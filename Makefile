@@ -3,7 +3,7 @@ BUF := $(TOOL) buf
 GOLANGCI_LINT := $(TOOL) golangci-lint
 
 # Paths whose contents are produced by `make gen` and must never drift.
-GENERATED := gen internal/apiserver/servicegen
+GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
 .PHONY: all gen check lint lint-proto lint-go breaking test e2e gen-check dev tools deps
 
@@ -20,6 +20,7 @@ gen: deps
 	else \
 		echo "gen: no .proto files yet"; \
 	fi
+	$(TOOL) sqlc generate
 
 lint: lint-proto lint-go
 
