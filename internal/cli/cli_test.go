@@ -42,7 +42,7 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com"})
+	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}})
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))
@@ -52,7 +52,7 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	node := &http.Server{
-		Handler:     srv.Handler(auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}}}),
+		Handler:     srv.Handler(auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: testNode}}),
 		ConnContext: auth.ConnContext,
 	}
 	go func() { _ = node.Serve(ln) }()
@@ -134,6 +134,9 @@ func (w *world) as(user string) {
 	w.t.Helper()
 	w.must("", "config", "set-context", user, "--endpoint", w.url, "--auth", "dev", "--user", user, "--project", "web", "--use")
 }
+
+// testNode is the Node the agent on the test socket acts as.
+const testNode = "n1"
 
 // setStatus writes a container's status as the node does.
 func (w *world) setStatus(name string, status *computev1alpha1.ContainerStatus) {

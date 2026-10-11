@@ -63,9 +63,11 @@ go run ./cmd/hangar get containers -o json
 
 To act as someone else, add them as a member first (a platform RoleBinding
 with role `platform.member` for their email, applied as the admin) and make a
-second context with `--user`. To act as the node (the only caller allowed to
-write status), pass `--socket /tmp/hangar-node.sock --node-uid $(id -u)` to
-the apiserver and call the API over that socket.
+second context with `--user`. To act as the node (the only caller besides the
+apiserver allowed to write status), pass `--socket /tmp/hangar-node.sock
+--node-uid $(id -u) --node-name dev` to the apiserver and call the API over that
+socket; the apiserver registers a `Node` named `dev`, and the caller may report
+the status of that node and of machines placed on it.
 
 ## When something goes wrong
 

@@ -24,8 +24,10 @@ separate root process on the same host.
 - **People on the CLI** log in through `cloudflared access login`; the CLI gets
   the JWT from `cloudflared access token` and caches it until expiry. Not a
   reimplementation of Cloudflare's undocumented CLI flow.
-- **The node** connects over a unix socket and is identified by `SO_PEERCRED`.
-  An mTLS authenticator joins the chain when there is more than one host.
+- **The node** connects over a unix socket and is identified by `SO_PEERCRED`;
+  the socket belongs to one host, so the agent acts as the `Node` named by the
+  apiserver's `--node-name`. An mTLS authenticator, carrying the node name in
+  the certificate, joins the chain when there is more than one host.
 - **Dev mode** takes the user from a header. It must be enabled explicitly and
   refuses to start on a non-loopback address.
 - Controllers run in-process as the System principal.

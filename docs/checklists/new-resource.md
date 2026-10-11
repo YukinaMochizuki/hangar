@@ -34,6 +34,10 @@ what it cannot.
 
 - [ ] Admission rules that are specific to the kind are implemented and tested,
       including the rejection paths.
+- [ ] If only the apiserver's controllers write the kind, `hooksFor` marks it
+      `systemManaged` and its comment says so; if a node agent reports its
+      status, `nodeOf` names the node allowed to. Tests show a caller with the
+      broadest role is still refused.
 
 ## Docs
 

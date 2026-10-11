@@ -30,6 +30,7 @@ type flags struct {
 	listen         string
 	socket         string
 	nodeUID        uint
+	nodeName       string
 	authMode       string
 	cfTeamDomain   string
 	cfAudience     string
@@ -43,6 +44,7 @@ func main() {
 	flag.StringVar(&f.listen, "listen", "127.0.0.1:8080", "address for the public API (behind cloudflared)")
 	flag.StringVar(&f.socket, "socket", "", "unix socket for the node agent; empty disables it")
 	flag.UintVar(&f.nodeUID, "node-uid", 0, "uid accepted as the node agent on the socket")
+	flag.StringVar(&f.nodeName, "node-name", "", "name of the Node the agent on the socket runs; required with --socket")
 	flag.StringVar(&f.authMode, "auth-mode", "cloudflare", "how public callers authenticate: cloudflare or dev")
 	flag.StringVar(&f.cfTeamDomain, "cf-team-domain", "", "Access team domain, such as https://team.cloudflareaccess.com")
 	flag.StringVar(&f.cfAudience, "cf-audience", "", "AUD tag of the Access application")
@@ -70,7 +72,21 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	srv := apiserver.New(apiserver.Config{Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin)})
+	if f.socket != "" && f.nodeName == "" {
+		return errors.New("--socket needs --node-name: the agent on it acts as that Node")
+	}
+	if f.nodeName != "" {
+		if err := apiserver.ValidName(f.nodeName); err != nil {
+			return fmt.Errorf("--node-name: %w", err)
+		}
+	}
+	var nodes []string
+	if f.nodeName != "" {
+		nodes = []string{f.nodeName}
+	}
+	srv := apiserver.New(apiserver.Config{
+		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes,
+	})
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return srv.Run(ctx) })
 
@@ -88,7 +104,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		node := auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(f.nodeUID)}}}
+		node := auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(f.nodeUID)}, NodeName: f.nodeName}}
 		g.Go(func() error {
 			log.Info("serving the node socket", "path", f.socket)
 			return serve(ctx, &http.Server{Handler: srv.Handler(node), Protocols: protocols(), ConnContext: auth.ConnContext}, sock)

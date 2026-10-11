@@ -82,13 +82,15 @@ func TestChain(t *testing.T) {
 func TestPeerCred(t *testing.T) {
 	me := uint32(os.Getuid())
 	for _, tt := range []struct {
-		name    string
-		uids    []uint32
-		ok      bool
-		wantErr bool
+		name     string
+		uids     []uint32
+		nodeName string
+		ok       bool
+		wantErr  bool
 	}{
-		{name: "allowed uid", uids: []uint32{me}, ok: true},
-		{name: "other uid", uids: []uint32{me + 1}, wantErr: true},
+		{name: "allowed uid", uids: []uint32{me}, nodeName: "n1", ok: true},
+		{name: "other uid", uids: []uint32{me + 1}, nodeName: "n1", wantErr: true},
+		{name: "no node name", uids: []uint32{me}, wantErr: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sock := filepath.Join(t.TempDir(), "s.sock")
@@ -105,7 +107,7 @@ func TestPeerCred(t *testing.T) {
 			srv := &http.Server{
 				ConnContext: auth.ConnContext,
 				Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					p, ok, err := auth.PeerCred{NodeUIDs: tt.uids}.Authenticate(r.Context(), r.Header)
+					p, ok, err := auth.PeerCred{NodeUIDs: tt.uids, NodeName: tt.nodeName}.Authenticate(r.Context(), r.Header)
 					got <- result{p, ok, err}
 				}),
 			}
@@ -126,7 +128,7 @@ func TestPeerCred(t *testing.T) {
 			if (r.err != nil) != tt.wantErr || r.ok != tt.ok {
 				t.Fatalf("got %v, %t, %v", r.p, r.ok, r.err)
 			}
-			if tt.ok && r.p != (auth.Principal{Type: auth.Node, ID: "local"}) {
+			if tt.ok && r.p != (auth.Principal{Type: auth.Node, ID: tt.nodeName}) {
 				t.Errorf("principal %v", r.p)
 			}
 		})
