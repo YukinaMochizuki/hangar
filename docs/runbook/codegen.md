@@ -1,7 +1,7 @@
 # Code generation
 
-Everything generated comes from `proto/` and is committed. `make gen`
-regenerates it; `make check` fails if the committed output is stale.
+Everything generated comes from `proto/` or from SQL, and is committed.
+`make gen` regenerates it; `make check` fails if the committed output is stale.
 
 ## What runs
 
@@ -15,7 +15,11 @@ regenerates it; `make check` fails if the committed output is stale.
 | `buf.gen.hangar.yaml` | protoc-gen-hangar, `mode=registry` | `gen/go/hangar/registry/registry.go` |
 | | protoc-gen-hangar, `mode=server` | `internal/apiserver/servicegen/services.go` |
 
-The second template runs separately because protoc-gen-hangar
+`make gen` then runs sqlc (`sqlc.yaml`), which turns
+`internal/store/sqlite/queries.sql` into `internal/store/sqlite/db`, checking
+every query against the schema in `internal/store/sqlite/migrations`.
+
+The second buf template runs separately because protoc-gen-hangar
 (`tools/protoc-gen-hangar`) imports the generated `hangar.meta.v1` package to
 read resource declarations, so that package must exist first. The first
 template cleans its output directories; the second does not, so a hand-written
@@ -28,6 +32,13 @@ test next to `services.go` survives.
 3. `go test ./internal/apiserver/servicegen/` exercises the shims through real
    Connect calls against a recording backend; extend it when the shim gains
    behaviour.
+
+## Changing the store schema
+
+Add a new numbered goose migration under `internal/store/sqlite/migrations`;
+never edit one that has shipped. The apiserver applies pending migrations at
+startup. Then `make gen`, and run `go test ./internal/store/...`, which runs
+the contract in `internal/store/storetest`.
 
 ## The API group domain
 
