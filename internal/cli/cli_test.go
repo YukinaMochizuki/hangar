@@ -138,18 +138,84 @@ func (w *world) as(user string) {
 // testNode is the Node the agent on the test socket acts as.
 const testNode = "n1"
 
-// setStatus writes a container's status as the node does.
-func (w *world) setStatus(name string, status *computev1alpha1.ContainerStatus) {
-	w.t.Helper()
+// fakeNode plays the node agent over the socket, as hangar-node will.
+type fakeNode struct {
+	t        *testing.T
+	nodes    computev1alpha1connect.NodeServiceClient
+	machines computev1alpha1connect.MachineServiceClient
+}
+
+func (w *world) node() *fakeNode {
 	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", w.socket)
 	}}}
-	c := computev1alpha1connect.NewContainerServiceClient(hc, "http://node")
-	if _, err := c.UpdateContainerStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateContainerStatusRequest{
-		Project: "web", Name: name, Status: status,
-	})); err != nil {
-		w.t.Fatal(err)
+	return &fakeNode{
+		t:        w.t,
+		nodes:    computev1alpha1connect.NewNodeServiceClient(hc, "http://node"),
+		machines: computev1alpha1connect.NewMachineServiceClient(hc, "http://node"),
 	}
+}
+
+// ready reports the node ready, with room for a few machines.
+func (n *fakeNode) ready() {
+	n.t.Helper()
+	if _, err := n.nodes.UpdateNodeStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
+		Name: testNode,
+		Status: &computev1alpha1.NodeStatus{
+			Capacity: &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 4096},
+			Conditions: []*metav1.Condition{{
+				Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
+			}},
+		},
+	})); err != nil {
+		n.t.Fatal(err)
+	}
+}
+
+// placed waits until the scheduler puts the machine on this node and returns
+// it.
+func (n *fakeNode) placed(name string) *computev1alpha1.Machine {
+	n.t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		res, err := n.machines.GetMachine(context.Background(), connect.NewRequest(&computev1alpha1.GetMachineRequest{Project: "web", Name: name}))
+		if err == nil && res.Msg.GetMachine().GetSpec().GetNode() == testNode {
+			return res.Msg.GetMachine()
+		}
+		if time.Now().After(deadline) {
+			n.t.Fatalf("machine %s never placed: %v", name, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// report writes a machine's status as the node does: phase, the generation it
+// has applied, and conditions, keeping the scheduler's own.
+func (n *fakeNode) report(m *computev1alpha1.Machine, phase computev1alpha1.MachinePhase, observed int64, conds ...*metav1.Condition) {
+	n.t.Helper()
+	status := &computev1alpha1.MachineStatus{Phase: phase, ObservedGeneration: observed}
+	for _, c := range m.GetStatus().GetConditions() {
+		if c.GetType() == "Scheduled" {
+			status.Conditions = append(status.Conditions, c)
+		}
+	}
+	status.Conditions = append(status.Conditions, conds...)
+	if _, err := n.machines.UpdateMachineStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateMachineStatusRequest{
+		Project: "web", Name: m.GetMetadata().GetName(), Status: status,
+	})); err != nil {
+		n.t.Fatal(err)
+	}
+}
+
+// released reports that the machine's VM and disks are gone from the host.
+func (n *fakeNode) released(name string) {
+	n.t.Helper()
+	res, err := n.machines.GetMachine(context.Background(), connect.NewRequest(&computev1alpha1.GetMachineRequest{Project: "web", Name: name}))
+	if err != nil {
+		n.t.Fatal(err)
+	}
+	n.report(res.Msg.GetMachine(), computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, res.Msg.GetMachine().GetMetadata().GetGeneration(),
+		&metav1.Condition{Type: "Released", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
 }
 
 const stack = `apiVersion: tenancy.hangar.dev/v1alpha1
@@ -243,6 +309,7 @@ func TestApplyGetDelete(t *testing.T) {
 	if out := w.must("", "delete", "container", "api"); out != "container/api deleted\n" {
 		t.Errorf("delete printed %q", out)
 	}
+	w.must("", "wait", "container", "api", "--for=delete", "--timeout=10s")
 	if r := w.run("", "get", "container", "api"); r.code != cli.ExitNotFound {
 		t.Errorf("get after delete: exit %d (%s), want %d", r.code, r.err, cli.ExitNotFound)
 	}
@@ -344,37 +411,52 @@ func TestWait(t *testing.T) {
 		}
 		return result{}
 	}
-	ready := func(gen int64) *computev1alpha1.ContainerStatus {
-		return &computev1alpha1.ContainerStatus{
-			ObservedGeneration: gen,
-			Conditions: []*metav1.Condition{{
-				Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, ObservedGeneration: gen,
-			}},
-		}
-	}
+	running := computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING
+	node := w.node()
 
+	// The container becomes ready once a node runs its machine.
 	ch := waitFor("wait", "container", "api", "--for=condition=Ready", "--timeout=10s")
-	w.setStatus("api", ready(1))
+	node.ready()
+	m := node.placed("ct-api")
+	node.report(m, running, m.GetMetadata().GetGeneration())
 	if r := finished(ch); r.code != 0 {
 		t.Fatalf("wait for Ready: exit %d: %s", r.code, r.err)
 	}
+	if out := w.must("", "get", "machines", "-o", "name"); out != "machine/ct-api\n" {
+		t.Errorf("get machines printed %q", out)
+	}
 
-	// After a spec change, Ready for the old generation is not enough.
+	// After a spec change, a machine still running the old one is not enough.
 	w.must(strings.Replace(strings.Split(stack, "---\n")[2], "nginx:1", "nginx:2", 1), "apply", "-f", "-")
 	ch = waitFor("wait", "container", "api", "--for=condition=Ready", "--timeout=10s")
-	w.setStatus("api", ready(1))
+	before := m.GetMetadata().GetGeneration()
+	deadline := time.Now().Add(10 * time.Second)
+	for m = node.placed("ct-api"); m.GetMetadata().GetGeneration() == before; m = node.placed("ct-api") {
+		if time.Now().After(deadline) {
+			t.Fatal("the machine never took the new image")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	node.report(m, running, before)
 	select {
 	case r := <-ch:
-		t.Fatalf("wait returned on a stale condition: exit %d", r.code)
+		t.Fatalf("wait returned while the machine ran the old spec: exit %d", r.code)
 	case <-time.After(300 * time.Millisecond):
 	}
-	w.setStatus("api", ready(2))
+	node.report(m, running, m.GetMetadata().GetGeneration())
 	if r := finished(ch); r.code != 0 {
-		t.Fatalf("wait for Ready at generation 2: exit %d: %s", r.code, r.err)
+		t.Fatalf("wait for Ready after the change: exit %d: %s", r.code, r.err)
 	}
 
+	// Deleting waits for the node to release the machine.
 	ch = waitFor("wait", "container", "api", "--for=delete", "--timeout=10s")
 	w.must("", "delete", "container", "api")
+	select {
+	case r := <-ch:
+		t.Fatalf("the container was gone before its node released the machine: exit %d", r.code)
+	case <-time.After(300 * time.Millisecond):
+	}
+	node.released("ct-api")
 	if r := finished(ch); r.code != 0 {
 		t.Fatalf("wait for delete: exit %d: %s", r.code, r.err)
 	}

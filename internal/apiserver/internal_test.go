@@ -22,8 +22,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
-// running starts a server and returns it with contexts acting as the system
-// and as a user who owns tenant "acme" with project "web".
+// running starts a server without controllers and returns it with contexts
+// acting as the system and as a user who owns tenant "acme" with project
+// "web".
 func running(t *testing.T) (s *Server, system, user context.Context) {
 	t.Helper()
 	return runningWith(t, func(*Config) {})
@@ -37,7 +38,7 @@ func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Store: st, Clock: clockwork.NewFakeClock()}
+	cfg := Config{Store: st, Clock: clockwork.NewFakeClock(), DisableControllers: true}
 	configure(&cfg)
 	s = New(cfg)
 	done := make(chan error, 1)
@@ -122,11 +123,28 @@ func TestFinalizers(t *testing.T) {
 		t.Errorf("applying an object being deleted: %v", err)
 	}
 
+	// Containers also carry the cascade's finalizer, which garbage collection
+	// removes once nothing they own is left.
 	if err := s.RemoveFinalizer(system, registry.Container, key, "hangar.dev/machine"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := b.Get(user, key); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Errorf("after its last finalizer went, Get = %v, want NotFound", err)
+	eventuallyGone(t, b, user, key)
+}
+
+// eventuallyGone waits for an object to be deleted, as happens in the
+// background once its finalizers are done.
+func eventuallyGone(t *testing.T, b *backend, ctx context.Context, key resource.Key) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, err := b.Get(ctx, key)
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%s %s still there: %v", b.r.Kind, key.Name, err)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -220,14 +238,10 @@ func TestSweepCollectsOrphans(t *testing.T) {
 	}
 
 	s.sweep(system)
-	if _, err := b.Get(user, resource.Key{Project: "web", Name: "orphan"}); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Errorf("the orphan survived the sweep: %v", err)
-	}
+	eventuallyGone(t, b, user, resource.Key{Project: "web", Name: "orphan"})
+	eventuallyGone(t, b, user, resource.Key{Project: "web", Name: "impostor"})
 	if _, err := b.Get(user, resource.Key{Project: "web", Name: "owned"}); err != nil {
 		t.Errorf("the sweep collected an object whose owner exists: %v", err)
-	}
-	if _, err := b.Get(user, resource.Key{Project: "web", Name: "impostor"}); connect.CodeOf(err) != connect.CodeNotFound {
-		t.Errorf("an object owned by an earlier holder of the owner's name survived: %v", err)
 	}
 
 	// Deleting the owner collects what it owns.

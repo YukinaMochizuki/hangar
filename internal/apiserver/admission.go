@@ -100,7 +100,7 @@ type kindHooks struct {
 	// an object.
 	systemManaged bool
 	// nodeOf names the Node responsible for obj, the only node agent allowed
-	// to write its status.
+	// to write its status. Kinds without it take no status from node agents.
 	nodeOf func(obj proto.Message) string
 }
 
@@ -172,11 +172,14 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate: validateRoleBinding,
 		}
 	case registry.Container.Kind:
-		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer}
+		// Deleting a container waits for its machine to be gone from the
+		// node, so the deletion a client watches is the real one.
+		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer, cascades: true}
 	case registry.Machine.Kind:
+		// A machine is owned by the object it was made from, which is
+		// already owned by the project.
 		return kindHooks{
 			target:        projectTarget,
-			owner:         ownedByProject,
 			validate:      validateMachine,
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
