@@ -63,11 +63,19 @@ go run ./cmd/hangar get containers -o json
 
 To act as someone else, add them as a member first (a platform RoleBinding
 with role `platform.member` for their email, applied as the admin) and make a
-second context with `--user`. To act as the node (the only caller besides the
-apiserver allowed to write status), pass `--socket /tmp/hangar-node.sock
---node-uid $(id -u) --node-name dev` to the apiserver and call the API over that
-socket; the apiserver registers a `Node` named `dev`, and the caller may report
-the status of that node and of machines placed on it.
+second context with `--user`.
+
+To have a node, pass `--socket /tmp/hangar-node.sock --node-uid $(id -u)
+--node-name dev` to the apiserver, which then registers a `Node` named `dev`,
+and run the node agent against it:
+
+```sh
+go run ./cmd/hangar-node --name dev --socket /tmp/hangar-node.sock
+```
+
+The node turns Ready and machines get placed on it. Anything else on that
+socket acts as the node too: it may report the status of the node and of the
+machines placed on it, which is how tests play the node by hand.
 
 ## When something goes wrong
 

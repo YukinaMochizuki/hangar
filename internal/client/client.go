@@ -6,6 +6,8 @@ package client
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
 	"strings"
 
 	"connectrpc.com/connect"
@@ -29,6 +31,19 @@ type Client struct {
 func New(hc connect.HTTPClient, baseURL string, opts ...connect.ClientOption) *Client {
 	return &Client{hc: hc, base: strings.TrimSuffix(baseURL, "/"), opts: opts}
 }
+
+// UnixSocket returns an HTTP client that sends every request to the unix
+// socket at path, as the node agent reaches the apiserver. Use it with
+// UnixSocketURL.
+func UnixSocket(path string) *http.Client {
+	return &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", path)
+	}}}
+}
+
+// UnixSocketURL is the base URL for a UnixSocket client; the host is never
+// resolved.
+const UnixSocketURL = "http://hangar.sock"
 
 // Key names one object; Project is empty for global kinds.
 type Key struct {
@@ -264,17 +279,23 @@ func (c *Client) List(ctx context.Context, r registry.Resource, opts ListOptions
 	return result, nil
 }
 
-// ListAll follows page tokens and returns every matching object.
+// ListAll follows page tokens and returns every matching object, with the
+// revision of the first page: each page is read on its own, so only a watch
+// from the earliest of them misses no change to an object already listed.
 func (c *Client) ListAll(ctx context.Context, r registry.Resource, opts ListOptions) ([]proto.Message, int64, error) {
 	var all []proto.Message
-	for {
+	var rev int64
+	for first := true; ; first = false {
 		page, err := c.List(ctx, r, opts)
 		if err != nil {
 			return nil, 0, err
 		}
+		if first {
+			rev = page.Revision
+		}
 		all = append(all, page.Items...)
 		if page.NextPageToken == "" {
-			return all, page.Revision, nil
+			return all, rev, nil
 		}
 		opts.PageToken = page.NextPageToken
 	}
