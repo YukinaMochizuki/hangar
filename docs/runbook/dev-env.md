@@ -38,6 +38,35 @@ make check   # before every commit: lint, breaking, test, gen-check
 `make check` is what CI runs, split into jobs that only run when their paths
 change (`.github/workflows/ci.yml`).
 
+## Running the apiserver and CLI locally
+
+`make dev` runs the apiserver on `127.0.0.1:8080` with dev auth (the caller's
+email comes from a header, so it refuses to listen anywhere but loopback) and
+a `hangar.db` in the working directory. Only platform members may do
+anything, so start a fresh database with yourself as its first admin:
+
+```sh
+rm -f hangar.db
+go run ./cmd/hangar-apiserver --auth-mode=dev --bootstrap-admin you@example.com
+```
+
+Point the CLI at it with a dev context, and keep its config out of your real
+one:
+
+```sh
+export HANGAR_CONFIG=/tmp/hangar-dev.yaml
+go run ./cmd/hangar config set-context dev --endpoint http://127.0.0.1:8080 \
+  --auth dev --user you@example.com --project web --use
+go run ./cmd/hangar apply -f my-stack.yaml
+go run ./cmd/hangar get containers -o json
+```
+
+To act as someone else, add them as a member first (a platform RoleBinding
+with role `platform.member` for their email, applied as the admin) and make a
+second context with `--user`. To act as the node (the only caller allowed to
+write status), pass `--socket /tmp/hangar-node.sock --node-uid $(id -u)` to
+the apiserver and call the API over that socket.
+
 ## When something goes wrong
 
 - **`gen-check` fails**: generated code differs from what the sources produce.
