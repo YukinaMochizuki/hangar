@@ -15,6 +15,7 @@ jobs:
     outputs:
       proto: ${{ steps.filter.outputs.proto }}
       go: ${{ steps.filter.outputs.go }}
+      sh: ${{ steps.filter.outputs.sh }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -42,6 +43,10 @@ jobs:
               - 'tools/**'
               - '.golangci.yml'
               - 'Makefile'
+            sh:
+              - '**/*.sh'
+              - 'deploy/**'
+              - 'Makefile'
 
   proto:
     needs: changes
@@ -66,3 +71,11 @@ jobs:
       - uses: ./.github/actions/setup
       - run: make lint-go
       - run: make test
+
+  sh:
+    needs: changes
+    if: needs.changes.outputs.sh == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: make lint-sh
