@@ -59,6 +59,11 @@ func (s *Server) runGC(ctx context.Context) error {
 				s.finishOwners(ctx, key.Project, obj)
 				return nil
 			}
+			// An owner reference the system set itself is not checked on
+			// create, and its owner may have gone in the meantime.
+			if ev.Type == store.EventCreated {
+				s.collectIfOrphaned(ctx, b, key, obj)
+			}
 			if s.isCascading(b, obj) {
 				s.cascade(ctx, b, key, obj)
 			}
@@ -85,15 +90,12 @@ func (s *Server) sweep(ctx context.Context) {
 		if s.isCascading(b, obj) {
 			s.cascade(ctx, b, key, obj)
 		}
-		for _, ref := range object.Meta(obj).GetOwnerReferences() {
-			alive, err := s.ownerAlive(ctx, key.Project, ref)
-			if err != nil {
-				return err
-			}
-			if !alive {
-				s.collect(ctx, b, key)
-				return nil
-			}
+		gone, err := s.orphaned(ctx, key, obj)
+		if err != nil {
+			return err
+		}
+		if gone {
+			s.collect(ctx, b, key)
 		}
 		return nil
 	})
@@ -192,6 +194,45 @@ func (s *Server) finishOwners(ctx context.Context, project string, deleted proto
 		}
 		if s.isCascading(b, owner) {
 			s.cascade(ctx, b, key, owner)
+		}
+	}
+}
+
+// orphaned reports whether any of obj's owners is gone.
+func (s *Server) orphaned(ctx context.Context, key resource.Key, obj proto.Message) (bool, error) {
+	for _, ref := range object.Meta(obj).GetOwnerReferences() {
+		alive, err := s.ownerAlive(ctx, key.Project, ref)
+		if err != nil || !alive {
+			return !alive, err
+		}
+	}
+	return false, nil
+}
+
+func (s *Server) collectIfOrphaned(ctx context.Context, b *backend, key resource.Key, obj proto.Message) {
+	gone, err := s.orphaned(ctx, key, obj)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.log.Error("checking owners failed", "kind", b.r.Kind, "name", key.Name, "error", err)
+		}
+		return
+	}
+	if gone {
+		// Only the object the event was about: a later one of the same name
+		// has owners of its own.
+		cur, err := s.store.Get(ctx, b.storeKey(key))
+		if err != nil {
+			return
+		}
+		now, err := b.decode(cur)
+		if err != nil || object.Meta(now).GetUid() != object.Meta(obj).GetUid() {
+			return
+		}
+		rv := cur.Revision
+		if _, err := b.Delete(s.system(ctx), key, &rv); err == nil {
+			s.log.Info("collected", "kind", b.r.Kind, "project", key.Project, "name", key.Name)
+		} else if c := connect.CodeOf(err); c != connect.CodeNotFound && c != connect.CodeAborted && ctx.Err() == nil {
+			s.log.Error("collecting failed", "kind", b.r.Kind, "project", key.Project, "name", key.Name, "error", err)
 		}
 	}
 }

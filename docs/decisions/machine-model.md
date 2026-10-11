@@ -32,8 +32,21 @@ Hypervisor directly, without Kata or Kubernetes.
   heartbeat), and the apiserver marks a node `Ready=Unknown` when the reports
   stop, timing them on its own clock so host clock skew cannot fake or hide
   silence. A node agent writes the status of its own `Node` and of the
-  machines placed on it. `Machine.spec.node` is set once and never changes;
-  moving a machine means a new one.
+  machines placed on it, nothing else. `Machine.spec.node` is set once and
+  never changes; moving a machine means a new one.
+- A scheduler in the apiserver places each machine on a ready, uncordoned node
+  with room for its memory, preferring the most free memory. Memory is the
+  only resource it reserves; vCPUs are shared, and a placed machine is only
+  resized if its node still has room. The scheduler owns the machine's
+  `Scheduled` condition and sets phase `Pending` until the node reports; the
+  node owns the rest of the machine's status. A container is `Ready` only
+  while its node is reporting.
+- Deleting a `Container` waits for its machine, and a placed machine waits for
+  its node to report `Released` (VM and disks gone) before its finalizer is
+  removed. A client watching the container's deletion sees the host's state,
+  not a promise. Open question: a machine on a node that never comes back can
+  never be released, which also holds up its container, project and tenant;
+  the way out belongs with node lifecycle (draining, removing a node).
 
 ## Consequences
 

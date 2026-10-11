@@ -63,6 +63,7 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/runbook/dev-env.md` | You set up a workspace or a tool misbehaves |
 | `docs/runbook/codegen.md` | You change `proto/` or the code generator |
 | `docs/checklists/new-resource.md` | You add a resource kind |
+| `docs/checklists/new-controller.md` | You add or change a controller |
 | `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
 
 When you add a doc, add it to this index.
