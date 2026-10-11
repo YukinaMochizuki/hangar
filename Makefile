@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test e2e gen-check dev tools deps
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env')
@@ -46,6 +46,11 @@ breaking:
 
 test:
 	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then go test -race ./...; fi
+
+# The guest's tests that start processes as other users, as PID 1 does; they
+# skip in make test unless it runs as root. CI runs this under sudo.
+test-root:
+	sudo -E env "PATH=$$PATH" go test -race -count=1 ./internal/guest/... ./internal/node/driver/chguest/
 
 e2e:
 	go test -race -tags e2e ./test/e2e/...

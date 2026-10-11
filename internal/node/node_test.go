@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -203,22 +202,6 @@ func TestAllocatableIsNeverNegative(t *testing.T) {
 	got := node.Allocatable(&computev1alpha1.NodeResources{Vcpus: 2, MemoryMib: 1024}, &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 2048})
 	if got.GetVcpus() != 0 || got.GetMemoryMib() != 0 {
 		t.Errorf("allocatable %v when the host keeps more than it has", got)
-	}
-}
-
-func TestVersion(t *testing.T) {
-	for _, tt := range []struct {
-		settings []debug.BuildSetting
-		want     string
-	}{
-		{[]debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "false"}}, "abc123"},
-		{[]debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "true"}}, "abc123-dirty"},
-		{nil, "v1.2.3"},
-	} {
-		info := &debug.BuildInfo{Main: debug.Module{Version: "v1.2.3"}, Settings: tt.settings}
-		if got := node.VersionOf(info); got != tt.want {
-			t.Errorf("version of %v: %q, want %q", tt.settings, got, tt.want)
-		}
 	}
 }
 

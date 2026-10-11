@@ -1,0 +1,111 @@
+syntax = "proto3";
+
+// The protocol between the node agent and hangar-init, which is PID 1 and
+// the agent in every container's guest. It is internal, not part of the
+// API, but its compatibility is held by buf breaking all the same: a guest
+// keeps the hangar-init it booted with while the node is upgraded. See
+// docs/decisions/guest-agent.md.
+package hangar.guest.v1;
+
+import "google/protobuf/duration.proto";
+
+// BootConfig is all a guest needs from the node to boot, and to boot again:
+// what to run and how it reaches the network. It comes on a small read-only
+// disk (internal/guest/bootdisk).
+message BootConfig {
+  // The container's main process. The guest powers off when it exits.
+  Process process = 1;
+  repeated Interface interfaces = 2;
+  string hostname = 3;
+  // Resolver addresses for /etc/resolv.conf.
+  repeated string nameservers = 4;
+  // Search domains for /etc/resolv.conf.
+  repeated string search = 5;
+}
+
+// Process is a process to run in the guest.
+message Process {
+  // The first is the program, looked up on PATH as set in env.
+  repeated string args = 1;
+  // KEY=VALUE pairs.
+  repeated string env = 2;
+  // Empty means the root directory.
+  string working_dir = 3;
+  // As an OCI image gives it: "uid", "uid:gid", "name" or "name:group",
+  // looked up in the guest's /etc/passwd and /etc/group. Empty means root.
+  string user = 4;
+}
+
+// Interface is one network interface, found in the guest by its MAC.
+message Interface {
+  // Such as 02:00:00:00:00:01.
+  string mac = 1;
+  // With the network's prefix length, such as 10.0.0.5/24.
+  string address = 2;
+  // The default route through this interface; empty for none.
+  string gateway = 3;
+}
+
+// GuestAgentService is served by hangar-init over vsock.
+service GuestAgentService {
+  // Ping answers once the guest is up.
+  rpc Ping(PingRequest) returns (PingResponse);
+  // Exec runs a process beside the container's main one. The first request
+  // starts it; later ones carry its stdin, a resize or a signal. The
+  // responses carry its output and, last, how it ended.
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {
+  // Version of hangar-init.
+  string version = 1;
+  // How long since hangar-init started.
+  google.protobuf.Duration uptime = 2;
+}
+
+message ExecRequest {
+  oneof message {
+    ExecStart start = 1;
+    bytes stdin = 2;
+    // Closes the process's stdin.
+    StdinClose stdin_close = 3;
+    WindowSize resize = 4;
+    // A signal number to send the process, such as 15.
+    int32 signal = 5;
+  }
+}
+
+// ExecStart starts the process.
+message ExecStart {
+  Process process = 1;
+  // Runs it on a terminal; its stdout and stderr are then one stream.
+  bool tty = 2;
+  // The terminal's first size, with tty.
+  WindowSize size = 3;
+}
+
+message StdinClose {}
+
+message WindowSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+message ExecResponse {
+  oneof message {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    // The last response.
+    ExecExit exit = 3;
+  }
+}
+
+// ExecExit says how the process ended.
+message ExecExit {
+  // The exit code; 128 plus the signal's number when a signal ended it.
+  int32 code = 1;
+  // The signal that ended it, 0 if none.
+  int32 signal = 2;
+}

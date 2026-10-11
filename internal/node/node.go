@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"runtime/debug"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -26,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/buildinfo"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
@@ -284,32 +284,5 @@ func allocatable(capacity, reserved *computev1alpha1.NodeResources) *computev1al
 	}
 }
 
-// Version is the agent's build: the VCS revision it was built from, marked
-// when the tree had uncommitted changes.
-func Version() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
-	}
-	return versionOf(info)
-}
-
-func versionOf(info *debug.BuildInfo) string {
-	var rev string
-	var dirty bool
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			rev = s.Value
-		case "vcs.modified":
-			dirty = s.Value == "true"
-		}
-	}
-	if rev == "" {
-		return info.Main.Version
-	}
-	if dirty {
-		rev += "-dirty"
-	}
-	return rev
-}
+// Version is the agent's build.
+func Version() string { return buildinfo.Version() }
