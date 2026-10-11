@@ -5,6 +5,7 @@ go 1.27
 tool (
 	github.com/bufbuild/buf/cmd/buf
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
+	github.com/google/go-containerregistry/cmd/crane
 	github.com/sqlc-dev/sqlc/cmd/sqlc
 )
 

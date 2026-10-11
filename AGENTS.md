@@ -35,8 +35,11 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make gen` | Regenerate everything from `proto/` (and SQL, once it exists) |
 | `make check` | Lint, test, and fail if `make gen` would change anything. Run before every commit |
 | `make e2e` | Hermetic end-to-end tests (no KVM, no root) |
+| `make e2e-host` | Real-host tests (L4): boots guests as root, on a disposable testbed VM only |
 | `make dev` | Run the apiserver locally in dev auth mode |
 | `make lint-sh` | shellcheck every shell script (part of `make check`) |
+| `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
+| `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` (`INIT_MAIN=DIR` packs another main package) |
 | `make tools` | Print the pinned tool versions |
 
 The only toolchains needed are Go and Node (versions in `go.mod` and `.nvmrc`).
@@ -65,5 +68,7 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/checklists/new-resource.md` | You add a resource kind |
 | `docs/checklists/new-controller.md` | You add or change a controller |
 | `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
+| `docs/runbook/testbed.md` | You run or add a real-host test (L4), or change the guest boot path |
+| `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
 
 When you add a doc, add it to this index.

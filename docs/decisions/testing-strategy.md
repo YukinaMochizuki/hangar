@@ -34,6 +34,8 @@ ordinary workspaces and CI runners cannot provide.
   (`deploy/`), so host setup is exercised continuously. Production-only
   behaviour is emulated there where possible (a namespace playing OVH's
   upstream router, with MAC filtering).
+- **L4 tests live under `test/testbed/`**, behind the `testbed` build tag,
+  and `make e2e-host` runs them on the testbed (`docs/runbook/testbed.md`).
 
 ## Consequences
 
