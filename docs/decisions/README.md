@@ -23,3 +23,4 @@ the change.
 | `testing-strategy.md` | Test layers, fakes held honest by conformance tests, a disposable testbed |
 | `node-agent.md` | The node agent keeps no state, reads the host back, and sweeps what nothing accounts for |
 | `guest-agent.md` | hangar-init: PID 1 from the initramfs, a boot disk, Connect over vsock, a framed console |
+| `guest-kernel.md` | One platform guest kernel and initramfs: LTS only, allnoconfig + fragment, no modules, `quiet` |

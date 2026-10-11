@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
@@ -43,6 +44,25 @@ func (w *world) applyMachine(m *computev1alpha1.Machine) {
 	if _, err := w.system.Apply(context.Background(), registry.Machine, m); err != nil {
 		w.t.Fatal(err)
 	}
+}
+
+// editMachine changes the machine as it is now, again if the node wrote its
+// status in between: the apply is conditional on the version read.
+func (w *world) editMachine(name string, edit func(*computev1alpha1.Machine)) {
+	w.t.Helper()
+	for range 20 {
+		m := w.machine2(name)
+		edit(m)
+		_, err := w.system.Apply(context.Background(), registry.Machine, m)
+		if connect.CodeOf(err) == connect.CodeAborted {
+			continue
+		}
+		if err != nil {
+			w.t.Fatal(err)
+		}
+		return
+	}
+	w.t.Fatalf("machine %s: every edit lost to another write", name)
 }
 
 // waitMachine waits for the machine to be in phase, with the node's Ready
@@ -94,9 +114,9 @@ func TestAStoppedMachineKeepsItsDisk(t *testing.T) {
 	uid := w.machine2("solo").GetMetadata().GetUid()
 
 	w.host.FailPull("nginx", errors.New("registry unreachable"))
-	m = w.machine2("solo") // as placed
-	m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
-	w.applyMachine(m)
+	w.editMachine("solo", func(m *computev1alpha1.Machine) {
+		m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
+	})
 	w.waitMachine("solo", computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped)
 	s := w.host.Snapshot()
 	if _, running := s.VMs[uid]; running {
@@ -106,9 +126,9 @@ func TestAStoppedMachineKeepsItsDisk(t *testing.T) {
 		t.Errorf("a stopped machine lost its disk or interface: %+v", s)
 	}
 
-	m = w.machine2("solo")
-	m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING
-	w.applyMachine(m)
+	w.editMachine("solo", func(m *computev1alpha1.Machine) {
+		m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING
+	})
 	w.waitMachine("solo", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
 	if vm := w.host.Snapshot().VMs[uid]; vm.Spec.Root.Digest != "sha256:nginx-1" {
 		t.Errorf("started again on %+v", vm.Spec.Root)
@@ -159,10 +179,10 @@ func TestAnInterfaceChangeReplacesIt(t *testing.T) {
 		t.Fatalf("%d interfaces on the host, want 2", n)
 	}
 
-	m = w.machine2("solo") // as placed
-	m.Spec.Interfaces = m.Spec.Interfaces[:1]
-	m.Spec.Interfaces[0].Ipv4 = "10.0.0.51/24"
-	w.applyMachine(m)
+	w.editMachine("solo", func(m *computev1alpha1.Machine) {
+		m.Spec.Interfaces = m.Spec.Interfaces[:1]
+		m.Spec.Interfaces[0].Ipv4 = "10.0.0.51/24"
+	})
 	w.eventually("the interface replaced and the VM on it", func() (bool, string) {
 		s := w.host.Snapshot()
 		ifs, vm := s.Interfaces[uid], s.VMs[uid]
