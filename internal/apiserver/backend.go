@@ -339,6 +339,17 @@ func eventType(t store.EventType) metav1.EventType {
 }
 
 func (b *backend) Apply(ctx context.Context, in proto.Message) (resource.ApplyResult, error) {
+	return b.apply(ctx, in, false)
+}
+
+// Create writes in only if no object has its key, and fails with
+// AlreadyExists otherwise. Controllers create with it: one that read
+// "absent" must not overwrite an object written since.
+func (b *backend) Create(ctx context.Context, in proto.Message) (resource.ApplyResult, error) {
+	return b.apply(ctx, in, true)
+}
+
+func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) (resource.ApplyResult, error) {
 	p, err := b.begin(ctx)
 	if err != nil {
 		return resource.ApplyResult{}, err
@@ -372,12 +383,14 @@ func (b *backend) Apply(ctx context.Context, in proto.Message) (resource.ApplyRe
 					fmt.Errorf("%s %s does not exist at resource version %d", b.r.Kind, key.Name, expected))
 			}
 			res, err := b.create(ctx, p, key, in)
-			if errors.Is(err, store.ErrExists) {
+			if errors.Is(err, store.ErrExists) && !createOnly {
 				continue
 			}
 			return res, apiError(err)
 		case err != nil:
 			return resource.ApplyResult{}, apiError(err)
+		case createOnly:
+			return resource.ApplyResult{}, apiError(store.ErrExists)
 		}
 		res, err := b.update(ctx, p, key, cur, in, expected)
 		if errors.Is(err, store.ErrConflict) && expected == 0 {
@@ -418,6 +431,11 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	}
 	if b.hooks.cascades && !slices.Contains(meta.Finalizers, dependentsFinalizer) {
 		meta.Finalizers = append(meta.Finalizers, dependentsFinalizer)
+	}
+	for _, f := range b.hooks.finalizers {
+		if !slices.Contains(meta.Finalizers, f) {
+			meta.Finalizers = append(meta.Finalizers, f)
+		}
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
@@ -573,6 +591,11 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 				fmt.Errorf("%s %s is at resource version %d, not %d", b.r.Kind, key.Name, cur.Revision, *expected))
 		}
 		meta := object.Meta(old)
+		if meta.GetDeleteTime() == nil && b.hooks.beforeDelete != nil {
+			if err := b.hooks.beforeDelete(ctx, b.s, old); err != nil {
+				return nil, apiError(err)
+			}
+		}
 		if len(meta.GetFinalizers()) > 0 {
 			if meta.GetDeleteTime() != nil {
 				return old, nil

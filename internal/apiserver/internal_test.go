@@ -14,6 +14,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
@@ -67,6 +68,15 @@ func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user
 		Metadata: &metav1.ObjectMeta{Name: "web"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "acme"},
 	}); err != nil {
 		t.Fatal(err)
+	}
+	// What the project controller does, for tests that run without it.
+	if cfg.DisableControllers {
+		if _, err := s.backend(registry.Network).Apply(system, &networkv1alpha1.Network{
+			Metadata: &metav1.ObjectMeta{Project: "web", Name: DefaultNetwork},
+			Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return s, system, user
 }

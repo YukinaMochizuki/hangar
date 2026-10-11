@@ -47,6 +47,8 @@ internal `Machine`, the only thing the node understands, so snapshots, disks,
 networking and quotas are implemented once. Each host is a global `Node`;
 a machine runs on the node named in its `spec.node`. Both are system-managed:
 users can read their machines, and only platform administrators read nodes.
+A machine's interfaces sit on `Network`s of its project, which get their
+addresses from the apiserver; every project has a `default` network.
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources.
