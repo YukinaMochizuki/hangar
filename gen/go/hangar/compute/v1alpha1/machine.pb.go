@@ -477,7 +477,11 @@ type MachineStatus struct {
 	// Digest of the image the root disk was built from.
 	ImageDigest string `protobuf:"bytes,4,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
 	// When the running instance booted.
-	BootTime      *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=boot_time,json=bootTime,proto3" json:"boot_time,omitempty"`
+	BootTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=boot_time,json=bootTime,proto3" json:"boot_time,omitempty"`
+	// The image reference image_digest was resolved from. The node resolves a
+	// reference once: it resolves it again only when the spec names another
+	// image, so a tag moving upstream never rebuilds a machine's disk.
+	Image         string `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -545,6 +549,13 @@ func (x *MachineStatus) GetBootTime() *timestamppb.Timestamp {
 		return x.BootTime
 	}
 	return nil
+}
+
+func (x *MachineStatus) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
 }
 
 type GetMachineRequest struct {
@@ -1245,7 +1256,7 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x10MachineInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
-	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\"\x94\x02\n" +
+	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\"\xaa\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1253,7 +1264,8 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"conditions\x12;\n" +
 	"\x05phase\x18\x03 \x01(\x0e2%.hangar.compute.v1alpha1.MachinePhaseR\x05phase\x12!\n" +
 	"\fimage_digest\x18\x04 \x01(\tR\vimageDigest\x127\n" +
-	"\tboot_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bbootTime\"A\n" +
+	"\tboot_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bbootTime\x12\x14\n" +
+	"\x05image\x18\x06 \x01(\tR\x05image\"A\n" +
 	"\x11GetMachineRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"P\n" +

@@ -16,10 +16,17 @@ apply to it.
       outcome.
 - [ ] `Watches` lists every kind whose changes affect the result, each with a
       `Map` from the changed object to the keys to reconcile (a child maps to
-      its owner, a node change maps to the machines it could take).
+      its owner, a node change maps to the machines it could take). A kind
+      whose `Map` is costly and whose keys another watch already queues on
+      start and resync sets `SkipResync`.
+- [ ] Nothing slow (a download, a large copy) runs in `Reconcile`: it holds up
+      every other key. Start it elsewhere and return `ErrWaiting` until it is
+      done, as the node agent's puller does.
 - [ ] Anything that changes with time rather than with a write (a deadline, a
       heartbeat) is caught by the resync or by its own loop, not by hoping for
-      an event.
+      an event. A change outside the API, such as a VM exiting on the host,
+      feeds `Trigger`; a reconcile waiting on one (a VM booting) returns
+      `ErrWaiting`, not a failure.
 
 ## Writes
 

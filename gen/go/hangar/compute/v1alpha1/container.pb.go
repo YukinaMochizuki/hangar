@@ -206,7 +206,9 @@ func (x *Container) GetStatus() *ContainerStatus {
 // ContainerSpec is the desired state of a container.
 type ContainerSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// OCI image reference. Changing it rebuilds the root disk.
+	// OCI image reference. Changing it rebuilds the root disk. A tag is
+	// resolved when the container first runs it; to pick up a tag that moved
+	// since, name the image by its new digest or another tag.
 	Image string `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
 	// Overrides the image entrypoint.
 	Command []string `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`

@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"runtime/debug"
+	"slices"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -20,8 +23,13 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 // Config configures an Agent. Zero values take defaults.
@@ -40,14 +48,35 @@ type Config struct {
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
 	// spare.
 	HeartbeatInterval time.Duration
-	Clock             clockwork.Clock
-	Log               *slog.Logger
+	// Drivers are the host. Without them the agent only reports the node.
+	Drivers *Drivers
+	// SweepInterval is how often the host is checked for what no machine
+	// accounts for. Zero means a minute.
+	SweepInterval time.Duration
+	// PullTimeout bounds preparing one image, so a stalled pull fails and
+	// is tried again. Zero means half an hour.
+	PullTimeout time.Duration
+	Clock       clockwork.Clock
+	Log         *slog.Logger
 }
 
 // Agent is a running node agent.
 type Agent struct {
-	cfg   Config
-	nodes computev1alpha1connect.NodeServiceClient
+	cfg      Config
+	api      *client.Client
+	nodes    computev1alpha1connect.NodeServiceClient
+	machines computev1alpha1connect.MachineServiceClient
+	networks networkv1alpha1connect.NetworkServiceClient
+	// host serializes everything that changes the host: each reconcile, and
+	// the sweep, which must not judge what a reconcile is building.
+	host sync.Mutex
+	// puller prepares images off the host lock.
+	puller *puller
+	// netEpoch counts the network driver's change signals, and netChecked
+	// is the epoch each machine's interfaces were last found whole in.
+	// Guarded by host, but netEpoch, which the signals bump.
+	netEpoch   atomic.Int64
+	netChecked map[string]int64
 }
 
 // New returns an agent for cfg.
@@ -67,24 +96,58 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.Clock == nil {
 		cfg.Clock = clockwork.NewRealClock()
 	}
+	if cfg.SweepInterval == 0 {
+		cfg.SweepInterval = time.Minute
+	}
+	if cfg.PullTimeout == 0 {
+		cfg.PullTimeout = 30 * time.Minute
+	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
+	cfg.Log = cfg.Log.With("node", cfg.Name)
+	var puller *puller
+	if cfg.Drivers != nil {
+		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout)
+	}
 	return &Agent{
-		cfg:   cfg,
-		nodes: computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
+		cfg:        cfg,
+		api:        client.New(cfg.HTTP, cfg.BaseURL),
+		nodes:      computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
+		machines:   computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
+		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
+		netChecked: map[string]int64{},
+		puller:     puller,
 	}, nil
 }
 
-// Run reports the node until ctx is done. A failed report is logged and
-// tried again at the next beat: the apiserver judges the silence.
+// Run reports the node and, with drivers, runs its machines, until ctx is
+// done. Failures are logged and retried, never fatal: the apiserver judges
+// a node by its reports.
 func (a *Agent) Run(ctx context.Context) error {
-	log := a.cfg.Log.With("node", a.cfg.Name)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	if a.cfg.Drivers != nil {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			_ = a.machineController(ctx).Run(ctx)
+			a.puller.wait() // its jobs end with ctx
+		}()
+		go func() {
+			defer wg.Done()
+			a.sweepLoop(ctx)
+		}()
+	} else {
+		a.cfg.Log.Warn("no host drivers: reporting the node, running no machines")
+	}
 	ticker := a.cfg.Clock.NewTicker(a.cfg.HeartbeatInterval)
 	defer ticker.Stop()
 	for {
 		if err := a.report(ctx); err != nil && ctx.Err() == nil {
-			log.Error("reporting the node failed", "error", err)
+			a.cfg.Log.Error("reporting the node failed", "error", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -92,6 +155,92 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-ticker.Chan():
 		}
 	}
+}
+
+func (a *Agent) sweepLoop(ctx context.Context) {
+	ticker := a.cfg.Clock.NewTicker(a.cfg.SweepInterval)
+	defer ticker.Stop()
+	for {
+		if err := a.sweep(ctx); err != nil && ctx.Err() == nil {
+			a.cfg.Log.Error("sweeping the host failed", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.Chan():
+		}
+	}
+}
+
+// machineController runs the machines placed on this node. Besides changes
+// to machines and their networks, anything the drivers notice on the host
+// checks every machine again.
+func (a *Agent) machineController(ctx context.Context) *controller.Controller {
+	trigger := make(chan struct{}, 1)
+	forward := func(from <-chan struct{}, noted func()) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-from:
+			}
+			noted()
+			select {
+			case trigger <- struct{}{}:
+			default:
+			}
+		}
+	}
+	go forward(a.cfg.Drivers.Network.Changes(), func() { a.netEpoch.Add(1) })
+	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
+	// An image made ready is looked at as soon as it is.
+	a.puller.start(ctx, func() {
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+	})
+	return &controller.Controller{
+		Name:       "machines",
+		Source:     controller.APISource{Client: a.api},
+		Reconciler: controller.ReconcilerFunc(a.reconcileMachine),
+		Watches: []controller.Watch{
+			{Kind: registry.Machine.Kind, Map: a.machineIfMine},
+			// A network getting its transit link unblocks its machines. On a
+			// resync every machine is queued already.
+			{Kind: registry.Network.Kind, Map: a.machinesOnNetwork, SkipResync: true},
+		},
+		Trigger: trigger,
+		Clock:   a.cfg.Clock,
+		Log:     a.cfg.Log,
+	}
+}
+
+func (a *Agent) machineIfMine(_ context.Context, o store.Object) []controller.Key {
+	var m computev1alpha1.Machine
+	if proto.Unmarshal(o.Data, &m) != nil || m.GetSpec().GetNode() != a.cfg.Name {
+		return nil
+	}
+	return []controller.Key{{Project: o.Project, Name: o.Name}}
+}
+
+func (a *Agent) machinesOnNetwork(ctx context.Context, o store.Object) []controller.Key {
+	objs, _, err := a.api.ListAll(ctx, registry.Machine, client.ListOptions{Project: o.Project})
+	if err != nil {
+		a.cfg.Log.Error("listing machines failed", "error", err)
+		return nil
+	}
+	var keys []controller.Key
+	for _, obj := range objs {
+		m := obj.(*computev1alpha1.Machine)
+		if m.GetSpec().GetNode() != a.cfg.Name {
+			continue
+		}
+		if slices.ContainsFunc(m.GetSpec().GetInterfaces(), func(i *computev1alpha1.MachineInterface) bool { return i.GetNetwork() == o.Name }) {
+			keys = append(keys, controller.Key{Project: o.Project, Name: m.GetMetadata().GetName()})
+		}
+	}
+	return keys
 }
 
 // report writes the node's status: what the host has, what is left for

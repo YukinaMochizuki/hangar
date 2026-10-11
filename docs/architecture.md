@@ -59,8 +59,9 @@ to a `Tenant`; tenants hold people, projects hold resources.
    and stores it, bumping the global revision.
 2. Controllers watching that kind reconcile it, creating or updating
    lower-level objects (a `Container` produces a `Machine`).
-3. `hangar-node` watches `Machine` objects, converges the host, and reports back
-   through the status RPC.
+3. `hangar-node` watches the `Machine` objects placed on it, converges the host
+   through its drivers, and reports back through the status RPC. It keeps no
+   state: the host is read back each time (`decisions/node-agent.md`).
 4. Clients watch or `hangar wait` until `status.observed_generation` catches up
    with the generation they wrote.
 

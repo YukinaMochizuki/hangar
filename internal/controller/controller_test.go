@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -331,4 +332,78 @@ func TestAChangeBetweenListsIsNotMissed(t *testing.T) {
 		Watches: []Watch{{Kind: "A", Map: Self}, {Kind: "B", Map: Self}},
 	})
 	eventually(t, "the A written between the lists", func() bool { return r.count(Key{Name: "between"}) == 1 })
+}
+
+// TestWaitingIsCheckedSoon: a key waiting on something outside the
+// controller is checked again within MaxWait, however long it has waited.
+func TestWaitingIsCheckedSoon(t *testing.T) {
+	st := openStore(t)
+	clock := clockwork.NewFakeClock()
+	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "booting"}, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	waiting := ReconcilerFunc(func(context.Context, Key) error {
+		calls.Add(1)
+		return fmt.Errorf("%w: still booting", ErrWaiting)
+	})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: waiting, Clock: clock, MaxWait: 200 * time.Millisecond,
+		Watches: []Watch{{Kind: "A", Map: Self}}})
+	for i := int32(1); i <= 6; i++ {
+		eventually(t, fmt.Sprintf("check %d", i), func() bool { return calls.Load() == i })
+		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
+			t.Fatal(err)
+		}
+		clock.Advance(200 * time.Millisecond)
+	}
+}
+
+// TestASkipResyncKindIsMappedOnlyAsItChanges: a kind marked SkipResync is
+// not mapped on start or resync, and is as it changes.
+func TestASkipResyncKindIsMappedOnlyAsItChanges(t *testing.T) {
+	st := openStore(t)
+	ctx := t.Context()
+	clock := clockwork.NewFakeClock()
+	for _, k := range []store.Key{{Kind: "A", Name: "a"}, {Kind: "B", Name: "before"}} {
+		if _, err := st.Create(ctx, k, []byte("x")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mappedB atomic.Int32
+	r := newRecorder()
+	run(t, &Controller{
+		Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Resync: time.Minute,
+		Watches: []Watch{
+			{Kind: "A", Map: Self},
+			{Kind: "B", SkipResync: true, Map: func(_ context.Context, o store.Object) []Key {
+				mappedB.Add(1)
+				return []Key{{Name: o.Name}}
+			}},
+		},
+	})
+	eventually(t, "the start", func() bool { return r.count(Key{Name: "a"}) == 1 })
+	if err := clock.BlockUntilContext(ctx, 1); err != nil { // the resync ticker
+		t.Fatal(err)
+	}
+	clock.Advance(time.Minute)
+	eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
+	if n := mappedB.Load(); n != 0 {
+		t.Errorf("a SkipResync kind was mapped %d times on start and resync", n)
+	}
+	if _, err := st.Create(ctx, store.Key{Kind: "B", Name: "after"}, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "the change mapped", func() bool { return r.count(Key{Name: "after"}) == 1 })
+}
+
+// TestAControllerMustListSomething: a controller whose every watch skips
+// resyncs would start from nothing; it refuses to run.
+func TestAControllerMustListSomething(t *testing.T) {
+	c := &Controller{Name: "t", Source: StoreSource{Store: openStore(t)}, Reconciler: newRecorder(),
+		Watches: []Watch{{Kind: "A", Map: Self, SkipResync: true}}}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	if err := c.Run(ctx); err == nil {
+		t.Error("a controller that lists nothing ran")
+	}
 }
