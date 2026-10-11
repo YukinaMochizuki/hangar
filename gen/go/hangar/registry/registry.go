@@ -48,6 +48,26 @@ var (
 		Message:    (*v1alpha1.Container)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.ContainerService",
 	}
+	Machine = Resource{
+		Group:      "compute",
+		Version:    "v1alpha1",
+		Kind:       "Machine",
+		Plural:     "machines",
+		ShortNames: []string{"mc"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha1.Machine)(nil).ProtoReflect().Type(),
+		Service:    "hangar.compute.v1alpha1.MachineService",
+	}
+	Node = Resource{
+		Group:      "compute",
+		Version:    "v1alpha1",
+		Kind:       "Node",
+		Plural:     "nodes",
+		ShortNames: []string{},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha1.Node)(nil).ProtoReflect().Type(),
+		Service:    "hangar.compute.v1alpha1.NodeService",
+	}
 	RoleBinding = Resource{
 		Group:      "iam",
 		Version:    "v1alpha1",
@@ -83,6 +103,8 @@ var (
 // All lists every resource kind, ordered by group and kind.
 var All = []Resource{
 	Container,
+	Machine,
+	Node,
 	RoleBinding,
 	Project,
 	Tenant,

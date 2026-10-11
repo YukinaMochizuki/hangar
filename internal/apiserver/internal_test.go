@@ -26,12 +26,20 @@ import (
 // and as a user who owns tenant "acme" with project "web".
 func running(t *testing.T) (s *Server, system, user context.Context) {
 	t.Helper()
+	return runningWith(t, func(*Config) {})
+}
+
+// runningWith is running with a config adjusted by configure.
+func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user context.Context) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s = New(Config{Store: st, Clock: clockwork.NewFakeClock()})
+	cfg := Config{Store: st, Clock: clockwork.NewFakeClock()}
+	configure(&cfg)
+	s = New(cfg)
 	done := make(chan error, 1)
 	go func() { done <- s.Run(ctx) }()
 	t.Cleanup(func() {

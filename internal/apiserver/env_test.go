@@ -27,7 +27,11 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
-const root = "root@example.com"
+const (
+	root = "root@example.com"
+	// testNode is the Node the agent on the test socket acts as.
+	testNode = "n1"
+)
 
 // env is a running apiserver over a real SQLite store, reached over HTTP
 // exactly as clients reach it: a dev-auth listener for users and a unix
@@ -51,7 +55,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		t.Fatal(err)
 	}
 	clock := clockwork.NewFakeClock()
-	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root}
+	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -67,7 +71,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		t.Fatal(err)
 	}
 	node := &http.Server{
-		Handler:     srv.Handler(auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}}}),
+		Handler:     srv.Handler(auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: testNode}}),
 		ConnContext: auth.ConnContext,
 	}
 	go func() { _ = node.Serve(ln) }()
@@ -121,6 +125,8 @@ type clients struct {
 	projects   tenancyv1alpha1connect.ProjectServiceClient
 	bindings   iamv1alpha1connect.RoleBindingServiceClient
 	containers computev1alpha1connect.ContainerServiceClient
+	machines   computev1alpha1connect.MachineServiceClient
+	nodes      computev1alpha1connect.NodeServiceClient
 }
 
 func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption) clients {
@@ -129,6 +135,8 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		projects:   tenancyv1alpha1connect.NewProjectServiceClient(hc, url, opts...),
 		bindings:   iamv1alpha1connect.NewRoleBindingServiceClient(hc, url, opts...),
 		containers: computev1alpha1connect.NewContainerServiceClient(hc, url, opts...),
+		machines:   computev1alpha1connect.NewMachineServiceClient(hc, url, opts...),
+		nodes:      computev1alpha1connect.NewNodeServiceClient(hc, url, opts...),
 	}
 }
 

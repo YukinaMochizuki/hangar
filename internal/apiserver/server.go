@@ -44,6 +44,15 @@ type Config struct {
 	// SweepInterval is how often garbage collection rechecks every object,
 	// catching anything it missed while following deletes.
 	SweepInterval time.Duration
+	// Nodes are the Node names of the agents this apiserver accepts; each
+	// gets a Node object if it has none.
+	Nodes []string
+	// NodeGracePeriod is how long a node may go without reporting before it
+	// is marked Ready=Unknown. Node agents report every ten seconds, so the
+	// default tolerates three missed reports.
+	NodeGracePeriod time.Duration
+	// NodeMonitorInterval is how often heartbeats are checked.
+	NodeMonitorInterval time.Duration
 }
 
 // Server is the API server. Create it with New, start its background work
@@ -55,6 +64,8 @@ type Server struct {
 	log      *slog.Logger
 	authz    *authz.Authorizer
 	backends map[string]*backend
+	// heartbeats is when each node agent was last heard from.
+	heartbeats heartbeats
 }
 
 // New returns a server over cfg.Store.
@@ -76,6 +87,12 @@ func New(cfg Config) *Server {
 	}
 	if cfg.SweepInterval == 0 {
 		cfg.SweepInterval = 5 * time.Minute
+	}
+	if cfg.NodeGracePeriod == 0 {
+		cfg.NodeGracePeriod = 40 * time.Second
+	}
+	if cfg.NodeMonitorInterval == 0 {
+		cfg.NodeMonitorInterval = 10 * time.Second
 	}
 	s := &Server{
 		cfg:      cfg,
@@ -105,24 +122,19 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 }
 
 // Run does the server's background work until ctx is done: it keeps the
-// authorization view current, bootstraps the first admin, collects garbage
-// and compacts history.
+// authorization view current, bootstraps the first admin, registers nodes,
+// watches their heartbeats, collects garbage and compacts history.
 func (s *Server) Run(ctx context.Context) error {
-	// Only a store nothing was ever written to gets a bootstrap admin, so
-	// revoking every root binding is not undone by the next restart.
-	rev, err := s.store.Revision(ctx)
-	if err != nil {
-		return err
-	}
-	firstStart := rev == 0
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return s.authz.Run(gctx) })
 	g.Go(func() error {
-		if s.cfg.BootstrapAdmin == "" || !firstStart {
+		if s.cfg.BootstrapAdmin == "" {
 			return nil
 		}
 		return s.bootstrap(gctx, s.cfg.BootstrapAdmin)
 	})
+	g.Go(func() error { return s.ensureNodes(gctx) })
+	g.Go(func() error { return s.runNodeMonitor(gctx) })
 	g.Go(func() error { return s.runGC(gctx) })
 	g.Go(func() error { return s.runCompaction(gctx) })
 	// Background work ends when the caller's ctx does; only a failure before
@@ -137,9 +149,21 @@ func (s *Server) system(ctx context.Context) context.Context {
 	return auth.WithPrincipal(ctx, auth.SystemPrincipal)
 }
 
-// bootstrap grants email platform.root.
+// bootstrapMarker records that a bootstrap admin was granted root. It is not
+// an API kind; nothing serves or watches it.
+var bootstrapMarker = store.Key{Kind: "BootstrapMarker", Name: "done"}
+
+// bootstrap grants email platform.root, once in the life of the store, so
+// revoking every root binding is not undone by the next restart.
 func (s *Server) bootstrap(ctx context.Context, email string) error {
-	_, err := s.backend(registry.RoleBinding).Apply(s.system(ctx), &iamv1alpha1.RoleBinding{
+	_, err := s.store.Get(ctx, bootstrapMarker)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	_, err = s.backend(registry.RoleBinding).Apply(s.system(ctx), &iamv1alpha1.RoleBinding{
 		Metadata: &metav1.ObjectMeta{Name: "bootstrap-root"},
 		Spec: &iamv1alpha1.RoleBindingSpec{
 			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: email}},
@@ -149,6 +173,11 @@ func (s *Server) bootstrap(ctx context.Context, email string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("bootstrap admin: %w", err)
+	}
+	// A crash before the marker is written grants the same binding again on
+	// the next start, which changes nothing.
+	if _, err := s.store.Create(ctx, bootstrapMarker, nil); err != nil && !errors.Is(err, store.ErrExists) {
+		return fmt.Errorf("recording the bootstrap: %w", err)
 	}
 	s.log.Info("granted platform.root to the bootstrap admin", "user", email)
 	return nil
