@@ -5,10 +5,10 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs
 
 # Every shell script in the repo, committed or not, outside ignored paths.
-SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env')
+SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
 
 all: check
 
@@ -69,6 +69,14 @@ check: lint breaking test gen-check
 
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
+
+# Not part of check: it takes minutes and needs a C toolchain.
+guest-kernel:
+	guest/kernel/build.sh
+
+# INIT_MAIN=DIR packs another main package as /init (see docs/runbook/guest-kernel.md).
+guest-initramfs:
+	guest/initramfs/build.sh $(if $(INIT_MAIN),--main $(INIT_MAIN))
 
 tools:
 	@go tool protoc-gen-go --version

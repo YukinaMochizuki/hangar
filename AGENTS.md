@@ -37,6 +37,8 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make e2e` | Hermetic end-to-end tests (no KVM, no root) |
 | `make dev` | Run the apiserver locally in dev auth mode |
 | `make lint-sh` | shellcheck every shell script (part of `make check`) |
+| `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
+| `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` (`INIT_MAIN=DIR` packs another main package) |
 | `make tools` | Print the pinned tool versions |
 
 The only toolchains needed are Go and Node (versions in `go.mod` and `.nvmrc`).
@@ -65,5 +67,6 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/checklists/new-resource.md` | You add a resource kind |
 | `docs/checklists/new-controller.md` | You add or change a controller |
 | `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
+| `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
 
 When you add a doc, add it to this index.
