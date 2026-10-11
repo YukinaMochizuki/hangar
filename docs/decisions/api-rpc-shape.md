@@ -20,7 +20,18 @@ exceptions:
   use only `name`.
 - `List` returns the store revision it read at. `Watch` takes
   `since_revision` and streams `ADDED`, `MODIFIED`, `DELETED` and `BOOKMARK`
-  events, so list-then-watch never misses an event.
+  events, so list-then-watch never misses an event. `since_revision` 0 means
+  "from now". Every watch opens with a `BOOKMARK` at the revision it starts
+  after, which also makes the response begin before the first change.
+- Asking for a revision that compaction removed fails with `OUT_OF_RANGE`; the
+  client lists again and watches from the new revision.
+- A watch with a label selector reports objects while they match. An object
+  that changes so it no longer matches produces no event; clients that cache
+  by selector must list again to notice.
+- An error never says whether an object the caller may not see exists, nor
+  anything about it beyond what the request named. The exception is creating
+  an object with a global name (a tenant, project or role binding): a taken
+  name has to be refused.
 - `Apply` returns `warnings` and whether it `created` the object. `Delete`
   accepts an optional `expected_resource_version`.
 
