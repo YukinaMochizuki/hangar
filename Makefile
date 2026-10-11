@@ -5,7 +5,10 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go breaking test e2e gen-check dev tools deps
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test e2e gen-check dev tools deps
+
+# Every shell script in the repo, committed or not, outside ignored paths.
+SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env')
 
 all: check
 
@@ -22,10 +25,13 @@ gen: deps
 	fi
 	$(TOOL) sqlc generate
 
-lint: lint-proto lint-go
+lint: lint-proto lint-go lint-sh
 
 lint-proto:
 	@if [ -n "$$(find proto -name '*.proto' 2>/dev/null)" ]; then $(BUF) lint; fi
+
+lint-sh:
+	@if [ -n "$(SHELL_SCRIPTS)" ]; then ./tools/shellcheck.sh --shell=bash -x $(SHELL_SCRIPTS); fi
 
 lint-go:
 	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then $(GOLANGCI_LINT) run ./...; fi
