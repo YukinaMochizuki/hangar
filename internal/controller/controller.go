@@ -9,7 +9,9 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -44,12 +46,21 @@ type ReconcilerFunc func(ctx context.Context, key Key) error
 
 func (f ReconcilerFunc) Reconcile(ctx context.Context, key Key) error { return f(ctx, key) }
 
+// ErrWaiting, wrapped in the error Reconcile returns, says it waits on
+// something outside its control, such as a VM booting: the key is checked
+// again soon (see MaxWait), and nothing is logged as a failure.
+var ErrWaiting = errors.New("waiting")
+
 // Watch says which keys a change to one kind affects. Map is given the
 // object as written (or, for a delete, as last stored) and returns the keys
 // to reconcile; it may read the current state.
 type Watch struct {
 	Kind string
 	Map  func(ctx context.Context, o store.Object) []Key
+	// SkipResync maps the kind only as it changes, not on start or resync:
+	// for a kind whose mapping is costly when another watch already queues
+	// every key then. At least one watch of a controller does not skip.
+	SkipResync bool
 }
 
 // Self maps an object of the reconciled kind to its own key.
@@ -73,8 +84,15 @@ type Controller struct {
 	// MaxBackoff caps the delay before a failing key is retried. Zero means
 	// one minute; the first retry comes after 100ms.
 	MaxBackoff time.Duration
-	Clock      clockwork.Clock
-	Log        *slog.Logger
+	// MaxWait caps the delay before a key that returned ErrWaiting is
+	// checked again. Zero means two seconds.
+	MaxWait time.Duration
+	// Trigger, when it delivers, maps every object again at once, as a
+	// resync does: for changes no watched kind shows, such as a VM exiting
+	// on the host.
+	Trigger <-chan struct{}
+	Clock   clockwork.Clock
+	Log     *slog.Logger
 }
 
 // Run reconciles until ctx is done, and returns once every reconcile it
@@ -82,6 +100,9 @@ type Controller struct {
 // controller's trouble must not stop the other background work of the
 // process running it.
 func (c *Controller) Run(ctx context.Context) error {
+	if !slices.ContainsFunc(c.Watches, func(w Watch) bool { return !w.SkipResync }) {
+		return fmt.Errorf("controller %s lists nothing on start: every watch skips resyncs", c.Name)
+	}
 	if c.Clock == nil {
 		c.Clock = clockwork.NewRealClock()
 	}
@@ -93,6 +114,9 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 	if c.MaxBackoff == 0 {
 		c.MaxBackoff = time.Minute
+	}
+	if c.MaxWait == 0 {
+		c.MaxWait = 2 * time.Second
 	}
 	log := c.Log.With("controller", c.Name)
 	q := newQueue(c.Clock, 100*time.Millisecond, c.MaxBackoff)
@@ -116,9 +140,10 @@ func (c *Controller) Run(ctx context.Context) error {
 			case <-ctx.Done():
 				return
 			case <-ticker.Chan():
-				if _, err := c.mapAll(ctx, q); err != nil && ctx.Err() == nil {
-					log.Error("resync failed", "error", err)
-				}
+			case <-c.Trigger:
+			}
+			if _, err := c.mapAll(ctx, q); err != nil && ctx.Err() == nil {
+				log.Error("resync failed", "error", err)
 			}
 		}
 	}()
@@ -153,13 +178,17 @@ func (c *Controller) Run(ctx context.Context) error {
 // the earliest of the lists' revisions, so a watch from it misses nothing.
 func (c *Controller) mapAll(ctx context.Context, q *queue) (int64, error) {
 	var since int64
-	for i, w := range c.Watches {
+	first := true
+	for _, w := range c.Watches {
+		if w.SkipResync {
+			continue
+		}
 		objs, rev, err := c.Source.List(ctx, w.Kind)
 		if err != nil {
 			return 0, err
 		}
-		if i == 0 || rev < since {
-			since = rev
+		if first || rev < since {
+			since, first = rev, false
 		}
 		for _, o := range objs {
 			q.addAll(w.Map(ctx, o))
@@ -196,6 +225,9 @@ func (c *Controller) work(ctx context.Context, q *queue, log *slog.Logger) {
 		case ctx.Err() != nil:
 			q.done(key, false)
 			return
+		case errors.Is(err, ErrWaiting):
+			delay := q.retry(key, c.MaxWait)
+			log.Debug("reconcile waiting; checking again", "key", key.String(), "in", delay, "for", err)
 		default:
 			delay := q.done(key, true)
 			log.Warn("reconcile failed; retrying", "key", key.String(), "in", delay, "error", err)

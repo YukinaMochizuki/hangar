@@ -41,6 +41,10 @@ type Env struct {
 	t *testing.T
 	// URL is the public API, which trusts auth.DevUserHeader.
 	URL string
+	// SystemURL serves every caller as the System principal, as the
+	// apiserver's own controllers act; tests use it to write what only the
+	// system may, such as a Machine.
+	SystemURL string
 	// Socket is the node socket.
 	Socket string
 	Store  store.Store
@@ -64,6 +68,7 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 	go func() { done <- srv.Run(ctx) }()
 
 	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))
+	system := httptest.NewServer(srv.Handler(auth.Chain{asSystem{}}))
 	// Unix socket paths are short; t.TempDir can be too long for one.
 	dir, err := os.MkdirTemp("", "hangar")
 	if err != nil {
@@ -81,6 +86,7 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 	go func() { _ = node.Serve(ln) }()
 	t.Cleanup(func() {
 		public.Close()
+		system.Close()
 		_ = node.Close()
 		cancel()
 		if err := <-done; err != nil {
@@ -89,12 +95,23 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
 	})
-	return &Env{t: t, URL: public.URL, Socket: sock, Store: st}
+	return &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, Store: st}
 }
 
 // AsNode returns a client acting as Node.
 func (e *Env) AsNode() *client.Client {
 	return client.New(client.UnixSocket(e.Socket), client.UnixSocketURL)
+}
+
+// AsSystem returns a client acting as the System principal.
+func (e *Env) AsSystem() *client.Client {
+	return client.New(http.DefaultClient, e.SystemURL)
+}
+
+type asSystem struct{}
+
+func (asSystem) Authenticate(context.Context, http.Header) (auth.Principal, bool, error) {
+	return auth.SystemPrincipal, true, nil
 }
 
 // As returns a client acting as the person with the email.

@@ -74,17 +74,25 @@ func (q *queue) get(ctx context.Context) (Key, bool) {
 // done records how a reconcile of k ended. After a failure it schedules a
 // retry and returns the delay; after a success it forgets past failures.
 func (q *queue) done(k Key, failed bool) time.Duration {
-	q.mu.Lock()
-	defer q.mu.Unlock()
 	if !failed {
+		q.mu.Lock()
+		defer q.mu.Unlock()
 		delete(q.failures, k)
 		return 0
 	}
+	return q.retry(k, q.max)
+}
+
+// retry schedules k again after a delay that doubles with each retry in a
+// row, up to limit, and returns the delay.
+func (q *queue) retry(k Key, limit time.Duration) time.Duration {
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	n := q.failures[k]
 	q.failures[k] = n + 1
 	delay := q.base << min(n, 30)
-	if delay > q.max || delay <= 0 {
-		delay = q.max
+	if delay > limit || delay <= 0 {
+		delay = limit
 	}
 	q.clock.AfterFunc(delay, func() { q.add(k) })
 	return delay

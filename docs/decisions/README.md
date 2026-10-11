@@ -21,3 +21,4 @@ the change.
 | `networking.md` | Per-network namespaces, security groups, routed IPv6, one tunnel |
 | `streaming-transport.md` | Bidirectional streams over WebSocket |
 | `testing-strategy.md` | Test layers, fakes held honest by conformance tests, a disposable testbed |
+| `node-agent.md` | The node agent keeps no state, reads the host back, and sweeps what nothing accounts for |

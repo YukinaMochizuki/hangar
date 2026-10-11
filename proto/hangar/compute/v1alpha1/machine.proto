@@ -79,6 +79,10 @@ message MachineStatus {
   string image_digest = 4;
   // When the running instance booted.
   google.protobuf.Timestamp boot_time = 5;
+  // The image reference image_digest was resolved from. The node resolves a
+  // reference once: it resolves it again only when the spec names another
+  // image, so a tag moving upstream never rebuilds a machine's disk.
+  string image = 6;
 }
 
 // MachinePhase is where the machine is in its lifecycle.

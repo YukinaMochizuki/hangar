@@ -23,7 +23,9 @@ message Container {
 
 // ContainerSpec is the desired state of a container.
 message ContainerSpec {
-  // OCI image reference. Changing it rebuilds the root disk.
+  // OCI image reference. Changing it rebuilds the root disk. A tag is
+  // resolved when the container first runs it; to pick up a tag that moved
+  // since, name the image by its new digest or another tag.
   string image = 1;
   // Overrides the image entrypoint.
   repeated string command = 2;
