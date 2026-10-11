@@ -28,6 +28,8 @@ jobs:
               - 'buf.gen.hangar.yaml'
               - 'gen/**'
               - 'internal/apiserver/servicegen/**'
+              - 'sqlc.yaml'
+              - 'internal/store/sqlite/**'
               - 'tools/**'
               - 'package.json'
               - 'pnpm-lock.yaml'

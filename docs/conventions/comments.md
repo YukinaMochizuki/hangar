@@ -15,7 +15,8 @@ it, a year from now.
   ```
 
 - **Doc comments on exported identifiers.** One line, starting with the name,
-  saying what it is or what it guarantees, not how it works:
+  saying what it is or what it guarantees, not how it works. A method that
+  implements a documented interface method needs none of its own:
 
   ```go
   // Revision is the store-wide write counter; every write increments it by one.
