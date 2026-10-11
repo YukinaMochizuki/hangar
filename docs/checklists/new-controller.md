@@ -23,6 +23,9 @@ in `internal/apiserver/controllers.go`.
 - [ ] Writes are conditional on what was read (pass the resource version, or
       apply the object as read). A conflict returns an error and the key is
       retried; nothing is overwritten with stale data.
+- [ ] An object the controller found absent is created with
+      `backend.Create`, never `Apply`: `Apply` would overwrite one written
+      since the read, dropping its finalizers and owner references.
 - [ ] A reconcile that finds nothing to change writes nothing; compare before
       writing, so a quiet system stays quiet.
 - [ ] Status the controller shares with another writer (the node, another
