@@ -36,6 +36,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make check` | Lint, test, and fail if `make gen` would change anything. Run before every commit |
 | `make e2e` | Hermetic end-to-end tests (no KVM, no root) |
 | `make dev` | Run the apiserver locally in dev auth mode |
+| `make lint-sh` | shellcheck every shell script (part of `make check`) |
 | `make tools` | Print the pinned tool versions |
 
 The only toolchains needed are Go and Node (versions in `go.mod` and `.nvmrc`).
@@ -62,5 +63,6 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/runbook/dev-env.md` | You set up a workspace or a tool misbehaves |
 | `docs/runbook/codegen.md` | You change `proto/` or the code generator |
 | `docs/checklists/new-resource.md` | You add a resource kind |
+| `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
 
 When you add a doc, add it to this index.
