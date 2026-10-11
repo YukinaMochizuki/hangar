@@ -1,14 +1,19 @@
 # Adding a controller
 
-Controllers run inside the apiserver as the System principal, on
-`internal/controller`. Go through this when adding one; the existing ones are
-in `internal/apiserver/controllers.go`.
+Controllers run on `internal/controller`: inside the apiserver as the System
+principal, following the store (`controller.StoreSource`), and in the node
+agent as its Node, following the API (`controller.APISource`). Go through
+this when adding one; the apiserver's are in
+`internal/apiserver/controllers.go`. A node agent writes only status, never
+through a backend, so of the rules on writes below only those on status
+apply to it.
 
 ## Shape
 
-- [ ] It reconciles one kind, by key. `Reconcile` reads the current state from
-      the store and never relies on the event that queued it: a missed,
-      repeated or reordered event must not change the outcome.
+- [ ] It reconciles one kind, by key. `Reconcile` reads the current state
+      (the store, or the API from a node) and never relies on the event that
+      queued it: a missed, repeated or reordered event must not change the
+      outcome.
 - [ ] `Watches` lists every kind whose changes affect the result, each with a
       `Map` from the changed object to the keys to reconcile (a child maps to
       its owner, a node change maps to the machines it could take).
@@ -39,8 +44,9 @@ in `internal/apiserver/controllers.go`.
 ## Tests
 
 - [ ] Tests run the real apiserver with controllers on (`runningWith`, with
-      `DisableControllers` false) and wait for the outcome; they do not call
-      `Reconcile` directly unless they test a race.
+      `DisableControllers` false; outside the apiserver package, such as for
+      the node agent's, `apiservertest`) and wait for the outcome; they do
+      not call `Reconcile` directly unless they test a race.
 - [ ] The paths that matter are covered: creation, a spec change, a change to
       a watched kind, deletion, and a start over a store written while no
       controller ran.

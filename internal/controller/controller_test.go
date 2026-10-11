@@ -102,7 +102,7 @@ func TestReconcilesExistingObjectsThenChanges(t *testing.T) {
 	}
 	r := newRecorder()
 	run(t, &Controller{
-		Name: "t", Store: st, Reconciler: r, Clock: clockwork.NewFakeClock(),
+		Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(),
 		Watches: []Watch{
 			{Kind: "A", Map: Self},
 			// A change to a B reconciles the A of the same name.
@@ -140,7 +140,7 @@ func TestFailuresAreRetriedWithBackoff(t *testing.T) {
 	r := newRecorder()
 	k := Key{Name: "flaky"}
 	r.fail[k] = 2
-	run(t, &Controller{Name: "t", Store: st, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
 
 	eventually(t, "the first attempt", func() bool { return r.count(k) == 1 })
 	// The retry waits for its backoff: nothing happens until the clock moves.
@@ -175,7 +175,7 @@ func TestAKeyIsNeverReconciledTwiceAtOnce(t *testing.T) {
 	}
 	r := newRecorder()
 	r.block = make(chan struct{})
-	run(t, &Controller{Name: "t", Store: st, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
 	k := Key{Name: "busy"}
 	eventually(t, "the first reconcile starts", func() bool { return r.count(k) == 1 })
 
@@ -222,7 +222,7 @@ func TestRelistsAfterCompaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newRecorder()
-	run(t, &Controller{Name: "t", Store: st, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
 	eventually(t, "the object is listed again", func() bool { return r.count(Key{Name: "a"}) >= 1 })
 	if _, err := st.Create(ctx, store.Key{Kind: "A", Name: "b"}, []byte("x")); err != nil {
 		t.Fatal(err)
@@ -242,7 +242,7 @@ func TestRunWaitsForTheReconcileInFlight(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() {
-		done <- (&Controller{Name: "t", Store: st, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}}).Run(ctx)
+		done <- (&Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}}).Run(ctx)
 	}()
 	eventually(t, "the reconcile starts", func() bool { return r.count(Key{Name: "slow"}) == 1 })
 	cancel()
@@ -277,7 +277,7 @@ func TestAFailingStoreIsRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newRecorder()
-	run(t, &Controller{Name: "t", Store: st, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
 	if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // resync ticker and the retry wait
 		t.Fatal(err)
 	}
@@ -292,11 +292,43 @@ func TestResyncReconcilesEverythingAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := newRecorder()
-	run(t, &Controller{Name: "t", Store: st, Reconciler: r, Clock: clock, Resync: time.Minute, Watches: []Watch{{Kind: "A", Map: Self}}})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Resync: time.Minute, Watches: []Watch{{Kind: "A", Map: Self}}})
 	eventually(t, "the first reconcile", func() bool { return r.count(Key{Name: "a"}) == 1 })
 	if err := clock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	clock.Advance(time.Minute)
 	eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
+}
+
+// writeBetweenLists writes an A while the controller lists Bs, after it
+// listed As.
+type writeBetweenLists struct {
+	StoreSource
+	once sync.Once
+}
+
+func (w *writeBetweenLists) List(ctx context.Context, kind string) ([]store.Object, int64, error) {
+	if kind == "B" {
+		var err error
+		w.once.Do(func() {
+			_, err = w.Store.Create(ctx, store.Key{Kind: "A", Name: "between"}, []byte("x"))
+		})
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	return w.StoreSource.List(ctx, kind)
+}
+
+// TestAChangeBetweenListsIsNotMissed: the watch starts from the earliest
+// list, so a change made after one kind was listed is still seen.
+func TestAChangeBetweenListsIsNotMissed(t *testing.T) {
+	st := openStore(t)
+	r := newRecorder()
+	run(t, &Controller{
+		Name: "t", Source: &writeBetweenLists{StoreSource: StoreSource{Store: st}}, Reconciler: r, Clock: clockwork.NewFakeClock(),
+		Watches: []Watch{{Kind: "A", Map: Self}, {Kind: "B", Map: Self}},
+	})
+	eventually(t, "the A written between the lists", func() bool { return r.count(Key{Name: "between"}) == 1 })
 }
