@@ -54,10 +54,29 @@ func (s *Server) controllers() []*controller.Controller {
 			Watches: []controller.Watch{
 				{Kind: registry.Container.Kind, Map: controller.Self},
 				// A machine on a node changing may make room for a resize
-				// another container is waiting on.
+				// another container is waiting on, and a machine going frees
+				// its address.
 				{Kind: registry.Machine.Kind, Map: s.machineOwnerAndNeighbours},
 				// A node going quiet changes what its containers report.
 				{Kind: registry.Node.Kind, Map: s.containersOnNode},
+				// A network appearing unblocks containers waiting for an address.
+				{Kind: registry.Network.Kind, Map: s.containersInProject},
+			},
+		},
+		{
+			Name: "project-networks", Store: s.store, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileProject),
+			Watches: []controller.Watch{
+				{Kind: registry.Project.Kind, Map: controller.Self},
+				{Kind: registry.Network.Kind, Map: projectOfNetwork},
+			},
+		},
+		{
+			Name: "network", Store: s.store, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileNetwork),
+			Watches: []controller.Watch{
+				{Kind: registry.Network.Kind, Map: controller.Self},
+				{Kind: registry.Machine.Kind, Map: networksOfMachine},
 			},
 		},
 		{
@@ -108,6 +127,42 @@ func (s *Server) machineOwnerAndNeighbours(ctx context.Context, o store.Object) 
 	keys := containerOf(o.Project, m)
 	if node := m.GetSpec().GetNode(); node != "" {
 		keys = append(keys, s.containersOnNode(ctx, store.Object{Key: store.Key{Name: node}})...)
+	}
+	return append(keys, s.containersWaitingForAddress(ctx, o.Project)...)
+}
+
+// containersWaitingForAddress maps to the containers in a project told their
+// network is full: a machine going frees an address without changing the
+// network.
+func (s *Server) containersWaitingForAddress(ctx context.Context, project string) []controller.Key {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Container.Kind, Project: project})
+	if err != nil {
+		s.log.Error("listing containers failed", "error", err)
+		return nil
+	}
+	var keys []controller.Key
+	for _, o := range objs {
+		var c computev1alpha1.Container
+		if proto.Unmarshal(o.Data, &c) != nil {
+			continue
+		}
+		if conditions.Find(c.GetStatus().GetConditions(), ContainerReady).GetReason() == ReasonNoAddressLeft {
+			keys = append(keys, controller.Key{Project: o.Project, Name: o.Name})
+		}
+	}
+	return keys
+}
+
+// containersInProject maps an object to every container in its project.
+func (s *Server) containersInProject(ctx context.Context, o store.Object) []controller.Key {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Container.Kind, Project: o.Project})
+	if err != nil {
+		s.log.Error("listing containers failed", "error", err)
+		return nil
+	}
+	keys := make([]controller.Key, 0, len(objs))
+	for _, c := range objs {
+		keys = append(keys, controller.Key{Project: c.Project, Name: c.Name})
 	}
 	return keys
 }
@@ -221,7 +276,14 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	meta := c.GetMetadata()
 	want := machineSpec(c.GetSpec())
+	key := resource.Key{Project: meta.GetProject(), Name: machineName(meta.GetName())}
 	if m == nil {
+		// Addresses are chosen and written as one decision.
+		s.ipam.Lock()
+		defer s.ipam.Unlock()
+		if err := s.assignAddresses(ctx, key.Project, nil, want); err != nil {
+			return nil, err
+		}
 		created := &computev1alpha1.Machine{
 			Metadata: &metav1.ObjectMeta{
 				Project: meta.GetProject(), Name: machineName(meta.GetName()),
@@ -233,7 +295,7 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 			},
 			Spec: want,
 		}
-		res, err := s.backend(registry.Machine).Apply(s.system(ctx), created)
+		res, err := s.backend(registry.Machine).Create(s.system(ctx), created)
 		if err != nil {
 			return nil, err
 		}
@@ -246,9 +308,14 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 	if m.GetMetadata().GetDeleteTime() != nil {
 		return m, nil
 	}
-	// The node is the scheduler's to set; everything else follows the
-	// container.
+	// The node is the scheduler's to set, and addresses the machine already
+	// has stay; everything else follows the container.
 	want.Node = m.GetSpec().GetNode()
+	s.ipam.Lock()
+	defer s.ipam.Unlock()
+	if err := s.assignAddresses(ctx, key.Project, m.GetSpec(), want); err != nil {
+		return m, err
+	}
 	if proto.Equal(want, m.GetSpec()) {
 		return m, nil
 	}

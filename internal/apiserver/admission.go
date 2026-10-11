@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"regexp"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
@@ -93,12 +95,18 @@ type kindHooks struct {
 	owner func(ctx context.Context, s *Server, obj proto.Message) (registry.Resource, resource.Key, bool)
 	// validate checks rules specific to the kind; old is nil on create.
 	validate func(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error
+	// beforeDelete may refuse a delete; it runs when the delete is asked
+	// for, not again while finalizers hold the object.
+	beforeDelete func(ctx context.Context, s *Server, obj proto.Message) error
 	// afterCreate runs once a new object is stored.
 	afterCreate func(ctx context.Context, s *Server, p auth.Principal, obj proto.Message) error
 	// systemManaged keeps every write but status updates to the apiserver
 	// itself: no role, however broad, lets anyone else apply or delete such
 	// an object.
 	systemManaged bool
+	// finalizers are added to every new object of the kind; the controller
+	// that owns each removes it.
+	finalizers []string
 	// nodeOf names the Node responsible for obj, the only node agent allowed
 	// to write its status. Kinds without it take no status from node agents.
 	nodeOf func(obj proto.Message) string
@@ -183,6 +191,14 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:      validateMachine,
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
+		}
+	case registry.Network.Kind:
+		return kindHooks{
+			target:       projectTarget,
+			owner:        ownedByProject,
+			validate:     validateNetwork,
+			beforeDelete: refuseDeletingInUse,
+			finalizers:   []string{NetworkInUseFinalizer},
 		}
 	case registry.Node.Kind:
 		return kindHooks{
@@ -391,6 +407,11 @@ func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj pr
 		if err := ValidName(nic.GetName()); err != nil {
 			return invalid("spec.interfaces: %v", err)
 		}
+		if a := nic.GetIpv4(); a != "" {
+			if p, err := netip.ParsePrefix(a); err != nil || !p.Addr().Is4() {
+				return invalid("spec.interfaces[%s].ipv4 %q is not an IPv4 address with a prefix length", nic.GetName(), a)
+			}
+		}
 		if seen[nic.GetName()] {
 			return invalid("spec.interfaces: duplicate name %q", nic.GetName())
 		}
@@ -400,6 +421,37 @@ func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj pr
 		}
 	}
 	return nil
+}
+
+// privateIPv4 are the RFC 1918 ranges networks may use.
+var privateIPv4 = []netip.Prefix{
+	netip.MustParsePrefix("10.0.0.0/8"),
+	netip.MustParsePrefix("172.16.0.0/12"),
+	netip.MustParsePrefix("192.168.0.0/16"),
+}
+
+func validateNetwork(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
+	n := obj.(*networkv1alpha1.Network)
+	cidr := n.GetSpec().GetIpv4Cidr()
+	if n.GetMetadata().GetName() == DefaultNetwork && cidr != DefaultNetworkCIDR {
+		return invalid("network %q always has spec.ipv4_cidr %s; give another range another name", DefaultNetwork, DefaultNetworkCIDR)
+	}
+	p, err := netip.ParsePrefix(cidr)
+	if err != nil || !p.Addr().Is4() {
+		return invalid("spec.ipv4_cidr %q is not an IPv4 range such as 10.0.0.0/24", cidr)
+	}
+	if p != p.Masked() {
+		return invalid("spec.ipv4_cidr %q has host bits set; did you mean %s?", cidr, p.Masked())
+	}
+	if p.Bits() < 16 || p.Bits() > 28 {
+		return invalid("spec.ipv4_cidr %q must be between /16 and /28", cidr)
+	}
+	for _, r := range privateIPv4 {
+		if r.Bits() <= p.Bits() && r.Contains(p.Addr()) {
+			return nil
+		}
+	}
+	return invalid("spec.ipv4_cidr %q is not inside a private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)", cidr)
 }
 
 // grantTenantOwner binds the tenant's creator as its owner. The binding is

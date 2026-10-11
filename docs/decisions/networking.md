@@ -20,6 +20,22 @@ anything else needs a reachable address.
   and hands their file descriptors to Cloud Hypervisor. The apiserver does IPAM
   and assigns static addresses; there is no DHCP. All of it sits behind a
   network driver interface so VXLAN or OVN can replace it.
+- **Addresses are the apiserver's.** A `Network` carries its IPv4 range; the
+  container controller hands each machine interface the lowest free address
+  after the gateway (the range's first usable address), and the network
+  controller gives each network a /31 transit link from 100.64.0.0/10 to the
+  host. Both are decided under one lock and derived from what is stored, so
+  an address is free again once the machine holding it is gone; a machine
+  being deleted keeps its address until its node releases it. Every project
+  gets a `default` network (10.0.0.0/24), recreated if deleted. A user cannot
+  delete a network any machine is on, as clouds refuse to delete a subnet
+  still in use: a network being deleted could take no new machines and could
+  not be brought back. A project being deleted takes its networks with it,
+  each kept until its last machine is gone.
+- **Inside a node**, each network's namespace reaches the host through a veth
+  pair on its transit link. IPv4 egress is two NATs: the namespace maps its
+  range to its transit address, and the host maps 100.64.0.0/10 to the public
+  address. Overlapping tenant ranges never meet on the host.
 - **`SecurityGroup`** works as in AWS: attached to NICs, several per NIC,
   sources are CIDRs or other groups, stateful, allow rules only, inbound denied
   by default. Each network has a `default` group. One nftables set per group.

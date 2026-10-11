@@ -74,6 +74,10 @@ type Server struct {
 	// memory serializes every decision that reserves memory on a node:
 	// placing a machine, and growing a placed one.
 	memory sync.Mutex
+	// ipam serializes every decision that hands out an address (a machine's
+	// interface addresses, a network's transit link) and the release of a
+	// network. Whoever holds both takes ipam first.
+	ipam sync.Mutex
 }
 
 // New returns a server over cfg.Store.

@@ -57,6 +57,9 @@ message MachineInterface {
   string name = 1;
   // Names a network in the machine's project.
   string network = 2;
+  // The interface's address with the network's prefix length, such as
+  // "10.0.0.5/24". Assigned by the apiserver; empty until it is.
+  string ipv4 = 3;
 }
 
 // MachineRunState is whether the machine should be running.
