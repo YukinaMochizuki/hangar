@@ -1,0 +1,17 @@
+name: setup
+description: Go, Node and pnpm at the versions pinned in the repo.
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: |
+          go.sum
+          tools/tools.sum
+    - uses: actions/setup-node@v5
+      with:
+        node-version-file: .nvmrc
+        package-manager-cache: false
+    - shell: bash
+      run: corepack enable pnpm && pnpm install --frozen-lockfile
