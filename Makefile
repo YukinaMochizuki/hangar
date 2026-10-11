@@ -3,7 +3,7 @@ BUF := $(TOOL) buf
 GOLANGCI_LINT := $(TOOL) golangci-lint
 
 # Paths whose contents are produced by `make gen` and must never drift.
-GENERATED := gen
+GENERATED := gen internal/apiserver/servicegen
 
 .PHONY: all gen check lint lint-proto lint-go breaking test e2e gen-check dev tools deps
 
@@ -16,7 +16,7 @@ node_modules/.modules.yaml: package.json pnpm-lock.yaml gen/ts/package.json
 
 gen: deps
 	@if [ -n "$$(find proto -name '*.proto' 2>/dev/null)" ]; then \
-		$(BUF) generate; \
+		$(BUF) generate && $(BUF) generate --template buf.gen.hangar.yaml; \
 	else \
 		echo "gen: no .proto files yet"; \
 	fi
@@ -46,9 +46,9 @@ e2e:
 # Regenerates into the working tree and fails if anything changed, so it holds
 # for uncommitted work as well as in CI.
 gen-check: deps
-	@snap=$$(mktemp -d) && cp -r $(GENERATED) $$snap/ && \
+	@snap=$$(mktemp -d) && cp -r --parents $(GENERATED) $$snap/ && \
 	$(MAKE) --no-print-directory gen >/dev/null && \
-	if ! diff -r --exclude=node_modules $$snap/$(GENERATED) $(GENERATED); then \
+	if ! for d in $(GENERATED); do diff -r --exclude=node_modules $$snap/$$d $$d || exit 1; done; then \
 		echo "gen-check: generated code is stale; run 'make gen' and commit the result"; \
 		rm -rf $$snap; exit 1; \
 	fi; rm -rf $$snap
