@@ -1,9 +1,9 @@
-// Package controller runs level-triggered reconcilers inside the apiserver.
-// A Controller follows some kinds in the store, turns every change into the
-// keys it affects, and calls Reconcile for each until it succeeds. Reconcile
-// is handed only a key, never the event, so it always works from the current
-// state and a missed or repeated event cannot lead it astray. See
-// docs/checklists/new-controller.md.
+// Package controller runs level-triggered reconcilers, in the apiserver over
+// the store and in the node agent over the API. A Controller follows some
+// kinds, turns every change into the keys it affects, and calls Reconcile for
+// each until it succeeds. Reconcile is handed only a key, never the event, so
+// it always works from the current state and a missed or repeated event
+// cannot lead it astray. See docs/checklists/new-controller.md.
 package controller
 
 import (
@@ -46,7 +46,7 @@ func (f ReconcilerFunc) Reconcile(ctx context.Context, key Key) error { return f
 
 // Watch says which keys a change to one kind affects. Map is given the
 // object as written (or, for a delete, as last stored) and returns the keys
-// to reconcile; it may read the store.
+// to reconcile; it may read the current state.
 type Watch struct {
 	Kind string
 	Map  func(ctx context.Context, o store.Object) []Key
@@ -60,8 +60,8 @@ func Self(_ context.Context, o store.Object) []Key {
 // Controller feeds a Reconciler. Run it with Run.
 type Controller struct {
 	// Name appears in logs.
-	Name  string
-	Store store.Store
+	Name   string
+	Source Source
 	// Watches lists every kind whose changes matter; each object of every
 	// watched kind is also mapped on start and on every resync.
 	Watches    []Watch
@@ -78,8 +78,9 @@ type Controller struct {
 }
 
 // Run reconciles until ctx is done, and returns once every reconcile it
-// started has finished. A failing store is retried, never fatal: one
-// controller's trouble must not stop the apiserver's other background work.
+// started has finished. A failing source is retried, never fatal: one
+// controller's trouble must not stop the other background work of the
+// process running it.
 func (c *Controller) Run(ctx context.Context) error {
 	if c.Clock == nil {
 		c.Clock = clockwork.NewRealClock()
@@ -130,11 +131,16 @@ func (c *Controller) Run(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if errors.Is(err, store.ErrCompacted) {
+		switch {
+		case errors.Is(err, store.ErrCompacted):
 			log.Info("watch fell behind compaction; listing again")
 			continue
+		case err == nil:
+			// The source ended the watch, as an API server may.
+			log.Debug("watch ended; listing again shortly")
+		default:
+			log.Error("following changes failed; listing again shortly", "error", err)
 		}
-		log.Error("following the store failed; listing again shortly", "error", err)
 		select {
 		case <-ctx.Done():
 			return nil
@@ -144,31 +150,32 @@ func (c *Controller) Run(ctx context.Context) error {
 }
 
 // mapAll queues the keys of every object of every watched kind, and returns
-// a revision no later than the earliest list, so a watch from it misses
-// nothing.
+// the earliest of the lists' revisions, so a watch from it misses nothing.
 func (c *Controller) mapAll(ctx context.Context, q *queue) (int64, error) {
-	rev, err := c.Store.Revision(ctx)
-	if err != nil {
-		return 0, err
-	}
-	for _, w := range c.Watches {
-		objs, _, err := c.Store.List(ctx, store.ListOptions{Kind: w.Kind})
+	var since int64
+	for i, w := range c.Watches {
+		objs, rev, err := c.Source.List(ctx, w.Kind)
 		if err != nil {
 			return 0, err
+		}
+		if i == 0 || rev < since {
+			since = rev
 		}
 		for _, o := range objs {
 			q.addAll(w.Map(ctx, o))
 		}
 	}
-	return rev, nil
+	return since, nil
 }
 
 func (c *Controller) follow(ctx context.Context, q *queue, since int64) error {
 	byKind := map[string]Watch{}
+	kinds := make([]string, 0, len(c.Watches))
 	for _, w := range c.Watches {
 		byKind[w.Kind] = w
+		kinds = append(kinds, w.Kind)
 	}
-	return c.Store.Watch(ctx, store.WatchOptions{SinceRevision: since}, func(ev store.Event) error {
+	return c.Source.Watch(ctx, kinds, since, func(ev store.Event) error {
 		if w, ok := byKind[ev.Object.Kind]; ok {
 			q.addAll(w.Map(ctx, ev.Object))
 		}

@@ -15,13 +15,12 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
-// NodeReady is the Node condition that says the agent is reporting. The agent
-// sets it true with every report; the apiserver turns it Unknown when the
-// reports stop.
-const NodeReady = "Ready"
+// NodeReady is described in computeapi.
+const NodeReady = computeapi.NodeReady
 
 // heartbeats remembers, on the apiserver's own clock, when each node agent
 // last wrote its Node's status. The agent's last_heartbeat_time is its own

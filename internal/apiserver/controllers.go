@@ -49,7 +49,7 @@ const (
 func (s *Server) controllers() []*controller.Controller {
 	return []*controller.Controller{
 		{
-			Name: "container", Store: s.store, Clock: s.clock, Log: s.log,
+			Name: "container", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileContainer),
 			Watches: []controller.Watch{
 				{Kind: registry.Container.Kind, Map: controller.Self},
@@ -64,7 +64,7 @@ func (s *Server) controllers() []*controller.Controller {
 			},
 		},
 		{
-			Name: "project-networks", Store: s.store, Clock: s.clock, Log: s.log,
+			Name: "project-networks", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileProject),
 			Watches: []controller.Watch{
 				{Kind: registry.Project.Kind, Map: controller.Self},
@@ -72,7 +72,7 @@ func (s *Server) controllers() []*controller.Controller {
 			},
 		},
 		{
-			Name: "network", Store: s.store, Clock: s.clock, Log: s.log,
+			Name: "network", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileNetwork),
 			Watches: []controller.Watch{
 				{Kind: registry.Network.Kind, Map: controller.Self},
@@ -80,7 +80,7 @@ func (s *Server) controllers() []*controller.Controller {
 			},
 		},
 		{
-			Name: "scheduler", Store: s.store, Clock: s.clock, Log: s.log,
+			Name: "scheduler", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileMachine),
 			Watches: []controller.Watch{
 				{Kind: registry.Machine.Kind, Map: s.machineAndWaiting},
