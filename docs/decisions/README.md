@@ -22,3 +22,4 @@ the change.
 | `streaming-transport.md` | Bidirectional streams over WebSocket |
 | `testing-strategy.md` | Test layers, fakes held honest by conformance tests, a disposable testbed |
 | `node-agent.md` | The node agent keeps no state, reads the host back, and sweeps what nothing accounts for |
+| `guest-agent.md` | hangar-init: PID 1 from the initramfs, a boot disk, Connect over vsock, a framed console |
