@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -290,8 +292,26 @@ func (a *app) deleteCmd() *cobra.Command {
 			default:
 				return usageErr("usage: %s", cmd.UseLine())
 			}
+			fromFiles := len(files) > 0
+			if fromFiles {
+				// Files list owners before what they own; deleting in reverse
+				// removes contents first, as a cascade from the owner would.
+				slices.Reverse(targets)
+			}
 			for _, t := range targets {
 				o, err := cl.Delete(cmd.Context(), t.m.r, t.key)
+				// An object in a file may already be gone, taken by the
+				// cascade from an owner deleted before it; that is the
+				// outcome asked for.
+				if fromFiles && connect.CodeOf(err) == connect.CodeNotFound {
+					name := strings.ToLower(t.m.r.Kind) + "/" + t.key.Name
+					if output == "name" {
+						_, _ = fmt.Fprintln(cmd.OutOrStdout(), name)
+					} else {
+						_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s already deleted\n", name)
+					}
+					continue
+				}
 				if err != nil {
 					return err
 				}

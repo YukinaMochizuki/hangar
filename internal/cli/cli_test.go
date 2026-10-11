@@ -264,6 +264,27 @@ func TestApplyFromStdinAndDirectory(t *testing.T) {
 	}
 }
 
+func TestDeleteFromFiles(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	file := filepath.Join(t.TempDir(), "stack.yaml")
+	if err := os.WriteFile(file, []byte(stack), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	w.must("", "apply", "-f", file)
+	// Naming a missing object is an error.
+	if r := w.run("", "delete", "container", "missing"); r.code != cli.ExitNotFound {
+		t.Errorf("deleting a missing container by name: exit %d", r.code)
+	}
+	// A file is deleted contents first, so nothing it names has already
+	// gone with its owner.
+	out := w.must("", "delete", "-f", file)
+	want := "container/api deleted\nproject/web deleted\ntenant/acme deleted\n"
+	if out != want {
+		t.Errorf("delete -f printed %q, want %q", out, want)
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	w := newWorld(t)
 	fresh := &world{t: t, config: filepath.Join(t.TempDir(), "config.yaml")}
