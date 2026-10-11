@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package hangar.tenancy.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Project is where resources live: the unit of quota, networking and access.
+// Project names are unique across the platform.
+message Project {
+  option (hangar.meta.v1.resource) = {
+    kind: "Project"
+    plural: "projects"
+    short_names: ["proj"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  ProjectSpec spec = 4;
+  ProjectStatus status = 5;
+}
+
+// ProjectSpec is the desired state of a project.
+message ProjectSpec {
+  // Name of the owning Tenant.
+  string tenant = 1 [(hangar.meta.v1.field).immutable = true];
+  string display_name = 2;
+}
+
+// ProjectStatus is the observed state of a project.
+message ProjectStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// ProjectService manages projects.
+service ProjectService {
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse);
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc WatchProjects(WatchProjectsRequest) returns (stream WatchProjectsResponse);
+  rpc ApplyProject(ApplyProjectRequest) returns (ApplyProjectResponse);
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse);
+  rpc UpdateProjectStatus(UpdateProjectStatusRequest) returns (UpdateProjectStatusResponse);
+}
+
+message GetProjectRequest {
+  string name = 1;
+}
+
+message GetProjectResponse {
+  Project project = 1;
+}
+
+message ListProjectsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListProjectsResponse {
+  repeated Project items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchProjectsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchProjectsResponse {
+  hangar.meta.v1.EventType type = 1;
+  Project project = 2;
+  int64 revision = 3;
+}
+
+message ApplyProjectRequest {
+  Project project = 1;
+}
+
+message ApplyProjectResponse {
+  Project project = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteProjectRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteProjectResponse {
+  Project project = 1;
+}
+
+message UpdateProjectStatusRequest {
+  string name = 1;
+  ProjectStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateProjectStatusResponse {
+  Project project = 1;
+}
