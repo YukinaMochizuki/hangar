@@ -62,7 +62,9 @@ export const ContainerSchema: GenMessage<Container> = /*@__PURE__*/
  */
 export type ContainerSpec = Message<"hangar.compute.v1alpha1.ContainerSpec"> & {
   /**
-   * OCI image reference. Changing it rebuilds the root disk.
+   * OCI image reference. Changing it rebuilds the root disk. A tag is
+   * resolved when the container first runs it; to pick up a tag that moved
+   * since, name the image by its new digest or another tag.
    *
    * @generated from field: string image = 1;
    */

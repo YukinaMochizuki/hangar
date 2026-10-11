@@ -18,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -26,13 +27,9 @@ const (
 	// NodeCleanupFinalizer keeps a deleted machine in place until its node
 	// has freed what it held, which the node reports with Released.
 	NodeCleanupFinalizer = "hangar.dev/node-cleanup"
-	// MachineScheduled is the Machine condition the scheduler owns. The
-	// scheduler also sets phase Pending on a machine no node has reported on;
-	// every other part of a machine's status is its node's.
-	MachineScheduled = "Scheduled"
-	// MachineReleased is the Machine condition a node sets once a deleted
-	// machine's VM and disks are gone from the host.
-	MachineReleased = "Released"
+	// MachineScheduled and MachineReleased are described in computeapi.
+	MachineScheduled = computeapi.MachineScheduled
+	MachineReleased  = computeapi.MachineReleased
 	// ContainerReady is the Container condition saying its machine runs the
 	// current spec on a node that is reporting.
 	ContainerReady = "Ready"
@@ -56,11 +53,11 @@ func (s *Server) controllers() []*controller.Controller {
 				// A machine on a node changing may make room for a resize
 				// another container is waiting on, and a machine going frees
 				// its address.
-				{Kind: registry.Machine.Kind, Map: s.machineOwnerAndNeighbours},
+				{Kind: registry.Machine.Kind, Map: s.machineOwnerAndNeighbours, SkipResync: true},
 				// A node going quiet changes what its containers report.
-				{Kind: registry.Node.Kind, Map: s.containersOnNode},
+				{Kind: registry.Node.Kind, Map: s.containersOnNode, SkipResync: true},
 				// A network appearing unblocks containers waiting for an address.
-				{Kind: registry.Network.Kind, Map: s.containersInProject},
+				{Kind: registry.Network.Kind, Map: s.containersInProject, SkipResync: true},
 			},
 		},
 		{
@@ -419,6 +416,14 @@ func machineReadiness(m *computev1alpha1.Machine, node *computev1alpha1.Node) *m
 			Type: ContainerReady, Status: metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN,
 			Reason: "NodeNotReporting", Message: "node " + name + " is not reporting",
 		}
+	}
+	// What stands in the way, as the node says, for the current spec.
+	nodeSays := conditions.Find(st.GetConditions(), computeapi.MachineReady)
+	if nodeSays.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE || nodeSays.GetObservedGeneration() != m.GetMetadata().GetGeneration() {
+		nodeSays = nil
+	}
+	if nodeSays != nil {
+		return notReady(nodeSays.GetReason(), nodeSays.GetMessage())
 	}
 	if st.GetObservedGeneration() < m.GetMetadata().GetGeneration() {
 		return notReady("Updating", "the node has not yet applied the latest change")

@@ -12,6 +12,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 )
 
@@ -91,6 +92,55 @@ func TestAContainerWhoseNodeStopsReportingIsNotReady(t *testing.T) {
 	waitContainer(t, s, system, "api", "unknown with its node", func(c *computev1alpha1.Container) bool {
 		r := containerReady(c)
 		return r.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN && r.GetReason() == "NodeNotReporting"
+	})
+}
+
+// TestAContainerSaysWhatItsNodeSays: what keeps a machine from running, as
+// its node reports it for the current spec, is what its container says.
+func TestAContainerSaysWhatItsNodeSays(t *testing.T) {
+	s, system, user := controlled(t, "n1")
+	nodeWithRoom(t, s, system, "n1", 4096)
+	applyCtr(t, s, user, ctr("api"))
+	m := waitMachine(t, s, system, "ct-api", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
+	gen := m.GetMetadata().GetGeneration()
+	pullFailed := &metav1.Condition{
+		Type: computeapi.MachineReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE,
+		Reason: computeapi.ReasonImagePullFailed, Message: "nginx: manifest unknown", ObservedGeneration: gen,
+	}
+	// Not yet applied, failing.
+	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, gen-1, pullFailed)
+	waitContainer(t, s, system, "api", "told the image pull failed", func(c *computev1alpha1.Container) bool {
+		r := containerReady(c)
+		return r.GetReason() == computeapi.ReasonImagePullFailed && r.GetMessage() == "nginx: manifest unknown"
+	})
+
+	// Applied, then exited.
+	m = getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"})
+	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, gen, &metav1.Condition{
+		Type: computeapi.MachineReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE,
+		Reason: computeapi.ReasonExited, Message: "the container exited with code 3", ObservedGeneration: gen,
+	})
+	waitContainer(t, s, system, "api", "told it exited", func(c *computev1alpha1.Container) bool {
+		return containerReady(c).GetMessage() == "the container exited with code 3"
+	})
+
+	// Running, but the node says it is cut off.
+	m = getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"})
+	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, gen, &metav1.Condition{
+		Type: computeapi.MachineReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE,
+		Reason: computeapi.ReasonNetworkFailed, Message: "netlink: no buffer space", ObservedGeneration: gen,
+	})
+	waitContainer(t, s, system, "api", "told its network failed though running", func(c *computev1alpha1.Container) bool {
+		r := containerReady(c)
+		return r.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE && r.GetReason() == computeapi.ReasonNetworkFailed
+	})
+
+	// What the node said of an older spec is not passed on.
+	pullFailed.ObservedGeneration = gen - 1
+	m = getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"})
+	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, gen-1, pullFailed)
+	waitContainer(t, s, system, "api", "told it is updating", func(c *computev1alpha1.Container) bool {
+		return containerReady(c).GetReason() == "Updating"
 	})
 }
 

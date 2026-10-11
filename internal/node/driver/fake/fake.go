@@ -1,0 +1,701 @@
+// Package fake simulates a whole host behind the node's driver interfaces,
+// for tests: a registry, storage, networking, VMs and their guests, sharing
+// one state so they check each other as a host would (a VM needs its root
+// disk, an interface needs its network). Tests inject faults and inspect
+// what the host holds.
+package fake
+
+import (
+	"cmp"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"maps"
+	"os"
+	"path/filepath"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+)
+
+// Host is a simulated host. The zero value is not usable; call New.
+type Host struct {
+	mu sync.Mutex
+
+	tags      map[string]string             // reference to digest
+	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
+	pullErr   map[string]error              // by reference
+	unpackErr map[string]error              // by reference
+	pulled    map[string]bool               // digests in the host's cache
+	resolved  map[string]int                // resolutions, by reference
+
+	bases    map[string]bool // by digest
+	building map[string]*sync.Mutex
+	roots    map[string]driver.Disk
+	full     bool
+	held     map[string]chan struct{} // unpacks waiting to be let go, by reference
+	// Unpacked counts how often each digest was unpacked into a base.
+	unpacked map[string]int
+
+	networks   map[string]driver.NetworkSpec
+	interfaces map[string]map[string]driver.Interface // machine uid, then name
+
+	vms        map[string]*vm
+	bootErr    map[string]error // by machine uid; "" for every machine
+	silent     map[string]bool  // guests that never answer
+	hung       map[string]bool  // guests that take a call and never return it
+	listErr    map[string]error // by listing: vms, interfaces, networks, roots, bases
+	removalErr error            // fails stopping VMs and removing disks and interfaces
+	netErr     error            // fails making and listing networks and interfaces
+	cloneErr   error            // fails making root disks
+	vmChanges  chan struct{}
+	netChange  chan struct{}
+}
+
+type vm struct {
+	driver.VM
+	spec driver.VMSpec
+	// Boots counts how often the VM started, restarts included.
+	boots int
+	// deadNICs says an interface was taken from under the running VM: the
+	// tap it holds is gone, whatever is recreated by the same name.
+	deadNICs bool
+}
+
+// New returns an empty host.
+func New() *Host {
+	return &Host{
+		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, pulled: map[string]bool{},
+		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
+		bases: map[string]bool{}, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{},
+		held:     map[string]chan struct{}{},
+		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{},
+		vms: map[string]*vm{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
+	}
+}
+
+// Images, Storage, Network, Hypervisor and Guest are the host's drivers.
+func (h *Host) Images() driver.Images         { return images{h} }
+func (h *Host) Storage() driver.Storage       { return storage{h} }
+func (h *Host) Network() driver.Network       { return network{h} }
+func (h *Host) Hypervisor() driver.Hypervisor { return hypervisor{h} }
+func (h *Host) Guest() driver.Guest           { return guest{h} }
+
+func signal(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
+	}
+}
+
+// --- what tests set up and inject ---
+
+// AddImage publishes an image under ref. What ref named before stays
+// pullable by its digest, as in a registry.
+func (h *Host) AddImage(ref, digest string, config driver.ImageConfig) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.tags[ref] = digest
+	h.configs[digest] = config
+}
+
+// HoldUnpack makes unpacking ref wait, as a large image does, until the
+// returned function lets it go.
+func (h *Host) HoldUnpack(ref string) (letGo func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	ch := make(chan struct{})
+	h.held[ref] = ch
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.held[ref] == ch {
+			delete(h.held, ref)
+			close(ch)
+		}
+	}
+}
+
+// FailUnpack makes unpacking ref fail with err, as a layer that cannot be
+// fetched does; nil clears it.
+func (h *Host) FailUnpack(ref string, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.unpackErr[ref] = err
+}
+
+// HangGuest makes the machine's guest agent take a call and never return
+// it, until the caller gives up.
+func (h *Host) HangGuest(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.hung[machineUID] = true
+}
+
+// Resolved returns how often ref was resolved.
+func (h *Host) Resolved(ref string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.resolved[ref]
+}
+
+// FailPull makes resolving ref fail with err; nil clears it.
+func (h *Host) FailPull(ref string, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.pullErr[ref] = err
+}
+
+// SetFull makes storage refuse every new disk with driver.ErrNoSpace.
+func (h *Host) SetFull(full bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.full = full
+}
+
+// FailBoot makes starting the machine's VM fail with err; machineUID ""
+// fails every machine, and nil clears it.
+func (h *Host) FailBoot(machineUID string, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.bootErr[machineUID] = err
+}
+
+// Listings of what the host holds, for FailListing.
+const (
+	ListVMs        = "vms"
+	ListInterfaces = "interfaces"
+	ListNetworks   = "networks"
+	ListRoots      = "roots"
+	ListBases      = "bases"
+)
+
+// FailListing makes the listings named, or every one if none is, fail with
+// err; nil clears them.
+func (h *Host) FailListing(err error, lists ...string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(lists) == 0 {
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases}
+	}
+	for _, l := range lists {
+		h.listErr[l] = err
+	}
+}
+
+// FailRemoval makes stopping VMs and removing root disks and interfaces fail
+// with err; nil clears it.
+func (h *Host) FailRemoval(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.removalErr = err
+}
+
+// FailNetworking makes making and listing networks and interfaces fail with
+// err, as a netlink error does; nil clears it.
+func (h *Host) FailNetworking(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.netErr = err
+}
+
+// FailClone makes making root disks fail with err; nil clears it.
+func (h *Host) FailClone(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cloneErr = err
+}
+
+// Silence keeps the machine's guest agent from answering, or lets it again.
+func (h *Host) Silence(machineUID string, silent bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.silent[machineUID] = silent
+}
+
+// Exit ends the guest process of a running VM with code; the VM's restart
+// policy decides whether it starts again.
+func (h *Host) Exit(machineUID string, code int) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	v, ok := h.vms[machineUID]
+	if !ok || v.State != driver.VMRunning {
+		return fmt.Errorf("no running VM for machine %s", machineUID)
+	}
+	switch {
+	case v.spec.Restart == driver.RestartAlways,
+		v.spec.Restart == driver.RestartOnFailure && code != 0:
+		v.boots++
+		v.Started = time.Now()
+	default:
+		v.State = driver.VMExited
+		v.ExitCode = code
+	}
+	signal(h.vmChanges)
+	return nil
+}
+
+// LoseNetwork removes a network and its interfaces behind the agent's back,
+// as a networkd reconfiguration can, and says so on Changes.
+func (h *Host) LoseNetwork(networkUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.removeNetwork(networkUID)
+	signal(h.netChange)
+}
+
+// removeNetwork takes a network and every interface in it off the host,
+// cutting off the VMs that held them. Callers hold h.mu.
+func (h *Host) removeNetwork(networkUID string) {
+	delete(h.networks, networkUID)
+	for uid, ifs := range h.interfaces {
+		for name, i := range ifs {
+			if i.NetworkUID != networkUID {
+				continue
+			}
+			delete(ifs, name)
+			if v, ok := h.vms[uid]; ok && v.State == driver.VMRunning {
+				v.deadNICs = true
+			}
+		}
+		if len(ifs) == 0 {
+			delete(h.interfaces, uid)
+		}
+	}
+}
+
+// LoseBase removes the base of digest behind the agent's back, as an
+// administrator cleaning up by hand might.
+func (h *Host) LoseBase(digest string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.bases, digest)
+}
+
+// Leave puts objects on the host that no machine accounts for, as a crash
+// between steps leaves them.
+func (h *Host) Leave(machineUID, networkUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.bases["sha256:orphan"] = true
+	h.roots[machineUID] = driver.Disk{MachineUID: machineUID, Digest: "sha256:orphan", Path: "/dev/fake/" + machineUID}
+	h.networks[networkUID] = driver.NetworkSpec{UID: networkUID}
+	h.interfaces[machineUID] = map[string]driver.Interface{"eth0": {MachineUID: machineUID, Name: "eth0", NetworkUID: networkUID}}
+	h.vms[machineUID] = &vm{VM: driver.VM{MachineUID: machineUID, State: driver.VMRunning, Started: time.Now()}, boots: 1}
+}
+
+// --- what tests inspect ---
+
+// Snapshot is what the host holds.
+type Snapshot struct {
+	Bases      []string
+	Roots      map[string]driver.Disk
+	Networks   map[string]driver.NetworkSpec
+	Interfaces map[string][]driver.Interface
+	VMs        map[string]VMView
+}
+
+// VMView is a VM as a test sees it.
+type VMView struct {
+	driver.VM
+	Spec  driver.VMSpec
+	Boots int
+	// DeadNICs says the running instance lost an interface from under it.
+	DeadNICs bool
+}
+
+// Empty reports whether the host holds nothing at all.
+func (s Snapshot) Empty() bool {
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0
+}
+
+// Snapshot returns a copy of what the host holds.
+func (h *Host) Snapshot() Snapshot {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	s := Snapshot{
+		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Networks: maps.Clone(h.networks),
+		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{},
+	}
+	for uid, ifs := range h.interfaces {
+		for _, name := range slices.Sorted(maps.Keys(ifs)) {
+			s.Interfaces[uid] = append(s.Interfaces[uid], ifs[name])
+		}
+	}
+	for uid, v := range h.vms {
+		s.VMs[uid] = VMView{VM: v.VM, Spec: v.spec, Boots: v.boots, DeadNICs: v.deadNICs}
+	}
+	return s
+}
+
+// Cached reports whether the host's image cache holds digest.
+func (h *Host) Cached(digest string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.pulled[digest]
+}
+
+// Unpacked returns how often the image with digest was unpacked.
+func (h *Host) Unpacked(digest string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.unpacked[digest]
+}
+
+// --- Images ---
+
+type images struct{ h *Host }
+
+func (d images) Resolve(_ context.Context, ref string) (string, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.resolved[ref]++
+	if err := d.h.pullErr[ref]; err != nil {
+		return "", err
+	}
+	digest, ok := d.h.tags[ref]
+	if !ok {
+		return "", fmt.Errorf("%s: manifest unknown", ref)
+	}
+	return digest, nil
+}
+
+// byDigest looks an image up in the host's cache, or else pulls it as a
+// registry gives ref@digest.
+func (d images) byDigest(ref, digest string) (driver.ImageConfig, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.pullErr[ref]; err != nil && !d.h.pulled[digest] {
+		return driver.ImageConfig{}, err
+	}
+	config, ok := d.h.configs[digest]
+	if !ok {
+		return driver.ImageConfig{}, fmt.Errorf("%s@%s: manifest unknown", ref, digest)
+	}
+	d.h.pulled[digest] = true
+	return config, nil
+}
+
+func (d images) Config(_ context.Context, ref, digest string) (driver.ImageConfig, error) {
+	return d.byDigest(ref, digest)
+}
+
+func (d images) Forget(_ context.Context, digest string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	delete(d.h.pulled, digest)
+	return nil
+}
+
+func (d images) Unpack(ctx context.Context, ref, digest, dir string) error {
+	if _, err := d.byDigest(ref, digest); err != nil {
+		return err
+	}
+	d.h.mu.Lock()
+	held, failed := d.h.held[ref], d.h.unpackErr[ref]
+	d.h.mu.Unlock()
+	if failed != nil {
+		return failed
+	}
+	if held != nil {
+		select {
+		case <-held:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return os.WriteFile(filepath.Join(dir, "image"), []byte(digest), 0o644)
+}
+
+// --- Storage ---
+
+type storage struct{ h *Host }
+
+func (d storage) EnsureBase(_ context.Context, digest string, fill func(dir string) error) error {
+	d.h.mu.Lock()
+	one := d.h.building[digest]
+	if one == nil {
+		one = &sync.Mutex{}
+		d.h.building[digest] = one
+	}
+	d.h.mu.Unlock()
+	one.Lock() // one maker per digest
+	defer one.Unlock()
+
+	d.h.mu.Lock()
+	if d.h.bases[digest] {
+		d.h.mu.Unlock()
+		return nil
+	}
+	full := d.h.full
+	d.h.mu.Unlock()
+	if full {
+		return driver.ErrNoSpace
+	}
+	dir, err := os.MkdirTemp("", "fake-base")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	if err := fill(dir); err != nil {
+		return err
+	}
+	if _, err := os.Stat(filepath.Join(dir, "image")); err != nil {
+		return fmt.Errorf("the base for %s was left empty", digest)
+	}
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.bases[digest] = true
+	d.h.unpacked[digest]++
+	return nil
+}
+
+func (d storage) Bases(context.Context) ([]string, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListBases]; err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(d.h.bases)), nil
+}
+
+func (d storage) DeleteBase(_ context.Context, digest string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	for _, r := range d.h.roots {
+		if r.Digest == digest {
+			return fmt.Errorf("base %s has root disks cloned from it", digest)
+		}
+	}
+	delete(d.h.bases, digest)
+	return nil
+}
+
+func (d storage) EnsureRoot(_ context.Context, machineUID, digest string) (driver.Disk, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if r, ok := d.h.roots[machineUID]; ok {
+		if r.Digest != digest {
+			return driver.Disk{}, fmt.Errorf("machine %s has a root disk of %s, not %s", machineUID, r.Digest, digest)
+		}
+		return r, nil
+	}
+	if !d.h.bases[digest] {
+		return driver.Disk{}, fmt.Errorf("no base for %s", digest)
+	}
+	if d.h.cloneErr != nil {
+		return driver.Disk{}, d.h.cloneErr
+	}
+	if d.h.full {
+		return driver.Disk{}, driver.ErrNoSpace
+	}
+	r := driver.Disk{MachineUID: machineUID, Digest: digest, Path: "/dev/fake/" + machineUID}
+	d.h.roots[machineUID] = r
+	return r, nil
+}
+
+func (d storage) Roots(context.Context) ([]driver.Disk, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListRoots]; err != nil {
+		return nil, err
+	}
+	return slices.Collect(maps.Values(d.h.roots)), nil
+}
+
+func (d storage) DeleteRoot(_ context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.removalErr != nil {
+		return d.h.removalErr
+	}
+	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning {
+		return fmt.Errorf("the root disk of machine %s is in use by its VM", machineUID)
+	}
+	delete(d.h.roots, machineUID)
+	return nil
+}
+
+// --- Network ---
+
+type network struct{ h *Host }
+
+func (d network) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.netErr != nil {
+		return d.h.netErr
+	}
+	if !n.CIDR.IsValid() || !n.Transit.IsValid() {
+		return fmt.Errorf("network %s needs a range and a transit link", n.UID)
+	}
+	d.h.networks[n.UID] = n
+	return nil
+}
+
+func (d network) Networks(context.Context) ([]driver.NetworkSpec, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := cmp.Or(d.h.listErr[ListNetworks], d.h.netErr); err != nil {
+		return nil, err
+	}
+	return slices.Collect(maps.Values(d.h.networks)), nil
+}
+
+// DeleteNetwork does what a real driver does when asked to delete a network
+// still in use: it deletes it, and its VMs lose their interfaces.
+func (d network) DeleteNetwork(_ context.Context, networkUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.removeNetwork(networkUID)
+	return nil
+}
+
+func (d network) EnsureInterface(_ context.Context, i driver.Interface) (driver.Interface, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.netErr != nil {
+		return driver.Interface{}, d.h.netErr
+	}
+	n, ok := d.h.networks[i.NetworkUID]
+	if !ok {
+		return driver.Interface{}, fmt.Errorf("no network %s for machine %s's %s", i.NetworkUID, i.MachineUID, i.Name)
+	}
+	if !n.CIDR.Contains(i.Address.Addr()) {
+		return driver.Interface{}, fmt.Errorf("%s is outside network %s (%s)", i.Address, i.NetworkUID, n.CIDR)
+	}
+	sum := sha256.Sum256([]byte(i.MachineUID + "/" + i.Name))
+	i.Device = "hm" + hex.EncodeToString(sum[:])[:13]
+	if d.h.interfaces[i.MachineUID] == nil {
+		d.h.interfaces[i.MachineUID] = map[string]driver.Interface{}
+	}
+	d.h.interfaces[i.MachineUID][i.Name] = i
+	return i, nil
+}
+
+func (d network) Interfaces(context.Context) ([]driver.Interface, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := cmp.Or(d.h.listErr[ListInterfaces], d.h.netErr); err != nil {
+		return nil, err
+	}
+	var all []driver.Interface
+	for _, ifs := range d.h.interfaces {
+		all = append(all, slices.Collect(maps.Values(ifs))...)
+	}
+	return all, nil
+}
+
+func (d network) DeleteInterfaces(_ context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.removalErr != nil {
+		return d.h.removalErr
+	}
+	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning {
+		return fmt.Errorf("the interfaces of machine %s are in use by its VM", machineUID)
+	}
+	delete(d.h.interfaces, machineUID)
+	return nil
+}
+
+func (d network) Changes() <-chan struct{} { return d.h.netChange }
+
+// --- Hypervisor ---
+
+type hypervisor struct{ h *Host }
+
+// errUnknownVM is what a guest of no running VM answers.
+var errUnknownVM = errors.New("no running VM")
+
+func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	hash := spec.Hash()
+	if v, ok := d.h.vms[spec.MachineUID]; ok {
+		if v.SpecHash != hash {
+			return fmt.Errorf("machine %s's VM runs another spec; stop it first", spec.MachineUID)
+		}
+		if v.State == driver.VMRunning {
+			return nil
+		}
+	}
+	if err := d.h.bootErr[spec.MachineUID]; err != nil {
+		return err
+	}
+	if err := d.h.bootErr[""]; err != nil {
+		return err
+	}
+	if r, ok := d.h.roots[spec.MachineUID]; !ok || r != spec.Root {
+		return fmt.Errorf("machine %s has no root disk %s", spec.MachineUID, spec.Root.Path)
+	}
+	for _, i := range spec.Interfaces {
+		if have, ok := d.h.interfaces[spec.MachineUID][i.Name]; !ok || have != i {
+			return fmt.Errorf("machine %s has no interface %s as specified", spec.MachineUID, i.Name)
+		}
+	}
+	boots := 1
+	if v, ok := d.h.vms[spec.MachineUID]; ok {
+		boots = v.boots + 1
+	}
+	d.h.vms[spec.MachineUID] = &vm{
+		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now()},
+		spec:  spec,
+		boots: boots,
+	}
+	return nil
+}
+
+func (d hypervisor) Stop(_ context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.removalErr != nil {
+		return d.h.removalErr
+	}
+	delete(d.h.vms, machineUID)
+	return nil
+}
+
+func (d hypervisor) VMs(context.Context) ([]driver.VM, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListVMs]; err != nil {
+		return nil, err
+	}
+	var all []driver.VM
+	for _, v := range d.h.vms {
+		all = append(all, v.VM)
+	}
+	return all, nil
+}
+
+func (d hypervisor) Changes() <-chan struct{} { return d.h.vmChanges }
+
+// --- Guest ---
+
+type guest struct{ h *Host }
+
+func (d guest) Ready(ctx context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	hung := d.h.hung[machineUID]
+	d.h.mu.Unlock()
+	if hung {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	v, ok := d.h.vms[machineUID]
+	if !ok || v.State != driver.VMRunning {
+		return errUnknownVM
+	}
+	if d.h.silent[machineUID] {
+		return fmt.Errorf("the guest agent of machine %s does not answer", machineUID)
+	}
+	return nil
+}
