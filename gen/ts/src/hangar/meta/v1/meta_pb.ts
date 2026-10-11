@@ -258,6 +258,7 @@ export enum EventType {
 
   /**
    * No object changed; the stream is alive and has reached the revision.
+   * Every watch starts with one, at the revision it starts after.
    *
    * @generated from enum value: EVENT_TYPE_BOOKMARK = 4;
    */
