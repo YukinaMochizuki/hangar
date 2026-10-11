@@ -409,7 +409,10 @@ type MachineInterface struct {
 	// DNS-1123 label, unique within the machine.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Names a network in the machine's project.
-	Network       string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
+	Network string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
+	// The interface's address with the network's prefix length, such as
+	// "10.0.0.5/24". Assigned by the apiserver; empty until it is.
+	Ipv4          string `protobuf:"bytes,3,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -454,6 +457,13 @@ func (x *MachineInterface) GetName() string {
 func (x *MachineInterface) GetNetwork() string {
 	if x != nil {
 		return x.Network
+	}
+	return ""
+}
+
+func (x *MachineInterface) GetIpv4() string {
+	if x != nil {
+		return x.Ipv4
 	}
 	return ""
 }
@@ -1231,10 +1241,11 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x03 \x03(\tR\x04args\x121\n" +
-	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\"@\n" +
+	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\"T\n" +
 	"\x10MachineInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
-	"\anetwork\x18\x02 \x01(\tR\anetwork\"\x94\x02\n" +
+	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
+	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\"\x94\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

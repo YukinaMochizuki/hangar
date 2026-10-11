@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Network is a private network inside a project: its own address space and
+// its own network namespace on every node that runs one of its machines.
+// Every project gets one named "default". See docs/decisions/networking.md.
+message Network {
+  option (hangar.meta.v1.resource) = {
+    kind: "Network"
+    plural: "networks"
+    short_names: ["net"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  NetworkSpec spec = 4;
+  NetworkStatus status = 5;
+}
+
+// NetworkSpec is the network's address space.
+message NetworkSpec {
+  // IPv4 range machines get addresses from, such as "10.0.0.0/24": a private
+  // (RFC 1918) range between /16 and /28. Networks may overlap each other.
+  // The first usable address is the network's gateway.
+  string ipv4_cidr = 1 [(hangar.meta.v1.field).immutable = true];
+}
+
+// NetworkStatus is what the apiserver assigned to the network.
+message NetworkStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The /31 linking the network's namespace to the host, such as
+  // "100.64.0.0/31". The lower address is the host's end.
+  string transit_ipv4 = 3;
+}
+
+// NetworkService manages networks.
+service NetworkService {
+  rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse);
+  rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse);
+  rpc WatchNetworks(WatchNetworksRequest) returns (stream WatchNetworksResponse);
+  rpc ApplyNetwork(ApplyNetworkRequest) returns (ApplyNetworkResponse);
+  rpc DeleteNetwork(DeleteNetworkRequest) returns (DeleteNetworkResponse);
+  rpc UpdateNetworkStatus(UpdateNetworkStatusRequest) returns (UpdateNetworkStatusResponse);
+}
+
+message GetNetworkRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetNetworkResponse {
+  Network network = 1;
+}
+
+message ListNetworksRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListNetworksResponse {
+  repeated Network items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchNetworksRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchNetworksResponse {
+  hangar.meta.v1.EventType type = 1;
+  Network network = 2;
+  int64 revision = 3;
+}
+
+message ApplyNetworkRequest {
+  Network network = 1;
+}
+
+message ApplyNetworkResponse {
+  Network network = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteNetworkRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteNetworkResponse {
+  Network network = 1;
+}
+
+message UpdateNetworkStatusRequest {
+  string project = 1;
+  string name = 2;
+  NetworkStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateNetworkStatusResponse {
+  Network network = 1;
+}
