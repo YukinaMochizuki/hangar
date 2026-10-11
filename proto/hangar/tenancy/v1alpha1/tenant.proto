@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package hangar.tenancy.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Tenant is who: the people and identities that own projects. Membership is
+// expressed with RoleBindings scoped to the tenant.
+message Tenant {
+  option (hangar.meta.v1.resource) = {
+    kind: "Tenant"
+    plural: "tenants"
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  TenantSpec spec = 4;
+  TenantStatus status = 5;
+}
+
+// TenantSpec is the desired state of a tenant.
+message TenantSpec {
+  string display_name = 1;
+  // Name of the Plan that sets this tenant's quota limits; empty means the
+  // platform default.
+  string plan = 2;
+}
+
+// TenantStatus is the observed state of a tenant.
+message TenantStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// TenantService manages tenants.
+service TenantService {
+  rpc GetTenant(GetTenantRequest) returns (GetTenantResponse);
+  rpc ListTenants(ListTenantsRequest) returns (ListTenantsResponse);
+  rpc WatchTenants(WatchTenantsRequest) returns (stream WatchTenantsResponse);
+  rpc ApplyTenant(ApplyTenantRequest) returns (ApplyTenantResponse);
+  rpc DeleteTenant(DeleteTenantRequest) returns (DeleteTenantResponse);
+  rpc UpdateTenantStatus(UpdateTenantStatusRequest) returns (UpdateTenantStatusResponse);
+}
+
+message GetTenantRequest {
+  string name = 1;
+}
+
+message GetTenantResponse {
+  Tenant tenant = 1;
+}
+
+message ListTenantsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListTenantsResponse {
+  repeated Tenant items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchTenantsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchTenantsResponse {
+  hangar.meta.v1.EventType type = 1;
+  Tenant tenant = 2;
+  int64 revision = 3;
+}
+
+message ApplyTenantRequest {
+  Tenant tenant = 1;
+}
+
+message ApplyTenantResponse {
+  Tenant tenant = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteTenantRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteTenantResponse {
+  Tenant tenant = 1;
+}
+
+message UpdateTenantStatusRequest {
+  string name = 1;
+  TenantStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateTenantStatusResponse {
+  Tenant tenant = 1;
+}

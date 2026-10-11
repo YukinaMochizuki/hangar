@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Container runs an OCI image as its own microVM. See
+// docs/decisions/machine-model.md.
+message Container {
+  option (hangar.meta.v1.resource) = {
+    kind: "Container"
+    plural: "containers"
+    short_names: ["ct"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  ContainerSpec spec = 4;
+  ContainerStatus status = 5;
+}
+
+// ContainerSpec is the desired state of a container.
+message ContainerSpec {
+  // OCI image reference. Changing it rebuilds the root disk.
+  string image = 1;
+  // Overrides the image entrypoint.
+  repeated string command = 2;
+  // Overrides the image command.
+  repeated string args = 3;
+  repeated EnvVar env = 4;
+  repeated ContainerPort ports = 5;
+  RestartPolicy restart_policy = 6;
+  Resources resources = 7;
+}
+
+// EnvVar is one environment variable.
+message EnvVar {
+  string name = 1;
+  string value = 2;
+}
+
+// ContainerPort is a port the container listens on.
+message ContainerPort {
+  // DNS-1123 label, unique within the container.
+  string name = 1;
+  int32 port = 2;
+  Protocol protocol = 3;
+  // Expose the port over HTTPS through a PublicEndpoint.
+  bool public = 4;
+}
+
+// Protocol is a transport protocol.
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_TCP = 1;
+  PROTOCOL_UDP = 2;
+}
+
+// RestartPolicy says when a container's process is restarted after it exits.
+enum RestartPolicy {
+  RESTART_POLICY_UNSPECIFIED = 0;
+  RESTART_POLICY_ALWAYS = 1;
+  RESTART_POLICY_ON_FAILURE = 2;
+  RESTART_POLICY_NEVER = 3;
+}
+
+// Resources sizes the microVM.
+message Resources {
+  int32 vcpus = 1;
+  int64 memory_mib = 2;
+}
+
+// ContainerStatus is the observed state of a container.
+message ContainerStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// ContainerService manages containers.
+service ContainerService {
+  rpc GetContainer(GetContainerRequest) returns (GetContainerResponse);
+  rpc ListContainers(ListContainersRequest) returns (ListContainersResponse);
+  rpc WatchContainers(WatchContainersRequest) returns (stream WatchContainersResponse);
+  rpc ApplyContainer(ApplyContainerRequest) returns (ApplyContainerResponse);
+  rpc DeleteContainer(DeleteContainerRequest) returns (DeleteContainerResponse);
+  rpc UpdateContainerStatus(UpdateContainerStatusRequest) returns (UpdateContainerStatusResponse);
+}
+
+message GetContainerRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetContainerResponse {
+  Container container = 1;
+}
+
+message ListContainersRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListContainersResponse {
+  repeated Container items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchContainersRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchContainersResponse {
+  hangar.meta.v1.EventType type = 1;
+  Container container = 2;
+  int64 revision = 3;
+}
+
+message ApplyContainerRequest {
+  Container container = 1;
+}
+
+message ApplyContainerResponse {
+  Container container = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteContainerRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteContainerResponse {
+  Container container = 1;
+}
+
+message UpdateContainerStatusRequest {
+  string project = 1;
+  string name = 2;
+  ContainerStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateContainerStatusResponse {
+  Container container = 1;
+}

@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "google/protobuf/empty.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// RoleBinding grants one role to one subject at one scope. See
+// docs/decisions/tenancy-and-iam.md.
+message RoleBinding {
+  option (hangar.meta.v1.resource) = {
+    kind: "RoleBinding"
+    plural: "rolebindings"
+    short_names: ["rb"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  RoleBindingSpec spec = 4;
+  RoleBindingStatus status = 5;
+}
+
+// RoleBindingSpec is the desired state of a role binding.
+message RoleBindingSpec {
+  Subject subject = 1;
+  // A built-in role name, such as "tenant.owner".
+  string role = 2;
+  BindingScope scope = 3;
+}
+
+// Subject is who a binding grants a role to.
+message Subject {
+  oneof subject {
+    // An email address verified by Cloudflare Access.
+    string user = 1;
+    // The client ID of a Cloudflare Access service token.
+    string service_token = 2;
+  }
+}
+
+// BindingScope is where a binding's role applies.
+message BindingScope {
+  oneof target {
+    google.protobuf.Empty platform = 1;
+    // Tenant name; the role applies to the tenant and all its projects.
+    string tenant = 2;
+    // Project name.
+    string project = 3;
+  }
+}
+
+// RoleBindingStatus is the observed state of a role binding.
+message RoleBindingStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// RoleBindingService manages role bindings.
+service RoleBindingService {
+  rpc GetRoleBinding(GetRoleBindingRequest) returns (GetRoleBindingResponse);
+  rpc ListRoleBindings(ListRoleBindingsRequest) returns (ListRoleBindingsResponse);
+  rpc WatchRoleBindings(WatchRoleBindingsRequest) returns (stream WatchRoleBindingsResponse);
+  rpc ApplyRoleBinding(ApplyRoleBindingRequest) returns (ApplyRoleBindingResponse);
+  rpc DeleteRoleBinding(DeleteRoleBindingRequest) returns (DeleteRoleBindingResponse);
+  rpc UpdateRoleBindingStatus(UpdateRoleBindingStatusRequest) returns (UpdateRoleBindingStatusResponse);
+}
+
+message GetRoleBindingRequest {
+  string name = 1;
+}
+
+message GetRoleBindingResponse {
+  RoleBinding role_binding = 1;
+}
+
+message ListRoleBindingsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListRoleBindingsResponse {
+  repeated RoleBinding items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchRoleBindingsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchRoleBindingsResponse {
+  hangar.meta.v1.EventType type = 1;
+  RoleBinding role_binding = 2;
+  int64 revision = 3;
+}
+
+message ApplyRoleBindingRequest {
+  RoleBinding role_binding = 1;
+}
+
+message ApplyRoleBindingResponse {
+  RoleBinding role_binding = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteRoleBindingRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteRoleBindingResponse {
+  RoleBinding role_binding = 1;
+}
+
+message UpdateRoleBindingStatusRequest {
+  string name = 1;
+  RoleBindingStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateRoleBindingStatusResponse {
+  RoleBinding role_binding = 1;
+}
