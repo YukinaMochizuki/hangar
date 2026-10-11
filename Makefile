@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
@@ -54,6 +54,20 @@ test-root:
 
 e2e:
 	go test -race -tags e2e ./test/e2e/...
+
+# Real-host tests (L4), on a testbed VM only: they boot guests as root.
+# docs/runbook/testbed.md says what they need and how to provide it.
+E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3b9c8e0ffbb309f34c3b14c12d889d69
+# Named by the image's digest, so a new pin makes a new image.
+E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
+
+e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
+	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
+		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
+
+$(E2E_HOST_ROOTFS):
+	mkdir -p $(@D)
+	sudo env "PATH=$$PATH" test/testbed/guest-rootfs.sh $(E2E_HOST_ROOTFS_IMAGE) $@
 
 # Regenerates into the working tree and fails if anything changed, so it holds
 # for uncommitted work as well as in CI.
