@@ -16,7 +16,11 @@ controllers, and the node, which runs as a separate process.
   under any `*.hangar.dev/` prefix. Those are reserved for the system: a user
   setting one is rejected, and system-set ones survive a user's apply.
 - **Finalizers and owner references** belong to the system; their values in an
-  apply are ignored. `uid` (UUIDv7), `create_time`, `resource_version` and
+  apply are ignored. The system sets them on create: everything in a project
+  is owned by the project, a project by its tenant, and a role binding by the
+  tenant or project it is scoped to. Tenants and projects carry the
+  `hangar.dev/dependents` finalizer, so deleting one deletes its contents
+  first. `uid` (UUIDv7), `create_time`, `resource_version` and
   `generation` are system-generated.
 - **`generation`** increments only when the spec actually changes. Controllers
   report `status.observed_generation`, which is how `hangar wait` knows a change
@@ -30,7 +34,8 @@ controllers, and the node, which runs as a separate process.
   characters), because they end up in hostnames and internal DNS.
 - **Delete** with finalizers present only sets `delete_time`; the object goes
   away when controllers have removed every finalizer. Children found through
-  owner references are deleted by a background garbage collector.
+  owner references (matched by uid, not name) are deleted by a background
+  garbage collector, which also sweeps everything periodically.
 - **Status is a subresource.** Every kind has an `Update<Kind>Status` RPC that
   only system principals (the node, controllers) may call. Users can never
   write status, and system writers never write spec.

@@ -84,6 +84,7 @@ const (
 	EventType_EVENT_TYPE_MODIFIED    EventType = 2
 	EventType_EVENT_TYPE_DELETED     EventType = 3
 	// No object changed; the stream is alive and has reached the revision.
+	// Every watch starts with one, at the revision it starts after.
 	EventType_EVENT_TYPE_BOOKMARK EventType = 4
 )
 

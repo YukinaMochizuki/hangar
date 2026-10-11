@@ -27,7 +27,9 @@ message RoleBindingSpec {
   Subject subject = 1;
   // A built-in role name, such as "tenant.owner".
   string role = 2;
-  BindingScope scope = 3;
+  // A binding belongs to its scope's tenant or project and goes with it, so
+  // the scope cannot move.
+  BindingScope scope = 3 [(hangar.meta.v1.field).immutable = true];
 }
 
 // Subject is who a binding grants a role to.

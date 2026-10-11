@@ -106,7 +106,9 @@ type RoleBindingSpec struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Subject *Subject               `protobuf:"bytes,1,opt,name=subject,proto3" json:"subject,omitempty"`
 	// A built-in role name, such as "tenant.owner".
-	Role          string        `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	Role string `protobuf:"bytes,2,opt,name=role,proto3" json:"role,omitempty"`
+	// A binding belongs to its scope's tenant or project and goes with it, so
+	// the scope cannot move.
 	Scope         *BindingScope `protobuf:"bytes,3,opt,name=scope,proto3" json:"scope,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1038,11 +1040,11 @@ const file_hangar_iam_v1alpha1_role_binding_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x128\n" +
 	"\x04spec\x18\x04 \x01(\v2$.hangar.iam.v1alpha1.RoleBindingSpecR\x04spec\x12>\n" +
 	"\x06status\x18\x05 \x01(\v2&.hangar.iam.v1alpha1.RoleBindingStatusR\x06status:%\x8a\xb5\x18!\n" +
-	"\vRoleBinding\x12\frolebindings\x1a\x02rb \x02\"\x96\x01\n" +
+	"\vRoleBinding\x12\frolebindings\x1a\x02rb \x02\"\x9e\x01\n" +
 	"\x0fRoleBindingSpec\x126\n" +
 	"\asubject\x18\x01 \x01(\v2\x1c.hangar.iam.v1alpha1.SubjectR\asubject\x12\x12\n" +
-	"\x04role\x18\x02 \x01(\tR\x04role\x127\n" +
-	"\x05scope\x18\x03 \x01(\v2!.hangar.iam.v1alpha1.BindingScopeR\x05scope\"Q\n" +
+	"\x04role\x18\x02 \x01(\tR\x04role\x12?\n" +
+	"\x05scope\x18\x03 \x01(\v2!.hangar.iam.v1alpha1.BindingScopeB\x06\x8a\xb5\x18\x02\b\x01R\x05scope\"Q\n" +
 	"\aSubject\x12\x14\n" +
 	"\x04user\x18\x01 \x01(\tH\x00R\x04user\x12%\n" +
 	"\rservice_token\x18\x02 \x01(\tH\x00R\fserviceTokenB\t\n" +
