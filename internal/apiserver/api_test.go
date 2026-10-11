@@ -77,9 +77,19 @@ func TestLifecycle(t *testing.T) {
 		t.Errorf("label selector tier=back matched %d items", len(selected.GetItems()))
 	}
 
+	// A container goes once garbage collection has seen to what it owns.
 	must[computev1alpha1.DeleteContainerResponse](t)(a.containers.DeleteContainer(ctx, connect.NewRequest(&computev1alpha1.DeleteContainerRequest{Project: "web", Name: "api"})))
-	_, err := a.containers.GetContainer(ctx, getContainer("web", "api"))
-	wantCode(t, err, connect.CodeNotFound, "Get after Delete")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		_, err := a.containers.GetContainer(ctx, getContainer("web", "api"))
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Get after Delete: %v, want not_found", err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
 
 func TestAuthorization(t *testing.T) {
@@ -126,17 +136,15 @@ func TestAuthorization(t *testing.T) {
 		t.Errorf("bob listing containers across projects sees %d of alice's", len(all.GetItems()))
 	}
 
-	// Status belongs to the system: no user, not even root, may write it, and
-	// the node may.
+	// A container's status is its controller's: no user, not even root, and
+	// no node agent may write it.
 	status := &computev1alpha1.UpdateContainerStatusRequest{Project: "web", Name: "api", Status: &computev1alpha1.ContainerStatus{ObservedGeneration: 1}}
 	_, err = a.containers.UpdateContainerStatus(ctx, connect.NewRequest(status))
 	wantCode(t, err, connect.CodePermissionDenied, "the owner writing status")
 	_, err = e.as(root).containers.UpdateContainerStatus(ctx, connect.NewRequest(status))
 	wantCode(t, err, connect.CodePermissionDenied, "root writing status")
-	updated := must[computev1alpha1.UpdateContainerStatusResponse](t)(e.asNode().containers.UpdateContainerStatus(ctx, connect.NewRequest(status)))
-	if updated.GetContainer().GetStatus().GetObservedGeneration() != 1 {
-		t.Errorf("node status write returned %v", updated.GetContainer().GetStatus())
-	}
+	_, err = e.asNode().containers.UpdateContainerStatus(ctx, connect.NewRequest(status))
+	wantCode(t, err, connect.CodePermissionDenied, "the node writing a container's status")
 	_, err = e.asNode().containers.ApplyContainer(ctx, applyContainer(container("web", "api", "other")))
 	wantCode(t, err, connect.CodePermissionDenied, "the node writing spec")
 
@@ -192,7 +200,7 @@ func TestApplyRules(t *testing.T) {
 	sneaky.Metadata.Uid = "forged"
 	sneaky.Status = &computev1alpha1.ContainerStatus{ObservedGeneration: 99}
 	stored := must[computev1alpha1.ApplyContainerResponse](t)(a.containers.ApplyContainer(ctx, applyContainer(sneaky))).GetContainer()
-	if len(stored.GetMetadata().GetFinalizers()) != 0 || stored.GetMetadata().GetUid() == "forged" || stored.GetStatus().GetObservedGeneration() != 0 {
+	if slices.Contains(stored.GetMetadata().GetFinalizers(), "user/finalizer") || stored.GetMetadata().GetUid() == "forged" || stored.GetStatus().GetObservedGeneration() != 0 {
 		t.Errorf("system-owned fields taken from input: %v / %v", stored.GetMetadata(), stored.GetStatus())
 	}
 
@@ -253,10 +261,17 @@ func TestWatch(t *testing.T) {
 	must[computev1alpha1.ApplyContainerResponse](t)(a.containers.ApplyContainer(ctx, applyContainer(container("web", "api", "nginx"))))
 	must[computev1alpha1.ApplyContainerResponse](t)(a.containers.ApplyContainer(ctx, applyContainer(container("web", "api", "nginx:2"))))
 	must[computev1alpha1.DeleteContainerResponse](t)(a.containers.DeleteContainer(ctx, connect.NewRequest(&computev1alpha1.DeleteContainerRequest{Project: "web", Name: "api"})))
-	for _, want := range []metav1.EventType{metav1.EventType_EVENT_TYPE_ADDED, metav1.EventType_EVENT_TYPE_MODIFIED, metav1.EventType_EVENT_TYPE_DELETED} {
+	// Deleting marks the container, then garbage collection removes it.
+	for i, want := range []metav1.EventType{
+		metav1.EventType_EVENT_TYPE_ADDED, metav1.EventType_EVENT_TYPE_MODIFIED,
+		metav1.EventType_EVENT_TYPE_MODIFIED, metav1.EventType_EVENT_TYPE_DELETED,
+	} {
 		ev := next()
 		if ev.GetType() != want || ev.GetContainer().GetMetadata().GetName() != "api" {
 			t.Fatalf("got %v %v, want %v", ev.GetType(), ev.GetContainer().GetMetadata().GetName(), want)
+		}
+		if i == 2 && ev.GetContainer().GetMetadata().GetDeleteTime() == nil {
+			t.Fatal("the event before the delete does not mark the container")
 		}
 	}
 	last, err := e.store.Revision(ctx)

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -53,6 +54,10 @@ type Config struct {
 	NodeGracePeriod time.Duration
 	// NodeMonitorInterval is how often heartbeats are checked.
 	NodeMonitorInterval time.Duration
+	// DisableControllers leaves out the controllers, as tests of the generic
+	// machinery do: they use real kinds as examples and need nothing else
+	// writing to them. A real apiserver always runs them.
+	DisableControllers bool
 }
 
 // Server is the API server. Create it with New, start its background work
@@ -66,6 +71,9 @@ type Server struct {
 	backends map[string]*backend
 	// heartbeats is when each node agent was last heard from.
 	heartbeats heartbeats
+	// memory serializes every decision that reserves memory on a node:
+	// placing a machine, and growing a placed one.
+	memory sync.Mutex
 }
 
 // New returns a server over cfg.Store.
@@ -123,7 +131,8 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 
 // Run does the server's background work until ctx is done: it keeps the
 // authorization view current, bootstraps the first admin, registers nodes,
-// watches their heartbeats, collects garbage and compacts history.
+// watches their heartbeats, runs the controllers, collects garbage and
+// compacts history.
 func (s *Server) Run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return s.authz.Run(gctx) })
@@ -135,6 +144,11 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 	g.Go(func() error { return s.ensureNodes(gctx) })
 	g.Go(func() error { return s.runNodeMonitor(gctx) })
+	if !s.cfg.DisableControllers {
+		for _, c := range s.controllers() {
+			g.Go(func() error { return c.Run(gctx) })
+		}
+	}
 	g.Go(func() error { return s.runGC(gctx) })
 	g.Go(func() error { return s.runCompaction(gctx) })
 	// Background work ends when the caller's ctx does; only a failure before

@@ -621,7 +621,10 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 			return nil, err
 		}
 		// A node agent reports only on what it runs.
-		if p.Type == auth.Node && b.hooks.nodeOf != nil {
+		if p.Type == auth.Node {
+			if b.hooks.nodeOf == nil {
+				return nil, denied("%s may not update the status of %s", p, b.asked(key))
+			}
 			if node := b.hooks.nodeOf(obj); node == "" || node != p.ID {
 				return nil, denied("%s may not update the status of %s", p, b.asked(key))
 			}

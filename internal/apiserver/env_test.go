@@ -55,7 +55,10 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		t.Fatal(err)
 	}
 	clock := clockwork.NewFakeClock()
-	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}}
+	// The API tests use containers as examples of any kind; the controllers
+	// would write to them behind the tests' back. The controllers' own tests
+	// run them, and the CLI tests go through them end to end.
+	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}, DisableControllers: true}
 	for _, o := range opts {
 		o(&cfg)
 	}
