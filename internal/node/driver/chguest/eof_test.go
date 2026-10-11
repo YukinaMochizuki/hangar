@@ -13,6 +13,7 @@ import (
 // TestAnExecEndsWhenBothSidesHave: after the exit the call stays open until
 // the caller closes its side, then ends cleanly, with io.EOF.
 func TestAnExecEndsWhenBothSidesHave(t *testing.T) {
+	execsAsRoot(t)
 	c, done := guestOn(fakeCH(t, agent.Port)).Client("m1")
 	defer done()
 	s := c.Exec(t.Context())

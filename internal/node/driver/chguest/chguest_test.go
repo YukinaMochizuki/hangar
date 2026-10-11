@@ -174,10 +174,20 @@ func TestATerminalCanBeResized(t *testing.T) {
 	}
 }
 
+// execsAsRoot skips a test that execs: the agent sets every process's user,
+// as PID 1 may, which only root can. make test-root runs these.
+func execsAsRoot(t *testing.T) {
+	t.Helper()
+	if os.Geteuid() != 0 {
+		t.Skip("execs as the agent does, which needs root; make test-root runs it")
+	}
+}
+
 // run execs p and collects what comes back; send is called with the
 // stream once it has started.
 func run(t *testing.T, ctx context.Context, start *guestv1.ExecStart, send func(*connect.BidiStreamForClient[guestv1.ExecRequest, guestv1.ExecResponse])) (stdout, stderr string, exit *guestv1.ExecExit, err error) {
 	t.Helper()
+	execsAsRoot(t)
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second) // a hang fails here, by name
 	defer cancel()
 	c, done := guestOn(fakeCH(t, agent.Port)).Client("m1")
@@ -275,6 +285,7 @@ func TestAChildLeftBehindHoldsUpNothing(t *testing.T) {
 // TestACallerGoingAwayKillsTheProcess: an exec whose caller is gone leaves
 // nothing running.
 func TestACallerGoingAwayKillsTheProcess(t *testing.T) {
+	execsAsRoot(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	c, done := guestOn(fakeCH(t, agent.Port)).Client("m1")
 	defer done()
