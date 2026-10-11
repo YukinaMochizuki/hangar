@@ -44,7 +44,9 @@ whole `spec` (the desired state); there is no server-side merge.
 
 Users see `Container` and `VirtualMachine`. Controllers turn both into an
 internal `Machine`, the only thing the node understands, so snapshots, disks,
-networking and quotas are implemented once.
+networking and quotas are implemented once. Each host is a global `Node`;
+a machine runs on the node named in its `spec.node`. Both are system-managed:
+users can read their machines, and only platform administrators read nodes.
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources.

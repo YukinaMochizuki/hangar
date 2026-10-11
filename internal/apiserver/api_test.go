@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -14,6 +15,8 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
+	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
 const (
@@ -351,15 +354,54 @@ func TestBootstrapIsOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	res := must[iamv1alpha1.ListRoleBindingsResponse](t)(e.as(root).bindings.ListRoleBindings(ctx, connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{})))
-	roots := 0
+	var roots []string
 	for _, rb := range res.GetItems() {
 		if rb.GetSpec().GetRole() == "platform.root" {
-			roots++
+			roots = append(roots, rb.GetSpec().GetSubject().GetUser())
 		}
 	}
-	if roots != 1 {
-		t.Errorf("%d root bindings after a second bootstrap, want 1", roots)
+	if !slices.Equal(roots, []string{root}) {
+		t.Errorf("root is held by %v after a second bootstrap, want only %s", roots, root)
 	}
+}
+
+// TestBootstrapAfterAStartWithoutAdmin: a first start that writes something
+// (here, registering a node) without --bootstrap-admin must not use up the
+// one bootstrap.
+func TestBootstrapAfterAStartWithoutAdmin(t *testing.T) {
+	ctx := t.Context()
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	start := func(cfg apiserver.Config, until func() bool) {
+		t.Helper()
+		cfg.Store = st
+		runCtx, cancel := context.WithCancel(ctx)
+		done := make(chan error, 1)
+		go func() { done <- apiserver.New(cfg).Run(runCtx) }()
+		deadline := time.Now().Add(10 * time.Second)
+		for !until() {
+			if time.Now().After(deadline) {
+				t.Fatal("the server never got there")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	exists := func(kind, name string) func() bool {
+		return func() bool {
+			_, err := st.Get(ctx, store.Key{Kind: kind, Name: name})
+			return err == nil
+		}
+	}
+
+	start(apiserver.Config{Nodes: []string{"n1"}}, exists("Node", "n1"))
+	start(apiserver.Config{BootstrapAdmin: root}, exists("RoleBinding", "bootstrap-root"))
 }
 
 func binding(name, user, role string, scope *iamv1alpha1.BindingScope) *connect.Request[iamv1alpha1.ApplyRoleBindingRequest] {

@@ -23,7 +23,9 @@ import (
 
 var dns1123Label = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
-func validName(name string) error {
+// ValidName checks that a name is a DNS-1123 label, the rule for every object
+// name, project and node name.
+func ValidName(name string) error {
 	if len(name) == 0 || len(name) > 63 || !dns1123Label.MatchString(name) {
 		return fmt.Errorf("%q must be 1-63 lowercase letters, digits or '-', starting and ending with a letter or digit", name)
 	}
@@ -93,6 +95,13 @@ type kindHooks struct {
 	validate func(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error
 	// afterCreate runs once a new object is stored.
 	afterCreate func(ctx context.Context, s *Server, p auth.Principal, obj proto.Message) error
+	// systemManaged keeps every write but status updates to the apiserver
+	// itself: no role, however broad, lets anyone else apply or delete such
+	// an object.
+	systemManaged bool
+	// nodeOf names the Node responsible for obj, the only node agent allowed
+	// to write its status.
+	nodeOf func(obj proto.Message) string
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -164,12 +173,28 @@ func hooksFor(r registry.Resource) kindHooks {
 		}
 	case registry.Container.Kind:
 		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer}
+	case registry.Machine.Kind:
+		return kindHooks{
+			target:        projectTarget,
+			owner:         ownedByProject,
+			validate:      validateMachine,
+			systemManaged: true,
+			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
+		}
+	case registry.Node.Kind:
+		return kindHooks{
+			target:        platformTarget,
+			systemManaged: true,
+			nodeOf:        func(obj proto.Message) string { return object.Meta(obj).GetName() },
+		}
 	}
 	if r.ProjectScoped() {
 		return kindHooks{target: projectTarget, owner: ownedByProject}
 	}
-	return kindHooks{target: func(*Server, resource.Key, proto.Message, bool) authz.Target { return authz.Target{} }}
+	return kindHooks{target: platformTarget}
 }
+
+func platformTarget(*Server, resource.Key, proto.Message, bool) authz.Target { return authz.Target{} }
 
 // admit runs the checks every write of an object goes through; old is nil on
 // create.
@@ -305,7 +330,7 @@ func validateContainer(_ context.Context, _ *Server, _ auth.Principal, _, obj pr
 	}
 	seen := map[string]bool{}
 	for _, port := range spec.GetPorts() {
-		if err := validName(port.GetName()); err != nil {
+		if err := ValidName(port.GetName()); err != nil {
 			return invalid("spec.ports: %v", err)
 		}
 		if seen[port.GetName()] {
@@ -318,6 +343,58 @@ func validateContainer(_ context.Context, _ *Server, _ auth.Principal, _, obj pr
 	}
 	if spec.GetResources().GetVcpus() < 0 || spec.GetResources().GetMemoryMib() < 0 {
 		return invalid("spec.resources must not be negative")
+	}
+	return nil
+}
+
+// validateMachine checks a machine the controllers wrote. The node, once
+// chosen, is permanent: moving a machine means a new one, never a rewrite.
+func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj proto.Message) error {
+	spec := obj.(*computev1alpha1.Machine).GetSpec()
+	if old != nil {
+		if was := old.(*computev1alpha1.Machine).GetSpec().GetNode(); was != "" && was != spec.GetNode() {
+			return invalid("spec.node is %q and cannot change", was)
+		}
+	}
+	if spec.GetNode() != "" {
+		if err := ValidName(spec.GetNode()); err != nil {
+			return invalid("spec.node: %v", err)
+		}
+	}
+	// Only controllers write machines, and they always say what they mean:
+	// no enum is left for the node to default.
+	switch spec.GetRunState() {
+	case computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING, computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED:
+	default:
+		return invalid("spec.run_state %v is not RUNNING or STOPPED", spec.GetRunState())
+	}
+	switch spec.GetRestartPolicy() {
+	case computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS, computev1alpha1.RestartPolicy_RESTART_POLICY_ON_FAILURE,
+		computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER:
+	default:
+		return invalid("spec.restart_policy %v is not ALWAYS, ON_FAILURE or NEVER", spec.GetRestartPolicy())
+	}
+	if spec.GetBoot() == nil {
+		return invalid("spec.boot is required")
+	}
+	if c := spec.GetContainer(); c != nil && c.GetImage() == "" {
+		return invalid("spec.container.image is required")
+	}
+	if spec.GetResources().GetVcpus() < 0 || spec.GetResources().GetMemoryMib() < 0 {
+		return invalid("spec.resources must not be negative")
+	}
+	seen := map[string]bool{}
+	for _, nic := range spec.GetInterfaces() {
+		if err := ValidName(nic.GetName()); err != nil {
+			return invalid("spec.interfaces: %v", err)
+		}
+		if seen[nic.GetName()] {
+			return invalid("spec.interfaces: duplicate name %q", nic.GetName())
+		}
+		seen[nic.GetName()] = true
+		if err := ValidName(nic.GetNetwork()); err != nil {
+			return invalid("spec.interfaces[%s].network: %v", nic.GetName(), err)
+		}
 	}
 	return nil
 }

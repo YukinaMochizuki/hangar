@@ -34,10 +34,13 @@ func ConnContext(ctx context.Context, c net.Conn) context.Context {
 }
 
 // PeerCred authenticates processes on the node's unix socket by the uid the
-// kernel reports for the peer.
+// kernel reports for the peer. The socket is local to one host, so whoever
+// passes is that host's node agent.
 type PeerCred struct {
 	// NodeUIDs are the uids accepted as the node agent.
 	NodeUIDs []uint32
+	// NodeName is the Node the agent acts as; it becomes the principal's ID.
+	NodeName string
 }
 
 func (p PeerCred) Authenticate(ctx context.Context, _ http.Header) (Principal, bool, error) {
@@ -48,5 +51,8 @@ func (p PeerCred) Authenticate(ctx context.Context, _ http.Header) (Principal, b
 	if !slices.Contains(p.NodeUIDs, cred.Uid) {
 		return Principal{}, false, errors.New("peer uid is not a node agent")
 	}
-	return Principal{Type: Node, ID: "local"}, true, nil
+	if p.NodeName == "" {
+		return Principal{}, false, errors.New("the node socket has no node name configured")
+	}
+	return Principal{Type: Node, ID: p.NodeName}, true, nil
 }

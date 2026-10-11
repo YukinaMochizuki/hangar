@@ -85,7 +85,16 @@ func (b *backend) begin(ctx context.Context) (auth.Principal, error) {
 }
 
 func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) bool {
+	if b.hooks.systemManaged && p.Type != auth.System && !readsOrReports(verb) {
+		return false
+	}
 	return b.s.authz.Allowed(p, authz.Permission(b.r, verb), t)
+}
+
+// readsOrReports lists the verbs anyone but the system may use on a
+// system-managed kind; any verb added later is refused until it is listed.
+func readsOrReports(v authz.Verb) bool {
+	return v == authz.Get || v == authz.List || v == authz.Watch || v == authz.UpdateStatus
 }
 
 // authorize checks a grant. The denial names only what the caller asked
@@ -122,13 +131,13 @@ func (b *backend) checkKey(k resource.Key) error {
 		if k.Project == "" {
 			return invalid("%s are project-scoped; project is required", b.r.Plural)
 		}
-		if err := validName(k.Project); err != nil {
+		if err := ValidName(k.Project); err != nil {
 			return invalid("project: %v", err)
 		}
 	} else if k.Project != "" {
 		return invalid("%s are global; project must be empty", b.r.Plural)
 	}
-	if err := validName(k.Name); err != nil {
+	if err := ValidName(k.Name); err != nil {
 		return invalid("name: %v", err)
 	}
 	return nil
@@ -611,6 +620,12 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 		if err != nil {
 			return nil, err
 		}
+		// A node agent reports only on what it runs.
+		if p.Type == auth.Node && b.hooks.nodeOf != nil {
+			if node := b.hooks.nodeOf(obj); node == "" || node != p.ID {
+				return nil, denied("%s may not update the status of %s", p, b.asked(key))
+			}
+		}
 		if expected != nil && *expected != cur.Revision {
 			return nil, connect.NewError(connect.CodeAborted,
 				fmt.Errorf("%s %s is at resource version %d, not %d", b.r.Kind, key.Name, cur.Revision, *expected))
@@ -628,6 +643,9 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 			return nil, apiError(err)
 		}
 		object.Meta(obj).ResourceVersion = rev
+		if p.Type == auth.Node && b.r.Kind == registry.Node.Kind {
+			b.s.heartbeats.record(key.Name, b.s.clock.Now())
+		}
 		return obj, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))

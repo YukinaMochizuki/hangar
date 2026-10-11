@@ -22,6 +22,18 @@ Hypervisor directly, without Kata or Kubernetes.
 - A `Container`'s root disk lives and dies with it: kept across restarts,
   rebuilt when the image changes. A `VirtualMachine`'s root disk is a durable
   `Disk`.
+- `Machine` is project-scoped and owned by the object it was made from, so
+  garbage collection, tenant isolation and quotas need nothing new. Users can
+  read their machines (it is where placement and boot failures show) but never
+  write them: `Machine` and `Node` are system-managed kinds, whose spec only the
+  apiserver writes, whatever role the caller holds.
+- `Node` is a global kind, one per host. The apiserver creates it for each node
+  agent it is configured to accept; the agent only reports status (capacity,
+  heartbeat), and the apiserver marks a node `Ready=Unknown` when the reports
+  stop, timing them on its own clock so host clock skew cannot fake or hide
+  silence. A node agent writes the status of its own `Node` and of the
+  machines placed on it. `Machine.spec.node` is set once and never changes;
+  moving a machine means a new one.
 
 ## Consequences
 

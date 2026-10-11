@@ -39,6 +39,8 @@ controllers, and the node, which runs as a separate process.
 - **Status is a subresource.** Every kind has an `Update<Kind>Status` RPC that
   only system principals (the node, controllers) may call. Users can never
   write status, and system writers never write spec.
+- **System-managed kinds** (`Machine`, `Node`) have their spec written only by
+  the apiserver's own controllers. People may at most read them.
 
 ## Consequences
 

@@ -49,7 +49,10 @@ cloud, and some people fund the hardware and should see more of it.
   A binding's scope is immutable: it belongs to that tenant or project.
 - A tenant's `plan` is set by platform administrators only.
 - `Update<Kind>Status` is granted by no role, not even `platform.root`: only
-  the node and the apiserver itself write status.
+  the node and the apiserver itself write status. A node agent writes the
+  status of its own `Node` and of the machines placed on it.
+- No role grants apply or delete on system-managed kinds (`Machine`, `Node`);
+  see `docs/decisions/apply-semantics.md`.
 - **Sponsors** (people who fund the hardware) get `platform.sponsor`: aggregated
   platform data only (node capacity and utilization, per-tenant usage totals,
   cost and traffic), never the contents of other tenants' resources.

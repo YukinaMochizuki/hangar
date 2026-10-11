@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/compute/v1alpha1/container.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Machine is one microVM as the node runs it. Controllers create machines from
+// the user-facing kinds that run as microVMs; users can read them but never
+// write them. See docs/decisions/machine-model.md.
+message Machine {
+  option (hangar.meta.v1.resource) = {
+    kind: "Machine"
+    plural: "machines"
+    short_names: ["mc"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  MachineSpec spec = 4;
+  MachineStatus status = 5;
+}
+
+// MachineSpec is what the node should run.
+message MachineSpec {
+  // Names the Node that runs the machine. Empty until the scheduler places it;
+  // once set it never changes.
+  string node = 1;
+  Resources resources = 2;
+  MachineRunState run_state = 3;
+  // How the machine boots.
+  oneof boot {
+    ContainerBoot container = 10;
+  }
+  repeated MachineInterface interfaces = 20;
+  RestartPolicy restart_policy = 21;
+}
+
+// ContainerBoot boots an OCI image as the root disk, with hangar-init as PID 1
+// running the image's process.
+message ContainerBoot {
+  // OCI image reference, as the user gave it.
+  string image = 1;
+  // Overrides the image entrypoint.
+  repeated string command = 2;
+  // Overrides the image command.
+  repeated string args = 3;
+  repeated EnvVar env = 4;
+}
+
+// MachineInterface is one network interface of the machine.
+message MachineInterface {
+  // DNS-1123 label, unique within the machine.
+  string name = 1;
+  // Names a network in the machine's project.
+  string network = 2;
+}
+
+// MachineRunState is whether the machine should be running.
+enum MachineRunState {
+  // Rejected: controllers always choose.
+  MACHINE_RUN_STATE_UNSPECIFIED = 0;
+  MACHINE_RUN_STATE_RUNNING = 1;
+  MACHINE_RUN_STATE_STOPPED = 2;
+}
+
+// MachineStatus is what the node and the scheduler observed.
+message MachineStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  MachinePhase phase = 3;
+  // Digest of the image the root disk was built from.
+  string image_digest = 4;
+  // When the running instance booted.
+  google.protobuf.Timestamp boot_time = 5;
+}
+
+// MachinePhase is where the machine is in its lifecycle.
+enum MachinePhase {
+  // Nothing has reported on the machine yet.
+  MACHINE_PHASE_UNSPECIFIED = 0;
+  // Accepted, not yet placed on a node or not yet picked up by it.
+  MACHINE_PHASE_PENDING = 1;
+  // The node is building its disk or booting it.
+  MACHINE_PHASE_CREATING = 2;
+  MACHINE_PHASE_RUNNING = 3;
+  MACHINE_PHASE_STOPPED = 4;
+  MACHINE_PHASE_FAILED = 5;
+  // Memory saved to disk, not running. Reserved for snapshots.
+  MACHINE_PHASE_SUSPENDED = 6;
+}
+
+// MachineService exposes machines. Only the system may apply or delete them.
+service MachineService {
+  rpc GetMachine(GetMachineRequest) returns (GetMachineResponse);
+  rpc ListMachines(ListMachinesRequest) returns (ListMachinesResponse);
+  rpc WatchMachines(WatchMachinesRequest) returns (stream WatchMachinesResponse);
+  rpc ApplyMachine(ApplyMachineRequest) returns (ApplyMachineResponse);
+  rpc DeleteMachine(DeleteMachineRequest) returns (DeleteMachineResponse);
+  rpc UpdateMachineStatus(UpdateMachineStatusRequest) returns (UpdateMachineStatusResponse);
+}
+
+message GetMachineRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetMachineResponse {
+  Machine machine = 1;
+}
+
+message ListMachinesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListMachinesResponse {
+  repeated Machine items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchMachinesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchMachinesResponse {
+  hangar.meta.v1.EventType type = 1;
+  Machine machine = 2;
+  int64 revision = 3;
+}
+
+message ApplyMachineRequest {
+  Machine machine = 1;
+}
+
+message ApplyMachineResponse {
+  Machine machine = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteMachineRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteMachineResponse {
+  Machine machine = 1;
+}
+
+message UpdateMachineStatusRequest {
+  string project = 1;
+  string name = 2;
+  MachineStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateMachineStatusResponse {
+  Machine machine = 1;
+}

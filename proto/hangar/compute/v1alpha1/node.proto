@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Node is a host that runs machines. The apiserver creates one for each node
+// agent it is configured to accept; the agent reports its status. Only the
+// system writes nodes, and only platform administrators read them.
+message Node {
+  option (hangar.meta.v1.resource) = {
+    kind: "Node"
+    plural: "nodes"
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  NodeSpec spec = 4;
+  NodeStatus status = 5;
+}
+
+// NodeSpec is how the platform wants the node used.
+message NodeSpec {
+  // Keeps the scheduler from placing new machines on the node. Machines
+  // already there keep running.
+  bool unschedulable = 1;
+}
+
+// NodeStatus is what the node agent reports, plus the Ready condition the
+// apiserver turns Unknown when the reports stop. The apiserver judges silence
+// by when it received reports, on its own clock, never by
+// last_heartbeat_time.
+message NodeStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // Everything the host has.
+  NodeResources capacity = 3;
+  // What is left for machines after the host's own needs.
+  NodeResources allocatable = 4;
+  // When the agent last reported, by the agent's clock.
+  google.protobuf.Timestamp last_heartbeat_time = 5;
+  // Version of the node agent.
+  string agent_version = 6;
+}
+
+// NodeResources is an amount of compute.
+message NodeResources {
+  int32 vcpus = 1;
+  int64 memory_mib = 2;
+}
+
+// NodeService exposes nodes. Only the system may apply or delete them.
+service NodeService {
+  rpc GetNode(GetNodeRequest) returns (GetNodeResponse);
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse);
+  rpc WatchNodes(WatchNodesRequest) returns (stream WatchNodesResponse);
+  rpc ApplyNode(ApplyNodeRequest) returns (ApplyNodeResponse);
+  rpc DeleteNode(DeleteNodeRequest) returns (DeleteNodeResponse);
+  rpc UpdateNodeStatus(UpdateNodeStatusRequest) returns (UpdateNodeStatusResponse);
+}
+
+message GetNodeRequest {
+  string name = 1;
+}
+
+message GetNodeResponse {
+  Node node = 1;
+}
+
+message ListNodesRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListNodesResponse {
+  repeated Node items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchNodesRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchNodesResponse {
+  hangar.meta.v1.EventType type = 1;
+  Node node = 2;
+  int64 revision = 3;
+}
+
+message ApplyNodeRequest {
+  Node node = 1;
+}
+
+message ApplyNodeResponse {
+  Node node = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteNodeRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteNodeResponse {
+  Node node = 1;
+}
+
+message UpdateNodeStatusRequest {
+  string name = 1;
+  NodeStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateNodeStatusResponse {
+  Node node = 1;
+}
