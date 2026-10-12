@@ -49,7 +49,9 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     file it rotates to, so whichever files a read finds, it numbers boots
     alike. The guest's own `Boot` records are dropped as any unknown stream
     is, so the numbering cannot be forged. A boot that ends with no exit
-    recorded, as in a crash, gets an exit of 253 from the launcher.
+    recorded, as in a crash or a guest killed when it is stopped, gets an
+    exit of 253 from the launcher in its log (never in `exit.json`), so
+    every boot's log ends with an exit.
   - A follow ends with the call, or once the VM, seen running, has exited for
     good or is stopped. It reads through rotations, the file rotated between
     included when the log rotates twice between two reads; a third rotation

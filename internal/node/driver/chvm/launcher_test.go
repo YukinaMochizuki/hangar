@@ -385,6 +385,29 @@ func TestTheLauncherStops(t *testing.T) {
 	if g := l.Guest.(*launcherGuest).asked(); len(g) != 0 {
 		t.Errorf("the guest was asked to stop again: %v", g)
 	}
+	logEndsWith(t, dir, ExitNoRecord)
+}
+
+// logEndsWith checks that the console log's last record is an exit with
+// code.
+func logEndsWith(t *testing.T, dir string, code int32) {
+	t.Helper()
+	recs := records(t, filepath.Join(dir, ConsoleLog))
+	if len(recs) == 0 {
+		t.Fatal("the console log is empty")
+	}
+	if st, err := console.ExitOf(recs[len(recs)-1]); err != nil || st.Code != code {
+		t.Errorf("the console log ends with %+v %v, want an exit with %d", recs[len(recs)-1], err, code)
+	}
+	n := 0
+	for _, r := range recs {
+		if r.Stream == console.Exit {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d exits in the console log of one boot", n)
+	}
 }
 
 // stopBySystemd runs the launcher and stops it, as systemd does, once its
@@ -451,6 +474,7 @@ func TestTheLauncherStopsTheGuestForSystemd(t *testing.T) {
 	if r, ok := exitOf(t, dir); ok {
 		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
 	}
+	logEndsWith(t, dir, 0)
 }
 
 // TestTheLauncherKillsAGuestThatStaysUp: a guest that takes the stop but
@@ -469,6 +493,8 @@ func TestTheLauncherKillsAGuestThatStaysUp(t *testing.T) {
 	if r, ok := exitOf(t, dir); ok {
 		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
 	}
+	// Killed, it recorded no exit, so the launcher's ends its log.
+	logEndsWith(t, dir, ExitNoRecord)
 
 	l, dir = launcherDir(t, "m1", "hang")
 	l.KillGrace = 100 * time.Millisecond

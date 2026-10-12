@@ -264,14 +264,17 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 				<-waited
 			}
 		}
-		_, _ = l.drain(consoleDone)
+		// The log, not exit.json: a stop is no exit to the driver.
+		if st, drained := l.drain(consoleDone); st == nil && drained {
+			noExit(clog)
+		}
 		l.Log.Info("vmm: stopped", "machine_uid", uid)
 		return -1, nil
 	case err := <-waited:
 		st, drained := l.drain(consoleDone)
 		code := exitCode(st)
-		if st == nil && drained { // so the log shows every exit, a crash's too
-			_, _ = clog.Write(console.AppendRecord(nil, console.ExitRecord(console.ExitStatus{Code: ExitNoRecord}, time.Now())))
+		if st == nil && drained {
+			noExit(clog)
 		}
 		rec := exitRecord{Code: code, Started: started, Ended: time.Now()}
 		if st != nil {
@@ -307,6 +310,13 @@ func (l *Launcher) stopGuest(uid string, ln launch, waited <-chan error) bool {
 		l.Log.Error("vmm: the guest did not power off in its grace", "machine_uid", uid)
 		return false
 	}
+}
+
+// noExit ends a boot whose guest recorded no exit, as a crash or a kill
+// leaves it, with an exit of ExitNoRecord in the console log, so the log
+// shows every boot's end.
+func noExit(clog *cappedLog) {
+	_, _ = clog.Write(console.AppendRecord(nil, console.ExitRecord(console.ExitStatus{Code: ExitNoRecord}, time.Now())))
 }
 
 // markBoot numbers this boot in the console log, one past the last there,
