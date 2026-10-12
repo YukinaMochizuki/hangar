@@ -59,7 +59,8 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   process prints. `tenant.owner` and `platform.root` hold it; a sponsor does
   not.
 - **What the console holds is the tenant's**, so every read is bounded: a
-  record holds at most 64 KiB, a tail keeps back at most 4 MiB, batches are
+  record holds at most 64 KiB, a tail keeps back at most 4 MiB of memory,
+  each record counted with what it takes beyond its data, batches are
   about 256 KiB, a message from a node at most 1 MiB, and the reader holds at
   most a record and a read of a file, whatever is in it. Bytes that are no
   record are skipped; forged records garble only the container's own log.

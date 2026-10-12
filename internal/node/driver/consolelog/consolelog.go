@@ -1,14 +1,15 @@
 // Package consolelog turns a VM's console records, read in order, into
 // what a read of its log sends (driver.Hypervisor.ReadLog): boots numbered
 // by the host's Boot records, records older than Since dropped, and only
-// the last lines kept for a tail, within driver.MaxLogTail. Reading the
-// records is each hypervisor driver's own; this package holds what they
-// share, so they select alike.
+// the last lines kept for a tail, within driver.MaxLogTail of memory.
+// Reading the records is each hypervisor driver's own; this package holds
+// what they share, so they select alike.
 package consolelog
 
 import (
 	"bytes"
 	"math"
+	"unsafe"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -47,10 +48,10 @@ func (s *Selection) Add(rec console.Record) (driver.LogRecord, bool) {
 	}
 	s.tail = append(s.tail, r)
 	s.tailLines += lines(r)
-	s.tailBytes += len(r.Data)
+	s.tailBytes += cost(r)
 	for len(s.tail) > 1 && (s.tailLines-lines(s.tail[0]) >= s.opts.Tail || s.tailBytes > driver.MaxLogTail) {
 		s.tailLines -= lines(s.tail[0])
-		s.tailBytes -= len(s.tail[0].Data)
+		s.tailBytes -= cost(s.tail[0])
 		s.tail[0] = driver.LogRecord{}
 		s.tail = s.tail[1:]
 	}
@@ -102,6 +103,14 @@ func (s *Selection) convert(rec console.Record) (driver.LogRecord, bool) {
 	}
 	return r, true
 }
+
+// recordCost is what a record kept for a tail takes beyond its data: the
+// record itself, and the rounding of its data's allocation. Without it a
+// log of one-byte records would keep millions of them.
+const recordCost = int(unsafe.Sizeof(driver.LogRecord{})) + 16
+
+// cost is the memory a record kept for a tail counts as.
+func cost(r driver.LogRecord) int { return len(r.Data) + recordCost }
 
 // lines is how many lines a record counts as: an exit is one, and output
 // one per line, the last one even unfinished.

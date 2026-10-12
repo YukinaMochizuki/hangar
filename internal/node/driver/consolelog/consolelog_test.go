@@ -1,10 +1,12 @@
 package consolelog_test
 
 import (
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -118,6 +120,32 @@ func TestATailIsBoundedInBytes(t *testing.T) {
 	if total > driver.MaxLogTail || string(tail[len(tail)-1].Data) != "last\n" {
 		t.Errorf("kept %d bytes in %d records, ending %q", total, len(tail), tail[len(tail)-1].Data)
 	}
+}
+
+// TestATailOfTinyRecordsIsBoundedInMemory: a 32 MiB log of one-byte
+// records, unfinished lines all, keeps no more than MaxLogTail of records
+// for a tail, each counted with what it takes beyond its byte, and the
+// heap it holds stays within three times that.
+func TestATailOfTinyRecordsIsBoundedInMemory(t *testing.T) {
+	const n = 32 << 20 / 16 // a header of 15 bytes and one byte each
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	s := consolelog.New(driver.LogOptions{Tail: 1 << 40})
+	for i := range n {
+		s.Add(console.Record{Stream: console.Stdout, Time: at(i), Payload: []byte{'x'}})
+	}
+	tail := s.EndBacklog()
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	if most := driver.MaxLogTail / int(unsafe.Sizeof(driver.LogRecord{})); len(tail) > most {
+		t.Errorf("kept %d records, more than %d", len(tail), most)
+	}
+	if held := int64(after.HeapAlloc) - int64(before.HeapAlloc); held > 3*driver.MaxLogTail {
+		t.Errorf("the tail holds %d bytes of heap, past %d", held, 3*driver.MaxLogTail)
+	}
+	t.Logf("kept %d records in %d bytes of heap", len(tail), int64(after.HeapAlloc)-int64(before.HeapAlloc))
+	runtime.KeepAlive(tail)
 }
 
 // TestFollowingPassesEverythingOn: after the backlog, records are sent

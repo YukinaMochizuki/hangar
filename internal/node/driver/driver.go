@@ -248,8 +248,9 @@ type LogRecord struct {
 	Exit console.ExitStatus
 }
 
-// Bounds on what one read of a log holds: a batch, and what Tail keeps
-// back before sending. A record holds at most console.MaxPayload.
+// Bounds on what one read of a log holds: a batch, and the memory Tail
+// keeps back before sending, the records' own included. A record holds at
+// most console.MaxPayload.
 const (
 	MaxLogBatch = 256 << 10
 	MaxLogTail  = 4 << 20
