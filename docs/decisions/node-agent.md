@@ -37,9 +37,25 @@ with the host after any of these, and nothing would notice.
   image (resolving, pulling, making its base) can take minutes, so a puller
   does it off the lock, once per image however many machines want it; a
   machine waiting on its image says it is pulling, while the others are
-  built, stopped and deleted meanwhile. A job that stalls fails after a
-  timeout and is tried again, and asking a guest agent whether it answers is
-  bounded to seconds. One worker then serves every machine in turn; a step
+  built, stopped and deleted meanwhile. Fetching an image into the cache
+  takes no turn: a registry that stalls is given up within about half a
+  minute (no answer, or a body slower than 30 KiB in 30 s), and holds up no
+  other image. Unpacking it, the host's disk and CPU work, takes a turn: at
+  most `--max-pulls` images (two by default) are unpacked at once, the
+  others waiting in the order they came, saying they are pulling, and
+  giving up their turn if no machine wants them any more. Unpacking one
+  image takes at most `--max-unpack-work` steps of work (15M by default,
+  about 680,000 ordinary files; `storage-zfs.md`), past which it is too
+  large. A job that fails is tried again within a minute; one that timed
+  out (its own half hour, or a registry's stall) from a minute, twice as
+  long each time, up to half an hour. An image at fault (too large, or
+  holding what the host refuses to unpack, but not a cached blob the disk
+  failed to read, which is dropped and fetched again) is never unpacked
+  again: a pinned digest is not tried again until the machine names
+  another image, and a tag is resolved again, with the backoff, so an image
+  fixed and pushed under the same tag is pulled. Asking a guest agent
+  whether it answers is bounded to
+  seconds. One worker then serves every machine in turn; a step
   that turns slow later (such as a graceful shutdown) moves off the lock the
   same way.
 - **An image reference is resolved once**: the reference and its digest

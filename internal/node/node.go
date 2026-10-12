@@ -5,6 +5,7 @@
 package node
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/buildinfo"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
@@ -57,9 +59,20 @@ type Config struct {
 	// PullTimeout bounds preparing one image, so a stalled pull fails and
 	// is tried again. Zero means half an hour.
 	PullTimeout time.Duration
-	Clock       clockwork.Clock
-	Log         *slog.Logger
+	// MaxPulls bounds the images unpacked at once. Zero means
+	// DefaultMaxPulls.
+	MaxPulls int
+	// MaxUnpackWork bounds the work unpacking one image takes, in
+	// ocilayer's steps: the Images driver is built with it as
+	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
+	MaxUnpackWork int64
+	Clock         clockwork.Clock
+	Log           *slog.Logger
 }
+
+// DefaultMaxPulls is how many images a node prepares at once by default:
+// pulls and unpacks share the host's disks and CPUs with running machines.
+const DefaultMaxPulls = 2
 
 // Agent is a running node agent.
 type Agent struct {
@@ -106,13 +119,19 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
+	if cfg.MaxPulls == 0 {
+		cfg.MaxPulls = DefaultMaxPulls
+	}
+	if cfg.MaxPulls < 0 || cfg.MaxUnpackWork < 0 {
+		return nil, fmt.Errorf("max pulls %d and max unpack work %d cannot be negative", cfg.MaxPulls, cfg.MaxUnpackWork)
+	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
 	cfg.Log = cfg.Log.With("node", cfg.Name)
 	var puller *puller
 	if cfg.Drivers != nil {
-		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout)
+		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 	}
 	return &Agent{
 		cfg:        cfg,
@@ -265,6 +284,17 @@ func (a *Agent) report(ctx context.Context) error {
 	}
 	now := a.cfg.Clock.Now()
 	status.ObservedGeneration = n.GetMetadata().GetGeneration()
+	capacity = proto.Clone(capacity).(*computev1alpha1.NodeResources)
+	if d := a.cfg.Drivers; d != nil {
+		if c, err := d.Storage.Capacity(ctx); err == nil {
+			capacity.Disk = diskCapacity(c)
+		} else {
+			// A failed read keeps what was last reported rather than fail
+			// the heartbeat, or none before: no disk, not an unchecked one.
+			capacity.Disk = cmp.Or(n.GetStatus().GetCapacity().GetDisk(), quantity.FormatDisk(0))
+			a.cfg.Log.Warn("reading the storage's capacity", "error", err)
+		}
+	}
 	status.Capacity = capacity
 	if status.Allocatable, err = allocatable(capacity, a.cfg.Reserved); err != nil {
 		return fmt.Errorf("reading the host's resources: %w", err)

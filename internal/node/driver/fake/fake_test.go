@@ -18,13 +18,15 @@ func TestConformance(t *testing.T) {
 		published := 0
 		return drivertest.Host{
 			Images: h.Images(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest(),
-			Publish: func(_ *testing.T, ref string) string {
+			Publish: func(_ *testing.T, name string) (string, string) {
 				published++
 				digest := fmt.Sprintf("sha256:%d", published)
-				h.AddImage(ref, digest, driver.ImageConfig{Cmd: []string{"true"}})
-				return digest
+				h.AddImage(name, digest, driver.ImageConfig{Cmd: []string{"true"}})
+				return name, digest
 			},
 			Withdraw: func(_ *testing.T, ref string) { h.FailPull(ref, errors.New("registry down")) },
+			Reopen:   func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },
+			Hold:     func(_ *testing.T, d driver.Disk) func() { return h.HoldDisk(d.MachineUID) },
 			Exit: func(t *testing.T, machineUID string, code int) {
 				if err := h.Exit(machineUID, code); err != nil {
 					t.Fatal(err)

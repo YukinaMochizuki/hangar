@@ -213,8 +213,15 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 			return nil, blocked(computeapi.ReasonDiskFailed, err)
 		}
 	}
-	root, err := d.Storage.EnsureRoot(ctx, uid, digest)
+	size, err := diskSize(m.GetSpec().GetResources())
 	if err != nil {
+		return nil, blocked(computeapi.ReasonDiskFailed, err)
+	}
+	root, err := d.Storage.EnsureRoot(ctx, uid, digest, size)
+	switch {
+	case errors.Is(err, driver.ErrDiskTooSmall):
+		return nil, blocked(computeapi.ReasonDiskTooSmall, err)
+	case err != nil:
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
 
