@@ -9,8 +9,10 @@ create taps and an nftables table, and turn on IPv4 forwarding.
 | Path | What it tests |
 |---|---|
 | `test/testbed/guest/` | The platform kernel, initramfs and hangar-init under Cloud Hypervisor, driven as the node drives them: the boot disk (`internal/guest/bootdisk`), the framed console (`internal/guest/console`) and the guest agent over hybrid vsock (`internal/node/driver/chguest`). No node or driver code |
+| `test/testbed/disks/` | The image and storage drivers (`internal/node/driver/registry`, `zfsstore`) on the `hangar` pool: the conformance suite (`drivertest`) with decoy datasets about, Docker Hub pulls by tag and digest compared with the reference flattening, and a guest booting from a root disk larger than its image, its filesystem grown by hangar-init |
 | `test/testbed/internal/vmtest/` | Not tests: the harness that boots those guests, for any L4 package. A package calls `vmtest.Main` from its `TestMain`, then `vmtest.New`, `Start`, `Ready`, `Exec` |
 | `test/testbed/host-bootstrap.sh` | `deploy/host` on a VM made to look like a fresh OVH install (`docs/runbook/host-bootstrap.md`) |
+| `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file and `hangar/images`, as a host has them, for `test/testbed/disks` |
 
 ## Prepare a testbed VM
 
@@ -20,7 +22,7 @@ of memory and 20 GB of disk is enough. As a user with sudo:
 1. Packages for the kernel build, and nftables:
 
    ```sh
-   sudo apt-get install build-essential flex bison bc libelf-dev libssl-dev curl xz-utils git nftables
+   sudo apt-get install build-essential flex bison bc libelf-dev libssl-dev curl xz-utils git nftables zfsutils-linux e2fsprogs
    ```
 
 2. Go at the version in `go.mod`, from <https://go.dev/dl/>, on `PATH`.
@@ -28,6 +30,11 @@ of memory and 20 GB of disk is enough. As a user with sudo:
    checked against its sha256 there, installed as `cloud-hypervisor` on `PATH`.
 4. A checkout of the branch under test, then `make guest-kernel` (a few
    minutes; `docs/runbook/guest-kernel.md`).
+5. `sudo test/testbed/setup.sh`: the ZFS pool `hangar`, 24 GB on a sparse
+   file in `/var/tmp`, `hangar/images` with an 8 GB quota, and the udev
+   rules for zvols the `zfs` step of `deploy/host` installs. It is
+   idempotent; a VM that ran `test/testbed/host-bootstrap.sh` has the pool
+   already.
 
 ## Run
 
@@ -51,6 +58,20 @@ The guest tests need outbound internet access: Docker in a guest pulls
 172.31.N.2/24 behind its own tap, `hgtN`, at 172.31.N.1, NATed out by the
 nftables table `hangar_testbed_guest`; its disks and sockets are in
 `/var/tmp/hangar-testbed-guests/`. IPv4 forwarding is turned on and left on.
+
+`HANGAR_TESTBED_WORST_CASE=1` also runs `TestWorstCaseWork`, which streams
+layers built to cost the most into the image dataset at the default limits
+and logs how long and how much CPU each takes to end (minutes);
+`docs/decisions/storage-zfs.md` records what it measured.
+
+The disk tests pull `nginx`, `debian` and `busybox` from Docker Hub, by tag
+and by pinned digest. What the image driver unpacks is compared, entry by
+entry, with go-containerregistry's `mutate.Extract` (what `crane export`
+writes), except for device nodes, which the host never makes, and symlinks
+climbing out of the root, which Extract drops. Each test works in a
+dataset of its own under `hangar/testbed-disks`, with decoy datasets the drivers must leave alone,
+and in `/var/lib/hangar/images/testbed-disks`; both are removed as the test
+ends, and swept at the start of the next run if a run was killed.
 
 A run leaves nothing else behind. Guests die with the test binary
 (`Pdeathsig`), and taps with their guests. The table and the directories
