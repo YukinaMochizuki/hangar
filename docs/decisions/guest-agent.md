@@ -54,7 +54,8 @@ to boot again.
   ends by itself. It answers once SIGTERM is sent; a stop asked for before
   the process starts applies as it starts. The node gives 10 seconds for
   now, and kills the VM if the guest is not off a few seconds after; a
-  `stopGracePeriod` field may come later.
+  `stopGracePeriod` field may come later. A VM's launcher asks the same
+  when the host shuts down (`node-agent.md`).
 - **The platform provides `/etc/hostname`, `/etc/hosts` and
   `/etc/resolv.conf`** as Docker does: written to `/run/hangar` and mounted
   over the image's files, so the image's own are never written. The

@@ -58,6 +58,31 @@ const (
 	ExitFailed = 252
 )
 
+// How long each step of a stop may take. A stop asks the guest to stop its
+// process (stopAsk), waits for the guest to power off (the grace and the
+// slack), then stops Cloud Hypervisor (killGrace) and reads the rest of
+// its console (drainWait).
+const (
+	// DefaultStopSlack is how much longer than the grace a guest has to
+	// power off, unless Config.StopSlack says otherwise.
+	DefaultStopSlack = 5 * time.Second
+	// stopAsk bounds asking the guest to stop: a guest that does not take
+	// the stop within it is killed at once.
+	stopAsk = 3 * time.Second
+	// killGrace is how long Cloud Hypervisor has to exit once SIGTERMed
+	// before it is killed, unless Launcher.KillGrace says otherwise.
+	killGrace = 2 * time.Second
+	// drainWait bounds reading the console once Cloud Hypervisor exits.
+	drainWait = 5 * time.Second
+)
+
+// stopTimeout is the unit's TimeoutStopSec: a stop of the unit by
+// systemd, as at host shutdown, takes each step of a stop at its longest,
+// so systemd never kills the launcher before the guest has had its grace.
+func stopTimeout(grace, slack time.Duration) time.Duration {
+	return stopAsk + grace + slack + killGrace + drainWait
+}
+
 // launch is the spec file: the VM and what the launcher starts it with.
 type launch struct {
 	Spec driver.VMSpec
@@ -67,6 +92,22 @@ type launch struct {
 	Kernel          string
 	Initramfs       string
 	Cmdline         string
+	// StopGrace and StopSlack are the driver's Config.StopGrace and
+	// StopSlack, which the launcher gives a guest when systemd stops it;
+	// zero, as in a spec written before they were, means the defaults.
+	StopGrace, StopSlack time.Duration `json:",omitempty"`
+}
+
+// stopTimes are the grace and the slack the launch gives a guest to stop.
+func (l launch) stopTimes() (grace, slack time.Duration) {
+	grace, slack = l.StopGrace, l.StopSlack
+	if grace <= 0 {
+		grace = driver.StopGrace
+	}
+	if slack <= 0 {
+		slack = DefaultStopSlack
+	}
+	return grace, slack
 }
 
 // exitRecord is the exit file.
@@ -88,6 +129,10 @@ type exitRecord struct {
 const unitPrefix = "hangar-vm-"
 
 func unitName(uid string) string { return unitPrefix + uid + ".service" }
+
+// agentUnit is the node agent's unit as deploy/host installs it, which the
+// VMs' units are ordered before so that a shutdown stops the agent first.
+const agentUnit = "hangar-node.service"
 
 // uidOfUnit returns the machine uid a unit's name is for, if it is one of
 // the driver's names.

@@ -49,7 +49,9 @@ type Config struct {
 	// SIGKILL; zero means driver.StopGrace.
 	StopGrace time.Duration
 	// StopSlack is how much longer than StopGrace a guest has to power off
-	// before its VM is killed; zero means 5 seconds.
+	// before its VM is killed; zero means DefaultStopSlack. A VM keeps
+	// both as it was started with: its launcher gives its guest the same
+	// when systemd stops it, as at host shutdown.
 	StopSlack time.Duration
 
 	// systemd and guest, if set, replace systemd over D-Bus and the
@@ -75,7 +77,7 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 		cfg.StopGrace = driver.StopGrace
 	}
 	if cfg.StopSlack == 0 {
-		cfg.StopSlack = 5 * time.Second
+		cfg.StopSlack = DefaultStopSlack
 	}
 	if !filepath.IsAbs(cfg.Dir) || filepath.Clean(cfg.Dir) != cfg.Dir {
 		return nil, fmt.Errorf("the VMs' directory %q is not a clean absolute path", cfg.Dir)
@@ -316,6 +318,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	b, err := json.Marshal(launch{
 		Spec: spec, Hash: hash, CloudHypervisor: h.cfg.CloudHypervisor,
 		Kernel: h.cfg.Kernel, Initramfs: h.cfg.Initramfs, Cmdline: h.cfg.Cmdline,
+		StopGrace: h.cfg.StopGrace, StopSlack: h.cfg.StopSlack,
 	})
 	if err != nil {
 		return err
@@ -324,7 +327,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		return err
 	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, uid)
-	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart)); err != nil {
+	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack))); err != nil {
 		return fmt.Errorf("starting %s: %w", unitName(uid), err)
 	}
 	return nil
@@ -440,7 +443,7 @@ func (h *Hypervisor) Stop(ctx context.Context, uid string) error {
 // power off, for the grace period and the slack; it returns at once if the
 // guest does not take the stop.
 func (h *Hypervisor) stopGuest(ctx context.Context, uid string) {
-	gctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	gctx, cancel := context.WithTimeout(ctx, stopAsk)
 	err := h.guest.Stop(gctx, uid, h.cfg.StopGrace)
 	cancel()
 	if err != nil {
