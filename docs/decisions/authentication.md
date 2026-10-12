@@ -27,7 +27,9 @@ separate root process on the same host.
 - **The node** connects over a unix socket and is identified by `SO_PEERCRED`;
   the socket belongs to one host, so the agent acts as the `Node` named by the
   apiserver's `--node-name`. An mTLS authenticator, carrying the node name in
-  the certificate, joins the chain when there is more than one host.
+  the certificate, joins the chain when there is more than one host. The
+  tunnel the agent opens on the socket, over which the apiserver calls it,
+  is that node by the same authentication (`node-tunnel.md`).
 - **Dev mode** takes the user from a header. It must be enabled explicitly and
   refuses to start on a non-loopback address.
 - Controllers run in-process as the System principal.
