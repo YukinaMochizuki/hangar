@@ -74,6 +74,12 @@ func (n *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/hello":
 		_, _ = fmt.Fprintf(w, "hello over %s", r.Proto)
+	case "/until-stopped":
+		n.streams.Add(1)
+		defer n.streams.Add(-1)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		_, _ = io.WriteString(w, "the agent is stopping")
 	case "/stream":
 		n.streams.Add(1)
 		defer n.streams.Add(-1)
@@ -100,13 +106,19 @@ type agent struct {
 
 func startAgent(t *testing.T, a *apiserver, handler http.Handler, dial func(context.Context) (net.Conn, error)) *agent {
 	t.Helper()
+	return startAgentLive(t, a, handler, dial, fast)
+}
+
+// startAgentLive is startAgent with the agent's liveness live.
+func startAgentLive(t *testing.T, a *apiserver, handler http.Handler, dial func(context.Context) (net.Conn, error), live tunnel.Liveness) *agent {
+	t.Helper()
 	ag := &agent{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		(&tunnel.Agent{
-			Dial: dial, Handler: handler, Liveness: fast,
+			Dial: dial, Handler: handler, Liveness: live,
 			MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
 			Opened: func() { ag.opened.Add(1) },
 		}).Run(ctx)
@@ -194,6 +206,32 @@ func TestARoundTrip(t *testing.T) {
 	hello(t, tun)
 }
 
+// TestAStoppingAgentLetsItsCallsAnswer: an agent stopping ends its calls,
+// and their answers reach the apiserver before the tunnel closes.
+func TestAStoppingAgentLetsItsCallsAnswer(t *testing.T) {
+	noLeaks(t)
+	a := newAPIServer(t)
+	n := &node{}
+	ag := startAgent(t, a, n, a.dial)
+	tun := tunnelOf(t, a)
+	resp, err := tun.HTTPClient().Get("http://node/until-stopped")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	eventually(t, "the call begun", 5*time.Second, func() bool { return n.streams.Load() == 1 })
+	go ag.stop()
+	b, err := io.ReadAll(resp.Body)
+	if err != nil || string(b) != "the agent is stopping" {
+		t.Errorf("the call's answer: %q %v", b, err)
+	}
+	select {
+	case <-tun.Done():
+	case <-time.After(5 * time.Second):
+		t.Error("the tunnel stayed open after the agent stopped")
+	}
+}
+
 func TestNoTunnel(t *testing.T) {
 	a := newAPIServer(t)
 	if _, err := a.hub.Node("n1"); !errors.Is(err, tunnel.ErrNoTunnel) {
@@ -265,6 +303,8 @@ func TestCancellingACallEndsItOnTheNode(t *testing.T) {
 // that does not say so.
 type blackHole struct {
 	net.Conn
+	// readsOnly, once cut, drops only what comes from the apiserver.
+	readsOnly bool
 	cut    chan struct{}
 	once   sync.Once
 	closed chan struct{}
@@ -290,6 +330,9 @@ func (b *blackHole) Read(p []byte) (int, error) {
 func (b *blackHole) Write(p []byte) (int, error) {
 	select {
 	case <-b.cut:
+		if b.readsOnly {
+			return b.Conn.Write(p)
+		}
 		return len(p), nil
 	default:
 		return b.Conn.Write(p)
@@ -363,6 +406,43 @@ func TestAPingUnansweredDropsTheTunnel(t *testing.T) {
 	eventually(t, "the agent opened another tunnel", 5*time.Second, func() bool { return ag.opened.Load() >= 2 })
 	eventually(t, "the node's call ended", 5*time.Second, func() bool { return n.streams.Load() == 0 })
 	hello(t, tunnelOf(t, a))
+}
+
+// TestTheApiserversPingDropsADeadTunnel: what the apiserver sends no
+// longer reaching the agent, and the agent pinging only after an hour, the
+// apiserver's own ping drops the tunnel within its liveness.
+func TestTheApiserversPingDropsADeadTunnel(t *testing.T) {
+	noLeaks(t)
+	a := newAPIServer(t)
+	var hole *blackHole
+	var mu sync.Mutex
+	startAgentLive(t, a, &node{}, func(ctx context.Context) (net.Conn, error) {
+		c, err := a.dial(ctx)
+		if err != nil {
+			return nil, err
+		}
+		b := &blackHole{Conn: c, readsOnly: true, cut: make(chan struct{}), closed: make(chan struct{})}
+		mu.Lock()
+		if hole == nil {
+			hole = b
+		}
+		mu.Unlock()
+		return b, nil
+	}, tunnel.Liveness{Idle: time.Hour, Timeout: time.Hour})
+	tun := tunnelOf(t, a)
+	hello(t, tun)
+	mu.Lock()
+	hole.once.Do(func() { close(hole.cut) })
+	mu.Unlock()
+	start := time.Now()
+	select {
+	case <-tun.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the apiserver never dropped the dead tunnel")
+	}
+	if took, bound := time.Since(start), 3*(fast.Idle+fast.Timeout); took > bound {
+		t.Errorf("dropped after %v, past %v", took, bound)
+	}
 }
 
 // TestANewerTunnelReplacesTheOlder: a node opening a tunnel again, as a
