@@ -192,7 +192,12 @@ func windowSize(s *nodev1.WindowSize) driver.WindowSize {
 func execResponse(out driver.ExecOutput) *nodev1.ExecResponse {
 	switch {
 	case out.Exit != nil:
-		return &nodev1.ExecResponse{Message: &nodev1.ExecResponse_Exit{Exit: &nodev1.ExitStatus{Code: out.Exit.Code, Signal: out.Exit.Signal}}}
+		// The guest's claim: no process exits with more than 255.
+		code := out.Exit.Code
+		if code < 0 || code > 255 {
+			code = 255
+		}
+		return &nodev1.ExecResponse{Message: &nodev1.ExecResponse_Exit{Exit: &nodev1.ExitStatus{Code: code, Signal: out.Exit.Signal}}}
 	case out.Stderr:
 		return &nodev1.ExecResponse{Message: &nodev1.ExecResponse_Stderr{Stderr: out.Data}}
 	}

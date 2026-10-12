@@ -338,12 +338,9 @@ type Guest interface {
 	// SIGKILL after grace. The guest powers off once the process has ended;
 	// Stop returns once the process is signalled, not when it ends.
 	Stop(ctx context.Context, machineUID string, grace time.Duration) error
-	// Exec runs a process in the machine's guest beside its container's,
-	// until the process ends or ctx does: ending ctx kills the process's
-	// group in the guest. A guest that cannot be reached, or refuses the
-	// process, fails the session's Recv. A program that cannot run is no
-	// error: it ends as in a shell, with 127 if it is not found and 126
-	// otherwise.
+	// Exec runs a process in the machine's guest, until it ends or ctx
+	// does, which kills its group. A guest out of reach fails Recv; a
+	// program that cannot run exits 127 or 126, as in a shell.
 	Exec(ctx context.Context, machineUID string, spec ExecSpec) (ExecSession, error)
 }
 

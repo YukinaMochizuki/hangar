@@ -270,3 +270,16 @@ func TestAVMGoingEndsItsExecs(t *testing.T) {
 		t.Errorf("an exec whose guest restarted: %+v", r)
 	}
 }
+
+// TestAnExitCodeOutOfRangeIs255: what a guest says no process can exit
+// with is passed on as 255.
+func TestAnExitCodeOutOfRangeIs255(t *testing.T) {
+	host, c := execNode(t)
+	runVM(t, host, "m1", driver.RunSpec{Command: []string{"wait", "main"}})
+	for _, code := range []string{"300", "-1", "255"} {
+		r := nodeExec(t, t.Context(), c, &nodev1.ExecStart{MachineUid: "m1", Args: []string{"exit", code}})
+		if r.err != nil || r.exit.GetCode() != 255 {
+			t.Errorf("exit %s: %+v", code, r)
+		}
+	}
+}
