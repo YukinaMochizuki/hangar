@@ -36,14 +36,9 @@ zfs_udev_unprobed() {
 	return 0
 }
 
-# Each entry is DATASET:MOUNTPOINT:PROPERTIES:MODE. PROPERTIES are
-# comma-separated zfs properties; MODE, when set, is that of the mount point,
-# which is then root's (the services step owns hangar/state's).
-# hangar/poc holds throwaway experiments and is never mounted; volumes under
-# it are reached as /dev/zvol paths. hangar/images and hangar/vms hold tenant
-# content (images, VMs' disks and console logs), so nothing on them runs, and
-# each has a quota so it never takes the room root disks need. hangar/vms
-# outlives a reboot: the node reads each VM's spec.json and exit.json after one.
+# Each entry is DATASET:MOUNTPOINT:PROPERTIES(comma-separated):MODE, MODE that
+# of the mount point, then root's. What each dataset is for:
+# docs/runbook/host-bootstrap.md.
 zfs_datasets() {
 	printf '%s\n' \
 		"$HANGAR_ZPOOL/state:/var/lib/hangar/state::" \

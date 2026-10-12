@@ -76,7 +76,10 @@ with `--release DIR`. `--only <step>` runs a single step
   `hangar/vms` (`/var/lib/hangar/vms`, `setuid=off exec=off`, quota
   `HANGAR_VMS_QUOTA`), both mount points `0700` and root's, mounted by
   `zfs-mount.service` at boot. `hangar/vms` must outlive a reboot: the node
-  reads each VM's `spec.json` and `exit.json` after one.
+  reads each VM's `spec.json` and `exit.json` after one. It also keeps
+  `hangar/state` at `/var/lib/hangar/state` (the `services` step owns its
+  mount point) and `hangar/poc`, for throwaway experiments, never mounted:
+  volumes under it are reached as `/dev/zvol` paths.
 - `upgrades` keeps Ubuntu's unattended upgrades to their default origins
   (security only), never reboots, and moves `apt-daily.timer` to 03:30 and
   `apt-daily-upgrade.timer` to 04:00 Asia/Singapore, with no random delay
