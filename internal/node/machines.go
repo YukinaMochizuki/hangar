@@ -228,11 +228,15 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	}
 	a.netChecked[uid] = epoch
 
+	vcpus, memoryMiB, err := vmSize(m.GetSpec().GetResources())
+	if err != nil {
+		return nil, blocked(computeapi.ReasonBootFailed, err)
+	}
 	spec := driver.VMSpec{
 		MachineUID: uid,
 		Machine:    m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
-		VCPUs:      m.GetSpec().GetResources().GetVcpus(),
-		MemoryMiB:  m.GetSpec().GetResources().GetMemoryMib(),
+		VCPUs:      vcpus,
+		MemoryMiB:  memoryMiB,
 		Root:       root,
 		Interfaces: ifaces,
 		Run:        runSpec(boot, image),

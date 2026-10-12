@@ -71,9 +71,9 @@ type Server struct {
 	backends map[string]*backend
 	// heartbeats is when each node agent was last heard from.
 	heartbeats heartbeats
-	// memory serializes every decision that reserves memory on a node:
+	// capacity serializes every decision that reserves memory or disk on a node:
 	// placing a machine, and growing a placed one.
-	memory sync.Mutex
+	capacity sync.Mutex
 	// ipam serializes every decision that hands out an address (a machine's
 	// interface addresses, a network's transit link) and the release of a
 	// network. Whoever holds both takes ipam first.

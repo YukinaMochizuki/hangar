@@ -425,11 +425,16 @@ func (x *ContainerPort) GetPublic() bool {
 	return false
 }
 
-// Resources sizes the microVM.
+// Resources sizes the microVM. Each field is a quantity in Kubernetes syntax,
+// such as "2", "512Mi" or "10Gi"; empty takes the default.
 type Resources struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Vcpus         int32                  `protobuf:"varint,1,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
-	MemoryMib     int64                  `protobuf:"varint,2,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Whole vCPUs: "2" or "2000m", never a fraction.
+	Cpu string `protobuf:"bytes,3,opt,name=cpu,proto3" json:"cpu,omitempty"`
+	// Guest memory, at least 128Mi.
+	Memory string `protobuf:"bytes,4,opt,name=memory,proto3" json:"memory,omitempty"`
+	// Root disk size, at least 1Gi. It can grow but never shrink.
+	Disk          string `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -464,18 +469,25 @@ func (*Resources) Descriptor() ([]byte, []int) {
 	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Resources) GetVcpus() int32 {
+func (x *Resources) GetCpu() string {
 	if x != nil {
-		return x.Vcpus
+		return x.Cpu
 	}
-	return 0
+	return ""
 }
 
-func (x *Resources) GetMemoryMib() int64 {
+func (x *Resources) GetMemory() string {
 	if x != nil {
-		return x.MemoryMib
+		return x.Memory
 	}
-	return 0
+	return ""
+}
+
+func (x *Resources) GetDisk() string {
+	if x != nil {
+		return x.Disk
+	}
+	return ""
 }
 
 // ContainerStatus is the observed state of a container.
@@ -1226,11 +1238,12 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12=\n" +
 	"\bprotocol\x18\x03 \x01(\x0e2!.hangar.compute.v1alpha1.ProtocolR\bprotocol\x12\x16\n" +
-	"\x06public\x18\x04 \x01(\bR\x06public\"@\n" +
-	"\tResources\x12\x14\n" +
-	"\x05vcpus\x18\x01 \x01(\x05R\x05vcpus\x12\x1d\n" +
-	"\n" +
-	"memory_mib\x18\x02 \x01(\x03R\tmemoryMib\"}\n" +
+	"\x06public\x18\x04 \x01(\bR\x06public\"h\n" +
+	"\tResources\x12\x10\n" +
+	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
+	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
+	"\x04disk\x18\x05 \x01(\tR\x04diskJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
+	"memory_mib\"}\n" +
 	"\x0fContainerStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

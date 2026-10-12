@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -33,7 +34,7 @@ func controlled(t *testing.T, nodes ...string) (*Server, context.Context, contex
 func nodeWithRoom(t *testing.T, s *Server, system context.Context, node string, memMiB int64) {
 	t.Helper()
 	status := &computev1alpha1.NodeStatus{
-		Capacity: &computev1alpha1.NodeResources{Vcpus: 8, MemoryMib: memMiB},
+		Capacity: &computev1alpha1.NodeResources{Cpu: "8", Memory: fmt.Sprintf("%dMi", memMiB)},
 		Conditions: []*metav1.Condition{{
 			Type: NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		}},
@@ -52,7 +53,7 @@ func applyCtr(t *testing.T, s *Server, user context.Context, c *computev1alpha1.
 
 func sized(name string, memMiB int64) *computev1alpha1.Container {
 	c := ctr(name)
-	c.Spec.Resources = &computev1alpha1.Resources{MemoryMib: memMiB}
+	c.Spec.Resources = &computev1alpha1.Resources{Memory: fmt.Sprintf("%dMi", memMiB)}
 	return c
 }
 
@@ -157,7 +158,7 @@ func TestAContainerGetsAMachine(t *testing.T) {
 		t.Errorf("finalizers %v", m.GetMetadata().GetFinalizers())
 	}
 	want := &computev1alpha1.MachineSpec{
-		Resources:     &computev1alpha1.Resources{Vcpus: defaultVCPUs, MemoryMib: defaultMemoryMiB},
+		Resources:     &computev1alpha1.Resources{Cpu: defaultCPU, Memory: defaultMemory, Disk: defaultDisk},
 		RunState:      computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
 		RestartPolicy: computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS,
 		Boot:          &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx"}},
@@ -202,7 +203,7 @@ func TestSchedulerPicksAReadyNodeWithRoom(t *testing.T) {
 	// big has 3584 MiB left, small 1024: 3800 fits nowhere.
 	applyCtr(t, s, user, sized("huge", 3800))
 	waitMachine(t, s, system, "ct-huge", "refused for lack of memory", func(m *computev1alpha1.Machine) bool {
-		return m.GetSpec().GetNode() == "" && scheduled(m).GetMessage() == "no ready node has 3800 MiB of memory free"
+		return m.GetSpec().GetNode() == "" && scheduled(m).GetMessage() == "no ready node has 3800Mi of memory free"
 	})
 
 	// A cordoned node takes nothing new.

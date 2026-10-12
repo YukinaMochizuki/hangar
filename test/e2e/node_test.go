@@ -77,7 +77,7 @@ func (w *world) startAgent() {
 		HTTP:    hc,
 		BaseURL: client.UnixSocketURL,
 		Host: func() (*computev1alpha1.NodeResources, error) {
-			return &computev1alpha1.NodeResources{Vcpus: 8, MemoryMib: 16384}, nil
+			return &computev1alpha1.NodeResources{Cpu: "8", Memory: "16Gi"}, nil
 		},
 		HeartbeatInterval: 50 * time.Millisecond,
 		SweepInterval:     100 * time.Millisecond,

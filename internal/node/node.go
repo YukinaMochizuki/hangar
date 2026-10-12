@@ -42,7 +42,8 @@ type Config struct {
 	BaseURL string
 	// Host reports what the host has. Defaults to reading this host.
 	Host func() (*computev1alpha1.NodeResources, error)
-	// Reserved is kept back from machines for the host itself.
+	// Reserved is kept back from machines for the host itself, in
+	// quantities.
 	Reserved *computev1alpha1.NodeResources
 	// HeartbeatInterval is how often the agent reports. The default of ten
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
@@ -89,6 +90,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Reserved == nil {
 		cfg.Reserved = &computev1alpha1.NodeResources{}
+	}
+	if _, err := readAmounts(cfg.Reserved); err != nil {
+		return nil, fmt.Errorf("reserved %w", err)
 	}
 	if cfg.HeartbeatInterval == 0 {
 		cfg.HeartbeatInterval = 10 * time.Second
@@ -262,7 +266,9 @@ func (a *Agent) report(ctx context.Context) error {
 	now := a.cfg.Clock.Now()
 	status.ObservedGeneration = n.GetMetadata().GetGeneration()
 	status.Capacity = capacity
-	status.Allocatable = allocatable(capacity, a.cfg.Reserved)
+	if status.Allocatable, err = allocatable(capacity, a.cfg.Reserved); err != nil {
+		return fmt.Errorf("reading the host's resources: %w", err)
+	}
 	status.LastHeartbeatTime = timestamppb.New(now)
 	status.AgentVersion = Version()
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
@@ -273,15 +279,6 @@ func (a *Agent) report(ctx context.Context) error {
 		Name: a.cfg.Name, Status: status,
 	}))
 	return err
-}
-
-// allocatable is what the host has less what it keeps for itself, never
-// below nothing.
-func allocatable(capacity, reserved *computev1alpha1.NodeResources) *computev1alpha1.NodeResources {
-	return &computev1alpha1.NodeResources{
-		Vcpus:     max(capacity.GetVcpus()-reserved.GetVcpus(), 0),
-		MemoryMib: max(capacity.GetMemoryMib()-reserved.GetMemoryMib(), 0),
-	}
 }
 
 // Version is the agent's build.

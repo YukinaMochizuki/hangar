@@ -68,10 +68,17 @@ enum RestartPolicy {
   RESTART_POLICY_NEVER = 3;
 }
 
-// Resources sizes the microVM.
+// Resources sizes the microVM. Each field is a quantity in Kubernetes syntax,
+// such as "2", "512Mi" or "10Gi"; empty takes the default.
 message Resources {
-  int32 vcpus = 1;
-  int64 memory_mib = 2;
+  reserved 1, 2;
+  reserved "vcpus", "memory_mib";
+  // Whole vCPUs: "2" or "2000m", never a fraction.
+  string cpu = 3;
+  // Guest memory, at least 128Mi.
+  string memory = 4;
+  // Root disk size, at least 1Gi. It can grow but never shrink.
+  string disk = 5;
 }
 
 // ContainerStatus is the observed state of a container.

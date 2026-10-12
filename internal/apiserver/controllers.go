@@ -17,6 +17,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
@@ -35,12 +36,6 @@ const (
 	ContainerReady = "Ready"
 	// DefaultNetwork is the network every container's machine joins.
 	DefaultNetwork = "default"
-)
-
-// Sizes a container gets when its spec leaves them out.
-const (
-	defaultVCPUs     = 1
-	defaultMemoryMiB = 512
 )
 
 func (s *Server) controllers() []*controller.Controller {
@@ -272,7 +267,10 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 // none), in line with the container. Every write is conditional on m.
 func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	meta := c.GetMetadata()
-	want := machineSpec(c.GetSpec())
+	want, err := machineSpec(c.GetSpec())
+	if err != nil {
+		return m, &blocked{"InvalidResources", err.Error()}
+	}
 	key := resource.Key{Project: meta.GetProject(), Name: machineName(meta.GetName())}
 	if m == nil {
 		// Addresses are chosen and written as one decision.
@@ -313,21 +311,30 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 	if err := s.assignAddresses(ctx, key.Project, m.GetSpec(), want); err != nil {
 		return m, err
 	}
+	was, err := heldBy(m.GetSpec().GetResources())
+	if err != nil {
+		return nil, fmt.Errorf("machine %s: %w", key.Name, err)
+	}
+	now, err := heldBy(want.GetResources())
+	if err != nil {
+		return nil, err
+	}
+	// A placed machine's disk never shrinks. Admission lets a container
+	// withdraw a growth its machine never got, so one that races the growth
+	// landing can ask for less than the machine has; the machine keeps its
+	// disk. An unplaced machine has no disk yet.
+	if want.GetNode() != "" && now.disk < was.disk {
+		want.Resources.Disk, now.disk = m.GetSpec().GetResources().GetDisk(), was.disk
+	}
 	if proto.Equal(want, m.GetSpec()) {
 		return m, nil
 	}
-	if node := want.GetNode(); node != "" && want.GetResources().GetMemoryMib() > m.GetSpec().GetResources().GetMemoryMib() {
+	if node := want.GetNode(); node != "" && (now.memory > was.memory || now.disk > was.disk) {
 		// The check and the write are one decision, as a placement is.
-		s.memory.Lock()
-		defer s.memory.Unlock()
-		free, err := s.freeMemory(ctx, node, resource.Key{Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName()})
-		if err != nil {
-			return nil, err
-		}
-		if want.GetResources().GetMemoryMib() > free {
-			return m, &blocked{"ResizeDoesNotFit", fmt.Sprintf(
-				"node %s has %d MiB free for this machine, not %d; the change is not applied",
-				node, free, want.GetResources().GetMemoryMib())}
+		s.capacity.Lock()
+		defer s.capacity.Unlock()
+		if err := s.resizeFits(ctx, node, key, was, now); err != nil {
+			return m, err
 		}
 	}
 	updated := proto.Clone(m).(*computev1alpha1.Machine)
@@ -345,32 +352,26 @@ func ownedBy(meta *metav1.ObjectMeta, uid string) bool {
 	})
 }
 
-// machineSpec is what a container's spec asks of its machine; node is left
-// for the scheduler.
-func machineSpec(cs *computev1alpha1.ContainerSpec) *computev1alpha1.MachineSpec {
-	res := &computev1alpha1.Resources{
-		Vcpus:     cs.GetResources().GetVcpus(),
-		MemoryMib: cs.GetResources().GetMemoryMib(),
-	}
-	if res.Vcpus == 0 {
-		res.Vcpus = defaultVCPUs
-	}
-	if res.MemoryMib == 0 {
-		res.MemoryMib = defaultMemoryMiB
+// machineSpec is what a container's spec asks of its machine, in canonical
+// quantities; node is left for the scheduler.
+func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpec, error) {
+	sz, err := containerSizes(cs.GetResources())
+	if err != nil {
+		return nil, err
 	}
 	restart := cs.GetRestartPolicy()
 	if restart == computev1alpha1.RestartPolicy_RESTART_POLICY_UNSPECIFIED {
 		restart = computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS
 	}
 	return &computev1alpha1.MachineSpec{
-		Resources: res,
+		Resources: sz.canonical(),
 		RunState:  computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
 		}},
 		Interfaces:    []*computev1alpha1.MachineInterface{{Name: "eth0", Network: DefaultNetwork}},
 		RestartPolicy: restart,
-	}
+	}, nil
 }
 
 // reportContainer writes the container's status, conditional on c as read:
@@ -479,10 +480,10 @@ func (s *Server) scheduleMachine(ctx context.Context, key resource.Key, m *compu
 }
 
 // place picks a node for m and writes it, as one decision about the node's
-// memory. Without a fit it returns no machine and says why.
+// memory and disk. Without a fit it returns no machine and says why.
 func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Machine, string, string, error) {
-	s.memory.Lock()
-	defer s.memory.Unlock()
+	s.capacity.Lock()
+	defer s.capacity.Unlock()
 	node, why, err := s.pickNode(ctx, m)
 	if err != nil || node == "" {
 		return nil, "", why, err
@@ -521,9 +522,10 @@ func (s *Server) setScheduled(ctx context.Context, key resource.Key, m *computev
 	return err
 }
 
-// nodeMemory returns every node and the memory machines hold on each. A
-// machine still being deleted holds its memory until released.
-func (s *Server) nodeMemory(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]int64, error) {
+// nodeUsage returns every node and what machines hold on each. A machine
+// still being deleted holds its share until released. Root disks are sparse,
+// so a machine holds the disk size it declares, not what it has written.
+func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]held, error) {
 	nodeObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
 	if err != nil {
 		return nil, nil, err
@@ -532,7 +534,7 @@ func (s *Server) nodeMemory(ctx context.Context, except resource.Key) ([]*comput
 	if err != nil {
 		return nil, nil, err
 	}
-	used := map[string]int64{}
+	used := map[string]held{}
 	for _, o := range machineObjs {
 		if o.Project == except.Project && o.Name == except.Name {
 			continue
@@ -541,9 +543,18 @@ func (s *Server) nodeMemory(ctx context.Context, except resource.Key) ([]*comput
 		if !ok {
 			return nil, nil, fmt.Errorf("decode machine %s", o.Name)
 		}
-		if n := m.GetSpec().GetNode(); n != "" {
-			used[n] += m.GetSpec().GetResources().GetMemoryMib()
+		n := m.GetSpec().GetNode()
+		if n == "" {
+			continue
 		}
+		h, err := heldBy(m.GetSpec().GetResources())
+		if err != nil {
+			return nil, nil, fmt.Errorf("machine %s/%s: %w", o.Project, o.Name, err)
+		}
+		u := used[n]
+		u.memory = add(u.memory, h.memory)
+		u.disk = add(u.disk, h.disk)
+		used[n] = u
 	}
 	nodes := make([]*computev1alpha1.Node, 0, len(nodeObjs))
 	for _, o := range nodeObjs {
@@ -556,43 +567,56 @@ func (s *Server) nodeMemory(ctx context.Context, except resource.Key) ([]*comput
 	return nodes, used, nil
 }
 
-func memoryOf(n *computev1alpha1.Node) int64 {
-	if a := n.GetStatus().GetAllocatable().GetMemoryMib(); a != 0 {
-		return a
-	}
-	return n.GetStatus().GetCapacity().GetMemoryMib()
-}
-
-// freeMemory is the memory a node has for one machine, not counting what
-// that machine holds itself.
-func (s *Server) freeMemory(ctx context.Context, node string, machine resource.Key) (int64, error) {
-	nodes, used, err := s.nodeMemory(ctx, machine)
+// resizeFits says whether a machine placed on node can grow from was to now:
+// each amount that grows must fit in what the node has left besides this
+// machine. A node that reports no disk is not checked for disk.
+func (s *Server) resizeFits(ctx context.Context, node string, machine resource.Key, was, now held) error {
+	nodes, used, err := s.nodeUsage(ctx, machine)
 	if err != nil {
-		return 0, err
+		return err
 	}
+	var room nodeRoom
 	for _, n := range nodes {
 		if n.GetMetadata().GetName() == node {
-			return memoryOf(n) - used[node], nil
+			if room, err = roomOf(n); err != nil {
+				// Retrying cannot help until the node reports again, which
+				// brings the container back here.
+				return &blocked{"NodeSizeUnreadable", err.Error() + "; the change is not applied"}
+			}
 		}
 	}
-	return 0, nil
+	if mem := free(room.memory, used[node].memory); now.memory > was.memory && now.memory > mem {
+		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
+			"node %s has %s of memory free for this machine, not %s; the change is not applied",
+			node, quantity.FormatMemory(mem), quantity.FormatMemory(now.memory))}
+	}
+	if disk := free(room.disk, used[node].disk); room.hasDisk && now.disk > was.disk && now.disk > disk {
+		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
+			"node %s has %s of disk free for this machine, not %s; the change is not applied",
+			node, quantity.FormatDisk(disk), quantity.FormatDisk(now.disk))}
+	}
+	return nil
 }
 
 // pickNode chooses the ready, schedulable node with the most free memory that
-// fits the machine. Memory is the only resource that cannot be overcommitted;
-// vCPUs are shared. With no fit, it says why.
+// fits the machine's memory and disk. Memory and disk cannot be
+// overcommitted; vCPUs are shared. With no fit, it says why.
 func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine) (string, string, error) {
-	nodes, used, err := s.nodeMemory(ctx, resource.Key{})
+	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
 		return "", "", err
 	}
+	need, err := heldBy(m.GetSpec().GetResources())
+	if err != nil {
+		return "", "", fmt.Errorf("machine %s: %w", m.GetMetadata().GetName(), err)
+	}
 	type candidate struct {
 		name string
-		free int64
+		free uint64
 	}
 	var fits []candidate
-	need := m.GetSpec().GetResources().GetMemoryMib()
-	ready, schedulable := 0, 0
+	ready, schedulable, memoryFits, diskFits := 0, 0, 0, 0
+	var unreadable []string
 	for _, n := range nodes {
 		if !conditions.IsTrue(n.GetStatus().GetConditions(), NodeReady) {
 			continue
@@ -603,11 +627,26 @@ func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine) (stri
 		}
 		schedulable++
 		name := n.GetMetadata().GetName()
-		if free := memoryOf(n) - used[name]; free >= need {
-			fits = append(fits, candidate{name, free})
+		room, err := roomOf(n)
+		if err != nil {
+			unreadable = append(unreadable, err.Error())
+			continue
+		}
+		mem := free(room.memory, used[name].memory)
+		memoryFit := mem >= need.memory
+		diskFit := !room.hasDisk || free(room.disk, used[name].disk) >= need.disk
+		if memoryFit {
+			memoryFits++
+		}
+		if diskFit {
+			diskFits++
+		}
+		if memoryFit && diskFit {
+			fits = append(fits, candidate{name, mem})
 		}
 	}
 	if len(fits) == 0 {
+		mem, disk := quantity.FormatMemory(need.memory), quantity.FormatDisk(need.disk)
 		switch {
 		case len(nodes) == 0:
 			return "", "no nodes are registered", nil
@@ -615,8 +654,24 @@ func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine) (stri
 			return "", "no node is ready", nil
 		case schedulable == 0:
 			return "", "every ready node is cordoned", nil
+		case len(unreadable) == schedulable:
+			return "", "no ready node reports sizes that can be read: " + strings.Join(unreadable, "; "), nil
 		}
-		return "", fmt.Sprintf("no ready node has %d MiB of memory free", need), nil
+		var why string
+		switch {
+		case memoryFits == 0 && diskFits == 0:
+			why = fmt.Sprintf("no ready node has %s of memory or %s of disk free", mem, disk)
+		case memoryFits == 0:
+			why = fmt.Sprintf("no ready node has %s of memory free", mem)
+		case diskFits == 0:
+			why = fmt.Sprintf("no ready node has %s of disk free", disk)
+		default:
+			why = fmt.Sprintf("no ready node has both %s of memory and %s of disk free", mem, disk)
+		}
+		if len(unreadable) > 0 {
+			why += "; not counted, as its sizes cannot be read: " + strings.Join(unreadable, "; ")
+		}
+		return "", why, nil
 	}
 	sort.Slice(fits, func(i, j int) bool {
 		if fits[i].free != fits[j].free {
