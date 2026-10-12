@@ -76,6 +76,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network changes", networkChanges, nets)
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
+	part("logs", logs, vms)
 }
 
 func must(t *testing.T, err error) {

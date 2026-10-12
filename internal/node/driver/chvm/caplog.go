@@ -19,6 +19,9 @@ type cappedLog struct {
 	max  int64
 	f    *os.File
 	size int64
+	// head, if set, starts every file a rotation begins, as a console
+	// log's files start with the boot they are of.
+	head []byte
 	// open opens the file at path; nil means openLog. Tests make it fail.
 	open func(path string, flag int) (*os.File, error)
 }
@@ -70,6 +73,10 @@ func (c *cappedLog) rotate() error {
 	}
 	_ = c.f.Close()
 	c.f, c.size = f, 0
+	if len(c.head) > 0 {
+		n, _ := c.f.Write(c.head)
+		c.size += int64(n)
+	}
 	return nil
 }
 
@@ -96,6 +103,8 @@ func pumpConsole(r io.Reader, log io.Writer, logErr func(error)) *console.ExitSt
 		if err != nil && (!errors.Is(err, console.ErrCorrupt) || rec.Payload == nil) {
 			continue
 		}
+		// Anything else, Boot records included, is not the guest's to
+		// write.
 		switch rec.Stream {
 		case console.Stdout, console.Stderr, console.Init:
 		case console.Exit:

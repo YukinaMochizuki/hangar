@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
@@ -52,7 +53,9 @@ type Host struct {
 	interfaces map[string]map[string]driver.Interface // machine uid, then name
 
 	vms        map[string]*vm
-	logs       map[string]bool       // console logs kept, by machine uid
+	logs       map[string]*consoleLog // console logs kept, by machine uid
+	logChanged chan struct{}          // closed when any log is written
+	logReaders int
 	stops      map[string]int        // guest Stops asked for, by machine uid
 	bootErr    map[string]error      // by machine uid; "" for every machine
 	silent     map[string]bool       // guests that never answer
@@ -87,7 +90,7 @@ func New() *Host {
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{},
-		vms: map[string]*vm{}, logs: map[string]bool{}, stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
@@ -315,11 +318,13 @@ func (h *Host) exitLocked(machineUID string, code int) error {
 	if !ok || v.State != driver.VMRunning {
 		return fmt.Errorf("no running VM for machine %s", machineUID)
 	}
+	h.writeLog(machineUID, console.ExitRecord(console.ExitStatus{Code: int32(code)}, time.Now()))
 	switch {
 	case v.spec.Restart == driver.RestartAlways,
 		v.spec.Restart == driver.RestartOnFailure && code != 0:
 		v.boots++
 		v.Started = time.Now()
+		h.boot(machineUID)
 	default:
 		v.State = driver.VMExited
 		v.ExitCode = code
@@ -375,14 +380,14 @@ func (h *Host) Leave(machineUID, networkUID string) {
 	h.networks[networkUID] = driver.NetworkSpec{UID: networkUID}
 	h.interfaces[machineUID] = map[string]driver.Interface{"eth0": {MachineUID: machineUID, Name: "eth0", NetworkUID: networkUID}}
 	h.vms[machineUID] = &vm{VM: driver.VM{MachineUID: machineUID, State: driver.VMRunning, Started: time.Now()}, boots: 1}
-	h.logs[machineUID] = true
+	h.logOf(machineUID)
 }
 
 // LeaveLog puts a console log on the host, of a machine whose VM is gone.
 func (h *Host) LeaveLog(machineUID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.logs[machineUID] = true
+	h.logOf(machineUID)
 }
 
 // --- what tests inspect ---
@@ -819,7 +824,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		spec:  spec,
 		boots: boots,
 	}
-	d.h.logs[spec.MachineUID] = true
+	d.h.boot(spec.MachineUID)
 	return nil
 }
 

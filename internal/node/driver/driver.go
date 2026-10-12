@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"net/netip"
 	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 )
 
 // Errors the drivers wrap, for the agent to tell what went wrong.
@@ -208,7 +210,50 @@ type Hypervisor interface {
 	// DeleteLogs removes a machine's console log. It fails while the
 	// machine's VM is listed.
 	DeleteLogs(ctx context.Context, machineUID string) error
+	// ReadLog sends what the machine's console log holds, oldest first,
+	// across every boot it keeps, in batches. A machine with no log has no
+	// records. With Follow it then sends what is written, rotations
+	// included, until ctx ends; a log made later is followed from its
+	// start. It returns send's error, or ctx's once following.
+	ReadLog(ctx context.Context, machineUID string, opts LogOptions, send func([]LogRecord) error) error
 }
+
+// LogOptions selects what ReadLog sends.
+type LogOptions struct {
+	Follow bool
+	// Tail keeps only the last Tail lines of what the log holds, or every
+	// line if it is AllLines: each line of output, and each exit, is one.
+	// Zero sends only what is written from now, when following.
+	Tail int64
+	// Since, if not zero, drops records older than it, by the time the
+	// guest gave them.
+	Since time.Time
+}
+
+// AllLines is the Tail that keeps every line.
+const AllLines = -1
+
+// LogRecord is one record of a console log. The guest writes it, so all
+// but Boot is the guest's claim (docs/decisions/guest-agent.md).
+type LogRecord struct {
+	// Boot numbers the VM's boots from 1, the same whatever part of the
+	// log is read; 0 means unknown, for records written before boots were
+	// numbered.
+	Boot   int64
+	Stream console.Stream
+	Time   time.Time
+	// Data is a Stdout, Stderr or Init record's.
+	Data []byte
+	// Exit is an Exit record's.
+	Exit console.ExitStatus
+}
+
+// Bounds on what one read of a log holds: a batch, and what Tail keeps
+// back before sending. A record holds at most console.MaxPayload.
+const (
+	MaxLogBatch = 256 << 10
+	MaxLogTail  = 4 << 20
+)
 
 // StopGrace is how long a container's process has between SIGTERM and
 // SIGKILL when its machine is stopped.
