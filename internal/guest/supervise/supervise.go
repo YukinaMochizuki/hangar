@@ -37,29 +37,39 @@ type Reaper struct {
 	waiting map[int]*Process
 	sigs    chan os.Signal
 	done    chan struct{}
+	stopped chan struct{}
 }
 
 // NewReaper starts reaping. Stop ends it. A process has one at a time: two
 // would take each other's exits.
 func NewReaper() *Reaper {
-	r := &Reaper{waiting: map[int]*Process{}, sigs: make(chan os.Signal, 1), done: make(chan struct{})}
+	r := &Reaper{waiting: map[int]*Process{}, sigs: make(chan os.Signal, 1), done: make(chan struct{}), stopped: make(chan struct{})}
 	signal.Notify(r.sigs, unix.SIGCHLD)
 	go r.loop()
 	return r
 }
 
-// Stop stops reaping.
+// Stop stops reaping. Once it returns this reaper reaps nothing more, so a
+// reaper started after it gets every exit.
 func (r *Reaper) Stop() {
 	signal.Stop(r.sigs)
 	close(r.done)
+	<-r.stopped
 }
 
 func (r *Reaper) loop() {
+	defer close(r.stopped)
 	for {
 		select {
 		case <-r.done:
 			return
 		case <-r.sigs:
+		}
+		// select picks at random when both are ready.
+		select {
+		case <-r.done:
+			return
+		default:
 		}
 		r.reap()
 	}

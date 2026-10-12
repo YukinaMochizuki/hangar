@@ -1,0 +1,894 @@
+// Package hostnet is the real network driver: each Network is a namespace
+// on the host, joined to the root namespace by a veth pair on its transit
+// /31, with a bridge holding its gateway, a persistent tap per machine
+// interface, and IPv4 SNAT in two layers. It keeps no state: what it made
+// is read back from links named with its Prefix, their aliases, and its
+// nft table, and it changes nothing else. Host settings it relies on, such
+// as IPv4 forwarding, are deploy/host's, not the driver's. See
+// docs/decisions/networking.md.
+package hostnet
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/netip"
+	"slices"
+	"strings"
+	"sync"
+
+	"github.com/google/nftables"
+	"github.com/vishvananda/netlink"
+	"github.com/vishvananda/netns"
+	"golang.org/x/sys/unix"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+)
+
+// Config is what the driver needs to know of the host.
+type Config struct {
+	// Uplink is the link the host reaches the internet through.
+	Uplink string
+	// PublicIPv4 is the address the networks' traffic leaves the uplink
+	// as. Unset, it is whichever address the uplink has when a connection
+	// starts.
+	PublicIPv4 netip.Addr
+}
+
+// Driver is a driver.Network on this host. It must run in the root network
+// namespace, as root.
+type Driver struct {
+	cfg  Config
+	root *netlink.Handle
+	// mu serializes everything that reads or changes the host, so a list
+	// never sees an object half made.
+	mu      sync.Mutex
+	changes chan struct{}
+	// watches are by network uid; "" is the root namespace's.
+	watches map[string]*watch
+}
+
+var _ driver.Network = (*Driver)(nil)
+
+// New returns a driver watching the host for changes until Close.
+func New(cfg Config) (*Driver, error) {
+	if cfg.Uplink == "" || len(cfg.Uplink) >= unix.IFNAMSIZ || strings.HasPrefix(cfg.Uplink, Prefix) {
+		return nil, fmt.Errorf("uplink %q is not a link name outside the driver's prefix %s", cfg.Uplink, Prefix)
+	}
+	if cfg.PublicIPv4.IsValid() && !cfg.PublicIPv4.Is4() {
+		return nil, fmt.Errorf("public address %s is not IPv4", cfg.PublicIPv4)
+	}
+	root, err := netlink.NewHandle()
+	if err != nil {
+		return nil, err
+	}
+	d := &Driver{cfg: cfg, root: root, changes: make(chan struct{}, 1), watches: map[string]*watch{}}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	uids, err := namespaces()
+	if err == nil {
+		err = d.rewatch("")
+	}
+	for _, uid := range uids {
+		if err == nil {
+			err = d.rewatch(uid)
+		}
+	}
+	if err != nil {
+		d.closeLocked()
+		return nil, err
+	}
+	return d, nil
+}
+
+// Close stops watching the host. What the driver made stays.
+func (d *Driver) Close() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.closeLocked()
+	return nil
+}
+
+func (d *Driver) closeLocked() {
+	for uid := range d.watches {
+		d.stopWatch(uid)
+	}
+	d.root.Close()
+}
+
+func (d *Driver) Changes() <-chan struct{} { return d.changes }
+
+func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
+	if err := checkNetwork(n); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if v, err := sysctl("net.ipv4.ip_forward"); err != nil {
+		return err
+	} else if v != "1" {
+		return errors.New("IPv4 forwarding is off on the host (net.ipv4.ip_forward); deploy/host turns it on")
+	}
+	if err := d.rewatch(""); err != nil {
+		return err
+	}
+	if err := d.ensureRoot(); err != nil {
+		return err
+	}
+	ns, err := ensureNS(n.UID)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = ns.Close() }()
+	if err := d.rewatch(n.UID); err != nil {
+		return err
+	}
+	h, err := netlink.NewHandleAt(ns)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	if err := inNS(ns, func() error { return ensureSysctl("net.ipv4.ip_forward", "1") }); err != nil {
+		return fmt.Errorf("network %s: forwarding: %w", n.UID, err)
+	}
+	if lo, err := h.LinkByName("lo"); err != nil {
+		return err
+	} else if err := ensureUp(h, lo); err != nil {
+		return err
+	}
+
+	host, inner, err := d.ensureVeth(n.UID, ns, h)
+	if err != nil {
+		return fmt.Errorf("network %s: veth: %w", n.UID, err)
+	}
+	if err := ensureAddr(d.root, host, netip.PrefixFrom(n.Transit.Addr(), 31)); err != nil {
+		return fmt.Errorf("network %s: host end of the transit link: %w", n.UID, err)
+	}
+	nsTransit := n.Transit.Addr().Next()
+	if err := ensureAddr(h, inner, netip.PrefixFrom(nsTransit, 31)); err != nil {
+		return fmt.Errorf("network %s: namespace end of the transit link: %w", n.UID, err)
+	}
+	if err := ensureDefaultRoute(h, inner, n.Transit.Addr()); err != nil {
+		return fmt.Errorf("network %s: default route: %w", n.UID, err)
+	}
+	br, err := ensureBridge(h, n.UID)
+	if err != nil {
+		return fmt.Errorf("network %s: bridge: %w", n.UID, err)
+	}
+	if err := ensureAddr(h, br, netip.PrefixFrom(n.CIDR.Addr().Next(), n.CIDR.Bits())); err != nil {
+		return fmt.Errorf("network %s: gateway: %w", n.UID, err)
+	}
+	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	if err != nil {
+		return err
+	}
+	if err := ensureTable(conn, nsChains(n.CIDR, nsTransit)); err != nil {
+		return fmt.Errorf("network %s: %w", n.UID, err)
+	}
+	return sweepTaps(h)
+}
+
+// ensureRoot makes the root namespace's table, and removes veths the driver
+// did not finish making.
+func (d *Driver) ensureRoot() error {
+	conn, err := nftables.New()
+	if err != nil {
+		return err
+	}
+	if err := ensureTable(conn, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4)); err != nil {
+		return err
+	}
+	links, err := d.root.LinkList()
+	if err != nil {
+		return err
+	}
+	for _, l := range links {
+		if _, ok := decodeVeth(l.Attrs().Alias); isVeth(l) && !ok {
+			if err := d.root.LinkDel(l); err != nil && !isNotFound(err) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// ensureVeth returns the network's veth pair, making it again unless both
+// ends are there and joined to each other.
+func (d *Driver) ensureVeth(uid string, ns netns.NsHandle, h *netlink.Handle) (host, inner netlink.Link, err error) {
+	hosts, err := d.vethsOf(uid)
+	if err != nil {
+		return nil, nil, err
+	}
+	if inner, err = linkByName(h, nsUplink); err != nil {
+		return nil, nil, err
+	}
+	if len(hosts) == 1 && inner != nil && inner.Type() == "veth" &&
+		inner.Attrs().ParentIndex == hosts[0].Attrs().Index && hosts[0].Attrs().ParentIndex == inner.Attrs().Index {
+		host = hosts[0]
+	} else {
+		for _, l := range hosts {
+			if err := d.root.LinkDel(l); err != nil && !isNotFound(err) {
+				return nil, nil, err
+			}
+		}
+		if inner != nil {
+			if err := h.LinkDel(inner); err != nil && !isNotFound(err) {
+				return nil, nil, err
+			}
+		}
+		if host, inner, err = d.makeVeth(uid, ns, h); err != nil {
+			return nil, nil, err
+		}
+	}
+	hostMAC, innerMAC := vethMACs(uid)
+	if err := ensureMAC(d.root, host, hostMAC); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureMAC(h, inner, innerMAC); err != nil {
+		return nil, nil, err
+	}
+	if err := ensureUp(d.root, host); err != nil {
+		return nil, nil, err
+	}
+	return host, inner, ensureUp(h, inner)
+}
+
+func ensureMAC(h *netlink.Handle, l netlink.Link, mac net.HardwareAddr) error {
+	if bytes.Equal(l.Attrs().HardwareAddr, mac) {
+		return nil
+	}
+	return h.LinkSetHardwareAddr(l, mac)
+}
+
+func (d *Driver) makeVeth(uid string, ns netns.NsHandle, h *netlink.Handle) (host, inner netlink.Link, err error) {
+	links, err := d.root.LinkList()
+	if err != nil {
+		return nil, nil, err
+	}
+	name, err := freeName(vethPrefix, uid, func(n string) bool {
+		return slices.ContainsFunc(links, func(l netlink.Link) bool { return l.Attrs().Name == n })
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	alias, err := encodeAlias(vethMeta{Network: uid})
+	if err != nil {
+		return nil, nil, err
+	}
+	// Made with its MAC, so udev leaves it; the end made in the namespace
+	// udev does not see, and ensureVeth sets its MAC.
+	hostMAC, _ := vethMACs(uid)
+	v := &netlink.Veth{
+		LinkAttrs: netlink.LinkAttrs{Name: name, HardwareAddr: hostMAC},
+		PeerName:  nsUplink, PeerNamespace: netlink.NsFd(int(ns)),
+	}
+	if err := d.root.LinkAdd(v); err != nil {
+		return nil, nil, fmt.Errorf("adding %s: %w", name, err)
+	}
+	if host, err = d.root.LinkByName(name); err == nil {
+		err = d.root.LinkSetAlias(host, alias)
+	}
+	if err == nil {
+		host, err = d.root.LinkByName(name)
+	}
+	if err == nil {
+		inner, err = h.LinkByName(nsUplink)
+	}
+	if err != nil {
+		_ = d.root.LinkDel(v)
+		return nil, nil, err
+	}
+	return host, inner, nil
+}
+
+// vethsOf returns the root ends of a network's veths; there is one, unless
+// something went wrong.
+func (d *Driver) vethsOf(uid string) ([]netlink.Link, error) {
+	links, err := d.root.LinkList()
+	if err != nil {
+		return nil, err
+	}
+	var out []netlink.Link
+	for _, l := range links {
+		if n, ok := decodeVeth(l.Attrs().Alias); ok && n == uid && isVeth(l) {
+			out = append(out, l)
+		}
+	}
+	return out, nil
+}
+
+// ensureBridge makes the bridge holding the gateway, with the network's MAC
+// rather than one of its ports', so guests' ARP entries outlive it.
+func ensureBridge(h *netlink.Handle, uid string) (netlink.Link, error) {
+	br, err := linkByName(h, nsBridge)
+	if err != nil {
+		return nil, err
+	}
+	if br != nil && br.Type() != "bridge" {
+		if err := h.LinkDel(br); err != nil {
+			return nil, err
+		}
+		br = nil
+	}
+	mac := gatewayMAC(uid)
+	if br == nil {
+		if err := h.LinkAdd(&netlink.Bridge{LinkAttrs: netlink.LinkAttrs{Name: nsBridge, HardwareAddr: mac}}); err != nil {
+			return nil, err
+		}
+		if br, err = h.LinkByName(nsBridge); err != nil {
+			return nil, err
+		}
+	}
+	if err := ensureMAC(h, br, mac); err != nil {
+		return nil, err
+	}
+	return br, ensureUp(h, br)
+}
+
+// sweepTaps removes taps the driver did not finish making, unless something
+// holds them open.
+func sweepTaps(h *netlink.Handle) error {
+	links, err := h.LinkList()
+	if err != nil {
+		return err
+	}
+	for _, l := range links {
+		if _, ok := decodeTap(l.Attrs().Alias); !isTap(l) || ok {
+			continue
+		}
+		if held, err := heldOpen(h, l); err != nil {
+			return err
+		} else if held {
+			continue
+		}
+		if err := h.LinkDel(l); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+// isVeth says whether l is a root end of a veth the driver may have made.
+func isVeth(l netlink.Link) bool {
+	return strings.HasPrefix(l.Attrs().Name, vethPrefix) && l.Type() == "veth"
+}
+
+// isTap says whether l is a tap the driver may have made.
+func isTap(l netlink.Link) bool {
+	return strings.HasPrefix(l.Attrs().Name, tapPrefix) && l.Type() == "tuntap"
+}
+
+func (d *Driver) Networks(context.Context) ([]driver.NetworkSpec, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	specs := map[string]*driver.NetworkSpec{}
+	spec := func(uid string) *driver.NetworkSpec {
+		if specs[uid] == nil {
+			specs[uid] = &driver.NetworkSpec{UID: uid}
+		}
+		return specs[uid]
+	}
+	links, err := d.root.LinkList()
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range links {
+		if uid, ok := decodeVeth(l.Attrs().Alias); ok && isVeth(l) {
+			s := spec(uid)
+			if p, ok, err := addrOf(d.root, l); err != nil {
+				return nil, err
+			} else if ok {
+				s.Transit = netip.PrefixFrom(p.Addr(), 31).Masked()
+			}
+		}
+	}
+	uids, err := namespaces()
+	if err != nil {
+		return nil, err
+	}
+	for _, uid := range uids {
+		ns, ok, err := openNS(uid)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		s := spec(uid)
+		err = func() error {
+			defer func() { _ = ns.Close() }()
+			h, err := netlink.NewHandleAt(ns)
+			if err != nil {
+				return err
+			}
+			defer h.Close()
+			if br, err := linkByName(h, nsBridge); err != nil {
+				return err
+			} else if br != nil {
+				if p, ok, err := addrOf(h, br); err != nil {
+					return err
+				} else if ok {
+					s.CIDR = p.Masked()
+				}
+			}
+			if up, err := linkByName(h, nsUplink); err != nil || up == nil || s.Transit.IsValid() {
+				return err
+			} else if p, ok, err := addrOf(h, up); err != nil || !ok {
+				return err
+			} else {
+				s.Transit = netip.PrefixFrom(p.Addr(), 31).Masked()
+			}
+			return nil
+		}()
+		if err != nil {
+			return nil, fmt.Errorf("network %s: %w", uid, err)
+		}
+	}
+	out := make([]driver.NetworkSpec, 0, len(specs))
+	for _, s := range specs {
+		out = append(out, *s)
+	}
+	slices.SortFunc(out, func(a, b driver.NetworkSpec) int { return strings.Compare(a.UID, b.UID) })
+	return out, nil
+}
+
+func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
+	if checkUID(networkUID) != nil {
+		return nil // no namespace or alias can name it
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.stopWatch(networkUID)
+	veths, err := d.vethsOf(networkUID)
+	if err != nil {
+		return err
+	}
+	for _, l := range veths {
+		if err := d.root.LinkDel(l); err != nil && !isNotFound(err) {
+			return err
+		}
+	}
+	ns, ok, err := openNS(networkUID)
+	if err != nil {
+		return err
+	}
+	if ok {
+		// Emptied first, so nothing is left should something else hold
+		// the namespace after it is unmounted.
+		err := func() error {
+			defer func() { _ = ns.Close() }()
+			h, err := netlink.NewHandleAt(ns)
+			if err != nil {
+				return err
+			}
+			defer h.Close()
+			links, err := h.LinkList()
+			if err != nil {
+				return err
+			}
+			for _, l := range links {
+				if strings.HasPrefix(l.Attrs().Name, Prefix) {
+					if err := h.LinkDel(l); err != nil && !isNotFound(err) {
+						return err
+					}
+				}
+			}
+			conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+			if err != nil {
+				return err
+			}
+			return deleteTable(conn)
+		}()
+		if err != nil {
+			return fmt.Errorf("network %s: %w", networkUID, err)
+		}
+	}
+	if err := deleteNS(networkUID); err != nil {
+		return err
+	}
+	return d.deleteRootIfUnused()
+}
+
+// deleteRootIfUnused removes the root namespace's table once no network is
+// left to use it.
+func (d *Driver) deleteRootIfUnused() error {
+	uids, err := namespaces()
+	if err != nil || len(uids) > 0 {
+		return err
+	}
+	links, err := d.root.LinkList()
+	if err != nil {
+		return err
+	}
+	for _, l := range links {
+		if isVeth(l) {
+			return nil
+		}
+	}
+	conn, err := nftables.New()
+	if err != nil {
+		return err
+	}
+	return deleteTable(conn)
+}
+
+// tap is a tap with the tap prefix in a network's namespace.
+type tap struct {
+	network string
+	link    netlink.Link
+	// meta is valid if ok: a tap without is one the driver did not finish
+	// making.
+	meta tapMeta
+	ok   bool
+}
+
+// taps lists every tap with the tap prefix in every network's namespace.
+func taps() ([]tap, error) {
+	uids, err := namespaces()
+	if err != nil {
+		return nil, err
+	}
+	var out []tap
+	for _, uid := range uids {
+		ns, ok, err := openNS(uid)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			continue
+		}
+		links, err := func() ([]netlink.Link, error) {
+			defer func() { _ = ns.Close() }()
+			h, err := netlink.NewHandleAt(ns)
+			if err != nil {
+				return nil, err
+			}
+			defer h.Close()
+			return h.LinkList()
+		}()
+		if err != nil {
+			return nil, fmt.Errorf("network %s: %w", uid, err)
+		}
+		for _, l := range links {
+			if isTap(l) {
+				m, ok := decodeTap(l.Attrs().Alias)
+				out = append(out, tap{network: uid, link: l, meta: m, ok: ok})
+			}
+		}
+	}
+	return out, nil
+}
+
+// heldOpen says whether something, a VM, holds a tap open: a tap has carrier
+// while it is open, which only an up link shows, so a down one is set up.
+func heldOpen(h *netlink.Handle, l netlink.Link) (bool, error) {
+	if l.Attrs().Flags&net.FlagUp == 0 {
+		if err := h.LinkSetUp(l); err != nil {
+			return false, err
+		}
+		up, err := h.LinkByIndex(l.Attrs().Index)
+		if err != nil {
+			return false, err
+		}
+		l = up
+	}
+	return l.Attrs().RawFlags&unix.IFF_LOWER_UP != 0, nil
+}
+
+// refuseHeld returns an error if a VM holds any of the taps open.
+func refuseHeld(ts []tap) error {
+	for _, t := range ts {
+		if err := withTap(t, func(h *netlink.Handle, l netlink.Link) error {
+			if held, err := heldOpen(h, l); err != nil {
+				return err
+			} else if held {
+				return fmt.Errorf("tap %s of machine %s's %s is held open, by its VM", l.Attrs().Name, t.meta.Machine, t.meta.Name)
+			}
+			return nil
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.Interface, error) {
+	if err := checkInterface(i); err != nil {
+		return driver.Interface{}, err
+	}
+	alias, err := encodeAlias(tapMetaOf(i))
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ns, ok, err := openNS(i.NetworkUID)
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	if !ok {
+		return driver.Interface{}, fmt.Errorf("machine %s's %s: network %s: %w", i.MachineUID, i.Name, i.NetworkUID, errNoNetwork)
+	}
+	defer func() { _ = ns.Close() }()
+	h, err := netlink.NewHandleAt(ns)
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	defer h.Close()
+	br, err := linkByName(h, nsBridge)
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	var cidr netip.Prefix
+	if br != nil {
+		p, _, err := addrOf(h, br)
+		if err != nil {
+			return driver.Interface{}, err
+		}
+		cidr = p.Masked()
+	}
+	if !cidr.Contains(i.Address.Addr()) {
+		return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is outside network %s (%s)", i.MachineUID, i.Name, i.Address, i.NetworkUID, cidr)
+	}
+
+	all, err := taps()
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	// The interface's other taps, on another network or duplicates, go,
+	// unless a VM holds one; that is refused, as deleting the interface is.
+	var link netlink.Link
+	var others []tap
+	for _, t := range all {
+		if !t.ok || t.meta.Machine != i.MachineUID || t.meta.Name != i.Name {
+			continue
+		}
+		if t.network == i.NetworkUID && link == nil {
+			link = t.link
+			continue
+		}
+		others = append(others, t)
+	}
+	if err := refuseHeld(others); err != nil {
+		return driver.Interface{}, err
+	}
+	for _, t := range others {
+		if err := deleteTap(t); err != nil {
+			return driver.Interface{}, err
+		}
+	}
+	if link == nil {
+		if link, err = makeTap(ns, h, i, all); err != nil {
+			return driver.Interface{}, err
+		}
+	}
+	if link.Attrs().Alias != alias {
+		if err := h.LinkSetAlias(link, alias); err != nil {
+			return driver.Interface{}, err
+		}
+	}
+	if link.Attrs().MasterIndex != br.Attrs().Index {
+		if err := h.LinkSetMasterByIndex(link, br.Attrs().Index); err != nil {
+			return driver.Interface{}, err
+		}
+	}
+	if err := ensureUp(h, link); err != nil {
+		return driver.Interface{}, err
+	}
+	i.Device = link.Attrs().Name
+	return i, nil
+}
+
+// makeTap makes a persistent tap for i, named so no other tap on the host
+// has its name, and gives it i's alias.
+func makeTap(ns netns.NsHandle, h *netlink.Handle, i driver.Interface, all []tap) (netlink.Link, error) {
+	links, err := h.LinkList()
+	if err != nil {
+		return nil, err
+	}
+	name, err := freeName(tapPrefix, i.MachineUID+"/"+i.Name, func(n string) bool {
+		return slices.ContainsFunc(all, func(t tap) bool { return t.link.Attrs().Name == n }) ||
+			slices.ContainsFunc(links, func(l netlink.Link) bool { return l.Attrs().Name == n })
+	})
+	if err != nil {
+		return nil, err
+	}
+	alias, err := encodeAlias(tapMetaOf(i))
+	if err != nil {
+		return nil, err
+	}
+	// A tap is made by opening it, which happens in the namespace of the
+	// thread that opens it.
+	err = inNS(ns, func() error {
+		return netlink.LinkAdd(&netlink.Tuntap{
+			LinkAttrs: netlink.LinkAttrs{Name: name}, Mode: netlink.TUNTAP_MODE_TAP,
+			Flags: netlink.TUNTAP_NO_PI | netlink.TUNTAP_VNET_HDR | netlink.TUNTAP_TUN_EXCL,
+		})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("making tap %s: %w", name, err)
+	}
+	link, err := h.LinkByName(name)
+	if err == nil {
+		err = h.LinkSetAlias(link, alias)
+	}
+	if err == nil {
+		link, err = h.LinkByName(name)
+	}
+	if err != nil {
+		if l, lerr := h.LinkByName(name); lerr == nil {
+			_ = h.LinkDel(l)
+		}
+		return nil, err
+	}
+	return link, nil
+}
+
+func deleteTap(t tap) error {
+	return withTap(t, func(h *netlink.Handle, l netlink.Link) error {
+		if err := h.LinkDel(l); err != nil && !isNotFound(err) {
+			return fmt.Errorf("deleting tap %s: %w", l.Attrs().Name, err)
+		}
+		return nil
+	})
+}
+
+// withTap calls f with a handle in the tap's namespace, unless the
+// namespace is gone.
+func withTap(t tap, f func(h *netlink.Handle, l netlink.Link) error) error {
+	ns, ok, err := openNS(t.network)
+	if err != nil || !ok {
+		return err
+	}
+	defer func() { _ = ns.Close() }()
+	h, err := netlink.NewHandleAt(ns)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	return f(h, t.link)
+}
+
+func (d *Driver) Interfaces(context.Context) ([]driver.Interface, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	all, err := taps()
+	if err != nil {
+		return nil, err
+	}
+	var out []driver.Interface
+	for _, t := range all {
+		if t.ok {
+			out = append(out, t.meta.iface(t.network, t.link.Attrs().Name))
+		}
+	}
+	return out, nil
+}
+
+func (d *Driver) DeleteInterfaces(_ context.Context, machineUID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	all, err := taps()
+	if err != nil {
+		return err
+	}
+	var mine []tap
+	for _, t := range all {
+		if t.ok && t.meta.Machine == machineUID {
+			mine = append(mine, t)
+		}
+	}
+	if err := refuseHeld(mine); err != nil {
+		return err
+	}
+	for _, t := range mine {
+		if err := deleteTap(t); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// linkByName returns the link named name, or nil if there is none.
+func linkByName(h *netlink.Handle, name string) (netlink.Link, error) {
+	l, err := h.LinkByName(name)
+	if isNotFound(err) {
+		return nil, nil
+	}
+	return l, err
+}
+
+func isNotFound(err error) bool {
+	var nf netlink.LinkNotFoundError
+	return errors.As(err, &nf) || errors.Is(err, unix.ENODEV) || errors.Is(err, unix.ENOENT)
+}
+
+func ensureUp(h *netlink.Handle, l netlink.Link) error {
+	if l.Attrs().Flags&net.FlagUp != 0 {
+		return nil
+	}
+	return h.LinkSetUp(l)
+}
+
+// addrOf returns the first IPv4 address of a link.
+func addrOf(h *netlink.Handle, l netlink.Link) (netip.Prefix, bool, error) {
+	addrs, err := h.AddrList(l, unix.AF_INET)
+	if err != nil || len(addrs) == 0 {
+		return netip.Prefix{}, false, err
+	}
+	p, ok := prefixOf(addrs[0].IPNet)
+	return p, ok, nil
+}
+
+func prefixOf(n *net.IPNet) (netip.Prefix, bool) {
+	a, ok := netip.AddrFromSlice(n.IP)
+	if !ok {
+		return netip.Prefix{}, false
+	}
+	ones, _ := n.Mask.Size()
+	return netip.PrefixFrom(a.Unmap(), ones), true
+}
+
+func ipNet(p netip.Prefix) *net.IPNet {
+	return &net.IPNet{IP: p.Addr().AsSlice(), Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen())}
+}
+
+// ensureAddr makes want the link's only IPv4 address, with its route to
+// the rest of its prefix, which flushing routes takes away and nothing
+// gives back.
+func ensureAddr(h *netlink.Handle, l netlink.Link, want netip.Prefix) error {
+	addrs, err := h.AddrList(l, unix.AF_INET)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, a := range addrs {
+		if p, _ := prefixOf(a.IPNet); p == want {
+			found = true
+			continue
+		}
+		if err := h.AddrDel(l, &a); err != nil {
+			return err
+		}
+	}
+	if !found {
+		if err := h.AddrAdd(l, &netlink.Addr{IPNet: ipNet(want)}); err != nil {
+			return err
+		}
+	}
+	filter := &netlink.Route{LinkIndex: l.Attrs().Index, Dst: ipNet(want.Masked()), Table: unix.RT_TABLE_MAIN}
+	routes, err := h.RouteListFiltered(unix.AF_INET, filter, netlink.RT_FILTER_OIF|netlink.RT_FILTER_DST|netlink.RT_FILTER_TABLE)
+	if err != nil || len(routes) > 0 {
+		return err
+	}
+	return h.RouteAdd(&netlink.Route{
+		LinkIndex: l.Attrs().Index, Dst: ipNet(want.Masked()), Src: want.Addr().AsSlice(),
+		Scope: netlink.SCOPE_LINK, Protocol: unix.RTPROT_KERNEL, Table: unix.RT_TABLE_MAIN,
+	})
+}
+
+// ensureDefaultRoute makes the namespace's only IPv4 default route the one
+// via the host's end of the transit link.
+func ensureDefaultRoute(h *netlink.Handle, l netlink.Link, via netip.Addr) error {
+	routes, err := h.RouteListFiltered(unix.AF_INET, &netlink.Route{Table: unix.RT_TABLE_MAIN}, netlink.RT_FILTER_TABLE)
+	if err != nil {
+		return err
+	}
+	var defaults []netlink.Route
+	for _, r := range routes {
+		if r.Dst == nil || r.Dst.String() == "0.0.0.0/0" {
+			defaults = append(defaults, r)
+		}
+	}
+	if len(defaults) == 1 && defaults[0].LinkIndex == l.Attrs().Index && net.IP.Equal(defaults[0].Gw, via.AsSlice()) {
+		return nil
+	}
+	for _, r := range defaults {
+		if err := h.RouteDel(&r); err != nil {
+			return err
+		}
+	}
+	return h.RouteAdd(&netlink.Route{LinkIndex: l.Attrs().Index, Gw: via.AsSlice(), Table: unix.RT_TABLE_MAIN})
+}
