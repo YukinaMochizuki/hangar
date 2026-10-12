@@ -309,6 +309,28 @@ test_unit_change_restarts_its_service() {
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the pending restart"
 }
 
+test_refuses_dropins() {
+	step "a drop-in for a hangar unit fails verify and stops the services step"
+	local node_pid
+	node_pid=$(main_pid hangar-node)
+	mkdir -p /etc/systemd/system/hangar-node.service.d
+	printf '[Service]\nEnvironment=TB_DROPIN=1\n' >/etc/systemd/system/hangar-node.service.d/tb.conf
+	systemctl daemon-reload
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/dropin-verify.log"; then
+		fail "verify passed with a drop-in for hangar-node"
+	fi
+	grep -q '^FAIL no drop-ins for' "$work/dropin-verify.log" || fail "verify does not name the drop-in: $(grep FAIL "$work/dropin-verify.log")"
+	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/dropin.log"; then
+		fail "bootstrap reported converged with a drop-in for hangar-node"
+	fi
+	grep -q 'drop-ins change the hangar units: .*hangar-node.service.d' "$work/dropin.log" || fail "unexpected refusal: $(cat "$work/dropin.log")"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
+	rm -r /etc/systemd/system/hangar-node.service.d
+	systemctl daemon-reload
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged once the drop-in is gone"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once the drop-in is gone"
+}
+
 test_node_needs_its_datasets() {
 	step "the node does not start while hangar/images is not mounted"
 	systemctl stop hangar-node
@@ -413,6 +435,7 @@ test_refuses_tampered_release
 test_refuses_without_local_env
 test_upgrade_restarts_services
 test_unit_change_restarts_its_service
+test_refuses_dropins
 test_node_needs_its_datasets
 test_refuses_while_rollback_pending
 test_verify_catches_drift

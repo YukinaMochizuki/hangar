@@ -108,6 +108,11 @@ A second `bootstrap.sh`, with the same `--release` or none, must print
   restart leaves `/var/lib/hangar-bootstrap/restart-<unit>`, so the next run
   restarts it.
 
+  The units are generated in full, so a drop-in for either
+  (`hangar-node.service.d/`, or anything in `systemctl show -p DropInPaths`)
+  makes `verify.sh` FAIL and the step refuse until it is removed: change
+  the step instead.
+
 ## Deploying a new hangar version
 
 VMs keep running across it: restarting `hangar-node` leaves their units
@@ -236,11 +241,12 @@ nothing, and a dead IPv6 config is rolled back. It needs a release
 from it, and checks: the node is Ready; a tampered release, or one whose
 `SHA256SUMS` lacks a file, is refused with nothing installed; the services
 step refuses without `/etc/hangar/local.env` or with it readable by others;
-a new release restarts both services and not a stand-in VM unit, and so
-does going back; a changed unit restarts its service only, also when a run
-died before the restart; and drift in the datasets, the installed files,
-the apt timers and the services is reported and repaired. It does not
-reboot. Run it as root on a disposable VM only. `make lint-sh` runs
+a new release restarts both services, and so does going back; a changed
+unit restarts its service only, also when a run died before the restart; a
+drop-in for a unit fails verify and is refused; the node does not start
+while `hangar/images` is not mounted; and drift in the datasets, the
+installed files, the apt timers and the services is reported and repaired.
+It does not reboot. Run it as root on a disposable VM only. `make lint-sh` runs
 shellcheck over every script.
 
 `HANGAR_TESTBED_FLOW_INSTALLED=1` runs the L4 flow (`docs/runbook/testbed.md`)

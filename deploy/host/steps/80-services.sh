@@ -156,6 +156,20 @@ services_units_ok() {
 	done
 }
 
+# services_dropins prints every drop-in for the hangar units, on disk or
+# loaded: one would change what runs without changing the unit verify compares.
+services_dropins() {
+	local u d
+	for u in $SERVICES_UNITS; do
+		for d in /etc /run /usr/local/lib /usr/lib /lib; do
+			ls -d "$d/systemd/system/$u.service.d" 2>/dev/null || true
+		done
+		systemctl show -p DropInPaths --value "$u.service" | tr ' ' '\n'
+	done | { grep . || true; } | sort -u
+}
+
+services_no_dropins() { [ -z "$(services_dropins)" ]; }
+
 services_running_ok() {
 	local u
 	for u in $SERVICES_UNITS; do
@@ -207,6 +221,13 @@ services_apply() {
 		log "warning: $LOCAL_ENV is missing or wrong; a real run refuses until you $how"
 	fi
 
+	if ! services_no_dropins; then
+		local what
+		what="drop-ins change the hangar units: $(services_dropins | tr '\n' ' ')"
+		[ "$DRY_RUN" = 1 ] || die "$what; remove them (the units are generated in full by this step), run systemctl daemon-reload, then re-run"
+		log "warning: $what; a real run refuses until they are removed"
+	fi
+
 	id -u "$SERVICES_USER" >/dev/null 2>&1 ||
 		run "create system user $SERVICES_USER" useradd --system --user-group \
 			--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$SERVICES_USER"
@@ -248,6 +269,7 @@ services_verify() {
 	check "system user $SERVICES_USER" services_user_ok
 	check "$SERVICES_STATE is $SERVICES_USER's, mode 700" services_state_ok
 	check "units $SERVICES_UNITS as generated and loaded" services_units_ok
+	check "no drop-ins for $SERVICES_UNITS" services_no_dropins
 	check "units $SERVICES_UNITS enabled, active, running what is installed" services_running_ok
 	check "node socket $SERVICES_SOCKET, $SERVICES_USER's, 660" services_socket_ok
 	check "apiserver listens on loopback only" services_loopback_only
