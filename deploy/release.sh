@@ -39,6 +39,10 @@ fi
 short=${version:0:12}
 case $version in *-dirty) short=$short-dirty ;; esac
 out=${out:-$REPO/bin/release/hangar-$short}
+# OUT is replaced, so it must be a release this script wrote before.
+if [ -e "$out" ] && ! { [ -f "$out/VERSION" ] && [ -f "$out/SHA256SUMS" ]; }; then
+	die "$out exists and is not a release (no VERSION and SHA256SUMS); refusing to replace it"
+fi
 
 # Everything is staged first, so a failed build never leaves a directory
 # that looks like a release.
@@ -57,10 +61,13 @@ rm -rf "$stage/guest"
 printf '%s\n' "$version" >"$stage/VERSION"
 (cd "$stage" && sha256sum -- * >SHA256SUMS.part && mv SHA256SUMS.part SHA256SUMS)
 
-rm -rf "$out"
 mkdir -p "$(dirname "$out")"
+rm -rf "$out.part"
 cp -r "$stage" "$out.part"
 chmod 0755 "$out.part"
+rm -rf "$out"
 mv "$out.part" "$out"
 log "wrote $out"
 cat "$out/SHA256SUMS" >&2
+# Compared on the host before installing (docs/runbook/host-bootstrap.md).
+log "sha256sum SHA256SUMS: $(cd "$out" && sha256sum SHA256SUMS)"

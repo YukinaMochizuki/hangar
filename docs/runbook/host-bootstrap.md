@@ -126,12 +126,18 @@ boots the new guest kernel and initramfs. A running VM keeps its own until
 then.
 
 1. Build it from the commit to deploy, on a testbed VM: `make release`.
-   Note its directory name, `hangar-<revision>`.
+   Note its directory name, `hangar-<revision>`, and the last line it
+   prints, `sha256sum SHA256SUMS: <digest>  SHA256SUMS`.
 2. Copy `deploy/` from that commit to `/var/tmp/hangar/deploy` on the host,
    and the release directory to `/var/tmp/hangar/release/hangar-<revision>`.
    Keep the previous release's directory there: going back is the same
    sequence with it.
-3. On the host, one command per line:
+3. On the host, `sha256sum /var/tmp/hangar/release/hangar-<revision>/SHA256SUMS`
+   must print the digest `make release` printed on the build machine. The
+   release step checks every file against the `SHA256SUMS` in the
+   directory, which only catches a copy corrupted on the way; this
+   comparison is what ties the directory to the build.
+4. On the host, one command per line:
 
    ```sh
    sudo /var/tmp/hangar/deploy/host/bootstrap.sh --release /var/tmp/hangar/release/hangar-<revision> --dry-run
