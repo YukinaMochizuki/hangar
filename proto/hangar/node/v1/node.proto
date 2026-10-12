@@ -15,6 +15,12 @@ service NodeService {
   // Logs streams a machine's console log, oldest first, across every boot
   // the host keeps, then, with follow, what is written as it comes.
   rpc Logs(LogsRequest) returns (stream LogsResponse);
+  // Exec runs a process in a running machine's guest beside its
+  // container's, for as long as the call lasts: once the call ends, the
+  // process's group is killed. The first request starts it; later ones
+  // carry its stdin, a resize or a signal. The responses carry its output
+  // and, last, how it ended.
+  rpc Exec(stream ExecRequest) returns (stream ExecResponse);
 }
 
 message LogsRequest {
@@ -58,9 +64,61 @@ enum LogStream {
   LOG_STREAM_EXIT = 4;
 }
 
-// ExitStatus is how a container's process ended.
+// ExitStatus is how a container's process, or an exec's, ended.
 message ExitStatus {
   int32 code = 1;
   // The signal that ended it, 0 if none.
   int32 signal = 2;
+}
+
+message ExecRequest {
+  oneof message {
+    // The first request, and only the first.
+    ExecStart start = 1;
+    // Only after a start with stdin.
+    bytes stdin = 2;
+    // Closes the process's stdin; on a terminal it sends end-of-file.
+    ExecStdinClose stdin_close = 3;
+    WindowSize resize = 4;
+    // A signal number to send the process, such as 2.
+    int32 signal = 5;
+  }
+}
+
+// ExecStart starts an exec's process. What it leaves empty is the
+// container's, as its machine's VM was started with.
+message ExecStart {
+  string machine_uid = 1;
+  // The program, looked up on PATH as the process's environment sets it,
+  // and its arguments.
+  repeated string args = 2;
+  // KEY=VALUE pairs set over the container's environment.
+  repeated string env = 3;
+  string working_dir = 4;
+  // As an OCI image gives it, such as "1000:1000".
+  string user = 5;
+  // Runs the process on a terminal; its stdout and stderr are then one
+  // stream.
+  bool tty = 6;
+  // The terminal's first size, with tty.
+  WindowSize size = 7;
+  // Gives the process a stdin to read. Without it, a process with no
+  // terminal has its stdin closed at once.
+  bool stdin = 8;
+}
+
+message ExecStdinClose {}
+
+message WindowSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+message ExecResponse {
+  oneof message {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    // The last response.
+    ExitStatus exit = 3;
+  }
 }

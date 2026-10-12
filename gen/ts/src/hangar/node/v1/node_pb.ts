@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/node.proto.
  */
 export const file_hangar_node_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUqfwoJTG9nU3RyZWFtEhoKFkxPR19TVFJFQU1fVU5TUEVDSUZJRUQQABIVChFMT0dfU1RSRUFNX1NURE9VVBABEhUKEUxPR19TVFJFQU1fU1RERVJSEAISEwoPTE9HX1NUUkVBTV9JTklUEAMSEwoPTE9HX1NUUkVBTV9FWElUEAQyUgoLTm9kZVNlcnZpY2USQwoETG9ncxIbLmhhbmdhci5ub2RlLnYxLkxvZ3NSZXF1ZXN0GhwuaGFuZ2FyLm5vZGUudjEuTG9nc1Jlc3BvbnNlMAFCuQEKEmNvbS5oYW5nYXIubm9kZS52MUIJTm9kZVByb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMpkBCgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABQrkBChJjb20uaGFuZ2FyLm5vZGUudjFCCU5vZGVQcm90b1ABWj5naXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ub2RlL3YxO25vZGV2MaICA0hOWKoCDkhhbmdhci5Ob2RlLlYxygIOSGFuZ2FyXE5vZGVcVjHiAhpIYW5nYXJcTm9kZVxWMVxHUEJNZXRhZGF0YeoCEEhhbmdhcjo6Tm9kZTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.node.v1.LogsRequest
@@ -131,7 +131,7 @@ export const LogRecordSchema: GenMessage<LogRecord> = /*@__PURE__*/
   messageDesc(file_hangar_node_v1_node, 2);
 
 /**
- * ExitStatus is how a container's process ended.
+ * ExitStatus is how a container's process, or an exec's, ended.
  *
  * @generated from message hangar.node.v1.ExitStatus
  */
@@ -155,6 +155,203 @@ export type ExitStatus = Message<"hangar.node.v1.ExitStatus"> & {
  */
 export const ExitStatusSchema: GenMessage<ExitStatus> = /*@__PURE__*/
   messageDesc(file_hangar_node_v1_node, 3);
+
+/**
+ * @generated from message hangar.node.v1.ExecRequest
+ */
+export type ExecRequest = Message<"hangar.node.v1.ExecRequest"> & {
+  /**
+   * @generated from oneof hangar.node.v1.ExecRequest.message
+   */
+  message: {
+    /**
+     * The first request, and only the first.
+     *
+     * @generated from field: hangar.node.v1.ExecStart start = 1;
+     */
+    value: ExecStart;
+    case: "start";
+  } | {
+    /**
+     * Only after a start with stdin.
+     *
+     * @generated from field: bytes stdin = 2;
+     */
+    value: Uint8Array;
+    case: "stdin";
+  } | {
+    /**
+     * Closes the process's stdin; on a terminal it sends end-of-file.
+     *
+     * @generated from field: hangar.node.v1.ExecStdinClose stdin_close = 3;
+     */
+    value: ExecStdinClose;
+    case: "stdinClose";
+  } | {
+    /**
+     * @generated from field: hangar.node.v1.WindowSize resize = 4;
+     */
+    value: WindowSize;
+    case: "resize";
+  } | {
+    /**
+     * A signal number to send the process, such as 2.
+     *
+     * @generated from field: int32 signal = 5;
+     */
+    value: number;
+    case: "signal";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.ExecRequest.
+ * Use `create(ExecRequestSchema)` to create a new message.
+ */
+export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 4);
+
+/**
+ * ExecStart starts an exec's process. What it leaves empty is the
+ * container's, as its machine's VM was started with.
+ *
+ * @generated from message hangar.node.v1.ExecStart
+ */
+export type ExecStart = Message<"hangar.node.v1.ExecStart"> & {
+  /**
+   * @generated from field: string machine_uid = 1;
+   */
+  machineUid: string;
+
+  /**
+   * The program, looked up on PATH as the process's environment sets it,
+   * and its arguments.
+   *
+   * @generated from field: repeated string args = 2;
+   */
+  args: string[];
+
+  /**
+   * KEY=VALUE pairs set over the container's environment.
+   *
+   * @generated from field: repeated string env = 3;
+   */
+  env: string[];
+
+  /**
+   * @generated from field: string working_dir = 4;
+   */
+  workingDir: string;
+
+  /**
+   * As an OCI image gives it, such as "1000:1000".
+   *
+   * @generated from field: string user = 5;
+   */
+  user: string;
+
+  /**
+   * Runs the process on a terminal; its stdout and stderr are then one
+   * stream.
+   *
+   * @generated from field: bool tty = 6;
+   */
+  tty: boolean;
+
+  /**
+   * The terminal's first size, with tty.
+   *
+   * @generated from field: hangar.node.v1.WindowSize size = 7;
+   */
+  size?: WindowSize | undefined;
+
+  /**
+   * Gives the process a stdin to read. Without it, a process with no
+   * terminal has its stdin closed at once.
+   *
+   * @generated from field: bool stdin = 8;
+   */
+  stdin: boolean;
+};
+
+/**
+ * Describes the message hangar.node.v1.ExecStart.
+ * Use `create(ExecStartSchema)` to create a new message.
+ */
+export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 5);
+
+/**
+ * @generated from message hangar.node.v1.ExecStdinClose
+ */
+export type ExecStdinClose = Message<"hangar.node.v1.ExecStdinClose"> & {
+};
+
+/**
+ * Describes the message hangar.node.v1.ExecStdinClose.
+ * Use `create(ExecStdinCloseSchema)` to create a new message.
+ */
+export const ExecStdinCloseSchema: GenMessage<ExecStdinClose> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 6);
+
+/**
+ * @generated from message hangar.node.v1.WindowSize
+ */
+export type WindowSize = Message<"hangar.node.v1.WindowSize"> & {
+  /**
+   * @generated from field: uint32 rows = 1;
+   */
+  rows: number;
+
+  /**
+   * @generated from field: uint32 cols = 2;
+   */
+  cols: number;
+};
+
+/**
+ * Describes the message hangar.node.v1.WindowSize.
+ * Use `create(WindowSizeSchema)` to create a new message.
+ */
+export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 7);
+
+/**
+ * @generated from message hangar.node.v1.ExecResponse
+ */
+export type ExecResponse = Message<"hangar.node.v1.ExecResponse"> & {
+  /**
+   * @generated from oneof hangar.node.v1.ExecResponse.message
+   */
+  message: {
+    /**
+     * @generated from field: bytes stdout = 1;
+     */
+    value: Uint8Array;
+    case: "stdout";
+  } | {
+    /**
+     * @generated from field: bytes stderr = 2;
+     */
+    value: Uint8Array;
+    case: "stderr";
+  } | {
+    /**
+     * The last response.
+     *
+     * @generated from field: hangar.node.v1.ExitStatus exit = 3;
+     */
+    value: ExitStatus;
+    case: "exit";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.ExecResponse.
+ * Use `create(ExecResponseSchema)` to create a new message.
+ */
+export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 8);
 
 /**
  * LogStream says what a record carries.
@@ -213,6 +410,20 @@ export const NodeService: GenService<{
     methodKind: "server_streaming";
     input: typeof LogsRequestSchema;
     output: typeof LogsResponseSchema;
+  },
+  /**
+   * Exec runs a process in a running machine's guest beside its
+   * container's, for as long as the call lasts: once the call ends, the
+   * process's group is killed. The first request starts it; later ones
+   * carry its stdin, a resize or a signal. The responses carry its output
+   * and, last, how it ended.
+   *
+   * @generated from rpc hangar.node.v1.NodeService.Exec
+   */
+  exec: {
+    methodKind: "bidi_streaming";
+    input: typeof ExecRequestSchema;
+    output: typeof ExecResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_node_v1_node, 0);

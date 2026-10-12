@@ -313,7 +313,7 @@ func (*LogRecord_Data) isLogRecord_Content() {}
 
 func (*LogRecord_Exit) isLogRecord_Content() {}
 
-// ExitStatus is how a container's process ended.
+// ExitStatus is how a container's process, or an exec's, ended.
 type ExitStatus struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Code  int32                  `protobuf:"varint,1,opt,name=code,proto3" json:"code,omitempty"`
@@ -367,6 +367,438 @@ func (x *ExitStatus) GetSignal() int32 {
 	return 0
 }
 
+type ExecRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ExecRequest_Start
+	//	*ExecRequest_Stdin
+	//	*ExecRequest_StdinClose
+	//	*ExecRequest_Resize
+	//	*ExecRequest_Signal
+	Message       isExecRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecRequest) Reset() {
+	*x = ExecRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecRequest) ProtoMessage() {}
+
+func (x *ExecRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecRequest.ProtoReflect.Descriptor instead.
+func (*ExecRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ExecRequest) GetMessage() isExecRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ExecRequest) GetStart() *ExecStart {
+	if x != nil {
+		if x, ok := x.Message.(*ExecRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *ExecRequest) GetStdin() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*ExecRequest_Stdin); ok {
+			return x.Stdin
+		}
+	}
+	return nil
+}
+
+func (x *ExecRequest) GetStdinClose() *ExecStdinClose {
+	if x != nil {
+		if x, ok := x.Message.(*ExecRequest_StdinClose); ok {
+			return x.StdinClose
+		}
+	}
+	return nil
+}
+
+func (x *ExecRequest) GetResize() *WindowSize {
+	if x != nil {
+		if x, ok := x.Message.(*ExecRequest_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+func (x *ExecRequest) GetSignal() int32 {
+	if x != nil {
+		if x, ok := x.Message.(*ExecRequest_Signal); ok {
+			return x.Signal
+		}
+	}
+	return 0
+}
+
+type isExecRequest_Message interface {
+	isExecRequest_Message()
+}
+
+type ExecRequest_Start struct {
+	// The first request, and only the first.
+	Start *ExecStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type ExecRequest_Stdin struct {
+	// Only after a start with stdin.
+	Stdin []byte `protobuf:"bytes,2,opt,name=stdin,proto3,oneof"`
+}
+
+type ExecRequest_StdinClose struct {
+	// Closes the process's stdin; on a terminal it sends end-of-file.
+	StdinClose *ExecStdinClose `protobuf:"bytes,3,opt,name=stdin_close,json=stdinClose,proto3,oneof"`
+}
+
+type ExecRequest_Resize struct {
+	Resize *WindowSize `protobuf:"bytes,4,opt,name=resize,proto3,oneof"`
+}
+
+type ExecRequest_Signal struct {
+	// A signal number to send the process, such as 2.
+	Signal int32 `protobuf:"varint,5,opt,name=signal,proto3,oneof"`
+}
+
+func (*ExecRequest_Start) isExecRequest_Message() {}
+
+func (*ExecRequest_Stdin) isExecRequest_Message() {}
+
+func (*ExecRequest_StdinClose) isExecRequest_Message() {}
+
+func (*ExecRequest_Resize) isExecRequest_Message() {}
+
+func (*ExecRequest_Signal) isExecRequest_Message() {}
+
+// ExecStart starts an exec's process. What it leaves empty is the
+// container's, as its machine's VM was started with.
+type ExecStart struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	MachineUid string                 `protobuf:"bytes,1,opt,name=machine_uid,json=machineUid,proto3" json:"machine_uid,omitempty"`
+	// The program, looked up on PATH as the process's environment sets it,
+	// and its arguments.
+	Args []string `protobuf:"bytes,2,rep,name=args,proto3" json:"args,omitempty"`
+	// KEY=VALUE pairs set over the container's environment.
+	Env        []string `protobuf:"bytes,3,rep,name=env,proto3" json:"env,omitempty"`
+	WorkingDir string   `protobuf:"bytes,4,opt,name=working_dir,json=workingDir,proto3" json:"working_dir,omitempty"`
+	// As an OCI image gives it, such as "1000:1000".
+	User string `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
+	// Runs the process on a terminal; its stdout and stderr are then one
+	// stream.
+	Tty bool `protobuf:"varint,6,opt,name=tty,proto3" json:"tty,omitempty"`
+	// The terminal's first size, with tty.
+	Size *WindowSize `protobuf:"bytes,7,opt,name=size,proto3" json:"size,omitempty"`
+	// Gives the process a stdin to read. Without it, a process with no
+	// terminal has its stdin closed at once.
+	Stdin         bool `protobuf:"varint,8,opt,name=stdin,proto3" json:"stdin,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecStart) Reset() {
+	*x = ExecStart{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecStart) ProtoMessage() {}
+
+func (x *ExecStart) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecStart.ProtoReflect.Descriptor instead.
+func (*ExecStart) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ExecStart) GetMachineUid() string {
+	if x != nil {
+		return x.MachineUid
+	}
+	return ""
+}
+
+func (x *ExecStart) GetArgs() []string {
+	if x != nil {
+		return x.Args
+	}
+	return nil
+}
+
+func (x *ExecStart) GetEnv() []string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+func (x *ExecStart) GetWorkingDir() string {
+	if x != nil {
+		return x.WorkingDir
+	}
+	return ""
+}
+
+func (x *ExecStart) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *ExecStart) GetTty() bool {
+	if x != nil {
+		return x.Tty
+	}
+	return false
+}
+
+func (x *ExecStart) GetSize() *WindowSize {
+	if x != nil {
+		return x.Size
+	}
+	return nil
+}
+
+func (x *ExecStart) GetStdin() bool {
+	if x != nil {
+		return x.Stdin
+	}
+	return false
+}
+
+type ExecStdinClose struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecStdinClose) Reset() {
+	*x = ExecStdinClose{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecStdinClose) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecStdinClose) ProtoMessage() {}
+
+func (x *ExecStdinClose) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecStdinClose.ProtoReflect.Descriptor instead.
+func (*ExecStdinClose) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{6}
+}
+
+type WindowSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Rows          uint32                 `protobuf:"varint,1,opt,name=rows,proto3" json:"rows,omitempty"`
+	Cols          uint32                 `protobuf:"varint,2,opt,name=cols,proto3" json:"cols,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WindowSize) Reset() {
+	*x = WindowSize{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WindowSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WindowSize) ProtoMessage() {}
+
+func (x *WindowSize) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WindowSize.ProtoReflect.Descriptor instead.
+func (*WindowSize) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *WindowSize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+func (x *WindowSize) GetCols() uint32 {
+	if x != nil {
+		return x.Cols
+	}
+	return 0
+}
+
+type ExecResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ExecResponse_Stdout
+	//	*ExecResponse_Stderr
+	//	*ExecResponse_Exit
+	Message       isExecResponse_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExecResponse) Reset() {
+	*x = ExecResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExecResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExecResponse) ProtoMessage() {}
+
+func (x *ExecResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExecResponse.ProtoReflect.Descriptor instead.
+func (*ExecResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ExecResponse) GetMessage() isExecResponse_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ExecResponse) GetStdout() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*ExecResponse_Stdout); ok {
+			return x.Stdout
+		}
+	}
+	return nil
+}
+
+func (x *ExecResponse) GetStderr() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*ExecResponse_Stderr); ok {
+			return x.Stderr
+		}
+	}
+	return nil
+}
+
+func (x *ExecResponse) GetExit() *ExitStatus {
+	if x != nil {
+		if x, ok := x.Message.(*ExecResponse_Exit); ok {
+			return x.Exit
+		}
+	}
+	return nil
+}
+
+type isExecResponse_Message interface {
+	isExecResponse_Message()
+}
+
+type ExecResponse_Stdout struct {
+	Stdout []byte `protobuf:"bytes,1,opt,name=stdout,proto3,oneof"`
+}
+
+type ExecResponse_Stderr struct {
+	Stderr []byte `protobuf:"bytes,2,opt,name=stderr,proto3,oneof"`
+}
+
+type ExecResponse_Exit struct {
+	// The last response.
+	Exit *ExitStatus `protobuf:"bytes,3,opt,name=exit,proto3,oneof"`
+}
+
+func (*ExecResponse_Stdout) isExecResponse_Message() {}
+
+func (*ExecResponse_Stderr) isExecResponse_Message() {}
+
+func (*ExecResponse_Exit) isExecResponse_Message() {}
+
 var File_hangar_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_hangar_node_v1_node_proto_rawDesc = "" +
@@ -392,15 +824,45 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\n" +
 	"ExitStatus\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x16\n" +
-	"\x06signal\x18\x02 \x01(\x05R\x06signal*\x7f\n" +
+	"\x06signal\x18\x02 \x01(\x05R\x06signal\"\xf6\x01\n" +
+	"\vExecRequest\x121\n" +
+	"\x05start\x18\x01 \x01(\v2\x19.hangar.node.v1.ExecStartH\x00R\x05start\x12\x16\n" +
+	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdin\x12A\n" +
+	"\vstdin_close\x18\x03 \x01(\v2\x1e.hangar.node.v1.ExecStdinCloseH\x00R\n" +
+	"stdinClose\x124\n" +
+	"\x06resize\x18\x04 \x01(\v2\x1a.hangar.node.v1.WindowSizeH\x00R\x06resize\x12\x18\n" +
+	"\x06signal\x18\x05 \x01(\x05H\x00R\x06signalB\t\n" +
+	"\amessage\"\xdf\x01\n" +
+	"\tExecStart\x12\x1f\n" +
+	"\vmachine_uid\x18\x01 \x01(\tR\n" +
+	"machineUid\x12\x12\n" +
+	"\x04args\x18\x02 \x03(\tR\x04args\x12\x10\n" +
+	"\x03env\x18\x03 \x03(\tR\x03env\x12\x1f\n" +
+	"\vworking_dir\x18\x04 \x01(\tR\n" +
+	"workingDir\x12\x12\n" +
+	"\x04user\x18\x05 \x01(\tR\x04user\x12\x10\n" +
+	"\x03tty\x18\x06 \x01(\bR\x03tty\x12.\n" +
+	"\x04size\x18\a \x01(\v2\x1a.hangar.node.v1.WindowSizeR\x04size\x12\x14\n" +
+	"\x05stdin\x18\b \x01(\bR\x05stdin\"\x10\n" +
+	"\x0eExecStdinClose\"4\n" +
+	"\n" +
+	"WindowSize\x12\x12\n" +
+	"\x04rows\x18\x01 \x01(\rR\x04rows\x12\x12\n" +
+	"\x04cols\x18\x02 \x01(\rR\x04cols\"\x7f\n" +
+	"\fExecResponse\x12\x18\n" +
+	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
+	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x120\n" +
+	"\x04exit\x18\x03 \x01(\v2\x1a.hangar.node.v1.ExitStatusH\x00R\x04exitB\t\n" +
+	"\amessage*\x7f\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x13\n" +
 	"\x0fLOG_STREAM_INIT\x10\x03\x12\x13\n" +
-	"\x0fLOG_STREAM_EXIT\x10\x042R\n" +
+	"\x0fLOG_STREAM_EXIT\x10\x042\x99\x01\n" +
 	"\vNodeService\x12C\n" +
-	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01B\xb9\x01\n" +
+	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01\x12E\n" +
+	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01B\xb9\x01\n" +
 	"\x12com.hangar.node.v1B\tNodeProtoP\x01Z>github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1;nodev1\xa2\x02\x03HNX\xaa\x02\x0eHangar.Node.V1\xca\x02\x0eHangar\\Node\\V1\xe2\x02\x1aHangar\\Node\\V1\\GPBMetadata\xea\x02\x10Hangar::Node::V1b\x06proto3"
 
 var (
@@ -416,28 +878,40 @@ func file_hangar_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_hangar_node_v1_node_proto_goTypes = []any{
 	(LogStream)(0),                // 0: hangar.node.v1.LogStream
 	(*LogsRequest)(nil),           // 1: hangar.node.v1.LogsRequest
 	(*LogsResponse)(nil),          // 2: hangar.node.v1.LogsResponse
 	(*LogRecord)(nil),             // 3: hangar.node.v1.LogRecord
 	(*ExitStatus)(nil),            // 4: hangar.node.v1.ExitStatus
-	(*timestamppb.Timestamp)(nil), // 5: google.protobuf.Timestamp
+	(*ExecRequest)(nil),           // 5: hangar.node.v1.ExecRequest
+	(*ExecStart)(nil),             // 6: hangar.node.v1.ExecStart
+	(*ExecStdinClose)(nil),        // 7: hangar.node.v1.ExecStdinClose
+	(*WindowSize)(nil),            // 8: hangar.node.v1.WindowSize
+	(*ExecResponse)(nil),          // 9: hangar.node.v1.ExecResponse
+	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
 }
 var file_hangar_node_v1_node_proto_depIdxs = []int32{
-	5, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
-	3, // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
-	0, // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
-	5, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
-	4, // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
-	1, // 5: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
-	2, // 6: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	10, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	3,  // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
+	0,  // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
+	10, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
+	4,  // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
+	6,  // 5: hangar.node.v1.ExecRequest.start:type_name -> hangar.node.v1.ExecStart
+	7,  // 6: hangar.node.v1.ExecRequest.stdin_close:type_name -> hangar.node.v1.ExecStdinClose
+	8,  // 7: hangar.node.v1.ExecRequest.resize:type_name -> hangar.node.v1.WindowSize
+	8,  // 8: hangar.node.v1.ExecStart.size:type_name -> hangar.node.v1.WindowSize
+	4,  // 9: hangar.node.v1.ExecResponse.exit:type_name -> hangar.node.v1.ExitStatus
+	1,  // 10: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
+	5,  // 11: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
+	2,  // 12: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 13: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	12, // [12:14] is the sub-list for method output_type
+	10, // [10:12] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_hangar_node_v1_node_proto_init() }
@@ -450,13 +924,25 @@ func file_hangar_node_v1_node_proto_init() {
 		(*LogRecord_Data)(nil),
 		(*LogRecord_Exit)(nil),
 	}
+	file_hangar_node_v1_node_proto_msgTypes[4].OneofWrappers = []any{
+		(*ExecRequest_Start)(nil),
+		(*ExecRequest_Stdin)(nil),
+		(*ExecRequest_StdinClose)(nil),
+		(*ExecRequest_Resize)(nil),
+		(*ExecRequest_Signal)(nil),
+	}
+	file_hangar_node_v1_node_proto_msgTypes[8].OneofWrappers = []any{
+		(*ExecResponse_Stdout)(nil),
+		(*ExecResponse_Stderr)(nil),
+		(*ExecResponse_Exit)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_node_proto_rawDesc), len(file_hangar_node_v1_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

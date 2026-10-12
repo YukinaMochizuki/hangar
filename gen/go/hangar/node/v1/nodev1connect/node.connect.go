@@ -40,6 +40,8 @@ const (
 const (
 	// NodeServiceLogsProcedure is the fully-qualified name of the NodeService's Logs RPC.
 	NodeServiceLogsProcedure = "/hangar.node.v1.NodeService/Logs"
+	// NodeServiceExecProcedure is the fully-qualified name of the NodeService's Exec RPC.
+	NodeServiceExecProcedure = "/hangar.node.v1.NodeService/Exec"
 )
 
 // NodeServiceClient is a client for the hangar.node.v1.NodeService service.
@@ -47,6 +49,12 @@ type NodeServiceClient interface {
 	// Logs streams a machine's console log, oldest first, across every boot
 	// the host keeps, then, with follow, what is written as it comes.
 	Logs(context.Context, *connect.Request[v1.LogsRequest]) (*connect.ServerStreamForClient[v1.LogsResponse], error)
+	// Exec runs a process in a running machine's guest beside its
+	// container's, for as long as the call lasts: once the call ends, the
+	// process's group is killed. The first request starts it; later ones
+	// carry its stdin, a resize or a signal. The responses carry its output
+	// and, last, how it ended.
+	Exec(context.Context) *connect.BidiStreamForClient[v1.ExecRequest, v1.ExecResponse]
 }
 
 // NewNodeServiceClient constructs a client for the hangar.node.v1.NodeService service. By default,
@@ -66,12 +74,19 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Logs")),
 			connect.WithClientOptions(opts...),
 		),
+		exec: connect.NewClient[v1.ExecRequest, v1.ExecResponse](
+			httpClient,
+			baseURL+NodeServiceExecProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Exec")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
 	logs *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	exec *connect.Client[v1.ExecRequest, v1.ExecResponse]
 }
 
 // Logs calls hangar.node.v1.NodeService.Logs.
@@ -79,11 +94,22 @@ func (c *nodeServiceClient) Logs(ctx context.Context, req *connect.Request[v1.Lo
 	return c.logs.CallServerStream(ctx, req)
 }
 
+// Exec calls hangar.node.v1.NodeService.Exec.
+func (c *nodeServiceClient) Exec(ctx context.Context) *connect.BidiStreamForClient[v1.ExecRequest, v1.ExecResponse] {
+	return c.exec.CallBidiStream(ctx)
+}
+
 // NodeServiceHandler is an implementation of the hangar.node.v1.NodeService service.
 type NodeServiceHandler interface {
 	// Logs streams a machine's console log, oldest first, across every boot
 	// the host keeps, then, with follow, what is written as it comes.
 	Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error
+	// Exec runs a process in a running machine's guest beside its
+	// container's, for as long as the call lasts: once the call ends, the
+	// process's group is killed. The first request starts it; later ones
+	// carry its stdin, a resize or a signal. The responses carry its output
+	// and, last, how it ended.
+	Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -99,10 +125,18 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Logs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceExecHandler := connect.NewBidiStreamHandler(
+		NodeServiceExecProcedure,
+		svc.Exec,
+		connect.WithSchema(nodeServiceMethods.ByName("Exec")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceLogsProcedure:
 			nodeServiceLogsHandler.ServeHTTP(w, r)
+		case NodeServiceExecProcedure:
+			nodeServiceExecHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -114,4 +148,8 @@ type UnimplementedNodeServiceHandler struct{}
 
 func (UnimplementedNodeServiceHandler) Logs(context.Context, *connect.Request[v1.LogsRequest], *connect.ServerStream[v1.LogsResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.Logs is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.Exec is not implemented"))
 }

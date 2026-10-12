@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "hangar/compute/v1alpha1/container.proto";
+
+// A container's exec is a WebSocket, not a Connect call: a browser cannot
+// make a bidirectional Connect call (docs/decisions/streaming-transport.md).
+// The client opens
+//
+//   GET /v1/projects/{project}/containers/{name}:exec
+//
+// with the subprotocol hangar.exec.v1alpha1, authenticated as a Connect
+// call is. Each binary message is one ContainerExecRequest from the client,
+// the first of them a start, or one ContainerExecResponse from the server.
+// It needs compute.containers.exec. A refusal before the upgrade is an HTTP
+// error with a body of {"code", "message"}, as a Connect error; one after
+// it closes the WebSocket with 4000 plus the Connect code, such as 4009 for
+// FailedPrecondition, and the message as its reason. After the exit the
+// server closes it with 1000. See docs/decisions/node-tunnel.md.
+
+// ContainerExecRequest is a message from the client.
+message ContainerExecRequest {
+  oneof message {
+    // The first message, and only the first.
+    ContainerExecStart start = 1;
+    // Bytes for the process's stdin; only after a start with stdin.
+    bytes stdin = 2;
+    // Closes the process's stdin; on a terminal it sends end-of-file.
+    ContainerExecStdinClose stdin_close = 3;
+    // The terminal's new size, with tty.
+    ContainerExecWindowSize resize = 4;
+    // A signal number to send the process, such as 2 for SIGINT.
+    int32 signal = 5;
+  }
+}
+
+// ContainerExecStart runs a process in the container, as docker exec does:
+// with the container's environment, user and working directory, unless
+// overridden.
+message ContainerExecStart {
+  // The program, looked up on the PATH of the process's environment, and
+  // its arguments.
+  repeated string command = 1;
+  // Gives the process a stdin to read; without it, its stdin is closed
+  // from the start, or, on a terminal, nothing is ever typed.
+  bool stdin = 2;
+  // Runs the process on a terminal; its stdout and stderr are then one
+  // stream, sent as stdout.
+  bool tty = 3;
+  // The terminal's first size, with tty.
+  ContainerExecWindowSize size = 4;
+  // As an OCI image gives it, such as "1000" or "nobody:nogroup"; empty
+  // keeps the container's.
+  string user = 5;
+  // Set over the container's environment.
+  repeated EnvVar env = 6;
+  // Empty keeps the container's.
+  string working_dir = 7;
+}
+
+message ContainerExecStdinClose {}
+
+message ContainerExecWindowSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+// ContainerExecResponse is a message from the server.
+message ContainerExecResponse {
+  oneof message {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    // How the process ended; the last message.
+    ContainerExecExit exit = 3;
+  }
+}
+
+// ContainerExecExit is how an exec's process ended.
+message ContainerExecExit {
+  // The exit code; 128 plus the signal's number when a signal ended it.
+  // A program that cannot run ends with 127 if it is not found and 126
+  // otherwise, as in a shell.
+  int32 code = 1;
+  // The signal that ended it, 0 if none.
+  int32 signal = 2;
+}
