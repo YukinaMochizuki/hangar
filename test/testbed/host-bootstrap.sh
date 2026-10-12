@@ -3,14 +3,18 @@
 # installed OVH host: two plain swap partitions (loop devices), an installer-made
 # pool named hangar (file-backed), and an uplink whose IPv6 is the prefix's ::
 # address behind an on-link gateway outside the /64 (a veth into a netns).
+# HANGAR_TESTBED_RELEASE names a release directory (make release) for the
+# release and services steps.
 #
-# Run as root on a throwaway VM only: it rewrites fstab, netplan and sysctl.
+# Run as root on a throwaway VM only: it rewrites fstab, netplan and sysctl,
+# and installs and starts hangar's services.
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 host_dir=$repo/deploy/host
 work=/var/tmp/hangar-testbed
 env_file=$work/testbed.env
+release=${HANGAR_TESTBED_RELEASE:-}
 
 swap0=
 swap1=
@@ -19,6 +23,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 step() { echo; echo "### $*" >&2; }
 
 [ "$(id -u)" = 0 ] || fail "must run as root"
+[ -f "$release/SHA256SUMS" ] || fail "HANGAR_TESTBED_RELEASE must name a release directory (make release)"
+release=$(cd "$release" && pwd)
 
 # state_digest summarises everything a dry run must leave untouched.
 state_digest() {
@@ -34,6 +40,12 @@ state_digest() {
 		zpool get -H -o value autotrim hangar
 		cat /sys/module/zfs/parameters/zfs_arc_max
 		sysctl -n net.ipv6.conf.all.forwarding net.ipv6.conf.tb-uplink.proxy_ndp
+		zfs get -H -o property,value -r setuid,exec,devices,quota,mounted hangar
+		ls -lR /etc/systemd/system /etc/apt/apt.conf.d /etc/needrestart /usr/local/lib /etc/hangar
+		ls -la /var/lib/hangar
+		getent passwd hangar
+		systemctl is-active hangar-apiserver hangar-node
+		systemctl show -p TimersCalendar apt-daily.timer apt-daily-upgrade.timer
 	} 2>&1 | sha256sum
 }
 
@@ -104,7 +116,30 @@ HANGAR_SWAP_PARTS="$swap0 $swap1"
 HANGAR_SWAP_MD_NAME=swap
 HANGAR_ZPOOL=hangar
 HANGAR_ARC_MAX_BYTES=1073741824
+HANGAR_PUBLIC_IPV4=192.0.2.10
+HANGAR_IMAGES_QUOTA=1G
+HANGAR_VMS_QUOTA=1G
+HANGAR_NODE_NAME=testbed
 EOF
+	# What the operator writes by hand on a real host.
+	mkdir -p /etc/hangar
+	install -m 0600 /dev/null /etc/hangar/local.env
+	echo 'HANGAR_BOOTSTRAP_ADMIN=admin@testbed.invalid' >/etc/hangar/local.env
+}
+
+# main_pid UNIT prints the main pid of a service, 0 when it is not running.
+main_pid() { systemctl show -p MainPID --value "$1"; }
+
+# make_release FROM TO VERSION copies a release and makes TO a new version of
+# it: its binaries get bytes appended (an ELF file still runs with them), so
+# they differ, and SHA256SUMS is made again.
+make_release() {
+	local from=$1 to=$2 version=$3 f
+	rm -rf "$to"
+	cp -r "$from" "$to"
+	for f in hangar-node hangar-apiserver; do printf '%s' "$version" >>"$to/$f"; done
+	echo "$version" >"$to/VERSION"
+	(cd "$to" && rm SHA256SUMS && sha256sum -- * >SHA256SUMS)
 }
 
 test_failed_generator_writes_nothing() {
@@ -148,7 +183,7 @@ test_dry_run_changes_nothing() {
 	step "dry run reports changes and makes none"
 	local before out
 	before=$(state_digest)
-	out=$("$host_dir/bootstrap.sh" --env "$env_file" --dry-run)
+	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$release" --dry-run)
 	[ "$out" != "changes: 0" ] || fail "dry run on a fresh host reported no changes"
 	[ "$(state_digest)" = "$before" ] || fail "dry run changed the host"
 }
@@ -157,16 +192,140 @@ test_converges_and_is_idempotent() {
 	step "first run converges"
 	local log applied
 	log=$work/first-run.log
-	"$host_dir/bootstrap.sh" --env "$env_file" 2>&1 | tee "$log"
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" 2>&1 | tee "$log"
 	# The summary must count every change made, or "changes: 0" proves nothing.
 	applied=$(grep -c '^apply: ' "$log")
 	grep -qx "changes: $applied" "$log" || fail "summary does not match the $applied changes applied"
-	step "second run changes nothing"
+	step "second run changes nothing, with the same release or none"
 	local out
-	out=$("$host_dir/bootstrap.sh" --env "$env_file")
+	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$release")
 	[ "$out" = "changes: 0" ] || fail "second run reported $out"
+	out=$("$host_dir/bootstrap.sh" --env "$env_file")
+	[ "$out" = "changes: 0" ] || fail "a run without --release reported $out"
 	step "verify passes"
 	"$host_dir/verify.sh" --env "$env_file"
+	[ "$(cat /usr/local/lib/hangar/VERSION)" = "$(cat "$release/VERSION")" ] || fail "installed VERSION is not the release's"
+}
+
+test_refuses_tampered_release() {
+	step "a release whose files do not match its SHA256SUMS is refused, and nothing installed"
+	local bad=$work/release-tampered before node_pid
+	rm -rf "$bad"
+	cp -r "$release" "$bad"
+	printf x >>"$bad/hangar-node"
+	before=$(sha256sum /usr/local/bin/hangar-* /usr/local/lib/hangar/*)
+	node_pid=$(main_pid hangar-node)
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
+		fail "bootstrap installed a tampered release"
+	fi
+	grep -q 'checksum mismatch' "$work/tampered.log" || fail "unexpected refusal: $(cat "$work/tampered.log")"
+	[ "$(sha256sum /usr/local/bin/hangar-* /usr/local/lib/hangar/*)" = "$before" ] || fail "a refused release changed what is installed"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "a refused release restarted the node"
+	sed -i '/  hangar$/d' "$bad/SHA256SUMS"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
+		fail "bootstrap installed a release whose SHA256SUMS lacks a file"
+	fi
+	grep -q 'does not list hangar;' "$work/tampered.log" || fail "unexpected refusal: $(cat "$work/tampered.log")"
+	rm -rf "$bad"
+}
+
+test_refuses_without_local_env() {
+	step "the services step refuses without the bootstrap admin in /etc/hangar/local.env"
+	mv /etc/hangar/local.env "$work/local.env"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>"$work/localenv.log"; then
+		fail "the services step ran without /etc/hangar/local.env"
+	fi
+	grep -q 'HANGAR_BOOTSTRAP_ADMIN=<email>' "$work/localenv.log" || fail "unexpected refusal: $(cat "$work/localenv.log")"
+	mv "$work/local.env" /etc/hangar/local.env
+	# Readable by anyone is wrong too.
+	chmod 644 /etc/hangar/local.env
+	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with local.env mode 644"; fi
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then
+		fail "the services step ran with local.env mode 644"
+	fi
+	chmod 600 /etc/hangar/local.env
+}
+
+test_upgrade_restarts_services() {
+	step "a new release replaces the binaries and restarts both services, and no VM"
+	local next=$work/release-next api_pid node_pid decoy_pid out log=$work/upgrade.log
+	make_release "$release" "$next" "$(cat "$release/VERSION")-tb2"
+	# A stand-in for a VM: a transient unit of its own, as the agent starts
+	# them. Not named hangar-vm-*: the agent stops such a unit when no machine
+	# accounts for it.
+	systemd-run --quiet --unit=hangar-tb-decoy --property=KillMode=mixed sleep infinity
+	decoy_pid=$(main_pid hangar-tb-decoy)
+	api_pid=$(main_pid hangar-apiserver)
+	node_pid=$(main_pid hangar-node)
+
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$next" --dry-run 2>"$work/upgrade-dry.log" >/dev/null
+	grep -q '^would: restart hangar-node$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the node"
+	grep -q '^would: restart hangar-apiserver$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the apiserver"
+
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$next" >"$work/upgrade.out" 2>"$log"
+	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$work/upgrade.out" || fail "upgrade summary does not match its changes"
+	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver was not restarted on its new binary"
+	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted on its new binary"
+	[ "$(main_pid hangar-tb-decoy)" = "$decoy_pid" ] || fail "restarting the node touched another unit"
+	grep -q '^apply: install vmlinux' "$log" && fail "the upgrade reinstalled an unchanged kernel"
+	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$next")
+	[ "$out" = "changes: 0" ] || fail "the run after the upgrade reported $out"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/upgrade-verify.log" || fail "verify after the upgrade: $(grep FAIL "$work/upgrade-verify.log")"
+	grep -q "^PASS hangar release $(cat "$next/VERSION") installed" "$work/upgrade-verify.log" || fail "verify does not report the new version"
+
+	step "going back to the first release restarts them again"
+	node_pid=$(main_pid hangar-node)
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>&1
+	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted going back"
+	[ "$(main_pid hangar-tb-decoy)" = "$decoy_pid" ] || fail "restarting the node touched another unit"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after going back"
+	systemctl stop hangar-tb-decoy
+	rm -rf "$next"
+}
+
+test_unit_change_restarts_its_service() {
+	step "a changed unit restarts its service only"
+	local api_pid node_pid
+	api_pid=$(main_pid hangar-apiserver)
+	node_pid=$(main_pid hangar-node)
+	sed 's|^HANGAR_PUBLIC_IPV4=.*|HANGAR_PUBLIC_IPV4=192.0.2.11|' "$env_file" >"$work/ip.env"
+	"$host_dir/bootstrap.sh" --env "$work/ip.env" >/dev/null 2>"$work/unit.log"
+	grep -q '^apply: restart hangar-node$' "$work/unit.log" || fail "a changed node unit did not restart the node: $(cat "$work/unit.log")"
+	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node runs its old unit"
+	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the apiserver was restarted for the node's unit"
+	systemctl show -p ExecStart --value hangar-node | grep -q -- '--public-ipv4 192.0.2.11' || fail "the node's new unit is not loaded"
+
+	step "a run that died between writing a unit and restarting finishes the job"
+	node_pid=$(main_pid hangar-node)
+	sed -i 's/--public-ipv4 192.0.2.11/--public-ipv4 192.0.2.10/' /etc/systemd/system/hangar-node.service
+	mkdir -p /var/lib/hangar-bootstrap
+	touch /var/lib/hangar-bootstrap/restart-hangar-node
+	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with a restart pending"; fi
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/unit.log"
+	grep -q '^apply: restart hangar-node$' "$work/unit.log" || fail "a pending restart was not done: $(cat "$work/unit.log")"
+	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the pending restart"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the pending restart"
+}
+
+test_verify_catches_service_drift() {
+	step "verify reports drift in datasets, release, apt timers and services; bootstrap repairs it"
+	zfs set exec=on hangar/images
+	chmod 755 /var/lib/hangar/vms
+	printf x >>/usr/local/lib/hangar/vmlinux
+	rm /etc/systemd/system/apt-daily-upgrade.timer.d/hangar.conf
+	systemctl daemon-reload
+	systemctl restart apt-daily-upgrade.timer
+	systemctl stop hangar-apiserver
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log"; then
+		fail "verify passed on a drifted host"
+	fi
+	# images, vms, release checksums, upgrade files, timers, units running,
+	# socket, loopback listener, node Ready.
+	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 9 ] || fail "expected 9 FAIL lines: $(cat "$work/drift2.log")"
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null
+	"$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the repair"
 }
 
 test_bad_ipv6_rolls_back() {
@@ -229,8 +388,13 @@ test_refuses_non_swap_partition
 test_refuses_unknown_installer_keys
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
+test_refuses_tampered_release
+test_refuses_without_local_env
+test_upgrade_restarts_services
+test_unit_change_restarts_its_service
 test_refuses_while_rollback_pending
 test_verify_catches_drift
+test_verify_catches_service_drift
 test_bad_ipv6_rolls_back
 echo
 echo "host-bootstrap testbed: all passed"

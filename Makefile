@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
@@ -103,6 +103,13 @@ check: lint breaking test gen-check
 
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
+
+# What a host runs, in bin/release/hangar-<revision>/ with SHA256SUMS: the
+# binaries, the guest kernel and the initramfs (docs/runbook/host-bootstrap.md).
+# Builds the kernel, so it takes minutes and needs a C toolchain. OUT=DIR
+# writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted changes.
+release:
+	deploy/release.sh $(if $(ALLOW_DIRTY),--allow-dirty) $(OUT)
 
 # Not part of check: it takes minutes and needs a C toolchain.
 guest-kernel:

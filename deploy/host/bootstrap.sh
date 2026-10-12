@@ -5,12 +5,14 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: bootstrap.sh [--host NAME | --env FILE] [--only STEP] [--dry-run]
+usage: bootstrap.sh [--host NAME | --env FILE] [--only STEP] [--release DIR] [--dry-run]
 
-  --host NAME   use hosts/NAME.env (default: the output of `hostname`)
-  --env FILE    use FILE instead of a file under hosts/
-  --only STEP   run one step, e.g. --only swap-raid
-  --dry-run     print what would change and change nothing
+  --host NAME    use hosts/NAME.env (default: the output of `hostname`)
+  --env FILE     use FILE instead of a file under hosts/
+  --only STEP    run one step, e.g. --only swap-raid
+  --release DIR  install the release in DIR (made by `make release`); without
+                 it, the release step keeps what is installed
+  --dry-run      print what would change and change nothing
 
 Prints "changes: N" at the end; N is 0 when the host was already converged.
 EOF
@@ -23,11 +25,14 @@ here=$(cd "$(dirname "$0")" && pwd)
 host=$(hostname)
 env_file=
 only=
+# HANGAR_RELEASE_DIR is read by the release step.
+# shellcheck disable=SC2034
 while [ $# -gt 0 ]; do
 	case $1 in
 	--host) host=$2; shift 2 ;;
 	--env) env_file=$2; shift 2 ;;
 	--only) only=$2; shift 2 ;;
+	--release) HANGAR_RELEASE_DIR=$(cd "$2" && pwd) || die "no release directory $2"; shift 2 ;;
 	--dry-run) DRY_RUN=1; shift ;;
 	-h | --help) usage; exit 0 ;;
 	*) usage >&2; exit 2 ;;

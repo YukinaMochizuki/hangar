@@ -14,6 +14,10 @@ STATE_DIR=/var/lib/hangar-bootstrap
 INITRAMFS_MARKER=$STATE_DIR/initramfs-pending
 INITRAMFS_PENDING=0
 ROLLBACK_UNIT=hangar-netplan-rollback
+# What stays on the host and out of the repo: the bootstrap admin's email
+# (the human's Cloudflare Access identity). The operator writes it by hand.
+# shellcheck disable=SC2034
+LOCAL_ENV=/etc/hangar/local.env
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
@@ -110,7 +114,12 @@ load_env() {
 	# shellcheck disable=SC1090
 	. "$env_file"
 	require_vars HANGAR_UPLINK HANGAR_UPLINK_MAC HANGAR_IPV6_ADDR HANGAR_IPV6_GATEWAY \
-		HANGAR_SWAP_PARTS HANGAR_SWAP_MD_NAME HANGAR_ZPOOL HANGAR_ARC_MAX_BYTES
+		HANGAR_SWAP_PARTS HANGAR_SWAP_MD_NAME HANGAR_ZPOOL HANGAR_ARC_MAX_BYTES \
+		HANGAR_NODE_NAME HANGAR_PUBLIC_IPV4 HANGAR_IMAGES_QUOTA HANGAR_VMS_QUOTA
+	local v
+	for v in HANGAR_IMAGES_QUOTA HANGAR_VMS_QUOTA; do
+		[[ ${!v} =~ ^[1-9][0-9]*G$ ]] || die "$v must be a whole number of GiB, such as 100G, not ${!v}"
+	done
 	# ip prints addresses in canonical form; compare against the same form.
 	HANGAR_IPV6_ADDR=$(ipv6_canon "$HANGAR_IPV6_ADDR")
 	HANGAR_UPLINK_MAC=${HANGAR_UPLINK_MAC,,}
@@ -135,6 +144,12 @@ EOF
 uplink_global_ipv6() {
 	ip -6 -o addr show dev "$HANGAR_UPLINK" scope global | awk '{print $4}'
 }
+
+# gib_of SIZE prints the GiB in a size of the form NG.
+gib_of() { printf '%s\n' "${1%G}"; }
+
+# bytes_of SIZE prints the bytes in a size of the form NG.
+bytes_of() { printf '%s\n' $(($(gib_of "$1") << 30)); }
 
 uplink_holds_subnet_router() {
 	local a
