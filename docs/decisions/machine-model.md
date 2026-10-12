@@ -36,8 +36,9 @@ Hypervisor directly, without Kata or Kubernetes.
   reporting. `Ready` is False with reason `Stopped` meanwhile. Apply replaces
   the whole spec (`apply-semantics.md`), so applying a manifest that leaves
   `runState` out starts a stopped container again, by design, as `kubectl
-  apply` after `kubectl scale` resets the replicas. A CLI `hangar stop` and
-  `start` would apply the container with only the run state changed.
+  apply` after `kubectl scale` resets the replicas. `hangar stop` and
+  `hangar start` apply the container with only the run state changed, at
+  the resource version they read, and read again on a conflict.
 - `Machine` is project-scoped and owned by the object it was made from, so
   garbage collection, tenant isolation and quotas need nothing new. Users can
   read their machines (it is where placement and boot failures show) but never

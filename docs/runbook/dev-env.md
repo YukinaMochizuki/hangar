@@ -85,6 +85,17 @@ A number anchored outside a string field and reached through a YAML alias
 (`*name`) or merge key (`<<`) is not converted, so quote it where it is
 anchored.
 
+To stop a container and start it again without editing its manifest:
+
+```sh
+go run ./cmd/hangar stop ct api --wait     # waits for condition Stopped
+go run ./cmd/hangar start ct api --wait    # waits for condition Ready
+```
+
+They change only `spec.runState`, so a later `apply` of a manifest without
+`runState` starts the container again. Without a node, `--wait` waits until
+`--timeout`.
+
 To act as someone else, add them as a member first (a platform RoleBinding
 with role `platform.member` for their email, applied as the admin) and make a
 second context with `--user`.
