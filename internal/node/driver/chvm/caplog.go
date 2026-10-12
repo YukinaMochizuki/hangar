@@ -19,8 +19,14 @@ type cappedLog struct {
 	max  int64
 	f    *os.File
 	size int64
+	// head, if set, starts every file a rotation begins, as a console
+	// log's files start with the boot they are of.
+	head []byte
 	// open opens the file at path; nil means openLog. Tests make it fail.
 	open func(path string, flag int) (*os.File, error)
+	// write writes to the file; nil means its Write. Tests make it fall
+	// short.
+	write func(f *os.File, p []byte) (int, error)
 }
 
 // openCapped opens the log at path to append to it, as a VM started again
@@ -48,9 +54,30 @@ func (c *cappedLog) Write(p []byte) (int, error) {
 			return 0, err
 		}
 	}
-	n, err := c.f.Write(p)
-	c.size += int64(n)
-	return n, err
+	return c.whole(p)
+}
+
+// whole writes p, a whole record or several, or none of it: a write that
+// falls short, as on a full disk, is cut back off the file, so no part of
+// a record stays in it to swallow what comes after.
+func (c *cappedLog) whole(p []byte) (int, error) {
+	write := c.write
+	if write == nil {
+		write = (*os.File).Write
+	}
+	n, err := write(c.f, p)
+	if n == len(p) {
+		c.size += int64(n)
+		return n, err
+	}
+	if terr := c.f.Truncate(c.size); terr != nil {
+		c.size += int64(n)
+		return n, errors.Join(err, terr)
+	}
+	if err == nil {
+		err = io.ErrShortWrite
+	}
+	return 0, err
 }
 
 // rotate moves the log to path.1 and starts it afresh. A rotation that
@@ -70,6 +97,9 @@ func (c *cappedLog) rotate() error {
 	}
 	_ = c.f.Close()
 	c.f, c.size = f, 0
+	if len(c.head) > 0 {
+		_, _ = c.whole(c.head)
+	}
 	return nil
 }
 
@@ -96,6 +126,8 @@ func pumpConsole(r io.Reader, log io.Writer, logErr func(error)) *console.ExitSt
 		if err != nil && (!errors.Is(err, console.ErrCorrupt) || rec.Payload == nil) {
 			continue
 		}
+		// Anything else, Boot records included, is not the guest's to
+		// write.
 		switch rec.Stream {
 		case console.Stdout, console.Stderr, console.Init:
 		case console.Exit:

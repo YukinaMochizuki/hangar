@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
@@ -57,7 +59,14 @@ func newWorld(t *testing.T) *world {
 // newIdleWorld is a world whose agent is not started yet.
 func newIdleWorld(t *testing.T) *world {
 	t.Helper()
-	env := apiservertest.Start(t, nil)
+	return newIdleWorldWith(t, nil)
+}
+
+// newIdleWorldWith is newIdleWorld with the apiserver's config adjusted by
+// configure.
+func newIdleWorldWith(t *testing.T, configure func(*apiserver.Config)) *world {
+	t.Helper()
+	env := apiservertest.Start(t, configure)
 	env.Setup()
 	w := &world{t: t, env: env, host: fake.New(), root: env.As(apiservertest.Root), system: env.AsSystem()}
 	w.host.AddImage("nginx", "sha256:nginx-1", nginx)
@@ -76,6 +85,10 @@ func (w *world) startAgent() {
 		Name:    apiservertest.Node,
 		HTTP:    hc,
 		BaseURL: client.UnixSocketURL,
+		Tunnel: func(ctx context.Context) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", w.env.Socket)
+		},
+		LogPoll: 20 * time.Millisecond,
 		Host: func() (*computev1alpha1.NodeResources, error) {
 			return &computev1alpha1.NodeResources{Cpu: "8", Memory: "16Gi"}, nil
 		},

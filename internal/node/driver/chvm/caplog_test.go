@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -175,6 +176,78 @@ func TestThePumpKeepsWellFormedRecords(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("record %d: %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+// TestAGuestCannotNumberItsBoots: a Boot record the guest writes is
+// dropped, so only the launcher's number the boots.
+func TestAGuestCannotNumberItsBoots(t *testing.T) {
+	var in bytes.Buffer
+	in.Write(record(console.Stdout, "before\n"))
+	in.Write(console.AppendRecord(nil, console.BootRecord(99, time.Unix(1, 0))))
+	in.Write(record(console.Stdout, "after\n"))
+	var log bytes.Buffer
+	pumpConsole(&in, &log, nil)
+	path := filepath.Join(t.TempDir(), "log")
+	if err := os.WriteFile(path, log.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got := records(t, path)
+	if len(got) != 2 || string(got[0].Payload) != "before\n" || string(got[1].Payload) != "after\n" {
+		t.Errorf("kept %+v, want the output without the forged boot", got)
+	}
+}
+
+// TestAShortWriteLeavesNoPartOfARecord: a write the disk takes only part
+// of, as when it fills, is cut back off the log, and so is a rotated
+// file's head, so the log holds whole records only and what comes after
+// is read.
+func TestAShortWriteLeavesNoPartOfARecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ConsoleLog)
+	l, err := openCapped(path, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = l.Close() }()
+	var short atomic.Bool
+	l.write = func(f *os.File, p []byte) (int, error) {
+		if short.Load() {
+			n, _ := f.Write(p[:len(p)/2])
+			return n, syscall.ENOSPC
+		}
+		return f.Write(p)
+	}
+	l.head = record(console.Init, "head")
+	if _, err := l.Write(record(console.Stdout, "one\n")); err != nil {
+		t.Fatal(err)
+	}
+	short.Store(true)
+	if n, err := l.Write(record(console.Stdout, "lost\n")); n != 0 || !errors.Is(err, syscall.ENOSPC) {
+		t.Errorf("a short write: %d, %v", n, err)
+	}
+	short.Store(false)
+	if _, err := l.Write(record(console.Stdout, "two\n")); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range records(t, path) {
+		got = append(got, string(r.Payload))
+	}
+	if len(got) != 2 || got[0] != "one\n" || got[1] != "two\n" {
+		t.Errorf("the log holds %q", got)
+	}
+
+	// A rotation whose head falls short starts the file with nothing.
+	short.Store(true)
+	if err := l.rotate(); err != nil {
+		t.Fatal(err)
+	}
+	short.Store(false)
+	if _, err := l.Write(record(console.Stdout, "three\n")); err != nil {
+		t.Fatal(err)
+	}
+	if got := records(t, path); len(got) != 1 || string(got[0].Payload) != "three\n" || l.size != size(t, path) {
+		t.Errorf("after a short head: %+v, size %d of %d", got, l.size, size(t, path))
 	}
 }
 
