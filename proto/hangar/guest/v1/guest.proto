@@ -54,7 +54,20 @@ service GuestAgentService {
   // starts it; later ones carry its stdin, a resize or a signal. The
   // responses carry its output and, last, how it ended.
   rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+  // Stop stops the container's main process as docker stop does: SIGTERM
+  // to its process group, then SIGKILL once the grace period has passed.
+  // The guest then records how the process ended and powers off, as when
+  // it exits by itself. It answers once SIGTERM is sent; asking again
+  // changes nothing.
+  rpc Stop(StopRequest) returns (StopResponse);
 }
+
+message StopRequest {
+  // How long the process has between SIGTERM and SIGKILL; at most an hour.
+  google.protobuf.Duration grace = 1;
+}
+
+message StopResponse {}
 
 message PingRequest {}
 

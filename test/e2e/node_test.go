@@ -437,6 +437,7 @@ func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 		t.Fatal("a machine went before its node released it")
 	}
 	w.host.Leave("crashed-machine", "crashed-network")
+	w.host.LeaveLog("long-gone-machine")
 
 	w.startAgent()
 	w.waitGone("api")
@@ -444,7 +445,7 @@ func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 		s := w.host.Snapshot()
 		_, vm := s.VMs[web]
 		return len(s.VMs) == 1 && vm && len(s.Roots) == 1 && len(s.Interfaces) == 1 && len(s.Networks) == 1 &&
-			len(s.Bases) == 1, fmt.Sprintf("%+v", s)
+			len(s.Bases) == 1 && slices.Equal(s.Logs, []string{web}), fmt.Sprintf("%+v", s)
 	})
 	w.waitReason("web", "Running")
 	if vm := w.host.Snapshot().VMs[web]; vm.Boots != 1 {

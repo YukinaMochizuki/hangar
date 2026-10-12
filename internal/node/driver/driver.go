@@ -185,17 +185,34 @@ type Interface struct {
 // Hypervisor runs VMs. A VM exited for good stays listed, with its exit
 // code, until it is stopped: an unlisted VM is one never started. Stopping
 // what is not there is not an error.
+//
+// A VM's console log, what its container wrote, outlives it: through its
+// restarts, a Stop and a Start again, until DeleteLogs, once the machine is
+// gone.
 type Hypervisor interface {
 	// Start runs the VM, or leaves it as it is if it already runs this exact
 	// spec. A VM running another spec is an error: stop it first.
 	Start(ctx context.Context, vm VMSpec) error
-	// Stop stops a machine's VM and forgets it.
+	// Stop stops a machine's VM and forgets it, keeping its console log. A
+	// running guest is asked to stop its process first, as docker stop
+	// does, and its VM is killed if it has not powered off in StopGrace and
+	// a few seconds more. A stopped VM is never started again by its
+	// restart policy.
 	Stop(ctx context.Context, machineUID string) error
 	// VMs lists the VMs on the host, running or not.
 	VMs(ctx context.Context) ([]VM, error)
 	// Changes signals that a VM changed state on its own, such as exiting.
 	Changes() <-chan struct{}
+	// Logs lists the machines whose console logs the host keeps.
+	Logs(ctx context.Context) ([]string, error)
+	// DeleteLogs removes a machine's console log. It fails while the
+	// machine's VM is listed.
+	DeleteLogs(ctx context.Context, machineUID string) error
 }
+
+// StopGrace is how long a container's process has between SIGTERM and
+// SIGKILL when its machine is stopped.
+const StopGrace = 10 * time.Second
 
 // VMSpec is everything a VM is started with. Hash identifies it.
 type VMSpec struct {
@@ -267,4 +284,8 @@ type Guest interface {
 	// Ready returns nil once the machine's guest agent answers. It is called
 	// with a short deadline and must honour it.
 	Ready(ctx context.Context, machineUID string) error
+	// Stop asks the guest to stop its container's process: SIGTERM, then
+	// SIGKILL after grace. The guest powers off once the process has ended;
+	// Stop returns once the process is signalled, not when it ends.
+	Stop(ctx context.Context, machineUID string, grace time.Duration) error
 }

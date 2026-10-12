@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
@@ -33,6 +34,14 @@ func (g Guest) Ready(ctx context.Context, machineUID string) error {
 	c, done := g.Client(machineUID)
 	defer done()
 	_, err := c.Ping(ctx, connect.NewRequest(&guestv1.PingRequest{}))
+	return err
+}
+
+// Stop asks the guest agent to stop the container's process.
+func (g Guest) Stop(ctx context.Context, machineUID string, grace time.Duration) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	_, err := c.Stop(ctx, connect.NewRequest(&guestv1.StopRequest{Grace: durationpb.New(grace)}))
 	return err
 }
 

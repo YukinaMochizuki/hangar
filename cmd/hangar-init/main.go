@@ -103,7 +103,8 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	}
 
 	reaper := supervise.NewReaper()
-	if err := serveAgent(reaper, workload, started, logf); err != nil {
+	stopper := &supervise.Stopper{}
+	if err := serveAgent(reaper, stopper, workload, started, logf); err != nil {
 		// The container runs all the same; the node sees it does not answer.
 		logf("hangar-init: guest agent: %v", err)
 	}
@@ -143,6 +144,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 		}
 		return console.ExitStatus{Code: code}, fmt.Errorf("starting %s: %w", argv[0], err)
 	}
+	stopper.Started(proc)
 	_ = devnull.Close()
 	_ = outW.Close()
 	_ = errW.Close()
@@ -166,8 +168,8 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 }
 
 // serveAgent serves the guest agent on vsock, processes it starts going to
-// the workload cgroup.
-func serveAgent(reaper *supervise.Reaper, workload *os.File, started time.Time, logf func(string, ...any)) error {
+// the workload cgroup; a Stop goes to stopper.
+func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, started time.Time, logf func(string, ...any)) error {
 	ln, err := vsock.Listen(agent.Port, nil)
 	if err != nil {
 		return err
@@ -175,6 +177,10 @@ func serveAgent(reaper *supervise.Reaper, workload *os.File, started time.Time, 
 	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
 		Reaper: reaper, Root: "/", Version: buildinfo.Version(), Started: started, Cgroup: workload,
 		OnPanic: func(r any) { logf("hangar-init: guest agent: %v", r) },
+		StopMain: func(grace time.Duration) {
+			logf("hangar-init: stopping the container, %v before SIGKILL", grace)
+			stopper.Stop(grace)
+		},
 	}, connect.WithReadMaxBytes(agent.MaxMessage))
 	protocols := &http.Protocols{}
 	protocols.SetUnencryptedHTTP2(true)

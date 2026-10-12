@@ -27,7 +27,63 @@ with the host after any of these, and nothing would notice.
   suite `driver/drivertest`. A fake of all five simulates one host with fault
   injection (`driver/fake`), which the hermetic end-to-end tests run on and
   which the suite holds to the contract; systemd units are a detail of the
-  real hypervisor driver.
+  real hypervisor driver. `hangar-node --drivers=host` runs on this host's
+  drivers: `registry`, `zfsstore`, `hostnet`, `chvm` and `chguest`.
+- **Each VM is a transient systemd unit, `hangar-vm-<machine uid>.service`,
+  whose main process is the launcher, `hangar-node vmm <uid>`**
+  (`internal/node/driver/chvm`), so a VM outlives the agent: the agent
+  crashing, restarting or being upgraded leaves it running, and a new
+  agent reads it back. Each VM has a directory, `/var/lib/hangar/vms/<uid>`,
+  with what the launcher runs: the spec, written whole by `Start`, and the
+  boot disk. On each start the launcher checks with `BLKZNAME` that the
+  root disk's link leads to the machine's own zvol (a stale link can lead
+  to another's, `storage-zfs.md`), opens the taps, and runs Cloud
+  Hypervisor on them with the platform kernel and initramfs, hybrid vsock
+  at `vsock` in the directory, and the console on its stdout. It keeps the
+  console in `console.log`, rotated at record boundaries to `console.log.1`
+  past 16 MiB, writing only well-formed records, so nothing the guest
+  writes can wedge it or grow the file past its cap; the kernel's serial
+  console goes to `serial.log` the same way, past 1 MiB. A log that fails,
+  as on a full disk, drops what it cannot take and is tried again, so the
+  guest is never held up by it. When the guest
+  powers off, the launcher records how its process ended in `exit.json`
+  and exits with the process's exit code (253 when the guest recorded
+  none, as after a crash; 252 when the launcher could not start the VM),
+  so systemd's `Restart=` and its restart count see the container. A
+  container exiting with 252 or 253 itself reads the same; `exit.json`
+  says which (`Error` for the launcher's failure).
+- **The exit code and the log are the guest's claim.** The guest's root
+  is the tenant's, who can write any records on the console: a forged
+  exit record, or a header of a legal length that swallows what follows,
+  hangar-init's own exit record included. The launcher reads them as they
+  are, so a guest can set its own exit code and garble its own log, and so
+  its own restart policy's decision; nothing it writes reaches another VM,
+  stops the launcher, or grows the log past its cap.
+- **The restart policy is systemd's**: `always`, `on-failure` or `no`, the
+  first restart after a second, then longer, up to a minute, and never
+  given up. A VM is listed running while its unit is active or waiting to
+  restart, and exited (with its code) when its exit is recorded and its
+  unit is gone.
+- **A VM interrupted is started again by its policy** (decided 2026-10):
+  one whose unit is gone with no exit recorded and no stop asked, as at a
+  host reboot (units are transient) or with its launcher killed outright,
+  is not listed under `always` and `on-failure`, so the agent starts it
+  again, and is listed exited with 253 under `no`.
+- **Stopping is docker stop** (`guest-agent.md`): the agent asks the guest
+  to stop its process, waits up to the 10 s grace and 5 s more for the
+  guest to power off, then stops the unit, which kills Cloud Hypervisor; a
+  guest that does not take the stop within 3 s is killed at once. Before
+  asking, it marks the VM as being stopped, and a launcher whose guest
+  powers off while marked waits to be stopped instead of exiting, so a
+  stop never restarts a VM, whatever its policy. A stop removes the unit
+  and the VM's directory but its logs. A stop cut short leaves the mark;
+  starting the VM's spec again while it runs clears it, so its next exit
+  is its policy's again.
+- **A VM's logs outlive it**: its restarts, a stop and a start again. They
+  go when the machine is released, or when the sweep finds them of no
+  machine on the node.
+- **The driver touches only its own**: units named `hangar-vm-<uid>` for a
+  uid it takes, and its directory.
 - **The node follows the API like a controller** (`controller.APISource`),
   with Machines placed on it and their Networks as the watched kinds. What the
   host notices on its own (a VM exiting, networkd removing a link) checks every
@@ -55,9 +111,11 @@ with the host after any of these, and nothing would notice.
   another image, and a tag is resolved again, with the backoff, so an image
   fixed and pushed under the same tag is pulled. Asking a guest agent
   whether it answers is bounded to
-  seconds. One worker then serves every machine in turn; a step
-  that turns slow later (such as a graceful shutdown) moves off the lock the
-  same way.
+  seconds. One worker then serves every machine in turn. Stopping a VM
+  still runs under the lock, and takes as long as its guest takes to stop:
+  about 20 s at worst (3 s to ask the guest, the 10 s grace and 5 s of
+  slack, 2 s for the launcher to kill Cloud Hypervisor); it is the next
+  step to move off the lock the same way.
 - **An image reference is resolved once**: the reference and its digest
   are kept in the machine's status, and resolved again only when the spec
   names another image. A tag moving upstream never rebuilds a container's

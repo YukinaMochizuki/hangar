@@ -40,6 +40,15 @@ type Host struct {
 	// Exit ends the guest process of a running VM with code, as the
 	// container's process exiting does.
 	Exit func(t *testing.T, machineUID string, code int)
+	// Run is what the guests run, which Exit knows how to end; zero runs
+	// sleep infinity.
+	Run driver.RunSpec
+	// ReopenHypervisor, if set, returns a new instance of the hypervisor
+	// driver on the same host, as the agent has after it restarts.
+	ReopenHypervisor func(t *testing.T) driver.Hypervisor
+	// AskedToStop reports whether the guest of the machine's VM, stopped,
+	// was asked to stop its process before the VM went.
+	AskedToStop func(t *testing.T, machineUID string) bool
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -54,7 +63,9 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 		})
 	}
 	disks := func(h Host) bool { return h.Images != nil && h.Storage != nil }
-	vms := func(h Host) bool { return disks(h) && h.Network != nil && h.Hypervisor != nil && h.Guest != nil }
+	vms := func(h Host) bool {
+		return disks(h) && h.Network != nil && h.Hypervisor != nil && h.Guest != nil && h.AskedToStop != nil
+	}
 	part("images", images, func(h Host) bool { return h.Images != nil })
 	part("storage", storage, disks)
 	part("root sizes", rootSizes, disks)
@@ -508,17 +519,26 @@ func vmSpec(t *testing.T, h Host, machine string, restart driver.RestartPolicy) 
 	must(t, h.Network.EnsureNetwork(ctx, testNet))
 	nic, err := h.Network.EnsureInterface(ctx, eth0(machine))
 	must(t, err)
+	run := h.Run
+	if len(run.Command) == 0 {
+		run = driver.RunSpec{Command: []string{"sleep", "infinity"}}
+	}
 	return driver.VMSpec{
 		MachineUID: machine, Machine: "test/" + machine, VCPUs: 1, MemoryMiB: 256,
 		Root: root, Interfaces: []driver.Interface{nic},
-		Run:     driver.RunSpec{Command: []string{"sleep", "infinity"}},
+		Run:     run,
 		Restart: restart,
 	}
 }
 
 func vmOf(t *testing.T, h Host, machine string) (driver.VM, bool) {
 	t.Helper()
-	vms, err := h.Hypervisor.VMs(t.Context())
+	return vmIn(t, h.Hypervisor, machine)
+}
+
+func vmIn(t *testing.T, hv driver.Hypervisor, machine string) (driver.VM, bool) {
+	t.Helper()
+	vms, err := hv.VMs(t.Context())
 	must(t, err)
 	for _, v := range vms {
 		if v.MachineUID == machine {
@@ -565,6 +585,25 @@ func hypervisor(t *testing.T, h Host) {
 	if err := h.Network.DeleteInterfaces(ctx, "m1"); err == nil {
 		t.Error("deleted the interfaces of a running VM")
 	}
+	if err := h.Hypervisor.DeleteLogs(ctx, "m1"); err == nil {
+		t.Error("deleted the console log of a running VM")
+	}
+
+	// What the host runs is read back from it, not remembered.
+	if h.ReopenHypervisor != nil {
+		fresh := h.ReopenHypervisor(t)
+		got, ok := vmIn(t, fresh, "m1")
+		if !ok || got.SpecHash != vm.SpecHash || got.State != driver.VMRunning || !got.Started.Equal(vm.Started) {
+			t.Errorf("a new instance lists %+v %t, the first listed %+v", got, ok, vm)
+		}
+		must(t, fresh.Start(ctx, spec))
+		if err := fresh.Start(ctx, other); err == nil {
+			t.Error("a new instance started another spec over a running VM")
+		}
+		if again, _ := vmOf(t, h, "m1"); !again.Started.Equal(vm.Started) {
+			t.Error("a new instance starting the same spec restarted the VM")
+		}
+	}
 
 	must(t, h.Hypervisor.Stop(ctx, "m1"))
 	must(t, h.Hypervisor.Stop(ctx, "m1"))
@@ -573,6 +612,24 @@ func hypervisor(t *testing.T, h Host) {
 	}
 	if err := h.Guest.Ready(ctx, "m1"); err == nil {
 		t.Error("the guest of a stopped VM answers")
+	}
+	if !h.AskedToStop(t, "m1") {
+		t.Error("the VM was stopped without its guest being asked to stop its process")
+	}
+	// Stopped, it stays down, though its policy is always.
+	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+		if vm, ok := vmOf(t, h, "m1"); ok {
+			t.Fatalf("a stopped VM came back: %+v", vm)
+		}
+	}
+	// The log outlives the VM until the machine is gone.
+	if logs, err := h.Hypervisor.Logs(ctx); err != nil || !slices.Contains(logs, "m1") {
+		t.Errorf("logs after the VM stopped: %v %v", logs, err)
+	}
+	must(t, h.Hypervisor.DeleteLogs(ctx, "m1"))
+	must(t, h.Hypervisor.DeleteLogs(ctx, "m1"))
+	if logs, err := h.Hypervisor.Logs(ctx); err != nil || slices.Contains(logs, "m1") {
+		t.Errorf("logs after deleting them: %v %v", logs, err)
 	}
 	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
 	must(t, h.Storage.DeleteRoot(ctx, "m1"))
@@ -590,10 +647,18 @@ func restarts(t *testing.T, h Host) {
 		{"always after failure", driver.RestartAlways, 3, true},
 		{"on failure after success", driver.RestartOnFailure, 0, false},
 		{"on failure after failure", driver.RestartOnFailure, 3, true},
+		{"never after success", driver.RestartNever, 0, false},
 		{"never after failure", driver.RestartNever, 3, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			spec := vmSpec(t, h, "m1", tt.policy)
+			// A failed case leaves nothing for the next.
+			t.Cleanup(func() {
+				_ = h.Hypervisor.Stop(ctx, "m1")
+				_ = h.Hypervisor.DeleteLogs(ctx, "m1")
+				_ = h.Network.DeleteInterfaces(ctx, "m1")
+				_ = h.Storage.DeleteRoot(ctx, "m1")
+			})
 			must(t, h.Hypervisor.Start(ctx, spec))
 			first, _ := vmOf(t, h, "m1")
 			eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
@@ -616,8 +681,19 @@ func restarts(t *testing.T, h Host) {
 					vm, ok := vmOf(t, h, "m1")
 					return ok && vm.State == driver.VMExited && vm.ExitCode == tt.code
 				})
+				if h.ReopenHypervisor != nil {
+					if vm, ok := vmIn(t, h.ReopenHypervisor(t), "m1"); !ok || vm.State != driver.VMExited || vm.ExitCode != tt.code {
+						t.Errorf("a new instance lists the exited VM as %+v %t", vm, ok)
+					}
+				}
+				// Starting the same spec again runs it again.
+				must(t, h.Hypervisor.Start(ctx, spec))
+				if vm, ok := vmOf(t, h, "m1"); !ok || vm.State != driver.VMRunning {
+					t.Errorf("an exited VM started again is listed as %+v %t", vm, ok)
+				}
 			}
 			must(t, h.Hypervisor.Stop(ctx, "m1"))
+			must(t, h.Hypervisor.DeleteLogs(ctx, "m1"))
 			must(t, h.Network.DeleteInterfaces(ctx, "m1"))
 			must(t, h.Storage.DeleteRoot(ctx, "m1"))
 		})

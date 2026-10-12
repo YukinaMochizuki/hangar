@@ -41,6 +41,9 @@ type Inputs struct {
 	// Cmdline is HANGAR_KERNEL_CMDLINE from guest/kernel/kernel.env, or
 	// HANGAR_TESTBED_CMDLINE.
 	Cmdline string
+	// Node is hangar-node, built by make e2e-host, or HANGAR_TESTBED_NODE;
+	// a package that uses it checks that it is there.
+	Node string
 }
 
 var in Inputs
@@ -149,6 +152,10 @@ func atExit(f func()) (now func()) {
 	}
 }
 
+// AtExit runs f once the run ends, however it ends: after the tests, on
+// SIGINT or SIGTERM, or just before -timeout.
+func AtExit(f func()) { atExit(f) }
+
 // cleanUp runs every pending atExit function, the most recent first.
 func cleanUp() {
 	exitMu.Lock()
@@ -219,6 +226,7 @@ func loadInputs() (Inputs, error) {
 		Kernel:    pick("HANGAR_TESTBED_KERNEL", "bin/guest/vmlinux"),
 		Initramfs: pick("HANGAR_TESTBED_INITRAMFS", "bin/guest/initramfs.cpio"),
 		Rootfs:    pick("HANGAR_TESTBED_ROOTFS", ""),
+		Node:      pick("HANGAR_TESTBED_NODE", "bin/hangar-node"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")
