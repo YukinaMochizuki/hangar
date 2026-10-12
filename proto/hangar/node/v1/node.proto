@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+// The protocol between the apiserver and the node agent, which the agent
+// serves on the tunnel it opens to the apiserver (internal/tunnel). It is
+// internal, not part of the API, but its compatibility is held by buf
+// breaking all the same: the apiserver and a node may run different
+// versions while one is upgraded. See docs/decisions/node-tunnel.md.
+package hangar.node.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// NodeService is what the apiserver asks of a node agent about the
+// machines on its host.
+service NodeService {
+  // Logs streams a machine's console log, oldest first, across every boot
+  // the host keeps, then, with follow, what is written as it comes.
+  rpc Logs(LogsRequest) returns (stream LogsResponse);
+}
+
+message LogsRequest {
+  string machine_uid = 1;
+  // Goes on with what is written until the call ends, or the machine's VM,
+  // once running, exits for good or is stopped.
+  bool follow = 2;
+  // Keeps only the last lines of what the log holds; unset keeps them
+  // all. Each line of output, and each exit, is one.
+  optional int64 tail_lines = 3;
+  // Drops records older than this, by the time the guest gave them.
+  google.protobuf.Timestamp since = 4;
+}
+
+message LogsResponse {
+  repeated LogRecord records = 1;
+}
+
+// LogRecord is one record of a console log. All but its boot is what the
+// guest asserts.
+message LogRecord {
+  // Numbers the VM's boots from 1; 0 means unknown.
+  int64 boot = 1;
+  LogStream stream = 2;
+  google.protobuf.Timestamp time = 3;
+  oneof content {
+    // What the container or hangar-init wrote.
+    bytes data = 4;
+    // How the boot's process ended.
+    ExitStatus exit = 5;
+  }
+}
+
+// LogStream says what a record carries.
+enum LogStream {
+  LOG_STREAM_UNSPECIFIED = 0;
+  LOG_STREAM_STDOUT = 1;
+  LOG_STREAM_STDERR = 2;
+  // hangar-init's own messages.
+  LOG_STREAM_INIT = 3;
+  LOG_STREAM_EXIT = 4;
+}
+
+// ExitStatus is how a container's process ended.
+message ExitStatus {
+  int32 code = 1;
+  // The signal that ended it, 0 if none.
+  int32 signal = 2;
+}
