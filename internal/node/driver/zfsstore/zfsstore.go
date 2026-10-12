@@ -442,9 +442,15 @@ func zvolName(dev string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
+	return VolumeOf(f)
+}
+
+// VolumeOf returns the dataset the open zvol device f is, by BLKZNAME: what
+// the device is, whatever link led to it.
+func VolumeOf(f *os.File) (string, error) {
 	var buf [256]byte
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), blkZName, uintptr(unsafe.Pointer(&buf[0]))); errno != 0 {
-		return "", fmt.Errorf("%s: BLKZNAME: %w", dev, errno)
+		return "", fmt.Errorf("%s: BLKZNAME: %w", f.Name(), errno)
 	}
 	name, _, _ := bytes.Cut(buf[:], []byte{0})
 	return string(name), nil

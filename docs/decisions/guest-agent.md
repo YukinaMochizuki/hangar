@@ -36,9 +36,10 @@ to boot again.
   never dropped, since a pipe's must arrive whole.
 - **Output goes to the virtio console, framed** (`internal/guest/console`):
   every write of the container's stdout and stderr, hangar-init's own
-  messages, and, last, how the process ended. Cloud Hypervisor writes the
-  console to a file on the host, so the logs and the exit code are there
-  however the guest ended and whether or not the node was up. The console
+  messages, and, last, how the process ended. Cloud Hypervisor hands the
+  console to the VM's launcher, which keeps it in a file on the host
+  (`node-agent.md`), so the logs and the exit code are there however the
+  guest ended and whether or not the node was up. The console
   is a tty, so hangar-init sets it raw; nothing is written after the exit
   record. The kernel's own console stays on the serial port, quiet.
 - **When the container's process ends, the guest powers off.** hangar-init
@@ -84,8 +85,11 @@ to boot again.
   can replace the agent's answers or write their own frames to the console,
   forged exit records included. So the node bounds what it reads from a
   guest (each agent message to 1 MiB, the vsock handshake to a line and a
-  deadline), reads the console as the tenant's data, and must bound the
-  console file's size itself: Cloud Hypervisor does not.
+  deadline), reads the console as the tenant's data, and bounds the console
+  file's size itself: Cloud Hypervisor does not. The exit code and the log
+  are whatever the guest asserts: a guest forging records, or a header
+  whose payload takes in hangar-init's exit record, sets its own exit code
+  and garbles its own log, which harms only itself (`node-agent.md`).
 - What needs root in the guest (mounting, switching root, the network) is
   exercised on the testbed (`docs/decisions/testing-strategy.md`, L4); the
   rest is tested in any workspace.
