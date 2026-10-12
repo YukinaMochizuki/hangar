@@ -119,6 +119,11 @@ with `--release DIR`. `--only <step>` runs a single step
   makes `verify.sh` FAIL and the step refuse until it is removed: change
   the step instead.
 
+  Both units `Requires=zfs-mount.service` and refuse to start while their
+  datasets are not mounted. Restarting `zfs-mount.service` by hand restarts
+  them too, and stopping it stops them: start them again yourself after
+  starting it.
+
 ## Deploying a new hangar version
 
 VMs keep running across it: restarting `hangar-node` leaves their units
