@@ -393,7 +393,10 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 			return resource.ApplyResult{}, apiError(store.ErrExists)
 		}
 		res, err := b.update(ctx, p, key, cur, in, expected)
-		if errors.Is(err, store.ErrConflict) && expected == 0 {
+		// Without an expected version Apply is create-or-update, so an object
+		// changed or deleted since it was read is read again: deleted, it is
+		// created.
+		if (errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrNotFound)) && expected == 0 {
 			continue
 		}
 		return res, apiError(err)
