@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,8 +39,8 @@ import (
 // scriptedNode serves NodeService.Exec as a node would, running scripted
 // programs named by the first argument: echo prints its arguments, fail
 // fails the call as a VM that is not running does, flood writes output
-// until it is stopped, and anything else echoes stdin, ends with stdin's
-// close or a signal, and records resizes.
+// until it is stopped, sink reads no input, and anything else echoes
+// stdin, ends with stdin's close or a signal, and records resizes.
 type scriptedNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	starts  chan *nodev1.ExecStart
@@ -85,6 +87,10 @@ func (n *scriptedNode) Exec(ctx context.Context, s *connect.BidiStream[nodev1.Ex
 		return exit(3, 0)
 	case "fail":
 		return connect.NewError(connect.CodeFailedPrecondition, errors.New("machine m1's VM is not running"))
+	case "sink":
+		// Reads nothing more, as a process that never reads its stdin.
+		<-ctx.Done()
+		return ctx.Err()
 	case "flood":
 		// Random, as compression on the tunnel would make anything else
 		// small on the wire.
@@ -254,6 +260,7 @@ func (w *execWorld) dial(t *testing.T, user, name string) (*websocket.Conn, erro
 		}
 		return nil, err
 	}
+	c.SetReadLimit(execws.MaxMessage)
 	t.Cleanup(func() { _ = c.CloseNow() })
 	return c, nil
 }
@@ -347,20 +354,103 @@ func TestAnExecRelaysAProcess(t *testing.T) {
 	}
 	// Ended, by the close of this side or the reset that follows it.
 	_ = w.node.waitEnded(t)
+	started := w.auditLine(t, "exec started")
+	wantFields(t, started, map[string]any{
+		"principal": "user:alice@example.com", "project": "web", "container": "api", "machine": w.uid,
+		"argv": []any{"echo", "hello", "there"}, "tty": true, "stdin": false, "user": "1000", "workdir": "/srv",
+		"env_names": []any{"A"},
+	})
+	ended := w.auditLine(t, "exec ended")
+	wantFields(t, ended, map[string]any{"principal": "user:alice@example.com", "machine": w.uid, "exit_code": float64(3), "signal": float64(0)})
+	if _, ok := ended["duration"]; !ok {
+		t.Errorf("the end line has no duration: %v", ended)
+	}
+	// Never what the process wrote, nor the environment's values.
+	if strings.Contains(w.log.String(), "to stderr") || strings.Contains(w.log.String(), "b=c") {
+		t.Errorf("the log holds output or an environment's value:\n%s", w.log.String())
+	}
+}
+
+// auditLine waits for the first log line of msg and returns its fields.
+func (w *execWorld) auditLine(t *testing.T, msg string) map[string]any {
+	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(w.log.String(), `"msg":"exec"`) {
+	for {
+		for line := range strings.Lines(w.log.String()) {
+			var fields map[string]any
+			if json.Unmarshal([]byte(line), &fields) == nil && fields["msg"] == msg {
+				return fields
+			}
+		}
 		if time.Now().After(deadline) {
-			t.Fatalf("no audit line in %s", w.log.String())
+			t.Fatalf("no %q line in:\n%s", msg, w.log.String())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	for _, want := range []string{
-		`"principal":"user:alice@example.com"`, `"project":"web"`, `"container":"api"`, `"machine":"` + w.uid + `"`,
-		`"argv":["echo","hello","there"]`, `"tty":true`, `"exit_code":3`, `"duration":`,
-	} {
-		if !strings.Contains(w.log.String(), want) {
-			t.Errorf("the audit line has no %s: %s", want, w.log.String())
+}
+
+// auditLines returns the fields of every log line of msg so far.
+func (w *execWorld) auditLines(msg string) []map[string]any {
+	var out []map[string]any
+	for line := range strings.Lines(w.log.String()) {
+		var fields map[string]any
+		if json.Unmarshal([]byte(line), &fields) == nil && fields["msg"] == msg {
+			out = append(out, fields)
 		}
+	}
+	return out
+}
+
+func wantFields(t *testing.T, got, want map[string]any) {
+	t.Helper()
+	for k, v := range want {
+		if !reflect.DeepEqual(got[k], v) {
+			t.Errorf("%s is %#v, want %#v, in %v", k, got[k], v, got)
+		}
+	}
+}
+
+// TestEveryRefusedExecIsLogged: an exec refused, before the upgrade or
+// before its process starts, is logged with who asked, for what, and the
+// code it was refused with.
+func TestEveryRefusedExecIsLogged(t *testing.T) {
+	w := newExecWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1; c.ExecStart = 200 * time.Millisecond })
+	w.connectNode(t)
+	_, _ = w.dial(t, "carol@example.com", "api")
+	_, _ = w.dial(t, "", "api")
+	c, err := w.dial(t, "alice@example.com", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.dial(t, "alice@example.com", "api") // over the cap: c holds the one call
+	readAll(t, c)                                // no start comes
+	system := auth.WithPrincipal(t.Context(), auth.SystemPrincipal)
+	m, err := w.s.backend(registry.Machine).Get(system, resource.Key{Project: "web", Name: machineName("api")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportMachine(t, w.s, system, m.(*computev1alpha1.Machine), computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, 1)
+	_, _ = w.dial(t, "alice@example.com", "api")
+	want := []map[string]any{
+		{"principal": "user:carol@example.com", "container": "api", "code": "permission_denied"},
+		{"principal": "", "container": "api", "code": "unauthenticated"},
+		{"principal": "user:alice@example.com", "container": "api", "code": "resource_exhausted"},
+		{"principal": "user:alice@example.com", "container": "api", "code": "invalid_argument"},
+		{"principal": "user:alice@example.com", "container": "api", "code": "failed_precondition"},
+	}
+	var got []map[string]any
+	deadline := time.Now().Add(5 * time.Second)
+	for got = w.auditLines("exec refused"); len(got) < len(want); got = w.auditLines("exec refused") {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d refusals logged, want %d:\n%s", len(got), len(want), w.log.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	for i := range want {
+		wantFields(t, got[i], want[i])
+	}
+	if lines := w.auditLines("exec started"); len(lines) != 0 {
+		t.Errorf("refused execs logged as started: %v", lines)
 	}
 }
 
@@ -647,5 +737,147 @@ func TestExecsLeaveNothingRunning(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("%d calls to n1 still counted", calls())
 		}
+	}
+}
+
+// liveFor fails the test if the exec on c, or its node's call, ends
+// within d.
+func (w *execWorld) liveFor(t *testing.T, c *websocket.Conn, d time.Duration, readErr <-chan error) {
+	t.Helper()
+	select {
+	case err := <-w.node.ended:
+		t.Fatalf("the node's call ended with %v while the client was there", err)
+	case err := <-readErr:
+		t.Fatalf("the exec ended for the client: %v", err)
+	case <-time.After(d):
+	}
+}
+
+// TestAClientWhoseStdinIsBackedUpStays: a client sending stdin a process
+// does not read is held up, not taken to be gone, though the apiserver's
+// reader, held up too, takes none of its pongs.
+func TestAClientWhoseStdinIsBackedUpStays(t *testing.T) {
+	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
+	w.connectNode(t)
+	c, err := w.dial(t, "alice@example.com", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"sink"}, Stdin: true}))
+	<-w.node.starts
+	readErr := make(chan error, 1)
+	go func() {
+		for {
+			if _, _, err := c.Read(context.Background()); err != nil {
+				readErr <- err
+				return
+			}
+		}
+	}()
+	chunk, _ := proto.Marshal(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: make([]byte, 32<<10)}})
+	go func() {
+		for c.Write(context.Background(), websocket.MessageBinary, chunk) == nil {
+		}
+	}()
+	w.liveFor(t, c, 1500*time.Millisecond, readErr)
+	_ = c.CloseNow()
+	_ = w.node.waitEnded(t)
+}
+
+// TestAClientReadingSlowlyStays: a client reading a flood slower than it
+// comes is held up, not taken to be gone, though its pongs wait behind the
+// output.
+func TestAClientReadingSlowlyStays(t *testing.T) {
+	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
+	w.connectNode(t)
+	c, err := w.dial(t, "alice@example.com", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"flood"}}))
+	readErr := make(chan error, 1)
+	go func() {
+		for { // 64 KiB every 20 ms: about 3 MiB/s
+			if _, _, err := c.Read(context.Background()); err != nil {
+				readErr <- err
+				return
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	w.liveFor(t, c, 1500*time.Millisecond, readErr)
+	_ = c.CloseNow()
+	_ = w.node.waitEnded(t)
+}
+
+// TestAClientThatStopsReadingButPingsStays: a client whose reader is held
+// up, as by a terminal that is not read, still pings, and so stays.
+func TestAClientThatStopsReadingButPingsStays(t *testing.T) {
+	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
+	w.connectNode(t)
+	c, err := w.dial(t, "alice@example.com", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true}))
+	<-w.node.starts
+	pinging, stop := context.WithCancel(context.Background())
+	defer stop()
+	go func() {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pinging.Done():
+				return
+			case <-ticker.C:
+				// Its pong is never read: the client reads nothing.
+				go func() { _ = c.Ping(context.WithoutCancel(pinging)) }()
+			}
+		}
+	}()
+	w.liveFor(t, c, 1500*time.Millisecond, nil)
+	stop()
+	_ = c.CloseNow()
+	_ = w.node.waitEnded(t)
+}
+
+// TestACrossOriginExecIsRefused: a browser on another site cannot open an
+// exec with the cookies it holds for this one; a same-origin page and a
+// client sending no Origin can.
+func TestACrossOriginExecIsRefused(t *testing.T) {
+	w := newExecWorld(t, nil)
+	w.connectNode(t)
+	for _, tc := range []struct {
+		origin string
+		status int
+	}{
+		{"https://evil.example", http.StatusForbidden},
+		{w.url, http.StatusSwitchingProtocols},
+		{"", http.StatusSwitchingProtocols},
+	} {
+		h := http.Header{auth.DevUserHeader: []string{"alice@example.com"}}
+		if tc.origin != "" {
+			h.Set("Origin", tc.origin)
+		}
+		c, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "api"), &websocket.DialOptions{
+			HTTPHeader: h, Subprotocols: []string{execws.Subprotocol},
+		})
+		if resp == nil {
+			t.Fatalf("Origin %q: %v", tc.origin, err)
+		}
+		if resp.Body != nil {
+			_ = resp.Body.Close()
+		}
+		if resp.StatusCode != tc.status {
+			t.Errorf("Origin %q: %s, %v; want %d", tc.origin, resp.Status, err, tc.status)
+		}
+		if c != nil {
+			_ = c.CloseNow()
+		}
+	}
+	refused := w.auditLines("exec refused")
+	if len(refused) == 0 || refused[0]["code"] != "permission_denied" {
+		t.Errorf("the cross-origin exec logged as %v", refused)
 	}
 }

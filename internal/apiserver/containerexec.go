@@ -29,8 +29,8 @@ const (
 	// DefaultExecPing is how often an exec's WebSocket is pinged: Cloudflare
 	// closes one idle for 100 s.
 	DefaultExecPing = 30 * time.Second
-	// DefaultExecPong is how long a ping waits for its pong before the
-	// client is taken to be gone.
+	// DefaultExecPong is how much longer than DefaultExecPing a client may
+	// stay silent, with nothing pending, before it is taken to be gone.
 	DefaultExecPong = 30 * time.Second
 	// DefaultExecStart is how long a client has to send the start.
 	DefaultExecStart = 10 * time.Second
@@ -57,26 +57,44 @@ func (s *Server) containerExec(chain auth.Chain) http.HandlerFunc {
 			http.NotFound(w, r)
 			return
 		}
+		key := resource.Key{Project: r.PathValue("project"), Name: name}
+		refuse := func(p auth.Principal, err error) {
+			s.auditRefused(p, key, err)
+			execws.WriteError(w, r, err)
+		}
 		ctx, err := chain.Authenticate(r.Context(), r.Header)
 		if err != nil {
-			execws.WriteError(w, r, connect.NewError(connect.CodeUnauthenticated, err))
+			refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
 			return
 		}
-		x, err := s.execTarget(ctx, resource.Key{Project: r.PathValue("project"), Name: name})
+		p, _ := auth.FromContext(ctx)
+		x, err := s.execTarget(ctx, key)
 		if err != nil {
-			execws.WriteError(w, r, err)
+			refuse(p, err)
 			return
 		}
 		defer x.call.release()
 		if !slices.Contains(subprotocols(r), execws.Subprotocol) {
-			execws.WriteError(w, r, invalid("an exec is a WebSocket with the subprotocol %s", execws.Subprotocol))
+			refuse(p, invalid("an exec is a WebSocket with the subprotocol %s", execws.Subprotocol))
 			return
 		}
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{Subprotocols: []string{execws.Subprotocol}})
+		timing := s.execTiming()
+		live := execws.NewLiveness(timing.ping, timing.pong)
+		// The Origin check stays on: see docs/decisions/streaming-transport.md.
+		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			Subprotocols:   []string{execws.Subprotocol},
+			OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
+		})
 		if err != nil {
-			return // Accept answered
+			// Accept answered.
+			code := connect.CodeInvalidArgument
+			if r.Header.Get("Origin") != "" && strings.Contains(err.Error(), "Origin") {
+				code = connect.CodePermissionDenied
+			}
+			s.auditRefused(p, key, connect.NewError(code, err))
+			return
 		}
-		s.runExec(ctx, c, x)
+		s.runExec(ctx, c, x, live)
 	}
 }
 
@@ -136,7 +154,7 @@ func (s *Server) execTarget(ctx context.Context, key resource.Key) (*execTarget,
 	return &execTarget{principal: p, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
 }
 
-// execAudit is what the audit line of an exec says.
+// execAudit is what the audit lines of an exec say.
 type execAudit struct {
 	start *computev1alpha1.ContainerExecStart
 	exit  *nodev1.ExitStatus
@@ -145,7 +163,7 @@ type execAudit struct {
 
 // runExec runs an exec on an upgraded WebSocket until the process ends,
 // the client goes, or the node does, and closes the WebSocket.
-func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *execTarget) {
+func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *execTarget, live *execws.Liveness) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	c.SetReadLimit(execws.MaxMessage)
@@ -167,35 +185,55 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *execTarget) 
 		})
 	}
 	audit := &execAudit{began: time.Now()}
-	err := s.exec(ctx, end, c, x, audit)
-	if audit.start != nil {
-		s.auditExec(x, audit, err)
+	err := s.exec(ctx, end, c, x, live, audit)
+	if audit.start == nil {
+		s.auditRefused(x.principal, x.key, err)
+	} else {
+		s.auditEnded(x, audit, err)
 	}
 	end(err)
 }
 
-func (s *Server) auditExec(x *execTarget, a *execAudit, err error) {
+// auditRefused logs an exec refused before its process started.
+func (s *Server) auditRefused(p auth.Principal, key resource.Key, err error) {
+	principal := ""
+	if p != (auth.Principal{}) {
+		principal = p.String()
+	}
+	s.log.Info("exec refused", "principal", principal, "project", key.Project, "container", key.Name,
+		"code", connect.CodeOf(err).String(), "error", err.Error())
+}
+
+// auditStarted logs an exec whose process is asked of the node: never its
+// input or output, nor its environment's values.
+func (s *Server) auditStarted(x *execTarget, start *computev1alpha1.ContainerExecStart) {
+	env := make([]string, 0, len(start.GetEnv()))
+	for _, e := range start.GetEnv() {
+		env = append(env, e.GetName())
+	}
+	s.log.Info("exec started", "principal", x.principal.String(), "project", x.key.Project, "container", x.key.Name,
+		"machine", x.machine, "argv", start.GetCommand(), "tty", start.GetTty(), "stdin", start.GetStdin(),
+		"user", start.GetUser(), "workdir", start.GetWorkingDir(), "env_names", env)
+}
+
+func (s *Server) auditEnded(x *execTarget, a *execAudit, err error) {
 	attrs := []any{
-		"principal", x.principal.String(), "project", x.key.Project, "container", x.key.Name,
-		"machine", x.machine, "argv", a.start.GetCommand(), "tty", a.start.GetTty(), "stdin", a.start.GetStdin(),
+		"principal", x.principal.String(), "project", x.key.Project, "container", x.key.Name, "machine", x.machine,
 		"duration", time.Since(a.began).Round(time.Millisecond).String(),
 	}
 	if a.exit != nil {
 		attrs = append(attrs, "exit_code", a.exit.GetCode(), "signal", a.exit.GetSignal())
 	}
 	if err != nil {
-		attrs = append(attrs, "error", err.Error())
+		attrs = append(attrs, "code", connect.CodeOf(err).String(), "error", err.Error())
 	}
-	s.log.Info("exec", attrs...)
+	s.log.Info("exec ended", attrs...)
 }
 
-// exec relays between the client and the node, until end. Each side's
-// messages are passed on one at a time, so a side that does not read holds
-// up the other's, past the WebSocket's buffers and the tunnel stream's
-// window, and nothing piles up here. The WebSocket is read and written
-// with a context that never ends: coder/websocket closes a connection
-// whose read or write is cancelled, before end can say why.
-func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x *execTarget, audit *execAudit) error {
+// exec relays between the client and the node, one message at a time each
+// way, until end. It reads and writes the WebSocket with ws, which never
+// ends: coder/websocket closes a connection whose I/O is cancelled.
+func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x *execTarget, live *execws.Liveness, audit *execAudit) error {
 	ws := context.WithoutCancel(ctx)
 	timing := s.execTiming()
 	noStart := time.AfterFunc(timing.start, func() { end(invalid("no start came in %s", timing.start)) })
@@ -206,23 +244,29 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 	if err != nil {
 		return clientFailed(ctx, err)
 	}
+	live.Heard()
 	start := first.GetStart()
 	if err := checkExecStart(start); err != nil {
 		return err
 	}
 	audit.start = start
+	s.auditStarted(x, start)
 
 	// The node kills the process once the stream is reset on the tunnel.
 	// ctx ending resets it while the response is being read, and closing
 	// the response once nothing reads it.
 	stream := x.call.nodes.Exec(ctx)
 	context.AfterFunc(ctx, func() { _ = stream.CloseResponse() })
-	node := &nodeSender{stream: stream}
+	node := &nodeSender{stream: stream, live: live}
 	if err := node.send(&nodev1.ExecRequest{Message: &nodev1.ExecRequest_Start{Start: nodeExecStart(x.machine, start)}}); err != nil {
 		return s.nodeFailed(ctx, x, stream.Receive)
 	}
 
-	go s.pingClient(ctx, ws, end, c)
+	go func() {
+		if live.Run(ctx, c) != nil {
+			end(errClientGone)
+		}
+	}()
 	go func() {
 		// Once the exec has ended, end does nothing.
 		end(relayInput(ctx, ws, c, node, start.GetStdin()))
@@ -250,7 +294,10 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 		default:
 			continue
 		}
-		if err := writeExec(ws, c, out); err != nil {
+		done := live.Pending()
+		err = writeExec(ws, c, out)
+		done()
+		if err != nil {
 			return clientFailed(ctx, err)
 		}
 		if audit.exit != nil {
@@ -285,13 +332,15 @@ func clientFailed(ctx context.Context, err error) error {
 }
 
 // nodeSender sends to the node's call from the client's reader and closes
-// it from the relay, one at a time, as the call needs.
+// it from the relay, one at a time, as the call needs. A send held up by
+// the process not reading is pending to live.
 type nodeSender struct {
 	mu     sync.Mutex
 	stream interface {
 		Send(*nodev1.ExecRequest) error
 		CloseRequest() error
 	}
+	live   *execws.Liveness
 	closed bool
 }
 
@@ -301,6 +350,8 @@ func (n *nodeSender) send(req *nodev1.ExecRequest) error {
 	if n.closed {
 		return nil // the process has ended; what comes after is dropped
 	}
+	done := n.live.Pending()
+	defer done()
 	return n.stream.Send(req)
 }
 
@@ -323,6 +374,7 @@ func relayInput(ctx, ws context.Context, c *websocket.Conn, node *nodeSender, st
 		if err != nil {
 			return clientFailed(ctx, err)
 		}
+		node.live.Heard()
 		out := &nodev1.ExecRequest{}
 		switch m := req.GetMessage().(type) {
 		case *computev1alpha1.ContainerExecRequest_Stdin:
@@ -346,30 +398,6 @@ func relayInput(ctx, ws context.Context, c *websocket.Conn, node *nodeSender, st
 		}
 		// A failed send means the call is over; the relay says why.
 		_ = node.send(out)
-	}
-}
-
-// pingClient pings the client every so often, ending the exec once a ping
-// goes unanswered: Cloudflare drops a WebSocket that is idle, and a client
-// that is gone may not have said so. A client that does not read answers
-// no ping, so it goes too.
-func (s *Server) pingClient(ctx, ws context.Context, end func(error), c *websocket.Conn) {
-	timing := s.execTiming()
-	ticker := time.NewTicker(timing.ping)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		pctx, stop := context.WithTimeout(ws, timing.pong)
-		err := c.Ping(pctx)
-		stop()
-		if err != nil {
-			end(errClientGone)
-			return
-		}
 	}
 }
 

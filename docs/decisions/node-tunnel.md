@@ -99,10 +99,11 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     what the exec sets instead. It has no stdin unless asked: without a
     terminal its stdin is closed at once; on a terminal nothing is typed.
     On a terminal, stdout and stderr are one stream. The exit, the
-    signal that caused it included, comes last; `hangar exec` exits with
-    its code.
+    signal that caused it included, comes last, its code 0 to 255
+    whatever the guest says; `hangar exec` exits with that code, and with
+    125, as `docker exec` does, when the exec itself fails.
   - Each end of the relay ends the next: a client that closes, drops, or
-    leaves a ping unanswered ends the apiserver's call to the node, which
+    is taken to be gone ends the apiserver's call to the node, which
     resets the stream on the tunnel; the node's call to the guest ends
     with it, on a vsock connection of its own that is closed, and
     hangar-init kills the process's group. A VM that stops or restarts
@@ -111,19 +112,30 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     not read holds up the other past the WebSocket's buffers and the
     stream's window on the tunnel, never memory in the apiserver. A
     message is at most 256 KiB from a client and 64 KiB of output from a
-    node. A client that stops reading answers no ping, so it is dropped
-    within a minute.
+    node.
+  - Data backed up never drops a live client (`internal/execws`). Each
+    end pings the other every 30 s, and hears it in anything it sends: a
+    pong, its own ping, a message. A reader held up by data backed up
+    takes no pong, so silence counts only once nothing has been pending,
+    either way, for a minute: no write to the client and no send to the
+    node held up. While something is, a dead peer is TCP's to tell: the
+    apiserver's connections have keepalive (30 s idle, then a probe every
+    10 s, three missed) and a user timeout of 60 s for unacknowledged
+    writes, and an empty message written each tick fails on a connection
+    that broke. `hangar exec` tells a server gone in the same way.
   - Refused before the WebSocket opens, in this order: whoever is not
     authorized (`compute.containers.exec`, told nothing of the container,
     as a read is not), a container without a machine on a node or whose
     machine is not running (`FailedPrecondition`), a node not connected
     (`Unavailable`), and a caller over the caps on calls to nodes
-    (`ResourceExhausted`, shared with logs). After it opens, the node can still
-    refuse it, as for a VM that stopped since.
-  - Every exec is logged once by the apiserver, as it ends: the caller,
-    the container, its machine, the command and whether it had a terminal
-    or stdin, how it ended, and how long it took. Never its input or
-    output.
+    (`ResourceExhausted`, shared with logs). After it opens, the node can
+    still refuse it, as for a VM that stopped since.
+  - The apiserver logs every exec: when its process is asked of the node,
+    the caller, the container, its machine, the command, whether it has a
+    terminal or stdin, and the user, working directory and names of the
+    environment it sets; when it ends, how, and how long it took; and
+    every attempt refused, by whom, for which container, with which code.
+    Never its input, its output, or its environment's values.
 - **Running a process in a container is a permission of its own**,
   `compute.containers.exec`, apart from `get` and `logs`: it reaches
   everything the container can. `tenant.owner` and `platform.root` hold

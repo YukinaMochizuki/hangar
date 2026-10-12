@@ -17,7 +17,9 @@ import "hangar/compute/v1alpha1/container.proto";
 // error with a body of {"code", "message"}, as a Connect error; one after
 // it closes the WebSocket with 4000 plus the Connect code, such as 4009 for
 // FailedPrecondition, and the message as its reason. After the exit the
-// server closes it with 1000. See docs/decisions/node-tunnel.md.
+// server closes it with 1000. Either end may send a message with no field
+// set, which the other ignores: a keepalive. See
+// docs/decisions/streaming-transport.md.
 
 // ContainerExecRequest is a message from the client.
 message ContainerExecRequest {
