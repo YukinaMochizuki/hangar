@@ -52,16 +52,19 @@ type Host struct {
 	interfaces map[string]map[string]driver.Interface // machine uid, then name
 
 	vms        map[string]*vm
-	logs       map[string]bool  // console logs kept, by machine uid
-	stops      map[string]int   // guest Stops asked for, by machine uid
-	bootErr    map[string]error // by machine uid; "" for every machine
-	silent     map[string]bool  // guests that never answer
-	hung       map[string]bool  // guests that take a call and never return it
-	listErr    map[string]error // by listing: vms, interfaces, networks, roots, bases
-	removalErr error            // fails stopping VMs and removing disks and interfaces
-	netErr     error            // fails making and listing networks and interfaces
-	cloneErr   error            // fails making root disks
-	capErr     error            // fails reading the storage's capacity
+	logs       map[string]bool       // console logs kept, by machine uid
+	stops      map[string]int        // guest Stops asked for, by machine uid
+	bootErr    map[string]error      // by machine uid; "" for every machine
+	silent     map[string]bool       // guests that never answer
+	hung       map[string]bool       // guests that take a call and never return it
+	stopDelay  map[string]*stopDelay // by machine uid; "" for every machine
+	stopCalls  map[string]int        // Hypervisor.Stop calls, failed ones too, by machine uid
+	readyCalls map[string]int        // Guest.Ready calls, by machine uid
+	listErr    map[string]error      // by listing: vms, interfaces, networks, roots, bases
+	removalErr error                 // fails stopping VMs and removing disks and interfaces
+	netErr     error                 // fails making and listing networks and interfaces
+	cloneErr   error                 // fails making root disks
+	capErr     error                 // fails reading the storage's capacity
 	vmChanges  chan struct{}
 	netChange  chan struct{}
 }
@@ -85,6 +88,7 @@ func New() *Host {
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{},
 		vms: map[string]*vm{}, logs: map[string]bool{}, stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
 }
@@ -146,6 +150,36 @@ func (h *Host) HangGuest(machineUID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hung[machineUID] = true
+}
+
+// stopDelay is how long stopping a running VM takes, unless let go first.
+type stopDelay struct {
+	d     time.Duration
+	letGo chan struct{}
+}
+
+// DelayStop makes stopping the machine's VM while it runs take twice d; ""
+// delays every machine's. The VM stays listed running for d, as a guest
+// ignoring SIGTERM makes the real driver wait out the grace period, then is
+// gone from the list for d more before Stop returns, as the real driver
+// tidies up after its unit. A stop whose context ends first fails with it.
+// letGo ends the delay of the stops waiting and of those to come.
+func (h *Host) DelayStop(machineUID string, d time.Duration) (letGo func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	sd := &stopDelay{d: d, letGo: make(chan struct{})}
+	h.stopDelay[machineUID] = sd
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			close(sd.letGo)
+			if h.stopDelay[machineUID] == sd {
+				delete(h.stopDelay, machineUID)
+			}
+		})
+	}
 }
 
 // Resolved returns how often ref was resolved.
@@ -352,6 +386,22 @@ func (h *Host) LeaveLog(machineUID string) {
 }
 
 // --- what tests inspect ---
+
+// HypervisorStops returns how often the machine's VM was asked to stop,
+// failed calls included.
+func (h *Host) HypervisorStops(machineUID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stopCalls[machineUID]
+}
+
+// GuestReadies returns how often the machine's guest agent was asked whether
+// it answers, as each reconcile of a running machine does.
+func (h *Host) GuestReadies(machineUID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.readyCalls[machineUID]
+}
 
 // GuestStops returns how often the machine's guest was asked to stop.
 func (h *Host) GuestStops(machineUID string) int {
@@ -774,18 +824,46 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 }
 
 // Stop asks a running VM's guest to stop its process first, as the real
-// driver does, unless the guest does not answer.
-func (d hypervisor) Stop(_ context.Context, machineUID string) error {
+// driver does, unless the guest does not answer, and takes as long as
+// DelayStop says.
+func (d hypervisor) Stop(ctx context.Context, machineUID string) error {
 	d.h.mu.Lock()
-	defer d.h.mu.Unlock()
-	if d.h.removalErr != nil {
-		return d.h.removalErr
+	d.h.stopCalls[machineUID]++
+	if err := d.h.removalErr; err != nil {
+		d.h.mu.Unlock()
+		return err
 	}
-	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning && !d.h.hung[machineUID] && !d.h.silent[machineUID] {
+	v, ok := d.h.vms[machineUID]
+	running := ok && v.State == driver.VMRunning
+	if running && !d.h.hung[machineUID] && !d.h.silent[machineUID] {
 		d.h.stops[machineUID]++
 	}
+	delay := d.h.stopDelay[machineUID]
+	if delay == nil {
+		delay = d.h.stopDelay[""]
+	}
+	d.h.mu.Unlock()
+	wait := func() error {
+		if !running || delay == nil {
+			return nil
+		}
+		t := time.NewTimer(delay.d)
+		defer t.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		case <-delay.letGo:
+		}
+		return nil
+	}
+	if err := wait(); err != nil {
+		return err
+	}
+	d.h.mu.Lock()
 	delete(d.h.vms, machineUID)
-	return nil
+	d.h.mu.Unlock()
+	return wait()
 }
 
 func (d hypervisor) VMs(context.Context) ([]driver.VM, error) {
@@ -831,6 +909,7 @@ type guest struct{ h *Host }
 
 func (d guest) Ready(ctx context.Context, machineUID string) error {
 	d.h.mu.Lock()
+	d.h.readyCalls[machineUID]++
 	hung := d.h.hung[machineUID]
 	d.h.mu.Unlock()
 	if hung {

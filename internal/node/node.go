@@ -84,8 +84,11 @@ type Agent struct {
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
 	host sync.Mutex
-	// puller prepares images off the host lock.
+	// puller prepares images off the host lock, and stops stops VMs off it.
 	puller *puller
+	stops  *stops
+	// trigger has every machine checked again.
+	trigger chan struct{}
 	// netEpoch counts the network driver's change signals, and netChecked
 	// is the epoch each machine's interfaces were last found whole in.
 	// Guarded by host, but netEpoch, which the signals bump.
@@ -141,6 +144,8 @@ func New(cfg Config) (*Agent, error) {
 		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
 		netChecked: map[string]int64{},
 		puller:     puller,
+		stops:      newStops(),
+		trigger:    make(chan struct{}, 1),
 	}, nil
 }
 
@@ -148,6 +153,8 @@ func New(cfg Config) (*Agent, error) {
 // done. Failures are logged and retried, never fatal: the apiserver judges
 // a node by its reports.
 func (a *Agent) Run(ctx context.Context) error {
+	// Stops end with ctx; the sweep and the reconciles begin them.
+	defer a.stops.wg.Wait()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
@@ -199,7 +206,6 @@ func (a *Agent) sweepLoop(ctx context.Context) {
 // to machines and their networks, anything the drivers notice on the host
 // checks every machine again.
 func (a *Agent) machineController(ctx context.Context) *controller.Controller {
-	trigger := make(chan struct{}, 1)
 	forward := func(from <-chan struct{}, noted func()) {
 		for {
 			select {
@@ -208,21 +214,13 @@ func (a *Agent) machineController(ctx context.Context) *controller.Controller {
 			case <-from:
 			}
 			noted()
-			select {
-			case trigger <- struct{}{}:
-			default:
-			}
+			a.recheck()
 		}
 	}
 	go forward(a.cfg.Drivers.Network.Changes(), func() { a.netEpoch.Add(1) })
 	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
 	// An image made ready is looked at as soon as it is.
-	a.puller.start(ctx, func() {
-		select {
-		case trigger <- struct{}{}:
-		default:
-		}
-	})
+	a.puller.start(ctx, a.recheck)
 	return &controller.Controller{
 		Name:       "machines",
 		Source:     controller.APISource{Client: a.api},
@@ -233,7 +231,7 @@ func (a *Agent) machineController(ctx context.Context) *controller.Controller {
 			// resync every machine is queued already.
 			{Kind: registry.Network.Kind, Map: a.machinesOnNetwork, SkipResync: true},
 		},
-		Trigger: trigger,
+		Trigger: a.trigger,
 		Clock:   a.cfg.Clock,
 		Log:     a.cfg.Log,
 	}
