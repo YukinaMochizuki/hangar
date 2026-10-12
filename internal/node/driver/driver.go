@@ -19,20 +19,54 @@ import (
 	"time"
 )
 
-// ErrNoSpace means storage has no room for what was asked.
-var ErrNoSpace = errors.New("no space left")
+// Errors the drivers wrap, for the agent to tell what went wrong.
+var (
+	// ErrNoSpace means storage has no room for what was asked.
+	ErrNoSpace = errors.New("no space left")
+	// ErrDiskTooSmall means a root disk was asked for smaller than its
+	// image's base.
+	ErrDiskTooSmall = errors.New("disk smaller than its image")
+	// ErrImageNotFound means the registry has no such image.
+	ErrImageNotFound = errors.New("image not found")
+	// ErrUnauthorized means the registry refused the credentials, or asks
+	// for some.
+	ErrUnauthorized = errors.New("registry refused access")
+	// ErrRegistryUnreachable means the registry could not be reached or
+	// failed to answer.
+	ErrRegistryUnreachable = errors.New("registry unreachable")
+	// ErrImageTooLarge means an image is beyond what the host unpacks.
+	ErrImageTooLarge = errors.New("image too large")
+	// ErrInvalidImage means an image holds what the host refuses to
+	// unpack, such as a name climbing out of its root.
+	ErrInvalidImage = errors.New("invalid image")
+)
 
-// Images resolves and unpacks OCI images. A digest the host has pulled is
-// answered from its own cache, without the registry, until it is
-// forgotten: a running machine must not depend on the registry being up.
+// Credentials finds the login for a registry, named by its host as in
+// docker login, such as ghcr.io or index.docker.io. A zero Login pulls
+// anonymously.
+type Credentials func(ctx context.Context, registry string) (Login, error)
+
+// Login is a registry login, as the Docker config format holds one.
+type Login struct {
+	Username, Password string
+	// IdentityToken is an OAuth refresh token, used instead of a password.
+	IdentityToken string
+}
+
+// Anonymous pulls from every registry without logging in.
+func Anonymous(context.Context, string) (Login, error) { return Login{}, nil }
+
+// Images resolves and unpacks OCI images for the host's platform, a pulled
+// digest from the host's cache until forgotten. Failed pulls wrap
+// ErrImageNotFound, ErrUnauthorized, ErrRegistryUnreachable or ctx's error.
 type Images interface {
 	// Resolve returns the digest the reference names now.
-	Resolve(ctx context.Context, ref string) (digest string, err error)
+	Resolve(ctx context.Context, ref string, creds Credentials) (digest string, err error)
 	// Config returns how the image wants to be run.
-	Config(ctx context.Context, ref, digest string) (ImageConfig, error)
-	// Unpack writes the image's root filesystem, its layers applied in
-	// order, into the empty directory dir.
-	Unpack(ctx context.Context, ref, digest, dir string) error
+	Config(ctx context.Context, ref, digest string, creds Credentials) (ImageConfig, error)
+	// Unpack writes the image's root filesystem into the empty dir, never
+	// outside it; an image larger than the host allows is ErrImageTooLarge.
+	Unpack(ctx context.Context, ref, digest, dir string, creds Credentials) error
 	// Forget drops what the host keeps of a digest, once no base of it is
 	// left.
 	Forget(ctx context.Context, digest string) error
@@ -45,30 +79,35 @@ type ImageConfig struct {
 	Env        []string
 	WorkingDir string
 	User       string
+	// Size is the bytes of the image's layers as its registry sends them,
+	// compressed: the least unpacking it takes.
+	Size int64
 }
 
 // Storage holds disks: a read-only base per image, and a root disk per
 // machine cloned from one. Deleting what is not there is not an error.
 type Storage interface {
-	// EnsureBase makes the base for an image digest if it does not exist,
-	// calling fill with an empty directory to populate it; an error fill
-	// returns is returned, wrapped. Calls for one digest at once make it
-	// once.
-	EnsureBase(ctx context.Context, digest string, fill func(dir string) error) error
+	// EnsureBase makes a digest's base once, filling an empty dir with fill,
+	// unless size (ImageConfig.Size, or zero) exceeds the room left; fill's
+	// error is returned wrapped.
+	EnsureBase(ctx context.Context, digest string, size int64, fill func(dir string) error) error
 	// Bases lists the digests that have a base.
 	Bases(ctx context.Context) ([]string, error)
 	// DeleteBase removes a base. It fails while a root disk cloned from it
 	// exists, as a ZFS snapshot with clones does.
 	DeleteBase(ctx context.Context, digest string) error
-	// EnsureRoot clones the base of digest as the machine's root disk, unless
-	// it has one, and returns it. A root disk of another digest is an error:
-	// delete it first.
-	EnsureRoot(ctx context.Context, machineUID, digest string) (Disk, error)
+	// EnsureRoot returns the machine's root disk of digest, cloned if need
+	// be, of at least size bytes: grown, never shrunk, and ErrDiskTooSmall
+	// below the base. A root disk of another digest is an error.
+	EnsureRoot(ctx context.Context, machineUID, digest string, size int64) (Disk, error)
 	// Roots lists every machine's root disk.
 	Roots(ctx context.Context) ([]Disk, error)
 	// DeleteRoot removes a machine's root disk. It fails while the machine's
 	// VM runs.
 	DeleteRoot(ctx context.Context, machineUID string) error
+	// Capacity returns how much the storage holds, and how much of it is
+	// free.
+	Capacity(ctx context.Context) (Capacity, error)
 }
 
 // Disk is a machine's root disk.
@@ -78,6 +117,14 @@ type Disk struct {
 	Digest string
 	// Path is the block device the VM boots from.
 	Path string
+	// Size is the disk's size in bytes, at least what was asked for. The
+	// guest grows its filesystem to it as it boots.
+	Size int64
+}
+
+// Capacity is the storage's size and free space, in bytes.
+type Capacity struct {
+	Total, Free int64
 }
 
 // Network gives each API Network a namespace on the host and each machine

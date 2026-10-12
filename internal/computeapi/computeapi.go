@@ -30,6 +30,9 @@ const (
 	ReasonStopped         = "Stopped"
 	ReasonImagePullFailed = "ImagePullFailed"
 	ReasonDiskFailed      = "DiskFailed"
+	// ReasonDiskTooSmall means the machine asks for a root disk smaller than
+	// its image.
+	ReasonDiskTooSmall    = "DiskTooSmall"
 	ReasonNetworkFailed   = "NetworkFailed"
 	ReasonBootFailed      = "BootFailed"
 	ReasonExited          = "Exited"
