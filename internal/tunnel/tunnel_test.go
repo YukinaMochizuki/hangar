@@ -305,10 +305,10 @@ type blackHole struct {
 	net.Conn
 	// readsOnly, once cut, drops only what comes from the apiserver.
 	readsOnly bool
-	cut    chan struct{}
-	once   sync.Once
-	closed chan struct{}
-	shut   sync.Once
+	cut       chan struct{}
+	once      sync.Once
+	closed    chan struct{}
+	shut      sync.Once
 }
 
 func (b *blackHole) Read(p []byte) (int, error) {
