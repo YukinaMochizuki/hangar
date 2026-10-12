@@ -227,6 +227,9 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 			if got, _ := prop(props, "After").([]string); !slices.Equal(got, []string{"network.target"}) {
 				t.Errorf("After=%v: at shutdown the network could go before the VM", got)
 			}
+			if got, _ := prop(props, "Before").([]string); !slices.Equal(got, []string{"hangar-node.service"}) {
+				t.Errorf("Before=%v: at shutdown the agent could see the VM stop and start it again", got)
+			}
 			exec := fmt.Sprint(prop(props, "ExecStart"))
 			if !strings.Contains(exec, "/usr/bin/hangar-node vmm --dir "+h.cfg.Dir+" m1") {
 				t.Errorf("ExecStart=%s", exec)

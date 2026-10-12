@@ -78,7 +78,11 @@ with the host after any of these, and nothing would notice.
   covers each step of a stop at its longest (25 s by default), and it
   stops before `network.target`, so the guest has its network meanwhile;
   the default dependencies keep the mounts (its directory, the networks'
-  namespaces) until it has stopped. The launcher records no exit for such
+  namespaces) until it has stopped. It is ordered `Before=hangar-node.service`
+  (the name `deploy/host` installs), so the agent has stopped before any VM
+  does and never starts a VM the shutdown stopped; the order binds only
+  jobs in one transaction, so restarting the agent or starting a VM is not
+  held up by it. The launcher records no exit for such
   a stop, whatever the container exited with: the VM reads as interrupted
   above, never as a container that ended by itself.
 - **Stopping is docker stop** (`guest-agent.md`): the agent asks the guest

@@ -130,6 +130,10 @@ const unitPrefix = "hangar-vm-"
 
 func unitName(uid string) string { return unitPrefix + uid + ".service" }
 
+// agentUnit is the node agent's unit as deploy/host installs it, which the
+// VMs' units are ordered before so that a shutdown stops the agent first.
+const agentUnit = "hangar-node.service"
+
 // uidOfUnit returns the machine uid a unit's name is for, if it is one of
 // the driver's names.
 func uidOfUnit(name string) (string, bool) {

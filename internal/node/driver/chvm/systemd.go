@@ -76,6 +76,11 @@ func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout ti
 		// namespaces, are mounts, which the default dependencies already
 		// keep until it has stopped.
 		prop("After", []string{"network.target"}),
+		// And after the agent has stopped, so it never sees a VM the
+		// shutdown stopped and starts it again. The order binds only jobs
+		// in one transaction: restarting the agent, or the agent starting
+		// a VM, is not held up by it; with no such unit it does nothing.
+		prop("Before", []string{agentUnit}),
 		// An exited VM's record is its exit file: the unit goes.
 		prop("CollectMode", "inactive-or-failed"),
 	}
