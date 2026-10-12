@@ -58,6 +58,8 @@ type Config struct {
 	// guests' agents, for tests.
 	systemd systemd
 	guest   driver.Guest
+	// logPoll, if set, is how often a followed log is checked for more.
+	logPoll time.Duration
 }
 
 // Hypervisor is the driver. It is safe for concurrent use.

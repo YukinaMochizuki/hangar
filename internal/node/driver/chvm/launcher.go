@@ -191,6 +191,7 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		return 0, err
 	}
 	defer func() { _ = clog.Close() }()
+	l.markBoot(clog, started)
 	serialLog, err := openCapped(filepath.Join(dir, SerialLog), l.SerialMax)
 	if err != nil {
 		return 0, err
@@ -263,12 +264,18 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 				<-waited
 			}
 		}
-		l.drain(consoleDone)
+		// The log, not exit.json: a stop is no exit to the driver.
+		if st, drained := l.drain(consoleDone); st == nil && drained {
+			noExit(clog)
+		}
 		l.Log.Info("vmm: stopped", "machine_uid", uid)
 		return -1, nil
 	case err := <-waited:
-		st := l.drain(consoleDone)
+		st, drained := l.drain(consoleDone)
 		code := exitCode(st)
+		if st == nil && drained {
+			noExit(clog)
+		}
 		rec := exitRecord{Code: code, Started: started, Ended: time.Now()}
 		if st != nil {
 			rec.Signal = int(st.Signal)
@@ -305,15 +312,37 @@ func (l *Launcher) stopGuest(uid string, ln launch, waited <-chan error) bool {
 	}
 }
 
+// noExit ends a boot whose guest recorded no exit, as a crash or a kill
+// leaves it, with an exit of ExitNoRecord in the console log, so the log
+// shows every boot's end.
+func noExit(clog *cappedLog) {
+	_, _ = clog.Write(console.AppendRecord(nil, console.ExitRecord(console.ExitStatus{Code: ExitNoRecord}, time.Now())))
+}
+
+// markBoot numbers this boot in the console log, one past the last there,
+// and starts each file the log rotates to with the same number, so a
+// reader numbers boots alike whichever files it reads.
+func (l *Launcher) markBoot(clog *cappedLog, started time.Time) {
+	last, err := lastBoot(clog.path)
+	if err != nil {
+		l.Log.Error("vmm: reading the last boot's number; numbering from it anyway", "error", err)
+	}
+	mark := console.AppendRecord(nil, console.BootRecord(last+1, started))
+	clog.head = mark
+	if _, err := clog.Write(mark); err != nil {
+		l.Log.Error("vmm: marking the boot in the console log", "error", err)
+	}
+}
+
 // drain waits a little for the rest of the console once Cloud Hypervisor
-// has exited.
-func (l *Launcher) drain(done <-chan *console.ExitStatus) *console.ExitStatus {
+// has exited, and reports whether the console ended.
+func (l *Launcher) drain(done <-chan *console.ExitStatus) (*console.ExitStatus, bool) {
 	select {
 	case st := <-done:
-		return st
+		return st, true
 	case <-time.After(drainWait):
 		l.Log.Error("vmm: the console did not end with Cloud Hypervisor")
-		return nil
+		return nil, false
 	}
 }
 

@@ -42,7 +42,9 @@ with the host after any of these, and nothing would notice.
   at `vsock` in the directory, and the console on its stdout. It keeps the
   console in `console.log`, rotated at record boundaries to `console.log.1`
   past 16 MiB, writing only well-formed records, so nothing the guest
-  writes can wedge it or grow the file past its cap; the kernel's serial
+  writes can wedge it or grow the file past its cap, and numbers the boot
+  in it, at its start and at the head of each file it rotates to
+  (`node-tunnel.md`); the kernel's serial
   console goes to `serial.log` the same way, past 1 MiB. A log that fails,
   as on a full disk, drops what it cannot take and is tried again, so the
   guest is never held up by it. When the guest
@@ -99,7 +101,9 @@ with the host after any of these, and nothing would notice.
   is its policy's again.
 - **A VM's logs outlive it**: its restarts, a stop and a start again. They
   go when the machine is released, or when the sweep finds them of no
-  machine on the node.
+  machine on the node. The hypervisor driver reads them back, both files
+  as one stream, for the apiserver, which asks for them over the agent's
+  tunnel (`node-tunnel.md`).
 - **The driver touches only its own**: units named `hangar-vm-<uid>` for a
   uid it takes, and its directory.
 - **The node follows the API like a controller** (`controller.APISource`),

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -32,6 +33,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
 // Config configures an Agent. Zero values take defaults.
@@ -42,6 +44,15 @@ type Config struct {
 	// HTTP and BaseURL reach the apiserver's node socket.
 	HTTP    connect.HTTPClient
 	BaseURL string
+	// Tunnel, if set, connects to the apiserver's node socket for the
+	// tunnel the agent keeps open, over which the apiserver calls it
+	// (internal/tunnel); without it the apiserver cannot reach the node.
+	Tunnel func(ctx context.Context) (net.Conn, error)
+	// TunnelLiveness is the tunnel's; zero means tunnel.DefaultLiveness.
+	TunnelLiveness tunnel.Liveness
+	// LogPoll is how often a followed log's VM is checked to have ended.
+	// Zero means a second.
+	LogPoll time.Duration
 	// Host reports what the host has. Defaults to reading this host.
 	Host func() (*computev1alpha1.NodeResources, error)
 	// Reserved is kept back from machines for the host itself, in
@@ -159,6 +170,9 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer wg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if a.cfg.Tunnel != nil {
+		wg.Go(func() { a.serveTunnel(ctx) })
+	}
 	if a.cfg.Drivers != nil {
 		wg.Add(2)
 		go func() {

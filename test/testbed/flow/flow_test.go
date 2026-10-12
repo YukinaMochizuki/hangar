@@ -98,6 +98,7 @@ func TestFlow(t *testing.T) {
 		{"6-change-the-image", f.changeTheImage},
 		{"8-the-node-survives-a-restart", f.nodeSurvivesARestart},
 		{"9-host-shutdown", f.hostShutdown},
+		{"10-logs", f.logs},
 		{"7-delete", f.delete},
 	}
 	for _, s := range steps {

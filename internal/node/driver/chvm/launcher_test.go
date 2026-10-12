@@ -213,7 +213,11 @@ func TestTheLauncherExitsAsTheContainer(t *testing.T) {
 				t.Errorf("exit record %+v %t", r, ok)
 			}
 			var got []string
-			for _, r := range records(t, filepath.Join(dir, ConsoleLog)) {
+			recs := records(t, filepath.Join(dir, ConsoleLog))
+			if n, err := console.BootOf(recs[0]); err != nil || n != 1 {
+				t.Errorf("the log starts with %+v, not boot 1", recs[0])
+			}
+			for _, r := range recs[1:] {
 				if r.Stream != console.Exit {
 					got = append(got, string(r.Payload))
 				}
@@ -248,8 +252,15 @@ func TestTheLauncherLogsAcrossRuns(t *testing.T) {
 	l, dir := launcherDir(t, "m1", "exit:0")
 	runFor(t, l, t.Context(), "m1")
 	runFor(t, l, t.Context(), "m1")
-	if n := len(records(t, filepath.Join(dir, ConsoleLog))); n != 2*4 {
-		t.Errorf("%d records after two runs, want 8", n)
+	recs := records(t, filepath.Join(dir, ConsoleLog))
+	if len(recs) != 2*5 {
+		t.Fatalf("%d records after two runs, want 10", len(recs))
+	}
+	// Boots are numbered on from the log's last.
+	for i, want := range []uint64{1, 2} {
+		if n, err := console.BootOf(recs[5*i]); err != nil || n != want {
+			t.Errorf("run %d starts with %+v, not boot %d", i, recs[5*i], want)
+		}
 	}
 }
 
@@ -263,7 +274,12 @@ func TestTheLauncherCapsAFlood(t *testing.T) {
 		if s := size(t, filepath.Join(dir, f)); s > l.ConsoleMax {
 			t.Errorf("%s holds %d bytes, past the cap of %d", f, s, l.ConsoleMax)
 		}
-		records(t, filepath.Join(dir, f)) // whole records only
+		// Whole records only, and each file says which boot it is of.
+		if recs := records(t, filepath.Join(dir, f)); len(recs) == 0 {
+			t.Errorf("%s is empty", f)
+		} else if n, err := console.BootOf(recs[0]); err != nil || n != 1 {
+			t.Errorf("%s starts with %+v, not boot 1", f, recs[0])
+		}
 	}
 	if s, err := os.Stat(filepath.Join(dir, ConsoleLog+".2")); err == nil {
 		t.Errorf("a third file: %v", s.Name())
@@ -288,6 +304,11 @@ func TestTheLauncherWithoutARecord(t *testing.T) {
 	}
 	if r, ok := exitOf(t, dir); !ok || r.Code != ExitNoRecord {
 		t.Errorf("exit record %+v %t", r, ok)
+	}
+	// The log shows the exit all the same.
+	recs := records(t, filepath.Join(dir, ConsoleLog))
+	if st, err := console.ExitOf(recs[len(recs)-1]); err != nil || st.Code != ExitNoRecord {
+		t.Errorf("the log ends with %+v %v", recs[len(recs)-1], err)
 	}
 }
 
@@ -364,6 +385,29 @@ func TestTheLauncherStops(t *testing.T) {
 	if g := l.Guest.(*launcherGuest).asked(); len(g) != 0 {
 		t.Errorf("the guest was asked to stop again: %v", g)
 	}
+	logEndsWith(t, dir, ExitNoRecord)
+}
+
+// logEndsWith checks that the console log's last record is an exit with
+// code.
+func logEndsWith(t *testing.T, dir string, code int32) {
+	t.Helper()
+	recs := records(t, filepath.Join(dir, ConsoleLog))
+	if len(recs) == 0 {
+		t.Fatal("the console log is empty")
+	}
+	if st, err := console.ExitOf(recs[len(recs)-1]); err != nil || st.Code != code {
+		t.Errorf("the console log ends with %+v %v, want an exit with %d", recs[len(recs)-1], err, code)
+	}
+	n := 0
+	for _, r := range recs {
+		if r.Stream == console.Exit {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("%d exits in the console log of one boot", n)
+	}
 }
 
 // stopBySystemd runs the launcher and stops it, as systemd does, once its
@@ -430,6 +474,7 @@ func TestTheLauncherStopsTheGuestForSystemd(t *testing.T) {
 	if r, ok := exitOf(t, dir); ok {
 		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
 	}
+	logEndsWith(t, dir, 0)
 }
 
 // TestTheLauncherKillsAGuestThatStaysUp: a guest that takes the stop but
@@ -448,6 +493,8 @@ func TestTheLauncherKillsAGuestThatStaysUp(t *testing.T) {
 	if r, ok := exitOf(t, dir); ok {
 		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
 	}
+	// Killed, it recorded no exit, so the launcher's ends its log.
+	logEndsWith(t, dir, ExitNoRecord)
 
 	l, dir = launcherDir(t, "m1", "hang")
 	l.KillGrace = 100 * time.Millisecond

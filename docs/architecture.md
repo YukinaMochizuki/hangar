@@ -14,8 +14,8 @@ planned; the code is the authority wherever it exists.
   │  hangar-apiserver  ◀── watch / status ──┐           │
   │   Connect + WebSocket, SQLite           │           │
   │   controllers in the same process       │           │
-  │          │ streams (exec, console)      │           │
-  │          ▼                              │           │
+  │          │ logs, exec: over a tunnel    │           │
+  │          ▼   the node opens             │           │
   │  hangar-node (root) ────────────────────┘           │
   │   ├ edge proxy        ├ network driver (netns, nft) │
   │   ├ storage (ZFS)     ├ metadata service, DNS       │
@@ -64,6 +64,10 @@ to a `Tenant`; tenants hold people, projects hold resources.
    state: the host is read back each time (`decisions/node-agent.md`).
 4. Clients watch or `hangar wait` until `status.observed_generation` catches up
    with the generation they wrote.
+
+The node also keeps a tunnel open to the apiserver, through which the
+apiserver calls it for what only the host reaches, such as a container's logs
+(`decisions/node-tunnel.md`): a node never listens.
 
 ## Where the reasoning lives
 
