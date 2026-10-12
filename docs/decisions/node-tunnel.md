@@ -31,12 +31,24 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     connection being closed. An agent stopping answers its calls
     `Unavailable`, and gives them 2 s to answer before it closes the
     tunnel.
-  - Calls to nodes open at once are capped: 64 per tenant (the tenant of
-    the container's project), so no tenant takes a node's streams from the
-    others, and 900 per node, below the 1000 streams an agent takes on its
+  - Calls to nodes open at once are capped: 64 per caller, counted by the
+    principal the call is authenticated as, so making tenants, as any
+    member may, gives no one more; 64 per tenant (the tenant of the
+    container's project), so no tenant takes a node's streams from the
+    others; and 900 per node, below the 1000 streams an agent takes on its
     tunnel, leaving room for the apiserver's own calls. A call over a cap
     fails at once with `ResourceExhausted`; none waits. Logs and exec share
-    the caps.
+    the caps. They are counted in each apiserver process, which holds while
+    there is one.
+  - Each end of a tunnel receives with a window of 1 MiB per stream and of
+    1000 MiB for the connection, every stream's at once. A call whose
+    caller stops reading holds its stream's window until it ends; were the
+    connection's smaller than the streams' together, a few hundred such
+    calls would hold it all, and no call on the tunnel would get data while
+    pings still went through. The cost is memory: the apiserver keeps up to
+    1 MiB unread per call, so at most 64 MiB for a caller and 900 MiB for a
+    node. x/net's HTTP/2 client passes no window to net/http, so the
+    apiserver's end is net/http's own, on the connection it took over.
   - Not the node listening and the apiserver dialing: that takes a second
     trust setup, and inbound ports on every node once there are several.
 - **The API is apart from its transport.** The node serves an internal
@@ -70,13 +82,14 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   process prints. `tenant.owner` and `platform.root` hold it; a sponsor does
   not.
 - **What the console holds is the tenant's**, so every read is bounded: a
-  record holds at most 64 KiB, a tail keeps back at most 4 MiB of memory,
-  each record counted with what it takes beyond its data, batches are
+  record holds at most 64 KiB, a tail keeps back about 4 MiB of memory,
+  each record counted with what it takes beyond its data (the allocator's
+  rounding can make it up to about twice that), batches are
   about 256 KiB, a message from a node at most 1 MiB, and the reader holds at
   most a record and a read of a file, whatever is in it. Bytes that are no
   record are skipped; forged records garble only the container's own log.
   Follows wait on the client: a slow reader slows the node's read through
-  HTTP/2's flow control, and buffers nothing.
+  HTTP/2's flow control, past the stream's window of 1 MiB.
 
 ## Consequences
 
