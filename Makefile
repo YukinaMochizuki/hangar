@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
@@ -66,6 +66,11 @@ E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_RO
 e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
+
+# The real network driver's tests alone: root, but no KVM and no guest
+# artifacts.
+e2e-host-network:
+	go test -exec 'sudo -E' -tags testbed -count=1 -timeout 15m -v ./test/testbed/network/
 
 $(E2E_HOST_ROOTFS):
 	mkdir -p $(@D)

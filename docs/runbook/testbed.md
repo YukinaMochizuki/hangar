@@ -10,6 +10,7 @@ create taps and an nftables table, and turn on IPv4 forwarding.
 |---|---|
 | `test/testbed/guest/` | The platform kernel, initramfs and hangar-init under Cloud Hypervisor, driven as the node drives them: the boot disk (`internal/guest/bootdisk`), the framed console (`internal/guest/console`) and the guest agent over hybrid vsock (`internal/node/driver/chguest`). No node or driver code |
 | `test/testbed/disks/` | The image and storage drivers (`internal/node/driver/registry`, `zfsstore`) on the `hangar` pool: the conformance suite (`drivertest`) with decoy datasets about, Docker Hub pulls by tag and digest compared with the reference flattening, and a guest booting from a root disk larger than its image, its filesystem grown by hangar-init |
+| `test/testbed/network/` | The real network driver (`internal/node/driver/hostnet`): the drivers' conformance suite (L3), then stand-in guests on taps through both NATs, isolation, forged sources, egress only by the uplink, drift, failing watches, collisions and cleanup. Needs root, not KVM |
 | `test/testbed/internal/vmtest/` | Not tests: the harness that boots those guests, for any L4 package. A package calls `vmtest.Main` from its `TestMain`, then `vmtest.New`, `Start`, `Ready`, `Exec` |
 | `test/testbed/host-bootstrap.sh` | `deploy/host` on a VM made to look like a fresh OVH install (`docs/runbook/host-bootstrap.md`) |
 | `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file and `hangar/images`, as a host has them, for `test/testbed/disks` |
@@ -82,6 +83,23 @@ and the directories, and the next run sweeps them first, with any stale
 `make e2e-host` runs the packages one after another (`-p 1`), and
 `vmtest.Main` holds `/run/lock/hangar-testbed.lock`, so a second run waits
 for the first.
+
+`make e2e-host-network` runs the network tests alone, which need no guest
+artifacts, no KVM and no Cloud Hypervisor: a bare Ubuntu 24.04 VM with Go,
+`nftables`, `curl` and `iputils-ping` is enough. Each stand-in guest is a
+namespace `tbg-<machine>-<nic>` whose own tap the test joins to the
+interface's tap by copying frames, as a VMM does. The tests make an upstream
+in namespace `tb-upstream` behind veth `tbup0` (198.51.100.0/24), which they
+use as the uplink so they can take it down, and decoys named `tbdecoy*` the
+driver must leave alone, and count in the upstream, with nft counters, what
+arrives from a source other than the host. Built with the `testbed` tag,
+`hostnet` also exports `BreakWatch`, `BreakNftWatch` and `FailSubscriptions`,
+which the tests use to make the driver's subscriptions fail; `hangar-node` is never
+built with that tag. `TestInternet` goes out of the testbed's real
+uplink to 1.1.1.1, and runs `networkctl reconfigure` on it when networkd
+manages it. The tests take `/run/lock/hangar-testbed.lock` too, turn IPv4
+forwarding on and leave it on, and remove everything they made, the
+driver's `hn*` objects included, at the start and the end.
 
 A failing guest test logs what the host saw: Cloud Hypervisor's log, the
 serial console (the kernel's, quiet unless something went wrong), and every
