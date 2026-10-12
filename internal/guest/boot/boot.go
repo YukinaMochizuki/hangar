@@ -70,12 +70,17 @@ func ReadConfig() (*guestv1.BootConfig, error) {
 	return bootdisk.Read(f)
 }
 
-// SwitchRoot mounts the root disk and makes it the root, keeping /dev,
-// /proc and /sys, and drops the initramfs, whose memory is the guest's.
-// hangar-init runs on from the memory it was loaded into.
-func SwitchRoot() error {
+// SwitchRoot mounts the root disk, grows its filesystem to the disk (or says
+// why not with logf), makes it the root keeping /dev, /proc and /sys, and
+// drops the initramfs; hangar-init runs on from memory.
+func SwitchRoot(logf func(format string, args ...any)) error {
 	if err := (mount{RootDevice, newRoot, "ext4", "", 0}).do(); err != nil {
 		return err
+	}
+	if from, to, err := GrowRoot(newRoot, RootDevice); err != nil {
+		logf("hangar-init: the root filesystem stays as it is: %v", err)
+	} else if to > from {
+		logf("hangar-init: grew the root filesystem from %d to %d blocks", from, to)
 	}
 	for _, dir := range []string{"/dev", "/proc", "/sys"} {
 		target := newRoot + dir

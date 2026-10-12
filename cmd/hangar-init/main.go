@@ -88,7 +88,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	if err != nil {
 		return failed, fmt.Errorf("reading the boot disk: %w", err)
 	}
-	if err := boot.SwitchRoot(); err != nil {
+	if err := boot.SwitchRoot(logf); err != nil {
 		return failed, err
 	}
 	workload, err := boot.System()
