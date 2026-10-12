@@ -7,6 +7,7 @@ package console
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -30,6 +31,10 @@ const (
 	// signal that ended it, as two big-endian int32s. It is the last record
 	// of a boot.
 	Exit Stream = 4
+	// Boot starts a boot, and each log file the host keeps: its payload is
+	// the boot's number, a big-endian uint64. Only the host writes it; one
+	// from the guest is dropped, so it cannot be forged.
+	Boot Stream = 5
 )
 
 // MaxPayload bounds one record; longer output is split.
@@ -202,6 +207,64 @@ func (r *Reader) Next() (Record, error) {
 		return rec, ErrCorrupt
 	}
 	return rec, nil
+}
+
+// ErrShort means b holds no whole record yet: more may complete it.
+var ErrShort = errors.New("console: no whole record yet")
+
+// Parse reads the record at the start of b, skipping bytes that are not
+// one, and returns it with the bytes it took. It returns ErrShort, with
+// the bytes that can be dropped, when b ends before a whole record, and
+// ErrCorrupt with no record for a header claiming too long a payload;
+// skipped bytes are reported as ErrCorrupt along with the record after
+// them, as Reader.Next does.
+func Parse(b []byte) (Record, int, error) {
+	skip := 0
+	for skip < len(b) && (b[skip] != recordMagic[0] || (skip+1 < len(b) && b[skip+1] != recordMagic[1])) {
+		skip++
+	}
+	b = b[skip:]
+	if len(b) < headerSize {
+		return Record{}, skip, ErrShort
+	}
+	n := binary.BigEndian.Uint32(b[11:])
+	if n > MaxPayload {
+		return Record{}, skip + len(recordMagic), fmt.Errorf("%w: a record of %d bytes", ErrCorrupt, n)
+	}
+	if len(b) < headerSize+int(n) {
+		return Record{}, skip, ErrShort
+	}
+	rec := Record{
+		Stream:  Stream(b[2]),
+		Time:    time.Unix(0, int64(binary.BigEndian.Uint64(b[3:]))),
+		Payload: bytes.Clone(b[headerSize : headerSize+int(n)]),
+	}
+	if rec.Payload == nil {
+		rec.Payload = []byte{}
+	}
+	if skip > 0 {
+		return rec, skip + headerSize + int(n), ErrCorrupt
+	}
+	return rec, headerSize + int(n), nil
+}
+
+// BootRecord is the Boot record of boot number n.
+func BootRecord(n uint64, t time.Time) Record {
+	return Record{Stream: Boot, Time: t, Payload: binary.BigEndian.AppendUint64(nil, n)}
+}
+
+// BootOf decodes a Boot record's payload.
+func BootOf(rec Record) (uint64, error) {
+	if rec.Stream != Boot || len(rec.Payload) != 8 {
+		return 0, fmt.Errorf("not a boot record: stream %d, %d bytes", rec.Stream, len(rec.Payload))
+	}
+	return binary.BigEndian.Uint64(rec.Payload), nil
+}
+
+// ExitRecord is the Exit record of st.
+func ExitRecord(st ExitStatus, t time.Time) Record {
+	p := binary.BigEndian.AppendUint32(nil, uint32(st.Code))
+	return Record{Stream: Exit, Time: t, Payload: binary.BigEndian.AppendUint32(p, uint32(st.Signal))}
 }
 
 // ExitOf decodes an Exit record's payload.
