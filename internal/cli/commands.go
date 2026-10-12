@@ -127,7 +127,13 @@ func (a *app) applyCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apply -f FILE|DIR|-",
 		Short: "Create or replace the objects in YAML or JSON files",
-		Args:  args(0, 0),
+		Long: `Create or replace the objects in YAML or JSON files.
+
+A number written where the API has a string is sent as the text written, so
+"cpu: 2" and an env "value: 8080" need no quotes, and 1.10 stays 1.10. A
+number anchored outside a string field and reached through a YAML alias or
+merge key (<<) is not converted, so quote it where it is anchored.`,
+		Args: args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(files) == 0 {
 				return usageErr("-f is required")

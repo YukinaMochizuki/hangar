@@ -44,14 +44,14 @@ func TestAResizeThatDoesNotFitIsNotApplied(t *testing.T) {
 	waitContainer(t, s, system, "api", "told the resize does not fit", func(c *computev1alpha1.Container) bool {
 		return containerReady(c).GetReason() == "ResizeDoesNotFit"
 	})
-	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"}); m.GetSpec().GetResources().GetMemoryMib() != defaultMemoryMiB {
-		t.Errorf("the node was overcommitted: the machine now asks %d MiB", m.GetSpec().GetResources().GetMemoryMib())
+	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"}); m.GetSpec().GetResources().GetMemory() != defaultMemory {
+		t.Errorf("the node was overcommitted: the machine now asks %s", m.GetSpec().GetResources().GetMemory())
 	}
 
 	// A resize that fits goes through.
 	applyCtr(t, s, user, sized("api", 1024))
 	waitMachine(t, s, system, "ct-api", "resized", func(m *computev1alpha1.Machine) bool {
-		return m.GetSpec().GetResources().GetMemoryMib() == 1024
+		return m.GetSpec().GetResources().GetMemory() == "1024Mi"
 	})
 }
 
@@ -82,7 +82,7 @@ func TestAContainerWhoseNodeStopsReportingIsNotReady(t *testing.T) {
 	})
 
 	if _, err := s.backend(registry.Node).UpdateStatus(system, resource.Key{Name: "n1"}, &computev1alpha1.NodeStatus{
-		Capacity: &computev1alpha1.NodeResources{MemoryMib: 4096},
+		Capacity: &computev1alpha1.NodeResources{Memory: "4096Mi"},
 		Conditions: []*metav1.Condition{{
 			Type: NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN, Reason: "NodeStatusUnknown",
 		}},
@@ -256,7 +256,7 @@ func TestMemoryDecisionsTakeTurns(t *testing.T) {
 	grown := sized("api", 1024)
 	grown.Metadata = c.GetMetadata()
 
-	s.memory.Lock()
+	s.capacity.Lock()
 	done := make(chan string, 2)
 	go func() {
 		_, _ = s.ensureMachine(system, grown, placed)
@@ -273,7 +273,7 @@ func TestMemoryDecisionsTakeTurns(t *testing.T) {
 		finished++
 	case <-time.After(200 * time.Millisecond):
 	}
-	s.memory.Unlock()
+	s.capacity.Unlock()
 	for ; finished < 2; finished++ {
 		<-done
 	}
@@ -300,7 +300,7 @@ func TestABlockedResizeGoesThroughOnceThereIsRoom(t *testing.T) {
 	reportMachine(t, s, system, other, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, other.GetMetadata().GetGeneration(),
 		&metav1.Condition{Type: MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
 	waitMachine(t, s, system, "ct-api", "resized", func(m *computev1alpha1.Machine) bool {
-		return m.GetSpec().GetResources().GetMemoryMib() == 1536
+		return m.GetSpec().GetResources().GetMemory() == "1536Mi"
 	})
 }
 

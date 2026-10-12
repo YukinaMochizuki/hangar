@@ -20,8 +20,8 @@ func main() {
 	var (
 		name           = flag.String("name", "", "the Node this agent reports as; the apiserver's --node-name")
 		socket         = flag.String("socket", "/run/hangar/node.sock", "the apiserver's node socket")
-		reservedMemory = flag.Int64("reserved-memory-mib", 0, "memory kept back for the host, including the ZFS ARC")
-		reservedVCPUs  = flag.Int("reserved-vcpus", 0, "vCPUs kept back for the host")
+		reservedMemory = flag.String("reserved-memory", "", "memory kept back for the host, including the ZFS ARC, as a quantity such as 4Gi")
+		reservedCPU    = flag.String("reserved-cpu", "", "CPUs kept back for the host, as a whole number")
 	)
 	flag.Parse()
 
@@ -32,7 +32,7 @@ func main() {
 		Name:     *name,
 		HTTP:     client.UnixSocket(*socket),
 		BaseURL:  client.UnixSocketURL,
-		Reserved: &computev1alpha1.NodeResources{Vcpus: int32(*reservedVCPUs), MemoryMib: *reservedMemory},
+		Reserved: &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory},
 		Log:      log,
 	})
 	if err == nil {

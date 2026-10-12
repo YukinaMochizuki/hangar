@@ -213,7 +213,7 @@ func TestNodesAreRegisteredAndKeepTheirSpec(t *testing.T) {
 		t.Error("registering again undid the cordon")
 	}
 
-	status := &computev1alpha1.NodeStatus{Capacity: &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 8192}}
+	status := &computev1alpha1.NodeStatus{Capacity: &computev1alpha1.NodeResources{Cpu: "4", Memory: "8192Mi"}}
 	if _, err := b.UpdateStatus(asNode(system, "n1"), key, status, nil); err != nil {
 		t.Errorf("a node reporting on itself: %v", err)
 	}
@@ -250,7 +250,7 @@ func report(t *testing.T, s *Server, system context.Context, node string, agentN
 	t.Helper()
 	status := &computev1alpha1.NodeStatus{
 		LastHeartbeatTime: timestamppb.New(agentNow),
-		Capacity:          &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 8192},
+		Capacity:          &computev1alpha1.NodeResources{Cpu: "4", Memory: "8192Mi"},
 		Conditions: []*metav1.Condition{{
 			Type: NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 			LastTransitionTime: timestamppb.New(agentNow),
@@ -404,7 +404,7 @@ func TestNodeMonitorNeverOverwritesANewerReport(t *testing.T) {
 		t.Fatal(err)
 	}
 	st := o.(*computev1alpha1.Node).GetStatus()
-	if !conditions.IsTrue(st.GetConditions(), NodeReady) || st.GetCapacity().GetMemoryMib() != 8192 {
+	if !conditions.IsTrue(st.GetConditions(), NodeReady) || st.GetCapacity().GetMemory() != "8192Mi" {
 		t.Errorf("a decision on stale data overwrote a newer report: %v", st)
 	}
 }

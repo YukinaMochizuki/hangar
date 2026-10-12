@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
@@ -342,7 +344,7 @@ func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, _, ob
 	return nil
 }
 
-func validateContainer(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
+func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	spec := obj.(*computev1alpha1.Container).GetSpec()
 	if spec.GetImage() == "" {
 		return invalid("spec.image is required")
@@ -360,8 +362,82 @@ func validateContainer(_ context.Context, _ *Server, _ auth.Principal, _, obj pr
 			return invalid("spec.ports[%s]: port %d out of range", port.GetName(), port.GetPort())
 		}
 	}
-	if spec.GetResources().GetVcpus() < 0 || spec.GetResources().GetMemoryMib() < 0 {
-		return invalid("spec.resources must not be negative")
+	return s.validateContainerResources(ctx, old, spec.GetResources())
+}
+
+// validateContainerResources checks the quantities a container asks for,
+// as written; old is the stored container, nil on create. The defaults
+// count as written, so a container that never named a disk has the default.
+func (s *Server) validateContainerResources(ctx context.Context, old proto.Message, r *computev1alpha1.Resources) error {
+	sz, err := containerSizes(r)
+	if err != nil {
+		return invalid("%v", err)
+	}
+	if sz.memory < minMemory {
+		return invalid("spec.resources.memory %s is below the minimum of 128Mi", cmp.Or(r.GetMemory(), defaultMemory))
+	}
+	if sz.disk < minDisk {
+		return invalid("spec.resources.disk %s is below the minimum of 1Gi", cmp.Or(r.GetDisk(), defaultDisk))
+	}
+	if err := checkMaximums(sz, cmp.Or(r.GetCpu(), defaultCPU), cmp.Or(r.GetMemory(), defaultMemory), cmp.Or(r.GetDisk(), defaultDisk)); err != nil {
+		return err
+	}
+	if old == nil {
+		return nil
+	}
+	// Only a change of disk is checked, so an apply that leaves the disk as
+	// it was always passes, even when the machine's disk is larger.
+	was := old.(*computev1alpha1.Container)
+	if stored, _ := containerSizes(was.GetSpec().GetResources()); wholeGi(sz.disk) == wholeGi(stored.disk) {
+		return nil
+	}
+	floor, err := s.diskFloor(ctx, was)
+	if err != nil {
+		return err
+	}
+	if wholeGi(sz.disk) < floor {
+		return invalid("spec.resources.disk %s is smaller than the current %dGi; a root disk can grow but never shrink",
+			cmp.Or(r.GetDisk(), defaultDisk), floor)
+	}
+	return nil
+}
+
+// diskFloor is the smallest disk, in whole Gi, an update of c may ask for:
+// the disk its placed machine has, so a growth that never took effect can be
+// withdrawn; nothing while the machine is unplaced, as no disk exists yet;
+// and before there is a machine, the disk c asks for.
+func (s *Server) diskFloor(ctx context.Context, c *computev1alpha1.Container) (uint64, error) {
+	// One Get of the machine by name, not a list or a watch: the machine may
+	// still change after this read, and the container controller keeps a
+	// machine's disk from shrinking if it does.
+	obj, err := s.get(ctx, registry.Machine, resource.Key{Project: c.GetMetadata().GetProject(), Name: machineName(c.GetMetadata().GetName())})
+	if err != nil {
+		return 0, err
+	}
+	if m, ok := obj.(*computev1alpha1.Machine); ok && ownedBy(m.GetMetadata(), c.GetMetadata().GetUid()) {
+		if m.GetSpec().GetNode() == "" {
+			return 0, nil
+		}
+		if h, err := heldBy(m.GetSpec().GetResources()); err == nil {
+			return wholeGi(h.disk), nil
+		}
+	}
+	// A stored disk that does not parse reads as zero and holds nothing back.
+	stored, _ := containerSizes(c.GetSpec().GetResources())
+	return wholeGi(stored.disk), nil
+}
+
+// checkMaximums refuses sizes past what a machine can have; cpu, memory and
+// disk are the quantities as written, for the message.
+func checkMaximums(sz sizes, cpu, memory, disk string) error {
+	if sz.cpu > maxCPU {
+		return invalid("spec.resources.cpu %s is above the maximum of %d vCPUs", cpu, maxCPU)
+	}
+	if sz.memory > maxMemory {
+		return invalid("spec.resources.memory %s is above the maximum of 4Ti", memory)
+	}
+	if sz.disk > maxDisk {
+		return invalid("spec.resources.disk %s is above the maximum of 64Ti", disk)
 	}
 	return nil
 }
@@ -399,8 +475,21 @@ func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj pr
 	if c := spec.GetContainer(); c != nil && c.GetImage() == "" {
 		return invalid("spec.container.image is required")
 	}
-	if spec.GetResources().GetVcpus() < 0 || spec.GetResources().GetMemoryMib() < 0 {
-		return invalid("spec.resources must not be negative")
+	res := spec.GetResources()
+	var sz sizes
+	if cpu := res.GetCpu(); cpu != "" {
+		var err error
+		if sz.cpu, err = quantity.CPU(cpu); err != nil {
+			return invalid("spec.resources.cpu: %v", err)
+		}
+	}
+	h, err := heldBy(res)
+	if err != nil {
+		return invalid("spec.resources.%v", err)
+	}
+	sz.memory, sz.disk = h.memory, h.disk
+	if err := checkMaximums(sz, res.GetCpu(), res.GetMemory(), res.GetDisk()); err != nil {
+		return err
 	}
 	seen := map[string]bool{}
 	for _, nic := range spec.GetInterfaces() {

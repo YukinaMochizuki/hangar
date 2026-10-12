@@ -46,10 +46,14 @@ message NodeStatus {
   string agent_version = 6;
 }
 
-// NodeResources is an amount of compute.
+// NodeResources is an amount of compute. Each field is a quantity in
+// Kubernetes syntax; empty means the node does not report it.
 message NodeResources {
-  int32 vcpus = 1;
-  int64 memory_mib = 2;
+  reserved 1, 2;
+  reserved "vcpus", "memory_mib";
+  string cpu = 3;
+  string memory = 4;
+  string disk = 5;
 }
 
 // NodeService exposes nodes. Only the system may apply or delete them.

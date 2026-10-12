@@ -61,6 +61,30 @@ go run ./cmd/hangar apply -f my-stack.yaml
 go run ./cmd/hangar get containers -o json
 ```
 
+A container in `my-stack.yaml` might read:
+
+```yaml
+apiVersion: compute.hangar.dev/v1alpha1
+kind: Container
+metadata:
+  name: api
+spec:
+  image: nginx:1
+  env:
+  - name: PORT
+    value: 8080
+  resources:
+    cpu: 2
+    memory: 512Mi
+    disk: 10Gi
+```
+
+`apply` sends a YAML number written where the API has a string as the text
+written, so `cpu: 2` and `value: 8080` need no quotes; `1.10` stays `1.10`.
+A number anchored outside a string field and reached through a YAML alias
+(`*name`) or merge key (`<<`) is not converted, so quote it where it is
+anchored.
+
 To act as someone else, add them as a member first (a platform RoleBinding
 with role `platform.member` for their email, applied as the admin) and make a
 second context with `--user`.

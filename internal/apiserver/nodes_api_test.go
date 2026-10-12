@@ -48,12 +48,12 @@ func TestNodeOverTheWire(t *testing.T) {
 	wantCode(t, err, connect.CodePermissionDenied, "root deleting a node")
 
 	status := &computev1alpha1.NodeStatus{
-		Capacity:     &computev1alpha1.NodeResources{Vcpus: 32, MemoryMib: 131072},
+		Capacity:     &computev1alpha1.NodeResources{Cpu: "32", Memory: "128Gi"},
 		AgentVersion: "test",
 	}
 	got := must[computev1alpha1.UpdateNodeStatusResponse](t)(e.asNode().nodes.UpdateNodeStatus(ctx,
 		connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{Name: testNode, Status: status})))
-	if got.GetNode().GetStatus().GetCapacity().GetMemoryMib() != 131072 {
+	if got.GetNode().GetStatus().GetCapacity().GetMemory() != "128Gi" {
 		t.Errorf("the agent's report was not stored: %v", got.GetNode().GetStatus())
 	}
 	_, err = e.as(root).nodes.UpdateNodeStatus(ctx,
