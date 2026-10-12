@@ -21,12 +21,20 @@ import (
 // NodeService on it, until ctx ends.
 func (a *Agent) serveTunnel(ctx context.Context) {
 	mux := http.NewServeMux()
-	mux.Handle(nodev1connect.NewNodeServiceHandler(nodeService{a}, connect.WithReadMaxBytes(1<<20)))
+	mux.Handle(nodev1connect.NewNodeServiceHandler(nodeService{a: a, agent: ctx}, connect.WithReadMaxBytes(1<<20)))
 	(&tunnel.Agent{Dial: a.cfg.Tunnel, Handler: mux, Liveness: a.cfg.TunnelLiveness, Log: a.cfg.Log}).Run(ctx)
 }
 
-// nodeService is the NodeService the agent serves the apiserver.
-type nodeService struct{ a *Agent }
+// nodeService is the NodeService the agent serves the apiserver. agent
+// ends when the agent stops.
+type nodeService struct {
+	a     *Agent
+	agent context.Context
+}
+
+// followEndDelay is how long a follow goes on once its VM is done, for the
+// driver's reader to take what the VM wrote last: chvm reads every 250 ms.
+const followEndDelay = time.Second
 
 // errVMDone ends following a log whose VM is done.
 var errVMDone = errors.New("the machine's VM is done")
@@ -60,6 +68,8 @@ func (s nodeService) Logs(ctx context.Context, req *connect.Request[nodev1.LogsR
 	switch {
 	case errors.Is(context.Cause(ctx), errVMDone):
 		return nil
+	case s.agent.Err() != nil:
+		return connect.NewError(connect.CodeUnavailable, errors.New("the node agent is stopping"))
 	case ctx.Err() != nil:
 		return connect.NewError(connect.CodeCanceled, ctx.Err())
 	case err != nil:
@@ -70,8 +80,7 @@ func (s nodeService) Logs(ctx context.Context, req *connect.Request[nodev1.LogsR
 
 // endWithVM ends a follow of the machine's log, by cancel, once its VM,
 // seen running, has exited for good or is gone, as a stop leaves it: the
-// log will have no more. It waits a little first, so the follow reads
-// what the VM wrote last.
+// log will have no more. It waits followEndDelay first.
 func (a *Agent) endWithVM(ctx context.Context, uid string, cancel context.CancelCauseFunc) {
 	poll := a.cfg.LogPoll
 	if poll == 0 {
@@ -89,7 +98,7 @@ func (a *Agent) endWithVM(ctx context.Context, uid string, cancel context.Cancel
 		case vm != nil && vm.State == driver.VMExited, vm == nil && seen:
 			select {
 			case <-ctx.Done():
-			case <-a.cfg.Clock.After(poll):
+			case <-a.cfg.Clock.After(followEndDelay):
 				cancel(errVMDone)
 			}
 			return

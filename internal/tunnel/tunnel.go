@@ -92,7 +92,7 @@ func (a *Agent) Run(ctx context.Context) {
 	})
 	wait := minWait
 	for ctx.Err() == nil {
-		opened, err := a.serve(ctx, handler)
+		opened, err := a.serve(ctx, handler, &calls)
 		if ctx.Err() != nil {
 			return
 		}
@@ -132,20 +132,45 @@ func (c *calls) add(d int) {
 	}
 }
 
-func (c *calls) wait() {
+func (c *calls) wait() { c.waitFor(-1) }
+
+// waitFor waits for the calls to end, for at most d unless d is negative.
+func (c *calls) waitFor(d time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.idle == nil {
 		c.idle = sync.NewCond(&c.mu)
 	}
-	for c.n > 0 {
+	expired := false
+	if d >= 0 {
+		t := time.AfterFunc(d, func() {
+			c.mu.Lock()
+			expired = true
+			c.idle.Broadcast()
+			c.mu.Unlock()
+		})
+		defer t.Stop()
+	}
+	for c.n > 0 && !expired {
 		c.idle.Wait()
 	}
 }
 
+// MaxStreams is how many calls a node agent takes at once on its tunnel:
+// the apiserver keeps its own calls to a node below it.
+const MaxStreams = 1000
+
+// Stopping the agent, the calls on its tunnel are given stopAnswer to
+// answer, their contexts done, before the tunnel closes, and flushAnswers
+// more for their answers to leave.
+const (
+	stopAnswer   = 2 * time.Second
+	flushAnswers = 50 * time.Millisecond
+)
+
 // serve opens one tunnel and serves on it until it drops, reporting
 // whether it opened.
-func (a *Agent) serve(ctx context.Context, handler http.Handler) (bool, error) {
+func (a *Agent) serve(ctx context.Context, handler http.Handler, calls *calls) (bool, error) {
 	conn, err := a.Dial(ctx)
 	if err != nil {
 		return false, err
@@ -158,8 +183,12 @@ func (a *Agent) serve(ctx context.Context, handler http.Handler) (bool, error) {
 		a.Opened()
 	}
 	live := a.Liveness.orDefault()
-	srv := &http2.Server{ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout}
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	srv := &http2.Server{ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout, MaxConcurrentStreams: MaxStreams}
+	stop := context.AfterFunc(ctx, func() {
+		calls.waitFor(stopAnswer)
+		time.Sleep(flushAnswers)
+		_ = conn.Close()
+	})
 	defer stop()
 	srv.ServeConn(conn, &http2.ServeConnOpts{Context: ctx, Handler: handler})
 	_ = conn.Close()
@@ -237,6 +266,19 @@ func (t *Tunnel) Node() string { return t.node }
 
 // Done is closed once the tunnel has dropped; calls on it then fail.
 func (t *Tunnel) Done() <-chan struct{} { return t.conn.done }
+
+// Closed reports whether the tunnel has dropped. It is true for a call
+// the drop failed by the time the call fails: net/http marks its HTTP/2
+// connection closed before it fails the connection's streams, while Done
+// may be closed only after.
+func (t *Tunnel) Closed() bool {
+	select {
+	case <-t.conn.done:
+		return true
+	default:
+		return t.cc.State().Closed
+	}
+}
 
 // HTTPClient sends requests to the node over the tunnel, whatever their
 // URL's host.
