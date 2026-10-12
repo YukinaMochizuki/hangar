@@ -49,6 +49,29 @@ healthy within about 60 s, it rolls back at once; if the script dies, the timer
 rolls back. While the timer is pending, `bootstrap.sh` refuses to run.
 Backups and the rollback script are under `/var/lib/hangar-bootstrap/netplan-*`.
 
+## What the node agent needs from the pool
+
+The node's image and storage drivers (`docs/decisions/storage-zfs.md`) need
+these before `hangar-node` starts; `deploy/host` does not make them:
+
+- `e2fsprogs` (for `mkfs.ext4 -d`) and `zfsutils-linux` installed.
+- The pool `hangar`, as the installer and the `zfs` step leave it.
+- `hangar/images`, mounted at `/var/lib/hangar/images` with
+  `setuid=off exec=off devices=off`, the mount point `0700` and root's, and a
+  `quota`, so pulling and unpacking never take the room root disks need: a
+  few times the largest image the host should take, such as 100G on the
+  current host. The image cache and the directory images are unpacked in
+  both go under it, on that one dataset: both hold tenant content. Pass the
+  quota, and what bases may take, to `hangar-node --reserved-disk`.
+- Nothing else: the driver makes `hangar/bases` and `hangar/roots`
+  (`mountpoint=none`) under the pool when they are missing, and owns them.
+  Nothing else may be created under them.
+- udev's zvol rules (`/dev/zvol/...`), which `zfsutils-linux` installs. The
+  `zfs` step adds Hangar's own, which keep udev from probing or watching
+  zvols (`/etc/udev/rules.d/59-hangar-zvol.rules` and `99-hangar-zvol.rules`).
+
+`test/testbed/setup.sh` makes the same on a testbed VM.
+
 ## Things that are easy to get wrong
 
 - Proxy NDP is set through a networkd drop-in, not sysctl.d: networkd resets

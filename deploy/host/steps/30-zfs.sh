@@ -5,6 +5,37 @@
 ZFS_MODPROBE=/etc/modprobe.d/zfs-hangar.conf
 ZFS_ARC_PARAM=/sys/module/zfs/parameters/zfs_arc_max
 
+# Zvols hold tenants' filesystems, which the host never parses: udev must not
+# probe them (blkid, before 60-persistent-storage) nor watch them for writes
+# (after 60-block, which turns watching on). docs/decisions/storage-zfs.md.
+ZFS_UDEV_NOPROBE=/etc/udev/rules.d/59-hangar-zvol.rules
+ZFS_UDEV_NOWATCH=/etc/udev/rules.d/99-hangar-zvol.rules
+
+zfs_udev_noprobe() {
+	printf '%s\n' '# Written by deploy/host/steps/30-zfs.sh.' \
+		'KERNEL=="zd*", ENV{UDEV_DISABLE_PERSISTENT_STORAGE_BLKID_FLAG}="1"'
+}
+
+zfs_udev_nowatch() {
+	printf '%s\n' '# Written by deploy/host/steps/30-zfs.sh.' \
+		'KERNEL=="zd*", OPTIONS+="nowatch"'
+}
+
+zfs_udev_persisted() {
+	zfs_udev_noprobe | cmp -s - "$ZFS_UDEV_NOPROBE" && zfs_udev_nowatch | cmp -s - "$ZFS_UDEV_NOWATCH" &&
+		[ "$(stat -c %a "$ZFS_UDEV_NOPROBE")" = 644 ] && [ "$(stat -c %a "$ZFS_UDEV_NOWATCH")" = 644 ]
+}
+
+# zfs_udev_unprobed holds when no zvol carries what blkid would have read.
+zfs_udev_unprobed() {
+	local dev
+	for dev in /dev/zd*; do
+		[ -b "$dev" ] || continue
+		udevadm info --query=property --name="$dev" | grep -q '^ID_FS_' && return 1
+	done
+	return 0
+}
+
 # Each entry is DATASET:MOUNTPOINT. hangar/poc holds throwaway experiments and is
 # never mounted; volumes under it are reached as /dev/zvol paths.
 zfs_datasets() {
@@ -63,6 +94,15 @@ zfs_apply() {
 	fi
 	zfs_arc_runtime_ok ||
 		run "set zfs_arc_max=$HANGAR_ARC_MAX_BYTES now" sh -c "echo $HANGAR_ARC_MAX_BYTES >$ZFS_ARC_PARAM"
+
+	if ! zfs_udev_persisted; then
+		put_file "$ZFS_UDEV_NOPROBE" 644 "$(zfs_udev_noprobe)"
+		put_file "$ZFS_UDEV_NOWATCH" 644 "$(zfs_udev_nowatch)"
+		run "reload udev rules" udevadm control --reload
+	fi
+	# Zvols probed before the rules keep what blkid read until an event.
+	zfs_udev_unprobed ||
+		run "forget what udev probed on zvols" udevadm trigger --action=change --subsystem-match=block --sysname-match='zd*' --settle
 }
 
 zfs_verify() {
@@ -70,4 +110,6 @@ zfs_verify() {
 	check "datasets $(zfs_datasets | tr '\n' ' ')" zfs_datasets_ok
 	check "ARC max $HANGAR_ARC_MAX_BYTES at runtime" zfs_arc_runtime_ok
 	check "ARC max $HANGAR_ARC_MAX_BYTES across reboots" zfs_arc_persistent_ok
+	check "udev neither probes nor watches zvols" zfs_udev_persisted
+	check "no zvol carries a probed filesystem" zfs_udev_unprobed
 }
