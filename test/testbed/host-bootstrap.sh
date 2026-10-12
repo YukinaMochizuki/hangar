@@ -230,6 +230,28 @@ test_refuses_tampered_release() {
 	rm -rf "$bad"
 }
 
+test_refuses_half_applied_release() {
+	step "without --release, files that do not match the installed release are refused, and nothing restarted"
+	local api_pid node_pid
+	api_pid=$(main_pid hangar-apiserver)
+	node_pid=$(main_pid hangar-node)
+	cp /usr/local/bin/hangar-node "$work/hangar-node.mixed"
+	printf x >>"$work/hangar-node.mixed"
+	install -m 755 "$work/hangar-node.mixed" /usr/local/bin/hangar-node.tb-new
+	mv -f /usr/local/bin/hangar-node.tb-new /usr/local/bin/hangar-node
+	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/mixed.log"; then
+		fail "bootstrap ran on a half-applied release without --release"
+	fi
+	grep -q 'rerun with --release DIR' "$work/mixed.log" || fail "unexpected refusal: $(cat "$work/mixed.log")"
+	grep -q '^apply: ' "$work/mixed.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/mixed.log")"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
+	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the refused run restarted the apiserver"
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$work/mixed.log"
+	grep -q '^apply: install hangar-node as' "$work/mixed.log" || fail "--release did not reinstall hangar-node: $(cat "$work/mixed.log")"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after reinstalling the release"
+	rm -f "$work/hangar-node.mixed"
+}
+
 test_refuses_without_local_env() {
 	step "the services step refuses without the bootstrap admin in /etc/hangar/local.env"
 	mv /etc/hangar/local.env "$work/local.env"
@@ -432,6 +454,7 @@ test_refuses_unknown_installer_keys
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
 test_refuses_tampered_release
+test_refuses_half_applied_release
 test_refuses_without_local_env
 test_upgrade_restarts_services
 test_unit_change_restarts_its_service

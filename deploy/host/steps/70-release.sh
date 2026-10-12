@@ -63,9 +63,18 @@ install_release_file() {
 release_apply() {
 	local dir=${HANGAR_RELEASE_DIR:-} entry name path mode sha
 	if [ -z "$dir" ]; then
-		[ -f "$RELEASE_VERSION" ] && return 0
-		[ "$DRY_RUN" = 1 ] || die "no hangar release is installed; pass --release DIR (docs/runbook/host-bootstrap.md)"
-		log "warning: no hangar release is installed; a real run needs --release DIR"
+		if [ ! -f "$RELEASE_VERSION" ]; then
+			[ "$DRY_RUN" = 1 ] || die "no hangar release is installed; pass --release DIR (docs/runbook/host-bootstrap.md)"
+			log "warning: no hangar release is installed; a real run needs --release DIR"
+			return 0
+		fi
+		# Files of two releases (a run that died half-way, or one replaced by
+		# hand): the services step would restart onto them.
+		release_installed_ok >/dev/null 2>&1 && return 0
+		local why
+		why="the installed files do not match the checksums recorded for release $(cat "$RELEASE_VERSION")"
+		[ "$DRY_RUN" = 1 ] || die "$why; rerun with --release DIR to install a whole release (docs/runbook/host-bootstrap.md)"
+		log "warning: $why; a real run refuses without --release DIR"
 		return 0
 	fi
 	release_check_dir "$dir"

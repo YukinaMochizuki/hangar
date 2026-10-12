@@ -61,8 +61,11 @@ Run the real thing detached from the SSH session, as above. `netplan apply` and
 session; a run killed with it is safe to re-run, but it should not be killed.
 
 A second `bootstrap.sh`, with the same `--release` or none, must print
-`changes: 0`. Without `--release` the `release` step keeps what is installed
-(and refuses when nothing is). `--only <step>` runs a single step
+`changes: 0`. Without `--release` the `release` step keeps what is installed.
+It refuses when nothing is, and when the installed files do not match the
+checksums recorded for them (a run that died half-way, or a file replaced
+by hand), so that no service restarts onto files of two releases; rerun
+with `--release DIR`. `--only <step>` runs a single step
 (`packages`, `swap-raid`, `zfs`, `network`, `sysctl`, `upgrades`, `release`,
 `services`).
 
