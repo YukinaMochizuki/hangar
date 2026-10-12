@@ -25,11 +25,15 @@ services_unit_hangar_apiserver() {
 # Written by deploy/host/steps/80-services.sh.
 [Unit]
 Description=Hangar API server
+# zfs-mount.service mounts the datasets without mount units, so
+# RequiresMountsFor= cannot see them; ExecStartPre checks the mount itself.
+Requires=zfs-mount.service
 After=network.target zfs-mount.service
-RequiresMountsFor=$SERVICES_STATE
 
 [Service]
 Type=exec
+# Outside the sandbox (+): ReadWritePaths= bind-mounts the path onto itself.
+ExecStartPre=+/usr/bin/mountpoint -q $SERVICES_STATE
 User=$SERVICES_USER
 Group=$SERVICES_USER
 # HANGAR_BOOTSTRAP_ADMIN, kept on the host only.
@@ -83,13 +87,17 @@ services_unit_hangar_node() {
 # Written by deploy/host/steps/80-services.sh.
 [Unit]
 Description=Hangar node agent
+Requires=zfs-mount.service
 After=network-online.target zfs-mount.service hangar-apiserver.service
 Wants=network-online.target
-RequiresMountsFor=/var/lib/hangar/images /var/lib/hangar/vms
 StartLimitIntervalSec=0
 
 [Service]
 Type=exec
+# Never on the root filesystem: the datasets carry the quotas and the
+# no-exec properties.
+ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/images
+ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
 ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --reserved-disk $(services_reserved_disk)

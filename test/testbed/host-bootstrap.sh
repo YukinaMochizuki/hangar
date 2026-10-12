@@ -308,6 +308,26 @@ test_unit_change_restarts_its_service() {
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the pending restart"
 }
 
+test_node_needs_its_datasets() {
+	step "the node does not start while hangar/images is not mounted"
+	systemctl stop hangar-node
+	zfs unmount hangar/images
+	# Restart=always keeps retrying; whether the start job waits for that
+	# depends on systemd's version, so it gets a bound.
+	if timeout 20 systemctl start hangar-node 2>/dev/null; then
+		fail "the node started without hangar/images mounted"
+	fi
+	sleep 3
+	systemctl is-active --quiet hangar-node && fail "the node is active without hangar/images mounted"
+	if [ -d /var/lib/hangar/images ] && [ -n "$(ls -A /var/lib/hangar/images)" ]; then
+		fail "the node wrote to the root filesystem under /var/lib/hangar/images: $(ls -A /var/lib/hangar/images)"
+	fi
+	zfs mount hangar/images
+	systemctl start hangar-node
+	systemctl is-active --quiet hangar-node || fail "the node is not active once hangar/images is mounted"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/mounts-verify.log" || fail "verify after remounting: $(grep FAIL "$work/mounts-verify.log")"
+}
+
 test_verify_catches_service_drift() {
 	step "verify reports drift in datasets, release, apt timers and services; bootstrap repairs it"
 	zfs set exec=on hangar/images
@@ -392,6 +412,7 @@ test_refuses_tampered_release
 test_refuses_without_local_env
 test_upgrade_restarts_services
 test_unit_change_restarts_its_service
+test_node_needs_its_datasets
 test_refuses_while_rollback_pending
 test_verify_catches_drift
 test_verify_catches_service_drift
