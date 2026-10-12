@@ -52,6 +52,8 @@ type Host struct {
 	interfaces map[string]map[string]driver.Interface // machine uid, then name
 
 	vms        map[string]*vm
+	logs       map[string]bool  // console logs kept, by machine uid
+	stops      map[string]int   // guest Stops asked for, by machine uid
 	bootErr    map[string]error // by machine uid; "" for every machine
 	silent     map[string]bool  // guests that never answer
 	hung       map[string]bool  // guests that take a call and never return it
@@ -82,7 +84,7 @@ func New() *Host {
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{},
-		vms: map[string]*vm{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		vms: map[string]*vm{}, logs: map[string]bool{}, stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
 }
@@ -212,6 +214,7 @@ const (
 	ListNetworks   = "networks"
 	ListRoots      = "roots"
 	ListBases      = "bases"
+	ListLogs       = "logs"
 )
 
 // FailListing makes the listings named, or every one if none is, fail with
@@ -220,7 +223,7 @@ func (h *Host) FailListing(err error, lists ...string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(lists) == 0 {
-		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases}
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListLogs}
 	}
 	for _, l := range lists {
 		h.listErr[l] = err
@@ -270,6 +273,10 @@ func (h *Host) Silence(machineUID string, silent bool) {
 func (h *Host) Exit(machineUID string, code int) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	return h.exitLocked(machineUID, code)
+}
+
+func (h *Host) exitLocked(machineUID string, code int) error {
 	v, ok := h.vms[machineUID]
 	if !ok || v.State != driver.VMRunning {
 		return fmt.Errorf("no running VM for machine %s", machineUID)
@@ -334,9 +341,24 @@ func (h *Host) Leave(machineUID, networkUID string) {
 	h.networks[networkUID] = driver.NetworkSpec{UID: networkUID}
 	h.interfaces[machineUID] = map[string]driver.Interface{"eth0": {MachineUID: machineUID, Name: "eth0", NetworkUID: networkUID}}
 	h.vms[machineUID] = &vm{VM: driver.VM{MachineUID: machineUID, State: driver.VMRunning, Started: time.Now()}, boots: 1}
+	h.logs[machineUID] = true
+}
+
+// LeaveLog puts a console log on the host, of a machine whose VM is gone.
+func (h *Host) LeaveLog(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.logs[machineUID] = true
 }
 
 // --- what tests inspect ---
+
+// GuestStops returns how often the machine's guest was asked to stop.
+func (h *Host) GuestStops(machineUID string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.stops[machineUID]
+}
 
 // Snapshot is what the host holds.
 type Snapshot struct {
@@ -345,6 +367,8 @@ type Snapshot struct {
 	Networks   map[string]driver.NetworkSpec
 	Interfaces map[string][]driver.Interface
 	VMs        map[string]VMView
+	// Logs are the machines whose console logs the host keeps.
+	Logs []string
 }
 
 // VMView is a VM as a test sees it.
@@ -358,7 +382,7 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 && len(s.Logs) == 0
 }
 
 // Snapshot returns a copy of what the host holds.
@@ -367,7 +391,7 @@ func (h *Host) Snapshot() Snapshot {
 	defer h.mu.Unlock()
 	s := Snapshot{
 		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Networks: maps.Clone(h.networks),
-		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{},
+		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
 	}
 	for uid, ifs := range h.interfaces {
 		for _, name := range slices.Sorted(maps.Keys(ifs)) {
@@ -745,14 +769,20 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		spec:  spec,
 		boots: boots,
 	}
+	d.h.logs[spec.MachineUID] = true
 	return nil
 }
 
+// Stop asks a running VM's guest to stop its process first, as the real
+// driver does, unless the guest does not answer.
 func (d hypervisor) Stop(_ context.Context, machineUID string) error {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	if d.h.removalErr != nil {
 		return d.h.removalErr
+	}
+	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning && !d.h.hung[machineUID] && !d.h.silent[machineUID] {
+		d.h.stops[machineUID]++
 	}
 	delete(d.h.vms, machineUID)
 	return nil
@@ -772,6 +802,28 @@ func (d hypervisor) VMs(context.Context) ([]driver.VM, error) {
 }
 
 func (d hypervisor) Changes() <-chan struct{} { return d.h.vmChanges }
+
+func (d hypervisor) Logs(context.Context) ([]string, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListLogs]; err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(d.h.logs)), nil
+}
+
+func (d hypervisor) DeleteLogs(_ context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.removalErr != nil {
+		return d.h.removalErr
+	}
+	if _, ok := d.h.vms[machineUID]; ok {
+		return fmt.Errorf("machine %s's VM is listed; stop it first", machineUID)
+	}
+	delete(d.h.logs, machineUID)
+	return nil
+}
 
 // --- Guest ---
 
@@ -795,4 +847,26 @@ func (d guest) Ready(ctx context.Context, machineUID string) error {
 		return fmt.Errorf("the guest agent of machine %s does not answer", machineUID)
 	}
 	return nil
+}
+
+// Stop ends the guest's process as SIGTERM does, at once: the VM exits with
+// 143 and its restart policy decides what comes next.
+func (d guest) Stop(ctx context.Context, machineUID string, _ time.Duration) error {
+	d.h.mu.Lock()
+	hung := d.h.hung[machineUID]
+	d.h.stops[machineUID]++
+	d.h.mu.Unlock()
+	if hung {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if v, ok := d.h.vms[machineUID]; !ok || v.State != driver.VMRunning {
+		return errUnknownVM
+	}
+	if d.h.silent[machineUID] {
+		return fmt.Errorf("the guest agent of machine %s does not answer", machineUID)
+	}
+	return d.h.exitLocked(machineUID, 143)
 }

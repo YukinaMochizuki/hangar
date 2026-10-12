@@ -389,6 +389,9 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	if err := d.Hypervisor.Stop(ctx, uid); err != nil {
 		return err
 	}
+	if err := d.Hypervisor.DeleteLogs(ctx, uid); err != nil {
+		return err
+	}
 	if err := d.Network.DeleteInterfaces(ctx, uid); err != nil {
 		return err
 	}
@@ -400,7 +403,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{
 		Type: computeapi.MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned",
-		Message: "the VM, its disk and its interfaces are gone from the host",
+		Message: "the VM, its log, its disk and its interfaces are gone from the host",
 	})
 	return a.writeStatus(ctx, m, obs)
 }
