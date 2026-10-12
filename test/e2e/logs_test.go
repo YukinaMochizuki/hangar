@@ -18,6 +18,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
@@ -294,6 +295,83 @@ func TestLogsOfANodeDown(t *testing.T) {
 	w.startAgent()
 	w.eventually("the logs readable again", func() (bool, string) {
 		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		return err == nil, fmt.Sprint(err)
+	})
+}
+
+// TestATenantsCallsToNodesAreCapped: a tenant with as many calls open to
+// nodes as it may is refused another at once, while another tenant's go
+// through; a follow ending, or cancelled, gives its slot back.
+func TestATenantsCallsToNodesAreCapped(t *testing.T) {
+	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerTenant = 2 })
+	w.startAgent()
+	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.root.Apply(context.Background(), registry.Project, &tenancyv1alpha1.Project{
+		Metadata: &metav1.ObjectMeta{Name: "elsewhere"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "other"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	job := container("job", "nginx")
+	job.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
+	w.apply(container("api", "nginx"))
+	w.apply(job)
+	theirs := container("theirs", "nginx")
+	theirs.Metadata.Project = "elsewhere"
+	w.apply(theirs)
+	w.waitReason("api", "Running")
+	w.waitReason("job", "Running")
+	root := w.logsAs(apiservertest.Root)
+	read := func(project, name string) error {
+		_, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: name})
+		return err
+	}
+	w.eventually("the other tenant's container readable", func() (bool, string) {
+		err := read("elsewhere", "theirs")
+		return err == nil, fmt.Sprint(err)
+	})
+
+	started := "1:init:hangar-init: starting the container"
+	f1 := w.follow(apiservertest.Root, "api")
+	f2 := w.follow(apiservertest.Root, "job")
+	w.eventually("both follows open", func() (bool, string) {
+		ok1, _ := f1.has(started)
+		ok2, _ := f2.has(started)
+		return ok1 && ok2, ""
+	})
+	start := time.Now()
+	err := read(project, "api")
+	if connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), `tenant "acme"`) {
+		t.Errorf("a third call of the tenant: %v, want resource exhausted", err)
+	}
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("the refusal took %v", took)
+	}
+	if err := read("elsewhere", "theirs"); err != nil {
+		t.Errorf("another tenant's call: %v", err)
+	}
+
+	// The job exiting for good ends its follow, and frees its slot.
+	if err := w.host.Exit(w.machine("job").GetMetadata().GetUid(), 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := f2.ended(t, 10*time.Second); err != nil {
+		t.Errorf("the job's follow ended with %v", err)
+	}
+	w.eventually("a slot free once the follow ended", func() (bool, string) {
+		err := read(project, "api")
+		return err == nil, fmt.Sprint(err)
+	})
+	f3 := w.follow(apiservertest.Root, "api")
+	w.eventually("the third follow open", func() (bool, string) { return f3.has(started) })
+	if err := read(project, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Errorf("a call at the cap again: %v", err)
+	}
+	f1.cancel()
+	_ = f1.ended(t, 5*time.Second)
+	w.eventually("a slot free once the follow was cancelled", func() (bool, string) {
+		err := read(project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
 }

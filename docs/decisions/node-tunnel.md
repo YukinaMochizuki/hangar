@@ -27,7 +27,16 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     answered in 10 s more, so a dead tunnel goes within 20 s. The agent
     dials again, from 200 ms, twice as long after each failure, up to 5 s.
   - A call to a node with no tunnel, or on a tunnel that drops under it,
-    fails with `Unavailable`.
+    fails with `Unavailable`, a drop told by the tunnel's HTTP/2
+    connection being closed. An agent stopping answers its calls
+    `Unavailable`, and gives them 2 s to answer before it closes the
+    tunnel.
+  - Calls to nodes open at once are capped: 64 per tenant (the tenant of
+    the container's project), so no tenant takes a node's streams from the
+    others, and 900 per node, below the 1000 streams an agent takes on its
+    tunnel, leaving room for the apiserver's own calls. A call over a cap
+    fails at once with `ResourceExhausted`; none waits. Logs and exec share
+    the caps.
   - Not the node listening and the apiserver dialing: that takes a second
     trust setup, and inbound ports on every node once there are several.
 - **The API is apart from its transport.** The node serves an internal
