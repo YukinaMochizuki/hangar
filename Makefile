@@ -34,7 +34,7 @@ lint-sh:
 	@if [ -n "$(SHELL_SCRIPTS)" ]; then ./tools/shellcheck.sh --shell=bash -x $(SHELL_SCRIPTS); fi
 
 lint-go:
-	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then $(GOLANGCI_LINT) run ./...; fi
+	$(GOLANGCI_LINT) run ./...
 
 # Compares against main; skipped while main has no schema to compare with.
 breaking:
@@ -45,7 +45,7 @@ breaking:
 	fi
 
 test:
-	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then go test -race ./...; fi
+	go test -race ./...
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, and the image unpacker's, which give files owners. They skip in
