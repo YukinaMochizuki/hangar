@@ -241,11 +241,13 @@ func (x *NodeStatus) GetAgentVersion() string {
 	return ""
 }
 
-// NodeResources is an amount of compute.
+// NodeResources is an amount of compute. Each field is a quantity in
+// Kubernetes syntax; empty means the node does not report it.
 type NodeResources struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Vcpus         int32                  `protobuf:"varint,1,opt,name=vcpus,proto3" json:"vcpus,omitempty"`
-	MemoryMib     int64                  `protobuf:"varint,2,opt,name=memory_mib,json=memoryMib,proto3" json:"memory_mib,omitempty"`
+	Cpu           string                 `protobuf:"bytes,3,opt,name=cpu,proto3" json:"cpu,omitempty"`
+	Memory        string                 `protobuf:"bytes,4,opt,name=memory,proto3" json:"memory,omitempty"`
+	Disk          string                 `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -280,18 +282,25 @@ func (*NodeResources) Descriptor() ([]byte, []int) {
 	return file_hangar_compute_v1alpha1_node_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *NodeResources) GetVcpus() int32 {
+func (x *NodeResources) GetCpu() string {
 	if x != nil {
-		return x.Vcpus
+		return x.Cpu
 	}
-	return 0
+	return ""
 }
 
-func (x *NodeResources) GetMemoryMib() int64 {
+func (x *NodeResources) GetMemory() string {
 	if x != nil {
-		return x.MemoryMib
+		return x.Memory
 	}
-	return 0
+	return ""
+}
+
+func (x *NodeResources) GetDisk() string {
+	if x != nil {
+		return x.Disk
+	}
+	return ""
 }
 
 type GetNodeRequest struct {
@@ -942,11 +951,12 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\bcapacity\x18\x03 \x01(\v2&.hangar.compute.v1alpha1.NodeResourcesR\bcapacity\x12H\n" +
 	"\vallocatable\x18\x04 \x01(\v2&.hangar.compute.v1alpha1.NodeResourcesR\vallocatable\x12J\n" +
 	"\x13last_heartbeat_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x11lastHeartbeatTime\x12#\n" +
-	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"D\n" +
-	"\rNodeResources\x12\x14\n" +
-	"\x05vcpus\x18\x01 \x01(\x05R\x05vcpus\x12\x1d\n" +
-	"\n" +
-	"memory_mib\x18\x02 \x01(\x03R\tmemoryMib\"$\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"l\n" +
+	"\rNodeResources\x12\x10\n" +
+	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
+	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
+	"\x04disk\x18\x05 \x01(\tR\x04diskJ\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05vcpusR\n" +
+	"memory_mib\"$\n" +
 	"\x0eGetNodeRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"D\n" +
 	"\x0fGetNodeResponse\x121\n" +

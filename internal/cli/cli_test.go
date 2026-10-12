@@ -162,7 +162,7 @@ func (n *fakeNode) ready() {
 	if _, err := n.nodes.UpdateNodeStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
 		Name: testNode,
 		Status: &computev1alpha1.NodeStatus{
-			Capacity: &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 4096},
+			Capacity: &computev1alpha1.NodeResources{Cpu: "4", Memory: "4Gi"},
 			Conditions: []*metav1.Condition{{
 				Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 			}},
@@ -243,6 +243,10 @@ spec:
   ports:
   - name: http
     port: 80
+  resources:
+    cpu: 2
+    memory: 512Mi
+    disk: 20Gi
 `
 
 func TestApplyGetDelete(t *testing.T) {
@@ -271,14 +275,16 @@ func TestApplyGetDelete(t *testing.T) {
 			Labels          map[string]string `json:"labels"`
 		} `json:"metadata"`
 		Spec struct {
-			Image string `json:"image"`
+			Image     string            `json:"image"`
+			Resources map[string]string `json:"resources"`
 		} `json:"spec"`
 	}
 	if err := json.Unmarshal([]byte(w.must("", "get", "ct", "api", "-o", "json")), &one); err != nil {
 		t.Fatal(err)
 	}
 	if one.APIVersion != "compute.hangar.dev/v1alpha1" || one.Metadata.Name != "api" || one.Metadata.Project != "web" ||
-		one.Spec.Image != "nginx:1" || one.Metadata.Labels["tier"] != "front" || one.Metadata.ResourceVersion == "" {
+		one.Spec.Image != "nginx:1" || one.Metadata.Labels["tier"] != "front" || one.Metadata.ResourceVersion == "" ||
+		one.Spec.Resources["cpu"] != "2" || one.Spec.Resources["memory"] != "512Mi" || one.Spec.Resources["disk"] != "20Gi" {
 		t.Errorf("get -o json returned %+v", one)
 	}
 
@@ -312,6 +318,99 @@ func TestApplyGetDelete(t *testing.T) {
 	w.must("", "wait", "container", "api", "--for=delete", "--timeout=10s")
 	if r := w.run("", "get", "container", "api"); r.code != cli.ExitNotFound {
 		t.Errorf("get after delete: exit %d (%s), want %d", r.code, r.err, cli.ExitNotFound)
+	}
+}
+
+// TestApplyTakesNumbersAsText: a YAML number where the API has a string is
+// sent as the text written, in any string field; numeric fields keep numbers.
+func TestApplyTakesNumbersAsText(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	docs := strings.Split(stack, "---\n")
+	w.must(docs[0]+"---\n"+docs[1], "apply", "-f", "-")
+	w.must(`apiVersion: compute.hangar.dev/v1alpha1
+kind: Container
+metadata:
+  name: api
+  labels:
+    version: 2
+spec:
+  image: nginx:1
+  args: [1, 1.10, 1e3, "x"]
+  env:
+  - name: PORT
+    value: 8080
+  - name: RATIO
+    value: 0.50
+  ports:
+  - name: http
+    port: 80
+  resources:
+    cpu: 2000m
+    memory: 1e9
+    disk: 20Gi
+`, "apply", "-f", "-")
+
+	var got struct {
+		Metadata struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"metadata"`
+		Spec struct {
+			Args []string `json:"args"`
+			Env  []struct {
+				Value string `json:"value"`
+			} `json:"env"`
+			Ports []struct {
+				Port int `json:"port"`
+			} `json:"ports"`
+			Resources map[string]string `json:"resources"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal([]byte(w.must("", "get", "ct", "api", "-o", "json")), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Metadata.Labels["version"] != "2" {
+		t.Errorf("labels %v", got.Metadata.Labels)
+	}
+	if strings.Join(got.Spec.Args, " ") != "1 1.10 1e3 x" {
+		t.Errorf("args %q", got.Spec.Args)
+	}
+	if len(got.Spec.Env) != 2 || got.Spec.Env[0].Value != "8080" || got.Spec.Env[1].Value != "0.50" {
+		t.Errorf("env %+v", got.Spec.Env)
+	}
+	if len(got.Spec.Ports) != 1 || got.Spec.Ports[0].Port != 80 {
+		t.Errorf("ports %+v", got.Spec.Ports)
+	}
+	if r := got.Spec.Resources; r["cpu"] != "2000m" || r["memory"] != "1e9" || r["disk"] != "20Gi" {
+		t.Errorf("resources %v", r)
+	}
+
+	// Proto field names work as well as JSON ones.
+	w.must("apiVersion: tenancy.hangar.dev/v1alpha1\nkind: Tenant\nmetadata: {name: numbers}\nspec: {display_name: 2024}\n", "apply", "-f", "-")
+	if out := w.must("", "get", "tenant", "numbers", "-o", "json"); !strings.Contains(out, `"displayName": "2024"`) {
+		t.Errorf("tenant:\n%s", out)
+	}
+
+	// A number is not text where the API wants a number.
+	bad := "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, ports: [{name: http, port: eighty}]}\n"
+	if r := w.run(bad, "apply", "-f", "-"); r.code != cli.ExitUsage {
+		t.Errorf("a word for a port: exit %d (%s)", r.code, r.err)
+	}
+	// A number anchored outside a string field stays a number through an
+	// alias or a merge key, as the help says; quoting the anchor works.
+	for _, doc := range []string{
+		"apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  ports: [{name: http, port: &p 80}]\n  args: [*p]\n",
+		"apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: 2}\n",
+	} {
+		if r := w.run(doc, "apply", "-f", "-"); r.code != cli.ExitUsage {
+			t.Errorf("a number through an alias: exit %d (%s)", r.code, r.err)
+		}
+	}
+	w.must("apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
+	// The server, not the CLI, says a fraction of a vCPU is refused.
+	frac := "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, resources: {cpu: 1.5}}\n"
+	if r := w.run(frac, "apply", "-f", "-"); r.code != cli.ExitError || !strings.Contains(r.err, "vCPUs are whole") {
+		t.Errorf("cpu 1.5: exit %d (%s)", r.code, r.err)
 	}
 }
 

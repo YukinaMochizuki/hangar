@@ -15,6 +15,7 @@ import (
 	"go.yaml.in/yaml/v3"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 )
@@ -85,18 +86,23 @@ func manifestFiles(p string) ([]string, error) {
 
 // decodeManifests reads a stream of YAML (or JSON) documents. Each becomes the
 // message its apiVersion and kind name, decoded strictly: an unknown field is
-// an error, not something silently dropped.
+// an error, not something silently dropped. A number written where the
+// message has a string, such as cpu: 2, is taken as its text.
 func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 	dec := yaml.NewDecoder(r)
 	var out []manifest
 	for i := 1; ; i++ {
-		var doc any
-		err := dec.Decode(&doc)
+		var node yaml.Node
+		err := dec.Decode(&node)
 		if errors.Is(err, io.EOF) {
 			return out, nil
 		}
 		where := fmt.Sprintf("%s, document %d", source, i)
 		if err != nil {
+			return nil, usageErr("%s: %v", where, err)
+		}
+		var doc any
+		if err := node.Decode(&doc); err != nil {
 			return nil, usageErr("%s: %v", where, err)
 		}
 		if doc == nil {
@@ -112,7 +118,12 @@ func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 		if !ok {
 			return nil, usageErr("%s: unknown apiVersion %q and kind %q", where, apiVersion, kind)
 		}
-		js, err := json.Marshal(doc)
+		numbersAsText(node.Content[0], res.Message.Descriptor())
+		var typed any
+		if err := node.Decode(&typed); err != nil {
+			return nil, usageErr("%s: %v", where, err)
+		}
+		js, err := json.Marshal(typed)
 		if err != nil {
 			return nil, usageErr("%s: %v", where, err)
 		}
@@ -121,5 +132,50 @@ func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 			return nil, usageErr("%s: %v", where, err)
 		}
 		out = append(out, manifest{source: where, r: res, obj: obj})
+	}
+}
+
+// numbersAsText retags every number in n that stands where md has a string
+// field as a string, so it decodes as the text written: protojson takes no
+// number for a string, and 1.10 or 1e3 must not come back as 1.1 or 1000.
+func numbersAsText(n *yaml.Node, md protoreflect.MessageDescriptor) {
+	if n.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		key, val := n.Content[i].Value, n.Content[i+1]
+		fd := md.Fields().ByJSONName(key)
+		if fd == nil {
+			fd = md.Fields().ByName(protoreflect.Name(key))
+		}
+		switch {
+		case fd == nil:
+		case fd.IsMap():
+			if val.Kind == yaml.MappingNode {
+				for j := 1; j < len(val.Content); j += 2 {
+					valueAsText(val.Content[j], fd.MapValue())
+				}
+			}
+		case fd.IsList():
+			if val.Kind == yaml.SequenceNode {
+				for _, item := range val.Content {
+					valueAsText(item, fd)
+				}
+			}
+		default:
+			valueAsText(val, fd)
+		}
+	}
+}
+
+// valueAsText applies numbersAsText to one value of field fd.
+func valueAsText(n *yaml.Node, fd protoreflect.FieldDescriptor) {
+	switch fd.Kind() {
+	case protoreflect.StringKind:
+		if t := n.ShortTag(); n.Kind == yaml.ScalarNode && (t == "!!int" || t == "!!float") {
+			n.Tag = "!!str"
+		}
+	case protoreflect.MessageKind:
+		numbersAsText(n, fd.Message())
 	}
 }

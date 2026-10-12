@@ -32,7 +32,7 @@ func TestAnotherNodesMachineIsNeverBuilt(t *testing.T) {
 		Metadata: &metav1.ObjectMeta{Project: apiservertest.Project, Name: "elsewhere"},
 		Spec: &computev1alpha1.MachineSpec{
 			Node:          "n2",
-			Resources:     &computev1alpha1.Resources{Vcpus: 1, MemoryMib: 512},
+			Resources:     &computev1alpha1.Resources{Cpu: "1", Memory: "512Mi", Disk: "10Gi"},
 			RunState:      computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
 			Boot:          &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx"}},
 			RestartPolicy: computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS,

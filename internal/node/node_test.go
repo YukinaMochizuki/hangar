@@ -71,7 +71,7 @@ func waitFor[T proto.Message](t *testing.T, what string, get func() (T, error), 
 
 func TestTheNodeReportsItsHost(t *testing.T) {
 	env := apiservertest.Start(t, nil)
-	startAgent(t, env, &computev1alpha1.NodeResources{Vcpus: 8, MemoryMib: 8192}, &computev1alpha1.NodeResources{Vcpus: 1, MemoryMib: 2048})
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, &computev1alpha1.NodeResources{Cpu: "1", Memory: "2G"})
 	root := env.As(apiservertest.Root)
 	n := waitFor(t, "the node reporting ready", func() (*computev1alpha1.Node, error) {
 		obj, err := root.Get(t.Context(), registry.Node, client.Key{Name: apiservertest.Node})
@@ -84,10 +84,10 @@ func TestTheNodeReportsItsHost(t *testing.T) {
 	})
 
 	st := n.GetStatus()
-	if !proto.Equal(st.GetCapacity(), &computev1alpha1.NodeResources{Vcpus: 8, MemoryMib: 8192}) {
+	if !proto.Equal(st.GetCapacity(), &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}) {
 		t.Errorf("capacity %v", st.GetCapacity())
 	}
-	if !proto.Equal(st.GetAllocatable(), &computev1alpha1.NodeResources{Vcpus: 7, MemoryMib: 6144}) {
+	if !proto.Equal(st.GetAllocatable(), &computev1alpha1.NodeResources{Cpu: "7", Memory: "6284Mi"}) {
 		t.Errorf("allocatable %v, want the capacity less what the host keeps", st.GetAllocatable())
 	}
 	if st.GetAgentVersion() == "" || st.GetLastHeartbeatTime() == nil {
@@ -121,7 +121,7 @@ func TestTheAgentKeepsReporting(t *testing.T) {
 	// before that would fail and wait for the next beat.
 	waitFor(t, "the Node created", getNode(t, root), func(*computev1alpha1.Node) bool { return true })
 	clock := clockwork.NewFakeClockAt(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
-	startAgent(t, env, &computev1alpha1.NodeResources{Vcpus: 1, MemoryMib: 1024}, nil, func(c *node.Config) {
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "1", Memory: "1Gi"}, nil, func(c *node.Config) {
 		c.HeartbeatInterval = 0
 		c.Clock = clock
 	})
@@ -177,7 +177,7 @@ func TestALiveAgentWinsOverTheMonitor(t *testing.T) {
 	}
 	markUnknown()
 	racing := &http.Client{Transport: afterGetNode{next: client.UnixSocket(env.Socket).Transport, then: markUnknown}}
-	startAgent(t, env, &computev1alpha1.NodeResources{Vcpus: 1, MemoryMib: 1024}, nil, func(c *node.Config) { c.HTTP = racing })
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "1", Memory: "1Gi"}, nil, func(c *node.Config) { c.HTTP = racing })
 	waitFor(t, "the node ready again", getNode(t, root), func(n *computev1alpha1.Node) bool {
 		return conditions.IsTrue(n.GetStatus().GetConditions(), computeapi.NodeReady)
 	})
@@ -198,10 +198,58 @@ func (a afterGetNode) RoundTrip(r *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-func TestAllocatableIsNeverNegative(t *testing.T) {
-	got := node.Allocatable(&computev1alpha1.NodeResources{Vcpus: 2, MemoryMib: 1024}, &computev1alpha1.NodeResources{Vcpus: 4, MemoryMib: 2048})
-	if got.GetVcpus() != 0 || got.GetMemoryMib() != 0 {
-		t.Errorf("allocatable %v when the host keeps more than it has", got)
+func TestAllocatable(t *testing.T) {
+	type res = computev1alpha1.NodeResources
+	tests := []struct {
+		name               string
+		capacity, reserved *res
+		want               *res
+	}{
+		{"nothing kept", &res{Cpu: "4", Memory: "4Gi", Disk: "100Gi"}, &res{}, &res{Cpu: "4", Memory: "4096Mi", Disk: "100Gi"}},
+		{"never negative", &res{Cpu: "2", Memory: "1Gi", Disk: "1Gi"}, &res{Cpu: "4", Memory: "2Gi", Disk: "2Gi"}, &res{Cpu: "0", Memory: "0Mi", Disk: "0Gi"}},
+		{"exactly all kept", &res{Cpu: "2", Memory: "1Gi"}, &res{Cpu: "2000m", Memory: "1024Mi"}, &res{Cpu: "0", Memory: "0Mi"}},
+		{"rounded down", &res{Cpu: "8", Memory: "8Gi", Disk: "100Gi"}, &res{Cpu: "1", Memory: "2G", Disk: "1"}, &res{Cpu: "7", Memory: "6284Mi", Disk: "99Gi"}},
+		{"what the host does not report stays empty", &res{Cpu: "8", Memory: "8Gi"}, &res{Disk: "10Gi"}, &res{Cpu: "8", Memory: "8192Mi"}},
+	}
+	for _, tt := range tests {
+		got, err := node.Allocatable(tt.capacity, tt.reserved)
+		if err != nil || !proto.Equal(got, tt.want) {
+			t.Errorf("%s: allocatable %v, %v; want %v", tt.name, got, err, tt.want)
+		}
+	}
+	for _, bad := range []*res{{Cpu: "1.5"}, {Cpu: "-1"}, {Cpu: "x"}, {Memory: "1.5"}, {Disk: "-1Gi"}} {
+		if _, err := node.Allocatable(&res{Cpu: "8", Memory: "8Gi", Disk: "8Gi"}, bad); err == nil {
+			t.Errorf("reserved %v was accepted", bad)
+		}
+		if _, err := node.Allocatable(bad, &res{}); err == nil {
+			t.Errorf("capacity %v was accepted", bad)
+		}
+		if _, err := node.New(node.Config{Name: "n1", Reserved: bad}); err == nil || !strings.Contains(err.Error(), "reserved") {
+			t.Errorf("an agent keeping %v back: %v", bad, err)
+		}
+	}
+}
+
+func TestVMSize(t *testing.T) {
+	tests := []struct {
+		res       *computev1alpha1.Resources
+		vcpus     int32
+		memoryMiB int64
+	}{
+		{&computev1alpha1.Resources{Cpu: "2", Memory: "512Mi", Disk: "10Gi"}, 2, 512},
+		{&computev1alpha1.Resources{Cpu: "1", Memory: "512M"}, 1, 489},
+		{&computev1alpha1.Resources{Cpu: "1", Memory: "1Mi"}, 1, 1},
+	}
+	for _, tt := range tests {
+		vcpus, mib, err := node.VMSize(tt.res)
+		if err != nil || vcpus != tt.vcpus || mib != tt.memoryMiB {
+			t.Errorf("VMSize(%v) = %d, %d, %v; want %d, %d", tt.res, vcpus, mib, err, tt.vcpus, tt.memoryMiB)
+		}
+	}
+	for _, bad := range []*computev1alpha1.Resources{{Memory: "512Mi"}, {Cpu: "500m", Memory: "512Mi"}, {Cpu: "1"}, {Cpu: "1", Memory: "-1Mi"}} {
+		if _, _, err := node.VMSize(bad); err == nil {
+			t.Errorf("VMSize(%v) was accepted", bad)
+		}
 	}
 }
 
@@ -211,13 +259,13 @@ func TestMachinesArePlacedOnAReportingNode(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	env.Setup()
 	// Room for one 512 MiB container, not two.
-	startAgent(t, env, &computev1alpha1.NodeResources{Vcpus: 2, MemoryMib: 1024}, &computev1alpha1.NodeResources{MemoryMib: 400})
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "2", Memory: "1Gi"}, &computev1alpha1.NodeResources{Memory: "400Mi"})
 	root := env.As(apiservertest.Root)
 	for _, name := range []string{"a", "b"} {
 		if _, err := root.Apply(t.Context(), registry.Container, &computev1alpha1.Container{
 			Metadata: &metav1.ObjectMeta{Project: apiservertest.Project, Name: name},
 			Spec: &computev1alpha1.ContainerSpec{
-				Image: "nginx", Resources: &computev1alpha1.Resources{Vcpus: 1, MemoryMib: 512},
+				Image: "nginx", Resources: &computev1alpha1.Resources{Cpu: "1", Memory: "512Mi"},
 			},
 		}); err != nil {
 			t.Fatal(err)

@@ -30,7 +30,7 @@ func bare(name, ipv4 string) *computev1alpha1.Machine {
 	return &computev1alpha1.Machine{
 		Metadata: &metav1.ObjectMeta{Project: project, Name: name},
 		Spec: &computev1alpha1.MachineSpec{
-			Resources:     &computev1alpha1.Resources{Vcpus: 1, MemoryMib: 512},
+			Resources:     &computev1alpha1.Resources{Cpu: "1", Memory: "512Mi", Disk: "10Gi"},
 			RunState:      computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
 			Boot:          &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx"}},
 			Interfaces:    []*computev1alpha1.MachineInterface{{Name: "eth0", Network: "default", Ipv4: ipv4}},
