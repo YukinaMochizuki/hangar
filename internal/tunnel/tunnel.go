@@ -160,6 +160,15 @@ func (c *calls) waitFor(d time.Duration) {
 // the apiserver keeps its own calls to a node below it.
 const MaxStreams = 1000
 
+// HTTP/2 flow control windows of a tunnel, each end's for what it
+// receives. A call whose reader stops holds at most its stream's window;
+// the connection's holds every stream's at once, so no set of calls a
+// tunnel takes, however slowly read, stops the others (node-tunnel.md).
+const (
+	StreamWindow     = 1 << 20
+	ConnectionWindow = MaxStreams * StreamWindow
+)
+
 // Stopping the agent, the calls on its tunnel are given stopAnswer to
 // answer, their contexts done, before the tunnel closes, and flushAnswers
 // more for their answers to leave.
@@ -183,7 +192,11 @@ func (a *Agent) serve(ctx context.Context, handler http.Handler, calls *calls) (
 		a.Opened()
 	}
 	live := a.Liveness.orDefault()
-	srv := &http2.Server{ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout, MaxConcurrentStreams: MaxStreams}
+	srv := &http2.Server{
+		ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout,
+		MaxConcurrentStreams:     MaxStreams,
+		MaxUploadBufferPerStream: StreamWindow, MaxUploadBufferPerConnection: ConnectionWindow,
+	}
 	stop := context.AfterFunc(ctx, func() {
 		calls.waitFor(stopAnswer)
 		time.Sleep(flushAnswers)
@@ -251,12 +264,15 @@ type Hub struct {
 	mu      sync.Mutex
 	tunnels map[string]*Tunnel
 	closed  bool
+	// streamWindow and connWindow, if set, replace StreamWindow and
+	// ConnectionWindow, for tests.
+	streamWindow, connWindow int
 }
 
 // Tunnel is one node's tunnel, open until Done.
 type Tunnel struct {
 	node   string
-	cc     *http2.ClientConn
+	cc     *http.ClientConn
 	conn   *closeConn
 	client *http.Client
 }
@@ -276,7 +292,7 @@ func (t *Tunnel) Closed() bool {
 	case <-t.conn.done:
 		return true
 	default:
-		return t.cc.State().Closed
+		return t.cc.Err() != nil
 	}
 }
 
@@ -333,9 +349,7 @@ func (h *Hub) Accept(w http.ResponseWriter, r *http.Request, node string) {
 		return
 	}
 	_ = conn.SetDeadline(time.Time{})
-	live := h.Liveness.orDefault()
-	tr := &http2.Transport{ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout}
-	cc, err := tr.NewClientConn(conn)
+	cc, err := h.clientConn(r.Context(), conn)
 	if err != nil {
 		_ = conn.Close()
 		h.log().Error("opening a tunnel", "node", node, "error", err)
@@ -368,6 +382,37 @@ func (h *Hub) Accept(w http.ResponseWriter, r *http.Request, node string) {
 		h.mu.Unlock()
 		h.log().Info("node tunnel dropped", "node", node)
 	}()
+}
+
+// clientConn makes the apiserver's end of a tunnel on conn, with
+// net/http's HTTP/2 client. Not x/net's http2.Transport: it passes no
+// window size on to net/http.
+func (h *Hub) clientConn(ctx context.Context, conn net.Conn) (*http.ClientConn, error) {
+	live := h.Liveness.orDefault()
+	stream, connection := StreamWindow, ConnectionWindow
+	if h.streamWindow != 0 {
+		stream, connection = h.streamWindow, h.connWindow
+	}
+	var dialed sync.Once
+	protocols := &http.Protocols{}
+	protocols.SetUnencryptedHTTP2(true)
+	tr := &http.Transport{
+		Protocols: protocols,
+		HTTP2: &http.HTTP2Config{
+			MaxReceiveBufferPerStream: stream, MaxReceiveBufferPerConnection: connection,
+			SendPingTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout,
+		},
+		// The tunnel's one connection, once.
+		DialContext: func(context.Context, string, string) (net.Conn, error) {
+			var c net.Conn
+			dialed.Do(func() { c = conn })
+			if c == nil {
+				return nil, errors.New("a tunnel has one connection")
+			}
+			return c, nil
+		},
+	}
+	return tr.NewClientConn(context.WithoutCancel(ctx), "http", "node:80")
 }
 
 func (h *Hub) log() *slog.Logger {

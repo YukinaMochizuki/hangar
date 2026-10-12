@@ -68,12 +68,24 @@ func (a *apiserver) dial(ctx context.Context) (net.Conn, error) {
 // line every 10 ms until its call ends, counting the streams under way.
 type node struct {
 	streams atomic.Int32
+	// flooded counts what /flood calls have written.
+	flooded atomic.Int64
 }
 
 func (n *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/hello":
 		_, _ = fmt.Fprintf(w, "hello over %s", r.Proto)
+	case "/flood":
+		chunk := make([]byte, 16<<10)
+		for r.Context().Err() == nil {
+			k, err := w.Write(chunk)
+			n.flooded.Add(int64(k))
+			if err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+		}
 	case "/until-stopped":
 		n.streams.Add(1)
 		defer n.streams.Add(-1)
@@ -229,6 +241,64 @@ func TestAStoppingAgentLetsItsCallsAnswer(t *testing.T) {
 	case <-tun.Done():
 	case <-time.After(5 * time.Second):
 		t.Error("the tunnel stayed open after the agent stopped")
+	}
+}
+
+// TestCallsNotReadDoNotStopTheOthers: calls whose bodies the apiserver
+// does not read, as when their callers stop reading, each hold their
+// stream's window. With a connection window smaller than theirs together
+// they hold it all, and another call gets no data; with the tunnel's
+// sizing, the connection's window every stream's, it does. The windows
+// are scaled down from the tunnel's.
+func TestCallsNotReadDoNotStopTheOthers(t *testing.T) {
+	const stream = 64 << 10
+	for _, tt := range []struct {
+		name       string
+		connection int
+		stalls     bool
+	}{
+		{"a connection window less than its streams'", 4 * stream, true},
+		{"the connection window every stream's", tunnel.MaxStreams * stream, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			a := newAPIServer(t)
+			a.hub.SetWindows(stream, tt.connection)
+			n := &node{}
+			startAgent(t, a, n, a.dial)
+			tun := tunnelOf(t, a)
+			const held = 8
+			for range held {
+				resp, err := tun.HTTPClient().Get("http://node/flood")
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = resp.Body.Close() })
+			}
+			// The floods fill what the windows let them, then stall.
+			last := int64(-1)
+			for n.flooded.Load() != last {
+				last = n.flooded.Load()
+				time.Sleep(200 * time.Millisecond)
+			}
+			t.Logf("%d calls not read hold %d KiB", held, last>>10)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+			defer cancel()
+			req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "http://node/hello", nil)
+			resp, err := tun.HTTPClient().Do(req)
+			var body []byte
+			if err == nil {
+				body, err = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
+			}
+			got := err == nil && string(body) == "hello over HTTP/2.0"
+			switch {
+			case tt.stalls && got:
+				t.Error("another call got its data: the stall this sizing allows did not happen")
+			case !tt.stalls && !got:
+				t.Errorf("another call got no data: %q %v", body, err)
+			}
+		})
 	}
 }
 
