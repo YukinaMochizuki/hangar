@@ -13,6 +13,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os"
 	"os/signal"
@@ -71,9 +72,12 @@ func main() {
 	}
 	defer closeDrivers()
 	agent, err := node.New(node.Config{
-		Name:          *name,
-		HTTP:          client.UnixSocket(*socket),
-		BaseURL:       client.UnixSocketURL,
+		Name:    *name,
+		HTTP:    client.UnixSocket(*socket),
+		BaseURL: client.UnixSocketURL,
+		Tunnel: func(ctx context.Context) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
+		},
 		Reserved:      &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
 		MaxPulls:      *maxPulls,
 		MaxUnpackWork: hf.maxUnpackWork,
