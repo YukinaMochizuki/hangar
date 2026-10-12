@@ -451,6 +451,16 @@ func (f *flow) nodeSurvivesARestart(t *testing.T) {
 		}
 	}
 	check("with the agent back")
+	if installed {
+		// What deploy/host does on an upgrade: the VMs are units of their
+		// own, which the agent's unit leaves alone.
+		c.restartNodeUnit()
+		t.Logf("restarted %s with systemctl", nodeUnit)
+		for _, name := range running {
+			c.waitReady(name, time.Minute)
+		}
+		check("after systemctl restart " + nodeUnit)
+	}
 
 	// One of everything per machine, and nothing else.
 	var want []string
@@ -490,7 +500,20 @@ func (f *flow) nodeSurvivesARestart(t *testing.T) {
 	wantVols = append(wantVols, dataset+"/bases")
 	slices.Sort(vols)
 	slices.Sort(wantVols)
-	if !slices.Equal(vols, wantVols) {
+	if installed {
+		// The installed host's image cache may hold bases from before;
+		// each must still be whole.
+		for _, v := range vols {
+			if v != dataset+"/bases" && !strings.Contains(v, "@") && !slices.Contains(vols, v+"@base") {
+				t.Errorf("base %s has no @base snapshot", v)
+			}
+		}
+		for _, v := range wantVols {
+			if !slices.Contains(vols, v) {
+				t.Errorf("bases %v lack %s", vols, v)
+			}
+		}
+	} else if !slices.Equal(vols, wantVols) {
 		t.Errorf("bases %v, want %v", vols, wantVols)
 	}
 	if s := scratch(t); len(s) > 0 {

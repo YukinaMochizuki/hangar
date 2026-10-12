@@ -7,6 +7,11 @@
 // run, reach the internet, restart, grow their disks, change their images,
 // outlive a killed node and are deleted, and every step is checked from the
 // API and from the host (docs/runbook/testbed.md).
+//
+// With HANGAR_TESTBED_FLOW_INSTALLED=1 the flow runs instead against the
+// services deploy/host installed on this host (hangar-apiserver.service and
+// hangar-node.service, on the default dataset and directories), and the
+// agent is killed and restarted through systemd.
 package flow
 
 import (
@@ -46,21 +51,69 @@ import (
 // under workDir, datasets under dataset, image files under imageDir, and the
 // units hangar-vm-*.
 const (
-	pool     = "hangar"
-	dataset  = pool + "/testbed-flow"
-	imageDir = "/var/lib/hangar/images/testbed-flow"
-	workDir  = "/var/tmp/hangar-testbed-flow"
+	pool    = "hangar"
+	workDir = "/var/tmp/hangar-testbed-flow"
 	// apiDir holds the apiserver's database and node socket, and its
 	// binary: the apiserver runs as nobody, who cannot read a checkout in
 	// a home directory.
-	apiDir = workDir + "/api"
-	vmDir  = workDir + "/vms"
+	apiDir  = workDir + "/api"
+	tenant  = "flow"
+	project = "flow"
+)
+
+// installed is whether the flow runs against the services deploy/host
+// installed, which own the pool's default dataset and directories. A run
+// then sweeps only the containers it makes, through the API.
+var installed = os.Getenv("HANGAR_TESTBED_FLOW_INSTALLED") == "1"
+
+// The dataset, directories, Node and admin the agent and the apiserver use.
+var (
+	dataset  = pool + "/testbed-flow"
+	imageDir = "/var/lib/hangar/images/testbed-flow"
+	vmDir    = workDir + "/vms"
 	// nodeName is the Node the apiserver registers and the agent reports.
 	nodeName = "testbed"
-	tenant   = "flow"
-	project  = "flow"
 	admin    = "root@testbed.invalid"
+	apiAddr  string
 )
+
+// The installed services: deploy/host/steps/80-services.sh.
+const (
+	installedLocalEnv = "/etc/hangar/local.env"
+	installedAPI      = "127.0.0.1:8080"
+	apiUnit           = "hangar-apiserver.service"
+	nodeUnit          = "hangar-node.service"
+)
+
+// containers are what the scenarios make, which an installed run deletes
+// first and last.
+var containers = []string{"web", "crashy", "third"}
+
+// useInstalled points the flow at the installed services: the default
+// dataset and directories, the node named by HANGAR_TESTBED_FLOW_NODE, and
+// the bootstrap admin of /etc/hangar/local.env.
+func useInstalled(t *testing.T) {
+	t.Helper()
+	dataset, imageDir, vmDir = pool, "/var/lib/hangar/images", "/var/lib/hangar/vms"
+	apiAddr = installedAPI
+	if nodeName = os.Getenv("HANGAR_TESTBED_FLOW_NODE"); nodeName == "" {
+		t.Fatal("HANGAR_TESTBED_FLOW_INSTALLED needs HANGAR_TESTBED_FLOW_NODE, the host's HANGAR_NODE_NAME")
+	}
+	b, err := os.ReadFile(installedLocalEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(b), "\n") {
+		if v, ok := strings.CutPrefix(line, "HANGAR_BOOTSTRAP_ADMIN="); ok {
+			admin = strings.Trim(v, `"'`)
+		}
+	}
+	for _, u := range []string{apiUnit, nodeUnit} {
+		if err := exec.Command("systemctl", "is-active", "--quiet", u).Run(); err != nil {
+			t.Fatalf("%s is not active: run deploy/host/bootstrap.sh first", u)
+		}
+	}
+}
 
 // The images are pinned by digest, as the disk tests pin them: busybox 1.37,
 // debian trixie and nginx 1.29.
@@ -92,6 +145,10 @@ type cluster struct {
 func startCluster(t *testing.T) *cluster {
 	t.Helper()
 	in := vmtest.Artifacts()
+	if installed {
+		useInstalled(t)
+		return startInstalled(t)
+	}
 	for _, p := range []string{in.Node, in.Apiserver, in.CLI} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("%v (make e2e-host builds it)", err)
@@ -116,6 +173,53 @@ func startCluster(t *testing.T) *cluster {
 	c.startAPI()
 	t.Cleanup(c.stop)
 	c.startNode()
+	c.setUp()
+	return c
+}
+
+// startInstalled readies the installed services for the flow: the
+// containers an earlier run left are deleted, and the host must then hold
+// no machine at all.
+func startInstalled(t *testing.T) *cluster {
+	t.Helper()
+	if _, err := os.Stat(vmtest.Artifacts().CLI); err != nil {
+		t.Fatalf("%v (HANGAR_TESTBED_CLI=/usr/local/bin/hangar uses the installed one)", err)
+	}
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := &cluster{t: t, uplink: uplink(t)}
+	t.Cleanup(c.stop)
+	c.setUp()
+	c.sweepInstalled()
+	vmtest.AtExit(c.sweepInstalled)
+	if out := strings.TrimSpace(c.cli("get", "machines", "-A", "-o", "name")); out != "" {
+		t.Fatalf("the flow needs a host with no machines; it has %s", out)
+	}
+	if units := hangarUnits(t); len(units) > 0 {
+		t.Fatalf("the flow needs a host with no VMs; it has units for %v", units)
+	}
+	return c
+}
+
+// sweepInstalled deletes, through the API, the containers a run makes, and
+// waits for them to go.
+func (c *cluster) sweepInstalled() {
+	for _, name := range containers {
+		if _, err := c.tryCLI(nil, "delete", "container", name); err != nil {
+			continue
+		}
+		if _, err := c.tryCLI(nil, "wait", "container", name, "--for=delete", "--timeout=2m"); err != nil {
+			fmt.Fprintf(os.Stderr, "flow: deleting container %s: %v\n", name, err)
+		}
+	}
+}
+
+// setUp configures the CLI and makes the tenant and project, and waits for
+// the node.
+func (c *cluster) setUp() {
+	t := c.t
+	t.Helper()
 	c.cli("config", "set-context", "testbed", "--endpoint", "http://"+c.apiAddr(), "--auth", "dev", "--user", admin, "--project", project)
 	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangar.dev/v1alpha1
 kind: Tenant
@@ -127,12 +231,9 @@ metadata: {name: %s}
 spec: {tenant: %s}
 `, tenant, project, tenant))
 	c.cli("wait", "node", nodeName, "--for=condition=Ready", "--timeout=60s")
-	return c
 }
 
-var apiPort int
-
-func (c *cluster) apiAddr() string { return fmt.Sprintf("127.0.0.1:%d", apiPort) }
+func (c *cluster) apiAddr() string { return apiAddr }
 
 // startAPI runs the apiserver as nobody, as an unprivileged user runs it on
 // a host, with dev auth on loopback and the node socket accepting root.
@@ -145,7 +246,7 @@ func (c *cluster) startAPI() {
 	if err := os.Chown(apiDir, nobody, nobody); err != nil {
 		t.Fatal(err)
 	}
-	apiPort = freePort(t)
+	apiAddr = fmt.Sprintf("127.0.0.1:%d", freePort(t))
 	log := openLog(t, "apiserver.log")
 	cmd := exec.Command(bin,
 		"--db", filepath.Join(apiDir, "hangar.db"),
@@ -184,6 +285,10 @@ func (c *cluster) startAPI() {
 func (c *cluster) startNode() {
 	t := c.t
 	t.Helper()
+	if installed {
+		c.awaitNodeUnit()
+		return
+	}
 	in := vmtest.Artifacts()
 	ch, err := exec.LookPath("cloud-hypervisor")
 	if err != nil {
@@ -214,9 +319,48 @@ func (c *cluster) startNode() {
 	c.node, c.nodeDone = cmd, done
 }
 
+// nodeKilled is the agent unit's main pid and restart count when it was
+// killed, in an installed run.
+var nodeKilled struct{ pid, restarts int }
+
+// awaitNodeUnit waits for systemd to have started the agent's unit again
+// after killNode, as its Restart=always does, with nothing doing it by hand.
+func (c *cluster) awaitNodeUnit() {
+	t := c.t
+	t.Helper()
+	eventually(t, 30*time.Second, "systemd to start "+nodeUnit+" again", func() (bool, string) {
+		p := serviceProps(t, nodeUnit, "ActiveState", "MainPID", "NRestarts")
+		pid, _ := strconv.Atoi(p["MainPID"])
+		n, _ := strconv.Atoi(p["NRestarts"])
+		return p["ActiveState"] == "active" && pid != 0 && pid != nodeKilled.pid && n == nodeKilled.restarts+1, fmt.Sprint(p)
+	})
+	t.Logf("systemd started %s again (Restart=always)", nodeUnit)
+}
+
+// restartNodeUnit restarts the agent's unit as deploy/host does on an
+// upgrade, and waits for the node to be Ready.
+func (c *cluster) restartNodeUnit() {
+	t := c.t
+	t.Helper()
+	mustRun(t, "systemctl", "restart", nodeUnit)
+	c.cli("wait", "node", nodeName, "--for=condition=Ready", "--timeout=60s")
+}
+
 // killNode kills the agent outright, as a crash or an OOM kill would.
 func (c *cluster) killNode() {
 	c.t.Helper()
+	if installed {
+		p := serviceProps(c.t, nodeUnit, "MainPID", "NRestarts")
+		nodeKilled.pid, _ = strconv.Atoi(p["MainPID"])
+		nodeKilled.restarts, _ = strconv.Atoi(p["NRestarts"])
+		// The agent alone, as when it crashes; systemd then stops what
+		// is left of the unit and starts it again.
+		mustRun(c.t, "systemctl", "kill", "--kill-whom=main", "--signal=SIGKILL", nodeUnit)
+		eventually(c.t, 10*time.Second, "the killed agent to be gone", func() (bool, string) {
+			return !exists(fmt.Sprintf("/proc/%d", nodeKilled.pid)), ""
+		})
+		return
+	}
 	if err := c.node.Process.Signal(syscall.SIGKILL); err != nil {
 		c.t.Fatal(err)
 	}
@@ -226,6 +370,15 @@ func (c *cluster) killNode() {
 // stop stops the agent and the apiserver as their units would, and logs the
 // tail of their logs if the test failed.
 func (c *cluster) stop() {
+	if installed {
+		if c.t.Failed() {
+			for _, u := range []string{apiUnit, nodeUnit} {
+				out, _ := exec.Command("journalctl", "--no-pager", "-n", "60", "-u", u).CombinedOutput()
+				c.t.Logf("--- journal of %s:\n%s", u, out)
+			}
+		}
+		return
+	}
 	if c.node != nil {
 		_ = c.node.Process.Signal(syscall.SIGTERM)
 		select {
@@ -419,7 +572,13 @@ func unitOf(uid string) string { return "hangar-vm-" + uid + ".service" }
 // unitProps reads properties of a machine's unit.
 func unitProps(t *testing.T, uid string, props ...string) map[string]string {
 	t.Helper()
-	out := mustRun(t, "systemctl", "show", "-p", strings.Join(props, ","), unitOf(uid))
+	return serviceProps(t, unitOf(uid), props...)
+}
+
+// serviceProps reads properties of a unit.
+func serviceProps(t *testing.T, unit string, props ...string) map[string]string {
+	t.Helper()
+	out := mustRun(t, "systemctl", "show", "-p", strings.Join(props, ","), unit)
 	m := map[string]string{}
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		if k, v, ok := strings.Cut(line, "="); ok {

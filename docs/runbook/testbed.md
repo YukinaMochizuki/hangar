@@ -121,6 +121,20 @@ the dataset and both directories, and kill an agent or apiserver a run
 killed outright left. `hangar-testbed-reset` removes the dataset but not
 the units or `/var/tmp/hangar-testbed-flow`; the next run's sweep does.
 
+`HANGAR_TESTBED_FLOW_INSTALLED=1` runs the same flow against the services
+`deploy/host` installed instead (`docs/runbook/host-bootstrap.md`), on the
+default dataset `hangar` and `/var/lib/hangar/{images,vms}`, with
+`HANGAR_TESTBED_FLOW_NODE` the host's `HANGAR_NODE_NAME`, the admin of
+`/etc/hangar/local.env`, and `HANGAR_TESTBED_CLI=/usr/local/bin/hangar`.
+The agent is killed with `systemctl kill --kill-whom=main` and must come
+back by its unit's `Restart=always`; `systemctl restart hangar-node` must
+then leave every VM as it was. The run needs a host with no machines, and
+deletes, through the API, only the containers it makes, first and last;
+image bases stay. On a `hangar-testbed` VM, install the services with
+`bootstrap.sh --env FILE --only` for the `packages`, `zfs`, `upgrades`,
+`release` and `services` steps (never `network` or `swap-raid`), from an
+env file naming the VM's uplink and address.
+
 `make e2e-host-network` runs the network tests alone, which need no guest
 artifacts, no KVM and no Cloud Hypervisor: a bare Ubuntu 24.04 VM with Go,
 `nftables`, `curl` and `iputils-ping` is enough. Each stand-in guest is a
