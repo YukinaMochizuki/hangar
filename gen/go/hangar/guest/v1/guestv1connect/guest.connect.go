@@ -42,6 +42,8 @@ const (
 	GuestAgentServicePingProcedure = "/hangar.guest.v1.GuestAgentService/Ping"
 	// GuestAgentServiceExecProcedure is the fully-qualified name of the GuestAgentService's Exec RPC.
 	GuestAgentServiceExecProcedure = "/hangar.guest.v1.GuestAgentService/Exec"
+	// GuestAgentServiceStopProcedure is the fully-qualified name of the GuestAgentService's Stop RPC.
+	GuestAgentServiceStopProcedure = "/hangar.guest.v1.GuestAgentService/Stop"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -52,6 +54,12 @@ type GuestAgentServiceClient interface {
 	// starts it; later ones carry its stdin, a resize or a signal. The
 	// responses carry its output and, last, how it ended.
 	Exec(context.Context) *connect.BidiStreamForClient[v1.ExecRequest, v1.ExecResponse]
+	// Stop stops the container's main process as docker stop does: SIGTERM
+	// to its process group, then SIGKILL once the grace period has passed.
+	// The guest then records how the process ended and powers off, as when
+	// it exits by itself. It answers once SIGTERM is sent; asking again
+	// changes nothing.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -77,6 +85,12 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("Exec")),
 			connect.WithClientOptions(opts...),
 		),
+		stop: connect.NewClient[v1.StopRequest, v1.StopResponse](
+			httpClient,
+			baseURL+GuestAgentServiceStopProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("Stop")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -84,6 +98,7 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 type guestAgentServiceClient struct {
 	ping *connect.Client[v1.PingRequest, v1.PingResponse]
 	exec *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop *connect.Client[v1.StopRequest, v1.StopResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -96,6 +111,11 @@ func (c *guestAgentServiceClient) Exec(ctx context.Context) *connect.BidiStreamF
 	return c.exec.CallBidiStream(ctx)
 }
 
+// Stop calls hangar.guest.v1.GuestAgentService.Stop.
+func (c *guestAgentServiceClient) Stop(ctx context.Context, req *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return c.stop.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -104,6 +124,12 @@ type GuestAgentServiceHandler interface {
 	// starts it; later ones carry its stdin, a resize or a signal. The
 	// responses carry its output and, last, how it ended.
 	Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error
+	// Stop stops the container's main process as docker stop does: SIGTERM
+	// to its process group, then SIGKILL once the grace period has passed.
+	// The guest then records how the process ended and powers off, as when
+	// it exits by itself. It answers once SIGTERM is sent; asking again
+	// changes nothing.
+	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -125,12 +151,20 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("Exec")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceStopHandler := connect.NewUnaryHandler(
+		GuestAgentServiceStopProcedure,
+		svc.Stop,
+		connect.WithSchema(guestAgentServiceMethods.ByName("Stop")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
 			guestAgentServicePingHandler.ServeHTTP(w, r)
 		case GuestAgentServiceExecProcedure:
 			guestAgentServiceExecHandler.ServeHTTP(w, r)
+		case GuestAgentServiceStopProcedure:
+			guestAgentServiceStopHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -146,4 +180,8 @@ func (UnimplementedGuestAgentServiceHandler) Ping(context.Context, *connect.Requ
 
 func (UnimplementedGuestAgentServiceHandler) Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.Exec is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.Stop is not implemented"))
 }

@@ -104,6 +104,7 @@ func (r *Reaper) reap() {
 		if p, ok := r.waiting[pid]; ok {
 			delete(r.waiting, pid)
 			p.exit <- exitOf(ws)
+			close(p.done)
 			_ = p.proc.Release()
 		}
 	}
@@ -113,6 +114,7 @@ func (r *Reaper) reap() {
 type Process struct {
 	Pid  int
 	exit chan Exit
+	done chan struct{}
 	// proc signals through its pidfd, so never a later process given the
 	// same pid; it is not waited on, the reaper reaps.
 	proc *os.Process
@@ -124,6 +126,9 @@ func (p *Process) Wait() Exit {
 	p.exit <- e // later calls get it too
 	return e
 }
+
+// Done is closed once the process has ended.
+func (p *Process) Done() <-chan struct{} { return p.done }
 
 // Signal sends the process a signal, unless it has ended.
 func (p *Process) Signal(sig syscall.Signal) error {
@@ -142,7 +147,7 @@ func (r *Reaper) Start(argv []string, attr *os.ProcAttr) (*Process, error) {
 	if err != nil {
 		return nil, err
 	}
-	proc := &Process{Pid: p.Pid, exit: make(chan Exit, 1), proc: p}
+	proc := &Process{Pid: p.Pid, exit: make(chan Exit, 1), done: make(chan struct{}), proc: p}
 	r.waiting[p.Pid] = proc
 	return proc, nil
 }

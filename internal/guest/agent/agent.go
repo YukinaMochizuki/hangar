@@ -41,12 +41,37 @@ type Server struct {
 	Cgroup *os.File
 	// OnPanic, if set, hears of a panic the server recovered from.
 	OnPanic func(any)
+	// StopMain, if set, stops the container's main process as Stop asks:
+	// SIGTERM to its process group now, SIGKILL once grace has passed. It
+	// returns at once, and does nothing when called again.
+	StopMain func(grace time.Duration)
 }
+
+// MaxGrace bounds the grace period a Stop may ask for.
+const MaxGrace = time.Hour
 
 var _ guestv1connect.GuestAgentServiceHandler = (*Server)(nil)
 
 func (s *Server) Ping(context.Context, *connect.Request[guestv1.PingRequest]) (*connect.Response[guestv1.PingResponse], error) {
 	return connect.NewResponse(&guestv1.PingResponse{Version: s.Version, Uptime: durationpb.New(time.Since(s.Started))}), nil
+}
+
+// Stop stops the container's main process; the guest powers off once it
+// has ended.
+func (s *Server) Stop(_ context.Context, req *connect.Request[guestv1.StopRequest]) (*connect.Response[guestv1.StopResponse], error) {
+	if s.StopMain == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest has no main process to stop"))
+	}
+	grace := req.Msg.GetGrace()
+	if err := grace.CheckValid(); grace != nil && err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	d := grace.AsDuration()
+	if d < 0 || d > MaxGrace {
+		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("a grace period of %v is not between 0 and %v", d, MaxGrace))
+	}
+	s.StopMain(d)
+	return connect.NewResponse(&guestv1.StopResponse{}), nil
 }
 
 // Exit codes for a program that cannot run, as shells give them.

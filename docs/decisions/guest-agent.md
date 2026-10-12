@@ -46,6 +46,14 @@ to boot again.
   off; the host's restart policy decides whether it boots again. A restart
   is a fresh boot on the same root disk, as restarting a Docker container
   keeps its filesystem.
+- **Stopping a container is docker stop** (`Stop`): hangar-init sends
+  SIGTERM to the process group of the container's process, and SIGKILL to
+  it once the grace period the node gives has passed, unless the process
+  has ended; it then records the exit and powers off as when the process
+  ends by itself. It answers once SIGTERM is sent; a stop asked for before
+  the process starts applies as it starts. The node gives 10 seconds for
+  now, and kills the VM if the guest is not off a few seconds after; a
+  `stopGracePeriod` field may come later.
 - **The platform provides `/etc/hostname`, `/etc/hosts` and
   `/etc/resolv.conf`** as Docker does: written to `/run/hangar` and mounted
   over the image's files, so the image's own are never written. The

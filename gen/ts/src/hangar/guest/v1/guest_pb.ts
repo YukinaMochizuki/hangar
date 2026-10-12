@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/guest/v1/guest.proto.
  */
 export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
-  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKeAQoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJIkcKB1Byb2Nlc3MSDAoEYXJncxgBIAMoCRILCgNlbnYYAiADKAkSEwoLd29ya2luZ19kaXIYAyABKAkSDAoEdXNlchgEIAEoCSI6CglJbnRlcmZhY2USCwoDbWFjGAEgASgJEg8KB2FkZHJlc3MYAiABKAkSDwoHZ2F0ZXdheRgDIAEoCSINCgtQaW5nUmVxdWVzdCJKCgxQaW5nUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIpCgZ1cHRpbWUYAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iywEKC0V4ZWNSZXF1ZXN0EisKBXN0YXJ0GAEgASgLMhouaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNTdGFydEgAEg8KBXN0ZGluGAIgASgMSAASMgoLc3RkaW5fY2xvc2UYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuU3RkaW5DbG9zZUgAEi0KBnJlc2l6ZRgEIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSJuCglFeGVjU3RhcnQSKQoHcHJvY2VzcxgBIAEoCzIYLmhhbmdhci5ndWVzdC52MS5Qcm9jZXNzEgsKA3R0eRgCIAEoCBIpCgRzaXplGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemUiDAoKU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJoCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKQoEZXhpdBgDIAEoCzIZLmhhbmdhci5ndWVzdC52MS5FeGVjRXhpdEgAQgkKB21lc3NhZ2UiKAoIRXhlY0V4aXQSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUyoQEKEUd1ZXN0QWdlbnRTZXJ2aWNlEkMKBFBpbmcSHC5oYW5nYXIuZ3Vlc3QudjEuUGluZ1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuUGluZ1Jlc3BvbnNlEkcKBEV4ZWMSHC5oYW5nYXIuZ3Vlc3QudjEuRXhlY1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuRXhlY1Jlc3BvbnNlKAEwAULBAQoTY29tLmhhbmdhci5ndWVzdC52MUIKR3Vlc3RQcm90b1ABWkBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ndWVzdC92MTtndWVzdHYxogIDSEdYqgIPSGFuZ2FyLkd1ZXN0LlYxygIPSGFuZ2FyXEd1ZXN0XFYx4gIbSGFuZ2FyXEd1ZXN0XFYxXEdQQk1ldGFkYXRh6gIRSGFuZ2FyOjpHdWVzdDo6VjFiBnByb3RvMw", [file_google_protobuf_duration]);
+  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKeAQoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJIkcKB1Byb2Nlc3MSDAoEYXJncxgBIAMoCRILCgNlbnYYAiADKAkSEwoLd29ya2luZ19kaXIYAyABKAkSDAoEdXNlchgEIAEoCSI6CglJbnRlcmZhY2USCwoDbWFjGAEgASgJEg8KB2FkZHJlc3MYAiABKAkSDwoHZ2F0ZXdheRgDIAEoCSI3CgtTdG9wUmVxdWVzdBIoCgVncmFjZRgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiIOCgxTdG9wUmVzcG9uc2UiDQoLUGluZ1JlcXVlc3QiSgoMUGluZ1Jlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSKQoGdXB0aW1lGAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIssBCgtFeGVjUmVxdWVzdBIrCgVzdGFydBgBIAEoCzIaLmhhbmdhci5ndWVzdC52MS5FeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEjIKC3N0ZGluX2Nsb3NlGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLlN0ZGluQ2xvc2VIABItCgZyZXNpemUYBCABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UibgoJRXhlY1N0YXJ0EikKB3Byb2Nlc3MYASABKAsyGC5oYW5nYXIuZ3Vlc3QudjEuUHJvY2VzcxILCgN0dHkYAiABKAgSKQoEc2l6ZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplIgwKClN0ZGluQ2xvc2UiKAoKV2luZG93U2l6ZRIMCgRyb3dzGAEgASgNEgwKBGNvbHMYAiABKA0iaAoMRXhlY1Jlc3BvbnNlEhAKBnN0ZG91dBgBIAEoDEgAEhAKBnN0ZGVychgCIAEoDEgAEikKBGV4aXQYAyABKAsyGS5oYW5nYXIuZ3Vlc3QudjEuRXhlY0V4aXRIAEIJCgdtZXNzYWdlIigKCEV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFMuYBChFHdWVzdEFnZW50U2VydmljZRJDCgRQaW5nEhwuaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXNwb25zZRJHCgRFeGVjEhwuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXNwb25zZSgBMAESQwoEU3RvcBIcLmhhbmdhci5ndWVzdC52MS5TdG9wUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5TdG9wUmVzcG9uc2VCwQEKE2NvbS5oYW5nYXIuZ3Vlc3QudjFCCkd1ZXN0UHJvdG9QAVpAZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvZ3Vlc3QvdjE7Z3Vlc3R2MaICA0hHWKoCD0hhbmdhci5HdWVzdC5WMcoCD0hhbmdhclxHdWVzdFxWMeICG0hhbmdhclxHdWVzdFxWMVxHUEJNZXRhZGF0YeoCEUhhbmdhcjo6R3Vlc3Q6OlYxYgZwcm90bzM", [file_google_protobuf_duration]);
 
 /**
  * BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -146,6 +146,38 @@ export const InterfaceSchema: GenMessage<Interface> = /*@__PURE__*/
   messageDesc(file_hangar_guest_v1_guest, 2);
 
 /**
+ * @generated from message hangar.guest.v1.StopRequest
+ */
+export type StopRequest = Message<"hangar.guest.v1.StopRequest"> & {
+  /**
+   * How long the process has between SIGTERM and SIGKILL; at most an hour.
+   *
+   * @generated from field: google.protobuf.Duration grace = 1;
+   */
+  grace?: Duration | undefined;
+};
+
+/**
+ * Describes the message hangar.guest.v1.StopRequest.
+ * Use `create(StopRequestSchema)` to create a new message.
+ */
+export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 3);
+
+/**
+ * @generated from message hangar.guest.v1.StopResponse
+ */
+export type StopResponse = Message<"hangar.guest.v1.StopResponse"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.StopResponse.
+ * Use `create(StopResponseSchema)` to create a new message.
+ */
+export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 4);
+
+/**
  * @generated from message hangar.guest.v1.PingRequest
  */
 export type PingRequest = Message<"hangar.guest.v1.PingRequest"> & {
@@ -156,7 +188,7 @@ export type PingRequest = Message<"hangar.guest.v1.PingRequest"> & {
  * Use `create(PingRequestSchema)` to create a new message.
  */
 export const PingRequestSchema: GenMessage<PingRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 3);
+  messageDesc(file_hangar_guest_v1_guest, 5);
 
 /**
  * @generated from message hangar.guest.v1.PingResponse
@@ -182,7 +214,7 @@ export type PingResponse = Message<"hangar.guest.v1.PingResponse"> & {
  * Use `create(PingResponseSchema)` to create a new message.
  */
 export const PingResponseSchema: GenMessage<PingResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 4);
+  messageDesc(file_hangar_guest_v1_guest, 6);
 
 /**
  * @generated from message hangar.guest.v1.ExecRequest
@@ -233,7 +265,7 @@ export type ExecRequest = Message<"hangar.guest.v1.ExecRequest"> & {
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 5);
+  messageDesc(file_hangar_guest_v1_guest, 7);
 
 /**
  * ExecStart starts the process.
@@ -266,7 +298,7 @@ export type ExecStart = Message<"hangar.guest.v1.ExecStart"> & {
  * Use `create(ExecStartSchema)` to create a new message.
  */
 export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 6);
+  messageDesc(file_hangar_guest_v1_guest, 8);
 
 /**
  * @generated from message hangar.guest.v1.StdinClose
@@ -279,7 +311,7 @@ export type StdinClose = Message<"hangar.guest.v1.StdinClose"> & {
  * Use `create(StdinCloseSchema)` to create a new message.
  */
 export const StdinCloseSchema: GenMessage<StdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 7);
+  messageDesc(file_hangar_guest_v1_guest, 9);
 
 /**
  * @generated from message hangar.guest.v1.WindowSize
@@ -301,7 +333,7 @@ export type WindowSize = Message<"hangar.guest.v1.WindowSize"> & {
  * Use `create(WindowSizeSchema)` to create a new message.
  */
 export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 8);
+  messageDesc(file_hangar_guest_v1_guest, 10);
 
 /**
  * @generated from message hangar.guest.v1.ExecResponse
@@ -338,7 +370,7 @@ export type ExecResponse = Message<"hangar.guest.v1.ExecResponse"> & {
  * Use `create(ExecResponseSchema)` to create a new message.
  */
 export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 9);
+  messageDesc(file_hangar_guest_v1_guest, 11);
 
 /**
  * ExecExit says how the process ended.
@@ -366,7 +398,7 @@ export type ExecExit = Message<"hangar.guest.v1.ExecExit"> & {
  * Use `create(ExecExitSchema)` to create a new message.
  */
 export const ExecExitSchema: GenMessage<ExecExit> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 10);
+  messageDesc(file_hangar_guest_v1_guest, 12);
 
 /**
  * GuestAgentService is served by hangar-init over vsock.
@@ -395,6 +427,20 @@ export const GuestAgentService: GenService<{
     methodKind: "bidi_streaming";
     input: typeof ExecRequestSchema;
     output: typeof ExecResponseSchema;
+  },
+  /**
+   * Stop stops the container's main process as docker stop does: SIGTERM
+   * to its process group, then SIGKILL once the grace period has passed.
+   * The guest then records how the process ended and powers off, as when
+   * it exits by itself. It answers once SIGTERM is sent; asking again
+   * changes nothing.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.Stop
+   */
+  stop: {
+    methodKind: "unary";
+    input: typeof StopRequestSchema;
+    output: typeof StopResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_guest_v1_guest, 0);
