@@ -9,6 +9,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/signal"
+	"sync/atomic"
+	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -41,7 +45,15 @@ type Options struct {
 	HTTPClient     connect.HTTPClient
 	RunCloudflared func(ctx context.Context, args ...string) (string, error)
 	Now            func() time.Time
+	// Signals relays the process's signals sigs to c, as signal.Notify
+	// does, until stop.
+	Signals func(c chan<- os.Signal, sigs ...os.Signal) (stop func())
+	// Terminal returns the terminal IO.In is, if it is one.
+	Terminal func(in io.Reader) (Terminal, bool)
 }
+
+// interrupts are the signals that end a command, unless it takes them.
+var interrupts = []os.Signal{os.Interrupt, syscall.SIGTERM}
 
 // Run runs the command line and returns the exit code.
 func Run(ctx context.Context, args []string, stdio IO, opts Options) int {
@@ -58,18 +70,54 @@ func Run(ctx context.Context, args []string, stdio IO, opts Options) int {
 	if a.opts.Now == nil {
 		a.opts.Now = time.Now
 	}
+	if a.opts.Signals == nil {
+		a.opts.Signals = func(c chan<- os.Signal, sigs ...os.Signal) func() {
+			signal.Notify(c, sigs...)
+			return func() { signal.Stop(c) }
+		}
+	}
+	if a.opts.Terminal == nil {
+		a.opts.Terminal = func(in io.Reader) (Terminal, bool) { return terminalOf(in) }
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sigs := make(chan os.Signal, 1)
+	stop := a.opts.Signals(sigs, interrupts...)
+	defer stop()
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case sig := <-sigs:
+				if take := a.takeInterrupts.Load(); take == nil || !(*take)(sig) {
+					cancel()
+				}
+			}
+		}
+	}()
 	root := a.root()
 	root.SetArgs(args)
 	root.SetIn(stdio.In)
 	root.SetOut(stdio.Out)
 	root.SetErr(stdio.Err)
 	err := root.ExecuteContext(ctx)
-	if err == nil {
+	var remote exitStatus
+	switch {
+	case err == nil:
 		return ExitOK
+	case errors.As(err, &remote):
+		return int(remote)
 	}
 	_, _ = fmt.Fprintln(stdio.Err, "error:", err)
 	return exitCode(err)
 }
+
+// exitStatus ends a command that ran a process elsewhere with the process's
+// exit code, saying nothing.
+type exitStatus int
+
+func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
 
 type exitError struct {
 	code int
@@ -106,6 +154,9 @@ type app struct {
 	io   IO
 	env  func(string) string
 	opts Options
+	// takeInterrupts, if set, is given SIGINT and SIGTERM first; what it
+	// takes does not end the command.
+	takeInterrupts atomic.Pointer[func(os.Signal) bool]
 
 	contextName string
 	project     string
@@ -121,7 +172,7 @@ func (a *app) root() *cobra.Command {
 	root.PersistentFlags().StringVar(&a.contextName, "context", "", "context to use instead of the current one")
 	root.PersistentFlags().StringVarP(&a.project, "project", "p", "", "project for project-scoped kinds, instead of the context's")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &exitError{code: ExitUsage, err: err} })
-	root.AddCommand(a.configCmd(), a.loginCmd(), a.applyCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd())
+	root.AddCommand(a.configCmd(), a.loginCmd(), a.applyCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd())
 	return root
 }
 
