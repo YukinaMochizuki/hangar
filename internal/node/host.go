@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"math"
 	"os"
 	"runtime"
 	"strconv"
@@ -11,10 +12,11 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
-// hostResources reads what this host has: its CPUs and its memory. Disk is
-// left empty until the storage driver reports its pool.
+// hostResources reads what this host has: its CPUs and its memory. Its disk
+// is the storage driver's to report.
 func hostResources() (*computev1alpha1.NodeResources, error) {
 	meminfo, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
@@ -117,6 +119,24 @@ func less(a, b uint64) uint64 {
 		return 0
 	}
 	return a - b
+}
+
+// diskSize reads the size of a machine's root disk.
+func diskSize(r *computev1alpha1.Resources) (int64, error) {
+	size, err := quantity.Bytes(r.GetDisk())
+	if err != nil {
+		return 0, fmt.Errorf("disk: %w", err)
+	}
+	if size == 0 || size > math.MaxInt64 {
+		return 0, fmt.Errorf("disk: %q is not a size a root disk can have", r.GetDisk())
+	}
+	return int64(size), nil
+}
+
+// diskCapacity is the storage's size as a node reports it, in whole Gi
+// rounded down, so it never claims more than there is.
+func diskCapacity(c driver.Capacity) string {
+	return quantity.FormatDisk(uint64(max(c.Total, 0)) / quantity.GiB * quantity.GiB)
 }
 
 // vmSize reads the vCPUs and memory a machine's VM is started with. The

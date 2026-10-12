@@ -8,3 +8,6 @@ var Allocatable = allocatable
 
 // VMSize exposes vmSize to the tests.
 var VMSize = vmSize
+
+// DiskCapacity exposes diskCapacity to the tests.
+var DiskCapacity = diskCapacity

@@ -228,6 +228,11 @@ func TestAllocatable(t *testing.T) {
 			t.Errorf("an agent keeping %v back: %v", bad, err)
 		}
 	}
+	for _, cfg := range []node.Config{{Name: "n1", MaxPulls: -1}, {Name: "n1", MaxUnpackWork: -1}} {
+		if _, err := node.New(cfg); err == nil {
+			t.Errorf("an agent with %d pulls and %d steps of work", cfg.MaxPulls, cfg.MaxUnpackWork)
+		}
+	}
 }
 
 func TestVMSize(t *testing.T) {
