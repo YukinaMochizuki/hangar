@@ -198,12 +198,29 @@ test_verify_catches_drift() {
 	zfs set compression=off hangar
 	echo 0 >/sys/module/zfs/parameters/zfs_arc_max
 	sysctl -q -w net.ipv6.conf.tb-uplink.proxy_ndp=0
+	# A zvol holding ext4, probed while udev's rule for zvols was gone.
+	rm /etc/udev/rules.d/59-hangar-zvol.rules
+	udevadm control --reload
+	zfs create -s -V 16M hangar/poc/tb-probe
+	udevadm settle
+	mkfs.ext4 -q "$(readlink -f /dev/zvol/hangar/poc/tb-probe)"
+	udevadm trigger --action=change --sysname-match="$(basename "$(readlink -f /dev/zvol/hangar/poc/tb-probe)")" --settle
 	if "$host_dir/verify.sh" --env "$env_file" >"$work/drift.log"; then
 		fail "verify passed on a drifted host"
 	fi
-	[ "$(grep -c '^FAIL' "$work/drift.log")" = 3 ] || fail "expected 3 FAIL lines: $(cat "$work/drift.log")"
+	[ "$(grep -c '^FAIL' "$work/drift.log")" = 5 ] || fail "expected 5 FAIL lines: $(cat "$work/drift.log")"
 	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "bootstrap did not repair the drift"
+	zfs destroy hangar/poc/tb-probe
+
+	# A rule of the right content but the wrong mode is drift too.
+	chmod 600 /etc/udev/rules.d/99-hangar-zvol.rules
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/mode.log"; then
+		fail "verify passed with a udev rule of mode 600"
+	fi
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null
+	[ "$(stat -c %a /etc/udev/rules.d/99-hangar-zvol.rules)" = 644 ] || fail "bootstrap left the rule's mode"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "bootstrap did not repair the rule's mode"
 }
 
 prepare

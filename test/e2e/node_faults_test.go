@@ -498,6 +498,58 @@ func TestAFullDiskForANewImageSaysSo(t *testing.T) {
 	w.waitReason("api", "Running")
 }
 
+// TestAnImageLargerThanTheDiskSaysSo: an image whose base is larger than
+// the root disk asked for is the disk's size at fault, which its owner can
+// fix.
+func TestAnImageLargerThanTheDiskSaysSo(t *testing.T) {
+	w := newWorld(t)
+	w.host.SetBaseSize(20 << 30)
+	w.apply(container("api", "nginx"))
+	c := w.waitReason("api", computeapi.ReasonDiskTooSmall)
+	if msg := ready(c).GetMessage(); !strings.Contains(msg, "disk smaller than its image") {
+		t.Errorf("message %q", msg)
+	}
+	if roots := w.host.Snapshot().Roots; len(roots) != 0 {
+		t.Errorf("roots made: %v", roots)
+	}
+}
+
+// TestAnImageLargerThanTheRoomLeftIsNotUnpacked: an image whose layers
+// alone take more than storage has left fails as the disk's, and is never
+// unpacked.
+func TestAnImageLargerThanTheRoomLeftIsNotUnpacked(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddImage("big", "sha256:big-1", driver.ImageConfig{Cmd: []string{"true"}, Size: fake.Capacity + 1})
+	w.apply(container("api", "big"))
+	w.waitReason("api", computeapi.ReasonDiskFailed)
+	if n := w.host.Unpacked("sha256:big-1"); n != 0 {
+		t.Errorf("unpacked %d times", n)
+	}
+}
+
+// TestTheRootDiskIsTheSizeAsked: a machine's root disk is the size its
+// container asks for, and asking for more grows it and restarts the VM on
+// it.
+func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
+	w := newWorld(t)
+	c := container("api", "nginx")
+	c.Spec.Resources = &computev1alpha1.Resources{Disk: "20Gi"}
+	w.apply(c)
+	w.waitReason("api", "Running")
+	uid := w.machine("api").GetMetadata().GetUid()
+	if r := w.host.Snapshot().Roots[uid]; r.Size != 20<<30 {
+		t.Fatalf("root %+v, want 20Gi", r)
+	}
+	c.Spec.Resources.Disk = "30Gi"
+	w.apply(c)
+	w.eventually("the root grown and the VM started again on it", func() (bool, string) {
+		s := w.host.Snapshot()
+		vm := s.VMs[uid]
+		return s.Roots[uid].Size == 30<<30 && vm.Spec.Root.Size == 30<<30 && vm.State == driver.VMRunning,
+			fmt.Sprintf("root %+v vm %+v", s.Roots[uid], vm.Spec.Root)
+	})
+}
+
 // TestAVanishedBaseIsMadeAgain: a base gone after its image was prepared,
 // before the machine's disk was cloned from it, is made again.
 func TestAVanishedBaseIsMadeAgain(t *testing.T) {

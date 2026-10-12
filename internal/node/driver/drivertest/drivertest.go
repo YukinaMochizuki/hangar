@@ -5,8 +5,11 @@
 package drivertest
 
 import (
+	"errors"
 	"net/netip"
 	"os"
+	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,17 +18,25 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
-// Host is one host's drivers, with what the suite needs to drive them.
+// Host is one host's drivers, with what the suite needs to drive them. A
+// part of the suite whose drivers a Host lacks is skipped, so a real driver
+// runs it before the others exist.
 type Host struct {
 	Images     driver.Images
 	Storage    driver.Storage
 	Network    driver.Network
 	Hypervisor driver.Hypervisor
 	Guest      driver.Guest
-	// Publish makes an image pullable under ref and returns its digest.
-	Publish func(t *testing.T, ref string) string
+	// Publish makes an image pullable under a reference made of name, and
+	// returns that reference and the image's digest.
+	Publish func(t *testing.T, name string) (ref, digest string)
 	// Withdraw makes the registry stop serving ref, as when it is down.
 	Withdraw func(t *testing.T, ref string)
+	// Reopen returns new instances of the image and storage drivers on the
+	// same host, as the agent has after it restarts.
+	Reopen func(t *testing.T) (driver.Images, driver.Storage)
+	// Hold keeps a root disk in use, as a running VM does, until release.
+	Hold func(t *testing.T, d driver.Disk) (release func())
 	// Exit ends the guest process of a running VM with code, as the
 	// container's process exiting does.
 	Exit func(t *testing.T, machineUID string, code int)
@@ -33,11 +44,25 @@ type Host struct {
 
 // Run runs the suite, each test on a host from fresh.
 func Run(t *testing.T, fresh func(t *testing.T) Host) {
-	t.Run("images", func(t *testing.T) { images(t, fresh(t)) })
-	t.Run("storage", func(t *testing.T) { storage(t, fresh(t)) })
-	t.Run("network", func(t *testing.T) { network(t, fresh(t)) })
-	t.Run("hypervisor", func(t *testing.T) { hypervisor(t, fresh(t)) })
-	t.Run("restart policies", func(t *testing.T) { restarts(t, fresh(t)) })
+	part := func(name string, test func(*testing.T, Host), needs func(Host) bool) {
+		t.Run(name, func(t *testing.T) {
+			h := fresh(t)
+			if !needs(h) {
+				t.Skip("the host lacks the drivers this part needs")
+			}
+			test(t, h)
+		})
+	}
+	disks := func(h Host) bool { return h.Images != nil && h.Storage != nil }
+	vms := func(h Host) bool { return disks(h) && h.Network != nil && h.Hypervisor != nil && h.Guest != nil }
+	part("images", images, func(h Host) bool { return h.Images != nil })
+	part("storage", storage, disks)
+	part("root sizes", rootSizes, disks)
+	part("deleting disks", deletingDisks, disks)
+	part("reopening", reopening, disks)
+	part("network", network, func(h Host) bool { return h.Network != nil })
+	part("hypervisor", hypervisor, vms)
+	part("restart policies", restarts, vms)
 }
 
 func must(t *testing.T, err error) {
@@ -47,65 +72,80 @@ func must(t *testing.T, err error) {
 	}
 }
 
+var anon = driver.Credentials(driver.Anonymous)
+
 func images(t *testing.T, h Host) {
 	ctx := t.Context()
-	digest := h.Publish(t, "app:1")
-	got, err := h.Images.Resolve(ctx, "app:1")
+	ref, digest := h.Publish(t, "app:1")
+	got, err := h.Images.Resolve(ctx, ref, anon)
 	must(t, err)
 	if got != digest {
 		t.Errorf("resolved %s, published %s", got, digest)
 	}
-	if _, err := h.Images.Config(ctx, "app:1", digest); err != nil {
+	// A reference by digest resolves to that digest; ref ends in its tag.
+	pinned := ref[:strings.LastIndex(ref, ":")] + "@" + digest
+	if got, err := h.Images.Resolve(ctx, pinned, anon); err != nil || got != digest {
+		t.Errorf("resolving %s: %s %v", pinned, got, err)
+	}
+	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
 		t.Errorf("config: %v", err)
 	}
 	dir := t.TempDir()
-	must(t, h.Images.Unpack(ctx, "app:1", digest, dir))
+	must(t, h.Images.Unpack(ctx, ref, digest, dir, anon))
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) == 0 {
 		t.Errorf("unpacked nothing: %v %v", entries, err)
 	}
-	if _, err := h.Images.Resolve(ctx, "absent:1"); err == nil {
-		t.Error("resolved an image never published")
+	absent := strings.Replace(ref, "app:1", "absent:1", 1)
+	if _, err := h.Images.Resolve(ctx, absent, anon); !errors.Is(err, driver.ErrImageNotFound) {
+		t.Errorf("resolving an image never published: %v, want not found", err)
 	}
 
 	// A pulled digest is the host's until forgotten, registry or not.
-	h.Withdraw(t, "app:1")
-	if _, err := h.Images.Config(ctx, "app:1", digest); err != nil {
+	h.Withdraw(t, ref)
+	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
 		t.Errorf("config of a pulled digest with the registry down: %v", err)
 	}
-	if err := h.Images.Unpack(ctx, "app:1", digest, t.TempDir()); err != nil {
+	if err := h.Images.Unpack(ctx, ref, digest, t.TempDir(), anon); err != nil {
 		t.Errorf("unpacking a pulled digest with the registry down: %v", err)
 	}
 	must(t, h.Images.Forget(ctx, digest))
 	must(t, h.Images.Forget(ctx, digest))
-	if _, err := h.Images.Config(ctx, "app:1", digest); err == nil {
+	if _, err := h.Images.Config(ctx, ref, digest, anon); err == nil {
 		t.Error("a forgotten digest answered with the registry down")
 	}
 }
 
 // base makes the base of a published image.
-func base(t *testing.T, h Host, ref string) string {
+func base(t *testing.T, h Host, name string) string {
 	t.Helper()
-	digest := h.Publish(t, ref)
-	must(t, h.Storage.EnsureBase(t.Context(), digest, func(dir string) error {
-		return h.Images.Unpack(t.Context(), ref, digest, dir)
+	ref, digest := h.Publish(t, name)
+	must(t, h.Storage.EnsureBase(t.Context(), digest, 0, func(dir string) error {
+		return h.Images.Unpack(t.Context(), ref, digest, dir, anon)
 	}))
 	return digest
 }
 
+// Sizes of root disks the suite asks for, above any base it makes.
+const (
+	gib       = int64(1) << 30
+	rootSize  = 1 * gib
+	grownSize = 2 * gib
+)
+
 func storage(t *testing.T, h Host) {
 	ctx := t.Context()
 	// Made at once from two places, a base is made once.
-	digest := h.Publish(t, "app:1")
+	ref, digest := h.Publish(t, "app:1")
 	var fills atomic.Int32
 	var wg sync.WaitGroup
 	for range 2 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if err := h.Storage.EnsureBase(ctx, digest, func(dir string) error {
+			if err := h.Storage.EnsureBase(ctx, digest, 0, func(dir string) error {
 				fills.Add(1)
 				time.Sleep(50 * time.Millisecond) // both callers are in by now
-				return h.Images.Unpack(ctx, "app:1", digest, dir)
+				return h.Images.Unpack(ctx, ref, digest, dir, anon)
 			}); err != nil {
 				t.Error(err)
 			}
@@ -116,25 +156,43 @@ func storage(t *testing.T, h Host) {
 		t.Errorf("a base made at once from two places was filled %d times", n)
 	}
 	filled := false
-	must(t, h.Storage.EnsureBase(ctx, digest, func(string) error { filled = true; return nil }))
+	must(t, h.Storage.EnsureBase(ctx, digest, 0, func(string) error { filled = true; return nil }))
 	if filled {
 		t.Error("an existing base was filled again")
 	}
 	if bases, err := h.Storage.Bases(ctx); err != nil || len(bases) != 1 || bases[0] != digest {
 		t.Errorf("bases %v %v", bases, err)
 	}
-
-	root, err := h.Storage.EnsureRoot(ctx, "m1", digest)
+	// A fill that fails leaves no base.
+	_, failing := h.Publish(t, "failing:1")
+	failed := errors.New("the fill failed")
+	if err := h.Storage.EnsureBase(ctx, failing, 0, func(string) error { return failed }); !errors.Is(err, failed) {
+		t.Errorf("a failing fill: %v, want its error", err)
+	}
+	if bases, _ := h.Storage.Bases(ctx); slices.Contains(bases, failing) {
+		t.Error("a failed fill left a base")
+	}
+	// An image larger than the room left is refused before it is unpacked.
+	c, err := h.Storage.Capacity(ctx)
 	must(t, err)
-	if root.MachineUID != "m1" || root.Digest != digest || root.Path == "" {
+	if err := h.Storage.EnsureBase(ctx, failing, c.Free+1, func(string) error {
+		t.Error("an image larger than the room left was unpacked")
+		return nil
+	}); !errors.Is(err, driver.ErrNoSpace) {
+		t.Errorf("an image larger than the room left: %v, want no space", err)
+	}
+
+	root, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
+	must(t, err)
+	if root.MachineUID != "m1" || root.Digest != digest || root.Path == "" || root.Size < rootSize {
 		t.Errorf("root %+v", root)
 	}
-	again, err := h.Storage.EnsureRoot(ctx, "m1", digest)
+	again, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
 	if err != nil || again != root {
 		t.Errorf("ensuring the root again: %+v %v", again, err)
 	}
 	other := base(t, h, "app:2")
-	if _, err := h.Storage.EnsureRoot(ctx, "m1", other); err == nil {
+	if _, err := h.Storage.EnsureRoot(ctx, "m1", other, rootSize); err == nil {
 		t.Error("a root disk of one image was taken for another")
 	}
 	if roots, err := h.Storage.Roots(ctx); err != nil || len(roots) != 1 || roots[0] != root {
@@ -142,6 +200,11 @@ func storage(t *testing.T, h Host) {
 	}
 	if err := h.Storage.DeleteBase(ctx, digest); err == nil {
 		t.Error("deleted a base a root disk was cloned from")
+	}
+
+	c, err = h.Storage.Capacity(ctx)
+	if err != nil || c.Total <= 0 || c.Free < 0 || c.Free > c.Total {
+		t.Errorf("capacity %+v %v", c, err)
 	}
 
 	must(t, h.Storage.DeleteRoot(ctx, "m1"))
@@ -155,6 +218,145 @@ func storage(t *testing.T, h Host) {
 	if bases, _ := h.Storage.Bases(ctx); len(bases) != 0 {
 		t.Errorf("bases left: %v", bases)
 	}
+}
+
+// rootOf returns the machine's root disk as listed.
+func rootOf(t *testing.T, s driver.Storage, machine string) (driver.Disk, bool) {
+	t.Helper()
+	roots, err := s.Roots(t.Context())
+	must(t, err)
+	for _, r := range roots {
+		if r.MachineUID == machine {
+			return r, true
+		}
+	}
+	return driver.Disk{}, false
+}
+
+func rootSizes(t *testing.T, h Host) {
+	ctx := t.Context()
+	digest := base(t, h, "app:1")
+
+	// Below the base's size is too small, and makes nothing.
+	if _, err := h.Storage.EnsureRoot(ctx, "m1", digest, 1); !errors.Is(err, driver.ErrDiskTooSmall) {
+		t.Errorf("a root of one byte: %v, want too small", err)
+	}
+	if _, ok := rootOf(t, h.Storage, "m1"); ok {
+		t.Error("a root too small was made")
+	}
+
+	root, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
+	must(t, err)
+	// Asked smaller, it is not shrunk.
+	smaller, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize/2)
+	if err != nil || smaller != root {
+		t.Errorf("asked smaller: %+v %v, want %+v", smaller, err, root)
+	}
+	// Asked larger, it grows, and is listed so.
+	grown, err := h.Storage.EnsureRoot(ctx, "m1", digest, grownSize)
+	must(t, err)
+	if grown.Size < grownSize || grown.Path != root.Path {
+		t.Errorf("grown %+v from %+v", grown, root)
+	}
+	if listed, _ := rootOf(t, h.Storage, "m1"); listed != grown {
+		t.Errorf("listed %+v, grown %+v", listed, grown)
+	}
+	// Even too small for the base, an existing root is only kept.
+	if kept, err := h.Storage.EnsureRoot(ctx, "m1", digest, 1); err != nil || kept != grown {
+		t.Errorf("asked one byte of a grown root: %+v %v", kept, err)
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "m1"))
+	must(t, h.Storage.DeleteBase(ctx, digest))
+}
+
+func deletingDisks(t *testing.T, h Host) {
+	ctx := t.Context()
+	a := base(t, h, "app:1")
+	b := base(t, h, "app:2")
+	// A base no root was cloned from goes at once.
+	must(t, h.Storage.DeleteBase(ctx, b))
+
+	// A base goes only once its last root has.
+	var roots []driver.Disk
+	for _, m := range []string{"m1", "m2", "m3"} {
+		r, err := h.Storage.EnsureRoot(ctx, m, a, rootSize)
+		must(t, err)
+		roots = append(roots, r)
+	}
+	if paths := map[string]bool{roots[0].Path: true, roots[1].Path: true, roots[2].Path: true}; len(paths) != 3 {
+		t.Errorf("roots share devices: %+v", roots)
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "m2"))
+	if err := h.Storage.DeleteBase(ctx, a); err == nil {
+		t.Error("deleted a base two roots were cloned from")
+	}
+
+	// A root in use stays until it is let go.
+	if h.Hold != nil {
+		release := h.Hold(t, roots[0])
+		if err := h.Storage.DeleteRoot(ctx, "m1"); err == nil {
+			t.Error("deleted a root in use")
+		}
+		if _, ok := rootOf(t, h.Storage, "m1"); !ok {
+			t.Error("a root in use is gone after a failed delete")
+		}
+		release()
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "m1"))
+	if err := h.Storage.DeleteBase(ctx, a); err == nil {
+		t.Error("deleted a base a root was cloned from")
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "m3"))
+	must(t, h.Storage.DeleteBase(ctx, a))
+	if bases, _ := h.Storage.Bases(ctx); len(bases) != 0 {
+		t.Errorf("bases left: %v", bases)
+	}
+	// Deleting what was never made is not an error.
+	must(t, h.Storage.DeleteRoot(ctx, "never"))
+	_, never := h.Publish(t, "never:1")
+	must(t, h.Storage.DeleteBase(ctx, never))
+}
+
+func reopening(t *testing.T, h Host) {
+	if h.Reopen == nil {
+		t.Skip("the host cannot reopen its drivers")
+	}
+	ctx := t.Context()
+	ref, digest := h.Publish(t, "app:1")
+	must(t, h.Storage.EnsureBase(ctx, digest, 0, func(dir string) error {
+		return h.Images.Unpack(ctx, ref, digest, dir, anon)
+	}))
+	r1, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
+	must(t, err)
+	r2, err := h.Storage.EnsureRoot(ctx, "m2", digest, grownSize)
+	must(t, err)
+
+	// What one instance made, another finds, the registry gone.
+	h.Withdraw(t, ref)
+	images, storage := h.Reopen(t)
+	if bases, err := storage.Bases(ctx); err != nil || !slices.Equal(bases, []string{digest}) {
+		t.Errorf("bases after reopening: %v %v", bases, err)
+	}
+	roots, err := storage.Roots(ctx)
+	must(t, err)
+	slices.SortFunc(roots, func(a, b driver.Disk) int { return strings.Compare(a.MachineUID, b.MachineUID) })
+	if !slices.Equal(roots, []driver.Disk{r1, r2}) {
+		t.Errorf("roots after reopening: %+v, want %+v %+v", roots, r1, r2)
+	}
+	if _, err := images.Config(ctx, ref, digest, anon); err != nil {
+		t.Errorf("config of a pulled digest after reopening: %v", err)
+	}
+	must(t, storage.EnsureBase(ctx, digest, 0, func(string) error {
+		t.Error("a base made before reopening was filled again")
+		return nil
+	}))
+	if again, err := storage.EnsureRoot(ctx, "m1", digest, rootSize); err != nil || again != r1 {
+		t.Errorf("ensuring a root after reopening: %+v %v", again, err)
+	}
+	must(t, storage.DeleteRoot(ctx, "m1"))
+	must(t, storage.DeleteRoot(ctx, "m2"))
+	must(t, storage.DeleteBase(ctx, digest))
+	must(t, images.Forget(ctx, digest))
 }
 
 var testNet = driver.NetworkSpec{
@@ -218,7 +420,7 @@ func vmSpec(t *testing.T, h Host, machine string, restart driver.RestartPolicy) 
 	t.Helper()
 	ctx := t.Context()
 	digest := base(t, h, "app:1")
-	root, err := h.Storage.EnsureRoot(ctx, machine, digest)
+	root, err := h.Storage.EnsureRoot(ctx, machine, digest, rootSize)
 	must(t, err)
 	must(t, h.Network.EnsureNetwork(ctx, testNet))
 	nic, err := h.Network.EnsureInterface(ctx, eth0(machine))
