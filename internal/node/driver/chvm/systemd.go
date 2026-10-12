@@ -47,9 +47,10 @@ const (
 
 func usec(d time.Duration) uint64 { return uint64(d / time.Microsecond) }
 
-// unitProps are the properties of a VM's unit. Explicit stops never
-// restart a unit, whatever its Restart=.
-func unitProps(spec driver.VMSpec, argv []string, restart string) []sd.Property {
+// unitProps are the properties of a VM's unit, which systemd gives
+// stopTimeout to stop. Explicit stops never restart a unit, whatever its
+// Restart=.
+func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration) []sd.Property {
 	prop := func(name string, v any) sd.Property { return sd.Property{Name: name, Value: dbus.MakeVariant(v)} }
 	return []sd.Property{
 		sd.PropDescription(fmt.Sprintf("Hangar VM of machine %s (%s)", spec.Machine, spec.MachineUID)),
@@ -64,10 +65,17 @@ func unitProps(spec driver.VMSpec, argv []string, restart string) []sd.Property 
 		prop("RestartMaxDelayUSec", usec(restartMax)),
 		// Never give up restarting, as Docker does not.
 		prop("StartLimitIntervalUSec", uint64(0)),
-		// SIGTERM to the launcher alone, which kills Cloud Hypervisor; the
-		// rest of the unit is killed once it has exited.
+		// SIGTERM to the launcher alone, which stops the guest and Cloud
+		// Hypervisor; the rest of the unit is killed once it has exited.
 		prop("KillMode", "mixed"),
-		prop("TimeoutStopUSec", usec(15*time.Second)),
+		prop("TimeoutStopUSec", usec(stopTimeout)),
+		// At host shutdown the VM stops before the host's network does
+		// (networkd, and nftables.service flushing the ruleset, which
+		// holds the networks' SNAT), so a container has its network for
+		// its grace. Its disks and directory, and the networks'
+		// namespaces, are mounts, which the default dependencies already
+		// keep until it has stopped.
+		prop("After", []string{"network.target"}),
 		// An exited VM's record is its exit file: the unit goes.
 		prop("CollectMode", "inactive-or-failed"),
 	}

@@ -219,6 +219,14 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 			if got := prop(props, "RestartMaxDelayUSec"); got != uint64(60_000_000) {
 				t.Errorf("RestartMaxDelayUSec=%v", got)
 			}
+			// systemd stopping the unit, as at host shutdown, waits for the
+			// launcher to give the guest its grace.
+			if got, want := prop(props, "TimeoutStopUSec"), usec(stopAsk+testGrace+testSlack+killGrace+drainWait); got != want {
+				t.Errorf("TimeoutStopUSec=%v, want %d", got, want)
+			}
+			if got, _ := prop(props, "After").([]string); !slices.Equal(got, []string{"network.target"}) {
+				t.Errorf("After=%v: at shutdown the network could go before the VM", got)
+			}
 			exec := fmt.Sprint(prop(props, "ExecStart"))
 			if !strings.Contains(exec, "/usr/bin/hangar-node vmm --dir "+h.cfg.Dir+" m1") {
 				t.Errorf("ExecStart=%s", exec)
@@ -232,7 +240,8 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ln.Hash != spec.Hash() || ln.Spec.Hash() != spec.Hash() || ln.CloudHypervisor != os.Args[0] || ln.Cmdline != "quiet" {
+			if ln.Hash != spec.Hash() || ln.Spec.Hash() != spec.Hash() || ln.CloudHypervisor != os.Args[0] || ln.Cmdline != "quiet" ||
+				ln.StopGrace != testGrace || ln.StopSlack != testSlack {
 				t.Errorf("launch %+v", ln)
 			}
 			f, err := os.Open(filepath.Join(h.dir("m1"), bootFile))

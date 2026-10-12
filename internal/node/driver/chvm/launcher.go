@@ -19,6 +19,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/hostnet"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/zfsstore"
 )
@@ -37,7 +38,12 @@ const (
 // its taps, and runs Cloud Hypervisor on them; it keeps the guest's console
 // in a log of bounded size, and exits as the container's process did, so
 // systemd's restart policy and restart count see the container. Stopped
-// (ctx ends, on SIGTERM), it kills Cloud Hypervisor and exits.
+// (ctx ends, on SIGTERM), it stops Cloud Hypervisor and exits, recording no
+// exit: stopped by the driver, which has stopped the guest already, at
+// once; stopped by systemd alone, as at host shutdown, once it has stopped
+// the guest as the driver's Stop does, so the container gets its SIGTERM
+// and grace. Either way the VM reads as stopped or interrupted, never as
+// exited, however its process ended.
 type Launcher struct {
 	// Dir holds the VMs' directories, as the driver's Config.Dir.
 	Dir string
@@ -52,7 +58,10 @@ type Launcher struct {
 	// KillGrace bounds how long Cloud Hypervisor has to exit once
 	// SIGTERMed before it is killed; zero means 2 seconds.
 	KillGrace time.Duration
-	Log       *slog.Logger
+	// Guest reaches the guest's agent. Nil means chguest's, at the VM's
+	// vsock socket.
+	Guest driver.Guest
+	Log   *slog.Logger
 }
 
 // LauncherMain is hangar-node vmm [--dir DIR] UID, returning its exit code.
@@ -106,7 +115,10 @@ func (l *Launcher) defaults() {
 		l.SerialMax = DefaultSerialMax
 	}
 	if l.KillGrace == 0 {
-		l.KillGrace = 2 * time.Second
+		l.KillGrace = killGrace
+	}
+	if l.Guest == nil {
+		l.Guest = chguest.Guest{Socket: func(uid string) string { return filepath.Join(l.Dir, uid, vsockFile) }}
 	}
 	if l.Log == nil {
 		l.Log = slog.New(slog.DiscardHandler)
@@ -240,12 +252,16 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 
 	select {
 	case <-ctx.Done():
-		_ = cmd.Process.Signal(syscall.SIGTERM)
-		select {
-		case <-waited:
-		case <-time.After(l.KillGrace):
-			_ = cmd.Process.Kill()
-			<-waited
+		// The driver marks a VM before it stops the guest: without the
+		// mark, systemd stops the unit on its own.
+		if exists(filepath.Join(dir, stopFile)) || !l.stopGuest(uid, ln, waited) {
+			_ = cmd.Process.Signal(syscall.SIGTERM)
+			select {
+			case <-waited:
+			case <-time.After(l.KillGrace):
+				_ = cmd.Process.Kill()
+				<-waited
+			}
 		}
 		l.drain(consoleDone)
 		l.Log.Info("vmm: stopped", "machine_uid", uid)
@@ -263,13 +279,39 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 }
 
+// stopGuest asks the guest to stop its process with the launch's grace, as
+// the driver's Stop does, and waits for the guest to power off, Cloud
+// Hypervisor exiting, for the grace and the slack. It reports whether Cloud
+// Hypervisor has exited, and returns at once if the guest does not take
+// the stop.
+func (l *Launcher) stopGuest(uid string, ln launch, waited <-chan error) bool {
+	grace, slack := ln.stopTimes()
+	l.Log.Info("vmm: stopped by systemd; stopping the guest", "machine_uid", uid, "grace", grace)
+	ctx, cancel := context.WithTimeout(context.Background(), stopAsk)
+	err := l.Guest.Stop(ctx, uid, grace)
+	cancel()
+	if err != nil {
+		l.Log.Error("vmm: the guest did not take the stop", "machine_uid", uid, "error", err)
+		return false
+	}
+	deadline := time.NewTimer(grace + slack)
+	defer deadline.Stop()
+	select {
+	case <-waited:
+		return true
+	case <-deadline.C:
+		l.Log.Error("vmm: the guest did not power off in its grace", "machine_uid", uid)
+		return false
+	}
+}
+
 // drain waits a little for the rest of the console once Cloud Hypervisor
 // has exited.
 func (l *Launcher) drain(done <-chan *console.ExitStatus) *console.ExitStatus {
 	select {
 	case st := <-done:
 		return st
-	case <-time.After(5 * time.Second):
+	case <-time.After(drainWait):
 		l.Log.Error("vmm: the console did not end with Cloud Hypervisor")
 		return nil
 	}

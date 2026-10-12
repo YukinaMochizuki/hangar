@@ -69,13 +69,27 @@ with the host after any of these, and nothing would notice.
   host reboot (units are transient) or with its launcher killed outright,
   is not listed under `always` and `on-failure`, so the agent starts it
   again, and is listed exited with 253 under `no`.
+- **A host shutdown stops each guest as the agent would** (decided
+  2026-10): systemd stopping a VM's unit by itself, with no stop mark,
+  makes the launcher ask the guest to stop with the grace and slack the
+  driver started the VM with (kept in the spec), wait for it to power off,
+  and only then stop Cloud Hypervisor, so the container gets its SIGTERM
+  and grace and its handler's output is in the log. A unit's stop timeout
+  covers each step of a stop at its longest (25 s by default), and it
+  stops before `network.target`, so the guest has its network meanwhile;
+  the default dependencies keep the mounts (its directory, the networks'
+  namespaces) until it has stopped. The launcher records no exit for such
+  a stop, whatever the container exited with: the VM reads as interrupted
+  above, never as a container that ended by itself.
 - **Stopping is docker stop** (`guest-agent.md`): the agent asks the guest
   to stop its process, waits up to the 10 s grace and 5 s more for the
   guest to power off, then stops the unit, which kills Cloud Hypervisor; a
   guest that does not take the stop within 3 s is killed at once. Before
   asking, it marks the VM as being stopped, and a launcher whose guest
   powers off while marked waits to be stopped instead of exiting, so a
-  stop never restarts a VM, whatever its policy. A stop removes the unit
+  stop never restarts a VM, whatever its policy; a launcher stopped while
+  marked kills Cloud Hypervisor at once, the guest having been asked
+  already. A stop removes the unit
   and the VM's directory but its logs. A stop cut short leaves the mark;
   starting the VM's spec again while it runs clears it, so its next exit
   is its policy's again.
