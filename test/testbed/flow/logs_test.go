@@ -206,4 +206,53 @@ func (f *flow) logs(t *testing.T) {
 
 	c.cli("delete", "container", "chatty")
 	c.cli("wait", "container", "chatty", "--for=delete", "--timeout=2m")
+	f.logsOfAShutdown(t)
+}
+
+// logsOfAShutdown: a VM whose unit systemd stops, as a host shutting down
+// does, ends its boot with the guest's own exit, which the logs show; a
+// follow of one its policy keeps down then ends.
+func (f *flow) logsOfAShutdown(t *testing.T) {
+	c := f.c
+	// The containers the host shutdown stopped, one booted again since.
+	for name, again := range map[string]bool{"down-always": true, "down-never": false} {
+		out, errOut, err := c.logsCLI("ct", name)
+		if err != nil || !strings.Contains(out, "got SIGTERM\n") || !strings.Contains(errOut, "hangar: exited with code 0 (boot 1)\n") {
+			t.Errorf("%s's logs after the shutdown: stdout %q, stderr %q, %v", name, out, errOut, err)
+		}
+		if booted := strings.Count(out, "ready\n") == 2; booted != again {
+			t.Errorf("%s's logs: booted again %t, want %t: %q", name, booted, again, out)
+		}
+	}
+
+	c.applyYAML(containerYAML("halted", busyboxRef, "RESTART_POLICY_NEVER", "1Gi", termScript))
+	c.waitReady("halted", 3*time.Minute)
+	uid := c.machine("halted").GetMetadata().GetUid()
+	f.uids["halted"] = uid
+	follow := exec.Command(vmtest.Artifacts().CLI, "logs", "-f", "ct", "halted")
+	follow.Env = append(os.Environ(), "HANGAR_CONFIG="+filepath.Join(workDir, "cli.yaml"))
+	var stdout, stderr bytes.Buffer
+	follow.Stdout, follow.Stderr = &stdout, &stderr
+	if err := follow.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- follow.Wait() }()
+	eventually(t, 30*time.Second, "halted ready", func() (bool, string) {
+		text := consoleText(t, uid)
+		return strings.Contains(text, "ready"), text
+	})
+	mustRun(t, "systemctl", "stop", unitOf(uid))
+	select {
+	case err := <-done:
+		if err != nil || !strings.Contains(stdout.String(), "got SIGTERM\n") || !strings.HasSuffix(stderr.String(), "hangar: exited with code 0 (boot 1)\n") {
+			t.Errorf("logs -f of a VM systemd stopped ended with %v: stdout %q, stderr %q", err, stdout.String(), stderr.String())
+		}
+	case <-time.After(time.Minute):
+		_ = follow.Process.Kill()
+		t.Errorf("logs -f did not end with the VM systemd stopped: stdout %q, stderr %q", stdout.String(), stderr.String())
+	}
+	t.Logf("logs -f of halted, its unit stopped by systemd: stdout %q, stderr %q", stdout.String(), stderr.String())
+	c.cli("delete", "container", "halted")
+	c.cli("wait", "container", "halted", "--for=delete", "--timeout=2m")
 }

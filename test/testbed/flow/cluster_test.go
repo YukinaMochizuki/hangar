@@ -87,7 +87,7 @@ const (
 
 // containers are what the scenarios make, which an installed run deletes
 // first and last.
-var containers = []string{"web", "crashy", "third", "chatty"}
+var containers = []string{"web", "crashy", "third", "chatty", "halted"}
 
 // useInstalled points the flow at the installed services: the default
 // dataset and directories, the node named by HANGAR_TESTBED_FLOW_NODE, and
