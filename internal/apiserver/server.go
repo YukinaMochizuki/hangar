@@ -59,10 +59,10 @@ type Config struct {
 	// TunnelLiveness is the node tunnels'; zero means
 	// tunnel.DefaultLiveness.
 	TunnelLiveness tunnel.Liveness
-	// MaxNodeCallsPerTenant and MaxNodeCallsPerNode cap the calls to nodes
-	// open at once; zero means DefaultMaxNodeCallsPerTenant and
-	// DefaultMaxNodeCallsPerNode.
-	MaxNodeCallsPerTenant, MaxNodeCallsPerNode int
+	// MaxNodeCallsPerPrincipal, MaxNodeCallsPerTenant and
+	// MaxNodeCallsPerNode cap the calls to nodes open at once; zero means
+	// their Default.
+	MaxNodeCallsPerPrincipal, MaxNodeCallsPerTenant, MaxNodeCallsPerNode int
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -128,7 +128,7 @@ func New(cfg Config) *Server {
 		authz:     authz.New(cfg.Store),
 		backends:  map[string]*backend{},
 		tunnels:   &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
-		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
+		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
 	}
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}

@@ -375,3 +375,73 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 		return err == nil, fmt.Sprint(err)
 	})
 }
+
+// TestACallersCallsToNodesAreCappedAcrossTenants: a caller with as many
+// calls open to nodes as one may, across tenants, is refused another
+// whatever tenant it is in, while another caller in the same tenant is
+// not; a call ending gives the slot back.
+func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
+	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerPrincipal = 2 })
+	w.startAgent()
+	ctx := context.Background()
+	if _, err := w.root.Apply(ctx, registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.root.Apply(ctx, registry.Project, &tenancyv1alpha1.Project{
+		Metadata: &metav1.ObjectMeta{Name: "elsewhere"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "other"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	platform := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}}
+	for name, b := range map[string]*iamv1alpha1.RoleBindingSpec{
+		"member-owner": {Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "owner@example.com"}}, Role: "platform.member", Scope: platform},
+		"owner": {Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "owner@example.com"}}, Role: "tenant.owner",
+			Scope: &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}}},
+	} {
+		if _, err := w.root.Apply(ctx, registry.RoleBinding, &iamv1alpha1.RoleBinding{Metadata: &metav1.ObjectMeta{Name: name}, Spec: b}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.apply(container("api", "nginx"))
+	theirs := container("theirs", "nginx")
+	theirs.Metadata.Project = "elsewhere"
+	w.apply(theirs)
+	w.waitReason("api", "Running")
+	read := func(who, project, name string) error {
+		_, err := readLogs(ctx, w.logsAs(who), &computev1alpha1.ContainerLogsRequest{Project: project, Name: name})
+		return err
+	}
+	w.eventually("the other tenant's container readable", func() (bool, string) {
+		err := read(apiservertest.Root, "elsewhere", "theirs")
+		return err == nil, fmt.Sprint(err)
+	})
+
+	started := "1:init:hangar-init: starting the container"
+	f1 := w.follow(apiservertest.Root, "api")
+	stream, err := w.logsAs(apiservertest.Root).ContainerLogs(ctx, connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: "elsewhere", Name: "theirs", Follow: true}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stream.Close() }()
+	if !stream.Receive() {
+		t.Fatalf("the follow in the other tenant: %v", stream.Err())
+	}
+	w.eventually("the follow open", func() (bool, string) { return f1.has(started) })
+
+	for _, where := range [][2]string{{project, "api"}, {"elsewhere", "theirs"}} {
+		err := read(apiservertest.Root, where[0], where[1])
+		if connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), "user:"+apiservertest.Root) {
+			t.Errorf("root's third call, in %s: %v, want resource exhausted", where[0], err)
+		}
+	}
+	w.eventually("the owner reading the logs", func() (bool, string) {
+		err := read("owner@example.com", project, "api")
+		return err == nil, fmt.Sprint(err)
+	})
+	f1.cancel()
+	_ = f1.ended(t, 5*time.Second)
+	w.eventually("root's slot back once its follow was cancelled", func() (bool, string) {
+		err := read(apiservertest.Root, project, "api")
+		return err == nil, fmt.Sprint(err)
+	})
+}

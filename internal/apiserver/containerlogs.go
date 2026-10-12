@@ -84,7 +84,7 @@ func (l containerLogs) ContainerLogs(ctx context.Context, req *connect.Request[c
 	if project == nil {
 		return failedPrecondition("project %q is gone", key.Project)
 	}
-	call, err := s.callNode(project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), node, fmt.Sprintf("container %q", key.Name))
+	call, err := s.callNode(p, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), node, fmt.Sprintf("container %q", key.Name))
 	if err != nil {
 		return err
 	}

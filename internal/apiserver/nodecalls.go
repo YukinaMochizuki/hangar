@@ -8,46 +8,62 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
+	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
-// Calls to nodes open at once are capped per tenant, so no tenant takes
-// a node's streams from the others, and per node below what its tunnel
-// takes, keeping room for the apiserver's own calls. A call over a cap
-// fails at once with ResourceExhausted; none waits (node-tunnel.md).
+// Calls to nodes open at once are capped per caller and per tenant, so no
+// one takes a node's streams from the others, however many tenants they
+// make, and per node below what its tunnel takes, keeping room for the
+// apiserver's own calls. A call over a cap fails at once with
+// ResourceExhausted; none waits (node-tunnel.md).
 const (
-	DefaultMaxNodeCallsPerTenant = 64
-	DefaultMaxNodeCallsPerNode   = tunnel.MaxStreams - 100
+	DefaultMaxNodeCallsPerPrincipal = 64
+	DefaultMaxNodeCallsPerTenant    = 64
+	DefaultMaxNodeCallsPerNode      = tunnel.MaxStreams - 100
 )
 
 // maxNodeMessage bounds a message from a node: a batch of log records is
 // about driver.MaxLogBatch, and one record at most 64 KiB more.
 const maxNodeMessage = 1 << 20
 
-// nodeCalls counts the calls to nodes open, by tenant and by node.
+// nodeCalls counts the calls to nodes open, by caller, by tenant and by
+// node.
 type nodeCalls struct {
-	mu         sync.Mutex
-	perTenant  map[string]int
-	perNode    map[string]int
-	maxTenant  int
-	maxPerNode int
+	mu           sync.Mutex
+	perPrincipal map[auth.Principal]int
+	perTenant    map[string]int
+	perNode      map[string]int
+	maxPrincipal int
+	maxTenant    int
+	maxPerNode   int
 }
 
-func newNodeCalls(maxTenant, maxPerNode int) *nodeCalls {
+func newNodeCalls(maxPrincipal, maxTenant, maxPerNode int) *nodeCalls {
+	if maxPrincipal == 0 {
+		maxPrincipal = DefaultMaxNodeCallsPerPrincipal
+	}
 	if maxTenant == 0 {
 		maxTenant = DefaultMaxNodeCallsPerTenant
 	}
 	if maxPerNode == 0 {
 		maxPerNode = DefaultMaxNodeCallsPerNode
 	}
-	return &nodeCalls{perTenant: map[string]int{}, perNode: map[string]int{}, maxTenant: maxTenant, maxPerNode: maxPerNode}
+	return &nodeCalls{
+		perPrincipal: map[auth.Principal]int{}, perTenant: map[string]int{}, perNode: map[string]int{},
+		maxPrincipal: maxPrincipal, maxTenant: maxTenant, maxPerNode: maxPerNode,
+	}
 }
 
-// take takes a slot for a call by tenant to node, and returns what gives
-// it back.
-func (n *nodeCalls) take(tenant, node string) (func(), error) {
+// take takes a slot for a call by p, the authenticated caller, in tenant
+// to node, and returns what gives it back.
+func (n *nodeCalls) take(p auth.Principal, tenant, node string) (func(), error) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.perPrincipal[p] >= n.maxPrincipal {
+		return nil, connect.NewError(connect.CodeResourceExhausted,
+			fmt.Errorf("%s has %d calls open to nodes, the most one may; end one first", p, n.maxPrincipal))
+	}
 	if n.perTenant[tenant] >= n.maxTenant {
 		return nil, connect.NewError(connect.CodeResourceExhausted,
 			fmt.Errorf("tenant %q has %d calls open to nodes, the most it may; end one first", tenant, n.maxTenant))
@@ -56,6 +72,7 @@ func (n *nodeCalls) take(tenant, node string) (func(), error) {
 		return nil, connect.NewError(connect.CodeResourceExhausted,
 			fmt.Errorf("node %s has %d calls open, the most it takes; try again later", node, n.maxPerNode))
 	}
+	n.perPrincipal[p]++
 	n.perTenant[tenant]++
 	n.perNode[node]++
 	var once sync.Once
@@ -63,6 +80,9 @@ func (n *nodeCalls) take(tenant, node string) (func(), error) {
 		once.Do(func() {
 			n.mu.Lock()
 			defer n.mu.Unlock()
+			if n.perPrincipal[p]--; n.perPrincipal[p] == 0 {
+				delete(n.perPrincipal, p)
+			}
 			if n.perTenant[tenant]--; n.perTenant[tenant] == 0 {
 				delete(n.perTenant, tenant)
 			}
@@ -82,10 +102,11 @@ type nodeCall struct {
 	release func()
 }
 
-// callNode begins a call by tenant to node; what names it in errors, such
-// as the container it is for. The caller ends it with release. Reaching
-// nodes some other way changes only this.
-func (s *Server) callNode(tenant, node, what string) (*nodeCall, error) {
+// callNode begins a call by p, the authenticated caller, in tenant to
+// node; what names it in errors, such as the container it is for. The
+// caller ends it with release. Reaching nodes some other way changes only
+// this.
+func (s *Server) callNode(p auth.Principal, tenant, node, what string) (*nodeCall, error) {
 	t, err := s.tunnels.Node(node)
 	if errors.Is(err, tunnel.ErrNoTunnel) {
 		return nil, connect.NewError(connect.CodeUnavailable, fmt.Errorf("%s's node %s is not connected", what, node))
@@ -93,7 +114,7 @@ func (s *Server) callNode(tenant, node, what string) (*nodeCall, error) {
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	release, err := s.nodeCalls.take(tenant, node)
+	release, err := s.nodeCalls.take(p, tenant, node)
 	if err != nil {
 		return nil, err
 	}
