@@ -180,7 +180,7 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	if err != nil {
 		return driver.VM{}, false, err
 	}
-	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash}
+	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run}
 	// A guest that powered off while it was being stopped, its launcher
 	// waiting for the stop, has exited.
 	offInStop := exited && exists(filepath.Join(dir, stopFile))

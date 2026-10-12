@@ -3,6 +3,7 @@ package fake_test
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -33,6 +34,16 @@ func TestConformance(t *testing.T) {
 				if err := h.Exit(machineUID, code); err != nil {
 					t.Fatal(err)
 				}
+			},
+			Exec: &drivertest.ExecPrograms{
+				Output: func(stdout, stderr string, code int) []string {
+					return []string{"exit", strconv.Itoa(code), stdout, stderr}
+				},
+				Cat:     []string{"cat"},
+				Size:    []string{"size"},
+				Show:    []string{"show", "HANGAR_EXEC"},
+				Wait:    func(marker string) []string { return []string{"wait", marker} },
+				Running: func(marker string) []string { return []string{"running", marker} },
 			},
 		}
 	})

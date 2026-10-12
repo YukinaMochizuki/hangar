@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sync"
 
@@ -44,6 +45,8 @@ type subject struct {
 // RoleBindings and Projects, kept current by watching the store.
 type Authorizer struct {
 	store store.Store
+	// extra are roles beyond Roles, which never replace one of them.
+	extra map[string]Role
 
 	mu sync.RWMutex
 	// bindings maps each binding's key to its subject and grant, so updates
@@ -64,9 +67,10 @@ type bindingEntry struct {
 }
 
 // New returns an authorizer over st. Call Run before using it.
-func New(st store.Store) *Authorizer {
+func New(st store.Store, extra map[string]Role) *Authorizer {
 	return &Authorizer{
 		store:    st,
+		extra:    maps.Clone(extra),
 		bindings: map[string]bindingEntry{},
 		grants:   map[subject][]grant{},
 		tenantOf: map[string]string{},
@@ -141,7 +145,7 @@ func (a *Authorizer) putBinding(o store.Object) {
 	if err := proto.Unmarshal(o.Data, &rb); err != nil {
 		return
 	}
-	e, ok := entryOf(&rb)
+	e, ok := a.entryOf(&rb)
 	if !ok {
 		delete(a.bindings, o.Name)
 		return
@@ -149,9 +153,19 @@ func (a *Authorizer) putBinding(o store.Object) {
 	a.bindings[o.Name] = e
 }
 
-func entryOf(rb *iamv1alpha1.RoleBinding) (bindingEntry, bool) {
+// Role returns the role named name: a built-in one, or one of the
+// authorizer's extra roles.
+func (a *Authorizer) Role(name string) (Role, bool) {
+	if r, ok := Roles[name]; ok {
+		return r, true
+	}
+	r, ok := a.extra[name]
+	return r, ok
+}
+
+func (a *Authorizer) entryOf(rb *iamv1alpha1.RoleBinding) (bindingEntry, bool) {
 	spec := rb.GetSpec()
-	role, ok := Roles[spec.GetRole()]
+	role, ok := a.Role(spec.GetRole())
 	if !ok {
 		return bindingEntry{}, false
 	}

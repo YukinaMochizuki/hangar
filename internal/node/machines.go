@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"slices"
+	"strings"
 	"time"
 
 	"connectrpc.com/connect"
@@ -499,9 +500,7 @@ func runSpec(boot *computev1alpha1.ContainerBoot, image driver.ImageConfig) driv
 	}
 	env := slices.Clone(image.Env)
 	for _, e := range boot.GetEnv() {
-		prefix := e.GetName() + "="
-		env = slices.DeleteFunc(env, func(kv string) bool { return len(kv) >= len(prefix) && kv[:len(prefix)] == prefix })
-		env = append(env, prefix+e.GetValue())
+		env = withEnv(env, e.GetName(), e.GetValue())
 	}
 	return driver.RunSpec{
 		Command:    append(slices.Clone(command), args...),
@@ -509,6 +508,13 @@ func runSpec(boot *computev1alpha1.ContainerBoot, image driver.ImageConfig) driv
 		WorkingDir: image.WorkingDir,
 		User:       image.User,
 	}
+}
+
+// withEnv returns a copy of env, KEY=VALUE pairs, with name set to value.
+func withEnv(env []string, name, value string) []string {
+	prefix := name + "="
+	env = slices.DeleteFunc(slices.Clone(env), func(kv string) bool { return strings.HasPrefix(kv, prefix) })
+	return append(env, prefix+value)
 }
 
 func restartPolicy(p computev1alpha1.RestartPolicy) driver.RestartPolicy {

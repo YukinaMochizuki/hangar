@@ -1,4 +1,4 @@
-# The apiserver calls a node over a tunnel the node opens; logs are one stream
+# The apiserver calls a node over a tunnel the node opens; logs are one stream; exec is docker exec
 
 Status: accepted, 2026-10.
 
@@ -90,11 +90,64 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   record are skipped; forged records garble only the container's own log.
   Follows wait on the client: a slow reader slows the node's read through
   HTTP/2's flow control, past the stream's window of 1 MiB.
+- **An exec runs as `docker exec` does, for as long as its call.** The
+  client's WebSocket (`streaming-transport.md`) is relayed to the node's
+  `NodeService.Exec`, a bidirectional Connect call on the tunnel, and on to
+  the guest agent's `Exec` (`guest-agent.md`).
+  - The process inherits the container's environment, user and working
+    directory, as its VM was started (the host keeps that spec), with
+    what the exec sets instead. It has no stdin unless asked: without a
+    terminal its stdin is closed at once; on a terminal nothing is typed.
+    On a terminal, stdout and stderr are one stream. The exit, the
+    signal that caused it included, comes last, its code 0 to 255
+    whatever the guest says; `hangar exec` exits with that code, and with
+    125, as `docker exec` does, when the exec itself fails.
+  - Each end of the relay ends the next: a client that closes, drops, or
+    is taken to be gone ends the apiserver's call to the node, which
+    resets the stream on the tunnel; the node's call to the guest ends
+    with it, on a vsock connection of its own that is closed, and
+    hangar-init kills the process's group. A VM that stops or restarts
+    ends its execs as `Unavailable`.
+  - The apiserver holds a message each way at a time: what one side does
+    not read holds up the other past the WebSocket's buffers and the
+    stream's window on the tunnel, never memory in the apiserver. A
+    message is at most 256 KiB from a client and 64 KiB of output from a
+    node.
+  - Data backed up never drops a live client (`internal/execws`). Each
+    end pings the other every 30 s, and hears it in anything it sends: a
+    pong, its own ping, a message. A reader held up by data backed up
+    takes no pong, so silence counts only once nothing has been pending,
+    either way, for a minute: no write to the client and no send to the
+    node held up. While something is, a dead peer is TCP's to tell: the
+    apiserver's connections have keepalive (30 s idle, then a probe every
+    10 s, three missed) and a user timeout of 60 s for unacknowledged
+    writes, and an empty message written each tick fails on a connection
+    that broke. `hangar exec` tells a server gone in the same way.
+  - Refused before the WebSocket opens, in this order: whoever is not
+    authorized (`compute.containers.exec`, told nothing of the container,
+    as a read is not), a container without a machine on a node or whose
+    machine is not running (`FailedPrecondition`), a node not connected
+    (`Unavailable`), and a caller over the caps on calls to nodes
+    (`ResourceExhausted`, shared with logs). After it opens, the node can
+    still refuse it, as for a VM that stopped since.
+  - The apiserver logs every exec: when its process is asked of the node,
+    the caller, the container, its machine, the command, whether it has a
+    terminal or stdin, and the user, working directory and names of the
+    environment it sets; when it ends, how, and how long it took; and
+    every attempt refused, by whom, for which container, with which code.
+    Never its input, its output, or its environment's values.
+- **Running a process in a container is a permission of its own**,
+  `compute.containers.exec`, apart from `get` and `logs`: it reaches
+  everything the container can. `tenant.owner` and `platform.root` hold
+  it; a sponsor does not.
 
 ## Consequences
 
-- A client going away ends the node's read: the apiserver's call is the
-  client's request's, and HTTP/2 resets the stream on the tunnel.
-- A node's logs are unreadable while its agent is down, though the VMs run
-  on and their logs are kept.
+- A client going away ends the node's read, or its exec: the apiserver's
+  call is the client's request's, and HTTP/2 resets the stream on the
+  tunnel.
+- A node's logs are unreadable, and its containers cannot be exec'd in,
+  while its agent is down, though the VMs run on and their logs are kept.
+- An exec lasts no longer than its connection: an apiserver or agent
+  restart, or a tunnel dropping, kills it.
 - Times in a log are the guest's clock; `--since` trusts them.

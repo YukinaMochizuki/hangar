@@ -25,8 +25,8 @@ cloud, and some people fund the hardware and should see more of it.
   - Permissions are `<group>.<plural>.<verb>`, generated from resource
     declarations (`get`, `list`, `watch`, `apply`, `delete`, `updateStatus`);
     special actions are declared explicitly, such as
-    `compute.containers.logs`, which `tenant.owner` and `platform.root`
-    hold (`node-tunnel.md`).
+    `compute.containers.logs` and `compute.containers.exec`, which
+    `tenant.owner` and `platform.root` hold (`node-tunnel.md`).
   - Roles bundle permissions. They are built in for now (`platform.root`,
     `platform.sponsor`, `tenant.owner`) and may become resources later.
   - A `RoleBinding` (group `iam`) grants a role to a principal at a scope:
