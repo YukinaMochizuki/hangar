@@ -101,17 +101,23 @@ func (w *Writer) write(s Stream, p []byte) error {
 	}
 	for len(p) > 0 {
 		n := min(len(p), MaxPayload)
-		var head [headerSize]byte
-		copy(head[:], recordMagic[:])
-		head[2] = byte(s)
-		binary.BigEndian.PutUint64(head[3:], uint64(w.now().UnixNano()))
-		binary.BigEndian.PutUint32(head[11:], uint32(n))
-		if _, err := w.w.Write(append(head[:], p[:n]...)); err != nil {
+		if _, err := w.w.Write(AppendRecord(nil, Record{Stream: s, Time: w.now(), Payload: p[:n]})); err != nil {
 			return err
 		}
 		p = p[n:]
 	}
 	return nil
+}
+
+// AppendRecord appends rec, framed, to b. Its payload must be at most
+// MaxPayload.
+func AppendRecord(b []byte, rec Record) []byte {
+	var head [headerSize]byte
+	copy(head[:], recordMagic[:])
+	head[2] = byte(rec.Stream)
+	binary.BigEndian.PutUint64(head[3:], uint64(rec.Time.UnixNano()))
+	binary.BigEndian.PutUint32(head[11:], uint32(len(rec.Payload)))
+	return append(append(b, head[:]...), rec.Payload...)
 }
 
 // WriteExit frames how the process ended, once: nothing is written after.

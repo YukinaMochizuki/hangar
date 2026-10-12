@@ -72,6 +72,32 @@ these before `hangar-node` starts; `deploy/host` does not make them:
 
 `test/testbed/setup.sh` makes the same on a testbed VM.
 
+## What the node agent needs to run VMs
+
+The hypervisor driver (`internal/node/driver/chvm`,
+`docs/decisions/node-agent.md`), with `hangar-node --drivers=host`, needs:
+
+- Cloud Hypervisor at `/usr/local/bin/cloud-hypervisor`, which the
+  `packages` step installs at the pinned version; `--cloud-hypervisor`
+  names another.
+- The platform guest kernel and initramfs (`docs/runbook/guest-kernel.md`)
+  at `/usr/local/lib/hangar/vmlinux` and
+  `/usr/local/lib/hangar/initramfs.cpio`, or where `--guest-kernel` and
+  `--guest-initramfs` say. `deploy/host` does not install them yet. A VM
+  keeps the ones it was started with until it is started again.
+- `/var/lib/hangar/vms` (`--vm-dir`), which the driver makes, `0700` and
+  root's: each VM's spec, boot disk, sockets and console logs. Its path must
+  stay short enough for a unix socket under it (the driver refuses one too
+  long). The logs are tenant data, at most 34 MiB a VM.
+- systemd 254 or later, for `RestartSteps=` and `RestartMaxDelaySec=` in
+  the VMs' units (Ubuntu 24.04 has 255), and its D-Bus API: the system bus,
+  or, as root, systemd's private socket.
+- `/dev/kvm`. Not `vhost_vsock`: Cloud Hypervisor's hybrid vsock is its own
+  device, reached through a unix socket.
+- The binary `hangar-node` stays where it was when VMs were started: their
+  units run it as their launcher, by the path the agent ran from. Replacing
+  it in place upgrades every VM's launcher at its next start.
+
 ## Things that are easy to get wrong
 
 - Proxy NDP is set through a networkd drop-in, not sysctl.d: networkd resets

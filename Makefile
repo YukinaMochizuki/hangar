@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
@@ -64,8 +64,15 @@ E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
 e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
+	go build -o bin/hangar-node ./cmd/hangar-node
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
+
+# The real hypervisor driver's tests alone, with every other real driver.
+e2e-host-vms: guest-initramfs $(E2E_HOST_ROOTFS)
+	go build -o bin/hangar-node ./cmd/hangar-node
+	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
+		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 
 # The real network driver's tests alone: root, but no KVM and no guest
 # artifacts.

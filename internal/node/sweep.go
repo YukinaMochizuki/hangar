@@ -48,6 +48,16 @@ func (a *Agent) sweep(ctx context.Context) error {
 			}
 		}
 	}
+	// Logs of the VMs just stopped go too; a failed stop leaves the VM
+	// listed, and DeleteLogs refuses it.
+	if logs, err := d.Hypervisor.Logs(ctx); keep(err) {
+		for _, uid := range logs {
+			if !mine[uid] {
+				a.cfg.Log.Info("removing a console log no machine accounts for", "machine_uid", uid)
+				keep(d.Hypervisor.DeleteLogs(ctx, uid))
+			}
+		}
+	}
 	if ifaces, err := d.Network.Interfaces(ctx); keep(err) {
 		gone := map[string]bool{}
 		for _, i := range ifaces {

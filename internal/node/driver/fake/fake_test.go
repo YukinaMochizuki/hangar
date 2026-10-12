@@ -24,9 +24,11 @@ func TestConformance(t *testing.T) {
 				h.AddImage(name, digest, driver.ImageConfig{Cmd: []string{"true"}})
 				return name, digest
 			},
-			Withdraw: func(_ *testing.T, ref string) { h.FailPull(ref, errors.New("registry down")) },
-			Reopen:   func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },
-			Hold:     func(_ *testing.T, d driver.Disk) func() { return h.HoldDisk(d.MachineUID) },
+			Withdraw:         func(_ *testing.T, ref string) { h.FailPull(ref, errors.New("registry down")) },
+			Reopen:           func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },
+			Hold:             func(_ *testing.T, d driver.Disk) func() { return h.HoldDisk(d.MachineUID) },
+			ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
+			AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
 			Exit: func(t *testing.T, machineUID string, code int) {
 				if err := h.Exit(machineUID, code); err != nil {
 					t.Fatal(err)
