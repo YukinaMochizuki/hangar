@@ -5,8 +5,9 @@ containers both run as microVMs ("Machines") on a single host, managed through a
 declarative, Kubernetes-style API (Connect + protobuf). One person maintains it,
 and agents are first-class users of both the code and the API.
 
-Status: early. The apiserver runs (resources, auth, RBAC, watch); nothing
-starts machines yet. `docs/architecture.md` describes the target.
+Status: early. The apiserver and the node agent run Containers as Cloud
+Hypervisor microVMs on one host, deployed there by `deploy/host`.
+`docs/architecture.md` describes the target.
 
 ## Layout
 
