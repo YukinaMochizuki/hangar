@@ -196,7 +196,7 @@ func (f *flow) exec(t *testing.T) {
 	if code != 0 || strings.Fields(out)[0] != "3" || !strings.HasSuffix(out, "done\n") {
 		t.Errorf("stdin piped with -i: exit %d, stdout %q", code, out)
 	}
-	if _, errOut, code := execCLI(t, nil, "ct", "absent", "--", "true"); code != 3 || !strings.Contains(errOut, "not found") {
+	if _, errOut, code := execCLI(t, nil, "ct", "absent", "--", "true"); code != 125 || !strings.Contains(errOut, "not found") {
 		t.Errorf("a container that is not there: exit %d, stderr %q", code, errOut)
 	}
 
@@ -260,16 +260,22 @@ func (f *flow) exec(t *testing.T) {
 	})
 	_ = killed.Process.Signal(syscall.SIGKILL)
 	_ = killed.Wait()
-	eventually(t, 70*time.Second, "nothing of the killed CLI's command left in the guest", func() (bool, string) {
+	// Within a ping's interval: the close reaches the guest, not a ping.
+	eventually(t, 10*time.Second, "nothing of the killed CLI's command left in the guest", func() (bool, string) {
 		n := guestRuns(t, uid, "4321")
 		return n == "0", n
 	})
 
-	audit := tail(filepath.Join(workDir, "apiserver.log"))
+	b, err := os.ReadFile(filepath.Join(workDir, "apiserver.log"))
+	if err != nil && !installed {
+		t.Fatal(err)
+	}
+	audit := string(b)
 	if installed {
 		audit = mustRun(t, "journalctl", "-u", apiUnit, "--since", "-10min", "--no-pager")
 	}
-	if !strings.Contains(audit, "msg=exec") || !strings.Contains(audit, "argv=") || strings.Contains(audit, "three") {
+	if !strings.Contains(audit, `msg="exec started"`) || !strings.Contains(audit, `msg="exec ended"`) ||
+		!strings.Contains(audit, `msg="exec refused"`) || !strings.Contains(audit, "argv=") || strings.Contains(audit, "three") {
 		t.Errorf("the apiserver's log of execs:\n%s", audit)
 	}
 
