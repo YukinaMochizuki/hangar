@@ -50,6 +50,9 @@ type Options struct {
 	Signals func(c chan<- os.Signal, sigs ...os.Signal) (stop func())
 	// Terminal returns the terminal IO.In is, if it is one.
 	Terminal func(in io.Reader) (Terminal, bool)
+	// ExecPing and ExecPong time how hangar exec tells the server is gone,
+	// as apiserver.Config's do the other way; zero means 30 s each.
+	ExecPing, ExecPong time.Duration
 }
 
 // interrupts are the signals that end a command, unless it takes them.

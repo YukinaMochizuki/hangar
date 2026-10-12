@@ -31,8 +31,9 @@ import (
 // commands named by their first word: out writes stdout and stderr and
 // exits 7; cat echoes stdin to stdout until it closes; wait ends with the
 // first signal; size prints the terminal's size at the start and on each
-// resize, until a signal; fail closes the exec with FailedPrecondition. A
-// container named absent is refused before the upgrade.
+// resize, until a signal; fail closes the exec with FailedPrecondition;
+// hang says and reads nothing; deaf reads nothing but pings. A container
+// named absent is refused before the upgrade.
 type execServer struct {
 	mu     sync.Mutex
 	start  *computev1alpha1.ContainerExecStart
@@ -91,6 +92,21 @@ func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "size":
 		stdout(fmt.Sprintf("%d %d\n", size.GetRows(), size.GetCols()))
+	case "hang":
+		<-ctx.Done()
+		return
+	case "deaf":
+		// Reads nothing, as a server held up, but pings.
+		ticker := time.NewTicker(50 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				go func() { _ = c.Ping(context.WithoutCancel(ctx)) }()
+			}
+		}
 	}
 	for {
 		req, err := read()
@@ -202,10 +218,12 @@ func (f *fakeTerminal) state() (raw bool, raws int) {
 }
 
 type execRun struct {
-	server *execServer
-	sigs   *signals
-	term   *fakeTerminal
-	stdin  io.Reader
+	// ping and pong time the CLI's liveness; zero is its default.
+	ping, pong time.Duration
+	server     *execServer
+	sigs       *signals
+	term       *fakeTerminal
+	stdin      io.Reader
 }
 
 func newExecRun(t *testing.T) *execRun {
@@ -226,6 +244,7 @@ func (r *execRun) run(t *testing.T, args ...string) (int, string, string) {
 		return ""
 	}
 	opts := cli.Options{
+		ExecPing: r.ping, ExecPong: r.pong,
 		Signals:  r.sigs.notify,
 		Terminal: func(io.Reader) (cli.Terminal, bool) { return r.term, r.term != nil },
 	}
@@ -337,7 +356,7 @@ func TestATerminalIsRawResizedAndRestored(t *testing.T) {
 	r.sigs.raise(t, syscall.SIGTERM)
 	select {
 	case code := <-done:
-		if code != cli.ExitError {
+		if code != cli.ExitExecFailed {
 			t.Errorf("exit %d", code)
 		}
 	case <-time.After(10 * time.Second):
@@ -359,7 +378,7 @@ func TestATerminalIsRawResizedAndRestored(t *testing.T) {
 func TestATerminalIsRestoredWhenTheExecFails(t *testing.T) {
 	r := newExecRun(t)
 	code, _, errOut := r.run(t, "exec", "-t", "ct", "api", "--", "fail")
-	if code != cli.ExitError || !strings.Contains(errOut, "not running") {
+	if code != cli.ExitExecFailed || !strings.Contains(errOut, "not running") {
 		t.Errorf("exit %d, stderr %q", code, errOut)
 	}
 	if raw, raws := r.term.state(); raw || raws != 1 {
@@ -378,12 +397,12 @@ func TestExecFailures(t *testing.T) {
 		code int
 		says string
 	}{
-		{[]string{"exec", "ct", "absent", "--", "out"}, cli.ExitNotFound, "not found"},
-		{[]string{"exec", "ct", "api", "--", "fail"}, cli.ExitError, "not running"},
-		{[]string{"exec", "ct", "api", "out"}, cli.ExitUsage, "usage"},
-		{[]string{"exec", "ct", "api", "--"}, cli.ExitUsage, "usage"},
-		{[]string{"exec", "machine", "api", "--", "out"}, cli.ExitUsage, "only containers"},
-		{[]string{"exec", "--env", "X", "ct", "api", "--", "out"}, cli.ExitUsage, "KEY=VALUE"},
+		{[]string{"exec", "ct", "absent", "--", "out"}, cli.ExitExecFailed, "not found"},
+		{[]string{"exec", "ct", "api", "--", "fail"}, cli.ExitExecFailed, "not running"},
+		{[]string{"exec", "ct", "api", "out"}, cli.ExitExecFailed, "usage"},
+		{[]string{"exec", "ct", "api", "--"}, cli.ExitExecFailed, "usage"},
+		{[]string{"exec", "machine", "api", "--", "out"}, cli.ExitExecFailed, "only containers"},
+		{[]string{"exec", "--env", "X", "ct", "api", "--", "out"}, cli.ExitExecFailed, "KEY=VALUE"},
 	} {
 		code, _, errOut := r.run(t, tc.args...)
 		if code != tc.code || !strings.Contains(errOut, tc.says) {
@@ -391,7 +410,57 @@ func TestExecFailures(t *testing.T) {
 		}
 	}
 	r.term = nil
-	if code, _, errOut := r.run(t, "exec", "-t", "ct", "api", "--", "out"); code != cli.ExitUsage || !strings.Contains(errOut, "terminal") {
+	if code, _, errOut := r.run(t, "exec", "-t", "ct", "api", "--", "out"); code != cli.ExitExecFailed || !strings.Contains(errOut, "terminal") {
 		t.Errorf("-t without a terminal: exit %d, stderr %q", code, errOut)
+	}
+}
+
+// TestExecGivesUpOnASilentServer: a server that says nothing, and answers
+// no ping, with nothing pending, ends hangar with 125.
+func TestExecGivesUpOnASilentServer(t *testing.T) {
+	r := newExecRun(t)
+	r.ping, r.pong = 100*time.Millisecond, 300*time.Millisecond
+	began := time.Now()
+	code, _, errOut := r.run(t, "exec", "ct", "api", "--", "hang")
+	if code != cli.ExitExecFailed || !strings.Contains(errOut, "stopped answering") {
+		t.Errorf("exit %d, stderr %q", code, errOut)
+	}
+	if took := time.Since(began); took > 5*time.Second {
+		t.Errorf("gave up after %s", took)
+	}
+}
+
+// TestAServerThatPingsIsThere: a server whose reader is held up still
+// pings, so hangar stays; a second Ctrl-C within 2 s then ends it with 125,
+// the first having gone to the command.
+func TestAServerThatPingsIsThere(t *testing.T) {
+	r := newExecRun(t)
+	r.ping, r.pong = 100*time.Millisecond, 300*time.Millisecond
+	done := make(chan int, 1)
+	var errOut string
+	go func() {
+		var code int
+		code, _, errOut = r.run(t, "exec", "ct", "api", "--", "deaf")
+		done <- code
+	}()
+	select {
+	case code := <-done:
+		t.Fatalf("hangar ended with %d while the server pinged: %s", code, errOut)
+	case <-time.After(1500 * time.Millisecond):
+	}
+	r.sigs.raise(t, os.Interrupt)
+	select {
+	case code := <-done:
+		t.Fatalf("one Ctrl-C ended hangar with %d", code)
+	case <-time.After(200 * time.Millisecond):
+	}
+	r.sigs.raise(t, os.Interrupt)
+	select {
+	case code := <-done:
+		if code != cli.ExitExecFailed || !strings.Contains(errOut, "interrupted twice") {
+			t.Errorf("exit %d, stderr %q", code, errOut)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a second Ctrl-C did not end hangar")
 	}
 }
