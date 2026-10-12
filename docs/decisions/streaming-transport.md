@@ -11,6 +11,19 @@ streams through Cloudflare are risky.
 ## Decision
 
 - Bidirectional streams use WebSocket, with messages still defined in proto.
+  A container's exec is the first
+  (`proto/hangar/compute/v1alpha1/container_exec.proto`, `internal/execws`):
+  - `GET /v1/projects/{project}/containers/{name}:exec`, authenticated as
+    any call on the listener is, with a subprotocol naming the messages'
+    version (`hangar.exec.v1alpha1`); one proto message per binary
+    WebSocket message.
+  - Everything that can refuse it does so before the upgrade, as an HTTP
+    error whose body is a Connect error's JSON, so clients read it as they
+    read any Connect error. After the upgrade, a failure closes the
+    WebSocket with 4000 plus the Connect code and the message as its
+    reason; a normal close follows the last message.
+  - The server pings every 30 s, as `Watch` sends bookmarks, and takes a
+    client whose pong does not come in 30 s more to be gone.
 - Everything else uses Connect unary and server-streaming calls.
 - `Watch` sends a `BOOKMARK` every 30 seconds as a heartbeat, so idle streams
   survive proxies and clients advance their revision.

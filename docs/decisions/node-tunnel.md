@@ -1,4 +1,4 @@
-# The apiserver calls a node over a tunnel the node opens; logs are one stream
+# The apiserver calls a node over a tunnel the node opens; logs are one stream; exec is docker exec
 
 Status: accepted, 2026-10.
 
@@ -90,11 +90,52 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   record are skipped; forged records garble only the container's own log.
   Follows wait on the client: a slow reader slows the node's read through
   HTTP/2's flow control, past the stream's window of 1 MiB.
+- **An exec runs as `docker exec` does, for as long as its call.** The
+  client's WebSocket (`streaming-transport.md`) is relayed to the node's
+  `NodeService.Exec`, a bidirectional Connect call on the tunnel, and on to
+  the guest agent's `Exec` (`guest-agent.md`).
+  - The process inherits the container's environment, user and working
+    directory, as its VM was started (the host keeps that spec), with
+    what the exec sets instead. It has no stdin unless asked: without a
+    terminal its stdin is closed at once; on a terminal nothing is typed.
+    On a terminal, stdout and stderr are one stream. The exit, the
+    signal that caused it included, comes last; `hangar exec` exits with
+    its code.
+  - Each end of the relay ends the next: a client that closes, drops, or
+    leaves a ping unanswered ends the apiserver's call to the node, which
+    resets the stream on the tunnel; the node's call to the guest ends
+    with it, on a vsock connection of its own that is closed, and
+    hangar-init kills the process's group. A VM that stops or restarts
+    ends its execs as `Unavailable`.
+  - The apiserver holds a message each way at a time: what one side does
+    not read holds up the other past the WebSocket's buffers and the
+    stream's window on the tunnel, never memory in the apiserver. A
+    message is at most 256 KiB from a client and 64 KiB of output from a
+    node. A client that stops reading answers no ping, so it is dropped
+    within a minute.
+  - Refused before the WebSocket opens, in this order: whoever is not
+    authorized (`compute.containers.exec`, told nothing of the container,
+    as a read is not), a container without a machine on a node or whose
+    machine is not running (`FailedPrecondition`), a node not connected
+    (`Unavailable`), and a caller over the caps on calls to nodes
+    (`ResourceExhausted`, shared with logs). After it opens, the node can still
+    refuse it, as for a VM that stopped since.
+  - Every exec is logged once by the apiserver, as it ends: the caller,
+    the container, its machine, the command and whether it had a terminal
+    or stdin, how it ended, and how long it took. Never its input or
+    output.
+- **Running a process in a container is a permission of its own**,
+  `compute.containers.exec`, apart from `get` and `logs`: it reaches
+  everything the container can. `tenant.owner` and `platform.root` hold
+  it; a sponsor does not.
 
 ## Consequences
 
-- A client going away ends the node's read: the apiserver's call is the
-  client's request's, and HTTP/2 resets the stream on the tunnel.
-- A node's logs are unreadable while its agent is down, though the VMs run
-  on and their logs are kept.
+- A client going away ends the node's read, or its exec: the apiserver's
+  call is the client's request's, and HTTP/2 resets the stream on the
+  tunnel.
+- A node's logs are unreadable, and its containers cannot be exec'd in,
+  while its agent is down, though the VMs run on and their logs are kept.
+- An exec lasts no longer than its connection: an apiserver or agent
+  restart, or a tunnel dropping, kills it.
 - Times in a log are the guest's clock; `--since` trusts them.
