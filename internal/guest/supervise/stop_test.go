@@ -44,11 +44,12 @@ func TestStopTermsTheGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The child in the group says it was asked, too.
-	p := group(t, r, `sh -c 'trap "echo child; exit 0" TERM; while :; do sleep 0.05; done' &
+	p := group(t, r, `sh -c 'trap "echo child; exit 0" TERM; echo armed; while :; do sleep 0.05; done' &
 trap 'wait; echo main; exit 7' TERM
 echo ready
 while :; do sleep 0.05; done`, out)
 	waitOutput(t, out, "ready")
+	waitOutput(t, out, "armed") // the child's trap is set too
 	var s supervise.Stopper
 	s.Started(p)
 	start := time.Now()
