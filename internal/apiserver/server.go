@@ -25,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/servicegen"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
@@ -63,6 +64,11 @@ type Config struct {
 	// MaxNodeCallsPerNode cap the calls to nodes open at once; zero means
 	// their Default.
 	MaxNodeCallsPerPrincipal, MaxNodeCallsPerTenant, MaxNodeCallsPerNode int
+	// ExecPing, ExecPong and ExecStart time a container's exec: how often
+	// its client is pinged, how long a pong may take, and how long the
+	// start may; zero means DefaultExecPing, DefaultExecPong and
+	// DefaultExecStart.
+	ExecPing, ExecPong, ExecStart time.Duration
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -146,6 +152,7 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 		connect.WithInterceptors(chain.Interceptor()))
 	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(containerLogs{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
+	mux.HandleFunc(execws.Pattern, s.containerExec(chain))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})

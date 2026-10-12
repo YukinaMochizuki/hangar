@@ -33,6 +33,9 @@ const (
 	// Logs reads what a container wrote; only containers use it. It is not
 	// Get: output can hold what the spec does not.
 	Logs Verb = "logs"
+	// Exec runs a process in a container; only containers use it. It is
+	// neither Get nor Logs: it reaches everything the container can.
+	Exec Verb = "exec"
 )
 
 // CreateTenant is the permission to open a tenant of one's own.
@@ -40,6 +43,9 @@ const CreateTenant = "tenancy.tenants.create"
 
 // ContainerLogs is the permission to read a container's output.
 var ContainerLogs = Permission(registry.Container, Logs)
+
+// ContainerExec is the permission to run a process in a container.
+var ContainerExec = Permission(registry.Container, Exec)
 
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
@@ -69,8 +75,8 @@ type Role struct {
 	Level ScopeLevel
 	// verbs are granted on every kind.
 	verbs []Verb
-	// permissions are granted one by one.
-	permissions []string
+	// Permissions are granted one by one, such as one verb on one kind.
+	Permissions []string
 	// Member makes whoever holds the role, at platform level, a platform
 	// member: someone allowed to use Hangar at all.
 	Member bool
@@ -78,16 +84,16 @@ type Role struct {
 
 // Grants reports whether the role includes the permission.
 func (r Role) Grants(permission string) bool {
-	return slices.Contains(r.verbs, verbOf(permission)) || slices.Contains(r.permissions, permission)
+	return slices.Contains(r.verbs, verbOf(permission)) || slices.Contains(r.Permissions, permission)
 }
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs}, Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, Permissions: []string{CreateTenant, ContainerLogs, ContainerExec}, Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
-	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs}},
+	"platform.sponsor": {Level: PlatformLevel, Permissions: []string{CreateTenant}, Member: true},
+	"platform.member":  {Level: PlatformLevel, Permissions: []string{CreateTenant}, Member: true},
+	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, Permissions: []string{ContainerLogs, ContainerExec}},
 }
