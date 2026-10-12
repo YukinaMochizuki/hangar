@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 )
@@ -365,50 +366,55 @@ func (a *app) waitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
-			defer cancel()
-			key := client.Key{Project: project, Name: args[1]}
-			done := func(o proto.Message) bool {
-				if condType == "" {
-					return o == nil
-				}
-				return o != nil && conditionMet(o, condType)
-			}
-
-			o, err := cl.Get(ctx, r, key)
-			switch {
-			case connect.CodeOf(err) == connect.CodeNotFound && condType == "":
-				return nil
-			case err != nil:
-				return timeoutOr(ctx, err)
-			case done(o):
-				return nil
-			}
-			errDone := errors.New("done")
-			err = cl.Watch(ctx, r, client.ListOptions{Project: project}, object.Meta(o).GetResourceVersion(), func(ev client.Event) error {
-				if ev.Object == nil || object.Meta(ev.Object).GetName() != key.Name {
-					return nil
-				}
-				if ev.Type == metav1.EventType_EVENT_TYPE_DELETED {
-					if condType == "" {
-						return errDone
-					}
-					return &exitError{code: ExitNotFound, err: fmt.Errorf("%s was deleted", objectName(r, ev.Object))}
-				}
-				if done(ev.Object) {
-					return errDone
-				}
-				return nil
-			})
-			if errors.Is(err, errDone) {
-				return nil
-			}
-			return timeoutOr(ctx, err)
+			return await(cmd, cl, r, client.Key{Project: project, Name: args[1]}, condType, timeout)
 		},
 	}
 	cmd.Flags().StringVar(&forCond, "for", "", "condition=TYPE or delete")
 	cmd.Flags().DurationVar(&timeout, "timeout", 5*time.Minute, "give up after this long")
 	return cmd
+}
+
+// await waits until the object's condition condType is True for its current
+// generation, or with an empty condType until the object is gone.
+func await(cmd *cobra.Command, cl *client.Client, r registry.Resource, key client.Key, condType string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+	defer cancel()
+	done := func(o proto.Message) bool {
+		if condType == "" {
+			return o == nil
+		}
+		return o != nil && conditionMet(o, condType)
+	}
+
+	o, err := cl.Get(ctx, r, key)
+	switch {
+	case connect.CodeOf(err) == connect.CodeNotFound && condType == "":
+		return nil
+	case err != nil:
+		return timeoutOr(ctx, err)
+	case done(o):
+		return nil
+	}
+	errDone := errors.New("done")
+	err = cl.Watch(ctx, r, client.ListOptions{Project: key.Project}, object.Meta(o).GetResourceVersion(), func(ev client.Event) error {
+		if ev.Object == nil || object.Meta(ev.Object).GetName() != key.Name {
+			return nil
+		}
+		if ev.Type == metav1.EventType_EVENT_TYPE_DELETED {
+			if condType == "" {
+				return errDone
+			}
+			return &exitError{code: ExitNotFound, err: fmt.Errorf("%s was deleted", objectName(r, ev.Object))}
+		}
+		if done(ev.Object) {
+			return errDone
+		}
+		return nil
+	})
+	if errors.Is(err, errDone) {
+		return nil
+	}
+	return timeoutOr(ctx, err)
 }
 
 // conditionMet reports whether the condition is True and was computed for the
