@@ -12,6 +12,7 @@ create taps and an nftables table, and turn on IPv4 forwarding.
 | `test/testbed/disks/` | The image and storage drivers (`internal/node/driver/registry`, `zfsstore`) on the `hangar` pool: the conformance suite (`drivertest`) with decoy datasets about, Docker Hub pulls by tag and digest compared with the reference flattening, and a guest booting from a root disk larger than its image, its filesystem grown by hangar-init |
 | `test/testbed/vms/` | The real hypervisor driver (`internal/node/driver/chvm`) and its launcher, `hangar-node vmm`, under real systemd and Cloud Hypervisor, with every other real driver: the conformance suite (L3) with guests booting from root disks the storage driver made, graceful and forced stops (`Stop`, a process ignoring SIGTERM, a frozen guest), restart counts, a VM outliving its agent killed outright, root disk links refused by `BLKZNAME`, the console log under a 40 MiB flood and forged records (one VM's harming no other), a serial log failing under a `chattr +i` directory without freezing the guest, VMs interrupted as by a reboot under each policy, the driver reconnecting to systemd, nothing left after the sweep with decoy units and files about, and `hangar-node --drivers=host` starting |
 | `test/testbed/network/` | The real network driver (`internal/node/driver/hostnet`): the drivers' conformance suite (L3), then stand-in guests on taps through both NATs, isolation, forged sources, egress only by the uplink, drift, failing watches, collisions and cleanup. Needs root, not KVM |
+| `test/testbed/flow/` | The whole system, as deploy/host puts it on a host: the real `hangar-apiserver` (as `nobody`) and `hangar-node --drivers=host` (as root, over the apiserver's node socket) as processes, driven by the real `hangar` CLI. One test, `TestFlow`, in ordered scenarios, each checked from the API and from the host: apply and Ready; online through both NATs; stop and start with `runState`, the disk kept; restart under `on-failure`; growing the disk; changing the image; the agent killed mid-pull and started again; delete |
 | `test/testbed/internal/vmtest/` | Not tests: the harness that boots those guests, for any L4 package. A package calls `vmtest.Main` from its `TestMain`, then `vmtest.New`, `Start`, `Ready`, `Exec` |
 | `test/testbed/host-bootstrap.sh` | `deploy/host` on a VM made to look like a fresh OVH install (`docs/runbook/host-bootstrap.md`) |
 | `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file and `hangar/images`, as a host has them, for `test/testbed/disks` |
@@ -46,7 +47,8 @@ make e2e-host
 
 It rebuilds the initramfs, makes the root disk image on first use, builds
 `bin/hangar-node` (the VMs' launcher, `HANGAR_TESTBED_NODE` names another),
-and runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
+`bin/hangar-apiserver` and `bin/hangar` (`HANGAR_TESTBED_APISERVER`,
+`HANGAR_TESTBED_CLI`), and runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
 tests are built as you and run as root. The root disk image,
 `.cache/testbed/dind-<digest>.ext4`, comes from the `docker:dind` image
 pinned by digest in the `Makefile` (`test/testbed/guest-rootfs.sh` makes it,
@@ -98,6 +100,26 @@ are the units `hangar-vmdecoy.service`, `hangar-decoy-vm-m1.service` and
 `hangar-vm-*` unit, are swept at the start of a run and at its end.
 `hangar-testbed-reset` does not know them yet: after a run killed outright,
 the next run's sweep, or `systemctl stop 'hangar-vm-*'`, removes them.
+
+`make e2e-host-flow` runs the full flow alone (`RUN=regexp` picks
+scenarios, such as `RUN=TestFlow/1-`, though each stands on the ones
+before it). It pulls `busybox`, `debian` and `nginx` from Docker Hub by
+pinned digest, and its first container fetches
+`http://cloudflare.com/cdn-cgi/trace`, so it needs outbound internet access
+and DNS. The apiserver listens on a free loopback port in dev auth, its
+database, node socket and a copy of its binary in
+`/var/tmp/hangar-testbed-flow/api` (`nobody` cannot read a checkout in a home
+directory); the agent runs with `--zfs-dataset hangar/testbed-flow`,
+`--image-dir /var/lib/hangar/images/testbed-flow` and `--vm-dir
+/var/tmp/hangar-testbed-flow/vms`, and the uplink of the default route.
+Their logs, `apiserver.log` and `node-N.log` (one per start of the agent),
+are in `/var/tmp/hangar-testbed-flow` and are logged when a scenario fails.
+The agent and the apiserver die with the test binary (`Pdeathsig`); the VMs,
+which outlive the agent by design, do not. The start of a run and its end
+sweep every `hangar-vm-*` unit, the network driver's namespaces and links,
+the dataset and both directories, and kill an agent or apiserver a run
+killed outright left. `hangar-testbed-reset` removes the dataset but not
+the units or `/var/tmp/hangar-testbed-flow`; the next run's sweep does.
 
 `make e2e-host-network` runs the network tests alone, which need no guest
 artifacts, no KVM and no Cloud Hypervisor: a bare Ubuntu 24.04 VM with Go,
