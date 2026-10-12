@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"testing"
@@ -76,6 +77,10 @@ func (w *world) startAgent() {
 		Name:    apiservertest.Node,
 		HTTP:    hc,
 		BaseURL: client.UnixSocketURL,
+		Tunnel: func(ctx context.Context) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", w.env.Socket)
+		},
+		LogPoll: 20 * time.Millisecond,
 		Host: func() (*computev1alpha1.NodeResources, error) {
 			return &computev1alpha1.NodeResources{Cpu: "8", Memory: "16Gi"}, nil
 		},

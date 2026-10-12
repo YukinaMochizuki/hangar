@@ -1,0 +1,299 @@
+package e2e
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/emptypb"
+
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
+	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
+	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/guest/console"
+)
+
+func (w *world) logsAs(email string) computev1alpha1connect.ContainerLogsServiceClient {
+	return computev1alpha1connect.NewContainerLogsServiceClient(apiservertest.DevUser(email), w.env.URL)
+}
+
+// readLogs reads a container's logs to their end, rendered as
+// boot:stream:data lines, an exit as boot:exit:code.
+func readLogs(ctx context.Context, c computev1alpha1connect.ContainerLogsServiceClient, req *computev1alpha1.ContainerLogsRequest) ([]string, error) {
+	stream, err := c.ContainerLogs(ctx, connect.NewRequest(req))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = stream.Close() }()
+	var out []string
+	for stream.Receive() {
+		out = append(out, render(stream.Msg().GetRecords())...)
+	}
+	return out, stream.Err()
+}
+
+func render(recs []*computev1alpha1.ContainerLogRecord) []string {
+	var out []string
+	for _, r := range recs {
+		s := strings.ToLower(strings.TrimPrefix(r.GetStream().String(), "CONTAINER_LOG_STREAM_"))
+		if r.GetExit() != nil {
+			out = append(out, fmt.Sprintf("%d:exit:%d", r.GetBoot(), r.GetExit().GetCode()))
+			continue
+		}
+		out = append(out, fmt.Sprintf("%d:%s:%s", r.GetBoot(), s, strings.TrimSuffix(string(r.GetData()), "\n")))
+	}
+	return out
+}
+
+// follower follows a container's logs in the background.
+type follower struct {
+	mu     sync.Mutex
+	lines  []string
+	err    error
+	done   chan struct{}
+	cancel func()
+}
+
+func (w *world) follow(email, name string) *follower {
+	ctx, cancel := context.WithCancel(context.Background())
+	f := &follower{done: make(chan struct{}), cancel: cancel}
+	stream, err := w.logsAs(email).ContainerLogs(ctx, connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: project, Name: name, Follow: true}))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	go func() {
+		defer close(f.done)
+		defer func() { _ = stream.Close() }()
+		for stream.Receive() {
+			f.mu.Lock()
+			f.lines = append(f.lines, render(stream.Msg().GetRecords())...)
+			f.mu.Unlock()
+		}
+		f.mu.Lock()
+		f.err = stream.Err()
+		f.mu.Unlock()
+	}()
+	w.t.Cleanup(func() { cancel(); <-f.done })
+	return f
+}
+
+func (f *follower) has(line string) (bool, string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, l := range f.lines {
+		if l == line {
+			return true, ""
+		}
+	}
+	return false, strings.Join(f.lines, " | ")
+}
+
+func (f *follower) ended(t *testing.T, within time.Duration) error {
+	t.Helper()
+	select {
+	case <-f.done:
+	case <-time.After(within):
+		t.Fatal("the follow did not end")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.err
+}
+
+func contains(lines []string, want ...string) bool {
+	i := 0
+	for _, l := range lines {
+		if i < len(want) && l == want[i] {
+			i++
+		}
+	}
+	return i == len(want)
+}
+
+// TestContainerLogs: a container's output, read through the apiserver
+// from the node's host over the node's tunnel, as one stream across its
+// boots; a follow sees what comes as it comes, and a client going away
+// ends the node's read.
+func TestContainerLogs(t *testing.T) {
+	w := newWorld(t)
+	w.apply(container("api", "nginx"))
+	w.waitReason("api", "Running")
+	uid := w.machine("api").GetMetadata().GetUid()
+	if err := w.host.Print(uid, console.Stdout, "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.host.Print(uid, console.Stderr, "oops\n"); err != nil {
+		t.Fatal(err)
+	}
+	root := w.logsAs(apiservertest.Root)
+	var lines []string
+	w.eventually("the output in the logs", func() (bool, string) {
+		var err error
+		lines, err = readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		return err == nil && contains(lines, "1:stdout:hello", "1:stderr:oops"), fmt.Sprint(lines, err)
+	})
+	if !strings.HasPrefix(lines[0], "1:init:") {
+		t.Errorf("the log starts with %q, not hangar-init's", lines[0])
+	}
+
+	f := w.follow(apiservertest.Root, "api")
+	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:stdout:hello") })
+	if err := w.host.Exit(uid, 1); err != nil {
+		t.Fatal(err)
+	}
+	w.eventually("the restart", func() (bool, string) { return w.host.Snapshot().VMs[uid].Boots == 2, "" })
+	if err := w.host.Print(uid, console.Stdout, "again\n"); err != nil {
+		t.Fatal(err)
+	}
+	w.eventually("the follow seeing the exit and the next boot", func() (bool, string) {
+		if ok, last := f.has("1:exit:1"); !ok {
+			return false, last
+		}
+		return f.has("2:stdout:again")
+	})
+	if w.host.LogReaders() != 1 {
+		t.Errorf("%d reads of logs under way, want the follow's", w.host.LogReaders())
+	}
+	f.cancel()
+	_ = f.ended(t, 5*time.Second)
+	w.eventually("the node's read ended with the client", func() (bool, string) {
+		return w.host.LogReaders() == 0, fmt.Sprint(w.host.LogReaders())
+	})
+
+	tail, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api", TailLines: ptr(int64(1))})
+	if err != nil || len(tail) != 1 || tail[0] != "2:stdout:again" {
+		t.Errorf("a tail of one line: %q %v", tail, err)
+	}
+
+	w.delete("api")
+	w.waitGone("api")
+	if _, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"}); connect.CodeOf(err) != connect.CodeNotFound {
+		t.Errorf("the logs of a container deleted: %v", err)
+	}
+	w.waitHostEmpty()
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// TestAFollowEndsWithTheContainer: a container that exits for good ends
+// its follow, once its exit is read.
+func TestAFollowEndsWithTheContainer(t *testing.T) {
+	w := newWorld(t)
+	c := container("job", "nginx")
+	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
+	w.apply(c)
+	w.waitReason("job", "Running")
+	f := w.follow(apiservertest.Root, "job")
+	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
+	if err := w.host.Exit(w.machine("job").GetMetadata().GetUid(), 3); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.ended(t, 10*time.Second); err != nil {
+		t.Errorf("the follow ended with %v", err)
+	}
+	if ok, lines := f.has("1:exit:3"); !ok {
+		t.Errorf("the follow ended without the exit: %s", lines)
+	}
+}
+
+// TestReadingLogsNeedsItsOwnPermission: the tenant's owner reads them;
+// a sponsor, a member, and the owner of another tenant do not, and are
+// told so the same whether the container exists or not; and a container
+// not yet placed has none to read.
+func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
+	w := newIdleWorld(t)
+	bind := func(name, user, role string, scope *iamv1alpha1.BindingScope) {
+		t.Helper()
+		if _, err := w.root.Apply(context.Background(), registry.RoleBinding, &iamv1alpha1.RoleBinding{
+			Metadata: &metav1.ObjectMeta{Name: name},
+			Spec: &iamv1alpha1.RoleBindingSpec{
+				Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: user}}, Role: role, Scope: scope,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	platform := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}}
+	for _, u := range []string{"owner@example.com", "other@example.com", "member@example.com"} {
+		bind("member-"+strings.Split(u, "@")[0], u, "platform.member", platform)
+	}
+	bind("sponsor", "sponsor@example.com", "platform.sponsor", platform)
+	bind("owner", "owner@example.com", "tenant.owner", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}})
+	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	bind("other-owner", "other@example.com", "tenant.owner", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "other"}})
+
+	// The agent is not started: the machine is never placed.
+	w.apply(container("api", "nginx"))
+	req := func(name string) *computev1alpha1.ContainerLogsRequest {
+		return &computev1alpha1.ContainerLogsRequest{Project: project, Name: name}
+	}
+	w.eventually("the owner told the container has no machine yet", func() (bool, string) {
+		_, err := readLogs(context.Background(), w.logsAs("owner@example.com"), req("api"))
+		return connect.CodeOf(err) == connect.CodeFailedPrecondition, fmt.Sprint(err)
+	})
+	for _, user := range []string{"sponsor@example.com", "member@example.com", "other@example.com", "stranger@example.com"} {
+		for _, name := range []string{"api", "absent"} {
+			_, err := readLogs(context.Background(), w.logsAs(user), req(name))
+			if connect.CodeOf(err) != connect.CodePermissionDenied {
+				t.Errorf("%s reading %s's logs: %v, want denied", user, name, err)
+			}
+		}
+	}
+	// The owner reads the container itself as well.
+	if _, err := w.env.As("owner@example.com").Get(context.Background(), registry.Container, client.Key{Project: project, Name: "api"}); err != nil {
+		t.Errorf("the owner reading the container: %v", err)
+	}
+	if _, err := readLogs(context.Background(), w.logsAs("owner@example.com"), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api", TailLines: ptr(int64(-1))}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Errorf("a negative tail: %v", err)
+	}
+
+	w.startAgent()
+	w.waitReason("api", "Running")
+	if _, err := readLogs(context.Background(), w.logsAs("owner@example.com"), req("api")); err != nil {
+		t.Errorf("the owner reading the logs: %v", err)
+	}
+}
+
+// TestLogsOfANodeDown: a node with no tunnel, its agent stopped, fails a
+// read at once with Unavailable, and a follow under way when it goes too.
+func TestLogsOfANodeDown(t *testing.T) {
+	w := newWorld(t)
+	w.apply(container("api", "nginx"))
+	w.waitReason("api", "Running")
+	f := w.follow(apiservertest.Root, "api")
+	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
+
+	w.stopAgent()
+	if err := f.ended(t, 5*time.Second); connect.CodeOf(err) != connect.CodeUnavailable {
+		t.Errorf("the follow ended with %v, want unavailable", err)
+	}
+	w.eventually("a read failing as unavailable", func() (bool, string) {
+		start := time.Now()
+		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		return connect.CodeOf(err) == connect.CodeUnavailable && time.Since(start) < time.Second, fmt.Sprint(err)
+	})
+	var ce *connect.Error
+	_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+	if !errors.As(err, &ce) || !strings.Contains(ce.Message(), "not connected") {
+		t.Errorf("the error says %v", err)
+	}
+
+	// The node back, so are its logs.
+	w.startAgent()
+	w.eventually("the logs readable again", func() (bool, string) {
+		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		return err == nil, fmt.Sprint(err)
+	})
+}
