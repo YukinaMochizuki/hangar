@@ -59,6 +59,10 @@ type Config struct {
 	// TunnelLiveness is the node tunnels'; zero means
 	// tunnel.DefaultLiveness.
 	TunnelLiveness tunnel.Liveness
+	// MaxNodeCallsPerTenant and MaxNodeCallsPerNode cap the calls to nodes
+	// open at once; zero means DefaultMaxNodeCallsPerTenant and
+	// DefaultMaxNodeCallsPerNode.
+	MaxNodeCallsPerTenant, MaxNodeCallsPerNode int
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -79,6 +83,8 @@ type Server struct {
 	// tunnels are the node agents' tunnels, through which the apiserver
 	// calls them.
 	tunnels *tunnel.Hub
+	// nodeCalls caps the calls to nodes open at once.
+	nodeCalls *nodeCalls
 	// capacity serializes every decision that reserves memory or disk on a node:
 	// placing a machine, and growing a placed one.
 	capacity sync.Mutex
@@ -115,13 +121,14 @@ func New(cfg Config) *Server {
 		cfg.NodeMonitorInterval = 10 * time.Second
 	}
 	s := &Server{
-		cfg:      cfg,
-		store:    cfg.Store,
-		clock:    cfg.Clock,
-		log:      cfg.Logger,
-		authz:    authz.New(cfg.Store),
-		backends: map[string]*backend{},
-		tunnels:  &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
+		cfg:       cfg,
+		store:     cfg.Store,
+		clock:     cfg.Clock,
+		log:       cfg.Logger,
+		authz:     authz.New(cfg.Store),
+		backends:  map[string]*backend{},
+		tunnels:   &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
+		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
 	}
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}

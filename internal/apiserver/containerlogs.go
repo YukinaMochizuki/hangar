@@ -2,22 +2,19 @@ package apiserver
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"slices"
-	"time"
 
 	"connectrpc.com/connect"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	nodev1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1"
-	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
-	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
 // openTunnel takes a node agent's tunnel (internal/tunnel). The tunnel is
@@ -39,21 +36,6 @@ func (s *Server) openTunnel(chain auth.Chain) http.HandlerFunc {
 		s.tunnels.Accept(w, r, p.ID)
 	}
 }
-
-// nodeClient is node's NodeService, reached over the tunnel the node keeps
-// open, and a channel closed once that tunnel drops. Reaching nodes some
-// other way changes only this.
-func (s *Server) nodeClient(node string) (nodev1connect.NodeServiceClient, <-chan struct{}, error) {
-	t, err := s.tunnels.Node(node)
-	if err != nil {
-		return nil, nil, err
-	}
-	return nodev1connect.NewNodeServiceClient(t.HTTPClient(), "http://"+node, connect.WithReadMaxBytes(maxNodeMessage)), t.Done(), nil
-}
-
-// maxNodeMessage bounds a message from a node: a batch of log records is
-// about driver.MaxLogBatch, and one record at most 64 KiB more.
-const maxNodeMessage = 1 << 20
 
 // containerLogs serves ContainerLogsService.
 type containerLogs struct{ s *Server }
@@ -95,14 +77,19 @@ func (l containerLogs) ContainerLogs(ctx context.Context, req *connect.Request[c
 	if node == "" {
 		return failedPrecondition("container %q is not placed on a node yet", key.Name)
 	}
-	nodes, dropped, err := s.nodeClient(node)
-	if errors.Is(err, tunnel.ErrNoTunnel) {
-		return connect.NewError(connect.CodeUnavailable, fmt.Errorf("container %q's node %s is not connected", key.Name, node))
-	}
+	project, err := s.get(ctx, registry.Project, resource.Key{Name: key.Project})
 	if err != nil {
-		return connect.NewError(connect.CodeInternal, err)
+		return apiError(err)
 	}
-	logs, err := nodes.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{
+	if project == nil {
+		return failedPrecondition("project %q is gone", key.Project)
+	}
+	call, err := s.callNode(project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), node, fmt.Sprintf("container %q", key.Name))
+	if err != nil {
+		return err
+	}
+	defer call.release()
+	logs, err := call.nodes.Logs(ctx, connect.NewRequest(&nodev1.LogsRequest{
 		MachineUid: machine.GetMetadata().GetUid(),
 		Follow:     m.GetFollow(),
 		TailLines:  m.TailLines,
@@ -120,29 +107,7 @@ func (l containerLogs) ContainerLogs(ctx context.Context, req *connect.Request[c
 	if err == nil || ctx.Err() != nil {
 		return ctx.Err()
 	}
-	return nodeError(err, dropped, fmt.Sprintf("container %q's node %s", key.Name, node))
-}
-
-// tunnelGrace is how long a failed call waits to see whether it failed
-// because its tunnel dropped: the call can learn of it first.
-const tunnelGrace = 200 * time.Millisecond
-
-// nodeError is what a call to a node that failed with err fails with: a
-// tunnel that dropped under it makes it Unavailable.
-func nodeError(err error, dropped <-chan struct{}, what string) error {
-	code, msg := connect.CodeUnknown, err.Error()
-	var ce *connect.Error
-	if errors.As(err, &ce) {
-		code, msg = ce.Code(), ce.Message()
-	}
-	t := time.NewTimer(tunnelGrace)
-	defer t.Stop()
-	select {
-	case <-dropped:
-		return connect.NewError(connect.CodeUnavailable, fmt.Errorf("%s dropped its connection: %s", what, msg))
-	case <-t.C:
-	}
-	return connect.NewError(code, fmt.Errorf("%s: %s", what, msg))
+	return call.failed(err)
 }
 
 func containerLogRecords(recs []*nodev1.LogRecord) []*computev1alpha1.ContainerLogRecord {
