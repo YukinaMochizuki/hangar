@@ -111,11 +111,23 @@ with the host after any of these, and nothing would notice.
   another image, and a tag is resolved again, with the backoff, so an image
   fixed and pushed under the same tag is pulled. Asking a guest agent
   whether it answers is bounded to
-  seconds. One worker then serves every machine in turn. Stopping a VM
-  still runs under the lock, and takes as long as its guest takes to stop:
-  about 20 s at worst (3 s to ask the guest, the 10 s grace and 5 s of
-  slack, 2 s for the launcher to kill Cloud Hypervisor); it is the next
-  step to move off the lock the same way.
+  seconds. One worker then serves every machine in turn.
+- **A VM is stopped off the host lock.** A stop takes as long as its guest
+  takes: about 20 s at worst (3 s to ask the guest, the 10 s grace and 5 s
+  of slack, 2 s for the launcher to kill Cloud Hypervisor). Whatever needs
+  a VM stopped (its machine stopped, deleted or changed, or the sweep)
+  begins the stop under the lock and lets it run in the background; when it
+  succeeds, every machine is checked again, and the step that wanted it
+  goes on. A machine with no VM listed is not stopped at all. A stop that
+  fails is reported on its machine and begun again after a second, twice as
+  long after each failure in a row, up to a minute, however often the
+  machine is checked meanwhile; it checks no other machine. While a
+  machine's stop runs, nothing else touches it: its reconciles only wait,
+  so it is neither started again nor stopped twice, and the
+  sweep passes by its VM, disk, interfaces and logs, which go at the first
+  sweep after the stop. What the agent keeps of a stop under way is lost
+  with it; a stop cut short is found again, as the VM still listed or the
+  driver's stopping mark, and done again.
 - **An image reference is resolved once**: the reference and its digest
   are kept in the machine's status, and resolved again only when the spec
   names another image. A tag moving upstream never rebuilds a container's

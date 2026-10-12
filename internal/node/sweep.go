@@ -13,6 +13,8 @@ import (
 // sweep removes what no machine on this node accounts for, then networks
 // and bases nothing uses (docs/decisions/node-agent.md). A list it could not
 // read stops whatever depends on it: a failed list is never an empty one.
+// A VM is stopped off the host lock, and what its machine has left goes at
+// the first sweep after its stop.
 func (a *Agent) sweep(ctx context.Context) error {
 	a.host.Lock()
 	defer a.host.Unlock()
@@ -33,6 +35,14 @@ func (a *Agent) sweep(ctx context.Context) error {
 			delete(a.netChecked, uid)
 		}
 	}
+	for uid := range a.stops.ended {
+		if !mine[uid] {
+			delete(a.stops.ended, uid)
+		}
+	}
+	// A machine being stopped is passed by: its VM still uses its disk and
+	// interfaces, and its stop must be the only one.
+	gone := func(uid string) bool { return !mine[uid] && !a.stops.running[uid] }
 
 	d := a.cfg.Drivers
 	var errs []error
@@ -41,28 +51,34 @@ func (a *Agent) sweep(ctx context.Context) error {
 		return err == nil
 	}
 	if vms, err := d.Hypervisor.VMs(ctx); keep(err) {
+		listed := map[string]bool{}
 		for _, vm := range vms {
-			if !mine[vm.MachineUID] {
+			listed[vm.MachineUID] = true
+			if gone(vm.MachineUID) && !a.backingOff(vm.MachineUID) {
 				a.cfg.Log.Info("stopping a VM no machine accounts for", "machine_uid", vm.MachineUID)
-				keep(d.Hypervisor.Stop(ctx, vm.MachineUID))
+				a.beginStop(ctx, vm.MachineUID)
+			}
+		}
+		for uid := range a.stops.failed {
+			if !mine[uid] && !listed[uid] {
+				delete(a.stops.failed, uid)
 			}
 		}
 	}
-	// Logs of the VMs just stopped go too; a failed stop leaves the VM
-	// listed, and DeleteLogs refuses it.
+	// A failed stop leaves the VM listed, and DeleteLogs refuses it.
 	if logs, err := d.Hypervisor.Logs(ctx); keep(err) {
 		for _, uid := range logs {
-			if !mine[uid] {
+			if gone(uid) {
 				a.cfg.Log.Info("removing a console log no machine accounts for", "machine_uid", uid)
 				keep(d.Hypervisor.DeleteLogs(ctx, uid))
 			}
 		}
 	}
 	if ifaces, err := d.Network.Interfaces(ctx); keep(err) {
-		gone := map[string]bool{}
+		done := map[string]bool{}
 		for _, i := range ifaces {
-			if !mine[i.MachineUID] && !gone[i.MachineUID] {
-				gone[i.MachineUID] = true
+			if gone(i.MachineUID) && !done[i.MachineUID] {
+				done[i.MachineUID] = true
 				a.cfg.Log.Info("removing interfaces no machine accounts for", "machine_uid", i.MachineUID)
 				keep(d.Network.DeleteInterfaces(ctx, i.MachineUID))
 			}
@@ -70,7 +86,7 @@ func (a *Agent) sweep(ctx context.Context) error {
 	}
 	if roots, err := d.Storage.Roots(ctx); keep(err) {
 		for _, r := range roots {
-			if !mine[r.MachineUID] {
+			if gone(r.MachineUID) {
 				a.cfg.Log.Info("removing a root disk no machine accounts for", "machine_uid", r.MachineUID)
 				keep(d.Storage.DeleteRoot(ctx, r.MachineUID))
 			}
