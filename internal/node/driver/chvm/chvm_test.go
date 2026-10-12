@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -115,6 +116,10 @@ type fakeGuest struct {
 }
 
 func (g *fakeGuest) Ready(context.Context, string) error { return nil }
+
+func (g *fakeGuest) Exec(context.Context, string, driver.ExecSpec) (driver.ExecSession, error) {
+	return nil, errors.New("the hypervisor driver never execs")
+}
 
 func (g *fakeGuest) Stop(ctx context.Context, uid string, grace time.Duration) error {
 	g.mu.Lock()
@@ -296,7 +301,7 @@ func TestStartIsIdempotent(t *testing.T) {
 		if err := d.Start(t.Context(), other); err == nil {
 			t.Error("started another spec over a running VM")
 		}
-		if vm, ok := listed(t, d, "m1"); !ok || vm != first {
+		if vm, ok := listed(t, d, "m1"); !ok || !reflect.DeepEqual(vm, first) {
 			t.Errorf("listed %+v %t, want %+v", vm, ok, first)
 		}
 	}

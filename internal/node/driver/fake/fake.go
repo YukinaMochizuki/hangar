@@ -56,18 +56,19 @@ type Host struct {
 	logs       map[string]*consoleLog // console logs kept, by machine uid
 	logChanged chan struct{}          // closed when any log is written
 	logReaders int
-	stops      map[string]int        // guest Stops asked for, by machine uid
-	bootErr    map[string]error      // by machine uid; "" for every machine
-	silent     map[string]bool       // guests that never answer
-	hung       map[string]bool       // guests that take a call and never return it
-	stopDelay  map[string]*stopDelay // by machine uid; "" for every machine
-	stopCalls  map[string]int        // Hypervisor.Stop calls, failed ones too, by machine uid
-	readyCalls map[string]int        // Guest.Ready calls, by machine uid
-	listErr    map[string]error      // by listing: vms, interfaces, networks, roots, bases
-	removalErr error                 // fails stopping VMs and removing disks and interfaces
-	netErr     error                 // fails making and listing networks and interfaces
-	cloneErr   error                 // fails making root disks
-	capErr     error                 // fails reading the storage's capacity
+	stops      map[string]int               // guest Stops asked for, by machine uid
+	bootErr    map[string]error             // by machine uid; "" for every machine
+	silent     map[string]bool              // guests that never answer
+	hung       map[string]bool              // guests that take a call and never return it
+	stopDelay  map[string]*stopDelay        // by machine uid; "" for every machine
+	stopCalls  map[string]int               // Hypervisor.Stop calls, failed ones too, by machine uid
+	readyCalls map[string]int               // Guest.Ready calls, by machine uid
+	execs      map[string]map[*process]bool // exec processes running, by machine uid
+	listErr    map[string]error             // by listing: vms, interfaces, networks, roots, bases
+	removalErr error                        // fails stopping VMs and removing disks and interfaces
+	netErr     error                        // fails making and listing networks and interfaces
+	cloneErr   error                        // fails making root disks
+	capErr     error                        // fails reading the storage's capacity
 	vmChanges  chan struct{}
 	netChange  chan struct{}
 }
@@ -319,6 +320,7 @@ func (h *Host) exitLocked(machineUID string, code int) error {
 		return fmt.Errorf("no running VM for machine %s", machineUID)
 	}
 	h.writeLog(machineUID, console.ExitRecord(console.ExitStatus{Code: int32(code)}, time.Now()))
+	h.endExecsLocked(machineUID)
 	switch {
 	case v.spec.Restart == driver.RestartAlways,
 		v.spec.Restart == driver.RestartOnFailure && code != 0:
@@ -820,7 +822,7 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		boots = v.boots + 1
 	}
 	d.h.vms[spec.MachineUID] = &vm{
-		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now()},
+		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run},
 		spec:  spec,
 		boots: boots,
 	}
@@ -867,6 +869,7 @@ func (d hypervisor) Stop(ctx context.Context, machineUID string) error {
 	}
 	d.h.mu.Lock()
 	delete(d.h.vms, machineUID)
+	d.h.endExecsLocked(machineUID)
 	d.h.mu.Unlock()
 	return wait()
 }

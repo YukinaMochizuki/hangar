@@ -49,6 +49,8 @@ type Host struct {
 	// AskedToStop reports whether the guest of the machine's VM, stopped,
 	// was asked to stop its process before the VM went.
 	AskedToStop func(t *testing.T, machineUID string) bool
+	// Exec are the programs the guests can exec.
+	Exec *ExecPrograms
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -77,6 +79,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
+	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 }
 
 func must(t *testing.T, err error) {

@@ -160,6 +160,10 @@ type launcherGuest struct {
 
 func (g *launcherGuest) Ready(context.Context, string) error { return nil }
 
+func (g *launcherGuest) Exec(context.Context, string, driver.ExecSpec) (driver.ExecSession, error) {
+	return nil, errors.New("the launcher never execs")
+}
+
 func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {
 	g.mu.Lock()
 	g.graces = append(g.graces, grace)
