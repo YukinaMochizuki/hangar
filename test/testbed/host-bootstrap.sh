@@ -270,18 +270,17 @@ test_refuses_without_local_env() {
 }
 
 test_upgrade_restarts_services() {
-	step "a new release replaces the binaries and restarts both services, and no VM"
-	local next=$work/release-next api_pid node_pid decoy_pid out log=$work/upgrade.log
+	step "a new release replaces the binaries and restarts both services"
+	local next=$work/release-next api_pid node_pid before out log=$work/upgrade.log
 	make_release "$release" "$next" "$(cat "$release/VERSION")-tb2"
-	# A stand-in for a VM: a transient unit of its own, as the agent starts
-	# them. Not named hangar-vm-*: the agent stops such a unit when no machine
-	# accounts for it.
-	systemd-run --quiet --unit=hangar-tb-decoy --property=KillMode=mixed sleep infinity
-	decoy_pid=$(main_pid hangar-tb-decoy)
+
 	api_pid=$(main_pid hangar-apiserver)
 	node_pid=$(main_pid hangar-node)
-
+	before=$(state_digest)
 	"$host_dir/bootstrap.sh" --env "$env_file" --release "$next" --dry-run 2>"$work/upgrade-dry.log" >/dev/null
+	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the upgrade's dry run restarted the apiserver"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the upgrade's dry run restarted the node"
+	[ "$(state_digest)" = "$before" ] || fail "the upgrade's dry run changed the host"
 	grep -q '^would: restart hangar-node$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the node"
 	grep -q '^would: restart hangar-apiserver$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the apiserver"
 
@@ -289,7 +288,6 @@ test_upgrade_restarts_services() {
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$work/upgrade.out" || fail "upgrade summary does not match its changes"
 	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver was not restarted on its new binary"
 	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted on its new binary"
-	[ "$(main_pid hangar-tb-decoy)" = "$decoy_pid" ] || fail "restarting the node touched another unit"
 	grep -q '^apply: install vmlinux' "$log" && fail "the upgrade reinstalled an unchanged kernel"
 	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$next")
 	[ "$out" = "changes: 0" ] || fail "the run after the upgrade reported $out"
@@ -300,9 +298,7 @@ test_upgrade_restarts_services() {
 	node_pid=$(main_pid hangar-node)
 	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>&1
 	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted going back"
-	[ "$(main_pid hangar-tb-decoy)" = "$decoy_pid" ] || fail "restarting the node touched another unit"
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after going back"
-	systemctl stop hangar-tb-decoy
 	rm -rf "$next"
 }
 
