@@ -45,13 +45,25 @@ func blocked(reason string, err error) error { return &stuck{reason, err} }
 
 // reconcileMachine brings the host in line with one machine placed on this
 // node. Anything left on the host by machines that are gone is the sweep's.
-func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) error {
+func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err error) {
 	a.host.Lock()
 	defer a.host.Unlock()
 	m, err := a.getMachine(ctx, k)
 	if err != nil || m == nil || m.GetSpec().GetNode() != a.cfg.Name {
 		return err
 	}
+	uid := m.GetMetadata().GetUid()
+	if a.stops.running[uid] {
+		// Its stop's success, or its own retry, checks it again.
+		return stopping(uid)
+	}
+	defer delete(a.stops.ended, uid)
+	defer func() {
+		if err == nil {
+			// What it needed is done: a later stop is no retry.
+			delete(a.stops.failed, uid)
+		}
+	}()
 	if m.GetMetadata().GetDeleteTime() != nil {
 		return a.release(ctx, m)
 	}
@@ -147,8 +159,8 @@ func (a *Agent) vmOf(ctx context.Context, uid string) (*driver.VM, error) {
 // stop stops the machine's VM, keeping its disk and interfaces.
 func (a *Agent) stop(ctx context.Context, vm *driver.VM) (*observation, error) {
 	if vm != nil {
-		if err := a.cfg.Drivers.Hypervisor.Stop(ctx, vm.MachineUID); err != nil {
-			return nil, blocked(computeapi.ReasonBootFailed, err)
+		if err := a.stopVM(ctx, vm.MachineUID); err != nil {
+			return nil, err
 		}
 	}
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine is stopped")
@@ -205,8 +217,10 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
 	if i := slices.IndexFunc(roots, func(r driver.Disk) bool { return r.MachineUID == uid }); i >= 0 && roots[i].Digest != digest {
-		if err := d.Hypervisor.Stop(ctx, uid); err != nil {
-			return nil, blocked(computeapi.ReasonBootFailed, err)
+		if vm != nil {
+			if err := a.stopVM(ctx, uid); err != nil {
+				return nil, err
+			}
 		}
 		vm = nil
 		if err := d.Storage.DeleteRoot(ctx, uid); err != nil {
@@ -310,8 +324,8 @@ func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.
 		return !slices.ContainsFunc(have, func(h driver.Interface) bool { return sameInterface(h, w) })
 	})
 	if vm != nil && vm.State == driver.VMRunning && (stale || missing) {
-		if err := d.Hypervisor.Stop(ctx, uid); err != nil {
-			return nil, vm, blocked(computeapi.ReasonBootFailed, err)
+		if err := a.stopVM(ctx, uid); err != nil {
+			return nil, vm, err
 		}
 		vm = nil
 	}
@@ -347,8 +361,8 @@ const guestTimeout = 2 * time.Second
 func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM) (*observation, error) {
 	d := a.cfg.Drivers
 	if vm != nil && vm.SpecHash != spec.Hash() {
-		if err := d.Hypervisor.Stop(ctx, spec.MachineUID); err != nil {
-			return nil, blocked(computeapi.ReasonBootFailed, err)
+		if err := a.stopVM(ctx, spec.MachineUID); err != nil {
+			return nil, err
 		}
 		vm = nil
 	}
@@ -386,8 +400,16 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	}
 	uid := m.GetMetadata().GetUid()
 	d := a.cfg.Drivers
-	if err := d.Hypervisor.Stop(ctx, uid); err != nil {
+	vm, err := a.vmOf(ctx, uid)
+	if err != nil {
 		return err
+	}
+	// A VM not listed has nothing to stop; DeleteLogs removes what is left
+	// of it.
+	if vm != nil {
+		if err := a.stopVM(ctx, uid); err != nil {
+			return err
+		}
 	}
 	if err := d.Hypervisor.DeleteLogs(ctx, uid); err != nil {
 		return err
