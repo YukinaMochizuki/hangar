@@ -60,7 +60,9 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("root sizes", rootSizes, disks)
 	part("deleting disks", deletingDisks, disks)
 	part("reopening", reopening, disks)
-	part("network", network, func(h Host) bool { return h.Network != nil })
+	nets := func(h Host) bool { return h.Network != nil }
+	part("network", network, nets)
+	part("network changes", networkChanges, nets)
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
 }
@@ -411,6 +413,87 @@ func network(t *testing.T, h Host) {
 		t.Errorf("interfaces left: %v", ifs)
 	}
 	if nets, _ := h.Network.Networks(ctx); len(nets) != 0 {
+		t.Errorf("networks left: %v", nets)
+	}
+}
+
+// networkChanges holds the host to the spec it is ensured to as the spec
+// changes, and refuses interfaces no network on it can take.
+func networkChanges(t *testing.T, h Host) {
+	ctx := t.Context()
+	other := driver.NetworkSpec{
+		UID: "n2", CIDR: netip.MustParsePrefix("10.0.0.0/24"), Transit: netip.MustParsePrefix("100.64.0.2/31"),
+	}
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	must(t, h.Network.EnsureNetwork(ctx, other))
+	networks := func() map[string]driver.NetworkSpec {
+		t.Helper()
+		nets, err := h.Network.Networks(ctx)
+		must(t, err)
+		m := map[string]driver.NetworkSpec{}
+		for _, n := range nets {
+			m[n.UID] = n
+		}
+		return m
+	}
+	if nets := networks(); len(nets) != 2 || nets[testNet.UID] != testNet || nets[other.UID] != other {
+		t.Errorf("two networks with the same range listed as %v", nets)
+	}
+	other.CIDR = netip.MustParsePrefix("10.1.0.0/16")
+	other.Transit = netip.MustParsePrefix("100.64.0.4/31")
+	must(t, h.Network.EnsureNetwork(ctx, other))
+	if nets := networks(); nets[other.UID] != other {
+		t.Errorf("a network ensured to another range and transit is listed as %+v", nets[other.UID])
+	}
+
+	nowhere := eth0("m1")
+	nowhere.NetworkUID = "absent"
+	if _, err := h.Network.EnsureInterface(ctx, nowhere); err == nil {
+		t.Error("made an interface on a network the host does not have")
+	}
+	outside := eth0("m1")
+	outside.Address = netip.MustParsePrefix("10.9.0.2/24")
+	if _, err := h.Network.EnsureInterface(ctx, outside); err == nil {
+		t.Error("made an interface with an address outside its network")
+	}
+	if ifs, _ := h.Network.Interfaces(ctx); len(ifs) != 0 {
+		t.Errorf("refused interfaces are listed: %+v", ifs)
+	}
+
+	// An interface ensured again with another spec is listed once, as
+	// ensured last, wherever that puts it.
+	nic := eth0("m1")
+	_, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	nic.MAC = "02:00:00:00:00:02"
+	nic.NetworkUID = other.UID
+	nic.Address = netip.MustParsePrefix("10.1.0.2/16")
+	nic.Gateway = netip.MustParseAddr("10.1.0.1")
+	moved, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	if ifs, err := h.Network.Interfaces(ctx); err != nil || len(ifs) != 1 || ifs[0] != moved {
+		t.Errorf("an interface moved to another network is listed as %+v %v, want %+v", ifs, err, moved)
+	}
+	second := eth0("m1")
+	second.Name = "eth1"
+	second.MAC = "02:00:00:00:00:03"
+	second, err = h.Network.EnsureInterface(ctx, second)
+	must(t, err)
+	if second.Device == moved.Device {
+		t.Errorf("two interfaces of a machine share the device %q", moved.Device)
+	}
+
+	// A network deleted with interfaces in it takes them with it.
+	must(t, h.Network.DeleteNetwork(ctx, other.UID))
+	if ifs, err := h.Network.Interfaces(ctx); err != nil || len(ifs) != 1 || ifs[0] != second {
+		t.Errorf("after deleting the network of one, interfaces %+v %v, want only %+v", ifs, err, second)
+	}
+	if nets := networks(); len(nets) != 1 || nets[testNet.UID] != testNet {
+		t.Errorf("after deleting one network, %v", nets)
+	}
+	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+	if nets := networks(); len(nets) != 0 {
 		t.Errorf("networks left: %v", nets)
 	}
 }
