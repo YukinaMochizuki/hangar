@@ -44,6 +44,13 @@ load_env "${env_file:-$here/hosts/$host.env}"
 # config, so nothing may build on the new one yet.
 ! rollback_pending ||
 	die "$ROLLBACK_UNIT.timer is pending; wait for it to fire or run verify.sh, then re-run"
+# The services step would refuse without the local env file; refuse before
+# any step changes the host instead.
+if [ "$DRY_RUN" != 1 ] && { [ -z "$only" ] || [ "$only" = services ]; }; then
+	# shellcheck source=deploy/host/steps/80-services.sh
+	. "$here/steps/80-services.sh"
+	services_local_env_ok || die "$LOCAL_ENV is missing or wrong: $(services_local_env_how)"
+fi
 
 ran=0
 for f in "$here"/steps/[0-9][0-9]-*.sh; do

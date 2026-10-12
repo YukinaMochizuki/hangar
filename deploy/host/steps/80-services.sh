@@ -120,6 +120,10 @@ services_local_env_ok() {
 		grep -qE '^HANGAR_BOOTSTRAP_ADMIN=[^[:space:]]+@[^[:space:]]+$' "$LOCAL_ENV"
 }
 
+services_local_env_how() {
+	printf '%s\n' "write HANGAR_BOOTSTRAP_ADMIN=<email> to $LOCAL_ENV, root's, mode 0600 (docs/runbook/host-bootstrap.md)"
+}
+
 # services_admin prints the bootstrap admin's email from the local env file.
 services_admin() {
 	sed -n 's/^HANGAR_BOOTSTRAP_ADMIN=//p' "$LOCAL_ENV" | tail -n 1 | tr -d "\"'"
@@ -216,7 +220,8 @@ EOF
 services_apply() {
 	local u before reload=0
 	if ! services_local_env_ok; then
-		local how="write HANGAR_BOOTSTRAP_ADMIN=<email> to $LOCAL_ENV, root's, mode 0600 (docs/runbook/host-bootstrap.md)"
+		local how
+		how=$(services_local_env_how)
 		[ "$DRY_RUN" = 1 ] || die "$LOCAL_ENV is missing or wrong: $how"
 		log "warning: $LOCAL_ENV is missing or wrong; a real run refuses until you $how"
 	fi

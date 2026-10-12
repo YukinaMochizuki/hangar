@@ -259,6 +259,12 @@ test_refuses_without_local_env() {
 		fail "the services step ran without /etc/hangar/local.env"
 	fi
 	grep -q 'HANGAR_BOOTSTRAP_ADMIN=<email>' "$work/localenv.log" || fail "unexpected refusal: $(cat "$work/localenv.log")"
+	# A whole run refuses before its first step.
+	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/localenv.log"; then
+		fail "bootstrap ran without /etc/hangar/local.env"
+	fi
+	grep -q 'HANGAR_BOOTSTRAP_ADMIN=<email>' "$work/localenv.log" || fail "unexpected refusal: $(cat "$work/localenv.log")"
+	grep -q '^== ' "$work/localenv.log" && fail "steps ran before the refusal: $(grep '^== ' "$work/localenv.log")"
 	mv "$work/local.env" /etc/hangar/local.env
 	# Readable by anyone is wrong too.
 	chmod 644 /etc/hangar/local.env
