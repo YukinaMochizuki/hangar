@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,6 +37,9 @@ func TestMain(m *testing.M) {
 //	flood:N  N records of 64 KiB, then exit code 0
 //	crash    a record, then dies with no exit record
 //	hang     a record, then waits to be killed
+//	stoppable  a record, then, once the guest is asked to stop (a file
+//	         "stop" beside the socket, see launcherGuest), says it got
+//	         SIGTERM and exits 0
 //	garbage  bytes that are no record, forged and oversized headers, then
 //	         exit code 5
 func fakeCH(mode string) int {
@@ -85,6 +89,12 @@ func fakeCH(mode string) int {
 		return 1
 	case "hang":
 		select {}
+	case "stoppable":
+		for !exists(filepath.Join(filepath.Dir(vsock), "stop")) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		_ = w.Write(console.Stdout, []byte("got SIGTERM\n"))
+		_ = w.WriteExit(console.ExitStatus{})
 	case "garbage":
 		_, _ = os.Stdout.Write([]byte("\xc4\x47\x01not quite a header"))
 		var huge [15]byte
@@ -118,7 +128,10 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 		}},
 		Run: driver.RunSpec{Command: []string{"true"}},
 	}
-	b, err := json.Marshal(launch{Spec: spec, Hash: spec.Hash(), CloudHypervisor: os.Args[0], Kernel: "/k", Initramfs: "/i", Cmdline: "quiet"})
+	b, err := json.Marshal(launch{
+		Spec: spec, Hash: spec.Hash(), CloudHypervisor: os.Args[0], Kernel: "/k", Initramfs: "/i", Cmdline: "quiet",
+		StopGrace: testGrace, StopSlack: testSlack,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +143,37 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 		Dir:      base,
 		OpenRoot: func(path string) (*os.File, error) { return file("root") },
 		OpenTap:  func(i driver.Interface) (*os.File, error) { return file("tap-" + i.Device) },
+		Guest:    &launcherGuest{dir: dir},
 	}
 	return l, dir
+}
+
+// launcherGuest is the guest of a fake Cloud Hypervisor: Stop leaves the
+// file "stop" in the VM's directory, which the mode stoppable waits for,
+// unless err says it fails.
+type launcherGuest struct {
+	dir    string
+	err    error
+	mu     sync.Mutex
+	graces []time.Duration
+}
+
+func (g *launcherGuest) Ready(context.Context, string) error { return nil }
+
+func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {
+	g.mu.Lock()
+	g.graces = append(g.graces, grace)
+	g.mu.Unlock()
+	if g.err != nil {
+		return g.err
+	}
+	return os.WriteFile(filepath.Join(g.dir, "stop"), nil, 0o600)
+}
+
+func (g *launcherGuest) asked() []time.Duration {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return slices.Clone(g.graces)
 }
 
 func runFor(t *testing.T, l *Launcher, ctx context.Context, uid string) int {
@@ -299,10 +341,14 @@ func TestOpenZvolTakesOnlyZvolLinks(t *testing.T) {
 	}
 }
 
-// TestTheLauncherStops: stopped, it kills Cloud Hypervisor and exits 0,
-// recording no exit.
+// TestTheLauncherStops: stopped by the driver, which has marked the VM
+// and asked its guest already, it kills Cloud Hypervisor at once and exits
+// 0, recording no exit.
 func TestTheLauncherStops(t *testing.T) {
 	l, dir := launcherDir(t, "m1", "hang")
+	if err := os.WriteFile(filepath.Join(dir, stopFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
 	time.AfterFunc(500*time.Millisecond, cancel)
 	start := time.Now()
@@ -314,6 +360,100 @@ func TestTheLauncherStops(t *testing.T) {
 	}
 	if _, ok := exitOf(t, dir); ok {
 		t.Error("a stop was recorded as an exit")
+	}
+	if g := l.Guest.(*launcherGuest).asked(); len(g) != 0 {
+		t.Errorf("the guest was asked to stop again: %v", g)
+	}
+}
+
+// stopBySystemd runs the launcher and stops it, as systemd does, once its
+// guest has booted; it returns the code and how long the stop took.
+func stopBySystemd(t *testing.T, l *Launcher, dir string) (int, time.Duration) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan int, 1)
+	go func() { done <- l.Run(ctx, "m1") }()
+	deadline := time.Now().Add(10 * time.Second)
+	for len(records(t, filepath.Join(dir, ConsoleLog))) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("the guest never booted")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	start := time.Now()
+	cancel()
+	select {
+	case code := <-done:
+		return code, time.Since(start)
+	case <-time.After(30 * time.Second):
+		t.Fatal("the launcher did not return")
+		return 0, 0
+	}
+}
+
+// TestTheLauncherStopsTheGuestForSystemd: stopped by systemd alone, as at
+// host shutdown, the launcher asks the guest to stop with the launch's
+// grace, and the container's handler writes to the log; however the
+// container ended, nothing is recorded, so the VM reads as interrupted.
+func TestTheLauncherStopsTheGuestForSystemd(t *testing.T) {
+	l, dir := launcherDir(t, "m1", "stoppable")
+	// A grace long enough to tell a guest powering off from one killed
+	// after it, even under the race detector, which holds an exit for 1s.
+	ln, err := readLaunch(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.StopGrace = 20 * time.Second
+	b, _ := json.Marshal(ln)
+	if err := os.WriteFile(filepath.Join(dir, specFile), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, took := stopBySystemd(t, l, dir)
+	if code != 0 {
+		t.Errorf("exited %d, want 0", code)
+	}
+	if took > 5*time.Second {
+		t.Errorf("a guest stopping at once took %v", took)
+	}
+	if g := l.Guest.(*launcherGuest).asked(); !slices.Equal(g, []time.Duration{ln.StopGrace}) {
+		t.Errorf("the guest was asked to stop with %v, want the launch's grace once", g)
+	}
+	var out []string
+	for _, r := range records(t, filepath.Join(dir, ConsoleLog)) {
+		if r.Stream == console.Stdout {
+			out = append(out, string(r.Payload))
+		}
+	}
+	if !slices.Equal(out, []string{"got SIGTERM\n"}) {
+		t.Errorf("stdout %q, want the handler's", out)
+	}
+	if r, ok := exitOf(t, dir); ok {
+		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
+	}
+}
+
+// TestTheLauncherKillsAGuestThatStaysUp: a guest that takes the stop but
+// does not power off is killed after the grace and the slack; one that
+// does not take it, at once.
+func TestTheLauncherKillsAGuestThatStaysUp(t *testing.T) {
+	l, dir := launcherDir(t, "m1", "hang")
+	l.KillGrace = 100 * time.Millisecond
+	code, took := stopBySystemd(t, l, dir)
+	if code != 0 {
+		t.Errorf("exited %d, want 0", code)
+	}
+	if took < testGrace+testSlack || took > testGrace+testSlack+time.Second {
+		t.Errorf("stopped in %v, want after the grace and the slack, %v", took, testGrace+testSlack)
+	}
+	if r, ok := exitOf(t, dir); ok {
+		t.Errorf("a stop by systemd was recorded as an exit: %+v", r)
+	}
+
+	l, dir = launcherDir(t, "m1", "hang")
+	l.KillGrace = 100 * time.Millisecond
+	l.Guest.(*launcherGuest).err = errors.New("no answer")
+	if _, took := stopBySystemd(t, l, dir); took > testGrace {
+		t.Errorf("a guest not taking the stop was killed in %v", took)
 	}
 }
 

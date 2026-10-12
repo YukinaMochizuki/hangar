@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,6 +97,7 @@ func TestFlow(t *testing.T) {
 		{"5-grow-the-disk", f.growTheDisk},
 		{"6-change-the-image", f.changeTheImage},
 		{"8-the-node-survives-a-restart", f.nodeSurvivesARestart},
+		{"9-host-shutdown", f.hostShutdown},
 		{"7-delete", f.delete},
 	}
 	for _, s := range steps {
@@ -522,12 +524,105 @@ func (f *flow) nodeSurvivesARestart(t *testing.T) {
 	listing(t, "after the agent's restart")
 }
 
+// termScript says it got SIGTERM, and exits 0, on SIGTERM.
+const termScript = `trap 'echo got SIGTERM; exit 0' TERM
+echo ready
+while :; do sleep 1 & wait $!; done`
+
+// Scenario 9: a host shutdown stops the agent and then each VM's unit,
+// systemd alone: the containers get SIGTERM and their grace, and write to
+// their logs, yet each VM reads as interrupted, never as a container that
+// exited 0 (decision 16). Once the agent is back, always and on-failure
+// boot again, and never is Exited with 253. A real reboot would also drop
+// the units, which are transient; the stop already unloads them.
+func (f *flow) hostShutdown(t *testing.T) {
+	c := f.c
+	policies := map[string]string{
+		"down-always": "RESTART_POLICY_ALWAYS", "down-on-failure": "RESTART_POLICY_ON_FAILURE", "down-never": "RESTART_POLICY_NEVER",
+	}
+	names := slices.Sorted(maps.Keys(policies))
+	for _, name := range names {
+		c.applyYAML(containerYAML(name, busyboxRef, policies[name], "1Gi", termScript))
+	}
+	boots := map[string]time.Time{}
+	for _, name := range names {
+		c.waitReady(name, 3*time.Minute)
+		f.uids[name] = c.machine(name).GetMetadata().GetUid()
+		boots[name] = c.machine(name).GetStatus().GetBootTime().AsTime()
+		eventually(t, 30*time.Second, name+" ready", func() (bool, string) {
+			text := consoleText(t, f.uids[name])
+			return strings.Contains(text, "ready"), text
+		})
+	}
+
+	// The agent goes first, then the VMs, all at once, as systemd orders a
+	// shutdown.
+	if installed {
+		mustRun(t, "systemctl", "stop", nodeUnit)
+	} else {
+		c.killNode()
+	}
+	start := time.Now()
+	args := []string{"stop"}
+	for _, name := range names {
+		args = append(args, unitOf(f.uids[name]))
+	}
+	mustRun(t, "systemctl", args...)
+	took := time.Since(start)
+	t.Logf("systemctl stopped the VMs' units in %s", took.Round(time.Millisecond))
+	if took > 10*time.Second {
+		t.Errorf("containers exiting at once on SIGTERM took %v to stop", took)
+	}
+	for _, name := range names {
+		uid := f.uids[name]
+		if load := unitProps(t, uid, "LoadState")["LoadState"]; load != "not-found" || chPID(t, uid) != 0 {
+			t.Errorf("%s's unit is %s after the stop, Cloud Hypervisor pid %d", name, load, chPID(t, uid))
+		}
+		if text := consoleText(t, uid); !strings.Contains(text, "got SIGTERM") {
+			t.Errorf("%s's console has no SIGTERM handler's output: %q", name, text)
+		}
+		if ex := exits(t, uid); len(ex) == 0 || ex[len(ex)-1].Code != 0 {
+			t.Errorf("%s's exits on its console %+v, want the handler's 0 last", name, ex)
+		}
+		if exists(filepath.Join(vmDir, uid, "exit.json")) || exists(filepath.Join(vmDir, uid, "stopping")) {
+			t.Errorf("%s: the shutdown was recorded as an exit or a stop", name)
+		}
+	}
+
+	if installed {
+		mustRun(t, "systemctl", "start", nodeUnit)
+		c.cli("wait", "node", nodeName, "--for=condition=Ready", "--timeout=60s")
+	} else {
+		c.startNode()
+	}
+	for _, name := range []string{"down-always", "down-on-failure"} {
+		// Its status says Ready from before the shutdown until the agent
+		// has seen it again.
+		eventually(t, 2*time.Minute, name+" booted again", func() (bool, string) {
+			boot := c.machine(name).GetStatus().GetBootTime().AsTime()
+			return boot.After(boots[name]) && unitActive(f.uids[name]), fmt.Sprintf("boot time %v, was %v", boot, boots[name])
+		})
+		c.waitReady(name, 2*time.Minute)
+	}
+	eventually(t, time.Minute, "down-never Exited with 253", func() (bool, string) {
+		m := c.machine("down-never")
+		r := conditions.Find(m.GetStatus().GetConditions(), "Ready")
+		return m.GetStatus().GetPhase() == computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED &&
+				r.GetReason() == "Exited" && strings.Contains(r.GetMessage(), "code 253"),
+			fmt.Sprintf("phase %v, Ready %v", m.GetStatus().GetPhase(), r)
+	})
+	if unitActive(f.uids["down-never"]) {
+		t.Error("down-never was started again")
+	}
+	t.Log("after the shutdown: down-always and down-on-failure booted again, down-never Exited with 253")
+}
+
 // Scenario 7: deleting the containers takes their machines, and leaves
 // the host without their root disks, taps, units, directories or logs.
 // Image bases may stay: they are a cache.
 func (f *flow) delete(t *testing.T) {
 	c := f.c
-	names := []string{"web", "crashy", "third"}
+	names := []string{"web", "crashy", "third", "down-always", "down-on-failure", "down-never"}
 	c.cli(append([]string{"delete", "container"}, names...)...)
 	for _, name := range names {
 		c.cli("wait", "container", name, "--for=delete", "--timeout=2m")
