@@ -47,10 +47,12 @@ breaking:
 test:
 	@if [ -n "$$(go list ./... 2>/dev/null)" ]; then go test -race ./...; fi
 
-# The guest's tests that start processes as other users, as PID 1 does; they
-# skip in make test unless it runs as root. CI runs this under sudo.
+# Tests that need root: the guest's, which start processes as other users as
+# PID 1 does, and the image unpacker's, which give files owners. They skip in
+# make test unless it runs as root. CI runs this under sudo.
 test-root:
-	sudo -E env "PATH=$$PATH" go test -race -count=1 ./internal/guest/... ./internal/node/driver/chguest/
+	sudo -E env "PATH=$$PATH" go test -race -count=1 ./internal/guest/... ./internal/node/driver/chguest/ \
+		./internal/node/driver/ocilayer/ ./internal/node/driver/registry/ ./internal/node/
 
 e2e:
 	go test -race -tags e2e ./test/e2e/...

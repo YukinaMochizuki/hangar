@@ -3,6 +3,7 @@ package node
 import (
 	"archive/tar"
 	"bytes"
+	"os"
 	"testing"
 	"time"
 
@@ -22,6 +23,9 @@ import (
 // up no image from another: it is ready in seconds, long before the stalled
 // ones time out.
 func TestAStalledRegistryHoldsUpNoOtherImage(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("unpacking gives files owners; run as root (make test-root)")
+	}
 	r := registrytest.New(t)
 	var buf bytes.Buffer
 	w := tar.NewWriter(&buf)
