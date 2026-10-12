@@ -349,6 +349,12 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 	if spec.GetImage() == "" {
 		return invalid("spec.image is required")
 	}
+	switch spec.GetRunState() {
+	case computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_UNSPECIFIED, computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_RUNNING,
+		computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED:
+	default:
+		return invalid("spec.run_state %v is not RUNNING or STOPPED", spec.GetRunState())
+	}
 	seen := map[string]bool{}
 	for _, port := range spec.GetPorts() {
 		if err := ValidName(port.GetName()); err != nil {
