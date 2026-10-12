@@ -17,6 +17,7 @@ import (
 	"github.com/jonboulle/clockwork"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
@@ -25,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
 // Config configures a Server. Zero durations and counts take defaults.
@@ -54,6 +56,9 @@ type Config struct {
 	NodeGracePeriod time.Duration
 	// NodeMonitorInterval is how often heartbeats are checked.
 	NodeMonitorInterval time.Duration
+	// TunnelLiveness is the node tunnels'; zero means
+	// tunnel.DefaultLiveness.
+	TunnelLiveness tunnel.Liveness
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -71,6 +76,9 @@ type Server struct {
 	backends map[string]*backend
 	// heartbeats is when each node agent was last heard from.
 	heartbeats heartbeats
+	// tunnels are the node agents' tunnels, through which the apiserver
+	// calls them.
+	tunnels *tunnel.Hub
 	// capacity serializes every decision that reserves memory or disk on a node:
 	// placing a machine, and growing a placed one.
 	capacity sync.Mutex
@@ -113,6 +121,7 @@ func New(cfg Config) *Server {
 		log:      cfg.Logger,
 		authz:    authz.New(cfg.Store),
 		backends: map[string]*backend{},
+		tunnels:  &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
 	}
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}
@@ -122,11 +131,14 @@ func New(cfg Config) *Server {
 
 func (s *Server) backend(r registry.Resource) *backend { return s.backends[r.Kind] }
 
-// Handler serves the API, authenticating every call with chain.
+// Handler serves the API, authenticating every call with chain. It takes
+// node agents' tunnels too, from callers chain authenticates as nodes.
 func (s *Server) Handler(chain auth.Chain) http.Handler {
 	mux := http.NewServeMux()
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
 		connect.WithInterceptors(chain.Interceptor()))
+	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(containerLogs{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -139,6 +151,11 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 // compacts history.
 func (s *Server) Run(ctx context.Context) error {
 	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		<-gctx.Done()
+		s.tunnels.Close()
+		return nil
+	})
 	g.Go(func() error { return s.authz.Run(gctx) })
 	g.Go(func() error {
 		if s.cfg.BootstrapAdmin == "" {
