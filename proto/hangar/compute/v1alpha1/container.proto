@@ -35,6 +35,23 @@ message ContainerSpec {
   repeated ContainerPort ports = 5;
   RestartPolicy restart_policy = 6;
   Resources resources = 7;
+  // Whether the container should be running; unset is RUNNING. Stopping
+  // sends the process SIGTERM, SIGKILL after a grace, and powers the VM off
+  // for good: the restart policy never brings a stopped container back. The
+  // root disk is kept, and RUNNING boots it again. Apply replaces the whole
+  // spec, so applying a manifest that leaves this out starts the container.
+  // The status condition Stopped says when a stop has taken effect.
+  ContainerRunState run_state = 8;
+}
+
+// ContainerRunState is what a container's user asks of its process. More
+// states, such as one for a paused VM, may come; a client should treat one it
+// does not know as not running.
+enum ContainerRunState {
+  // Means RUNNING.
+  CONTAINER_RUN_STATE_UNSPECIFIED = 0;
+  CONTAINER_RUN_STATE_RUNNING = 1;
+  CONTAINER_RUN_STATE_STOPPED = 2;
 }
 
 // EnvVar is one environment variable.

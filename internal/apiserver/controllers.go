@@ -34,6 +34,10 @@ const (
 	// ContainerReady is the Container condition saying its machine runs the
 	// current spec on a node that is reporting.
 	ContainerReady = "Ready"
+	// ContainerStopped is the Container condition saying a stop asked for
+	// with spec.run_state has taken effect: the machine's VM is down for
+	// good, its disk kept. False while the container is asked to run.
+	ContainerStopped = "Stopped"
 	// DefaultNetwork is the network every container's machine joins.
 	DefaultNetwork = "default"
 )
@@ -363,9 +367,13 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 	if restart == computev1alpha1.RestartPolicy_RESTART_POLICY_UNSPECIFIED {
 		restart = computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS
 	}
+	runState := computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING
+	if cs.GetRunState() == computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
+		runState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
+	}
 	return &computev1alpha1.MachineSpec{
 		Resources: sz.canonical(),
-		RunState:  computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
+		RunState:  runState,
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
 		}},
@@ -379,19 +387,23 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 // machine's node.
 func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine, node *computev1alpha1.Node, stuck *blocked) error {
 	gen := c.GetMetadata().GetGeneration()
-	var ready *metav1.Condition
+	var ready, stopped *metav1.Condition
 	if stuck != nil {
 		ready = &metav1.Condition{Type: ContainerReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: stuck.reason, Message: stuck.message}
+		stopped = &metav1.Condition{Type: ContainerStopped, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: stuck.reason, Message: stuck.message}
 	} else {
 		ready = machineReadiness(m, node)
+		stopped = machineStopped(c.GetSpec(), m, node)
 	}
 	ready.ObservedGeneration = gen
+	stopped.ObservedGeneration = gen
 	status := &computev1alpha1.ContainerStatus{}
 	if c.GetStatus() != nil {
 		status = proto.Clone(c.GetStatus()).(*computev1alpha1.ContainerStatus)
 	}
 	status.ObservedGeneration = gen
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
+	status.Conditions = conditions.Set(status.GetConditions(), stopped, s.clock.Now())
 	if proto.Equal(status, c.GetStatus()) {
 		return nil
 	}
@@ -437,6 +449,28 @@ func machineReadiness(m *computev1alpha1.Machine, node *computev1alpha1.Node) *m
 	}
 	phase := strings.TrimPrefix(st.GetPhase().String(), "MACHINE_PHASE_")
 	return notReady(strings.ToUpper(phase[:1])+strings.ToLower(phase[1:]), "")
+}
+
+// machineStopped says whether a container asked to stop has: its node has
+// stopped the machine at the machine's current spec. A container asked to
+// run is never Stopped; Ready says whether it runs.
+func machineStopped(cs *computev1alpha1.ContainerSpec, m *computev1alpha1.Machine, node *computev1alpha1.Node) *metav1.Condition {
+	cond := func(status metav1.ConditionStatus, reason, msg string) *metav1.Condition {
+		return &metav1.Condition{Type: ContainerStopped, Status: status, Reason: reason, Message: msg}
+	}
+	if cs.GetRunState() != computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
+		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, "RunStateRunning", "the container is asked to run")
+	}
+	if name := m.GetSpec().GetNode(); name != "" && !conditions.IsTrue(node.GetStatus().GetConditions(), NodeReady) {
+		return cond(metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN, "NodeNotReporting", "node "+name+" is not reporting")
+	}
+	// m is in line with the container, so asked to stop too. The node
+	// observes a machine's generation only once it has applied it, and
+	// applying a stop is the VM being down.
+	if m.GetStatus().GetObservedGeneration() == m.GetMetadata().GetGeneration() {
+		return cond(metav1.ConditionStatus_CONDITION_STATUS_TRUE, computeapi.ReasonStopped, "")
+	}
+	return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, "Stopping", "the node has not yet stopped the machine")
 }
 
 // reconcileMachine places an unplaced machine on a node, and lets a deleted

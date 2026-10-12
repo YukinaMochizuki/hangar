@@ -22,6 +22,22 @@ Hypervisor directly, without Kata or Kubernetes.
 - A `Container`'s root disk lives and dies with it: kept across restarts,
   rebuilt when the image changes. A `VirtualMachine`'s root disk is a durable
   `Disk`.
+- A `Container` is stopped and started through its spec, `runState: STOPPED`
+  or `RUNNING` (`CONTAINER_RUN_STATE_*`; unset is RUNNING), which its
+  controller copies to `Machine.spec.run_state`. Stopping is `docker stop`:
+  SIGTERM, SIGKILL after a grace, the VM powered off and never brought back by
+  the restart policy, which stays as written and applies again once the
+  container runs. The root disk and the address are kept, and RUNNING boots
+  the same disk. The enum leaves room for more states, such as a paused VM.
+  The container's `Stopped` condition is True once its node has applied the
+  stop (the machine's generation observed), so `hangar wait --for=condition=Stopped`
+  waits for it as `--for=condition=Ready` waits for a start; it is False
+  while the container is asked to run, and Unknown while its node is not
+  reporting. `Ready` is False with reason `Stopped` meanwhile. Apply replaces
+  the whole spec (`apply-semantics.md`), so applying a manifest that leaves
+  `runState` out starts a stopped container again, by design, as `kubectl
+  apply` after `kubectl scale` resets the replicas. A CLI `hangar stop` and
+  `start` would apply the container with only the run state changed.
 - `Machine` is project-scoped and owned by the object it was made from, so
   garbage collection, tenant isolation and quotas need nothing new. Users can
   read their machines (it is where placement and boot failures show) but never
