@@ -150,14 +150,11 @@ const readerRole = "test.reader"
 
 func newExecWorld(t *testing.T, configure func(*Config)) *execWorld {
 	t.Helper()
-	// Registered before the server runs and removed after it stops.
-	authz.Roles[readerRole] = authz.Role{Level: authz.TenantLevel, Permissions: []string{
-		authz.Permission(registry.Container, authz.Get), authz.ContainerLogs,
-	}}
-	t.Cleanup(func() { delete(authz.Roles, readerRole) })
 	w := &execWorld{node: newScriptedNode(), log: &syncBuffer{}}
 	s, system, user := runningWith(t, func(c *Config) {
 		c.Nodes = []string{"n1"}
+		c.ExtraRoles = map[string]authz.Role{readerRole: authz.NewRole(authz.TenantLevel,
+			authz.Permission(registry.Container, authz.Get), authz.ContainerLogs)}
 		c.Logger = slog.New(slog.NewJSONHandler(w.log, nil))
 		if configure != nil {
 			configure(c)

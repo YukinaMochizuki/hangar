@@ -69,6 +69,9 @@ type Config struct {
 	// start may; zero means DefaultExecPing, DefaultExecPong and
 	// DefaultExecStart.
 	ExecPing, ExecPong, ExecStart time.Duration
+	// ExtraRoles are roles beyond the built-in ones, by name, as tests
+	// need; none replaces a built-in role.
+	ExtraRoles map[string]authz.Role
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -131,7 +134,7 @@ func New(cfg Config) *Server {
 		store:     cfg.Store,
 		clock:     cfg.Clock,
 		log:       cfg.Logger,
-		authz:     authz.New(cfg.Store),
+		authz:     authz.New(cfg.Store, cfg.ExtraRoles),
 		backends:  map[string]*backend{},
 		tunnels:   &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
 		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),

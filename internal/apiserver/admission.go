@@ -305,7 +305,7 @@ func validateProject(ctx context.Context, s *Server, _ auth.Principal, _, obj pr
 
 func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, _, obj proto.Message) error {
 	spec := obj.(*iamv1alpha1.RoleBinding).GetSpec()
-	role, ok := authz.Roles[spec.GetRole()]
+	role, ok := s.authz.Role(spec.GetRole())
 	if !ok {
 		return invalid("spec.role %q is not a known role", spec.GetRole())
 	}

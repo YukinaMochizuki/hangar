@@ -199,11 +199,11 @@ const readerRole = "e2e.reader"
 // get and read logs, a sponsor, a member and another tenant's owner do
 // not, and are told so the same whether the container exists or not.
 func TestExecNeedsItsOwnPermission(t *testing.T) {
-	authz.Roles[readerRole] = authz.Role{Level: authz.TenantLevel, Permissions: []string{
-		authz.Permission(registry.Container, authz.Get), authz.ContainerLogs,
-	}}
-	t.Cleanup(func() { delete(authz.Roles, readerRole) })
-	w := newWorld(t)
+	w := newIdleWorldWith(t, func(c *apiserver.Config) {
+		c.ExtraRoles = map[string]authz.Role{readerRole: authz.NewRole(authz.TenantLevel,
+			authz.Permission(registry.Container, authz.Get), authz.ContainerLogs)}
+	})
+	w.startAgent()
 	bind := func(name, user, role string, scope *iamv1alpha1.BindingScope) {
 		t.Helper()
 		if _, err := w.root.Apply(context.Background(), registry.RoleBinding, &iamv1alpha1.RoleBinding{
