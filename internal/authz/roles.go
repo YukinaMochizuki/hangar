@@ -33,6 +33,9 @@ const (
 	// Logs reads what a container wrote; only containers use it. It is not
 	// Get: output can hold what the spec does not.
 	Logs Verb = "logs"
+	// Exec runs a process in a container; only containers use it. It is
+	// neither Get nor Logs: it reaches everything the container can.
+	Exec Verb = "exec"
 )
 
 // CreateTenant is the permission to open a tenant of one's own.
@@ -40,6 +43,9 @@ const CreateTenant = "tenancy.tenants.create"
 
 // ContainerLogs is the permission to read a container's output.
 var ContainerLogs = Permission(registry.Container, Logs)
+
+// ContainerExec is the permission to run a process in a container.
+var ContainerExec = Permission(registry.Container, Exec)
 
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
@@ -76,6 +82,12 @@ type Role struct {
 	Member bool
 }
 
+// NewRole is a role at level granting permissions one by one, for roles
+// beyond the built-in ones, such as a test's.
+func NewRole(level ScopeLevel, permissions ...string) Role {
+	return Role{Level: level, permissions: slices.Clone(permissions)}
+}
+
 // Grants reports whether the role includes the permission.
 func (r Role) Grants(permission string) bool {
 	return slices.Contains(r.verbs, verbOf(permission)) || slices.Contains(r.permissions, permission)
@@ -84,10 +96,10 @@ func (r Role) Grants(permission string) bool {
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs}, Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec}, Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
 	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
 	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs}},
+	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec}},
 }

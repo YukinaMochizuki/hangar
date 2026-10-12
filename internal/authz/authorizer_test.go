@@ -38,7 +38,7 @@ func setup(t *testing.T, delay time.Duration) (store.Store, *authz.Authorizer) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := authz.New(slowWatch{st, delay})
+	a := authz.New(slowWatch{st, delay}, nil)
 	done := make(chan error, 1)
 	go func() { done <- a.Run(ctx) }()
 	t.Cleanup(func() {

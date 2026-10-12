@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -39,6 +40,7 @@ func TestConformance(t *testing.T) {
 			},
 			Exit:             exit,
 			Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
+			Exec:             &execPrograms,
 			ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
 			AskedToStop: func(t *testing.T, uid string) bool {
 				for _, r := range consoleOf(t, uid) {
@@ -114,4 +116,20 @@ func lastExit(t *testing.T, uid string) (console.ExitStatus, bool) {
 		}
 	}
 	return st, found
+}
+
+// execPrograms are the exec part's programs in the guests' busybox.
+var execPrograms = drivertest.ExecPrograms{
+	Output: func(stdout, stderr string, code int) []string {
+		return []string{"/bin/sh", "-c", `printf %s "$1"; printf %s "$2" >&2; exit "$3"`, "sh", stdout, stderr, strconv.Itoa(code)}
+	},
+	Cat:  []string{"/bin/cat"},
+	Size: []string{"/bin/sh", "-c", "stty size; read -r line; stty size"},
+	Show: []string{"/bin/sh", "-c", `echo "$HANGAR_EXEC"; pwd; id -u`},
+	Wait: func(marker string) []string {
+		return []string{"/bin/sh", "-c", `sleep 1000 & echo $! > "/tmp/hangar-wait-$1"; wait`, "sh", marker}
+	},
+	Running: func(marker string) []string {
+		return []string{"/bin/sh", "-c", `kill -0 "$(cat "/tmp/hangar-wait-$1")" 2>/dev/null && echo 1 || echo 0`, "sh", marker}
+	},
 }

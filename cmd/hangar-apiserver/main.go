@@ -22,6 +22,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
@@ -90,7 +91,9 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return srv.Run(ctx) })
 
-	ln, err := net.Listen("tcp", f.listen)
+	// Keepalive and a user timeout drop a dead client under an exec whose
+	// data is backed up, which no ping can tell (internal/execws).
+	ln, err := (&net.ListenConfig{KeepAliveConfig: execws.KeepAlive, Control: execws.Control}).Listen(ctx, "tcp", f.listen)
 	if err != nil {
 		return err
 	}

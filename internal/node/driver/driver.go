@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
+	"syscall"
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
@@ -313,6 +314,9 @@ type VM struct {
 	ExitCode int
 	// Started is when the running instance booted.
 	Started time.Time
+	// Run is what its guest runs, as the VM was started: what an exec in
+	// it inherits.
+	Run RunSpec
 }
 
 // VMState is where a VM is.
@@ -334,4 +338,53 @@ type Guest interface {
 	// SIGKILL after grace. The guest powers off once the process has ended;
 	// Stop returns once the process is signalled, not when it ends.
 	Stop(ctx context.Context, machineUID string, grace time.Duration) error
+	// Exec runs a process in the machine's guest, until it ends or ctx
+	// does, which kills its group. A guest out of reach fails Recv; a
+	// program that cannot run exits 127 or 126, as in a shell.
+	Exec(ctx context.Context, machineUID string, spec ExecSpec) (ExecSession, error)
 }
+
+// ExecSpec is a process for Guest.Exec to run.
+type ExecSpec struct {
+	// Process is the whole process: nothing is taken from the container's.
+	Process RunSpec
+	// TTY runs it on a terminal of Size; its stdout and stderr are then one
+	// stream, sent as stdout.
+	TTY  bool
+	Size WindowSize
+}
+
+// WindowSize is a terminal's size.
+type WindowSize struct {
+	Rows, Cols uint16
+}
+
+// ExecSession is an exec's process under way. Its input methods are called
+// from one goroutine and Recv from another; they fail once the process has
+// ended.
+type ExecSession interface {
+	// Stdin writes to the process's stdin. It waits while the guest holds
+	// as much as it takes that the process has not read.
+	Stdin(p []byte) error
+	// CloseStdin closes the process's stdin; on a terminal it sends
+	// end-of-file.
+	CloseStdin() error
+	Resize(size WindowSize) error
+	Signal(sig syscall.Signal) error
+	// Recv returns the process's next output, and last how it ended; then
+	// io.EOF.
+	Recv() (ExecOutput, error)
+}
+
+// ExecOutput is a piece of an exec's output, or how its process ended.
+type ExecOutput struct {
+	// Data is what the process wrote to stdout, or to stderr if Stderr.
+	Data   []byte
+	Stderr bool
+	// Exit, on the last, is how the process ended: Code is 128 plus the
+	// signal's number when a signal ended it.
+	Exit *console.ExitStatus
+}
+
+// MaxExecOutput bounds an ExecOutput's data.
+const MaxExecOutput = 64 << 10

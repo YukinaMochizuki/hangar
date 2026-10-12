@@ -99,6 +99,7 @@ func TestFlow(t *testing.T) {
 		{"8-the-node-survives-a-restart", f.nodeSurvivesARestart},
 		{"9-host-shutdown", f.hostShutdown},
 		{"10-logs", f.logs},
+		{"11-exec", f.exec},
 		{"7-delete", f.delete},
 	}
 	for _, s := range steps {

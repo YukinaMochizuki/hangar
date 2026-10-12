@@ -50,19 +50,24 @@ func (g Guest) Stop(ctx context.Context, machineUID string, grace time.Duration)
 // used, and again whenever the connection is lost, as when the VM restarts.
 func (g Guest) Client(machineUID string) (c guestv1connect.GuestAgentServiceClient, done func()) {
 	socket := g.Socket(machineUID)
+	tr := transport(func(ctx context.Context) (net.Conn, error) { return Dial(ctx, socket, agent.Port) })
+	return newClient(tr), tr.CloseIdleConnections
+}
+
+func transport(dial func(context.Context) (net.Conn, error)) *http.Transport {
 	protocols := &http.Protocols{}
 	protocols.SetUnencryptedHTTP2(true)
-	tr := &http.Transport{
-		Protocols: protocols,
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return Dial(ctx, socket, agent.Port)
-		},
+	return &http.Transport{
+		Protocols:              protocols,
+		DialContext:            func(ctx context.Context, _, _ string) (net.Conn, error) { return dial(ctx) },
 		MaxResponseHeaderBytes: 64 << 10,
 		IdleConnTimeout:        time.Minute,
 	}
-	inner := guestv1connect.NewGuestAgentServiceClient(&http.Client{Transport: tr}, "http://guest",
-		connect.WithReadMaxBytes(agent.MaxMessage))
-	return client{inner}, tr.CloseIdleConnections
+}
+
+func newClient(tr *http.Transport) client {
+	return client{guestv1connect.NewGuestAgentServiceClient(&http.Client{Transport: tr}, "http://guest",
+		connect.WithReadMaxBytes(agent.MaxMessage))}
 }
 
 type client struct {
