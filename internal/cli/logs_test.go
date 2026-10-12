@@ -123,6 +123,9 @@ func TestLogsOptions(t *testing.T) {
 	if !f.req.GetFollow() || f.req.GetTailLines() != 5 || !f.req.GetSince().AsTime().Equal(logT0.Add(50*time.Minute)) {
 		t.Errorf("asked %v", f.req)
 	}
+	if code, _, e := runLogs(t, f, "logs", "ct", "api", "--tail", "-1"); code != 0 || f.req.TailLines != nil {
+		t.Errorf("--tail -1: exit %d, %s, asked %v", code, e, f.req)
+	}
 	if code, _, e := runLogs(t, f, "logs", "ct", "api", "--since", "2026-10-12T09:30:00Z", "--tail", "0"); code != 0 {
 		t.Fatal(e)
 	}
@@ -134,6 +137,7 @@ func TestLogsOptions(t *testing.T) {
 		{"logs", "machine", "x"},
 		{"logs", "ct", "api", "--since", "yesterday"},
 		{"logs", "ct", "api", "-o", "yaml"},
+		{"logs", "ct", "api", "--tail", "-2"},
 	} {
 		if code, _, _ := runLogs(t, f, args...); code != cli.ExitUsage {
 			t.Errorf("hangar %s: exit %d, want usage", strings.Join(args, " "), code)

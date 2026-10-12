@@ -42,8 +42,11 @@ func (a *app) logsCmd() *cobra.Command {
 				return usageErr("only containers have logs, not %s", r.Plural)
 			}
 			req := &computev1alpha1.ContainerLogsRequest{Name: args[1], Follow: follow}
-			if tail >= 0 {
+			switch {
+			case tail >= 0:
 				req.TailLines = &tail
+			case tail != -1:
+				return usageErr("--tail %d: want a number of lines, or -1 for every line", tail)
 			}
 			if since != "" {
 				t, err := parseSince(since, a.opts.Now())
@@ -81,7 +84,7 @@ func (a *app) logsCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "go on printing what is written, until the container exits for good or is stopped")
-	cmd.Flags().Int64Var(&tail, "tail", -1, "print only the last N lines; each exit counts as one")
+	cmd.Flags().Int64Var(&tail, "tail", -1, "print only the last N lines, or every line with -1; each exit counts as one")
 	cmd.Flags().StringVar(&since, "since", "", "print only what is newer than a duration ago, such as 10m, or an RFC 3339 time")
 	cmd.Flags().BoolVar(&timestamps, "timestamps", false, "start each line with its time")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "json, for one object per record")
