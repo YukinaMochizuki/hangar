@@ -18,8 +18,8 @@ gives the host its prefix's `::` address; the bootstrap fixes both.
 
 Add `deploy/host/hosts/<hostname>.env` for the host. Every value in it is
 explicit (uplink name, public IPv4, IPv6 address and gateway, the two swap
-partitions, the dataset quotas, the Node's name); the scripts never guess a
-disk or an interface.
+partitions, the dataset quotas, the memory kept from VMs, the Node's name);
+the scripts never guess a disk or an interface.
 
 One value stays on the host and out of the repo: the bootstrap admin, the
 email of the person's Cloudflare Access identity, who is granted
@@ -96,9 +96,11 @@ A second `bootstrap.sh`, with the same `--release` or none, must print
     its runtime directory, accepting uid 0 as the Node `HANGAR_NODE_NAME`;
   - the agent as root: `--drivers=host --name HANGAR_NODE_NAME --uplink
     HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --reserved-disk` the sum
-    of both quotas, every path its default, `Restart=always`. Its
-    `KillMode=control-group` kills only what the agent runs itself: each VM
-    is a transient unit of its own and outlives a stop or restart of it.
+    of both quotas, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
+    plus the host's own overhead), every path its default,
+    `Restart=always`. Its `KillMode=control-group` kills only what the
+    agent runs itself: each VM is a transient unit of its own and outlives
+    a stop or restart of it.
 
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
