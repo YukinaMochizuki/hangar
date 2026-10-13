@@ -50,9 +50,11 @@ separate root process on the same host.
   listener that takes whoever the caller says it is.
 - **Dev mode** takes the user from a header. It must be enabled explicitly and
   refuses to start on a non-loopback address. It also refuses any request
-  carrying a header Cloudflare's edge adds (`Cf-Connecting-Ip`, `Cdn-Loop`,
-  `Cf-Ray`), and the host runs cloudflared only while the apiserver is in
-  cloudflare auth (`docs/runbook/host-bootstrap.md`), so a tunnel never
+  carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`, which cloudflared
+  sets on every request it proxies, and `Cf-Connecting-Ip`, `Cdn-Loop` and
+  `Cf-Ray` from its edge), and the host runs cloudflared only while the
+  apiserver is in cloudflare auth, which the tunnel's unit checks itself at
+  every start (`docs/runbook/host-bootstrap.md`), so a tunnel never
   reaches it.
 - Controllers run in-process as the System principal.
 - A third principal source, workload identity issued through the metadata
