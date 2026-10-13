@@ -281,7 +281,7 @@ EOF
 	step "dev auth refuses what came through Cloudflare"
 	[ "$(list_nodes_status)" = 200 ] || fail "dev auth on loopback refused the bootstrap admin"
 	local h
-	for h in 'Cdn-Loop: cloudflare' 'Cf-Connecting-Ip: 192.0.2.7' 'Cf-Ray: 0123456789abcdef-SIN'; do
+	for h in 'Cf-Warp-Tag-Id: 6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f' 'Cdn-Loop: cloudflare' 'Cf-Connecting-Ip: 192.0.2.7' 'Cf-Ray: 0123456789abcdef-SIN'; do
 		[ "$(list_nodes_status "$h")" = 401 ] || fail "dev auth took a request with $h"
 	done
 }
@@ -361,7 +361,7 @@ auth_env() {
 sandbox_probe() {
 	local props=() line
 	while IFS= read -r line; do
-		case $line in '' | '#'* | '['* | ExecStart=* | Restart=* | RestartSec=* | Type=*) continue ;; esac
+		case $line in '' | '#'* | '['* | ExecStart=* | ExecStartPre=* | Restart=* | RestartSec=* | Type=*) continue ;; esac
 		props+=(-p "$line")
 	done < <(sed -n '/^\[Service\]/,/^\[Install\]/p' /etc/systemd/system/hangar-cloudflared.service)
 	systemd-run --quiet --wait --pipe --collect "${props[@]}" "$@" /usr/bin/python3 - <<'EOF'
@@ -380,6 +380,23 @@ for d in ["/run/hangar", "/var/lib/hangar", "/var/lib/hangar/state", "/etc/hanga
     except OSError as e:
         print("denied", d, e.strerror)
 EOF
+}
+
+# cf_state prints the tunnel unit's state as ACTIVE/SUB, such as
+# activating/auto-restart.
+cf_state() { systemctl show -p ActiveState,SubState --value hangar-cloudflared | paste -sd/; }
+
+# cf_journal SINCE prints the tunnel unit's log since SINCE.
+cf_journal() { journalctl -u hangar-cloudflared --since "$1" --no-pager -o cat; }
+
+# wait_cf_active waits up to 20 s for cloudflared to be running.
+wait_cf_active() {
+	local i
+	for i in $(seq 1 20); do
+		[ "$(cf_state)" = active/running ] && return 0
+		sleep 1
+	done
+	return 1
 }
 
 test_cloudflared_needs_cloudflare_auth() {
@@ -483,6 +500,40 @@ test_cloudflare_cutover() {
 	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the apiserver was restarted for the token"
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the new token"
 
+	step "the unit's own guard: no tunnel while the apiserver is stopped, back once it runs in cloudflare auth"
+	local since
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	cf_pid=$(main_pid hangar-cloudflared)
+	systemctl restart hangar-apiserver
+	wait_cf_active || fail "cloudflared did not come back with the apiserver: $(cf_state)"
+	[ "$(main_pid hangar-cloudflared)" != "$cf_pid" ] || fail "restarting the apiserver did not restart cloudflared (PartOf=)"
+	systemctl stop hangar-apiserver
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared outlived a stopped apiserver"
+	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started with the apiserver stopped"
+	sleep 2
+	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver is not running' ||
+		fail "the guard did not refuse a stopped apiserver: $(cf_journal "$since" | tail -n 5)"
+	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
+	systemctl start hangar-apiserver
+	wait_cf_active || fail "cloudflared did not come up once the apiserver was back: $(cf_state)"
+
+	step "the guard also refuses an apiserver whose loaded unit would restart it in dev auth"
+	# The log is read by the second: nothing from before may share it.
+	sleep 1
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	sed -i 's/--auth-mode cloudflare --cf-team-domain [^ ]* --cf-audience [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
+	systemctl daemon-reload
+	systemctl restart hangar-cloudflared 2>/dev/null && fail "cloudflared restarted in front of a unit in dev auth"
+	sleep 2
+	cf_journal "$since" | grep -q "refusing to start the tunnel: hangar-apiserver's unit would restart it without --auth-mode cloudflare" ||
+		fail "the guard did not refuse the loaded unit: $(cf_journal "$since" | tail -n 5)"
+	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of a unit in dev auth"
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "bootstrap did not put the unit back: $(cat "$work/cut.log")"
+	wait_cf_active || fail "cloudflared did not come back with the unit: $(cf_state)"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the guard"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the guard: $(grep FAIL "$work/cut-verify.log")"
+
 	step "rolling back: the tunnel stops without cloudflared.env, then the apiserver goes back to dev auth"
 	rm /etc/hangar/cloudflared.env
 	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
@@ -497,6 +548,43 @@ test_cloudflare_cutover() {
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the rollback"
 	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the rollback: $(grep FAIL "$work/cut-verify.log")"
 	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared after the rollback"
+
+	step "started by hand without its env file in dev auth: verify fails, and the env file appearing does not bring it up"
+	sleep 1
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started without its env file"
+	sleep 1
+	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying"; fi
+	grep -q '^FAIL hangar-cloudflared down (activating/auto-restart): there is no /etc/hangar/cloudflared.env$' "$work/cut-verify.log" ||
+		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
+	put_tunnel_token 1
+	# Past two of its 5 s retries.
+	sleep 12
+	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver runs --auth-mode dev, not cloudflare' ||
+		fail "the guard did not refuse dev auth: $(cf_journal "$since" | tail -n 5)"
+	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of dev auth"
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared is active in front of dev auth"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying in dev auth"; fi
+	grep -q '^FAIL hangar-cloudflared down while the apiserver is not in cloudflare auth$' "$work/cut-verify.log" ||
+		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"; then
+		fail "the cloudflared step went through in dev auth"
+	fi
+	grep -q '^apply: stop and disable hangar-cloudflared: the apiserver is not in cloudflare auth$' "$work/cut.log" ||
+		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
+	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
+	rm /etc/hangar/cloudflared.env
+
+	step "started by hand without its env file, and removed by the step without it"
+	systemctl start hangar-cloudflared 2>/dev/null || true
+	sleep 1
+	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: stop and disable hangar-cloudflared: /etc/hangar/cloudflared.env is gone$' "$work/cut.log" ||
+		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
+	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the hand-started tunnel"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the hand-started tunnel"
 
 	step "dev auth with the tunnel up stops the tunnel before the apiserver changes"
 	auth_env cloudflare

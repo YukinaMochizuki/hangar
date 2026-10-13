@@ -140,10 +140,16 @@ apiserver_auth_mode() {
 	tr '\0' '\n' <"/proc/$pid/cmdline" | sed -n '/^--auth-mode$/{n;p;q}'
 }
 
-# cloudflared_up holds while the tunnel runs, or would start at boot.
+# cloudflared_up holds while the tunnel is in any state but stopped: running,
+# starting, or waiting to retry (Restart=always never gives up, so a unit
+# started by hand without its env file comes up once the file appears), or
+# while it would start at boot.
 cloudflared_up() {
-	systemctl is-active --quiet "$CLOUDFLARED_UNIT.service" ||
-		systemctl is-enabled --quiet "$CLOUDFLARED_UNIT.service" 2>/dev/null
+	case $(systemctl show -p ActiveState --value "$CLOUDFLARED_UNIT.service" 2>/dev/null) in
+	'' | inactive | failed) ;;
+	*) return 0 ;;
+	esac
+	systemctl is-enabled --quiet "$CLOUDFLARED_UNIT.service" 2>/dev/null
 }
 
 # cloudflared_down WHY stops and disables the tunnel, if it is up.

@@ -7,9 +7,37 @@
 
 CLOUDFLARED_BIN=/usr/local/bin/cloudflared
 CLOUDFLARED_UNIT_PATH=/etc/systemd/system/$CLOUDFLARED_UNIT.service
+CLOUDFLARED_GUARD=/usr/local/libexec/hangar-cloudflared-guard
 # Its metrics server, pinned to loopback: left alone it picks a port and,
 # where it thinks it is in a container, every interface.
 CLOUDFLARED_METRICS=127.0.0.1:20241
+
+# cloudflared_guard is the unit's own check, every time it starts, however it
+# was started: the apiserver runs, in cloudflare auth, and a restart would
+# keep it there. The running process says what the tunnel would reach now;
+# the loaded unit what a restart of the apiserver (on failure, without this
+# unit's PartOf= seeing it) would bring up instead.
+cloudflared_guard() {
+	cat <<'EOF'
+#!/bin/sh
+# Written by deploy/host/steps/85-cloudflared.sh. hangar-cloudflared runs it
+# as root before cloudflared (ExecStartPre=+) and does not start unless it
+# succeeds: cloudflared never forwards to an apiserver in dev auth, which
+# trusts a header.
+set -eu
+refuse() {
+	echo "hangar-cloudflared-guard: refusing to start the tunnel: $*" >&2
+	exit 1
+}
+pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
+[ -n "$pid" ] && [ "$pid" != 0 ] || refuse "hangar-apiserver is not running"
+mode=$(tr '\0' '\n' <"/proc/$pid/cmdline" | sed -n '/^--auth-mode$/{n;p;q}') ||
+	refuse "cannot read hangar-apiserver's command line"
+[ "$mode" = cloudflare ] || refuse "hangar-apiserver runs --auth-mode ${mode:-(none)}, not cloudflare"
+systemctl show -p ExecStart --value hangar-apiserver.service | grep -q -- ' --auth-mode cloudflare ' ||
+	refuse "hangar-apiserver's unit would restart it without --auth-mode cloudflare"
+EOF
+}
 
 cloudflared_unit() {
 	cat <<EOF
@@ -18,6 +46,9 @@ cloudflared_unit() {
 Description=Cloudflare Tunnel to the Hangar API
 Wants=network-online.target
 After=network-online.target hangar-apiserver.service
+# Stopped and restarted with the apiserver, so the guard below looks again
+# at what the apiserver came back as.
+PartOf=hangar-apiserver.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -27,6 +58,8 @@ Type=exec
 # TUNNEL_TOKEN, kept on the host only. systemd reads it, so the sandbox
 # below can hide /etc/hangar.
 EnvironmentFile=$CLOUDFLARED_ENV
+# Outside the sandbox (+), which cannot see the apiserver.
+ExecStartPre=+$CLOUDFLARED_GUARD
 ExecStart=$CLOUDFLARED_BIN tunnel --no-autoupdate --metrics $CLOUDFLARED_METRICS run
 Restart=always
 RestartSec=5
@@ -146,6 +179,8 @@ cloudflared_apply() {
 	fi
 
 	cloudflared_is_pinned || run "install cloudflared $HANGAR_CLOUDFLARED_VERSION" install_cloudflared
+	# The guard runs at each start, so a new one needs no restart.
+	put_file "$CLOUDFLARED_GUARD" 755 "$(cloudflared_guard)"
 	local before=$CHANGES
 	put_file "$CLOUDFLARED_UNIT_PATH" 644 "$(cloudflared_unit)"
 	if [ "$CHANGES" != "$before" ]; then
@@ -165,7 +200,9 @@ cloudflared_apply() {
 }
 
 cloudflared_unit_ok() {
-	cloudflared_unit | cmp -s - "$CLOUDFLARED_UNIT_PATH" &&
+	cloudflared_guard | cmp -s - "$CLOUDFLARED_GUARD" &&
+		[ "$(stat -c '%U %a' "$CLOUDFLARED_GUARD")" = "root 755" ] &&
+		cloudflared_unit | cmp -s - "$CLOUDFLARED_UNIT_PATH" &&
 		[ "$(systemctl show -p NeedDaemonReload --value "$CLOUDFLARED_UNIT.service")" = no ] &&
 		[ -z "$(systemctl show -p DropInPaths --value "$CLOUDFLARED_UNIT.service")" ]
 }
@@ -179,15 +216,23 @@ cloudflared_verify() {
 	local name="cloudflared $HANGAR_CLOUDFLARED_VERSION"
 	if [ ! -e "$CLOUDFLARED_ENV" ]; then
 		if cloudflared_up; then
-			check "$CLOUDFLARED_UNIT down: there is no $CLOUDFLARED_ENV" false
+			check "$CLOUDFLARED_UNIT down ($(systemctl show -p ActiveState,SubState --value "$CLOUDFLARED_UNIT.service" | paste -sd/)): there is no $CLOUDFLARED_ENV" false
 		else
 			skip "$name" "no $CLOUDFLARED_ENV"
 		fi
 		return 0
 	fi
 	check "$CLOUDFLARED_ENV root's, 0600, with TUNNEL_TOKEN" cloudflared_env_ok
-	check "$CLOUDFLARED_UNIT only with the apiserver in cloudflare auth" test -z "$(cloudflared_auth_problem)"
+	local problem
+	problem=$(cloudflared_auth_problem)
+	check "$CLOUDFLARED_UNIT only with the apiserver in cloudflare auth" test -z "$problem"
+	if [ -n "$problem" ]; then
+		# Starting or waiting to retry counts: its guard is all that stands
+		# between it and the apiserver.
+		cloudflared_up && check "$CLOUDFLARED_UNIT down while the apiserver is not in cloudflare auth" false
+		return 0
+	fi
 	check "$name" cloudflared_is_pinned
-	check "unit $CLOUDFLARED_UNIT as generated and loaded, no drop-ins" cloudflared_unit_ok
+	check "unit $CLOUDFLARED_UNIT and its guard as generated and loaded, no drop-ins" cloudflared_unit_ok
 	check "unit $CLOUDFLARED_UNIT enabled, active, running what is installed" cloudflared_running_ok
 }
