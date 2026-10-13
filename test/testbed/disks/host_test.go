@@ -114,6 +114,8 @@ func newHost(t *testing.T) *host {
 		{h.dataset + "/disks/decoy", nil},
 		{h.dataset + "/disks/d-decoy", []string{"hangar:disk=someone-else"}},
 		{h.dataset + "/outside-disk", []string{"hangar:disk=d1"}},
+		// A disk image's base's place, unclaimed.
+		{h.dataset + "/vmbases/" + hexDecoy, nil},
 	} {
 		args := []string{"create", "-s", "-V", "8M", "-o", "volmode=dev"}
 		for _, p := range d.props {

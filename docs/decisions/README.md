@@ -10,6 +10,7 @@ the change.
 | `monorepo.md` | Everything in one repo and one Go module |
 | `machine-model.md` | Containers and VMs are both microVMs; one internal `Machine` |
 | `storage-zfs.md` | ZFS zvols for machine disks, NFS for shared files, no virtio-fs |
+| `vm-images.md` | A platform catalogue of disk images, fetched by URL and sha256 and written raw onto a base |
 | `api-versioning.md` | Proto packages and `apiVersion` are per group, mapped 1:1 |
 | `api-rpc-shape.md` | One typed service per kind, buf STANDARD request/response wrappers |
 | `apply-semantics.md` | Apply replaces the spec; field ownership; status subresource |

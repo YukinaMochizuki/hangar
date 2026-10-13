@@ -21,11 +21,11 @@ import (
 func TestAGuestSeesItsVolumes(t *testing.T) {
 	h := newHost(t)
 	ctx := context.Background()
-	v1, err := h.storage.EnsureVolume(ctx, "tbdisk1", 1<<30)
+	v1, err := h.storage.EnsureVolume(ctx, "tbdisk1", 1<<30, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	v2, err := h.storage.EnsureVolume(ctx, "tbdisk2", 2<<30)
+	v2, err := h.storage.EnsureVolume(ctx, "tbdisk2", 2<<30, "")
 	if err != nil {
 		t.Fatal(err)
 	}

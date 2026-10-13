@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver/diskimage"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/hostnet"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/ocilayer"
@@ -124,7 +125,7 @@ func drivers(ctx context.Context, kind string, hf hostFlags) (*node.Drivers, fun
 func fakeDrivers(hf hostFlags) (*node.Drivers, func(), error) {
 	none := func() {}
 	h := fake.New()
-	d := &node.Drivers{Images: h.Images(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
+	d := &node.Drivers{Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
 	switch hf.network {
 	case "fake":
 		return d, none, nil
@@ -162,7 +163,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.uplink, "uplink", "", "with this host's network driver, the link the host reaches the internet through")
 	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the address networks' traffic leaves the uplink as; empty for the uplink's own")
 	fs.StringVar(&hf.dataset, "zfs-dataset", "hangar", "for --drivers=host, the dataset root disks and image bases go under")
-	fs.StringVar(&hf.imageDir, "image-dir", "/var/lib/hangar/images", "for --drivers=host, where images are cached and unpacked: the hangar/images dataset's mount point")
+	fs.StringVar(&hf.imageDir, "image-dir", "/var/lib/hangar/images", "for --drivers=host, where images are cached, unpacked and downloaded: the hangar/images dataset's mount point")
 	fs.StringVar(&hf.cloudHypervisor, "cloud-hypervisor", "/usr/local/bin/cloud-hypervisor", "for --drivers=host, Cloud Hypervisor")
 	fs.StringVar(&hf.kernel, "guest-kernel", "/usr/local/lib/hangar/vmlinux", "for --drivers=host, the guests' kernel")
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
@@ -207,6 +208,10 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 	if err != nil {
 		return nil, none, fmt.Errorf("storage driver: %w", err)
 	}
+	diskImages, err := diskimage.New(diskimage.Config{Dir: filepath.Join(hf.imageDir, "disk-images")})
+	if err != nil {
+		return nil, none, fmt.Errorf("disk image driver: %w", err)
+	}
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, none, err
@@ -223,6 +228,6 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		_ = vms.Close()
 		return nil, none, err
 	}
-	d := &node.Drivers{Images: images, Storage: storage, Network: n, Hypervisor: vms, Guest: vms.Guest()}
+	d := &node.Drivers{Images: images, DiskImages: diskImages, Storage: storage, Network: n, Hypervisor: vms, Guest: vms.Guest()}
 	return d, func() { _ = errors.Join(n.Close(), vms.Close()) }, nil
 }

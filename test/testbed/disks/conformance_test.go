@@ -27,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry/registrytest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/zfsstore"
+	"github.com/YukinaMochizuki/hangar/test/testbed/internal/diskimgtest"
 )
 
 var anon = driver.Credentials(driver.Anonymous)
@@ -79,10 +80,15 @@ func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
 		h := newHost(t)
 		r := registrytest.New(t)
+		srv := diskimgtest.New(t)
 		n := 0
 		return drivertest.Host{
-			Images:  h.images(t),
-			Storage: h.storage(t),
+			Images:     h.images(t),
+			DiskImages: srv.Driver(t, filepath.Join(filepath.Dir(h.cache), "disk-images")),
+			Storage:    h.storage(t),
+			PublishDiskImage: func(t *testing.T, name string, size int64) (string, string) {
+				return srv.QCOW2(t, name, size, "disk image "+name)
+			},
 			Publish: func(t *testing.T, name string) (string, string) {
 				n++
 				return r.Push(t, name, smallImage(t, n))
@@ -155,11 +161,20 @@ func TestDecoysAreLeftAlone(t *testing.T) {
 	if vols, err := s.Volumes(ctx); err != nil || len(vols) != 0 {
 		t.Errorf("volumes %v %v", vols, err)
 	}
+	if bases, err := s.ImageBases(ctx); err != nil || len(bases) != 0 {
+		t.Errorf("image bases %v %v", bases, err)
+	}
+	if err := s.EnsureImageBase(ctx, decoyDigest, 1<<20, func(string) error { return nil }); err == nil {
+		t.Error("made an image base over one the driver did not make")
+	}
+	if err := s.DeleteImageBase(ctx, decoyDigest); err == nil {
+		t.Error("deleted an image base the driver did not make")
+	}
 	for _, uid := range []string{"decoy", "d-decoy"} {
 		if err := s.DeleteVolume(ctx, uid); err == nil {
 			t.Errorf("deleted the volume %s the driver did not make", uid)
 		}
-		if _, err := s.EnsureVolume(ctx, uid, 1<<30); err == nil {
+		if _, err := s.EnsureVolume(ctx, uid, 1<<30, ""); err == nil {
 			t.Errorf("took %s as a volume", uid)
 		}
 	}

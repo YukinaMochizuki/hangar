@@ -118,10 +118,17 @@ unreliable on virtio-fs.
   asks for. A root disk smaller than asked is grown (`zfs set volsize`),
   never shrunk; a size below its base's fails with `DiskTooSmall`. The size
   is part of the VM's spec, so a grown disk restarts the VM.
-- **A volume per Disk**: `hangar/disks/<disk uid>`, a blank sparse zvol,
+- **A base per disk image**: `hangar/vmbases/<sha256 hex>`, a sparse zvol
+  of the size of the disk the image holds, onto which `qemu-img convert`
+  writes it raw (`docs/decisions/vm-images.md`), then snapshotted as
+  `@base` and set read-only, as an OCI image's base is. It goes once no
+  volume is cloned from it and no disk still to be made on the node is of
+  it.
+- **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
-  never shrunk, like a root disk. It is not cloned from anything and has no
-  filesystem the host made: the host never reads it. It outlives the
+  never shrunk, like a root disk. It is blank, or a clone of its disk
+  image's `@base` (below whose size it fails with `DiskTooSmall`), and the
+  host made no filesystem on it: the host never reads it. It outlives the
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
   volume restarts the machine it is attached to, as a grown root disk does.
@@ -130,7 +137,8 @@ unreliable on virtio-fs.
   `EXT4_IOC_RESIZE_FS`; a failure is logged and the guest boots as it is.
 - **The driver knows its datasets by their user properties**: `hangar:digest`
   on a base and its snapshot, `hangar:machine` and `hangar:digest` on a root
-  disk, `hangar:disk` on a volume. It lists from them, and a dataset whose
+  disk, `hangar:disk` (and `hangar:digest`, for one cloned from a disk
+  image) on a volume. It lists from them, and a dataset whose
   properties do not match its name is never listed, changed or destroyed,
   whatever it is called. It
   never destroys recursively; ZFS itself refuses to destroy a base with
@@ -174,7 +182,8 @@ unreliable on virtio-fs.
 - Every clone of a base shares its filesystem UUID.
 - The pool, the `hangar/images` dataset and its quota are the host's to
   provision (`docs/runbook/host-bootstrap.md`); the driver makes
-  `hangar/bases`, `hangar/roots` and `hangar/disks` itself.
+  `hangar/bases`, `hangar/roots`, `hangar/disks` and `hangar/vmbases`
+  itself.
 - The layers' size is a floor: an image compressing far more than the usual
   can still fill `hangar/images` while it unpacks, up to the quota, and
   fail there.

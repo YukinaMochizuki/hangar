@@ -25,6 +25,14 @@ install_ch() {
 	rm -f "$tmp"
 }
 
+# qemu_img_recent says the installed qemu-img is HANGAR_QEMU_IMG_MIN or
+# newer.
+qemu_img_recent() {
+	local v
+	v=$(qemu-img --version 2>/dev/null | sed -n '1s/^qemu-img version \([0-9][0-9.]*\).*/\1/p')
+	[ -n "$v" ] && [ "$(printf '%s\n%s\n' "$HANGAR_QEMU_IMG_MIN" "$v" | sort -V | head -n1)" = "$HANGAR_QEMU_IMG_MIN" ]
+}
+
 packages_apply() {
 	local missing
 	missing=$(missing_packages)
@@ -38,4 +46,5 @@ packages_apply() {
 packages_verify() {
 	check "packages installed" test -z "$(missing_packages)"
 	check "cloud-hypervisor $HANGAR_CH_VERSION" ch_is_pinned
+	check "qemu-img $HANGAR_QEMU_IMG_MIN or newer" qemu_img_recent
 }

@@ -1,6 +1,7 @@
 package registry
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -61,12 +62,16 @@ func defaultTransport(t Timeouts) *http.Transport {
 	return tr
 }
 
-// StallError is a registry making no progress within its Timeouts. It is a
-// timeout, and not temporary: the pull fails and is tried again later as a
-// whole, not request by request.
-type StallError struct{ What string }
+// StallError is a registry, or another server, making no progress within
+// its Timeouts. It is a timeout, and not temporary: the pull fails and is
+// tried again later as a whole, not request by request.
+type StallError struct {
+	What string
+	// Server says what made no progress; empty is "registry".
+	Server string
+}
 
-func (e *StallError) Error() string   { return "the registry " + e.What }
+func (e *StallError) Error() string   { return "the " + cmp.Or(e.Server, "registry") + " " + e.What }
 func (e *StallError) Timeout() bool   { return true }
 func (e *StallError) Temporary() bool { return false }
 
@@ -75,12 +80,25 @@ func (e *StallError) Temporary() bool { return false }
 type progress struct {
 	base http.RoundTripper
 	t    Timeouts
+	// server names what it reaches, for StallError.
+	server string
+}
+
+// Bounded is base, or a transport of the defaults connecting within t if it
+// is nil, failing with a StallError a request to server whose answer, or
+// whose body, makes no progress within t.
+func Bounded(base http.RoundTripper, t Timeouts, server string) http.RoundTripper {
+	t = t.orDefault()
+	if base == nil {
+		base = defaultTransport(t)
+	}
+	return progress{base, t, server}
 }
 
 func (p progress) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(req.Context())
 	header := time.AfterFunc(p.t.ResponseHeader, func() {
-		cancel(&StallError{fmt.Sprintf("sent no answer to %s %s within %v", req.Method, req.URL.Redacted(), p.t.ResponseHeader)})
+		cancel(&StallError{fmt.Sprintf("sent no answer to %s %s within %v", req.Method, req.URL.Redacted(), p.t.ResponseHeader), p.server})
 	})
 	resp, err := p.base.RoundTrip(req.WithContext(ctx))
 	header.Stop()
@@ -98,7 +116,7 @@ func (p progress) RoundTrip(req *http.Request) (*http.Response, error) {
 		cancel(nil)
 		return nil, s
 	}
-	w := &watched{ReadCloser: resp.Body, ctx: ctx, cancel: cancel, t: p.t, what: req.URL.Redacted()}
+	w := &watched{ReadCloser: resp.Body, ctx: ctx, cancel: cancel, t: p.t, what: req.URL.Redacted(), server: p.server}
 	w.mu.Lock()
 	w.timer = time.AfterFunc(p.t.Window, w.check)
 	w.mu.Unlock()
@@ -113,6 +131,7 @@ type watched struct {
 	cancel context.CancelCauseFunc
 	t      Timeouts
 	what   string
+	server string
 	read   atomic.Int64
 
 	mu    sync.Mutex
@@ -127,7 +146,7 @@ func (w *watched) check() {
 		return
 	}
 	if got := w.read.Swap(0); got < w.t.MinBytes {
-		w.cancel(&StallError{fmt.Sprintf("sent %d bytes of %s in %v, fewer than %d", got, w.what, w.t.Window, w.t.MinBytes)})
+		w.cancel(&StallError{fmt.Sprintf("sent %d bytes of %s in %v, fewer than %d", got, w.what, w.t.Window, w.t.MinBytes), w.server})
 		return
 	}
 	w.timer.Reset(w.t.Window)

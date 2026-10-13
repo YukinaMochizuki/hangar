@@ -34,6 +34,18 @@ const (
 	DiskReady = "Ready"
 	// DiskReleased is the node's: a deleted disk is gone from the host.
 	DiskReleased = "Released"
+	// ImageVerified is any node's: True once a node has fetched the image,
+	// found it matches its sha256 and made a disk image of it; False, with
+	// one of the Image reasons, when the image at that generation can never
+	// be used. Nodes then try it again only once its spec changes.
+	ImageVerified = "Verified"
+)
+
+// Reasons an image can never be used, for ImageVerified.
+const (
+	ReasonHashMismatch  = "HashMismatch"
+	ReasonInvalidImage  = "InvalidImage"
+	ReasonImageTooLarge = "ImageTooLarge"
 )
 
 // Reasons the node gives for MachineReady.

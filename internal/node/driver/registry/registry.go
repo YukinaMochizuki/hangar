@@ -99,7 +99,7 @@ func New(cfg Config) (*Images, error) {
 	if cfg.Transport == nil {
 		cfg.Transport = defaultTransport(cfg.Timeouts)
 	}
-	cfg.Transport = progress{cfg.Transport, cfg.Timeouts}
+	cfg.Transport = progress{cfg.Transport, cfg.Timeouts, ""}
 	if cfg.open == nil {
 		cfg.open = func(name string) (io.ReadCloser, error) { return os.Open(name) }
 	}
