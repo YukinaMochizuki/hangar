@@ -1,6 +1,7 @@
 package chvm
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -756,5 +757,27 @@ func TestHostnames(t *testing.T) {
 		if got := hostname(driver.VMSpec{Machine: machine, MachineUID: "M1_uid-abcdefgh"}); got != want {
 			t.Errorf("hostname of %q: %q, want %q", machine, got, want)
 		}
+	}
+}
+
+// TestOnlyTheFirstInterfaceRoutesByDefault: a machine on several networks
+// has its default route by its first interface alone, as the guest takes
+// no more than one.
+func TestOnlyTheFirstInterfaceRoutesByDefault(t *testing.T) {
+	spec := testSpec("m1", driver.RestartAlways)
+	second := spec.Interfaces[0]
+	second.Name, second.NetworkUID, second.MAC = "eth1", "n2", "02:00:00:00:00:02"
+	second.Address, second.Gateway = netip.MustParsePrefix("10.1.0.2/24"), netip.MustParseAddr("10.1.0.1")
+	spec.Interfaces = append(spec.Interfaces, second)
+	b, err := (&Hypervisor{}).bootDisk(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bootdisk.Read(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := cfg.GetInterfaces(); len(i) != 2 || i[0].GetGateway() != "10.0.0.1" || i[1].GetGateway() != "" || i[1].GetAddress() != "10.1.0.2/24" {
+		t.Errorf("interfaces %v", i)
 	}
 }

@@ -444,9 +444,11 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		Nameservers: spec.Nameservers,
 		Search:      spec.Search,
 	}
-	for _, i := range spec.Interfaces {
+	for n, i := range spec.Interfaces {
+		// The default route goes by the first interface; the guest takes
+		// no more than one.
 		gw := ""
-		if i.Gateway.IsValid() {
+		if n == 0 && i.Gateway.IsValid() {
 			gw = i.Gateway.String()
 		}
 		cfg.Interfaces = append(cfg.Interfaces, &guestv1.Interface{Mac: i.MAC, Address: i.Address.String(), Gateway: gw})

@@ -377,9 +377,22 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
 		}},
-		Interfaces:    []*computev1alpha1.MachineInterface{{Name: "eth0", Network: DefaultNetwork}},
+		Interfaces:    machineInterfaces(cs.GetInterfaces()),
 		RestartPolicy: restart,
 	}, nil
+}
+
+// machineInterfaces are the interfaces asked for, named by position, or one
+// on the default network if none is.
+func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alpha1.MachineInterface {
+	if len(nics) == 0 {
+		return []*computev1alpha1.MachineInterface{{Name: "eth0", Network: DefaultNetwork}}
+	}
+	out := make([]*computev1alpha1.MachineInterface, len(nics))
+	for i, nic := range nics {
+		out[i] = &computev1alpha1.MachineInterface{Name: fmt.Sprintf("eth%d", i), Network: nic.GetNetwork()}
+	}
+	return out
 }
 
 // reportContainer writes the container's status, conditional on c as read:

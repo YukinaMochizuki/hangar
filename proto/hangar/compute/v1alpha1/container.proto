@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package hangar.compute.v1alpha1;
 
+import "hangar/compute/v1alpha1/interface.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
 
@@ -42,6 +43,10 @@ message ContainerSpec {
   // spec, so applying a manifest that leaves this out starts the container.
   // The status condition Stopped says when a stop has taken effect.
   ContainerRunState run_state = 8;
+  // The networks the container is on, at most 8, each once; empty is one
+  // interface on "default". The first holds the default route. Changing
+  // them restarts the container.
+  repeated NetworkInterface interfaces = 9;
 }
 
 // ContainerRunState is what a container's user asks of its process. More
