@@ -39,11 +39,18 @@ message VirtualMachineSpec {
   // out starts the VM.
   VirtualMachineRunState run_state = 4;
   // SSH public keys, each a line of an authorized_keys file, which the
-  // guest is given for its default user.
+  // guest's cloud-init gives its default user (such as "ubuntu") on its
+  // first boot, through vendor-data. A user_data that sets
+  // ssh_authorized_keys itself, or turns vendor-data off, takes precedence.
   repeated string ssh_authorized_keys = 5;
   // The VM's network interfaces, eth0, eth1 and on, in this order. Empty is
   // one interface on the network "default". Changing them restarts the VM.
   repeated NetworkInterface interfaces = 6;
+  // Handed to the guest's cloud-init unchanged, as user-data, such as a
+  // #cloud-config document or a script; at most 16 KiB. cloud-init runs it
+  // on the VM's first boot only, so changing it neither restarts the VM
+  // nor runs again in it. See docs/decisions/vm-boot.md.
+  string user_data = 7;
 }
 
 // VirtualMachineResources sizes the VM. Each field is a quantity in

@@ -40,6 +40,25 @@ booted kernels of their own, moved there too.
   `ds=nocloud;s=http://169.254.169.254/nocloud/`, which cloud-init reads as
   its NoCloud datasource, served by the metadata service of the VM's
   networks. Images are used unmodified.
+- **What cloud-init gets** (`networking.md`, the metadata service):
+  `meta-data` with the VM's uid as `instance-id` and its name as
+  `local-hostname`; `user-data`, the VM's `userData` exactly as written
+  (at most 16 KiB; empty is served as an empty answer); and
+  `vendor-data`, the platform's settings, a `#cloud-config` with the VM's
+  `sshAuthorizedKeys` as `ssh_authorized_keys`, which cloud-init gives the
+  image's default user (`ubuntu` on Ubuntu). The platform's settings go
+  in vendor-data, never into the user's document: cloud-init applies
+  user-data over vendor-data, so a user-data that sets its own keys, or
+  turns vendor-data off, wins. More of the platform's settings, such as
+  an SSH CA, go there too. A key holds only printable characters and
+  tabs, as cloud-init's YAML parser refuses the whole vendor-data over
+  some others; and the keys, each quoted, fit the machine's 64 KiB of
+  vendor-data, so a VM admitted always gets its machine.
+- **First boot only.** cloud-init runs per instance, and the instance id
+  is the VM's uid, so user-data and keys apply on the VM's first boot,
+  not again on a restart, nor when its machine is made again. Changing
+  `userData` or `sshAuthorizedKeys` restarts nothing: the new data is
+  served, and read only by a new instance (a VM made again).
 - **Its disks are Disks.** Its root disk is a `Disk`, made for it from an
   image (`<vm>-root`, deleted with it or retained, as its `deletePolicy`
   says) or one it names; data disks follow it, in order (`vda`, `vdb` and on).

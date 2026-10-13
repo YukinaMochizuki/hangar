@@ -203,12 +203,17 @@ anything else needs a reachable address.
   gateway, in the form of cloud-init's NoCloud datasource, which a VM is
   pointed at by its SMBIOS serial number
   (`ds=nocloud;s=http://169.254.169.254/nocloud/`). It serves
-  `/nocloud/meta-data` (the machine's uid as instance-id, its name as
-  hostname), `user-data` and `vendor-data`, each for the machine whose
-  address the request comes from, which the binding above makes sound;
-  any other address or path is 404. NoCloud sends no token, so nothing
-  but the binding stands between a guest and another's user-data. It
-  takes GET only, with bounded headers and timeouts, at most 16
+  `/nocloud/meta-data` (the instance id, its name as hostname),
+  `user-data` and `vendor-data`, each for the machine whose address the
+  request comes from, which the binding above makes sound; any other
+  address or path is 404. NoCloud sends no token, so nothing but the
+  binding stands between a guest and another's user-data. A container's
+  instance id is its machine's uid, and it has no user-data or
+  vendor-data; a VM's are its own (`vm-boot.md`), carried on its
+  machine's `firmware.cloud_init`, which the apiserver shows a node agent
+  only for the machines on that node (and a VM's `userData` and keys to
+  none), so the node serving a guest is the only one that reads its
+  data. It takes GET only, with bounded headers and timeouts, at most 16
   connections a network and 4 a machine, so no machine keeps the others'
   cloud-init waiting, and stops with a deadline, as the resolver does.
 - **`SecurityGroup`** works as in AWS (`internal/secgroup`): a group belongs

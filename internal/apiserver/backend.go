@@ -155,7 +155,18 @@ func (b *backend) Get(ctx context.Context, key resource.Key) (proto.Message, err
 		return nil, err
 	}
 	_, obj, err := b.read(ctx, p, authz.Get, key)
-	return obj, err
+	if err != nil {
+		return nil, err
+	}
+	b.forNode(p, obj)
+	return obj, nil
+}
+
+// forNode clears from obj what a node agent p may not read (kindHooks.forNode).
+func (b *backend) forNode(p auth.Principal, obj proto.Message) {
+	if p.Type == auth.Node && b.hooks.forNode != nil {
+		b.hooks.forNode(p.ID, obj)
+	}
 }
 
 // read fetches an object for an action and authorizes it. Its answer never
@@ -222,6 +233,7 @@ func (b *backend) List(ctx context.Context, opts resource.ListOptions) (resource
 		if !b.allowed(p, authz.List, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			continue
 		}
+		b.forNode(p, obj)
 		res.Items = append(res.Items, obj)
 	}
 	// A full page means there may be more, even if filtering emptied it.
@@ -316,6 +328,7 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 		if !b.allowed(p, authz.Watch, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			return nil
 		}
+		b.forNode(p, obj)
 		return send(resource.Event{Type: eventType(ev.Type), Object: obj, Revision: ev.Revision})
 	})
 	// The caller's deadline reaches the server a little before the caller,
@@ -688,6 +701,7 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 		if p.Type == auth.Node && b.r.Kind == registry.Node.Kind {
 			b.s.heartbeats.record(key.Name, b.s.clock.Now())
 		}
+		b.forNode(p, obj)
 		return obj, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))
