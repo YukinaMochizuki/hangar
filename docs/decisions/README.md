@@ -18,6 +18,7 @@ the change.
 | `buf-breaking-wire-json.md` | WIRE_JSON breaking checks are enforced even in alpha |
 | `tenancy-and-iam.md` | Tenant and Project; permissions, roles and bindings |
 | `authentication.md` | Cloudflare Access for people and agents; peer credentials for the node |
+| `cloudflare-setup.md` | Cloudflare's side is converged by `hangar-cloudflare`, which changes only what its state file records |
 | `networking.md` | Per-network namespaces, security groups, routed IPv6, one tunnel |
 | `streaming-transport.md` | Bidirectional streams over WebSocket |
 | `testing-strategy.md` | Test layers, fakes held honest by conformance tests, a disposable testbed |
