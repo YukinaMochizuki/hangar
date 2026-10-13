@@ -6,7 +6,9 @@ the Cloudflare API it converges:
 
 - a remotely-managed tunnel (`config_src: cloudflare`) whose ingress sends
   `<hostname>` to `http://127.0.0.1:8080` and everything else to
-  `http_status:404`;
+  `http_status:404`; the hostname's rule sets `originRequest.access`
+  (`required: true`, the team name, the application's AUD), so cloudflared
+  itself drops any request without a valid Access token for the application;
 - a proxied CNAME `<hostname>` → `<tunnel id>.cfargotunnel.com`, commented
   `managed by hangar-cloudflare`;
 - two reusable Access policies, `<hostname>: allow listed emails` (allow,
@@ -17,10 +19,20 @@ the Cloudflare API it converges:
 - one service token, `hangar-smoke`, for smoke tests only.
 
 It changes only what it created. The IDs of those objects are in the output
-directory's `state.json`; an object with a colliding name (a tunnel or
-policy, a service token called `hangar-smoke`) or on the same hostname (a DNS
-record, an application) that is not in the state makes it stop with the
-object's ID, before it changes anything. It never deletes anything.
+directory's `state.json`. It stops, naming the object's ID, before it changes
+anything, when an object not in the state collides with one of its own: a
+tunnel or policy of the same name, a service token called `hangar-smoke`, a
+DNS record at the hostname, or an Access application that covers the
+hostname or a path under it (through its domain, a destination, or a legacy
+self-hosted domain). It never deletes anything.
+
+On a first apply it creates the policies and the application first, then
+the tunnel and its ingress, and the DNS record last, so the hostname is never
+routed before Access covers it.
+
+The hostname cannot be changed: the state records it, and a config naming
+another is refused. To move, remove the old setup by hand (see the end of
+this file) and start again, or run with a new `--out` directory.
 
 The code is `cmd/hangar-cloudflare` and `internal/cloudflare`.
 
@@ -88,12 +100,25 @@ go run ./cmd/hangar-cloudflare verify --config ~/cloudflare.yaml --out ~/hangar-
 - `apply` converges and prints what it changed. A second `apply` prints
   `No changes.`
 - `verify` is `plan` with an exit code: 0 when nothing differs, 3 on drift,
-  1 on an error (including a refusal), 2 on a usage error. It reports a
-  changed or extra ingress rule, `originRequest` or `warp-routing` set, the
-  record pointing elsewhere or unproxied, a policy rule added, removed or
-  changed (include, exclude, require, decision, session), the application's
-  session, login methods, auto-redirect, destinations or attached policies
-  changed, any managed object deleted, and an output file missing or stale.
+  1 on an error (including a refusal), 2 on a usage error. It reports:
+  - the tunnel: an ingress rule changed, added or removed, including its
+    `originRequest` (the access check removed, not required, another AUD or
+    team), and a top-level `originRequest` set;
+  - the DNS record: its type, name, content, proxied flag or comment;
+  - a policy: a rule added, removed or changed (include, exclude, require),
+    its decision or its session;
+  - the application: its name, domain, session, login methods,
+    auto-redirect, destinations, self-hosted domains or attached policies,
+    and any setting that lets a request in with less than a full login or
+    weakens its cookie (`options_preflight_bypass`,
+    `allow_authenticate_via_warp`, `cors_headers`, `allow_iframe`,
+    `use_clientless_isolation_app_launcher_url`,
+    `http_only_cookie_attribute` off, `same_site_cookie_attribute` none);
+  - any managed object deleted, and an output file missing or stale.
+
+  A tunnel with `warp-routing` enabled is a note, not drift: the field is
+  read-only (assigning the tunnel a private network route turns it on), so
+  `apply` could not change it.
 
 Requests that get a 429 or a 5xx are retried with backoff (honouring
 `Retry-After`), except a create that got a 5xx, which may have succeeded; the
@@ -102,7 +127,9 @@ times out after 30 s and the whole run after `--timeout` (5m).
 
 ## The output directory
 
-Mode 0700, every file 0600. Nothing secret is ever printed.
+Created mode 0700, every file in it 0600. An existing directory that group
+or others can access is refused, before any API call, with the `chmod` that
+fixes it. Nothing secret is ever printed.
 
 | File | Holds | Goes to |
 |---|---|---|
@@ -111,21 +138,55 @@ Mode 0700, every file 0600. Nothing secret is ever printed.
 | `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | Merged into the host's `/etc/hangar/local.env` |
 | `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Wherever smoke tests run; the CLI reads those variables |
 
-Copy a file to the host without it passing through a terminal:
+Copy files to the host without them passing through a terminal (below).
 
-```sh
-ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflared.env' < ~/hangar-cloudflare/cloudflared.env
-```
+## Putting it on the host
 
-The order on the host (tunnel token first, then the auth mode) is in
-`docs/runbook/host-bootstrap.md`.
+**Switch the auth mode to `cloudflare` first, then install the tunnel
+token. Roll back in reverse.** Until the apiserver runs in `cloudflare` mode
+it runs `dev` auth, which takes the caller's identity from a header any
+client can set (`X-Hangar-Dev-User`). Once cloudflared connects, the public
+hostname reaches that listener: with the origin still in `dev` mode,
+anyone whose request gets through (every allowed person and service token,
+and everyone if Access is ever misconfigured) could claim any identity,
+`platform.root` included, with a header. The ingress's own access check
+does not help there: it checks that the request has a valid Access token,
+not who the header says it is.
+
+1. **Auth mode.** Add the two lines of `access.env` and
+   `HANGAR_AUTH_MODE=cloudflare` to the host's `/etc/hangar/local.env`
+   (root, 0600), each key once:
+
+   ```sh
+   ssh <host> 'sudo tee -a /etc/hangar/local.env >/dev/null' < ~/hangar-cloudflare/access.env
+   ssh <host> 'echo HANGAR_AUTH_MODE=cloudflare | sudo tee -a /etc/hangar/local.env >/dev/null'
+   ```
+
+   Re-run `deploy/host`, whose services step restarts the apiserver with
+   `--auth-mode cloudflare`, and check with `verify.sh` that the running
+   flags match `local.env`. Do not go on until they do.
+2. **Tunnel token.** Install it, then re-run `deploy/host`, which installs
+   and starts cloudflared once the file exists:
+
+   ```sh
+   ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflared.env' < ~/hangar-cloudflare/cloudflared.env
+   ```
+3. **Check** from outside: `hangar` through Access works, and so does a
+   call with the smoke token's `HANGAR_CF_CLIENT_ID` and
+   `HANGAR_CF_CLIENT_SECRET`.
+
+To roll back: first take the tunnel down (stop and disable the cloudflared
+service and remove `/etc/hangar/cloudflared.env`), then set
+`HANGAR_AUTH_MODE=dev` in `local.env` and re-run `deploy/host`. The host's
+side of each step is in `docs/runbook/host-bootstrap.md`; the order is the
+one above.
 
 ## When something is off
 
 - **A refusal names an object you know is ours.** `state.json` was lost or
   is from another directory. Restore it. Failing that, write it by hand with
   the IDs from the dashboard (fields `version: 1`, `account_id`, `zone_id`,
-  `tunnel_id`, `dns_record_id`, `app_id`, `policies.emails`,
+  `hostname`, `tunnel_id`, `dns_record_id`, `app_id`, `policies.emails`,
   `policies.service_tokens`, `service_token_id`), then run `plan`.
 - **`note: … smoke-token.env is not in the output directory`.** Cloudflare
   returns a client secret only when the token is created. Delete
@@ -133,6 +194,8 @@ The order on the host (tunnel token first, then the auth mode) is in
   run `apply`, which creates a new one and writes the file.
 - **`note: … expires at …`.** The smoke token lasts a year. Delete it and
   `apply`, as above.
-- **Removing everything.** The tool deletes nothing. In the dashboard,
-  delete the application, the two policies, the DNS record, the tunnel and
-  the service token, then delete `state.json`.
+- **Removing everything.** The tool deletes nothing. Take the host off the
+  tunnel first (the rollback above), then in the dashboard delete the DNS
+  record, the tunnel, the application, the two policies and the service
+  token, in that order, so the hostname is never routed without Access in
+  front. Then delete `state.json`.

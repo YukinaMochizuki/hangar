@@ -28,6 +28,17 @@ public endpoints), so the client has to be reusable Go.
 - **Reusable Access policies**, attached to the application by ID and
   precedence. Cloudflare's application-scoped policies are legacy: they
   cannot be added to new applications.
+- **The hostname is never routed before Access covers it.** A first apply
+  creates the policies and the application, then the tunnel and its
+  ingress, and the DNS record last. The ingress rule also sets
+  `originRequest.access` (required, the team, the application's AUD), so a
+  request that did not pass this application's Access check (the
+  application deleted, or its destinations changed) never reaches the
+  origin. On the host, the apiserver leaves `dev` auth
+  before the tunnel token is installed (`docs/runbook/cloudflare.md`).
+- **The hostname is fixed for a state file.** Changing it is refused rather
+  than converged, since the old name's record, application and ingress would
+  have to be taken down in the right order.
 - **It deletes nothing.** Removing an object is a human's decision, in the
   dashboard.
 - **Secrets go to files, never to output.** The tunnel token, and the
