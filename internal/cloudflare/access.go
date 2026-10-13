@@ -8,7 +8,9 @@ import (
 	"time"
 )
 
-// AccessApp is an Access application as the API returns it.
+// AccessApp is an Access application as the API returns it. Besides what
+// defines it, it carries the settings that, set, let requests through with
+// less than a full Access login, so callers can check them.
 type AccessApp struct {
 	ID                     string            `json:"id"`
 	AUD                    string            `json:"aud"`
@@ -19,7 +21,18 @@ type AccessApp struct {
 	AllowedIdPs            []string          `json:"allowed_idps"`
 	AutoRedirectToIdentity bool              `json:"auto_redirect_to_identity"`
 	Destinations           []AppDestination  `json:"destinations,omitempty"`
+	SelfHostedDomains      []string          `json:"self_hosted_domains,omitempty"`
 	Policies               []AppPolicyResult `json:"policies"`
+
+	OptionsPreflightBypass   bool            `json:"options_preflight_bypass"`
+	AllowAuthenticateViaWarp bool            `json:"allow_authenticate_via_warp"`
+	AllowIframe              bool            `json:"allow_iframe"`
+	CORSHeaders              json.RawMessage `json:"cors_headers,omitempty"`
+	// HTTPOnlyCookieAttribute is nil when the API leaves it out; its default
+	// is true.
+	HTTPOnlyCookieAttribute *bool  `json:"http_only_cookie_attribute"`
+	SameSiteCookieAttribute string `json:"same_site_cookie_attribute"`
+	ClientlessIsolationURL  bool   `json:"use_clientless_isolation_app_launcher_url"`
 }
 
 // AppDestination is a hostname (and path) an application secures.
@@ -36,7 +49,7 @@ type AppPolicyResult struct {
 }
 
 // AccessAppInput is the body that creates or replaces a self-hosted
-// application.
+// application. A replace resets what the body leaves out.
 type AccessAppInput struct {
 	Name                   string           `json:"name"`
 	Domain                 string           `json:"domain"`
@@ -46,6 +59,13 @@ type AccessAppInput struct {
 	AutoRedirectToIdentity bool             `json:"auto_redirect_to_identity"`
 	Destinations           []AppDestination `json:"destinations,omitempty"`
 	Policies               []PolicyLink     `json:"policies"`
+
+	OptionsPreflightBypass   bool   `json:"options_preflight_bypass"`
+	AllowAuthenticateViaWarp bool   `json:"allow_authenticate_via_warp"`
+	AllowIframe              bool   `json:"allow_iframe"`
+	HTTPOnlyCookieAttribute  bool   `json:"http_only_cookie_attribute"`
+	SameSiteCookieAttribute  string `json:"same_site_cookie_attribute,omitempty"`
+	ClientlessIsolationURL   bool   `json:"use_clientless_isolation_app_launcher_url"`
 }
 
 // PolicyLink attaches a reusable policy to an application.
@@ -110,11 +130,11 @@ type Organization struct {
 
 func accessPath(account, rest string) string { return "/accounts/" + esc(account) + "/access/" + rest }
 
-// ListAccessApps returns the account's applications whose domain is exactly
-// domain.
-func (c *Client) ListAccessApps(ctx context.Context, account, domain string) ([]AccessApp, error) {
-	q := url.Values{"domain": {domain}, "exact": {"true"}}
-	return listAll[AccessApp](ctx, c, accessPath(account, "apps"), q, 100)
+// ListAccessApps returns every application of the account. Filtering is the
+// caller's: the API's domain filter sees only the primary domain, not
+// destinations, so it can miss an application covering a hostname.
+func (c *Client) ListAccessApps(ctx context.Context, account string) ([]AccessApp, error) {
+	return listAll[AccessApp](ctx, c, accessPath(account, "apps"), nil, 100)
 }
 
 // GetAccessApp returns one application.

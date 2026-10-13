@@ -79,13 +79,16 @@ type Engine struct {
 
 type run struct {
 	*Engine
-	ctx   context.Context
-	st    State
-	res   *Result
-	zone  cloudflare.Zone
-	team  string
-	idps  []string
-	owned owned
+	ctx  context.Context
+	st   State
+	res  *Result
+	zone cloudflare.Zone
+	team string
+	// teamName is the team domain's first label, which cloudflared's
+	// origin access check takes.
+	teamName string
+	idps     []string
+	owned    owned
 }
 
 // owned holds the objects the state names that still exist.
@@ -98,10 +101,16 @@ type owned struct {
 }
 
 // Run compares Cloudflare with the config and, with Apply, converges it.
-// Ownership conflicts are all found before anything is changed.
+// Ownership conflicts are all found before anything is changed. Objects are
+// converged so that the hostname is never routed before Access covers it:
+// the policies and the application first, then the tunnel and its ingress,
+// then the DNS record.
 func (e *Engine) Run(ctx context.Context) (*Result, error) {
 	if e.Log == nil {
 		e.Log = io.Discard
+	}
+	if err := checkDir(e.Dir); err != nil {
+		return nil, err
 	}
 	st, err := loadState(e.Dir)
 	if err != nil {
@@ -110,7 +119,11 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 	if st.AccountID != "" && st.AccountID != e.Config.AccountID {
 		return nil, fmt.Errorf("%s belongs to account %s, the config names %s", StateFile, st.AccountID, e.Config.AccountID)
 	}
-	st.AccountID = e.Config.AccountID
+	if st.Hostname != "" && st.Hostname != e.Config.Hostname {
+		return nil, fmt.Errorf("%s was written for hostname %s, the config names %s; changing the hostname is not supported: "+
+			"remove the old setup by hand (docs/runbook/cloudflare.md), or run with a new --out directory", StateFile, st.Hostname, e.Config.Hostname)
+	}
+	st.AccountID, st.Hostname = e.Config.AccountID, e.Config.Hostname
 	r := &run{Engine: e, ctx: ctx, st: st, res: &Result{}}
 	if err := r.lookups(); err != nil {
 		return nil, err
@@ -118,7 +131,7 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 	if err := r.observe(); err != nil {
 		return nil, err
 	}
-	steps := []func() error{r.tunnel, r.tunnelConfig, r.dnsRecord, r.policies, r.app, r.serviceToken, r.outputs}
+	steps := []func() error{r.policies, r.app, r.tunnel, r.tunnelConfig, r.dnsRecord, r.serviceToken, r.outputs}
 	for _, s := range steps {
 		if err := s(); err != nil {
 			return r.res, err
@@ -157,7 +170,13 @@ func (r *run) lookups() error {
 	if err != nil {
 		return err
 	}
-	r.team = "https://" + strings.TrimSuffix(org.AuthDomain, "/")
+	domain := strings.TrimSuffix(org.AuthDomain, "/")
+	r.team = "https://" + domain
+	name, ok := strings.CutSuffix(domain, ".cloudflareaccess.com")
+	if !ok || name == "" || strings.Contains(name, ".") {
+		return fmt.Errorf("the team domain %s is not <team>.cloudflareaccess.com, which cloudflared's access check needs", domain)
+	}
+	r.teamName = name
 	idps, err := r.Client.ListIdentityProviders(r.ctx, acct)
 	if err != nil {
 		return err
@@ -212,6 +231,12 @@ func (r *run) observe() error {
 		case err != nil:
 			return err
 		case t.DeletedAt == nil:
+			if t.LocallyManaged() {
+				return fmt.Errorf("tunnel %q (id %s) is locally managed (config_src local); its configuration cannot be set through the API", t.Name, t.ID)
+			}
+			if t.Name != cfg.TunnelName {
+				return fmt.Errorf("tunnel %s is named %q, the config says %q; rename it in the dashboard or the config", t.ID, t.Name, cfg.TunnelName)
+			}
 			r.owned.tunnel = &t
 		}
 	}
@@ -278,13 +303,13 @@ func (r *run) observe() error {
 			r.owned.app = &a
 		}
 	}
-	apps, err := r.Client.ListAccessApps(r.ctx, acct, cfg.Hostname)
+	apps, err := r.Client.ListAccessApps(r.ctx, acct)
 	if err != nil {
 		return err
 	}
 	for _, a := range apps {
-		if strings.EqualFold(a.Domain, cfg.Hostname) && (r.owned.app == nil || a.ID != r.owned.app.ID) {
-			foreign("Access application", a.Domain, a.ID)
+		if covers(a, cfg.Hostname) && (r.owned.app == nil || a.ID != r.owned.app.ID) {
+			foreign("Access application", a.Name, a.ID)
 		}
 	}
 
@@ -352,12 +377,6 @@ func (r *run) tunnel() error {
 		r.st.TunnelID = created.ID
 		return r.save()
 	}
-	if t.ConfigSrc != "cloudflare" {
-		return fmt.Errorf("%s (id %s) is locally managed (config_src %q); its configuration cannot be set through the API", obj, t.ID, t.ConfigSrc)
-	}
-	if t.Name != name {
-		return fmt.Errorf("tunnel %s is named %q, the config says %q; rename it in the dashboard or the config", t.ID, t.Name, name)
-	}
 	return nil
 }
 
@@ -368,8 +387,19 @@ func (r *run) tunnelID() string {
 	return r.owned.tunnel.ID
 }
 
+// wantIngress routes the hostname to the origin, with cloudflared itself
+// refusing any request without a valid Access token for the application, so
+// a mistake on Access's side still cannot reach the origin.
 func (r *run) wantIngress() []cloudflare.IngressRule {
-	return []cloudflare.IngressRule{{Hostname: r.Config.Hostname, Service: Origin}, {Service: catchAll}}
+	aud := pendingID("application's AUD")
+	if r.owned.app != nil {
+		aud = r.owned.app.AUD
+	}
+	access := cloudflare.OriginAccess{Required: true, TeamName: r.teamName, AudTag: []string{aud}}
+	return []cloudflare.IngressRule{
+		{Hostname: r.Config.Hostname, Service: Origin, OriginRequest: cloudflare.OriginRequestWithAccess(access)},
+		{Service: catchAll},
+	}
 }
 
 func (r *run) tunnelConfig() error {
@@ -384,6 +414,12 @@ func (r *run) tunnelConfig() error {
 			return err
 		}
 		fields = diffTunnelConfig(have.Config, want)
+		if !zeroJSON(have.Config.WarpRouting) {
+			// Read-only: an assigned private network route turns it on, and the
+			// configuration call cannot turn it off.
+			r.res.Notes = append(r.res.Notes, fmt.Sprintf("%s reports warp-routing %s; it is read-only, set by private network routes assigned to the tunnel",
+				obj, string(have.Config.WarpRouting)))
+		}
 	}
 	if len(fields) == 0 {
 		return nil
@@ -407,16 +443,13 @@ func diffTunnelConfig(have, want cloudflare.TunnelConfig) []Field {
 	if !zeroJSON(have.OriginRequest) {
 		fields = append(fields, Field{Name: "originRequest", Have: string(have.OriginRequest), Want: "(unset)"})
 	}
-	if !zeroJSON(have.WarpRouting) {
-		fields = append(fields, Field{Name: "warp-routing", Have: string(have.WarpRouting), Want: "(unset)"})
-	}
 	return fields
 }
 
 func sameIngress(a, b []cloudflare.IngressRule) bool {
 	return slices.EqualFunc(a, b, func(x, y cloudflare.IngressRule) bool {
 		return strings.EqualFold(x.Hostname, y.Hostname) && x.Path == y.Path && x.Service == y.Service &&
-			zeroJSON(x.OriginRequest) && zeroJSON(y.OriginRequest)
+			canonJSON(x.OriginRequest) == canonJSON(y.OriginRequest)
 	})
 }
 
@@ -432,8 +465,8 @@ func formatIngress(rules []cloudflare.IngressRule) string {
 		}
 		h += x.Path
 		s := h + " -> " + x.Service
-		if !zeroJSON(x.OriginRequest) {
-			s += " " + string(x.OriginRequest)
+		if c := canonJSON(x.OriginRequest); c != "" {
+			s += " " + c
 		}
 		parts[i] = s
 	}
@@ -443,43 +476,56 @@ func formatIngress(rules []cloudflare.IngressRule) string {
 // zeroJSON reports whether raw sets nothing: absent, null, or an object or
 // array holding only false, zero, empty or null values. The API may echo
 // settings back as {} or {"enabled": false}, which mean the same as unset.
-func zeroJSON(raw json.RawMessage) bool {
+func zeroJSON(raw json.RawMessage) bool { return canonJSON(raw) == "" }
+
+// canonJSON renders raw with every unset value (false, zero, empty, null)
+// dropped and keys sorted, so settings compare by meaning; "" is nothing
+// set. Invalid JSON renders as itself, so it never equals a valid value.
+func canonJSON(raw json.RawMessage) string {
 	if len(raw) == 0 {
-		return true
+		return ""
 	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
-		return false
+		return "invalid:" + string(raw)
 	}
-	var zero func(any) bool
-	zero = func(v any) bool {
-		switch x := v.(type) {
-		case nil:
-			return true
-		case bool:
-			return !x
-		case float64:
-			return x == 0
-		case string:
-			return x == ""
-		case []any:
-			for _, e := range x {
-				if !zero(e) {
-					return false
-				}
-			}
-			return true
-		case map[string]any:
-			for _, e := range x {
-				if !zero(e) {
-					return false
-				}
-			}
-			return true
+	v, set := prune(v)
+	if !set {
+		return ""
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// prune drops unset values from v and reports whether anything is left.
+func prune(v any) (any, bool) {
+	switch x := v.(type) {
+	case nil:
+		return nil, false
+	case bool:
+		return x, x
+	case float64:
+		return x, x != 0
+	case string:
+		return x, x != ""
+	case []any:
+		out, set := make([]any, 0, len(x)), false
+		for _, e := range x {
+			p, ok := prune(e)
+			out = append(out, p)
+			set = set || ok
 		}
-		return false
+		return out, set
+	case map[string]any:
+		out := map[string]any{}
+		for k, e := range x {
+			if p, ok := prune(e); ok {
+				out[k] = p
+			}
+		}
+		return out, len(out) > 0
 	}
-	return zero(v)
+	return v, true
 }
 
 func (r *run) dnsRecord() error {
@@ -666,6 +712,14 @@ func (r *run) wantApp() cloudflare.AccessAppInput {
 		AutoRedirectToIdentity: false,
 		Destinations:           []cloudflare.AppDestination{{Type: "public", URI: r.Config.Hostname}},
 		Policies:               r.policyLinks(),
+		// Every setting that lets a request in with less than a full login
+		// is sent at its strict value, so a replace also undoes drift there.
+		OptionsPreflightBypass:   false,
+		AllowAuthenticateViaWarp: false,
+		AllowIframe:              false,
+		HTTPOnlyCookieAttribute:  true,
+		SameSiteCookieAttribute:  "lax",
+		ClientlessIsolationURL:   false,
 	}
 }
 
@@ -737,6 +791,12 @@ func diffApp(have cloudflare.AccessApp, want cloudflare.AccessAppInput) []Field 
 	}) {
 		add("destinations", formatDestinations(have.Destinations), formatDestinations(want.Destinations))
 	}
+	if len(have.SelfHostedDomains) > 0 && !slices.EqualFunc(have.SelfHostedDomains, []string{want.Domain}, func(a, b string) bool {
+		return strings.EqualFold(strings.TrimSuffix(a, "/"), b)
+	}) {
+		add("self_hosted_domains", strings.Join(have.SelfHostedDomains, ", "), want.Domain)
+	}
+	fields = append(fields, diffLoosening(have)...)
 	var links []cloudflare.PolicyLink
 	for _, p := range have.Policies {
 		links = append(links, cloudflare.PolicyLink{ID: p.ID, Precedence: p.Precedence})
@@ -747,6 +807,46 @@ func diffApp(have cloudflare.AccessApp, want cloudflare.AccessAppInput) []Field 
 		add("policies", formatLinks(links), formatLinks(want.Policies))
 	}
 	return fields
+}
+
+// diffLoosening reports the application settings that, away from their
+// strict value, let a request in with less than a full Access login or
+// weaken its session cookie.
+func diffLoosening(have cloudflare.AccessApp) []Field {
+	var fields []Field
+	flag := func(name string, on bool) {
+		if on {
+			fields = append(fields, Field{name, "true", "false"})
+		}
+	}
+	flag("options_preflight_bypass", have.OptionsPreflightBypass)
+	flag("allow_authenticate_via_warp", have.AllowAuthenticateViaWarp)
+	flag("allow_iframe", have.AllowIframe)
+	flag("use_clientless_isolation_app_launcher_url", have.ClientlessIsolationURL)
+	if c := canonJSON(have.CORSHeaders); c != "" {
+		fields = append(fields, Field{"cors_headers", c, "(unset)"})
+	}
+	if have.HTTPOnlyCookieAttribute != nil && !*have.HTTPOnlyCookieAttribute {
+		fields = append(fields, Field{"http_only_cookie_attribute", "false", "true"})
+	}
+	if s := strings.ToLower(have.SameSiteCookieAttribute); s != "" && s != "lax" && s != "strict" {
+		fields = append(fields, Field{"same_site_cookie_attribute", have.SameSiteCookieAttribute, "lax"})
+	}
+	return fields
+}
+
+// covers reports whether an application secures hostname or a path under
+// it, through its domain, its destinations or its legacy self-hosted
+// domains.
+func covers(a cloudflare.AccessApp, hostname string) bool {
+	match := func(s string) bool {
+		s = strings.ToLower(s)
+		return s == hostname || strings.HasPrefix(s, hostname+"/")
+	}
+	if match(a.Domain) || slices.ContainsFunc(a.SelfHostedDomains, match) {
+		return true
+	}
+	return slices.ContainsFunc(a.Destinations, func(d cloudflare.AppDestination) bool { return match(d.URI) })
 }
 
 func formatLinks(links []cloudflare.PolicyLink) string {

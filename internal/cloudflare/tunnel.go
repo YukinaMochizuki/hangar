@@ -10,13 +10,22 @@ import (
 
 // Tunnel is a Cloudflare Tunnel (cfd_tunnel).
 type Tunnel struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	ConfigSrc string     `json:"config_src"`
-	Status    string     `json:"status"`
-	CreatedAt time.Time  `json:"created_at"`
-	DeletedAt *time.Time `json:"deleted_at"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	ConfigSrc string `json:"config_src"`
+	// RemoteConfig is the deprecated form of ConfigSrc cloudflare, which
+	// some responses still carry instead.
+	RemoteConfig bool       `json:"remote_config"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"created_at"`
+	DeletedAt    *time.Time `json:"deleted_at"`
 }
+
+// LocallyManaged reports whether the tunnel's configuration lives on its
+// connector rather than in Cloudflare. Only an explicit local says so: an
+// absent config_src is the deprecated remote_config form or the API's
+// omission, not a claim.
+func (t Tunnel) LocallyManaged() bool { return t.ConfigSrc == "local" }
 
 // IngressRule maps a hostname (empty for the catch-all) to a service.
 type IngressRule struct {
@@ -27,12 +36,27 @@ type IngressRule struct {
 }
 
 // TunnelConfig is a remotely-managed tunnel's configuration. OriginRequest
-// and WarpRouting are kept raw: callers only need to know whether they are
-// set.
+// is kept raw, so settings this package does not model still compare.
+// WarpRouting is read-only (and deprecated): it is read, never sent.
 type TunnelConfig struct {
 	Ingress       []IngressRule   `json:"ingress"`
 	OriginRequest json.RawMessage `json:"originRequest,omitempty"`
 	WarpRouting   json.RawMessage `json:"warp-routing,omitempty"`
+}
+
+// OriginAccess is an ingress rule's originRequest.access: cloudflared checks
+// each request's Access token against these application AUD tags of the
+// team, and with Required refuses requests that have none.
+type OriginAccess struct {
+	Required bool     `json:"required"`
+	TeamName string   `json:"teamName"`
+	AudTag   []string `json:"audTag"`
+}
+
+// OriginRequestWithAccess is an originRequest holding only access.
+func OriginRequestWithAccess(a OriginAccess) json.RawMessage {
+	b, _ := json.Marshal(map[string]OriginAccess{"access": a})
+	return b
 }
 
 // TunnelConfiguration is the versioned configuration record of a tunnel.
@@ -75,6 +99,7 @@ func (c *Client) GetTunnelConfiguration(ctx context.Context, account, id string)
 // PutTunnelConfiguration replaces a remotely-managed tunnel's configuration.
 func (c *Client) PutTunnelConfiguration(ctx context.Context, account, id string, cfg TunnelConfig) (TunnelConfiguration, error) {
 	var tc TunnelConfiguration
+	cfg.WarpRouting = nil
 	body := map[string]TunnelConfig{"config": cfg}
 	_, err := c.do(ctx, http.MethodPut, "/accounts/"+esc(account)+"/cfd_tunnel/"+esc(id)+"/configurations", nil, body, &tc)
 	return tc, err

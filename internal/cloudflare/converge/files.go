@@ -26,10 +26,40 @@ type State struct {
 	TunnelID    string `json:"tunnel_id,omitempty"`
 	DNSRecordID string `json:"dns_record_id,omitempty"`
 	ZoneID      string `json:"zone_id,omitempty"`
-	AppID       string `json:"app_id,omitempty"`
+	// Hostname is the API hostname the objects serve; changing it is refused.
+	Hostname string `json:"hostname,omitempty"`
+	AppID    string `json:"app_id,omitempty"`
 	// Policies maps a policy's role (emailsPolicy, tokensPolicy) to its ID.
 	Policies       map[string]string `json:"policies,omitempty"`
 	ServiceTokenID string            `json:"service_token_id,omitempty"`
+}
+
+// checkDir refuses an output directory that is not a directory or that
+// group or others can enter: it holds secrets. A missing one is fine; it is
+// created 0700 when the first file is written.
+func checkDir(dir string) error {
+	fi, err := os.Stat(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("output directory %s is not a directory", dir)
+	}
+	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
+		return fmt.Errorf("output directory %s has mode %04o; it holds secrets, so only its owner may have access: chmod 700 %s", dir, perm, dir)
+	}
+	return nil
+}
+
+func mkdir(dir string) error {
+	if _, err := os.Stat(dir); err == nil {
+		return checkDir(dir)
+	}
+	// The umask can only take bits away, so this is 0700 or stricter.
+	return os.MkdirAll(dir, 0o700)
 }
 
 func loadState(dir string) (State, error) {
@@ -74,7 +104,7 @@ type pending struct {
 var createTemp = os.CreateTemp
 
 func newPending(dir, name string) (*pending, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := mkdir(dir); err != nil {
 		return nil, err
 	}
 	f, err := createTemp(dir, "."+name+".*")

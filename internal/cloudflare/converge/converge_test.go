@@ -131,12 +131,12 @@ func TestPlanFromEmptyChangesNothing(t *testing.T) {
 		t.Fatalf("plan created the output directory: %v", err)
 	}
 	want := []string{
-		`create tunnel "hangar"`,
-		`update tunnel "hangar" configuration`,
-		"create DNS record " + testHost,
 		`create Access policy "` + testHost + `: allow listed emails"`,
 		`create Access policy "` + testHost + `: service tokens"`,
 		"create Access application " + testHost,
+		`create tunnel "hangar"`,
+		`update tunnel "hangar" configuration`,
+		"create DNS record " + testHost,
 		`create service token "hangar-smoke"`,
 		"write output " + SmokeTokenEnv,
 		"write output " + CloudflaredEnv,
@@ -172,8 +172,12 @@ func TestApplyFromEmpty(t *testing.T) {
 		}
 		ing := s.Configs[tun.ID].Config.Ingress
 		if len(ing) != 2 || ing[0].Hostname != testHost || ing[0].Service != "http://127.0.0.1:8080" ||
-			ing[1].Hostname != "" || ing[1].Service != "http_status:404" {
+			ing[1].Hostname != "" || ing[1].Service != "http_status:404" || len(ing[1].OriginRequest) != 0 {
 			t.Fatalf("ingress: %+v", ing)
+		}
+		wantAccess := `{"access":{"required":true,"teamName":"hangar-test","audTag":["` + s.Apps[st.AppID].AUD + `"]}}`
+		if got := string(ing[0].OriginRequest); got != wantAccess {
+			t.Fatalf("originRequest %s, want %s", got, wantAccess)
 		}
 		d := s.DNS[st.DNSRecordID]
 		if d == nil || d.Type != "CNAME" || d.Name != testHost || d.Content != tun.ID+".cfargotunnel.com" || !d.Proxied {
@@ -294,9 +298,20 @@ var drifts = []struct {
 	{"ingress origin request set", func(e *env, st State, s *cftest.State) {
 		s.Configs[st.TunnelID].Config.Ingress[0].OriginRequest = json.RawMessage(`{"httpHostHeader":"other"}`)
 	}, `tunnel "hangar" configuration`, "ingress"},
-	{"warp routing enabled", func(e *env, st State, s *cftest.State) {
-		s.Configs[st.TunnelID].Config.WarpRouting = json.RawMessage(`{"enabled":true}`)
-	}, `tunnel "hangar" configuration`, "warp-routing"},
+	{"origin access removed", func(e *env, st State, s *cftest.State) {
+		s.Configs[st.TunnelID].Config.Ingress[0].OriginRequest = nil
+	}, `tunnel "hangar" configuration`, "ingress"},
+	{"origin access not required", func(e *env, st State, s *cftest.State) {
+		r := &s.Configs[st.TunnelID].Config.Ingress[0]
+		r.OriginRequest = json.RawMessage(strings.Replace(string(r.OriginRequest), `"required":true`, `"required":false`, 1))
+	}, `tunnel "hangar" configuration`, "ingress"},
+	{"origin access other aud", func(e *env, st State, s *cftest.State) {
+		s.Configs[st.TunnelID].Config.Ingress[0].OriginRequest = json.RawMessage(`{"access":{"required":true,"teamName":"hangar-test","audTag":["other"]}}`)
+	}, `tunnel "hangar" configuration`, "ingress"},
+	{"origin access other team", func(e *env, st State, s *cftest.State) {
+		r := &s.Configs[st.TunnelID].Config.Ingress[0]
+		r.OriginRequest = json.RawMessage(strings.Replace(string(r.OriginRequest), `"hangar-test"`, `"elsewhere"`, 1))
+	}, `tunnel "hangar" configuration`, "ingress"},
 	{"dns points elsewhere", func(e *env, st State, s *cftest.State) {
 		s.DNS[st.DNSRecordID].Content = "elsewhere.example.net"
 	}, "DNS record " + testHost, "content"},
@@ -362,6 +377,30 @@ var drifts = []struct {
 		a := s.Apps[st.AppID]
 		a.Destinations = append(a.Destinations, cftest.AppDestination{Type: "public", URI: "other." + testZone})
 	}, "Access application " + testHost, "destinations"},
+	{"app self-hosted domain added", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].SelfHostedDomains = []string{testHost, "other." + testZone}
+	}, "Access application " + testHost, "self_hosted_domains"},
+	{"app options preflight bypass", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].OptionsPreflightBypass = true
+	}, "Access application " + testHost, "options_preflight_bypass"},
+	{"app authenticate via warp", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].AllowAuthenticateViaWarp = true
+	}, "Access application " + testHost, "allow_authenticate_via_warp"},
+	{"app iframe allowed", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].AllowIframe = true
+	}, "Access application " + testHost, "allow_iframe"},
+	{"app cors headers", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].CORSHeaders = json.RawMessage(`{"allow_all_origins":true,"allow_credentials":true}`)
+	}, "Access application " + testHost, "cors_headers"},
+	{"app cookie not http-only", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].HTTPOnlyCookieAttribute = false
+	}, "Access application " + testHost, "http_only_cookie_attribute"},
+	{"app cookie samesite none", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].SameSiteCookieAttribute = "none"
+	}, "Access application " + testHost, "same_site_cookie_attribute"},
+	{"app clientless isolation", func(e *env, st State, s *cftest.State) {
+		s.Apps[st.AppID].ClientlessIsolationURL = true
+	}, "Access application " + testHost, "use_clientless_isolation_app_launcher_url"},
 	{"tunnel deleted", func(e *env, st State, s *cftest.State) {
 		now := time.Now()
 		s.Tunnels[st.TunnelID].DeletedAt = &now
@@ -486,6 +525,20 @@ func TestRefusesObjectsItDidNotCreate(t *testing.T) {
 			return id
 		}},
 		{"service token", func(f *cftest.Fake) string { return f.AddServiceToken("hangar-smoke").ID }},
+		{"access app with the hostname as a destination", func(f *cftest.Fake) string {
+			return addApp(f, "aaaaaaaa-0000-0000-0000-000000000001", "other."+testZone, cftest.AppDestination{Type: "public", URI: testHost})
+		}},
+		{"access app on a path under the hostname", func(f *cftest.Fake) string {
+			return addApp(f, "aaaaaaaa-0000-0000-0000-000000000002", testHost+"/admin")
+		}},
+		{"access app with a destination under the hostname", func(f *cftest.Fake) string {
+			return addApp(f, "aaaaaaaa-0000-0000-0000-000000000003", "other."+testZone, cftest.AppDestination{Type: "public", URI: strings.ToUpper(testHost) + "/debug/*"})
+		}},
+		{"access app with the hostname as a legacy self-hosted domain", func(f *cftest.Fake) string {
+			id := addApp(f, "aaaaaaaa-0000-0000-0000-000000000004", "other."+testZone)
+			f.Mutate(func(s *cftest.State) { s.Apps[id].SelfHostedDomains = []string{testHost} })
+			return id
+		}},
 	}
 	for _, c := range cases {
 		t.Run("before first apply/"+c.name, func(t *testing.T) {

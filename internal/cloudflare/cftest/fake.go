@@ -32,14 +32,17 @@ type Zone struct {
 
 // Tunnel is a cfd_tunnel.
 type Tunnel struct {
-	ID        string     `json:"id"`
-	AccountID string     `json:"account_tag"`
-	Name      string     `json:"name"`
-	ConfigSrc string     `json:"config_src"`
-	Status    string     `json:"status"`
-	CreatedAt time.Time  `json:"created_at"`
-	DeletedAt *time.Time `json:"deleted_at"`
-	TunType   string     `json:"tun_type"`
+	ID        string `json:"id"`
+	AccountID string `json:"account_tag"`
+	Name      string `json:"name"`
+	ConfigSrc string `json:"config_src,omitempty"`
+	// RemoteConfig is the deprecated field older responses carry, alone or
+	// beside config_src.
+	RemoteConfig bool       `json:"remote_config"`
+	Status       string     `json:"status"`
+	CreatedAt    time.Time  `json:"created_at"`
+	DeletedAt    *time.Time `json:"deleted_at"`
+	TunType      string     `json:"tun_type"`
 	// Token is what GET .../token returns; never part of the tunnel's JSON.
 	Token string `json:"-"`
 }
@@ -108,6 +111,15 @@ type App struct {
 	AppLauncherVisible     bool             `json:"app_launcher_visible"`
 	Destinations           []AppDestination `json:"destinations"`
 	Tags                   []string         `json:"tags"`
+	SelfHostedDomains      []string         `json:"self_hosted_domains"`
+
+	OptionsPreflightBypass   bool            `json:"options_preflight_bypass"`
+	AllowAuthenticateViaWarp bool            `json:"allow_authenticate_via_warp"`
+	AllowIframe              bool            `json:"allow_iframe"`
+	CORSHeaders              json.RawMessage `json:"cors_headers,omitempty"`
+	HTTPOnlyCookieAttribute  bool            `json:"http_only_cookie_attribute"`
+	SameSiteCookieAttribute  string          `json:"same_site_cookie_attribute,omitempty"`
+	ClientlessIsolationURL   bool            `json:"use_clientless_isolation_app_launcher_url"`
 	// Links are the attached policies; the API expands them in responses.
 	Links     []PolicyLink `json:"-"`
 	CreatedAt time.Time    `json:"created_at"`
@@ -544,13 +556,17 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request, st *State) {
 	if t == nil {
 		return
 	}
+	// warp-routing is read-only, so it is not part of the request schema.
 	var in struct {
-		Config TunnelConfig `json:"config"`
+		Config struct {
+			Ingress       []IngressRule   `json:"ingress"`
+			OriginRequest json.RawMessage `json:"originRequest,omitempty"`
+		} `json:"config"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if t.ConfigSrc != "cloudflare" {
+	if t.ConfigSrc == "local" || t.ConfigSrc == "" && !t.RemoteConfig {
 		fail(w, http.StatusBadRequest, 1055, "This tunnel is not configured remotely.")
 		return
 	}
@@ -560,10 +576,12 @@ func (f *Fake) putConfig(w http.ResponseWriter, r *http.Request, st *State) {
 	}
 	old := st.Configs[t.ID]
 	v := 1
+	var warp json.RawMessage
 	if old != nil {
-		v = old.Version + 1
+		v, warp = old.Version+1, old.Config.WarpRouting
 	}
-	c := &TunnelConfiguration{AccountID: f.AccountID, TunnelID: t.ID, Version: v, Source: "cloudflare", Config: in.Config, CreatedAt: now()}
+	cfg := TunnelConfig{Ingress: in.Config.Ingress, OriginRequest: in.Config.OriginRequest, WarpRouting: warp}
+	c := &TunnelConfiguration{AccountID: f.AccountID, TunnelID: t.ID, Version: v, Source: "cloudflare", Config: cfg, CreatedAt: now()}
 	st.Configs[t.ID] = c
 	reply(w, http.StatusOK, c, nil)
 }
@@ -577,6 +595,20 @@ func checkIngress(rules []IngressRule) string {
 	for _, r := range rules {
 		if r.Service == "" {
 			return "Ingress rule is missing a service."
+		}
+		var or struct {
+			Access *struct {
+				AudTag   []string `json:"audTag"`
+				TeamName string   `json:"teamName"`
+			} `json:"access"`
+		}
+		if len(r.OriginRequest) > 0 {
+			if err := json.Unmarshal(r.OriginRequest, &or); err != nil {
+				return "Invalid originRequest."
+			}
+		}
+		if a := or.Access; a != nil && (len(a.AudTag) == 0 || a.TeamName == "") {
+			return "originRequest.access needs audTag and teamName."
 		}
 	}
 	if last := rules[len(rules)-1]; last.Hostname != "" || last.Path != "" {
@@ -728,7 +760,16 @@ type appInput struct {
 	AppLauncherVisible     *bool             `json:"app_launcher_visible"`
 	Destinations           []AppDestination  `json:"destinations"`
 	Tags                   []string          `json:"tags"`
+	SelfHostedDomains      []string          `json:"self_hosted_domains"`
 	Policies               []json.RawMessage `json:"policies"`
+
+	OptionsPreflightBypass   bool            `json:"options_preflight_bypass"`
+	AllowAuthenticateViaWarp bool            `json:"allow_authenticate_via_warp"`
+	AllowIframe              bool            `json:"allow_iframe"`
+	CORSHeaders              json.RawMessage `json:"cors_headers"`
+	HTTPOnlyCookieAttribute  *bool           `json:"http_only_cookie_attribute"`
+	SameSiteCookieAttribute  string          `json:"same_site_cookie_attribute"`
+	ClientlessIsolationURL   bool            `json:"use_clientless_isolation_app_launcher_url"`
 }
 
 // appPolicy is a policy as an application response carries it.
@@ -802,6 +843,10 @@ func (f *Fake) appFromInput(w http.ResponseWriter, in appInput, st *State, a *Ap
 		fail(w, http.StatusBadRequest, 12130, "auto_redirect_to_identity requires exactly one identity provider")
 		return false
 	}
+	if in.OptionsPreflightBypass && len(in.CORSHeaders) > 0 && string(in.CORSHeaders) != "null" {
+		fail(w, http.StatusBadRequest, 12130, "options_preflight_bypass cannot be on while cors_headers is set")
+		return false
+	}
 	var links []PolicyLink
 	seen := map[int]bool{}
 	for i, raw := range in.Policies {
@@ -844,6 +889,18 @@ func (f *Fake) appFromInput(w http.ResponseWriter, in appInput, st *State, a *Ap
 	if a.Tags == nil {
 		a.Tags = []string{}
 	}
+	a.SelfHostedDomains = in.SelfHostedDomains
+	if a.SelfHostedDomains == nil {
+		a.SelfHostedDomains = []string{}
+	}
+	// A replace resets every setting the body leaves out to its default.
+	a.OptionsPreflightBypass = in.OptionsPreflightBypass
+	a.AllowAuthenticateViaWarp = in.AllowAuthenticateViaWarp
+	a.AllowIframe = in.AllowIframe
+	a.CORSHeaders = in.CORSHeaders
+	a.HTTPOnlyCookieAttribute = in.HTTPOnlyCookieAttribute == nil || *in.HTTPOnlyCookieAttribute
+	a.SameSiteCookieAttribute = in.SameSiteCookieAttribute
+	a.ClientlessIsolationURL = in.ClientlessIsolationURL
 	a.Links = links
 	a.UpdatedAt = now()
 	return true
