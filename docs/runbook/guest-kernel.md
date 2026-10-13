@@ -10,6 +10,7 @@
 | `hangar.fragment` | What Hangar needs on top of x86_64 `allnoconfig` |
 | `config` | The resolved `.config`, minus the lines that only name the toolchain |
 | `build.sh` | Download, verify, configure, check, build |
+| `cache.sh` | The key prebuilt kernels are filed under, and the check a cached one must pass |
 
 ## Build
 
@@ -42,6 +43,29 @@ The committed `config` was resolved with GCC 13 on Ubuntu 24.04. A different
 compiler can change toolchain capability symbols (`CONFIG_CC_HAS_*` and the
 options that depend on them); that shows up as a diff, and it is a real
 difference in what gets built.
+
+## Reuse a prebuilt kernel in a release
+
+`make release` builds the kernel every time unless `HANGAR_KERNEL_CACHE`
+names a cache directory. On a testbed VM, use the one the `hangar-testbed`
+image prebuilt:
+
+```sh
+HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release
+```
+
+An entry is `DIR/<key>/{vmlinux,config}`, where the key
+(`guest/kernel/cache.sh key`) is the sha256 of `kernel.env`,
+`hangar.fragment`, `config` and `build.sh` concatenated in that order. The
+blueprint's `hangar-testbed-prepare --kernel-key REPO` computes the same
+value; change both together. With an entry for the checkout's key, the release
+prints `kernel: cache hit <key>` and uses it after checking its `config`
+against the committed one as the build does (a mismatch stops the release).
+Without one, it builds as usual and files the result under the key
+(`kernel: built, cached under <key>`). A kernel from the cache is the one the
+build would produce on the same toolchain, so `SHA256SUMS` does not change.
+The key does not name the compiler: share a cache only between hosts with the
+same toolchain, as the testbed image does with itself.
 
 ## Build the initramfs
 

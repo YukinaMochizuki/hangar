@@ -133,9 +133,15 @@ reboot) runs the new launcher on the `spec.json` the old agent wrote, and
 boots the new guest kernel and initramfs. A running VM keeps its own until
 then.
 
-1. Build it from the commit to deploy, on a testbed VM: `make release`.
-   Note its directory name, `hangar-<revision>`, and the last line it
-   prints, `sha256sum SHA256SUMS: <digest>  SHA256SUMS`.
+1. Build it from the commit to deploy, on a testbed VM:
+   `HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release`.
+   The variable lets it reuse the kernel the testbed image prebuilt when the
+   kernel's inputs are unchanged (`kernel: cache hit <key>`) instead of
+   spending minutes building it; it builds and files the kernel otherwise
+   (`kernel: built, cached under <key>`). The release is the same either way
+   (`docs/runbook/guest-kernel.md`). Note its directory name,
+   `hangar-<revision>`, and the last line it prints,
+   `sha256sum SHA256SUMS: <digest>  SHA256SUMS`.
 2. Copy `deploy/` from that commit to `/var/tmp/hangar/deploy` on the host,
    and the release directory to `/var/tmp/hangar/release/hangar-<revision>`.
    Keep the previous release's directory there: going back is the same
