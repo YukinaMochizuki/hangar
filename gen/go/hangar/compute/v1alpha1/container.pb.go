@@ -277,7 +277,11 @@ type ContainerSpec struct {
 	// root disk is kept, and RUNNING boots it again. Apply replaces the whole
 	// spec, so applying a manifest that leaves this out starts the container.
 	// The status condition Stopped says when a stop has taken effect.
-	RunState      ContainerRunState `protobuf:"varint,8,opt,name=run_state,json=runState,proto3,enum=hangar.compute.v1alpha1.ContainerRunState" json:"run_state,omitempty"`
+	RunState ContainerRunState `protobuf:"varint,8,opt,name=run_state,json=runState,proto3,enum=hangar.compute.v1alpha1.ContainerRunState" json:"run_state,omitempty"`
+	// The networks the container is on, at most 8, each once; empty is one
+	// interface on "default". The first holds the default route. Changing
+	// them restarts the container.
+	Interfaces    []*NetworkInterface `protobuf:"bytes,9,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -366,6 +370,13 @@ func (x *ContainerSpec) GetRunState() ContainerRunState {
 		return x.RunState
 	}
 	return ContainerRunState_CONTAINER_RUN_STATE_UNSPECIFIED
+}
+
+func (x *ContainerSpec) GetInterfaces() []*NetworkInterface {
+	if x != nil {
+		return x.Interfaces
+	}
+	return nil
 }
 
 // EnvVar is one environment variable.
@@ -1280,7 +1291,7 @@ var File_hangar_compute_v1alpha1_container_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\n" +
-	"'hangar/compute/v1alpha1/container.proto\x12\x17hangar.compute.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\x99\x02\n" +
+	"'hangar/compute/v1alpha1/container.proto\x12\x17hangar.compute.v1alpha1\x1a'hangar/compute/v1alpha1/interface.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\x99\x02\n" +
 	"\tContainer\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -1289,7 +1300,7 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04spec\x18\x04 \x01(\v2&.hangar.compute.v1alpha1.ContainerSpecR\x04spec\x12@\n" +
 	"\x06status\x18\x05 \x01(\v2(.hangar.compute.v1alpha1.ContainerStatusR\x06status:!\x8a\xb5\x18\x1d\n" +
 	"\tContainer\x12\n" +
-	"containers\x1a\x02ct \x01\"\x9e\x03\n" +
+	"containers\x1a\x02ct \x01\"\xe9\x03\n" +
 	"\rContainerSpec\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
@@ -1298,7 +1309,10 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x05ports\x18\x05 \x03(\v2&.hangar.compute.v1alpha1.ContainerPortR\x05ports\x12M\n" +
 	"\x0erestart_policy\x18\x06 \x01(\x0e2&.hangar.compute.v1alpha1.RestartPolicyR\rrestartPolicy\x12@\n" +
 	"\tresources\x18\a \x01(\v2\".hangar.compute.v1alpha1.ResourcesR\tresources\x12G\n" +
-	"\trun_state\x18\b \x01(\x0e2*.hangar.compute.v1alpha1.ContainerRunStateR\brunState\"2\n" +
+	"\trun_state\x18\b \x01(\x0e2*.hangar.compute.v1alpha1.ContainerRunStateR\brunState\x12I\n" +
+	"\n" +
+	"interfaces\x18\t \x03(\v2).hangar.compute.v1alpha1.NetworkInterfaceR\n" +
+	"interfaces\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"\x8e\x01\n" +
@@ -1420,8 +1434,9 @@ var file_hangar_compute_v1alpha1_container_proto_goTypes = []any{
 	(*UpdateContainerStatusRequest)(nil),  // 19: hangar.compute.v1alpha1.UpdateContainerStatusRequest
 	(*UpdateContainerStatusResponse)(nil), // 20: hangar.compute.v1alpha1.UpdateContainerStatusResponse
 	(*v1.ObjectMeta)(nil),                 // 21: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),                  // 22: hangar.meta.v1.Condition
-	(v1.EventType)(0),                     // 23: hangar.meta.v1.EventType
+	(*NetworkInterface)(nil),              // 22: hangar.compute.v1alpha1.NetworkInterface
+	(*v1.Condition)(nil),                  // 23: hangar.meta.v1.Condition
+	(v1.EventType)(0),                     // 24: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_container_proto_depIdxs = []int32{
 	21, // 0: hangar.compute.v1alpha1.Container.metadata:type_name -> hangar.meta.v1.ObjectMeta
@@ -1432,34 +1447,35 @@ var file_hangar_compute_v1alpha1_container_proto_depIdxs = []int32{
 	2,  // 5: hangar.compute.v1alpha1.ContainerSpec.restart_policy:type_name -> hangar.compute.v1alpha1.RestartPolicy
 	7,  // 6: hangar.compute.v1alpha1.ContainerSpec.resources:type_name -> hangar.compute.v1alpha1.Resources
 	0,  // 7: hangar.compute.v1alpha1.ContainerSpec.run_state:type_name -> hangar.compute.v1alpha1.ContainerRunState
-	1,  // 8: hangar.compute.v1alpha1.ContainerPort.protocol:type_name -> hangar.compute.v1alpha1.Protocol
-	22, // 9: hangar.compute.v1alpha1.ContainerStatus.conditions:type_name -> hangar.meta.v1.Condition
-	3,  // 10: hangar.compute.v1alpha1.GetContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 11: hangar.compute.v1alpha1.ListContainersResponse.items:type_name -> hangar.compute.v1alpha1.Container
-	23, // 12: hangar.compute.v1alpha1.WatchContainersResponse.type:type_name -> hangar.meta.v1.EventType
-	3,  // 13: hangar.compute.v1alpha1.WatchContainersResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 14: hangar.compute.v1alpha1.ApplyContainerRequest.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 15: hangar.compute.v1alpha1.ApplyContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 16: hangar.compute.v1alpha1.DeleteContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	8,  // 17: hangar.compute.v1alpha1.UpdateContainerStatusRequest.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
-	3,  // 18: hangar.compute.v1alpha1.UpdateContainerStatusResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	9,  // 19: hangar.compute.v1alpha1.ContainerService.GetContainer:input_type -> hangar.compute.v1alpha1.GetContainerRequest
-	11, // 20: hangar.compute.v1alpha1.ContainerService.ListContainers:input_type -> hangar.compute.v1alpha1.ListContainersRequest
-	13, // 21: hangar.compute.v1alpha1.ContainerService.WatchContainers:input_type -> hangar.compute.v1alpha1.WatchContainersRequest
-	15, // 22: hangar.compute.v1alpha1.ContainerService.ApplyContainer:input_type -> hangar.compute.v1alpha1.ApplyContainerRequest
-	17, // 23: hangar.compute.v1alpha1.ContainerService.DeleteContainer:input_type -> hangar.compute.v1alpha1.DeleteContainerRequest
-	19, // 24: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:input_type -> hangar.compute.v1alpha1.UpdateContainerStatusRequest
-	10, // 25: hangar.compute.v1alpha1.ContainerService.GetContainer:output_type -> hangar.compute.v1alpha1.GetContainerResponse
-	12, // 26: hangar.compute.v1alpha1.ContainerService.ListContainers:output_type -> hangar.compute.v1alpha1.ListContainersResponse
-	14, // 27: hangar.compute.v1alpha1.ContainerService.WatchContainers:output_type -> hangar.compute.v1alpha1.WatchContainersResponse
-	16, // 28: hangar.compute.v1alpha1.ContainerService.ApplyContainer:output_type -> hangar.compute.v1alpha1.ApplyContainerResponse
-	18, // 29: hangar.compute.v1alpha1.ContainerService.DeleteContainer:output_type -> hangar.compute.v1alpha1.DeleteContainerResponse
-	20, // 30: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:output_type -> hangar.compute.v1alpha1.UpdateContainerStatusResponse
-	25, // [25:31] is the sub-list for method output_type
-	19, // [19:25] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	22, // 8: hangar.compute.v1alpha1.ContainerSpec.interfaces:type_name -> hangar.compute.v1alpha1.NetworkInterface
+	1,  // 9: hangar.compute.v1alpha1.ContainerPort.protocol:type_name -> hangar.compute.v1alpha1.Protocol
+	23, // 10: hangar.compute.v1alpha1.ContainerStatus.conditions:type_name -> hangar.meta.v1.Condition
+	3,  // 11: hangar.compute.v1alpha1.GetContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 12: hangar.compute.v1alpha1.ListContainersResponse.items:type_name -> hangar.compute.v1alpha1.Container
+	24, // 13: hangar.compute.v1alpha1.WatchContainersResponse.type:type_name -> hangar.meta.v1.EventType
+	3,  // 14: hangar.compute.v1alpha1.WatchContainersResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 15: hangar.compute.v1alpha1.ApplyContainerRequest.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 16: hangar.compute.v1alpha1.ApplyContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 17: hangar.compute.v1alpha1.DeleteContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	8,  // 18: hangar.compute.v1alpha1.UpdateContainerStatusRequest.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
+	3,  // 19: hangar.compute.v1alpha1.UpdateContainerStatusResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	9,  // 20: hangar.compute.v1alpha1.ContainerService.GetContainer:input_type -> hangar.compute.v1alpha1.GetContainerRequest
+	11, // 21: hangar.compute.v1alpha1.ContainerService.ListContainers:input_type -> hangar.compute.v1alpha1.ListContainersRequest
+	13, // 22: hangar.compute.v1alpha1.ContainerService.WatchContainers:input_type -> hangar.compute.v1alpha1.WatchContainersRequest
+	15, // 23: hangar.compute.v1alpha1.ContainerService.ApplyContainer:input_type -> hangar.compute.v1alpha1.ApplyContainerRequest
+	17, // 24: hangar.compute.v1alpha1.ContainerService.DeleteContainer:input_type -> hangar.compute.v1alpha1.DeleteContainerRequest
+	19, // 25: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:input_type -> hangar.compute.v1alpha1.UpdateContainerStatusRequest
+	10, // 26: hangar.compute.v1alpha1.ContainerService.GetContainer:output_type -> hangar.compute.v1alpha1.GetContainerResponse
+	12, // 27: hangar.compute.v1alpha1.ContainerService.ListContainers:output_type -> hangar.compute.v1alpha1.ListContainersResponse
+	14, // 28: hangar.compute.v1alpha1.ContainerService.WatchContainers:output_type -> hangar.compute.v1alpha1.WatchContainersResponse
+	16, // 29: hangar.compute.v1alpha1.ContainerService.ApplyContainer:output_type -> hangar.compute.v1alpha1.ApplyContainerResponse
+	18, // 30: hangar.compute.v1alpha1.ContainerService.DeleteContainer:output_type -> hangar.compute.v1alpha1.DeleteContainerResponse
+	20, // 31: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:output_type -> hangar.compute.v1alpha1.UpdateContainerStatusResponse
+	26, // [26:32] is the sub-list for method output_type
+	20, // [20:26] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_container_proto_init() }
@@ -1467,6 +1483,7 @@ func file_hangar_compute_v1alpha1_container_proto_init() {
 	if File_hangar_compute_v1alpha1_container_proto != nil {
 		return
 	}
+	file_hangar_compute_v1alpha1_interface_proto_init()
 	file_hangar_compute_v1alpha1_container_proto_msgTypes[14].OneofWrappers = []any{}
 	file_hangar_compute_v1alpha1_container_proto_msgTypes[16].OneofWrappers = []any{}
 	type x struct{}
