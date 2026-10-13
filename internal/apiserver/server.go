@@ -159,6 +159,7 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
 		connect.WithInterceptors(chain.Interceptor()))
 	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(containerLogs{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(computev1alpha1connect.NewVirtualMachineLogsServiceHandler(virtualMachineLogs{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.HandleFunc(execws.Pattern, s.containerExec(chain))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {

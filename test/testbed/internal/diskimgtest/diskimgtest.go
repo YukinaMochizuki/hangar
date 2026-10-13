@@ -3,7 +3,8 @@
 // Package diskimgtest serves disk images over HTTPS for the L4 tests of the
 // disk image driver (internal/node/driver/diskimage): images qemu-img makes
 // in the test, and real cloud images, downloaded once per testbed into a
-// cache and checked against their pinned sha256.
+// cache and checked against their pinned sha256, as is the firmware
+// virtual machines boot through.
 package diskimgtest
 
 import (
@@ -106,6 +107,10 @@ func Cached(t *testing.T, name, url, digest string) string {
 		_, err = io.Copy(f, resp.Body)
 		if cerr := f.Close(); err == nil {
 			err = cerr
+		}
+		// Readable by all, as a VM's own user reads firmware.
+		if err == nil {
+			err = os.Chmod(f.Name(), 0o644)
 		}
 		if err == nil {
 			err = os.Rename(f.Name(), path)

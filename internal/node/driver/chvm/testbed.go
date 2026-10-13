@@ -62,6 +62,12 @@ func (h *Hypervisor) StartUnconfined(ctx context.Context, spec driver.VMSpec, la
 	return h.sd.start(ctx, unitName(spec.MachineUID), baseProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack)))
 }
 
+// PressPowerButton presses the power button of the machine's VM as its
+// stop does, at its API socket's path.
+func (h *Hypervisor) PressPowerButton(ctx context.Context, uid string) error {
+	return h.powerButton(ctx, filepath.Join(h.dir(uid), apiFile))
+}
+
 // SystemdConnects counts the connections to systemd the driver has made.
 func (h *Hypervisor) SystemdConnects() int {
 	if s, ok := h.sd.(*dbusSystemd); ok {

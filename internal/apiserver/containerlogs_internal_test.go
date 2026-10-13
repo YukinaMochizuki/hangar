@@ -90,3 +90,39 @@ func TestGettingAContainerIsNotReadingItsLogs(t *testing.T) {
 	}
 	wantCodeOf(t, logsOf(t, s, node, "api"), connect.CodePermissionDenied, "the node reading the container's logs")
 }
+
+// vmLogsOf reads a VM's serial console as principal p, to the first error.
+func vmLogsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
+	t.Helper()
+	srv := httptest.NewServer(s.Handler(auth.Chain{fixedAuth{p, true}}))
+	t.Cleanup(srv.Close)
+	stream, err := computev1alpha1connect.NewVirtualMachineLogsServiceClient(http.DefaultClient, srv.URL).
+		VirtualMachineLogs(t.Context(), connect.NewRequest(&computev1alpha1.VirtualMachineLogsRequest{Project: "web", Name: name}))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = stream.Close() }()
+	for stream.Receive() {
+	}
+	return stream.Err()
+}
+
+// TestGettingAVirtualMachineIsNotReadingItsLogs: the node agent may get any
+// virtual machine, but not read its serial console; its owner may.
+func TestGettingAVirtualMachineIsNotReadingItsLogs(t *testing.T) {
+	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
+	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, vmFromImage("web", "noble")); err != nil {
+		t.Fatal(err)
+	}
+	node := auth.Principal{Type: auth.Node, ID: "n1"}
+	if _, err := s.backend(registry.VirtualMachine).Get(asNode(system, "n1"), resource.Key{Project: "web", Name: "web"}); err != nil {
+		t.Fatalf("the node getting the virtual machine: %v", err)
+	}
+	wantCodeOf(t, vmLogsOf(t, s, node, "web"), connect.CodePermissionDenied, "the node reading the virtual machine's logs")
+	// Its owner gets as far as its machine, which no controller made.
+	alice := auth.Principal{Type: auth.User, ID: "alice@example.com"}
+	wantCodeOf(t, vmLogsOf(t, s, alice, "web"), connect.CodeFailedPrecondition, "the owner reading the logs of a VM not on a node")
+}

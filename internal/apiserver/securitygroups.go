@@ -111,7 +111,7 @@ func refuseDeletingGroupInUse(ctx context.Context, s *Server, obj proto.Message)
 	g := obj.(*networkv1alpha1.SecurityGroup)
 	project, name, network := g.GetMetadata().GetProject(), g.GetMetadata().GetName(), g.GetSpec().GetNetwork()
 	var users []string
-	for _, kind := range []registry.Resource{registry.Container, registry.Machine} {
+	for _, kind := range []registry.Resource{registry.Container, registry.VirtualMachine, registry.Machine} {
 		objs, _, err := s.store.List(ctx, store.ListOptions{Kind: kind.Kind, Project: project})
 		if err != nil {
 			return err
@@ -129,8 +129,8 @@ func refuseDeletingGroupInUse(ctx context.Context, s *Server, obj proto.Message)
 	return failedPrecondition("security group %q is in use by %s; take it off their interfaces first", name, strings.Join(users, ", "))
 }
 
-// inGroup says whether a stored Container or Machine has an interface on
-// network in group.
+// inGroup says whether a stored Container, VirtualMachine or Machine has an
+// interface on network in group.
 func inGroup(kind registry.Resource, o store.Object, network, group string) bool {
 	switch kind.Kind {
 	case registry.Container.Kind:
@@ -139,6 +139,14 @@ func inGroup(kind registry.Resource, o store.Object, network, group string) bool
 			return false
 		}
 		return slices.ContainsFunc(c.GetSpec().GetInterfaces(), func(i *computev1alpha1.NetworkInterface) bool {
+			return i.GetNetwork() == network && slices.Contains(i.GetSecurityGroups(), group)
+		})
+	case registry.VirtualMachine.Kind:
+		var vm computev1alpha1.VirtualMachine
+		if proto.Unmarshal(o.Data, &vm) != nil {
+			return false
+		}
+		return slices.ContainsFunc(vm.GetSpec().GetInterfaces(), func(i *computev1alpha1.NetworkInterface) bool {
 			return i.GetNetwork() == network && slices.Contains(i.GetSecurityGroups(), group)
 		})
 	case registry.Machine.Kind:

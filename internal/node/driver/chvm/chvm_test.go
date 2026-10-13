@@ -152,13 +152,21 @@ const (
 
 func newDriver(t *testing.T, dir string, s *fakeSystemd, g *fakeGuest) *Hypervisor {
 	t.Helper()
-	h, err := New(t.Context(), Config{
+	return newDriverWith(t, dir, s, g, func(*Config) {})
+}
+
+// newDriverWith is newDriver with its config adjusted by configure.
+func newDriverWith(t *testing.T, dir string, s *fakeSystemd, g *fakeGuest, configure func(*Config)) *Hypervisor {
+	t.Helper()
+	cfg := Config{
 		Dir: dir, CloudHypervisor: os.Args[0], Kernel: os.Args[0], Initramfs: os.Args[0], Cmdline: "quiet",
 		Launcher:  []string{os.Args[0], "vmm"},
 		StopGrace: testGrace, StopSlack: testSlack,
 		systemd: s, guest: g, dynamicOK: true, etc: testEtc(t),
 		procUsers: func() (map[uint32]bool, error) { return nil, nil },
-	})
+	}
+	configure(&cfg)
+	h, err := New(t.Context(), cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -61,11 +61,19 @@ type Config struct {
 	// both as it was started with: its launcher gives its guest the same
 	// when systemd stops it, as at host shutdown.
 	StopSlack time.Duration
+	// Firmware is what a VM that boots its own kernel (VMSpec.Firmware)
+	// boots through: Cloud Hypervisor's EDK2 build, at an absolute path;
+	// empty refuses such VMs. FirmwareStopGrace is how long such a guest
+	// has to power off once its power button is pressed; zero means
+	// DefaultFirmwareStopGrace.
+	Firmware          string
+	FirmwareStopGrace time.Duration
 
-	// systemd and guest, if set, replace systemd over D-Bus and the
-	// guests' agents, for tests.
-	systemd systemd
-	guest   driver.Guest
+	// systemd, guest and powerButton, if set, replace systemd over D-Bus,
+	// the guests' agents and pressPowerButton, for tests.
+	systemd     systemd
+	guest       driver.Guest
+	powerButton func(ctx context.Context, socket string) error
 	// logPoll, if set, is how often a followed log is checked for more.
 	logPoll time.Duration
 	// procUsers, if set, replaces listing the ids processes run as.
@@ -81,11 +89,12 @@ type Config struct {
 
 // Hypervisor is the driver. It is safe for concurrent use.
 type Hypervisor struct {
-	cfg     Config
-	sd      systemd
-	guest   driver.Guest
-	locks   keylock.Map
-	changes chan struct{}
+	cfg         Config
+	sd          systemd
+	guest       driver.Guest
+	powerButton func(ctx context.Context, socket string) error
+	locks       keylock.Map
+	changes     chan struct{}
 	// users is held while a Start picks its VM's id and writes it down.
 	users     sync.Mutex
 	procUsers func() (map[uint32]bool, error)
@@ -101,6 +110,9 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	}
 	if cfg.StopSlack == 0 {
 		cfg.StopSlack = DefaultStopSlack
+	}
+	if cfg.FirmwareStopGrace == 0 {
+		cfg.FirmwareStopGrace = DefaultFirmwareStopGrace
 	}
 	if !filepath.IsAbs(cfg.Dir) || filepath.Clean(cfg.Dir) != cfg.Dir {
 		return nil, fmt.Errorf("the VMs' directory %q is not a clean absolute path", cfg.Dir)
@@ -124,7 +136,11 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if err := cfg.VMUsers.checkFree(cfg.etc); err != nil {
 		return nil, err
 	}
-	for _, p := range []string{cfg.Launcher[0], cfg.CloudHypervisor, cfg.Kernel, cfg.Initramfs} {
+	paths := []string{cfg.Launcher[0], cfg.CloudHypervisor, cfg.Kernel, cfg.Initramfs}
+	if cfg.Firmware != "" {
+		paths = append(paths, cfg.Firmware)
+	}
+	for _, p := range paths {
 		if !filepath.IsAbs(p) {
 			return nil, fmt.Errorf("%q is not an absolute path", p)
 		}
@@ -153,6 +169,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	h.guest = cfg.guest
 	if h.guest == nil {
 		h.guest = chguest.Guest{Socket: h.Socket}
+	}
+	h.powerButton = cfg.powerButton
+	if h.powerButton == nil {
+		h.powerButton = pressPowerButton
 	}
 	h.sd = cfg.systemd
 	if h.sd == nil {
@@ -317,6 +337,9 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if err := checkSpec(spec); err != nil {
 		return err
 	}
+	if spec.Firmware && h.cfg.Firmware == "" {
+		return fmt.Errorf("machine %s boots through firmware, which this host has none of", uid)
+	}
 	restart, err := restartOf(spec.Restart)
 	if err != nil {
 		return err
@@ -366,24 +389,32 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if err := os.RemoveAll(filepath.Join(dir, chDir)); err != nil {
 		return err
 	}
-	disk, err := h.bootDisk(spec)
-	if err != nil {
-		return err
-	}
-	if err := writeAtomic(filepath.Join(dir, bootFile), disk); err != nil {
-		return err
-	}
-	user, err := h.writeLaunch(dir, launch{
+	ln := launch{
 		Spec: spec, Hash: hash, CloudHypervisor: h.cfg.CloudHypervisor,
 		Kernel: h.cfg.Kernel, Initramfs: h.cfg.Initramfs, Cmdline: h.cfg.Cmdline,
 		StopGrace: h.cfg.StopGrace, StopSlack: h.cfg.StopSlack,
-	})
+	}
+	sb := sandbox{Dir: dir, Binds: []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.Initramfs}}
+	if spec.Firmware {
+		// The guest's own kernel boots: no boot disk, no platform kernel.
+		ln.Kernel, ln.Initramfs, ln.Cmdline = "", "", ""
+		ln.Firmware, ln.StopGrace = h.cfg.Firmware, h.cfg.FirmwareStopGrace
+		sb.Binds = []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Firmware}
+	} else {
+		disk, err := h.bootDisk(spec)
+		if err != nil {
+			return err
+		}
+		if err := writeAtomic(filepath.Join(dir, bootFile), disk); err != nil {
+			return err
+		}
+	}
+	user, err := h.writeLaunch(dir, ln)
 	if err != nil {
 		return err
 	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
-	sb := sandbox{Dir: dir, Binds: []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.Initramfs}}
-	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack), sb)); err != nil {
+	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(ln.stopTimes()), sb)); err != nil {
 		return fmt.Errorf("starting %s: %w", unitName(uid), err)
 	}
 	return nil
@@ -422,7 +453,10 @@ func checkSpec(s driver.VMSpec) error {
 	if s.VCPUs < 1 || s.MemoryMiB < 1 {
 		return fmt.Errorf("machine %s: %d vCPUs and %d MiB of memory", s.MachineUID, s.VCPUs, s.MemoryMiB)
 	}
-	if s.Root.MachineUID != s.MachineUID || s.Root.Path == "" {
+	switch {
+	case s.Firmware && (s.Root != driver.Disk{} || len(s.Disks) == 0):
+		return fmt.Errorf("machine %s: a firmware VM boots its first volume, not a root disk", s.MachineUID)
+	case !s.Firmware && (s.Root.MachineUID != s.MachineUID || s.Root.Path == ""):
 		return fmt.Errorf("machine %s: root disk %+v is not its", s.MachineUID, s.Root)
 	}
 	seen := map[string]bool{s.Root.Path: true}
@@ -530,17 +564,27 @@ func (h *Hypervisor) Stop(ctx context.Context, uid string) error {
 	return h.removeRuntime(dir)
 }
 
-// stopGuest asks the guest to stop its process and waits for the guest to
-// power off, for the grace period and the slack; it returns at once if the
-// guest does not take the stop.
+// stopGuest asks the guest to stop its process, or presses a firmware VM's
+// power button, and waits for the guest to power off, for the grace period
+// and the slack the VM was started with; it returns at once if the guest
+// does not take the stop.
 func (h *Hypervisor) stopGuest(ctx context.Context, uid string) {
+	grace, slack := h.cfg.StopGrace, h.cfg.StopSlack
+	ln, err := readLaunch(h.dir(uid))
+	if err == nil {
+		grace, slack = ln.stopTimes()
+	}
 	gctx, cancel := context.WithTimeout(ctx, stopAsk)
-	err := h.guest.Stop(gctx, uid, h.cfg.StopGrace)
+	if ln.Spec.Firmware {
+		err = h.powerButton(gctx, filepath.Join(h.dir(uid), apiFile))
+	} else {
+		err = h.guest.Stop(gctx, uid, grace)
+	}
 	cancel()
 	if err != nil {
 		return
 	}
-	deadline := time.NewTimer(h.cfg.StopGrace + h.cfg.StopSlack)
+	deadline := time.NewTimer(grace + slack)
 	defer deadline.Stop()
 	tick := time.NewTicker(50 * time.Millisecond)
 	defer tick.Stop()

@@ -59,6 +59,8 @@ type Host struct {
 	AskedToStop func(t *testing.T, machineUID string) bool
 	// Exec are the programs the guests can exec.
 	Exec *ExecPrograms
+	// Firmware says the hypervisor boots firmware VMs (VMSpec.Firmware).
+	Firmware bool
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -94,6 +96,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
+	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
 }
 
 func must(t *testing.T, err error) {

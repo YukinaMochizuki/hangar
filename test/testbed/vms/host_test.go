@@ -278,9 +278,13 @@ func openHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// It boots firmware VMs too, as a host's does, their guests given the
+	// same grace once their power button is pressed: the conformance
+	// suite's has nothing to boot, and its firmware never answers.
 	hv, err := chvm.New(context.Background(), chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
+		Firmware: firmware(t), FirmwareStopGrace: grace,
 	})
 	if err != nil {
 		t.Fatal(err)

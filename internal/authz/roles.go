@@ -30,8 +30,8 @@ const (
 	// Create opens a new tenant without any grant inside it; only tenants
 	// use it.
 	Create Verb = "create"
-	// Logs reads what a container wrote; only containers use it. It is not
-	// Get: output can hold what the spec does not.
+	// Logs reads what a container or a virtual machine wrote; only they use
+	// it. It is not Get: output can hold what the spec does not.
 	Logs Verb = "logs"
 	// Exec runs a process in a container; only containers use it. It is
 	// neither Get nor Logs: it reaches everything the container can.
@@ -43,6 +43,10 @@ const CreateTenant = "tenancy.tenants.create"
 
 // ContainerLogs is the permission to read a container's output.
 var ContainerLogs = Permission(registry.Container, Logs)
+
+// VirtualMachineLogs is the permission to read a virtual machine's serial
+// console.
+var VirtualMachineLogs = Permission(registry.VirtualMachine, Logs)
 
 // ContainerExec is the permission to run a process in a container.
 var ContainerExec = Permission(registry.Container, Exec)
@@ -96,10 +100,10 @@ func (r Role) Grants(permission string) bool {
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec}, Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec, VirtualMachineLogs}, Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
 	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
 	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec}},
+	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec, VirtualMachineLogs}},
 }

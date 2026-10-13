@@ -136,7 +136,10 @@ var deniedSyscalls = []string{
 // unit starts, the machine's zvols, each checked by the launcher, which makes
 // its node (m) for Cloud Hypervisor.
 func devices(spec driver.VMSpec) []pathPair {
-	out := []pathPair{{"/dev/kvm", "rw"}, {"/dev/net/tun", "rw"}, {spec.Root.Path, "rwm"}}
+	out := []pathPair{{"/dev/kvm", "rw"}, {"/dev/net/tun", "rw"}}
+	if spec.Root.Path != "" {
+		out = append(out, pathPair{spec.Root.Path, "rwm"})
+	}
 	for _, v := range spec.Disks {
 		out = append(out, pathPair{v.Path, "rwm"})
 	}

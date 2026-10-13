@@ -63,6 +63,22 @@ func (s *Server) controllers() []*controller.Controller {
 			},
 		},
 		{
+			Name: "virtualmachine", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileVirtualMachine),
+			Watches: []controller.Watch{
+				{Kind: registry.VirtualMachine.Kind, Map: controller.Self},
+				{Kind: registry.Machine.Kind, Map: s.vmOfMachineAndNeighbours, SkipResync: true},
+				// A node going quiet changes what its VMs report.
+				{Kind: registry.Node.Kind, Map: s.vmsOnNode, SkipResync: true},
+				// A network appearing unblocks VMs waiting for an address, a
+				// disk changing those that boot from it or keep it.
+				{Kind: registry.Network.Kind, Map: s.vmsInProject, SkipResync: true},
+				{Kind: registry.Disk.Kind, Map: s.vmsInProject, SkipResync: true},
+				// An image fixed lets a root disk be made of it.
+				{Kind: registry.Image.Kind, Map: s.vmsOfImage, SkipResync: true},
+			},
+		},
+		{
 			Name: "disk", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileDisk),
 			Watches: []controller.Watch{
@@ -286,12 +302,18 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 // ensureMachine brings m, the container's machine as read (nil if there is
 // none), in line with the container. Every write is conditional on m.
 func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
-	meta := c.GetMetadata()
 	want, err := machineSpec(c.GetSpec())
 	if err != nil {
 		return m, &blocked{"InvalidResources", err.Error()}
 	}
-	key := resource.Key{Project: meta.GetProject(), Name: machineName(meta.GetName())}
+	return s.ensureMachineOf(ctx, registry.Container, c.GetMetadata(), machineName(c.GetMetadata().GetName()), want, m)
+}
+
+// ensureMachineOf brings m, the machine name as read (nil if there is
+// none), in line with want, for its owner, an object of kind r. Every write
+// is conditional on m.
+func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta *metav1.ObjectMeta, name string, want *computev1alpha1.MachineSpec, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
+	key := resource.Key{Project: meta.GetProject(), Name: name}
 	if m == nil {
 		// Addresses are chosen and written as one decision.
 		s.ipam.Lock()
@@ -301,10 +323,10 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 		}
 		created := &computev1alpha1.Machine{
 			Metadata: &metav1.ObjectMeta{
-				Project: meta.GetProject(), Name: machineName(meta.GetName()),
+				Project: meta.GetProject(), Name: name,
 				Finalizers: []string{NodeCleanupFinalizer},
 				OwnerReferences: []*metav1.OwnerReference{{
-					ApiVersion: registry.Container.APIVersion(), Kind: registry.Container.Kind,
+					ApiVersion: r.APIVersion(), Kind: r.Kind,
 					Name: meta.GetName(), Uid: meta.GetUid(), Controller: true,
 				}},
 			},
@@ -318,7 +340,8 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 	}
 	if !ownedBy(m.GetMetadata(), meta.GetUid()) {
 		return nil, &blocked{"MachineNameInUse", fmt.Sprintf(
-			"machine %s belongs to another object, such as an earlier container of this name still being deleted", m.GetMetadata().GetName())}
+			"machine %s belongs to another object, such as an earlier %s of this name still being deleted",
+			m.GetMetadata().GetName(), strings.ToLower(r.Kind))}
 	}
 	if m.GetMetadata().GetDeleteTime() != nil {
 		return m, nil
@@ -427,7 +450,7 @@ func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Contain
 		stopped = &metav1.Condition{Type: ContainerStopped, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: stuck.reason, Message: stuck.message}
 	} else {
 		ready = machineReadiness(m, node)
-		stopped = machineStopped(c.GetSpec(), m, node)
+		stopped = machineStopped(c.GetSpec().GetRunState() == computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED, "container", m, node)
 	}
 	ready.ObservedGeneration = gen
 	stopped.ObservedGeneration = gen
@@ -485,20 +508,21 @@ func machineReadiness(m *computev1alpha1.Machine, node *computev1alpha1.Node) *m
 	return notReady(strings.ToUpper(phase[:1])+strings.ToLower(phase[1:]), "")
 }
 
-// machineStopped says whether a container asked to stop has: its node has
-// stopped the machine at the machine's current spec. A container asked to
-// run is never Stopped; Ready says whether it runs.
-func machineStopped(cs *computev1alpha1.ContainerSpec, m *computev1alpha1.Machine, node *computev1alpha1.Node) *metav1.Condition {
+// machineStopped says whether an owner, what it is in words, asked to stop
+// (stopAsked) has: its node has stopped the machine at the machine's
+// current spec. An owner asked to run is never Stopped; Ready says whether
+// it runs.
+func machineStopped(stopAsked bool, what string, m *computev1alpha1.Machine, node *computev1alpha1.Node) *metav1.Condition {
 	cond := func(status metav1.ConditionStatus, reason, msg string) *metav1.Condition {
 		return &metav1.Condition{Type: ContainerStopped, Status: status, Reason: reason, Message: msg}
 	}
-	if cs.GetRunState() != computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
-		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, "RunStateRunning", "the container is asked to run")
+	if !stopAsked {
+		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, "RunStateRunning", "the "+what+" is asked to run")
 	}
 	if name := m.GetSpec().GetNode(); name != "" && !conditions.IsTrue(node.GetStatus().GetConditions(), NodeReady) {
 		return cond(metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN, "NodeNotReporting", "node "+name+" is not reporting")
 	}
-	// m is in line with the container, so asked to stop too. The node
+	// m is in line with its owner, so asked to stop too. The node
 	// observes a machine's generation only once it has applied it, and
 	// applying a stop is the VM being down.
 	if m.GetStatus().GetObservedGeneration() == m.GetMetadata().GetGeneration() {

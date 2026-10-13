@@ -366,6 +366,12 @@ The hypervisor driver (`internal/node/driver/chvm`,
   `/usr/local/lib/hangar/initramfs.cpio`, or where `--guest-kernel` and
   `--guest-initramfs` say. The `release` step installs them. A VM
   keeps the ones it was started with until it is started again.
+- For VirtualMachines, the firmware they boot their own kernel through
+  (`docs/decisions/vm-boot.md`): Cloud Hypervisor's EDK2 build at
+  `/usr/local/lib/hangar/CLOUDHV.fd`, `0644`, which the `packages` step
+  installs at the release and sha256 pinned in `deploy/host/versions.env`
+  and `verify.sh` checks; `--vm-firmware` names another. Without the file
+  the agent starts, warns, and refuses VirtualMachines.
 - `/var/lib/hangar/vms` (`--vm-dir`), the `hangar/vms` dataset the `zfs`
   step makes, `0700` and
   root's: each VM's spec, boot disk, sockets and console logs. Its path must
