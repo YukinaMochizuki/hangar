@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strconv"
 	"syscall"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 // A network's sockets are real loopback ones standing for their addresses
@@ -67,7 +69,7 @@ func (d network) listen(networkUID, proto string, addr netip.AddrPort, open func
 	if !ok {
 		return nil, fmt.Errorf("network %s has no namespace on the host", networkUID)
 	}
-	if a := addr.Addr(); a != n.CIDR.Addr().Next() && a != netip.IPv4Unspecified() {
+	if a := addr.Addr(); a != n.CIDR.Addr().Next() && a != driver.MetadataAddr && a != netip.IPv4Unspecified() {
 		return nil, fmt.Errorf("network %s has no address %s to listen on", networkUID, a)
 	}
 	instance := d.h.instances[networkUID]

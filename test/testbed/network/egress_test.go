@@ -16,8 +16,10 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/hostnet"
 )
 
-// TestSpoofing has a guest forge its source address: only addresses of its
-// network's range leave it, NATed, and each of the two layers holds alone.
+// TestSpoofing has a guest forge its source address: only its own address
+// leaves its interface, and only addresses of its network's range leave
+// the namespace, NATed; each of the three layers, the binding, the
+// namespace's filter and the host's, holds alone.
 func TestSpoofing(t *testing.T) {
 	d := newDriver(t, hostnet.Config{Uplink: upstreamLink, PublicIPv4: netip.MustParseAddr(hostAddr)})
 	nets := []driver.NetworkSpec{netA, netB, netC}
@@ -68,7 +70,20 @@ func TestSpoofing(t *testing.T) {
 		forged(t)
 		reflected(t)
 	})
-	t.Run("as another guest of its network, it stays there", func(t *testing.T) {
+	unbind := func(t *testing.T) {
+		t.Helper()
+		run(t, "ip", "netns", "exec", hostnet.NamespaceOf(netA.UID), "nft", "flush", "chain", "bridge", hostnet.Table, "prerouting")
+	}
+	t.Run("as another guest of its network, nothing leaves its interface", func(t *testing.T) {
+		a1.sendAs(t, a2.nic.Address.Addr().String(), upstreamAddr)
+		if n := count(t, upstreamNS, "marked-request"); n > 0 {
+			t.Errorf("a1 as a2 reached the upstream (%d pings)", n)
+		}
+		noneForeign(t)
+	})
+	t.Run("without the binding, as another guest of its network, it stays there", func(t *testing.T) {
+		defer restore()
+		unbind(t)
 		a1.sendAs(t, a2.nic.Address.Addr().String(), upstreamAddr)
 		if n := count(t, upstreamNS, "marked-request"); n == 0 {
 			t.Error("a1 as a2 did not reach the upstream; the test tests nothing")
@@ -82,13 +97,22 @@ func TestSpoofing(t *testing.T) {
 		}
 		noneForeign(t)
 	})
-	t.Run("without the namespace's filter, the host's holds", func(t *testing.T) {
+	t.Run("without the binding and the namespace's filter, the host's holds", func(t *testing.T) {
 		defer restore()
+		unbind(t)
 		run(t, "ip", "netns", "exec", hostnet.NamespaceOf(netA.UID), "nft", "flush", "chain", "ip", hostnet.Table, "prerouting")
 		forged(t)
 	})
-	t.Run("without the host's filter, the namespace's holds", func(t *testing.T) {
+	t.Run("without the namespace's and the host's filters, the binding holds", func(t *testing.T) {
 		defer restore()
+		run(t, "ip", "netns", "exec", hostnet.NamespaceOf(netA.UID), "nft", "flush", "chain", "ip", hostnet.Table, "prerouting")
+		run(t, "nft", "flush", "chain", "ip", hostnet.Table, "prerouting")
+		forged(t)
+		reflected(t)
+	})
+	t.Run("without the binding and the host's filter, the namespace's holds", func(t *testing.T) {
+		defer restore()
+		unbind(t)
 		run(t, "nft", "flush", "chain", "ip", hostnet.Table, "prerouting")
 		forged(t)
 		reflected(t)

@@ -93,6 +93,40 @@ func TestServiceSockets(t *testing.T) {
 		t.Error("the host is answered at the gateway, by the namespace's uplink")
 	}
 
+	// The metadata address answers only the network's own machines: a guest
+	// of another network finds its own network's, where nothing listens
+	// here, and the host finds nothing, by route or at the transit address.
+	md := netip.AddrPortFrom(driver.MetadataAddr, 80)
+	mdl, _, err := d.ListenTCP(ctx, netA.UID, md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		for {
+			c, err := mdl.Accept()
+			if err != nil {
+				return
+			}
+			_, _ = c.Write([]byte("hi"))
+			_ = c.Close()
+		}
+	}()
+	if !answers(t, guestNS(inA), "tcp", md) {
+		t.Error("a machine of the network does not reach its metadata address")
+	}
+	if answers(t, guestNS(inC), "tcp", md) {
+		t.Error("a machine of another network reaches this network's metadata service")
+	}
+	if answers(t, root, "tcp", netip.AddrPortFrom(nsTransit, 80)) {
+		t.Error("the host reaches the metadata service at the transit address")
+	}
+	run(t, "ip", "route", "add", "169.254.169.254/32", "via", nsTransit.String())
+	if answers(t, root, "tcp", md) {
+		t.Error("the host reaches the metadata service by a route through the uplink")
+	}
+	run(t, "ip", "route", "del", "169.254.169.254/32")
+	_ = mdl.Close()
+
 	// A bridge made again is another instance: the sockets bound to the old
 	// one serve nothing, and new ones serve the network.
 	before, err := d.Instance(ctx, netA.UID)
