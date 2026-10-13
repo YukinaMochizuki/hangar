@@ -15,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/node/dhcp"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/netsvc"
 	"github.com/YukinaMochizuki/hangar/internal/node/resolver"
@@ -24,10 +25,15 @@ import (
 // resolverPort is where a network's resolver listens, on its gateway.
 const resolverPort = 53
 
-// netServices are the services the node serves the networks on its host,
-// such as each network's resolver.
+// dhcpAddr is where a network's DHCP server listens: any address of its
+// bridge, as requests come from clients without one, to the broadcast.
+var dhcpAddr = netip.AddrPortFrom(netip.IPv4Unspecified(), 67)
+
+// netServices are the services the node serves the networks on its host:
+// each network's resolver and its DHCP.
 type netServices struct {
 	resolver *resolver.Resolver
+	dhcp     *dhcp.Server
 	services *netsvc.Manager
 
 	mu sync.Mutex
@@ -53,7 +59,20 @@ func newNetServices(n driver.Network, upstreams []netip.AddrPort, log *slog.Logg
 			}
 		},
 	}
-	return &netServices{resolver: r, services: netsvc.New(n, log, dns), named: map[string]map[controller.Key]bool{}}
+	d := dhcp.New(log)
+	dhcpService := netsvc.Service{
+		Name: "dhcp",
+		Addr: func(netsvc.Network) netip.AddrPort { return dhcpAddr },
+		ServeUDP: func(ctx context.Context, n netsvc.Network, c *net.UDPConn) {
+			if err := d.Serve(ctx, n.UID, c); err != nil {
+				log.Error("a network's DHCP stopped", "network_uid", n.UID, "error", err)
+			}
+		},
+	}
+	return &netServices{
+		resolver: r, dhcp: d, services: netsvc.New(n, log, dns, dhcpService),
+		named: map[string]map[controller.Key]bool{},
+	}
 }
 
 // networkController keeps each network on the host served: its records made
@@ -101,11 +120,11 @@ func (a *Agent) networksOfMachine(_ context.Context, o store.Object) []controlle
 }
 
 // reconcileNetworkServices has a network's services listen, if the network
-// is on the host, then makes its records from the API; one not on the host
-// is neither served nor named. Listening first is what makes a guest asking
-// before the records are read get SERVFAIL rather than nothing. A network
-// gone from the API is the sweep's to stop serving, as it is the sweep's to
-// remove.
+// is on the host, then makes its records and leases from the API; one not on
+// the host is neither served nor named. Listening first is what makes a
+// guest asking before the records are read get SERVFAIL rather than
+// nothing. A network gone from the API is the sweep's to stop serving, as
+// it is the sweep's to remove.
 func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) error {
 	n, err := a.getNetwork(ctx, k.Project, k.Name)
 	if err != nil {
@@ -128,7 +147,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		return err
 	}
 	if !slices.Contains(s.services.Serving(), uid) {
-		s.resolver.Forget(uid)
+		s.forget(uid)
 		s.name(k, nil)
 		return nil
 	}
@@ -137,6 +156,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		return err
 	}
 	names := map[string][]netip.Addr{}
+	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
 	var on []string
 	for _, o := range objs {
 		m := o.(*computev1alpha1.Machine)
@@ -149,11 +169,13 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			if !slices.Contains(names[name], addr.Addr()) {
 				names[name] = append(names[name], addr.Addr())
 			}
+			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
 			on = append(on, m.GetMetadata().GetUid())
 		}
 	}
 	s.name(k, on)
 	s.resolver.Set(uid, resolver.Records{Project: k.Project, Names: names})
+	s.dhcp.Set(uid, leases)
 	return nil
 }
 
@@ -175,14 +197,19 @@ func (s *netServices) name(network controller.Key, on []string) {
 }
 
 // keep stops serving every network not on the host, and forgets its
-// records.
+// records and leases.
 func (s *netServices) keep(onHost map[string]bool) {
 	s.services.Keep(func(uid string) bool {
 		if !onHost[uid] {
-			s.resolver.Forget(uid)
+			s.forget(uid)
 		}
 		return onHost[uid]
 	})
+}
+
+func (s *netServices) forget(networkUID string) {
+	s.resolver.Forget(networkUID)
+	s.dhcp.Forget(networkUID)
 }
 
 // machineDNSName is the name a machine answers to in its project: that of the

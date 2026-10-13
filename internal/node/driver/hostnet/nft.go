@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -99,6 +100,14 @@ func nsChains(cidr netip.Prefix, nsTransit netip.Addr) []chainSpec {
 	return []chainSpec{{
 		name: "prerouting", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookPrerouting, prio: *nftables.ChainPriorityRaw,
 		rules: []ruleSpec{{
+			// A guest asks DHCP for its address before it has one, by
+			// broadcast, which is never routed on: the packet goes no
+			// further than the namespace's DHCP server.
+			says: fmt.Sprintf("DHCP from no address on %s", nsBridge),
+			exprs: slices.Concat(matchIfname(expr.MetaKeyIIFNAME, nsBridge),
+				matchSaddr(netip.MustParsePrefix("0.0.0.0/32")), matchDaddr(netip.MustParsePrefix("255.255.255.255/32")),
+				matchUDPPorts(68, 67), []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}}),
+		}, {
 			says: fmt.Sprintf("only %s from %s", cidr, nsBridge),
 			exprs: append(matchIfname(expr.MetaKeyIIFNAME, nsBridge),
 				append(matchSaddrNot(cidr), &expr.Verdict{Kind: expr.VerdictDrop})...),
@@ -113,6 +122,27 @@ func nsChains(cidr netip.Prefix, nsTransit netip.Addr) []chainSpec {
 }
 
 func matchSaddr(p netip.Prefix) []expr.Any { return saddrIs(p, expr.CmpOpEq) }
+
+// matchDaddr matches a destination in p.
+func matchDaddr(p netip.Prefix) []expr.Any {
+	return []expr.Any{
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: net.CIDRMask(p.Bits(), 32), Xor: make([]byte, 4)},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: p.Addr().AsSlice()},
+	}
+}
+
+// matchUDPPorts matches UDP from port src to port dst.
+func matchUDPPorts(src, dst uint16) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyL4PROTO, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{unix.IPPROTO_UDP}},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 0, Len: 2},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(src)},
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.BigEndian.PutUint16(dst)},
+	}
+}
 
 func matchSaddrNot(p netip.Prefix) []expr.Any { return saddrIs(p, expr.CmpOpNeq) }
 

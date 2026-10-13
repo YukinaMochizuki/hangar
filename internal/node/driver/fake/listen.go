@@ -67,7 +67,7 @@ func (d network) listen(networkUID, proto string, addr netip.AddrPort, open func
 	if !ok {
 		return nil, fmt.Errorf("network %s has no namespace on the host", networkUID)
 	}
-	if a := addr.Addr(); a != n.CIDR.Addr().Next() {
+	if a := addr.Addr(); a != n.CIDR.Addr().Next() && a != netip.IPv4Unspecified() {
 		return nil, fmt.Errorf("network %s has no address %s to listen on", networkUID, a)
 	}
 	instance := d.h.instances[networkUID]

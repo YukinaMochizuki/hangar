@@ -19,8 +19,9 @@ anything else needs a reachable address.
 - **Each `Network` is its own network namespace** (that is what allows
   overlapping CIDRs) with a bridge and nftables. The node creates tap devices
   and hands their file descriptors to Cloud Hypervisor. The apiserver does IPAM
-  and assigns static addresses; there is no DHCP. All of it sits behind a
-  network driver interface so VXLAN or OVN can replace it.
+  and assigns static addresses; DHCP only delivers them, and has no pool
+  of its own. All of it sits behind a network driver interface so VXLAN or
+  OVN can replace it.
 - **Addresses are the apiserver's.** A `Network` carries its IPv4 range; the
   container controller hands each machine interface the lowest free address
   after the gateway (the range's first usable address), and the network
@@ -76,13 +77,15 @@ anything else needs a reachable address.
       network exists whose replies could leave by another link;
     - input: from `hnv*`, drop all but replies, so a network cannot reach
       the host.
-  - Table `ip hangar` in each namespace has two: in prerouting, before
-    conntrack, drop what comes in from `hn-br` with a source outside the
-    network's range, so a guest cannot forge one, nor make the gateway answer
-    one; and SNAT the range leaving `hn-up` to the namespace's transit
-    address. A guest taking an address of the namespace's own, its transit
-    address or the gateway, is dropped by the kernel as a martian. Each
-    layer holds without the other.
+  - Table `ip hangar` in each namespace has three: in prerouting, before
+    conntrack, accept DHCP from `hn-br` sent from no address to the
+    broadcast (UDP 68 to 67), which a guest without an address yet sends
+    and which is never routed on; drop what else comes in from `hn-br` with
+    a source outside the network's range, so a guest cannot forge one, nor
+    make the gateway answer one; and SNAT the range leaving `hn-up` to the
+    namespace's transit address. A guest taking an address of the
+    namespace's own, its transit address or the gateway, is dropped by the
+    kernel as a martian. Each layer holds without the other.
   - Each rule's comment says what the rule does and ends with a hash of its
     expressions. A table whose comments differ from the wanted rules',
     including one written for other rules under the same words, is replaced
@@ -156,6 +159,16 @@ anything else needs a reachable address.
     its own network and a guest does not ask the next resolver after a
     NXDOMAIN, so a machine on several networks resolves the names of its
     first.
+- **Each network has a DHCP server** (`internal/node/dhcp`), beside its
+  resolver, on UDP 67 of any address of `hn-br`, for images that configure
+  themselves by DHCP, as cloud images do; container guests never ask, as
+  their boot disk carries their network. It offers each machine interface,
+  known by its MAC, the address the apiserver assigned it, with the
+  gateway as router and resolver, the project's search domain, the
+  machine's name as hostname and a lease of a day; a MAC it does not know
+  is not answered, and a request for another address is refused. A client
+  without an address is answered by broadcast, one renewing at its
+  address.
 - **`SecurityGroup`** works as in AWS: attached to NICs, several per NIC,
   sources are CIDRs or other groups, stateful, allow rules only, inbound denied
   by default. Each network has a `default` group. One nftables set per group.
