@@ -54,8 +54,9 @@ func exitError(t *testing.T, uid string) string {
 }
 
 // TestTheLauncherRefusesAnotherZvol: a root disk's link leading to another
-// zvol, as a stale one can, or to what is no zvol, is refused by BLKZNAME
-// before Cloud Hypervisor runs; the link put right, the VM starts.
+// zvol, as a stale one can, or to what is no zvol, is refused before Cloud
+// Hypervisor runs: by BLKZNAME, or as nothing the unit's empty root holds;
+// the link put right, the VM starts.
 func TestTheLauncherRefusesAnotherZvol(t *testing.T) {
 	h := newHost(t)
 	spec := h.machine(t, "victim", driver.RestartNever, guestScript)
@@ -91,7 +92,9 @@ func TestTheLauncherRefusesAnotherZvol(t *testing.T) {
 
 	for _, tt := range []struct{ target, says string }{
 		{wrong, "leads to the zvol " + strings.TrimPrefix(other.Path, "/dev/zvol/")},
-		{notZvol, "BLKZNAME"},
+		// Outside the unit's empty root: not there to open.
+		{notZvol, "no such file"},
+		{"/dev/null", "BLKZNAME"},
 	} {
 		relink(tt.target)
 		if err := h.hv.Start(context.Background(), spec); err != nil {

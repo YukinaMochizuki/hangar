@@ -19,7 +19,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
@@ -41,8 +44,15 @@ type Config struct {
 	// until it is started again.
 	CloudHypervisor, Kernel, Initramfs, Cmdline string
 	// Launcher is the launcher's command line, to which the driver adds
-	// --dir and the machine uid: hangar-node vmm.
+	// --dir, --vm-user and the machine uid: hangar-node vmm. The launcher
+	// and Cloud Hypervisor must be statically linked, at absolute paths:
+	// each VM's unit has an empty root, into which only they, the kernel
+	// and the initramfs are bound.
 	Launcher []string
+	// VMUsers are the ids the VMs run as, one each; zero means
+	// DefaultVMUsers. No user or group of the host may have one, nor any
+	// subordinate range overlap them, but deploy/host's for the VMs.
+	VMUsers UserRange
 	// Nameservers are the guests' resolvers.
 	Nameservers []string
 	// StopGrace is how long a guest's process has between SIGTERM and
@@ -60,6 +70,15 @@ type Config struct {
 	guest   driver.Guest
 	// logPoll, if set, is how often a followed log is checked for more.
 	logPoll time.Duration
+	// procUsers, if set, replaces listing the ids processes run as.
+	procUsers func() (map[uint32]bool, error)
+	// dynamicOK lets the launcher and Cloud Hypervisor be dynamically
+	// linked, for tests whose units are fakes.
+	dynamicOK bool
+	// etc, if set, replaces /etc, where the host's users and groups are.
+	etc string
+	// removeAll, if set, replaces os.RemoveAll in removeRuntime.
+	removeAll func(string) error
 }
 
 // Hypervisor is the driver. It is safe for concurrent use.
@@ -69,6 +88,10 @@ type Hypervisor struct {
 	guest   driver.Guest
 	locks   keylock.Map
 	changes chan struct{}
+	// users is held while a Start picks its VM's id and writes it down.
+	users     sync.Mutex
+	procUsers func() (map[uint32]bool, error)
+	removeAll func(string) error
 }
 
 var _ driver.Hypervisor = (*Hypervisor)(nil)
@@ -91,15 +114,44 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if len(cfg.Launcher) == 0 {
 		return nil, errors.New("no launcher")
 	}
-	for _, p := range []string{cfg.CloudHypervisor, cfg.Kernel, cfg.Initramfs} {
+	if cfg.VMUsers == (UserRange{}) {
+		cfg.VMUsers = DefaultVMUsers
+	}
+	if err := cfg.VMUsers.check(); err != nil {
+		return nil, err
+	}
+	if cfg.etc == "" {
+		cfg.etc = "/etc"
+	}
+	if err := cfg.VMUsers.checkFree(cfg.etc); err != nil {
+		return nil, err
+	}
+	for _, p := range []string{cfg.Launcher[0], cfg.CloudHypervisor, cfg.Kernel, cfg.Initramfs} {
+		if !filepath.IsAbs(p) {
+			return nil, fmt.Errorf("%q is not an absolute path", p)
+		}
 		if _, err := os.Stat(p); err != nil {
 			return nil, err
+		}
+	}
+	if !cfg.dynamicOK {
+		for _, p := range []string{cfg.Launcher[0], cfg.CloudHypervisor} {
+			if err := checkStatic(p); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
 		return nil, err
 	}
-	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1)}
+	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1), procUsers: cfg.procUsers}
+	if h.procUsers == nil {
+		h.procUsers = procUsers
+	}
+	h.removeAll = cfg.removeAll
+	if h.removeAll == nil {
+		h.removeAll = os.RemoveAll
+	}
 	h.guest = cfg.guest
 	if h.guest == nil {
 		h.guest = chguest.Guest{Socket: h.Socket}
@@ -126,6 +178,9 @@ func (h *Hypervisor) Guest() driver.Guest { return h.guest }
 
 // Socket is the hybrid vsock socket of a machine's VM.
 func (h *Hypervisor) Socket(machineUID string) string {
+	if legacy := filepath.Join(h.cfg.Dir, machineUID, legacyVsockFile); isSocket(legacy) {
+		return legacy
+	}
 	return filepath.Join(h.cfg.Dir, machineUID, vsockFile)
 }
 
@@ -305,10 +360,13 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	for _, f := range []string{exitFile, stopFile, vsockFile} {
+	for _, f := range []string{exitFile, stopFile, legacyVsockFile} {
 		if err := os.Remove(filepath.Join(dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
+	}
+	if err := os.RemoveAll(filepath.Join(dir, chDir)); err != nil {
+		return err
 	}
 	disk, err := h.bootDisk(spec)
 	if err != nil {
@@ -317,7 +375,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if err := writeAtomic(filepath.Join(dir, bootFile), disk); err != nil {
 		return err
 	}
-	b, err := json.Marshal(launch{
+	user, err := h.writeLaunch(dir, launch{
 		Spec: spec, Hash: hash, CloudHypervisor: h.cfg.CloudHypervisor,
 		Kernel: h.cfg.Kernel, Initramfs: h.cfg.Initramfs, Cmdline: h.cfg.Cmdline,
 		StopGrace: h.cfg.StopGrace, StopSlack: h.cfg.StopSlack,
@@ -325,14 +383,37 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(filepath.Join(dir, specFile), b); err != nil {
-		return err
-	}
-	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, uid)
-	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack))); err != nil {
+	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
+	sb := sandbox{Dir: dir, Binds: []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.Initramfs}}
+	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack), sb)); err != nil {
 		return fmt.Errorf("starting %s: %w", unitName(uid), err)
 	}
 	return nil
+}
+
+// writeLaunch writes the spec file, with the VM's id, and returns the id.
+func (h *Hypervisor) writeLaunch(dir string, ln launch) (uint32, error) {
+	h.users.Lock()
+	defer h.users.Unlock()
+	// And against another driver on the same directory.
+	lock, err := os.Open(h.cfg.Dir)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = lock.Close() }()
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		return 0, err
+	}
+	user, err := h.vmUser(ln.Spec.MachineUID)
+	if err != nil {
+		return 0, err
+	}
+	ln.VMUser = user
+	b, err := json.Marshal(ln)
+	if err != nil {
+		return 0, err
+	}
+	return user, writeAtomic(filepath.Join(dir, specFile), b)
 }
 
 // checkSpec refuses a spec no VM can be started with.
@@ -477,7 +558,8 @@ func (h *Hypervisor) poweredOff(ctx context.Context, uid string) bool {
 }
 
 // removeRuntime removes what a VM's directory holds but its logs, and the
-// directory too if no log is left.
+// directory too if no log is left. The spec file goes last: while anything
+// else of the VM's is left, its id is not given to another VM.
 func (h *Hypervisor) removeRuntime(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -492,9 +574,15 @@ func (h *Hypervisor) removeRuntime(dir string) error {
 			kept++
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+		if e.Name() == specFile {
+			continue
+		}
+		if err := h.removeAll(filepath.Join(dir, e.Name())); err != nil {
 			return err
 		}
+	}
+	if err := os.Remove(filepath.Join(dir, specFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
 	if kept == 0 {
 		return os.Remove(dir)

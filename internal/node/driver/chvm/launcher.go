@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -35,7 +36,8 @@ const (
 // process of the VM's unit, started again by systemd as the restart policy
 // says. It needs nothing of the node agent: what it runs is in the VM's
 // directory. It opens the VM's root disk, checked to be the machine's, and
-// its taps, and runs Cloud Hypervisor on them; it keeps the guest's console
+// its taps, and runs Cloud Hypervisor on them as the VM's user, with no
+// capabilities and only the taps' fds (ExecMain); it keeps the guest's console
 // in a log of bounded size, and exits as the container's process did, so
 // systemd's restart policy and restart count see the container. Stopped
 // (ctx ends, on SIGTERM), it stops Cloud Hypervisor and exits, recording no
@@ -62,19 +64,43 @@ type Launcher struct {
 	// vsock socket.
 	Guest driver.Guest
 	Log   *slog.Logger
+
+	// VMUser is the id the unit runs Cloud Hypervisor as, which the spec
+	// file must hold too. Zero is a unit that runs it as root, as a driver
+	// without VM users started them: such a VM runs as it did until it is
+	// started again, in a unit of its user's.
+	VMUser uint32
+	// MakeNode makes at path a node of the device f is open on, the
+	// group's to read and write. Nil means mknodOf.
+	MakeNode func(f *os.File, path string, gid int) error
+	// Exec runs Cloud Hypervisor as the VM's user: hangar-node vmm-exec,
+	// to which the launcher adds the flags of ExecMain. Nil means
+	// /proc/self/exe vmm-exec.
+	Exec []string
+	// KVM is the KVM device, whose group Cloud Hypervisor gets if it
+	// needs it. Empty means /dev/kvm.
+	KVM string
+	// UnmountNetns removes the networks' namespaces from the unit's mount
+	// namespace once the taps are open, so Cloud Hypervisor never sees
+	// them. Nil means unmountNetns.
+	UnmountNetns func() error
+	// DropCaps leaves the launcher only what it needs once Cloud
+	// Hypervisor runs, with a VM user. Nil means dropCaps(launcherKeeps).
+	DropCaps func() error
 }
 
 // LauncherMain is hangar-node vmm [--dir DIR] UID, returning its exit code.
 func LauncherMain(args []string) int {
 	fs := flag.NewFlagSet("vmm", flag.ContinueOnError)
 	dir := fs.String("dir", DefaultDir, "the directory of the VMs' directories")
-	if err := fs.Parse(args); err != nil || fs.NArg() != 1 {
-		fmt.Fprintln(os.Stderr, "usage: hangar-node vmm [--dir DIR] MACHINE_UID")
+	user := fs.Uint("vm-user", 0, "the id Cloud Hypervisor runs as; 0, or none, runs it as root")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 1 || *user > 1<<31 {
+		fmt.Fprintln(os.Stderr, "usage: hangar-node vmm [--dir DIR] [--vm-user ID] MACHINE_UID")
 		return ExitFailed
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	l := &Launcher{Dir: *dir, Log: slog.New(slog.NewTextHandler(os.Stderr, nil))}
+	l := &Launcher{Dir: *dir, VMUser: uint32(*user), Log: slog.New(slog.NewTextHandler(os.Stderr, nil))}
 	return l.Run(ctx, fs.Arg(0))
 }
 
@@ -123,12 +149,33 @@ func (l *Launcher) defaults() {
 	if l.Log == nil {
 		l.Log = slog.New(slog.DiscardHandler)
 	}
+	if l.MakeNode == nil {
+		l.MakeNode = mknodOf
+	}
+	if l.Exec == nil {
+		l.Exec = []string{"/proc/self/exe", "vmm-exec"}
+	}
+	if l.KVM == "" {
+		l.KVM = "/dev/kvm"
+	}
+	if l.UnmountNetns == nil {
+		l.UnmountNetns = unmountNetns
+	}
+	if l.DropCaps == nil {
+		l.DropCaps = func() error { return dropCaps(launcherKeeps) }
+	}
 }
 
 // Run runs the machine's VM until it powers off, or ctx ends, and returns
 // the code to exit with.
 func (l *Launcher) Run(ctx context.Context, uid string) int {
 	l.defaults()
+	// No fd the launcher was started with reaches Cloud Hypervisor: it
+	// gets only what the launcher passes it (command).
+	if err := unix.CloseRange(3, ^uint(0), unix.CLOSE_RANGE_CLOEXEC); err != nil {
+		l.Log.Error("vmm", "error", fmt.Errorf("close_range: %w", err))
+		return ExitFailed
+	}
 	if err := checkUID(uid); err != nil {
 		l.Log.Error("vmm", "error", err)
 		return ExitFailed
@@ -167,14 +214,30 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	if ln.Spec.MachineUID != uid {
 		return 0, fmt.Errorf("%s is machine %q's, not %q's", filepath.Join(dir, specFile), ln.Spec.MachineUID, uid)
 	}
+	if ln.VMUser != l.VMUser {
+		return 0, fmt.Errorf("the unit runs Cloud Hypervisor as %d, %s says %d", l.VMUser, filepath.Join(dir, specFile), ln.VMUser)
+	}
+	if err := checkOwn(filepath.Join(dir, specFile)); err != nil {
+		return 0, err
+	}
+	// The VM's group; root's, with no VM user.
+	gid := int(ln.VMUser)
+	if err := prepareDir(dir, gid); err != nil {
+		return 0, err
+	}
+	// Held open while the VM runs, O_EXCL: no other zvol can take its
+	// device's number, which the node names.
 	root, err := l.OpenRoot(ln.Spec.Root.Path)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = root.Close() }()
-	files := []*os.File{root}
+	if err := l.MakeNode(root, filepath.Join(dir, diskNode), gid); err != nil {
+		return 0, fmt.Errorf("the root disk's node: %w", err)
+	}
+	var taps []*os.File
 	defer func() {
-		for _, f := range files[1:] {
+		for _, f := range taps {
 			_ = f.Close()
 		}
 	}()
@@ -183,7 +246,12 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		if err != nil {
 			return 0, err
 		}
-		files = append(files, tap)
+		taps = append(taps, tap)
+	}
+	if ln.VMUser != 0 {
+		if err := l.UnmountNetns(); err != nil {
+			return 0, fmt.Errorf("unmounting the networks' namespaces: %w", err)
+		}
 	}
 
 	clog, err := openCapped(filepath.Join(dir, ConsoleLog), l.ConsoleMax)
@@ -197,14 +265,11 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		return 0, err
 	}
 	defer func() { _ = serialLog.Close() }()
-	serial, err := openFIFO(filepath.Join(dir, serialFIFO))
+	serial, err := openFIFO(filepath.Join(dir, serialFIFO), gid)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = serial.Close() }()
-	if err := os.Remove(filepath.Join(dir, vsockFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return 0, err
-	}
 
 	// The console comes on Cloud Hypervisor's stdout; its stdin, the
 	// console's input, is held open and never written.
@@ -219,15 +284,27 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		return 0, err
 	}
 	defer func() { _ = inW.Close() }()
-	cmd := exec.Command(ln.CloudHypervisor, chArgs(ln, dir, len(files)-1)...)
+	cmd, err := l.command(ln, dir, len(taps))
+	if err != nil {
+		_ = outW.Close()
+		_ = inR.Close()
+		return 0, err
+	}
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = inR, outW, os.Stderr
-	cmd.ExtraFiles = files // fd 3 is the root disk, the taps follow
+	cmd.ExtraFiles = taps // fds 3 and on, and nothing else
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	err = cmd.Start()
 	_ = inR.Close()
 	_ = outW.Close()
 	if err != nil {
 		return 0, err
+	}
+	if ln.VMUser != 0 {
+		if err := l.DropCaps(); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return 0, fmt.Errorf("giving up root's capabilities: %w", err)
+		}
 	}
 	l.Log.Info("vmm: started", "machine_uid", uid, "machine", ln.Spec.Machine, "pid", cmd.Process.Pid, "spec", ln.Hash)
 
@@ -360,9 +437,10 @@ func (l *Launcher) record(dir string, r exitRecord) {
 	}
 }
 
-// openFIFO makes a FIFO at path, afresh, and opens it to read from. It is
-// opened for writing too, so it never reads as ended between writers.
-func openFIFO(path string) (*os.File, error) {
+// openFIFO makes a FIFO at path, afresh, for the group gid to write to, and
+// opens it to read from. It is opened for writing too, so it never reads as
+// ended between writers.
+func openFIFO(path string, gid int) (*os.File, error) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -373,11 +451,157 @@ func openFIFO(path string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	return os.NewFile(uintptr(fd), path), nil
+	f := os.NewFile(uintptr(fd), path)
+	if gid != 0 {
+		if err := setGroup(f, gid, 0o620); err != nil {
+			_ = f.Close()
+			return nil, err
+		}
+	}
+	return f, nil
+}
+
+// prepareDir makes the VM's directory and what Cloud Hypervisor reads in
+// it the group gid's, and chDir afresh, where it writes. With no VM user
+// (gid 0) they are root's alone. Nothing in the directory is Cloud
+// Hypervisor's to remove or replace, nor to read but what it needs.
+func prepareDir(dir string, gid int) error {
+	dirMode, readMode, chMode := os.FileMode(0o700), os.FileMode(0o600), os.FileMode(0o700)
+	if gid != 0 {
+		dirMode, readMode, chMode = 0o710, 0o640, 0o770
+	}
+	for _, p := range []struct {
+		name string
+		mode os.FileMode
+	}{{"", dirMode}, {bootFile, readMode}} {
+		f, err := os.OpenFile(filepath.Join(dir, p.name), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+		if err != nil {
+			return err
+		}
+		err = setGroup(f, gid, p.mode)
+		_ = f.Close()
+		if err != nil {
+			return err
+		}
+	}
+	for _, name := range []string{legacyVsockFile, diskNode} {
+		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	ch := filepath.Join(dir, chDir)
+	if err := os.RemoveAll(ch); err != nil {
+		return err
+	}
+	if err := os.Mkdir(ch, 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(ch, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	return setGroup(f, gid, chMode)
+}
+
+// checkOwn refuses a file the launcher would run what it says of, unless it
+// is a regular file the launcher's user alone can write.
+func checkOwn(path string) error {
+	var st unix.Stat_t
+	if err := unix.Lstat(path, &st); err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || int(st.Uid) != os.Geteuid() || st.Mode&0o022 != 0 {
+		return fmt.Errorf("%s is not a file of the launcher's user's alone", path)
+	}
+	return nil
+}
+
+// setGroup gives f to root and the group gid, with mode. It is root's
+// already, or the launcher's when it is not root, as in tests.
+func setGroup(f *os.File, gid int, mode os.FileMode) error {
+	// Not root, a test cannot give a file to root's group.
+	if err := f.Chown(os.Geteuid(), gid); err != nil && (os.Geteuid() == 0 || gid != 0) {
+		return err
+	}
+	return f.Chmod(mode)
+}
+
+// mknodOf makes at path a block device node of the device f is open on,
+// root's and the group gid's to read and write.
+func mknodOf(f *os.File, path string, gid int) error {
+	var st unix.Stat_t
+	if err := unix.Fstat(int(f.Fd()), &st); err != nil {
+		return err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFBLK {
+		return fmt.Errorf("%s is no block device", f.Name())
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := unix.Mknod(path, unix.S_IFBLK|0o600, int(st.Rdev)); err != nil {
+		return err
+	}
+	// By path: nothing but root writes in the VM's directory.
+	if err := os.Lchown(path, 0, gid); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o660)
+}
+
+// unmountNetns detaches /run/netns from the unit's mount namespace, and
+// only from a VM unit's: one whose root is the empty tmpfs it has.
+func unmountNetns() error {
+	var st unix.Statfs_t
+	if err := unix.Statfs("/", &st); err != nil {
+		return err
+	}
+	if st.Type != unix.TMPFS_MAGIC {
+		return errors.New("the root is the host's: this is no VM unit's mount namespace")
+	}
+	err := unix.Unmount("/run/netns", unix.MNT_DETACH)
+	if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.ENOENT) {
+		return nil // not mounted: the host has no network
+	}
+	return err
+}
+
+// command is what runs Cloud Hypervisor for the launch: with a VM user,
+// ExecMain, which runs it as that user with the KVM device's group if it
+// needs one; with none, Cloud Hypervisor itself, as root.
+func (l *Launcher) command(ln launch, dir string, taps int) (*exec.Cmd, error) {
+	args := chArgs(ln, dir, taps)
+	if ln.VMUser == 0 {
+		return exec.Command(ln.CloudHypervisor, args...), nil
+	}
+	groups, err := kvmGroups(l.KVM)
+	if err != nil {
+		return nil, err
+	}
+	id := fmt.Sprint(ln.VMUser)
+	argv := append(slices.Clone(l.Exec[1:]), "--uid", id, "--gid", id, "--groups", groups, "--fds", fmt.Sprint(taps), "--", ln.CloudHypervisor)
+	return exec.Command(l.Exec[0], append(argv, args...)...), nil
+}
+
+// kvmGroups is the group the KVM device needs of its users, if any.
+func kvmGroups(kvm string) (string, error) {
+	var st unix.Stat_t
+	if err := unix.Stat(kvm, &st); err != nil {
+		return "", err
+	}
+	switch {
+	case st.Mode&0o006 == 0o006:
+		return "", nil
+	case st.Mode&0o060 == 0o060 && st.Gid != 0:
+		return fmt.Sprint(st.Gid), nil
+	}
+	return "", fmt.Errorf("%s is open to neither its group nor everyone", kvm)
 }
 
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk
-// on fd 3 and the taps on the fds after it, as the launcher passes them.
+// at its node in dir and the taps on fds 3 and on, as the launcher passes
+// them.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
@@ -387,13 +611,13 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
 		"--disk",
-		"path=/dev/fd/3,image_type=raw",
+		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
 	}
 	if taps > 0 {
 		args = append(args, "--net")
 		for n, i := range s.Interfaces[:taps] {
-			args = append(args, fmt.Sprintf("fd=%d,mac=%s", 4+n, i.MAC))
+			args = append(args, fmt.Sprintf("fd=%d,mac=%s", 3+n, i.MAC))
 		}
 	}
 	return append(args,

@@ -14,6 +14,13 @@ SERVICES_RUN=/run/hangar
 SERVICES_SOCKET=$SERVICES_RUN/node.sock
 SERVICES_ADMIN_SOCKET=$SERVICES_RUN/admin.sock
 SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
+# The ids each VM's Cloud Hypervisor runs as, one a VM, its uid and gid
+# (DefaultVMUsers in internal/node/driver/chvm, which refuses to start on a
+# host where anything else has one). Kept under this name in /etc/subuid
+# and /etc/subgid, so useradd gives no user a subordinate range of them.
+SERVICES_VM_IDS_NAME=hangar-vms
+SERVICES_VM_IDS_FIRST=200000
+SERVICES_VM_IDS_COUNT=65536
 SERVICES_UNITS="hangar-apiserver hangar-node"
 # The apiserver's sockets: socket units of their own, part of its service.
 SERVICES_SOCKETS="hangar-apiserver-node hangar-apiserver-admin"
@@ -48,6 +55,46 @@ services_auth_flags() {
 		;;
 	*) printf -- '--auth-mode dev\n' ;;
 	esac
+}
+
+services_vm_ids_line() {
+	printf '%s:%d:%d\n' "$SERVICES_VM_IDS_NAME" "$SERVICES_VM_IDS_FIRST" "$SERVICES_VM_IDS_COUNT"
+}
+
+# services_vm_ids_file FILE prints FILE with the VMs' range kept, last, and
+# no other line of that name.
+services_vm_ids_file() {
+	[ ! -f "$1" ] || grep -v "^$SERVICES_VM_IDS_NAME:" "$1" || true
+	services_vm_ids_line
+}
+
+services_vm_ids_kept() {
+	local f
+	for f in /etc/subuid /etc/subgid; do
+		services_vm_ids_file "$f" | cmp -s - "$f" || return 1
+	done
+}
+
+# services_vm_ids_clash prints each user, group or subordinate range but
+# the VMs' that has one of the VMs' ids.
+services_vm_ids_clash() {
+	local lo=$SERVICES_VM_IDS_FIRST hi=$((SERVICES_VM_IDS_FIRST + SERVICES_VM_IDS_COUNT))
+	getent passwd | awk -F: -v lo="$lo" -v hi="$hi" \
+		'($3 >= lo && $3 < hi) || ($4 >= lo && $4 < hi) { print "user " $1 }'
+	getent group | awk -F: -v lo="$lo" -v hi="$hi" '$3 >= lo && $3 < hi { print "group " $1 }'
+	local f
+	for f in /etc/subuid /etc/subgid; do
+		[ -f "$f" ] || continue
+		awk -F: -v lo="$lo" -v hi="$hi" -v me="$SERVICES_VM_IDS_NAME" -v f="$f" \
+			'NF == 3 && $1 != me && $2 < hi && lo < $2 + $3 { print f " range of " $1 }' "$f"
+	done
+}
+
+services_vm_ids_free() { [ -z "$(services_vm_ids_clash)" ]; }
+
+services_vm_ids_problem() {
+	printf "the VMs' ids %d to %d are taken: %s; move each to other ids (usermod, groupmod, or its line in /etc/subuid or /etc/subgid), then re-run\n" \
+		"$SERVICES_VM_IDS_FIRST" $((SERVICES_VM_IDS_FIRST + SERVICES_VM_IDS_COUNT - 1)) "$(services_vm_ids_clash | paste -sd, - | sed 's/,/, /g')"
 }
 
 services_tmpfiles() {
@@ -345,6 +392,10 @@ services_apply() {
 		log "warning: $what; a real run refuses until they are removed"
 	fi
 
+	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
+	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
+	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
+
 	id -u "$SERVICES_USER" >/dev/null 2>&1 ||
 		run "create system user $SERVICES_USER" useradd --system --user-group \
 			--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$SERVICES_USER"
@@ -401,6 +452,8 @@ services_apply() {
 services_verify() {
 	check "$LOCAL_ENV root's, 0600 or 0640, with HANGAR_BOOTSTRAP_ADMIN" services_local_env_ok
 	check "system user $SERVICES_USER" services_user_ok
+	check "the VMs' ids $SERVICES_VM_IDS_FIRST+$SERVICES_VM_IDS_COUNT kept in /etc/subuid and /etc/subgid" services_vm_ids_kept
+	check "no user, group or other subordinate range has one of the VMs' ids" services_vm_ids_free
 	check "$SERVICES_STATE is $SERVICES_USER's, mode 700" services_state_ok
 	check "units $SERVICES_UNITS, sockets $SERVICES_SOCKETS and $SERVICES_TMPFILES as generated and loaded" services_units_ok
 	check "no drop-ins for $SERVICES_UNITS $SERVICES_SOCKETS" services_no_dropins

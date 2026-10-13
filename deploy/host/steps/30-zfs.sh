@@ -43,7 +43,7 @@ zfs_datasets() {
 	printf '%s\n' \
 		"$HANGAR_ZPOOL/state:/var/lib/hangar/state::" \
 		"$HANGAR_ZPOOL/images:/var/lib/hangar/images:setuid=off,exec=off,devices=off,quota=$HANGAR_IMAGES_QUOTA:700" \
-		"$HANGAR_ZPOOL/vms:/var/lib/hangar/vms:setuid=off,exec=off,quota=$HANGAR_VMS_QUOTA:700" \
+		"$HANGAR_ZPOOL/vms:/var/lib/hangar/vms:setuid=off,exec=off,devices=on,quota=$HANGAR_VMS_QUOTA:700" \
 		"$HANGAR_ZPOOL/poc:none::"
 }
 

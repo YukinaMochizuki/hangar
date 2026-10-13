@@ -4,7 +4,8 @@
 //
 // hangar-node vmm MACHINE_UID is the launcher of one VM, the main process
 // of the VM's systemd unit (internal/node/driver/chvm); the agent starts
-// those units, never this command itself.
+// those units, never this command itself. hangar-node vmm-exec is what the
+// launcher runs Cloud Hypervisor through, as the VM's user.
 package main
 
 import (
@@ -48,6 +49,9 @@ type hostFlags struct {
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "vmm" {
 		os.Exit(chvm.LauncherMain(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "vmm-exec" {
+		os.Exit(chvm.ExecMain(os.Args[2:]))
 	}
 	var hf hostFlags
 	var (

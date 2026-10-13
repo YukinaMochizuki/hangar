@@ -54,6 +54,11 @@ with the host after any of these, and nothing would notice.
   so systemd's `Restart=` and its restart count see the container. A
   container exiting with 252 or 253 itself reads the same; `exit.json`
   says which (`Error` for the launcher's failure).
+- **Cloud Hypervisor runs confined to its VM** (decided 2026-10), as
+  Firecracker's jailer confines Firecracker: as a uid of the VM's own,
+  with no capability, in a unit with an empty root that holds its VM's
+  directory and little else. "A VM's confinement" below says what each
+  measure stops, and what is left.
 - **The exit code and the log are the guest's claim.** The guest's root
   is the tenant's, who can write any records on the console: a forged
   exit record, or a header of a legal length that swallows what follows,
@@ -168,6 +173,108 @@ with the host after any of these, and nothing would notice.
 - **The node owns the machine's status except `Scheduled`**, and writes it on
   the copy it read, conditional on its resource version. Its `Ready` condition
   says what stands in the way, and the container passes that on.
+
+## A VM's confinement
+
+The threat: the guest is the tenant's, and a bug in Cloud Hypervisor can
+give the guest Cloud Hypervisor's process. From there it must reach
+nothing of the host and nothing of another VM: not its files, disk,
+socket or process.
+
+**The VM's user.** The driver gives each VM a uid from 200000 on, 65536 of
+them (`DefaultVMUsers`), which is also its gid: the lowest that no VM's
+`spec.json` holds and no process runs as. `spec.json` records it, so a VM
+keeps it across its restarts, the agent's and the host's; `Start` takes the
+one its `spec.json` already holds. A stop removes `spec.json` last, after
+everything else of the VM's but its logs, which are root's, and only once
+the unit has stopped: an id is given out again only when no process, file
+or socket of its last VM is left. A VM could write nowhere but its own
+directory, so there is nowhere else for one to be. The agent refuses to
+start on a host where a user, a group, or a subordinate range other than
+`hangar-vms`'s in `/etc/subuid` and `/etc/subgid` has one of these ids;
+`deploy/host` keeps them there under that name.
+
+**What the launcher does as root, and why.** The launcher, the unit's
+main process, is root, with only the capabilities these need: it opens
+the root disk (checking it by `BLKZNAME`) and holds it open, `O_EXCL`, for
+the VM's life, so no other zvol can take its device number; makes a node
+of that device in the VM's directory (`CAP_MKNOD`); enters the networks'
+namespaces and opens the taps (`CAP_SYS_ADMIN`, `CAP_NET_ADMIN`), then
+unmounts `/run/netns` from the unit; gives the VM's directory and what
+Cloud Hypervisor reads to the VM's group (`CAP_CHOWN`); runs Cloud
+Hypervisor through `hangar-node vmm-exec` (`CAP_SETUID`, `CAP_SETGID`,
+`CAP_SETPCAP`). Once Cloud Hypervisor runs, the launcher drops all of them
+but `CAP_DAC_OVERRIDE`, to reach its socket, the VM user's, and
+`CAP_KILL`, to stop it, from the bounding, permitted and effective sets of
+every thread, and checks that it did; if it cannot, it kills Cloud
+Hypervisor and fails. A restart under the VM's policy starts a new
+launcher, with the unit's set again. Cloud Hypervisor re-opens its disks by
+path, `/dev/fd/N` included, which checks the file's permissions: a node
+of the VM's group is what a fd would be to root. `vmm-exec` marks every
+fd but the taps' close-on-exec, sets `no_new_privs`, empties the
+bounding, inheritable and ambient sets, takes the VM's uid and gid with
+no group but the KVM device's, and checks all of it in
+`/proc/thread-self/status` before it execs Cloud Hypervisor, with no
+environment. Cloud Hypervisor keeps its own seccomp filter.
+
+**The VM's directory** is root's and the VM's group's, `0710`: Cloud
+Hypervisor reads `boot.img` (`0640`), opens `disk` and `serial.fifo`
+through the group, and writes only in `ch/` (`0770`), made afresh on each
+run, where it makes its socket. It can neither read `spec.json` or the
+logs, nor replace them. The agent and the launcher connect to the socket
+only as a socket, never through a link Cloud Hypervisor put in its place.
+
+| Measure | What it stops |
+|---|---|
+| A uid and gid of the VM's own | Signalling, tracing, or reading the files and sockets of another VM's Cloud Hypervisor, which is another user; every host file not open to all |
+| No capability, `no_new_privs`, empty bounding set | Getting root's powers back by any exec, setuid file or file capability |
+| Empty root (`TemporaryFileSystem=/:ro`, `MountAPIVFS`), only the launcher, Cloud Hypervisor, the kernel, the initramfs and `/run/netns` bound read-only, and the VM's directory read-write; `/run` read-only | Reading any host file, even one open to all (`/etc`, `/home`, `/var/lib/hangar`), and seeing other VMs' directories; writing anywhere but `ch/` |
+| `DevicePolicy=closed` with `/dev/kvm`, `/dev/net/tun` and the root disk alone | Opening another zvol, a host disk or any other device, even as root in the unit, or as the KVM group (`/dev/vhost-*`) |
+| `/dev/shm`, `/dev/mqueue`, `/dev/pts`, `/dev/ptmx` inaccessible; `PrivateIPC` | Leaving shared memory or queues that outlive the VM; using up the host's ptys |
+| The host's `/dev`, which `MountAPIVFS` binds, read-only (`ReadOnlyPaths`) | Making, removing or renaming anything in the host's `/dev`, even as root in the unit; its devices still open for writing |
+| `PrivateNetwork`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK` | Any network but its taps' fds, and the host's abstract sockets |
+| `ProtectProc=invisible`, `ProcSubset=pid` | Seeing the host's other processes and its kernel settings |
+| `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`, `RestrictSUIDSGID`, `RestrictNamespaces=net`, a system call deny list, `LimitCORE=0`, `KeyringMode=private` | Changing the kernel, the clock or the hostname; keys a later VM of the same uid could read; a core holding the guest's memory |
+| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's), `TasksMax` (64 and two a vCPU) | Taking the host's memory or tasks |
+
+`MemoryMax` was measured (2026-10, `TestMemoryOverhead` in
+`test/testbed/vms`) with guests of 1, 4 and 16 GiB filling half their
+memory: past what the guest used and what its kernel keeps out of its
+`MemTotal`, the unit took at most 13, 9 and 36 MiB, mostly KVM's page
+tables, which grow with the guest; a guest that barely ran peaked at 113,
+239 and 463 MiB, its kernel touching its memory map. 256 MiB and 2% (584
+MiB past a 16 GiB guest) leave room for that many times over, and for the
+unit's page cache, which is reclaimed before the limit kills anything.
+
+Not `ProtectSystem=strict`, which binds the host's root again over the
+empty one; not `PrivateTmp` or `ProtectHome=tmpfs`, which add directories
+Cloud Hypervisor could write; not `ProtectHome=yes`, which drops binds
+under `/home`. The launcher and Cloud Hypervisor must therefore be static:
+the unit has no dynamic loader. `TestCHIsConfined` in
+`test/testbed/vms` runs a probe in Cloud Hypervisor's place, in a real VM's
+unit, and checks each of these from there.
+
+**What is left.**
+
+- The launcher runs as uid 0 for the VM's life, with `CAP_DAC_OVERRIDE`
+  and `CAP_KILL` once Cloud Hypervisor runs, and reads what the guest
+  writes on its console (`console.log`'s records, see above). A bug in
+  that reading is a way from the guest to that launcher: it could read
+  and write any file the unit sees, the VM's directory and the binds
+  (read-only), and signal any process of the host by its pid (the unit
+  has no pid namespace of its own), but not mount, enter a namespace, make
+  a device, or get a capability back.
+- Cloud Hypervisor still reaches the kernel through KVM, its system calls
+  (under its filter and the deny list) and `/dev/net/tun` in an empty
+  network namespace; a kernel bug there is a way out.
+- It can fill `ch/`, on the `hangar/vms` dataset, up to that dataset's
+  quota, and its own memory up to `MemoryMax`.
+- A VM started before VM users runs as root, unconfined, until it is
+  started again (stopped and started, its spec changed, or the host
+  rebooted). Restarting under its policy keeps its unit, which says root;
+  the launcher then runs Cloud Hypervisor as root as before.
+- `/proc/sys` and `/sys` are read-only but readable, and the unit sees
+  the host's devices' names in its read-only `/dev`.
 
 ## Consequences
 

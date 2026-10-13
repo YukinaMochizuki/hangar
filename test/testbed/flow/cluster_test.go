@@ -783,7 +783,7 @@ func exits(t *testing.T, uid string) []console.ExitStatus {
 
 // guest reaches the guest agents of the VMs the agent runs.
 func guest() chguest.Guest {
-	return chguest.Guest{Socket: func(uid string) string { return filepath.Join(vmDir, uid, "vsock") }}
+	return chguest.Guest{Socket: func(uid string) string { return filepath.Join(vmDir, uid, "ch", "vsock") }}
 }
 
 // execIn runs a process in the machine's guest and returns its stdout and
