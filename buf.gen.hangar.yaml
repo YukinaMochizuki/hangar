@@ -9,7 +9,7 @@ managed:
 plugins:
   - local: [go, run, ./tools/protoc-gen-hangar]
     out: gen/go
-    opt: [mode=registry, domain=hangar.dev]
+    opt: [mode=registry, domain=hangarlab.cloud]
     strategy: all
   - local: [go, run, ./tools/protoc-gen-hangar]
     out: internal/apiserver/servicegen

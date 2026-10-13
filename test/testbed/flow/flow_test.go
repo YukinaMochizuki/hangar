@@ -69,7 +69,7 @@ func containerYAML(name, image, restart, disk, script string) string {
 	if restart != "" {
 		restartLine = "  restartPolicy: " + restart + "\n"
 	}
-	return fmt.Sprintf(`apiVersion: compute.hangar.dev/v1alpha1
+	return fmt.Sprintf(`apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata: {name: %s}
 spec:

@@ -252,7 +252,7 @@ EOF
 	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "root could not get the node over the admin socket"
 	# What a locked-out administrator does: bind someone as root again.
 	admin_cli apply -f - <<'EOF' || fail "root could not bind over the admin socket"
-apiVersion: iam.hangar.dev/v1alpha1
+apiVersion: iam.hangarlab.cloud/v1alpha1
 kind: RoleBinding
 metadata: {name: tb-root-again}
 spec: {subject: {user: again@testbed.invalid}, role: platform.root, scope: {platform: {}}}

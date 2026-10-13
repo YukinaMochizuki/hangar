@@ -193,7 +193,7 @@ func TestAStopRacesNothing(t *testing.T) {
 // so the sweep finds what it left.
 func churn(t *testing.T, env *apiservertest.Env, sys *client.Client, a *Agent, host *fake.Host, name, ipv4 string, lost bool) {
 	m := &computev1alpha1.Machine{
-		Metadata: &metav1.ObjectMeta{Project: apiservertest.Project, Name: name, Finalizers: []string{"hangar.dev/node-cleanup"}},
+		Metadata: &metav1.ObjectMeta{Project: apiservertest.Project, Name: name, Finalizers: []string{"hangarlab.cloud/node-cleanup"}},
 		Spec: &computev1alpha1.MachineSpec{
 			Node:          apiservertest.Node,
 			Resources:     &computev1alpha1.Resources{Cpu: "1", Memory: "512Mi", Disk: "10Gi"},

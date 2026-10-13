@@ -27,7 +27,7 @@ import (
 const (
 	// NodeCleanupFinalizer keeps a deleted machine in place until its node
 	// has freed what it held, which the node reports with Released.
-	NodeCleanupFinalizer = "hangar.dev/node-cleanup"
+	NodeCleanupFinalizer = registry.Domain + "/node-cleanup"
 	// MachineScheduled and MachineReleased are described in computeapi.
 	MachineScheduled = computeapi.MachineScheduled
 	MachineReleased  = computeapi.MachineReleased
