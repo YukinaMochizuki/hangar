@@ -191,7 +191,7 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 	file := func(name string) (*os.File, error) { return os.Create(filepath.Join(base, name)) }
 	l := &Launcher{
 		Dir:      base,
-		OpenRoot: func(path string) (*os.File, error) { return file("root") },
+		OpenDisk: func(path string) (*os.File, error) { return file("root") },
 		OpenTap:  func(i driver.Interface) (*os.File, error) { return file("tap-" + i.Device) },
 		Guest:    &launcherGuest{dir: dir},
 		// A plain file for the root disk's node.
@@ -382,13 +382,97 @@ func TestTheLauncherWithoutARecord(t *testing.T) {
 	}
 }
 
+// withVolumes rewrites the launch in dir to attach volumes.
+func withVolumes(t *testing.T, dir string, vols ...driver.Volume) {
+	t.Helper()
+	ln, err := readLaunch(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.Spec.Disks = vols
+	ln.Hash = ln.Spec.Hash()
+	b, err := json.Marshal(ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, specFile), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTheLauncherAttachesVolumes(t *testing.T) {
+	l, dir := launcherDir(t, "m1", "exit:0")
+	vols := []driver.Volume{
+		{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1", Size: 1 << 30},
+		{DiskUID: "d2", Path: "/dev/zvol/hangar/disks/d2", Size: 1 << 30},
+	}
+	withVolumes(t, dir, vols...)
+	// A node an earlier run made for a volume since detached.
+	if err := os.WriteFile(filepath.Join(dir, volumeNode(2)), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	l.OpenDisk = func(path string) (*os.File, error) {
+		opened = append(opened, path)
+		return os.Create(filepath.Join(l.Dir, fmt.Sprintf("dev-%d", len(opened))))
+	}
+	if got := runFor(t, l, t.Context(), "m1"); got != 0 {
+		t.Fatalf("exited %d", got)
+	}
+	if want := []string{"/dev/zvol/hangar/roots/m1", vols[0].Path, vols[1].Path}; !slices.Equal(opened, want) {
+		t.Errorf("opened %q, want %q", opened, want)
+	}
+	// Each volume's node is of the device opened for it.
+	for n := range vols {
+		if b, err := os.ReadFile(filepath.Join(dir, volumeNode(n))); err != nil || string(b) != filepath.Join(l.Dir, fmt.Sprintf("dev-%d", n+2)) {
+			t.Errorf("the node of volume %d: %q %v", n, b, err)
+		}
+	}
+	if exists(filepath.Join(dir, volumeNode(2))) {
+		t.Error("the node of a detached volume was left")
+	}
+	var ch struct{ Args []string }
+	b, _ := os.ReadFile(filepath.Join(dir, chDir, "args.json"))
+	if err := json.Unmarshal(b, &ch); err != nil {
+		t.Fatal(err)
+	}
+	// The root disk, the boot disk, then the volumes in order: the guest
+	// sees them as vda, vdb, vdc and vdd.
+	i := slices.Index(ch.Args, "--disk")
+	want := []string{
+		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
+		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
+		"path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw",
+		"path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw",
+	}
+	if i < 0 || len(ch.Args) < i+1+len(want) || !slices.Equal(ch.Args[i+1:i+1+len(want)], want) {
+		t.Errorf("Cloud Hypervisor's arguments %q, want --disk %q", ch.Args, want)
+	}
+
+	// A volume that is not what its path names stops the VM from starting.
+	l, dir = launcherDir(t, "m1", "exit:0")
+	withVolumes(t, dir, vols...)
+	l.OpenDisk = func(path string) (*os.File, error) {
+		if path == vols[1].Path {
+			return nil, errors.New("not the disk's zvol")
+		}
+		return os.CreateTemp(l.Dir, "dev")
+	}
+	if got := runFor(t, l, t.Context(), "m1"); got != ExitFailed {
+		t.Errorf("a refused volume: exited %d, want %d", got, ExitFailed)
+	}
+	if exists(filepath.Join(dir, chDir, "args.json")) {
+		t.Error("Cloud Hypervisor was started without its volume")
+	}
+}
+
 func TestTheLauncherRefusesWhatItCannotOpen(t *testing.T) {
 	for _, tt := range []struct {
 		name   string
 		break_ func(*Launcher)
 	}{
 		{"root", func(l *Launcher) {
-			l.OpenRoot = func(string) (*os.File, error) { return nil, errors.New("not the machine's zvol") }
+			l.OpenDisk = func(string) (*os.File, error) { return nil, errors.New("not the machine's zvol") }
 		}},
 		{"tap", func(l *Launcher) {
 			l.OpenTap = func(driver.Interface) (*os.File, error) { return nil, errors.New("no tap") }

@@ -58,6 +58,18 @@ func (s *Server) controllers() []*controller.Controller {
 				{Kind: registry.Node.Kind, Map: s.containersOnNode, SkipResync: true},
 				// A network appearing unblocks containers waiting for an address.
 				{Kind: registry.Network.Kind, Map: s.containersInProject, SkipResync: true},
+				// A disk going may make room for a resize.
+				{Kind: registry.Disk.Kind, Map: s.containersOnDiskNode, SkipResync: true},
+			},
+		},
+		{
+			Name: "disk", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileDisk),
+			Watches: []controller.Watch{
+				{Kind: registry.Disk.Kind, Map: controller.Self},
+				{Kind: registry.Machine.Kind, Map: s.disksOfMachineAndWaiting},
+				// Any node change may make room for a disk to grow.
+				{Kind: registry.Node.Kind, Map: s.disksWaitingForRoom, SkipResync: true},
 			},
 		},
 		{
@@ -83,6 +95,9 @@ func (s *Server) controllers() []*controller.Controller {
 				{Kind: registry.Machine.Kind, Map: s.machineAndWaiting},
 				// Any node change may make room for a machine nobody could take.
 				{Kind: registry.Node.Kind, Map: s.unscheduledMachines},
+				// So may a disk going or shrinking, and a disk is where some
+				// machines must go.
+				{Kind: registry.Disk.Kind, Map: s.unscheduledMachines, SkipResync: true},
 			},
 		},
 	}
@@ -533,13 +548,31 @@ func (s *Server) scheduleMachine(ctx context.Context, key resource.Key, m *compu
 }
 
 // place picks a node for m and writes it, as one decision about the node's
-// memory and disk. Without a fit it returns no machine and says why.
+// memory and disk. The disks m lists that live on no node yet are bound to
+// it first. Without a fit it returns no machine and says why.
 func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Machine, string, string, error) {
 	s.capacity.Lock()
 	defer s.capacity.Unlock()
-	node, why, err := s.pickNode(ctx, m)
+	disksOn, unbound, why, err := s.machineDisks(ctx, m)
+	if err != nil || why != "" {
+		return nil, "", why, err
+	}
+	var extra uint64
+	for _, d := range unbound {
+		b, err := diskBytes(d.GetSpec())
+		if err != nil {
+			return nil, "", "", fmt.Errorf("disk %s: %w", d.GetMetadata().GetName(), err)
+		}
+		extra = add(extra, wholeGi(b)*quantity.GiB)
+	}
+	node, why, err := s.pickNode(ctx, m, disksOn, extra)
 	if err != nil || node == "" {
 		return nil, "", why, err
+	}
+	// A disk bound to a node the machine then fails to be written to only
+	// sends the machine there next time.
+	if err := s.bindDisks(ctx, node, unbound); err != nil {
+		return nil, "", "", err
 	}
 	placed := proto.Clone(m).(*computev1alpha1.Machine)
 	placed.Spec.Node = node
@@ -575,9 +608,10 @@ func (s *Server) setScheduled(ctx context.Context, key resource.Key, m *computev
 	return err
 }
 
-// nodeUsage returns every node and what machines hold on each. A machine
-// still being deleted holds its share until released. Root disks are sparse,
-// so a machine holds the disk size it declares, not what it has written.
+// nodeUsage returns every node and what machines and disks hold on each. A
+// machine or disk still being deleted holds its share until released. Disks
+// are sparse, so a machine holds the root disk size it declares, and a disk
+// the size it has, not what was written to them.
 func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]held, error) {
 	nodeObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
 	if err != nil {
@@ -607,6 +641,27 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 		u := used[n]
 		u.memory = add(u.memory, h.memory)
 		u.disk = add(u.disk, h.disk)
+		used[n] = u
+	}
+	diskObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Disk.Kind})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, o := range diskObjs {
+		d, ok := decodeDisk(o)
+		if !ok {
+			return nil, nil, fmt.Errorf("decode disk %s/%s", o.Project, o.Name)
+		}
+		n := d.GetStatus().GetNode()
+		if n == "" {
+			continue
+		}
+		size, err := diskHeld(d)
+		if err != nil {
+			return nil, nil, err
+		}
+		u := used[n]
+		u.disk = add(u.disk, size)
 		used[n] = u
 	}
 	nodes := make([]*computev1alpha1.Node, 0, len(nodeObjs))
@@ -652,9 +707,10 @@ func (s *Server) resizeFits(ctx context.Context, node string, machine resource.K
 }
 
 // pickNode chooses the ready, schedulable node with the most free memory that
-// fits the machine's memory and disk. Memory and disk cannot be
-// overcommitted; vCPUs are shared. With no fit, it says why.
-func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine) (string, string, error) {
+// fits the machine's memory and disk, and extra bytes of disk besides. Memory
+// and disk cannot be overcommitted; vCPUs are shared. If only is not empty,
+// the node of that name is the only one considered. With no fit, it says why.
+func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine, only string, extra uint64) (string, string, error) {
 	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
 		return "", "", err
@@ -662,6 +718,13 @@ func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine) (stri
 	need, err := heldBy(m.GetSpec().GetResources())
 	if err != nil {
 		return "", "", fmt.Errorf("machine %s: %w", m.GetMetadata().GetName(), err)
+	}
+	need.disk = add(need.disk, extra)
+	if only != "" {
+		nodes = slices.DeleteFunc(nodes, func(n *computev1alpha1.Node) bool { return n.GetMetadata().GetName() != only })
+		if len(nodes) == 0 {
+			return "", fmt.Sprintf("its disks live on node %s, which is not registered", only), nil
+		}
 	}
 	type candidate struct {
 		name string

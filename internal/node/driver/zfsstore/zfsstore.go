@@ -2,7 +2,8 @@
 // command. Each image digest gets a base: a zvol filled with mkfs.ext4 -d
 // from the unpacked image, so the host never mounts it, and snapshotted.
 // Each machine's root disk is a sparse clone of its image's base, grown to
-// the size asked for; the guest grows its filesystem as it boots. Every
+// the size asked for; the guest grows its filesystem as it boots. Each API
+// Disk gets a volume of its own, a sparse zvol the host never reads. Every
 // dataset the driver makes carries a user property naming what it serves,
 // which is how it is listed and how the driver knows it as its own: a
 // dataset without it is never changed or destroyed. See
@@ -35,6 +36,7 @@ import (
 const (
 	propDigest  = "hangar:digest"
 	propMachine = "hangar:machine"
+	propDisk    = "hangar:disk"
 )
 
 // baseSnapshot names the snapshot a base is cloned from; a base without it
@@ -55,8 +57,9 @@ const (
 // Config configures the driver.
 type Config struct {
 	// Dataset is the parent of the driver's datasets, such as the pool
-	// hangar; it must exist. The driver keeps bases in Dataset/bases and
-	// root disks in Dataset/roots, and makes those if need be.
+	// hangar; it must exist. The driver keeps bases in Dataset/bases, root
+	// disks in Dataset/roots and volumes in Dataset/disks, and makes those
+	// if need be.
 	Dataset string
 	// Scratch is a directory, root's alone, to unpack images in before they
 	// go into their base. The driver owns all of it.
@@ -85,7 +88,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	if _, err := zfs(ctx, "list", "-H", "-o", "name", cfg.Dataset); err != nil {
 		return nil, fmt.Errorf("the dataset for disks: %w", err)
 	}
-	for _, ds := range []string{s.bases(), s.roots()} {
+	for _, ds := range []string{s.bases(), s.roots(), s.disks()} {
 		_, err := zfs(ctx, "list", "-H", "-o", "name", ds)
 		if errors.Is(err, errNotExist) {
 			_, err = zfs(ctx, "create", "-o", "mountpoint=none", "-o", "canmount=off", ds)
@@ -114,6 +117,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 
 func (s *Store) bases() string { return s.cfg.Dataset + "/bases" }
 func (s *Store) roots() string { return s.cfg.Dataset + "/roots" }
+func (s *Store) disks() string { return s.cfg.Dataset + "/disks" }
 
 var (
 	digestRE = regexp.MustCompile(`^sha256:([0-9a-f]{64})$`)
@@ -137,6 +141,15 @@ func (s *Store) rootName(uid string) (string, error) {
 		return "", fmt.Errorf("%q cannot name a root disk", uid)
 	}
 	return s.roots() + "/" + uid, nil
+}
+
+// volumeName returns the volume of a Disk, or fails for a uid that cannot
+// name one.
+func (s *Store) volumeName(uid string) (string, error) {
+	if !uidRE.MatchString(uid) {
+		return "", fmt.Errorf("%q cannot name a disk's volume", uid)
+	}
+	return s.disks() + "/" + uid, nil
 }
 
 func device(volume string) string { return "/dev/zvol/" + volume }
@@ -597,6 +610,86 @@ func (s *Store) DeleteRoot(ctx context.Context, machineUID string) error {
 	}
 	if r.machine != machineUID {
 		return fmt.Errorf("%s is not machine %s's root disk; left alone", vol, machineUID)
+	}
+	// zfs refuses while the device is open, as a running VM holds it.
+	return destroy(ctx, vol)
+}
+
+// volumeOf returns the Disk a volume serves and its size, as its properties
+// say.
+func volumeOf(ctx context.Context, vol string) (disk string, size int64, ok bool, err error) {
+	p, ok, err := props(ctx, vol, propDisk, "volsize")
+	if err != nil || !ok {
+		return "", 0, ok, err
+	}
+	size, err = strconv.ParseInt(p["volsize"], 10, 64)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("%s: volsize %q", vol, p["volsize"])
+	}
+	return p[propDisk], size, true, nil
+}
+
+func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64) (driver.Volume, error) {
+	vol, err := s.volumeName(diskUID)
+	if err != nil {
+		return driver.Volume{}, err
+	}
+	want := roundUp(max(size, 1), align)
+	disk, have, ok, err := volumeOf(ctx, vol)
+	switch {
+	case err != nil:
+		return driver.Volume{}, err
+	case ok && disk != diskUID:
+		return driver.Volume{}, fmt.Errorf("%s is not disk %s's volume; left alone", vol, diskUID)
+	case !ok:
+		if _, err := zfs(ctx, "create", "-s", "-V", strconv.FormatInt(want, 10),
+			"-o", "volmode=dev", "-o", propDisk+"="+diskUID, vol); err != nil {
+			return driver.Volume{}, err
+		}
+		have = want
+	case have < want:
+		if _, err := zfs(ctx, "set", "volsize="+strconv.FormatInt(want, 10), vol); err != nil {
+			return driver.Volume{}, err
+		}
+		have = want
+	}
+	if _, err := s.waitDevice(ctx, vol); err != nil {
+		return driver.Volume{}, err
+	}
+	return driver.Volume{DiskUID: diskUID, Path: device(vol), Size: have}, nil
+}
+
+func (s *Store) Volumes(ctx context.Context) ([]driver.Volume, error) {
+	rows, err := list(ctx, "volume", s.disks(), "name", propDisk, "volsize")
+	if err != nil {
+		return nil, err
+	}
+	var out []driver.Volume
+	for _, row := range rows {
+		name, disk := row[0], row[1]
+		if vol, err := s.volumeName(disk); err != nil || vol != name {
+			continue // not ours
+		}
+		size, err := strconv.ParseInt(row[2], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s: volsize %q", name, row[2])
+		}
+		out = append(out, driver.Volume{DiskUID: disk, Path: device(name), Size: size})
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteVolume(ctx context.Context, diskUID string) error {
+	vol, err := s.volumeName(diskUID)
+	if err != nil {
+		return err
+	}
+	disk, _, ok, err := volumeOf(ctx, vol)
+	if err != nil || !ok {
+		return err
+	}
+	if disk != diskUID {
+		return fmt.Errorf("%s is not disk %s's volume; left alone", vol, diskUID)
 	}
 	// zfs refuses while the device is open, as a running VM holds it.
 	return destroy(ctx, vol)

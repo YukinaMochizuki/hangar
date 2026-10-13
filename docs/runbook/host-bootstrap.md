@@ -338,8 +338,9 @@ these before `hangar-node` starts; the `packages` and `zfs` steps make them:
   current host. The image cache and the directory images are unpacked in
   both go under it, on that one dataset: both hold tenant content. Pass the
   quota, and what bases may take, to `hangar-node --reserved-disk`.
-- Nothing else: the driver makes `hangar/bases` and `hangar/roots`
-  (`mountpoint=none`) under the pool when they are missing, and owns them.
+- Nothing else: the driver makes `hangar/bases`, `hangar/roots` and
+  `hangar/disks` (`mountpoint=none`) under the pool when they are missing,
+  and owns them.
   Nothing else may be created under them.
 - udev's zvol rules (`/dev/zvol/...`), which `zfsutils-linux` installs. The
   `zfs` step adds Hangar's own, which keep udev from probing or watching

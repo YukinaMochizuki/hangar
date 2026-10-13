@@ -101,6 +101,11 @@ type Server struct {
 	// interface addresses, a network's transit link) and the release of a
 	// network. Whoever holds both takes ipam first.
 	ipam sync.Mutex
+	// attach serializes every apply and delete of machines and disks, from
+	// the admission checks to the write, so a disk is attached to one
+	// machine at a time and never to one being deleted. The backend takes it
+	// last, under ipam and capacity.
+	attach sync.Mutex
 }
 
 // New returns a server over cfg.Store.

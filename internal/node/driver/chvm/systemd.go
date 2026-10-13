@@ -132,6 +132,17 @@ var deniedSyscalls = []string{
 	"@clock", "@cpu-emulation", "@debug", "@keyring", "@module", "@obsolete", "@raw-io", "@reboot", "@swap",
 }
 
+// devices are what the VM's unit may open: KVM, taps, and, resolved when the
+// unit starts, the machine's zvols, each checked by the launcher, which makes
+// its node (m) for Cloud Hypervisor.
+func devices(spec driver.VMSpec) []pathPair {
+	out := []pathPair{{"/dev/kvm", "rw"}, {"/dev/net/tun", "rw"}, {spec.Root.Path, "rwm"}}
+	for _, v := range spec.Disks {
+		out = append(out, pathPair{v.Path, "rwm"})
+	}
+	return out
+}
+
 type pathPair struct {
 	Path, Value string
 }
@@ -184,13 +195,7 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 		property("PrivateNetwork", true),
 		property("PrivateIPC", true),
 		property("DevicePolicy", "closed"),
-		property("DeviceAllow", []pathPair{
-			{"/dev/kvm", "rw"},
-			{"/dev/net/tun", "rw"},
-			// Resolved when the unit starts: the machine's zvol, checked
-			// by the launcher, which makes its node (m) for Cloud Hypervisor.
-			{spec.Root.Path, "rwm"},
-		}),
+		property("DeviceAllow", devices(spec)),
 		property("CapabilityBoundingSet", caps),
 		property("AmbientCapabilities", uint64(0)),
 		property("NoNewPrivileges", true),

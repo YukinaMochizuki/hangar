@@ -38,6 +38,9 @@ type Host struct {
 	Reopen func(t *testing.T) (driver.Images, driver.Storage)
 	// Hold keeps a root disk in use, as a running VM does, until release.
 	Hold func(t *testing.T, d driver.Disk) (release func())
+	// HoldVolume keeps a volume in use, as a running VM does, until
+	// release.
+	HoldVolume func(t *testing.T, v driver.Volume) (release func())
 	// Exit ends the guest process of a running VM with code, as the
 	// container's process exiting does.
 	Exit func(t *testing.T, machineUID string, code int)
@@ -74,6 +77,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("root sizes", rootSizes, disks)
 	part("deleting disks", deletingDisks, disks)
 	part("reopening", reopening, disks)
+	part("volumes", volumes, func(h Host) bool { return h.Storage != nil })
 	nets := func(h Host) bool { return h.Network != nil }
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)
@@ -379,6 +383,80 @@ func reopening(t *testing.T, h Host) {
 	must(t, images.Forget(ctx, digest))
 }
 
+// volumeOf returns the Disk's volume as listed.
+func volumeOf(t *testing.T, s driver.Storage, disk string) (driver.Volume, bool) {
+	t.Helper()
+	vols, err := s.Volumes(t.Context())
+	must(t, err)
+	for _, v := range vols {
+		if v.DiskUID == disk {
+			return v, true
+		}
+	}
+	return driver.Volume{}, false
+}
+
+func volumes(t *testing.T, h Host) {
+	ctx := t.Context()
+	v1, err := h.Storage.EnsureVolume(ctx, "d1", rootSize)
+	must(t, err)
+	if v1.DiskUID != "d1" || v1.Path == "" || v1.Size < rootSize {
+		t.Errorf("volume %+v", v1)
+	}
+	if again, err := h.Storage.EnsureVolume(ctx, "d1", rootSize); err != nil || again != v1 {
+		t.Errorf("ensuring the volume again: %+v %v", again, err)
+	}
+	// Asked smaller, it is kept; asked larger, it grows, and is listed so.
+	if kept, err := h.Storage.EnsureVolume(ctx, "d1", 1); err != nil || kept != v1 {
+		t.Errorf("asked smaller: %+v %v, want %+v", kept, err, v1)
+	}
+	grown, err := h.Storage.EnsureVolume(ctx, "d1", grownSize)
+	must(t, err)
+	if grown.Size < grownSize || grown.Path != v1.Path {
+		t.Errorf("grown %+v from %+v", grown, v1)
+	}
+	if listed, ok := volumeOf(t, h.Storage, "d1"); !ok || listed != grown {
+		t.Errorf("listed %+v %t, grown %+v", listed, ok, grown)
+	}
+	v2, err := h.Storage.EnsureVolume(ctx, "d2", rootSize)
+	must(t, err)
+	if v2.Path == v1.Path {
+		t.Errorf("volumes share a device: %+v %+v", v1, v2)
+	}
+	// Volumes are not root disks.
+	if roots, err := h.Storage.Roots(ctx); err != nil || len(roots) != 0 {
+		t.Errorf("roots %v %v", roots, err)
+	}
+	// A volume in use stays until it is let go.
+	if h.HoldVolume != nil {
+		release := h.HoldVolume(t, v2)
+		if err := h.Storage.DeleteVolume(ctx, "d2"); err == nil {
+			t.Error("deleted a volume in use")
+		}
+		if _, ok := volumeOf(t, h.Storage, "d2"); !ok {
+			t.Error("a volume in use is gone after a failed delete")
+		}
+		release()
+	}
+	// What one instance made, another finds.
+	if h.Reopen != nil {
+		_, storage := h.Reopen(t)
+		vols, err := storage.Volumes(ctx)
+		must(t, err)
+		slices.SortFunc(vols, func(a, b driver.Volume) int { return strings.Compare(a.DiskUID, b.DiskUID) })
+		if !slices.Equal(vols, []driver.Volume{grown, v2}) {
+			t.Errorf("volumes after reopening: %+v, want %+v %+v", vols, grown, v2)
+		}
+	}
+	must(t, h.Storage.DeleteVolume(ctx, "d1"))
+	must(t, h.Storage.DeleteVolume(ctx, "d1"))
+	must(t, h.Storage.DeleteVolume(ctx, "d2"))
+	must(t, h.Storage.DeleteVolume(ctx, "never"))
+	if vols, err := h.Storage.Volumes(ctx); err != nil || len(vols) != 0 {
+		t.Errorf("volumes left: %v %v", vols, err)
+	}
+}
+
 var testNet = driver.NetworkSpec{
 	UID: "n1", CIDR: netip.MustParsePrefix("10.0.0.0/24"), Transit: netip.MustParsePrefix("100.64.0.0/31"),
 }
@@ -678,6 +756,9 @@ func eventually(t *testing.T, what string, cond func() bool) {
 func hypervisor(t *testing.T, h Host) {
 	ctx := t.Context()
 	spec := vmSpec(t, h, "m1", driver.RestartAlways)
+	vol, err := h.Storage.EnsureVolume(ctx, "d1", rootSize)
+	must(t, err)
+	spec.Disks = []driver.Volume{vol}
 	must(t, h.Hypervisor.Start(ctx, spec))
 	vm, ok := vmOf(t, h, "m1")
 	if !ok || vm.State != driver.VMRunning || vm.SpecHash != spec.Hash() {
@@ -702,6 +783,9 @@ func hypervisor(t *testing.T, h Host) {
 	}
 	if err := h.Hypervisor.DeleteLogs(ctx, "m1"); err == nil {
 		t.Error("deleted the console log of a running VM")
+	}
+	if err := h.Storage.DeleteVolume(ctx, "d1"); err == nil {
+		t.Error("deleted a volume a running VM has")
 	}
 
 	// What the host runs is read back from it, not remembered.
@@ -748,6 +832,7 @@ func hypervisor(t *testing.T, h Host) {
 	}
 	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
 	must(t, h.Storage.DeleteRoot(ctx, "m1"))
+	must(t, h.Storage.DeleteVolume(ctx, "d1"))
 }
 
 func restarts(t *testing.T, h Host) {

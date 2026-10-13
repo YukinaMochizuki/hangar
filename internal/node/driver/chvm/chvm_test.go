@@ -297,6 +297,30 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 	}
 }
 
+// TestAVMMayOpenItsVolumes: the unit's device policy lets it open its
+// volumes' zvols as it does its root disk's, and nothing else.
+func TestAVMMayOpenItsVolumes(t *testing.T) {
+	s := newFakeSystemd()
+	h := newDriver(t, shortDir(t), s, &fakeGuest{})
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1", Size: 1 << 30}}
+	if err := h.Start(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	got := prop(s.props["hangar-vm-m1.service"], "DeviceAllow")
+	want := []pathPair{{"/dev/kvm", "rw"}, {"/dev/net/tun", "rw"}, {spec.Root.Path, "rwm"}, {"/dev/zvol/hangar/disks/d1", "rwm"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("DeviceAllow=%v, want %v", got, want)
+	}
+	ln, err := readLaunch(h.dir("m1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(ln.Spec.Disks, spec.Disks) {
+		t.Errorf("the launch attaches %+v, want %+v", ln.Spec.Disks, spec.Disks)
+	}
+}
+
 func TestStartIsIdempotent(t *testing.T) {
 	s := newFakeSystemd()
 	dir := shortDir(t)
@@ -722,6 +746,15 @@ func TestSpecsNoVMCanRun(t *testing.T) {
 		"another's interface": func(s *driver.VMSpec) { s.Interfaces[0].MachineUID = "m2" },
 		"no device":           func(s *driver.VMSpec) { s.Interfaces[0].Device = "" },
 		"no policy":           func(s *driver.VMSpec) { s.Restart = 7 },
+		"a volume without a path": func(s *driver.VMSpec) {
+			s.Disks = []driver.Volume{{DiskUID: "d1"}}
+		},
+		"a volume twice": func(s *driver.VMSpec) {
+			s.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1"}, {DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1"}}
+		},
+		"the root as a volume": func(s *driver.VMSpec) {
+			s.Disks = []driver.Volume{{DiskUID: "d1", Path: s.Root.Path}}
+		},
 	} {
 		spec := testSpec("m1", driver.RestartAlways)
 		spec.Interfaces = slices.Clone(spec.Interfaces)

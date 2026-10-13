@@ -28,6 +28,7 @@ func TestConformance(t *testing.T) {
 			Withdraw:         func(_ *testing.T, ref string) { h.FailPull(ref, errors.New("registry down")) },
 			Reopen:           func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },
 			Hold:             func(_ *testing.T, d driver.Disk) func() { return h.HoldDisk(d.MachineUID) },
+			HoldVolume:       func(_ *testing.T, v driver.Volume) func() { return h.HoldVolume(v.DiskUID) },
 			ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
 			AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
 			Exit: func(t *testing.T, machineUID string, code int) {

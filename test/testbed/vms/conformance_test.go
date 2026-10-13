@@ -38,6 +38,13 @@ func TestConformance(t *testing.T) {
 				}
 				return func() { _ = f.Close() }
 			},
+			HoldVolume: func(t *testing.T, v driver.Volume) func() {
+				f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return func() { _ = f.Close() }
+			},
 			Exit:             exit,
 			Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
 			Exec:             &execPrograms,

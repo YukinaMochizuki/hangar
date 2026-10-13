@@ -99,6 +99,13 @@ func TestConformance(t *testing.T) {
 				}
 				return func() { _ = f.Close() }
 			},
+			HoldVolume: func(t *testing.T, v driver.Volume) func() {
+				f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return func() { _ = f.Close() }
+			},
 		}
 	})
 }
@@ -144,6 +151,22 @@ func TestDecoysAreLeftAlone(t *testing.T) {
 	}
 	if err := s.DeleteBase(ctx, "sha256:../../x"); err == nil {
 		t.Error("deleted the base of a digest that is not one")
+	}
+	if vols, err := s.Volumes(ctx); err != nil || len(vols) != 0 {
+		t.Errorf("volumes %v %v", vols, err)
+	}
+	for _, uid := range []string{"decoy", "d-decoy"} {
+		if err := s.DeleteVolume(ctx, uid); err == nil {
+			t.Errorf("deleted the volume %s the driver did not make", uid)
+		}
+		if _, err := s.EnsureVolume(ctx, uid, 1<<30); err == nil {
+			t.Errorf("took %s as a volume", uid)
+		}
+	}
+	for _, bad := range []string{"../x", "a/b", "", "-x", "x@snap"} {
+		if err := s.DeleteVolume(ctx, bad); err == nil {
+			t.Errorf("deleted the volume of %q", bad)
+		}
 	}
 	h.checkDecoys(t)
 }

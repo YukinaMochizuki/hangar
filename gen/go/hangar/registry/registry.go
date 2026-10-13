@@ -9,7 +9,8 @@ import (
 	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	v1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
-	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	slices "slices"
 	strings "strings"
@@ -99,6 +100,16 @@ var (
 		Message:    (*v1alpha12.SecurityGroup)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.SecurityGroupService",
 	}
+	Disk = Resource{
+		Group:      "storage",
+		Version:    "v1alpha1",
+		Kind:       "Disk",
+		Plural:     "disks",
+		ShortNames: []string{"dk"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha13.Disk)(nil).ProtoReflect().Type(),
+		Service:    "hangar.storage.v1alpha1.DiskService",
+	}
 	Project = Resource{
 		Group:      "tenancy",
 		Version:    "v1alpha1",
@@ -106,7 +117,7 @@ var (
 		Plural:     "projects",
 		ShortNames: []string{"proj"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha13.Project)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha14.Project)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.ProjectService",
 	}
 	Tenant = Resource{
@@ -116,7 +127,7 @@ var (
 		Plural:     "tenants",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha13.Tenant)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha14.Tenant)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.TenantService",
 	}
 )
@@ -129,6 +140,7 @@ var All = []Resource{
 	RoleBinding,
 	Network,
 	SecurityGroup,
+	Disk,
 	Project,
 	Tenant,
 }
