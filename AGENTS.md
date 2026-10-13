@@ -15,12 +15,12 @@ Hypervisor microVMs on one host, deployed there by `deploy/host`.
 |---|---|
 | `proto/hangar/<group>/<version>/` | API schema, the single source of truth for resources |
 | `gen/go`, `gen/ts` | Generated code. Committed, never edited by hand |
-| `cmd/` | Binaries: `hangar-apiserver`, `hangar-node`, `hangar-init`, `hangar` (CLI) |
+| `cmd/` | Binaries: `hangar-apiserver`, `hangar-node`, `hangar-init`, `hangar` (CLI), `hangar-cloudflare` (Cloudflare setup) |
 | `internal/` | Implementation, split by function rather than by binary |
 | `sdk/go` | Public Go client |
 | `web/` | React console |
 | `guest/` | Guest kernel config and OS image pipeline |
-| `deploy/` | Host provisioning and systemd units |
+| `deploy/` | Host provisioning and systemd units; `deploy/cloudflare/` holds the example `hangar-cloudflare` config |
 | `tools/` | Our own codegen and lint tools; `tools/tools.mod` pins third-party CLIs |
 | `test/` | End-to-end harnesses and the testbed setup |
 | `docs/` | See the index below |
@@ -69,6 +69,7 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/checklists/new-resource.md` | You add a resource kind |
 | `docs/checklists/new-controller.md` | You add or change a controller |
 | `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
+| `docs/runbook/cloudflare.md` | You set up or change the tunnel, DNS or Access app (`hangar-cloudflare`), or create its API token |
 | `docs/runbook/testbed.md` | You run or add a real-host test (L4), or change the guest boot path |
 | `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
 
