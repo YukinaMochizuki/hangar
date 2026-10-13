@@ -552,6 +552,14 @@ func networkSockets(t *testing.T, h Host) {
 	if _, _, err := h.Network.ListenUDP(ctx, testNet.UID, netip.AddrPortFrom(netip.MustParseAddr("10.9.0.1"), 53)); err == nil {
 		t.Error("listened on an address the network does not have")
 	}
+	// A service answering clients that have no address yet, as DHCP,
+	// listens on every address of the bridge.
+	any, in, err := h.Network.ListenUDP(ctx, testNet.UID, netip.AddrPortFrom(netip.IPv4Unspecified(), 67))
+	must(t, err)
+	if in != first {
+		t.Errorf("a socket opened in instance %q, want %q", in, first)
+	}
+	must(t, any.Close())
 
 	// A network made again is another instance, while a socket of the old
 	// one lives on.
