@@ -67,6 +67,22 @@ message FirmwareBoot {
   // Names the Disk, in the machine's project, booted from: attached first,
   // before spec.disks, and attached to one machine at a time as they are.
   string root_disk = 1;
+  // What the guest's cloud-init is served by the metadata service. Only
+  // the node the machine is on reads it.
+  MachineCloudInit cloud_init = 2;
+}
+
+// MachineCloudInit is a firmware machine's NoCloud data, served by its
+// networks' metadata service. Changing it does not restart the machine:
+// cloud-init reads it once per instance.
+message MachineCloudInit {
+  // Served as meta-data's instance-id; empty is the machine's uid. A new
+  // instance id is a new first boot to cloud-init.
+  string instance_id = 1;
+  // Served as user-data, unchanged; at most 16 KiB.
+  string user_data = 2;
+  // Served as vendor-data, the platform's settings; at most 64 KiB.
+  string vendor_data = 3;
 }
 
 // MachineInterface is one network interface of the machine.

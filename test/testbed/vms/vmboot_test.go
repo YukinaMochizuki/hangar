@@ -4,10 +4,8 @@ package vms
 
 import (
 	"context"
-	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -18,34 +16,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/test/testbed/internal/diskimgtest"
 	"github.com/YukinaMochizuki/hangar/test/testbed/internal/vmtest"
 )
-
-// An Ubuntu cloud image, as Canonical publishes it, with the sha256 its
-// SHA256SUMS gives.
-const (
-	ubuntuName   = "ubuntu-24.04-server-cloudimg-amd64-20260926.img"
-	ubuntuURL    = "https://cloud-images.ubuntu.com/releases/noble/release-20260926/ubuntu-24.04-server-cloudimg-amd64.img"
-	ubuntuSHA256 = "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2"
-)
-
-// firmware is the firmware VMs boot through: HANGAR_TESTBED_FIRMWARE, or
-// the one deploy/host/versions.env pins, cached on the testbed.
-func firmware(t *testing.T) string {
-	t.Helper()
-	if fw := os.Getenv("HANGAR_TESTBED_FIRMWARE"); fw != "" {
-		return fw
-	}
-	_, self, _, _ := runtime.Caller(0)
-	env := filepath.Join(filepath.Dir(self), "..", "..", "..", "deploy", "host", "versions.env")
-	out, err := exec.Command("bash", "-c", `. "$1" && echo "$HANGAR_FW_VERSION $HANGAR_FW_URL $HANGAR_FW_SHA256"`, "-", env).Output()
-	if err != nil {
-		t.Fatalf("reading %s: %v", env, err)
-	}
-	f := strings.Fields(string(out))
-	if len(f) != 3 {
-		t.Fatalf("%s pins no firmware: %q", env, out)
-	}
-	return diskimgtest.Cached(t, "CLOUDHV-"+f[0]+".fd", f[1], f[2])
-}
 
 // serialOf is what the machine's serial console wrote, as its console log
 // holds it.
@@ -81,16 +51,16 @@ func TestAnUbuntuVMBootsToALoginPrompt(t *testing.T) {
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: testGrace,
 		// The shipped firmware stop grace: Ubuntu must power off within it.
-		Firmware: firmware(t),
+		Firmware: diskimgtest.Firmware(t),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hv.Close() })
 
-	file := diskimgtest.Cached(t, ubuntuName, ubuntuURL, ubuntuSHA256)
+	file := diskimgtest.Ubuntu(t)
 	srv := diskimgtest.New(t)
-	url, digest := srv.Serve(t, ubuntuName, file)
+	url, digest := srv.Serve(t, diskimgtest.UbuntuName, file)
 	img, err := srv.Driver(t, filepath.Join(filepath.Dir(h.cache), "disk-images")).Fetch(ctx, url, digest)
 	if err != nil {
 		t.Fatal(err)

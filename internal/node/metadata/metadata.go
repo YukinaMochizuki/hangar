@@ -26,11 +26,14 @@ const Prefix = "/nocloud/"
 
 // Instance is what the service says of one machine.
 type Instance struct {
-	// UID is the machine's, which cloud-init takes as its instance-id: a
-	// machine made again is a new instance, and runs its first boot again.
+	// UID is the instance id cloud-init is given, which runs its first
+	// boot once per id: the one the machine's cloud-init data names, such
+	// as a VM's uid, so the same instance however often its machine is
+	// made; else the machine's uid, so a machine made again boots anew.
 	UID      string
 	Hostname string
-	// UserData and VendorData are served as they are; empty serves none.
+	// UserData and VendorData are served as they are; empty is an empty
+	// answer.
 	UserData, VendorData string
 }
 

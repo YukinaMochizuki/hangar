@@ -43,6 +43,10 @@ what it cannot.
       node, for what holds on every node, as an Image's). A global kind every
       tenant reads, as the Image catalogue, sets `readableByAll`. Tests show a
       caller with the broadest role is still refused.
+- [ ] If the kind holds what node agents may not read (a guest's user-data,
+      keys), `forNode` clears it from every answer to a node, and a test
+      reads the object by get, list and watch as that node, another node and
+      its owner (`docs/decisions/tenancy-and-iam.md`).
 
 ## Docs
 

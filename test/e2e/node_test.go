@@ -28,6 +28,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
+	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 )
 
 const project = apiservertest.Project
@@ -50,7 +51,10 @@ type world struct {
 	// dnsUpstreams, if set before the agent starts, are what the networks'
 	// resolvers forward to.
 	dnsUpstreams []netip.AddrPort
-	stop         func()
+	// metadata is the agent's metadata service, which a test asks as a
+	// guest would, from the guest's address (see askMetadata).
+	metadata *metadata.Server
+	stop     func()
 }
 
 func newWorld(t *testing.T) *world {
@@ -72,7 +76,10 @@ func newIdleWorldWith(t *testing.T, configure func(*apiserver.Config)) *world {
 	t.Helper()
 	env := apiservertest.Start(t, configure)
 	env.Setup()
-	w := &world{t: t, env: env, host: fake.New(), root: env.As(apiservertest.Root), system: env.AsSystem()}
+	w := &world{
+		t: t, env: env, host: fake.New(), root: env.As(apiservertest.Root), system: env.AsSystem(),
+		metadata: metadata.New(metadata.Config{}),
+	}
 	w.host.AddImage("nginx", "sha256:nginx-1", nginx)
 	t.Cleanup(func() { w.stopAgent() })
 	return w
@@ -100,6 +107,7 @@ func (w *world) startAgent() {
 		SweepInterval:     100 * time.Millisecond,
 		PullTimeout:       w.pullTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
+		Metadata:          w.metadata,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),

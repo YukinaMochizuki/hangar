@@ -123,6 +123,12 @@ type kindHooks struct {
 	// anyNodeReports lets every node agent write the status of any object
 	// of the kind, for what is the same on every node.
 	anyNodeReports bool
+	// forNode, if set, clears in place what of obj the node agent of node
+	// may not read, though it reads the rest: what only the node an object
+	// runs on needs, such as a VM's user-data. It is applied to every
+	// object answered to a node: by get, list, watch and status update.
+	// Nodes may not create, apply or delete.
+	forNode func(node string, obj proto.Message)
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -205,6 +211,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
 			writeLock:     attachLock,
+			forNode:       machineForNode,
 		}
 	case registry.Disk.Kind:
 		// A disk's node reports on it once the scheduler has bound it there.
@@ -238,6 +245,11 @@ func hooksFor(r registry.Resource) kindHooks {
 			beforeDelete: refuseDeletingUnsettledVM,
 			cascades:     true,
 			writeLock:    attachLock,
+			// Its machine carries what its guest is given, to its node.
+			forNode: func(_ string, obj proto.Message) {
+				spec := obj.(*computev1alpha1.VirtualMachine).GetSpec()
+				spec.UserData, spec.SshAuthorizedKeys = "", nil
+			},
 		}
 	case registry.Network.Kind:
 		return kindHooks{
@@ -270,6 +282,15 @@ func hooksFor(r registry.Resource) kindHooks {
 func platformTarget(*Server, resource.Key, proto.Message, bool) authz.Target { return authz.Target{} }
 
 func attachLock(s *Server) *sync.Mutex { return &s.attach }
+
+// machineForNode keeps a machine's cloud-init data, its guest's user-data
+// and keys, from every node but the one it is on, which serves it.
+func machineForNode(node string, obj proto.Message) {
+	spec := obj.(*computev1alpha1.Machine).GetSpec()
+	if f := spec.GetFirmware(); f != nil && spec.GetNode() != node {
+		f.CloudInit = nil
+	}
+}
 
 // admit runs the checks every write of an object goes through; old is nil on
 // create.
@@ -570,6 +591,10 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if f := spec.GetFirmware(); f != nil && f.GetRootDisk() == "" {
 		return invalid("spec.firmware.root_disk is required")
+	}
+	if ci := spec.GetFirmware().GetCloudInit(); len(ci.GetUserData()) > maxUserData || len(ci.GetVendorData()) > maxVendorData {
+		return invalid("spec.firmware.cloud_init: user_data of %d bytes, at most %d; vendor_data of %d, at most %d",
+			len(ci.GetUserData()), maxUserData, len(ci.GetVendorData()), maxVendorData)
 	}
 	res := spec.GetResources()
 	var sz sizes

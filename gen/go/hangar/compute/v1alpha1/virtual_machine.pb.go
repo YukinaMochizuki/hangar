@@ -224,11 +224,18 @@ type VirtualMachineSpec struct {
 	// out starts the VM.
 	RunState VirtualMachineRunState `protobuf:"varint,4,opt,name=run_state,json=runState,proto3,enum=hangar.compute.v1alpha1.VirtualMachineRunState" json:"run_state,omitempty"`
 	// SSH public keys, each a line of an authorized_keys file, which the
-	// guest is given for its default user.
+	// guest's cloud-init gives its default user (such as "ubuntu") on its
+	// first boot, through vendor-data. A user_data that sets
+	// ssh_authorized_keys itself, or turns vendor-data off, takes precedence.
 	SshAuthorizedKeys []string `protobuf:"bytes,5,rep,name=ssh_authorized_keys,json=sshAuthorizedKeys,proto3" json:"ssh_authorized_keys,omitempty"`
 	// The VM's network interfaces, eth0, eth1 and on, in this order. Empty is
 	// one interface on the network "default". Changing them restarts the VM.
-	Interfaces    []*NetworkInterface `protobuf:"bytes,6,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	Interfaces []*NetworkInterface `protobuf:"bytes,6,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	// Handed to the guest's cloud-init unchanged, as user-data, such as a
+	// #cloud-config document or a script; at most 16 KiB. cloud-init runs it
+	// on the VM's first boot only, so changing it neither restarts the VM
+	// nor runs again in it. See docs/decisions/vm-boot.md.
+	UserData      string `protobuf:"bytes,7,opt,name=user_data,json=userData,proto3" json:"user_data,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -303,6 +310,13 @@ func (x *VirtualMachineSpec) GetInterfaces() []*NetworkInterface {
 		return x.Interfaces
 	}
 	return nil
+}
+
+func (x *VirtualMachineSpec) GetUserData() string {
+	if x != nil {
+		return x.UserData
+	}
+	return ""
 }
 
 // VirtualMachineResources sizes the VM. Each field is a quantity in
@@ -1367,7 +1381,7 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x12?\n" +
 	"\x04spec\x18\x04 \x01(\v2+.hangar.compute.v1alpha1.VirtualMachineSpecR\x04spec\x12E\n" +
 	"\x06status\x18\x05 \x01(\v2-.hangar.compute.v1alpha1.VirtualMachineStatusR\x06status:+\x8a\xb5\x18'\n" +
-	"\x0eVirtualMachine\x12\x0fvirtualmachines\x1a\x02vm \x01\"\xbe\x03\n" +
+	"\x0eVirtualMachine\x12\x0fvirtualmachines\x1a\x02vm \x01\"\xdb\x03\n" +
 	"\x12VirtualMachineSpec\x12N\n" +
 	"\tresources\x18\x01 \x01(\v20.hangar.compute.v1alpha1.VirtualMachineResourcesR\tresources\x12L\n" +
 	"\troot_disk\x18\x02 \x01(\v2/.hangar.compute.v1alpha1.VirtualMachineRootDiskR\brootDisk\x12A\n" +
@@ -1376,7 +1390,8 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\x13ssh_authorized_keys\x18\x05 \x03(\tR\x11sshAuthorizedKeys\x12I\n" +
 	"\n" +
 	"interfaces\x18\x06 \x03(\v2).hangar.compute.v1alpha1.NetworkInterfaceR\n" +
-	"interfaces\"C\n" +
+	"interfaces\x12\x1b\n" +
+	"\tuser_data\x18\a \x01(\tR\buserData\"C\n" +
 	"\x17VirtualMachineResources\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\"\x93\x01\n" +

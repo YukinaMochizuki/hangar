@@ -138,11 +138,22 @@ type cluster struct {
 	// nodeDone is closed once the agent has exited.
 	nodeDone chan struct{}
 	nodeRuns int
+	// nodeArgs and nodeEnv are what the agent is started with besides what
+	// startNode gives it.
+	nodeArgs, nodeEnv []string
 }
 
 // startCluster sweeps what an earlier run left, starts the apiserver and the
 // agent, and makes the tenant and project the tests use.
 func startCluster(t *testing.T) *cluster {
+	t.Helper()
+	return startClusterWith(t, nil)
+}
+
+// startClusterWith is startCluster with the cluster adjusted by configure
+// before the agent starts; an installed run's agent is the host's, which
+// it leaves alone.
+func startClusterWith(t *testing.T, configure func(*cluster)) *cluster {
 	t.Helper()
 	in := vmtest.Artifacts()
 	if installed {
@@ -170,6 +181,9 @@ func startCluster(t *testing.T) *cluster {
 		t.Fatal(err)
 	}
 	c := &cluster{t: t, uplink: uplink(t)}
+	if configure != nil {
+		configure(c)
+	}
 	c.startAPI()
 	t.Cleanup(c.stop)
 	c.startNode()
@@ -309,6 +323,10 @@ func (c *cluster) startNode() {
 		"--guest-cmdline", in.Cmdline,
 		"--vm-dir", vmDir,
 	)
+	cmd.Args = append(cmd.Args, c.nodeArgs...)
+	if len(c.nodeEnv) > 0 {
+		cmd.Env = append(os.Environ(), c.nodeEnv...)
+	}
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	if err := cmd.Start(); err != nil {

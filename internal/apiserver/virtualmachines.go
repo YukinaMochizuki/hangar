@@ -7,10 +7,13 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -45,9 +48,16 @@ const (
 	defaultVMMemory   = "1Gi"
 	defaultVMRootSize = "10Gi"
 	minVMMemory       = 256 * quantity.MiB
-	// maxSSHKeys bounds the keys a VM's spec lists.
-	maxSSHKeys   = 32
-	maxSSHKeyLen = 16 << 10
+	// maxSSHKeys, maxSSHKeyLen and maxSSHKeysLen bound the keys a VM's
+	// spec lists: how many, each, and all of them.
+	maxSSHKeys    = 32
+	maxSSHKeyLen  = 16 << 10
+	maxSSHKeysLen = 32 << 10
+	// maxUserData bounds a VM's user-data (docs/decisions/vm-boot.md).
+	// maxVendorData bounds a machine's vendor-data, the platform's, which
+	// holds the VM's keys, each quoted, so longer than they are.
+	maxUserData   = 16 << 10
+	maxVendorData = 64 << 10
 )
 
 // prefixedName is name with prefix, shortened with a hash when it would
@@ -137,13 +147,26 @@ func validateVirtualMachine(ctx context.Context, s *Server, _ auth.Principal, ol
 	if err := s.validateInterfaces(ctx, vm.GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
+	if n := len(spec.GetUserData()); n > maxUserData {
+		return invalid("spec.user_data is %d bytes, at most %d (16 KiB)", n, maxUserData)
+	}
 	if n := len(spec.GetSshAuthorizedKeys()); n > maxSSHKeys {
 		return invalid("spec.ssh_authorized_keys: %d keys, at most %d", n, maxSSHKeys)
 	}
+	total := 0
 	for i, k := range spec.GetSshAuthorizedKeys() {
 		if err := checkAuthorizedKey(k); err != nil {
 			return invalid("spec.ssh_authorized_keys[%d]: %v", i, err)
 		}
+		total += len(k)
+	}
+	if total > maxSSHKeysLen {
+		return invalid("spec.ssh_authorized_keys: %d bytes in all, at most %d", total, maxSSHKeysLen)
+	}
+	// Quoting lengthens a key, a character such as < to six bytes: the
+	// machine's limit is on what the keys become.
+	if n := len(vendorData(spec)); n > maxVendorData {
+		return invalid("spec.ssh_authorized_keys: %d bytes once quoted as the guest's vendor-data, at most %d", n, maxVendorData)
 	}
 	return nil
 }
@@ -213,10 +236,19 @@ var sshKeyTypes = []string{
 
 // checkAuthorizedKey checks the shape of an authorized_keys line: a key
 // type, the key, whose encoding names the same type, and a comment, on one
-// line, with no options before the type.
+// line, with no options before the type. Its characters are printable, or
+// tabs: cloud-init's YAML parser refuses the whole vendor-data over some
+// others, and changes some.
 func checkAuthorizedKey(k string) error {
 	if len(k) > maxSSHKeyLen || strings.ContainsAny(k, "\r\n\x00") {
 		return fmt.Errorf("not one line of at most %d bytes", maxSSHKeyLen)
+	}
+	if !utf8.ValidString(k) {
+		return errors.New("not UTF-8")
+	}
+	if i := strings.IndexFunc(k, func(r rune) bool { return r != '\t' && !unicode.IsPrint(r) }); i >= 0 {
+		r, _ := utf8.DecodeRuneInString(k[i:])
+		return fmt.Errorf("%U at byte %d is not a printable character", r, i)
 	}
 	f := strings.Fields(k)
 	if len(f) < 2 || !slices.Contains(sshKeyTypes, f[0]) {
@@ -234,6 +266,23 @@ func checkAuthorizedKey(k string) error {
 		return fmt.Errorf("the key is not a %s key", f[0])
 	}
 	return nil
+}
+
+// vendorData is the cloud-config of the platform's settings for a VM's
+// guest, its keys, each quoted as JSON, which YAML reads as the same
+// string; see docs/decisions/vm-boot.md.
+func vendorData(spec *computev1alpha1.VirtualMachineSpec) string {
+	keys := spec.GetSshAuthorizedKeys()
+	if len(keys) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("#cloud-config\nssh_authorized_keys:\n")
+	for _, k := range keys {
+		q, _ := json.Marshal(k) // a string always encodes
+		fmt.Fprintf(&b, "  - %s\n", q)
+	}
+	return b.String()
 }
 
 // refuseDeletingUnsettledVM keeps a VM from going before its root disk's
@@ -435,7 +484,14 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine) (*computev1alpha1.Machine
 	out := &computev1alpha1.MachineSpec{
 		Resources: &computev1alpha1.Resources{Cpu: quantity.FormatCPU(sz.cpu), Memory: quantity.FormatMemory(sz.memory)},
 		RunState:  runState,
-		Boot:      &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{RootDisk: vmRootDisk(vm)}},
+		Boot: &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{
+			RootDisk: vmRootDisk(vm),
+			// The VM's uid, not its machine's: a machine made again is the
+			// same instance, whose first boot is done.
+			CloudInit: &computev1alpha1.MachineCloudInit{
+				InstanceId: vm.GetMetadata().GetUid(), UserData: spec.GetUserData(), VendorData: vendorData(spec),
+			},
+		}},
 		// Only a guest that powers itself off, which ends its boot well,
 		// stays off, as a VM's on a cloud does; a crash, or its host
 		// shutting down, boots it again. See docs/decisions/vm-boot.md.

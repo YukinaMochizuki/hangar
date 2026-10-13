@@ -42,6 +42,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry/registrytest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/zfsstore"
+	"github.com/YukinaMochizuki/hangar/test/testbed/internal/diskimgtest"
 	"github.com/YukinaMochizuki/hangar/test/testbed/internal/vmtest"
 )
 
@@ -284,7 +285,7 @@ func openHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 	hv, err := chvm.New(context.Background(), chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
-		Firmware: firmware(t), FirmwareStopGrace: grace,
+		Firmware: diskimgtest.Firmware(t), FirmwareStopGrace: grace,
 	})
 	if err != nil {
 		t.Fatal(err)
