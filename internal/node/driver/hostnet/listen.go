@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"syscall"
 
 	"github.com/vishvananda/netlink"
@@ -57,10 +58,15 @@ func (d *Driver) listen(ctx context.Context, uid string, open func(context.Conte
 	if instance == "" {
 		return nil, "", fmt.Errorf("network %s has no bridge", uid)
 	}
-	lc := &net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+	lc := &net.ListenConfig{Control: func(network, _ string, c syscall.RawConn) error {
 		var serr error
 		err := c.Control(func(fd uintptr) {
 			serr = unix.SetsockoptString(int(fd), unix.SOL_SOCKET, unix.SO_BINDTODEVICE, nsBridge)
+			if serr == nil && strings.HasPrefix(network, "udp") {
+				// Some answer clients that have no address yet, by
+				// broadcast, as DHCP does.
+				serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_BROADCAST, 1)
+			}
 		})
 		if err != nil {
 			return err
