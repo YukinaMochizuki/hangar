@@ -19,6 +19,7 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 )
 
@@ -131,23 +132,28 @@ func (a *app) runExec(ctx context.Context, args []string, interactive, tty bool,
 	if err != nil {
 		return err
 	}
-	return a.exec(ctx, c.Endpoint+execws.Path(project, args[1]), creds, start, term)
+	hc, base := a.execHTTPClient(c)
+	return a.exec(ctx, base+execws.Path(project, args[1]), hc, creds, start, term)
 }
 
-// execHTTPClient is the client an exec dials with: the Options' in tests,
-// else one whose connections TCP drops once the server stops answering.
-func (a *app) execHTTPClient() *http.Client {
+// execHTTPClient is the client an exec dials with, and the base URL: one
+// dialing the socket of a unix:// endpoint, the Options' in tests, else one
+// whose connections TCP drops once the server stops answering.
+func (a *app) execHTTPClient(c *Context) (*http.Client, string) {
+	if path, ok := c.socketPath(); ok {
+		return client.UnixSocket(path), client.UnixSocketURL
+	}
 	if hc, ok := a.opts.HTTPClient.(*http.Client); ok && hc != http.DefaultClient {
-		return hc
+		return hc, c.Endpoint
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.DialContext = (&net.Dialer{KeepAliveConfig: execws.KeepAlive, Control: execws.Control}).DialContext
-	return &http.Client{Transport: tr}
+	return &http.Client{Transport: tr}, c.Endpoint
 }
 
 // exec runs start at url. With term, the terminal is raw while it runs and
 // put back however it ends.
-func (a *app) exec(ctx context.Context, url string, creds credentials, start *computev1alpha1.ContainerExecStart, term Terminal) error {
+func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds credentials, start *computev1alpha1.ContainerExecStart, term Terminal) error {
 	header := http.Header{}
 	if err := creds.set(ctx, header.Set); err != nil {
 		return err
@@ -161,7 +167,7 @@ func (a *app) exec(ctx context.Context, url string, creds credentials, start *co
 	}
 	live := execws.NewLiveness(every, timeout)
 	conn, resp, err := websocket.Dial(ctx, url, &websocket.DialOptions{
-		HTTPClient: a.execHTTPClient(), HTTPHeader: header, Subprotocols: []string{execws.Subprotocol},
+		HTTPClient: hc, HTTPHeader: header, Subprotocols: []string{execws.Subprotocol},
 		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
 	})
 	if err != nil {

@@ -32,6 +32,8 @@ type world struct {
 	t      *testing.T
 	url    string
 	socket string
+	// admin is the admin socket, where the test's own uid is root.
+	admin  string
 	config string
 }
 
@@ -56,14 +58,25 @@ func newWorld(t *testing.T) *world {
 		ConnContext: auth.ConnContext,
 	}
 	go func() { _ = node.Serve(ln) }()
+	adminSock := filepath.Join(t.TempDir(), "admin.sock")
+	adminLn, err := net.Listen("unix", adminSock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := &http.Server{
+		Handler:     srv.Handler(auth.Chain{auth.LocalRoot{Host: testNode, UID: uint32(os.Getuid())}}),
+		ConnContext: auth.AdminConnContext,
+	}
+	go func() { _ = admin.Serve(adminLn) }()
 	t.Cleanup(func() {
 		public.Close()
 		_ = node.Close()
+		_ = admin.Close()
 		cancel()
 		<-done
 		_ = st.Close()
 	})
-	w := &world{t: t, url: public.URL, socket: sock, config: filepath.Join(t.TempDir(), "config.yaml")}
+	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml")}
 	w.addMembers("alice@example.com", "bob@example.com")
 	return w
 }

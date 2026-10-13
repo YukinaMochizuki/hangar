@@ -66,7 +66,8 @@ func (a *app) logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			logs := computev1alpha1connect.NewContainerLogsServiceClient(a.opts.HTTPClient, c.Endpoint, connect.WithInterceptors(creds))
+			hc, base := a.httpClient(c)
+			logs := computev1alpha1connect.NewContainerLogsServiceClient(hc, base, connect.WithInterceptors(creds))
 			stream, err := logs.ContainerLogs(cmd.Context(), connect.NewRequest(req))
 			if err != nil {
 				return err
