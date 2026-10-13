@@ -769,7 +769,9 @@ type appInput struct {
 	CORSHeaders              json.RawMessage `json:"cors_headers"`
 	HTTPOnlyCookieAttribute  *bool           `json:"http_only_cookie_attribute"`
 	SameSiteCookieAttribute  string          `json:"same_site_cookie_attribute"`
-	ClientlessIsolationURL   bool            `json:"use_clientless_isolation_app_launcher_url"`
+	// Nil when the body leaves it out: the real API refuses the field, even
+	// false, on an application with only public destinations.
+	ClientlessIsolationURL *bool `json:"use_clientless_isolation_app_launcher_url"`
 }
 
 // appPolicy is a policy as an application response carries it.
@@ -816,6 +818,17 @@ func matches(have, want string, exact bool) bool {
 	return strings.Contains(have, want)
 }
 
+// hasPrivateDestination reports whether any destination is a private one
+// (a network or hostname reached through WARP).
+func hasPrivateDestination(ds []AppDestination) bool {
+	for _, d := range ds {
+		if d.Type == "private" {
+			return true
+		}
+	}
+	return false
+}
+
 func (f *Fake) appFromInput(w http.ResponseWriter, in appInput, st *State, a *App) bool {
 	if in.Type != "self_hosted" {
 		fail(w, http.StatusBadRequest, 12130, "only self_hosted applications are supported by this fake")
@@ -823,6 +836,10 @@ func (f *Fake) appFromInput(w http.ResponseWriter, in appInput, st *State, a *Ap
 	}
 	if in.Domain == "" {
 		fail(w, http.StatusBadRequest, 12130, "domain is required")
+		return false
+	}
+	if in.ClientlessIsolationURL != nil && !hasPrivateDestination(in.Destinations) {
+		fail(w, http.StatusBadRequest, 12130, "use_clientless_isolation_app_launcher_url can only be enabled for apps with private destinations")
 		return false
 	}
 	if in.SessionDuration != "" {
@@ -900,7 +917,7 @@ func (f *Fake) appFromInput(w http.ResponseWriter, in appInput, st *State, a *Ap
 	a.CORSHeaders = in.CORSHeaders
 	a.HTTPOnlyCookieAttribute = in.HTTPOnlyCookieAttribute == nil || *in.HTTPOnlyCookieAttribute
 	a.SameSiteCookieAttribute = in.SameSiteCookieAttribute
-	a.ClientlessIsolationURL = in.ClientlessIsolationURL
+	a.ClientlessIsolationURL = in.ClientlessIsolationURL != nil && *in.ClientlessIsolationURL
 	a.Links = links
 	a.UpdatedAt = now()
 	return true
