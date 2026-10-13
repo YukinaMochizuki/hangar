@@ -111,6 +111,11 @@ func nsChains(cidr netip.Prefix, nsTransit netip.Addr) []chainSpec {
 			says: fmt.Sprintf("only %s from %s", cidr, nsBridge),
 			exprs: append(matchIfname(expr.MetaKeyIIFNAME, nsBridge),
 				append(matchSaddrNot(cidr), &expr.Verdict{Kind: expr.VerdictDrop})...),
+		}, {
+			// The bridge passes frames for the 802.1D group addresses up a
+			// tap's own stack, past its own hooks and so the binding.
+			says:  "nothing in by a tap's own stack",
+			exprs: append(matchIfnamePrefix(expr.MetaKeyIIFNAME, tapPrefix), &expr.Verdict{Kind: expr.VerdictDrop}),
 		}},
 	}, {
 		name: "postrouting", typ: nftables.ChainTypeNAT, hook: *nftables.ChainHookPostrouting, prio: *nftables.ChainPriorityNATSource,
@@ -210,12 +215,12 @@ func commentOf(r *nftables.Rule) string {
 
 // ensureTable makes the driver's table on conn hold exactly want, replacing
 // it in one transaction if it differs, and touching nothing if it does not.
-func ensureTable(conn *nftables.Conn, want []chainSpec) error {
-	same, exists, err := tableIs(conn, want)
+func ensureTable(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec) error {
+	same, exists, err := tableIs(conn, family, want)
 	if err != nil || same {
 		return err
 	}
-	t := &nftables.Table{Family: nftables.TableFamilyIPv4, Name: Table}
+	t := &nftables.Table{Family: family, Name: Table}
 	if exists {
 		conn.DelTable(t)
 	}
@@ -240,10 +245,10 @@ func ensureTable(conn *nftables.Conn, want []chainSpec) error {
 	return nil
 }
 
-// tableIs says whether the driver's table holds exactly want, and whether
-// it exists at all.
-func tableIs(conn *nftables.Conn, want []chainSpec) (same, exists bool, err error) {
-	tables, err := conn.ListTablesOfFamily(nftables.TableFamilyIPv4)
+// tableIs says whether the driver's table of family holds exactly want, and
+// whether it exists at all.
+func tableIs(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec) (same, exists bool, err error) {
+	tables, err := conn.ListTablesOfFamily(family)
 	if err != nil {
 		return false, false, fmt.Errorf("listing nft tables: %w", err)
 	}
@@ -256,7 +261,7 @@ func tableIs(conn *nftables.Conn, want []chainSpec) (same, exists bool, err erro
 	if t == nil {
 		return false, false, nil
 	}
-	chains, err := conn.ListChainsOfTableFamily(nftables.TableFamilyIPv4)
+	chains, err := conn.ListChainsOfTableFamily(family)
 	if err != nil {
 		return false, true, fmt.Errorf("listing nft chains: %w", err)
 	}
@@ -295,9 +300,9 @@ func tableIs(conn *nftables.Conn, want []chainSpec) (same, exists bool, err erro
 	return true, true, nil
 }
 
-// deleteTable removes the driver's table on conn, if it has one.
-func deleteTable(conn *nftables.Conn) error {
-	tables, err := conn.ListTablesOfFamily(nftables.TableFamilyIPv4)
+// deleteTable removes the driver's table of family on conn, if it has one.
+func deleteTable(conn *nftables.Conn, family nftables.TableFamily) error {
+	tables, err := conn.ListTablesOfFamily(family)
 	if err != nil {
 		return fmt.Errorf("listing nft tables: %w", err)
 	}
@@ -321,5 +326,5 @@ func isOurs(data any) bool {
 	case *nftables.Rule:
 		t = v.Table
 	}
-	return t != nil && t.Family == nftables.TableFamilyIPv4 && t.Name == Table
+	return t != nil && (t.Family == nftables.TableFamilyIPv4 || t.Family == nftables.TableFamilyBridge) && t.Name == Table
 }

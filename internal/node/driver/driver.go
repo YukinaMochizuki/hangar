@@ -168,6 +168,10 @@ type Network interface {
 	Instance(ctx context.Context, networkUID string) (string, error)
 }
 
+// MetadataAddr is the metadata service's address in every network, as
+// clouds have it; a network's bridge holds it beside the gateway.
+var MetadataAddr = netip.MustParseAddr("169.254.169.254")
+
 // NetworkSpec is a network as the host has it.
 type NetworkSpec struct {
 	UID  string

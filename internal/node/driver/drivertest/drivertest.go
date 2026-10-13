@@ -560,6 +560,13 @@ func networkSockets(t *testing.T, h Host) {
 		t.Errorf("a socket opened in instance %q, want %q", in, first)
 	}
 	must(t, any.Close())
+	// Every network's bridge holds the metadata service's address.
+	md, _, err := h.Network.ListenTCP(ctx, testNet.UID, netip.AddrPortFrom(driver.MetadataAddr, 80))
+	must(t, err)
+	must(t, md.Close())
+	if nets, err := h.Network.Networks(ctx); err != nil || len(nets) != 1 || nets[0] != testNet {
+		t.Errorf("with the metadata address on its bridge, the network is listed as %v %v", nets, err)
+	}
 
 	// A network made again is another instance, while a socket of the old
 	// one lives on.

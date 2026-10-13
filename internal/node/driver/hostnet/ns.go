@@ -144,3 +144,25 @@ func sysctl(key string) (string, error) {
 	b, err := os.ReadFile(filepath.Join("/proc/sys", strings.ReplaceAll(key, ".", "/")))
 	return strings.TrimSpace(string(b)), err
 }
+
+// nsSysctls are what every network's namespace sets for itself, rather than
+// take whatever the host's defaults give it: forwarding; strict reverse-path
+// filtering, so a source not routed back by the link it came in by is
+// dropped; and no IPv6 on its links until machines have addresses of it.
+var nsSysctls = [][2]string{
+	{"net.ipv4.ip_forward", "1"},
+	{"net.ipv4.conf.all.rp_filter", "1"},
+	{"net.ipv4.conf.default.rp_filter", "1"},
+	{"net.ipv6.conf.all.disable_ipv6", "1"},
+	{"net.ipv6.conf.default.disable_ipv6", "1"},
+}
+
+// ensureSysctls sets each sysctl of the calling thread's namespace.
+func ensureSysctls(kvs [][2]string) error {
+	for _, kv := range kvs {
+		if err := ensureSysctl(kv[0], kv[1]); err != nil {
+			return fmt.Errorf("%s: %w", kv[0], err)
+		}
+	}
+	return nil
+}

@@ -182,8 +182,9 @@ func TestChains(t *testing.T) {
 	a := comments(t, nsChains(netip.MustParsePrefix("10.0.0.0/24"), netip.MustParseAddr("100.64.0.1")))
 	b := comments(t, nsChains(netip.MustParsePrefix("10.0.0.0/16"), netip.MustParseAddr("100.64.0.1")))
 	c := comments(t, nsChains(netip.MustParsePrefix("10.0.0.0/24"), netip.MustParseAddr("100.64.0.3")))
-	// The first rule, letting DHCP in, has no parameters.
-	if len(a) != 3 || a[1] == b[1] || a[2] == b[2] || a[2] == c[2] {
+	// The first and third rules, letting DHCP in and nothing in by a tap,
+	// have no parameters.
+	if len(a) != 4 || a[1] == b[1] || a[3] == b[3] || a[3] == c[3] {
 		t.Errorf("namespace rules for other parameters share a comment: %q %q %q", a, b, c)
 	}
 	// What a comment says is not all: the same words over other

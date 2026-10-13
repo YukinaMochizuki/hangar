@@ -17,6 +17,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/dhcp"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 	"github.com/YukinaMochizuki/hangar/internal/node/netsvc"
 	"github.com/YukinaMochizuki/hangar/internal/node/resolver"
 	"github.com/YukinaMochizuki/hangar/internal/store"
@@ -30,10 +31,11 @@ const resolverPort = 53
 var dhcpAddr = netip.AddrPortFrom(netip.IPv4Unspecified(), 67)
 
 // netServices are the services the node serves the networks on its host:
-// each network's resolver and its DHCP.
+// each network's resolver, its DHCP and its metadata service.
 type netServices struct {
 	resolver *resolver.Resolver
 	dhcp     *dhcp.Server
+	metadata *metadata.Server
 	services *netsvc.Manager
 
 	mu sync.Mutex
@@ -69,8 +71,18 @@ func newNetServices(n driver.Network, upstreams []netip.AddrPort, log *slog.Logg
 			}
 		},
 	}
+	md := metadata.New(metadata.Config{Log: log})
+	mdService := netsvc.Service{
+		Name: "metadata",
+		Addr: func(netsvc.Network) netip.AddrPort { return netip.AddrPortFrom(driver.MetadataAddr, 80) },
+		ServeTCP: func(ctx context.Context, n netsvc.Network, l *net.TCPListener) {
+			if err := md.Serve(ctx, n.UID, l); err != nil {
+				log.Error("a network's metadata service stopped", "network_uid", n.UID, "error", err)
+			}
+		},
+	}
 	return &netServices{
-		resolver: r, dhcp: d, services: netsvc.New(n, log, dns, dhcpService),
+		resolver: r, dhcp: d, metadata: md, services: netsvc.New(n, log, dns, dhcpService, mdService),
 		named: map[string]map[controller.Key]bool{},
 	}
 }
@@ -157,6 +169,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	}
 	names := map[string][]netip.Addr{}
 	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
+	instances := map[netip.Addr]metadata.Instance{}
 	var on []string
 	for _, o := range objs {
 		m := o.(*computev1alpha1.Machine)
@@ -170,12 +183,14 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				names[name] = append(names[name], addr.Addr())
 			}
 			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
+			instances[addr.Addr()] = metadata.Instance{UID: m.GetMetadata().GetUid(), Hostname: name}
 			on = append(on, m.GetMetadata().GetUid())
 		}
 	}
 	s.name(k, on)
 	s.resolver.Set(uid, resolver.Records{Project: k.Project, Names: names})
 	s.dhcp.Set(uid, leases)
+	s.metadata.Set(uid, instances)
 	return nil
 }
 
@@ -210,6 +225,7 @@ func (s *netServices) keep(onHost map[string]bool) {
 func (s *netServices) forget(networkUID string) {
 	s.resolver.Forget(networkUID)
 	s.dhcp.Forget(networkUID)
+	s.metadata.Forget(networkUID)
 }
 
 // machineDNSName is the name a machine answers to in its project: that of the

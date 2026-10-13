@@ -77,15 +77,36 @@ anything else needs a reachable address.
       network exists whose replies could leave by another link;
     - input: from `hnv*`, drop all but replies, so a network cannot reach
       the host.
-  - Table `ip hangar` in each namespace has three: in prerouting, before
+  - Table `ip hangar` in each namespace has four: in prerouting, before
     conntrack, accept DHCP from `hn-br` sent from no address to the
     broadcast (UDP 68 to 67), which a guest without an address yet sends
     and which is never routed on; drop what else comes in from `hn-br` with
     a source outside the network's range, so a guest cannot forge one, nor
-    make the gateway answer one; and SNAT the range leaving `hn-up` to the
-    namespace's transit address. A guest taking an address of the
+    make the gateway answer one; drop anything coming in by a tap's own
+    stack, where the bridge passes frames for the 802.1D group addresses,
+    past the bridge's hooks; and SNAT the range leaving `hn-up` to the
+    namespace's transit address. The namespace also sets its own strict
+    reverse-path filter rather than inherit the host's default, and turns
+    IPv6 off on its links. A guest taking an address of the
     namespace's own, its transit address or the gateway, is dropped by the
-    kernel as a martian. Each layer holds without the other.
+    kernel as a martian.
+  - Table `bridge hangar` in each namespace binds each interface, in its
+    prerouting, before the bridge forwards a frame or delivers it to the
+    namespace: a tap sends only from its interface's MAC; IPv4 only from
+    its assigned address, but for DHCP from no address to the broadcast;
+    ARP only for that MAC and address; and nothing but IPv4 and ARP (no
+    IPv6 until a machine has an `Address`). The kernel takes a VLAN tag
+    off before the bridge's hooks, so a tagged frame is held to the same
+    rules on what it carries. A frame too short for a rule's field passes
+    that rule, and the receiving stack drops it. A tap without
+    rules of its own sends nothing. Its rules are written from the taps'
+    aliases, before a tap joins the bridge, and go with it. So a guest
+    cannot pass as another of its network, which the metadata service
+    relies on to know who asks.
+  - Each of the three layers holds without the others: the binding, the
+    namespace's filter and the host's. A frame to a group address skips
+    the binding, and meets the namespace's filter and its reverse-path
+    filter.
   - Each rule's comment says what the rule does and ends with a hash of its
     expressions. A table whose comments differ from the wanted rules',
     including one written for other rules under the same words, is replaced
@@ -169,6 +190,19 @@ anything else needs a reachable address.
   is not answered, and a request for another address is refused. A client
   without an address is answered by broadcast, one renewing at its
   address.
+- **Each network has a metadata service** (`internal/node/metadata`) on
+  169.254.169.254, port 80, an address its bridge holds beside the
+  gateway, in the form of cloud-init's NoCloud datasource, which a VM is
+  pointed at by its SMBIOS serial number
+  (`ds=nocloud;s=http://169.254.169.254/nocloud/`). It serves
+  `/nocloud/meta-data` (the machine's uid as instance-id, its name as
+  hostname), `user-data` and `vendor-data`, each for the machine whose
+  address the request comes from, which the binding above makes sound;
+  any other address or path is 404. NoCloud sends no token, so nothing
+  but the binding stands between a guest and another's user-data. It
+  takes GET only, with bounded headers and timeouts, at most 16
+  connections a network and 4 a machine, so no machine keeps the others'
+  cloud-init waiting, and stops with a deadline, as the resolver does.
 - **`SecurityGroup`** works as in AWS: attached to NICs, several per NIC,
   sources are CIDRs or other groups, stateful, allow rules only, inbound denied
   by default. Each network has a `default` group. One nftables set per group.
