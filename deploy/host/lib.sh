@@ -18,6 +18,11 @@ ROLLBACK_UNIT=hangar-netplan-rollback
 # (the human's Cloudflare Access identity). The operator writes it by hand.
 # shellcheck disable=SC2034
 LOCAL_ENV=/etc/hangar/local.env
+# The Cloudflare tunnel's token, written by hand like LOCAL_ENV; without it
+# the host runs no tunnel.
+# shellcheck disable=SC2034
+CLOUDFLARED_ENV=/etc/hangar/cloudflared.env
+CLOUDFLARED_UNIT=hangar-cloudflared
 
 log() { printf '%s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
@@ -84,6 +89,78 @@ flush_initramfs() {
 
 # rollback_pending succeeds while a netplan change is still on probation.
 rollback_pending() { systemctl is-active --quiet "$ROLLBACK_UNIT.timer"; }
+
+# skip NAME WHY prints a SKIP line for verify.sh: a check that does not apply
+# to this host.
+skip() { printf 'SKIP %s (%s)\n' "$1" "$2"; }
+
+# refuse WHAT stops a real run; a dry run only warns and goes on.
+refuse() {
+	[ "$DRY_RUN" = 1 ] || die "$1"
+	log "warning: $1; a real run refuses"
+}
+
+# local_env KEY prints KEY's value in the local env file, empty when unset.
+local_env() {
+	[ -f "$LOCAL_ENV" ] || return 0
+	sed -n "s/^$1=//p" "$LOCAL_ENV" | tail -n 1 | tr -d "\"'"
+}
+
+# auth_mode prints how the public API authenticates, as the local env file
+# asks: HANGAR_AUTH_MODE, dev when unset.
+auth_mode() {
+	local m
+	m=$(local_env HANGAR_AUTH_MODE)
+	printf '%s\n' "${m:-dev}"
+}
+
+# auth_problem prints what is wrong with the local env file's auth settings,
+# nothing when they make a whole mode.
+auth_problem() {
+	local mode
+	mode=$(auth_mode)
+	case $mode in
+	dev) ;;
+	cloudflare)
+		[[ $(local_env HANGAR_CF_TEAM_DOMAIN) =~ ^https://[A-Za-z0-9.-]+$ ]] ||
+			printf '%s\n' "cloudflare auth needs HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com in $LOCAL_ENV"
+		[[ $(local_env HANGAR_CF_AUDIENCE) =~ ^[A-Za-z0-9]+$ ]] ||
+			printf '%s\n' "cloudflare auth needs HANGAR_CF_AUDIENCE=<the Access application's AUD tag> in $LOCAL_ENV"
+		;;
+	*) printf '%s\n' "HANGAR_AUTH_MODE in $LOCAL_ENV must be dev or cloudflare, not $mode" ;;
+	esac
+}
+
+# apiserver_auth_mode prints the auth mode the running apiserver was started
+# with, nothing when it is not running or does not set it exactly once as
+# --auth-mode VALUE (the same reading as cloudflared's guard).
+apiserver_auth_mode() {
+	local pid
+	pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
+	[ "$pid" != 0 ] || return 0
+	tr '\0' '\n' <"/proc/$pid/cmdline" | awk '
+		/^--?auth-mode(=.*)?$/ { n++; if ($0 == "--auth-mode") at = NR + 1; else odd = 1 }
+		NR == at { mode = $0 }
+		END { if (n == 1 && !odd) print mode }'
+}
+
+# cloudflared_up holds while the tunnel is in any state but stopped: running,
+# starting, or waiting to retry (Restart=always never gives up, so a unit
+# started by hand without its env file comes up once the file appears), or
+# while it would start at boot.
+cloudflared_up() {
+	case $(systemctl show -p ActiveState --value "$CLOUDFLARED_UNIT.service" 2>/dev/null) in
+	'' | inactive | failed) ;;
+	*) return 0 ;;
+	esac
+	systemctl is-enabled --quiet "$CLOUDFLARED_UNIT.service" 2>/dev/null
+}
+
+# cloudflared_down WHY stops and disables the tunnel, if it is up.
+cloudflared_down() {
+	cloudflared_up || return 0
+	run "stop and disable $CLOUDFLARED_UNIT: $1" systemctl disable --now "$CLOUDFLARED_UNIT.service"
+}
 
 # check NAME CMD... prints one PASS/FAIL line for verify.sh and records failures.
 check() {

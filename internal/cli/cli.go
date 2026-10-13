@@ -215,7 +215,17 @@ func (a *app) client() (*client.Client, *Context, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return client.New(a.opts.HTTPClient, c.Endpoint, connect.WithInterceptors(creds)), c, nil
+	hc, base := a.httpClient(c)
+	return client.New(hc, base, connect.WithInterceptors(creds)), c, nil
+}
+
+// httpClient returns the client and base URL that reach the context's API:
+// the Options' for a URL, or one dialing the socket of a unix:// endpoint.
+func (a *app) httpClient(c *Context) (connect.HTTPClient, string) {
+	if path, ok := c.socketPath(); ok {
+		return client.UnixSocket(path), client.UnixSocketURL
+	}
+	return a.opts.HTTPClient, c.Endpoint
 }
 
 // projectFor returns the project to use for r, if r is project-scoped.

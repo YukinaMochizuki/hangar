@@ -25,6 +25,9 @@ const (
 	Node
 	// System is the apiserver itself, acting through its controllers.
 	System
+	// Local is root on the host, through the admin socket. It holds
+	// platform.root without a RoleBinding, and no RoleBinding can name it.
+	Local
 )
 
 func (t Type) String() string {
@@ -37,6 +40,8 @@ func (t Type) String() string {
 		return "node"
 	case System:
 		return "system"
+	case Local:
+		return "local"
 	}
 	return fmt.Sprintf("Type(%d)", int(t))
 }

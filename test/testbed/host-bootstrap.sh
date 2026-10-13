@@ -12,6 +12,8 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 host_dir=$repo/deploy/host
+# shellcheck source=deploy/host/versions.env
+. "$host_dir/versions.env"
 work=/var/tmp/hangar-testbed
 env_file=$work/testbed.env
 release=${HANGAR_TESTBED_RELEASE:-}
@@ -204,8 +206,406 @@ test_converges_and_is_idempotent() {
 	out=$("$host_dir/bootstrap.sh" --env "$env_file")
 	[ "$out" = "changes: 0" ] || fail "a run without --release reported $out"
 	step "verify passes"
-	"$host_dir/verify.sh" --env "$env_file"
+	"$host_dir/verify.sh" --env "$env_file" | tee "$work/first-verify.log"
 	[ "$(cat /usr/local/lib/hangar/VERSION)" = "$(cat "$release/VERSION")" ] || fail "installed VERSION is not the release's"
+
+	step "without cloudflared.env there is no tunnel, and verify skips it"
+	grep -q "^SKIP cloudflared $HANGAR_CLOUDFLARED_VERSION (no /etc/hangar/cloudflared.env)$" "$work/first-verify.log" ||
+		fail "verify does not skip cloudflared"
+	grep -q '^FAIL' "$work/first-verify.log" && fail "verify failed: $(grep '^FAIL' "$work/first-verify.log")"
+	grep -qE '^(apply|would): .*cloudflared' "$log" && fail "the run did something about cloudflared: $(grep -E '^(apply|would): .*cloudflared' "$log")"
+	[ ! -e /usr/local/bin/cloudflared ] && [ ! -e /etc/systemd/system/hangar-cloudflared.service ] ||
+		fail "cloudflared was installed without cloudflared.env"
+	systemctl show -p ExecStart --value hangar-apiserver | grep -q -- '--listen 127.0.0.1:8080 --auth-mode dev --socket' ||
+		fail "an unset HANGAR_AUTH_MODE is not dev auth"
+}
+
+# admin_cli ARGS... runs the CLI through the admin socket, as root on the
+# host.
+admin_cli() { HANGAR_CONFIG=$work/admin.yaml /usr/local/bin/hangar "$@"; }
+
+# list_nodes_status [HEADER...] prints the HTTP status of ListNodes on the
+# public listener as the bootstrap admin in dev auth, with HEADERs.
+list_nodes_status() {
+	local h args=()
+	for h in "$@"; do args+=(-H "$h"); done
+	curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@testbed.invalid' \
+		-H 'Content-Type: application/json' "${args[@]}" -d '{}' \
+		http://127.0.0.1:8080/hangar.compute.v1alpha1.NodeService/ListNodes
+}
+
+test_admin_socket() {
+	step "the admin socket is root's alone, and root on it holds platform.root"
+	[ "$(stat -c '%U %G %a' /run/hangar)" = "root root 755" ] || fail "/run/hangar is $(stat -c '%U %G %a' /run/hangar)"
+	[ "$(stat -c '%F %U %G %a' /run/hangar/admin.sock)" = "socket root root 600" ] ||
+		fail "the admin socket is $(stat -c '%F %U %G %a' /run/hangar/admin.sock)"
+	[ "$(stat -c '%F %U %G %a' /run/hangar/node.sock)" = "socket hangar hangar 660" ] ||
+		fail "the node socket is $(stat -c '%F %U %G %a' /run/hangar/node.sock)"
+	cat >"$work/admin.yaml" <<'EOF'
+currentContext: local
+contexts:
+  local: {endpoint: "unix:///run/hangar/admin.sock"}
+EOF
+	chmod 644 "$work/admin.yaml"
+	local since
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "root could not get the node over the admin socket"
+	# What a locked-out administrator does: bind someone as root again.
+	admin_cli apply -f - <<'EOF' || fail "root could not bind over the admin socket"
+apiVersion: iam.hangar.dev/v1alpha1
+kind: RoleBinding
+metadata: {name: tb-root-again}
+spec: {subject: {user: again@testbed.invalid}, role: platform.root, scope: {platform: {}}}
+EOF
+	admin_cli delete rolebinding tb-root-again >/dev/null
+	journalctl -u hangar-apiserver --since "$since" --no-pager |
+		grep -q 'msg="admin socket request" method=POST path=/hangar.iam.v1alpha1.RoleBindingService/ApplyRoleBinding uid=0 pid=[0-9]* principal=local:root@testbed' ||
+		fail "the apply is not in the apiserver's log as local:root@testbed"
+
+	step "anyone else is kept out by the socket's mode, and by the apiserver if not"
+	if runuser -u nobody -- env HANGAR_CONFIG="$work/admin.yaml" /usr/local/bin/hangar get node testbed 2>"$work/nobody.log"; then
+		fail "nobody got the node over the admin socket"
+	fi
+	grep -q 'permission denied' "$work/nobody.log" || fail "unexpected refusal: $(cat "$work/nobody.log")"
+	if runuser -u hangar -- env HANGAR_CONFIG="$work/admin.yaml" /usr/local/bin/hangar get node testbed 2>/dev/null; then
+		fail "the apiserver's own user got in over the admin socket"
+	fi
+	chmod 666 /run/hangar/admin.sock
+	if runuser -u nobody -- env HANGAR_CONFIG="$work/admin.yaml" /usr/local/bin/hangar get node testbed 2>"$work/nobody.log"; then
+		chmod 600 /run/hangar/admin.sock
+		fail "nobody got the node through a socket left open"
+	fi
+	chmod 600 /run/hangar/admin.sock
+	grep -q 'is not root' "$work/nobody.log" || fail "the apiserver did not refuse nobody's uid: $(cat "$work/nobody.log")"
+
+	step "dev auth refuses what came through Cloudflare"
+	[ "$(list_nodes_status)" = 200 ] || fail "dev auth on loopback refused the bootstrap admin"
+	local h
+	for h in 'Cf-Warp-Tag-Id: 6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f' 'Cdn-Loop: cloudflare' 'Cf-Connecting-Ip: 192.0.2.7' 'Cf-Ray: 0123456789abcdef-SIN'; do
+		[ "$(list_nodes_status "$h")" = 401 ] || fail "dev auth took a request with $h"
+	done
+}
+
+# node_connected prints how many connections the running apiserver holds on
+# the node socket.
+node_connected() {
+	ss -Hxp state established src /run/hangar/node.sock 2>/dev/null |
+		grep -c "pid=$(main_pid hangar-apiserver)," || true
+}
+
+# wait_node_connected waits for the agent to be connected to the apiserver.
+wait_node_connected() {
+	local i
+	for i in $(seq 1 30); do
+		[ "$(node_connected)" -gt 0 ] && return 0
+		sleep 1
+	done
+	return 1
+}
+
+test_node_reconnects() {
+	step "the agent reconnects when the apiserver restarts, and its sockets with it"
+	local node_pid api_pid ino
+	wait_node_connected || fail "the agent is not connected to begin with"
+	node_pid=$(main_pid hangar-node)
+	api_pid=$(main_pid hangar-apiserver)
+	ino=$(stat -c %i /run/hangar/node.sock)
+	systemctl restart hangar-apiserver
+	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver did not restart"
+	systemctl is-active --quiet hangar-apiserver-node.socket hangar-apiserver-admin.socket || fail "its sockets are not active"
+	[ "$(stat -c %i /run/hangar/node.sock)" != "$ino" ] || fail "the node socket was not made again"
+	wait_node_connected || fail "the agent did not reconnect"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the agent restarted instead of reconnecting"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/reconnect.log" || fail "verify after the restart: $(grep FAIL "$work/reconnect.log")"
+
+	step "a socket restarted alone stays down; verify says so and bootstrap restarts the apiserver"
+	api_pid=$(main_pid hangar-apiserver)
+	systemctl restart hangar-apiserver-node.socket 2>/dev/null && fail "systemd restarted a socket whose service runs"
+	wait_node_connected || fail "the agent lost the apiserver over a socket unit"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/reconnect.log"; then fail "verify passed with a socket down"; fi
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/reconnect.log"
+	grep -q '^apply: restart hangar-apiserver$' "$work/reconnect.log" || fail "bootstrap did not restart the apiserver: $(cat "$work/reconnect.log")"
+	systemctl is-active --quiet hangar-apiserver-node.socket || fail "the node socket is still down"
+	wait_node_connected || fail "the agent did not reconnect"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the socket"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the socket"
+}
+
+TB_TEAM=https://testbed.cloudflareaccess.com
+TB_AUD=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+
+# fake_token N prints a well-formed tunnel token for no tunnel: cloudflared
+# takes it, and Cloudflare refuses it.
+fake_token() {
+	printf '{"a":"%s","t":"%s","s":"%s"}' 0123456789abcdef0123456789abcdef 6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f \
+		"$(printf 'testbed-%s' "$1" | base64 -w0)" | base64 -w0
+}
+
+put_tunnel_token() {
+	install -m 0600 /dev/null /etc/hangar/cloudflared.env
+	echo "TUNNEL_TOKEN=$(fake_token "$1")" >/etc/hangar/cloudflared.env
+}
+
+# auth_env MODE sets the auth settings in local.env: cloudflare with the
+# testbed's team and AUD, or none, which is dev.
+auth_env() {
+	sed -i '/^HANGAR_AUTH_MODE=/d; /^HANGAR_CF_/d' /etc/hangar/local.env
+	if [ "$1" = cloudflare ]; then
+		printf 'HANGAR_AUTH_MODE=cloudflare\nHANGAR_CF_TEAM_DOMAIN=%s\nHANGAR_CF_AUDIENCE=%s\n' "$TB_TEAM" "$TB_AUD" >>/etc/hangar/local.env
+	fi
+}
+
+# sandbox_probe [PROPERTY...] runs a probe under hangar-cloudflared's
+# [Service] settings, but for ExecStart and the restart policy, with
+# PROPERTYs on top, and prints what it could reach.
+sandbox_probe() {
+	local props=() line
+	while IFS= read -r line; do
+		case $line in '' | '#'* | '['* | ExecStart=* | ExecStartPre=* | Restart=* | RestartSec=* | Type=*) continue ;; esac
+		props+=(-p "$line")
+	done < <(sed -n '/^\[Service\]/,/^\[Install\]/p' /etc/systemd/system/hangar-cloudflared.service)
+	systemd-run --quiet --wait --pipe --collect "${props[@]}" "$@" /usr/bin/python3 - <<'EOF'
+import os, socket
+print("uid", os.getuid())
+for p in ["/run/hangar/admin.sock", "/run/hangar/node.sock"]:
+    try:
+        s = socket.socket(socket.AF_UNIX)
+        s.connect(p)
+        print("connected", p)
+    except OSError as e:
+        print("refused", p, e.strerror)
+for d in ["/run/hangar", "/var/lib/hangar", "/var/lib/hangar/state", "/etc/hangar"]:
+    try:
+        print("listed", d, os.listdir(d))
+    except OSError as e:
+        print("denied", d, e.strerror)
+EOF
+}
+
+# cf_state prints the tunnel unit's state as ACTIVE/SUB, such as
+# activating/auto-restart.
+cf_state() { systemctl show -p ActiveState,SubState --value hangar-cloudflared | paste -sd/; }
+
+# cf_journal SINCE prints the tunnel unit's log since SINCE.
+cf_journal() { journalctl -u hangar-cloudflared --since "$1" --no-pager -o cat; }
+
+# wait_cf_active waits up to 20 s for cloudflared to be running.
+wait_cf_active() {
+	local i
+	for i in $(seq 1 20); do
+		[ "$(cf_state)" = active/running ] && return 0
+		sleep 1
+	done
+	return 1
+}
+
+test_cloudflared_needs_cloudflare_auth() {
+	step "cloudflared is refused while the apiserver is in dev auth, and nothing installed"
+	local before
+	put_tunnel_token 1
+	before=$(state_digest)
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared 2>"$work/cf.log"; then
+		fail "the cloudflared step ran with the apiserver in dev auth"
+	fi
+	grep -q 'never forwards to an apiserver in dev auth' "$work/cf.log" || fail "unexpected refusal: $(cat "$work/cf.log")"
+	[ "$(state_digest)" = "$before" ] || fail "the refusal changed the host"
+	[ ! -e /usr/local/bin/cloudflared ] || fail "cloudflared was installed"
+	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cf.log"; then
+		fail "a whole run went through with cloudflared.env in dev auth"
+	fi
+	grep -q '^apply: ' "$work/cf.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/cf.log")"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cf-verify.log"; then fail "verify passed with cloudflared.env in dev auth"; fi
+	grep -q '^FAIL hangar-cloudflared only with the apiserver in cloudflare auth$' "$work/cf-verify.log" ||
+		fail "verify does not say why: $(grep FAIL "$work/cf-verify.log")"
+	rm /etc/hangar/cloudflared.env
+
+	step "a cloudflare mode without its team domain and AUD is refused before any step"
+	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cf.log"; then fail "bootstrap ran with half a cloudflare mode"; fi
+	{ grep -q 'HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com' "$work/cf.log" &&
+		grep -q 'HANGAR_CF_AUDIENCE=' "$work/cf.log"; } || fail "unexpected refusal: $(cat "$work/cf.log")"
+	grep -q '^== ' "$work/cf.log" && fail "steps ran before the refusal"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half a cloudflare mode"; fi
+	auth_env dev
+}
+
+test_cloudflare_cutover() {
+	step "cloudflare auth in local.env restarts the apiserver in it, still on loopback"
+	local api_pid node_pid out
+	api_pid=$(main_pid hangar-apiserver)
+	node_pid=$(main_pid hangar-node)
+	auth_env cloudflare
+	"$host_dir/bootstrap.sh" --env "$env_file" --only services >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
+	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver runs its old auth"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the node was restarted for the apiserver's auth"
+	systemctl show -p ExecStart --value hangar-apiserver |
+		grep -q -- "--listen 127.0.0.1:8080 --auth-mode cloudflare --cf-team-domain $TB_TEAM --cf-audience $TB_AUD --socket" ||
+		fail "the apiserver's unit does not have cloudflare auth"
+	[ "$(list_nodes_status)" = 401 ] || fail "cloudflare auth took a dev header"
+	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "the admin socket does not work in cloudflare auth"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify in cloudflare auth: $(grep FAIL "$work/cut-verify.log")"
+	grep -q "^PASS apiserver runs cloudflare auth as /etc/hangar/local.env asks: --auth-mode cloudflare --cf-team-domain $TB_TEAM --cf-audience $TB_AUD$" "$work/cut-verify.log" ||
+		fail "verify does not check the auth flags"
+	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared without its env"
+
+	step "then the tunnel token: cloudflared installed, enabled and started, and a second run changes nothing"
+	put_tunnel_token 1
+	"$host_dir/bootstrap.sh" --env "$env_file" 2>&1 | tee "$work/cut.log"
+	grep -qx "changes: $(grep -c '^apply: ' "$work/cut.log")" "$work/cut.log" || fail "summary does not match its changes"
+	for out in "install cloudflared $HANGAR_CLOUDFLARED_VERSION" 'write /etc/systemd/system/hangar-cloudflared.service' \
+		'enable hangar-cloudflared' 'start hangar-cloudflared'; do
+		grep -qx "apply: $out" "$work/cut.log" || fail "the run did not $out"
+	done
+	echo "$HANGAR_CLOUDFLARED_SHA256  /usr/local/bin/cloudflared" | sha256sum -c --quiet - || fail "cloudflared is not the pinned one"
+	systemctl is-active --quiet hangar-cloudflared || fail "cloudflared is not active"
+	out=$("$host_dir/bootstrap.sh" --env "$env_file")
+	[ "$out" = "changes: 0" ] || fail "the run after cloudflared reported $out"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify with cloudflared: $(grep FAIL "$work/cut-verify.log")"
+	grep -q "^PASS unit hangar-cloudflared enabled, active, running what is installed$" "$work/cut-verify.log" || fail "verify does not check cloudflared"
+	systemctl show -p ExecStart --value hangar-cloudflared | grep -q -- '--no-autoupdate --metrics 127.0.0.1:20241 run' || fail "cloudflared's command line"
+
+	step "cloudflared's sandbox keeps it from the admin socket and hangar's state"
+	systemd-analyze security hangar-cloudflared --no-pager | tee "$work/cf-security.log" | tail -n 1
+	systemd-analyze security hangar-apiserver --no-pager | tail -n 1
+	local pid uid score
+	score=$(sed -n 's/.*Overall exposure level for hangar-cloudflared.service: \([0-9.]*\).*/\1/p' "$work/cf-security.log")
+	awk -v s="$score" 'BEGIN { exit !(s != "" && s <= 2.0) }' || fail "cloudflared's exposure is $score, want at most 2.0"
+	pid=$(main_pid hangar-cloudflared)
+	uid=$(stat -c %u "/proc/$pid")
+	{ [ "$uid" != 0 ] && ! getent passwd "$uid" | grep -q '^hangar:'; } || fail "cloudflared runs as uid $uid"
+	# In its own mount namespace, hangar's directories are empty and closed.
+	for d in /run/hangar /var/lib/hangar /etc/hangar; do
+		[ -z "$(nsenter -t "$pid" -m ls -A "$d")" ] || fail "cloudflared sees $d: $(nsenter -t "$pid" -m ls -A "$d")"
+		[ "$(nsenter -t "$pid" -m stat -c %a "$d")" = 0 ] || fail "$d is open in cloudflared's namespace"
+	done
+	sandbox_probe | tee "$work/probe.log"
+	grep -q '^uid 0$' "$work/probe.log" && fail "the probe ran as root"
+	grep -qE '^(connected|listed) ' "$work/probe.log" && fail "the sandbox let the probe in: $(grep -E '^(connected|listed) ' "$work/probe.log")"
+	[ "$(grep -c '^refused .* Address family not supported by protocol$' "$work/probe.log")" = 2 ] || fail "unix sockets were not refused outright"
+	[ "$(grep -c '^denied .* Permission denied$' "$work/probe.log")" = 4 ] || fail "hangar's directories were not all denied"
+	# With unix sockets allowed, the paths alone still keep it out.
+	sandbox_probe -p RestrictAddressFamilies=AF_UNIX | tee "$work/probe.log"
+	grep -qE '^(connected|listed) ' "$work/probe.log" && fail "the paths let the probe in: $(grep -E '^(connected|listed) ' "$work/probe.log")"
+	[ "$(grep -c '^refused /run/hangar/.* Permission denied$' "$work/probe.log")" = 2 ] || fail "the sockets were not denied by path"
+
+	step "a new tunnel token restarts cloudflared, and only it"
+	local cf_pid
+	cf_pid=$(main_pid hangar-cloudflared)
+	api_pid=$(main_pid hangar-apiserver)
+	put_tunnel_token 2
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: restart hangar-cloudflared$' "$work/cut.log" || fail "a new token did not restart cloudflared: $(cat "$work/cut.log")"
+	[ "$(main_pid hangar-cloudflared)" != "$cf_pid" ] || fail "cloudflared runs the old token"
+	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the apiserver was restarted for the token"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the new token"
+
+	step "the unit's own guard: no tunnel while the apiserver is stopped, back once it runs in cloudflare auth"
+	local since
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	cf_pid=$(main_pid hangar-cloudflared)
+	systemctl restart hangar-apiserver
+	wait_cf_active || fail "cloudflared did not come back with the apiserver: $(cf_state)"
+	[ "$(main_pid hangar-cloudflared)" != "$cf_pid" ] || fail "restarting the apiserver did not restart cloudflared (PartOf=)"
+	systemctl stop hangar-apiserver
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared outlived a stopped apiserver"
+	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started with the apiserver stopped"
+	sleep 2
+	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver is not running' ||
+		fail "the guard did not refuse a stopped apiserver: $(cf_journal "$since" | tail -n 5)"
+	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
+	systemctl start hangar-apiserver
+	wait_cf_active || fail "cloudflared did not come up once the apiserver was back: $(cf_state)"
+
+	step "the guard also refuses an apiserver whose loaded unit would restart it in dev auth"
+	# The log is read by the second: nothing from before may share it.
+	sleep 1
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	sed -i 's/--auth-mode cloudflare --cf-team-domain [^ ]* --cf-audience [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
+	systemctl daemon-reload
+	systemctl restart hangar-cloudflared 2>/dev/null && fail "cloudflared restarted in front of a unit in dev auth"
+	sleep 2
+	cf_journal "$since" | grep -q "refusing to start the tunnel: hangar-apiserver's unit would restart it without --auth-mode cloudflare" ||
+		fail "the guard did not refuse the loaded unit: $(cf_journal "$since" | tail -n 5)"
+	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of a unit in dev auth"
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "bootstrap did not put the unit back: $(cat "$work/cut.log")"
+	wait_cf_active || fail "cloudflared did not come back with the unit: $(cf_state)"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the guard"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the guard: $(grep FAIL "$work/cut-verify.log")"
+
+	step "rolling back: the tunnel stops without cloudflared.env, then the apiserver goes back to dev auth"
+	rm /etc/hangar/cloudflared.env
+	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: stop and disable hangar-cloudflared: /etc/hangar/cloudflared.env is gone$' "$work/cut.log" ||
+		fail "the tunnel was not stopped: $(cat "$work/cut.log")"
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared still runs"
+	systemctl is-enabled --quiet hangar-cloudflared && fail "cloudflared is still enabled"
+	auth_env dev
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
+	[ "$(list_nodes_status)" = 200 ] || fail "dev auth is not back"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the rollback"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the rollback: $(grep FAIL "$work/cut-verify.log")"
+	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared after the rollback"
+
+	step "started by hand without its env file in dev auth: verify fails, and the env file appearing does not bring it up"
+	sleep 1
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started without its env file"
+	sleep 1
+	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying"; fi
+	grep -q '^FAIL hangar-cloudflared down (activating/auto-restart): there is no /etc/hangar/cloudflared.env$' "$work/cut-verify.log" ||
+		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
+	put_tunnel_token 1
+	# Past two of its 5 s retries.
+	sleep 12
+	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver runs --auth-mode dev, not cloudflare' ||
+		fail "the guard did not refuse dev auth: $(cf_journal "$since" | tail -n 5)"
+	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of dev auth"
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared is active in front of dev auth"
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying in dev auth"; fi
+	grep -q '^FAIL hangar-cloudflared down while the apiserver is not in cloudflare auth$' "$work/cut-verify.log" ||
+		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"; then
+		fail "the cloudflared step went through in dev auth"
+	fi
+	grep -q '^apply: stop and disable hangar-cloudflared: the apiserver is not in cloudflare auth$' "$work/cut.log" ||
+		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
+	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
+	rm /etc/hangar/cloudflared.env
+
+	step "started by hand without its env file, and removed by the step without it"
+	systemctl start hangar-cloudflared 2>/dev/null || true
+	sleep 1
+	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
+	grep -q '^apply: stop and disable hangar-cloudflared: /etc/hangar/cloudflared.env is gone$' "$work/cut.log" ||
+		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
+	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the hand-started tunnel"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the hand-started tunnel"
+
+	step "dev auth with the tunnel up stops the tunnel before the apiserver changes"
+	auth_env cloudflare
+	put_tunnel_token 1
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>&1
+	systemctl is-active --quiet hangar-cloudflared || fail "cloudflared did not come back"
+	auth_env dev
+	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"; then
+		fail "a run went through with cloudflared.env in dev auth"
+	fi
+	local stop restart
+	stop=$(grep -n '^apply: stop and disable hangar-cloudflared: the auth mode is dev$' "$work/cut.log" | cut -d: -f1)
+	restart=$(grep -n '^apply: restart hangar-apiserver$' "$work/cut.log" | cut -d: -f1)
+	[ -n "$stop" ] && [ -n "$restart" ] && [ "$stop" -lt "$restart" ] ||
+		fail "cloudflared was not stopped before the apiserver went to dev: $(cat "$work/cut.log")"
+	grep -q 'never forwards to an apiserver in dev auth' "$work/cut.log" || fail "the run does not say why it refused"
+	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared runs in front of dev auth"
+	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with cloudflared.env in dev auth"; fi
+	rm /etc/hangar/cloudflared.env
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged once cloudflared.env is gone"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once cloudflared.env is gone"
 }
 
 test_refuses_tampered_release() {
@@ -455,6 +855,10 @@ test_refuses_non_swap_partition
 test_refuses_unknown_installer_keys
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
+test_admin_socket
+test_node_reconnects
+test_cloudflared_needs_cloudflare_auth
+test_cloudflare_cutover
 test_refuses_tampered_release
 test_refuses_half_applied_release
 test_refuses_without_local_env

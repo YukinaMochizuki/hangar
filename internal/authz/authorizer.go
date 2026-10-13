@@ -244,6 +244,9 @@ func (a *Authorizer) WaitFor(ctx context.Context, want int64) error {
 	}
 }
 
+// LocalRootRole is the role root on the host holds, through the admin socket.
+const LocalRootRole = "platform.root"
+
 // Allowed reports whether p holds the permission on the target.
 func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool {
 	switch p.Type {
@@ -251,6 +254,10 @@ func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool
 		return true
 	case auth.Node:
 		return slices.Contains([]Verb{Get, List, Watch, UpdateStatus}, verbOf(permission))
+	case auth.Local:
+		// Root on the host holds platform.root whatever the bindings say, so
+		// it can mend them.
+		return Roles[LocalRootRole].Grants(permission)
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()
