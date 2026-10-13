@@ -175,14 +175,20 @@ not who the header says it is.
    call with the smoke token's `HANGAR_CF_CLIENT_ID` and
    `HANGAR_CF_CLIENT_SECRET`.
 
-To roll back: first take the tunnel down (stop and disable the cloudflared
-service and remove `/etc/hangar/cloudflared.env`), then set
-`HANGAR_AUTH_MODE=dev` in `local.env` and re-run `deploy/host`. The host's
-side of each step is in `docs/runbook/host-bootstrap.md`; the order is the
-one above.
+To roll back: first take the tunnel down (remove
+`/etc/hangar/cloudflared.env` and re-run `deploy/host`, whose cloudflared
+step then stops and disables the service), then set `HANGAR_AUTH_MODE=dev`
+in `local.env` and re-run `deploy/host`. The host's side of each step is in
+`docs/runbook/host-bootstrap.md`; the order is the one above, and the host
+enforces it: cloudflared does not start, by any route, unless the apiserver
+runs in `cloudflare` mode.
 
 ## When something is off
 
+- **The tunnel is down after the apiserver was stopped and started by
+  hand.** The tunnel's unit stops with the apiserver and does not start
+  with it again; on the host, `sudo systemctl start hangar-cloudflared` or
+  re-run `deploy/host` (`docs/runbook/host-bootstrap.md`).
 - **A refusal names an object you know is ours.** `state.json` was lost or
   is from another directory. Restore it. Failing that, write it by hand with
   the IDs from the dashboard (fields `version: 1`, `account_id`, `zone_id`,

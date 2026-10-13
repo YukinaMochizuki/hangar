@@ -32,6 +32,9 @@ func (a *app) configCmd() *cobra.Command {
 			if c.Endpoint == "" {
 				return usageErr("--endpoint is required")
 			}
+			if err := c.check(); err != nil {
+				return err
+			}
 			cfg, err := loadConfig(a.configPath())
 			if err != nil {
 				return err
@@ -44,9 +47,9 @@ func (a *app) configCmd() *cobra.Command {
 			return cfg.save(a.configPath())
 		},
 	}
-	set.Flags().StringVar(&c.Endpoint, "endpoint", "", "API URL, such as https://hangar.example.com")
+	set.Flags().StringVar(&c.Endpoint, "endpoint", "", "API URL, such as https://hangar.example.com, or unix:///run/hangar/admin.sock for root on the host")
 	set.Flags().StringVar(&c.Project, "project", "", "default project")
-	set.Flags().StringVar(&c.Auth, "auth", "", "cloudflare (default) or dev")
+	set.Flags().StringVar(&c.Auth, "auth", "", "cloudflare (default), dev, or local (the default for a unix:// endpoint)")
 	set.Flags().StringVar(&c.User, "user", "", "email to send in dev auth")
 	set.Flags().BoolVar(&use, "use", false, "make it the current context")
 
@@ -111,6 +114,9 @@ func (a *app) loginCmd() *cobra.Command {
 			c, err := a.current()
 			if err != nil {
 				return err
+			}
+			if c.local() {
+				return usageErr("the context uses local auth, which needs no login")
 			}
 			out, err := a.runCloudflared(cmd.Context(), "access", "login", c.Endpoint)
 			_, _ = fmt.Fprint(cmd.OutOrStdout(), out)

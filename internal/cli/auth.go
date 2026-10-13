@@ -63,6 +63,14 @@ const (
 )
 
 func (a *app) credentials(c *Context) (credentials, error) {
+	if err := c.check(); err != nil {
+		return credentials{}, err
+	}
+	// The admin socket knows its caller from the kernel; it has no use for a
+	// credential, and must not be handed one meant for Cloudflare.
+	if c.local() {
+		return credentials{header: func(context.Context) (map[string]string, error) { return nil, nil }}, nil
+	}
 	if id, secret := a.env(envClientID), a.env(envClientSecret); id != "" || secret != "" {
 		if id == "" || secret == "" {
 			return credentials{}, usageErr("set both %s and %s, or neither", envClientID, envClientSecret)
@@ -89,7 +97,7 @@ func (a *app) credentials(c *Context) (credentials, error) {
 			return map[string]string{"cf-access-token": tok}, nil
 		}}, nil
 	}
-	return credentials{}, usageErr("unknown auth %q; want cloudflare or dev", c.Auth)
+	return credentials{}, usageErr("unknown auth %q; want cloudflare, dev or local", c.Auth)
 }
 
 // accessToken fetches a Cloudflare Access token through cloudflared and

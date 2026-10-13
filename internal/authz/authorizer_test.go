@@ -92,6 +92,8 @@ func TestFreshSeesEarlierWrites(t *testing.T) {
 	}
 }
 
+var localRoot = auth.Principal{Type: auth.Local, ID: "root@n1"}
+
 func TestCoverage(t *testing.T) {
 	st, a := setup(t, 0)
 	put(t, st, registry.Project, "web", &tenancyv1alpha1.Project{Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "acme"}})
@@ -126,6 +128,11 @@ func TestCoverage(t *testing.T) {
 		{"node reads", auth.Principal{Type: auth.Node, ID: "local"}, get, authz.Target{Project: "web"}, true},
 		{"node writes status", auth.Principal{Type: auth.Node, ID: "local"}, status, authz.Target{Project: "web"}, true},
 		{"node writes spec", auth.Principal{Type: auth.Node, ID: "local"}, authz.Permission(registry.Container, authz.Apply), authz.Target{Project: "web"}, false},
+		{"root on the host, unbound, binds", localRoot, authz.Permission(registry.RoleBinding, authz.Apply), authz.Target{}, true},
+		{"root on the host, other tenant's project", localRoot, get, authz.Target{Project: "other"}, true},
+		{"root on the host execs", localRoot, authz.ContainerExec, authz.Target{Project: "web"}, true},
+		{"root on the host writes status", localRoot, status, authz.Target{Project: "web"}, false},
+		{"a user named as root on the host", auth.Principal{Type: auth.User, ID: localRoot.ID}, get, authz.Target{Project: "web"}, false},
 	}
 	for _, tt := range tests {
 		if got := a.Allowed(tt.p, tt.perm, tt.t); got != tt.want {

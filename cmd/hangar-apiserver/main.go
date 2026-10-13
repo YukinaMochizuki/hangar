@@ -1,6 +1,7 @@
-// Command hangar-apiserver serves the Hangar API on two listeners: a TCP
-// address behind Cloudflare Access for people and agents, and a unix socket
-// for the node agent. See docs/decisions/authentication.md.
+// Command hangar-apiserver serves the Hangar API on three listeners: a TCP
+// address behind Cloudflare Access for people and agents, a unix socket for
+// the node agent, and a unix socket for root on the host. See
+// docs/decisions/authentication.md.
 package main
 
 import (
@@ -13,7 +14,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -30,6 +30,7 @@ type flags struct {
 	db             string
 	listen         string
 	socket         string
+	adminSocket    string
 	nodeUID        uint
 	nodeName       string
 	authMode       string
@@ -44,6 +45,7 @@ func main() {
 	flag.StringVar(&f.db, "db", "hangar.db", "path of the SQLite database")
 	flag.StringVar(&f.listen, "listen", "127.0.0.1:8080", "address for the public API (behind cloudflared)")
 	flag.StringVar(&f.socket, "socket", "", "unix socket for the node agent; empty disables it")
+	flag.StringVar(&f.adminSocket, "admin-socket", "", "unix socket for root on this host, as platform.root; empty disables it")
 	flag.UintVar(&f.nodeUID, "node-uid", 0, "uid accepted as the node agent on the socket")
 	flag.StringVar(&f.nodeName, "node-name", "", "name of the Node the agent on the socket runs; required with --socket")
 	flag.StringVar(&f.authMode, "auth-mode", "cloudflare", "how public callers authenticate: cloudflare or dev")
@@ -63,6 +65,15 @@ func main() {
 }
 
 func run(ctx context.Context, f flags, log *slog.Logger) error {
+	socks, err := inheritSockets()
+	if err != nil {
+		return err
+	}
+	defer socks.close()
+	return serveAll(ctx, f, log, socks)
+}
+
+func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) error {
 	public, err := publicChain(ctx, f)
 	if err != nil {
 		return err
@@ -85,35 +96,84 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	if f.nodeName != "" {
 		nodes = []string{f.nodeName}
 	}
-	srv := apiserver.New(apiserver.Config{
-		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes,
-	})
-	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return srv.Run(ctx) })
+	host := f.nodeName
+	if host == "" {
+		if host, err = os.Hostname(); err != nil {
+			return err
+		}
+	}
 
+	var sock, admin net.Listener
+	if f.socket != "" {
+		if sock, err = socks.listen(nodeSocketName, f.socket, 0o660); err != nil {
+			return err
+		}
+		defer func() { _ = sock.Close() }()
+	}
+	if f.adminSocket != "" {
+		if admin, err = socks.listen(adminSocketName, f.adminSocket, 0o600); err != nil {
+			return err
+		}
+		defer func() { _ = admin.Close() }()
+	}
+	if err := socks.unused(); err != nil {
+		return err
+	}
 	// Keepalive and a user timeout drop a dead client under an exec whose
 	// data is backed up, which no ping can tell (internal/execws).
 	ln, err := (&net.ListenConfig{KeepAliveConfig: execws.KeepAlive, Control: execws.Control}).Listen(ctx, "tcp", f.listen)
 	if err != nil {
 		return err
 	}
+
+	srv := apiserver.New(apiserver.Config{
+		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes,
+	})
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return srv.Run(ctx) })
 	g.Go(func() error {
 		log.Info("serving the public API", "address", ln.Addr().String(), "auth", f.authMode)
 		return serve(ctx, &http.Server{Handler: srv.Handler(public), Protocols: protocols()}, ln)
 	})
-
-	if f.socket != "" {
-		sock, err := listenSocket(f.socket)
-		if err != nil {
-			return err
-		}
+	if sock != nil {
 		node := auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(f.nodeUID)}, NodeName: f.nodeName}}
 		g.Go(func() error {
 			log.Info("serving the node socket", "path", f.socket)
 			return serve(ctx, &http.Server{Handler: srv.Handler(node), Protocols: protocols(), ConnContext: auth.ConnContext}, sock)
 		})
 	}
+	if admin != nil {
+		// Nothing but LocalRoot, which reads only AdminConnContext's record:
+		// no header can say who is calling here.
+		root := auth.Chain{auth.LocalRoot{Host: host, UID: adminUID}}
+		g.Go(func() error {
+			log.Info("serving the admin socket", "path", f.adminSocket)
+			h := auditAdmin(log, root, srv.Handler(root))
+			return serve(ctx, &http.Server{Handler: h, Protocols: protocols(), ConnContext: auth.AdminConnContext}, admin)
+		})
+	}
 	return g.Wait()
+}
+
+// adminUID is the uid the admin socket accepts: root, except in tests.
+var adminUID uint32
+
+// auditAdmin logs every request on the admin socket, accepted or not, with
+// the process that made it: what root does there bypasses every binding.
+func auditAdmin(log *slog.Logger, chain auth.Chain, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attrs := []any{"method", r.Method, "path", r.URL.Path}
+		if cred, ok := auth.AdminPeer(r.Context()); ok {
+			attrs = append(attrs, "uid", cred.Uid, "pid", cred.Pid)
+		}
+		if ctx, err := chain.Authenticate(r.Context(), r.Header); err != nil {
+			log.Warn("admin socket request refused", append(attrs, "error", err.Error())...)
+		} else {
+			p, _ := auth.FromContext(ctx)
+			log.Info("admin socket request", append(attrs, "principal", p.String())...)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func publicChain(ctx context.Context, f flags) (auth.Chain, error) {
@@ -154,24 +214,6 @@ func protocols() *http.Protocols {
 	p.SetHTTP1(true)
 	p.SetUnencryptedHTTP2(true)
 	return p
-}
-
-func listenSocket(path string) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
-	ln, err := net.Listen("unix", path)
-	if err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(path, 0o660); err != nil {
-		_ = ln.Close()
-		return nil, err
-	}
-	return ln, nil
 }
 
 func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {

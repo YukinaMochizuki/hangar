@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -22,10 +23,40 @@ type Context struct {
 	Endpoint string `json:"endpoint"`
 	// Project is the default for project-scoped kinds.
 	Project string `json:"project,omitempty"`
-	// Auth is cloudflare (the default) or dev.
+	// Auth is cloudflare (the default), dev, or local: root on the host,
+	// through a unix:// endpoint, the only auth such an endpoint takes.
 	Auth string `json:"auth,omitempty"`
 	// User is the email dev auth sends.
 	User string `json:"user,omitempty"`
+}
+
+// unixScheme starts an endpoint that is a unix socket on this host, such as
+// unix:///run/hangar/admin.sock.
+const unixScheme = "unix://"
+
+// socketPath returns the socket a unix:// endpoint names.
+func (c *Context) socketPath() (string, bool) {
+	return strings.CutPrefix(c.Endpoint, unixScheme)
+}
+
+// local reports whether the context reaches the API as root on the host.
+func (c *Context) local() bool {
+	_, unix := c.socketPath()
+	return unix || c.Auth == "local"
+}
+
+// check refuses a context whose endpoint and auth do not go together.
+func (c *Context) check() error {
+	path, unix := c.socketPath()
+	switch {
+	case unix && !filepath.IsAbs(path):
+		return usageErr("endpoint %q: a unix socket needs an absolute path, such as unix:///run/hangar/admin.sock", c.Endpoint)
+	case unix && c.Auth != "" && c.Auth != "local":
+		return usageErr("endpoint %q is a unix socket, which takes local auth, not %s", c.Endpoint, c.Auth)
+	case !unix && c.Auth == "local":
+		return usageErr("local auth needs a unix:// endpoint, not %q", c.Endpoint)
+	}
+	return nil
 }
 
 func configPath(env func(string) string) string {
