@@ -158,7 +158,7 @@ func TestEachNetworkHasItsResolver(t *testing.T) {
 	w.answers("default", "10.0.0.1", "api."+zone, dns.RcodeSuccess, api)
 	w.eventually("the old namespace's sockets closed", func() (bool, string) {
 		l := w.host.Snapshot().Listening[w.networkUID("default")]
-		return len(l) == 3, fmt.Sprintf("%v", l) // the resolver's two, DHCP's one
+		return len(l) == 4, fmt.Sprintf("%v", l) // the resolver's two, DHCP's and the metadata service's
 	})
 
 	// An agent restarting leaves nothing listening, then serves every

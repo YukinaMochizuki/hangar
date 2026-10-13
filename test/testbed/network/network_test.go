@@ -345,6 +345,9 @@ func TestDrift(t *testing.T) {
 		{"address deleted", [][]string{{"ip", "-n", ns, "addr", "flush", "dev", "hn-up"}}, true},
 		{"root nft table deleted", [][]string{{"nft", "delete", "table", "ip", "hangar"}}, true},
 		{"namespace nft table deleted", [][]string{{"ip", "netns", "exec", ns, "nft", "delete", "table", "ip", "hangar"}}, true},
+		{"binding table deleted", [][]string{{"ip", "netns", "exec", ns, "nft", "delete", "table", "bridge", "hangar"}}, false},
+		{"binding rules flushed", [][]string{{"ip", "netns", "exec", ns, "nft", "flush", "chain", "bridge", "hangar", "prerouting"}}, false},
+		{"metadata address deleted", [][]string{{"ip", "-n", ns, "addr", "del", "169.254.169.254/32", "dev", "hn-br"}}, false},
 		{"root nft rule deleted", [][]string{{"nft", "flush", "chain", "ip", "hangar", "postrouting"}}, true},
 		{"namespace end of the veth down", [][]string{{"ip", "-n", ns, "link", "set", "hn-up", "down"}}, true},
 		{"root end of the veth down and up", [][]string{{"ip", "link", "set", rootVeth(t), "down"}, {"ip", "link", "set", rootVeth(t), "up"}}, false},
@@ -367,6 +370,13 @@ func TestDrift(t *testing.T) {
 			ensure(t, d, nets, nics...)
 			if err := vethMACs(rootVeth(t), netA); err != nil {
 				t.Errorf("after ensuring again: %v", err)
+			}
+			if rules := run(t, "ip", "netns", "exec", ns, "nft", "list", "table", "bridge", "hangar"); !strings.Contains(rules, a1.nic.Device) ||
+				!strings.Contains(rules, a2.nic.Device) {
+				t.Errorf("after ensuring again, the taps are not bound:\n%s", rules)
+			}
+			if addrs := run(t, "ip", "-n", ns, "-4", "addr", "show", "dev", "hn-br"); !strings.Contains(addrs, "169.254.169.254/32") {
+				t.Errorf("after ensuring again, the bridge lacks the metadata address:\n%s", addrs)
 			}
 			if err := works(); err != nil {
 				t.Errorf("after ensuring again: %v", err)

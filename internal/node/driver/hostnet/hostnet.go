@@ -1,9 +1,10 @@
 // Package hostnet is the real network driver: each Network is a namespace
 // on the host, joined to the root namespace by a veth pair on its transit
-// /31, with a bridge holding its gateway, a persistent tap per machine
-// interface, and IPv4 SNAT in two layers. It keeps no state: what it made
-// is read back from links named with its Prefix, their aliases, and its
-// nft table, and it changes nothing else. Host settings it relies on, such
+// /31, with a bridge holding its gateway and the metadata address, a
+// persistent tap per machine interface bound to its MAC and address, and
+// IPv4 SNAT in two layers. It keeps no state: what it made is read back
+// from links named with its Prefix, their aliases, and its nft tables, and
+// it changes nothing else. Host settings it relies on, such
 // as IPv4 forwarding, are deploy/host's, not the driver's. See
 // docs/decisions/networking.md.
 package hostnet
@@ -130,8 +131,8 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 		return err
 	}
 	defer h.Close()
-	if err := inNS(ns, func() error { return ensureSysctl("net.ipv4.ip_forward", "1") }); err != nil {
-		return fmt.Errorf("network %s: forwarding: %w", n.UID, err)
+	if err := inNS(ns, func() error { return ensureSysctls(nsSysctls) }); err != nil {
+		return fmt.Errorf("network %s: sysctls: %w", n.UID, err)
 	}
 	if lo, err := h.LinkByName("lo"); err != nil {
 		return err
@@ -157,17 +158,20 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err != nil {
 		return fmt.Errorf("network %s: bridge: %w", n.UID, err)
 	}
-	if err := ensureAddr(h, br, netip.PrefixFrom(n.CIDR.Addr().Next(), n.CIDR.Bits())); err != nil {
+	if err := ensureAddr(h, br, netip.PrefixFrom(n.CIDR.Addr().Next(), n.CIDR.Bits()), netip.PrefixFrom(driver.MetadataAddr, 32)); err != nil {
 		return fmt.Errorf("network %s: gateway: %w", n.UID, err)
 	}
 	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
 	}
-	if err := ensureTable(conn, nsChains(n.CIDR, nsTransit)); err != nil {
+	if err := ensureTable(conn, nftables.TableFamilyIPv4, nsChains(n.CIDR, nsTransit)); err != nil {
 		return fmt.Errorf("network %s: %w", n.UID, err)
 	}
-	return sweepTaps(h)
+	if err := sweepTaps(h); err != nil {
+		return err
+	}
+	return ensureBinding(ns, h)
 }
 
 // ensureRoot makes the root namespace's table, and removes veths the driver
@@ -177,7 +181,7 @@ func (d *Driver) ensureRoot() error {
 	if err != nil {
 		return err
 	}
-	if err := ensureTable(conn, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4)); err != nil {
+	if err := ensureTable(conn, nftables.TableFamilyIPv4, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4)); err != nil {
 		return err
 	}
 	links, err := d.root.LinkList()
@@ -479,7 +483,10 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 			if err != nil {
 				return err
 			}
-			return deleteTable(conn)
+			if err := deleteTable(conn, nftables.TableFamilyBridge); err != nil {
+				return err
+			}
+			return deleteTable(conn, nftables.TableFamilyIPv4)
 		}()
 		if err != nil {
 			return fmt.Errorf("network %s: %w", networkUID, err)
@@ -511,7 +518,7 @@ func (d *Driver) deleteRootIfUnused() error {
 	if err != nil {
 		return err
 	}
-	return deleteTable(conn)
+	return deleteTable(conn, nftables.TableFamilyIPv4)
 }
 
 // tap is a tap with the tap prefix in a network's namespace.
@@ -658,6 +665,11 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 		if err := deleteTap(t); err != nil {
 			return driver.Interface{}, err
 		}
+		if t.network != i.NetworkUID {
+			if err := rebind(t.network); err != nil {
+				return driver.Interface{}, err
+			}
+		}
 	}
 	if link == nil {
 		if link, err = makeTap(ns, h, i, all); err != nil {
@@ -668,6 +680,10 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 		if err := h.LinkSetAlias(link, alias); err != nil {
 			return driver.Interface{}, err
 		}
+	}
+	// Bound before it joins the bridge, so it never sends as another.
+	if err := ensureBinding(ns, h); err != nil {
+		return driver.Interface{}, err
 	}
 	if link.Attrs().MasterIndex != br.Attrs().Index {
 		if err := h.LinkSetMasterByIndex(link, br.Attrs().Index); err != nil {
@@ -788,7 +804,32 @@ func (d *Driver) DeleteInterfaces(_ context.Context, machineUID string) error {
 			return err
 		}
 	}
+	// What bound them goes too.
+	done := map[string]bool{}
+	for _, t := range mine {
+		if !done[t.network] {
+			done[t.network] = true
+			if err := rebind(t.network); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// rebind binds the taps of a network's namespace as they are now.
+func rebind(uid string) error {
+	ns, ok, err := openNS(uid)
+	if err != nil || !ok {
+		return err
+	}
+	defer func() { _ = ns.Close() }()
+	h, err := netlink.NewHandleAt(ns)
+	if err != nil {
+		return err
+	}
+	defer h.Close()
+	return ensureBinding(ns, h)
 }
 
 // linkByName returns the link named name, or nil if there is none.
@@ -812,14 +853,19 @@ func ensureUp(h *netlink.Handle, l netlink.Link) error {
 	return h.LinkSetUp(l)
 }
 
-// addrOf returns the first IPv4 address of a link.
+// addrOf returns the first IPv4 address of a link other than the metadata
+// service's, which a bridge holds beside its gateway.
 func addrOf(h *netlink.Handle, l netlink.Link) (netip.Prefix, bool, error) {
 	addrs, err := h.AddrList(l, unix.AF_INET)
-	if err != nil || len(addrs) == 0 {
+	if err != nil {
 		return netip.Prefix{}, false, err
 	}
-	p, ok := prefixOf(addrs[0].IPNet)
-	return p, ok, nil
+	for _, a := range addrs {
+		if p, ok := prefixOf(a.IPNet); ok && p.Addr() != driver.MetadataAddr {
+			return p, true, nil
+		}
+	}
+	return netip.Prefix{}, false, nil
 }
 
 func prefixOf(n *net.IPNet) (netip.Prefix, bool) {
@@ -835,27 +881,30 @@ func ipNet(p netip.Prefix) *net.IPNet {
 	return &net.IPNet{IP: p.Addr().AsSlice(), Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen())}
 }
 
-// ensureAddr makes want the link's only IPv4 address, with its route to
-// the rest of its prefix, which flushing routes takes away and nothing
-// gives back.
-func ensureAddr(h *netlink.Handle, l netlink.Link, want netip.Prefix) error {
+// ensureAddr makes want and more the link's only IPv4 addresses, with
+// want's route to the rest of its prefix, which flushing routes takes away
+// and nothing gives back.
+func ensureAddr(h *netlink.Handle, l netlink.Link, want netip.Prefix, more ...netip.Prefix) error {
 	addrs, err := h.AddrList(l, unix.AF_INET)
 	if err != nil {
 		return err
 	}
-	found := false
+	all := append([]netip.Prefix{want}, more...)
+	found := map[netip.Prefix]bool{}
 	for _, a := range addrs {
-		if p, _ := prefixOf(a.IPNet); p == want {
-			found = true
+		if p, _ := prefixOf(a.IPNet); slices.Contains(all, p) {
+			found[p] = true
 			continue
 		}
 		if err := h.AddrDel(l, &a); err != nil {
 			return err
 		}
 	}
-	if !found {
-		if err := h.AddrAdd(l, &netlink.Addr{IPNet: ipNet(want)}); err != nil {
-			return err
+	for _, p := range all {
+		if !found[p] {
+			if err := h.AddrAdd(l, &netlink.Addr{IPNet: ipNet(p)}); err != nil {
+				return err
+			}
 		}
 	}
 	filter := &netlink.Route{LinkIndex: l.Attrs().Index, Dst: ipNet(want.Masked()), Table: unix.RT_TABLE_MAIN}
