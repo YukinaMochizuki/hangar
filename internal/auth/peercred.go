@@ -7,9 +7,14 @@ import (
 	"net"
 	"net/http"
 	"slices"
-
-	"golang.org/x/sys/unix"
 )
+
+// Peer is what the kernel reports for the process at the other end of a
+// unix socket connection.
+type Peer struct {
+	UID uint32
+	PID int32
+}
 
 // Each listener records its peers' credentials under its own key, so an
 // authenticator only ever sees the credentials of the listener it was meant
@@ -34,8 +39,8 @@ func AdminConnContext(ctx context.Context, c net.Conn) context.Context {
 
 // AdminPeer returns the credentials AdminConnContext recorded for the
 // request's connection.
-func AdminPeer(ctx context.Context) (*unix.Ucred, bool) {
-	cred, ok := ctx.Value(adminPeerKey{}).(*unix.Ucred)
+func AdminPeer(ctx context.Context) (*Peer, bool) {
+	cred, ok := ctx.Value(adminPeerKey{}).(*Peer)
 	return cred, ok
 }
 
@@ -45,27 +50,6 @@ func withPeer(ctx context.Context, c net.Conn, key any) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, key, cred)
-}
-
-// PeerOf returns the credentials the kernel reports for the process at the
-// other end of a unix socket connection.
-func PeerOf(c net.Conn) (*unix.Ucred, error) {
-	uc, ok := c.(*net.UnixConn)
-	if !ok {
-		return nil, errors.New("not a unix socket connection")
-	}
-	raw, err := uc.SyscallConn()
-	if err != nil {
-		return nil, err
-	}
-	var cred *unix.Ucred
-	var credErr error
-	if err := raw.Control(func(fd uintptr) {
-		cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
-	}); err != nil {
-		return nil, err
-	}
-	return cred, credErr
 }
 
 // PeerCred authenticates processes on the node's unix socket by the uid the
@@ -79,11 +63,11 @@ type PeerCred struct {
 }
 
 func (p PeerCred) Authenticate(ctx context.Context, _ http.Header) (Principal, bool, error) {
-	cred, ok := ctx.Value(nodePeerKey{}).(*unix.Ucred)
+	cred, ok := ctx.Value(nodePeerKey{}).(*Peer)
 	if !ok {
 		return Principal{}, false, nil
 	}
-	if !slices.Contains(p.NodeUIDs, cred.Uid) {
+	if !slices.Contains(p.NodeUIDs, cred.UID) {
 		return Principal{}, false, errors.New("peer uid is not a node agent")
 	}
 	if p.NodeName == "" {
@@ -108,8 +92,8 @@ func (l LocalRoot) Authenticate(ctx context.Context, _ http.Header) (Principal, 
 	if !ok {
 		return Principal{}, false, nil
 	}
-	if cred.Uid != l.UID {
-		return Principal{}, false, fmt.Errorf("peer uid %d is not root; the admin socket is root's only", cred.Uid)
+	if cred.UID != l.UID {
+		return Principal{}, false, fmt.Errorf("peer uid %d is not root; the admin socket is root's only", cred.UID)
 	}
 	if l.Host == "" {
 		return Principal{}, false, errors.New("the admin socket has no host name configured")
