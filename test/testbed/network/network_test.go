@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/hostnet"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
 
 // newDriver returns a driver on a host with nothing of the driver's on it,
@@ -103,7 +104,31 @@ func ensure(t *testing.T, d *hostnet.Driver, nets []driver.NetworkSpec, nics ...
 		}
 		made = append(made, m)
 	}
+	openFirewalls(t, d, nets)
 	return made
+}
+
+// openFirewalls lets every interface of the networks receive and send
+// anything, so these tests see the networks' own behaviour: the driver
+// lets nothing through a tap it has no policy for.
+func openFirewalls(t *testing.T, d *hostnet.Driver, nets []driver.NetworkSpec) {
+	t.Helper()
+	all, err := d.Interfaces(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	open := secgroup.Policy{Ingress: []secgroup.Rule{{Protocol: secgroup.All, Peers: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}}, EgressAll: true}
+	for _, n := range nets {
+		var policies []driver.InterfacePolicy
+		for _, i := range all {
+			if i.NetworkUID == n.UID {
+				policies = append(policies, driver.InterfacePolicy{MachineUID: i.MachineUID, Name: i.Name, Policy: open})
+			}
+		}
+		if err := d.EnsureFirewall(t.Context(), n.UID, policies); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // TestTraffic runs stand-in guests on two networks, two each, and one on a
@@ -348,6 +373,12 @@ func TestDrift(t *testing.T) {
 		{"binding table deleted", [][]string{{"ip", "netns", "exec", ns, "nft", "delete", "table", "bridge", "hangar"}}, false},
 		{"binding rules flushed", [][]string{{"ip", "netns", "exec", ns, "nft", "flush", "chain", "bridge", "hangar", "prerouting"}}, false},
 		{"metadata address deleted", [][]string{{"ip", "-n", ns, "addr", "del", "169.254.169.254/32", "dev", "hn-br"}}, false},
+		// Without its firewall a tap is open; made again, the firewall is
+		// closed until its policies are ensured again, as ensure does.
+		{"firewall table deleted", [][]string{{"ip", "netns", "exec", ns, "nft", "delete", "table", "bridge", "hangar_sg"}}, false},
+		// Flushed, a firewall lets everything through; the agent's ensure
+		// on the signal writes it whole again.
+		{"firewall rules flushed", [][]string{{"ip", "netns", "exec", ns, "nft", "flush", "chain", "bridge", "hangar_sg", "prerouting"}}, false},
 		{"root nft rule deleted", [][]string{{"nft", "flush", "chain", "ip", "hangar", "postrouting"}}, true},
 		{"namespace end of the veth down", [][]string{{"ip", "-n", ns, "link", "set", "hn-up", "down"}}, true},
 		{"root end of the veth down and up", [][]string{{"ip", "link", "set", rootVeth(t), "down"}, {"ip", "link", "set", rootVeth(t), "up"}}, false},
@@ -374,6 +405,10 @@ func TestDrift(t *testing.T) {
 			if rules := run(t, "ip", "netns", "exec", ns, "nft", "list", "table", "bridge", "hangar"); !strings.Contains(rules, a1.nic.Device) ||
 				!strings.Contains(rules, a2.nic.Device) {
 				t.Errorf("after ensuring again, the taps are not bound:\n%s", rules)
+			}
+			if rules := run(t, "ip", "netns", "exec", ns, "nft", "list", "chain", "bridge", "hangar_sg", "prerouting"); !strings.Contains(rules, "nothing else") ||
+				!strings.Contains(rules, a1.nic.Device) {
+				t.Errorf("after ensuring again, the firewall is not whole:\n%s", rules)
 			}
 			if addrs := run(t, "ip", "-n", ns, "-4", "addr", "show", "dev", "hn-br"); !strings.Contains(addrs, "169.254.169.254/32") {
 				t.Errorf("after ensuring again, the bridge lacks the metadata address:\n%s", addrs)

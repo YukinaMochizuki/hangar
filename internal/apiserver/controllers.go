@@ -21,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -383,14 +384,19 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 }
 
 // machineInterfaces are the interfaces asked for, named by position, or one
-// on the default network if none is.
+// on the default network if none is, each in the groups it names or, naming
+// none, in the network's implicit default group.
 func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alpha1.MachineInterface {
 	if len(nics) == 0 {
-		return []*computev1alpha1.MachineInterface{{Name: "eth0", Network: DefaultNetwork}}
+		nics = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork}}
 	}
 	out := make([]*computev1alpha1.MachineInterface, len(nics))
 	for i, nic := range nics {
-		out[i] = &computev1alpha1.MachineInterface{Name: fmt.Sprintf("eth%d", i), Network: nic.GetNetwork()}
+		groups := slices.Clone(nic.GetSecurityGroups())
+		if len(groups) == 0 {
+			groups = []string{secgroup.Default}
+		}
+		out[i] = &computev1alpha1.MachineInterface{Name: fmt.Sprintf("eth%d", i), Network: nic.GetNetwork(), SecurityGroups: groups}
 	}
 	return out
 }

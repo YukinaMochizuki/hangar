@@ -89,6 +89,16 @@ var (
 		Message:    (*v1alpha12.Network)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkService",
 	}
+	SecurityGroup = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "SecurityGroup",
+		Plural:     "securitygroups",
+		ShortNames: []string{"sg"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.SecurityGroup)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.SecurityGroupService",
+	}
 	Project = Resource{
 		Group:      "tenancy",
 		Version:    "v1alpha1",
@@ -118,6 +128,7 @@ var All = []Resource{
 	Node,
 	RoleBinding,
 	Network,
+	SecurityGroup,
 	Project,
 	Tenant,
 }

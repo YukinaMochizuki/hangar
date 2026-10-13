@@ -1,0 +1,160 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// SecurityGroup is a set of allow rules for the interfaces on one network
+// that name it, as in AWS: stateful, ingress denied unless a rule allows it,
+// egress open unless the group has egress rules. Every network also has an
+// implicit group "default", which is no object: it lets in its own members.
+// See docs/decisions/networking.md.
+message SecurityGroup {
+  option (hangar.meta.v1.resource) = {
+    kind: "SecurityGroup"
+    plural: "securitygroups"
+    short_names: ["sg"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  SecurityGroupSpec spec = 4;
+  SecurityGroupStatus status = 5;
+}
+
+// SecurityGroupSpec is the group's rules.
+message SecurityGroupSpec {
+  // Names a network in the group's project; only its interfaces join the
+  // group.
+  string network = 1 [(hangar.meta.v1.field).immutable = true];
+  // What may come into a member.
+  repeated IngressRule ingress = 2;
+  // What a member may send. Empty lets everything out; once one group of an
+  // interface has egress rules, the interface sends only what some rule of
+  // its groups allows.
+  repeated EgressRule egress = 3;
+}
+
+// IngressRule lets in what comes from a peer.
+message IngressRule {
+  SecurityGroupProtocol protocol = 1;
+  // Ports, such as "443", "8000-8080" or "80,443"; empty is every port.
+  // Only TCP and UDP take ports.
+  string ports = 2;
+  SecurityGroupPeer from = 3;
+}
+
+// EgressRule lets out what goes to a peer.
+message EgressRule {
+  SecurityGroupProtocol protocol = 1;
+  // As IngressRule.ports.
+  string ports = 2;
+  SecurityGroupPeer to = 3;
+}
+
+// SecurityGroupPeer is the other end of a rule.
+message SecurityGroupPeer {
+  oneof peer {
+    // An IPv4 range, such as "0.0.0.0/0" or "10.0.0.0/24".
+    string cidr = 1;
+    // The members of a group of the same network, "default" included.
+    string group = 2;
+  }
+}
+
+// SecurityGroupProtocol is what a rule matches.
+enum SecurityGroupProtocol {
+  // Rejected.
+  SECURITY_GROUP_PROTOCOL_UNSPECIFIED = 0;
+  SECURITY_GROUP_PROTOCOL_ALL = 1;
+  SECURITY_GROUP_PROTOCOL_TCP = 2;
+  SECURITY_GROUP_PROTOCOL_UDP = 3;
+  SECURITY_GROUP_PROTOCOL_ICMP = 4;
+}
+
+// SecurityGroupStatus is the envelope's status. Nothing writes it: a
+// group's rules take effect on the nodes, which report through each
+// Machine's status, not here.
+message SecurityGroupStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// SecurityGroupService manages security groups.
+service SecurityGroupService {
+  rpc GetSecurityGroup(GetSecurityGroupRequest) returns (GetSecurityGroupResponse);
+  rpc ListSecurityGroups(ListSecurityGroupsRequest) returns (ListSecurityGroupsResponse);
+  rpc WatchSecurityGroups(WatchSecurityGroupsRequest) returns (stream WatchSecurityGroupsResponse);
+  rpc ApplySecurityGroup(ApplySecurityGroupRequest) returns (ApplySecurityGroupResponse);
+  rpc DeleteSecurityGroup(DeleteSecurityGroupRequest) returns (DeleteSecurityGroupResponse);
+  rpc UpdateSecurityGroupStatus(UpdateSecurityGroupStatusRequest) returns (UpdateSecurityGroupStatusResponse);
+}
+
+message GetSecurityGroupRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetSecurityGroupResponse {
+  SecurityGroup security_group = 1;
+}
+
+message ListSecurityGroupsRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListSecurityGroupsResponse {
+  repeated SecurityGroup items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchSecurityGroupsRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchSecurityGroupsResponse {
+  hangar.meta.v1.EventType type = 1;
+  SecurityGroup security_group = 2;
+  int64 revision = 3;
+}
+
+message ApplySecurityGroupRequest {
+  SecurityGroup security_group = 1;
+}
+
+message ApplySecurityGroupResponse {
+  SecurityGroup security_group = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteSecurityGroupRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteSecurityGroupResponse {
+  SecurityGroup security_group = 1;
+}
+
+message UpdateSecurityGroupStatusRequest {
+  string project = 1;
+  string name = 2;
+  SecurityGroupStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateSecurityGroupStatusResponse {
+  SecurityGroup security_group = 1;
+}

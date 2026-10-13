@@ -22,6 +22,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
 
 // Host is a simulated host. The zero value is not usable; call New.
@@ -56,6 +57,12 @@ type Host struct {
 	instances     map[string]string
 	instanceCount int
 	sockets       []*socket
+	// firewalls are the policies ensured, by network uid, then machine uid
+	// and interface name.
+	firewalls map[string]map[string]secgroup.Policy
+	// firewallLimit, if not 0, bounds a firewall in place of
+	// driver.MaxFirewallRules.
+	firewallLimit int
 
 	vms        map[string]*vm
 	logs       map[string]*consoleLog // console logs kept, by machine uid
@@ -96,7 +103,8 @@ func New() *Host {
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
-		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		firewalls: map[string]map[string]secgroup.Policy{},
+		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
@@ -354,6 +362,7 @@ func (h *Host) LoseNetwork(networkUID string) {
 func (h *Host) removeNetwork(networkUID string) {
 	delete(h.networks, networkUID)
 	delete(h.instances, networkUID)
+	delete(h.firewalls, networkUID)
 	for uid, ifs := range h.interfaces {
 		for name, i := range ifs {
 			if i.NetworkUID != networkUID {

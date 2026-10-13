@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -12,14 +13,17 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/dhcp"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 	"github.com/YukinaMochizuki/hangar/internal/node/netsvc"
 	"github.com/YukinaMochizuki/hangar/internal/node/resolver"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -98,6 +102,7 @@ func (a *Agent) networkController() *controller.Controller {
 		Watches: []controller.Watch{
 			{Kind: registry.Network.Kind, Map: controller.Self},
 			{Kind: registry.Machine.Kind, Map: a.networksOfMachine},
+			{Kind: registry.SecurityGroup.Kind, Map: networkOfGroup},
 		},
 		// The network driver's changes, its own included, are when a
 		// namespace comes, goes or is made again.
@@ -171,6 +176,11 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
 	instances := map[netip.Addr]metadata.Instance{}
 	var on []string
+	// Every interface on the network is a member, whichever node runs it;
+	// the policies ensured here are those of this node's, at mineAt.
+	var members []secgroup.Member
+	var mine []driver.InterfacePolicy
+	var mineAt []int
 	for _, o := range objs {
 		m := o.(*computev1alpha1.Machine)
 		for _, nic := range m.GetSpec().GetInterfaces() {
@@ -185,12 +195,40 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
 			instances[addr.Addr()] = metadata.Instance{UID: m.GetMetadata().GetUid(), Hostname: name}
 			on = append(on, m.GetMetadata().GetUid())
+			if m.GetSpec().GetNode() == a.cfg.Name {
+				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
+				mineAt = append(mineAt, len(members))
+			}
+			members = append(members, secgroup.Member{Addr: addr.Addr(), Groups: nic.GetSecurityGroups()})
 		}
 	}
+	groups, err := a.groupsOf(ctx, k)
+	if err != nil {
+		return err
+	}
+	policies := secgroup.Resolve(groups, members)
+	for i, at := range mineAt {
+		mine[i].Policy = policies[at]
+	}
+	// The network's services follow its machines whatever becomes of the
+	// firewall, which lets them through in any case.
 	s.name(k, on)
 	s.resolver.Set(uid, resolver.Records{Project: k.Project, Names: names})
 	s.dhcp.Set(uid, leases)
 	s.metadata.Set(uid, instances)
+	if err := a.cfg.Drivers.Network.EnsureFirewall(ctx, uid, mine); err != nil {
+		// Rules that cannot be written must not leave older, perhaps
+		// wider, ones in force: the interfaces get nothing but their
+		// network's services until they can be.
+		closed := make([]driver.InterfacePolicy, len(mine))
+		for i, p := range mine {
+			closed[i] = driver.InterfacePolicy{MachineUID: p.MachineUID, Name: p.Name}
+		}
+		if cerr := a.cfg.Drivers.Network.EnsureFirewall(ctx, uid, closed); cerr != nil {
+			err = errors.Join(err, fmt.Errorf("closing the firewall: %w", cerr))
+		}
+		return blocked(computeapi.ReasonNetworkFailed, err)
+	}
 	return nil
 }
 
@@ -260,4 +298,37 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
+}
+
+// networkOfGroup maps a SecurityGroup to the network it is of.
+func networkOfGroup(_ context.Context, o store.Object) []controller.Key {
+	var g networkv1alpha1.SecurityGroup
+	if proto.Unmarshal(o.Data, &g) != nil {
+		return nil
+	}
+	return []controller.Key{{Project: o.Project, Name: g.GetSpec().GetNetwork()}}
+}
+
+// groupsOf reads the SecurityGroups of a network, by name. One the agent
+// cannot read as admitted, which admission makes unlikely, is left out, and
+// its members are then no more open for it.
+func (a *Agent) groupsOf(ctx context.Context, network controller.Key) (map[string]secgroup.Group, error) {
+	objs, _, err := a.api.ListAll(ctx, registry.SecurityGroup, client.ListOptions{Project: network.Project})
+	if err != nil {
+		return nil, err
+	}
+	groups := map[string]secgroup.Group{}
+	for _, o := range objs {
+		sg := o.(*networkv1alpha1.SecurityGroup)
+		if sg.GetSpec().GetNetwork() != network.Name {
+			continue
+		}
+		g, err := secgroup.FromSpec(sg.GetSpec())
+		if err != nil {
+			a.cfg.Log.Warn("a security group the agent cannot read", "group", sg.GetMetadata().GetName(), "error", err)
+			continue
+		}
+		groups[sg.GetMetadata().GetName()] = g
+	}
+	return groups, nil
 }

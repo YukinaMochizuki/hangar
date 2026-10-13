@@ -412,9 +412,12 @@ type MachineInterface struct {
 	Network string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
 	// The interface's address with the network's prefix length, such as
 	// "10.0.0.5/24". Assigned by the apiserver; empty until it is.
-	Ipv4          string `protobuf:"bytes,3,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Ipv4 string `protobuf:"bytes,3,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
+	// The SecurityGroups the interface is in, "default" included when it is;
+	// never empty once the controller has written it.
+	SecurityGroups []string `protobuf:"bytes,4,rep,name=security_groups,json=securityGroups,proto3" json:"security_groups,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *MachineInterface) Reset() {
@@ -466,6 +469,13 @@ func (x *MachineInterface) GetIpv4() string {
 		return x.Ipv4
 	}
 	return ""
+}
+
+func (x *MachineInterface) GetSecurityGroups() []string {
+	if x != nil {
+		return x.SecurityGroups
+	}
+	return nil
 }
 
 // MachineStatus is what the node and the scheduler observed.
@@ -1252,11 +1262,12 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x03 \x03(\tR\x04args\x121\n" +
-	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\"T\n" +
+	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\"}\n" +
 	"\x10MachineInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
-	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\"\xaa\x02\n" +
+	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12'\n" +
+	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\"\xaa\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
