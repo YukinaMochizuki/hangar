@@ -153,7 +153,7 @@ func newDriver(t *testing.T, dir string, s *fakeSystemd, g *fakeGuest) *Hypervis
 	t.Helper()
 	h, err := New(t.Context(), Config{
 		Dir: dir, CloudHypervisor: os.Args[0], Kernel: os.Args[0], Initramfs: os.Args[0], Cmdline: "quiet",
-		Launcher: []string{os.Args[0], "vmm"}, Nameservers: []string{"1.1.1.1"},
+		Launcher:  []string{os.Args[0], "vmm"},
 		StopGrace: testGrace, StopSlack: testSlack,
 		systemd: s, guest: g, dynamicOK: true, etc: testEtc(t),
 		procUsers: func() (map[uint32]bool, error) { return nil, nil },
@@ -185,6 +185,7 @@ func testSpec(uid string, restart driver.RestartPolicy) driver.VMSpec {
 			MachineUID: uid, Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
 			Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"), Device: "hn123",
 		}},
+		Nameservers: []string{"10.0.0.1"}, Search: []string{"proj.hangar.internal"},
 		Run:     driver.RunSpec{Command: []string{"nginx", "-g", "daemon off;"}, Env: []string{"A=b"}, WorkingDir: "/srv", User: "1000"},
 		Restart: restart,
 	}
@@ -281,8 +282,9 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 			if !slices.Equal(p.GetArgs(), spec.Run.Command) || !slices.Equal(p.GetEnv(), spec.Run.Env) || p.GetWorkingDir() != "/srv" || p.GetUser() != "1000" {
 				t.Errorf("process %v", p)
 			}
-			if cfg.GetHostname() != "web-server-1" || !slices.Equal(cfg.GetNameservers(), []string{"1.1.1.1"}) {
-				t.Errorf("hostname %q, nameservers %v", cfg.GetHostname(), cfg.GetNameservers())
+			if cfg.GetHostname() != "web-server-1" || !slices.Equal(cfg.GetNameservers(), []string{"10.0.0.1"}) ||
+				!slices.Equal(cfg.GetSearch(), []string{"proj.hangar.internal"}) {
+				t.Errorf("hostname %q, nameservers %v, search %v", cfg.GetHostname(), cfg.GetNameservers(), cfg.GetSearch())
 			}
 			if i := cfg.GetInterfaces(); len(i) != 1 || i[0].GetMac() != "02:00:00:00:00:01" || i[0].GetAddress() != "10.0.0.2/24" || i[0].GetGateway() != "10.0.0.1" {
 				t.Errorf("interfaces %v", i)

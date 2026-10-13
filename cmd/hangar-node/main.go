@@ -43,7 +43,7 @@ type hostFlags struct {
 	dataset, imageDir               string
 	maxUnpackWork                   int64
 	cloudHypervisor, kernel, initrd string
-	cmdline, vmDir, nameservers     string
+	cmdline, vmDir                  string
 }
 
 func main() {
@@ -62,6 +62,7 @@ func main() {
 		maxPulls       = flag.Int("max-pulls", node.DefaultMaxPulls, "images unpacked at once; fetching them takes no turn")
 		reservedDisk   = flag.String("reserved-disk", "", "storage kept back from root disks, such as for the image cache, as a quantity such as 50Gi")
 		hostDrivers    = flag.String("drivers", "none", "the host drivers: none, to report the node only; fake, a simulated host; or host, this host's")
+		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
 	)
 	hf.bind(flag.CommandLine)
 	flag.Parse()
@@ -75,6 +76,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer closeDrivers()
+	upstreams, err := parseUpstreams(*dnsUpstreams)
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	agent, err := node.New(node.Config{
 		Name:    *name,
 		HTTP:    client.UnixSocket(*socket),
@@ -86,6 +92,7 @@ func main() {
 		MaxPulls:      *maxPulls,
 		MaxUnpackWork: hf.maxUnpackWork,
 		Drivers:       d,
+		DNSUpstreams:  upstreams,
 		Log:           log,
 	})
 	if err == nil {
@@ -161,7 +168,22 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
-	fs.StringVar(&hf.nameservers, "nameservers", "1.1.1.1,8.8.8.8", "for --drivers=host, the guests' resolvers, comma-separated")
+}
+
+// parseUpstreams reads --dns-upstreams: addresses, each on port 53.
+func parseUpstreams(s string) ([]netip.AddrPort, error) {
+	var out []netip.AddrPort
+	for _, a := range strings.Split(s, ",") {
+		if a = strings.TrimSpace(a); a == "" {
+			continue
+		}
+		addr, err := netip.ParseAddr(a)
+		if err != nil {
+			return nil, fmt.Errorf("--dns-upstreams: %w", err)
+		}
+		out = append(out, netip.AddrPortFrom(addr, 53))
+	}
+	return out, nil
 }
 
 // registryConfig is the image driver's configuration from the flags.
@@ -189,19 +211,9 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 	if err != nil {
 		return nil, none, err
 	}
-	var nameservers []string
-	for _, s := range strings.Split(hf.nameservers, ",") {
-		if s = strings.TrimSpace(s); s == "" {
-			continue
-		}
-		if _, err := netip.ParseAddr(s); err != nil {
-			return nil, none, fmt.Errorf("--nameservers: %w", err)
-		}
-		nameservers = append(nameservers, s)
-	}
 	vms, err := chvm.New(ctx, chvm.Config{
 		Dir: hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
-		Launcher: []string{exe, "vmm"}, Nameservers: nameservers,
+		Launcher: []string{exe, "vmm"},
 	})
 	if err != nil {
 		return nil, none, fmt.Errorf("hypervisor driver: %w", err)

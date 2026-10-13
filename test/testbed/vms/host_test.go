@@ -280,7 +280,7 @@ func openHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 	}
 	hv, err := chvm.New(context.Background(), chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
-		Launcher: []string{in.Node, "vmm"}, Nameservers: []string{"1.1.1.1"}, StopGrace: grace,
+		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -386,7 +386,7 @@ func (h *host) machine(t *testing.T, uid string, restart driver.RestartPolicy, s
 	}
 	return driver.VMSpec{
 		MachineUID: uid, Machine: "testbed/" + uid, VCPUs: 1, MemoryMiB: 256,
-		Root: root, Interfaces: []driver.Interface{nic},
+		Root: root, Interfaces: []driver.Interface{nic}, Nameservers: []string{"1.1.1.1"},
 		Run:     driver.RunSpec{Command: []string{"/bin/sh", "-c", script}},
 		Restart: restart,
 	}

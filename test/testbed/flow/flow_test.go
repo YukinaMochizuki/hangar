@@ -38,9 +38,9 @@ func scratch(t *testing.T) []string {
 }
 
 // webScript is what web runs on busybox: it fetches Cloudflare's trace page
-// over plain HTTP by name, which goes through the public resolvers and both
-// NATs and says the address it came from, then waits. It says it got
-// SIGTERM, and exits 0, on SIGTERM.
+// over plain HTTP by name, which goes through its network's resolver, the
+// resolver's upstreams and both NATs, and says the address it came from,
+// then waits. It says it got SIGTERM, and exits 0, on SIGTERM.
 const webScript = `trap 'echo got SIGTERM; exit 0' TERM
 wget -q -T 10 -O- http://cloudflare.com/cdn-cgi/trace || echo fetch failed
 echo ready

@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -73,6 +74,9 @@ type Config struct {
 	// MaxPulls bounds the images unpacked at once. Zero means
 	// DefaultMaxPulls.
 	MaxPulls int
+	// DNSUpstreams are the resolvers each network's resolver forwards names
+	// outside its own zone to.
+	DNSUpstreams []netip.AddrPort
 	// MaxUnpackWork bounds the work unpacking one image takes, in
 	// ocilayer's steps: the Images driver is built with it as
 	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
@@ -105,6 +109,10 @@ type Agent struct {
 	// Guarded by host, but netEpoch, which the signals bump.
 	netEpoch   atomic.Int64
 	netChecked map[string]int64
+	// netsvc serves the networks on the host their services, resolver
+	// among them, which netTrigger has checked again.
+	netsvc     *netServices
+	netTrigger chan struct{}
 }
 
 // New returns an agent for cfg.
@@ -144,8 +152,10 @@ func New(cfg Config) (*Agent, error) {
 	}
 	cfg.Log = cfg.Log.With("node", cfg.Name)
 	var puller *puller
+	var netsvc *netServices
 	if cfg.Drivers != nil {
 		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
+		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Log)
 	}
 	return &Agent{
 		cfg:        cfg,
@@ -157,6 +167,8 @@ func New(cfg Config) (*Agent, error) {
 		puller:     puller,
 		stops:      newStops(),
 		trigger:    make(chan struct{}, 1),
+		netsvc:     netsvc,
+		netTrigger: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -174,11 +186,16 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Go(func() { a.serveTunnel(ctx) })
 	}
 	if a.cfg.Drivers != nil {
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			_ = a.machineController(ctx).Run(ctx)
 			a.puller.wait() // its jobs end with ctx
+		}()
+		go func() {
+			defer wg.Done()
+			_ = a.networkController().Run(ctx)
+			a.netsvc.services.CloseAll()
 		}()
 		go func() {
 			defer wg.Done()
@@ -231,7 +248,10 @@ func (a *Agent) machineController(ctx context.Context) *controller.Controller {
 			a.recheck()
 		}
 	}
-	go forward(a.cfg.Drivers.Network.Changes(), func() { a.netEpoch.Add(1) })
+	go forward(a.cfg.Drivers.Network.Changes(), func() {
+		a.netEpoch.Add(1)
+		notify(a.netTrigger)
+	})
 	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
 	// An image made ready is looked at as soon as it is.
 	a.puller.start(ctx, a.recheck)

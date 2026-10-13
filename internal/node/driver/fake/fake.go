@@ -51,6 +51,11 @@ type Host struct {
 
 	networks   map[string]driver.NetworkSpec
 	interfaces map[string]map[string]driver.Interface // machine uid, then name
+	// instances are the networks' namespaces', by network uid; sockets, every
+	// socket handed out and maybe still open.
+	instances     map[string]string
+	instanceCount int
+	sockets       []*socket
 
 	vms        map[string]*vm
 	logs       map[string]*consoleLog // console logs kept, by machine uid
@@ -90,7 +95,7 @@ func New() *Host {
 		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
-		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{},
+		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
@@ -348,6 +353,7 @@ func (h *Host) LoseNetwork(networkUID string) {
 // cutting off the VMs that held them. Callers hold h.mu.
 func (h *Host) removeNetwork(networkUID string) {
 	delete(h.networks, networkUID)
+	delete(h.instances, networkUID)
 	for uid, ifs := range h.interfaces {
 		for name, i := range ifs {
 			if i.NetworkUID != networkUID {
@@ -380,6 +386,7 @@ func (h *Host) Leave(machineUID, networkUID string) {
 	h.bases["sha256:orphan"] = h.baseSize
 	h.roots[machineUID] = driver.Disk{MachineUID: machineUID, Digest: "sha256:orphan", Path: "/dev/fake/" + machineUID}
 	h.networks[networkUID] = driver.NetworkSpec{UID: networkUID}
+	h.newInstance(networkUID)
 	h.interfaces[machineUID] = map[string]driver.Interface{"eth0": {MachineUID: machineUID, Name: "eth0", NetworkUID: networkUID}}
 	h.vms[machineUID] = &vm{VM: driver.VM{MachineUID: machineUID, State: driver.VMRunning, Started: time.Now()}, boots: 1}
 	h.logOf(machineUID)
@@ -426,6 +433,9 @@ type Snapshot struct {
 	VMs        map[string]VMView
 	// Logs are the machines whose console logs the host keeps.
 	Logs []string
+	// Listening are the sockets still open, such as "udp 10.0.0.1:53", by
+	// network uid, including those of a namespace since made again.
+	Listening map[string][]string
 }
 
 // VMView is a VM as a test sees it.
@@ -439,7 +449,8 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 && len(s.Logs) == 0
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 && len(s.Logs) == 0 &&
+		len(s.Listening) == 0
 }
 
 // Snapshot returns a copy of what the host holds.
@@ -449,6 +460,7 @@ func (h *Host) Snapshot() Snapshot {
 	s := Snapshot{
 		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
+		Listening: h.listening(),
 	}
 	for uid, ifs := range h.interfaces {
 		for _, name := range slices.Sorted(maps.Keys(ifs)) {
@@ -711,6 +723,9 @@ func (d network) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	}
 	if !n.CIDR.IsValid() || !n.Transit.IsValid() {
 		return fmt.Errorf("network %s needs a range and a transit link", n.UID)
+	}
+	if _, ok := d.h.networks[n.UID]; !ok {
+		d.h.newInstance(n.UID)
 	}
 	d.h.networks[n.UID] = n
 	return nil

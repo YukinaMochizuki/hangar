@@ -254,15 +254,18 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if err != nil {
 		return nil, blocked(computeapi.ReasonBootFailed, err)
 	}
+	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)
 	spec := driver.VMSpec{
-		MachineUID: uid,
-		Machine:    m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
-		VCPUs:      vcpus,
-		MemoryMiB:  memoryMiB,
-		Root:       root,
-		Interfaces: ifaces,
-		Run:        runSpec(boot, image),
-		Restart:    restartPolicy(m.GetSpec().GetRestartPolicy()),
+		MachineUID:  uid,
+		Machine:     m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
+		VCPUs:       vcpus,
+		MemoryMiB:   memoryMiB,
+		Root:        root,
+		Interfaces:  ifaces,
+		Nameservers: nameservers,
+		Search:      search,
+		Run:         runSpec(boot, image),
+		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
 	obs, err := a.ensureVM(ctx, spec, vm)
 	if obs != nil {

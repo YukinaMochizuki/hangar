@@ -76,6 +76,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	nets := func(h Host) bool { return h.Network != nil }
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)
+	part("network sockets", networkSockets, nets)
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
@@ -511,6 +512,67 @@ func networkChanges(t *testing.T, h Host) {
 	if nets := networks(); len(nets) != 0 {
 		t.Errorf("networks left: %v", nets)
 	}
+}
+
+// networkSockets opens sockets in a network's namespace, each tied to the
+// instance of the namespace it was opened in.
+func networkSockets(t *testing.T, h Host) {
+	ctx := t.Context()
+	dns := netip.AddrPortFrom(netip.MustParseAddr("10.0.0.1"), 53)
+	if got, err := h.Network.Instance(ctx, testNet.UID); err != nil || got != "" {
+		t.Errorf("a network not on the host has instance %q %v", got, err)
+	}
+	if c, _, err := h.Network.ListenUDP(ctx, testNet.UID, dns); err == nil {
+		_ = c.Close()
+		t.Error("listened in a network not on the host")
+	}
+
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	first, err := h.Network.Instance(ctx, testNet.UID)
+	must(t, err)
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	if again, err := h.Network.Instance(ctx, testNet.UID); err != nil || first == "" || again != first {
+		t.Errorf("instances %q then %q %v, want one, kept by an ensure", first, again, err)
+	}
+	udp, in, err := h.Network.ListenUDP(ctx, testNet.UID, dns)
+	must(t, err)
+	if in != first {
+		t.Errorf("a socket opened in instance %q, want %q", in, first)
+	}
+	tcp, in, err := h.Network.ListenTCP(ctx, testNet.UID, dns)
+	must(t, err)
+	if in != first {
+		t.Errorf("a socket opened in instance %q, want %q", in, first)
+	}
+	must(t, tcp.Close())
+	if c, _, err := h.Network.ListenUDP(ctx, testNet.UID, dns); err == nil {
+		_ = c.Close()
+		t.Error("two sockets on one address")
+	}
+	if _, _, err := h.Network.ListenUDP(ctx, testNet.UID, netip.AddrPortFrom(netip.MustParseAddr("10.9.0.1"), 53)); err == nil {
+		t.Error("listened on an address the network does not have")
+	}
+
+	// A network made again is another instance, while a socket of the old
+	// one lives on.
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+	if got, err := h.Network.Instance(ctx, testNet.UID); err != nil || got != "" {
+		t.Errorf("a deleted network has instance %q %v", got, err)
+	}
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	second, err := h.Network.Instance(ctx, testNet.UID)
+	must(t, err)
+	if second == "" || second == first {
+		t.Errorf("a network made again has instance %q, before %q", second, first)
+	}
+	again, in, err := h.Network.ListenUDP(ctx, testNet.UID, dns)
+	must(t, err)
+	if in != second {
+		t.Errorf("a socket opened in instance %q, want %q", in, second)
+	}
+	must(t, again.Close())
+	must(t, udp.Close())
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
 }
 
 // vmSpec makes what a VM of machine needs and returns its spec.
