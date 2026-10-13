@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"testing"
 	"time"
@@ -89,20 +90,31 @@ func TestAFailedStopIsReportedAndTriedAgain(t *testing.T) {
 	}
 }
 
-// quiet waits until nothing has asked the machine's guest agent whether it
-// answers, as every reconcile of a running machine does, for a while, and
-// returns how often it was asked.
+// settled is how long no machine is reconciled before the node is taken to
+// be done with what it had in hand. It outlasts the 2 s by which the agent's
+// controller retries a reconcile that waits, a retry that still comes once
+// the machine is running.
+const settled = 2500 * time.Millisecond
+
+// quiet waits until nothing has asked any guest agent on the host whether
+// it answers, as every reconcile of a running machine does, for settled, and
+// returns how often the machine's was asked. Every machine is waited on, as
+// one's reconcile queued behind another's would come once the other's ends.
 func (w *world) quiet(uid string) int {
 	w.t.Helper()
-	last, since := -1, time.Now()
+	var last map[string]int
+	since := time.Now()
 	w.eventually("machine "+uid+" left alone", func() (bool, string) {
-		n := w.host.GuestReadies(uid)
-		if n != last {
+		n := map[string]int{uid: w.host.GuestReadies(uid)}
+		for other := range w.host.Snapshot().VMs {
+			n[other] = w.host.GuestReadies(other)
+		}
+		if !maps.Equal(n, last) {
 			last, since = n, time.Now()
 		}
-		return time.Since(since) > 300*time.Millisecond, fmt.Sprintf("%d reconciles", n)
+		return time.Since(since) > settled, fmt.Sprintf("reconciles by machine: %v", n)
 	})
-	return last
+	return last[uid]
 }
 
 // TestAFailingStopBacksOff: a stop that keeps failing is tried again no
