@@ -156,9 +156,14 @@ with `--release DIR`. `--only <step>` runs a single step
   `Restart=always` retrying, at boot): its `ExecStartPre=+` runs
   `/usr/local/libexec/hangar-cloudflared-guard`, which refuses unless the
   running apiserver's command line has `--auth-mode cloudflare` and so does
-  its loaded unit, which a restart on failure would run. It is `PartOf=`
-  the apiserver, so it stops with it and its guard looks again when the
-  apiserver restarts. A refused start keeps retrying every 5 s, so it
+  its loaded unit, which a restart on failure would run, each set exactly
+  once as `--auth-mode cloudflare`. It is `PartOf=` the apiserver, so it
+  stops with it and its guard looks again when the apiserver restarts.
+  `PartOf=` does not start it again: after a manual `systemctl stop
+  hangar-apiserver` and `start`, the tunnel stays down (closed, not open)
+  until `sudo systemctl start hangar-cloudflared`, a run of the
+  `cloudflared` step, or a reboot; `systemctl restart hangar-apiserver`
+  brings both back. A refused start keeps retrying every 5 s, so it
   comes up on its own once the apiserver is in cloudflare auth. The step
   and `verify.sh` count any state but `inactive` and `failed` as up,
   retrying included: such a unit with no `cloudflared.env`, or with the

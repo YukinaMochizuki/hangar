@@ -185,6 +185,10 @@ runs in `cloudflare` mode.
 
 ## When something is off
 
+- **The tunnel is down after the apiserver was stopped and started by
+  hand.** The tunnel's unit stops with the apiserver and does not start
+  with it again; on the host, `sudo systemctl start hangar-cloudflared` or
+  re-run `deploy/host` (`docs/runbook/host-bootstrap.md`).
 - **A refusal names an object you know is ours.** `state.json` was lost or
   is from another directory. Restore it. Failing that, write it by hand with
   the IDs from the dashboard (fields `version: 1`, `account_id`, `zone_id`,

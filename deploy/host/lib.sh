@@ -132,12 +132,16 @@ auth_problem() {
 }
 
 # apiserver_auth_mode prints the auth mode the running apiserver was started
-# with, nothing when it is not running.
+# with, nothing when it is not running or does not set it exactly once as
+# --auth-mode VALUE (the same reading as cloudflared's guard).
 apiserver_auth_mode() {
 	local pid
 	pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
 	[ "$pid" != 0 ] || return 0
-	tr '\0' '\n' <"/proc/$pid/cmdline" | sed -n '/^--auth-mode$/{n;p;q}'
+	tr '\0' '\n' <"/proc/$pid/cmdline" | awk '
+		/^--?auth-mode(=.*)?$/ { n++; if ($0 == "--auth-mode") at = NR + 1; else odd = 1 }
+		NR == at { mode = $0 }
+		END { if (n == 1 && !odd) print mode }'
 }
 
 # cloudflared_up holds while the tunnel is in any state but stopped: running,

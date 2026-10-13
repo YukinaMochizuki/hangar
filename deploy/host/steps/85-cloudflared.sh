@@ -29,12 +29,26 @@ refuse() {
 	echo "hangar-cloudflared-guard: refusing to start the tunnel: $*" >&2
 	exit 1
 }
+# auth_mode_of reads one argument per line and prints the auth mode they set,
+# but only when they set it exactly once, as --auth-mode VALUE: Go's flag
+# package takes the last of several, and -auth-mode and --auth-mode=VALUE
+# too, so anything else prints nothing and is refused.
+auth_mode_of() {
+	awk '
+		/^--?auth-mode(=.*)?$/ { n++; if ($0 == "--auth-mode") at = NR + 1; else odd = 1 }
+		NR == at { mode = $0 }
+		END { if (n == 1 && !odd) print mode }'
+}
 pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
 [ -n "$pid" ] && [ "$pid" != 0 ] || refuse "hangar-apiserver is not running"
-mode=$(tr '\0' '\n' <"/proc/$pid/cmdline" | sed -n '/^--auth-mode$/{n;p;q}') ||
-	refuse "cannot read hangar-apiserver's command line"
-[ "$mode" = cloudflare ] || refuse "hangar-apiserver runs --auth-mode ${mode:-(none)}, not cloudflare"
-systemctl show -p ExecStart --value hangar-apiserver.service | grep -q -- ' --auth-mode cloudflare ' ||
+[ -r "/proc/$pid/cmdline" ] || refuse "cannot read hangar-apiserver's command line"
+mode=$(tr '\0' '\n' <"/proc/$pid/cmdline" | auth_mode_of)
+[ "$mode" = cloudflare ] ||
+	refuse "hangar-apiserver runs --auth-mode ${mode:-(none, or not exactly once)}, not cloudflare"
+# ExecStart reads { path=... ; argv[]=ARGS ; ... }; no argument has a space.
+mode=$(systemctl show -p ExecStart --value hangar-apiserver.service |
+	sed -n 's/.*argv\[\]=\([^;]*\) ;.*/\1/p' | tr ' ' '\n' | auth_mode_of)
+[ "$mode" = cloudflare ] ||
 	refuse "hangar-apiserver's unit would restart it without --auth-mode cloudflare"
 EOF
 }
