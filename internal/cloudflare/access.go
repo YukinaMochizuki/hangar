@@ -65,7 +65,9 @@ type AccessAppInput struct {
 	AllowIframe              bool   `json:"allow_iframe"`
 	HTTPOnlyCookieAttribute  bool   `json:"http_only_cookie_attribute"`
 	SameSiteCookieAttribute  string `json:"same_site_cookie_attribute,omitempty"`
-	ClientlessIsolationURL   bool   `json:"use_clientless_isolation_app_launcher_url"`
+	// Left out when false: the API refuses the field, even false, on an
+	// application with a public destination.
+	ClientlessIsolationURL bool `json:"use_clientless_isolation_app_launcher_url,omitempty"`
 }
 
 // PolicyLink attaches a reusable policy to an application.
