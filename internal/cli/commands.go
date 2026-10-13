@@ -119,9 +119,15 @@ func (a *app) loginCmd() *cobra.Command {
 				return usageErr("the context uses local auth, which needs no login")
 			}
 			out, err := a.runCloudflared(cmd.Context(), "access", "login", c.Endpoint)
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), out)
+			shown, tok := loginOutput(out)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), shown)
 			if err != nil {
 				return fmt.Errorf("cloudflared access login: %w", err)
+			}
+			if email := tokenEmail(tok); email != "" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in to %s as %s\n", c.Endpoint, email)
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in to %s\n", c.Endpoint)
 			}
 			return nil
 		},

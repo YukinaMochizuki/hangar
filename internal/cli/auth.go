@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -125,6 +126,51 @@ func (t *accessToken) get(ctx context.Context) (string, error) {
 	}
 	t.token, t.expires = tok, expiry(tok, t.now())
 	return tok, nil
+}
+
+// jwtLike matches a line holding a JWT: three base64url segments.
+var jwtLike = regexp.MustCompile(`[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]+`)
+
+// loginOutput splits what `cloudflared access login` printed into what the
+// user should see and the token it fetched. cloudflared prints the token
+// itself, which must never reach a terminal or a log; the rest, such as the
+// URL to open when it can't start a browser, passes through.
+func loginOutput(out string) (shown, token string) {
+	var b strings.Builder
+	for line := range strings.Lines(out) {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case jwtLike.MatchString(trimmed) && !strings.Contains(trimmed, "://"):
+			if token == "" {
+				token = jwtLike.FindString(trimmed)
+			}
+		case strings.HasPrefix(trimmed, "Successfully fetched your token"):
+		case trimmed == "" && b.Len() == 0:
+		default:
+			b.WriteString(line)
+		}
+	}
+	return strings.TrimRight(b.String(), "\n\t ") + strings.Repeat("\n", min(b.Len(), 1)), token
+}
+
+// tokenEmail reads a JWT's email claim without verifying it, to say who
+// logged in; the server verifies the token on every call.
+func tokenEmail(tok string) string {
+	parts := strings.Split(tok, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Email string `json:"email"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return ""
+	}
+	return claims.Email
 }
 
 // expiry reads a JWT's exp claim without verifying it: the server verifies,
