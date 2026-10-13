@@ -202,6 +202,13 @@ func hooksFor(r registry.Resource) kindHooks {
 			beforeDelete: refuseDeletingInUse,
 			finalizers:   []string{NetworkInUseFinalizer},
 		}
+	case registry.SecurityGroup.Kind:
+		return kindHooks{
+			target:       projectTarget,
+			owner:        ownedByProject,
+			validate:     validateSecurityGroup,
+			beforeDelete: refuseDeletingGroupInUse,
+		}
 	case registry.Node.Kind:
 		return kindHooks{
 			target:        platformTarget,
@@ -368,7 +375,7 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 			return invalid("spec.ports[%s]: port %d out of range", port.GetName(), port.GetPort())
 		}
 	}
-	if err := validateInterfaces(spec.GetInterfaces()); err != nil {
+	if err := s.validateInterfaces(ctx, obj.(*computev1alpha1.Container).GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
 	return s.validateContainerResources(ctx, old, spec.GetResources())
@@ -378,9 +385,9 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 const MaxInterfaces = 8
 
 // validateInterfaces checks the interfaces a Container or VirtualMachine
-// asks for. A network that does not exist yet is the controller's to wait
-// for, not admission's to refuse.
-func validateInterfaces(nics []*computev1alpha1.NetworkInterface) error {
+// asks for in project. A network or group that does not exist yet is the
+// controller's or the node's to wait for, not admission's to refuse.
+func (s *Server) validateInterfaces(ctx context.Context, project string, nics []*computev1alpha1.NetworkInterface) error {
 	if len(nics) > MaxInterfaces {
 		return invalid("spec.interfaces: %d interfaces, at most %d", len(nics), MaxInterfaces)
 	}
@@ -393,6 +400,13 @@ func validateInterfaces(nics []*computev1alpha1.NetworkInterface) error {
 			return invalid("spec.interfaces: network %q twice; a machine has one interface on a network", nic.GetNetwork())
 		}
 		seen[nic.GetNetwork()] = true
+		if err := validateSecurityGroupNames(i, nic.GetSecurityGroups()); err != nil {
+			return err
+		}
+		if err := s.refuseGroupsOfOtherNetworks(ctx, project, nic.GetNetwork(), nic.GetSecurityGroups(),
+			fmt.Sprintf("spec.interfaces[%d].security_groups", i)); err != nil {
+			return err
+		}
 	}
 	return nil
 }

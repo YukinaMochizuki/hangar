@@ -27,9 +27,13 @@ const (
 type NetworkInterface struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Names a network in the object's project.
-	Network       string `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Network string `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	// SecurityGroups of the network the interface is in; empty is the
+	// network's implicit "default" alone. Naming others without "default"
+	// leaves it.
+	SecurityGroups []string `protobuf:"bytes,3,rep,name=security_groups,json=securityGroups,proto3" json:"security_groups,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *NetworkInterface) Reset() {
@@ -69,13 +73,21 @@ func (x *NetworkInterface) GetNetwork() string {
 	return ""
 }
 
+func (x *NetworkInterface) GetSecurityGroups() []string {
+	if x != nil {
+		return x.SecurityGroups
+	}
+	return nil
+}
+
 var File_hangar_compute_v1alpha1_interface_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_interface_proto_rawDesc = "" +
 	"\n" +
-	"'hangar/compute/v1alpha1/interface.proto\x12\x17hangar.compute.v1alpha1\"2\n" +
+	"'hangar/compute/v1alpha1/interface.proto\x12\x17hangar.compute.v1alpha1\"[\n" +
 	"\x10NetworkInterface\x12\x18\n" +
-	"\anetwork\x18\x01 \x01(\tR\anetworkJ\x04\b\x02\x10\x03B\xfd\x01\n" +
+	"\anetwork\x18\x01 \x01(\tR\anetwork\x12'\n" +
+	"\x0fsecurity_groups\x18\x03 \x03(\tR\x0esecurityGroupsJ\x04\b\x02\x10\x03B\xfd\x01\n" +
 	"\x1bcom.hangar.compute.v1alpha1B\x0eInterfaceProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1;computev1alpha1\xa2\x02\x03HCX\xaa\x02\x17Hangar.Compute.V1alpha1\xca\x02\x17Hangar\\Compute\\V1alpha1\xe2\x02#Hangar\\Compute\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Compute::V1alpha1b\x06proto3"
 
 var (

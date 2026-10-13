@@ -31,6 +31,9 @@ const (
 	// Table is the nft table, family ip, in the root namespace and in each
 	// network's.
 	Table = "hangar"
+	// FirewallTable is the bridge-family table in each network's namespace
+	// holding its interfaces' security groups.
+	FirewallTable = "hangar_sg"
 	// hashLen hex digits of the hash follow the three-character prefix.
 	hashLen = 12
 	// nameAttempts bounds the names tried for one object when the first are

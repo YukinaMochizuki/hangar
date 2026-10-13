@@ -60,6 +60,9 @@ message MachineInterface {
   // The interface's address with the network's prefix length, such as
   // "10.0.0.5/24". Assigned by the apiserver; empty until it is.
   string ipv4 = 3;
+  // The SecurityGroups the interface is in, "default" included when it is;
+  // never empty once the controller has written it.
+  repeated string security_groups = 4;
 }
 
 // MachineRunState is whether the machine should be running.
