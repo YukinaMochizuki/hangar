@@ -21,7 +21,7 @@ func terminalOf(in any) (Terminal, bool) {
 	if !ok {
 		return nil, false
 	}
-	if _, err := unix.IoctlGetTermios(int(f.Fd()), unix.TCGETS); err != nil {
+	if _, err := unix.IoctlGetTermios(int(f.Fd()), ioctlGetTermios); err != nil {
 		return nil, false
 	}
 	return ttyFile{f}, true
@@ -31,7 +31,7 @@ type ttyFile struct{ f *os.File }
 
 func (t ttyFile) MakeRaw() (func(), error) {
 	fd := int(t.f.Fd())
-	old, err := unix.IoctlGetTermios(fd, unix.TCGETS)
+	old, err := unix.IoctlGetTermios(fd, ioctlGetTermios)
 	if err != nil {
 		return nil, err
 	}
@@ -44,10 +44,10 @@ func (t ttyFile) MakeRaw() (func(), error) {
 	raw.Cflag |= unix.CS8
 	raw.Cc[unix.VMIN] = 1
 	raw.Cc[unix.VTIME] = 0
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, &raw); err != nil {
+	if err := unix.IoctlSetTermios(fd, ioctlSetTermios, &raw); err != nil {
 		return nil, err
 	}
-	return func() { _ = unix.IoctlSetTermios(fd, unix.TCSETS, old) }, nil
+	return func() { _ = unix.IoctlSetTermios(fd, ioctlSetTermios, old) }, nil
 }
 
 func (t ttyFile) Size() (uint16, uint16, error) {
