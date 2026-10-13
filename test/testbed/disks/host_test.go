@@ -109,6 +109,11 @@ func newHost(t *testing.T) *host {
 		// Claiming to be a base and a root, outside the driver's datasets.
 		{h.dataset + "/outside-" + hexDecoy, []string{"hangar:digest=" + decoyDigest}},
 		{h.dataset + "/outside-root", []string{"hangar:machine=m1", "hangar:digest=" + decoyDigest}},
+		// A volume's place, unclaimed, claimed by another disk, and a volume
+		// outside the driver's datasets.
+		{h.dataset + "/disks/decoy", nil},
+		{h.dataset + "/disks/d-decoy", []string{"hangar:disk=someone-else"}},
+		{h.dataset + "/outside-disk", []string{"hangar:disk=d1"}},
 	} {
 		args := []string{"create", "-s", "-V", "8M", "-o", "volmode=dev"}
 		for _, p := range d.props {
@@ -168,7 +173,7 @@ func (h *host) storage(t testing.TB) *zfsstore.Store {
 // the record of a run.
 func (h *host) listing(t testing.TB, when string) {
 	t.Helper()
-	out := mustRun(t, "zfs", "list", "-r", "-t", "all", "-o", "name,hangar:digest,hangar:machine,volsize,used,origin", h.dataset)
+	out := mustRun(t, "zfs", "list", "-r", "-t", "all", "-o", "name,hangar:digest,hangar:machine,hangar:disk,volsize,used,origin", h.dataset)
 	t.Logf("%s:\n%s", when, out)
 }
 

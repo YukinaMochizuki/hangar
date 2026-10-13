@@ -13,12 +13,14 @@ with the host after any of these, and nothing would notice.
 
 - **No state of its own.** Every object the agent makes on the host is named
   after the uid of the API object it serves (a machine's root disk, interfaces
-  and VM; a network's namespace), and every host driver lists what it made. A
-  reconcile compares what the API wants with what the host has.
+  and VM; a network's namespace; a disk's volume), and every host driver
+  lists what it made. A reconcile compares what the API wants with what the
+  host has.
 - **A sweep removes what nothing accounts for**: VMs, root disks and
-  interfaces of machines that are not on this node any more, then networks and
-  image bases nothing on the host uses or is being built from. It runs at
-  start and every minute, under the same lock as the reconciles. A list it
+  interfaces of machines that are not on this node any more, volumes of Disks
+  that are not bound to it any more, then networks and image bases nothing on
+  the host uses or is being built from. It runs at start and every minute,
+  under the same lock as the reconciles. A list it
   could not read, from the API or from a driver, stops whatever depends on
   it: a failed list must never read as "nothing is wanted", since a driver
   may delete what it is told to even while it is in use.
@@ -112,9 +114,11 @@ with the host after any of these, and nothing would notice.
 - **The driver touches only its own**: units named `hangar-vm-<uid>` for a
   uid it takes, and its directory.
 - **The node follows the API like a controller** (`controller.APISource`),
-  with Machines placed on it and their Networks as the watched kinds. What the
-  host notices on its own (a VM exiting, networkd removing a link) checks every
-  machine again.
+  with Machines placed on it and their Networks and Disks as the watched
+  kinds. What the host notices on its own (a VM exiting, networkd removing a
+  link) checks every machine again. A second controller keeps the volumes of
+  the Disks bound to the node, at the size their status says, and removes a
+  deleted one's once no machine lists it, reporting `Released`.
 - **Nothing slow runs under the host lock.** Reconciles and the sweep take
   turns under one lock, so each step under it must be short. Preparing an
   image (resolving, pulling, making its base) can take minutes, so a puller

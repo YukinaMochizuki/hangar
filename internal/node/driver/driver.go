@@ -89,8 +89,9 @@ type ImageConfig struct {
 	Size int64
 }
 
-// Storage holds disks: a read-only base per image, and a root disk per
-// machine cloned from one. Deleting what is not there is not an error.
+// Storage holds disks: a read-only base per image, a root disk per machine
+// cloned from one, and a volume per API Disk, which outlives the machines it
+// is attached to. Deleting what is not there is not an error.
 type Storage interface {
 	// EnsureBase makes a digest's base once, filling an empty dir with fill,
 	// unless size (ImageConfig.Size, or zero) exceeds the room left; fill's
@@ -110,6 +111,13 @@ type Storage interface {
 	// DeleteRoot removes a machine's root disk. It fails while the machine's
 	// VM runs.
 	DeleteRoot(ctx context.Context, machineUID string) error
+	// EnsureVolume returns a Disk's volume, made blank if need be, of at
+	// least size bytes: grown, never shrunk.
+	EnsureVolume(ctx context.Context, diskUID string, size int64) (Volume, error)
+	// Volumes lists every Disk's volume.
+	Volumes(ctx context.Context) ([]Volume, error)
+	// DeleteVolume removes a Disk's volume. It fails while a VM has it.
+	DeleteVolume(ctx context.Context, diskUID string) error
 	// Capacity returns how much the storage holds, and how much of it is
 	// free.
 	Capacity(ctx context.Context) (Capacity, error)
@@ -124,6 +132,15 @@ type Disk struct {
 	Path string
 	// Size is the disk's size in bytes, at least what was asked for. The
 	// guest grows its filesystem to it as it boots.
+	Size int64
+}
+
+// Volume is the block device of an API Disk.
+type Volume struct {
+	DiskUID string
+	// Path is the block device a VM is given.
+	Path string
+	// Size is the volume's size in bytes, at least what was asked for.
 	Size int64
 }
 
@@ -300,10 +317,14 @@ const StopGrace = 10 * time.Second
 type VMSpec struct {
 	MachineUID string
 	// Machine names the machine, project/name, for logs.
-	Machine    string
-	VCPUs      int32
-	MemoryMiB  int64
-	Root       Disk
+	Machine   string
+	VCPUs     int32
+	MemoryMiB int64
+	Root      Disk
+	// Disks are attached after the disks the boot needs, in this order.
+	// Left out of the hash when empty, so a VM started before there were
+	// disks keeps its hash.
+	Disks      []Volume `json:",omitempty"`
 	Interfaces []Interface
 	// Nameservers and Search are the guest's resolvers and search domains,
 	// as its /etc/resolv.conf lists them.

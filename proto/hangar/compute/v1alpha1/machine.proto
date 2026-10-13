@@ -37,6 +37,15 @@ message MachineSpec {
   }
   repeated MachineInterface interfaces = 20;
   RestartPolicy restart_policy = 21;
+  // Disks attached after the ones the boot makes, in this order. A disk is
+  // attached to one machine at a time.
+  repeated MachineDisk disks = 22;
+}
+
+// MachineDisk is a Disk attached to the machine as a block device.
+message MachineDisk {
+  // Names a Disk in the machine's project.
+  string disk = 1;
 }
 
 // ContainerBoot boots an OCI image as the root disk, with hangar-init as PID 1

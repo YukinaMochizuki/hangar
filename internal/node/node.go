@@ -27,6 +27,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/buildinfo"
@@ -96,6 +97,7 @@ type Agent struct {
 	nodes    computev1alpha1connect.NodeServiceClient
 	machines computev1alpha1connect.MachineServiceClient
 	networks networkv1alpha1connect.NetworkServiceClient
+	disks    storagev1alpha1connect.DiskServiceClient
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
 	host sync.Mutex
@@ -163,6 +165,7 @@ func New(cfg Config) (*Agent, error) {
 		nodes:      computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
 		machines:   computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
 		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
+		disks:      storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
 		netChecked: map[string]int64{},
 		puller:     puller,
 		stops:      newStops(),
@@ -186,7 +189,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Go(func() { a.serveTunnel(ctx) })
 	}
 	if a.cfg.Drivers != nil {
-		wg.Add(3)
+		wg.Add(4)
 		go func() {
 			defer wg.Done()
 			_ = a.machineController(ctx).Run(ctx)
@@ -196,6 +199,10 @@ func (a *Agent) Run(ctx context.Context) error {
 			defer wg.Done()
 			_ = a.networkController().Run(ctx)
 			a.netsvc.services.CloseAll()
+		}()
+		go func() {
+			defer wg.Done()
+			_ = a.diskController().Run(ctx)
 		}()
 		go func() {
 			defer wg.Done()
@@ -264,6 +271,9 @@ func (a *Agent) machineController(ctx context.Context) *controller.Controller {
 			// A network getting its transit link unblocks its machines. On a
 			// resync every machine is queued already.
 			{Kind: registry.Network.Kind, Map: a.machinesOnNetwork, SkipResync: true},
+			// So does a disk getting bound here, and a disk growing changes the
+			// VMs that have it.
+			{Kind: registry.Disk.Kind, Map: a.machinesWithDisk, SkipResync: true},
 		},
 		Trigger: a.trigger,
 		Clock:   a.cfg.Clock,

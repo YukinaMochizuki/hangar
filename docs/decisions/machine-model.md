@@ -73,6 +73,28 @@ Hypervisor directly, without Kata or Kubernetes.
   `Scheduled` condition and sets phase `Pending` until the node reports; the
   node owns the rest of the machine's status. A container is `Ready` only
   while its node is reporting.
+- A `Disk` (`storage` group) is a durable block device in a project, of a
+  `size` in whole Gi that can grow but never shrink. A machine lists the
+  disks it has by name, `spec.disks`, and its node attaches them as
+  virtio-blk devices after the ones its boot makes, in order: a container's
+  root and boot disks are `vda` and `vdb`, so its first disk is `vdc`. A disk
+  is attached to one machine at a time: machine admission refuses a disk
+  another machine lists, live or being deleted, or a disk being deleted, and
+  every apply and delete of machines and disks holds one lock from admission
+  to write, so two machines never both get one. A disk lives on one node,
+  the one its first machine is placed on: the scheduler binds it there
+  (`status.node`, and `status.size` from its spec) before writing the
+  machine's node, and a machine with a bound disk goes only to that node.
+  A bound disk holds `status.size` of its node's disk, as a machine holds its
+  root disk; the disk controller grants a growth only if the node has room
+  (else `Allocated` is False, `ResizeDoesNotFit`), and admission refuses a
+  size below `status.size`, so a growth that never took effect can be
+  withdrawn. A grown disk restarts the machine it is attached to, as a grown
+  root disk does. Deleting an attached disk is refused, unless its project is
+  being deleted; `disk-in-use` keeps a deleted disk until no machine lists
+  it, then `node-cleanup` until its node reports `Released` (at once for a
+  disk never bound). The apiserver writes a disk's node, size, machine, phase
+  and `Allocated`; its node writes `Ready` and `Released`.
 - Deleting a `Container` waits for its machine, and a placed machine waits for
   its node to report `Released` (VM and disks gone) before its finalizer is
   removed. A client watching the container's deletion sees the host's state,

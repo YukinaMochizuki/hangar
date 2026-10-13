@@ -28,6 +28,9 @@ const (
 	// diskNode is a node of the root disk's device, made by the launcher
 	// for Cloud Hypervisor to open, as the jailer makes one in its chroot.
 	diskNode = "disk"
+	// volumeNodePrefix and a number from 1 name a node of each volume's
+	// device, made as diskNode is (volumeNode).
+	volumeNodePrefix = "disk-"
 	// chDir is the one directory Cloud Hypervisor can write in, for its
 	// socket; the launcher makes it afresh on each run.
 	chDir = "ch"
@@ -54,6 +57,9 @@ const (
 	// SerialLog is the guest kernel's console, rotated to SerialLog.1.
 	SerialLog = "serial.log"
 )
+
+// volumeNode is the node of the spec's n-th volume, from 0.
+func volumeNode(n int) string { return fmt.Sprintf("%s%d", volumeNodePrefix, n+1) }
 
 // logFiles are what Stop keeps of a VM's directory.
 var logFiles = []string{ConsoleLog, ConsoleLog + ".1", SerialLog, SerialLog + ".1"}

@@ -1,0 +1,145 @@
+syntax = "proto3";
+
+package hangar.storage.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Disk is a durable block device in a project. It lives on one node, the one
+// that ran the first machine it was attached to, and outlives the machines
+// it is attached to, one at a time. See docs/decisions/machine-model.md and
+// docs/decisions/storage-zfs.md.
+message Disk {
+  option (hangar.meta.v1.resource) = {
+    kind: "Disk"
+    plural: "disks"
+    short_names: ["dk"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  DiskSpec spec = 4;
+  DiskStatus status = 5;
+}
+
+// DiskSpec is the desired state of a disk.
+message DiskSpec {
+  // A quantity in whole Gi, such as "20Gi", at least 1Gi; a size that is not
+  // whole Gi is rounded up. It can grow but never shrink. A machine sees a
+  // disk grown while it runs once it boots again.
+  string size = 1;
+  // What the disk holds when it is made.
+  DiskSource source = 2 [(hangar.meta.v1.field).immutable = true];
+}
+
+// DiskSource is what a disk is made from. Leaving every field empty makes a
+// blank disk, all zeros.
+message DiskSource {}
+
+// DiskStatus is the observed state of a disk. The apiserver writes its node,
+// size, machine, phase and the Allocated condition; the disk's node writes
+// the Ready and Released conditions.
+message DiskStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  DiskPhase phase = 3;
+  // Names the Node the disk lives on. Empty until a machine using it is
+  // placed; once set it never changes.
+  string node = 4;
+  // The size the disk has on its node, in whole Gi: spec.size once its node
+  // has room for it, and never less than before.
+  string size = 5;
+  // Names the Machine, in the disk's project, the disk is attached to; empty
+  // when it is attached to none.
+  string machine = 6;
+}
+
+// DiskPhase is where a disk is in its lifecycle.
+enum DiskPhase {
+  DISK_PHASE_UNSPECIFIED = 0;
+  // Not yet made on a node: no machine has used it, or its node is making
+  // it.
+  DISK_PHASE_PENDING = 1;
+  // Made on its node and attached to no machine.
+  DISK_PHASE_AVAILABLE = 2;
+  // Attached to a machine.
+  DISK_PHASE_IN_USE = 3;
+}
+
+// DiskService manages disks.
+service DiskService {
+  rpc GetDisk(GetDiskRequest) returns (GetDiskResponse);
+  rpc ListDisks(ListDisksRequest) returns (ListDisksResponse);
+  rpc WatchDisks(WatchDisksRequest) returns (stream WatchDisksResponse);
+  rpc ApplyDisk(ApplyDiskRequest) returns (ApplyDiskResponse);
+  rpc DeleteDisk(DeleteDiskRequest) returns (DeleteDiskResponse);
+  rpc UpdateDiskStatus(UpdateDiskStatusRequest) returns (UpdateDiskStatusResponse);
+}
+
+message GetDiskRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetDiskResponse {
+  Disk disk = 1;
+}
+
+message ListDisksRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListDisksResponse {
+  repeated Disk items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchDisksRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchDisksResponse {
+  hangar.meta.v1.EventType type = 1;
+  Disk disk = 2;
+  int64 revision = 3;
+}
+
+message ApplyDiskRequest {
+  Disk disk = 1;
+}
+
+message ApplyDiskResponse {
+  Disk disk = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteDiskRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteDiskResponse {
+  Disk disk = 1;
+}
+
+message UpdateDiskStatusRequest {
+  string project = 1;
+  string name = 2;
+  DiskStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateDiskStatusResponse {
+  Disk disk = 1;
+}

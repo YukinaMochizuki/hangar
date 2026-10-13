@@ -118,13 +118,21 @@ unreliable on virtio-fs.
   asks for. A root disk smaller than asked is grown (`zfs set volsize`),
   never shrunk; a size below its base's fails with `DiskTooSmall`. The size
   is part of the VM's spec, so a grown disk restarts the VM.
+- **A volume per Disk**: `hangar/disks/<disk uid>`, a blank sparse zvol,
+  `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
+  never shrunk, like a root disk. It is not cloned from anything and has no
+  filesystem the host made: the host never reads it. It outlives the
+  machines it is attached to, one at a time, and goes when its Disk is
+  deleted, or when the sweep finds no Disk bound to the node for it. A grown
+  volume restarts the machine it is attached to, as a grown root disk does.
 - **The guest grows its filesystem.** hangar-init, after mounting the root
   disk and before switching to it, grows the ext4 to the whole device with
   `EXT4_IOC_RESIZE_FS`; a failure is logged and the guest boots as it is.
 - **The driver knows its datasets by their user properties**: `hangar:digest`
   on a base and its snapshot, `hangar:machine` and `hangar:digest` on a root
-  disk. It lists from them, and a dataset whose properties do not match its
-  name is never listed, changed or destroyed, whatever it is called. It
+  disk, `hangar:disk` on a volume. It lists from them, and a dataset whose
+  properties do not match its name is never listed, changed or destroyed,
+  whatever it is called. It
   never destroys recursively; ZFS itself refuses to destroy a base with
   clones or a root disk that is open. A base without its snapshot is
   unfinished and is made again.
@@ -133,7 +141,8 @@ unreliable on virtio-fs.
   links after `zfs` returns, so for a moment the link of a destroyed zvol of
   the same name, such as a machine's previous root disk, can lead to another
   zvol that took its minor. `mkfs` runs on the device so checked, and a root
-  disk is handed out only once its link leads to it.
+  disk or volume is handed out only once its link leads to it; the VM's
+  launcher checks each again as it opens it.
 - **udev neither probes nor watches zvols.** On a stock Ubuntu host it reads
   the ext4 superblock of every base and root disk (`blkid`, for
   `/dev/disk/by-uuid`), which is the host parsing a tenant's filesystem, and
@@ -165,7 +174,7 @@ unreliable on virtio-fs.
 - Every clone of a base shares its filesystem UUID.
 - The pool, the `hangar/images` dataset and its quota are the host's to
   provision (`docs/runbook/host-bootstrap.md`); the driver makes
-  `hangar/bases` and `hangar/roots` itself.
+  `hangar/bases`, `hangar/roots` and `hangar/disks` itself.
 - The layers' size is a floor: an image compressing far more than the usual
   can still fill `hangar/images` while it unpacks, up to the quota, and
   fail there.

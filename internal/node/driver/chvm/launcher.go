@@ -35,23 +35,23 @@ const (
 // Launcher runs one VM in the foreground: it is hangar-node vmm, the main
 // process of the VM's unit, started again by systemd as the restart policy
 // says. It needs nothing of the node agent: what it runs is in the VM's
-// directory. It opens the VM's root disk, checked to be the machine's, and
-// its taps, and runs Cloud Hypervisor on them as the VM's user, with no
-// capabilities and only the taps' fds (ExecMain); it keeps the guest's console
-// in a log of bounded size, and exits as the container's process did, so
-// systemd's restart policy and restart count see the container. Stopped
-// (ctx ends, on SIGTERM), it stops Cloud Hypervisor and exits, recording no
-// exit: stopped by the driver, which has stopped the guest already, at
-// once; stopped by systemd alone, as at host shutdown, once it has stopped
-// the guest as the driver's Stop does, so the container gets its SIGTERM
-// and grace. Either way the VM reads as stopped or interrupted, never as
-// exited, however its process ended.
+// directory. It opens the VM's disks, each checked to be what the spec
+// names, and its taps, and runs Cloud Hypervisor on them as the VM's user,
+// with no capabilities and only the taps' fds (ExecMain); it keeps the
+// guest's console in a log of bounded size, and exits as the container's
+// process did, so systemd's restart policy and restart count see the
+// container. Stopped (ctx ends, on SIGTERM), it stops Cloud Hypervisor and
+// exits, recording no exit: stopped by the driver, which has stopped the
+// guest already, at once; stopped by systemd alone, as at host shutdown,
+// once it has stopped the guest as the driver's Stop does, so the container
+// gets its SIGTERM and grace. Either way the VM reads as stopped or
+// interrupted, never as exited, however its process ended.
 type Launcher struct {
 	// Dir holds the VMs' directories, as the driver's Config.Dir.
 	Dir string
-	// OpenRoot opens the root disk at path for the VM, refusing one that
-	// is not what path names. Nil means OpenZvol.
-	OpenRoot func(path string) (*os.File, error)
+	// OpenDisk opens a disk at path for the VM, the root disk or a volume,
+	// refusing one that is not what path names. Nil means OpenZvol.
+	OpenDisk func(path string) (*os.File, error)
 	// OpenTap opens an interface's tap. Nil means hostnet.OpenTap.
 	OpenTap func(driver.Interface) (*os.File, error)
 	// ConsoleMax and SerialMax bound each file of the logs; zero means
@@ -122,14 +122,14 @@ func OpenZvol(path string) (*os.File, error) {
 	}
 	if err != nil {
 		_ = f.Close()
-		return nil, fmt.Errorf("refusing the root disk: %w", err)
+		return nil, fmt.Errorf("refusing %s: %w", path, err)
 	}
 	return f, nil
 }
 
 func (l *Launcher) defaults() {
-	if l.OpenRoot == nil {
-		l.OpenRoot = OpenZvol
+	if l.OpenDisk == nil {
+		l.OpenDisk = OpenZvol
 	}
 	if l.OpenTap == nil {
 		l.OpenTap = hostnet.OpenTap
@@ -227,13 +227,29 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 	// Held open while the VM runs, O_EXCL: no other zvol can take its
 	// device's number, which the node names.
-	root, err := l.OpenRoot(ln.Spec.Root.Path)
+	root, err := l.OpenDisk(ln.Spec.Root.Path)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = root.Close() }()
 	if err := l.MakeNode(root, filepath.Join(dir, diskNode), gid); err != nil {
 		return 0, fmt.Errorf("the root disk's node: %w", err)
+	}
+	var vols []*os.File
+	defer func() {
+		for _, f := range vols {
+			_ = f.Close()
+		}
+	}()
+	for n, v := range ln.Spec.Disks {
+		f, err := l.OpenDisk(v.Path)
+		if err != nil {
+			return 0, fmt.Errorf("disk %s: %w", v.DiskUID, err)
+		}
+		vols = append(vols, f)
+		if err := l.MakeNode(f, filepath.Join(dir, volumeNode(n)), gid); err != nil {
+			return 0, fmt.Errorf("disk %s's node: %w", v.DiskUID, err)
+		}
 	}
 	var taps []*os.File
 	defer func() {
@@ -484,8 +500,12 @@ func prepareDir(dir string, gid int) error {
 			return err
 		}
 	}
-	for _, name := range []string{legacyVsockFile, diskNode} {
-		if err := os.Remove(filepath.Join(dir, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	nodes, err := filepath.Glob(filepath.Join(dir, volumeNodePrefix+"*"))
+	if err != nil {
+		return err
+	}
+	for _, path := range append(nodes, filepath.Join(dir, legacyVsockFile), filepath.Join(dir, diskNode)) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 	}
@@ -599,9 +619,9 @@ func kvmGroups(kvm string) (string, error) {
 	return "", fmt.Errorf("%s is open to neither its group nor everyone", kvm)
 }
 
-// chArgs is Cloud Hypervisor's command line for the launch: the root disk
-// at its node in dir and the taps on fds 3 and on, as the launcher passes
-// them.
+// chArgs is Cloud Hypervisor's command line for the launch: the root disk,
+// the boot disk and the volumes, at their nodes in dir, and the taps on fds
+// 3 and on, as the launcher passes them.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
@@ -613,6 +633,9 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--disk",
 		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
+	}
+	for n := range s.Disks {
+		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw")
 	}
 	if taps > 0 {
 		args = append(args, "--net")

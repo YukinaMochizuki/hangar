@@ -425,6 +425,13 @@ func checkSpec(s driver.VMSpec) error {
 	if s.Root.MachineUID != s.MachineUID || s.Root.Path == "" {
 		return fmt.Errorf("machine %s: root disk %+v is not its", s.MachineUID, s.Root)
 	}
+	seen := map[string]bool{s.Root.Path: true}
+	for _, v := range s.Disks {
+		if v.DiskUID == "" || v.Path == "" || seen[v.Path] {
+			return fmt.Errorf("machine %s: volume %+v has no disk or path, or is given twice", s.MachineUID, v)
+		}
+		seen[v.Path] = true
+	}
 	for _, i := range s.Interfaces {
 		if i.MachineUID != s.MachineUID || i.Device == "" {
 			return fmt.Errorf("machine %s: interface %+v is not its, or has no device", s.MachineUID, i)
