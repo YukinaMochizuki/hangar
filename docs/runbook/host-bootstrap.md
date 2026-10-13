@@ -5,8 +5,9 @@ packages and a pinned Cloud Hypervisor, swap mirrored on md RAID1, the `hangar`
 pool's properties and datasets, netplan owned by us with IPv6 off the
 prefix's `::` address, proxy NDP, forwarding, and vsock, unattended security
 upgrades in a fixed window, a hangar release (the binaries, the guest kernel
-and the initramfs), and `hangar-apiserver` and `hangar-node` as systemd
-services. It is safe to re-run.
+and the initramfs), `hangar-apiserver` and `hangar-node` as systemd
+services, and, once it has a token, the Cloudflare tunnel. It is safe to
+re-run.
 
 ## Before the first run
 
@@ -32,8 +33,9 @@ echo 'HANGAR_BOOTSTRAP_ADMIN=<email>' | sudo tee /etc/hangar/local.env
 ```
 
 The `services` step refuses to run without it, and `verify.sh` checks it.
-The apiserver reads it through `EnvironmentFile=`, and `verify.sh` asks the
-API as that identity.
+The apiserver reads it through `EnvironmentFile=`. The same file later
+sets the auth mode ("Switching to Cloudflare Access" below); without that,
+the public API is in dev auth.
 
 Build a release, `make release`, on a machine with the guest kernel's
 toolchain (`docs/runbook/guest-kernel.md`; the committed kernel config is
@@ -67,7 +69,7 @@ checksums recorded for them (a run that died half-way, or a file replaced
 by hand), so that no service restarts onto files of two releases; rerun
 with `--release DIR`. `--only <step>` runs a single step
 (`packages`, `swap-raid`, `zfs`, `network`, `sysctl`, `upgrades`, `release`,
-`services`).
+`services`, `cloudflared`).
 
 ## Datasets, upgrades, the release and the services
 
@@ -97,9 +99,17 @@ with `--release DIR`. `--only <step>` runs a single step
   `hangar-apiserver.service` and `hangar-node.service`:
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
-    the public API on `127.0.0.1:8080` with `--auth-mode=dev` until the
-    Cloudflare tunnel lands, and the node socket `/run/hangar/node.sock` in
-    its runtime directory, accepting uid 0 as the Node `HANGAR_NODE_NAME`;
+    the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
+    for (dev when unset), and two unix sockets that systemd makes and
+    passes it (`hangar-apiserver-node.socket` and
+    `hangar-apiserver-admin.socket`, `PartOf=` the apiserver, so they stop
+    and restart with it): the node socket `/run/hangar/node.sock`
+    (`hangar`'s, 0660), accepting uid 0 as the Node `HANGAR_NODE_NAME`, and
+    the admin socket `/run/hangar/admin.sock` (root's, 0600), where root on
+    the host is `platform.root` whatever the bindings say
+    (`docs/decisions/authentication.md`). `/run/hangar` is root's, 0755,
+    from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can remove or
+    replace neither socket;
   - the agent as root: `--drivers=host --name HANGAR_NODE_NAME --uplink
     HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --reserved-disk` the sum
     of both quotas, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
@@ -110,7 +120,11 @@ with `--release DIR`. `--only <step>` runs a single step
 
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
-  file), and nothing else. A unit written by a run that died before the
+  file), and nothing else. A changed socket unit, or one that is down,
+  restarts the apiserver: systemd refuses to start a socket alone while its
+  service runs, so `systemctl restart hangar-apiserver-node.socket` leaves
+  the socket unit failed (the apiserver keeps serving it) until the next
+  run restarts the apiserver. A unit written by a run that died before the
   restart leaves `/var/lib/hangar-bootstrap/restart-<unit>`, so the next run
   restarts it.
 
@@ -123,6 +137,25 @@ with `--release DIR`. `--only <step>` runs a single step
   datasets are not mounted. Restarting `zfs-mount.service` by hand restarts
   them too, and stopping it stops them: start them again yourself after
   starting it.
+- `cloudflared` runs the Cloudflare tunnel, and only when
+  `/etc/hangar/cloudflared.env` exists ("Switching to Cloudflare Access"
+  below); without it the step installs nothing, stops and disables a
+  tunnel that is up, and `verify.sh` reports its checks as SKIP. With it,
+  it installs `cloudflared` at the version and checksum pinned in
+  `versions.env` as `/usr/local/bin/cloudflared`, and writes, enables and
+  starts `hangar-cloudflared.service`: `cloudflared tunnel --no-autoupdate
+  --metrics 127.0.0.1:20241 run`, the token from the env file through
+  `EnvironmentFile=`, `Restart=always`, as a `DynamicUser=` with no unix
+  sockets (`RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK`) and
+  `/run/hangar`, `/var/lib/hangar` and `/etc/hangar` inaccessible
+  (`systemd-analyze security hangar-cloudflared` shows the rest). It
+  refuses, and stops a tunnel that is up, unless the apiserver runs in
+  cloudflare auth, as `local.env` asks and as it was started: a tunnel
+  must never reach an apiserver in dev auth, which trusts a header. The
+  `services` step, for the same reason, stops the tunnel before it would
+  restart the apiserver into dev auth. A changed unit, a replaced binary
+  or a new token restarts the tunnel. The tunnel's routes, DNS and Access
+  application are set on Cloudflare's side, not here.
 
 ## Deploying a new hangar version
 
@@ -172,9 +205,78 @@ then.
 A release with a file that does not match its `SHA256SUMS` stops the run
 before anything is installed; copy it again.
 
-To use the CLI on the host, as the bootstrap admin over dev auth:
-`hangar config set-context local --endpoint http://127.0.0.1:8080 --auth dev
---user <email>`.
+The first deploy with the admin socket rewrites the apiserver's unit (the
+sockets move to socket units, `/run/hangar` becomes root's), so it
+restarts the apiserver once even with the auth mode unset; the agent
+reconnects on its own and the VMs are not touched.
+
+To use the CLI on the host, as root on the host through the admin socket,
+in any auth mode, once:
+`sudo hangar config set-context local --endpoint unix:///run/hangar/admin.sock`
+(the auth is `local`, and no credential is sent). Then
+`sudo hangar --context local get nodes`, and so on: it holds
+`platform.root` without a binding, which is the way back in when no one
+else does (`sudo hangar --context local apply -f` a RoleBinding). Each
+request on the socket is in the apiserver's log as `admin socket request`,
+with the caller's pid, as `local:root@<node>`.
+
+## Switching to Cloudflare Access
+
+The public API moves from dev auth to Access tokens before any tunnel
+exists, so a tunnel never reaches a header-trusting apiserver; local
+administration goes through the admin socket throughout. Both values in
+this section stay on the host only.
+
+1. Add the Access application's settings to `/etc/hangar/local.env`, next
+   to `HANGAR_BOOTSTRAP_ADMIN`:
+
+   ```sh
+   HANGAR_AUTH_MODE=cloudflare
+   HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com
+   HANGAR_CF_AUDIENCE=<the Access application's AUD tag>
+   ```
+
+   Then `sudo deploy/host/bootstrap.sh --only services`. It refuses, before
+   changing anything, when the mode is neither `dev` nor `cloudflare` or
+   either value is missing. Otherwise the unit gets `--auth-mode cloudflare
+   --cf-team-domain … --cf-audience …` and the apiserver restarts, still on
+   `127.0.0.1:8080`. From here on a dev header on the public listener is
+   refused; use the admin socket.
+2. Put the tunnel's token (C2's `hangar-cloudflare`, or the dashboard,
+   prints it) in `/etc/hangar/cloudflared.env`, root's, mode 0600:
+
+   ```sh
+   sudo install -m 0600 /dev/null /etc/hangar/cloudflared.env
+   sudo sh -c 'echo "TUNNEL_TOKEN=<token>" >/etc/hangar/cloudflared.env'
+   ```
+
+   Then `sudo deploy/host/bootstrap.sh --only cloudflared`.
+3. Verify: `sudo deploy/host/verify.sh` passes, with `PASS apiserver runs
+   cloudflare auth …` and the cloudflared lines instead of SKIP;
+   `journalctl -u hangar-cloudflared` shows `Registered tunnel connection`;
+   from a workstation, `hangar login` then `hangar get nodes` against
+   `https://api.hangarlab.cloud`; and `curl -s -o /dev/null -w '%{http_code}'
+   https://api.hangarlab.cloud/healthz` without a session is a redirect to
+   Access, not 200. A full `bootstrap.sh` then prints `changes: 0`.
+
+A new token is the same step 2: the run restarts the tunnel.
+
+To roll back to dev auth, in the reverse order:
+
+1. `sudo rm /etc/hangar/cloudflared.env`, then `sudo
+   deploy/host/bootstrap.sh --only cloudflared`: it stops and disables
+   `hangar-cloudflared` (the binary and unit stay, unused).
+2. Remove the three `HANGAR_AUTH_MODE` and `HANGAR_CF_*` lines from
+   `local.env`, then `sudo deploy/host/bootstrap.sh --only services`: the
+   apiserver restarts in dev auth. `verify.sh` passes and reports
+   cloudflared as SKIP.
+
+Getting the order wrong is caught, not just documented: with
+`cloudflared.env` present and dev auth asked for, a full run stops the
+tunnel before the apiserver restarts and then refuses, and `verify.sh`
+fails until one of the two files is fixed. Dev auth also refuses any
+request carrying a header Cloudflare's edge adds (`Cf-Connecting-Ip`,
+`Cdn-Loop`, `Cf-Ray`).
 
 ## When the network step fails
 
@@ -269,6 +371,24 @@ unit restarts its service only, also when a run died before the restart; a
 drop-in for a unit fails verify and is refused; the node does not start
 while `hangar/images` is not mounted; and drift in the datasets, the
 installed files, the apt timers and the services is reported and repaired.
+For the admin socket and the tunnel it checks: `/run/hangar` and both
+sockets have their owners and modes; root on the admin socket gets and
+binds without a binding of its own and is logged as `local:root@testbed`;
+other users are kept out by the socket's mode and, with the mode opened,
+by the apiserver's uid check; dev auth refuses Cloudflare's edge headers;
+the agent reconnects when the apiserver and its sockets restart, and a
+socket restarted alone is reported and repaired; without `cloudflared.env`
+nothing about cloudflared changes and verify reports SKIP; with it, in dev
+auth, the step refuses and installs nothing; half a cloudflare mode is
+refused before any step; the switch to cloudflare auth restarts the
+apiserver with the flags, still on loopback; then, with a fake token,
+cloudflared is installed, enabled and started, and a second run changes
+nothing; `systemd-analyze security` rates the tunnel's unit at most 2.0,
+and a probe under the same sandbox can neither open a unix socket nor
+list hangar's directories, nor reach the sockets by path with unix
+sockets allowed; a new token restarts the tunnel only; the rollback in
+reverse order; and dev auth asked for with the tunnel up stops the tunnel
+before the apiserver changes.
 It does not reboot. Run it as root on a disposable VM only. `make lint-sh` runs
 shellcheck over every script.
 

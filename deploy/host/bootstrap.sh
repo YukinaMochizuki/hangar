@@ -50,6 +50,8 @@ if [ "$DRY_RUN" != 1 ] && { [ -z "$only" ] || [ "$only" = services ]; }; then
 	# shellcheck source=deploy/host/steps/80-services.sh
 	. "$here/steps/80-services.sh"
 	services_local_env_ok || die "$LOCAL_ENV is missing or wrong: $(services_local_env_how)"
+	problem=$(auth_problem)
+	[ -z "$problem" ] || die "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 fi
 
 ran=0
