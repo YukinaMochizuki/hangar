@@ -1,6 +1,7 @@
 package chvm
 
 import (
+	"debug/elf"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,14 +16,26 @@ import (
 )
 
 // What a VM's directory, Dir/<machine uid>, holds. The logs outlive the VM;
-// the rest is the running VM's, and goes with it.
+// the rest is the running VM's, and goes with it. Everything in it is
+// root's: Cloud Hypervisor, running as the VM's user, reads the boot disk
+// and opens the root disk's node and the serial FIFO through the VM's
+// group, and writes only in chDir.
 const (
 	// specFile is the launch: what the launcher starts, written by Start.
 	specFile = "spec.json"
 	// bootFile is the boot disk (internal/guest/bootdisk).
 	bootFile = "boot.img"
+	// diskNode is a node of the root disk's device, made by the launcher
+	// for Cloud Hypervisor to open, as the jailer makes one in its chroot.
+	diskNode = "disk"
+	// chDir is the one directory Cloud Hypervisor can write in, for its
+	// socket; the launcher makes it afresh on each run.
+	chDir = "ch"
 	// vsockFile is the hybrid vsock socket Cloud Hypervisor listens on.
-	vsockFile = "vsock"
+	vsockFile = chDir + "/vsock"
+	// legacyVsockFile is the socket of a VM whose launcher has no chDir; it
+	// is there until the VM is started again.
+	legacyVsockFile = "vsock"
 	// exitFile records how the VM's last run ended, written by the
 	// launcher when Cloud Hypervisor exits by itself.
 	exitFile = "exit.json"
@@ -96,6 +109,10 @@ type launch struct {
 	// StopSlack, which the launcher gives a guest when systemd stops it;
 	// zero, as in a spec written before they were, means the defaults.
 	StopGrace, StopSlack time.Duration `json:",omitempty"`
+	// VMUser is the uid, and the gid, Cloud Hypervisor runs as: the VM's
+	// own, from the driver's range, held while this file is. Zero, as in a
+	// spec written before it was, means Cloud Hypervisor runs as root.
+	VMUser uint32 `json:",omitempty"`
 }
 
 // stopTimes are the grace and the slack the launch gives a guest to stop.
@@ -212,4 +229,25 @@ func readExit(dir string) (exitRecord, bool, error) {
 func exists(path string) bool {
 	_, err := os.Lstat(path)
 	return err == nil
+}
+
+func isSocket(path string) bool {
+	fi, err := os.Lstat(path)
+	return err == nil && fi.Mode().Type() == fs.ModeSocket
+}
+
+// checkStatic refuses an executable that needs a dynamic loader, which a
+// VM's unit, with an empty root, does not have.
+func checkStatic(path string) error {
+	f, err := elf.Open(path)
+	if err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	for _, p := range f.Progs {
+		if p.Type == elf.PT_INTERP {
+			return fmt.Errorf("%s is dynamically linked; a VM's unit runs only static executables (CGO_ENABLED=0)", path)
+		}
+	}
+	return nil
 }

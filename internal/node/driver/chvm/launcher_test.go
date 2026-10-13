@@ -11,27 +11,78 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 // The test binary plays Cloud Hypervisor when fakeCHEnv is set, doing what
-// it names: see fakeCH.
-const fakeCHEnv = "CHVM_FAKE_CH"
+// it names: see fakeCH. Run as vmm-exec, it plays ExecMain (fakeExec), or
+// is it when realExecEnv is set.
+const (
+	fakeCHEnv   = "CHVM_FAKE_CH"
+	realExecEnv = "CHVM_REAL_EXEC"
+)
 
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "vmm-exec" {
+		if os.Getenv(realExecEnv) != "" {
+			os.Exit(ExecMain(os.Args[2:]))
+		}
+		os.Exit(fakeExec(os.Args[2:]))
+	}
 	if mode := os.Getenv(fakeCHEnv); mode != "" {
 		os.Exit(fakeCH(mode))
 	}
 	os.Exit(m.Run())
 }
 
-// fakeCH plays Cloud Hypervisor: it records its arguments and whether fds
-// 3 and 4 were given to it in args.json beside its vsock socket, writes to
-// the serial file, then frames what mode says on its stdout, the console:
+// fakeExec plays ExecMain, which needs root: it records what it was asked
+// to run Cloud Hypervisor as, and which fds it had past stderr, in
+// exec.json beside the vsock socket, and runs it as it is.
+func fakeExec(args []string) int {
+	c, argv, err := parseExec(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return ExitFailed
+	}
+	b, _ := json.Marshal(map[string]any{"uid": c.uid, "gid": c.gid, "groups": c.groups, "fds": c.fds, "open": openFDs()})
+	_ = os.WriteFile(filepath.Join(filepath.Dir(vsockOf(argv)), "exec.json"), b, 0o600)
+	if err := syscall.Exec(argv[0], argv, os.Environ()); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	return ExitFailed
+}
+
+// openFDs are the fds from 3 to 9 the process was given: open, and not
+// close-on-exec, as the Go runtime's own are.
+func openFDs() []int {
+	var fds []int
+	for fd := 3; fd <= 9; fd++ {
+		if flags, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err == nil && flags&unix.FD_CLOEXEC == 0 {
+			fds = append(fds, fd)
+		}
+	}
+	return fds
+}
+
+func vsockOf(args []string) string {
+	for i, a := range args {
+		if i > 0 && args[i-1] == "--vsock" {
+			return a[strings.Index(a, "socket=")+len("socket="):]
+		}
+	}
+	return ""
+}
+
+// fakeCH plays Cloud Hypervisor: it records its arguments and the fds from
+// 3 to 9 it was given in args.json beside its vsock socket, writes to the
+// serial file, then frames what mode says on its stdout, the console:
 //
 //	exit:N   a record on each stream, then exit code N, then powers off
 //	flood:N  N records of 64 KiB, then exit code 0
@@ -53,15 +104,7 @@ func fakeCH(mode string) int {
 			serial = strings.TrimPrefix(a, "file=")
 		}
 	}
-	var fds []int
-	for fd := 3; fd <= 4; fd++ {
-		if f := os.NewFile(uintptr(fd), ""); f != nil {
-			if _, err := f.Stat(); err == nil {
-				fds = append(fds, fd)
-			}
-		}
-	}
-	b, _ := json.Marshal(map[string]any{"args": args, "fds": fds})
+	b, _ := json.Marshal(map[string]any{"args": args, "fds": openFDs()})
 	_ = os.WriteFile(filepath.Join(filepath.Dir(vsock), "args.json"), b, 0o600)
 	if f, err := os.OpenFile(serial, os.O_WRONLY, 0); err == nil {
 		_, _ = f.WriteString("kernel: hello\n")
@@ -119,6 +162,10 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// A legacy launcher's socket, which a run removes.
+	if err := os.WriteFile(filepath.Join(dir, legacyVsockFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	spec := driver.VMSpec{
 		MachineUID: uid, Machine: "p/" + uid, VCPUs: 2, MemoryMiB: 512,
 		Root: driver.Disk{MachineUID: uid, Path: "/dev/zvol/hangar/roots/" + uid},
@@ -138,18 +185,34 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 	if err := os.WriteFile(filepath.Join(dir, specFile), b, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(filepath.Join(dir, bootFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	file := func(name string) (*os.File, error) { return os.Create(filepath.Join(base, name)) }
 	l := &Launcher{
 		Dir:      base,
 		OpenRoot: func(path string) (*os.File, error) { return file("root") },
 		OpenTap:  func(i driver.Interface) (*os.File, error) { return file("tap-" + i.Device) },
 		Guest:    &launcherGuest{dir: dir},
+		// A plain file for the root disk's node.
+		MakeNode: func(f *os.File, path string, gid int) error {
+			return os.WriteFile(path, []byte(f.Name()), 0o600)
+		},
+		Exec: []string{os.Args[0], "vmm-exec"},
+		UnmountNetns: func() error {
+			t.Error("a launcher with no VM user unmounted /run/netns")
+			return nil
+		},
+		DropCaps: func() error {
+			t.Error("a launcher with no VM user, in a unit without a sandbox, dropped its capabilities")
+			return nil
+		},
 	}
 	return l, dir
 }
 
 // launcherGuest is the guest of a fake Cloud Hypervisor: Stop leaves the
-// file "stop" in the VM's directory, which the mode stoppable waits for,
+// file "stop" in chDir, which the mode stoppable waits for,
 // unless err says it fails.
 type launcherGuest struct {
 	dir    string
@@ -171,7 +234,7 @@ func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) e
 	if g.err != nil {
 		return g.err
 	}
-	return os.WriteFile(filepath.Join(g.dir, "stop"), nil, 0o600)
+	return os.WriteFile(filepath.Join(g.dir, chDir, "stop"), nil, 0o600)
 }
 
 func (g *launcherGuest) asked() []time.Duration {
@@ -236,14 +299,17 @@ func TestTheLauncherExitsAsTheContainer(t *testing.T) {
 				Args []string
 				Fds  []int
 			}
-			b, _ := os.ReadFile(filepath.Join(dir, "args.json"))
+			b, _ := os.ReadFile(filepath.Join(dir, chDir, "args.json"))
 			if err := json.Unmarshal(b, &ch); err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(ch.Fds, []int{3, 4}) {
-				t.Errorf("Cloud Hypervisor had fds %v, want the root disk's and a tap's", ch.Fds)
+			if !slices.Equal(ch.Fds, []int{3}) {
+				t.Errorf("Cloud Hypervisor had fds %v, want a tap's alone", ch.Fds)
 			}
-			for _, want := range []string{"boot=2", "size=512M", "path=/dev/fd/3,image_type=raw", "fd=4,mac=02:00:00:00:00:01", "tty"} {
+			if exists(filepath.Join(dir, legacyVsockFile)) {
+				t.Error("the legacy socket was left")
+			}
+			for _, want := range []string{"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw", "fd=3,mac=02:00:00:00:00:01", "tty"} {
 				if !slices.Contains(ch.Args, want) {
 					t.Errorf("Cloud Hypervisor's arguments %q lack %q", ch.Args, want)
 				}
@@ -337,7 +403,7 @@ func TestTheLauncherRefusesWhatItCannotOpen(t *testing.T) {
 			if r, ok := exitOf(t, dir); !ok || r.Code != ExitFailed || r.Error == "" {
 				t.Errorf("exit record %+v %t", r, ok)
 			}
-			if exists(filepath.Join(dir, "args.json")) {
+			if exists(filepath.Join(dir, chDir, "args.json")) {
 				t.Error("Cloud Hypervisor was started")
 			}
 		})

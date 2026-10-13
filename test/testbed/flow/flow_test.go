@@ -4,6 +4,7 @@ package flow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -172,7 +173,7 @@ func (f *flow) applyAndReady(t *testing.T) {
 	if !unitActive(uid) || chPID(t, uid) == 0 {
 		t.Errorf("unit %s active: %t, Cloud Hypervisor pid %d", unitOf(uid), unitActive(uid), chPID(t, uid))
 	}
-	for _, file := range []string{"spec.json", "boot.img", "vsock", "console.log"} {
+	for _, file := range []string{"spec.json", "boot.img", "ch/vsock", "console.log"} {
 		if !exists(filepath.Join(vmDir, uid, file)) {
 			t.Errorf("VM directory of %s has no %s", uid, file)
 		}
@@ -531,12 +532,40 @@ const termScript = `trap 'echo got SIGTERM; exit 0' TERM
 echo ready
 while :; do sleep 1 & wait $!; done`
 
+// chUser is the uid the machine's Cloud Hypervisor runs as, which must be
+// the VM user its spec file holds, and none of root's.
+func chUser(t *testing.T, uid string) string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(vmDir, uid, "spec.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ln struct{ VMUser int }
+	if err := json.Unmarshal(b, &ln); err != nil {
+		t.Fatal(err)
+	}
+	status, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", chPID(t, uid)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.TrimSpace(strings.Repeat(strconv.Itoa(ln.VMUser)+" ", 4))
+	for _, line := range strings.Split(string(status), "\n") {
+		if v, ok := strings.CutPrefix(line, "Uid:"); ok {
+			if got := strings.Join(strings.Fields(v), " "); ln.VMUser == 0 || got != want {
+				t.Errorf("machine %s's Cloud Hypervisor runs as %s, its spec file says %d", uid, got, ln.VMUser)
+			}
+		}
+	}
+	return strconv.Itoa(ln.VMUser)
+}
+
 // Scenario 9: a host shutdown stops the agent and then each VM's unit,
 // systemd alone: the containers get SIGTERM and their grace, and write to
 // their logs, yet each VM reads as interrupted, never as a container that
 // exited 0 (decision 16). Once the agent is back, always and on-failure
-// boot again, and never is Exited with 253. A real reboot would also drop
-// the units, which are transient; the stop already unloads them.
+// boot again, as the VM users they had, and never is Exited with 253. A
+// real reboot would also drop the units, which are transient; the stop
+// already unloads them.
 func (f *flow) hostShutdown(t *testing.T) {
 	c := f.c
 	policies := map[string]string{
@@ -547,10 +576,12 @@ func (f *flow) hostShutdown(t *testing.T) {
 		c.applyYAML(containerYAML(name, busyboxRef, policies[name], "1Gi", termScript))
 	}
 	boots := map[string]time.Time{}
+	users := map[string]string{}
 	for _, name := range names {
 		c.waitReady(name, 3*time.Minute)
 		f.uids[name] = c.machine(name).GetMetadata().GetUid()
 		boots[name] = c.machine(name).GetStatus().GetBootTime().AsTime()
+		users[name] = chUser(t, f.uids[name])
 		eventually(t, 30*time.Second, name+" ready", func() (bool, string) {
 			text := consoleText(t, f.uids[name])
 			return strings.Contains(text, "ready"), text
@@ -605,6 +636,10 @@ func (f *flow) hostShutdown(t *testing.T) {
 			return boot.After(boots[name]) && unitActive(f.uids[name]), fmt.Sprintf("boot time %v, was %v", boot, boots[name])
 		})
 		c.waitReady(name, 2*time.Minute)
+		// The host's reboot keeps a VM's id: its spec file holds it.
+		if got := chUser(t, f.uids[name]); got != users[name] {
+			t.Errorf("%s's Cloud Hypervisor runs as %s after the shutdown, as %s before", name, got, users[name])
+		}
 	}
 	eventually(t, time.Minute, "down-never Exited with 253", func() (bool, string) {
 		m := c.machine("down-never")

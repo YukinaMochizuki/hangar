@@ -5,13 +5,16 @@ package chguest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
@@ -87,8 +90,7 @@ func (c client) Exec(ctx context.Context) *connect.BidiStreamForClient[guestv1.E
 // hybrid vsock socket: the host writes "CONNECT <port>" and Cloud
 // Hypervisor answers "OK <host port>" once the guest accepts.
 func Dial(ctx context.Context, socket string, port uint32) (net.Conn, error) {
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "unix", socket)
+	conn, err := dialSocket(ctx, socket)
 	if err != nil {
 		return nil, err
 	}
@@ -121,6 +123,29 @@ func Dial(ctx context.Context, socket string, port uint32) (net.Conn, error) {
 	}
 	_ = conn.SetDeadline(time.Time{})
 	return conn, nil
+}
+
+// ErrNotSocket is what Dial says of a socket path that holds something else.
+var ErrNotSocket = errors.New("not a socket")
+
+// dialSocket connects to the unix socket at path, and to nothing else: Cloud
+// Hypervisor makes the socket in a directory it can write in, so a link
+// there could lead its caller, root, to any socket of the host.
+func dialSocket(ctx context.Context, path string) (net.Conn, error) {
+	fd, err := unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, &os.PathError{Op: "open", Path: path, Err: err}
+	}
+	defer func() { _ = unix.Close(fd) }()
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return nil, err
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFSOCK {
+		return nil, fmt.Errorf("%s: %w", path, ErrNotSocket)
+	}
+	var d net.Dialer
+	return d.DialContext(ctx, "unix", fmt.Sprintf("/proc/self/fd/%d", fd))
 }
 
 func readLine(conn net.Conn) (string, error) {

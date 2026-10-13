@@ -48,35 +48,41 @@ test:
 	go test -race ./...
 
 # Tests that need root: the guest's, which start processes as other users as
-# PID 1 does, and the image unpacker's, which give files owners. They skip in
-# make test unless it runs as root. CI runs this under sudo.
+# PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,
+# which gives up root. They skip in make test unless it runs as root. CI runs
+# this under sudo.
 test-root:
 	sudo -E env "PATH=$$PATH" go test -race -count=1 ./internal/guest/... ./internal/node/driver/chguest/ \
-		./internal/node/driver/ocilayer/ ./internal/node/driver/registry/ ./internal/node/
+		./internal/node/driver/ocilayer/ ./internal/node/driver/registry/ ./internal/node/ \
+		./internal/node/driver/chvm/
 
 e2e:
 	go test -race -tags e2e ./test/e2e/...
 
 # Real-host tests (L4), on a testbed VM only: they boot guests as root.
 # docs/runbook/testbed.md says what they need and how to provide it.
+# hangar-node is static, as a release builds it, and so is the probe that
+# stands in for Cloud Hypervisor: a VM's unit has no dynamic loader.
 E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3b9c8e0ffbb309f34c3b14c12d889d69
 # Named by the image's digest, so a new pin makes a new image.
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
 e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
-	go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
 
 # The real hypervisor driver's tests alone, with every other real driver.
 e2e-host-vms: guest-initramfs $(E2E_HOST_ROOTFS)
-	go build -o bin/hangar-node ./cmd/hangar-node
+	CGO_ENABLED=0 go build -o bin/hangar-node ./cmd/hangar-node
+	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 
 # The full flow alone: the real apiserver, node and CLI on every real driver.
 e2e-host-flow: guest-initramfs $(E2E_HOST_ROOTFS)
-	go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/flow/ $(if $(RUN),-run '$(RUN)')
 

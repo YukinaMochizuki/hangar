@@ -48,6 +48,11 @@ type Inputs struct {
 	// e2e-host, or HANGAR_TESTBED_APISERVER and HANGAR_TESTBED_CLI; a
 	// package that uses them checks that they are there.
 	Apiserver, CLI string
+	// CHProbe stands in for Cloud Hypervisor to try what a VM's unit
+	// lets it do (test/testbed/vms/chprobe), built by make e2e-host, or
+	// HANGAR_TESTBED_CHPROBE; a package that uses it checks that it is
+	// there.
+	CHProbe string
 }
 
 var in Inputs
@@ -233,6 +238,7 @@ func loadInputs() (Inputs, error) {
 		Node:      pick("HANGAR_TESTBED_NODE", "bin/hangar-node"),
 		Apiserver: pick("HANGAR_TESTBED_APISERVER", "bin/hangar-apiserver"),
 		CLI:       pick("HANGAR_TESTBED_CLI", "bin/hangar"),
+		CHProbe:   pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")

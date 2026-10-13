@@ -652,6 +652,58 @@ test_refuses_half_applied_release() {
 	rm -f "$work/hangar-node.mixed"
 }
 
+# with_subuid_clash CMD... runs CMD with a user's subordinate range among
+# the VMs' ids in /etc/subuid, as useradd gave a second user before
+# hangar-vms was kept there, then puts /etc/subuid back.
+with_subuid_clash() {
+	local had=0 rc=0
+	if [ -f /etc/subuid ]; then had=1; cp -p /etc/subuid "$work/subuid"; fi
+	echo 'old:165536:65536' >>/etc/subuid
+	"$@" || rc=$?
+	if [ "$had" = 1 ]; then cp -p "$work/subuid" /etc/subuid; else rm -f /etc/subuid; fi
+	return "$rc"
+}
+
+ids_refused_fresh() {
+	local before
+	before=$(state_digest)
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$work/ids.log"; then
+		fail "bootstrap ran with old's subordinate range among the VMs' ids"
+	fi
+	grep -q "the VMs' ids 200000 to 265535 are taken: /etc/subuid range of old; move each to other ids" "$work/ids.log" ||
+		fail "unexpected refusal: $(cat "$work/ids.log")"
+	grep -q '^== ' "$work/ids.log" && fail "steps ran before the refusal: $(grep '^== ' "$work/ids.log")"
+	[ "$(state_digest)" = "$before" ] || fail "the refusal changed the host"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$release" --only release >/dev/null 2>"$work/ids.log"; then
+		fail "the release step ran with old's range among the VMs' ids"
+	fi
+	[ ! -e /usr/local/bin/hangar-node ] || fail "a refused run installed hangar-node"
+}
+
+test_refuses_vm_id_clash() {
+	step "a user's subordinate range among the VMs' ids is refused before any step, with nothing installed"
+	with_subuid_clash ids_refused_fresh
+}
+
+ids_refused_installed() {
+	local node_pid
+	node_pid=$(main_pid hangar-node)
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/ids-verify.log"; then fail "verify passed with old's range among the VMs' ids"; fi
+	grep -q "^FAIL no user, group or other subordinate range has one of the VMs' ids$" "$work/ids-verify.log" ||
+		fail "verify did not say why: $(grep '^FAIL' "$work/ids-verify.log")"
+	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/ids.log"; then fail "bootstrap ran with old's range among the VMs' ids"; fi
+	grep -q '^apply: ' "$work/ids.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/ids.log")"
+	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
+}
+
+test_refuses_vm_id_clash_installed() {
+	step "on an installed host, verify reports a range among the VMs' ids, and a run refuses it"
+	with_subuid_clash ids_refused_installed
+	grep -qx 'hangar-vms:200000:65536' /etc/subuid || fail "the VMs' ids are not kept in /etc/subuid"
+	grep -qx 'hangar-vms:200000:65536' /etc/subgid || fail "the VMs' ids are not kept in /etc/subgid"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once old's range is gone"
+}
+
 test_refuses_without_local_env() {
 	step "the services step refuses without the bootstrap admin in /etc/hangar/local.env"
 	mv /etc/hangar/local.env "$work/local.env"
@@ -853,6 +905,7 @@ prepare
 test_failed_generator_writes_nothing
 test_refuses_non_swap_partition
 test_refuses_unknown_installer_keys
+test_refuses_vm_id_clash
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
 test_admin_socket
@@ -862,6 +915,7 @@ test_cloudflare_cutover
 test_refuses_tampered_release
 test_refuses_half_applied_release
 test_refuses_without_local_env
+test_refuses_vm_id_clash_installed
 test_upgrade_restarts_services
 test_unit_change_restarts_its_service
 test_refuses_dropins

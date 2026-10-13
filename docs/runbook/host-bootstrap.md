@@ -229,6 +229,14 @@ reconnects on its own and the VMs are not touched. Going back to a release
 from before it leaves the two socket units behind and `admin.sock` owned by
 `hangar`, unused; both are harmless, and the next upgrade puts them right.
 
+Do not go back past the release that confines each VM's Cloud Hypervisor
+to a uid of its own (`docs/decisions/node-agent.md`) while VMs run: the
+older launcher refuses the `--vm-user` its VMs' units pass, so a VM that
+restarts fails to start, and the older agent looks for each VM's socket at
+`<dir>/vsock`, not `<dir>/ch/vsock`, so it cannot stop or exec into them.
+Stop every VM first (`hangar stop` each container), or do not go back that
+far. The ids it keeps in `/etc/subuid` and `/etc/subgid` stay, harmless.
+
 To use the CLI on the host, as root on the host through the admin socket,
 in any auth mode, once:
 `sudo hangar config set-context local --endpoint unix:///run/hangar/admin.sock`
@@ -356,12 +364,26 @@ The hypervisor driver (`internal/node/driver/chvm`,
   step makes, `0700` and
   root's: each VM's spec, boot disk, sockets and console logs. Its path must
   stay short enough for a unix socket under it (the driver refuses one too
-  long). The logs are tenant data, at most 34 MiB a VM.
+  long). The logs are tenant data, at most 34 MiB a VM. It keeps
+  `devices=on`: each VM's directory holds a node of its root disk, which
+  its Cloud Hypervisor opens.
+- The ids 200000 to 265535 for the VMs, one each as its uid and gid
+  (`docs/decisions/node-agent.md`): no user or group may have one, nor any
+  subordinate range in `/etc/subuid` or `/etc/subgid` overlap them, or
+  `hangar-node` refuses to start. The `services` step keeps them there as
+  `hangar-vms:200000:65536`, so `useradd` gives them to no one. While
+  anything else has one, a run refuses before any step, with nothing
+  installed: move it to other ids (`usermod`, `groupmod`, or its line in
+  `/etc/subuid` or `/etc/subgid`) and run again.
+- `hangar-node` and Cloud Hypervisor statically linked (a release builds
+  `hangar-node` so, and the pinned Cloud Hypervisor is the static build):
+  each VM's unit has an empty root, with no dynamic loader.
 - systemd 254 or later, for `RestartSteps=` and `RestartMaxDelaySec=` in
   the VMs' units (Ubuntu 24.04 has 255), and its D-Bus API: the system bus,
   or, as root, systemd's private socket.
-- `/dev/kvm`. Not `vhost_vsock`: Cloud Hypervisor's hybrid vsock is its own
-  device, reached through a unix socket.
+- `/dev/kvm`, open to its group or to everyone; a VM's Cloud Hypervisor
+  gets its group. Not `vhost_vsock`: Cloud Hypervisor's hybrid vsock is its
+  own device, reached through a unix socket.
 - The binary `hangar-node` stays where it was when VMs were started: their
   units run it as their launcher, by the path the agent ran from. Replacing
   it in place upgrades every VM's launcher at its next start.
@@ -390,6 +412,10 @@ nothing, and a dead IPv6 config is rolled back. It needs a release
 from it, and checks: the node is Ready; a tampered release, or one whose
 `SHA256SUMS` lacks a file, is refused with nothing installed; the services
 step refuses without `/etc/hangar/local.env` or with it readable by others;
+a subordinate range among the VMs' ids (`old:165536:65536` in
+`/etc/subuid`) is refused before any step on a fresh host, with nothing
+installed, the release step alone included, and on an installed one is
+reported by `verify.sh` and refused with nothing changed;
 a new release restarts both services, and so does going back; a changed
 unit restarts its service only, also when a run died before the restart; a
 drop-in for a unit fails verify and is refused; the node does not start

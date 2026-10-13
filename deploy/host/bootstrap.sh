@@ -53,6 +53,13 @@ if [ "$DRY_RUN" != 1 ] && { [ -z "$only" ] || [ "$only" = services ]; }; then
 	problem=$(auth_problem)
 	[ -z "$problem" ] || die "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 fi
+# A hangar-node the release step installs refuses to start while anything
+# else has one of the VMs' ids; refuse before it is installed.
+if [ -z "$only" ] || [ "$only" = release ] || [ "$only" = services ]; then
+	# shellcheck source=deploy/host/steps/80-services.sh
+	. "$here/steps/80-services.sh"
+	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
+fi
 
 ran=0
 for f in "$here"/steps/[0-9][0-9]-*.sh; do
