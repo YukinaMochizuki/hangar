@@ -1,6 +1,6 @@
 // Package kernel holds no code: its test keeps hangar.fragment, the
-// committed config and docs/decisions/guest-kernel.md in step, without a
-// kernel build.
+// committed config, docs/decisions/guest-kernel.md, build.sh and cache.sh in
+// step, without a kernel build.
 package kernel
 
 import (
@@ -108,5 +108,26 @@ func TestTheCommittedConfigHonoursTheFragment(t *testing.T) {
 		case want != "n" && got != want:
 			t.Errorf("%s=%s in the fragment, %q in config", opt, want, got)
 		}
+	}
+}
+
+// A cached kernel's config is compared the way build.sh compares a resolved
+// one, so a hit is held to the same standard as a build.
+func TestCacheChecksTheConfigLikeTheBuild(t *testing.T) {
+	normalize := regexp.MustCompile(`(?m)^\s*grep -vE '[^']*' "\$1"$`)
+	var got []string
+	for _, path := range []string{"build.sh", "cache.sh"} {
+		src, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := normalize.FindAll(src, -1)
+		if len(m) != 1 {
+			t.Fatalf("%s: %d normalize lines, want 1", path, len(m))
+		}
+		got = append(got, strings.TrimSpace(string(m[0])))
+	}
+	if got[0] != got[1] {
+		t.Errorf("build.sh and cache.sh leave out different lines:\n%s\n%s", got[0], got[1])
 	}
 }
