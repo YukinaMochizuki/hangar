@@ -10,6 +10,10 @@
 # reproducible: the same commit gives the same SHA256SUMS on the same
 # toolchain. A tree with uncommitted changes is refused unless --allow-dirty,
 # and its VERSION then ends in -dirty, as the binaries' own version does.
+#
+# HANGAR_KERNEL_CACHE=DIR reuses a prebuilt kernel from DIR/<key>, keyed by
+# guest/kernel/cache.sh, and files a kernel it builds there. The cached
+# config is checked against guest/kernel/config before it is used.
 set -euo pipefail
 shopt -s inherit_errexit
 
@@ -30,6 +34,9 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
+if [ -n "${HANGAR_KERNEL_CACHE:-}" ]; then
+	HANGAR_KERNEL_CACHE=$(realpath -m -- "$HANGAR_KERNEL_CACHE")
+fi
 cd "$REPO"
 version=$(git rev-parse HEAD)
 if [ -n "$(git status --porcelain)" ]; then
@@ -55,7 +62,26 @@ for cmd in hangar-apiserver hangar-node hangar; do
 		-o "$stage/$cmd" "./cmd/$cmd"
 done
 HANGAR_INITRAMFS_OUT=$stage/guest guest/initramfs/build.sh
-HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
+if [ -z "${HANGAR_KERNEL_CACHE:-}" ]; then
+	HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
+else
+	key=$(guest/kernel/cache.sh key)
+	entry=$HANGAR_KERNEL_CACHE/$key
+	if [ -e "$entry" ]; then
+		guest/kernel/cache.sh check "$entry"
+		cp "$entry/vmlinux" "$entry/config" "$stage/guest/"
+		log "kernel: cache hit $key"
+	else
+		HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
+		# Filed under a temporary name first, so a reader never sees half an entry.
+		mkdir -p "$HANGAR_KERNEL_CACHE"
+		part=$(mktemp -d "$HANGAR_KERNEL_CACHE/.$key.XXXXXX")
+		cp "$stage/guest/vmlinux" "$stage/guest/config" "$part/"
+		chmod 0755 "$part"
+		mv -T "$part" "$entry" 2>/dev/null || rm -rf "$part"
+		log "kernel: built, cached under $key"
+	fi
+fi
 mv "$stage/guest/vmlinux" "$stage/guest/initramfs.cpio" "$stage/"
 rm -rf "$stage/guest"
 printf '%s\n' "$version" >"$stage/VERSION"
