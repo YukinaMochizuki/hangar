@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/interface.proto.
  */
 export const file_hangar_compute_v1alpha1_interface: GenFile = /*@__PURE__*/
-  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9pbnRlcmZhY2UucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIikKEE5ldHdvcmtJbnRlcmZhY2USDwoHbmV0d29yaxgBIAEoCUoECAIQA0L9AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQg5JbnRlcmZhY2VQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9jb21wdXRlL3YxYWxwaGExO2NvbXB1dGV2MWFscGhhMaICA0hDWKoCF0hhbmdhci5Db21wdXRlLlYxYWxwaGExygIXSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTHiAiNIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6Q29tcHV0ZTo6VjFhbHBoYTFiBnByb3RvMw");
+  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9pbnRlcmZhY2UucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIkIKEE5ldHdvcmtJbnRlcmZhY2USDwoHbmV0d29yaxgBIAEoCRIXCg9zZWN1cml0eV9ncm91cHMYAyADKAlKBAgCEANC/QEKG2NvbS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMUIOSW50ZXJmYWNlUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM");
 
 /**
  * NetworkInterface is one network interface a Container or VirtualMachine
@@ -26,6 +26,15 @@ export type NetworkInterface = Message<"hangar.compute.v1alpha1.NetworkInterface
    * @generated from field: string network = 1;
    */
   network: string;
+
+  /**
+   * SecurityGroups of the network the interface is in; empty is the
+   * network's implicit "default" alone. Naming others without "default"
+   * leaves it.
+   *
+   * @generated from field: repeated string security_groups = 3;
+   */
+  securityGroups: string[];
 };
 
 /**

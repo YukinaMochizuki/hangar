@@ -22,6 +22,9 @@ type chainSpec struct {
 	hook  nftables.ChainHook
 	prio  nftables.ChainPriority
 	rules []ruleSpec
+	// regular is a chain on no hook, which only jumps reach; it has no
+	// type, hook or priority.
+	regular bool
 }
 
 // ruleSpec is a rule and what its comment says of it; the comment written
@@ -216,45 +219,58 @@ func commentOf(r *nftables.Rule) string {
 // ensureTable makes the driver's table on conn hold exactly want, replacing
 // it in one transaction if it differs, and touching nothing if it does not.
 func ensureTable(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec) error {
-	same, exists, err := tableIs(conn, family, want)
+	return ensureNamedTable(conn, family, Table, want)
+}
+
+// ensureNamedTable is ensureTable for the driver's table called name.
+func ensureNamedTable(conn *nftables.Conn, family nftables.TableFamily, name string, want []chainSpec) error {
+	same, exists, err := tableIs(conn, family, name, want)
 	if err != nil || same {
 		return err
 	}
-	t := &nftables.Table{Family: family, Name: Table}
+	t := &nftables.Table{Family: family, Name: name}
 	if exists {
 		conn.DelTable(t)
 	}
 	conn.AddTable(t)
 	accept := nftables.ChainPolicyAccept
-	for _, c := range want {
-		ch := conn.AddChain(&nftables.Chain{Name: c.name, Table: t, Type: c.typ, Hooknum: &c.hook, Priority: &c.prio, Policy: &accept})
+	// Every chain first, so a rule may jump to any of them.
+	chains := make([]*nftables.Chain, len(want))
+	for i, c := range want {
+		if c.regular {
+			chains[i] = conn.AddChain(&nftables.Chain{Name: c.name, Table: t})
+		} else {
+			chains[i] = conn.AddChain(&nftables.Chain{Name: c.name, Table: t, Type: c.typ, Hooknum: &c.hook, Priority: &c.prio, Policy: &accept})
+		}
+	}
+	for i, c := range want {
 		for _, r := range c.rules {
 			comment, err := r.comment()
 			if err != nil {
 				return err
 			}
 			conn.AddRule(&nftables.Rule{
-				Table: t, Chain: ch, Exprs: r.exprs,
+				Table: t, Chain: chains[i], Exprs: r.exprs,
 				UserData: userdata.AppendString(nil, userdata.TypeComment, comment),
 			})
 		}
 	}
 	if err := conn.Flush(); err != nil {
-		return fmt.Errorf("writing nft table %s: %w", Table, err)
+		return fmt.Errorf("writing nft table %s: %w", name, err)
 	}
 	return nil
 }
 
-// tableIs says whether the driver's table of family holds exactly want, and
-// whether it exists at all.
-func tableIs(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec) (same, exists bool, err error) {
+// tableIs says whether the driver's table of family called name holds
+// exactly want, and whether it exists at all.
+func tableIs(conn *nftables.Conn, family nftables.TableFamily, name string, want []chainSpec) (same, exists bool, err error) {
 	tables, err := conn.ListTablesOfFamily(family)
 	if err != nil {
 		return false, false, fmt.Errorf("listing nft tables: %w", err)
 	}
 	var t *nftables.Table
 	for _, tt := range tables {
-		if tt.Name == Table {
+		if tt.Name == name {
 			t = tt
 		}
 	}
@@ -267,7 +283,7 @@ func tableIs(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec)
 	}
 	have := map[string]*nftables.Chain{}
 	for _, c := range chains {
-		if c.Table.Name == Table {
+		if c.Table.Name == name {
 			have[c.Name] = c
 		}
 	}
@@ -276,8 +292,14 @@ func tableIs(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec)
 	}
 	for _, w := range want {
 		c := have[w.name]
-		if c == nil || c.Type != w.typ || c.Hooknum == nil || *c.Hooknum != w.hook || c.Priority == nil || *c.Priority != w.prio ||
-			(c.Policy != nil && *c.Policy != nftables.ChainPolicyAccept) {
+		if c == nil {
+			return false, true, nil
+		}
+		if w.regular && c.Hooknum != nil {
+			return false, true, nil
+		}
+		if !w.regular && (c.Type != w.typ || c.Hooknum == nil || *c.Hooknum != w.hook || c.Priority == nil || *c.Priority != w.prio ||
+			(c.Policy != nil && *c.Policy != nftables.ChainPolicyAccept)) {
 			return false, true, nil
 		}
 		rules, err := conn.GetRules(t, c)
@@ -302,12 +324,18 @@ func tableIs(conn *nftables.Conn, family nftables.TableFamily, want []chainSpec)
 
 // deleteTable removes the driver's table of family on conn, if it has one.
 func deleteTable(conn *nftables.Conn, family nftables.TableFamily) error {
+	return deleteNamedTable(conn, family, Table)
+}
+
+// deleteNamedTable removes the driver's table of family called name, if
+// it has one.
+func deleteNamedTable(conn *nftables.Conn, family nftables.TableFamily, name string) error {
 	tables, err := conn.ListTablesOfFamily(family)
 	if err != nil {
 		return fmt.Errorf("listing nft tables: %w", err)
 	}
 	for _, t := range tables {
-		if t.Name == Table {
+		if t.Name == name {
 			conn.DelTable(t)
 			return conn.Flush()
 		}
@@ -326,5 +354,6 @@ func isOurs(data any) bool {
 	case *nftables.Rule:
 		t = v.Table
 	}
-	return t != nil && (t.Family == nftables.TableFamilyIPv4 || t.Family == nftables.TableFamilyBridge) && t.Name == Table
+	return t != nil && (t.Family == nftables.TableFamilyIPv4 || t.Family == nftables.TableFamilyBridge) &&
+		(t.Name == Table || t.Name == FirewallTable)
 }

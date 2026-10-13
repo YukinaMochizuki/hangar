@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
 
 // Host is one host's drivers, with what the suite needs to drive them. A
@@ -77,6 +78,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)
 	part("network sockets", networkSockets, nets)
+	part("network firewall", networkFirewall, nets)
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
@@ -587,6 +589,38 @@ func networkSockets(t *testing.T, h Host) {
 	}
 	must(t, again.Close())
 	must(t, udp.Close())
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+}
+
+// networkFirewall ensures a network's interfaces' policies: only on a
+// network the host has, and ignoring interfaces it has not.
+func networkFirewall(t *testing.T, h Host) {
+	ctx := t.Context()
+	open := secgroup.Policy{Ingress: []secgroup.Rule{{Protocol: secgroup.All, Peers: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0")}}}, EgressAll: true}
+	if err := h.Network.EnsureFirewall(ctx, testNet.UID, nil); err == nil {
+		t.Error("ensured the firewall of a network not on the host")
+	}
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	_, err := h.Network.EnsureInterface(ctx, eth0("m1"))
+	must(t, err)
+	must(t, h.Network.EnsureFirewall(ctx, testNet.UID, []driver.InterfacePolicy{
+		{MachineUID: "m1", Name: "eth0", Policy: open},
+		{MachineUID: "elsewhere", Name: "eth0", Policy: open},
+	}))
+	// Past the bound, policies are refused; it counts only the
+	// interfaces on the host.
+	var peers []netip.Prefix
+	for i := range 100 {
+		peers = append(peers, netip.PrefixFrom(netip.AddrFrom4([4]byte{10, 1, 0, byte(i)}), 32))
+	}
+	big := secgroup.Policy{Ingress: []secgroup.Rule{{Protocol: secgroup.TCP, Peers: peers,
+		Ports: slices.Repeat([]secgroup.PortRange{{From: 80, To: 80}}, driver.MaxFirewallRules/len(peers)+1)}}}
+	if err := h.Network.EnsureFirewall(ctx, testNet.UID, []driver.InterfacePolicy{{MachineUID: "m1", Name: "eth0", Policy: big}}); err == nil {
+		t.Error("a firewall past its bound was made")
+	}
+	must(t, h.Network.EnsureFirewall(ctx, testNet.UID, []driver.InterfacePolicy{{MachineUID: "elsewhere", Name: "eth0", Policy: big}}))
+	must(t, h.Network.EnsureFirewall(ctx, testNet.UID, nil))
+	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
 	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
 }
 

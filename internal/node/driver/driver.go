@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
+	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
 
 // Errors the drivers wrap, for the agent to tell what went wrong.
@@ -166,6 +167,27 @@ type Network interface {
 	// Instance names what a network's sockets serve, until it is made again;
 	// "" means there is nothing to serve.
 	Instance(ctx context.Context, networkUID string) (string, error)
+
+	// EnsureFirewall makes each machine interface of the network on the
+	// host hold exactly its policy, replacing the network's whole set at
+	// once; an interface given none, or one made since, receives and sends
+	// nothing but its network's services and replies. Policies of
+	// interfaces not on the host are ignored. Policies of the interfaces on
+	// the host larger than MaxFirewallRules together are refused, and the
+	// firewall is then left as it was.
+	EnsureFirewall(ctx context.Context, networkUID string, policies []InterfacePolicy) error
+}
+
+// MaxFirewallRules bounds the policies one network's firewall on a host
+// holds, as their secgroup.Policy.Size together.
+const MaxFirewallRules = 20000
+
+// InterfacePolicy is what one machine interface may receive and send.
+type InterfacePolicy struct {
+	MachineUID string
+	// Name is the interface's name in the machine, such as eth0.
+	Name   string
+	Policy secgroup.Policy
 }
 
 // MetadataAddr is the metadata service's address in every network, as

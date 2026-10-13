@@ -158,6 +158,27 @@ func (s *signals) notify(c chan<- os.Signal, sigs ...os.Signal) func() {
 	}
 }
 
+// subscribed waits until something subscribes to sig.
+func (s *signals) subscribed(t *testing.T, sig os.Signal) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		s.mu.Lock()
+		found := false
+		for _, sigs := range s.subs {
+			found = found || slices.Contains(sigs, sig)
+		}
+		s.mu.Unlock()
+		if found {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("nothing subscribed to %v", sig)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 // raise delivers sig once something subscribes to it.
 func (s *signals) raise(t *testing.T, sig os.Signal) {
 	t.Helper()
@@ -300,6 +321,9 @@ func TestCtrlCGoesToTheCommandWithoutT(t *testing.T) {
 		code, _, _ := r.run(t, "exec", "ct", "api", "--", "wait")
 		done <- code
 	}()
+	// hangar takes SIGINT from its start; the exec takes it over when it
+	// relays signals, which it subscribes SIGHUP for.
+	r.sigs.subscribed(t, syscall.SIGHUP)
 	r.sigs.raise(t, os.Interrupt)
 	select {
 	case code := <-done:

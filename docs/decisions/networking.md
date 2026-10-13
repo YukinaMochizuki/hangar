@@ -211,9 +211,50 @@ anything else needs a reachable address.
   takes GET only, with bounded headers and timeouts, at most 16
   connections a network and 4 a machine, so no machine keeps the others'
   cloud-init waiting, and stops with a deadline, as the resolver does.
-- **`SecurityGroup`** works as in AWS: attached to NICs, several per NIC,
-  sources are CIDRs or other groups, stateful, allow rules only, inbound denied
-  by default. Each network has a `default` group. One nftables set per group.
+- **`SecurityGroup`** works as in AWS (`internal/secgroup`): a group belongs
+  to one network; an interface names up to 5 of its network's groups in
+  `spec.interfaces[].securityGroups`; rules are allow-only, stateful, by
+  protocol, ports and a peer that is a CIDR or a group of the network.
+  Ingress is denied unless a rule of one of the interface's groups lets it
+  in; egress is open unless one of its groups has egress rules, and then
+  only what some rule of its groups lets out leaves (decided by the project
+  owner, for agents' sandboxes: one restricting group locks an interface
+  even beside `default`). Here groups differ from AWS's, where egress is
+  the union of the groups' rules and every group allows all out until
+  edited; restricting is closer to Hetzner, whose firewalls without
+  outbound rules allow all out, and to a GCP deny rule by tag.
+  - Every network has an implicit group `default`, which is no object and
+    cannot be changed (decided by the project owner): it lets in its own
+    members, and lets everything out. An interface naming no group is in
+    it alone; naming groups without `default` takes it out; `[default,
+    web]` keeps it in both. So machines naming nothing behave as before
+    groups existed. Other groups' rules may name `default` as a peer.
+  - A group an interface names that does not exist lets nothing in and,
+    so that a missing group never opens anything, nothing out. A rule
+    naming a group that does not exist, or has no members, allows nothing,
+    even to interfaces naming that group. Admission lets such names
+    through, so objects can be applied in any order, but refuses one naming
+    a group of another network. A group an interface is in cannot be
+    deleted, as in AWS.
+  - The node resolves each interface's policy from the network's groups and
+    every machine on it, whichever node runs them, in the same reconcile
+    as the network's resolver, and enforces it in table `bridge hangar_sg`
+    in the network's namespace: what a tap sends in prerouting, what is
+    sent to it in forward (from another tap) and output (from the namespace,
+    or routed there), each through chains of its own. A connection's
+    replies always pass, as do ARP, DHCP (to the broadcast address or the
+    gateway, and back from the gateway) and the network's own resolver and
+    metadata service, which a sandbox still needs. The bridge and the IP
+    stack share one conntrack entry per flow. A tap with no policy yet,
+    such as one just made, sends and receives nothing else, and the table
+    is made, closed, with the network, before any tap can join it. The
+    whole table is replaced in one transaction when a policy changes,
+    which keeps the connections already admitted. A network's firewall is
+    bounded to 20,000 rules (each rule is written once per peer and port
+    range); policies past it, or a firewall that cannot be written, close
+    the network's interfaces on that node to all but its services rather
+    than leave older rules in force, and the resolver, DHCP and metadata
+    service keep following the network's machines.
 - **Public IPv6** is an `Address` resource, routed to the machine with NDP proxy
   on the host (no bridging, because of the MAC filtering).
 - **HTTPS exposure** is a `PublicEndpoint`: one platform tunnel and a wildcard

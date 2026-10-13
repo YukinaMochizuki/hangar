@@ -171,6 +171,10 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err := sweepTaps(h); err != nil {
 		return err
 	}
+	// Before any tap can join the bridge, so none is ever unfiltered.
+	if err := ensureFirewallTable(ns, n.CIDR.Addr().Next()); err != nil {
+		return fmt.Errorf("network %s: %w", n.UID, err)
+	}
 	return ensureBinding(ns, h)
 }
 
@@ -486,6 +490,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 			if err := deleteTable(conn, nftables.TableFamilyBridge); err != nil {
 				return err
 			}
+			if err := deleteNamedTable(conn, nftables.TableFamilyBridge, FirewallTable); err != nil {
+				return err
+			}
 			return deleteTable(conn, nftables.TableFamilyIPv4)
 		}()
 		if err != nil {
@@ -681,8 +688,16 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 			return driver.Interface{}, err
 		}
 	}
-	// Bound before it joins the bridge, so it never sends as another.
+	// Bound before it joins the bridge, so it never sends as another, and
+	// behind a firewall, closed if it has no other.
 	if err := ensureBinding(ns, h); err != nil {
+		return driver.Interface{}, err
+	}
+	gateway, err := gatewayOf(h)
+	if err != nil {
+		return driver.Interface{}, fmt.Errorf("network %s: %w", i.NetworkUID, err)
+	}
+	if err := ensureFirewallTable(ns, gateway); err != nil {
 		return driver.Interface{}, err
 	}
 	if link.Attrs().MasterIndex != br.Attrs().Index {
