@@ -140,7 +140,11 @@ with the host after any of these, and nothing would notice.
   failed to read, which is dropped and fetched again) is never unpacked
   again: a pinned digest is not tried again until the machine names
   another image, and a tag is resolved again, with the backoff, so an image
-  fixed and pushed under the same tag is pulled. Asking a guest agent
+  fixed and pushed under the same tag is pulled. A disk image's base
+  (`vm-images.md`) is made the same way, off the lock, once per digest
+  however many disks want it, by the disk controller, its disks saying
+  `Pulling` meanwhile; an image at fault is not fetched again until its
+  Image's generation changes. Asking a guest agent
   whether it answers is bounded to
   seconds. One worker then serves every machine in turn.
 - **A VM is stopped off the host lock.** A stop takes as long as its guest

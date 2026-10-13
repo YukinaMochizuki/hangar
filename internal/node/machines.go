@@ -26,6 +26,7 @@ import (
 // Drivers are the host as the agent sees it.
 type Drivers struct {
 	Images     driver.Images
+	DiskImages driver.DiskImages
 	Storage    driver.Storage
 	Network    driver.Network
 	Hypervisor driver.Hypervisor

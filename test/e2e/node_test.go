@@ -101,7 +101,7 @@ func (w *world) startAgent() {
 		PullTimeout:       w.pullTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
 		Drivers: &node.Drivers{
-			Images: w.host.Images(), Storage: w.host.Storage(), Network: w.host.Network(),
+			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),
 		},
 	})

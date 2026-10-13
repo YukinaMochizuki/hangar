@@ -1,0 +1,123 @@
+syntax = "proto3";
+
+package hangar.storage.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Image is a disk image in the platform's catalogue, such as a
+// distribution's official cloud image, that disks are made from. Platform
+// administrators write images; everyone can read them. See
+// docs/decisions/vm-images.md.
+message Image {
+  option (hangar.meta.v1.resource) = {
+    kind: "Image"
+    plural: "images"
+    short_names: ["img"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  ImageSpec spec = 4;
+  ImageStatus status = 5;
+}
+
+// ImageSpec says where an image comes from and what it is.
+message ImageSpec {
+  // HTTPS URL of the image file, raw or qcow2. Nodes download it when a disk
+  // is first made from it, and keep what they made of it while disks use it.
+  string url = 1;
+  // SHA-256 of the file at url, as 64 lowercase hex digits. A file that does
+  // not match is never used.
+  string sha256 = 2;
+  // What the image holds, for people choosing one, such as "ubuntu" and
+  // "24.04".
+  string os = 3;
+  string version = 4;
+  // The CPU architecture; only "amd64", which empty means.
+  string arch = 5;
+  // The smallest disk made from it, a quantity such as "10Gi"; empty is the
+  // image's own size.
+  string min_disk_size = 6;
+}
+
+// ImageStatus is what nodes found of the image. Any node may write it: the
+// file at a URL matches its digest, or not, on every node.
+message ImageStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The image's own size, in whole Gi: the smallest disk it fits on. Empty
+  // until a node has made a disk of it.
+  string disk_size = 3;
+}
+
+// ImageService manages images.
+service ImageService {
+  rpc GetImage(GetImageRequest) returns (GetImageResponse);
+  rpc ListImages(ListImagesRequest) returns (ListImagesResponse);
+  rpc WatchImages(WatchImagesRequest) returns (stream WatchImagesResponse);
+  rpc ApplyImage(ApplyImageRequest) returns (ApplyImageResponse);
+  rpc DeleteImage(DeleteImageRequest) returns (DeleteImageResponse);
+  rpc UpdateImageStatus(UpdateImageStatusRequest) returns (UpdateImageStatusResponse);
+}
+
+message GetImageRequest {
+  string name = 1;
+}
+
+message GetImageResponse {
+  Image image = 1;
+}
+
+message ListImagesRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListImagesResponse {
+  repeated Image items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchImagesRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchImagesResponse {
+  hangar.meta.v1.EventType type = 1;
+  Image image = 2;
+  int64 revision = 3;
+}
+
+message ApplyImageRequest {
+  Image image = 1;
+}
+
+message ApplyImageResponse {
+  Image image = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteImageRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteImageResponse {
+  Image image = 1;
+}
+
+message UpdateImageStatusRequest {
+  string name = 1;
+  ImageStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateImageStatusResponse {
+  Image image = 1;
+}

@@ -51,7 +51,9 @@ A machine's interfaces sit on `Network`s of its project, which get their
 addresses from the apiserver; every project has a `default` network. A
 `Disk` is a durable block device in a project that a machine lists by name,
 one machine at a time; it lives on the node of the first machine it was
-attached to, and every later machine with it goes there.
+attached to, and every later machine with it goes there. A disk is blank or
+a copy of a global `Image`, a distribution's disk image that platform
+administrators add to the catalogue by URL and sha256.
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources.

@@ -25,7 +25,7 @@ of memory and 20 GB of disk is enough. As a user with sudo:
 1. Packages for the kernel build, and nftables:
 
    ```sh
-   sudo apt-get install build-essential flex bison bc libelf-dev libssl-dev curl xz-utils git nftables zfsutils-linux e2fsprogs
+   sudo apt-get install build-essential flex bison bc libelf-dev libssl-dev curl xz-utils git nftables zfsutils-linux e2fsprogs qemu-utils
    ```
 
 2. Go at the version in `go.mod`, from <https://go.dev/dl/>, on `PATH`.
@@ -33,9 +33,10 @@ of memory and 20 GB of disk is enough. As a user with sudo:
    checked against its sha256 there, installed as `cloud-hypervisor` on `PATH`.
 4. A checkout of the branch under test, then `make guest-kernel` (a few
    minutes; `docs/runbook/guest-kernel.md`).
-5. `sudo test/testbed/setup.sh`: the ZFS pool `hangar`, 24 GB on a sparse
-   file in `/var/tmp`, `hangar/images` with an 8 GB quota, and the udev
-   rules for zvols the `zfs` step of `deploy/host` installs. It is
+5. `sudo test/testbed/setup.sh`: `qemu-img` if it is missing, the ZFS
+   pool `hangar`, 24 GB on a sparse file in `/var/tmp`, `hangar/images`
+   with an 8 GB quota, and the udev rules for zvols the `zfs` step of
+   `deploy/host` installs. It is
    idempotent; a VM that ran `test/testbed/host-bootstrap.sh` has the pool
    already.
 

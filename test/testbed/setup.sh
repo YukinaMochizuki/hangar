@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Gives a disposable testbed VM what the disk tests (test/testbed/disks) need,
-# as a host has it: a ZFS pool named hangar, on a sparse file here, the
-# dataset for images, mounted where the node keeps them and with a quota, and
-# the udev rules deploy/host installs for zvols. Idempotent.
+# as a host has it: qemu-img, a ZFS pool named hangar, on a sparse file here,
+# the dataset for images, mounted where the node keeps them and with a quota,
+# and the udev rules deploy/host installs for zvols. Idempotent.
 #
 # Run as root on a throwaway VM only.
 set -euo pipefail
@@ -19,6 +19,10 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || fail "must run as root"
 command -v zpool >/dev/null || fail "zfsutils-linux is not installed"
 command -v mkfs.ext4 >/dev/null || fail "e2fsprogs is not installed"
+# The disk image driver's, as deploy/host's packages step installs it.
+if ! command -v qemu-img >/dev/null; then
+	apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends qemu-utils
+fi
 modprobe zfs
 
 if ! zpool list -H -o name "$pool" >/dev/null 2>&1; then

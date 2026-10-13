@@ -17,6 +17,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
+	"github.com/YukinaMochizuki/hangar/test/testbed/internal/diskimgtest"
 )
 
 // TestConformance holds every real driver to the drivers' contract
@@ -24,8 +25,13 @@ import (
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
 		h := newHost(t)
+		srv := diskimgtest.New(t)
 		return drivertest.Host{
 			Images: h.images, Storage: h.storage, Network: h.net, Hypervisor: h.hv, Guest: h.hv.Guest(),
+			DiskImages: srv.Driver(t, filepath.Join(filepath.Dir(h.cache), "disk-images")),
+			PublishDiskImage: func(t *testing.T, name string, size int64) (string, string) {
+				return srv.QCOW2(t, name, size, "disk image "+name)
+			},
 			Publish: h.publish,
 			Withdraw: func(_ *testing.T, ref string) {
 				h.reg.Withdraw(strings.SplitN(strings.TrimPrefix(ref, h.reg.Host+"/"), ":", 2)[0])

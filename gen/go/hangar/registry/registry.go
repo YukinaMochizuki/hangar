@@ -110,6 +110,16 @@ var (
 		Message:    (*v1alpha13.Disk)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.DiskService",
 	}
+	Image = Resource{
+		Group:      "storage",
+		Version:    "v1alpha1",
+		Kind:       "Image",
+		Plural:     "images",
+		ShortNames: []string{"img"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha13.Image)(nil).ProtoReflect().Type(),
+		Service:    "hangar.storage.v1alpha1.ImageService",
+	}
 	Project = Resource{
 		Group:      "tenancy",
 		Version:    "v1alpha1",
@@ -141,6 +151,7 @@ var All = []Resource{
 	Network,
 	SecurityGroup,
 	Disk,
+	Image,
 	Project,
 	Tenant,
 }

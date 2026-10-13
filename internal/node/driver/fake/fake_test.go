@@ -18,12 +18,18 @@ func TestConformance(t *testing.T) {
 		h := fake.New()
 		published := 0
 		return drivertest.Host{
-			Images: h.Images(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest(),
+			Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest(),
 			Publish: func(_ *testing.T, name string) (string, string) {
 				published++
 				digest := fmt.Sprintf("sha256:%d", published)
 				h.AddImage(name, digest, driver.ImageConfig{Cmd: []string{"true"}})
 				return name, digest
+			},
+			PublishDiskImage: func(_ *testing.T, name string, size int64) (string, string) {
+				published++
+				url, digest := "https://images.example/"+name, fmt.Sprintf("sha256:%064x", published)
+				h.AddDiskImage(url, digest, size)
+				return url, digest
 			},
 			Withdraw:         func(_ *testing.T, ref string) { h.FailPull(ref, errors.New("registry down")) },
 			Reopen:           func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },

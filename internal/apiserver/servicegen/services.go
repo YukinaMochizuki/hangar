@@ -35,6 +35,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewDiskServiceHandler(&diskService{b: backends(registry.Disk)}, opts...))
+	mux.Handle(storagev1alpha1connect.NewImageServiceHandler(&imageService{b: backends(registry.Image)}, opts...))
 	mux.Handle(tenancyv1alpha1connect.NewProjectServiceHandler(&projectService{b: backends(registry.Project)}, opts...))
 	mux.Handle(tenancyv1alpha1connect.NewTenantServiceHandler(&tenantService{b: backends(registry.Tenant)}, opts...))
 }
@@ -478,6 +479,69 @@ func (s *diskService) UpdateDiskStatus(ctx context.Context, req *connect.Request
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha13.UpdateDiskStatusResponse{Disk: obj.(*v1alpha13.Disk)}), nil
+}
+
+type imageService struct {
+	b resource.Backend
+}
+
+func (s *imageService) GetImage(ctx context.Context, req *connect.Request[v1alpha13.GetImageRequest]) (*connect.Response[v1alpha13.GetImageResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha13.GetImageResponse{Image: obj.(*v1alpha13.Image)}), nil
+}
+
+func (s *imageService) ListImages(ctx context.Context, req *connect.Request[v1alpha13.ListImagesRequest]) (*connect.Response[v1alpha13.ListImagesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha13.ListImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha13.Image))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *imageService) WatchImages(ctx context.Context, req *connect.Request[v1alpha13.WatchImagesRequest], stream *connect.ServerStream[v1alpha13.WatchImagesResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha13.WatchImagesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.Image = ev.Object.(*v1alpha13.Image)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *imageService) ApplyImage(ctx context.Context, req *connect.Request[v1alpha13.ApplyImageRequest]) (*connect.Response[v1alpha13.ApplyImageResponse], error) {
+	in := req.Msg.GetImage()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("image is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha13.ApplyImageResponse{Image: res.Object.(*v1alpha13.Image), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *imageService) DeleteImage(ctx context.Context, req *connect.Request[v1alpha13.DeleteImageRequest]) (*connect.Response[v1alpha13.DeleteImageResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha13.DeleteImageResponse{Image: obj.(*v1alpha13.Image)}), nil
+}
+
+func (s *imageService) UpdateImageStatus(ctx context.Context, req *connect.Request[v1alpha13.UpdateImageStatusRequest]) (*connect.Response[v1alpha13.UpdateImageStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha13.UpdateImageStatusResponse{Image: obj.(*v1alpha13.Image)}), nil
 }
 
 type projectService struct {

@@ -45,6 +45,12 @@ type Host struct {
 	heldDisks map[string]int           // root disks in use, by machine uid
 	heldVols  map[string]int           // volumes in use, by disk uid
 	held      map[string]chan struct{} // unpacks waiting to be let go, by reference
+
+	// vmBases are disk images' bases' sizes, by digest; diskImages what the
+	// fake image servers serve, by URL, and fetches the fetches of each.
+	vmBases    map[string]int64
+	diskImages map[string]fakeDiskImage
+	fetches    map[string]int
 	// Unpacked counts how often each digest was unpacked into a base.
 	unpacked map[string]int
 	// unpacks counts the unpacks begun, by reference; unpacking, those
@@ -104,6 +110,7 @@ func New() *Host {
 		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
+		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]secgroup.Policy{},
 		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
@@ -112,8 +119,10 @@ func New() *Host {
 	}
 }
 
-// Images, Storage, Network, Hypervisor and Guest are the host's drivers.
+// Images, DiskImages, Storage, Network, Hypervisor and Guest are the host's
+// drivers.
 func (h *Host) Images() driver.Images         { return images{h} }
+func (h *Host) DiskImages() driver.DiskImages { return diskImages{h} }
 func (h *Host) Storage() driver.Storage       { return storage{h} }
 func (h *Host) Network() driver.Network       { return network{h} }
 func (h *Host) Hypervisor() driver.Hypervisor { return hypervisor{h} }
@@ -284,6 +293,7 @@ const (
 	ListRoots      = "roots"
 	ListBases      = "bases"
 	ListVolumes    = "volumes"
+	ListImageBases = "imagebases"
 	ListLogs       = "logs"
 )
 
@@ -293,7 +303,7 @@ func (h *Host) FailListing(err error, lists ...string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(lists) == 0 {
-		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListLogs}
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListImageBases, ListLogs}
 	}
 	for _, l := range lists {
 		h.listErr[l] = err
@@ -466,6 +476,7 @@ type Snapshot struct {
 	Bases      []string
 	Roots      map[string]driver.Disk
 	Volumes    map[string]driver.Volume
+	ImageBases []string
 	Networks   map[string]driver.NetworkSpec
 	Interfaces map[string][]driver.Interface
 	VMs        map[string]VMView
@@ -487,8 +498,8 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 &&
-		len(s.Logs) == 0 && len(s.Listening) == 0
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ImageBases) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
+		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.Listening) == 0
 }
 
 // Snapshot returns a copy of what the host holds.
@@ -496,7 +507,7 @@ func (h *Host) Snapshot() Snapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s := Snapshot{
-		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), Networks: maps.Clone(h.networks),
+		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
 		Listening: h.listening(),
 	}
@@ -728,10 +739,54 @@ func (d storage) DeleteRoot(_ context.Context, machineUID string) error {
 	return nil
 }
 
-func (d storage) EnsureVolume(_ context.Context, diskUID string, size int64) (driver.Volume, error) {
+func (d storage) EnsureImageBase(_ context.Context, digest string, size int64, fill func(dev string) error) error {
+	d.h.mu.Lock()
+	if _, ok := d.h.vmBases[digest]; ok {
+		d.h.mu.Unlock()
+		return nil
+	}
+	full := d.h.full || size > Capacity-d.h.usedLocked()
+	d.h.mu.Unlock()
+	if full {
+		return driver.ErrNoSpace
+	}
+	if err := fill("/dev/fake/vmbases/" + digest); err != nil {
+		return fmt.Errorf("filling the base of disk image %s: %w", digest, err)
+	}
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.vmBases[digest] = size
+	return nil
+}
+
+func (d storage) ImageBases(context.Context) ([]string, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListImageBases]; err != nil {
+		return nil, err
+	}
+	return slices.Sorted(maps.Keys(d.h.vmBases)), nil
+}
+
+func (d storage) DeleteImageBase(_ context.Context, digest string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	for _, v := range d.h.volumes {
+		if v.Digest == digest {
+			return fmt.Errorf("disk image %s has volumes cloned from it", digest)
+		}
+	}
+	delete(d.h.vmBases, digest)
+	return nil
+}
+
+func (d storage) EnsureVolume(_ context.Context, diskUID string, size int64, digest string) (driver.Volume, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	if v, ok := d.h.volumes[diskUID]; ok {
+		if v.Digest != digest {
+			return driver.Volume{}, fmt.Errorf("disk %s has a volume of %q, not %q", diskUID, v.Digest, digest)
+		}
 		if v.Size < size {
 			v.Size = size
 			d.h.volumes[diskUID] = v
@@ -744,7 +799,16 @@ func (d storage) EnsureVolume(_ context.Context, diskUID string, size int64) (dr
 	if d.h.full {
 		return driver.Volume{}, driver.ErrNoSpace
 	}
-	v := driver.Volume{DiskUID: diskUID, Path: "/dev/fake/disks/" + diskUID, Size: max(size, 1)}
+	v := driver.Volume{DiskUID: diskUID, Path: "/dev/fake/disks/" + diskUID, Size: max(size, 1), Digest: digest}
+	if digest != "" {
+		base, ok := d.h.vmBases[digest]
+		if !ok {
+			return driver.Volume{}, fmt.Errorf("no base for disk image %s", digest)
+		}
+		if size < base {
+			return driver.Volume{}, fmt.Errorf("%w: %d bytes asked, disk image %s has %d", driver.ErrDiskTooSmall, size, digest, base)
+		}
+	}
 	d.h.volumes[diskUID] = v
 	return v, nil
 }
@@ -794,8 +858,71 @@ func (h *Host) usedLocked() int64 {
 	for _, size := range h.bases {
 		used += size
 	}
+	for _, size := range h.vmBases {
+		used += size
+	}
 	return used
 }
+
+// --- Disk images ---
+
+type fakeDiskImage struct {
+	digest string
+	size   int64
+	err    error
+}
+
+// AddDiskImage serves at url a disk image of digest holding a disk of size
+// bytes.
+func (h *Host) AddDiskImage(url, digest string, size int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.diskImages[url] = fakeDiskImage{digest: digest, size: size}
+}
+
+// FailDiskImage makes fetching url fail with err; nil clears it.
+func (h *Host) FailDiskImage(url string, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	i := h.diskImages[url]
+	i.err = err
+	h.diskImages[url] = i
+}
+
+// Fetches returns how often url was fetched, failed fetches included.
+func (h *Host) Fetches(url string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.fetches[url]
+}
+
+type diskImages struct{ h *Host }
+
+func (d diskImages) Fetch(ctx context.Context, url, digest string) (driver.FetchedImage, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.fetches[url]++
+	i, ok := d.h.diskImages[url]
+	switch {
+	case ctx.Err() != nil:
+		return nil, ctx.Err()
+	case i.err != nil:
+		return nil, i.err
+	case !ok || i.digest == "":
+		return nil, fmt.Errorf("fetching %s: 404 Not Found", url)
+	case i.digest != digest:
+		return nil, fmt.Errorf("%s has %s, not %s: %w", url, i.digest, digest, driver.ErrDigestMismatch)
+	}
+	return fetchedImage{i.size}, nil
+}
+
+type fetchedImage struct{ size int64 }
+
+func (f fetchedImage) Size() int64 { return f.size }
+
+func (f fetchedImage) WriteTo(context.Context, string) error { return nil }
+
+func (f fetchedImage) Close() error { return nil }
 
 // --- Network ---
 
