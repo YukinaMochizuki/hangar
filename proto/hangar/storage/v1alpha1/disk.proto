@@ -33,9 +33,22 @@ message DiskSpec {
   DiskSource source = 2 [(hangar.meta.v1.field).immutable = true];
 }
 
-// DiskSource is what a disk is made from. Leaving every field empty makes a
-// blank disk, all zeros.
-message DiskSource {}
+// DiskSource is what a disk is made from. Leaving it empty makes a blank
+// disk, all zeros.
+message DiskSource {
+  oneof source {
+    // A copy of an image, grown to the disk's size, which must be at least
+    // the image's status.disk_size.
+    ImageSource image = 1;
+  }
+}
+
+// ImageSource names the Image a disk is copied from. See
+// docs/decisions/vm-images.md.
+message ImageSource {
+  // Names a global Image.
+  string name = 1;
+}
 
 // DiskStatus is the observed state of a disk. The apiserver writes its node,
 // size, machine, phase and the Allocated condition; the disk's node writes

@@ -117,6 +117,12 @@ type kindHooks struct {
 	// writeLock, if set, is held by every apply and delete of the kind from
 	// its admission checks to its write, for rules that span objects.
 	writeLock func(s *Server) *sync.Mutex
+	// readableByAll lets everyone allowed to use Hangar at all get, list and
+	// watch every object of the kind, whatever their grants.
+	readableByAll bool
+	// anyNodeReports lets every node agent write the status of any object
+	// of the kind, for what is the same on every node.
+	anyNodeReports bool
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -210,6 +216,15 @@ func hooksFor(r registry.Resource) kindHooks {
 			finalizers:   []string{DiskInUseFinalizer, NodeCleanupFinalizer},
 			nodeOf:       func(obj proto.Message) string { return obj.(*storagev1alpha1.Disk).GetStatus().GetNode() },
 			writeLock:    attachLock,
+		}
+	case registry.Image.Kind:
+		// Platform administrators keep the catalogue that every tenant
+		// makes disks from.
+		return kindHooks{
+			target:         platformTarget,
+			validate:       validateImage,
+			readableByAll:  true,
+			anyNodeReports: true,
 		}
 	case registry.Network.Kind:
 		return kindHooks{

@@ -65,7 +65,7 @@ func diskHeld(d *storagev1alpha1.Disk) (uint64, error) {
 // the disk as it is: it may not go below what the disk has on its node, so a
 // growth that never took effect can be withdrawn, and a disk not yet made can
 // still shrink.
-func validateDisk(_ context.Context, _ *Server, _ auth.Principal, old, obj proto.Message) error {
+func validateDisk(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	d := obj.(*storagev1alpha1.Disk)
 	size, err := diskBytes(d.GetSpec())
 	if err != nil {
@@ -77,10 +77,16 @@ func validateDisk(_ context.Context, _ *Server, _ auth.Principal, old, obj proto
 	if size > maxDisk {
 		return invalid("spec.size %s is above the maximum of 64Ti", d.GetSpec().GetSize())
 	}
-	if old == nil {
+	var was *storagev1alpha1.Disk
+	if old != nil {
+		was = old.(*storagev1alpha1.Disk)
+	}
+	if err := s.validateDiskSource(ctx, was, d, size); err != nil {
+		return err
+	}
+	if was == nil {
 		return nil
 	}
-	was := old.(*storagev1alpha1.Disk)
 	if stored, err := diskBytes(was.GetSpec()); err == nil && wholeGi(stored) == wholeGi(size) {
 		return nil
 	}

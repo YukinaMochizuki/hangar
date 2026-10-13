@@ -39,8 +39,10 @@ what it cannot.
       a test races writers to show only one wins.
 - [ ] If only the apiserver's controllers write the kind, `hooksFor` marks it
       `systemManaged` and its comment says so; if a node agent reports its
-      status, `nodeOf` names the node allowed to. Tests show a caller with the
-      broadest role is still refused.
+      status, `nodeOf` names the node allowed to (`anyNodeReports` lets every
+      node, for what holds on every node, as an Image's). A global kind every
+      tenant reads, as the Image catalogue, sets `readableByAll`. Tests show a
+      caller with the broadest role is still refused.
 
 ## Docs
 

@@ -44,6 +44,9 @@ var (
 	// ErrInvalidImage means an image holds what the host refuses to
 	// unpack, such as a name climbing out of its root.
 	ErrInvalidImage = errors.New("invalid image")
+	// ErrDigestMismatch means what was downloaded is not what its digest
+	// names.
+	ErrDigestMismatch = errors.New("digest mismatch")
 )
 
 // Credentials finds the login for a registry, named by its host as in
@@ -89,9 +92,34 @@ type ImageConfig struct {
 	Size int64
 }
 
-// Storage holds disks: a read-only base per image, a root disk per machine
-// cloned from one, and a volume per API Disk, which outlives the machines it
-// is attached to. Deleting what is not there is not an error.
+// DiskImages fetches disk images, such as a distribution's cloud image, for
+// the storage to make bases of. Only images a platform administrator chose
+// come through it (docs/decisions/vm-images.md). Failed fetches wrap
+// ErrDigestMismatch, ErrImageTooLarge, ErrInvalidImage, ctx's error, or a
+// failure to reach the server, which may pass.
+type DiskImages interface {
+	// Fetch downloads the image at the https url and checks it against its
+	// digest, "sha256:" and 64 hex digits, and that it is a disk image the
+	// host takes: raw or qcow2, naming no other file. The image is the
+	// caller's until it closes it.
+	Fetch(ctx context.Context, url, digest string) (FetchedImage, error)
+}
+
+// FetchedImage is a disk image fetched and checked.
+type FetchedImage interface {
+	// Size is the disk it holds, in bytes.
+	Size() int64
+	// WriteTo writes the disk onto the block device dev, at least Size
+	// bytes and all zeros, as raw.
+	WriteTo(ctx context.Context, dev string) error
+	// Close removes what the fetch kept on the host.
+	Close() error
+}
+
+// Storage holds disks: a read-only base per image, OCI or disk image, a root
+// disk per machine cloned from an OCI image's, and a volume per API Disk,
+// blank or cloned from a disk image's, which outlives the machines it is
+// attached to. Deleting what is not there is not an error.
 type Storage interface {
 	// EnsureBase makes a digest's base once, filling an empty dir with fill,
 	// unless size (ImageConfig.Size, or zero) exceeds the room left; fill's
@@ -111,9 +139,20 @@ type Storage interface {
 	// DeleteRoot removes a machine's root disk. It fails while the machine's
 	// VM runs.
 	DeleteRoot(ctx context.Context, machineUID string) error
-	// EnsureVolume returns a Disk's volume, made blank if need be, of at
-	// least size bytes: grown, never shrunk.
-	EnsureVolume(ctx context.Context, diskUID string, size int64) (Volume, error)
+	// EnsureImageBase makes the base of a disk image of digest once: a
+	// volume of size bytes, which fill writes given its device, kept
+	// read-only. fill's error is returned wrapped.
+	EnsureImageBase(ctx context.Context, digest string, size int64, fill func(dev string) error) error
+	// ImageBases lists the digests that have a disk image's base.
+	ImageBases(ctx context.Context) ([]string, error)
+	// DeleteImageBase removes a disk image's base. It fails while a volume
+	// cloned from it exists.
+	DeleteImageBase(ctx context.Context, digest string) error
+	// EnsureVolume returns a Disk's volume of at least size bytes, grown,
+	// never shrunk. A volume made here is blank if digest is empty, and
+	// otherwise a clone of the base of that disk image, ErrDiskTooSmall
+	// below its size. A volume made from another digest is an error.
+	EnsureVolume(ctx context.Context, diskUID string, size int64, digest string) (Volume, error)
 	// Volumes lists every Disk's volume.
 	Volumes(ctx context.Context) ([]Volume, error)
 	// DeleteVolume removes a Disk's volume. It fails while a VM has it.
@@ -142,6 +181,8 @@ type Volume struct {
 	Path string
 	// Size is the volume's size in bytes, at least what was asked for.
 	Size int64
+	// Digest is the disk image it was cloned from; empty for a blank one.
+	Digest string `json:",omitempty"`
 }
 
 // Capacity is the storage's size and free space, in bytes.

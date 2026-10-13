@@ -98,14 +98,17 @@ type Agent struct {
 	machines computev1alpha1connect.MachineServiceClient
 	networks networkv1alpha1connect.NetworkServiceClient
 	disks    storagev1alpha1connect.DiskServiceClient
+	// imagesAPI reaches Images; images makes disk images' bases.
+	imagesAPI storagev1alpha1connect.ImageServiceClient
+	images    *imageMaker
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
 	host sync.Mutex
 	// puller prepares images off the host lock, and stops stops VMs off it.
 	puller *puller
 	stops  *stops
-	// trigger has every machine checked again.
-	trigger chan struct{}
+	// trigger has every machine checked again, and diskTrigger every disk.
+	trigger, diskTrigger chan struct{}
 	// netEpoch counts the network driver's change signals, and netChecked
 	// is the epoch each machine's interfaces were last found whole in.
 	// Guarded by host, but netEpoch, which the signals bump.
@@ -155,24 +158,30 @@ func New(cfg Config) (*Agent, error) {
 	cfg.Log = cfg.Log.With("node", cfg.Name)
 	var puller *puller
 	var netsvc *netServices
+	var images *imageMaker
 	if cfg.Drivers != nil {
 		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Log)
+		images = newImageMaker(cfg.Drivers.DiskImages, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 	}
-	return &Agent{
+	a := &Agent{
 		cfg:        cfg,
 		api:        client.New(cfg.HTTP, cfg.BaseURL),
 		nodes:      computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
 		machines:   computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
 		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
 		disks:      storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
+		imagesAPI:  storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		images:     images,
 		netChecked: map[string]int64{},
 		puller:     puller,
 		stops:      newStops(),
 		trigger:    make(chan struct{}, 1),
 		netsvc:     netsvc,
 		netTrigger: make(chan struct{}, 1),
-	}, nil
+	}
+	a.diskTrigger = make(chan struct{}, 1)
+	return a, nil
 }
 
 // Run reports the node and, with drivers, runs its machines, until ctx is
@@ -202,7 +211,14 @@ func (a *Agent) Run(ctx context.Context) error {
 		}()
 		go func() {
 			defer wg.Done()
+			a.images.start(ctx, func() {
+				select {
+				case a.diskTrigger <- struct{}{}:
+				default:
+				}
+			})
 			_ = a.diskController().Run(ctx)
+			a.images.wait() // its jobs end with ctx
 		}()
 		go func() {
 			defer wg.Done()

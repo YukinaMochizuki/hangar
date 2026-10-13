@@ -329,7 +329,12 @@ Backups and the rollback script are under `/var/lib/hangar-bootstrap/netplan-*`.
 The node's image and storage drivers (`docs/decisions/storage-zfs.md`) need
 these before `hangar-node` starts; the `packages` and `zfs` steps make them:
 
-- `e2fsprogs` (for `mkfs.ext4 -d`) and `zfsutils-linux` installed.
+- `e2fsprogs` (for `mkfs.ext4 -d`), `zfsutils-linux` and `qemu-utils`
+  installed. `qemu-img` writes disk images, such as distributions' cloud
+  images, onto their bases (`docs/decisions/vm-images.md`); `verify.sh`
+  checks it is `HANGAR_QEMU_IMG_MIN` (`deploy/host/versions.env`) or newer.
+  The disk images are downloaded to `disk-images` under the image dataset,
+  whose quota bounds them, and removed once their base is made.
 - The pool `hangar`, as the installer and the `zfs` step leave it.
 - `hangar/images`, mounted at `/var/lib/hangar/images` with
   `setuid=off exec=off devices=off`, the mount point `0700` and root's, and a
@@ -338,9 +343,9 @@ these before `hangar-node` starts; the `packages` and `zfs` steps make them:
   current host. The image cache and the directory images are unpacked in
   both go under it, on that one dataset: both hold tenant content. Pass the
   quota, and what bases may take, to `hangar-node --reserved-disk`.
-- Nothing else: the driver makes `hangar/bases`, `hangar/roots` and
-  `hangar/disks` (`mountpoint=none`) under the pool when they are missing,
-  and owns them.
+- Nothing else: the driver makes `hangar/bases`, `hangar/roots`,
+  `hangar/disks` and `hangar/vmbases` (`mountpoint=none`) under the pool
+  when they are missing, and owns them.
   Nothing else may be created under them.
 - udev's zvol rules (`/dev/zvol/...`), which `zfsutils-linux` installs. The
   `zfs` step adds Hangar's own, which keep udev from probing or watching

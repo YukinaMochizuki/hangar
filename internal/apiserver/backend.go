@@ -88,6 +88,9 @@ func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) boo
 	if b.hooks.systemManaged && p.Type != auth.System && !readsOrReports(verb) {
 		return false
 	}
+	if b.hooks.readableByAll && (verb == authz.Get || verb == authz.List || verb == authz.Watch) {
+		return true
+	}
 	return b.s.authz.Allowed(p, authz.Permission(b.r, verb), t)
 }
 
@@ -657,7 +660,7 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 			return nil, err
 		}
 		// A node agent reports only on what it runs.
-		if p.Type == auth.Node {
+		if p.Type == auth.Node && !b.hooks.anyNodeReports {
 			if b.hooks.nodeOf == nil {
 				return nil, denied("%s may not update the status of %s", p, b.asked(key))
 			}

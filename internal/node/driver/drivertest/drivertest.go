@@ -24,6 +24,7 @@ import (
 // runs it before the others exist.
 type Host struct {
 	Images     driver.Images
+	DiskImages driver.DiskImages
 	Storage    driver.Storage
 	Network    driver.Network
 	Hypervisor driver.Hypervisor
@@ -31,6 +32,9 @@ type Host struct {
 	// Publish makes an image pullable under a reference made of name, and
 	// returns that reference and the image's digest.
 	Publish func(t *testing.T, name string) (ref, digest string)
+	// PublishDiskImage serves a disk image, qcow2, holding a disk of size
+	// bytes, and returns its URL and digest; DiskImages fetches from it.
+	PublishDiskImage func(t *testing.T, name string, size int64) (url, digest string)
 	// Withdraw makes the registry stop serving ref, as when it is down.
 	Withdraw func(t *testing.T, ref string)
 	// Reopen returns new instances of the image and storage drivers on the
@@ -78,6 +82,9 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("deleting disks", deletingDisks, disks)
 	part("reopening", reopening, disks)
 	part("volumes", volumes, func(h Host) bool { return h.Storage != nil })
+	part("disk images", diskImages, func(h Host) bool {
+		return h.Storage != nil && h.DiskImages != nil && h.PublishDiskImage != nil
+	})
 	nets := func(h Host) bool { return h.Network != nil }
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)
@@ -398,19 +405,19 @@ func volumeOf(t *testing.T, s driver.Storage, disk string) (driver.Volume, bool)
 
 func volumes(t *testing.T, h Host) {
 	ctx := t.Context()
-	v1, err := h.Storage.EnsureVolume(ctx, "d1", rootSize)
+	v1, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, "")
 	must(t, err)
 	if v1.DiskUID != "d1" || v1.Path == "" || v1.Size < rootSize {
 		t.Errorf("volume %+v", v1)
 	}
-	if again, err := h.Storage.EnsureVolume(ctx, "d1", rootSize); err != nil || again != v1 {
+	if again, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, ""); err != nil || again != v1 {
 		t.Errorf("ensuring the volume again: %+v %v", again, err)
 	}
 	// Asked smaller, it is kept; asked larger, it grows, and is listed so.
-	if kept, err := h.Storage.EnsureVolume(ctx, "d1", 1); err != nil || kept != v1 {
+	if kept, err := h.Storage.EnsureVolume(ctx, "d1", 1, ""); err != nil || kept != v1 {
 		t.Errorf("asked smaller: %+v %v, want %+v", kept, err, v1)
 	}
-	grown, err := h.Storage.EnsureVolume(ctx, "d1", grownSize)
+	grown, err := h.Storage.EnsureVolume(ctx, "d1", grownSize, "")
 	must(t, err)
 	if grown.Size < grownSize || grown.Path != v1.Path {
 		t.Errorf("grown %+v from %+v", grown, v1)
@@ -418,7 +425,7 @@ func volumes(t *testing.T, h Host) {
 	if listed, ok := volumeOf(t, h.Storage, "d1"); !ok || listed != grown {
 		t.Errorf("listed %+v %t, grown %+v", listed, ok, grown)
 	}
-	v2, err := h.Storage.EnsureVolume(ctx, "d2", rootSize)
+	v2, err := h.Storage.EnsureVolume(ctx, "d2", rootSize, "")
 	must(t, err)
 	if v2.Path == v1.Path {
 		t.Errorf("volumes share a device: %+v %+v", v1, v2)
@@ -454,6 +461,85 @@ func volumes(t *testing.T, h Host) {
 	must(t, h.Storage.DeleteVolume(ctx, "never"))
 	if vols, err := h.Storage.Volumes(ctx); err != nil || len(vols) != 0 {
 		t.Errorf("volumes left: %v %v", vols, err)
+	}
+}
+
+// diskImageSize is the disk the suite's disk images hold.
+const diskImageSize = 64 << 20
+
+func diskImages(t *testing.T, h Host) {
+	ctx := t.Context()
+	url, digest := h.PublishDiskImage(t, "cloud", diskImageSize)
+	other := "sha256:" + strings.Repeat("0", 64)
+	if _, err := h.DiskImages.Fetch(ctx, url, other); !errors.Is(err, driver.ErrDigestMismatch) {
+		t.Errorf("fetching with another digest: %v, want a mismatch", err)
+	}
+	img, err := h.DiskImages.Fetch(ctx, url, digest)
+	must(t, err)
+	if img.Size() != diskImageSize {
+		t.Errorf("the image holds %d bytes, want %d", img.Size(), diskImageSize)
+	}
+	// A fill that fails leaves no base.
+	failed := errors.New("the fill failed")
+	if err := h.Storage.EnsureImageBase(ctx, digest, img.Size(), func(string) error { return failed }); !errors.Is(err, failed) {
+		t.Errorf("a failing fill: %v, want its error", err)
+	}
+	if bases, err := h.Storage.ImageBases(ctx); err != nil || len(bases) != 0 {
+		t.Errorf("image bases after a failed fill: %v %v", bases, err)
+	}
+	must(t, h.Storage.EnsureImageBase(ctx, digest, img.Size(), func(dev string) error { return img.WriteTo(ctx, dev) }))
+	must(t, img.Close())
+	filled := false
+	must(t, h.Storage.EnsureImageBase(ctx, digest, diskImageSize, func(string) error { filled = true; return nil }))
+	if filled {
+		t.Error("an existing image base was filled again")
+	}
+	if bases, err := h.Storage.ImageBases(ctx); err != nil || !slices.Equal(bases, []string{digest}) {
+		t.Errorf("image bases %v %v", bases, err)
+	}
+	// Image bases are not OCI images' bases.
+	if bases, err := h.Storage.Bases(ctx); err != nil || len(bases) != 0 {
+		t.Errorf("bases %v %v", bases, err)
+	}
+
+	// A volume of it is no smaller than it, and grows.
+	if _, err := h.Storage.EnsureVolume(ctx, "d1", diskImageSize/2, digest); !errors.Is(err, driver.ErrDiskTooSmall) {
+		t.Errorf("a volume smaller than its image: %v, want too small", err)
+	}
+	if _, ok := volumeOf(t, h.Storage, "d1"); ok {
+		t.Error("a volume too small was made")
+	}
+	v, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, digest)
+	must(t, err)
+	if v.Digest != digest || v.Size < rootSize || v.Path == "" {
+		t.Errorf("volume %+v", v)
+	}
+	if listed, ok := volumeOf(t, h.Storage, "d1"); !ok || listed != v {
+		t.Errorf("listed %+v %t, made %+v", listed, ok, v)
+	}
+	if _, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, ""); err == nil {
+		t.Error("a volume of an image was taken for a blank one")
+	}
+	if _, err := h.Storage.EnsureVolume(ctx, "d2", rootSize, other); err == nil {
+		t.Error("made a volume of a disk image with no base")
+	}
+	if err := h.Storage.DeleteImageBase(ctx, digest); err == nil {
+		t.Error("deleted an image base a volume was cloned from")
+	}
+	if h.Reopen != nil {
+		_, storage := h.Reopen(t)
+		if bases, err := storage.ImageBases(ctx); err != nil || !slices.Equal(bases, []string{digest}) {
+			t.Errorf("image bases after reopening: %v %v", bases, err)
+		}
+		if listed, ok := volumeOf(t, storage, "d1"); !ok || listed != v {
+			t.Errorf("after reopening, listed %+v %t, made %+v", listed, ok, v)
+		}
+	}
+	must(t, h.Storage.DeleteVolume(ctx, "d1"))
+	must(t, h.Storage.DeleteImageBase(ctx, digest))
+	must(t, h.Storage.DeleteImageBase(ctx, digest))
+	if bases, err := h.Storage.ImageBases(ctx); err != nil || len(bases) != 0 {
+		t.Errorf("image bases left: %v %v", bases, err)
 	}
 }
 
@@ -756,7 +842,7 @@ func eventually(t *testing.T, what string, cond func() bool) {
 func hypervisor(t *testing.T, h Host) {
 	ctx := t.Context()
 	spec := vmSpec(t, h, "m1", driver.RestartAlways)
-	vol, err := h.Storage.EnsureVolume(ctx, "d1", rootSize)
+	vol, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, "")
 	must(t, err)
 	spec.Disks = []driver.Volume{vol}
 	must(t, h.Hypervisor.Start(ctx, spec))

@@ -96,19 +96,52 @@ func (a *Agent) sweep(ctx context.Context) error {
 	}
 
 	// A volume is a Disk's, not a machine's: it goes once its Disk is gone.
-	// The disk controller removes a deleted Disk's own.
-	if disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{}); keep(err) {
-		bound := map[string]bool{}
+	// The disk controller removes a deleted Disk's own. A disk image's base
+	// goes once no volume is cloned from it and no disk still to be made
+	// here is made from it.
+	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
+	images, _, ierr := a.api.ListAll(ctx, registry.Image, client.ListOptions{})
+	if keep(err) {
+		bound := map[string]*storagev1alpha1.Disk{}
 		for _, o := range disks {
 			if disk := o.(*storagev1alpha1.Disk); disk.GetStatus().GetNode() == a.cfg.Name {
-				bound[disk.GetMetadata().GetUid()] = true
+				bound[disk.GetMetadata().GetUid()] = disk
 			}
 		}
 		if vols, err := d.Storage.Volumes(ctx); keep(err) {
+			used := map[string]bool{}
 			for _, v := range vols {
-				if !bound[v.DiskUID] {
+				if bound[v.DiskUID] == nil {
 					a.cfg.Log.Info("removing a volume no disk accounts for", "disk_uid", v.DiskUID)
 					keep(d.Storage.DeleteVolume(ctx, v.DiskUID))
+				}
+			}
+			// Read again: a volume that would not go still holds its base.
+			if vols, err := d.Storage.Volumes(ctx); keep(err) && keep(ierr) {
+				made := map[string]bool{}
+				for _, v := range vols {
+					made[v.DiskUID] = true
+					used[v.Digest] = true
+				}
+				digests := map[string]string{}
+				for _, o := range images {
+					img := o.(*storagev1alpha1.Image)
+					digests[img.GetMetadata().GetName()] = "sha256:" + img.GetSpec().GetSha256()
+				}
+				for uid, disk := range bound {
+					if name := disk.GetSpec().GetSource().GetImage().GetName(); name != "" && !made[uid] && disk.GetMetadata().GetDeleteTime() == nil {
+						used[digests[name]] = true
+					}
+				}
+				for digest := range a.images.keep(used) {
+					used[digest] = true
+				}
+				if bases, err := d.Storage.ImageBases(ctx); keep(err) {
+					for _, b := range bases {
+						if !used[b] && keep(d.Storage.DeleteImageBase(ctx, b)) {
+							a.images.forget(b)
+						}
+					}
 				}
 			}
 		}
