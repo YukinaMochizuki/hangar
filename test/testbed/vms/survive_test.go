@@ -61,7 +61,7 @@ func TestTheVMOutlivesTheAgent(t *testing.T) {
 	job, _ := json.Marshal(agentJob{
 		Config: chvm.Config{
 			Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
-			Launcher: []string{in.Node, "vmm"}, Nameservers: []string{"1.1.1.1"},
+			Launcher: []string{in.Node, "vmm"},
 		},
 		Spec: spec,
 	})

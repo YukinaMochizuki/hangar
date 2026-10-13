@@ -101,11 +101,19 @@ func (a *Agent) sweep(ctx context.Context) error {
 			used[i.NetworkUID] = true
 		}
 		if nets, err := d.Network.Networks(ctx); keep(err) {
+			onHost := map[string]bool{}
 			for _, n := range nets {
+				onHost[n.UID] = true
 				if !used[n.UID] {
-					keep(d.Network.DeleteNetwork(ctx, n.UID))
+					// Its services go first. One reopened before the
+					// network goes is closed by the keep below.
+					a.netsvc.services.Close(n.UID)
+					if keep(d.Network.DeleteNetwork(ctx, n.UID)) {
+						delete(onHost, n.UID)
+					}
 				}
 			}
+			a.netsvc.keep(onHost)
 		}
 	}
 	if roots, err := d.Storage.Roots(ctx); keep(err) {

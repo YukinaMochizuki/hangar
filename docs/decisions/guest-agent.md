@@ -59,8 +59,8 @@ to boot again.
 - **The platform provides `/etc/hostname`, `/etc/hosts` and
   `/etc/resolv.conf`** as Docker does: written to `/run/hangar` and mounted
   over the image's files, so the image's own are never written. The
-  resolvers come from a node flag for now; a resolver per network, at its
-  gateway, will only change what the boot disk says.
+  resolvers are those of the machine's networks, at their gateways
+  (`networking.md`), as the boot disk lists them.
 - **Cgroups are laid out for Docker in the guest**: hangar-init in `/agent`,
   everything it starts in `/workload`, with every controller enabled, since
   the root cgroup has no limits to give.

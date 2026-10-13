@@ -21,6 +21,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/klauspost/compress v1.19.2
 	github.com/mdlayher/vsock v1.3.0
+	github.com/miekg/dns v1.1.73
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/spf13/cobra v1.10.2
 	github.com/vishvananda/netlink v1.3.1
