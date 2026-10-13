@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
 	"syscall"
 	"time"
@@ -157,6 +158,14 @@ type Network interface {
 	// networking, such as networkd reconfiguring links, so the agent
 	// checks everything again.
 	Changes() <-chan struct{}
+
+	// ListenUDP and ListenTCP open a socket only the network's machines
+	// reach, and return the Instance it serves (docs/decisions/networking.md).
+	ListenUDP(ctx context.Context, networkUID string, addr netip.AddrPort) (*net.UDPConn, string, error)
+	ListenTCP(ctx context.Context, networkUID string, addr netip.AddrPort) (*net.TCPListener, string, error)
+	// Instance names what a network's sockets serve, until it is made again;
+	// "" means there is nothing to serve.
+	Instance(ctx context.Context, networkUID string) (string, error)
 }
 
 // NetworkSpec is a network as the host has it.
@@ -270,6 +279,10 @@ type VMSpec struct {
 	MemoryMiB  int64
 	Root       Disk
 	Interfaces []Interface
+	// Nameservers and Search are the guest's resolvers and search domains,
+	// as its /etc/resolv.conf lists them.
+	Nameservers []string
+	Search      []string
 	// Run is what the guest runs.
 	Run     RunSpec
 	Restart RestartPolicy

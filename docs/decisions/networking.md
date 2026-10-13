@@ -13,7 +13,8 @@ anything else needs a reachable address.
 - **A simple VPC first**: `Network` (each project gets a `default`), `Subnet`
   with user-chosen CIDRs that may overlap across networks, multiple NICs per
   machine, security groups, NAT egress, internal DNS
-  (`<name>.<network>.internal`), and a metadata service at 169.254.169.254.
+  (`<name>.<project>.hangar.internal`), and a metadata service at
+  169.254.169.254.
   Peering, route tables and shared VPCs come later.
 - **Each `Network` is its own network namespace** (that is what allows
   overlapping CIDRs) with a bridge and nftables. The node creates tap devices
@@ -108,6 +109,53 @@ anything else needs a reachable address.
     `--public-ipv4`), nftables in the kernel, `/run/netns` shared with the
     agent's mount namespace, no networkd config matching `hn*` links, and no
     host firewall dropping forwarded traffic to or from `hnv*`.
+  - **The node serves each network from inside its namespace**
+    (`internal/node/netsvc`): the driver opens a service's socket on a
+    thread in the namespace, bound to `hn-br` before its address, so of
+    what arrives from outside the namespace only the network's machines
+    reach it, never what comes in by `hn-up`, routed by the host or not. A
+    socket keeps the namespace it was opened in, so the driver names each
+    instance, its namespace's nsfs inode and its bridge's index (a bridge
+    made again is another link), and the agent opens a network's sockets
+    again once the instance changes, and closes them before the sweep
+    removes the network. A process inside the namespace reaches the
+    sockets too, as the kernel delivers local traffic to them; only root
+    on the host runs one there. The sockets live in the agent's memory
+    only; a restarted agent opens them again from the API.
+- **Each network has its own resolver, on its gateway, port 53, UDP and
+  TCP** (`internal/node/resolver`), embedded in the node agent rather than
+  a dnsmasq or CoreDNS to supervise. It must live in the namespace anyway:
+  the root table drops every new connection from `hnv*` to the host.
+  - It answers `<name>.<project>.hangar.internal` for the machines with an
+    interface on the network, whichever node runs them, by the name of the
+    object a machine was made from (its Container) and with a TTL of 5
+    seconds. A machine of another network or project is NXDOMAIN; only A
+    records exist for now. `hangar.internal` is never forwarded.
+  - The agent opens a network's sockets before it reads the network's
+    machines from the API, and until it has, internal names fail with
+    SERVFAIL, not NXDOMAIN, so a client retries rather than caching a
+    wrong negative answer. Before the sockets are open (the agent starting)
+    nothing answers, which a client takes as no answer too.
+  - Every other name is forwarded to the node's upstream resolvers
+    (`hangar-node --dns-upstreams`), from the host, two tries of 2 seconds,
+    then SERVFAIL; answers are cached for their TTLs (negative ones for
+    their SOA's minimum, at most an hour) and a question asked many times
+    at once goes upstream once. UDP answers are cut at 1232 bytes, with TC
+    set, as DNS Flag Day 2020 settled. AAAA questions are forwarded too,
+    though guests have no IPv6 yet (decided by the project owner): as on
+    any IPv4-only network, clients fall back to IPv4.
+  - No network takes what the others need: one network's questions in
+    flight are bounded (128), past which they fail with SERVFAIL at once,
+    as are its TCP connections (32), past which they wait to be accepted;
+    the forwards of every network together are bounded too (1024).
+    Stopping a network's resolver closes its connections, so no client
+    holds the agent up.
+  - A guest's resolv.conf lists the gateway of its first interface's
+    network, and searches `<project>.hangar.internal`, through the boot
+    disk; the guest needs nothing of its own for it. A resolver knows only
+    its own network and a guest does not ask the next resolver after a
+    NXDOMAIN, so a machine on several networks resolves the names of its
+    first.
 - **`SecurityGroup`** works as in AWS: attached to NICs, several per NIC,
   sources are CIDRs or other groups, stateful, allow rules only, inbound denied
   by default. Each network has a `default` group. One nftables set per group.

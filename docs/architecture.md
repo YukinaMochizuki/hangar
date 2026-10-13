@@ -31,7 +31,7 @@ planned; the code is the authority wherever it exists.
 | Component | Runs as | Responsibility |
 |---|---|---|
 | `hangar-apiserver` | unprivileged user | The API (Connect for unary and server-streaming, WebSocket for bidirectional streams), authentication and authorization, admission, the object store, and every controller |
-| `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, the edge proxy, and the metadata service |
+| `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, the edge proxy, and what it serves each network from inside its namespace: its resolver, and the metadata service |
 | `hangar-init` | PID 1 in the guest | Boots containers from the platform's initramfs, frames their output on the console, serves exec over vsock, and later handles snapshot hooks (`decisions/guest-agent.md`) |
 | `hangar` | the user | CLI. Agent-friendly: non-interactive, `-o json`, stable exit codes |
 | web console | browser | React, using the generated TypeScript client |

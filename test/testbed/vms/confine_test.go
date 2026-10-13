@@ -88,7 +88,7 @@ func TestCHIsConfined(t *testing.T) {
 	in := vmtest.Artifacts()
 	probing, err := chvm.New(ctx, chvm.Config{
 		Dir: vmDir, CloudHypervisor: probe, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
-		Launcher: []string{in.Node, "vmm"}, Nameservers: []string{"1.1.1.1"}, StopGrace: testGrace,
+		Launcher: []string{in.Node, "vmm"}, StopGrace: testGrace,
 	})
 	if err != nil {
 		t.Fatal(err)

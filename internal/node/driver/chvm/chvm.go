@@ -53,8 +53,6 @@ type Config struct {
 	// DefaultVMUsers. No user or group of the host may have one, nor any
 	// subordinate range overlap them, but deploy/host's for the VMs.
 	VMUsers UserRange
-	// Nameservers are the guests' resolvers.
-	Nameservers []string
 	// StopGrace is how long a guest's process has between SIGTERM and
 	// SIGKILL; zero means driver.StopGrace.
 	StopGrace time.Duration
@@ -443,7 +441,8 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 			Args: spec.Run.Command, Env: spec.Run.Env, WorkingDir: spec.Run.WorkingDir, User: spec.Run.User,
 		},
 		Hostname:    hostname(spec),
-		Nameservers: h.cfg.Nameservers,
+		Nameservers: spec.Nameservers,
+		Search:      spec.Search,
 	}
 	for _, i := range spec.Interfaces {
 		gw := ""

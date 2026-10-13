@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"slices"
 	"testing"
 	"time"
@@ -46,7 +47,10 @@ type world struct {
 	// pullTimeout, if set before the agent starts, bounds preparing an
 	// image.
 	pullTimeout time.Duration
-	stop        func()
+	// dnsUpstreams, if set before the agent starts, are what the networks'
+	// resolvers forward to.
+	dnsUpstreams []netip.AddrPort
+	stop         func()
 }
 
 func newWorld(t *testing.T) *world {
@@ -95,6 +99,7 @@ func (w *world) startAgent() {
 		HeartbeatInterval: 50 * time.Millisecond,
 		SweepInterval:     100 * time.Millisecond,
 		PullTimeout:       w.pullTimeout,
+		DNSUpstreams:      w.dnsUpstreams,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),
