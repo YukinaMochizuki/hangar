@@ -1,0 +1,197 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "hangar/compute/v1alpha1/interface.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+import "hangar/storage/v1alpha1/disk.proto";
+
+// VirtualMachine runs a disk image's own operating system, booted through
+// firmware, as its own microVM. See docs/decisions/machine-model.md and
+// docs/decisions/vm-boot.md.
+message VirtualMachine {
+  option (hangar.meta.v1.resource) = {
+    kind: "VirtualMachine"
+    plural: "virtualmachines"
+    short_names: ["vm"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  VirtualMachineSpec spec = 4;
+  VirtualMachineStatus status = 5;
+}
+
+// VirtualMachineSpec is the desired state of a virtual machine.
+message VirtualMachineSpec {
+  VirtualMachineResources resources = 1;
+  // The disk the VM boots from, its first.
+  VirtualMachineRootDisk root_disk = 2;
+  // Disks attached after the root disk, in this order.
+  repeated VirtualMachineDisk disks = 3;
+  // Whether the VM should be running; unset is RUNNING. Stopping presses
+  // the VM's power button and powers it off after a grace. Only a guest
+  // that powers itself off stays off; stop and start the VM to boot it
+  // again. A VM that crashes, or whose host shut down, boots again.
+  // Apply replaces the whole spec, so applying a manifest that leaves this
+  // out starts the VM.
+  VirtualMachineRunState run_state = 4;
+  // SSH public keys, each a line of an authorized_keys file, which the
+  // guest is given for its default user.
+  repeated string ssh_authorized_keys = 5;
+  // The VM's network interfaces, eth0, eth1 and on, in this order. Empty is
+  // one interface on the network "default". Changing them restarts the VM.
+  repeated NetworkInterface interfaces = 6;
+}
+
+// VirtualMachineResources sizes the VM. Each field is a quantity in
+// Kubernetes syntax, such as "2" or "2Gi"; empty takes the default.
+message VirtualMachineResources {
+  // Whole vCPUs; the default is 1.
+  string cpu = 1;
+  // Guest memory, at least 256Mi; the default is 1Gi.
+  string memory = 2;
+}
+
+// VirtualMachineRootDisk is the disk a VM boots from.
+message VirtualMachineRootDisk {
+  oneof source {
+    // A disk made for the VM, named after it with "-root".
+    VirtualMachineImageDisk from_image = 1;
+    // Names an existing Disk in the VM's project.
+    string disk = 2 [(hangar.meta.v1.field).immutable = true];
+  }
+}
+
+// VirtualMachineImageDisk is a root disk the VM's controller makes from an
+// image.
+message VirtualMachineImageDisk {
+  hangar.storage.v1alpha1.ImageSource image = 1 [(hangar.meta.v1.field).immutable = true];
+  // As a Disk's size; empty is 10Gi. It can grow but never shrink.
+  string size = 2;
+  VirtualMachineDeletePolicy delete_policy = 3;
+}
+
+// VirtualMachineDeletePolicy says what becomes of a root disk made for a VM
+// when the VM is deleted.
+enum VirtualMachineDeletePolicy {
+  // Means DELETE.
+  VIRTUAL_MACHINE_DELETE_POLICY_UNSPECIFIED = 0;
+  VIRTUAL_MACHINE_DELETE_POLICY_DELETE = 1;
+  // Keeps the disk, which another VM can then name as its root disk.
+  VIRTUAL_MACHINE_DELETE_POLICY_RETAIN = 2;
+}
+
+// VirtualMachineDisk is a Disk attached to a VM.
+message VirtualMachineDisk {
+  // Names a Disk in the VM's project.
+  string disk = 1;
+}
+
+// VirtualMachineRunState is what a VM's user asks of it. More states, such
+// as one for a paused VM, may come; a client should treat one it does not
+// know as not running.
+enum VirtualMachineRunState {
+  // Means RUNNING.
+  VIRTUAL_MACHINE_RUN_STATE_UNSPECIFIED = 0;
+  VIRTUAL_MACHINE_RUN_STATE_RUNNING = 1;
+  VIRTUAL_MACHINE_RUN_STATE_STOPPED = 2;
+}
+
+// VirtualMachineStatus is the observed state of a virtual machine.
+message VirtualMachineStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // Names the Disk the VM boots from.
+  string root_disk = 3;
+  // The VM's interfaces, with their addresses once assigned.
+  repeated VirtualMachineInterfaceStatus interfaces = 4;
+}
+
+// VirtualMachineInterfaceStatus is one of a VM's interfaces as it is.
+message VirtualMachineInterfaceStatus {
+  // As the guest names it, such as "eth0".
+  string name = 1;
+  string network = 2;
+  // The address with its network's prefix length, such as "10.0.0.5/24".
+  string ipv4 = 3;
+}
+
+// VirtualMachineService manages virtual machines.
+service VirtualMachineService {
+  rpc GetVirtualMachine(GetVirtualMachineRequest) returns (GetVirtualMachineResponse);
+  rpc ListVirtualMachines(ListVirtualMachinesRequest) returns (ListVirtualMachinesResponse);
+  rpc WatchVirtualMachines(WatchVirtualMachinesRequest) returns (stream WatchVirtualMachinesResponse);
+  rpc ApplyVirtualMachine(ApplyVirtualMachineRequest) returns (ApplyVirtualMachineResponse);
+  rpc DeleteVirtualMachine(DeleteVirtualMachineRequest) returns (DeleteVirtualMachineResponse);
+  rpc UpdateVirtualMachineStatus(UpdateVirtualMachineStatusRequest) returns (UpdateVirtualMachineStatusResponse);
+}
+
+message GetVirtualMachineRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetVirtualMachineResponse {
+  VirtualMachine virtual_machine = 1;
+}
+
+message ListVirtualMachinesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListVirtualMachinesResponse {
+  repeated VirtualMachine items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchVirtualMachinesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchVirtualMachinesResponse {
+  hangar.meta.v1.EventType type = 1;
+  VirtualMachine virtual_machine = 2;
+  int64 revision = 3;
+}
+
+message ApplyVirtualMachineRequest {
+  VirtualMachine virtual_machine = 1;
+}
+
+message ApplyVirtualMachineResponse {
+  VirtualMachine virtual_machine = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteVirtualMachineRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteVirtualMachineResponse {
+  VirtualMachine virtual_machine = 1;
+}
+
+message UpdateVirtualMachineStatusRequest {
+  string project = 1;
+  string name = 2;
+  VirtualMachineStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateVirtualMachineStatusResponse {
+  VirtualMachine virtual_machine = 1;
+}

@@ -270,16 +270,16 @@ func (a *Agent) writeDiskStatus(ctx context.Context, d *storagev1alpha1.Disk, co
 // yet bound to this node holds the machine up.
 func (a *Agent) volumes(ctx context.Context, m *computev1alpha1.Machine) ([]driver.Volume, error) {
 	var out []driver.Volume
-	for _, md := range m.GetSpec().GetDisks() {
-		d, err := a.getDisk(ctx, m.GetMetadata().GetProject(), md.GetDisk())
+	for _, name := range computeapi.MachineDisks(m.GetSpec()) {
+		d, err := a.getDisk(ctx, m.GetMetadata().GetProject(), name)
 		if err != nil {
 			return nil, err
 		}
 		if d == nil {
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s does not exist", md.GetDisk()))
+			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s does not exist", name))
 		}
 		if d.GetStatus().GetNode() != a.cfg.Name {
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not bound to this node", md.GetDisk()))
+			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not bound to this node", name))
 		}
 		// A disk made from an image is the disk controller's to make; the
 		// machine waits for it, and is queued again once it is ready.
@@ -289,7 +289,7 @@ func (a *Agent) volumes(ctx context.Context, m *computev1alpha1.Machine) ([]driv
 		}
 		if !made && d.GetSpec().GetSource().GetImage() != nil {
 			msg := conditions.Find(d.GetStatus().GetConditions(), computeapi.DiskReady).GetMessage()
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not made yet: %s", md.GetDisk(), msg))
+			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not made yet: %s", name, msg))
 		}
 		size, err := statusSize(d)
 		if err != nil {
@@ -318,7 +318,7 @@ func (a *Agent) machinesWithDisk(ctx context.Context, o store.Object) []controll
 		if m.GetSpec().GetNode() != a.cfg.Name {
 			continue
 		}
-		if slices.ContainsFunc(m.GetSpec().GetDisks(), func(d *computev1alpha1.MachineDisk) bool { return d.GetDisk() == o.Name }) {
+		if slices.Contains(computeapi.MachineDisks(m.GetSpec()), o.Name) {
 			keys = append(keys, controller.Key{Project: o.Project, Name: m.GetMetadata().GetName()})
 		}
 	}

@@ -26,4 +26,5 @@ the change.
 | `node-agent.md` | The node agent keeps no state, reads the host back, and sweeps what nothing accounts for |
 | `guest-agent.md` | hangar-init: PID 1 from the initramfs, a boot disk, Connect over vsock, a framed console |
 | `node-tunnel.md` | The apiserver calls a node over a tunnel the node opens; a container's logs are one stream across its boots; an exec runs as `docker exec` does, as long as its call |
-| `guest-kernel.md` | One platform guest kernel and initramfs: LTS only, allnoconfig + fragment, no modules, `quiet` |
+| `guest-kernel.md` | One platform guest kernel and initramfs for containers: LTS only, allnoconfig + fragment, no modules, `quiet` |
+| `vm-boot.md` | Virtual machines boot their image's own kernel through EDK2 firmware; serial console as log, power button to stop, no restart policy |

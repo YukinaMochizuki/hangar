@@ -55,6 +55,7 @@ func TestConformance(t *testing.T) {
 			Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
 			Exec:             &execPrograms,
 			ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
+			Firmware:         true,
 			AskedToStop: func(t *testing.T, uid string) bool {
 				for _, r := range consoleOf(t, uid) {
 					if r.Stream == console.Init && strings.Contains(string(r.Payload), "hangar-init: stopping the container") {

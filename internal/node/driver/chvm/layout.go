@@ -32,8 +32,11 @@ const (
 	// device, made as diskNode is (volumeNode).
 	volumeNodePrefix = "disk-"
 	// chDir is the one directory Cloud Hypervisor can write in, for its
-	// socket; the launcher makes it afresh on each run.
+	// sockets; the launcher makes it afresh on each run.
 	chDir = "ch"
+	// apiFile is Cloud Hypervisor's API socket, which a firmware VM's stop
+	// presses its power button through.
+	apiFile = chDir + "/api"
 	// vsockFile is the hybrid vsock socket Cloud Hypervisor listens on.
 	vsockFile = chDir + "/vsock"
 	// legacyVsockFile is the socket of a VM whose launcher has no chDir; it
@@ -111,6 +114,9 @@ type launch struct {
 	Kernel          string
 	Initramfs       string
 	Cmdline         string
+	// Firmware is what a firmware VM (Spec.Firmware) boots, in place of
+	// the kernel and initramfs.
+	Firmware string `json:",omitempty"`
 	// StopGrace and StopSlack are the driver's Config.StopGrace and
 	// StopSlack, which the launcher gives a guest when systemd stops it;
 	// zero, as in a spec written before they were, means the defaults.

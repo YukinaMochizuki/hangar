@@ -84,6 +84,9 @@ func validateDisk(ctx context.Context, s *Server, _ auth.Principal, old, obj pro
 	if err := s.validateDiskSource(ctx, was, d, size); err != nil {
 		return err
 	}
+	if err := checkRootDiskOwner(ctx, s, was, d); err != nil {
+		return err
+	}
 	if was == nil {
 		return nil
 	}
@@ -119,11 +122,11 @@ func (s *Server) machinesUsing(ctx context.Context, project, disk string) ([]str
 }
 
 func listsDisk(spec *computev1alpha1.MachineSpec, disk string) bool {
-	return slices.ContainsFunc(spec.GetDisks(), func(d *computev1alpha1.MachineDisk) bool { return d.GetDisk() == disk })
+	return slices.Contains(computeapi.MachineDisks(spec), disk)
 }
 
-// refuseDeletingAttachedDisk keeps users from deleting a disk a machine has:
-// the machine could not boot without it. A project being deleted takes its
+// refuseDeletingAttachedDisk keeps users from deleting a disk a live machine
+// has: the machine could not boot without it. A project being deleted takes its
 // disks with it, and they wait for their machines under DiskInUseFinalizer.
 func refuseDeletingAttachedDisk(ctx context.Context, s *Server, obj proto.Message) error {
 	d := obj.(*storagev1alpha1.Disk)
@@ -135,11 +138,26 @@ func refuseDeletingAttachedDisk(ctx context.Context, s *Server, obj proto.Messag
 		return nil
 	}
 	machines, err := s.machinesUsing(ctx, d.GetMetadata().GetProject(), d.GetMetadata().GetName())
-	if err != nil || len(machines) == 0 {
+	if err != nil {
 		return err
 	}
+	// A disk whose machines are all going, as a VM's root disk deleted with
+	// it, may go too; it waits for them under DiskInUseFinalizer.
+	var live []string
+	for _, name := range machines {
+		obj, err := s.get(ctx, registry.Machine, resource.Key{Project: d.GetMetadata().GetProject(), Name: name})
+		if err != nil {
+			return err
+		}
+		if m, ok := obj.(*computev1alpha1.Machine); ok && m.GetMetadata().GetDeleteTime() == nil {
+			live = append(live, name)
+		}
+	}
+	if len(live) == 0 {
+		return nil
+	}
 	return failedPrecondition("disk %q is attached to machine %s; detach it first",
-		d.GetMetadata().GetName(), strings.Join(machines, ", "))
+		d.GetMetadata().GetName(), strings.Join(live, ", "))
 }
 
 // checkAttaching checks the disks a machine lists: each at most once, and
@@ -148,17 +166,17 @@ func refuseDeletingAttachedDisk(ctx context.Context, s *Server, obj proto.Messag
 // written.
 func (s *Server) checkAttaching(ctx context.Context, meta *metav1.ObjectMeta, old, spec *computev1alpha1.MachineSpec) error {
 	seen := map[string]bool{}
-	for i, d := range spec.GetDisks() {
-		if err := ValidName(d.GetDisk()); err != nil {
-			return invalid("spec.disks[%d].disk: %v", i, err)
+	names := computeapi.MachineDisks(spec)
+	for i, name := range names {
+		if err := ValidName(name); err != nil {
+			return invalid("disk %d of spec.firmware.root_disk and spec.disks: %v", i, err)
 		}
-		if seen[d.GetDisk()] {
-			return invalid("spec.disks: disk %q is listed twice", d.GetDisk())
+		if seen[name] {
+			return invalid("disk %q is attached twice", name)
 		}
-		seen[d.GetDisk()] = true
+		seen[name] = true
 	}
-	for _, d := range spec.GetDisks() {
-		name := d.GetDisk()
+	for _, name := range names {
 		if listsDisk(old, name) {
 			continue
 		}
@@ -187,8 +205,8 @@ func (s *Server) disksOfMachine(ctx context.Context, o store.Object) []controlle
 		return nil
 	}
 	var keys []controller.Key
-	for _, d := range m.GetSpec().GetDisks() {
-		keys = append(keys, controller.Key{Project: o.Project, Name: d.GetDisk()})
+	for _, d := range computeapi.MachineDisks(m.GetSpec()) {
+		keys = append(keys, controller.Key{Project: o.Project, Name: d})
 	}
 	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Disk.Kind, Project: o.Project})
 	if err != nil {
@@ -361,25 +379,25 @@ func (s *Server) diskGrowthFits(ctx context.Context, node string, have, want uin
 func (s *Server) machineDisks(ctx context.Context, m *computev1alpha1.Machine) (node string, unbound []*storagev1alpha1.Disk, why string, err error) {
 	project := m.GetMetadata().GetProject()
 	bound := ""
-	for _, md := range m.GetSpec().GetDisks() {
-		obj, err := s.get(ctx, registry.Disk, resource.Key{Project: project, Name: md.GetDisk()})
+	for _, name := range computeapi.MachineDisks(m.GetSpec()) {
+		obj, err := s.get(ctx, registry.Disk, resource.Key{Project: project, Name: name})
 		if err != nil {
 			return "", nil, "", err
 		}
 		if obj == nil {
-			return "", nil, fmt.Sprintf("disk %s does not exist", md.GetDisk()), nil
+			return "", nil, fmt.Sprintf("disk %s does not exist", name), nil
 		}
 		d := obj.(*storagev1alpha1.Disk)
 		if d.GetMetadata().GetDeleteTime() != nil {
-			return "", nil, fmt.Sprintf("disk %s is being deleted", md.GetDisk()), nil
+			return "", nil, fmt.Sprintf("disk %s is being deleted", name), nil
 		}
 		switch n := d.GetStatus().GetNode(); {
 		case n == "":
 			unbound = append(unbound, d)
 		case node == "":
-			node, bound = n, md.GetDisk()
+			node, bound = n, name
 		case n != node:
-			return "", nil, fmt.Sprintf("disk %s lives on node %s and disk %s on node %s", bound, node, md.GetDisk(), n), nil
+			return "", nil, fmt.Sprintf("disk %s lives on node %s and disk %s on node %s", bound, node, name, n), nil
 		}
 	}
 	return node, unbound, "", nil

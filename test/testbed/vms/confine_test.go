@@ -118,7 +118,7 @@ func TestCHIsConfined(t *testing.T) {
 			"/run/systemd/private", "/run/systemd/journal/socket", "/run/dbus/system_bus_socket", "/run/lock",
 			"/proc/kcore", "/proc/sys/kernel", "/proc/sysrq-trigger", "/proc/1/environ",
 		},
-		"PlantLink": filepath.Join(vmDir, "conf-b", "ch", "vsock"),
+		"PlantLink": filepath.Join(vmDir, "conf-b", "ch", "vsock"), "PlantAPILink": filepath.Join(vmDir, "conf-b", "ch", "vsock"),
 	})
 	if err := os.WriteFile(filepath.Join(aCh, "targets.json"), targets, 0o644); err != nil {
 		t.Fatal(err)
@@ -169,6 +169,22 @@ func TestCHIsConfined(t *testing.T) {
 		t.Errorf("the driver reaching a's guest through the planted link: %v, want ErrNotSocket", err)
 	} else {
 		t.Logf("the driver reaching a's guest, a link to b's socket planted at a's: %v", err)
+	}
+	// So with the link at a's API socket's path, through which the driver
+	// and the launcher press a firmware VM's power button.
+	plantedAPI := filepath.Join(aCh, "api")
+	if c, err := net.Dial("unix", plantedAPI); err != nil {
+		t.Errorf("the planted API link does not reach b's socket, so the check below proves nothing: %v", err)
+	} else {
+		_ = c.Close()
+	}
+	pctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+	err = probing.PressPowerButton(pctx, "conf-a")
+	cancel()
+	if !errors.Is(err, chguest.ErrNotSocket) {
+		t.Errorf("the driver pressing a's power button through the planted link: %v, want ErrNotSocket", err)
+	} else {
+		t.Logf("the driver pressing a's power button, a link to b's socket planted at a's API socket: %v", err)
 	}
 
 	// a's launcher, once its Cloud Hypervisor runs, keeps no capability

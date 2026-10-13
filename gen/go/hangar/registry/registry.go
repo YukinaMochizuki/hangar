@@ -70,6 +70,16 @@ var (
 		Message:    (*v1alpha1.Node)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.NodeService",
 	}
+	VirtualMachine = Resource{
+		Group:      "compute",
+		Version:    "v1alpha1",
+		Kind:       "VirtualMachine",
+		Plural:     "virtualmachines",
+		ShortNames: []string{"vm"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha1.VirtualMachine)(nil).ProtoReflect().Type(),
+		Service:    "hangar.compute.v1alpha1.VirtualMachineService",
+	}
 	RoleBinding = Resource{
 		Group:      "iam",
 		Version:    "v1alpha1",
@@ -147,6 +157,7 @@ var All = []Resource{
 	Container,
 	Machine,
 	Node,
+	VirtualMachine,
 	RoleBinding,
 	Network,
 	SecurityGroup,

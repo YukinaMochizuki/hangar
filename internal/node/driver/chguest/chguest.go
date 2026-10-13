@@ -90,7 +90,7 @@ func (c client) Exec(ctx context.Context) *connect.BidiStreamForClient[guestv1.E
 // hybrid vsock socket: the host writes "CONNECT <port>" and Cloud
 // Hypervisor answers "OK <host port>" once the guest accepts.
 func Dial(ctx context.Context, socket string, port uint32) (net.Conn, error) {
-	conn, err := dialSocket(ctx, socket)
+	conn, err := DialSocket(ctx, socket)
 	if err != nil {
 		return nil, err
 	}
@@ -125,13 +125,14 @@ func Dial(ctx context.Context, socket string, port uint32) (net.Conn, error) {
 	return conn, nil
 }
 
-// ErrNotSocket is what Dial says of a socket path that holds something else.
+// ErrNotSocket is what Dial and DialSocket say of a socket path that holds
+// something else.
 var ErrNotSocket = errors.New("not a socket")
 
-// dialSocket connects to the unix socket at path, and to nothing else: Cloud
+// DialSocket connects to the unix socket at path, and to nothing else: Cloud
 // Hypervisor makes the socket in a directory it can write in, so a link
 // there could lead its caller, root, to any socket of the host.
-func dialSocket(ctx context.Context, path string) (net.Conn, error) {
+func DialSocket(ctx context.Context, path string) (net.Conn, error) {
 	fd, err := unix.Open(path, unix.O_PATH|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}

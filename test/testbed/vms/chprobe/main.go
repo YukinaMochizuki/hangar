@@ -34,8 +34,9 @@ type Targets struct {
 	// HostPaths are paths of the host the probe must not reach.
 	HostPaths []string
 	// PlantLink is where a link the probe leaves at its socket's path
-	// points, for the test to see the driver refuse it.
-	PlantLink string
+	// points, and PlantAPILink where one at its API socket's path does,
+	// for the test to see the driver refuse them.
+	PlantLink, PlantAPILink string
 }
 
 // Result is what one try did.
@@ -74,6 +75,9 @@ func main() {
 	sock := filepath.Join(ch, "vsock")
 	_ = os.Remove(sock)
 	r["plant a link at its socket's path"] = allowed(os.Symlink(tg.PlantLink, sock))
+	api := filepath.Join(ch, "api")
+	_ = os.Remove(api)
+	r["plant a link at its API socket's path"] = allowed(os.Symlink(tg.PlantAPILink, api))
 	b, _ := json.MarshalIndent(r, "", "  ")
 	_ = os.WriteFile(filepath.Join(ch, "probe.json.part"), b, 0o600)
 	_ = os.Rename(filepath.Join(ch, "probe.json.part"), filepath.Join(ch, "probe.json"))

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 )
 
@@ -297,5 +298,121 @@ func TestStopStartErrors(t *testing.T) {
 	w.as("alice@example.com")
 	if got := w.container("api"); got.Spec.RunState != "" {
 		t.Errorf("bob's attempts changed the run state to %q", got.Spec.RunState)
+	}
+}
+
+const vmStack = `apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata:
+  name: noble
+spec:
+  url: https://cloud-images.example/noble.img
+  sha256: 1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a
+  os: ubuntu
+  version: "24.04"
+`
+
+const webVM = `apiVersion: compute.hangarlab.cloud/v1alpha1
+kind: VirtualMachine
+metadata:
+  name: web
+spec:
+  rootDisk:
+    fromImage:
+      image:
+        name: noble
+  resources:
+    memory: 2Gi
+`
+
+// vmJSON is the part of a VM the stop and start tests look at.
+type vmJSON struct {
+	Metadata struct {
+		Generation string `json:"generation"`
+	} `json:"metadata"`
+	Spec struct {
+		RunState  string            `json:"runState"`
+		Resources map[string]string `json:"resources"`
+		RootDisk  json.RawMessage   `json:"rootDisk"`
+	} `json:"spec"`
+}
+
+func (w *world) vm(name string) vmJSON {
+	w.t.Helper()
+	var v vmJSON
+	if err := json.Unmarshal([]byte(w.must("", "get", "vm", name, "-o", "json")), &v); err != nil {
+		w.t.Fatal(err)
+	}
+	return v
+}
+
+// TestStopStartAVirtualMachine: stop and start set a VM's run state, as a
+// container's, and leave the rest of its spec; start on a VM meant to run
+// whose guest powered itself off fails, saying what boots it again.
+func TestStopStartAVirtualMachine(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	w.must(stack, "apply", "-f", "-")
+	w.as("root@example.com")
+	w.must(vmStack, "apply", "-f", "-")
+	w.as("alice@example.com")
+	w.must(webVM, "apply", "-f", "-")
+	before := w.vm("web")
+
+	if out := w.must("", "start", "vm", "web"); out != "virtualmachine/web already running\n" {
+		t.Errorf("start of a running VM printed %q", out)
+	}
+	if out := w.must("", "stop", "virtualmachine", "web"); out != "virtualmachine/web stopped\n" {
+		t.Errorf("stop printed %q", out)
+	}
+	stopped := w.vm("web")
+	if stopped.Spec.RunState != "VIRTUAL_MACHINE_RUN_STATE_STOPPED" || stopped.Spec.Resources["memory"] != "2Gi" ||
+		string(stopped.Spec.RootDisk) != string(before.Spec.RootDisk) || stopped.Metadata.Generation == before.Metadata.Generation {
+		t.Errorf("after stop: %+v, before %+v", stopped, before)
+	}
+	if out := w.must("", "stop", "vm", "web"); out != "virtualmachine/web already stopped\n" {
+		t.Errorf("second stop printed %q", out)
+	}
+	if out := w.must("", "start", "vm", "web"); out != "virtualmachine/web started\n" {
+		t.Errorf("start printed %q", out)
+	}
+	if got := w.vm("web"); got.Spec.RunState != "VIRTUAL_MACHINE_RUN_STATE_RUNNING" {
+		t.Errorf("after start, run state %q", got.Spec.RunState)
+	}
+
+	// The node reports the VM ended with reason and message, and the VM
+	// reads so.
+	node := w.node()
+	node.ready()
+	m := node.placed("vm-web")
+	ended := func(phase computev1alpha1.MachinePhase, reason, msg string) {
+		t.Helper()
+		node.report(m, phase, m.GetMetadata().GetGeneration(), &metav1.Condition{
+			Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reason, Message: msg,
+			ObservedGeneration: m.GetMetadata().GetGeneration(),
+		})
+		deadline := time.Now().Add(10 * time.Second)
+		for !strings.Contains(w.must("", "get", "vm", "web", "-o", "json"), `"`+reason+`"`) {
+			if time.Now().After(deadline) {
+				t.Fatalf("the VM never read as %s: %s", reason, w.must("", "get", "vm", "web", "-o", "json"))
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	// It crashed, and waits out its restart's backoff: it boots again on
+	// its own, and start says nothing more.
+	ended(computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, "Exited", "the VM ended without powering off, code 253")
+	if r := w.run("", "start", "vm", "web"); r.code != 0 || r.out != "virtualmachine/web already running\n" {
+		t.Errorf("start of a crashed VM: exit %d: %q %s", r.code, r.out, r.err)
+	}
+
+	// Its guest powers itself off: start has nothing to ask, and says how
+	// to boot it again.
+	ended(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, "PoweredOff", "the guest powered off")
+	r := w.run("", "start", "vm", "web", "--wait", "--timeout=10s")
+	if r.code != cli.ExitError || r.out != "" || !strings.Contains(r.err, "virtualmachine/web is meant to run, but is off: the guest powered off") ||
+		!strings.Contains(r.err, "hangar stop vm web --wait && hangar start vm web") {
+		t.Errorf("start of a powered-off VM: exit %d: %q %s", r.code, r.out, r.err)
 	}
 }

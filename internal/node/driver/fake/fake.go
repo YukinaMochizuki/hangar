@@ -378,6 +378,45 @@ func (h *Host) exitLocked(machineUID string, code int) error {
 	return nil
 }
 
+// endFirmwareBootLocked ends the boot of a running firmware VM that the
+// platform stopped, pressing its power button, as chvm's launcher records
+// it: powered off, or killed if its guest does not answer.
+func (h *Host) endFirmwareBootLocked(machineUID string) {
+	code := int32(0)
+	if h.hung[machineUID] || h.silent[machineUID] {
+		code = 253
+	}
+	h.writeLog(machineUID, console.ExitRecord(console.ExitStatus{Code: code, Signal: driver.StoppedSignal}, time.Now()))
+}
+
+// Reboot shuts the host down and boots it again, the agent's to start
+// what it wants running: as at a shutdown, each running VM is stopped
+// without a stop asked of the driver, a firmware VM's by its power button
+// and a container's by its guest's stop. As chvm lists them after, a VM
+// whose restart policy is never has exited, with 253 (chvm.ExitNoRecord),
+// and any other is gone, to be started again. Execs end.
+func (h *Host) Reboot() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for uid, v := range h.vms {
+		if v.State != driver.VMRunning {
+			continue // its exit is recorded, and stays
+		}
+		if v.spec.Firmware {
+			h.endFirmwareBootLocked(uid)
+		} else {
+			h.writeLog(uid, console.ExitRecord(console.ExitStatus{Code: 143}, time.Now()))
+		}
+		h.endExecsLocked(uid)
+		if v.spec.Restart == driver.RestartNever {
+			v.State, v.ExitCode = driver.VMExited, 253
+		} else {
+			delete(h.vms, uid)
+		}
+	}
+	signal(h.vmChanges)
+}
+
 // LoseNetwork removes a network and its interfaces behind the agent's back,
 // as a networkd reconfiguration can, and says so on Changes.
 func (h *Host) LoseNetwork(networkUID string) {
@@ -1037,8 +1076,13 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	if err := d.h.bootErr[""]; err != nil {
 		return err
 	}
-	if r, ok := d.h.roots[spec.MachineUID]; !ok || r != spec.Root {
-		return fmt.Errorf("machine %s has no root disk %s", spec.MachineUID, spec.Root.Path)
+	switch {
+	case spec.Firmware && (spec.Root != driver.Disk{} || len(spec.Disks) == 0):
+		return fmt.Errorf("machine %s boots firmware from a volume, not root disk %+v", spec.MachineUID, spec.Root)
+	case !spec.Firmware:
+		if r, ok := d.h.roots[spec.MachineUID]; !ok || r != spec.Root {
+			return fmt.Errorf("machine %s has no root disk %s", spec.MachineUID, spec.Root.Path)
+		}
 	}
 	for _, v := range spec.Disks {
 		if have, ok := d.h.volumes[v.DiskUID]; !ok || have != v {
@@ -1075,7 +1119,8 @@ func (d hypervisor) Stop(ctx context.Context, machineUID string) error {
 	}
 	v, ok := d.h.vms[machineUID]
 	running := ok && v.State == driver.VMRunning
-	if running && !d.h.hung[machineUID] && !d.h.silent[machineUID] {
+	// A firmware VM has no guest agent to ask: its power button is pressed.
+	if running && !v.spec.Firmware && !d.h.hung[machineUID] && !d.h.silent[machineUID] {
 		d.h.stops[machineUID]++
 	}
 	delay := d.h.stopDelay[machineUID]
@@ -1101,6 +1146,9 @@ func (d hypervisor) Stop(ctx context.Context, machineUID string) error {
 		return err
 	}
 	d.h.mu.Lock()
+	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning && v.spec.Firmware {
+		d.h.endFirmwareBootLocked(machineUID)
+	}
 	delete(d.h.vms, machineUID)
 	d.h.endExecsLocked(machineUID)
 	d.h.mu.Unlock()

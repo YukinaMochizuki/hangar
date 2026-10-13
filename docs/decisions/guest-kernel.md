@@ -1,22 +1,26 @@
-# One platform guest kernel, LTS only
+# One platform guest kernel for containers, LTS only
 
 Status: accepted, 2026-10.
 
 ## Context
 
-Every machine, container or VM, is a Cloud Hypervisor guest booted directly
-from a kernel the host supplies (`docs/decisions/machine-model.md`). Containers run their
-image's userspace on that kernel, and users run Docker inside VMs, so the
-kernel decides what every workload can do: which filesystems, which netfilter
-interface, which cgroup controllers. A distribution kernel is built for real
-hardware and boots through firmware and an initramfs; it is large and slow to
-boot for a guest that only ever sees virtio devices.
+Every container is a Cloud Hypervisor guest booted directly from a kernel
+the host supplies (`docs/decisions/machine-model.md`). Containers run their
+image's userspace on that kernel, and users run Docker inside them, so the
+kernel decides what every container can do: which filesystems, which
+netfilter interface, which cgroup controllers. A distribution kernel is built
+for real hardware and boots through firmware and an initramfs; it is large
+and slow to boot for a guest that only ever sees virtio devices.
+VirtualMachines are not containers: they boot their image's own kernel
+through firmware (`docs/decisions/vm-boot.md`), and nothing here applies to
+them.
 
 ## Decision
 
-- Hangar ships one guest kernel, built from `guest/kernel/` and booted by every
-  machine. Images do not bring their own kernel. One kernel is one config to
-  audit, one build to test, and one boot path to keep fast.
+- Hangar ships one guest kernel, built from `guest/kernel/` and booted by
+  every container's machine. Container images do not bring their own
+  kernel. One kernel is one config to audit, one build to test, and one
+  boot path to keep fast.
 - The config is x86_64 `allnoconfig` plus `guest/kernel/hangar.fragment`, with
   everything built in and no modules: there is no module tree in the guest
   to keep in step with the kernel. The build fails if

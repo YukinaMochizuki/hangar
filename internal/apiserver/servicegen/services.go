@@ -31,6 +31,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(computev1alpha1connect.NewContainerServiceHandler(&containerService{b: backends(registry.Container)}, opts...))
 	mux.Handle(computev1alpha1connect.NewMachineServiceHandler(&machineService{b: backends(registry.Machine)}, opts...))
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
+	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewRoleBindingServiceHandler(&roleBindingService{b: backends(registry.RoleBinding)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
@@ -227,6 +228,69 @@ func (s *nodeService) UpdateNodeStatus(ctx context.Context, req *connect.Request
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha1.UpdateNodeStatusResponse{Node: obj.(*v1alpha1.Node)}), nil
+}
+
+type virtualMachineService struct {
+	b resource.Backend
+}
+
+func (s *virtualMachineService) GetVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.GetVirtualMachineRequest]) (*connect.Response[v1alpha1.GetVirtualMachineResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.GetVirtualMachineResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+}
+
+func (s *virtualMachineService) ListVirtualMachines(ctx context.Context, req *connect.Request[v1alpha1.ListVirtualMachinesRequest]) (*connect.Response[v1alpha1.ListVirtualMachinesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha1.ListVirtualMachinesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha1.VirtualMachine))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *virtualMachineService) WatchVirtualMachines(ctx context.Context, req *connect.Request[v1alpha1.WatchVirtualMachinesRequest], stream *connect.ServerStream[v1alpha1.WatchVirtualMachinesResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha1.WatchVirtualMachinesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.VirtualMachine = ev.Object.(*v1alpha1.VirtualMachine)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *virtualMachineService) ApplyVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.ApplyVirtualMachineRequest]) (*connect.Response[v1alpha1.ApplyVirtualMachineResponse], error) {
+	in := req.Msg.GetVirtualMachine()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("virtual_machine is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.ApplyVirtualMachineResponse{VirtualMachine: res.Object.(*v1alpha1.VirtualMachine), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *virtualMachineService) DeleteVirtualMachine(ctx context.Context, req *connect.Request[v1alpha1.DeleteVirtualMachineRequest]) (*connect.Response[v1alpha1.DeleteVirtualMachineResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.DeleteVirtualMachineResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+}
+
+func (s *virtualMachineService) UpdateVirtualMachineStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateVirtualMachineStatusRequest]) (*connect.Response[v1alpha1.UpdateVirtualMachineStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.UpdateVirtualMachineStatusResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
 }
 
 type roleBindingService struct {

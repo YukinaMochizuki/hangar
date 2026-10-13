@@ -24,11 +24,13 @@ func (a *app) logsCmd() *cobra.Command {
 	var since, output string
 	cmd := &cobra.Command{
 		Use:   "logs KIND NAME",
-		Short: "Print what a container wrote, across its restarts",
+		Short: "Print what a container or a virtual machine wrote, across its boots",
 		Long: "Prints one stream across every boot the container's node keeps, oldest\n" +
 			"first: its stdout to stdout, its stderr to stderr, and hangar-init's\n" +
 			"messages and each exit to stderr as hangar: lines. -o json prints one\n" +
-			"object per record, with its stream and boot.",
+			"object per record, with its stream and boot.\n\n" +
+			"For a virtual machine, prints its serial console to stdout, and how each\n" +
+			"boot ended to stderr, the same way.",
 		Args: args(2, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output != "" && output != "json" {
@@ -38,8 +40,8 @@ func (a *app) logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if r.Kind != registry.Container.Kind {
-				return usageErr("only containers have logs, not %s", r.Plural)
+			if r.Kind != registry.Container.Kind && r.Kind != registry.VirtualMachine.Kind {
+				return usageErr("only containers and virtual machines have logs, not %s", r.Plural)
 			}
 			req := &computev1alpha1.ContainerLogsRequest{Name: args[1], Follow: follow}
 			switch {
@@ -67,13 +69,31 @@ func (a *app) logsCmd() *cobra.Command {
 				return err
 			}
 			hc, base := a.httpClient(c)
+			p := &logPrinter{out: cmd.OutOrStdout(), err: cmd.ErrOrStderr(), json: output == "json", timestamps: timestamps}
+			if r.Kind == registry.VirtualMachine.Kind {
+				logs := computev1alpha1connect.NewVirtualMachineLogsServiceClient(hc, base, connect.WithInterceptors(creds))
+				stream, err := logs.VirtualMachineLogs(cmd.Context(), connect.NewRequest(&computev1alpha1.VirtualMachineLogsRequest{
+					Project: req.Project, Name: req.Name, Follow: req.Follow, TailLines: req.TailLines, Since: req.Since,
+				}))
+				if err != nil {
+					return err
+				}
+				defer func() { _ = stream.Close() }()
+				for stream.Receive() {
+					for _, rec := range stream.Msg().GetRecords() {
+						if err := p.printVM(rec); err != nil {
+							return err
+						}
+					}
+				}
+				return stream.Err()
+			}
 			logs := computev1alpha1connect.NewContainerLogsServiceClient(hc, base, connect.WithInterceptors(creds))
 			stream, err := logs.ContainerLogs(cmd.Context(), connect.NewRequest(req))
 			if err != nil {
 				return err
 			}
 			defer func() { _ = stream.Close() }()
-			p := &logPrinter{out: cmd.OutOrStdout(), err: cmd.ErrOrStderr(), json: output == "json", timestamps: timestamps}
 			for stream.Receive() {
 				for _, rec := range stream.Msg().GetRecords() {
 					if err := p.print(rec); err != nil {
@@ -84,12 +104,47 @@ func (a *app) logsCmd() *cobra.Command {
 			return stream.Err()
 		},
 	}
-	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "go on printing what is written, until the container exits for good or is stopped")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "go on printing what is written, until the container exits for good, the virtual machine powers off, or either is stopped")
 	cmd.Flags().Int64Var(&tail, "tail", -1, "print only the last N lines, or every line with -1; each exit counts as one")
 	cmd.Flags().StringVar(&since, "since", "", "print only what is newer than a duration ago, such as 10m, or an RFC 3339 time")
 	cmd.Flags().BoolVar(&timestamps, "timestamps", false, "start each line with its time")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "json, for one object per record")
 	return cmd
+}
+
+// printVM prints a virtual machine's log record as a container's is
+// printed: its serial console as stdout, and the end of each boot as an
+// exit, saying how the boot ended.
+func (p *logPrinter) printVM(r *computev1alpha1.VirtualMachineLogRecord) error {
+	rec := &computev1alpha1.ContainerLogRecord{Boot: r.GetBoot(), Time: r.GetTime()}
+	end := r.GetEnd()
+	if end == nil {
+		rec.Stream = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDOUT
+		rec.Content = &computev1alpha1.ContainerLogRecord_Data{Data: r.GetData()}
+		return p.print(rec)
+	}
+	rec.Stream = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_EXIT
+	if p.json {
+		return p.printJSON(logJSON{
+			Time: rec.GetTime().AsTime().Format(time.RFC3339Nano), Boot: rec.GetBoot(), Stream: streamName(rec.GetStream()),
+			Exit: &logJSONExit{Code: end.GetCode(), Stopped: end.GetStopped()},
+		})
+	}
+	var msg string
+	switch {
+	case end.GetStopped() && end.GetCode() == 0:
+		msg = "hangar: stopped; the guest powered off"
+	case end.GetStopped():
+		msg = "hangar: stopped; the guest did not power off, and was killed"
+	case end.GetCode() == 0:
+		msg = "hangar: the guest powered off"
+	default:
+		msg = fmt.Sprintf("hangar: the VM ended without powering off, code %d", end.GetCode())
+	}
+	if rec.GetBoot() > 0 {
+		msg += fmt.Sprintf(" (boot %d)", rec.GetBoot())
+	}
+	return p.line(rec, []byte(msg+"\n"))
 }
 
 func parseSince(s string, now time.Time) (time.Time, error) {
@@ -129,6 +184,8 @@ type logJSON struct {
 type logJSONExit struct {
 	Code   int32 `json:"code"`
 	Signal int32 `json:"signal"`
+	// Stopped is a virtual machine's boot the platform ended.
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 func streamName(s computev1alpha1.ContainerLogStream) string {
@@ -146,14 +203,7 @@ func (p *logPrinter) print(rec *computev1alpha1.ContainerLogRecord) error {
 		} else {
 			j.DataBase64 = data
 		}
-		var b bytes.Buffer
-		enc := json.NewEncoder(&b)
-		enc.SetEscapeHTML(false)
-		if err := enc.Encode(j); err != nil {
-			return err
-		}
-		_, err := p.out.Write(b.Bytes())
-		return err
+		return p.printJSON(j)
 	}
 	switch rec.GetStream() {
 	case computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDOUT:
@@ -179,6 +229,18 @@ func (p *logPrinter) print(rec *computev1alpha1.ContainerLogRecord) error {
 		return p.line(rec, []byte(msg+"\n"))
 	}
 	return nil
+}
+
+// printJSON prints one record as -o json does.
+func (p *logPrinter) printJSON(j logJSON) error {
+	var b bytes.Buffer
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(j); err != nil {
+		return err
+	}
+	_, err := p.out.Write(b.Bytes())
+	return err
 }
 
 // line writes whole lines of hangar's own to stderr, on a line of their
