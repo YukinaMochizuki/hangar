@@ -189,10 +189,27 @@ func TestNoOtherListenerIsRoot(t *testing.T) {
 
 func TestDevRefusesTunnelledRequests(t *testing.T) {
 	l := start(t, uint32(os.Getuid()))
-	h := http.Header{auth.DevUserHeader: {"root@example.com"}, "Cdn-Loop": {"cloudflare"}}
-	_, err := bindings(http.DefaultClient, l.public, h).ListRoleBindings(context.Background(), connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{}))
-	if connect.CodeOf(err) != connect.CodeUnauthenticated {
-		t.Fatalf("the bootstrap admin through Cloudflare: %v; want unauthenticated", err)
+	list := func(h http.Header) error {
+		_, err := bindings(http.DefaultClient, l.public, h).ListRoleBindings(context.Background(), connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{}))
+		return err
+	}
+	// The bootstrap admin's grant is written in the background at start.
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		err := list(http.Header{auth.DevUserHeader: {"root@example.com"}})
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the bootstrap admin on loopback: %v", err)
+		}
+	}
+	// Cf-Warp-Tag-Id is what cloudflared itself adds to every request it
+	// proxies; the rest come from Cloudflare's edge.
+	for _, k := range []string{"Cf-Warp-Tag-Id", "Cdn-Loop", "Cf-Connecting-Ip", "Cf-Ray"} {
+		err := list(http.Header{auth.DevUserHeader: {"root@example.com"}, k: {"x"}})
+		if connect.CodeOf(err) != connect.CodeUnauthenticated {
+			t.Errorf("the bootstrap admin with %s: %v; want unauthenticated", k, err)
+		}
 	}
 }
 

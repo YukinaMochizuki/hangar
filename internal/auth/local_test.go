@@ -127,7 +127,7 @@ func TestOnlyLocalRootMakesLocal(t *testing.T) {
 }
 
 func TestDevRefusesCloudflareTraffic(t *testing.T) {
-	for _, h := range []string{"Cf-Connecting-Ip", "CDN-Loop", "cf-ray"} {
+	for _, h := range []string{"Cf-Connecting-Ip", "CDN-Loop", "cf-ray", "Cf-Warp-Tag-Id"} {
 		t.Run(h, func(t *testing.T) {
 			header := http.Header{}
 			header.Set(auth.DevUserHeader, "root@example.com")
