@@ -73,7 +73,7 @@ func checkMetaKeys(p auth.Principal, meta, stored *metav1.ObjectMeta) error {
 
 // dependentsFinalizer keeps a tenant or project in place, marked as being
 // deleted, until everything it owns is gone.
-const dependentsFinalizer = "hangar.dev/dependents"
+const dependentsFinalizer = registry.Domain + "/dependents"
 
 // kindHooks is what differs between kinds in the generic machinery.
 type kindHooks struct {

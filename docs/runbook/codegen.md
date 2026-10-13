@@ -42,7 +42,7 @@ the contract in `internal/store/storetest`.
 
 ## The API group domain
 
-The suffix in every `apiVersion` (`hangar.dev`) is the `domain` option of the
+The suffix in every `apiVersion` (`hangarlab.cloud`) is the `domain` option of the
 registry plugin in `buf.gen.hangar.yaml`, and nowhere else.
 
 ## Troubleshooting

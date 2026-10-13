@@ -37,7 +37,7 @@ const (
 func main() {
 	var flags flag.FlagSet
 	mode := flags.String("mode", "", "registry or server")
-	domain := flags.String("domain", "", "suffix of every API group, such as hangar.dev")
+	domain := flags.String("domain", "", "suffix of every API group, such as hangarlab.cloud")
 	protogen.Options{ParamFunc: flags.Set}.Run(func(gen *protogen.Plugin) error {
 		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 		kinds, err := collect(gen)

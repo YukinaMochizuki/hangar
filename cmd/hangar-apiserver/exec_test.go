@@ -11,17 +11,17 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 )
 
-const execStack = `apiVersion: tenancy.hangar.dev/v1alpha1
+const execStack = `apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Tenant
 metadata: {name: acme}
 spec: {displayName: Acme}
 ---
-apiVersion: tenancy.hangar.dev/v1alpha1
+apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Project
 metadata: {name: web}
 spec: {tenant: acme}
 ---
-apiVersion: compute.hangar.dev/v1alpha1
+apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata: {name: api}
 spec:

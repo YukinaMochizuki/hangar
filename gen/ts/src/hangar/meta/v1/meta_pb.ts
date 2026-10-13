@@ -71,14 +71,14 @@ export type ObjectMeta = Message<"hangar.meta.v1.ObjectMeta"> & {
   deleteTime?: Timestamp | undefined;
 
   /**
-   * Keys under a *.hangar.dev/ prefix are reserved for the system.
+   * Keys under a *.hangarlab.cloud/ prefix are reserved for the system.
    *
    * @generated from field: map<string, string> labels = 8;
    */
   labels: { [key: string]: string };
 
   /**
-   * Keys under a *.hangar.dev/ prefix are reserved for the system.
+   * Keys under a *.hangarlab.cloud/ prefix are reserved for the system.
    *
    * @generated from field: map<string, string> annotations = 9;
    */

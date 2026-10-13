@@ -25,7 +25,7 @@ import (
 
 // shellYAML is a busybox container that idles, with an environment of its
 // own for its execs to inherit.
-var shellYAML = `apiVersion: compute.hangar.dev/v1alpha1
+var shellYAML = `apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata: {name: shell}
 spec:

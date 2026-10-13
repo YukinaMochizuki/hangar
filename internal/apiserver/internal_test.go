@@ -113,7 +113,7 @@ func TestFinalizers(t *testing.T) {
 	key := resource.Key{Project: "web", Name: "api"}
 
 	c := ctr("api")
-	c.Metadata.Finalizers = []string{"hangar.dev/machine"}
+	c.Metadata.Finalizers = []string{"hangarlab.cloud/machine"}
 	if _, err := b.Apply(system, c); err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestFinalizers(t *testing.T) {
 
 	// Containers also carry the cascade's finalizer, which garbage collection
 	// removes once nothing they own is left.
-	if err := s.RemoveFinalizer(system, registry.Container, key, "hangar.dev/machine"); err != nil {
+	if err := s.RemoveFinalizer(system, registry.Container, key, "hangarlab.cloud/machine"); err != nil {
 		t.Fatal(err)
 	}
 	eventuallyGone(t, b, user, key)
@@ -163,7 +163,7 @@ func TestReservedLabelsSurviveUserApply(t *testing.T) {
 	b := s.backend(registry.Container)
 
 	c := ctr("api")
-	c.Metadata.Labels = map[string]string{"hangar.dev/machine": "m-1", "app": "web"}
+	c.Metadata.Labels = map[string]string{"hangarlab.cloud/machine": "m-1", "app": "web"}
 	if _, err := b.Apply(system, c); err != nil {
 		t.Fatal(err)
 	}
@@ -173,9 +173,9 @@ func TestReservedLabelsSurviveUserApply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]string{"hangar.dev/machine": "m-1", "app": "api"}
+	want := map[string]string{"hangarlab.cloud/machine": "m-1", "app": "api"}
 	got := res.Object.(*computev1alpha1.Container).GetMetadata().GetLabels()
-	if len(got) != len(want) || got["hangar.dev/machine"] != "m-1" || got["app"] != "api" {
+	if len(got) != len(want) || got["hangarlab.cloud/machine"] != "m-1" || got["app"] != "api" {
 		t.Errorf("labels after a user apply: %v, want %v", got, want)
 	}
 }
@@ -184,7 +184,7 @@ func TestReservedAnnotationsSurviveAndEchoBack(t *testing.T) {
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 	c := ctr("api")
-	c.Metadata.Annotations = map[string]string{"hangar.dev/machine": "m-1"}
+	c.Metadata.Annotations = map[string]string{"hangarlab.cloud/machine": "m-1"}
 	if _, err := b.Apply(system, c); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestReservedAnnotationsSurviveAndEchoBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := res.Object.(*computev1alpha1.Container).GetMetadata().GetAnnotations()["hangar.dev/machine"]; got != "m-1" {
+	if got := res.Object.(*computev1alpha1.Container).GetMetadata().GetAnnotations()["hangarlab.cloud/machine"]; got != "m-1" {
 		t.Errorf("a user apply dropped a system annotation: %q", got)
 	}
 	// Sending back what was read is fine; changing it is not.
@@ -205,7 +205,7 @@ func TestReservedAnnotationsSurviveAndEchoBack(t *testing.T) {
 		t.Errorf("applying an object as read: %v", err)
 	}
 	forged := proto.Clone(read).(*computev1alpha1.Container)
-	forged.Metadata.Annotations["hangar.dev/machine"] = "m-2"
+	forged.Metadata.Annotations["hangarlab.cloud/machine"] = "m-2"
 	if _, err := b.Apply(user, forged); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("changing a system annotation: %v", err)
 	}

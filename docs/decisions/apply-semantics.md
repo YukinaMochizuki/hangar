@@ -13,13 +13,13 @@ controllers, and the node, which runs as a separate process.
 - **Apply is an upsert that replaces the whole `spec`.** The spec is the desired
   state. There is no server-side apply or field-level merge.
 - **Labels and annotations** belong to the user and are replaced too, except keys
-  under any `*.hangar.dev/` prefix. Those are reserved for the system: a user
+  under any `*.hangarlab.cloud/` prefix. Those are reserved for the system: a user
   setting one is rejected, and system-set ones survive a user's apply.
 - **Finalizers and owner references** belong to the system; their values in an
   apply are ignored. The system sets them on create: everything in a project
   is owned by the project, a project by its tenant, and a role binding by the
   tenant or project it is scoped to. Tenants and projects carry the
-  `hangar.dev/dependents` finalizer, so deleting one deletes its contents
+  `hangarlab.cloud/dependents` finalizer, so deleting one deletes its contents
   first. `uid` (UUIDv7), `create_time`, `resource_version` and
   `generation` are system-generated.
 - **`generation`** increments only when the spec actually changes. Controllers

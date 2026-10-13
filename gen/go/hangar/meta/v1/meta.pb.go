@@ -152,9 +152,9 @@ type ObjectMeta struct {
 	CreateTime *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=create_time,json=createTime,proto3" json:"create_time,omitempty"`
 	// Set when deletion was requested and finalizers are still pending.
 	DeleteTime *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=delete_time,json=deleteTime,proto3" json:"delete_time,omitempty"`
-	// Keys under a *.hangar.dev/ prefix are reserved for the system.
+	// Keys under a *.hangarlab.cloud/ prefix are reserved for the system.
 	Labels map[string]string `protobuf:"bytes,8,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	// Keys under a *.hangar.dev/ prefix are reserved for the system.
+	// Keys under a *.hangarlab.cloud/ prefix are reserved for the system.
 	Annotations     map[string]string `protobuf:"bytes,9,rep,name=annotations,proto3" json:"annotations,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	Finalizers      []string          `protobuf:"bytes,10,rep,name=finalizers,proto3" json:"finalizers,omitempty"`
 	OwnerReferences []*OwnerReference `protobuf:"bytes,11,rep,name=owner_references,json=ownerReferences,proto3" json:"owner_references,omitempty"`

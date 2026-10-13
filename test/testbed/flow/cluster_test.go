@@ -221,11 +221,11 @@ func (c *cluster) setUp() {
 	t := c.t
 	t.Helper()
 	c.cli("config", "set-context", "testbed", "--endpoint", "http://"+c.apiAddr(), "--auth", "dev", "--user", admin, "--project", project)
-	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangar.dev/v1alpha1
+	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Tenant
 metadata: {name: %s}
 ---
-apiVersion: tenancy.hangar.dev/v1alpha1
+apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Project
 metadata: {name: %s}
 spec: {tenant: %s}

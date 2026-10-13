@@ -188,7 +188,7 @@ func newExecWorld(t *testing.T, configure func(*Config)) *execWorld {
 	}
 	m := machine(machineName("api"), "n1")
 	m.Metadata.OwnerReferences = []*metav1.OwnerReference{{
-		ApiVersion: "compute.hangar.dev/v1alpha1", Kind: "Container", Name: "api",
+		ApiVersion: "compute.hangarlab.cloud/v1alpha1", Kind: "Container", Name: "api",
 		Uid: c.(*computev1alpha1.Container).GetMetadata().GetUid(), Controller: true,
 	}}
 	applied, err := s.backend(registry.Machine).Apply(system, m)

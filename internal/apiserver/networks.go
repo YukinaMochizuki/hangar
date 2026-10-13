@@ -23,7 +23,7 @@ import (
 const (
 	// NetworkInUseFinalizer keeps a network until no machine has an
 	// interface on it; the network controller removes it then.
-	NetworkInUseFinalizer = "hangar.dev/network-in-use"
+	NetworkInUseFinalizer = registry.Domain + "/network-in-use"
 	// ReasonNetworkNotReady and ReasonNoAddressLeft are the reasons a
 	// container's Ready condition gives when its machine can get no address.
 	ReasonNetworkNotReady = "NetworkNotReady"
