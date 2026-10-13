@@ -153,15 +153,28 @@ func newDriver(t *testing.T, dir string, s *fakeSystemd, g *fakeGuest) *Hypervis
 	t.Helper()
 	h, err := New(t.Context(), Config{
 		Dir: dir, CloudHypervisor: os.Args[0], Kernel: os.Args[0], Initramfs: os.Args[0], Cmdline: "quiet",
-		Launcher: []string{"/usr/bin/hangar-node", "vmm"}, Nameservers: []string{"1.1.1.1"},
+		Launcher: []string{os.Args[0], "vmm"}, Nameservers: []string{"1.1.1.1"},
 		StopGrace: testGrace, StopSlack: testSlack,
-		systemd: s, guest: g,
+		systemd: s, guest: g, dynamicOK: true, etc: testEtc(t),
+		procUsers: func() (map[uint32]bool, error) { return nil, nil },
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	g.h = h
 	return h
+}
+
+// testEtc is an /etc whose users and groups have none of the VMs' ids.
+func testEtc(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range map[string]string{"passwd": "root:x:0:0::/root:/bin/sh\n", "group": "root:x:0:\n"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
 }
 
 func testSpec(uid string, restart driver.RestartPolicy) driver.VMSpec {
@@ -236,7 +249,7 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 				t.Errorf("Before=%v: at shutdown the agent could see the VM stop and start it again", got)
 			}
 			exec := fmt.Sprint(prop(props, "ExecStart"))
-			if !strings.Contains(exec, "/usr/bin/hangar-node vmm --dir "+h.cfg.Dir+" m1") {
+			if !strings.Contains(exec, os.Args[0]+" vmm --dir "+h.cfg.Dir+" --vm-user 200000 m1") {
 				t.Errorf("ExecStart=%s", exec)
 			}
 			// systemd reads the flag as "-", ignoring the exit status.
@@ -249,7 +262,7 @@ func TestStartWritesWhatTheLauncherRuns(t *testing.T) {
 				t.Fatal(err)
 			}
 			if ln.Hash != spec.Hash() || ln.Spec.Hash() != spec.Hash() || ln.CloudHypervisor != os.Args[0] || ln.Cmdline != "quiet" ||
-				ln.StopGrace != testGrace || ln.StopSlack != testSlack {
+				ln.StopGrace != testGrace || ln.StopSlack != testSlack || ln.VMUser != DefaultVMUsers.First {
 				t.Errorf("launch %+v", ln)
 			}
 			f, err := os.Open(filepath.Join(h.dir("m1"), bootFile))
@@ -722,7 +735,7 @@ func TestSpecsNoVMCanRun(t *testing.T) {
 func TestNewRefusesItsDirectory(t *testing.T) {
 	for _, dir := range []string{"relative", "/a/../b", "/" + strings.Repeat("d", 40)} {
 		_, err := New(t.Context(), Config{Dir: dir, CloudHypervisor: os.Args[0], Kernel: os.Args[0], Initramfs: os.Args[0],
-			Launcher: []string{"x"}, systemd: newFakeSystemd(), guest: &fakeGuest{}})
+			Launcher: []string{"x"}, systemd: newFakeSystemd(), guest: &fakeGuest{}, etc: testEtc(t)})
 		if err == nil {
 			t.Errorf("took %q", dir)
 		}

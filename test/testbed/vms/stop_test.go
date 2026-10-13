@@ -33,7 +33,7 @@ func mainPID(t *testing.T, uid string) int {
 // chPID is the pid of the machine's Cloud Hypervisor, 0 if none.
 func chPID(t *testing.T, uid string) int {
 	t.Helper()
-	out, _ := exec.Command("pgrep", "-f", "socket=/var/tmp/hangar-testbed-vms/"+uid+"/vsock").Output()
+	out, _ := exec.Command("pgrep", "-f", "socket=/var/tmp/hangar-testbed-vms/"+uid+"/ch/vsock").Output()
 	pid, _ := strconv.Atoi(strings.TrimSpace(strings.Split(string(out), "\n")[0]))
 	return pid
 }

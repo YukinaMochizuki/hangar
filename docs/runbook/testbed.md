@@ -10,9 +10,9 @@ create taps and an nftables table, and turn on IPv4 forwarding.
 |---|---|
 | `test/testbed/guest/` | The platform kernel, initramfs and hangar-init under Cloud Hypervisor, driven as the node drives them: the boot disk (`internal/guest/bootdisk`), the framed console (`internal/guest/console`) and the guest agent over hybrid vsock (`internal/node/driver/chguest`). No node or driver code |
 | `test/testbed/disks/` | The image and storage drivers (`internal/node/driver/registry`, `zfsstore`) on the `hangar` pool: the conformance suite (`drivertest`) with decoy datasets about, Docker Hub pulls by tag and digest compared with the reference flattening, and a guest booting from a root disk larger than its image, its filesystem grown by hangar-init |
-| `test/testbed/vms/` | The real hypervisor driver (`internal/node/driver/chvm`) and its launcher, `hangar-node vmm`, under real systemd and Cloud Hypervisor, with every other real driver: the conformance suite (L3) with guests booting from root disks the storage driver made, their logs read and followed across a restart, execs in them (output, stdin, a terminal and its resize, signals, an exec's group killed with its context), graceful and forced stops (`Stop`, a process ignoring SIGTERM, a frozen guest), restart counts, a VM outliving its agent killed outright, root disk links refused by `BLKZNAME`, the console log under a 40 MiB flood and forged records (one VM's harming no other), a serial log failing under a `chattr +i` directory without freezing the guest, VMs interrupted as by a host shutdown under each policy (their units stopped with `systemctl stop`: the SIGTERM handler's output in the log, a process ignoring SIGTERM killed within the grace and slack, nothing recorded), the driver reconnecting to systemd, nothing left after the sweep with decoy units and files about, and `hangar-node --drivers=host` starting |
+| `test/testbed/vms/` | The real hypervisor driver (`internal/node/driver/chvm`) and its launcher, `hangar-node vmm`, under real systemd and Cloud Hypervisor, with every other real driver: the conformance suite (L3) with guests booting from root disks the storage driver made, their logs read and followed across a restart, execs in them (output, stdin, a terminal and its resize, signals, an exec's group killed with its context), graceful and forced stops (`Stop`, a process ignoring SIGTERM, a frozen guest), restart counts, a VM outliving its agent killed outright, root disk links refused by `BLKZNAME`, the console log under a 40 MiB flood and forged records (one VM's harming no other), a serial log failing under a `chattr +i` directory without freezing the guest, VMs interrupted as by a host shutdown under each policy (their units stopped with `systemctl stop`: the SIGTERM handler's output in the log, a process ignoring SIGTERM killed within the grace and slack, nothing recorded), the driver reconnecting to systemd, nothing left after the sweep with decoy units and files about, `hangar-node --drivers=host` starting, the confinement (`TestCHIsConfined`: a probe, `chprobe`, run in Cloud Hypervisor's place in a real VM's unit, tries the host's files, another VM's directory, socket, zvol and process, devices, privileges and the network; a link it plants at its own socket's path, to the other VM's socket, refused by the driver; the other VM's real Cloud Hypervisor checked from the host; both launchers left with `CAP_DAC_OVERRIDE` and `CAP_KILL` alone once Cloud Hypervisor runs; the unit's `/dev` read-only to root in it; the device policy from a root process in the unit's cgroup; the VM's uid outside any unit; `systemd-analyze security`), and a VM started without VM users running on across an upgrade of the launcher and confined once started again |
 | `test/testbed/network/` | The real network driver (`internal/node/driver/hostnet`): the drivers' conformance suite (L3), then stand-in guests on taps through both NATs, isolation, forged sources, egress only by the uplink, drift, failing watches, collisions and cleanup. Needs root, not KVM |
-| `test/testbed/flow/` | The whole system, as deploy/host puts it on a host: the real `hangar-apiserver` (as `nobody`) and `hangar-node --drivers=host` (as root, over the apiserver's node socket) as processes, driven by the real `hangar` CLI. One test, `TestFlow`, in ordered scenarios, each checked from the API and from the host: apply and Ready; online through both NATs; stop and start with `runState`, the disk kept; restart under `on-failure`; growing the disk; changing the image; the agent killed mid-pull and started again; a host shutdown (the agent, then each VM's unit stopped with `systemctl stop`), after which `always` and `on-failure` boot again and `never` is Exited with 253; `hangar logs` across a restart, with each option, and `logs -f` killed ending the agent's read of the log; `hangar exec` in a busybox container (the container's environment and overrides, stdout and stderr apart, exit codes, `-i` with piped stdin, `-it` on a pty for its size, a resize and Ctrl-C as a key, the terminal put back, SIGINT passed on without `-t`, a CLI killed leaving nothing running in the guest, the apiserver's audit line); delete |
+| `test/testbed/flow/` | The whole system, as deploy/host puts it on a host: the real `hangar-apiserver` (as `nobody`) and `hangar-node --drivers=host` (as root, over the apiserver's node socket) as processes, driven by the real `hangar` CLI. One test, `TestFlow`, in ordered scenarios, each checked from the API and from the host: apply and Ready; online through both NATs; stop and start with `runState`, the disk kept; restart under `on-failure`; growing the disk; changing the image; the agent killed mid-pull and started again; a host shutdown (the agent, then each VM's unit stopped with `systemctl stop`), after which `always` and `on-failure` boot again, their Cloud Hypervisor as the VM user it had, and `never` is Exited with 253; `hangar logs` across a restart, with each option, and `logs -f` killed ending the agent's read of the log; `hangar exec` in a busybox container (the container's environment and overrides, stdout and stderr apart, exit codes, `-i` with piped stdin, `-it` on a pty for its size, a resize and Ctrl-C as a key, the terminal put back, SIGINT passed on without `-t`, a CLI killed leaving nothing running in the guest, the apiserver's audit line); delete |
 | `test/testbed/internal/vmtest/` | Not tests: the harness that boots those guests, for any L4 package. A package calls `vmtest.Main` from its `TestMain`, then `vmtest.New`, `Start`, `Ready`, `Exec` |
 | `test/testbed/host-bootstrap.sh` | `deploy/host` on a VM made to look like a fresh OVH install (`docs/runbook/host-bootstrap.md`) |
 | `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file and `hangar/images`, as a host has them, for `test/testbed/disks` |
@@ -48,7 +48,12 @@ make e2e-host
 It rebuilds the initramfs, makes the root disk image on first use, builds
 `bin/hangar-node` (the VMs' launcher, `HANGAR_TESTBED_NODE` names another),
 `bin/hangar-apiserver` and `bin/hangar` (`HANGAR_TESTBED_APISERVER`,
-`HANGAR_TESTBED_CLI`), and runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
+`HANGAR_TESTBED_CLI`), and `bin/ch-probe` (`HANGAR_TESTBED_CHPROBE`), all
+static (`CGO_ENABLED=0`): a VM's unit has an empty root with no dynamic
+loader, and the hypervisor driver refuses a dynamically linked launcher.
+The unit binds the launcher, Cloud Hypervisor, the kernel and the
+initramfs from wherever they are, a checkout in a home directory
+included. Then it runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
 tests are built as you and run as root. The root disk image,
 `.cache/testbed/dind-<digest>.ext4`, comes from the `docker:dind` image
 pinned by digest in the `Makefile` (`test/testbed/guest-rootfs.sh` makes it,
@@ -96,8 +101,18 @@ as transient units `hangar-vm-<machine>.service` from directories under
 and image files under `/var/lib/hangar/images/testbed-vms`. Their decoys
 are the units `hangar-vmdecoy.service`, `hangar-decoy-vm-m1.service` and
 `decoy-hangar-vm-m1.service` (each a `sleep`) and
-`/var/tmp/hangar-testbed-vms-decoy`. All of these, and every
-`hangar-vm-*` unit, are swept at the start of a run and at its end.
+`/var/tmp/hangar-testbed-vms-decoy`. `TestAnUpgradeKeepsVMsRunning` keeps
+the launcher it replaces in `/var/tmp/hangar-testbed-vms-upgrade`; it
+starts with the launcher under test, or with `HANGAR_TESTBED_OLD_NODE`, a
+`hangar-node` built (static) from a release without VM users. All of
+these, and every `hangar-vm-*` unit, are swept at the start of a run and
+at its end. The VMs run as the ids from 200000 on
+(`docs/decisions/node-agent.md`); the driver refuses to start if a user,
+group or subordinate range of the testbed has one, as a second user made
+with `useradd` would. `HANGAR_TESTBED_MEASURE_MEMORY=1` also runs
+`TestMemoryOverhead`, which fills guests of 1, 4 and 16 GiB and logs how
+much memory their units take; it needs a testbed of 24 GiB
+(`docs/decisions/node-agent.md` records what it measured).
 `hangar-testbed-reset` does not know them yet: after a run killed outright,
 the next run's sweep, or `systemctl stop 'hangar-vm-*'`, removes them.
 

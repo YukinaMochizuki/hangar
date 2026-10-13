@@ -10,6 +10,7 @@ import (
 
 	sd "github.com/coreos/go-systemd/v22/dbus"
 	"github.com/godbus/dbus/v5"
+	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
@@ -47,11 +48,20 @@ const (
 
 func usec(d time.Duration) uint64 { return uint64(d / time.Microsecond) }
 
+func property(name string, v any) sd.Property {
+	return sd.Property{Name: name, Value: dbus.MakeVariant(v)}
+}
+
 // unitProps are the properties of a VM's unit, which systemd gives
-// stopTimeout to stop. Explicit stops never restart a unit, whatever its
-// Restart=.
-func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration) []sd.Property {
-	prop := func(name string, v any) sd.Property { return sd.Property{Name: name, Value: dbus.MakeVariant(v)} }
+// stopTimeout to stop, confined as sb says. Explicit stops never restart a
+// unit, whatever its Restart=.
+func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration, sb sandbox) []sd.Property {
+	return append(baseProps(spec, argv, restart, stopTimeout), sb.props(spec)...)
+}
+
+// baseProps are the properties of a VM's unit but its confinement: all of
+// them, for a launcher that runs Cloud Hypervisor as root.
+func baseProps(spec driver.VMSpec, argv []string, restart string, stopTimeout time.Duration) []sd.Property {
 	return []sd.Property{
 		sd.PropDescription(fmt.Sprintf("Hangar VM of machine %s (%s)", spec.Machine, spec.MachineUID)),
 		// systemd takes the flag go-systemd calls uncleanIsFailure as
@@ -59,30 +69,158 @@ func unitProps(spec driver.VMSpec, argv []string, restart string, stopTimeout ti
 		// Restart=on-failure would never restart.
 		sd.PropExecStart(argv, false),
 		sd.PropType("exec"),
-		prop("Restart", restart),
-		prop("RestartUSec", usec(restartFirst)),
-		prop("RestartSteps", uint32(restartSteps)),
-		prop("RestartMaxDelayUSec", usec(restartMax)),
+		property("Restart", restart),
+		property("RestartUSec", usec(restartFirst)),
+		property("RestartSteps", uint32(restartSteps)),
+		property("RestartMaxDelayUSec", usec(restartMax)),
 		// Never give up restarting, as Docker does not.
-		prop("StartLimitIntervalUSec", uint64(0)),
+		property("StartLimitIntervalUSec", uint64(0)),
 		// SIGTERM to the launcher alone, which stops the guest and Cloud
 		// Hypervisor; the rest of the unit is killed once it has exited.
-		prop("KillMode", "mixed"),
-		prop("TimeoutStopUSec", usec(stopTimeout)),
+		property("KillMode", "mixed"),
+		property("TimeoutStopUSec", usec(stopTimeout)),
 		// At host shutdown the VM stops before the host's network does
 		// (networkd, and nftables.service flushing the ruleset, which
 		// holds the networks' SNAT), so a container has its network for
 		// its grace. Its disks and directory, and the networks'
 		// namespaces, are mounts, which the default dependencies already
 		// keep until it has stopped.
-		prop("After", []string{"network.target"}),
+		property("After", []string{"network.target"}),
 		// And after the agent has stopped, so it never sees a VM the
 		// shutdown stopped and starts it again. The order binds only jobs
 		// in one transaction: restarting the agent, or the agent starting
 		// a VM, is not held up by it; with no such unit it does nothing.
-		prop("Before", []string{agentUnit}),
+		property("Before", []string{agentUnit}),
 		// An exited VM's record is its exit file: the unit goes.
-		prop("CollectMode", "inactive-or-failed"),
+		property("CollectMode", "inactive-or-failed"),
+	}
+}
+
+// sandbox is what confines a VM's unit: what of the host it sees and may
+// open. docs/decisions/node-agent.md says what each measure stops.
+type sandbox struct {
+	// Dir is the VM's directory, the one path writable in the unit.
+	Dir string
+	// Binds are the files the unit reads besides: the launcher, Cloud
+	// Hypervisor, the kernel and the initramfs.
+	Binds []string
+}
+
+// The unit's tasks past two per vCPU.
+const vmTasks = 64
+
+// vmMemoryMax is the unit's MemoryMax: the guest's memory, 256 MiB for Cloud
+// Hypervisor and the launcher, and 2% of the guest's for what grows with it
+// (KVM's page tables); docs/decisions/node-agent.md has the measurements.
+func vmMemoryMax(guestMiB int64) uint64 {
+	guest := uint64(guestMiB) << 20
+	return guest + 256<<20 + guest/50
+}
+
+// launcherCaps are what the launcher needs of root before Cloud Hypervisor
+// runs, and the unit's bounding set; docs/decisions/node-agent.md says why
+// each. It keeps launcherKeeps after.
+var launcherCaps = []uintptr{
+	unix.CAP_SYS_ADMIN, unix.CAP_NET_ADMIN, unix.CAP_MKNOD, unix.CAP_CHOWN,
+	unix.CAP_SETUID, unix.CAP_SETGID, unix.CAP_SETPCAP, unix.CAP_DAC_OVERRIDE, unix.CAP_KILL,
+}
+
+// deniedSyscalls are system call groups neither the launcher nor Cloud
+// Hypervisor makes, refused as a layer under Cloud Hypervisor's own filter.
+// Not @mount: the launcher unmounts /run/netns once it has the taps.
+var deniedSyscalls = []string{
+	"@clock", "@cpu-emulation", "@debug", "@keyring", "@module", "@obsolete", "@raw-io", "@reboot", "@swap",
+}
+
+type pathPair struct {
+	Path, Value string
+}
+
+type bindPath struct {
+	Source, Dest  string
+	IgnoreMissing bool
+	Flags         uint64
+}
+
+type namedList struct {
+	Allow bool
+	Names []string
+}
+
+type ipPrefix struct {
+	Family  int32
+	Address []byte
+	Prefix  uint32
+}
+
+func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
+	var caps uint64
+	for _, c := range launcherCaps {
+		caps |= 1 << c
+	}
+	// /run/netns recursive, for the namespaces' mounts, which the launcher
+	// unmounts once it has the taps.
+	binds := []bindPath{{Source: "/run/netns", Dest: "/run/netns", IgnoreMissing: true, Flags: unix.MS_REC}}
+	for _, p := range sb.Binds {
+		binds = append(binds, bindPath{Source: p, Dest: p})
+	}
+	memory := vmMemoryMax(spec.MemoryMiB)
+	return []sd.Property{
+		// An empty root, as the jailer's chroot. Not ProtectSystem, PrivateTmp
+		// or ProtectHome, which bind the host's root again, add writable
+		// directories, or drop binds (docs/decisions/node-agent.md).
+		property("TemporaryFileSystem", []pathPair{{"/", "ro"}, {"/run", "ro"}}),
+		property("MountAPIVFS", true),
+		property("BindReadOnlyPaths", binds),
+		property("BindPaths", []bindPath{{Source: sb.Dir, Dest: sb.Dir}}),
+		// Shared memory and queues would outlive the VM; ptys, which
+		// DevicePolicy=closed lets it open, are a host-wide count.
+		property("InaccessiblePaths", []string{"-/dev/shm", "-/dev/mqueue", "-/dev/pts", "-/dev/ptmx"}),
+		// The host's /dev, which MountAPIVFS binds: its devices still open
+		// for writing, but nothing is made or removed in it.
+		property("ReadOnlyPaths", []string{"/dev"}),
+		property("ProtectProc", "invisible"),
+		property("ProcSubset", "pid"),
+		property("PrivateNetwork", true),
+		property("PrivateIPC", true),
+		property("DevicePolicy", "closed"),
+		property("DeviceAllow", []pathPair{
+			{"/dev/kvm", "rw"},
+			{"/dev/net/tun", "rw"},
+			// Resolved when the unit starts: the machine's zvol, checked
+			// by the launcher, which makes its node (m) for Cloud Hypervisor.
+			{spec.Root.Path, "rwm"},
+		}),
+		property("CapabilityBoundingSet", caps),
+		property("AmbientCapabilities", uint64(0)),
+		property("NoNewPrivileges", true),
+		property("ProtectKernelTunables", true),
+		property("ProtectKernelModules", true),
+		property("ProtectKernelLogs", true),
+		property("ProtectControlGroups", true),
+		property("ProtectClock", true),
+		property("ProtectHostname", true),
+		property("RestrictAddressFamilies", namedList{Allow: true, Names: []string{"AF_UNIX", "AF_NETLINK"}}),
+		property("IPAddressDeny", []ipPrefix{
+			{Family: unix.AF_INET, Address: make([]byte, 4)},
+			{Family: unix.AF_INET6, Address: make([]byte, 16)},
+		}),
+		// The namespaces it may enter or make: the networks', which the
+		// launcher enters for the taps.
+		property("RestrictNamespaces", uint64(unix.CLONE_NEWNET)),
+		property("RestrictRealtime", true),
+		property("RestrictSUIDSGID", true),
+		property("LockPersonality", true),
+		property("MemoryDenyWriteExecute", true),
+		property("SystemCallArchitectures", []string{"native"}),
+		property("SystemCallFilter", namedList{Allow: false, Names: deniedSyscalls}),
+		property("SystemCallErrorNumber", int32(unix.EPERM)),
+		property("KeyringMode", "private"),
+		property("UMask", uint32(0o077)),
+		// A core of Cloud Hypervisor would hold the guest's memory.
+		property("LimitCORE", uint64(0)),
+		property("MemoryMax", memory),
+		property("TasksMax", uint64(vmTasks+2*spec.VCPUs)),
 	}
 }
 

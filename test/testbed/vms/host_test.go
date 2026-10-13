@@ -131,7 +131,7 @@ func sweep() {
 			fmt.Fprintf(os.Stderr, "vms: destroying %s: %v: %s\n", testParent, err, out)
 		}
 	}
-	for _, d := range []string{imageRoot, vmDir, decoyDir} {
+	for _, d := range []string{imageRoot, vmDir, decoyDir, upgradeDir} {
 		if err := os.RemoveAll(d); err != nil {
 			fmt.Fprintf(os.Stderr, "vms: %v\n", err)
 		}
@@ -392,9 +392,15 @@ func (h *host) machine(t *testing.T, uid string, restart driver.RestartPolicy, s
 	}
 }
 
-// guest reaches the guest agents of the VMs the driver starts.
+// guest reaches the guest agents of the VMs the driver starts, and of one
+// a launcher without VM users started (TestAnUpgradeKeepsVMsRunning).
 func guest() chguest.Guest {
-	return chguest.Guest{Socket: func(uid string) string { return filepath.Join(vmDir, uid, "vsock") }}
+	return chguest.Guest{Socket: func(uid string) string {
+		if fi, err := os.Lstat(filepath.Join(vmDir, uid, "vsock")); err == nil && fi.Mode().Type() == os.ModeSocket {
+			return filepath.Join(vmDir, uid, "vsock")
+		}
+		return filepath.Join(vmDir, uid, "ch", "vsock")
+	}}
 }
 
 // ready waits for the machine's guest agent to answer.
