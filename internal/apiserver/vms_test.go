@@ -135,6 +135,23 @@ func TestVirtualMachineAdmission(t *testing.T) {
 		"two keys on a line": func(s *computev1alpha1.VirtualMachineSpec) {
 			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\n" + sshKey("ssh-ed25519")}
 		},
+		"keys of more than 32 KiB in all": func(s *computev1alpha1.VirtualMachineSpec) {
+			long := sshKey("ssh-ed25519") + " " + strings.Repeat("c", 12<<10)
+			s.SshAuthorizedKeys = []string{long, long, long}
+		},
+		"user-data past 16 KiB": func(s *computev1alpha1.VirtualMachineSpec) { s.UserData = strings.Repeat("x", 16<<10+1) },
+		"a key comment with DEL": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\x7f"}
+		},
+		"a key comment with NEL": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\u0085"}
+		},
+		"a key comment with U+FFFE": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\ufffe"}
+		},
+		"a key comment not UTF-8": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\xff"}
+		},
 	} {
 		vm := vmFromImage("bad", "noble")
 		mutate(vm.Spec)
@@ -144,10 +161,11 @@ func TestVirtualMachineAdmission(t *testing.T) {
 		}
 	}
 	ok := vmFromImage("keys", "noble")
-	ok.Spec.SshAuthorizedKeys = []string{sshKey("ssh-ed25519"), sshKey("ecdsa-sha2-nistp256")}
+	ok.Spec.SshAuthorizedKeys = []string{sshKey("ssh-ed25519"), sshKey("ecdsa-sha2-nistp256") + "\tbob \"<é>\" 🔑"}
 	ok.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: "default"}, {Network: "other"}}
+	ok.Spec.UserData = "#!/bin/sh\n" + strings.Repeat("#", 16<<10-10)
 	if _, err := b.Apply(user, ok); err != nil {
-		t.Errorf("a VM with keys and two interfaces: %v", err)
+		t.Errorf("a VM with keys, two interfaces and 16 KiB of user-data: %v", err)
 	}
 
 	// The root disk is what it was made as; its size may grow.

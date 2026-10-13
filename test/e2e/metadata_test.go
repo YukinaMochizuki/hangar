@@ -11,8 +11,9 @@ import (
 
 // TestEachNetworkHasItsMetadataService: a network on the host has its
 // metadata service listening, and it tells nothing to an address that is
-// no machine's. Which machine is which is the L4 flow tests': here every
-// request comes from the loopback.
+// no machine's: over the fake's sockets every request comes from the
+// loopback. What each machine is told is asked of the service directly,
+// from its address (askMetadata).
 func TestEachNetworkHasItsMetadataService(t *testing.T) {
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))

@@ -311,7 +311,9 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 
 // ensureMachineOf brings m, the machine name as read (nil if there is
 // none), in line with want, for its owner, an object of kind r. Every write
-// is conditional on m.
+// is conditional on m. Admission refusing want is what the owner reports
+// (MachineRefused), not retried: it refuses it again until the owner
+// changes.
 func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta *metav1.ObjectMeta, name string, want *computev1alpha1.MachineSpec, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	key := resource.Key{Project: meta.GetProject(), Name: name}
 	if m == nil {
@@ -334,7 +336,7 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 		}
 		res, err := s.backend(registry.Machine).Create(s.system(ctx), created)
 		if err != nil {
-			return nil, err
+			return nil, refusedMachine(err)
 		}
 		return res.Object.(*computev1alpha1.Machine), nil
 	}
@@ -384,9 +386,19 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	updated.Spec = want
 	res, err := s.backend(registry.Machine).Apply(s.system(ctx), updated)
 	if err != nil {
-		return nil, err
+		return m, refusedMachine(err)
 	}
 	return res.Object.(*computev1alpha1.Machine), nil
+}
+
+// refusedMachine makes admission refusing a machine as asked for what its
+// owner reports; other errors, such as a disk still attached elsewhere,
+// are retried.
+func refusedMachine(err error) error {
+	if connect.CodeOf(err) == connect.CodeInvalidArgument {
+		return &blocked{"MachineRefused", err.Error()}
+	}
+	return err
 }
 
 func ownedBy(meta *metav1.ObjectMeta, uid string) bool {

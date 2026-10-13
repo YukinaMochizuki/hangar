@@ -34,6 +34,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
@@ -78,6 +79,9 @@ type Config struct {
 	// DNSUpstreams are the resolvers each network's resolver forwards names
 	// outside its own zone to.
 	DNSUpstreams []netip.AddrPort
+	// Metadata is the metadata service the networks are served; nil makes
+	// one. A test given one asks it as a guest would, from any address.
+	Metadata *metadata.Server
 	// MaxUnpackWork bounds the work unpacking one image takes, in
 	// ocilayer's steps: the Images driver is built with it as
 	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
@@ -161,7 +165,7 @@ func New(cfg Config) (*Agent, error) {
 	var images *imageMaker
 	if cfg.Drivers != nil {
 		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
-		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Log)
+		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Metadata, cfg.Log)
 		images = newImageMaker(cfg.Drivers.DiskImages, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 	}
 	a := &Agent{

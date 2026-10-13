@@ -49,7 +49,7 @@ type netServices struct {
 	named map[string]map[controller.Key]bool
 }
 
-func newNetServices(n driver.Network, upstreams []netip.AddrPort, log *slog.Logger) *netServices {
+func newNetServices(n driver.Network, upstreams []netip.AddrPort, md *metadata.Server, log *slog.Logger) *netServices {
 	r := resolver.New(resolver.Config{Upstreams: upstreams, Log: log})
 	dns := netsvc.Service{
 		Name: "resolver",
@@ -75,7 +75,9 @@ func newNetServices(n driver.Network, upstreams []netip.AddrPort, log *slog.Logg
 			}
 		},
 	}
-	md := metadata.New(metadata.Config{Log: log})
+	if md == nil {
+		md = metadata.New(metadata.Config{Log: log})
+	}
 	mdService := netsvc.Service{
 		Name: "metadata",
 		Addr: func(netsvc.Network) netip.AddrPort { return netip.AddrPortFrom(driver.MetadataAddr, 80) },
@@ -193,7 +195,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				names[name] = append(names[name], addr.Addr())
 			}
 			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
-			instances[addr.Addr()] = metadata.Instance{UID: m.GetMetadata().GetUid(), Hostname: name}
+			instances[addr.Addr()] = a.instance(m, name)
 			on = append(on, m.GetMetadata().GetUid())
 			if m.GetSpec().GetNode() == a.cfg.Name {
 				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
@@ -230,6 +232,22 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		return blocked(computeapi.ReasonNetworkFailed, err)
 	}
 	return nil
+}
+
+// instance is what the metadata service tells machine m's guest: with a
+// firmware machine's cloud-init data, its own instance id among it, if the
+// machine is this node's, the only node that reads it.
+func (a *Agent) instance(m *computev1alpha1.Machine, name string) metadata.Instance {
+	inst := metadata.Instance{UID: m.GetMetadata().GetUid(), Hostname: name}
+	ci := m.GetSpec().GetFirmware().GetCloudInit()
+	if ci == nil || m.GetSpec().GetNode() != a.cfg.Name {
+		return inst
+	}
+	if id := ci.GetInstanceId(); id != "" {
+		inst.UID = id
+	}
+	inst.UserData, inst.VendorData = ci.GetUserData(), ci.GetVendorData()
+	return inst
 }
 
 // name records that the network's records name exactly the machines on.

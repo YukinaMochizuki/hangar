@@ -54,6 +54,11 @@ cloud, and some people fund the hardware and should see more of it.
   the node and the apiserver itself write status. A node agent writes the
   status of its own `Node` and of the machines placed on it, nothing else;
   every other status is the apiserver's controllers'.
+- Node agents read only part of some objects. A `Machine`'s cloud-init data
+  (its guest's user-data and keys) reaches only the node it is on, which
+  serves it to the guest; a `VirtualMachine`'s `userData` and
+  `sshAuthorizedKeys` reach no node. Every answer to a node is cleared so,
+  by its kind's `forNode` hook (`internal/apiserver/admission.go`).
 - No role grants apply or delete on system-managed kinds (`Machine`, `Node`);
   see `docs/decisions/apply-semantics.md`.
 - **Sponsors** (people who fund the hardware) get `platform.sponsor`: aggregated
