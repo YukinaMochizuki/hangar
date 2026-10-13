@@ -373,6 +373,11 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 		}
 	}
 	expected := meta.GetResourceVersion()
+	if b.hooks.writeLock != nil {
+		mu := b.hooks.writeLock(b.s)
+		mu.Lock()
+		defer mu.Unlock()
+	}
 
 	for range maxRetries {
 		cur, err := b.s.store.Get(ctx, b.storeKey(key))
@@ -583,6 +588,11 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 	}
 	if err := b.checkKey(key); err != nil {
 		return nil, err
+	}
+	if b.hooks.writeLock != nil {
+		mu := b.hooks.writeLock(b.s)
+		mu.Lock()
+		defer mu.Unlock()
 	}
 	for range maxRetries {
 		cur, old, err := b.read(ctx, p, authz.Delete, key)

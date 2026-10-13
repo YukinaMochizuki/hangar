@@ -1,7 +1,14 @@
-// Package computeapi names what the status of Machines and Nodes says, for
-// the apiserver and the node agent, which write different parts of it and
-// read each other's.
+// Package computeapi names what the status of Machines, Nodes and Disks
+// says, for the apiserver and the node agent, which write different parts of
+// it and read each other's.
 package computeapi
+
+import "github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+
+// DiskInUseFinalizer keeps a deleted Disk until no machine lists it; the
+// apiserver removes it then. A node removes a disk's volume only once it is
+// gone, and reports DiskReleased.
+const DiskInUseFinalizer = registry.Domain + "/disk-in-use"
 
 // Condition types. Each has one writer.
 const (
@@ -19,6 +26,14 @@ const (
 	// MachineReleased is the node's: a deleted machine's VM, disks and
 	// interfaces are gone from the host.
 	MachineReleased = "Released"
+	// DiskAllocated is the apiserver's: whether the disk's node holds room
+	// for its spec.size, which status.size then says. The apiserver also
+	// writes a disk's node, size, machine and phase.
+	DiskAllocated = "Allocated"
+	// DiskReady is the node's: the disk exists on the host at status.size.
+	DiskReady = "Ready"
+	// DiskReleased is the node's: a deleted disk is gone from the host.
+	DiskReleased = "Released"
 )
 
 // Reasons the node gives for MachineReady.
@@ -37,4 +52,6 @@ const (
 	ReasonBootFailed      = "BootFailed"
 	ReasonExited          = "Exited"
 	ReasonNetworkNotReady = "NetworkNotReady"
+	// ReasonDiskNotReady means an attached disk is not on the node yet.
+	ReasonDiskNotReady = "DiskNotReady"
 )

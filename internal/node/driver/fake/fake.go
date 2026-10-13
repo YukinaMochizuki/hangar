@@ -40,8 +40,10 @@ type Host struct {
 	baseSize  int64            // of every base made from now on
 	building  map[string]*sync.Mutex
 	roots     map[string]driver.Disk
+	volumes   map[string]driver.Volume // by disk uid
 	full      bool
 	heldDisks map[string]int           // root disks in use, by machine uid
+	heldVols  map[string]int           // volumes in use, by disk uid
 	held      map[string]chan struct{} // unpacks waiting to be let go, by reference
 	// Unpacked counts how often each digest was unpacked into a base.
 	unpacked map[string]int
@@ -101,7 +103,7 @@ func New() *Host {
 		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, pulled: map[string]bool{},
 		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
-		held: map[string]chan struct{}{}, heldDisks: map[string]int{},
+		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]secgroup.Policy{},
 		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
@@ -243,6 +245,22 @@ func (h *Host) HoldDisk(machineUID string) (release func()) {
 	}
 }
 
+// HoldVolume keeps a Disk's volume in use, as a running VM does, until the
+// returned function lets it go.
+func (h *Host) HoldVolume(diskUID string) (release func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.heldVols[diskUID]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			h.mu.Lock()
+			defer h.mu.Unlock()
+			h.heldVols[diskUID]--
+		})
+	}
+}
+
 // SetFull makes storage refuse every new disk with driver.ErrNoSpace.
 func (h *Host) SetFull(full bool) {
 	h.mu.Lock()
@@ -265,6 +283,7 @@ const (
 	ListNetworks   = "networks"
 	ListRoots      = "roots"
 	ListBases      = "bases"
+	ListVolumes    = "volumes"
 	ListLogs       = "logs"
 )
 
@@ -274,15 +293,15 @@ func (h *Host) FailListing(err error, lists ...string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(lists) == 0 {
-		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListLogs}
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListLogs}
 	}
 	for _, l := range lists {
 		h.listErr[l] = err
 	}
 }
 
-// FailRemoval makes stopping VMs and removing root disks and interfaces fail
-// with err; nil clears it.
+// FailRemoval makes stopping VMs and removing root disks, volumes and
+// interfaces fail with err; nil clears it.
 func (h *Host) FailRemoval(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -305,7 +324,8 @@ func (h *Host) FailCapacity(err error) {
 	h.capErr = err
 }
 
-// FailClone makes making root disks fail with err; nil clears it.
+// FailClone makes making root disks and volumes fail with err; nil clears
+// it.
 func (h *Host) FailClone(err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -401,6 +421,14 @@ func (h *Host) Leave(machineUID, networkUID string) {
 	h.logOf(machineUID)
 }
 
+// LeaveVolume puts a Disk's volume on the host, as a node that ran it
+// leaves it.
+func (h *Host) LeaveVolume(diskUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.volumes[diskUID] = driver.Volume{DiskUID: diskUID, Path: "/dev/fake/disks/" + diskUID, Size: 1 << 30}
+}
+
 // LeaveLog puts a console log on the host, of a machine whose VM is gone.
 func (h *Host) LeaveLog(machineUID string) {
 	h.mu.Lock()
@@ -437,6 +465,7 @@ func (h *Host) GuestStops(machineUID string) int {
 type Snapshot struct {
 	Bases      []string
 	Roots      map[string]driver.Disk
+	Volumes    map[string]driver.Volume
 	Networks   map[string]driver.NetworkSpec
 	Interfaces map[string][]driver.Interface
 	VMs        map[string]VMView
@@ -458,8 +487,8 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 && len(s.Logs) == 0 &&
-		len(s.Listening) == 0
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 && len(s.VMs) == 0 &&
+		len(s.Logs) == 0 && len(s.Listening) == 0
 }
 
 // Snapshot returns a copy of what the host holds.
@@ -467,7 +496,7 @@ func (h *Host) Snapshot() Snapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s := Snapshot{
-		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Networks: maps.Clone(h.networks),
+		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
 		Listening: h.listening(),
 	}
@@ -699,6 +728,54 @@ func (d storage) DeleteRoot(_ context.Context, machineUID string) error {
 	return nil
 }
 
+func (d storage) EnsureVolume(_ context.Context, diskUID string, size int64) (driver.Volume, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if v, ok := d.h.volumes[diskUID]; ok {
+		if v.Size < size {
+			v.Size = size
+			d.h.volumes[diskUID] = v
+		}
+		return v, nil
+	}
+	if d.h.cloneErr != nil {
+		return driver.Volume{}, d.h.cloneErr
+	}
+	if d.h.full {
+		return driver.Volume{}, driver.ErrNoSpace
+	}
+	v := driver.Volume{DiskUID: diskUID, Path: "/dev/fake/disks/" + diskUID, Size: max(size, 1)}
+	d.h.volumes[diskUID] = v
+	return v, nil
+}
+
+func (d storage) Volumes(context.Context) ([]driver.Volume, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListVolumes]; err != nil {
+		return nil, err
+	}
+	return slices.Collect(maps.Values(d.h.volumes)), nil
+}
+
+func (d storage) DeleteVolume(_ context.Context, diskUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if d.h.removalErr != nil {
+		return d.h.removalErr
+	}
+	if d.h.heldVols[diskUID] > 0 {
+		return fmt.Errorf("the volume of disk %s is in use", diskUID)
+	}
+	for _, v := range d.h.vms {
+		if v.State == driver.VMRunning && slices.ContainsFunc(v.spec.Disks, func(x driver.Volume) bool { return x.DiskUID == diskUID }) {
+			return fmt.Errorf("the volume of disk %s is in use by machine %s", diskUID, v.MachineUID)
+		}
+	}
+	delete(d.h.volumes, diskUID)
+	return nil
+}
+
 func (d storage) Capacity(context.Context) (driver.Capacity, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
@@ -835,6 +912,11 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	}
 	if r, ok := d.h.roots[spec.MachineUID]; !ok || r != spec.Root {
 		return fmt.Errorf("machine %s has no root disk %s", spec.MachineUID, spec.Root.Path)
+	}
+	for _, v := range spec.Disks {
+		if have, ok := d.h.volumes[v.DiskUID]; !ok || have != v {
+			return fmt.Errorf("machine %s has no volume %s as specified", spec.MachineUID, v.Path)
+		}
 	}
 	for _, i := range spec.Interfaces {
 		if have, ok := d.h.interfaces[spec.MachineUID][i.Name]; !ok || have != i {

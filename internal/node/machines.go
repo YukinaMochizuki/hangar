@@ -240,6 +240,10 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
 
+	vols, err := a.volumes(ctx, m)
+	if err != nil {
+		return nil, err
+	}
 	want, err := a.interfaces(ctx, m)
 	if err != nil {
 		return nil, err
@@ -261,6 +265,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		VCPUs:       vcpus,
 		MemoryMiB:   memoryMiB,
 		Root:        root,
+		Disks:       vols,
 		Interfaces:  ifaces,
 		Nameservers: nameservers,
 		Search:      search,

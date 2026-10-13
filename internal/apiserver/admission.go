@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"regexp"
 	"strings"
+	"sync"
 
 	"google.golang.org/protobuf/proto"
 
@@ -16,6 +17,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
@@ -112,6 +114,9 @@ type kindHooks struct {
 	// nodeOf names the Node responsible for obj, the only node agent allowed
 	// to write its status. Kinds without it take no status from node agents.
 	nodeOf func(obj proto.Message) string
+	// writeLock, if set, is held by every apply and delete of the kind from
+	// its admission checks to its write, for rules that span objects.
+	writeLock func(s *Server) *sync.Mutex
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -193,6 +198,18 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:      validateMachine,
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
+			writeLock:     attachLock,
+		}
+	case registry.Disk.Kind:
+		// A disk's node reports on it once the scheduler has bound it there.
+		return kindHooks{
+			target:       projectTarget,
+			owner:        ownedByProject,
+			validate:     validateDisk,
+			beforeDelete: refuseDeletingAttachedDisk,
+			finalizers:   []string{DiskInUseFinalizer, NodeCleanupFinalizer},
+			nodeOf:       func(obj proto.Message) string { return obj.(*storagev1alpha1.Disk).GetStatus().GetNode() },
+			writeLock:    attachLock,
 		}
 	case registry.Network.Kind:
 		return kindHooks{
@@ -223,6 +240,8 @@ func hooksFor(r registry.Resource) kindHooks {
 }
 
 func platformTarget(*Server, resource.Key, proto.Message, bool) authz.Target { return authz.Target{} }
+
+func attachLock(s *Server) *sync.Mutex { return &s.attach }
 
 // admit runs the checks every write of an object goes through; old is nil on
 // create.
@@ -490,7 +509,7 @@ func checkMaximums(sz sizes, cpu, memory, disk string) error {
 
 // validateMachine checks a machine the controllers wrote. The node, once
 // chosen, is permanent: moving a machine means a new one, never a rewrite.
-func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj proto.Message) error {
+func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	spec := obj.(*computev1alpha1.Machine).GetSpec()
 	if old != nil {
 		if was := old.(*computev1alpha1.Machine).GetSpec().GetNode(); was != "" && was != spec.GetNode() {
@@ -555,7 +574,11 @@ func validateMachine(_ context.Context, _ *Server, _ auth.Principal, old, obj pr
 			return invalid("spec.interfaces[%s].network: %v", nic.GetName(), err)
 		}
 	}
-	return nil
+	var oldSpec *computev1alpha1.MachineSpec
+	if old != nil {
+		oldSpec = old.(*computev1alpha1.Machine).GetSpec()
+	}
+	return s.checkAttaching(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec)
 }
 
 // privateIPv4 are the RFC 1918 ranges networks may use.

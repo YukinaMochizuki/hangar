@@ -7,12 +7,14 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 )
 
-// sweep removes what no machine on this node accounts for, then networks
-// and bases nothing uses (docs/decisions/node-agent.md). A list it could not
-// read stops whatever depends on it: a failed list is never an empty one.
+// sweep removes what no machine on this node accounts for, and volumes no
+// Disk bound to it does, then networks and bases nothing uses
+// (docs/decisions/node-agent.md). A list it could not read stops whatever
+// depends on it: a failed list is never an empty one.
 // A VM is stopped off the host lock, and what its machine has left goes at
 // the first sweep after its stop.
 func (a *Agent) sweep(ctx context.Context) error {
@@ -89,6 +91,25 @@ func (a *Agent) sweep(ctx context.Context) error {
 			if gone(r.MachineUID) {
 				a.cfg.Log.Info("removing a root disk no machine accounts for", "machine_uid", r.MachineUID)
 				keep(d.Storage.DeleteRoot(ctx, r.MachineUID))
+			}
+		}
+	}
+
+	// A volume is a Disk's, not a machine's: it goes once its Disk is gone.
+	// The disk controller removes a deleted Disk's own.
+	if disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{}); keep(err) {
+		bound := map[string]bool{}
+		for _, o := range disks {
+			if disk := o.(*storagev1alpha1.Disk); disk.GetStatus().GetNode() == a.cfg.Name {
+				bound[disk.GetMetadata().GetUid()] = true
+			}
+		}
+		if vols, err := d.Storage.Volumes(ctx); keep(err) {
+			for _, v := range vols {
+				if !bound[v.DiskUID] {
+					a.cfg.Log.Info("removing a volume no disk accounts for", "disk_uid", v.DiskUID)
+					keep(d.Storage.DeleteVolume(ctx, v.DiskUID))
+				}
 			}
 		}
 	}
