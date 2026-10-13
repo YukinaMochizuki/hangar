@@ -56,7 +56,7 @@ func TestAdminSocket(t *testing.T) {
 		t.Errorf("get rolebindings as root on the host printed %q", out)
 	}
 	// What a locked-out administrator does: grant platform.root again.
-	w.must(`apiVersion: iam.hangar.dev/v1alpha1
+	w.must(`apiVersion: iam.hangarlab.cloud/v1alpha1
 kind: RoleBinding
 metadata: {name: root-again}
 spec: {subject: {user: carol@example.com}, role: platform.root, scope: {platform: {}}}

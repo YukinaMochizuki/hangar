@@ -16,7 +16,7 @@ import (
 )
 
 // Domain is the suffix of every API group.
-const Domain = "hangar.dev"
+const Domain = "hangarlab.cloud"
 
 // Resource describes one API resource kind.
 type Resource struct {

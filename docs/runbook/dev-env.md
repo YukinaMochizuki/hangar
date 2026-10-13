@@ -64,7 +64,7 @@ go run ./cmd/hangar get containers -o json
 A container in `my-stack.yaml` might read:
 
 ```yaml
-apiVersion: compute.hangar.dev/v1alpha1
+apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata:
   name: api

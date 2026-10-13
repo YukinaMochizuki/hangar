@@ -37,7 +37,7 @@ func TestLifecycle(t *testing.T) {
 	if meta.GetUid() == "" || meta.GetGeneration() != 1 || meta.GetResourceVersion() == 0 || meta.GetCreateTime() == nil {
 		t.Errorf("system fields not set on create: %v", meta)
 	}
-	if got := created.GetTenant().GetApiVersion(); got != "tenancy.hangar.dev/v1alpha1" {
+	if got := created.GetTenant().GetApiVersion(); got != "tenancy.hangarlab.cloud/v1alpha1" {
 		t.Errorf("apiVersion %q", got)
 	}
 	must[tenancyv1alpha1.ApplyProjectResponse](t)(a.projects.ApplyProject(ctx, connect.NewRequest(project("web", "acme"))))
@@ -174,10 +174,10 @@ func TestApplyRules(t *testing.T) {
 	a := e.as(alice)
 
 	c := container("web", "api", "nginx")
-	c.Metadata.Labels = map[string]string{"hangar.dev/managed": "yes"}
+	c.Metadata.Labels = map[string]string{"hangarlab.cloud/managed": "yes"}
 	_, err := a.containers.ApplyContainer(ctx, applyContainer(c))
 	wantCode(t, err, connect.CodeInvalidArgument, "a user setting a reserved label")
-	c.Metadata.Labels = map[string]string{"x.hangar.dev/managed": "yes"}
+	c.Metadata.Labels = map[string]string{"x.hangarlab.cloud/managed": "yes"}
 	_, err = a.containers.ApplyContainer(ctx, applyContainer(c))
 	wantCode(t, err, connect.CodeInvalidArgument, "a user setting a label under a reserved subdomain")
 

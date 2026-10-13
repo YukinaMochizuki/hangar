@@ -88,7 +88,7 @@ func (w *world) addMembers(emails ...string) {
 	w.as("root@example.com")
 	var docs []string
 	for i, e := range emails {
-		docs = append(docs, fmt.Sprintf(`apiVersion: iam.hangar.dev/v1alpha1
+		docs = append(docs, fmt.Sprintf(`apiVersion: iam.hangarlab.cloud/v1alpha1
 kind: RoleBinding
 metadata: {name: member-%d}
 spec: {subject: {user: %q}, role: platform.member, scope: {platform: {}}}
@@ -231,21 +231,21 @@ func (n *fakeNode) released(name string) {
 		&metav1.Condition{Type: "Released", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
 }
 
-const stack = `apiVersion: tenancy.hangar.dev/v1alpha1
+const stack = `apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Tenant
 metadata:
   name: acme
 spec:
   displayName: Acme
 ---
-apiVersion: tenancy.hangar.dev/v1alpha1
+apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Project
 metadata:
   name: web
 spec:
   tenant: acme
 ---
-apiVersion: compute.hangar.dev/v1alpha1
+apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata:
   name: api
@@ -295,7 +295,7 @@ func TestApplyGetDelete(t *testing.T) {
 	if err := json.Unmarshal([]byte(w.must("", "get", "ct", "api", "-o", "json")), &one); err != nil {
 		t.Fatal(err)
 	}
-	if one.APIVersion != "compute.hangar.dev/v1alpha1" || one.Metadata.Name != "api" || one.Metadata.Project != "web" ||
+	if one.APIVersion != "compute.hangarlab.cloud/v1alpha1" || one.Metadata.Name != "api" || one.Metadata.Project != "web" ||
 		one.Spec.Image != "nginx:1" || one.Metadata.Labels["tier"] != "front" || one.Metadata.ResourceVersion == "" ||
 		one.Spec.Resources["cpu"] != "2" || one.Spec.Resources["memory"] != "512Mi" || one.Spec.Resources["disk"] != "20Gi" {
 		t.Errorf("get -o json returned %+v", one)
@@ -341,7 +341,7 @@ func TestApplyTakesNumbersAsText(t *testing.T) {
 	w.as("alice@example.com")
 	docs := strings.Split(stack, "---\n")
 	w.must(docs[0]+"---\n"+docs[1], "apply", "-f", "-")
-	w.must(`apiVersion: compute.hangar.dev/v1alpha1
+	w.must(`apiVersion: compute.hangarlab.cloud/v1alpha1
 kind: Container
 metadata:
   name: api
@@ -399,29 +399,29 @@ spec:
 	}
 
 	// Proto field names work as well as JSON ones.
-	w.must("apiVersion: tenancy.hangar.dev/v1alpha1\nkind: Tenant\nmetadata: {name: numbers}\nspec: {display_name: 2024}\n", "apply", "-f", "-")
+	w.must("apiVersion: tenancy.hangarlab.cloud/v1alpha1\nkind: Tenant\nmetadata: {name: numbers}\nspec: {display_name: 2024}\n", "apply", "-f", "-")
 	if out := w.must("", "get", "tenant", "numbers", "-o", "json"); !strings.Contains(out, `"displayName": "2024"`) {
 		t.Errorf("tenant:\n%s", out)
 	}
 
 	// A number is not text where the API wants a number.
-	bad := "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, ports: [{name: http, port: eighty}]}\n"
+	bad := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, ports: [{name: http, port: eighty}]}\n"
 	if r := w.run(bad, "apply", "-f", "-"); r.code != cli.ExitUsage {
 		t.Errorf("a word for a port: exit %d (%s)", r.code, r.err)
 	}
 	// A number anchored outside a string field stays a number through an
 	// alias or a merge key, as the help says; quoting the anchor works.
 	for _, doc := range []string{
-		"apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  ports: [{name: http, port: &p 80}]\n  args: [*p]\n",
-		"apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: 2}\n",
+		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  ports: [{name: http, port: &p 80}]\n  args: [*p]\n",
+		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: 2}\n",
 	} {
 		if r := w.run(doc, "apply", "-f", "-"); r.code != cli.ExitUsage {
 			t.Errorf("a number through an alias: exit %d (%s)", r.code, r.err)
 		}
 	}
-	w.must("apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
+	w.must("apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
 	// The server, not the CLI, says a fraction of a vCPU is refused.
-	frac := "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, resources: {cpu: 1.5}}\n"
+	frac := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, resources: {cpu: 1.5}}\n"
 	if r := w.run(frac, "apply", "-f", "-"); r.code != cli.ExitError || !strings.Contains(r.err, "vCPUs are whole") {
 		t.Errorf("cpu 1.5: exit %d (%s)", r.code, r.err)
 	}
@@ -486,11 +486,11 @@ func TestExitCodes(t *testing.T) {
 		{"unknown flag", "", []string{"get", "tenants", "--bogus"}, cli.ExitUsage},
 		{"missing arguments", "", []string{"wait", "container"}, cli.ExitUsage},
 		{"bad output", "", []string{"get", "tenants", "-o", "xml"}, cli.ExitUsage},
-		{"unknown field in a manifest", "apiVersion: tenancy.hangar.dev/v1alpha1\nkind: Tenant\nmetadata: {name: x}\nspec: {colour: red}\n", []string{"apply", "-f", "-"}, cli.ExitUsage},
+		{"unknown field in a manifest", "apiVersion: tenancy.hangarlab.cloud/v1alpha1\nkind: Tenant\nmetadata: {name: x}\nspec: {colour: red}\n", []string{"apply", "-f", "-"}, cli.ExitUsage},
 		{"unknown kind in a manifest", "apiVersion: v1\nkind: Pod\n", []string{"apply", "-f", "-"}, cli.ExitUsage},
 		{"not found", "", []string{"get", "container", "missing"}, cli.ExitNotFound},
-		{"stale resource version", "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: api, resourceVersion: 1}\nspec: {image: x}\n", []string{"apply", "-f", "-"}, cli.ExitConflict},
-		{"server rejects", "apiVersion: compute.hangar.dev/v1alpha1\nkind: Container\nmetadata: {name: noimage}\nspec: {}\n", []string{"apply", "-f", "-"}, cli.ExitError},
+		{"stale resource version", "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api, resourceVersion: 1}\nspec: {image: x}\n", []string{"apply", "-f", "-"}, cli.ExitConflict},
+		{"server rejects", "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: noimage}\nspec: {}\n", []string{"apply", "-f", "-"}, cli.ExitError},
 		{"wait times out", "", []string{"wait", "container", "api", "--for=condition=Ready", "--timeout=200ms"}, cli.ExitTimeout},
 	}
 	for _, tt := range tests {
