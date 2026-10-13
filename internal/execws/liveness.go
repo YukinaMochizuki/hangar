@@ -5,11 +5,9 @@ import (
 	"errors"
 	"net"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/coder/websocket"
-	"golang.org/x/sys/unix"
 )
 
 // ErrPeerGone ends an exec whose other end has gone silent.
@@ -121,17 +119,3 @@ func (l *Liveness) gone(now time.Time) bool {
 var KeepAlive = net.KeepAliveConfig{Enable: true, Idle: 30 * time.Second, Interval: 10 * time.Second, Count: 3}
 
 const userTimeout = 60 * time.Second
-
-// Control sets TCP's user timeout on a socket, as net.ListenConfig's and
-// net.Dialer's Control take it; a listening socket's accepted sockets
-// inherit it.
-func Control(_, _ string, rc syscall.RawConn) error {
-	var serr error
-	err := rc.Control(func(fd uintptr) {
-		serr = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, int(userTimeout.Milliseconds()))
-	})
-	if err != nil {
-		return err
-	}
-	return serr
-}

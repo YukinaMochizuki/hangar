@@ -164,7 +164,7 @@ func auditAdmin(log *slog.Logger, chain auth.Chain, next http.Handler) http.Hand
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attrs := []any{"method", r.Method, "path", r.URL.Path}
 		if cred, ok := auth.AdminPeer(r.Context()); ok {
-			attrs = append(attrs, "uid", cred.Uid, "pid", cred.Pid)
+			attrs = append(attrs, "uid", cred.UID, "pid", cred.PID)
 		}
 		if ctx, err := chain.Authenticate(r.Context(), r.Header); err != nil {
 			log.Warn("admin socket request refused", append(attrs, "error", err.Error())...)

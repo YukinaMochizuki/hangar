@@ -36,7 +36,7 @@ func TestRawModeIsPutBack(t *testing.T) {
 	if rows, cols, err := term.Size(); err != nil || rows != 33 || cols != 101 {
 		t.Errorf("size %dx%d %v", rows, cols, err)
 	}
-	before, err := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS)
+	before, err := unix.IoctlGetTermios(int(tty.Fd()), ioctlGetTermios)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestRawModeIsPutBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS)
+	raw, err := unix.IoctlGetTermios(int(tty.Fd()), ioctlGetTermios)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestRawModeIsPutBack(t *testing.T) {
 		t.Errorf("raw mode left lflag %#x oflag %#x", raw.Lflag, raw.Oflag)
 	}
 	restore()
-	after, err := unix.IoctlGetTermios(int(tty.Fd()), unix.TCGETS)
+	after, err := unix.IoctlGetTermios(int(tty.Fd()), ioctlGetTermios)
 	if err != nil {
 		t.Fatal(err)
 	}
