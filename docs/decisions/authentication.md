@@ -11,7 +11,7 @@ separate root process on the same host.
 ## Decision
 
 - Each listener has a chain of authenticators, and the first that succeeds
-  produces a `Principal` of type User, ServiceToken, Node or System.
+  produces a `Principal` of type User, ServiceToken, Node, System or Local.
 - **Public listener** (loopback only, behind cloudflared): verifies the
   `Cf-Access-Jwt-Assertion` JWT against the team's JWKS, issuer and audience.
   It never trusts `Cf-Access-Authenticated-User-Email` or any other header a
@@ -30,8 +30,30 @@ separate root process on the same host.
   the certificate, joins the chain when there is more than one host. The
   tunnel the agent opens on the socket, over which the apiserver calls it,
   is that node by the same authentication (`node-tunnel.md`).
+- **Root on the host** connects over a third unix socket, the admin socket
+  (`/run/hangar/admin.sock`, root's, 0600), and is identified by
+  `SO_PEERCRED` alone: uid 0 is the Local principal `local:root@<node>`,
+  any other uid is refused. It holds `platform.root` without a RoleBinding,
+  and no RoleBinding can name it, so it is the way back in when every
+  binding is wrong or the Access setup is broken: Kubernetes' `admin.conf`.
+  Nothing else runs on that listener, and its authenticator reads only
+  what that listener recorded of the connection, never a header, so no
+  other listener can produce the principal. Every request on it is logged
+  with the caller's pid. systemd makes the socket (a socket unit) in a
+  root-owned `/run/hangar` and passes it to the apiserver, which runs as an
+  unprivileged user and could neither make a root-owned socket nor keep one
+  in its own runtime directory, which systemd chowns to it and removes on
+  stop. The node socket is made the same way. The CLI reaches it as a
+  `unix://` endpoint with `local` auth, which sends no credential.
+- Not a dev listener instead: a remotely-managed tunnel's routes are set
+  in Cloudflare, and one pointed at the wrong origin would expose a
+  listener that takes whoever the caller says it is.
 - **Dev mode** takes the user from a header. It must be enabled explicitly and
-  refuses to start on a non-loopback address.
+  refuses to start on a non-loopback address. It also refuses any request
+  carrying a header Cloudflare's edge adds (`Cf-Connecting-Ip`, `Cdn-Loop`,
+  `Cf-Ray`), and the host runs cloudflared only while the apiserver is in
+  cloudflare auth (`docs/runbook/host-bootstrap.md`), so a tunnel never
+  reaches it.
 - Controllers run in-process as the System principal.
 - A third principal source, workload identity issued through the metadata
   service, is reserved for later.
