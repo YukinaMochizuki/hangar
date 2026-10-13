@@ -37,6 +37,7 @@ func TestConformance(t *testing.T) {
 			HoldVolume:       func(_ *testing.T, v driver.Volume) func() { return h.HoldVolume(v.DiskUID) },
 			ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
 			AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
+			Firmware:         true,
 			Exit: func(t *testing.T, machineUID string, code int) {
 				if err := h.Exit(machineUID, code); err != nil {
 					t.Fatal(err)

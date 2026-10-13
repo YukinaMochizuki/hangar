@@ -13,6 +13,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
@@ -145,6 +146,55 @@ func TestSecurityGroupsReachTheHost(t *testing.T) {
 	}
 	for _, n := range []string{"db", "plain", "api"} {
 		w.waitGone(n)
+	}
+	w.waitHostEmpty()
+}
+
+// TestAVirtualMachinesInterfaceGetsItsPolicy: a VM's interface is in the
+// groups it names, or in default, and its node enforces them as it does a
+// container's.
+func TestAVirtualMachinesInterfaceGetsItsPolicy(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	tcp := networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_TCP
+	w.applyGroup("ssh", &networkv1alpha1.SecurityGroupSpec{Network: "default",
+		Ingress: []*networkv1alpha1.IngressRule{{Protocol: tcp, Ports: "22",
+			From: &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Cidr{Cidr: "0.0.0.0/0"}}}}})
+	vm := func(name string, nics ...*computev1alpha1.NetworkInterface) {
+		t.Helper()
+		if _, err := w.root.Apply(context.Background(), registry.VirtualMachine, &computev1alpha1.VirtualMachine{
+			Metadata: &metav1.ObjectMeta{Project: project, Name: name},
+			Spec: &computev1alpha1.VirtualMachineSpec{
+				RootDisk: &computev1alpha1.VirtualMachineRootDisk{Source: &computev1alpha1.VirtualMachineRootDisk_FromImage{
+					FromImage: &computev1alpha1.VirtualMachineImageDisk{Image: &storagev1alpha1.ImageSource{Name: "noble"}},
+				}},
+				Interfaces: nics,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		w.waitVMReason(name, "Running")
+	}
+	vm("bastion", &computev1alpha1.NetworkInterface{Network: "default", SecurityGroups: []string{"ssh"}})
+	vm("plain")
+	w.machinePolicy(vmMachineOf("bastion"), "letting SSH in", func(p secgroup.Policy) bool {
+		return len(p.Ingress) == 1 && p.Ingress[0].Protocol == secgroup.TCP &&
+			p.Ingress[0].Ports[0] == secgroup.PortRange{From: 22, To: 22} && p.EgressAll
+	})
+	w.machinePolicy(vmMachineOf("plain"), "in default", func(p secgroup.Policy) bool {
+		return len(p.Ingress) == 1 && p.Ingress[0].Protocol == secgroup.All && p.EgressAll
+	})
+
+	// Its groups change on the running VM, as a container's do.
+	w.applyGroup("ssh", &networkv1alpha1.SecurityGroupSpec{Network: "default"})
+	w.machinePolicy(vmMachineOf("bastion"), "letting nobody in once the rule is gone", func(p secgroup.Policy) bool {
+		return len(p.Ingress) == 0 && p.EgressAll
+	})
+	for _, name := range []string{"bastion", "plain"} {
+		if _, err := w.root.Delete(context.Background(), registry.VirtualMachine, client.Key{Project: project, Name: name}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	w.waitHostEmpty()
 }

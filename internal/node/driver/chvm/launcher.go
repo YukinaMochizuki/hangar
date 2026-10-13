@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -63,7 +65,10 @@ type Launcher struct {
 	// Guest reaches the guest's agent. Nil means chguest's, at the VM's
 	// vsock socket.
 	Guest driver.Guest
-	Log   *slog.Logger
+	// PowerButton presses the power button of a firmware VM, whose Cloud
+	// Hypervisor serves its API at socket. Nil means pressPowerButton.
+	PowerButton func(ctx context.Context, socket string) error
+	Log         *slog.Logger
 
 	// VMUser is the id the unit runs Cloud Hypervisor as, which the spec
 	// file must hold too. Zero is a unit that runs it as root, as a driver
@@ -146,6 +151,9 @@ func (l *Launcher) defaults() {
 	if l.Guest == nil {
 		l.Guest = chguest.Guest{Socket: func(uid string) string { return filepath.Join(l.Dir, uid, vsockFile) }}
 	}
+	if l.PowerButton == nil {
+		l.PowerButton = pressPowerButton
+	}
 	if l.Log == nil {
 		l.Log = slog.New(slog.DiscardHandler)
 	}
@@ -222,18 +230,21 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 	// The VM's group; root's, with no VM user.
 	gid := int(ln.VMUser)
-	if err := prepareDir(dir, gid); err != nil {
+	if err := prepareDir(dir, gid, ln.Spec.Firmware); err != nil {
 		return 0, err
 	}
 	// Held open while the VM runs, O_EXCL: no other zvol can take its
-	// device's number, which the node names.
-	root, err := l.OpenDisk(ln.Spec.Root.Path)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = root.Close() }()
-	if err := l.MakeNode(root, filepath.Join(dir, diskNode), gid); err != nil {
-		return 0, fmt.Errorf("the root disk's node: %w", err)
+	// device's number, which the node names. A firmware VM boots its first
+	// volume instead.
+	if !ln.Spec.Firmware {
+		root, err := l.OpenDisk(ln.Spec.Root.Path)
+		if err != nil {
+			return 0, err
+		}
+		defer func() { _ = root.Close() }()
+		if err := l.MakeNode(root, filepath.Join(dir, diskNode), gid); err != nil {
+			return 0, fmt.Errorf("the root disk's node: %w", err)
+		}
 	}
 	var vols []*os.File
 	defer func() {
@@ -276,11 +287,17 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 	defer func() { _ = clog.Close() }()
 	l.markBoot(clog, started)
-	serialLog, err := openCapped(filepath.Join(dir, SerialLog), l.SerialMax)
-	if err != nil {
-		return 0, err
+	// A firmware VM's serial console is its console log; a container's
+	// is the guest kernel's, kept apart.
+	var serialLog io.Writer = clog
+	if !ln.Spec.Firmware {
+		raw, err := openCapped(filepath.Join(dir, SerialLog), l.SerialMax)
+		if err != nil {
+			return 0, err
+		}
+		defer func() { _ = raw.Close() }()
+		serialLog = raw
 	}
-	defer func() { _ = serialLog.Close() }()
 	serial, err := openFIFO(filepath.Join(dir, serialFIFO), gid)
 	if err != nil {
 		return 0, err
@@ -325,22 +342,39 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	l.Log.Info("vmm: started", "machine_uid", uid, "machine", ln.Spec.Machine, "pid", cmd.Process.Pid, "spec", ln.Hash)
 
 	consoleDone := make(chan *console.ExitStatus, 1)
-	go func() {
-		consoleDone <- pumpConsole(outR, clog, func(err error) {
-			l.Log.Error("vmm: the console log fails; dropping records", "error", err)
-		})
-	}()
+	logErr := func(err error) { l.Log.Error("vmm: the console log fails; dropping records", "error", err) }
+	if ln.Spec.Firmware {
+		// No virtio console: its stdout carries nothing of the guest's.
+		go func() {
+			_, _ = io.Copy(io.Discard, outR)
+			consoleDone <- nil
+		}()
+	} else {
+		go func() { consoleDone <- pumpConsole(outR, clog, logErr) }()
+	}
 	serialDone := make(chan struct{})
+	framer := &serialFramer{log: clog, logErr: logErr, now: time.Now}
 	go func() {
 		defer close(serialDone)
+		if ln.Spec.Firmware {
+			framer.pump(serial)
+			return
+		}
 		pumpRaw(serial, serialLog, func(err error) {
 			l.Log.Error("vmm: the serial log fails; dropping output", "error", err)
 		})
 	}()
-	defer func() {
-		_ = serial.Close()
-		<-serialDone
-	}()
+	var endSerial sync.Once
+	stopSerial := func() {
+		endSerial.Do(func() {
+			if ln.Spec.Firmware {
+				framer.quiet()
+			}
+			_ = serial.Close()
+			<-serialDone
+		})
+	}
+	defer stopSerial()
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
 
@@ -348,7 +382,8 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	case <-ctx.Done():
 		// The driver marks a VM before it stops the guest: without the
 		// mark, systemd stops the unit on its own.
-		if exists(filepath.Join(dir, stopFile)) || !l.stopGuest(uid, ln, waited) {
+		poweredOff := !exists(filepath.Join(dir, stopFile)) && l.stopGuest(uid, ln, waited)
+		if !poweredOff {
 			_ = cmd.Process.Signal(syscall.SIGTERM)
 			select {
 			case <-waited:
@@ -357,8 +392,15 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 				<-waited
 			}
 		}
-		// The log, not exit.json: a stop is no exit to the driver.
-		if st, drained := l.drain(consoleDone); st == nil && drained {
+		// The log, not exit.json: a stop is no exit to the driver. A
+		// firmware VM's boot ends as the platform's, by the driver's stop
+		// or the host's shutdown alike.
+		st, drained := l.drain(consoleDone)
+		switch {
+		case ln.Spec.Firmware:
+			stopSerial()
+			endBoot(clog, poweredOff, true)
+		case st == nil && drained:
 			noExit(clog)
 		}
 		l.Log.Info("vmm: stopped", "machine_uid", uid)
@@ -366,7 +408,14 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	case err := <-waited:
 		st, drained := l.drain(consoleDone)
 		code := exitCode(st)
-		if st == nil && drained {
+		switch {
+		case ln.Spec.Firmware:
+			// A firmware VM records no exit: Cloud Hypervisor ending well
+			// is its guest powering off, on its own unless the driver
+			// pressed its power button, marking it as being stopped.
+			stopSerial()
+			code = endBoot(clog, err == nil, exists(filepath.Join(dir, stopFile)))
+		case st == nil && drained:
 			noExit(clog)
 		}
 		rec := exitRecord{Code: code, Started: started, Ended: time.Now()}
@@ -379,16 +428,21 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 }
 
-// stopGuest asks the guest to stop its process with the launch's grace, as
-// the driver's Stop does, and waits for the guest to power off, Cloud
-// Hypervisor exiting, for the grace and the slack. It reports whether Cloud
-// Hypervisor has exited, and returns at once if the guest does not take
-// the stop.
+// stopGuest asks the guest to stop its process with the launch's grace, or
+// presses a firmware VM's power button, as the driver's Stop does, and
+// waits for the guest to power off, Cloud Hypervisor exiting, for the grace
+// and the slack. It reports whether Cloud Hypervisor has exited, and
+// returns at once if the guest does not take the stop.
 func (l *Launcher) stopGuest(uid string, ln launch, waited <-chan error) bool {
 	grace, slack := ln.stopTimes()
 	l.Log.Info("vmm: stopped by systemd; stopping the guest", "machine_uid", uid, "grace", grace)
 	ctx, cancel := context.WithTimeout(context.Background(), stopAsk)
-	err := l.Guest.Stop(ctx, uid, grace)
+	var err error
+	if ln.Spec.Firmware {
+		err = l.PowerButton(ctx, filepath.Join(l.Dir, uid, apiFile))
+	} else {
+		err = l.Guest.Stop(ctx, uid, grace)
+	}
 	cancel()
 	if err != nil {
 		l.Log.Error("vmm: the guest did not take the stop", "machine_uid", uid, "error", err)
@@ -403,6 +457,22 @@ func (l *Launcher) stopGuest(uid string, ln launch, waited <-chan error) bool {
 		l.Log.Error("vmm: the guest did not power off in its grace", "machine_uid", uid)
 		return false
 	}
+}
+
+// endBoot ends a firmware VM's boot in its console log, as a container's
+// exit does, and returns the code it ended with: 0 if the guest powered
+// off, ExitNoRecord if not. A boot the platform ended, stopped, has
+// driver.StoppedSignal too.
+func endBoot(clog *cappedLog, poweredOff, stopped bool) int {
+	st := console.ExitStatus{Code: ExitNoRecord}
+	if poweredOff {
+		st.Code = 0
+	}
+	if stopped {
+		st.Signal = driver.StoppedSignal
+	}
+	_, _ = clog.Write(console.AppendRecord(nil, console.ExitRecord(st, time.Now())))
+	return int(st.Code)
 }
 
 // noExit ends a boot whose guest recorded no exit, as a crash or a kill
@@ -481,15 +551,20 @@ func openFIFO(path string, gid int) (*os.File, error) {
 // it the group gid's, and chDir afresh, where it writes. With no VM user
 // (gid 0) they are root's alone. Nothing in the directory is Cloud
 // Hypervisor's to remove or replace, nor to read but what it needs.
-func prepareDir(dir string, gid int) error {
+func prepareDir(dir string, gid int, firmware bool) error {
 	dirMode, readMode, chMode := os.FileMode(0o700), os.FileMode(0o600), os.FileMode(0o700)
 	if gid != 0 {
 		dirMode, readMode, chMode = 0o710, 0o640, 0o770
 	}
-	for _, p := range []struct {
+	type file struct {
 		name string
 		mode os.FileMode
-	}{{"", dirMode}, {bootFile, readMode}} {
+	}
+	files := []file{{"", dirMode}, {bootFile, readMode}}
+	if firmware {
+		files = files[:1] // a firmware VM has no boot disk
+	}
+	for _, p := range files {
 		f, err := os.OpenFile(filepath.Join(dir, p.name), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			return err
@@ -592,6 +667,9 @@ func unmountNetns() error {
 // needs one; with none, Cloud Hypervisor itself, as root.
 func (l *Launcher) command(ln launch, dir string, taps int) (*exec.Cmd, error) {
 	args := chArgs(ln, dir, taps)
+	if ln.Spec.Firmware {
+		args = firmwareArgs(ln, dir, taps)
+	}
 	if ln.VMUser == 0 {
 		return exec.Command(ln.CloudHypervisor, args...), nil
 	}

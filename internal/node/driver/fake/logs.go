@@ -65,6 +65,11 @@ func (h *Host) writeLog(machineUID string, rec console.Record) {
 // boot marks a new boot of the machine's VM in its log. Callers hold h.mu.
 func (h *Host) boot(machineUID string) {
 	h.writeLog(machineUID, console.BootRecord(h.logOf(machineUID).boot+1, time.Now()))
+	if v := h.vms[machineUID]; v != nil && v.spec.Firmware {
+		// A firmware VM's log is its serial console.
+		h.writeLog(machineUID, console.Record{Stream: console.Stdout, Time: time.Now(), Payload: []byte("Booting from the root disk\n")})
+		return
+	}
 	h.writeLog(machineUID, console.Record{Stream: console.Init, Time: time.Now(), Payload: []byte("hangar-init: starting the container\n")})
 }
 

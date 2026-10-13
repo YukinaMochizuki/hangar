@@ -34,6 +34,7 @@ message MachineSpec {
   // How the machine boots.
   oneof boot {
     ContainerBoot container = 10;
+    FirmwareBoot firmware = 11;
   }
   repeated MachineInterface interfaces = 20;
   RestartPolicy restart_policy = 21;
@@ -58,6 +59,14 @@ message ContainerBoot {
   // Overrides the image command.
   repeated string args = 3;
   repeated EnvVar env = 4;
+}
+
+// FirmwareBoot boots a disk's own operating system through the platform's
+// firmware, as a VirtualMachine does. See docs/decisions/vm-boot.md.
+message FirmwareBoot {
+  // Names the Disk, in the machine's project, booted from: attached first,
+  // before spec.disks, and attached to one machine at a time as they are.
+  string root_disk = 1;
 }
 
 // MachineInterface is one network interface of the machine.

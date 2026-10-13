@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -79,12 +80,16 @@ func TestSecurityGroupAdmission(t *testing.T) {
 	}
 }
 
+// TestInterfaceGroupAdmission: the groups a container's or a virtual
+// machine's interface names are checked alike.
 func TestInterfaceGroupAdmission(t *testing.T) {
-	s, _, user := running(t)
+	s, system, user := running(t)
 	if _, err := s.backend(registry.SecurityGroup).Apply(user, elsewhere()); err != nil {
 		t.Fatal(err)
 	}
-	b := s.backend(registry.Container)
+	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
+		t.Fatal(err)
+	}
 	for name, tc := range map[string]struct {
 		groups []string
 		ok     bool
@@ -96,11 +101,18 @@ func TestInterfaceGroupAdmission(t *testing.T) {
 		"more than five":    {[]string{"a", "b", "c", "d", "e", "f"}, false},
 		"another network's": {[]string{"default", "elsewhere"}, false},
 	} {
+		nics := []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: tc.groups}}
 		c := ctr("api")
-		c.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: tc.groups}}
-		_, err := b.Apply(user, c)
+		c.Spec.Interfaces = nics
+		_, err := s.backend(registry.Container).Apply(user, c)
 		if got := err == nil; got != tc.ok {
-			t.Errorf("%s: accepted %t, want %t (%v)", name, got, tc.ok, err)
+			t.Errorf("%s: a container accepted %t, want %t (%v)", name, got, tc.ok, err)
+		}
+		vm := vmFromImage("web", "noble")
+		vm.Spec.Interfaces = nics
+		_, err = s.backend(registry.VirtualMachine).Apply(user, vm)
+		if got := err == nil; got != tc.ok {
+			t.Errorf("%s: a virtual machine accepted %t, want %t (%v)", name, got, tc.ok, err)
 		}
 	}
 }
@@ -130,5 +142,35 @@ func TestAGroupInUseStays(t *testing.T) {
 	})
 	if _, err := s.backend(registry.SecurityGroup).Delete(user, key, nil); err != nil {
 		t.Errorf("deleting a group no longer in use: %v", err)
+	}
+}
+
+// TestAVMHoldsItsGroupsBeforeItHasAMachine: a group a VirtualMachine's
+// interface names cannot be deleted, though no controller has made the VM's
+// machine yet; once the VM names it no more, it can.
+func TestAVMHoldsItsGroupsBeforeItHasAMachine(t *testing.T) {
+	s, system, user := running(t)
+	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.backend(registry.SecurityGroup).Apply(user, group("ssh-in", https())); err != nil {
+		t.Fatal(err)
+	}
+	vm := vmFromImage("web", "noble")
+	vm.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: []string{"ssh-in"}}}
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, vm); err != nil {
+		t.Fatal(err)
+	}
+	key := resource.Key{Project: "web", Name: "ssh-in"}
+	_, err := s.backend(registry.SecurityGroup).Delete(user, key, nil)
+	wantCodeOf(t, err, connect.CodeFailedPrecondition, "deleting a group a VM without a machine names")
+	if err != nil && !strings.Contains(err.Error(), "virtualmachine web") {
+		t.Errorf("the refusal does not name the VM: %v", err)
+	}
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, vmFromImage("web", "noble")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.backend(registry.SecurityGroup).Delete(user, key, nil); err != nil {
+		t.Errorf("deleting a group no VM names any more: %v", err)
 	}
 }

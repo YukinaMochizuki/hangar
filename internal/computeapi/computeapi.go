@@ -1,9 +1,26 @@
-// Package computeapi names what the status of Machines, Nodes and Disks
-// says, for the apiserver and the node agent, which write different parts of
-// it and read each other's.
+// Package computeapi is what the apiserver and the node agent must read
+// alike in Machines, Nodes and Disks: what their status says, of which each
+// writes a part and reads the other's, and which Disks a Machine's spec
+// names.
 package computeapi
 
-import "github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+import (
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+)
+
+// MachineDisks names the Disks a machine has, in the order its node
+// attaches them: the disk a firmware boot boots from, then spec.disks.
+func MachineDisks(spec *computev1alpha1.MachineSpec) []string {
+	var out []string
+	if root := spec.GetFirmware().GetRootDisk(); root != "" {
+		out = append(out, root)
+	}
+	for _, d := range spec.GetDisks() {
+		out = append(out, d.GetDisk())
+	}
+	return out
+}
 
 // DiskInUseFinalizer keeps a deleted Disk until no machine lists it; the
 // apiserver removes it then. A node removes a disk's volume only once it is
@@ -59,10 +76,14 @@ const (
 	ReasonDiskFailed      = "DiskFailed"
 	// ReasonDiskTooSmall means the machine asks for a root disk smaller than
 	// its image.
-	ReasonDiskTooSmall    = "DiskTooSmall"
-	ReasonNetworkFailed   = "NetworkFailed"
-	ReasonBootFailed      = "BootFailed"
-	ReasonExited          = "Exited"
+	ReasonDiskTooSmall  = "DiskTooSmall"
+	ReasonNetworkFailed = "NetworkFailed"
+	ReasonBootFailed    = "BootFailed"
+	ReasonExited        = "Exited"
+	// ReasonPoweredOff means a firmware machine's guest powered itself
+	// off, which keeps it off until it is stopped and started; a firmware
+	// machine that ended otherwise is Exited, and boots again.
+	ReasonPoweredOff      = "PoweredOff"
 	ReasonNetworkNotReady = "NetworkNotReady"
 	// ReasonDiskNotReady means an attached disk is not on the node yet.
 	ReasonDiskNotReady = "DiskNotReady"

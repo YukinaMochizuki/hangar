@@ -354,6 +354,13 @@ const (
 // SIGKILL when its machine is stopped.
 const StopGrace = 10 * time.Second
 
+// StoppedSignal is the Signal of the Exit record that ends a firmware VM's
+// boot the platform ended, pressing its power button for a Stop or the
+// host's shutdown: SIGTERM, as a stop ends a container's process. A boot
+// with no signal ended on its own: the guest powered off, or the VM
+// crashed.
+const StoppedSignal int32 = 15
+
 // VMSpec is everything a VM is started with. Hash identifies it.
 type VMSpec struct {
 	MachineUID string
@@ -365,7 +372,14 @@ type VMSpec struct {
 	// Disks are attached after the disks the boot needs, in this order.
 	// Left out of the hash when empty, so a VM started before there were
 	// disks keeps its hash.
-	Disks      []Volume `json:",omitempty"`
+	Disks []Volume `json:",omitempty"`
+	// Firmware boots the VM through the platform's firmware from Disks[0],
+	// with its own kernel, as a VirtualMachine's: no Root, nothing to Run,
+	// no guest agent, and its serial console is its console log, each boot
+	// ended by an Exit record, 0 if the guest powered off, StoppedSignal if
+	// the platform ended it (docs/decisions/vm-boot.md). Stop presses its
+	// power button.
+	Firmware   bool `json:",omitempty"`
 	Interfaces []Interface
 	// Nameservers and Search are the guest's resolvers and search domains,
 	// as its /etc/resolv.conf lists them.

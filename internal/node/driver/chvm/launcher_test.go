@@ -100,6 +100,10 @@ func fakeCH(mode string) int {
 		if i > 0 && args[i-1] == "--vsock" {
 			vsock = a[strings.Index(a, "socket=")+len("socket="):]
 		}
+		// A firmware VM has no vsock: its API socket is in the same place.
+		if i > 0 && args[i-1] == "--api-socket" && vsock == "" {
+			vsock = strings.TrimPrefix(a, "path=")
+		}
 		if i > 0 && args[i-1] == "--serial" {
 			serial = strings.TrimPrefix(a, "file=")
 		}

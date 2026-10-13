@@ -22,6 +22,18 @@ Hypervisor directly, without Kata or Kubernetes.
 - A `Container`'s root disk lives and dies with it: kept across restarts,
   rebuilt when the image changes. A `VirtualMachine`'s root disk is a durable
   `Disk`.
+- A `VirtualMachine` boots its root disk's own operating system through
+  firmware (`vm-boot.md`), not the platform kernel; its controller turns it
+  into a machine `vm-<name>` whose boot is `firmware {root_disk}`, its root
+  disk made from an image as `<name>-root` (deleted with it unless its
+  `deletePolicy` is `RETAIN`) or one it names, its data disks after it, its
+  interfaces `eth0` and on, one on `default` if it lists none, each in its
+  security groups as a container's (`networking.md`), and its
+  restart policy `on-failure`. It is `Ready` once its VM runs: nothing in
+  the guest answers for it. `runState` stops it as a container's does, by
+  its power button; only a guest that powers itself off stays off, until the
+  VM is stopped and started, and one its host's shutdown stopped boots again
+  with the host.
 - A `Container` is stopped and started through its spec, `runState: STOPPED`
   or `RUNNING` (`CONTAINER_RUN_STATE_*`; unset is RUNNING), which its
   controller copies to `Machine.spec.run_state`. Stopping is `docker stop`:

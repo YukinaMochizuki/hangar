@@ -1,6 +1,10 @@
-# Host packages and the pinned Cloud Hypervisor binary.
+# Host packages, the pinned Cloud Hypervisor binary, and the pinned firmware
+# VirtualMachines boot through.
 
 CH_BIN=/usr/local/bin/cloud-hypervisor
+# hangar-node's --vm-firmware default. Every VM's unit binds it read-only,
+# and Cloud Hypervisor, as the VM's own user, reads it.
+FW_FILE=/usr/local/lib/hangar/CLOUDHV.fd
 
 missing_packages() {
 	local p
@@ -33,6 +37,22 @@ qemu_img_recent() {
 	[ -n "$v" ] && [ "$(printf '%s\n%s\n' "$HANGAR_QEMU_IMG_MIN" "$v" | sort -V | head -n1)" = "$HANGAR_QEMU_IMG_MIN" ]
 }
 
+fw_is_pinned() {
+	[ -f "$FW_FILE" ] && echo "$HANGAR_FW_SHA256  $FW_FILE" | sha256sum -c --quiet -
+}
+
+install_fw() {
+	local tmp
+	tmp=$(mktemp)
+	curl -fsSL -o "$tmp" "$HANGAR_FW_URL"
+	if ! echo "$HANGAR_FW_SHA256  $tmp" | sha256sum -c --quiet -; then
+		rm -f "$tmp"
+		die "checksum mismatch for $HANGAR_FW_URL"
+	fi
+	install -D -m 0644 "$tmp" "$FW_FILE"
+	rm -f "$tmp"
+}
+
 packages_apply() {
 	local missing
 	missing=$(missing_packages)
@@ -41,10 +61,12 @@ packages_apply() {
 			"apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends $missing"
 	fi
 	ch_is_pinned || run "install cloud-hypervisor $HANGAR_CH_VERSION" install_ch
+	fw_is_pinned || run "install the EDK2 firmware $HANGAR_FW_VERSION" install_fw
 }
 
 packages_verify() {
 	check "packages installed" test -z "$(missing_packages)"
 	check "cloud-hypervisor $HANGAR_CH_VERSION" ch_is_pinned
 	check "qemu-img $HANGAR_QEMU_IMG_MIN or newer" qemu_img_recent
+	check "EDK2 firmware $HANGAR_FW_VERSION" fw_is_pinned
 }

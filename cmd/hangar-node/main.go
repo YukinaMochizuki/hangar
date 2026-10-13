@@ -45,6 +45,8 @@ type hostFlags struct {
 	maxUnpackWork                   int64
 	cloudHypervisor, kernel, initrd string
 	cmdline, vmDir                  string
+	// firmware is what VirtualMachines boot through.
+	firmware string
 }
 
 func main() {
@@ -169,6 +171,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
+	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
 }
 
 // parseUpstreams reads --dns-upstreams: addresses, each on port 53.
@@ -216,8 +219,14 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 	if err != nil {
 		return nil, none, err
 	}
+	firmware := hf.firmware
+	if _, err := os.Stat(firmware); errors.Is(err, os.ErrNotExist) {
+		slog.Warn("no firmware: virtual machines are refused on this host", "vm_firmware", firmware)
+		firmware = ""
+	}
 	vms, err := chvm.New(ctx, chvm.Config{
-		Dir: hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
+		Firmware: firmware,
+		Dir:      hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
 		Launcher: []string{exe, "vmm"},
 	})
 	if err != nil {

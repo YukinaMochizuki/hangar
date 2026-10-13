@@ -226,6 +226,19 @@ func hooksFor(r registry.Resource) kindHooks {
 			readableByAll:  true,
 			anyNodeReports: true,
 		}
+	case registry.VirtualMachine.Kind:
+		// Deleting a VM waits for its machine to be gone from the node, and
+		// for a root disk it owns. Its applies and deletes hold Disk's lock:
+		// whether its root disk is owned by it is checked against it, both
+		// ways (checkRootDiskOwner, refuseDeletingUnsettledVM).
+		return kindHooks{
+			target:       projectTarget,
+			owner:        ownedByProject,
+			validate:     validateVirtualMachine,
+			beforeDelete: refuseDeletingUnsettledVM,
+			cascades:     true,
+			writeLock:    attachLock,
+		}
 	case registry.Network.Kind:
 		return kindHooks{
 			target:       projectTarget,
@@ -554,6 +567,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if c := spec.GetContainer(); c != nil && c.GetImage() == "" {
 		return invalid("spec.container.image is required")
+	}
+	if f := spec.GetFirmware(); f != nil && f.GetRootDisk() == "" {
+		return invalid("spec.firmware.root_disk is required")
 	}
 	res := spec.GetResources()
 	var sz sizes

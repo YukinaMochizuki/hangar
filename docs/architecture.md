@@ -42,7 +42,9 @@ Every resource has the same envelope: `api_version`, `kind`, `metadata`,
 `spec`, `status`. Users own `spec`; controllers own `status`. Apply replaces the
 whole `spec` (the desired state); there is no server-side merge.
 
-Users see `Container` and `VirtualMachine`. Controllers turn both into an
+Users see `Container` and `VirtualMachine`: a container boots the platform's
+kernel with hangar-init, a virtual machine its image's own kernel through
+firmware (`decisions/vm-boot.md`). Controllers turn both into an
 internal `Machine`, the only thing the node understands, so snapshots, disks,
 networking and quotas are implemented once. Each host is a global `Node`;
 a machine runs on the node named in its `spec.node`. Both are system-managed:

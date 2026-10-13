@@ -173,6 +173,9 @@ func (a *Agent) stop(ctx context.Context, vm *driver.VM) (*observation, error) {
 // converge makes the host run m as specified and says what it then runs.
 // epoch is the network driver's change count when the reconcile began.
 func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *driver.VM, epoch int64) (*observation, error) {
+	if m.GetSpec().GetFirmware() != nil {
+		return a.convergeFirmware(ctx, m, vm, epoch)
+	}
 	uid := m.GetMetadata().GetUid()
 	d := a.cfg.Drivers
 	boot := m.GetSpec().GetContainer()
