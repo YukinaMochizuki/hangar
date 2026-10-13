@@ -10,12 +10,20 @@ anything else needs a reachable address.
 
 ## Decision
 
-- **A simple VPC first**: `Network` (each project gets a `default`), `Subnet`
-  with user-chosen CIDRs that may overlap across networks, multiple NICs per
-  machine, security groups, NAT egress, internal DNS
+- **A simple VPC first**: `Network` (each project gets a `default`), each
+  one user-chosen IPv4 range that may overlap other networks', multiple
+  NICs per machine, security groups, NAT egress, internal DNS
   (`<name>.<project>.hangar.internal`), and a metadata service at
-  169.254.169.254.
-  Peering, route tables and shared VPCs come later.
+  169.254.169.254. There is no `Subnet` (decided by the project owner):
+  on one host without zones a subnet buys nothing another network does
+  not, as DigitalOcean's VPCs have none; one can come later as a network's
+  default subnet. Peering, route tables and shared VPCs come later.
+- **A Container or VirtualMachine names its networks** in
+  `spec.interfaces` (`NetworkInterface`), at most 8, each network once;
+  none is one interface on `default`. They are eth0, eth1… in order, each
+  with an address of its network's range and no address of the user's
+  choosing; the first holds the default route, and so the machine's
+  internet and its resolver. Changing them restarts the machine.
 - **Each `Network` is its own network namespace** (that is what allows
   overlapping CIDRs) with a bridge and nftables. The node creates tap devices
   and hands their file descriptors to Cloud Hypervisor. The apiserver does IPAM

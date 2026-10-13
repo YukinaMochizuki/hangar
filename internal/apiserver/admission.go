@@ -368,7 +368,33 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 			return invalid("spec.ports[%s]: port %d out of range", port.GetName(), port.GetPort())
 		}
 	}
+	if err := validateInterfaces(spec.GetInterfaces()); err != nil {
+		return err
+	}
 	return s.validateContainerResources(ctx, old, spec.GetResources())
+}
+
+// MaxInterfaces bounds the interfaces of a machine.
+const MaxInterfaces = 8
+
+// validateInterfaces checks the interfaces a Container or VirtualMachine
+// asks for. A network that does not exist yet is the controller's to wait
+// for, not admission's to refuse.
+func validateInterfaces(nics []*computev1alpha1.NetworkInterface) error {
+	if len(nics) > MaxInterfaces {
+		return invalid("spec.interfaces: %d interfaces, at most %d", len(nics), MaxInterfaces)
+	}
+	seen := map[string]bool{}
+	for i, nic := range nics {
+		if err := ValidName(nic.GetNetwork()); err != nil {
+			return invalid("spec.interfaces[%d].network: %v", i, err)
+		}
+		if seen[nic.GetNetwork()] {
+			return invalid("spec.interfaces: network %q twice; a machine has one interface on a network", nic.GetNetwork())
+		}
+		seen[nic.GetNetwork()] = true
+	}
+	return nil
 }
 
 // validateContainerResources checks the quantities a container asks for,

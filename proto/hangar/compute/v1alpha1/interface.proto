@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+// NetworkInterface is one network interface a Container or VirtualMachine
+// asks for. Its name is eth0, eth1… by position; its address comes from the
+// network's range.
+message NetworkInterface {
+  // Names a network in the object's project.
+  string network = 1;
+  reserved 2; // security_groups, with SecurityGroup
+}
