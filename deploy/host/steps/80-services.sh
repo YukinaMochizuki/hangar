@@ -14,6 +14,9 @@ SERVICES_RUN=/run/hangar
 SERVICES_SOCKET=$SERVICES_RUN/node.sock
 SERVICES_ADMIN_SOCKET=$SERVICES_RUN/admin.sock
 SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
+# The platform's SSH CA, its private key: the operator installs it from the
+# vault (docs/runbook/host-bootstrap.md); this step never makes one.
+SERVICES_SSH_CA=$SERVICES_STATE/ssh-ca
 # The ids each VM's Cloud Hypervisor runs as, one a VM, its uid and gid
 # (DefaultVMUsers in internal/node/driver/chvm, which refuses to start on a
 # host where anything else has one). Kept under this name in /etc/subuid
@@ -164,7 +167,7 @@ Group=$SERVICES_USER
 EnvironmentFile=$LOCAL_ENV
 # The public API is on loopback in either auth mode: cloudflared reaches it
 # there. The node socket accepts root's agent; the admin socket, root.
-ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN}
+ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA
 Sockets=$(for s in $SERVICES_SOCKETS; do printf '%s.socket ' "$s"; done | sed 's/ $//')
 Restart=on-failure
 RestartSec=2
@@ -257,6 +260,14 @@ services_user_ok() {
 
 services_state_ok() {
 	[ "$(stat -c '%U %G %a' "$SERVICES_STATE")" = "$SERVICES_USER $SERVICES_USER 700" ]
+}
+
+services_ssh_ca_ok() {
+	[ -f "$SERVICES_SSH_CA" ] && [ "$(stat -c '%U %G %a' "$SERVICES_SSH_CA")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+services_ssh_ca_how() {
+	printf '%s\n' "install the SSH CA's key from the vault at $SERVICES_SSH_CA, $SERVICES_USER's, mode 0600, then restart hangar-apiserver (docs/runbook/host-bootstrap.md)"
 }
 
 # services_stale UNIT holds when the running service is not what is
@@ -405,6 +416,16 @@ services_apply() {
 			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_STATE' && chmod 700 '$SERVICES_STATE'"
 	fi
 
+	# Without the CA the apiserver runs, and hangar ssh cannot sign: the key
+	# is the operator's to install, never this step's to make.
+	if [ ! -f "$SERVICES_SSH_CA" ]; then
+		log "warning: no SSH CA at $SERVICES_SSH_CA: hangar ssh cannot sign until you $(services_ssh_ca_how)"
+	elif ! services_ssh_ca_ok; then
+		log "warning: $SERVICES_SSH_CA was $(stat -c '%U:%G mode %a' "$SERVICES_SSH_CA"): whoever could read it may have the SSH CA's key; consider a new one (docs/runbook/host-bootstrap.md)"
+		run "give $SERVICES_SSH_CA to $SERVICES_USER, mode 600" \
+			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_SSH_CA' && chmod 600 '$SERVICES_SSH_CA'"
+	fi
+
 	put_file "$SERVICES_TMPFILES" 644 "$(services_tmpfiles)"
 	# A runtime directory the apiserver once had is its; tmpfiles gives it
 	# to root.
@@ -455,6 +476,11 @@ services_verify() {
 	check "the VMs' ids $SERVICES_VM_IDS_FIRST+$SERVICES_VM_IDS_COUNT kept in /etc/subuid and /etc/subgid" services_vm_ids_kept
 	check "no user, group or other subordinate range has one of the VMs' ids" services_vm_ids_free
 	check "$SERVICES_STATE is $SERVICES_USER's, mode 700" services_state_ok
+	if [ -e "$SERVICES_SSH_CA" ]; then
+		check "SSH CA key $SERVICES_SSH_CA, $SERVICES_USER's, mode 600 (hangar ssh)" services_ssh_ca_ok
+	else
+		skip "SSH CA" "no $SERVICES_SSH_CA: hangar ssh cannot sign"
+	fi
 	check "units $SERVICES_UNITS, sockets $SERVICES_SOCKETS and $SERVICES_TMPFILES as generated and loaded" services_units_ok
 	check "no drop-ins for $SERVICES_UNITS $SERVICES_SOCKETS" services_no_dropins
 	check "units $SERVICES_UNITS enabled, active, running what is installed" services_running_ok

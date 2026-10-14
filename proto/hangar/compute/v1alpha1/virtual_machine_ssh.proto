@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// VirtualMachineSSHService signs keys to log in to virtual machines with,
+// which hangar ssh does for its caller. It is not a resource's service, so
+// it is written by hand rather than generated. See docs/decisions/vm-ssh.md.
+service VirtualMachineSSHService {
+  // SignSSHKey certifies a public key, for minutes, for the VM's principal,
+  // its uid, which the VM's sshd accepts for any of its users but root. It
+  // needs compute.virtualmachines.ssh. Without the platform's SSH CA it
+  // fails with FailedPrecondition.
+  rpc SignSSHKey(SignSSHKeyRequest) returns (SignSSHKeyResponse);
+}
+
+message SignSSHKeyRequest {
+  string project = 1;
+  string name = 2;
+  // One public key in authorized_keys form, such as "ssh-ed25519 AAAA...".
+  string public_key = 3;
+}
+
+message SignSSHKeyResponse {
+  // The certificate, in authorized_keys form.
+  string certificate = 1;
+  // The VM's uid, the certificate's one principal, by which hangar ssh
+  // also knows the VM's host key.
+  string principal = 2;
+  // The image's default user, whom hangar ssh logs in as unless told
+  // another; empty if the VM's root disk names no image that has one.
+  string default_user = 3;
+  google.protobuf.Timestamp valid_before = 4;
+}

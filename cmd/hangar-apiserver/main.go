@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/sshca"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
@@ -38,6 +39,7 @@ type flags struct {
 	cfAudience     string
 	cfCertsURL     string
 	bootstrapAdmin string
+	sshCAKey       string
 }
 
 func main() {
@@ -53,6 +55,7 @@ func main() {
 	flag.StringVar(&f.cfAudience, "cf-audience", "", "AUD tag of the Access application")
 	flag.StringVar(&f.cfCertsURL, "cf-certs-url", "", "override for the Access signing keys URL")
 	flag.StringVar(&f.bootstrapAdmin, "bootstrap-admin", "", "email granted platform.root if no one holds it")
+	flag.StringVar(&f.sshCAKey, "ssh-ca-key", "", "the platform SSH CA's private key, an OpenSSH key file only its owner reads; missing, hangar ssh cannot sign")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -126,8 +129,12 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		return err
 	}
 
+	ca, err := loadSSHCA(f.sshCAKey, log)
+	if err != nil {
+		return err
+	}
 	srv := apiserver.New(apiserver.Config{
-		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes,
+		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca,
 	})
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return srv.Run(ctx) })
@@ -233,4 +240,23 @@ func serve(ctx context.Context, srv *http.Server, ln net.Listener) error {
 		_ = srv.Close()
 	}
 	return nil
+}
+
+// loadSSHCA loads the SSH CA's key at path. With no path or no file the
+// apiserver runs without one, and says so; a key it cannot use stops it.
+func loadSSHCA(path string, log *slog.Logger) (*sshca.CA, error) {
+	if path == "" {
+		log.Warn("no --ssh-ca-key: hangar ssh cannot sign keys; static keys still work")
+		return nil, nil
+	}
+	ca, err := sshca.Load(path)
+	if sshca.IsMissing(err) {
+		log.Warn("the SSH CA's key file is missing: hangar ssh cannot sign keys; static keys still work", "ssh_ca_key", path)
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("--ssh-ca-key: %w", err)
+	}
+	log.Info("loaded the SSH CA", "ssh_ca_key", path, "public_key", ca.PublicKey())
+	return ca, nil
 }

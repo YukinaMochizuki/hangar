@@ -3,6 +3,8 @@ package fake_test
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/netip"
 	"strconv"
 	"testing"
@@ -50,6 +52,11 @@ func TestConformance(t *testing.T) {
 			ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
 			AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
 			Firmware:         true,
+			ServeGuest: func(_ *testing.T, nic driver.Interface, ports ...uint16) {
+				for _, p := range ports {
+					h.ServeGuest(nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), p), echo)
+				}
+			},
 			Exit: func(t *testing.T, machineUID string, code int) {
 				if err := h.Exit(machineUID, code); err != nil {
 					t.Fatal(err)
@@ -67,4 +74,10 @@ func TestConformance(t *testing.T) {
 			},
 		}
 	})
+}
+
+// echo sends back what a connection sends, as a guest's echo server.
+func echo(c net.Conn) {
+	defer func() { _ = c.Close() }()
+	_, _ = io.Copy(c, c)
 }

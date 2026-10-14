@@ -69,7 +69,16 @@ func wipe(t *testing.T) {
 // TestConformance runs the suite's network parts; the rest it skips.
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
-		return drivertest.Host{Network: newDriver(t, hostnet.Config{Uplink: upstreamLink})}
+		return drivertest.Host{
+			Network: newDriver(t, hostnet.Config{Uplink: upstreamLink}),
+			ServeGuest: func(t *testing.T, nic driver.Interface, ports ...uint16) {
+				ints := make([]int, len(ports))
+				for i, p := range ports {
+					ints[i] = int(p)
+				}
+				echoServer(t, newGuest(t, nic), ints...)
+			},
+		}
 	})
 }
 

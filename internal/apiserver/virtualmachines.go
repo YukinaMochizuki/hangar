@@ -163,9 +163,9 @@ func validateVirtualMachine(ctx context.Context, s *Server, _ auth.Principal, ol
 	if total > maxSSHKeysLen {
 		return invalid("spec.ssh_authorized_keys: %d bytes in all, at most %d", total, maxSSHKeysLen)
 	}
-	// Quoting lengthens a key, a character such as < to six bytes: the
-	// machine's limit is on what the keys become.
-	if n := len(vendorData(spec)); n > maxVendorData {
+	// Quoting lengthens a key, a character such as < to six bytes, and the
+	// CA's script adds to it: the machine's limit is on what they become.
+	if n := vendorDataSize(vm, s.cfg.SSHCA.PublicKey()); n > maxVendorData {
 		return invalid("spec.ssh_authorized_keys: %d bytes once quoted as the guest's vendor-data, at most %d", n, maxVendorData)
 	}
 	return nil
@@ -268,10 +268,9 @@ func checkAuthorizedKey(k string) error {
 	return nil
 }
 
-// vendorData is the cloud-config of the platform's settings for a VM's
-// guest, its keys, each quoted as JSON, which YAML reads as the same
-// string; see docs/decisions/vm-boot.md.
-func vendorData(spec *computev1alpha1.VirtualMachineSpec) string {
+// keysConfig is the cloud-config giving a VM's guest its keys, each quoted
+// as JSON, which YAML reads as the same string; see vm-boot.md.
+func keysConfig(spec *computev1alpha1.VirtualMachineSpec) string {
 	keys := spec.GetSshAuthorizedKeys()
 	if len(keys) == 0 {
 		return ""
@@ -391,7 +390,7 @@ func (s *Server) reconcileVirtualMachine(ctx context.Context, k controller.Key) 
 	} else if err != nil {
 		return err
 	}
-	want, err := vmMachineSpec(vm)
+	want, err := vmMachineSpec(vm, s.cfg.SSHCA.PublicKey())
 	if err != nil {
 		return s.reportVirtualMachine(ctx, vm, m, nil, &blocked{"InvalidResources", err.Error()})
 	}
@@ -470,8 +469,9 @@ func refusedDisk(err error) error {
 }
 
 // vmMachineSpec is what a VM's spec asks of its machine, in canonical
-// quantities; node is left for the scheduler.
-func vmMachineSpec(vm *computev1alpha1.VirtualMachine) (*computev1alpha1.MachineSpec, error) {
+// quantities, caKey the platform SSH CA's public key if it has one; node is
+// left for the scheduler.
+func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1alpha1.MachineSpec, error) {
 	spec := vm.GetSpec()
 	sz, err := vmSizes(spec.GetResources())
 	if err != nil {
@@ -489,7 +489,7 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine) (*computev1alpha1.Machine
 			// The VM's uid, not its machine's: a machine made again is the
 			// same instance, whose first boot is done.
 			CloudInit: &computev1alpha1.MachineCloudInit{
-				InstanceId: vm.GetMetadata().GetUid(), UserData: spec.GetUserData(), VendorData: vendorData(spec),
+				InstanceId: vm.GetMetadata().GetUid(), UserData: spec.GetUserData(), VendorData: vendorData(vm, caKey),
 			},
 		}},
 		// Only a guest that powers itself off, which ends its boot well,

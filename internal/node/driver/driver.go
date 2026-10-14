@@ -227,6 +227,9 @@ type Network interface {
 	// known by the MAC it sends from, which the interface's binding makes
 	// its own; it returns the Instance it serves, as ListenUDP does.
 	ListenPackets(ctx context.Context, networkUID string, kind PacketKind) (PacketConn, string, error)
+	// DialSSH connects to port 22 of addr, a machine's, from the network's
+	// gateway in its namespace: the platform's SSH (docs/decisions/vm-ssh.md).
+	DialSSH(ctx context.Context, networkUID string, addr netip.Addr) (net.Conn, error)
 	// Instance names what a network's sockets serve, until it is made again;
 	// "" means there is nothing to serve.
 	Instance(ctx context.Context, networkUID string) (string, error)

@@ -799,6 +799,135 @@ func (*ExecResponse_Stderr) isExecResponse_Message() {}
 
 func (*ExecResponse_Exit) isExecResponse_Message() {}
 
+type SSHRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*SSHRequest_MachineUid
+	//	*SSHRequest_Data
+	Message       isSSHRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSHRequest) Reset() {
+	*x = SSHRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSHRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSHRequest) ProtoMessage() {}
+
+func (x *SSHRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSHRequest.ProtoReflect.Descriptor instead.
+func (*SSHRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *SSHRequest) GetMessage() isSSHRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *SSHRequest) GetMachineUid() string {
+	if x != nil {
+		if x, ok := x.Message.(*SSHRequest_MachineUid); ok {
+			return x.MachineUid
+		}
+	}
+	return ""
+}
+
+func (x *SSHRequest) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*SSHRequest_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isSSHRequest_Message interface {
+	isSSHRequest_Message()
+}
+
+type SSHRequest_MachineUid struct {
+	// First, and only first.
+	MachineUid string `protobuf:"bytes,1,opt,name=machine_uid,json=machineUid,proto3,oneof"`
+}
+
+type SSHRequest_Data struct {
+	// What the client sends, as it comes.
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"`
+}
+
+func (*SSHRequest_MachineUid) isSSHRequest_Message() {}
+
+func (*SSHRequest_Data) isSSHRequest_Message() {}
+
+type SSHResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What the guest's sshd sends, as it comes.
+	Data          []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SSHResponse) Reset() {
+	*x = SSHResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SSHResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SSHResponse) ProtoMessage() {}
+
+func (x *SSHResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SSHResponse.ProtoReflect.Descriptor instead.
+func (*SSHResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SSHResponse) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 var File_hangar_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_hangar_node_v1_node_proto_rawDesc = "" +
@@ -853,16 +982,25 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x06stdout\x18\x01 \x01(\fH\x00R\x06stdout\x12\x18\n" +
 	"\x06stderr\x18\x02 \x01(\fH\x00R\x06stderr\x120\n" +
 	"\x04exit\x18\x03 \x01(\v2\x1a.hangar.node.v1.ExitStatusH\x00R\x04exitB\t\n" +
-	"\amessage*\x7f\n" +
+	"\amessage\"P\n" +
+	"\n" +
+	"SSHRequest\x12!\n" +
+	"\vmachine_uid\x18\x01 \x01(\tH\x00R\n" +
+	"machineUid\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\amessage\"!\n" +
+	"\vSSHResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data*\x7f\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x13\n" +
 	"\x0fLOG_STREAM_INIT\x10\x03\x12\x13\n" +
-	"\x0fLOG_STREAM_EXIT\x10\x042\x99\x01\n" +
+	"\x0fLOG_STREAM_EXIT\x10\x042\xdd\x01\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01\x12E\n" +
-	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01B\xb9\x01\n" +
+	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01\x12B\n" +
+	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01B\xb9\x01\n" +
 	"\x12com.hangar.node.v1B\tNodeProtoP\x01Z>github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1;nodev1\xa2\x02\x03HNX\xaa\x02\x0eHangar.Node.V1\xca\x02\x0eHangar\\Node\\V1\xe2\x02\x1aHangar\\Node\\V1\\GPBMetadata\xea\x02\x10Hangar::Node::V1b\x06proto3"
 
 var (
@@ -878,7 +1016,7 @@ func file_hangar_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_hangar_node_v1_node_proto_goTypes = []any{
 	(LogStream)(0),                // 0: hangar.node.v1.LogStream
 	(*LogsRequest)(nil),           // 1: hangar.node.v1.LogsRequest
@@ -890,13 +1028,15 @@ var file_hangar_node_v1_node_proto_goTypes = []any{
 	(*ExecStdinClose)(nil),        // 7: hangar.node.v1.ExecStdinClose
 	(*WindowSize)(nil),            // 8: hangar.node.v1.WindowSize
 	(*ExecResponse)(nil),          // 9: hangar.node.v1.ExecResponse
-	(*timestamppb.Timestamp)(nil), // 10: google.protobuf.Timestamp
+	(*SSHRequest)(nil),            // 10: hangar.node.v1.SSHRequest
+	(*SSHResponse)(nil),           // 11: hangar.node.v1.SSHResponse
+	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
 }
 var file_hangar_node_v1_node_proto_depIdxs = []int32{
-	10, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	12, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
 	0,  // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
-	10, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
+	12, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
 	6,  // 5: hangar.node.v1.ExecRequest.start:type_name -> hangar.node.v1.ExecStart
 	7,  // 6: hangar.node.v1.ExecRequest.stdin_close:type_name -> hangar.node.v1.ExecStdinClose
@@ -905,10 +1045,12 @@ var file_hangar_node_v1_node_proto_depIdxs = []int32{
 	4,  // 9: hangar.node.v1.ExecResponse.exit:type_name -> hangar.node.v1.ExitStatus
 	1,  // 10: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
 	5,  // 11: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
-	2,  // 12: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	9,  // 13: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
-	12, // [12:14] is the sub-list for method output_type
-	10, // [10:12] is the sub-list for method input_type
+	10, // 12: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
+	2,  // 13: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 14: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	11, // 15: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
+	13, // [13:16] is the sub-list for method output_type
+	10, // [10:13] is the sub-list for method input_type
 	10, // [10:10] is the sub-list for extension type_name
 	10, // [10:10] is the sub-list for extension extendee
 	0,  // [0:10] is the sub-list for field type_name
@@ -936,13 +1078,17 @@ func file_hangar_node_v1_node_proto_init() {
 		(*ExecResponse_Stderr)(nil),
 		(*ExecResponse_Exit)(nil),
 	}
+	file_hangar_node_v1_node_proto_msgTypes[9].OneofWrappers = []any{
+		(*SSHRequest_MachineUid)(nil),
+		(*SSHRequest_Data)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_node_proto_rawDesc), len(file_hangar_node_v1_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
