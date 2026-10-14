@@ -47,6 +47,14 @@ func (w *world) applyDiskOf(name, size, img string) {
 	}
 }
 
+// deleteImage deletes an Image, which lets the node remove its base.
+func (w *world) deleteImage(name string) {
+	w.t.Helper()
+	if _, err := w.root.Delete(context.Background(), registry.Image, client.Key{Name: name}); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 func (w *world) image(name string) *storagev1alpha1.Image {
 	w.t.Helper()
 	obj, err := w.root.Get(context.Background(), registry.Image, client.Key{Name: name})
@@ -62,7 +70,9 @@ func diskReady(d *storagev1alpha1.Disk) *metav1.Condition {
 
 // TestADiskMadeFromAnImage: the image is fetched once, made a base of, and
 // cloned for each disk of it; the machine with the disk waits for it; the
-// base goes once no disk is made of it.
+// base stays while its Image does, so a disk made after every other is gone
+// needs no fetch, and goes once the Image names another digest or is
+// deleted and no disk is made of it.
 func TestADiskMadeFromAnImage(t *testing.T) {
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
@@ -100,7 +110,7 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 		t.Errorf("the image was fetched %d times", n)
 	}
 
-	// The disks gone, so is the base.
+	// The disks gone, the base stays for the Image.
 	for _, m := range []string{"vm-a", "vm-b"} {
 		if _, err := w.system.Delete(context.Background(), registry.Machine, client.Key{Project: project, Name: m}); err != nil {
 			t.Fatal(err)
@@ -116,7 +126,68 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	w.eventually("no volume left", func() (bool, string) {
+		s := w.host.Snapshot()
+		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
+	})
+	time.Sleep(400 * time.Millisecond) // several sweeps
+	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudSHA}) {
+		t.Fatalf("image bases with no disk of the image: %v", bases)
+	}
+
+	// A disk made after them all clones the kept base: no fetch.
+	w.applyDiskOf("again", "4Gi", "noble")
+	w.putMachine(diskMachine("vm-c", "again"))
+	w.waitDisk("again", "made", func(d *storagev1alpha1.Disk) bool {
+		return conditions.IsTrue(d.GetStatus().GetConditions(), computeapi.DiskReady)
+	})
+	if n := w.host.Fetches(cloudURL); n != 1 {
+		t.Errorf("the image was fetched %d times", n)
+	}
+
+	// A new digest for the Image: the old base goes once no disk is
+	// cloned from it.
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudFixed, 3*gib)
+	w.applyImage("noble", cloudFixed)
+	w.deleteMachineAndDisk("vm-c", "again")
+	w.eventually("the old digest's base gone", func() (bool, string) {
+		bases := w.host.Snapshot().ImageBases
+		return len(bases) == 0, fmt.Sprint(bases)
+	})
+
+	// A base of the new digest stays until the Image is deleted.
+	w.applyDiskOf("fixed", "4Gi", "noble")
+	w.putMachine(diskMachine("vm-d", "fixed"))
+	w.waitDisk("fixed", "made", func(d *storagev1alpha1.Disk) bool {
+		return conditions.IsTrue(d.GetStatus().GetConditions(), computeapi.DiskReady)
+	})
+	w.deleteMachineAndDisk("vm-d", "fixed")
+	w.eventually("no volume left", func() (bool, string) {
+		s := w.host.Snapshot()
+		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
+	})
+	time.Sleep(400 * time.Millisecond) // several sweeps
+	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudFixed}) {
+		t.Fatalf("image bases with no disk of the image: %v", bases)
+	}
+	w.deleteImage("noble")
 	w.waitHostEmpty()
+}
+
+// deleteMachineAndDisk deletes a machine, waits for it to be gone, then
+// deletes its disk.
+func (w *world) deleteMachineAndDisk(machine, disk string) {
+	w.t.Helper()
+	if _, err := w.system.Delete(context.Background(), registry.Machine, client.Key{Project: project, Name: machine}); err != nil {
+		w.t.Fatal(err)
+	}
+	w.eventually("the machine gone", func() (bool, string) {
+		_, ok := get[*computev1alpha1.Machine](w, registry.Machine, machine)
+		return !ok, ""
+	})
+	if _, err := w.root.Delete(context.Background(), registry.Disk, client.Key{Project: project, Name: disk}); err != nil {
+		w.t.Fatal(err)
+	}
 }
 
 // TestAnImageAtFault is never fetched again until its spec changes; a

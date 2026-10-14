@@ -376,8 +376,11 @@ these before `hangar-node` starts; the `packages` and `zfs` steps make them:
   `quota`, so pulling and unpacking never take the room root disks need: a
   few times the largest image the host should take, such as 100G on the
   current host. The image cache and the directory images are unpacked in
-  both go under it, on that one dataset: both hold tenant content. Pass the
-  quota, and what bases may take, to `hangar-node --reserved-disk`.
+  both go under it, on that one dataset: both hold tenant content. The
+  `services` step passes the sum of this quota and `hangar/vms`'s to
+  `hangar-node --reserved-disk`. Kept disk-image bases (about 4 GiB each, one
+  per Image used on the host, under `hangar/vmbases`) sit on the pool outside
+  that reservation, so the pool's free space must leave room for them.
 - Nothing else: the driver makes `hangar/bases`, `hangar/roots`,
   `hangar/disks` and `hangar/vmbases` (`mountpoint=none`) under the pool
   when they are missing, and owns them.

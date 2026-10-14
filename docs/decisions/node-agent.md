@@ -19,8 +19,9 @@ with the host after any of these, and nothing would notice.
 - **A sweep removes what nothing accounts for**: VMs, root disks and
   interfaces of machines that are not on this node any more, volumes of Disks
   that are not bound to it any more, then networks and image bases nothing on
-  the host uses or is being built from. It runs at start and every minute,
-  under the same lock as the reconciles. A list it
+  the host uses or is being built from; a disk image's base also stays while
+  an Image names it (`docs/decisions/vm-images.md`). It runs at start and
+  every minute, under the same lock as the reconciles. A list it
   could not read, from the API or from a driver, stops whatever depends on
   it: a failed list must never read as "nothing is wanted", since a driver
   may delete what it is told to even while it is in use.
