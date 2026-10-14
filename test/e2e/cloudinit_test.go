@@ -103,5 +103,6 @@ func TestAVirtualMachinesCloudInit(t *testing.T) {
 		}
 	}
 	w.delete("api")
+	w.deleteImage("noble")
 	w.waitHostEmpty()
 }

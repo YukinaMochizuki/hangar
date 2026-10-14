@@ -97,8 +97,9 @@ func (a *Agent) sweep(ctx context.Context) error {
 
 	// A volume is a Disk's, not a machine's: it goes once its Disk is gone.
 	// The disk controller removes a deleted Disk's own. A disk image's base
-	// goes once no volume is cloned from it and no disk still to be made
-	// here is made from it.
+	// goes once no volume is cloned from it, no disk still to be made here
+	// is made from it, and no Image not being deleted names its digest: a
+	// catalogued image stays ready for its next disk.
 	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
 	images, _, ierr := a.api.ListAll(ctx, registry.Image, client.ListOptions{})
 	if keep(err) {
@@ -126,7 +127,11 @@ func (a *Agent) sweep(ctx context.Context) error {
 				digests := map[string]string{}
 				for _, o := range images {
 					img := o.(*storagev1alpha1.Image)
-					digests[img.GetMetadata().GetName()] = "sha256:" + img.GetSpec().GetSha256()
+					digest := "sha256:" + img.GetSpec().GetSha256()
+					digests[img.GetMetadata().GetName()] = digest
+					if img.GetMetadata().GetDeleteTime() == nil {
+						used[digest] = true
+					}
 				}
 				for uid, disk := range bound {
 					if name := disk.GetSpec().GetSource().GetImage().GetName(); name != "" && !made[uid] && disk.GetMetadata().GetDeleteTime() == nil {
