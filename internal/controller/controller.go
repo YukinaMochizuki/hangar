@@ -226,7 +226,7 @@ func (c *Controller) work(ctx context.Context, q *queue, log *slog.Logger) {
 			q.done(key, false)
 			return
 		case errors.Is(err, ErrWaiting):
-			delay := q.retry(key, c.MaxWait)
+			delay := q.wait(key, c.MaxWait)
 			log.Debug("reconcile waiting; checking again", "key", key.String(), "in", delay, "for", err)
 		default:
 			delay := q.done(key, true)

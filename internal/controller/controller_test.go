@@ -358,6 +358,52 @@ func TestWaitingIsCheckedSoon(t *testing.T) {
 	}
 }
 
+// TestAFailureAfterWaitsIsRetriedSoon: waiting is not failing, so a key
+// that waited many times and then fails is retried after the first
+// backoff, not the longest; and a wait after failures is checked again
+// within MaxWait.
+func TestAFailureAfterWaitsIsRetriedSoon(t *testing.T) {
+	st := openStore(t)
+	clock := clockwork.NewFakeClock()
+	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "disk"}, []byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	const waits = 12 // enough to reach a one-minute backoff had they counted
+	var calls atomic.Int32
+	r := ReconcilerFunc(func(context.Context, Key) error {
+		switch n := calls.Add(1); {
+		case n <= waits:
+			return fmt.Errorf("%w: the image's base is being made", ErrWaiting)
+		case n <= waits+3:
+			return errors.New("injected")
+		case n == waits+4:
+			return fmt.Errorf("%w: once more", ErrWaiting)
+		}
+		return nil
+	})
+	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock,
+		Watches: []Watch{{Kind: "A", Map: Self}}})
+	step := func(n int32, by time.Duration) {
+		t.Helper()
+		eventually(t, fmt.Sprintf("call %d", n), func() bool { return calls.Load() == n })
+		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
+			t.Fatal(err)
+		}
+		clock.Advance(by)
+	}
+	for i := int32(1); i <= waits; i++ {
+		step(i, 2*time.Second) // MaxWait's default
+	}
+	// The failures back off from the first delay: 100, 200, 400ms.
+	step(waits+1, 100*time.Millisecond)
+	step(waits+2, 200*time.Millisecond)
+	step(waits+3, 400*time.Millisecond)
+	// Three failures in a row would next wait 800ms; a wait after them is
+	// checked again as soon as a first wait is.
+	step(waits+4, 100*time.Millisecond)
+	eventually(t, "the reconcile after the last wait", func() bool { return calls.Load() == waits+5 })
+}
+
 // TestASkipResyncKindIsMappedOnlyAsItChanges: a kind marked SkipResync is
 // not mapped on start or resync, and is as it changes.
 func TestASkipResyncKindIsMappedOnlyAsItChanges(t *testing.T) {
