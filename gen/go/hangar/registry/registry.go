@@ -90,6 +90,16 @@ var (
 		Message:    (*v1alpha11.RoleBinding)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.RoleBindingService",
 	}
+	Address = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "Address",
+		Plural:     "addresses",
+		ShortNames: []string{"addr"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.Address)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.AddressService",
+	}
 	Network = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -159,6 +169,7 @@ var All = []Resource{
 	Node,
 	VirtualMachine,
 	RoleBinding,
+	Address,
 	Network,
 	SecurityGroup,
 	Disk,

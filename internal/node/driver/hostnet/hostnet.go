@@ -710,6 +710,14 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if err != nil {
 		return driver.Interface{}, err
 	}
+	if i.IPv6.IsValid() {
+		for _, t := range all {
+			if t.ok && t.meta.IPv6 == i.IPv6 && (t.meta.Machine != i.MachineUID || t.meta.Name != i.Name) {
+				return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is machine %s's %s's: %w",
+					i.MachineUID, i.Name, i.IPv6, t.meta.Machine, t.meta.Name, driver.ErrIPv6InUse)
+			}
+		}
+	}
 	// The interface's other taps, on another network or duplicates, go,
 	// unless a VM holds one; that is refused, as deleting the interface is.
 	var link netlink.Link

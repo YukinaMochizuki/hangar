@@ -160,9 +160,8 @@ func (w *world) leasedTo(networkUID string, mac net.HardwareAddr) netip.Addr {
 }
 
 // TestAHostGainingAPrefix: a host given an IPv6 prefix gives its machines
-// addresses of it. A VM, which leases its address by DHCPv6, keeps running
-// and is leased it; a container, whose boot disk carries it, boots again
-// with it.
+// addresses of it, and none starts again: a VM is leased its address by
+// DHCPv6, and a container's guest is told it.
 func TestAHostGainingAPrefix(t *testing.T) {
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
@@ -173,6 +172,7 @@ func TestAHostGainingAPrefix(t *testing.T) {
 	w.waitReason("api", "Running")
 	vmUID := w.machine2(vmMachineOf("web")).GetMetadata().GetUid()
 	ctUID := w.machine("api").GetMetadata().GetUid()
+	started := w.started(vmUID, ctUID)
 
 	w.stopAgent()
 	w.ipv6Prefix = hostPrefix
@@ -200,15 +200,12 @@ func TestAHostGainingAPrefix(t *testing.T) {
 		ifs := w.host.Snapshot().Interfaces[vmUID]
 		return len(ifs) == 1 && ifs[0].IPv6 == addr, fmt.Sprint(ifs)
 	})
-	w.waitReason("api", "Running")
-	// A VM started with another spec is stopped and started anew.
-	w.eventually("the container started again with its /128", func() (bool, string) {
-		v := w.host.Snapshot().VMs[ctUID]
-		return v.Spec.Interfaces[0].IPv6.IsValid(), fmt.Sprint(v.Spec.Interfaces)
+	w.eventually("the container's guest told its /128", func() (bool, string) {
+		ctAddr := ipv6Of(w.machine("api"))
+		g := w.host.GuestIPv6(ctUID)
+		return ctAddr.IsValid() && len(g) == 1 && g[0].Address == ctAddr && g[0].Gateway == driver.GatewayIPv6, fmt.Sprint(ctAddr, g)
 	})
-	if v := w.host.Snapshot().VMs[vmUID]; v.Boots != 1 || v.State != driver.VMRunning {
-		t.Errorf("the VM was started again for its IPv6 address: boots %d, state %v", v.Boots, v.State)
-	}
+	w.checkNotRestarted(started)
 }
 
 // TestNoPrefixNoIPv6: on a host without a prefix, nothing of IPv6 exists:

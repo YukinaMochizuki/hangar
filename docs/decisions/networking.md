@@ -44,10 +44,25 @@ anything else needs a reachable address.
   machine, and never below 2^32, which leaves `::` and the low addresses,
   where deploy/host puts the host's own (`HANGAR_IPV6_ADDR`), to the host.
   A node whose prefix changes moves its machines to the new one; one that
-  loses it takes their IPv6 away. A VM learns its address by DHCPv6, so a
-  new one changes its interface in place and the VM keeps running; a
-  container's comes on its boot disk, so a new one starts it again, as
-  every container on a host does once when the host is given a prefix. Every project
+  loses it takes their IPv6 away. A new address restarts no machine: the
+  interface is changed in place on the host, at once, and is no part of
+  what a VM runs (its spec's hash). A VM learns it by DHCPv6, at its next
+  renewal, within minutes (below). A container's guest is told it by the
+  guest agent (`SetIPv6`), which hangar-init applies by netlink, as the
+  container shares hangar-init's network namespace. The boot disk carries
+  the address too, so a container that boots later starts right; but a
+  guest that boots again by its restart policy reuses the disk written when
+  its VM started. So the agent tells a guest its address the first time
+  it sees each boot, and again whenever the address changes. A reboot of
+  the guest and a restart of the agent both count as a new sighting, and
+  telling is the only way the agent knows what the guest holds.
+  A container whose hangar-init predates `SetIPv6`, started before an
+  upgrade, is left alone if its boot disk already carries the address it
+  should hold. Otherwise it is started again, once, with the address on its
+  boot disk, and the agent logs it. Upgrading the node restarts no
+  machine: a VM an older node started keeps the hash that node gave, which
+  counted the IPv6 addresses, and the agent accepts it
+  (`VMSpec.LegacyHash`). Every project
   gets a `default` network (10.0.0.0/24), recreated if deleted. A user cannot
   delete a network any machine is on, as clouds refuse to delete a subnet
   still in use: a network being deleted could take no new machines and could
@@ -185,6 +200,13 @@ anything else needs a reachable address.
     bridge, and has a proxy NDP entry on the uplink, which OVH's on-link,
     MAC-filtered /64 needs: the upstream asks for each address by neighbour
     solicitation and delivers only to the MAC that answers, the host's.
+    In the namespace each /128 also has a permanent neighbour entry on the
+    bridge at its tap's MAC, and the driver removes any other entry of the
+    prefix there. When an Address moves to another interface of the same
+    network, the namespace then sends to the new holder at once. Without
+    these entries, the namespace would keep sending to the old holder's MAC
+    until its cache entry went stale, and the old holder answers for the
+    address until its lease is renewed.
     All of it is derived from the taps' aliases; every proxy entry of the
     prefix on the uplink and every /128 route by an `hnv*` link is the
     driver's. The kernel signals no change to proxy entries, so the driver
@@ -278,8 +300,17 @@ anything else needs a reachable address.
     DHCPv6), no prefix to configure an address from, and a router lifetime
     of 30 minutes, every 200 seconds or so and when a machine solicits one,
     never more than once in 3 seconds however many solicit (RFC 4861).
-  - DHCPv6 leases each interface's MAC its /128 (IA_NA) for a day, and a
-    MAC it does not know is not answered; it answers at most 10 requests a
+  - DHCPv6 leases each interface's MAC its /128 (IA_NA), valid and
+    preferred for a day, so a guest keeps it through a long outage of the
+    agent, but with T1 2 minutes and T2 3 minutes, so a guest renews often
+    enough that an address that moved reaches it within minutes: a reply
+    gives it its address now and, with lifetimes of 0, any address it
+    held that is no longer its own, which it drops. RFC 8415 asks only
+    that T1 not exceed T2, nor T2 the preferred lifetime; its 0.5 and 0.8
+    of the preferred lifetime are a recommendation. No Reconfigure is sent:
+    systemd-networkd's DHCPv6 client (systemd 255, Ubuntu 24.04) takes none,
+    as it drops any message not of its own transaction, and RFC 8415 asks a
+    reconfigure key besides. A MAC it does not know is not answered; it answers at most 10 requests a
     second from one MAC and 100 from one network. DHCPv6 hands out the
     address only; DNS stays the network's IPv4 resolver (decided by the
     project owner): networks are always dual-stack, the resolver answers
@@ -365,9 +396,40 @@ anything else needs a reachable address.
 - **Public IPv6**: every machine interface has a public /128 of its host's
   /64 (above), its identity both ways, with no NAT, so one machine's abuse
   does not taint the shared IPv4. It is routed to the machine with proxy
-  NDP on the host (no bridging, because of the MAC filtering). An `Address`,
-  a reserved /128 that can be bound to and moved between machines, comes
-  later.
+  NDP on the host (no bridging, because of the MAC filtering).
+- **An `Address` reserves a public /128** and binds it to one interface of
+  a VirtualMachine or Container of its project, as an AWS Elastic IP is
+  associated: it names its target (`spec.target`, decided by the project
+  owner), and moving it changes only the Address. Its address is drawn
+  when it is made, from a node's prefix, at random as an automatic one,
+  and kept until it is deleted; no interface draws a reserved address as
+  its own. Bound, it replaces the interface's automatic address, which is
+  given up; the interface it leaves, unbound, retargeted or deleted, draws
+  a new automatic one. The hand-off is enforced twice, so no two
+  interfaces hold the address, in the store or on the host:
+  - In the API, the machine it moves to is given it only once the address
+    is gone from the spec of the machine it leaves. The machine it moves to
+    waits for that, reported as waiting, not failing, and is reconciled
+    again when the other machine changes.
+  - On the host, the interface it moves to takes it only once the one it
+    leaves has let go. The agent lets go of an address before anything a
+    machine's reconcile may wait on, such as its image, and the network
+    driver refuses an address another interface holds (`ErrIPv6InUse`).
+    Meanwhile the interface it moves to has none, and its machine runs on.
+    That gap lasts as long as the machine it leaves takes to let go. That
+    is usually one reconcile. When the machine it leaves is being stopped,
+    the gap lasts as long as the stop: 12 s in the hermetic tests, and up to
+    15 s for a container or 65 s for a VM on a real host. It is the price
+    of never holding one address twice.
+
+  The route, proxy NDP entry and the network's neighbour entry follow the
+  interface at once, so the machine it leaves stops receiving on the
+  address then, whatever its lease says, and neither machine starts again
+  (above). A target that does not exist yet is waited for; a
+  target deleted leaves the Address reserved and unbound. A deleted Address
+  stays, reserving its address, until its interface has let go of it. No
+  two Addresses name one interface, which admission checks under a lock.
+  Its status says where it is bound (`Bound`, and the machine).
 - **HTTPS exposure** is a `PublicEndpoint`: one platform tunnel and a wildcard
   DNS record lead to cloudflared, then to Hangar's own edge proxy, which routes
   by `Host` into the right namespace. Endpoints are `private` by default

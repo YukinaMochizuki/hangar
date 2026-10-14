@@ -45,6 +45,9 @@ type Server struct {
 	// SIGTERM to its process group now, SIGKILL once grace has passed. It
 	// returns at once, and does nothing when called again.
 	StopMain func(grace time.Duration)
+	// ApplyIPv6, if set, makes the interfaces' public IPv6 what SetIPv6
+	// asks.
+	ApplyIPv6 func(ifaces []*guestv1.Interface) error
 }
 
 // MaxGrace bounds the grace period a Stop may ask for.
@@ -72,6 +75,17 @@ func (s *Server) Stop(_ context.Context, req *connect.Request[guestv1.StopReques
 	}
 	s.StopMain(d)
 	return connect.NewResponse(&guestv1.StopResponse{}), nil
+}
+
+// SetIPv6 changes the interfaces' public IPv6 while the container runs.
+func (s *Server) SetIPv6(_ context.Context, req *connect.Request[guestv1.SetIPv6Request]) (*connect.Response[guestv1.SetIPv6Response], error) {
+	if s.ApplyIPv6 == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest's network is not the agent's to change"))
+	}
+	if err := s.ApplyIPv6(req.Msg.GetInterfaces()); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewResponse(&guestv1.SetIPv6Response{}), nil
 }
 
 // Exit codes for a program that cannot run, as shells give them.

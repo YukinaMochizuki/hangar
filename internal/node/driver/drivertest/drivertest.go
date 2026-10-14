@@ -67,6 +67,11 @@ type Host struct {
 	// ServeGuest has a guest on the interface echo what each TCP connection
 	// to its address on the ports sends, until the test ends.
 	ServeGuest func(t *testing.T, nic driver.Interface, ports ...uint16)
+	// GuestIPv6 reads, from inside the guest of the machine's running VM,
+	// what it holds of its public IPv6: each of the interfaces the platform
+	// gave it, by MAC, with its global address and, if the default route is
+	// by it, its gateway. The suite's guest IPv6 part runs only with it.
+	GuestIPv6 func(t *testing.T, machineUID string) []driver.GuestIPv6
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -106,6 +111,9 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
+	part("guest IPv6", guestIPv6, func(h Host) bool {
+		return vms(h) && h.IPv6Prefix.IsValid() && h.GuestIPv6 != nil && h.Exit != nil
+	})
 }
 
 func must(t *testing.T, err error) {
@@ -796,6 +804,19 @@ func networkIPv6(t *testing.T, h Host) {
 	if ifs, _ := h.Network.Interfaces(ctx); len(ifs) != 1 || ifs[0] != moved || ifs[0].IPv6 != at(2) {
 		t.Errorf("an interface given another IPv6 address is listed as %+v", ifs)
 	}
+	// One address is delivered to one interface: another takes it only once
+	// the first has let go.
+	taker := eth0("m3")
+	taker.MAC, taker.Address, taker.IPv6 = "02:00:00:00:00:03", netip.MustParsePrefix("10.0.0.4/24"), at(2)
+	if _, err := h.Network.EnsureInterface(ctx, taker); !errors.Is(err, driver.ErrIPv6InUse) {
+		t.Errorf("an interface given the IPv6 address another holds: %v, want ErrIPv6InUse", err)
+	}
+	nic.IPv6 = at(3)
+	_, err = h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	_, err = h.Network.EnsureInterface(ctx, taker)
+	must(t, err)
+	must(t, h.Network.DeleteInterfaces(ctx, "m3"))
 	outside := eth0("m2")
 	outside.MAC, outside.Address = "02:00:00:00:00:02", netip.MustParsePrefix("10.0.0.3/24")
 	outside.IPv6 = netip.MustParseAddr("2001:db8:ffff:ffff::1")
@@ -1076,4 +1097,89 @@ func restarts(t *testing.T, h Host) {
 			must(t, h.Storage.DeleteRoot(ctx, "m1"))
 		})
 	}
+}
+
+// guestIPv6 changes a container's guest's public IPv6 while it runs: the
+// guest boots with its boot disk's, which the VM lists as its interfaces as
+// started, takes what SetIPv6 says, and boots again with its boot disk's.
+func guestIPv6(t *testing.T, h Host) {
+	ctx := t.Context()
+	at := func(id byte) netip.Addr {
+		b := h.IPv6Prefix.Addr().As16()
+		b[8], b[15] = 0x8a, id
+		return netip.AddrFrom16(b)
+	}
+	spec := vmSpec(t, h, "m1", driver.RestartAlways)
+	nic := spec.Interfaces[0]
+	nic.IPv6 = at(1)
+	booted, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	spec.Interfaces = []driver.Interface{booted}
+	must(t, h.Hypervisor.Start(ctx, spec))
+	eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+	holds := func(what string, want []driver.GuestIPv6) {
+		t.Helper()
+		var got []driver.GuestIPv6
+		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
+			if got = h.GuestIPv6(t, "m1"); slices.Equal(got, want) {
+				return
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("never happened: %s; the guest holds %+v, want %+v", what, got, want)
+			}
+		}
+	}
+	bootDisk := driver.GuestIPv6Of(spec.Interfaces)
+	holds("the guest holding its boot disk's address", bootDisk)
+	listed := func(what string) {
+		t.Helper()
+		vm, ok := vmOf(t, h, "m1")
+		if !ok || !slices.Equal(vm.Interfaces, spec.Interfaces) || vm.SpecHash != spec.Hash() {
+			t.Errorf("%s: the VM lists interfaces %+v, hash %s; it started with %+v, hash %s", what, vm.Interfaces, vm.SpecHash, spec.Interfaces, spec.Hash())
+		}
+	}
+	listed("started")
+	if h.ReopenHypervisor != nil {
+		if vm, ok := vmIn(t, h.ReopenHypervisor(t), "m1"); !ok || !slices.Equal(vm.Interfaces, spec.Interfaces) {
+			t.Errorf("a new instance lists interfaces %+v, the VM started with %+v", vm.Interfaces, spec.Interfaces)
+		}
+	}
+
+	nic.IPv6 = at(2)
+	movedNIC, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	moved := driver.GuestIPv6Of([]driver.Interface{movedNIC})
+	must(t, h.Guest.SetIPv6(ctx, "m1", moved))
+	holds("the guest holding the address it was told", moved)
+	listed("told another address")
+	must(t, h.Guest.SetIPv6(ctx, "m1", moved))
+	holds("the guest told the same again", moved)
+	none := []driver.GuestIPv6{{MAC: nic.MAC}}
+	must(t, h.Guest.SetIPv6(ctx, "m1", none))
+	holds("the guest told it has none", none)
+	if err := h.Guest.SetIPv6(ctx, "m1", []driver.GuestIPv6{{MAC: "02:00:00:00:00:99", Address: at(3)}}); err == nil {
+		t.Error("the guest took an address for an interface it has not")
+	}
+	if err := h.Guest.SetIPv6(ctx, "m1", []driver.GuestIPv6{{MAC: nic.MAC, Address: netip.MustParseAddr("192.0.2.1")}}); err == nil {
+		t.Error("the guest took an IPv4 address as its IPv6 one")
+	}
+
+	// Booting again, it holds its boot disk's, whatever it was told.
+	must(t, h.Guest.SetIPv6(ctx, "m1", moved))
+	holds("the guest holding the address it was told, again", moved)
+	before, _ := vmOf(t, h, "m1")
+	h.Exit(t, "m1", 1)
+	eventually(t, "the VM booting again", func() bool {
+		vm, ok := vmOf(t, h, "m1")
+		return ok && vm.State == driver.VMRunning && vm.Started.After(before.Started) && h.Guest.Ready(ctx, "m1") == nil
+	})
+	holds("the guest, booted again, holding its boot disk's address", bootDisk)
+
+	must(t, h.Hypervisor.Stop(ctx, "m1"))
+	if err := h.Guest.SetIPv6(ctx, "m1", moved); err == nil {
+		t.Error("the guest of a stopped VM was told an address")
+	}
+	must(t, h.Hypervisor.DeleteLogs(ctx, "m1"))
+	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
+	must(t, h.Storage.DeleteRoot(ctx, "m1"))
 }

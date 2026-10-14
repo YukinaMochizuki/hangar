@@ -33,6 +33,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewRoleBindingServiceHandler(&roleBindingService{b: backends(registry.RoleBinding)}, opts...))
+	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewDiskServiceHandler(&diskService{b: backends(registry.Disk)}, opts...))
@@ -354,6 +355,69 @@ func (s *roleBindingService) UpdateRoleBindingStatus(ctx context.Context, req *c
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha11.UpdateRoleBindingStatusResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+}
+
+type addressService struct {
+	b resource.Backend
+}
+
+func (s *addressService) GetAddress(ctx context.Context, req *connect.Request[v1alpha12.GetAddressRequest]) (*connect.Response[v1alpha12.GetAddressResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.GetAddressResponse{Address: obj.(*v1alpha12.Address)}), nil
+}
+
+func (s *addressService) ListAddresses(ctx context.Context, req *connect.Request[v1alpha12.ListAddressesRequest]) (*connect.Response[v1alpha12.ListAddressesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha12.ListAddressesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha12.Address))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *addressService) WatchAddresses(ctx context.Context, req *connect.Request[v1alpha12.WatchAddressesRequest], stream *connect.ServerStream[v1alpha12.WatchAddressesResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha12.WatchAddressesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.Address = ev.Object.(*v1alpha12.Address)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *addressService) ApplyAddress(ctx context.Context, req *connect.Request[v1alpha12.ApplyAddressRequest]) (*connect.Response[v1alpha12.ApplyAddressResponse], error) {
+	in := req.Msg.GetAddress()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.ApplyAddressResponse{Address: res.Object.(*v1alpha12.Address), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *addressService) DeleteAddress(ctx context.Context, req *connect.Request[v1alpha12.DeleteAddressRequest]) (*connect.Response[v1alpha12.DeleteAddressResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.DeleteAddressResponse{Address: obj.(*v1alpha12.Address)}), nil
+}
+
+func (s *addressService) UpdateAddressStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateAddressStatusRequest]) (*connect.Response[v1alpha12.UpdateAddressStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.UpdateAddressStatusResponse{Address: obj.(*v1alpha12.Address)}), nil
 }
 
 type networkService struct {

@@ -21,6 +21,7 @@ import (
 	"github.com/mdlayher/vsock"
 	"golang.org/x/sys/unix"
 
+	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 	"github.com/YukinaMochizuki/hangar/internal/buildinfo"
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
@@ -104,7 +105,8 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 
 	reaper := supervise.NewReaper()
 	stopper := &supervise.Stopper{}
-	if err := serveAgent(reaper, stopper, workload, started, logf); err != nil {
+	v6 := boot.NewIPv6(cfg.GetInterfaces())
+	if err := serveAgent(reaper, stopper, workload, v6, started, logf); err != nil {
 		// The container runs all the same; the node sees it does not answer.
 		logf("hangar-init: guest agent: %v", err)
 	}
@@ -169,7 +171,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 
 // serveAgent serves the guest agent on vsock, processes it starts going to
 // the workload cgroup; a Stop goes to stopper.
-func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, started time.Time, logf func(string, ...any)) error {
+func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, started time.Time, logf func(string, ...any)) error {
 	ln, err := vsock.Listen(agent.Port, nil)
 	if err != nil {
 		return err
@@ -177,6 +179,13 @@ func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *
 	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
 		Reaper: reaper, Root: "/", Version: buildinfo.Version(), Started: started, Cgroup: workload,
 		OnPanic: func(r any) { logf("hangar-init: guest agent: %v", r) },
+		ApplyIPv6: func(ifaces []*guestv1.Interface) error {
+			err := v6.Set(ifaces)
+			if err != nil {
+				logf("hangar-init: setting IPv6: %v", err)
+			}
+			return err
+		},
 		StopMain: func(grace time.Duration) {
 			logf("hangar-init: stopping the container, %v before SIGKILL", grace)
 			stopper.Stop(grace)

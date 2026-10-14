@@ -66,7 +66,20 @@ service GuestAgentService {
   // it exits by itself. It answers once SIGTERM is sent; asking again
   // changes nothing.
   rpc Stop(StopRequest) returns (StopResponse);
+  // SetIPv6 makes each interface's public IPv6 address, and the IPv6
+  // default route, what is given, as the boot disk would at boot, while the
+  // container runs: the address its interface holds now, which may have
+  // moved since it booted. The other addresses of an interface stay.
+  rpc SetIPv6(SetIPv6Request) returns (SetIPv6Response);
 }
+
+message SetIPv6Request {
+  // Each interface by its MAC, with its ipv6 and ipv6_gateway; an empty
+  // ipv6 takes the interface's public address away. The rest is ignored.
+  repeated Interface interfaces = 1;
+}
+
+message SetIPv6Response {}
 
 message StopRequest {
   // How long the process has between SIGTERM and SIGKILL; at most an hour.

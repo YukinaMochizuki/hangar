@@ -251,6 +251,16 @@ func hooksFor(r registry.Resource) kindHooks {
 				spec.UserData, spec.SshAuthorizedKeys = "", nil
 			},
 		}
+	case registry.Address.Kind:
+		// Its applies hold its lock: that no two Addresses name one
+		// interface is checked against the others (validateAddress).
+		return kindHooks{
+			target:     projectTarget,
+			owner:      ownedByProject,
+			validate:   validateAddress,
+			writeLock:  addressLock,
+			finalizers: []string{AddressUnbindFinalizer},
+		}
 	case registry.Network.Kind:
 		return kindHooks{
 			target:       projectTarget,

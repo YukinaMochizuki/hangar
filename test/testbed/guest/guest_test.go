@@ -227,6 +227,50 @@ func TestGuestServices(t *testing.T) {
 		v.MustExec(t, "ping", "-c", "1", "-W", "2", gw)
 	})
 
+	// The agent changes the interface's public IPv6 and default route while
+	// the process runs, as when an Address moves to or from it.
+	t.Run("SetIPv6", func(t *testing.T) {
+		c, done := v.Guest.Client("")
+		defer done()
+		set := func(addr, gw string) error {
+			_, err := c.SetIPv6(context.Background(), connect.NewRequest(&guestv1.SetIPv6Request{
+				Interfaces: []*guestv1.Interface{{Mac: mac, Ipv6: addr, Ipv6Gateway: gw}},
+			}))
+			return err
+		}
+		holds := func(what, addr, gw string) {
+			t.Helper()
+			addrs := v.MustExec(t, "ip", "-6", "addr", "show")
+			routes := v.MustExec(t, "ip", "-6", "route", "show", "default")
+			n := strings.Count(addrs, "scope global")
+			switch {
+			case addr == "" && n != 0, addr != "" && (n != 1 || !strings.Contains(addrs, "inet6 "+addr+" scope global")):
+				t.Errorf("%s: the guest holds %q, want %q", what, addrs, addr)
+			case gw == "" && strings.TrimSpace(routes) != "", gw != "" && !strings.Contains(routes, "default via "+gw):
+				t.Errorf("%s: the guest's default routes are %q, want one via %q", what, routes, gw)
+			}
+		}
+		holds("booted without one", "", "")
+		if err := set("2001:db8::a/128", "fe80::1"); err != nil {
+			t.Fatal(err)
+		}
+		holds("given one", "2001:db8::a/128", "fe80::1")
+		if err := set("2001:db8::b/128", "fe80::1"); err != nil {
+			t.Fatal(err)
+		}
+		holds("given another", "2001:db8::b/128", "fe80::1")
+		for _, bad := range [][2]string{{"2001:db8::c/64", ""}, {"192.0.2.1/32", ""}, {"2001:db8::c/128", "192.0.2.1"}} {
+			if err := set(bad[0], bad[1]); connect.CodeOf(err) != connect.CodeInvalidArgument {
+				t.Errorf("%s via %q: %v, want InvalidArgument", bad[0], bad[1], err)
+			}
+		}
+		holds("refused what is no /128", "2001:db8::b/128", "fe80::1")
+		if err := set("", ""); err != nil {
+			t.Fatal(err)
+		}
+		holds("told it has none", "", "")
+	})
+
 	t.Run("Identity", func(t *testing.T) {
 		ip := strings.Split(addr, "/")[0]
 		if got := v.MustExec(t, "hostname"); got != "tb-guest\n" {

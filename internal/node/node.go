@@ -122,6 +122,9 @@ type Agent struct {
 	// Guarded by host, but netEpoch, which the signals bump.
 	netEpoch   atomic.Int64
 	netChecked map[string]int64
+	// told is, by machine uid, what each container's guest holds of its
+	// public IPv6 in its current boot. Guarded by host.
+	told map[string]toldIPv6
 	// netsvc serves the networks on the host their services, resolver
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
@@ -187,6 +190,7 @@ func New(cfg Config) (*Agent, error) {
 		imagesAPI:  storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
 		images:     images,
 		netChecked: map[string]int64{},
+		told:       map[string]toldIPv6{},
 		puller:     puller,
 		stops:      newStops(),
 		trigger:    make(chan struct{}, 1),

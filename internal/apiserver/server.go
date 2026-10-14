@@ -111,6 +111,9 @@ type Server struct {
 	// machine at a time and never to one being deleted. The backend takes it
 	// last, under ipam and capacity.
 	attach sync.Mutex
+	// addressBinding serializes every apply and delete of an Address, so
+	// no two bind one interface.
+	addressBinding sync.Mutex
 }
 
 // New returns a server over cfg.Store.

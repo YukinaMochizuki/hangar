@@ -26,10 +26,13 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/ipv6pkt"
 )
 
-// LeaseTime is each address's valid and preferred lifetime. An address
-// never changes while its machine has it, so a long lease only spares
-// renewals.
-const LeaseTime = 24 * time.Hour
+// A lease's times: long lifetimes and short renewals, so a moved address
+// reaches a guest within minutes (docs/decisions/networking.md).
+const (
+	LeaseTime  = 24 * time.Hour
+	RenewTime  = 2 * time.Minute
+	RebindTime = 3 * time.Minute
+)
 
 // Bounds on the requests answered in a second, by one MAC and by one
 // network, so no machine takes the server from the others.
@@ -194,7 +197,10 @@ func (s *Server) Reply(networkUID string, from net.HardwareAddr, req *dhcpv6.Mes
 }
 
 // addIANA answers the request's first IA_NA with the address and every
-// other with none; a request with no IA_NA is told none is available.
+// other with none; a request with no IA_NA is told none is available. An
+// address the client holds that is no longer its own, as after an Address
+// moved, is given back with lifetimes of 0, so the client drops it
+// (RFC 8415).
 func addIANA(reply, req *dhcpv6.Message, addr netip.Addr) {
 	ias := req.Options.IANA()
 	if len(ias) == 0 {
@@ -204,8 +210,13 @@ func addIANA(reply, req *dhcpv6.Message, addr netip.Addr) {
 	for i, ia := range ias {
 		out := &dhcpv6.OptIANA{IaId: ia.IaId}
 		if i == 0 {
-			out.T1, out.T2 = LeaseTime/2, LeaseTime*4/5
+			out.T1, out.T2 = RenewTime, RebindTime
 			out.Options.Add(&dhcpv6.OptIAAddress{IPv6Addr: addr.AsSlice(), PreferredLifetime: LeaseTime, ValidLifetime: LeaseTime})
+			for _, held := range ia.Options.Addresses() {
+				if a, ok := netip.AddrFromSlice(held.IPv6Addr); ok && a.Unmap() != addr {
+					out.Options.Add(&dhcpv6.OptIAAddress{IPv6Addr: held.IPv6Addr})
+				}
+			}
 		} else {
 			out.Options.Add(&dhcpv6.OptStatusCode{StatusCode: iana.StatusNoAddrsAvail})
 		}

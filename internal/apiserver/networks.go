@@ -219,7 +219,8 @@ func refuseDeletingInUse(ctx context.Context, s *Server, obj proto.Message) erro
 // address, keeping the addresses the machine already has. The caller holds
 // s.ipam until the machine is written, so two machines never get one
 // address.
-func (s *Server) assignAddresses(ctx context.Context, project string, current, want *computev1alpha1.MachineSpec) error {
+func (s *Server) assignAddresses(ctx context.Context, owner ipv6Owner, current, want *computev1alpha1.MachineSpec) error {
+	project := owner.project
 	have := map[string]*computev1alpha1.MachineInterface{}
 	for _, nic := range current.GetInterfaces() {
 		have[nic.GetName()] = nic
@@ -235,14 +236,16 @@ func (s *Server) assignAddresses(ctx context.Context, project string, current, w
 		}
 		nic.Ipv4 = addr
 	}
-	return s.assignIPv6(ctx, current, want)
+	return s.assignIPv6(ctx, owner, current, want)
 }
 
-// assignIPv6 gives every interface of want a /128 of its node's prefix,
-// keeping the one it has if it is still of that prefix, or takes them away
-// if the node has none. An unplaced machine has none. The caller holds
-// s.ipam.
-func (s *Server) assignIPv6(ctx context.Context, current, want *computev1alpha1.MachineSpec) error {
+// assignIPv6 gives every interface of want a /128 of its node's prefix, or
+// takes them away if the node has none; an unplaced machine has none. An
+// interface an Address names takes the Address's, once no other machine
+// holds it, which errAddressMoving says is still to come; any other keeps
+// the one it has while it is of that prefix and no Address reserves it, and
+// otherwise draws a new one. The caller holds s.ipam.
+func (s *Server) assignIPv6(ctx context.Context, owner ipv6Owner, current, want *computev1alpha1.MachineSpec) error {
 	prefix, err := s.nodePrefix(ctx, want.GetNode())
 	if err != nil {
 		return err
@@ -251,17 +254,43 @@ func (s *Server) assignIPv6(ctx context.Context, current, want *computev1alpha1.
 	for _, nic := range current.GetInterfaces() {
 		have[nic.GetName()] = nic
 	}
-	var taken map[netip.Addr]bool
+	var bound map[string]netip.Addr
+	var reserved, taken map[netip.Addr]bool
+	var holders map[netip.Addr]resource.Key
+	if prefix.IsValid() {
+		if bound, err = s.boundIPv6(ctx, owner); err != nil {
+			return err
+		}
+		if reserved, err = s.reservedIPv6(ctx); err != nil {
+			return err
+		}
+	}
+	var moving bool
 	for _, nic := range want.GetInterfaces() {
+		old := have[nic.GetName()].GetIpv6()
 		nic.Ipv6 = ""
 		if !prefix.IsValid() {
 			continue
 		}
-		if old := have[nic.GetName()]; old != nil {
-			if p, err := netip.ParsePrefix(old.GetIpv6()); err == nil && prefix.Contains(p.Addr()) {
-				nic.Ipv6 = old.GetIpv6()
+		if a, ok := bound[nic.GetName()]; ok && prefix.Contains(a) {
+			if holders == nil {
+				if holders, err = s.holders(ctx); err != nil {
+					return err
+				}
+			}
+			if h, held := holders[a]; held && h != (resource.Key{Project: owner.project, Name: owner.machine}) {
+				// Until the machine it leaves lets go, the interface keeps
+				// what it has.
+				moving = true
+				nic.Ipv6 = old
 				continue
 			}
+			nic.Ipv6 = netip.PrefixFrom(a, 128).String()
+			continue
+		}
+		if p, err := netip.ParsePrefix(old); err == nil && prefix.Contains(p.Addr()) && !reserved[p.Addr()] {
+			nic.Ipv6 = old
+			continue
 		}
 		if taken == nil {
 			if taken, err = s.takenIPv6(ctx); err != nil {
@@ -274,6 +303,9 @@ func (s *Server) assignIPv6(ctx context.Context, current, want *computev1alpha1.
 		}
 		taken[a] = true
 		nic.Ipv6 = netip.PrefixFrom(a, 128).String()
+	}
+	if moving {
+		return errAddressMoving
 	}
 	return nil
 }
@@ -295,14 +327,17 @@ func (s *Server) nodePrefix(ctx context.Context, node string) (netip.Prefix, err
 }
 
 // takenIPv6 are the IPv6 addresses of every machine, live or being
-// deleted, in any project: a machine keeps its address until its node
-// releases it.
+// deleted, in any project, and those every Address reserves: a machine
+// keeps its address until its node releases it.
 func (s *Server) takenIPv6(ctx context.Context) (map[netip.Addr]bool, error) {
 	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Machine.Kind})
 	if err != nil {
 		return nil, err
 	}
-	taken := map[netip.Addr]bool{}
+	taken, err := s.reservedIPv6(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, o := range objs {
 		m, ok := decodeMachine(o)
 		if !ok {

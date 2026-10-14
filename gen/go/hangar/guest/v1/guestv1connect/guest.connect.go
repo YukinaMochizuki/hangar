@@ -44,6 +44,9 @@ const (
 	GuestAgentServiceExecProcedure = "/hangar.guest.v1.GuestAgentService/Exec"
 	// GuestAgentServiceStopProcedure is the fully-qualified name of the GuestAgentService's Stop RPC.
 	GuestAgentServiceStopProcedure = "/hangar.guest.v1.GuestAgentService/Stop"
+	// GuestAgentServiceSetIPv6Procedure is the fully-qualified name of the GuestAgentService's SetIPv6
+	// RPC.
+	GuestAgentServiceSetIPv6Procedure = "/hangar.guest.v1.GuestAgentService/SetIPv6"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -60,6 +63,11 @@ type GuestAgentServiceClient interface {
 	// it exits by itself. It answers once SIGTERM is sent; asking again
 	// changes nothing.
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// SetIPv6 makes each interface's public IPv6 address, and the IPv6
+	// default route, what is given, as the boot disk would at boot, while the
+	// container runs: the address its interface holds now, which may have
+	// moved since it booted. The other addresses of an interface stay.
+	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -91,14 +99,21 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("Stop")),
 			connect.WithClientOptions(opts...),
 		),
+		setIPv6: connect.NewClient[v1.SetIPv6Request, v1.SetIPv6Response](
+			httpClient,
+			baseURL+GuestAgentServiceSetIPv6Procedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // guestAgentServiceClient implements GuestAgentServiceClient.
 type guestAgentServiceClient struct {
-	ping *connect.Client[v1.PingRequest, v1.PingResponse]
-	exec *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	stop *connect.Client[v1.StopRequest, v1.StopResponse]
+	ping    *connect.Client[v1.PingRequest, v1.PingResponse]
+	exec    *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop    *connect.Client[v1.StopRequest, v1.StopResponse]
+	setIPv6 *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -116,6 +131,11 @@ func (c *guestAgentServiceClient) Stop(ctx context.Context, req *connect.Request
 	return c.stop.CallUnary(ctx, req)
 }
 
+// SetIPv6 calls hangar.guest.v1.GuestAgentService.SetIPv6.
+func (c *guestAgentServiceClient) SetIPv6(ctx context.Context, req *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error) {
+	return c.setIPv6.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -130,6 +150,11 @@ type GuestAgentServiceHandler interface {
 	// it exits by itself. It answers once SIGTERM is sent; asking again
 	// changes nothing.
 	Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error)
+	// SetIPv6 makes each interface's public IPv6 address, and the IPv6
+	// default route, what is given, as the boot disk would at boot, while the
+	// container runs: the address its interface holds now, which may have
+	// moved since it booted. The other addresses of an interface stay.
+	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -157,6 +182,12 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("Stop")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceSetIPv6Handler := connect.NewUnaryHandler(
+		GuestAgentServiceSetIPv6Procedure,
+		svc.SetIPv6,
+		connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -165,6 +196,8 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceExecHandler.ServeHTTP(w, r)
 		case GuestAgentServiceStopProcedure:
 			guestAgentServiceStopHandler.ServeHTTP(w, r)
+		case GuestAgentServiceSetIPv6Procedure:
+			guestAgentServiceSetIPv6Handler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -184,4 +217,8 @@ func (UnimplementedGuestAgentServiceHandler) Exec(context.Context, *connect.Bidi
 
 func (UnimplementedGuestAgentServiceHandler) Stop(context.Context, *connect.Request[v1.StopRequest]) (*connect.Response[v1.StopResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.Stop is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.SetIPv6 is not implemented"))
 }

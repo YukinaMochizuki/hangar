@@ -95,6 +95,41 @@ func TestAMachineIsLeasedItsAddress(t *testing.T) {
 	}
 }
 
+// TestARenewMovesTheAddress: a client renewing an address no longer its
+// own, as after an Address moved, is given its address now and the old one
+// with lifetimes of 0, and renews again within RenewTime.
+func TestARenewMovesTheAddress(t *testing.T) {
+	s := server()
+	old := netip.MustParseAddr("2001:db8:0:1:1:2:3:4")
+	sol := solicit(t)
+	renew, _ := dhcpv6.NewMessage()
+	renew.MessageType = dhcpv6.MessageTypeRenew
+	renew.AddOption(dhcpv6.OptClientID(sol.Options.ClientID()))
+	renew.AddOption(dhcpv6.OptServerID(ServerID("net")))
+	renew.AddOption(&dhcpv6.OptIANA{IaId: [4]byte{7}, Options: dhcpv6.IdentityOptions{Options: dhcpv6.Options{
+		&dhcpv6.OptIAAddress{IPv6Addr: old.AsSlice(), PreferredLifetime: LeaseTime, ValidLifetime: LeaseTime},
+	}}})
+	rep := s.Reply("net", clientMAC, renew)
+	if rep == nil {
+		t.Fatal("no answer to a renew")
+	}
+	ia := rep.Options.OneIANA()
+	if ia.T1 != RenewTime || ia.T2 != RebindTime || RenewTime > RebindTime || RebindTime > LeaseTime {
+		t.Errorf("T1 %v, T2 %v", ia.T1, ia.T2)
+	}
+	got := map[netip.Addr][2]time.Duration{}
+	for _, a := range ia.Options.Addresses() {
+		addr, _ := netip.AddrFromSlice(a.IPv6Addr)
+		got[addr] = [2]time.Duration{a.PreferredLifetime, a.ValidLifetime}
+	}
+	if got[clientAddr] != [2]time.Duration{LeaseTime, LeaseTime} {
+		t.Errorf("the client's address: %v", got)
+	}
+	if l, ok := got[old]; !ok || l != [2]time.Duration{} {
+		t.Errorf("the address it held is not given back with lifetimes of 0: %v", got)
+	}
+}
+
 func TestAStrangerIsNotAnswered(t *testing.T) {
 	s := server()
 	if rep := s.Reply("net", strangerM, solicit(t)); rep != nil {
