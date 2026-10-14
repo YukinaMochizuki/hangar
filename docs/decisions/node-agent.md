@@ -146,8 +146,12 @@ with the host after any of these, and nothing would notice.
   however many disks want it, by the disk controller, its disks saying
   `Pulling` meanwhile; an image at fault is not fetched again until its
   Image's generation changes. Asking a guest agent
-  whether it answers is bounded to
-  seconds. One worker then serves every machine in turn.
+  whether it answers is bounded to two seconds; a guest that once lets
+  that run out is asked off the lock from then on, one ask at a time, until
+  it answers (every machine is then checked again) or its VM starts again,
+  its machine saying `Booting` meanwhile, so a hung guest
+  holds up the others once per boot, not at each of its reconciles. One
+  worker then serves every machine in turn.
 - **A VM is stopped off the host lock.** A stop takes as long as its guest
   takes: about 20 s at worst (3 s to ask the guest, the 10 s grace and 5 s
   of slack, 2 s for the launcher to kill Cloud Hypervisor). Whatever needs

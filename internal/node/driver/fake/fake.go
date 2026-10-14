@@ -190,11 +190,17 @@ func (h *Host) FailUnpack(ref string, err error) {
 }
 
 // HangGuest makes the machine's guest agent take a call and never return
-// it, until the caller gives up.
-func (h *Host) HangGuest(machineUID string) {
+// it, until the caller gives up; the returned function has it answer the
+// calls made after.
+func (h *Host) HangGuest(machineUID string) (letGo func()) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hung[machineUID] = true
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(h.hung, machineUID)
+	}
 }
 
 // stopDelay is how long stopping a running VM takes, unless let go first.

@@ -446,7 +446,7 @@ func sameInterface(a, b driver.Interface) bool {
 }
 
 // guestTimeout bounds asking a guest agent whether it answers, which happens
-// under the host lock.
+// under the host lock until the guest once does not answer in time.
 const guestTimeout = 2 * time.Second
 
 // ensureVM runs the VM as specified, starting it again if it runs anything
@@ -465,15 +465,14 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		if err := d.Hypervisor.Start(ctx, spec); err != nil {
 			return nil, blocked(computeapi.ReasonBootFailed, err)
 		}
+		a.forgetGuest(spec.MachineUID)
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting"),
 			fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine)
 	}
 	if vm.State == driver.VMExited {
 		return exited(vm), nil
 	}
-	gctx, cancel := context.WithTimeout(ctx, guestTimeout)
-	defer cancel()
-	if err := d.Guest.Ready(gctx, spec.MachineUID); err != nil {
+	if err := a.guestReady(ctx, spec.MachineUID); err != nil {
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, err.Error()),
 			fmt.Errorf("%w: machine %s's guest agent: %w", controller.ErrWaiting, spec.Machine, err)
 	}
@@ -570,6 +569,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	a.puller.drop(uid)
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
+	a.forgetGuest(uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{
 		Type: computeapi.MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned",
