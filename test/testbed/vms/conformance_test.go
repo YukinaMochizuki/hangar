@@ -23,49 +23,51 @@ import (
 // TestConformance holds every real driver to the drivers' contract
 // together, the hypervisor's parts with real VMs under systemd.
 func TestConformance(t *testing.T) {
-	drivertest.Run(t, func(t *testing.T) drivertest.Host {
-		h := newHost(t)
-		srv := diskimgtest.New(t)
-		return drivertest.Host{
-			Images: h.images, Storage: h.storage, Network: h.net, Hypervisor: h.hv, Guest: h.hv.Guest(),
-			DiskImages: srv.Driver(t, filepath.Join(filepath.Dir(h.cache), "disk-images")),
-			PublishDiskImage: func(t *testing.T, name string, size int64) (string, string) {
-				return srv.QCOW2(t, name, size, "disk image "+name)
-			},
-			Publish: h.publish,
-			Withdraw: func(_ *testing.T, ref string) {
-				h.reg.Withdraw(strings.SplitN(strings.TrimPrefix(ref, h.reg.Host+"/"), ":", 2)[0])
-			},
-			Reopen: func(t *testing.T) (driver.Images, driver.Storage) { return h.reopen(t) },
-			Hold: func(t *testing.T, d driver.Disk) func() {
-				f, err := os.OpenFile(d.Path, os.O_RDWR, 0)
-				if err != nil {
-					t.Fatal(err)
+	drivertest.Run(t, func(t *testing.T) drivertest.Host { return conformanceHost(t, newHost(t)) })
+}
+
+// conformanceHost is the suite's view of h.
+func conformanceHost(t *testing.T, h *host) drivertest.Host {
+	srv := diskimgtest.New(t)
+	return drivertest.Host{
+		Images: h.images, Storage: h.storage, Network: h.net, Hypervisor: h.hv, Guest: h.hv.Guest(),
+		DiskImages: srv.Driver(t, filepath.Join(filepath.Dir(h.cache), "disk-images")),
+		PublishDiskImage: func(t *testing.T, name string, size int64) (string, string) {
+			return srv.QCOW2(t, name, size, "disk image "+name)
+		},
+		Publish: h.publish,
+		Withdraw: func(_ *testing.T, ref string) {
+			h.reg.Withdraw(strings.SplitN(strings.TrimPrefix(ref, h.reg.Host+"/"), ":", 2)[0])
+		},
+		Reopen: func(t *testing.T) (driver.Images, driver.Storage) { return h.reopen(t) },
+		Hold: func(t *testing.T, d driver.Disk) func() {
+			f, err := os.OpenFile(d.Path, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func() { _ = f.Close() }
+		},
+		HoldVolume: func(t *testing.T, v driver.Volume) func() {
+			f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func() { _ = f.Close() }
+		},
+		Exit:             exit,
+		Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
+		Exec:             &execPrograms,
+		ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
+		Firmware:         true,
+		AskedToStop: func(t *testing.T, uid string) bool {
+			for _, r := range consoleOf(t, uid) {
+				if r.Stream == console.Init && strings.Contains(string(r.Payload), "hangar-init: stopping the container") {
+					return true
 				}
-				return func() { _ = f.Close() }
-			},
-			HoldVolume: func(t *testing.T, v driver.Volume) func() {
-				f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
-				if err != nil {
-					t.Fatal(err)
-				}
-				return func() { _ = f.Close() }
-			},
-			Exit:             exit,
-			Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
-			Exec:             &execPrograms,
-			ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
-			Firmware:         true,
-			AskedToStop: func(t *testing.T, uid string) bool {
-				for _, r := range consoleOf(t, uid) {
-					if r.Stream == console.Init && strings.Contains(string(r.Payload), "hangar-init: stopping the container") {
-						return true
-					}
-				}
-				return false
-			},
-		}
-	})
+			}
+			return false
+		},
+	}
 }
 
 func testNet() driver.NetworkSpec {

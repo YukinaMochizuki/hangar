@@ -188,6 +188,12 @@ while :; do sleep 1 & wait $!; done`
 
 func newHost(t *testing.T) *host {
 	t.Helper()
+	return newHostOn(t, hostnet.Config{Uplink: uplink(t)})
+}
+
+// newHostOn is newHost with the network driver configured as netCfg says.
+func newHostOn(t *testing.T, netCfg hostnet.Config) *host {
+	t.Helper()
 	prepare(t)
 	n := hostCount.Add(1)
 	h := &host{
@@ -198,7 +204,7 @@ func newHost(t *testing.T) *host {
 	}
 	mustRun(t, "zfs", "create", "-o", "mountpoint=none", h.dataset)
 	h.images, h.storage = h.reopen(t)
-	nd, err := hostnet.New(hostnet.Config{Uplink: uplink(t)})
+	nd, err := hostnet.New(netCfg)
 	if err != nil {
 		t.Fatal(err)
 	}

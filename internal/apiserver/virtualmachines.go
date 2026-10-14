@@ -398,6 +398,8 @@ func (s *Server) reconcileVirtualMachine(ctx context.Context, k controller.Key) 
 	if errors.As(err, &stuck) {
 		return s.reportVirtualMachine(ctx, vm, m, nil, stuck)
 	}
+	// An Address moving to it is waited on, and the VM reported meanwhile.
+	waiting, err := splitWaiting(err)
 	if err != nil {
 		return err
 	}
@@ -409,7 +411,7 @@ func (s *Server) reconcileVirtualMachine(ctx context.Context, k controller.Key) 
 		}
 		node, _ = nobj.(*computev1alpha1.Node)
 	}
-	return s.reportVirtualMachine(ctx, vm, m, node, nil)
+	return cmp.Or(s.reportVirtualMachine(ctx, vm, m, node, nil), waiting)
 }
 
 // ensureRootDisk makes the root disk a VM asks for from an image, or keeps

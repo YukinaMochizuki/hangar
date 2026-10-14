@@ -4,12 +4,14 @@ package network
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -276,6 +278,14 @@ func TestIPv6(t *testing.T) {
 			}
 			if r := run(t, "ip", "-n", g.ns, "-6", "route", "show", "default"); !strings.Contains(r, "via fe80::1 dev eth0") {
 				t.Errorf("%s's default route is not via the gateway: %s", g.ns, r)
+			}
+		}
+	})
+	t.Run("the network sends each address to its tap's MAC, never asking", func(t *testing.T) {
+		for _, g := range []*guest{a1, a2} {
+			n := run(t, "ip", "-n", hostnet.NamespaceOf(netA.UID), "-6", "neigh", "show", g.nic.IPv6.String(), "dev", "hn-br")
+			if !strings.Contains(n, g.nic.MAC) || !strings.Contains(n, "PERMANENT") {
+				t.Errorf("%s's address has no permanent neighbour entry at its MAC %s: %q", g.ns, g.nic.MAC, n)
 			}
 		}
 	})
@@ -585,6 +595,59 @@ func TestIPv6(t *testing.T) {
 			}
 		})
 	}
+	// As an Address moves: the interface it leaves lets go first, then the
+	// one on another network takes it.
+	t.Run("an address moving to another network's interface moves its delivery", func(t *testing.T) {
+		moving := a1.nic.IPv6.String()
+		nsA, nsB := hostnet.NamespaceOf(netA.UID), hostnet.NamespaceOf(netB.UID)
+		routeDev := func(addr string) string {
+			f := strings.Fields(run(t, "ip", "-6", "route", "show", addr+"/128"))
+			if i := slices.Index(f, "dev"); i >= 0 && i+1 < len(f) {
+				return f[i+1]
+			}
+			return ""
+		}
+		intoB := routeDev(b1.nic.IPv6.String())
+		freed := nics[0]
+		freed.IPv6 = nic6("a1", netA, 9).IPv6
+		taker := nics[2]
+		taker.IPv6 = a1.nic.IPv6
+		if _, err := d.EnsureInterface(t.Context(), taker); !errors.Is(err, driver.ErrIPv6InUse) {
+			t.Errorf("b1 took the address a1 holds: %v", err)
+		}
+		for _, i := range []driver.Interface{freed, taker} {
+			if _, err := d.EnsureInterface(t.Context(), i); err != nil {
+				t.Fatal(err)
+			}
+		}
+		// What the guests are told.
+		run(t, "ip", "-n", a1.ns, "-6", "addr", "del", moving+"/128", "dev", "eth0")
+		run(t, "ip", "-n", a1.ns, "-6", "addr", "add", freed.IPv6.String()+"/128", "dev", "eth0", "nodad")
+		run(t, "ip", "-n", b1.ns, "-6", "addr", "add", moving+"/128", "dev", "eth0", "nodad")
+		firewall(netA, policy6(freed, "::/0"), policy6(nics[1]))
+		firewall(netB, policy6(taker, "::/0"))
+		settle(d)
+
+		if got := routeDev(moving); got != intoB || got == "" {
+			t.Errorf("the address is routed by %q, not into b1's network by %q", got, intoB)
+		}
+		if n := run(t, "ip", "-n", nsB, "-6", "neigh", "show", moving, "dev", "hn-br"); !strings.Contains(n, b1.nic.MAC) || !strings.Contains(n, "PERMANENT") {
+			t.Errorf("b1's network has no permanent neighbour entry for the address at b1's MAC: %q", n)
+		}
+		if n := run(t, "ip", "-n", nsA, "-6", "neigh", "show", moving, "dev", "hn-br"); strings.Contains(n, "PERMANENT") || strings.Contains(n, a1.nic.MAC) {
+			t.Errorf("a1's network still sends the address to a1: %q", n)
+		}
+		if p := run(t, "ip", "-6", "neigh", "show", "proxy", moving); !strings.Contains(p, moving) {
+			t.Error("the address moved has no proxy entry on the uplink")
+		}
+		run(t, "ip", "-n", upstreamNS, "-6", "neigh", "flush", "dev", "tbupx")
+		if !reaches6From(upstreamNS, moving) {
+			t.Error("the upstream does not reach b1 at the address it moved to")
+		}
+		if !reaches6From(upstreamNS, freed.IPv6.String()) {
+			t.Error("the upstream does not reach a1 at its new address")
+		}
+	})
 	t.Run("a guest's interface going takes its route and proxy entry", func(t *testing.T) {
 		a2.unplug()
 		if err := d.DeleteInterfaces(t.Context(), "a2"); err != nil {
@@ -596,6 +659,9 @@ func TestIPv6(t *testing.T) {
 		}
 		if p := run(t, "ip", "-6", "neigh", "show", "proxy", a2Addr); strings.Contains(p, a2Addr) {
 			t.Errorf("a proxy entry for a2's address is left: %s", p)
+		}
+		if n := run(t, "ip", "-n", hostnet.NamespaceOf(netA.UID), "-6", "neigh", "show", a2Addr, "dev", "hn-br"); strings.Contains(n, "PERMANENT") {
+			t.Errorf("a neighbour entry for a2's address is left: %s", n)
 		}
 	})
 }

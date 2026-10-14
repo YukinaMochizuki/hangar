@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -60,6 +61,9 @@ func (s *Server) controllers() []*controller.Controller {
 				{Kind: registry.Network.Kind, Map: s.containersInProject, SkipResync: true},
 				// A disk going may make room for a resize.
 				{Kind: registry.Disk.Kind, Map: s.containersOnDiskNode, SkipResync: true},
+				// An Address binding, moving or going changes the interfaces
+				// of the containers it binds or leaves.
+				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.Container), SkipResync: true},
 			},
 		},
 		{
@@ -76,6 +80,17 @@ func (s *Server) controllers() []*controller.Controller {
 				{Kind: registry.Disk.Kind, Map: s.vmsInProject, SkipResync: true},
 				// An image fixed lets a root disk be made of it.
 				{Kind: registry.Image.Kind, Map: s.vmsOfImage, SkipResync: true},
+				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.VirtualMachine), SkipResync: true},
+			},
+		},
+		{
+			Name: "address", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileAddress),
+			Watches: []controller.Watch{
+				{Kind: registry.Address.Kind, Map: controller.Self},
+				{Kind: registry.Machine.Kind, Map: s.addressesOfMachine, SkipResync: true},
+				// A node's prefix is what an address is reserved from.
+				{Kind: registry.Node.Kind, Map: s.addressesOnNode, SkipResync: true},
 			},
 		},
 		{
@@ -156,7 +171,10 @@ func (s *Server) machineOwnerAndNeighbours(ctx context.Context, o store.Object) 
 	if node := m.GetSpec().GetNode(); node != "" {
 		keys = append(keys, s.containersOnNode(ctx, store.Object{Key: store.Key{Name: node}})...)
 	}
-	return append(keys, s.containersWaitingForAddress(ctx, o.Project)...)
+	keys = append(keys, s.containersWaitingForAddress(ctx, o.Project)...)
+	// A machine letting go of an Address's address is what its target
+	// waits on.
+	return append(keys, s.addressTargets(ctx, o.Project, registry.Container)...)
 }
 
 // containersWaitingForAddress maps to the containers in a project told their
@@ -283,6 +301,9 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	if errors.As(err, &stuck) {
 		return s.reportContainer(ctx, c, m, nil, stuck)
 	}
+	// An Address moving to it is waited on, and the container reported
+	// meanwhile.
+	waiting, err := splitWaiting(err)
 	if err != nil {
 		return err
 	}
@@ -296,7 +317,16 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 			node = nobj.(*computev1alpha1.Node)
 		}
 	}
-	return s.reportContainer(ctx, c, m, node, nil)
+	return cmp.Or(s.reportContainer(ctx, c, m, node, nil), waiting)
+}
+
+// splitWaiting splits err into what is waited on, wrapping
+// controller.ErrWaiting, and any other error.
+func splitWaiting(err error) (waiting, other error) {
+	if errors.Is(err, controller.ErrWaiting) {
+		return err, nil
+	}
+	return nil, err
 }
 
 // ensureMachine brings m, the container's machine as read (nil if there is
@@ -316,11 +346,12 @@ func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container
 // changes.
 func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta *metav1.ObjectMeta, name string, want *computev1alpha1.MachineSpec, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
 	key := resource.Key{Project: meta.GetProject(), Name: name}
+	owner := ipv6Owner{project: meta.GetProject(), kind: r.Kind, name: meta.GetName(), machine: name}
 	if m == nil {
 		// Addresses are chosen and written as one decision.
 		s.ipam.Lock()
 		defer s.ipam.Unlock()
-		if err := s.assignAddresses(ctx, key.Project, nil, want); err != nil {
+		if err := s.assignAddresses(ctx, owner, nil, want); err != nil {
 			return nil, err
 		}
 		created := &computev1alpha1.Machine{
@@ -353,8 +384,12 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	want.Node = m.GetSpec().GetNode()
 	s.ipam.Lock()
 	defer s.ipam.Unlock()
-	if err := s.assignAddresses(ctx, key.Project, m.GetSpec(), want); err != nil {
-		return m, err
+	// An Address still moving from another machine leaves the interface as
+	// it is, and the rest is written all the same; the address follows on a
+	// later reconcile.
+	moving := s.assignAddresses(ctx, owner, m.GetSpec(), want)
+	if moving != nil && !errors.Is(moving, errAddressMoving) {
+		return m, moving
 	}
 	was, err := heldBy(m.GetSpec().GetResources())
 	if err != nil {
@@ -372,7 +407,7 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 		want.Resources.Disk, now.disk = m.GetSpec().GetResources().GetDisk(), was.disk
 	}
 	if proto.Equal(want, m.GetSpec()) {
-		return m, nil
+		return m, moving
 	}
 	if node := want.GetNode(); node != "" && (now.memory > was.memory || now.disk > was.disk) {
 		// The check and the write are one decision, as a placement is.
@@ -388,7 +423,7 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	if err != nil {
 		return m, refusedMachine(err)
 	}
-	return res.Object.(*computev1alpha1.Machine), nil
+	return res.Object.(*computev1alpha1.Machine), moving
 }
 
 // refusedMachine makes admission refusing a machine as asked for what its
@@ -616,7 +651,8 @@ func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*comput
 	}
 	placed := proto.Clone(m).(*computev1alpha1.Machine)
 	placed.Spec.Node = node
-	if err := s.assignIPv6(ctx, m.GetSpec(), placed.GetSpec()); err != nil {
+	// An Address still moving from another machine follows once placed.
+	if err := s.assignIPv6(ctx, ownerOfMachine(m), m.GetSpec(), placed.GetSpec()); err != nil && !errors.Is(err, errAddressMoving) {
 		return nil, "", "", err
 	}
 	res, err := s.backend(registry.Machine).Apply(s.system(ctx), placed)

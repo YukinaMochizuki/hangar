@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"slices"
 	"syscall"
 	"time"
 
@@ -39,6 +40,9 @@ var (
 	// ErrRegistryUnreachable means the registry could not be reached or
 	// failed to answer.
 	ErrRegistryUnreachable = errors.New("registry unreachable")
+	// ErrIPv6InUse means an interface was asked for with the IPv6 address
+	// another interface on the host holds.
+	ErrIPv6InUse = errors.New("IPv6 address held by another interface")
 	// ErrImageTooLarge means an image is beyond what the host unpacks.
 	ErrImageTooLarge = errors.New("image too large")
 	// ErrInvalidImage means an image holds what the host refuses to
@@ -205,7 +209,8 @@ type Network interface {
 	DeleteNetwork(ctx context.Context, networkUID string) error
 	// EnsureInterface makes the tap for a machine interface in its
 	// network's namespace, or corrects it, and returns the interface with
-	// its Device.
+	// its Device. An IPv6 address another interface holds is refused with
+	// ErrIPv6InUse: one address is delivered to one interface.
 	EnsureInterface(ctx context.Context, i Interface) (Interface, error)
 	// Interfaces lists every machine interface on the host, as it was
 	// ensured.
@@ -307,8 +312,8 @@ type Interface struct {
 	// Gateway is the first address of the network.
 	Gateway netip.Addr
 	// IPv6 is the interface's public address, a /128 of the host's
-	// prefix, routed to it through GatewayIPv6; zero for none. A zero one
-	// leaves Hash as it was before interfaces had one.
+	// prefix, routed to it through GatewayIPv6; zero for none. It is no part
+	// of a VMSpec's Hash.
 	IPv6 netip.Addr `json:",omitzero"`
 	// Device names the tap on the host, unique there and at most 15
 	// characters, as Linux allows. The network driver chooses it; the
@@ -431,6 +436,31 @@ type VMSpec struct {
 // Hash identifies the spec: a VM started with a spec of another hash runs
 // something else and must be started again.
 func (s VMSpec) Hash() string {
+	// The interfaces' IPv6 addresses change while a VM runs, so they are no
+	// part of what it runs.
+	s.Interfaces = slices.Clone(s.Interfaces)
+	for i := range s.Interfaces {
+		s.Interfaces[i].IPv6 = netip.Addr{}
+	}
+	return s.hash()
+}
+
+// LegacyHash is the Hash nodes gave a spec before an interface's IPv6
+// address could change while its VM ran, which counted the addresses, with
+// those of started, the interfaces as the VM was started. A VM started by
+// such a node keeps that hash, and runs the spec all the same.
+func (s VMSpec) LegacyHash(started []Interface) string {
+	s.Interfaces = slices.Clone(s.Interfaces)
+	for i := range s.Interfaces {
+		s.Interfaces[i].IPv6 = netip.Addr{}
+		if n := slices.IndexFunc(started, func(o Interface) bool { return o.Name == s.Interfaces[i].Name }); n >= 0 {
+			s.Interfaces[i].IPv6 = started[n].IPv6
+		}
+	}
+	return s.hash()
+}
+
+func (s VMSpec) hash() string {
 	b, err := json.Marshal(s)
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes
@@ -470,6 +500,9 @@ type VM struct {
 	// Run is what its guest runs, as the VM was started: what an exec in
 	// it inherits.
 	Run RunSpec
+	// Interfaces are its interfaces as the VM was started, which a
+	// container's guest takes from its boot disk at every boot.
+	Interfaces []Interface
 }
 
 // VMState is where a VM is.
@@ -495,7 +528,38 @@ type Guest interface {
 	// does, which kills its group. A guest out of reach fails Recv; a
 	// program that cannot run exits 127 or 126, as in a shell.
 	Exec(ctx context.Context, machineUID string, spec ExecSpec) (ExecSession, error)
+	// SetIPv6 makes the public IPv6 address and IPv6 default route of each
+	// of the guest's interfaces what ifaces say, while its container runs.
+	// A guest that cannot, as one started before it could, fails with
+	// ErrGuestCannot.
+	SetIPv6(ctx context.Context, machineUID string, ifaces []GuestIPv6) error
 }
+
+// GuestIPv6 is one guest interface's public IPv6, by its MAC: an address
+// and, on the interface holding it, the default route's gateway; zero for
+// none.
+type GuestIPv6 struct {
+	MAC     string
+	Address netip.Addr
+	Gateway netip.Addr
+}
+
+// GuestIPv6Of is what a container's guest is given of its interfaces'
+// public IPv6, on its boot disk or by SetIPv6: each interface's address, and
+// the default route by the first interface alone.
+func GuestIPv6Of(ifaces []Interface) []GuestIPv6 {
+	out := make([]GuestIPv6, len(ifaces))
+	for n, i := range ifaces {
+		out[n] = GuestIPv6{MAC: i.MAC, Address: i.IPv6}
+		if n == 0 && i.IPv6.IsValid() {
+			out[n].Gateway = GatewayIPv6
+		}
+	}
+	return out
+}
+
+// ErrGuestCannot is a guest asked what it does not know how to do.
+var ErrGuestCannot = errors.New("the guest cannot do this")
 
 // ExecSpec is a process for Guest.Exec to run.
 type ExecSpec struct {

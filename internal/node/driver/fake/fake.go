@@ -85,21 +85,28 @@ type Host struct {
 	logs       map[string]*consoleLog // console logs kept, by machine uid
 	logChanged chan struct{}          // closed when any log is written
 	logReaders int
-	stops      map[string]int               // guest Stops asked for, by machine uid
-	bootErr    map[string]error             // by machine uid; "" for every machine
-	silent     map[string]bool              // guests that never answer
-	hung       map[string]bool              // guests that take a call and never return it
-	stopDelay  map[string]*stopDelay        // by machine uid; "" for every machine
-	stopCalls  map[string]int               // Hypervisor.Stop calls, failed ones too, by machine uid
-	readyCalls map[string]int               // Guest.Ready calls, by machine uid
-	execs      map[string]map[*process]bool // exec processes running, by machine uid
-	listErr    map[string]error             // by listing: vms, interfaces, networks, roots, bases
-	removalErr error                        // fails stopping VMs and removing disks and interfaces
-	netErr     error                        // fails making and listing networks and interfaces
-	cloneErr   error                        // fails making root disks
-	capErr     error                        // fails reading the storage's capacity
-	vmChanges  chan struct{}
-	netChange  chan struct{}
+	stops      map[string]int        // guest Stops asked for, by machine uid
+	bootErr    map[string]error      // by machine uid; "" for every machine
+	silent     map[string]bool       // guests that never answer
+	hung       map[string]bool       // guests that take a call and never return it
+	stopDelay  map[string]*stopDelay // by machine uid; "" for every machine
+	stopCalls  map[string]int        // Hypervisor.Stop calls, failed ones too, by machine uid
+	readyCalls map[string]int        // Guest.Ready calls, by machine uid
+	// guestIPv6 is what each container's guest holds of its public IPv6,
+	// by machine uid; oldGuests cannot be told.
+	guestIPv6 map[string][]driver.GuestIPv6
+	oldGuests map[string]bool
+	// ipv6Refused counts interfaces refused for an IPv6 address another
+	// holds.
+	ipv6Refused int
+	execs       map[string]map[*process]bool // exec processes running, by machine uid
+	listErr     map[string]error             // by listing: vms, interfaces, networks, roots, bases
+	removalErr  error                        // fails stopping VMs and removing disks and interfaces
+	netErr      error                        // fails making and listing networks and interfaces
+	cloneErr    error                        // fails making root disks
+	capErr      error                        // fails reading the storage's capacity
+	vmChanges   chan struct{}
+	netChange   chan struct{}
 }
 
 type vm struct {
@@ -124,6 +131,7 @@ func New() *Host {
 		firewalls: map[string]map[string]secgroup.Policy{},
 		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
+		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
 }
@@ -379,6 +387,7 @@ func (h *Host) exitLocked(machineUID string, code int) error {
 		v.boots++
 		v.Started = time.Now()
 		h.boot(machineUID)
+		h.bootGuestIPv6(v)
 	default:
 		v.State = driver.VMExited
 		v.ExitCode = code
@@ -1026,6 +1035,17 @@ func (d network) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if i.IPv6.IsValid() && !d.h.ipv6Prefix.Contains(i.IPv6) {
 		return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is not of the host's IPv6 prefix %s", i.MachineUID, i.Name, i.IPv6, d.h.ipv6Prefix)
 	}
+	if i.IPv6.IsValid() {
+		for uid, ifs := range d.h.interfaces {
+			for name, o := range ifs {
+				if o.IPv6 == i.IPv6 && (uid != i.MachineUID || name != i.Name) {
+					d.h.ipv6Refused++
+					return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is machine %s's %s's: %w",
+						i.MachineUID, i.Name, i.IPv6, uid, name, driver.ErrIPv6InUse)
+				}
+			}
+		}
+	}
 	sum := sha256.Sum256([]byte(i.MachineUID + "/" + i.Name))
 	i.Device = "hm" + hex.EncodeToString(sum[:])[:13]
 	if d.h.interfaces[i.MachineUID] == nil {
@@ -1111,12 +1131,22 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		boots = v.boots + 1
 	}
 	d.h.vms[spec.MachineUID] = &vm{
-		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run},
+		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces},
 		spec:  spec,
 		boots: boots,
 	}
 	d.h.boot(spec.MachineUID)
+	d.h.bootGuestIPv6(d.h.vms[spec.MachineUID])
 	return nil
+}
+
+// bootGuestIPv6 has a container's guest, booting, hold what its boot disk
+// gives it, written when the VM started: as hangar-init does, whatever it
+// was told in an earlier boot.
+func (h *Host) bootGuestIPv6(v *vm) {
+	if !v.spec.Firmware {
+		h.guestIPv6[v.MachineUID] = driver.GuestIPv6Of(v.spec.Interfaces)
+	}
 }
 
 // Stop asks a running VM's guest to stop its process first, as the real
@@ -1229,6 +1259,63 @@ func (d guest) Ready(ctx context.Context, machineUID string) error {
 	return nil
 }
 
+func (d guest) SetIPv6(_ context.Context, machineUID string, ifaces []driver.GuestIPv6) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if v, ok := d.h.vms[machineUID]; !ok || v.State != driver.VMRunning {
+		return errUnknownVM
+	}
+	if d.h.silent[machineUID] {
+		return fmt.Errorf("the guest agent of machine %s does not answer", machineUID)
+	}
+	if d.h.oldGuests[machineUID] {
+		return fmt.Errorf("%w: setting IPv6", driver.ErrGuestCannot)
+	}
+	v := d.h.vms[machineUID]
+	gateways := 0
+	for _, i := range ifaces {
+		if !slices.ContainsFunc(v.spec.Interfaces, func(n driver.Interface) bool { return n.MAC == i.MAC }) {
+			return fmt.Errorf("machine %s's guest has no interface %s", machineUID, i.MAC)
+		}
+		if (i.Address.IsValid() && (!i.Address.Is6() || i.Address.Is4In6())) || (i.Gateway.IsValid() && !i.Gateway.Is6()) {
+			return fmt.Errorf("machine %s's guest's interface %s: %s via %s is no IPv6", machineUID, i.MAC, i.Address, i.Gateway)
+		}
+		if i.Gateway.IsValid() {
+			gateways++
+		}
+	}
+	if gateways > 1 {
+		return fmt.Errorf("machine %s's guest: %d IPv6 default routes", machineUID, gateways)
+	}
+	held := driver.GuestIPv6Of(v.spec.Interfaces)
+	for n := range held {
+		if i := slices.IndexFunc(ifaces, func(g driver.GuestIPv6) bool { return g.MAC == held[n].MAC }); i >= 0 {
+			held[n] = ifaces[i]
+		} else if was := d.h.guestIPv6[machineUID]; n < len(was) {
+			held[n] = was[n]
+		}
+	}
+	d.h.guestIPv6[machineUID] = held
+	return nil
+}
+
+// OldGuest makes the machine's guest one that cannot be told its IPv6, as
+// one started before it could; false makes it able again.
+func (h *Host) OldGuest(machineUID string, old bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.oldGuests[machineUID] = old
+}
+
+// GuestIPv6 is what the machine's guest holds of its public IPv6: what its
+// boot disk gave it at its last boot, or what it was told since; nil for a
+// guest that never booted.
+func (h *Host) GuestIPv6(machineUID string) []driver.GuestIPv6 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.guestIPv6[machineUID])
+}
+
 // Stop ends the guest's process as SIGTERM does, at once: the VM exits with
 // 143 and its restart policy decides what comes next.
 func (d guest) Stop(ctx context.Context, machineUID string, _ time.Duration) error {
@@ -1249,4 +1336,23 @@ func (d guest) Stop(ctx context.Context, machineUID string, _ time.Duration) err
 		return fmt.Errorf("the guest agent of machine %s does not answer", machineUID)
 	}
 	return d.h.exitLocked(machineUID, 143)
+}
+
+// StartedByOldNode makes the machine's VM one an older node started, whose
+// hash counted its interfaces' IPv6 addresses (driver.VMSpec.LegacyHash).
+func (h *Host) StartedByOldNode(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if v, ok := h.vms[machineUID]; ok {
+		v.SpecHash = v.spec.LegacyHash(v.Interfaces)
+	}
+}
+
+// IPv6Refusals counts the interfaces refused for an IPv6 address another
+// interface held (driver.ErrIPv6InUse): the agent waits for one to let go,
+// and never asks.
+func (h *Host) IPv6Refusals() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.ipv6Refused
 }

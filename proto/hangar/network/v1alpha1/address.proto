@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Address reserves a public IPv6 /128, kept until the Address is deleted,
+// and binds it to one interface of a VirtualMachine or Container, as an AWS
+// Elastic IP is associated. Bound, it replaces the interface's automatic
+// address; moving it changes only the Address, and no machine restarts. See
+// docs/decisions/networking.md.
+message Address {
+  option (hangar.meta.v1.resource) = {
+    kind: "Address"
+    plural: "addresses"
+    short_names: ["addr"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  AddressSpec spec = 4;
+  AddressStatus status = 5;
+}
+
+// AddressSpec is where the address goes.
+message AddressSpec {
+  // The interface the address is bound to; none keeps it reserved and
+  // unbound. A target that does not exist yet is waited for.
+  AddressTarget target = 1;
+}
+
+// AddressTarget is one interface of a VirtualMachine or Container in the
+// Address's project.
+message AddressTarget {
+  oneof object {
+    // Names a VirtualMachine.
+    string virtual_machine = 1;
+    // Names a Container.
+    string container = 2;
+  }
+  // The interface's name, such as "eth0"; empty is "eth0".
+  string interface = 3;
+}
+
+// AddressStatus is the address and where it is bound.
+message AddressStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The reserved address, such as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128",
+  // drawn from a node's IPv6 prefix when the Address is made; empty until a
+  // node has one.
+  string ipv6 = 3;
+  // The machine whose interface holds the address; empty while unbound.
+  string machine = 4;
+}
+
+// AddressService manages addresses.
+service AddressService {
+  rpc GetAddress(GetAddressRequest) returns (GetAddressResponse);
+  rpc ListAddresses(ListAddressesRequest) returns (ListAddressesResponse);
+  rpc WatchAddresses(WatchAddressesRequest) returns (stream WatchAddressesResponse);
+  rpc ApplyAddress(ApplyAddressRequest) returns (ApplyAddressResponse);
+  rpc DeleteAddress(DeleteAddressRequest) returns (DeleteAddressResponse);
+  rpc UpdateAddressStatus(UpdateAddressStatusRequest) returns (UpdateAddressStatusResponse);
+}
+
+message GetAddressRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetAddressResponse {
+  Address address = 1;
+}
+
+message ListAddressesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListAddressesResponse {
+  repeated Address items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchAddressesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchAddressesResponse {
+  hangar.meta.v1.EventType type = 1;
+  Address address = 2;
+  int64 revision = 3;
+}
+
+message ApplyAddressRequest {
+  Address address = 1;
+}
+
+message ApplyAddressResponse {
+  Address address = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteAddressRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteAddressResponse {
+  Address address = 1;
+}
+
+message UpdateAddressStatusRequest {
+  string project = 1;
+  string name = 2;
+  AddressStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateAddressStatusResponse {
+  Address address = 1;
+}
