@@ -37,6 +37,11 @@ func (a *Agent) sweep(ctx context.Context) error {
 			delete(a.netChecked, uid)
 		}
 	}
+	for uid := range a.guests.slow {
+		if !mine[uid] {
+			a.forgetGuest(uid)
+		}
+	}
 	for uid := range a.stops.ended {
 		if !mine[uid] {
 			delete(a.stops.ended, uid)
