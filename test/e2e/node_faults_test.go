@@ -620,12 +620,49 @@ func TestAHungGuestHoldsUpNoOtherMachine(t *testing.T) {
 	defer letGo()
 	w.apply(container("stuck", "nginx"))
 	w.waitReason("stuck", computeapi.ReasonPulling)
-	w.host.HangGuest(w.machine("stuck").GetMetadata().GetUid())
+	stuck := w.machine("stuck").GetMetadata().GetUid()
+	w.host.HangGuest(stuck)
 	letGo()
 	w.waitReason("stuck", computeapi.ReasonBooting)
+	// Asked a few times: past the call that found it not answering.
+	w.eventually("the hung guest asked again", func() (bool, string) {
+		n := w.host.GuestReadies(stuck)
+		return n >= 3, fmt.Sprintf("%d asks", n)
+	})
 
-	w.apply(container("fine", "nginx"))
-	w.waitReason("fine", "Running")
+	for _, name := range []string{"fine-1", "fine-2", "fine-3"} {
+		start := time.Now()
+		w.apply(container(name, "nginx"))
+		w.waitReason(name, "Running")
+		took := time.Since(start)
+		t.Logf("%s running in %v", name, took)
+		// Asked under the host lock at each of its reconciles, the hung
+		// guest has each of the others wait out its two seconds at about
+		// every reconcile of theirs: three or more, past six seconds.
+		// Asked off it, a few hundred milliseconds, under load two.
+		if took > 4*time.Second {
+			t.Errorf("%s took %v to run beside a hung guest", name, took)
+		}
+	}
+}
+
+// TestAHungGuestThatAnswersAgainRuns: a guest agent that stopped answering
+// in time is running once it answers again.
+func TestAHungGuestThatAnswersAgainRuns(t *testing.T) {
+	w := newWorld(t)
+	letGo := w.host.HoldUnpack("nginx")
+	defer letGo()
+	w.apply(container("api", "nginx"))
+	w.waitReason("api", computeapi.ReasonPulling)
+	answer := w.host.HangGuest(w.machine("api").GetMetadata().GetUid())
+	letGo()
+	w.eventually("the guest found not answering", func() (bool, string) {
+		c, _ := get[*computev1alpha1.Container](w, registry.Container, "api")
+		r := ready(c)
+		return r.GetReason() == computeapi.ReasonBooting && strings.Contains(r.GetMessage(), "deadline"), fmt.Sprintf("%v", r)
+	})
+	answer()
+	w.waitReason("api", "Running")
 }
 
 // TestAMachineDeletedWhilePulling: deleting a machine whose image is still

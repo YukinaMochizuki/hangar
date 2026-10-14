@@ -11,7 +11,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
-	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 )
@@ -96,7 +95,13 @@ func TestAMachineRefusedIsReported(t *testing.T) {
 	if _, err := s.backend(registry.Disk).Apply(user, disk("web-root", "10Gi")); err != nil {
 		t.Fatal(err)
 	}
-	owner := &metav1.ObjectMeta{Project: "web", Name: "web", Uid: "vm-uid"}
+	// An owner that exists: garbage collection deletes a machine whose
+	// owner is gone, and the change below would then race that delete.
+	res, err := s.backend(registry.VirtualMachine).Apply(user, vmOfDisk("web", "web-root"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := res.Object.(*computev1alpha1.VirtualMachine).GetMetadata()
 	spec := func(userData string) *computev1alpha1.MachineSpec {
 		return &computev1alpha1.MachineSpec{
 			RunState:      computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,

@@ -115,6 +115,9 @@ type Agent struct {
 	// puller prepares images off the host lock, and stops stops VMs off it.
 	puller *puller
 	stops  *stops
+	// guests asks off the host lock the guest agents that did not answer
+	// in time.
+	guests *guests
 	// trigger has every machine checked again, and diskTrigger every disk.
 	trigger, diskTrigger chan struct{}
 	// netEpoch counts the network driver's change signals, and netChecked
@@ -193,6 +196,7 @@ func New(cfg Config) (*Agent, error) {
 		told:       map[string]toldIPv6{},
 		puller:     puller,
 		stops:      newStops(),
+		guests:     newGuests(),
 		trigger:    make(chan struct{}, 1),
 		netsvc:     netsvc,
 		netTrigger: make(chan struct{}, 1),
@@ -205,8 +209,10 @@ func New(cfg Config) (*Agent, error) {
 // done. Failures are logged and retried, never fatal: the apiserver judges
 // a node by its reports.
 func (a *Agent) Run(ctx context.Context) error {
-	// Stops end with ctx; the sweep and the reconciles begin them.
+	// Stops and asks of guests end with ctx; the sweep and the reconciles
+	// begin them.
 	defer a.stops.wg.Wait()
+	defer a.guests.wg.Wait()
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	ctx, cancel := context.WithCancel(ctx)
