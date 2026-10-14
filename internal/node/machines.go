@@ -1,6 +1,7 @@
 package node
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -76,10 +77,16 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 	applied := m.GetStatus().GetObservedGeneration() == m.GetMetadata().GetGeneration()
 	epoch := a.netEpoch.Load()
 	var report *observation
+	letGo := a.letGoOfIPv6(ctx, m)
 	switch {
 	case m.GetSpec().GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED:
-		// Stopping needs neither the image nor the network.
+		// Stopping needs neither the image nor the network; letting go of
+		// an address is tried again, the machine stopped all the same.
 		report, err = a.stop(ctx, vm)
+		err = cmp.Or(err, letGo)
+	case letGo != nil:
+		// Stuck, as a step of converging is.
+		err = blocked(computeapi.ReasonNetworkFailed, letGo)
 	default:
 		report, err = a.converge(ctx, m, vm, epoch)
 	}
@@ -252,7 +259,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if err != nil {
 		return nil, err
 	}
-	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm, false)
+	ifaces, vm, pending, err := a.ensureInterfaces(ctx, uid, want, vm, true)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +287,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if obs != nil {
 		obs.image, obs.digest = boot.GetImage(), digest
 	}
-	return obs, err
+	return obs, cmp.Or(err, pending)
 }
 
 // interfaces works out the host side of each of m's interfaces, making
@@ -321,6 +328,46 @@ func (a *Agent) interfaces(ctx context.Context, m *computev1alpha1.Machine) ([]d
 	return out, nil
 }
 
+// letGoOfIPv6 changes in place each of a machine's interfaces on the host
+// that holds an IPv6 address its spec no longer gives it, as when an Address
+// moved away, before anything its reconcile may wait on, such as its image:
+// the interface the address moves to takes it only once this one has let go
+// (ensureInterfaces). One whose new address another still holds has none
+// meanwhile.
+func (a *Agent) letGoOfIPv6(ctx context.Context, m *computev1alpha1.Machine) error {
+	uid := m.GetMetadata().GetUid()
+	d := a.cfg.Drivers
+	all, err := d.Network.Interfaces(ctx)
+	if err != nil {
+		return err
+	}
+	held := map[netip.Addr]bool{}
+	for _, i := range all {
+		if i.MachineUID != uid && i.IPv6.IsValid() {
+			held[i.IPv6] = true
+		}
+	}
+	for _, h := range all {
+		if h.MachineUID != uid || !h.IPv6.IsValid() {
+			continue
+		}
+		var want netip.Addr
+		for _, nic := range m.GetSpec().GetInterfaces() {
+			if v6, ok := ipv6Of(nic); ok && nic.GetName() == h.Name && a.cfg.IPv6Prefix.Contains(v6) && !held[v6] {
+				want = v6
+			}
+		}
+		if want == h.IPv6 {
+			continue
+		}
+		h.IPv6 = want
+		if _, err := d.Network.EnsureInterface(ctx, h); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ensureInterfaces makes the host hold exactly want for the machine and
 // returns them as made, with the VM as left. A running VM holds its taps, so
 // it is stopped first when one is changed, taken away or gone from the host.
@@ -328,16 +375,32 @@ func (a *Agent) interfaces(ctx context.Context, m *computev1alpha1.Machine) ([]d
 // With liveIPv6, as for a guest that learns its IPv6 address by DHCPv6, an
 // interface whose IPv6 address alone changed is changed in place, its tap
 // and the VM holding it kept.
-func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.Interface, vm *driver.VM, liveIPv6 bool) ([]driver.Interface, *driver.VM, error) {
+//
+// An IPv6 address another machine's interface on the host still holds, as
+// one an Address moves from it before that machine has let go, is left out
+// of the interface made: pending says what is waited on, and the rest
+// goes on.
+func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.Interface, vm *driver.VM, liveIPv6 bool) (made []driver.Interface, _ *driver.VM, pending, err error) {
 	d := a.cfg.Drivers
 	all, err := d.Network.Interfaces(ctx)
 	if err != nil {
-		return nil, vm, blocked(computeapi.ReasonNetworkFailed, err)
+		return nil, vm, nil, blocked(computeapi.ReasonNetworkFailed, err)
 	}
 	var have []driver.Interface
+	held := map[netip.Addr]driver.Interface{}
 	for _, i := range all {
 		if i.MachineUID == uid {
 			have = append(have, i)
+		} else if i.IPv6.IsValid() {
+			held[i.IPv6] = i
+		}
+	}
+	want = slices.Clone(want)
+	for n, w := range want {
+		if o, ok := held[w.IPv6]; ok && w.IPv6.IsValid() {
+			pending = errors.Join(pending, fmt.Errorf("%w: machine %s's %s: %s is still machine %s's %s's",
+				controller.ErrWaiting, uid, w.Name, w.IPv6, o.MachineUID, o.Name))
+			want[n].IPv6 = netip.Addr{}
 		}
 	}
 	same := sameInterface
@@ -355,24 +418,24 @@ func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.
 	})
 	if vm != nil && vm.State == driver.VMRunning && (stale || missing) {
 		if err := a.stopVM(ctx, uid); err != nil {
-			return nil, vm, err
+			return nil, vm, nil, err
 		}
 		vm = nil
 	}
 	if stale {
 		if err := d.Network.DeleteInterfaces(ctx, uid); err != nil {
-			return nil, vm, blocked(computeapi.ReasonNetworkFailed, err)
+			return nil, vm, nil, blocked(computeapi.ReasonNetworkFailed, err)
 		}
 	}
-	made := make([]driver.Interface, 0, len(want))
+	made = make([]driver.Interface, 0, len(want))
 	for _, w := range want {
 		i, err := d.Network.EnsureInterface(ctx, w)
 		if err != nil {
-			return nil, vm, blocked(computeapi.ReasonNetworkFailed, err)
+			return nil, vm, nil, blocked(computeapi.ReasonNetworkFailed, err)
 		}
 		made = append(made, i)
 	}
-	return made, vm, nil
+	return made, vm, pending, nil
 }
 
 // sameInterface compares interfaces by what the agent asks for; the device
@@ -390,7 +453,9 @@ const guestTimeout = 2 * time.Second
 // else, and says how it runs.
 func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM) (*observation, error) {
 	d := a.cfg.Drivers
-	if vm != nil && vm.SpecHash != spec.Hash() {
+	// One an older node started has the hash it gave, which counted the
+	// IPv6 addresses: an upgrade restarts nothing.
+	if vm != nil && vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces) {
 		if err := a.stopVM(ctx, spec.MachineUID); err != nil {
 			return nil, err
 		}
@@ -412,14 +477,66 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, err.Error()),
 			fmt.Errorf("%w: machine %s's guest agent: %w", controller.ErrWaiting, spec.Machine, err)
 	}
-	return &observation{
+	running := &observation{
 		phase: computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING,
 		conds: []*metav1.Condition{{
 			Type: computeapi.MachineReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: computeapi.ReasonRunning,
 		}},
 		started: timestamppb.New(vm.Started),
 		applied: true,
-	}, nil
+	}
+	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
+	switch {
+	case restarted:
+		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting again with its IPv6 address"),
+			errors.Join(fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine), err)
+	case err != nil:
+		// It runs all the same; telling it is tried again.
+		return running, fmt.Errorf("%w: machine %s: %w", controller.ErrWaiting, spec.Machine, err)
+	}
+	return running, nil
+}
+
+// toldIPv6 is what a container's guest was told of its public IPv6 in one
+// boot.
+type toldIPv6 struct {
+	boot   time.Time
+	ifaces []driver.GuestIPv6
+}
+
+// ensureGuestIPv6 tells a running container's guest its interfaces' public
+// IPv6: on the agent's first sight of each boot, since what the guest holds
+// then is the agent's to know only by telling it, and when spec's change,
+// as when an Address moved to or from it. A guest that cannot be told,
+// started before it could, is left as it is if its boot disk gave it
+// spec's, and otherwise stopped, to start again from a boot disk with them;
+// restarted says so.
+func (a *Agent) ensureGuestIPv6(ctx context.Context, spec driver.VMSpec, vm *driver.VM) (restarted bool, err error) {
+	uid := spec.MachineUID
+	want := driver.GuestIPv6Of(spec.Interfaces)
+	if told, ok := a.told[uid]; ok && told.boot.Equal(vm.Started) && slices.Equal(told.ifaces, want) {
+		return false, nil
+	}
+	gctx, cancel := context.WithTimeout(ctx, guestTimeout)
+	err = a.cfg.Drivers.Guest.SetIPv6(gctx, uid, want)
+	cancel()
+	if errors.Is(err, driver.ErrGuestCannot) {
+		if slices.Equal(driver.GuestIPv6Of(vm.Interfaces), want) {
+			a.told[uid] = toldIPv6{boot: vm.Started, ifaces: want}
+			return false, nil
+		}
+		a.cfg.Log.Warn("the machine's guest cannot change its IPv6 address while it runs, as one started before it could; starting it again with the address",
+			"machine", spec.Machine, "machine_uid", uid)
+		delete(a.told, uid)
+		// The reconcile's context: the stop outlives the guest's timeout.
+		return true, a.stopVM(ctx, uid)
+	}
+	if err != nil {
+		delete(a.told, uid)
+		return false, fmt.Errorf("telling the guest its IPv6 address: %w", err)
+	}
+	a.told[uid] = toldIPv6{boot: vm.Started, ifaces: want}
+	return false, nil
 }
 
 // release takes a deleted machine off the host and says so, only once
@@ -452,6 +569,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	}
 	a.puller.drop(uid)
 	delete(a.netChecked, uid)
+	delete(a.told, uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{
 		Type: computeapi.MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned",

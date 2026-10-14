@@ -2,9 +2,8 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"net/netip"
-	"slices"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -30,7 +29,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	if err != nil {
 		return nil, err
 	}
-	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm, true)
+	ifaces, vm, pending, err := a.ensureInterfaces(ctx, uid, want, vm, true)
 	if err != nil {
 		return nil, err
 	}
@@ -42,12 +41,8 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	// The guest learns these by DHCP, from the same leases; the spec
 	// carries them as a container's does.
 	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)
-	// So is its IPv6 address, by DHCPv6, which the spec does not carry: a
-	// new one, as when its host gets a prefix, does not restart the VM.
-	ifaces = slices.Clone(ifaces)
-	for i := range ifaces {
-		ifaces[i].IPv6 = netip.Addr{}
-	}
+	// So is its IPv6 address, by DHCPv6; a new one, as when an Address moves
+	// to it, is no part of the spec's hash and does not restart the VM.
 	spec := driver.VMSpec{
 		MachineUID:  uid,
 		Machine:     m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
@@ -60,7 +55,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Search:      search,
 		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
-	if vm != nil && vm.SpecHash != spec.Hash() {
+	if vm != nil && vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err
 		}
@@ -73,7 +68,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		// Seen running on the next look, which the hypervisor's signal or
 		// the wait brings.
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting"),
-			fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine)
+			errors.Join(fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine), pending)
 	}
 	if vm.State == driver.VMExited {
 		reason, msg := computeapi.ReasonPoweredOff, "the guest powered off"
@@ -82,7 +77,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		}
 		obs := notReady(phaseOf(vm), reason, msg)
 		obs.applied = true
-		return obs, nil
+		return obs, pending
 	}
 	return &observation{
 		phase: computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING,
@@ -91,5 +86,5 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		}},
 		started: timestamppb.New(vm.Started),
 		applied: true,
-	}, nil
+	}, pending
 }

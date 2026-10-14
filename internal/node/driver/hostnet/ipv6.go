@@ -1,6 +1,7 @@
 package hostnet
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"net"
@@ -156,7 +157,8 @@ func ensureDefaultRoute6(h *netlink.Handle, l netlink.Link) error {
 // syncIPv6 routes each tap's IPv6 address into its network, from the root
 // namespace to its veth and in the namespace to its bridge, and has the
 // uplink answer neighbour solicitations for it; every other such route and
-// proxy entry goes. All of it is derived from the taps' aliases. Without a
+// proxy entry goes. All of it is derived from the taps' aliases. An address
+// two taps hold, as EnsureInterface refuses, goes to neither. Without a
 // prefix, the root namespace's routes into networks go, and proxy entries
 // are left: nothing tells the driver's from others.
 func (d *Driver) syncIPv6() error {
@@ -165,12 +167,24 @@ func (d *Driver) syncIPv6() error {
 		return err
 	}
 	byNet := map[string][]netip.Addr{}
+	macs := map[string]map[netip.Addr]net.HardwareAddr{}
 	var addrs []netip.Addr
 	if d.cfg.IPv6Prefix.IsValid() {
+		holders := map[netip.Addr]int{}
 		for _, t := range all {
-			if t.ok && d.cfg.IPv6Prefix.Contains(t.meta.IPv6) {
+			if t.ok {
+				holders[t.meta.IPv6]++
+			}
+		}
+		for _, t := range all {
+			mac, err := net.ParseMAC(t.meta.MAC)
+			if t.ok && err == nil && d.cfg.IPv6Prefix.Contains(t.meta.IPv6) && holders[t.meta.IPv6] == 1 {
 				byNet[t.network] = append(byNet[t.network], t.meta.IPv6)
 				addrs = append(addrs, t.meta.IPv6)
+				if macs[t.network] == nil {
+					macs[t.network] = map[netip.Addr]net.HardwareAddr{}
+				}
+				macs[t.network][t.meta.IPv6] = mac
 			}
 		}
 	}
@@ -193,14 +207,14 @@ func (d *Driver) syncIPv6() error {
 		return err
 	}
 	for _, uid := range uids {
-		if err := d.syncNamespaceRoutes6(uid, byNet[uid]); err != nil {
+		if err := d.syncNamespaceRoutes6(uid, byNet[uid], macs[uid]); err != nil {
 			return fmt.Errorf("network %s: %w", uid, err)
 		}
 	}
 	return d.ensureProxies(addrs)
 }
 
-func (d *Driver) syncNamespaceRoutes6(uid string, addrs []netip.Addr) error {
+func (d *Driver) syncNamespaceRoutes6(uid string, addrs []netip.Addr, macs map[netip.Addr]net.HardwareAddr) error {
 	ns, ok, err := openNS(uid)
 	if err != nil || !ok {
 		return err
@@ -218,7 +232,47 @@ func (d *Driver) syncNamespaceRoutes6(uid string, addrs []netip.Addr) error {
 	if v, _ := sysctlIn(ns, "net.ipv6.conf."+nsBridge+".disable_ipv6"); v != "0" {
 		return nil // not made with IPv6 yet; EnsureNetwork routes it
 	}
-	return ensureRoutes6(h, br, addrs, nil)
+	if err := ensureRoutes6(h, br, addrs, nil); err != nil {
+		return err
+	}
+	return d.ensureNeighbours6(h, br, macs)
+}
+
+// ensureNeighbours6 makes the bridge's neighbour entries for the prefix
+// exactly a permanent one for each tap's address, at its MAC: the namespace
+// then sends to the tap holding an address now, the moment an address
+// moves to another interface of the network, never to one that held it
+// before and answered for it, and asks no guest for its address.
+func (d *Driver) ensureNeighbours6(h *netlink.Handle, br netlink.Link, macs map[netip.Addr]net.HardwareAddr) error {
+	have, err := dumped(func() ([]netlink.Neigh, error) { return h.NeighList(br.Attrs().Index, unix.AF_INET6) })
+	if err != nil {
+		return err
+	}
+	kept := map[netip.Addr]bool{}
+	for _, n := range have {
+		a, ok := netip.AddrFromSlice(n.IP)
+		if !ok || !d.cfg.IPv6Prefix.Contains(a.Unmap()) || n.Flags&netlink.NTF_PROXY != 0 {
+			continue
+		}
+		a = a.Unmap()
+		if mac, want := macs[a]; want && n.State == netlink.NUD_PERMANENT && bytes.Equal(n.HardwareAddr, mac) {
+			kept[a] = true
+			continue
+		}
+		if err := h.NeighDel(&n); err != nil && !errors.Is(err, unix.ENOENT) {
+			return fmt.Errorf("neighbour entry for %s: %w", a, err)
+		}
+	}
+	for a, mac := range macs {
+		if kept[a] {
+			continue
+		}
+		if err := h.NeighSet(&netlink.Neigh{LinkIndex: br.Attrs().Index, Family: unix.AF_INET6, State: netlink.NUD_PERMANENT,
+			IP: a.AsSlice(), HardwareAddr: mac}); err != nil {
+			return fmt.Errorf("neighbour entry for %s: %w", a, err)
+		}
+	}
+	return nil
 }
 
 // sysctlIn reads a sysctl of namespace ns.

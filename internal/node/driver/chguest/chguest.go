@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strings"
 	"time"
@@ -45,6 +46,28 @@ func (g Guest) Stop(ctx context.Context, machineUID string, grace time.Duration)
 	c, done := g.Client(machineUID)
 	defer done()
 	_, err := c.Stop(ctx, connect.NewRequest(&guestv1.StopRequest{Grace: durationpb.New(grace)}))
+	return err
+}
+
+// SetIPv6 has the guest agent change the interfaces' public IPv6.
+func (g Guest) SetIPv6(ctx context.Context, machineUID string, ifaces []driver.GuestIPv6) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	req := &guestv1.SetIPv6Request{}
+	for _, i := range ifaces {
+		nic := &guestv1.Interface{Mac: i.MAC}
+		if i.Address.IsValid() {
+			nic.Ipv6 = netip.PrefixFrom(i.Address, 128).String()
+		}
+		if i.Gateway.IsValid() {
+			nic.Ipv6Gateway = i.Gateway.String()
+		}
+		req.Interfaces = append(req.Interfaces, nic)
+	}
+	_, err := c.SetIPv6(ctx, connect.NewRequest(req))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
 	return err
 }
 
