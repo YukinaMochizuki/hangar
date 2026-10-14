@@ -277,11 +277,17 @@ func (r *Resolver) internal(networkUID string, q *dns.Msg, name string) *dns.Msg
 	case name == projectZone:
 		// A name with machines under it, and nothing of its own.
 	case inProject && !strings.Contains(machine, ".") && len(recs.Names[machine]) > 0:
-		if question.Qtype == dns.TypeA || question.Qtype == dns.TypeANY {
-			for _, a := range recs.Names[machine] {
+		for _, a := range recs.Names[machine] {
+			switch {
+			case a.Is4() && (question.Qtype == dns.TypeA || question.Qtype == dns.TypeANY):
 				resp.Answer = append(resp.Answer, &dns.A{
 					Hdr: dns.RR_Header{Name: question.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: TTL},
 					A:   a.AsSlice(),
+				})
+			case a.Is6() && (question.Qtype == dns.TypeAAAA || question.Qtype == dns.TypeANY):
+				resp.Answer = append(resp.Answer, &dns.AAAA{
+					Hdr:  dns.RR_Header{Name: question.Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: TTL},
+					AAAA: a.AsSlice(),
 				})
 			}
 		}

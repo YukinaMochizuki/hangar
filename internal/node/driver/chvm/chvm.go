@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -492,7 +493,14 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		if n == 0 && i.Gateway.IsValid() {
 			gw = i.Gateway.String()
 		}
-		cfg.Interfaces = append(cfg.Interfaces, &guestv1.Interface{Mac: i.MAC, Address: i.Address.String(), Gateway: gw})
+		nic := &guestv1.Interface{Mac: i.MAC, Address: i.Address.String(), Gateway: gw}
+		if i.IPv6.IsValid() {
+			nic.Ipv6 = netip.PrefixFrom(i.IPv6, 128).String()
+			if n == 0 {
+				nic.Ipv6Gateway = driver.GatewayIPv6.String()
+			}
+		}
+		cfg.Interfaces = append(cfg.Interfaces, nic)
 	}
 	var buf bytes.Buffer
 	if err := bootdisk.Write(&buf, cfg); err != nil {

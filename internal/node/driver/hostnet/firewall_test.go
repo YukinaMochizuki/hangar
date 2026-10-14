@@ -34,14 +34,16 @@ func TestFirewallChains(t *testing.T) {
 			t.Errorf("%s ends with %q, verdict %v", c.name, last.says, verdictOf(last))
 		}
 	}
-	// The DHCP exceptions are only DHCP: to the broadcast address or the
-	// gateway from a tap, and from the gateway to one.
+	// The DHCP exceptions are only DHCP: to the broadcast address, the
+	// servers' group or the gateway from a tap, and from the gateway to one.
 	for _, c := range none {
 		for _, r := range c.rules {
 			if !strings.Contains(r.says, "DHCP") {
 				continue
 			}
-			if !matchesAddr(r, gw) && !matchesAddr(r, netip.MustParseAddr("255.255.255.255")) {
+			if !slices.ContainsFunc([]string{"10.0.0.1", "255.255.255.255", "ff02::1:2", "fe80::1"}, func(a string) bool {
+				return matchesAddr(r, netip.MustParseAddr(a))
+			}) {
 				t.Errorf("%s: %q matches any address", c.name, r.says)
 			}
 		}
@@ -92,6 +94,72 @@ func TestFirewallChains(t *testing.T) {
 		if !strings.Contains(pre, want) {
 			t.Errorf("prerouting lacks %q:\n%s", want, pre)
 		}
+	}
+}
+
+// TestICMPv6PassesOnlyOnTheLink: what passes to a tap whatever its groups,
+// neighbour discovery and listener reports, is held to the hop limit only
+// a sender on the link can give it and, but from the tap itself, to a
+// link-local or no source, which nothing routed has: the internet's ICMPv6
+// is the groups' to let in.
+func TestICMPv6PassesOnlyOnTheLink(t *testing.T) {
+	cs, err := firewallChains(netip.MustParseAddr("10.0.0.1"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cs {
+		for _, r := range c.rules {
+			icmp6 := slices.ContainsFunc(r.exprs, func(e expr.Any) bool {
+				m, ok := e.(*expr.Cmp)
+				return ok && slices.Equal(m.Data, []byte{58})
+			})
+			if !icmp6 || verdictOf(r) != expr.VerdictAccept {
+				continue
+			}
+			hop := slices.ContainsFunc(r.exprs, func(e expr.Any) bool {
+				p, ok := e.(*expr.Payload)
+				return ok && p.Base == expr.PayloadBaseNetworkHeader && p.Offset == 7
+			})
+			src := slices.ContainsFunc(r.exprs, func(e expr.Any) bool {
+				p, ok := e.(*expr.Payload)
+				return ok && p.Base == expr.PayloadBaseNetworkHeader && p.Offset == 8
+			})
+			if !hop || (c.name != "prerouting" && !src) {
+				t.Errorf("%s: %q passes ICMPv6 a router could have forwarded (hop limit checked %v, source %v)", c.name, r.says, hop, src)
+			}
+		}
+	}
+}
+
+// TestPeersMatchTheirOwnFamily: an IPv6 peer matches IPv6 only, and icmp
+// with it ICMPv6; an IPv4 peer IPv4 only, so ::/0 opens nothing to IPv4
+// and 0.0.0.0/0 nothing to IPv6.
+func TestPeersMatchTheirOwnFamily(t *testing.T) {
+	rules, err := policyRules("hnt1", "in", []secgroup.Rule{
+		{Protocol: secgroup.ICMP, Peers: []netip.Prefix{netip.MustParsePrefix("0.0.0.0/0"), netip.MustParsePrefix("::/0")}},
+	}, true)
+	if err != nil || len(rules) != 2 {
+		t.Fatalf("%v %v", rules, err)
+	}
+	family := func(r ruleSpec) (ether []byte, l4 byte) {
+		for i, e := range r.exprs {
+			if m, ok := e.(*expr.Meta); ok && i+1 < len(r.exprs) {
+				c := r.exprs[i+1].(*expr.Cmp)
+				switch m.Key {
+				case expr.MetaKeyPROTOCOL:
+					ether = c.Data
+				case expr.MetaKeyL4PROTO:
+					l4 = c.Data[0]
+				}
+			}
+		}
+		return ether, l4
+	}
+	if e, l4 := family(rules[0]); !slices.Equal(e, etherIPv4) || l4 != 1 {
+		t.Errorf("0.0.0.0/0 icmp matches ether type %x, protocol %d", e, l4)
+	}
+	if e, l4 := family(rules[1]); !slices.Equal(e, etherIPv6) || l4 != 58 {
+		t.Errorf("::/0 icmp matches ether type %x, protocol %d", e, l4)
 	}
 }
 

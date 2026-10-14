@@ -54,7 +54,9 @@ type world struct {
 	// metadata is the agent's metadata service, which a test asks as a
 	// guest would, from the guest's address (see askMetadata).
 	metadata *metadata.Server
-	stop     func()
+	// ipv6Prefix, if set before the agent starts, is the host's.
+	ipv6Prefix netip.Prefix
+	stop       func()
 }
 
 func newWorld(t *testing.T) *world {
@@ -88,6 +90,7 @@ func newIdleWorldWith(t *testing.T, configure func(*apiserver.Config)) *world {
 // startAgent runs a node agent over the world's host.
 func (w *world) startAgent() {
 	w.t.Helper()
+	w.host.SetIPv6Prefix(w.ipv6Prefix)
 	hc := client.UnixSocket(w.env.Socket)
 	if w.wrap != nil {
 		hc.Transport = w.wrap(hc.Transport)
@@ -108,6 +111,7 @@ func (w *world) startAgent() {
 		PullTimeout:       w.pullTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
 		Metadata:          w.metadata,
+		IPv6Prefix:        w.ipv6Prefix,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),

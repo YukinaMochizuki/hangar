@@ -32,6 +32,7 @@ const (
 	All Protocol = iota + 1
 	TCP
 	UDP
+	// ICMP is ICMP for an IPv4 peer and ICMPv6 for an IPv6 one.
 	ICMP
 )
 
@@ -114,8 +115,8 @@ func ruleSpec(p networkv1alpha1.SecurityGroupProtocol, ports string, peer *netwo
 	switch v := peer.GetPeer().(type) {
 	case *networkv1alpha1.SecurityGroupPeer_Cidr:
 		p, err := netip.ParsePrefix(v.Cidr)
-		if err != nil || !p.Addr().Is4() {
-			return RuleSpec{}, fmt.Errorf("cidr %q is not an IPv4 range such as 10.0.0.0/24", v.Cidr)
+		if err != nil || p.Addr().Is4In6() || p.Addr().Zone() != "" {
+			return RuleSpec{}, fmt.Errorf("cidr %q is not an IPv4 or IPv6 range such as 10.0.0.0/24 or ::/0", v.Cidr)
 		}
 		if p != p.Masked() {
 			return RuleSpec{}, fmt.Errorf("cidr %q has host bits set; did you mean %s?", v.Cidr, p.Masked())
@@ -163,9 +164,10 @@ func port(s string) (uint16, error) {
 	return uint16(n), nil
 }
 
-// Member is one interface on the network: its address and its groups.
+// Member is one interface on the network: its addresses, IPv4 and any
+// IPv6, and its groups.
 type Member struct {
-	Addr   netip.Addr
+	Addrs  []netip.Addr
 	Groups []string
 }
 
@@ -198,7 +200,9 @@ func Resolve(groups map[string]Group, members []Member) []Policy {
 	inGroup := map[string][]netip.Prefix{}
 	for _, m := range members {
 		for _, g := range groupsOf(m) {
-			inGroup[g] = append(inGroup[g], netip.PrefixFrom(m.Addr, 32))
+			for _, a := range m.Addrs {
+				inGroup[g] = append(inGroup[g], netip.PrefixFrom(a, a.BitLen()))
+			}
 		}
 	}
 	resolve := func(rs RuleSpec) Rule {

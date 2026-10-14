@@ -57,7 +57,8 @@ message EgressRule {
 // SecurityGroupPeer is the other end of a rule.
 message SecurityGroupPeer {
   oneof peer {
-    // An IPv4 range, such as "0.0.0.0/0" or "10.0.0.0/24".
+    // An IPv4 or IPv6 range, such as "0.0.0.0/0", "10.0.0.0/24" or "::/0".
+    // A range matches only addresses of its own family.
     string cidr = 1;
     // The members of a group of the same network, "default" included.
     string group = 2;

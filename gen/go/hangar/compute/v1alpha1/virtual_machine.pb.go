@@ -647,7 +647,10 @@ type VirtualMachineInterfaceStatus struct {
 	Name    string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Network string `protobuf:"bytes,2,opt,name=network,proto3" json:"network,omitempty"`
 	// The address with its network's prefix length, such as "10.0.0.5/24".
-	Ipv4          string `protobuf:"bytes,3,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
+	Ipv4 string `protobuf:"bytes,3,opt,name=ipv4,proto3" json:"ipv4,omitempty"`
+	// The public IPv6 address, such as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128",
+	// which the guest leases by DHCPv6; empty while its host has no prefix.
+	Ipv6          string `protobuf:"bytes,4,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -699,6 +702,13 @@ func (x *VirtualMachineInterfaceStatus) GetNetwork() string {
 func (x *VirtualMachineInterfaceStatus) GetIpv4() string {
 	if x != nil {
 		return x.Ipv4
+	}
+	return ""
+}
+
+func (x *VirtualMachineInterfaceStatus) GetIpv6() string {
+	if x != nil {
+		return x.Ipv6
 	}
 	return ""
 }
@@ -1414,11 +1424,12 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\troot_disk\x18\x03 \x01(\tR\brootDisk\x12V\n" +
 	"\n" +
 	"interfaces\x18\x04 \x03(\v26.hangar.compute.v1alpha1.VirtualMachineInterfaceStatusR\n" +
-	"interfaces\"a\n" +
+	"interfaces\"u\n" +
 	"\x1dVirtualMachineInterfaceStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
-	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\"H\n" +
+	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12\x12\n" +
+	"\x04ipv6\x18\x04 \x01(\tR\x04ipv6\"H\n" +
 	"\x18GetVirtualMachineRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"m\n" +

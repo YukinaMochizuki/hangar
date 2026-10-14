@@ -576,6 +576,8 @@ func sweep() {
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
+	_ = exec.Command("ip", "netns", "del", upstream6NS).Run()
+	_ = exec.Command("ip", "link", "del", upstream6Link).Run()
 	for _, d := range []string{imageDir, workDir} {
 		if err := os.RemoveAll(d); err != nil {
 			fmt.Fprintf(os.Stderr, "flow: %v\n", err)

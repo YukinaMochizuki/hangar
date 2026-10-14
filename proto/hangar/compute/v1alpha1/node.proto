@@ -44,6 +44,10 @@ message NodeStatus {
   google.protobuf.Timestamp last_heartbeat_time = 5;
   // Version of the node agent.
   string agent_version = 6;
+  // The host's public IPv6 prefix, such as "2001:db8:0:1::/64", from which
+  // each machine interface on the node gets a /128; empty when the host has
+  // none, and its machines then have no IPv6.
+  string ipv6_prefix = 7;
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in

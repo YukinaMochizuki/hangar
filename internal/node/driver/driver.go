@@ -222,6 +222,11 @@ type Network interface {
 	// reach, and return the Instance it serves (docs/decisions/networking.md).
 	ListenUDP(ctx context.Context, networkUID string, addr netip.AddrPort) (*net.UDPConn, string, error)
 	ListenTCP(ctx context.Context, networkUID string, addr netip.AddrPort) (*net.TCPListener, string, error)
+	// ListenPackets opens a socket on the bridge of a network with IPv6
+	// that exchanges whole IPv6 packets of one kind with its machines, each
+	// known by the MAC it sends from, which the interface's binding makes
+	// its own; it returns the Instance it serves, as ListenUDP does.
+	ListenPackets(ctx context.Context, networkUID string, kind PacketKind) (PacketConn, string, error)
 	// Instance names what a network's sockets serve, until it is made again;
 	// "" means there is nothing to serve.
 	Instance(ctx context.Context, networkUID string) (string, error)
@@ -234,6 +239,28 @@ type Network interface {
 	// the host larger than MaxFirewallRules together are refused, and the
 	// firewall is then left as it was.
 	EnsureFirewall(ctx context.Context, networkUID string, policies []InterfacePolicy) error
+}
+
+// PacketKind is what IPv6 packets a PacketConn receives.
+type PacketKind int
+
+const (
+	// RouterSolicitations are ICMPv6 router solicitations.
+	RouterSolicitations PacketKind = iota + 1
+	// DHCPv6 is UDP to the DHCPv6 server port, 547.
+	DHCPv6
+)
+
+// PacketConn exchanges IPv6 packets, IPv6 header included, with a network's
+// machines. A packet it reads is one a machine sent; one the host sent is
+// never read back.
+type PacketConn interface {
+	// ReadPacket reads a packet into b and says which MAC sent it.
+	ReadPacket(b []byte) (n int, from net.HardwareAddr, err error)
+	// WritePacket sends packet b in a frame to the MAC to.
+	WritePacket(b []byte, to net.HardwareAddr) error
+	SetReadDeadline(t time.Time) error
+	Close() error
 }
 
 // MaxFirewallRules bounds the policies one network's firewall on a host
@@ -251,6 +278,10 @@ type InterfacePolicy struct {
 // MetadataAddr is the metadata service's address in every network, as
 // clouds have it; a network's bridge holds it beside the gateway.
 var MetadataAddr = netip.MustParseAddr("169.254.169.254")
+
+// GatewayIPv6 is the gateway's address on every network's bridge when its
+// host has an IPv6 prefix: machines route their public /128 through it.
+var GatewayIPv6 = netip.MustParseAddr("fe80::1")
 
 // NetworkSpec is a network as the host has it.
 type NetworkSpec struct {
@@ -272,6 +303,10 @@ type Interface struct {
 	Address netip.Prefix
 	// Gateway is the first address of the network.
 	Gateway netip.Addr
+	// IPv6 is the interface's public address, a /128 of the host's
+	// prefix, routed to it through GatewayIPv6; zero for none. A zero one
+	// leaves Hash as it was before interfaces had one.
+	IPv6 netip.Addr `json:",omitzero"`
 	// Device names the tap on the host, unique there and at most 15
 	// characters, as Linux allows. The network driver chooses it; the
 	// hypervisor driver opens it.

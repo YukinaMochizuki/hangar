@@ -27,9 +27,13 @@ type Network struct {
 	// Gateway is the network's first address, which its machines route
 	// through and the node's services answer on.
 	Gateway netip.Addr
+	// IPv6 says the network's machines have public IPv6 addresses, routed
+	// through driver.GatewayIPv6, so its IPv6 services are served.
+	IPv6 bool
 }
 
-// Service is one service the node serves every network, on UDP, TCP or both.
+// Service is one service the node serves every network, on UDP, TCP or
+// both, or every network with IPv6, on IPv6 packets of one kind.
 // A Serve returns soon after its ctx is done, whatever its clients hold
 // open, as stopping a network's services waits for it; its socket is closed
 // then.
@@ -40,6 +44,10 @@ type Service struct {
 	// ServeUDP and ServeTCP serve one network's socket. Either may be nil.
 	ServeUDP func(ctx context.Context, n Network, c *net.UDPConn)
 	ServeTCP func(ctx context.Context, n Network, l *net.TCPListener)
+	// ServePackets, with Packets the kind it serves, serves a network with
+	// IPv6; such a service has no Addr.
+	Packets      driver.PacketKind
+	ServePackets func(ctx context.Context, n Network, c driver.PacketConn)
 }
 
 // Manager keeps every service listening on each network it is told of.
@@ -109,6 +117,21 @@ func (m *Manager) open(ctx context.Context, n Network) (*serving, error) {
 		return nil
 	}
 	for _, svc := range m.services {
+		if svc.ServePackets != nil {
+			if !n.IPv6 {
+				continue
+			}
+			c, instance, err := m.net.ListenPackets(ctx, n.UID, svc.Packets)
+			if err == nil {
+				err = opened(instance, c, func() { svc.ServePackets(serveCtx, n, c) })
+			}
+			if err != nil {
+				stop()
+				closeAll(s.sockets)
+				return nil, fmt.Errorf("%s: %w", svc.Name, err)
+			}
+			continue
+		}
 		addr := svc.Addr(n)
 		var err error
 		if svc.ServeUDP != nil {

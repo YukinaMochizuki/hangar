@@ -45,15 +45,21 @@ func TestFromSpec(t *testing.T) {
 	if err != nil || len(g.Ingress) != 1 || g.Ingress[0].PeerCIDR != netip.MustParsePrefix("0.0.0.0/0") || g.Egress[0].PeerGroup != "default" {
 		t.Errorf("%+v %v", g, err)
 	}
+	v6 := &networkv1alpha1.SecurityGroupSpec{Ingress: []*networkv1alpha1.IngressRule{{Protocol: tcp, Ports: "22", From: peerCIDR("::/0")}}}
+	if g, err := FromSpec(v6); err != nil || g.Ingress[0].PeerCIDR != netip.MustParsePrefix("::/0") {
+		t.Errorf("an IPv6 range: %+v %v", g, err)
+	}
 	for name, r := range map[string]*networkv1alpha1.IngressRule{
-		"no protocol":    {From: peerCIDR("0.0.0.0/0")},
-		"ports on icmp":  {Protocol: icmp, Ports: "1", From: peerCIDR("0.0.0.0/0")},
-		"bad ports":      {Protocol: tcp, Ports: "x", From: peerCIDR("0.0.0.0/0")},
-		"no peer":        {Protocol: tcp},
-		"an IPv6 range":  {Protocol: tcp, From: peerCIDR("::/0")},
-		"host bits":      {Protocol: tcp, From: peerCIDR("10.0.0.1/24")},
-		"an empty group": {Protocol: tcp, From: peerGroup("")},
-		"not a range":    {Protocol: tcp, From: peerCIDR("nonsense")},
+		"no protocol":          {From: peerCIDR("0.0.0.0/0")},
+		"ports on icmp":        {Protocol: icmp, Ports: "1", From: peerCIDR("0.0.0.0/0")},
+		"bad ports":            {Protocol: tcp, Ports: "x", From: peerCIDR("0.0.0.0/0")},
+		"no peer":              {Protocol: tcp},
+		"an IPv4-mapped range": {Protocol: tcp, From: peerCIDR("::ffff:10.0.0.0/120")},
+		"a zone":               {Protocol: tcp, From: peerCIDR("fe80::%eth0/64")},
+		"host bits":            {Protocol: tcp, From: peerCIDR("10.0.0.1/24")},
+		"IPv6 host bits":       {Protocol: tcp, From: peerCIDR("2001:db8::1/64")},
+		"an empty group":       {Protocol: tcp, From: peerGroup("")},
+		"not a range":          {Protocol: tcp, From: peerCIDR("nonsense")},
 	} {
 		if _, err := FromSpec(&networkv1alpha1.SecurityGroupSpec{Ingress: []*networkv1alpha1.IngressRule{r}}); err == nil {
 			t.Errorf("%s accepted", name)
@@ -63,7 +69,14 @@ func TestFromSpec(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	a := func(s string) netip.Addr { return netip.MustParseAddr(s) }
-	p := func(s string) netip.Prefix { return netip.PrefixFrom(a(s), 32) }
+	p := func(s string) netip.Prefix { return netip.PrefixFrom(a(s), a(s).BitLen()) }
+	as := func(s ...string) []netip.Addr {
+		var out []netip.Addr
+		for _, x := range s {
+			out = append(out, a(x))
+		}
+		return out
+	}
 	groups := map[string]Group{
 		"web": {Ingress: []RuleSpec{{Protocol: TCP, Ports: []PortRange{{443, 443}}, PeerCIDR: netip.MustParsePrefix("0.0.0.0/0")}}},
 		"db":  {Ingress: []RuleSpec{{Protocol: TCP, Ports: []PortRange{{5432, 5432}}, PeerGroup: "web"}}},
@@ -73,23 +86,23 @@ func TestResolve(t *testing.T) {
 		}},
 	}
 	members := []Member{
-		{Addr: a("10.0.0.2")},                                          // default
-		{Addr: a("10.0.0.3"), Groups: []string{"web"}},                 // web
-		{Addr: a("10.0.0.4"), Groups: []string{"db"}},                  // db
-		{Addr: a("10.0.0.5"), Groups: []string{Default, "web"}},        // both
-		{Addr: a("10.0.0.6"), Groups: []string{"sandbox"}},             // locked down
-		{Addr: a("10.0.0.7"), Groups: []string{"web", "not-made-yet"}}, // a group missing
-		{Addr: a("10.0.0.8"), Groups: []string{"nobody"}},              // names a group that is not there
+		{Addrs: as("10.0.0.2", "2001:db8::2")},                           // default
+		{Addrs: as("10.0.0.3", "2001:db8::3"), Groups: []string{"web"}},  // web
+		{Addrs: as("10.0.0.4"), Groups: []string{"db"}},                  // db
+		{Addrs: as("10.0.0.5"), Groups: []string{Default, "web"}},        // both
+		{Addrs: as("10.0.0.6"), Groups: []string{"sandbox"}},             // locked down
+		{Addrs: as("10.0.0.7"), Groups: []string{"web", "not-made-yet"}}, // a group missing
+		{Addrs: as("10.0.0.8"), Groups: []string{"nobody"}},              // names a group that is not there
 	}
 	got := Resolve(groups, members)
 
-	if d := got[0]; len(d.Ingress) != 1 || !slices.Equal(d.Ingress[0].Peers, []netip.Prefix{p("10.0.0.2"), p("10.0.0.5")}) || !d.EgressAll {
+	if d := got[0]; len(d.Ingress) != 1 || !slices.Equal(d.Ingress[0].Peers, []netip.Prefix{p("10.0.0.2"), p("2001:db8::2"), p("10.0.0.5")}) || !d.EgressAll {
 		t.Errorf("default member: %+v", d)
 	}
 	if w := got[1]; len(w.Ingress) != 1 || w.Ingress[0].Peers[0] != netip.MustParsePrefix("0.0.0.0/0") || !w.EgressAll {
 		t.Errorf("web member: %+v", w)
 	}
-	if db := got[2]; len(db.Ingress) != 1 || !slices.Equal(db.Ingress[0].Peers, []netip.Prefix{p("10.0.0.3"), p("10.0.0.5"), p("10.0.0.7")}) {
+	if db := got[2]; len(db.Ingress) != 1 || !slices.Equal(db.Ingress[0].Peers, []netip.Prefix{p("10.0.0.3"), p("2001:db8::3"), p("10.0.0.5"), p("10.0.0.7")}) {
 		t.Errorf("db member: %+v", db)
 	}
 	if both := got[3]; len(both.Ingress) != 2 {
