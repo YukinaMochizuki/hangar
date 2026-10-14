@@ -2,6 +2,8 @@ package apiserver
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"net/netip"
 	"strings"
@@ -16,6 +18,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -212,7 +215,8 @@ func refuseDeletingInUse(ctx context.Context, s *Server, obj proto.Message) erro
 }
 
 // assignAddresses fills in the IPv4 address of every interface in want that
-// has none, keeping the addresses the machine already has. The caller holds
+// has none, and, once want is on a node with an IPv6 prefix, its IPv6
+// address, keeping the addresses the machine already has. The caller holds
 // s.ipam until the machine is written, so two machines never get one
 // address.
 func (s *Server) assignAddresses(ctx context.Context, project string, current, want *computev1alpha1.MachineSpec) error {
@@ -231,7 +235,115 @@ func (s *Server) assignAddresses(ctx context.Context, project string, current, w
 		}
 		nic.Ipv4 = addr
 	}
+	return s.assignIPv6(ctx, current, want)
+}
+
+// assignIPv6 gives every interface of want a /128 of its node's prefix,
+// keeping the one it has if it is still of that prefix, or takes them away
+// if the node has none. An unplaced machine has none. The caller holds
+// s.ipam.
+func (s *Server) assignIPv6(ctx context.Context, current, want *computev1alpha1.MachineSpec) error {
+	prefix, err := s.nodePrefix(ctx, want.GetNode())
+	if err != nil {
+		return err
+	}
+	have := map[string]*computev1alpha1.MachineInterface{}
+	for _, nic := range current.GetInterfaces() {
+		have[nic.GetName()] = nic
+	}
+	var taken map[netip.Addr]bool
+	for _, nic := range want.GetInterfaces() {
+		nic.Ipv6 = ""
+		if !prefix.IsValid() {
+			continue
+		}
+		if old := have[nic.GetName()]; old != nil {
+			if p, err := netip.ParsePrefix(old.GetIpv6()); err == nil && prefix.Contains(p.Addr()) {
+				nic.Ipv6 = old.GetIpv6()
+				continue
+			}
+		}
+		if taken == nil {
+			if taken, err = s.takenIPv6(ctx); err != nil {
+				return err
+			}
+		}
+		a, err := freeIPv6(prefix, taken, rand.Read)
+		if err != nil {
+			return err
+		}
+		taken[a] = true
+		nic.Ipv6 = netip.PrefixFrom(a, 128).String()
+	}
 	return nil
+}
+
+// nodePrefix is the IPv6 prefix a node reports, invalid if it reports none
+// or there is no node.
+func (s *Server) nodePrefix(ctx context.Context, node string) (netip.Prefix, error) {
+	if node == "" {
+		return netip.Prefix{}, nil
+	}
+	obj, err := s.get(ctx, registry.Node, resource.Key{Name: node})
+	if err != nil || obj == nil {
+		return netip.Prefix{}, err
+	}
+	// Agents report only valid prefixes; a node reporting another has none,
+	// which is safe.
+	p, _ := computeapi.ParseIPv6Prefix(obj.(*computev1alpha1.Node).GetStatus().GetIpv6Prefix())
+	return p, nil
+}
+
+// takenIPv6 are the IPv6 addresses of every machine, live or being
+// deleted, in any project: a machine keeps its address until its node
+// releases it.
+func (s *Server) takenIPv6(ctx context.Context) (map[netip.Addr]bool, error) {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Machine.Kind})
+	if err != nil {
+		return nil, err
+	}
+	taken := map[netip.Addr]bool{}
+	for _, o := range objs {
+		m, ok := decodeMachine(o)
+		if !ok {
+			return nil, fmt.Errorf("decode machine %s/%s", o.Project, o.Name)
+		}
+		for _, nic := range m.GetSpec().GetInterfaces() {
+			if p, err := netip.ParsePrefix(nic.GetIpv6()); err == nil {
+				taken[p.Addr()] = true
+			}
+		}
+	}
+	return taken, nil
+}
+
+// freeIPv6 draws a random address of the /64 prefix that is not taken, so
+// neighbours cannot be enumerated and a freed address is not handed straight
+// to the next machine. Interface IDs below 2^32, the prefix's :: among them,
+// are left to the host, which deploy/host puts on a low one, and the
+// reserved anycast IDs of RFC 5453 are never drawn.
+func freeIPv6(prefix netip.Prefix, taken map[netip.Addr]bool, read func([]byte) (int, error)) (netip.Addr, error) {
+	for range 64 {
+		var id [8]byte
+		if _, err := read(id[:]); err != nil {
+			return netip.Addr{}, err
+		}
+		if reservedInterfaceID(id) {
+			continue
+		}
+		b := prefix.Addr().As16()
+		copy(b[8:], id[:])
+		if a := netip.AddrFrom16(b); !taken[a] {
+			return a, nil
+		}
+	}
+	return netip.Addr{}, fmt.Errorf("no free IPv6 address found in %s", prefix)
+}
+
+// reservedInterfaceID says whether an interface ID is the host's (below
+// 2^32) or a reserved subnet anycast one (fdff:ffff:ffff:ff80 and up).
+func reservedInterfaceID(id [8]byte) bool {
+	return binary.BigEndian.Uint32(id[:4]) == 0 || binary.BigEndian.Uint64(id[:]) >= 0xfdffffffffffff80
 }
 
 // freeAddress returns the lowest address of the network no other machine

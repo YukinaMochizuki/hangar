@@ -354,6 +354,5 @@ func isOurs(data any) bool {
 	case *nftables.Rule:
 		t = v.Table
 	}
-	return t != nil && (t.Family == nftables.TableFamilyIPv4 || t.Family == nftables.TableFamilyBridge) &&
-		(t.Name == Table || t.Name == FirewallTable)
+	return t != nil && isOursFamily(t.Family) && (t.Name == Table || t.Name == FirewallTable)
 }

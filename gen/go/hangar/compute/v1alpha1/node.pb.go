@@ -164,7 +164,11 @@ type NodeStatus struct {
 	// When the agent last reported, by the agent's clock.
 	LastHeartbeatTime *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=last_heartbeat_time,json=lastHeartbeatTime,proto3" json:"last_heartbeat_time,omitempty"`
 	// Version of the node agent.
-	AgentVersion  string `protobuf:"bytes,6,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	AgentVersion string `protobuf:"bytes,6,opt,name=agent_version,json=agentVersion,proto3" json:"agent_version,omitempty"`
+	// The host's public IPv6 prefix, such as "2001:db8:0:1::/64", from which
+	// each machine interface on the node gets a /128; empty when the host has
+	// none, and its machines then have no IPv6.
+	Ipv6Prefix    string `protobuf:"bytes,7,opt,name=ipv6_prefix,json=ipv6Prefix,proto3" json:"ipv6_prefix,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -237,6 +241,13 @@ func (x *NodeStatus) GetLastHeartbeatTime() *timestamppb.Timestamp {
 func (x *NodeStatus) GetAgentVersion() string {
 	if x != nil {
 		return x.AgentVersion
+	}
+	return ""
+}
+
+func (x *NodeStatus) GetIpv6Prefix() string {
+	if x != nil {
+		return x.Ipv6Prefix
 	}
 	return ""
 }
@@ -941,7 +952,7 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\v2#.hangar.compute.v1alpha1.NodeStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
 	"\x04Node\x12\x05nodes \x02\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xf7\x02\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\x98\x03\n" +
 	"\n" +
 	"NodeStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -951,7 +962,9 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\bcapacity\x18\x03 \x01(\v2&.hangar.compute.v1alpha1.NodeResourcesR\bcapacity\x12H\n" +
 	"\vallocatable\x18\x04 \x01(\v2&.hangar.compute.v1alpha1.NodeResourcesR\vallocatable\x12J\n" +
 	"\x13last_heartbeat_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x11lastHeartbeatTime\x12#\n" +
-	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\"l\n" +
+	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\x12\x1f\n" +
+	"\vipv6_prefix\x18\a \x01(\tR\n" +
+	"ipv6Prefix\"l\n" +
 	"\rNodeResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +

@@ -44,6 +44,12 @@ message Interface {
   string address = 2;
   // The default route through this interface; empty for none.
   string gateway = 3;
+  // The interface's public IPv6 address, such as 2001:db8::5/128; empty for
+  // none.
+  string ipv6 = 4;
+  // The IPv6 default route through this interface, a link-local address
+  // such as fe80::1; empty for none.
+  string ipv6_gateway = 5;
 }
 
 // GuestAgentService is served by hangar-init over vsock.

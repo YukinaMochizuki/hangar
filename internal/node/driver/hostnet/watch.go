@@ -174,6 +174,14 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 		l, ok := seen[index]
 		return ns != nil || !ok || strings.HasPrefix(l.name, Prefix) || l.name == d.cfg.Uplink
 	}
+	// Of IPv6, only the driver's links' matter, and only with a prefix:
+	// without one, a link's IPv6 is the kernel's own, as the link-local
+	// address it adds once a link is up, and the uplink's comes and goes
+	// with the host's own configuration.
+	ours6 := func(index int) bool {
+		l, ok := seen[index]
+		return d.cfg.IPv6Prefix.IsValid() && index != 0 && (ns != nil || !ok || strings.HasPrefix(l.name, Prefix))
+	}
 	go func() {
 		defer func() {
 			for _, f := range started {
@@ -207,15 +215,18 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 					addrs = nil
 					continue
 				}
-				// IPv6 addresses and routes are the kernel's own so far, such
-				// as the link-local address it adds once a link is up.
-				changed = u.LinkAddress.IP.To4() != nil && ours(u.LinkIndex)
+				if u.LinkAddress.IP.To4() != nil {
+					changed = ours(u.LinkIndex)
+				} else {
+					changed = ours6(u.LinkIndex)
+				}
 			case u, ok := <-routes:
 				if !ok {
 					routes = nil
 					continue
 				}
-				changed = u.Family == unix.AF_INET && (u.LinkIndex == 0 || ours(u.LinkIndex))
+				changed = u.Family == unix.AF_INET && (u.LinkIndex == 0 || ours(u.LinkIndex)) ||
+					u.Family == unix.AF_INET6 && ours6(u.LinkIndex)
 			case e, ok := <-tables:
 				if !ok {
 					fail(nil)

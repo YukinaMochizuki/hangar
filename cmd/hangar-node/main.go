@@ -24,6 +24,7 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/diskimage"
@@ -41,6 +42,7 @@ const defaultCmdline = "console=ttyS0 root=/dev/vda rw quiet spectre_bhi=on"
 // hostFlags are what the host drivers are built with.
 type hostFlags struct {
 	network, uplink, publicIPv4     string
+	ipv6Prefix                      string
 	dataset, imageDir               string
 	maxUnpackWork                   int64
 	cloudHypervisor, kernel, initrd string
@@ -73,6 +75,11 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	prefix, err := hf.prefix()
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	d, closeDrivers, err := drivers(ctx, *hostDrivers, hf)
 	if err != nil {
 		log.Error("node agent stopped", "error", err)
@@ -96,6 +103,7 @@ func main() {
 		MaxUnpackWork: hf.maxUnpackWork,
 		Drivers:       d,
 		DNSUpstreams:  upstreams,
+		IPv6Prefix:    prefix,
 		Log:           log,
 	})
 	if err == nil {
@@ -127,6 +135,11 @@ func drivers(ctx context.Context, kind string, hf hostFlags) (*node.Drivers, fun
 func fakeDrivers(hf hostFlags) (*node.Drivers, func(), error) {
 	none := func() {}
 	h := fake.New()
+	prefix, err := hf.prefix()
+	if err != nil {
+		return nil, none, err
+	}
+	h.SetIPv6Prefix(prefix)
 	d := &node.Drivers{Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
 	switch hf.network {
 	case "fake":
@@ -151,7 +164,11 @@ func network(hf hostFlags) (*hostnet.Driver, error) {
 			return nil, fmt.Errorf("--public-ipv4: %w", err)
 		}
 	}
-	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public})
+	prefix, err := hf.prefix()
+	if err != nil {
+		return nil, err
+	}
+	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public, IPv6Prefix: prefix})
 	if err != nil {
 		return nil, fmt.Errorf("network driver: %w", err)
 	}
@@ -164,6 +181,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.network, "network-driver", "fake", "with --drivers=fake, the network driver: fake, or host for this host's (needs --uplink)")
 	fs.StringVar(&hf.uplink, "uplink", "", "with this host's network driver, the link the host reaches the internet through")
 	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the address networks' traffic leaves the uplink as; empty for the uplink's own")
+	fs.StringVar(&hf.ipv6Prefix, "public-ipv6-prefix", "", "the host's public IPv6 /64, such as 2001:db8:0:1::/64, on the uplink's link, from which each machine interface gets an address; empty for no IPv6 in the networks")
 	fs.StringVar(&hf.dataset, "zfs-dataset", "hangar", "for --drivers=host, the dataset root disks and image bases go under")
 	fs.StringVar(&hf.imageDir, "image-dir", "/var/lib/hangar/images", "for --drivers=host, where images are cached, unpacked and downloaded: the hangar/images dataset's mount point")
 	fs.StringVar(&hf.cloudHypervisor, "cloud-hypervisor", "/usr/local/bin/cloud-hypervisor", "for --drivers=host, Cloud Hypervisor")
@@ -172,6 +190,18 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
+}
+
+// prefix reads --public-ipv6-prefix; invalid when it is empty.
+func (hf hostFlags) prefix() (netip.Prefix, error) {
+	if hf.ipv6Prefix == "" {
+		return netip.Prefix{}, nil
+	}
+	p, err := computeapi.ParseIPv6Prefix(hf.ipv6Prefix)
+	if err != nil {
+		return netip.Prefix{}, fmt.Errorf("--public-ipv6-prefix: %w", err)
+	}
+	return p, nil
 }
 
 // parseUpstreams reads --dns-upstreams: addresses, each on port 53.

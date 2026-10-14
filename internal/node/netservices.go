@@ -19,9 +19,11 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/dhcp"
+	"github.com/YukinaMochizuki/hangar/internal/node/dhcp6"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 	"github.com/YukinaMochizuki/hangar/internal/node/netsvc"
+	"github.com/YukinaMochizuki/hangar/internal/node/ra"
 	"github.com/YukinaMochizuki/hangar/internal/node/resolver"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 	"github.com/YukinaMochizuki/hangar/internal/store"
@@ -35,10 +37,12 @@ const resolverPort = 53
 var dhcpAddr = netip.AddrPortFrom(netip.IPv4Unspecified(), 67)
 
 // netServices are the services the node serves the networks on its host:
-// each network's resolver, its DHCP and its metadata service.
+// each network's resolver, its DHCP and its metadata service, and where the
+// host has an IPv6 prefix, its router advertisements and DHCPv6.
 type netServices struct {
 	resolver *resolver.Resolver
 	dhcp     *dhcp.Server
+	dhcp6    *dhcp6.Server
 	metadata *metadata.Server
 	services *netsvc.Manager
 
@@ -87,9 +91,29 @@ func newNetServices(n driver.Network, upstreams []netip.AddrPort, md *metadata.S
 			}
 		},
 	}
+	raService := netsvc.Service{
+		Name:    "router advertisements",
+		Packets: driver.RouterSolicitations,
+		ServePackets: func(ctx context.Context, n netsvc.Network, c driver.PacketConn) {
+			if err := ra.Serve(ctx, c, log); err != nil {
+				log.Error("a network's router advertisements stopped", "network_uid", n.UID, "error", err)
+			}
+		},
+	}
+	d6 := dhcp6.New(log)
+	dhcp6Service := netsvc.Service{
+		Name:    "dhcpv6",
+		Packets: driver.DHCPv6,
+		ServePackets: func(ctx context.Context, n netsvc.Network, c driver.PacketConn) {
+			if err := d6.Serve(ctx, n.UID, c); err != nil {
+				log.Error("a network's DHCPv6 stopped", "network_uid", n.UID, "error", err)
+			}
+		},
+	}
 	return &netServices{
-		resolver: r, dhcp: d, metadata: md, services: netsvc.New(n, log, dns, dhcpService, mdService),
-		named: map[string]map[controller.Key]bool{},
+		resolver: r, dhcp: d, dhcp6: d6, metadata: md,
+		services: netsvc.New(n, log, dns, dhcpService, mdService, raService, dhcp6Service),
+		named:    map[string]map[controller.Key]bool{},
 	}
 }
 
@@ -162,7 +186,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		return nil
 	}
 	s := a.netsvc
-	if err := s.services.Ensure(ctx, netsvc.Network{UID: uid, Gateway: cidr.Addr().Next()}); err != nil {
+	if err := s.services.Ensure(ctx, netsvc.Network{UID: uid, Gateway: cidr.Addr().Next(), IPv6: a.cfg.IPv6Prefix.IsValid()}); err != nil {
 		return err
 	}
 	if !slices.Contains(s.services.Serving(), uid) {
@@ -177,6 +201,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	names := map[string][]netip.Addr{}
 	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
 	instances := map[netip.Addr]metadata.Instance{}
+	leases6 := map[string]netip.Addr{}
 	var on []string
 	// Every interface on the network is a member, whichever node runs it;
 	// the policies ensured here are those of this node's, at mineAt.
@@ -191,8 +216,15 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				continue
 			}
 			name := machineDNSName(m)
-			if !slices.Contains(names[name], addr.Addr()) {
-				names[name] = append(names[name], addr.Addr())
+			addrs := []netip.Addr{addr.Addr()}
+			if v6, ok := ipv6Of(nic); ok {
+				addrs = append(addrs, v6)
+				leases6[mac(m.GetMetadata().GetUid(), nic.GetName())] = v6
+			}
+			for _, a := range addrs {
+				if !slices.Contains(names[name], a) {
+					names[name] = append(names[name], a)
+				}
 			}
 			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
 			instances[addr.Addr()] = a.instance(m, name)
@@ -201,7 +233,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
 				mineAt = append(mineAt, len(members))
 			}
-			members = append(members, secgroup.Member{Addr: addr.Addr(), Groups: nic.GetSecurityGroups()})
+			members = append(members, secgroup.Member{Addrs: addrs, Groups: nic.GetSecurityGroups()})
 		}
 	}
 	groups, err := a.groupsOf(ctx, k)
@@ -217,6 +249,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	s.name(k, on)
 	s.resolver.Set(uid, resolver.Records{Project: k.Project, Names: names})
 	s.dhcp.Set(uid, leases)
+	s.dhcp6.Set(uid, leases6)
 	s.metadata.Set(uid, instances)
 	if err := a.cfg.Drivers.Network.EnsureFirewall(ctx, uid, mine); err != nil {
 		// Rules that cannot be written must not leave older, perhaps
@@ -281,6 +314,7 @@ func (s *netServices) keep(onHost map[string]bool) {
 func (s *netServices) forget(networkUID string) {
 	s.resolver.Forget(networkUID)
 	s.dhcp.Forget(networkUID)
+	s.dhcp6.Forget(networkUID)
 	s.metadata.Forget(networkUID)
 }
 
@@ -304,6 +338,15 @@ func guestDNS(project string, ifaces []driver.Interface) (nameservers, search []
 		nameservers = []string{ifaces[0].Gateway.String()}
 	}
 	return nameservers, []string{resolver.Search(project)}
+}
+
+// ipv6Of is an interface's public IPv6 address, if it has one.
+func ipv6Of(nic *computev1alpha1.MachineInterface) (netip.Addr, bool) {
+	p, err := netip.ParsePrefix(nic.GetIpv6())
+	if err != nil || !p.Addr().Is6() || p.Bits() != 128 {
+		return netip.Addr{}, false
+	}
+	return p.Addr(), true
 }
 
 func parsePrefix(s string) (netip.Prefix, bool) {

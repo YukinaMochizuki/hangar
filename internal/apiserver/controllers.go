@@ -585,8 +585,12 @@ func (s *Server) scheduleMachine(ctx context.Context, key resource.Key, m *compu
 
 // place picks a node for m and writes it, as one decision about the node's
 // memory and disk. The disks m lists that live on no node yet are bound to
-// it first. Without a fit it returns no machine and says why.
+// it first, and the IPv6 addresses of the node's prefix are given with it, so
+// the machine starts with them. Without a fit it returns no machine and
+// says why.
 func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Machine, string, string, error) {
+	s.ipam.Lock()
+	defer s.ipam.Unlock()
 	s.capacity.Lock()
 	defer s.capacity.Unlock()
 	disksOn, unbound, why, err := s.machineDisks(ctx, m)
@@ -612,6 +616,9 @@ func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*comput
 	}
 	placed := proto.Clone(m).(*computev1alpha1.Machine)
 	placed.Spec.Node = node
+	if err := s.assignIPv6(ctx, m.GetSpec(), placed.GetSpec()); err != nil {
+		return nil, "", "", err
+	}
 	res, err := s.backend(registry.Machine).Apply(s.system(ctx), placed)
 	if err != nil {
 		return nil, "", "", err

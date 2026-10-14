@@ -61,6 +61,9 @@ type Host struct {
 	Exec *ExecPrograms
 	// Firmware says the hypervisor boots firmware VMs (VMSpec.Firmware).
 	Firmware bool
+	// IPv6Prefix is the prefix the network driver was given, invalid for
+	// none; the suite's IPv6 part runs only with one.
+	IPv6Prefix netip.Prefix
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -92,6 +95,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network changes", networkChanges, nets)
 	part("network sockets", networkSockets, nets)
 	part("network firewall", networkFirewall, nets)
+	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
+	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })
 	part("hypervisor", hypervisor, vms)
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
@@ -756,6 +761,86 @@ func networkSockets(t *testing.T, h Host) {
 	}
 	must(t, again.Close())
 	must(t, udp.Close())
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+}
+
+// networkIPv6 gives interfaces IPv6 addresses of the host's prefix, and
+// opens a network's packet sockets, each tied to its instance as other
+// sockets are.
+func networkIPv6(t *testing.T, h Host) {
+	ctx := t.Context()
+	at := func(id byte) netip.Addr {
+		b := h.IPv6Prefix.Addr().As16()
+		b[8], b[15] = 0x8a, id
+		return netip.AddrFrom16(b)
+	}
+	if c, _, err := h.Network.ListenPackets(ctx, testNet.UID, driver.DHCPv6); err == nil {
+		_ = c.Close()
+		t.Error("opened a packet socket in a network not on the host")
+	}
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	nic := eth0("m1")
+	nic.IPv6 = at(1)
+	made, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	if ifs, err := h.Network.Interfaces(ctx); err != nil || len(ifs) != 1 || ifs[0] != made || ifs[0].IPv6 != at(1) {
+		t.Errorf("interfaces %+v %v, want one with %s", ifs, err, at(1))
+	}
+	nic.IPv6 = at(2)
+	moved, err := h.Network.EnsureInterface(ctx, nic)
+	must(t, err)
+	if ifs, _ := h.Network.Interfaces(ctx); len(ifs) != 1 || ifs[0] != moved || ifs[0].IPv6 != at(2) {
+		t.Errorf("an interface given another IPv6 address is listed as %+v", ifs)
+	}
+	outside := eth0("m2")
+	outside.MAC, outside.Address = "02:00:00:00:00:02", netip.MustParsePrefix("10.0.0.3/24")
+	outside.IPv6 = netip.MustParseAddr("2001:db8:ffff:ffff::1")
+	if h.IPv6Prefix.Contains(outside.IPv6) {
+		t.Fatalf("the host's prefix %s holds the test's outside address", h.IPv6Prefix)
+	}
+	if _, err := h.Network.EnsureInterface(ctx, outside); err == nil {
+		t.Error("made an interface with an IPv6 address outside the host's prefix")
+	}
+
+	first, err := h.Network.Instance(ctx, testNet.UID)
+	must(t, err)
+	var conns []driver.PacketConn
+	for _, kind := range []driver.PacketKind{driver.RouterSolicitations, driver.DHCPv6} {
+		c, in, err := h.Network.ListenPackets(ctx, testNet.UID, kind)
+		must(t, err)
+		if in != first {
+			t.Errorf("a packet socket opened in instance %q, want %q", in, first)
+		}
+		conns = append(conns, c)
+	}
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	c, in, err := h.Network.ListenPackets(ctx, testNet.UID, driver.DHCPv6)
+	must(t, err)
+	if second, _ := h.Network.Instance(ctx, testNet.UID); in != second || in == first {
+		t.Errorf("a packet socket of a network made again opened in instance %q, the network's is %q, before %q", in, second, first)
+	}
+	must(t, c.Close())
+	for _, c := range conns {
+		must(t, c.Close())
+	}
+	must(t, h.Network.DeleteInterfaces(ctx, "m1"))
+	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
+}
+
+// networkWithoutIPv6 refuses IPv6 on a host without a prefix.
+func networkWithoutIPv6(t *testing.T, h Host) {
+	ctx := t.Context()
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	nic := eth0("m1")
+	nic.IPv6 = netip.MustParseAddr("2001:db8:0:1::5")
+	if _, err := h.Network.EnsureInterface(ctx, nic); err == nil {
+		t.Error("made an interface with an IPv6 address on a host without a prefix")
+	}
+	if c, _, err := h.Network.ListenPackets(ctx, testNet.UID, driver.RouterSolicitations); err == nil {
+		_ = c.Close()
+		t.Error("opened a packet socket on a host without a prefix")
+	}
 	must(t, h.Network.DeleteNetwork(ctx, testNet.UID))
 }
 

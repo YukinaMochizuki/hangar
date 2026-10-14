@@ -38,6 +38,15 @@ const (
 	hostAddr     = "198.51.100.2"
 	upstreamAddr = "198.51.100.1"
 	upstreamURL  = "http://" + upstreamAddr + ":8080/"
+	// The upstream's IPv6 is OVH's: the host's /64 is on-link at the
+	// upstream, which asks for each address by neighbour solicitation and
+	// delivers only to the MAC that answers, and the upstream's own
+	// address, the gateway, is outside it. The host holds ::1 of it.
+	hostPrefix     = "2001:db8:0:1::/64"
+	hostAddr6      = "2001:db8:0:1::1"
+	upstreamAddr6  = "2001:db8:0:ff::ffff"
+	upstreamURL6   = "http://[" + upstreamAddr6 + "]:8080/"
+	upstreamOnLink = "2001:db8:0:ff::/64"
 	// guestPrefix names the namespaces of stand-in guests.
 	guestPrefix = "tbg-"
 	lockFile    = "/run/lock/hangar-testbed.lock"
@@ -80,8 +89,10 @@ func TestMain(m *testing.M) {
 		fail(err)
 	}
 	// deploy/host turns forwarding on; a testbed is not bootstrapped.
-	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0); err != nil {
-		fail(err)
+	for _, f := range []string{"/proc/sys/net/ipv4/ip_forward", "/proc/sys/net/ipv6/conf/all/forwarding"} {
+		if err := os.WriteFile(f, []byte("1"), 0); err != nil {
+			fail(err)
+		}
 	}
 	sweep()
 	if err := upstreamUp(); err != nil {
@@ -129,6 +140,12 @@ func upstreamUp() error {
 		{"ip", "-n", upstreamNS, "addr", "add", upstreamAddr + "/24", "dev", "tbupx"},
 		{"ip", "-n", upstreamNS, "link", "set", "tbupx", "up"},
 		{"ip", "-n", upstreamNS, "link", "set", "lo", "up"},
+		// deploy/host sets proxy NDP on the uplink.
+		{"sysctl", "-q", "-w", "net.ipv6.conf." + upstreamLink + ".proxy_ndp=1"},
+		{"ip", "-6", "addr", "add", hostAddr6 + "/64", "dev", upstreamLink, "nodad"},
+		{"ip", "-6", "route", "add", upstreamOnLink, "dev", upstreamLink},
+		{"ip", "-n", upstreamNS, "-6", "addr", "add", upstreamAddr6 + "/64", "dev", "tbupx", "nodad"},
+		{"ip", "-n", upstreamNS, "-6", "route", "add", hostPrefix, "dev", "tbupx"},
 	} {
 		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
 			return fmt.Errorf("%s: %w: %s", strings.Join(args, " "), err, out)
@@ -142,19 +159,22 @@ func upstreamUp() error {
 		return err
 	}
 	defer func() { _ = ns.Close() }()
-	var ln net.Listener
-	if err := inNS(ns, func() (err error) {
-		ln, err = net.Listen("tcp4", upstreamAddr+":8080")
-		return err
-	}); err != nil {
-		return err
+	// Port 25 too, which a network may not reach.
+	for _, at := range []string{upstreamAddr + ":8080", "[" + upstreamAddr6 + "]:8080", "[" + upstreamAddr6 + "]:25"} {
+		var ln net.Listener
+		if err := inNS(ns, func() (err error) {
+			ln, err = net.Listen("tcp", at)
+			return err
+		}); err != nil {
+			return err
+		}
+		go func() {
+			_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host, _, _ := net.SplitHostPort(r.RemoteAddr)
+				_, _ = fmt.Fprint(w, host)
+			}))
+		}()
 	}
-	go func() {
-		_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			host, _, _ := net.SplitHostPort(r.RemoteAddr)
-			_, _ = fmt.Fprint(w, host)
-		}))
-	}()
 	return nil
 }
 

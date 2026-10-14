@@ -124,6 +124,9 @@ message VirtualMachineInterfaceStatus {
   string network = 2;
   // The address with its network's prefix length, such as "10.0.0.5/24".
   string ipv4 = 3;
+  // The public IPv6 address, such as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128",
+  // which the guest leases by DHCPv6; empty while its host has no prefix.
+  string ipv6 = 4;
 }
 
 // VirtualMachineService manages virtual machines.

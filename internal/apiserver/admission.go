@@ -622,6 +622,15 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 				return invalid("spec.interfaces[%s].ipv4 %q is not an IPv4 address with a prefix length", nic.GetName(), a)
 			}
 		}
+		if a := nic.GetIpv6(); a != "" {
+			if p, err := netip.ParsePrefix(a); err != nil || !p.Addr().Is6() || p.Addr().Is4In6() || p.Addr().Zone() != "" ||
+				p.Bits() != 128 || !p.Addr().IsGlobalUnicast() {
+				return invalid("spec.interfaces[%s].ipv6 %q is not a global IPv6 address with /128", nic.GetName(), a)
+			}
+			if spec.GetNode() == "" {
+				return invalid("spec.interfaces[%s].ipv6 is set on a machine on no node", nic.GetName())
+			}
+		}
 		if seen[nic.GetName()] {
 			return invalid("spec.interfaces: duplicate name %q", nic.GetName())
 		}

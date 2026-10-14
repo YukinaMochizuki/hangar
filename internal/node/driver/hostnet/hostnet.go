@@ -2,7 +2,9 @@
 // on the host, joined to the root namespace by a veth pair on its transit
 // /31, with a bridge holding its gateway and the metadata address, a
 // persistent tap per machine interface bound to its MAC and address, and
-// IPv4 SNAT in two layers. It keeps no state: what it made is read back
+// IPv4 SNAT in two layers; with an IPv6 prefix, each interface's public
+// /128 is routed to it and answered for on the uplink by proxy NDP. It
+// keeps no state: what it made is read back
 // from links named with its Prefix, their aliases, and its nft tables, and
 // it changes nothing else. Host settings it relies on, such
 // as IPv4 forwarding, are deploy/host's, not the driver's. See
@@ -25,6 +27,7 @@ import (
 	"github.com/vishvananda/netns"
 	"golang.org/x/sys/unix"
 
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
@@ -36,6 +39,9 @@ type Config struct {
 	// as. Unset, it is whichever address the uplink has when a connection
 	// starts.
 	PublicIPv4 netip.Addr
+	// IPv6Prefix is the host's public /64, on the uplink's link, which
+	// interfaces' IPv6 addresses are of. Unset, the networks have no IPv6.
+	IPv6Prefix netip.Prefix
 }
 
 // Driver is a driver.Network on this host. It must run in the root network
@@ -49,6 +55,8 @@ type Driver struct {
 	changes chan struct{}
 	// watches are by network uid; "" is the root namespace's.
 	watches map[string]*watch
+	// stopPoll ends the polling of proxy entries.
+	stopPoll chan struct{}
 }
 
 var _ driver.Network = (*Driver)(nil)
@@ -61,11 +69,16 @@ func New(cfg Config) (*Driver, error) {
 	if cfg.PublicIPv4.IsValid() && !cfg.PublicIPv4.Is4() {
 		return nil, fmt.Errorf("public address %s is not IPv4", cfg.PublicIPv4)
 	}
+	if cfg.IPv6Prefix.IsValid() {
+		if _, err := computeapi.ParseIPv6Prefix(cfg.IPv6Prefix.String()); err != nil {
+			return nil, fmt.Errorf("IPv6 prefix: %w", err)
+		}
+	}
 	root, err := netlink.NewHandle()
 	if err != nil {
 		return nil, err
 	}
-	d := &Driver{cfg: cfg, root: root, changes: make(chan struct{}, 1), watches: map[string]*watch{}}
+	d := &Driver{cfg: cfg, root: root, changes: make(chan struct{}, 1), watches: map[string]*watch{}, stopPoll: make(chan struct{})}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	uids, err := namespaces()
@@ -81,6 +94,9 @@ func New(cfg Config) (*Driver, error) {
 		d.closeLocked()
 		return nil, err
 	}
+	if cfg.IPv6Prefix.IsValid() {
+		go d.pollProxies(d.stopPoll)
+	}
 	return d, nil
 }
 
@@ -93,6 +109,11 @@ func (d *Driver) Close() error {
 }
 
 func (d *Driver) closeLocked() {
+	select {
+	case <-d.stopPoll:
+	default:
+		close(d.stopPoll)
+	}
 	for uid := range d.watches {
 		d.stopWatch(uid)
 	}
@@ -111,6 +132,11 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 		return err
 	} else if v != "1" {
 		return errors.New("IPv4 forwarding is off on the host (net.ipv4.ip_forward); deploy/host turns it on")
+	}
+	if d.cfg.IPv6Prefix.IsValid() {
+		if err := d.checkHostIPv6(); err != nil {
+			return err
+		}
 	}
 	if err := d.rewatch(""); err != nil {
 		return err
@@ -161,6 +187,9 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err := ensureAddr(h, br, netip.PrefixFrom(n.CIDR.Addr().Next(), n.CIDR.Bits()), netip.PrefixFrom(driver.MetadataAddr, 32)); err != nil {
 		return fmt.Errorf("network %s: gateway: %w", n.UID, err)
 	}
+	if err := d.ensureNetworkIPv6(ns, h, host, inner, br); err != nil {
+		return fmt.Errorf("network %s: IPv6: %w", n.UID, err)
+	}
 	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
@@ -175,7 +204,10 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err := ensureFirewallTable(ns, n.CIDR.Addr().Next()); err != nil {
 		return fmt.Errorf("network %s: %w", n.UID, err)
 	}
-	return ensureBinding(ns, h)
+	if err := ensureBinding(ns, h, d.cfg.IPv6Prefix); err != nil {
+		return err
+	}
+	return d.syncIPv6()
 }
 
 // ensureRoot makes the root namespace's table, and removes veths the driver
@@ -186,6 +218,14 @@ func (d *Driver) ensureRoot() error {
 		return err
 	}
 	if err := ensureTable(conn, nftables.TableFamilyIPv4, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4)); err != nil {
+		return err
+	}
+	if d.cfg.IPv6Prefix.IsValid() {
+		err = ensureTable(conn, nftables.TableFamilyIPv6, rootChains6(d.cfg.Uplink, d.cfg.IPv6Prefix))
+	} else {
+		err = deleteTable(conn, nftables.TableFamilyIPv6)
+	}
+	if err != nil {
 		return err
 	}
 	links, err := d.root.LinkList()
@@ -493,6 +533,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 			if err := deleteNamedTable(conn, nftables.TableFamilyBridge, FirewallTable); err != nil {
 				return err
 			}
+			if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
+				return err
+			}
 			return deleteTable(conn, nftables.TableFamilyIPv4)
 		}()
 		if err != nil {
@@ -500,6 +543,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 		}
 	}
 	if err := deleteNS(networkUID); err != nil {
+		return err
+	}
+	if err := d.syncIPv6(); err != nil {
 		return err
 	}
 	return d.deleteRootIfUnused()
@@ -523,6 +569,9 @@ func (d *Driver) deleteRootIfUnused() error {
 	}
 	conn, err := nftables.New()
 	if err != nil {
+		return err
+	}
+	if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
 		return err
 	}
 	return deleteTable(conn, nftables.TableFamilyIPv4)
@@ -646,6 +695,16 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if !cidr.Contains(i.Address.Addr()) {
 		return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is outside network %s (%s)", i.MachineUID, i.Name, i.Address, i.NetworkUID, cidr)
 	}
+	if i.IPv6.IsValid() {
+		if !d.cfg.IPv6Prefix.Contains(i.IPv6) {
+			return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is not of the host's IPv6 prefix %s", i.MachineUID, i.Name, i.IPv6, d.cfg.IPv6Prefix)
+		}
+		if held, err := d.uplinkHolds(i.IPv6); err != nil {
+			return driver.Interface{}, err
+		} else if held {
+			return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is the host's own address", i.MachineUID, i.Name, i.IPv6)
+		}
+	}
 
 	all, err := taps()
 	if err != nil {
@@ -673,7 +732,7 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 			return driver.Interface{}, err
 		}
 		if t.network != i.NetworkUID {
-			if err := rebind(t.network); err != nil {
+			if err := d.rebind(t.network); err != nil {
 				return driver.Interface{}, err
 			}
 		}
@@ -690,7 +749,7 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	}
 	// Bound before it joins the bridge, so it never sends as another, and
 	// behind a firewall, closed if it has no other.
-	if err := ensureBinding(ns, h); err != nil {
+	if err := ensureBinding(ns, h, d.cfg.IPv6Prefix); err != nil {
 		return driver.Interface{}, err
 	}
 	gateway, err := gatewayOf(h)
@@ -706,6 +765,9 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 		}
 	}
 	if err := ensureUp(h, link); err != nil {
+		return driver.Interface{}, err
+	}
+	if err := d.syncIPv6(); err != nil {
 		return driver.Interface{}, err
 	}
 	i.Device = link.Attrs().Name
@@ -819,21 +881,24 @@ func (d *Driver) DeleteInterfaces(_ context.Context, machineUID string) error {
 			return err
 		}
 	}
-	// What bound them goes too.
+	// What bound and routed them goes too.
 	done := map[string]bool{}
 	for _, t := range mine {
 		if !done[t.network] {
 			done[t.network] = true
-			if err := rebind(t.network); err != nil {
+			if err := d.rebind(t.network); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	if len(mine) == 0 {
+		return nil
+	}
+	return d.syncIPv6()
 }
 
 // rebind binds the taps of a network's namespace as they are now.
-func rebind(uid string) error {
+func (d *Driver) rebind(uid string) error {
 	ns, ok, err := openNS(uid)
 	if err != nil || !ok {
 		return err
@@ -844,7 +909,7 @@ func rebind(uid string) error {
 		return err
 	}
 	defer h.Close()
-	return ensureBinding(ns, h)
+	return ensureBinding(ns, h, d.cfg.IPv6Prefix)
 }
 
 // linkByName returns the link named name, or nil if there is none.

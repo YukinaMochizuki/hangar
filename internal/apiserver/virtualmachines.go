@@ -532,7 +532,7 @@ func (s *Server) reportVirtualMachine(ctx context.Context, vm *computev1alpha1.V
 	if ownedBy(m.GetMetadata(), vm.GetMetadata().GetUid()) {
 		for _, nic := range m.GetSpec().GetInterfaces() {
 			status.Interfaces = append(status.Interfaces, &computev1alpha1.VirtualMachineInterfaceStatus{
-				Name: nic.GetName(), Network: nic.GetNetwork(), Ipv4: nic.GetIpv4(),
+				Name: nic.GetName(), Network: nic.GetNetwork(), Ipv4: nic.GetIpv4(), Ipv6: nic.GetIpv6(),
 			})
 		}
 	}

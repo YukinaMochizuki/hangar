@@ -153,16 +153,23 @@ func subtreeControl(controllers string) string {
 }
 
 // Network brings up lo, and each interface, found by its MAC, with its
-// address and its default route; only one may have one.
+// addresses and its default routes; only one may have an IPv4 default
+// route, and one an IPv6 one.
 func Network(ifaces []*guestv1.Interface) error {
-	gateways := 0
+	gateways, gateways6 := 0, 0
 	for _, i := range ifaces {
 		if i.GetGateway() != "" {
 			gateways++
 		}
+		if i.GetIpv6Gateway() != "" {
+			gateways6++
+		}
 	}
 	if gateways > 1 {
 		return fmt.Errorf("%d interfaces have a default route; one may", gateways)
+	}
+	if gateways6 > 1 {
+		return fmt.Errorf("%d interfaces have an IPv6 default route; one may", gateways6)
 	}
 	lo, err := netlink.LinkByName("lo")
 	if err != nil {
@@ -187,18 +194,38 @@ func Network(ifaces []*guestv1.Interface) error {
 		if err := netlink.AddrReplace(link, addr); err != nil {
 			return err
 		}
+		if v6 := want.GetIpv6(); v6 != "" {
+			a, err := netlink.ParseAddr(v6)
+			if err != nil || a.IP.To4() != nil {
+				return fmt.Errorf("interface %s: IPv6 address %q", want.GetMac(), v6)
+			}
+			// The address is the guest's alone, which the host's binding
+			// enforces, so it is usable at once.
+			a.Flags |= unix.IFA_F_NODAD
+			if err := netlink.AddrReplace(link, a); err != nil {
+				return err
+			}
+		}
 		if err := netlink.LinkSetUp(link); err != nil {
 			return err
 		}
-		if want.GetGateway() == "" {
-			continue
+		if want.GetGateway() != "" {
+			gw := net.ParseIP(want.GetGateway())
+			if gw == nil {
+				return fmt.Errorf("interface %s: gateway %q", want.GetMac(), want.GetGateway())
+			}
+			if err := netlink.RouteReplace(&netlink.Route{LinkIndex: link.Attrs().Index, Gw: gw}); err != nil {
+				return fmt.Errorf("interface %s: default route: %w", want.GetMac(), err)
+			}
 		}
-		gw := net.ParseIP(want.GetGateway())
-		if gw == nil {
-			return fmt.Errorf("interface %s: gateway %q", want.GetMac(), want.GetGateway())
-		}
-		if err := netlink.RouteReplace(&netlink.Route{LinkIndex: link.Attrs().Index, Gw: gw}); err != nil {
-			return fmt.Errorf("interface %s: default route: %w", want.GetMac(), err)
+		if want.GetIpv6Gateway() != "" {
+			gw := net.ParseIP(want.GetIpv6Gateway())
+			if gw == nil || gw.To4() != nil {
+				return fmt.Errorf("interface %s: IPv6 gateway %q", want.GetMac(), want.GetIpv6Gateway())
+			}
+			if err := netlink.RouteReplace(&netlink.Route{LinkIndex: link.Attrs().Index, Dst: &net.IPNet{IP: net.IPv6zero, Mask: net.CIDRMask(0, 128)}, Gw: gw}); err != nil {
+				return fmt.Errorf("interface %s: IPv6 default route: %w", want.GetMac(), err)
+			}
 		}
 	}
 	return nil
@@ -392,8 +419,10 @@ func hosts(cfg *guestv1.BootConfig) string {
 	b.WriteString("127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n")
 	if h := cfg.GetHostname(); h != "" {
 		for _, i := range cfg.GetInterfaces() {
-			if p, err := netip.ParsePrefix(i.GetAddress()); err == nil {
-				fmt.Fprintf(&b, "%s\t%s\n", p.Addr(), h)
+			for _, a := range []string{i.GetAddress(), i.GetIpv6()} {
+				if p, err := netip.ParsePrefix(a); err == nil {
+					fmt.Fprintf(&b, "%s\t%s\n", p.Addr(), h)
+				}
 			}
 		}
 	}

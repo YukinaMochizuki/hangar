@@ -36,6 +36,12 @@ func newDriver(t *testing.T, cfg hostnet.Config) *hostnet.Driver {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		// The driver itself first: only one with the prefix removes the
+		// proxy entries it made.
+		nets, _ := d.Networks(context.Background())
+		for _, n := range nets {
+			_ = d.DeleteNetwork(context.Background(), n.UID)
+		}
 		_ = d.Close()
 		wipe(t)
 	})
@@ -64,6 +70,14 @@ func wipe(t *testing.T) {
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
 		return drivertest.Host{Network: newDriver(t, hostnet.Config{Uplink: upstreamLink})}
+	})
+}
+
+// TestConformanceWithIPv6 runs them on a host with an IPv6 prefix.
+func TestConformanceWithIPv6(t *testing.T) {
+	prefix := netip.MustParsePrefix(hostPrefix)
+	drivertest.Run(t, func(t *testing.T) drivertest.Host {
+		return drivertest.Host{Network: newDriver(t, hostnet.Config{Uplink: upstreamLink, IPv6Prefix: prefix}), IPv6Prefix: prefix}
 	})
 }
 

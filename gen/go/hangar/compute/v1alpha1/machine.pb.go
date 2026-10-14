@@ -613,8 +613,12 @@ type MachineInterface struct {
 	// The SecurityGroups the interface is in, "default" included when it is;
 	// never empty once the controller has written it.
 	SecurityGroups []string `protobuf:"bytes,4,rep,name=security_groups,json=securityGroups,proto3" json:"security_groups,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The interface's public address, a /128 of its node's IPv6 prefix, such
+	// as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128". Assigned by the apiserver once
+	// the machine is on a node that has a prefix; empty otherwise.
+	Ipv6          string `protobuf:"bytes,5,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *MachineInterface) Reset() {
@@ -673,6 +677,13 @@ func (x *MachineInterface) GetSecurityGroups() []string {
 		return x.SecurityGroups
 	}
 	return nil
+}
+
+func (x *MachineInterface) GetIpv6() string {
+	if x != nil {
+		return x.Ipv6
+	}
+	return ""
 }
 
 // MachineStatus is what the node and the scheduler observed.
@@ -1473,12 +1484,13 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"instanceId\x12\x1b\n" +
 	"\tuser_data\x18\x02 \x01(\tR\buserData\x12\x1f\n" +
 	"\vvendor_data\x18\x03 \x01(\tR\n" +
-	"vendorData\"}\n" +
+	"vendorData\"\x91\x01\n" +
 	"\x10MachineInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12'\n" +
-	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\"\xaa\x02\n" +
+	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\x12\x12\n" +
+	"\x04ipv6\x18\x05 \x01(\tR\x04ipv6\"\xaa\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

@@ -97,6 +97,10 @@ message MachineInterface {
   // The SecurityGroups the interface is in, "default" included when it is;
   // never empty once the controller has written it.
   repeated string security_groups = 4;
+  // The interface's public address, a /128 of its node's IPv6 prefix, such
+  // as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128". Assigned by the apiserver once
+  // the machine is on a node that has a prefix; empty otherwise.
+  string ipv6 = 5;
 }
 
 // MachineRunState is whether the machine should be running.
