@@ -249,6 +249,39 @@ else does (`sudo hangar --context local apply -f` a RoleBinding). Each
 request on the socket is in the apiserver's log as `admin socket request`,
 with the caller's pid, as `local:root@<node>`.
 
+## The platform's SSH CA
+
+`hangar ssh` logs in with a key the apiserver signs for minutes, with the
+platform's one SSH CA (`docs/decisions/vm-ssh.md`). Its private key is a
+file the apiserver alone reads, `/var/lib/hangar/state/ssh-ca`, kept in
+the vault and installed by hand, as the Cloudflare tunnel's token is;
+nothing in `deploy/host` makes one. Make it once, on a workstation, and put
+the private key in the vault:
+
+```sh
+ssh-keygen -t ed25519 -N '' -C hangar-ssh-ca -f hangar-ssh-ca
+```
+
+Install it from the vault, the apiserver's, mode 0600, and restart the
+apiserver, which reads it at start and logs its public key:
+
+```sh
+sudo install -m 0600 -o hangar -g hangar hangar-ssh-ca /var/lib/hangar/state/ssh-ca
+sudo systemctl restart hangar-apiserver
+shred -u hangar-ssh-ca
+```
+
+The `services` step passes `--ssh-ca-key` to the apiserver and gives the
+file back to `hangar`, mode 0600, if it finds it otherwise, saying who it
+was open to: if anyone else could read it, take the key as exposed and make
+a new one; `verify.sh`
+checks it, and skips it while there is none. Without it the apiserver runs,
+signing fails saying the CA is not installed, and VMs' static keys still
+work. A guest takes the CA on its first boot only: VMs made while there
+was none, or under another CA, trust no CA, or the old one. A new key
+therefore holds for VMs made after it; the old one stays in the vault until
+no VM trusts it.
+
 ## Switching to Cloudflare Access
 
 The public API moves from dev auth to Access tokens before any tunnel

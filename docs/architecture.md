@@ -76,7 +76,9 @@ The node also keeps a tunnel open to the apiserver, through which the
 apiserver calls it for what only the host reaches, such as a container's logs
 and its execs (`decisions/node-tunnel.md`): a node never listens. A client
 reaches an exec through a WebSocket on the apiserver, which relays it to the
-node (`decisions/streaming-transport.md`).
+node (`decisions/streaming-transport.md`); `hangar ssh` reaches a virtual
+machine's port 22 the same way, with a key the apiserver's SSH CA signs for
+minutes (`decisions/vm-ssh.md`).
 
 ## Where the reasoning lives
 

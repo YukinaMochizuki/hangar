@@ -19,6 +19,10 @@ import (
 
 var sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
+// unixUser is a login name as useradd takes it, and as nothing in an ssh
+// command line or a guest's script can read as more.
+var unixUser = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
 func validateImage(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
 	spec := obj.(*storagev1alpha1.Image).GetSpec()
 	u, err := url.Parse(spec.GetUrl())
@@ -27,6 +31,9 @@ func validateImage(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.
 	}
 	if !sha256Hex.MatchString(spec.GetSha256()) {
 		return invalid("spec.sha256 %q is not 64 lowercase hex digits", spec.GetSha256())
+	}
+	if u := spec.GetDefaultUser(); u != "" && !unixUser.MatchString(u) {
+		return invalid("spec.default_user %q is not a login name, such as ubuntu", u)
 	}
 	if a := spec.GetArch(); a != "" && a != "amd64" {
 		return invalid("spec.arch %q: only amd64 is supported", a)

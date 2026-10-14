@@ -119,7 +119,10 @@ type ImageSpec struct {
 	Arch string `protobuf:"bytes,5,opt,name=arch,proto3" json:"arch,omitempty"`
 	// The smallest disk made from it, a quantity such as "10Gi"; empty is the
 	// image's own size.
-	MinDiskSize   string `protobuf:"bytes,6,opt,name=min_disk_size,json=minDiskSize,proto3" json:"min_disk_size,omitempty"`
+	MinDiskSize string `protobuf:"bytes,6,opt,name=min_disk_size,json=minDiskSize,proto3" json:"min_disk_size,omitempty"`
+	// The user the image's cloud-init makes, such as "ubuntu", whom hangar ssh
+	// logs in as unless told another; empty, it must be told.
+	DefaultUser   string `protobuf:"bytes,7,opt,name=default_user,json=defaultUser,proto3" json:"default_user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -192,6 +195,13 @@ func (x *ImageSpec) GetArch() string {
 func (x *ImageSpec) GetMinDiskSize() string {
 	if x != nil {
 		return x.MinDiskSize
+	}
+	return ""
+}
+
+func (x *ImageSpec) GetDefaultUser() string {
+	if x != nil {
+		return x.DefaultUser
 	}
 	return ""
 }
@@ -896,14 +906,15 @@ const file_hangar_storage_v1alpha1_image_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x126\n" +
 	"\x04spec\x18\x04 \x01(\v2\".hangar.storage.v1alpha1.ImageSpecR\x04spec\x12<\n" +
 	"\x06status\x18\x05 \x01(\v2$.hangar.storage.v1alpha1.ImageStatusR\x06status:\x1a\x8a\xb5\x18\x16\n" +
-	"\x05Image\x12\x06images\x1a\x03img \x02\"\x97\x01\n" +
+	"\x05Image\x12\x06images\x1a\x03img \x02\"\xba\x01\n" +
 	"\tImageSpec\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12\x16\n" +
 	"\x06sha256\x18\x02 \x01(\tR\x06sha256\x12\x0e\n" +
 	"\x02os\x18\x03 \x01(\tR\x02os\x12\x18\n" +
 	"\aversion\x18\x04 \x01(\tR\aversion\x12\x12\n" +
 	"\x04arch\x18\x05 \x01(\tR\x04arch\x12\"\n" +
-	"\rmin_disk_size\x18\x06 \x01(\tR\vminDiskSize\"\x96\x01\n" +
+	"\rmin_disk_size\x18\x06 \x01(\tR\vminDiskSize\x12!\n" +
+	"\fdefault_user\x18\a \x01(\tR\vdefaultUser\"\x96\x01\n" +
 	"\vImageStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
