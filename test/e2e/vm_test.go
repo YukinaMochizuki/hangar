@@ -141,6 +141,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 		_, d := get[*storagev1alpha1.Disk](w, registry.Disk, "web-root")
 		return !v && !m && !d, fmt.Sprintf("vm %t machine %t disk %t", v, m, d)
 	})
+	w.deleteImage("noble")
 	w.waitHostEmpty()
 }
 

@@ -58,8 +58,21 @@ change; for now only the platform chooses which images exist.
 
 ## Consequences
 
-- An image's base is held on every node that has a disk of it, until no
-  disk is cloned from it there.
+- **A node keeps an image's base for as long as its Image exists**, not
+  only while a disk is cloned from it, so a disk made after every other
+  disk of the image is gone needs no fetch and no conversion. The sweep
+  removes a base once no disk on the node is cloned from it or still to be
+  made of it, and no Image that is not being deleted names its digest:
+  after its Image is deleted, or names another digest. A node never fetches
+  an image no disk on it was made of: what it keeps is what it has used.
+  The node learns which Images exist by listing them, as every user may
+  (`readableByAll`); nothing about what nodes may read changed.
+- **Kept bases are on the pool, not under the images quota.** A base is a
+  sparse zvol under `hangar/vmbases` (`docs/decisions/storage-zfs.md`);
+  `hangar/images` holds only the downloaded file, until its base is made.
+  `hangar-node --reserved-disk` holds back only the dataset quotas, so
+  the pool's free space must leave room for the bases of the Images used
+  on the host (`docs/runbook/host-bootstrap.md`).
 - The image server must be reachable from the nodes when a node first
   makes a disk of the image; nothing is mirrored.
 - Changing an image's URL or digest affects only disks made afterwards: a

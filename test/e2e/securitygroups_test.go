@@ -196,5 +196,6 @@ func TestAVirtualMachinesInterfaceGetsItsPolicy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	w.deleteImage("noble")
 	w.waitHostEmpty()
 }

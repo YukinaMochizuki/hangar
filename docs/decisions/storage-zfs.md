@@ -122,8 +122,9 @@ unreliable on virtio-fs.
   of the size of the disk the image holds, onto which `qemu-img convert`
   writes it raw (`docs/decisions/vm-images.md`), then snapshotted as
   `@base` and set read-only, as an OCI image's base is. It goes once no
-  volume is cloned from it and no disk still to be made on the node is of
-  it.
+  volume is cloned from it, no disk still to be made on the node is of it,
+  and no Image that is not being deleted names its digest
+  (`docs/decisions/vm-images.md`).
 - **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk
