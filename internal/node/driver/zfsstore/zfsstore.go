@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -70,6 +71,9 @@ type Config struct {
 	// DeviceTimeout bounds waiting for a zvol's device node. Zero means 30
 	// seconds.
 	DeviceTimeout time.Duration
+	// Log is where the driver notes what it recovered from. Nil means
+	// slog.Default().
+	Log *slog.Logger
 }
 
 // Store is the driver. It is safe for concurrent use.
@@ -79,6 +83,9 @@ type Store struct {
 	// building holds a lock per digest, so a base is made once at a time
 	// and not deleted while it is made.
 	building keylock.Map
+
+	// waitDev is waitDevice; a test replaces it, having no zvol.
+	waitDev func(ctx context.Context, vol string) (string, error)
 }
 
 // New checks the parent dataset, makes the driver's own datasets in it if
@@ -87,14 +94,26 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	if cfg.DeviceTimeout == 0 {
 		cfg.DeviceTimeout = 30 * time.Second
 	}
+	if cfg.Log == nil {
+		cfg.Log = slog.Default()
+	}
 	s := &Store{cfg: cfg}
+	s.waitDev = s.waitDevice
 	if _, err := zfs(ctx, "list", "-H", "-o", "name", cfg.Dataset); err != nil {
 		return nil, fmt.Errorf("the dataset for disks: %w", err)
 	}
+	// Each zvol inherits volmode=dev from these, so its device is made as
+	// dev, never made as the default and then made again when its own
+	// volmode=dev is set (docs/decisions/storage-zfs.md).
 	for _, ds := range []string{s.bases(), s.roots(), s.disks(), s.vmBases()} {
-		_, err := zfs(ctx, "list", "-H", "-o", "name", ds)
-		if errors.Is(err, errNotExist) {
-			_, err = zfs(ctx, "create", "-o", "mountpoint=none", "-o", "canmount=off", ds)
+		p, ok, err := props(ctx, ds, "volmode")
+		switch {
+		case err != nil:
+			return nil, err
+		case !ok:
+			_, err = zfs(ctx, "create", "-o", "mountpoint=none", "-o", "canmount=off", "-o", "volmode=dev", ds)
+		case p["volmode"] != "dev":
+			_, err = zfs(ctx, "set", "volmode=dev", ds)
 		}
 		if err != nil {
 			return nil, err
@@ -581,8 +600,7 @@ func (s *Store) EnsureRoot(ctx context.Context, machineUID, digest string, size 
 		if want < baseSize {
 			return driver.Disk{}, fmt.Errorf("%w: %d bytes asked, the base of %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
 		}
-		if _, err := zfs(ctx, "clone", "-o", "volmode=dev", "-o", "refreservation=none",
-			"-o", propMachine+"="+machineUID, "-o", propDigest+"="+digest, snap, vol); err != nil {
+		if err := clone(ctx, snap, vol, propMachine+"="+machineUID, propDigest+"="+digest); err != nil {
 			return driver.Disk{}, err
 		}
 		r = root{machineUID, digest, baseSize}
@@ -590,12 +608,12 @@ func (s *Store) EnsureRoot(ctx context.Context, machineUID, digest string, size 
 	// A root smaller than asked is grown, as one cloned above is; never
 	// shrunk.
 	if r.size < want {
-		if _, err := zfs(ctx, "set", "volsize="+strconv.FormatInt(want, 10), vol); err != nil {
+		if err := s.grow(ctx, vol, want); err != nil {
 			return driver.Disk{}, err
 		}
 		r.size = want
 	}
-	if _, err := s.waitDevice(ctx, vol); err != nil {
+	if _, err := s.waitDev(ctx, vol); err != nil {
 		return driver.Disk{}, err
 	}
 	return driver.Disk{MachineUID: machineUID, Digest: digest, Path: device(vol), Size: r.size}, nil
@@ -794,8 +812,7 @@ func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64, di
 		if want < baseSize {
 			return driver.Volume{}, fmt.Errorf("%w: %d bytes asked, disk image %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
 		}
-		if _, err := zfs(ctx, "clone", "-o", "volmode=dev", "-o", "refreservation=none",
-			"-o", propDisk+"="+diskUID, "-o", propDigest+"="+digest, snap, vol); err != nil {
+		if err := clone(ctx, snap, vol, propDisk+"="+diskUID, propDigest+"="+digest); err != nil {
 			return driver.Volume{}, err
 		}
 		have = baseSize
@@ -803,15 +820,47 @@ func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64, di
 	// A volume smaller than asked is grown, as one cloned above is; never
 	// shrunk.
 	if have < want {
-		if _, err := zfs(ctx, "set", "volsize="+strconv.FormatInt(want, 10), vol); err != nil {
+		if err := s.grow(ctx, vol, want); err != nil {
 			return driver.Volume{}, err
 		}
 		have = want
 	}
-	if _, err := s.waitDevice(ctx, vol); err != nil {
+	if _, err := s.waitDev(ctx, vol); err != nil {
 		return driver.Volume{}, err
 	}
 	return driver.Volume{DiskUID: diskUID, Path: device(vol), Size: have, Digest: digest}, nil
+}
+
+// clone makes vol, sparse and volmode=dev, a clone of snap, with the user
+// properties props. Its size is its base's: a property set in the clone's
+// ioctl that fails leaves it without the rest, ownership among them
+// (docs/decisions/storage-zfs.md).
+func clone(ctx context.Context, snap, vol string, props ...string) error {
+	args := []string{"clone", "-o", "volmode=dev", "-o", "refreservation=none"}
+	for _, p := range props {
+		args = append(args, "-o", p)
+	}
+	_, err := zfs(ctx, append(args, snap, vol)...)
+	return err
+}
+
+// grow sets vol's volsize to want. A zfs set that fails once its change
+// is made, as one killed before it exits is, is done: the volsize is read
+// again (docs/decisions/storage-zfs.md).
+func (s *Store) grow(ctx context.Context, vol string, want int64) error {
+	_, err := zfs(ctx, "set", "volsize="+strconv.FormatInt(want, 10), vol)
+	if err == nil {
+		return nil
+	}
+	p, ok, rerr := props(ctx, vol, "volsize")
+	if rerr != nil || !ok {
+		return err
+	}
+	if have, perr := strconv.ParseInt(p["volsize"], 10, 64); perr == nil && have >= want {
+		s.cfg.Log.Debug("zfs set volsize failed after it was made; the volume is grown", "volume", vol, "volsize", have, "error", err)
+		return nil
+	}
+	return err
 }
 
 func (s *Store) Volumes(ctx context.Context) ([]driver.Volume, error) {

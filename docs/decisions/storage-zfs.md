@@ -133,6 +133,25 @@ unreliable on virtio-fs.
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
   volume restarts the machine it is attached to, as a grown root disk does.
+- **Every zvol is made `volmode=dev` from the start.** The driver's four
+  parent datasets carry `volmode=dev`, so a zvol's device is made as `dev`
+  when the zvol is. A zvol given `-o volmode=dev` under a parent without it
+  gets its device made with the default mode (its partition table scanned),
+  and setting its own `volmode` then removes and makes that device again,
+  asynchronously. On OpenZFS 2.4.1 (kernel 7.0), a `zfs set volsize`, or a
+  `zfs clone -o volsize=`, that lands while the device is being removed
+  dereferences a NULL pointer in `zvol_os_update_volsize`: the kernel oopses
+  and kills the `zfs` command, which the agent sees as `signal: killed`,
+  after the new size is set. An oops inside a clone also leaves the clone
+  without the properties after `volsize`, ownership among them. So a clone
+  is made at its base's size and then grown, and a `zfs set volsize` that
+  fails is followed by a read of the volsize: one at least what was asked
+  is done. The driver gives an existing host's parents their `volmode` as
+  it starts. OpenZFS 2.4 leaves the zvols already there as they are; 2.2
+  makes the device of each one nothing holds open again, once, and leaves
+  an open one, a running VM's, alone. An upstream report of the oops is worth
+  filing: `zvol_find_by_name` hands out a zvol whose device is being
+  removed.
 - **The guest grows its filesystem.** hangar-init, after mounting the root
   disk and before switching to it, grows the ext4 to the whole device with
   `EXT4_IOC_RESIZE_FS`; a failure is logged and the guest boots as it is.

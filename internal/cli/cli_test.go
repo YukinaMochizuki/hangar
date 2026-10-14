@@ -404,24 +404,27 @@ spec:
 		t.Errorf("tenant:\n%s", out)
 	}
 
-	// A number is not text where the API wants a number.
-	bad := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, ports: [{name: http, port: eighty}]}\n"
+	// A number is not text where the API wants a number. These go to a
+	// container of their own: one asking api's 20Gi down to the default
+	// disk is refused until api's machine is made, which the server does
+	// in the background.
+	bad := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec: {image: x, ports: [{name: http, port: eighty}]}\n"
 	if r := w.run(bad, "apply", "-f", "-"); r.code != cli.ExitUsage {
 		t.Errorf("a word for a port: exit %d (%s)", r.code, r.err)
 	}
 	// A number anchored outside a string field stays a number through an
 	// alias or a merge key, as the help says; quoting the anchor works.
 	for _, doc := range []string{
-		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  ports: [{name: http, port: &p 80}]\n  args: [*p]\n",
-		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: 2}\n",
+		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec:\n  image: x\n  ports: [{name: http, port: &p 80}]\n  args: [*p]\n",
+		"apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: 2}\n",
 	} {
 		if r := w.run(doc, "apply", "-f", "-"); r.code != cli.ExitUsage {
 			t.Errorf("a number through an alias: exit %d (%s)", r.code, r.err)
 		}
 	}
-	w.must("apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
+	w.must("apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
 	// The server, not the CLI, says a fraction of a vCPU is refused.
-	frac := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: api}\nspec: {image: x, resources: {cpu: 1.5}}\n"
+	frac := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec: {image: x, resources: {cpu: 1.5}}\n"
 	if r := w.run(frac, "apply", "-f", "-"); r.code != cli.ExitError || !strings.Contains(r.err, "vCPUs are whole") {
 		t.Errorf("cpu 1.5: exit %d (%s)", r.code, r.err)
 	}
