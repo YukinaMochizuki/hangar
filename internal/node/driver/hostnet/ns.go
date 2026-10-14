@@ -148,7 +148,8 @@ func sysctl(key string) (string, error) {
 // nsSysctls are what every network's namespace sets for itself, rather than
 // take whatever the host's defaults give it: forwarding; strict reverse-path
 // filtering, so a source not routed back by the link it came in by is
-// dropped; and no IPv6 on its links until machines have addresses of it.
+// dropped; and no IPv6 on its links but where a prefix turns it on
+// (ensureNetworkIPv6).
 var nsSysctls = [][2]string{
 	{"net.ipv4.ip_forward", "1"},
 	{"net.ipv4.conf.all.rp_filter", "1"},

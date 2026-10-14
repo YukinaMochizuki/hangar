@@ -111,7 +111,9 @@ with `--release DIR`. `--only <step>` runs a single step
     from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can remove or
     replace neither socket;
   - the agent as root: `--drivers=host --name HANGAR_NODE_NAME --uplink
-    HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --reserved-disk` the sum
+    HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --public-ipv6-prefix` the
+    /64 of `HANGAR_IPV6_ADDR`, from which every machine interface gets its
+    public IPv6 address, `--reserved-disk` the sum
     of both quotas, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
     plus the host's own overhead), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the

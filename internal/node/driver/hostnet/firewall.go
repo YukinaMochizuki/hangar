@@ -135,7 +135,31 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 	replies := ruleSpec{says: "a connection's replies pass", exprs: slices.Concat(ctEstablishedOrRelated(), accept)}
 	arp := ruleSpec{says: "ARP passes", exprs: slices.Concat(matchEtherType(etherARP), accept)}
 
-	egress := []ruleSpec{notTap, replies, arp,
+	// Neighbour discovery and listener reports on the link, which no
+	// group decides. A router never forwards a packet with hop limit 255,
+	// which neighbour discovery needs (RFC 4861), nor one from a link-local
+	// address, so nothing routed, as from the internet, passes as either.
+	// From a tap, what the binding holds to its own addresses: a guest
+	// answers a solicitation for its /128 from it.
+	v6 := matchEtherType(etherIPv6)
+	unspecified := netip.MustParsePrefix("::/128")
+	ndFromTap := ruleSpec{says: "neighbour discovery from a tap passes",
+		exprs: slices.Concat(v6, matchHopLimit(255), matchICMPv6Types(133, 136), accept)}
+	ndOnLink := ruleSpec{says: "neighbour discovery between link-local addresses passes",
+		exprs: slices.Concat(v6, matchHopLimit(255), matchSaddr6(linkLocal), matchICMPv6Types(133, 136), accept)}
+	dad := ruleSpec{says: "duplicate address detection passes",
+		exprs: slices.Concat(v6, matchHopLimit(255), matchSaddr6(unspecified), matchICMPv6Type(135), accept)}
+	mld := []ruleSpec{
+		{says: "listener queries and reports between link-local addresses pass",
+			exprs: slices.Concat(v6, matchHopLimit(1), matchSaddr6(linkLocal), matchICMPv6Types(130, 132), accept)},
+		{says: "listener reports between link-local addresses pass",
+			exprs: slices.Concat(v6, matchHopLimit(1), matchSaddr6(linkLocal), matchICMPv6Type(143), accept)},
+		{says: "listener reports from no address pass",
+			exprs: slices.Concat(v6, matchHopLimit(1), matchSaddr6(unspecified), matchICMPv6Type(143), accept)},
+	}
+	egress := slices.Concat([]ruleSpec{notTap, replies, arp, ndFromTap, dad}, mld, []ruleSpec{
+		{says: "DHCPv6 to the servers' group passes",
+			exprs: slices.Concat(matchEtherType(etherIPv6), matchDaddr6(netip.MustParsePrefix("ff02::1:2/128")), matchUDPPorts(546, 547), accept)},
 		{says: "DHCP broadcast from a tap passes",
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchDaddr(netip.MustParsePrefix("255.255.255.255/32")), matchUDPPorts(68, 67), accept)},
 		{says: fmt.Sprintf("DHCP to the server at %s passes", gateway),
@@ -146,12 +170,14 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchDaddr(netip.PrefixFrom(gateway, 32)), matchL4(unix.IPPROTO_TCP), matchDport(53, 53), accept)},
 		{says: "the metadata service is always reachable",
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchDaddr(netip.PrefixFrom(driver.MetadataAddr, 32)), matchL4(unix.IPPROTO_TCP), matchDport(80, 80), accept)},
-	}
-	forward := []ruleSpec{notToTap, replies, arp}
-	output := []ruleSpec{notToTap, replies, arp,
+	})
+	forward := slices.Concat([]ruleSpec{notToTap, replies, arp, ndOnLink, dad}, mld)
+	output := slices.Concat([]ruleSpec{notToTap, replies, arp, ndOnLink}, mld, []ruleSpec{
 		{says: fmt.Sprintf("DHCP replies from the server at %s pass", gateway),
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchUDPPorts(67, 68), accept)},
-	}
+		{says: fmt.Sprintf("DHCPv6 replies from the server at %s pass", driver.GatewayIPv6),
+			exprs: slices.Concat(matchEtherType(etherIPv6), matchSaddr6(netip.PrefixFrom(driver.GatewayIPv6, 128)), matchUDPPorts(547, 546), accept)},
+	})
 	var chains []chainSpec
 	for _, t := range taps {
 		in, out := "in_"+t.name, "out_"+t.name
@@ -198,11 +224,18 @@ func policyRules(tap, dir string, rules []secgroup.Rule, ingress bool) ([]ruleSp
 		}
 		for _, peer := range r.Peers {
 			for _, pr := range ports {
-				e := matchEtherType(etherIPv4)
-				if ingress {
-					e = append(e, matchSaddr(peer)...)
-				} else {
-					e = append(e, matchDaddr(peer)...)
+				// A peer matches only its own family: ::/0 is not 0.0.0.0/0.
+				var e []expr.Any
+				icmp := byte(unix.IPPROTO_ICMP)
+				switch {
+				case peer.Addr().Is4() && ingress:
+					e = slices.Concat(matchEtherType(etherIPv4), matchSaddr(peer))
+				case peer.Addr().Is4():
+					e = slices.Concat(matchEtherType(etherIPv4), matchDaddr(peer))
+				case ingress:
+					e, icmp = slices.Concat(matchEtherType(etherIPv6), matchSaddr6(peer)), unix.IPPROTO_ICMPV6
+				default:
+					e, icmp = slices.Concat(matchEtherType(etherIPv6), matchDaddr6(peer)), unix.IPPROTO_ICMPV6
 				}
 				switch r.Protocol {
 				case secgroup.TCP:
@@ -210,7 +243,7 @@ func policyRules(tap, dir string, rules []secgroup.Rule, ingress bool) ([]ruleSp
 				case secgroup.UDP:
 					e = append(e, matchL4(unix.IPPROTO_UDP)...)
 				case secgroup.ICMP:
-					e = append(e, matchL4(unix.IPPROTO_ICMP)...)
+					e = append(e, matchL4(icmp)...)
 				}
 				if pr.From != 0 {
 					e = append(e, matchDport(pr.From, pr.To)...)
@@ -221,6 +254,14 @@ func policyRules(tap, dir string, rules []secgroup.Rule, ingress bool) ([]ruleSp
 		}
 	}
 	return out, nil
+}
+
+// matchHopLimit matches an IPv6 packet's hop limit.
+func matchHopLimit(n byte) []expr.Any {
+	return []expr.Any{
+		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 7, Len: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{n}},
+	}
 }
 
 func ifnameNotPrefix(key expr.MetaKey, p string) []expr.Any {

@@ -71,7 +71,7 @@ func newResolver(t *testing.T) (*Resolver, *fakeUpstream, *clock) {
 	r := New(Config{Upstreams: []netip.AddrPort{upstream}, Exchange: u.exchange, Now: c.Now})
 	r.Set("n1", Records{Project: "Web", Names: map[string][]netip.Addr{
 		"api": {netip.MustParseAddr("10.0.0.2")},
-		"db":  {netip.MustParseAddr("10.0.0.3")},
+		"db":  {netip.MustParseAddr("10.0.0.3"), netip.MustParseAddr("2001:db8:0:1:8a3f:12c4:9e01:77b2")},
 	}})
 	return r, u, c
 }
@@ -85,8 +85,11 @@ func ask(t *testing.T, r *Resolver, network, name string, qtype uint16) *dns.Msg
 func addrs(m *dns.Msg) []string {
 	var out []string
 	for _, rr := range m.Answer {
-		if a, ok := rr.(*dns.A); ok {
+		switch a := rr.(type) {
+		case *dns.A:
 			out = append(out, a.A.String())
+		case *dns.AAAA:
+			out = append(out, a.AAAA.String())
 		}
 	}
 	return out
@@ -103,6 +106,9 @@ func TestInternalNames(t *testing.T) {
 		{"api.web.hangar.internal.", dns.TypeA, dns.RcodeSuccess, []string{"10.0.0.2"}},
 		{"API.Web.Hangar.Internal.", dns.TypeA, dns.RcodeSuccess, []string{"10.0.0.2"}},
 		{"api.web.hangar.internal.", dns.TypeAAAA, dns.RcodeSuccess, nil},
+		{"db.web.hangar.internal.", dns.TypeA, dns.RcodeSuccess, []string{"10.0.0.3"}},
+		{"db.web.hangar.internal.", dns.TypeAAAA, dns.RcodeSuccess, []string{"2001:db8:0:1:8a3f:12c4:9e01:77b2"}},
+		{"db.web.hangar.internal.", dns.TypeANY, dns.RcodeSuccess, []string{"10.0.0.3", "2001:db8:0:1:8a3f:12c4:9e01:77b2"}},
 		{"web.hangar.internal.", dns.TypeA, dns.RcodeSuccess, nil},
 		{"hangar.internal.", dns.TypeA, dns.RcodeSuccess, nil},
 		{"nope.web.hangar.internal.", dns.TypeA, dns.RcodeNameError, nil},

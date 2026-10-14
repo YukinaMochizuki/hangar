@@ -822,3 +822,31 @@ func TestOnlyTheFirstInterfaceRoutesByDefault(t *testing.T) {
 		t.Errorf("interfaces %v", i)
 	}
 }
+
+// TestTheBootDiskCarriesIPv6: each interface's /128 goes on the boot disk,
+// and the IPv6 default route by the first alone, through the gateway; an
+// interface without one has none.
+func TestTheBootDiskCarriesIPv6(t *testing.T) {
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Interfaces[0].IPv6 = netip.MustParseAddr("2001:db8:0:1:8a3f:12c4:9e01:77b2")
+	second := spec.Interfaces[0]
+	second.Name, second.NetworkUID, second.MAC = "eth1", "n2", "02:00:00:00:00:02"
+	second.IPv6 = netip.MustParseAddr("2001:db8:0:1:1:2:3:4")
+	third := second
+	third.Name, third.MAC, third.IPv6 = "eth2", "02:00:00:00:00:03", netip.Addr{}
+	spec.Interfaces = append(spec.Interfaces, second, third)
+	b, err := (&Hypervisor{}).bootDisk(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bootdisk.Read(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := cfg.GetInterfaces()
+	if i[0].GetIpv6() != "2001:db8:0:1:8a3f:12c4:9e01:77b2/128" || i[0].GetIpv6Gateway() != "fe80::1" ||
+		i[1].GetIpv6() != "2001:db8:0:1:1:2:3:4/128" || i[1].GetIpv6Gateway() != "" ||
+		i[2].GetIpv6() != "" || i[2].GetIpv6Gateway() != "" {
+		t.Errorf("interfaces %v", i)
+	}
+}

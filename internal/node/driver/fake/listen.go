@@ -140,6 +140,11 @@ func (h *Host) listening() map[string][]string {
 			out[s.network] = append(out[s.network], s.String())
 		}
 	}
+	for _, c := range h.packetConns {
+		if c.open() {
+			out[c.network] = append(out[c.network], fmt.Sprintf("packets %d", c.kind))
+		}
+	}
 	for _, l := range out {
 		slices.Sort(l)
 	}

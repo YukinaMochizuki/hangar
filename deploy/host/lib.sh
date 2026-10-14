@@ -208,6 +208,13 @@ ipv6_canon() {
 	python3 -c 'import ipaddress, sys; print(ipaddress.IPv6Interface(sys.argv[1]).with_prefixlen)' "$1"
 }
 
+# ipv6_prefix ADDR/LEN prints the /64 ADDR is in, such as 2001:db8:0:1::/64:
+# the host's prefix, from which the agent gives each machine interface an
+# address.
+ipv6_prefix() {
+	python3 -c 'import ipaddress, sys; print(ipaddress.IPv6Interface(sys.argv[1].split("/")[0] + "/64").network)' "$1"
+}
+
 # ipv6_is_subnet_router ADDR/LEN succeeds when ADDR is the all-zero host
 # address of its prefix (the Subnet-Router anycast address).
 ipv6_is_subnet_router() {

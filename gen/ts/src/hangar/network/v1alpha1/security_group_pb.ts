@@ -170,7 +170,8 @@ export type SecurityGroupPeer = Message<"hangar.network.v1alpha1.SecurityGroupPe
    */
   peer: {
     /**
-     * An IPv4 range, such as "0.0.0.0/0" or "10.0.0.0/24".
+     * An IPv4 or IPv6 range, such as "0.0.0.0/0", "10.0.0.0/24" or "::/0".
+     * A range matches only addresses of its own family.
      *
      * @generated from field: string cidr = 1;
      */

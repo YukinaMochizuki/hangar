@@ -36,7 +36,18 @@ anything else needs a reachable address.
   controller gives each network a /31 transit link from 100.64.0.0/10 to the
   host. Both are decided under one lock and derived from what is stored, so
   an address is free again once the machine holding it is gone; a machine
-  being deleted keeps its address until its node releases it. Every project
+  being deleted keeps its address until its node releases it. A machine
+  interface on a node whose host has an IPv6 prefix also gets a public
+  /128 of it (`ipv6`), when the machine is placed, kept as long as the
+  prefix holds it: its interface ID is random, so neighbours cannot be
+  enumerated and a freed address is not handed straight to the next
+  machine, and never below 2^32, which leaves `::` and the low addresses,
+  where deploy/host puts the host's own (`HANGAR_IPV6_ADDR`), to the host.
+  A node whose prefix changes moves its machines to the new one; one that
+  loses it takes their IPv6 away. A VM learns its address by DHCPv6, so a
+  new one changes its interface in place and the VM keeps running; a
+  container's comes on its boot disk, so a new one starts it again, as
+  every container on a host does once when the host is given a prefix. Every project
   gets a `default` network (10.0.0.0/24), recreated if deleted. A user cannot
   delete a network any machine is on, as clouds refuse to delete a subnet
   still in use: a network being deleted could take no new machines and could
@@ -71,8 +82,16 @@ anything else needs a reachable address.
   - **Default deny around the networks** (decided by the project owner): a
     network's traffic leaves only as an address of its range, NATed, and only
     to the internet; nothing reaches a network or the host from one but
-    replies. Table `ip hangar` in the root namespace has five rules however
-    many networks there are:
+    replies. The one exception is public IPv6 (decided by the project
+    owner): a new connection to a live /128 of one network from the
+    internet or from another network on the host passes the host, and the
+    receiving interface's security groups decide, as they would for the
+    same packet from anywhere; a public address is no more trusted from a
+    neighbouring network than from anywhere else, and the host is not the
+    one place it cannot be reached from. Private IPv4 between networks
+    stays blocked, the host stays unreachable, and a network sends only
+    from its own /128s. Table `ip hangar` in the root namespace has five
+    rules however many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
       iif oif missing`), so a network sends only as its own transit address;
@@ -85,6 +104,20 @@ anything else needs a reachable address.
       network exists whose replies could leave by another link;
     - input: from `hnv*`, drop all but replies, so a network cannot reach
       the host.
+  - With an IPv6 prefix, table `ip6 hangar` in the root namespace has
+    seven, however many networks there are:
+    - prerouting, before conntrack: from `hnv*`, drop a source not routed
+      back out of the link it came in on, so a network sends only from its
+      own /128s (each is routed to its network's veth) or link-local;
+    - forward: from `hnv*`, drop TCP to port 25 (the abuse protection
+      below); from `hnv*`, drop what leaves by a link that is neither the
+      uplink nor another network's veth; into `hnv*`, drop what is not for
+      the prefix; into `hnv*` from anything but the uplink or another
+      network, drop all but replies. A destination reaches a network's
+      veth only by its /128's route, so only live addresses are let in;
+    - input: from `hnv*`, take neighbour solicitations and advertisements,
+      for the transit link's link-local addresses, and drop all but
+      replies.
   - Table `ip hangar` in each namespace has four: in prerouting, before
     conntrack, accept DHCP from `hn-br` sent from no address to the
     broadcast (UDP 68 to 67), which a guest without an address yet sends
@@ -95,15 +128,35 @@ anything else needs a reachable address.
     past the bridge's hooks; and SNAT the range leaving `hn-up` to the
     namespace's transit address. The namespace also sets its own strict
     reverse-path filter rather than inherit the host's default, and turns
-    IPv6 off on its links. A guest taking an address of the
+    IPv6 off on its links. With an IPv6 prefix, IPv6 is turned on for the
+    bridge and the veth's end alone, each with the one link-local address
+    the driver gives it and none of the kernel's (`fe80::1` on `hn-br`,
+    the gateway, and `fe80::2` facing the host's `fe80::1`), taking no
+    router advertisement; taps keep IPv6 off, as bridge ports need none.
+    Table `ip6 hangar` then drops, before conntrack, a source from `hn-br`
+    outside the prefix and link-local, anything in by a tap's own stack,
+    and what would go back out of `hn-up`. Without a prefix nothing of IPv6
+    exists in a namespace. A guest taking an address of the
     namespace's own, its transit address or the gateway, is dropped by the
     kernel as a martian.
   - Table `bridge hangar` in each namespace binds each interface, in its
     prerouting, before the bridge forwards a frame or delivers it to the
     namespace: a tap sends only from its interface's MAC; IPv4 only from
     its assigned address, but for DHCP from no address to the broadcast;
-    ARP only for that MAC and address; and nothing but IPv4 and ARP (no
-    IPv6 until a machine has an `Address`). The kernel takes a VLAN tag
+    ARP only for that MAC and address; and nothing but IPv4 and ARP, and
+    IPv6 if its interface has a /128. Then it sends IPv6 only from that
+    address or a link-local one, guests choosing their own, or from none
+    only as duplicate address detection and listener reports do; it
+    advertises only those addresses as a neighbour, never the gateway's,
+    and a solicitation from an address, or an advertisement, carries at
+    most one option, its link-layer address, holding only its MAC (the
+    kernel takes the first link-layer option wherever it is, past others,
+    so more than one is refused);
+    and it sends no router advertisement, redirect or renumbering, and
+    nothing a DHCPv6 server or relay sends (from port 547, or to port
+    546). A guest can claim another's link-local address on its network;
+    the worst it does is keep that guest's DHCPv6 replies from it, never
+    its /128. The kernel takes a VLAN tag
     off before the bridge's hooks, so a tagged frame is held to the same
     rules on what it carries. A frame too short for a rule's field passes
     that rule, and the receiving stack drops it. A tap without
@@ -126,10 +179,19 @@ anything else needs a reachable address.
     interface is deleted, ensured on another network, or has a duplicate.
   - The driver watches links, IPv4 addresses and routes, and its nft tables,
     in each network's namespace and, for its own links and the uplink, in the
-    root namespace, and signals `Changes`. A link going down takes its
+    root namespace, and signals `Changes`; with an IPv6 prefix, the IPv6
+    addresses and routes of its own links too. Each /128 is routed from
+    the root namespace to its network's veth and in the namespace to its
+    bridge, and has a proxy NDP entry on the uplink, which OVH's on-link,
+    MAC-filtered /64 needs: the upstream asks for each address by neighbour
+    solicitation and delivers only to the MAC that answers, the host's.
+    All of it is derived from the taps' aliases; every proxy entry of the
+    prefix on the uplink and every /128 route by an `hnv*` link is the
+    driver's. The kernel signals no change to proxy entries, so the driver
+    compares them with the taps' addresses every 5 seconds. A link going down takes its
     routes with it, and the driver's own changes are signalled too; the agent
-    ensures again, which changes nothing the second time. A link's carrier
-    and IPv6 are not watched: they change on their own, and an ensure of
+    ensures again, which changes nothing the second time. A link's carrier,
+    and without a prefix its IPv6, are not watched: they change on their own, and an ensure of
     what is whole then changes nothing and signals nothing. A subscription
     that fails is signalled, and its namespace is watched again at the next
     ensure; one that cannot start fails the ensure. A namespace unmounted
@@ -138,7 +200,9 @@ anything else needs a reachable address.
   - What the driver needs of the host is deploy/host's: IPv4 forwarding on
     (it refuses to make a network otherwise), the uplink's name and,
     optionally, the public address as `hangar-node` flags (`--uplink`,
-    `--public-ipv4`), nftables in the kernel, `/run/netns` shared with the
+    `--public-ipv4`), and for IPv6 the prefix (`--public-ipv6-prefix`, the
+    /64 of `HANGAR_IPV6_ADDR`), IPv6 forwarding and proxy NDP on the uplink
+    (it refuses to make a network with a prefix otherwise), nftables in the kernel, `/run/netns` shared with the
     agent's mount namespace, no networkd config matching `hn*` links, and no
     host firewall dropping forwarded traffic to or from `hnv*`.
   - **The node serves each network from inside its namespace**
@@ -161,8 +225,9 @@ anything else needs a reachable address.
   - It answers `<name>.<project>.hangar.internal` for the machines with an
     interface on the network, whichever node runs them, by the name of the
     object a machine was made from (its Container) and with a TTL of 5
-    seconds. A machine of another network or project is NXDOMAIN; only A
-    records exist for now. `hangar.internal` is never forwarded.
+    seconds: A for its IPv4 addresses on the network and AAAA for its
+    public IPv6 ones. A machine of another network or project is
+    NXDOMAIN. `hangar.internal` is never forwarded.
   - The agent opens a network's sockets before it reads the network's
     machines from the API, and until it has, internal names fail with
     SERVFAIL, not NXDOMAIN, so a client retries rather than caching a
@@ -173,9 +238,9 @@ anything else needs a reachable address.
     then SERVFAIL; answers are cached for their TTLs (negative ones for
     their SOA's minimum, at most an hour) and a question asked many times
     at once goes upstream once. UDP answers are cut at 1232 bytes, with TC
-    set, as DNS Flag Day 2020 settled. AAAA questions are forwarded too,
-    though guests have no IPv6 yet (decided by the project owner): as on
-    any IPv4-only network, clients fall back to IPv4.
+    set, as DNS Flag Day 2020 settled. AAAA questions are forwarded too
+    (decided by the project owner), which a guest without IPv6 falls back
+    from as on any IPv4-only network.
   - No network takes what the others need: one network's questions in
     flight are bounded (128), past which they fail with SERVFAIL at once,
     as are its TCP connections (32), past which they wait to be accepted;
@@ -198,6 +263,27 @@ anything else needs a reachable address.
   is not answered, and a request for another address is refused. A client
   without an address is answered by broadcast, one renewing at its
   address.
+- **Each network with IPv6 advertises its gateway and leases each machine
+  its /128 by DHCPv6**, as AWS, GCP and Azure do (decided by the project
+  owner), for images that configure themselves by router advertisement and
+  DHCPv6; container guests take theirs, and the default route through
+  `fe80::1`, from the boot disk, and hangar-init sets them. Both are the
+  agent's (`internal/node/ra`, `internal/node/dhcp6`), on packet sockets of
+  the bridge (`ListenPackets`) that see which MAC a packet came from, which
+  the binding makes the interface's own: DHCPv6 knows a client by it, not
+  by its DUID, as clients choose those freely. A virtio guest leaves its
+  UDP checksum to its NIC, so a packet the socket marks as such has its
+  checksum completed before it is read.
+  - Router advertisements come from `fe80::1` with M set (addresses by
+    DHCPv6), no prefix to configure an address from, and a router lifetime
+    of 30 minutes, every 200 seconds or so and when a machine solicits one,
+    never more than once in 3 seconds however many solicit (RFC 4861).
+  - DHCPv6 leases each interface's MAC its /128 (IA_NA) for a day, and a
+    MAC it does not know is not answered; it answers at most 10 requests a
+    second from one MAC and 100 from one network. DHCPv6 hands out the
+    address only; DNS stays the network's IPv4 resolver (decided by the
+    project owner): networks are always dual-stack, the resolver answers
+    AAAA too, and DHCPv6 cannot carry a link-local resolver's scope.
 - **Each network has a metadata service** (`internal/node/metadata`) on
   169.254.169.254, port 80, an address its bridge holds beside the
   gateway, in the form of cloud-init's NoCloud datasource, which a VM is
@@ -241,6 +327,11 @@ anything else needs a reachable address.
     through, so objects can be applied in any order, but refuses one naming
     a group of another network. A group an interface is in cannot be
     deleted, as in AWS.
+  - A CIDR peer is IPv4 or IPv6 and matches only its own family, so
+    `::/0` is not `0.0.0.0/0`, as in AWS; a group peer stands for its
+    members' IPv4 and IPv6 addresses, `default` included; `icmp` is ICMPv6
+    for an IPv6 peer. Inbound IPv6 from the internet is thus denied unless
+    a rule allows it.
   - The node resolves each interface's policy from the network's groups and
     every machine on it, whichever node runs them, in the same reconcile
     as the network's resolver, and enforces it in table `bridge hangar_sg`
@@ -248,8 +339,15 @@ anything else needs a reachable address.
     sent to it in forward (from another tap) and output (from the namespace,
     or routed there), each through chains of its own. A connection's
     replies always pass, as do ARP, DHCP (to the broadcast address or the
-    gateway, and back from the gateway) and the network's own resolver and
-    metadata service, which a sandbox still needs. The bridge and the IP
+    gateway, and back from the gateway), neighbour discovery and listener
+    reports on the link, DHCPv6 (to the servers' group, and back from
+    `fe80::1`), and the network's own resolver and metadata service, which
+    a sandbox still needs; ICMPv6 errors of an admitted flow pass as its
+    replies. On the link means as no router forwards it: neighbour
+    discovery and router advertisements with hop limit 255 (RFC 4861),
+    listener messages with hop limit 1, to a tap only from a link-local
+    address or, for duplicate address detection, none. So the internet's
+    ICMPv6, of any type, is the groups' to let in, as its echo is. The bridge and the IP
     stack share one conntrack entry per flow. A tap with no policy yet,
     such as one just made, sends and receives nothing else, and the table
     is made, closed, with the network, before any tap can join it. The
@@ -260,8 +358,12 @@ anything else needs a reachable address.
     the network's interfaces on that node to all but its services rather
     than leave older rules in force, and the resolver, DHCP and metadata
     service keep following the network's machines.
-- **Public IPv6** is an `Address` resource, routed to the machine with NDP proxy
-  on the host (no bridging, because of the MAC filtering).
+- **Public IPv6**: every machine interface has a public /128 of its host's
+  /64 (above), its identity both ways, with no NAT, so one machine's abuse
+  does not taint the shared IPv4. It is routed to the machine with proxy
+  NDP on the host (no bridging, because of the MAC filtering). An `Address`,
+  a reserved /128 that can be bound to and moved between machines, comes
+  later.
 - **HTTPS exposure** is a `PublicEndpoint`: one platform tunnel and a wildcard
   DNS record lead to cloudflared, then to Hangar's own edge proxy, which routes
   by `Host` into the right namespace. Endpoints are `private` by default
@@ -279,5 +381,12 @@ anything else needs a reachable address.
 
 ## Consequences
 
-Routed IPv6 with NDP proxy and the OVH upstream behaviour need proving on the
-real host; see `testing-strategy.md` for what can be emulated before then.
+Routed IPv6 with proxy NDP is proven on the testbed against an emulated OVH
+upstream (`test/testbed/network`, `test/testbed/flow`): a router whose route
+to the host's /64 is on-link, which asks for each address by neighbour
+solicitation and delivers only to the MAC that answers. Guests get their
+/128 by router advertisement and DHCPv6 (`dhcpcd`) or the boot disk, reach
+the upstream as it, are reached only once their groups allow and only
+through the host's proxy answer, and routes and proxy entries removed by
+hand come back. Whether OVH's switch behaves as the emulation does is still
+the real host's to show; see `testing-strategy.md`.

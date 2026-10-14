@@ -60,9 +60,9 @@ func TestTheIdentityFilesReachWhereTheImageReadsThem(t *testing.T) {
 func TestTheFilesSay(t *testing.T) {
 	cfg := &guestv1.BootConfig{
 		Hostname:   "api",
-		Interfaces: []*guestv1.Interface{{Address: "10.0.0.5/24"}},
+		Interfaces: []*guestv1.Interface{{Address: "10.0.0.5/24", Ipv6: "2001:db8::5/128"}},
 	}
-	if got, want := hosts(cfg), "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n10.0.0.5\tapi\n"; got != want {
+	if got, want := hosts(cfg), "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n10.0.0.5\tapi\n2001:db8::5\tapi\n"; got != want {
 		t.Errorf("hosts %q, want %q", got, want)
 	}
 	if got, want := resolvConf([]string{"1.1.1.1", "8.8.8.8"}, []string{"web.hangar.internal"}),
@@ -81,6 +81,13 @@ func TestOneDefaultRouteAtMost(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "default route") {
 		t.Errorf("two default routes: %v", err)
+	}
+	err = Network([]*guestv1.Interface{
+		{Mac: "02:00:00:00:00:01", Address: "10.0.0.5/24", Ipv6: "2001:db8::5/128", Ipv6Gateway: "fe80::1"},
+		{Mac: "02:00:00:00:00:02", Address: "10.1.0.5/24", Ipv6: "2001:db8::6/128", Ipv6Gateway: "fe80::1"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "IPv6 default route") {
+		t.Errorf("two IPv6 default routes: %v", err)
 	}
 }
 

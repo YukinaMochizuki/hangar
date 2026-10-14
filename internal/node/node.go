@@ -82,6 +82,10 @@ type Config struct {
 	// Metadata is the metadata service the networks are served; nil makes
 	// one. A test given one asks it as a guest would, from any address.
 	Metadata *metadata.Server
+	// IPv6Prefix is the host's public IPv6 /64, which the agent reports and
+	// its machines' public addresses come from; invalid for none, and the
+	// node's machines then have no IPv6.
+	IPv6Prefix netip.Prefix
 	// MaxUnpackWork bounds the work unpacking one image takes, in
 	// ocilayer's steps: the Images driver is built with it as
 	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
@@ -128,6 +132,11 @@ type Agent struct {
 func New(cfg Config) (*Agent, error) {
 	if cfg.Name == "" {
 		return nil, errors.New("the node agent needs the name of its Node")
+	}
+	if cfg.IPv6Prefix.IsValid() {
+		if _, err := computeapi.ParseIPv6Prefix(cfg.IPv6Prefix.String()); err != nil {
+			return nil, fmt.Errorf("the host's IPv6 prefix: %w", err)
+		}
 	}
 	if cfg.Host == nil {
 		cfg.Host = hostResources
@@ -363,6 +372,10 @@ func (a *Agent) report(ctx context.Context) error {
 	}
 	status.LastHeartbeatTime = timestamppb.New(now)
 	status.AgentVersion = Version()
+	status.Ipv6Prefix = ""
+	if a.cfg.IPv6Prefix.IsValid() {
+		status.Ipv6Prefix = a.cfg.IPv6Prefix.String()
+	}
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
 		Type: computeapi.NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		ObservedGeneration: n.GetMetadata().GetGeneration(),

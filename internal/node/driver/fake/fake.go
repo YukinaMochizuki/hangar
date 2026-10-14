@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"slices"
@@ -71,6 +72,10 @@ type Host struct {
 	// firewallLimit, if not 0, bounds a firewall in place of
 	// driver.MaxFirewallRules.
 	firewallLimit int
+	// ipv6Prefix is the host's, which interfaces' IPv6 addresses are of;
+	// invalid for none. packetConns are every packet socket handed out.
+	ipv6Prefix  netip.Prefix
+	packetConns []*packetConn
 
 	vms        map[string]*vm
 	logs       map[string]*consoleLog // console logs kept, by machine uid
@@ -1013,6 +1018,9 @@ func (d network) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	}
 	if !n.CIDR.Contains(i.Address.Addr()) {
 		return driver.Interface{}, fmt.Errorf("%s is outside network %s (%s)", i.Address, i.NetworkUID, n.CIDR)
+	}
+	if i.IPv6.IsValid() && !d.h.ipv6Prefix.Contains(i.IPv6) {
+		return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is not of the host's IPv6 prefix %s", i.MachineUID, i.Name, i.IPv6, d.h.ipv6Prefix)
 	}
 	sum := sha256.Sum256([]byte(i.MachineUID + "/" + i.Name))
 	i.Device = "hm" + hex.EncodeToString(sum[:])[:13]

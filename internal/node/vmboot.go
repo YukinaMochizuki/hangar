@@ -3,6 +3,8 @@ package node
 import (
 	"context"
 	"fmt"
+	"net/netip"
+	"slices"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -28,7 +30,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	if err != nil {
 		return nil, err
 	}
-	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm)
+	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm, true)
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +42,12 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	// The guest learns these by DHCP, from the same leases; the spec
 	// carries them as a container's does.
 	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)
+	// So is its IPv6 address, by DHCPv6, which the spec does not carry: a
+	// new one, as when its host gets a prefix, does not restart the VM.
+	ifaces = slices.Clone(ifaces)
+	for i := range ifaces {
+		ifaces[i].IPv6 = netip.Addr{}
+	}
 	spec := driver.VMSpec{
 		MachineUID:  uid,
 		Machine:     m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),

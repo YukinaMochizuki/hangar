@@ -3,6 +3,7 @@ package fake_test
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"strconv"
 	"testing"
 
@@ -10,6 +11,17 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 )
+
+// TestConformanceWithIPv6 holds the fake's network to the contract on a host
+// with an IPv6 prefix.
+func TestConformanceWithIPv6(t *testing.T) {
+	prefix := netip.MustParsePrefix("2001:db8:0:1::/64")
+	drivertest.Run(t, func(t *testing.T) drivertest.Host {
+		h := fake.New()
+		h.SetIPv6Prefix(prefix)
+		return drivertest.Host{Network: h.Network(), IPv6Prefix: prefix}
+	})
+}
 
 // TestConformance holds the fake to the drivers' contract, which the real
 // drivers are held to on the testbed.

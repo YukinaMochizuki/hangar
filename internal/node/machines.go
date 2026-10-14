@@ -252,7 +252,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if err != nil {
 		return nil, err
 	}
-	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm)
+	ifaces, vm, err := a.ensureInterfaces(ctx, uid, want, vm, false)
 	if err != nil {
 		return nil, err
 	}
@@ -303,14 +303,20 @@ func (a *Agent) interfaces(ctx context.Context, m *computev1alpha1.Machine) ([]d
 		if err := a.cfg.Drivers.Network.EnsureNetwork(ctx, spec); err != nil {
 			return nil, blocked(computeapi.ReasonNetworkFailed, err)
 		}
-		out = append(out, driver.Interface{
+		i := driver.Interface{
 			MachineUID: m.GetMetadata().GetUid(),
 			Name:       nic.GetName(),
 			NetworkUID: spec.UID,
 			MAC:        mac(m.GetMetadata().GetUid(), nic.GetName()),
 			Address:    addr,
 			Gateway:    cidr.Addr().Next(),
-		})
+		}
+		// One of another prefix, assigned before the host's changed, waits
+		// for the apiserver to follow.
+		if v6, ok := ipv6Of(nic); ok && a.cfg.IPv6Prefix.Contains(v6) {
+			i.IPv6 = v6
+		}
+		out = append(out, i)
 	}
 	return out, nil
 }
@@ -318,7 +324,11 @@ func (a *Agent) interfaces(ctx context.Context, m *computev1alpha1.Machine) ([]d
 // ensureInterfaces makes the host hold exactly want for the machine and
 // returns them as made, with the VM as left. A running VM holds its taps, so
 // it is stopped first when one is changed, taken away or gone from the host.
-func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.Interface, vm *driver.VM) ([]driver.Interface, *driver.VM, error) {
+//
+// With liveIPv6, as for a guest that learns its IPv6 address by DHCPv6, an
+// interface whose IPv6 address alone changed is changed in place, its tap
+// and the VM holding it kept.
+func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.Interface, vm *driver.VM, liveIPv6 bool) ([]driver.Interface, *driver.VM, error) {
 	d := a.cfg.Drivers
 	all, err := d.Network.Interfaces(ctx)
 	if err != nil {
@@ -330,11 +340,18 @@ func (a *Agent) ensureInterfaces(ctx context.Context, uid string, want []driver.
 			have = append(have, i)
 		}
 	}
+	same := sameInterface
+	if liveIPv6 {
+		same = func(a, b driver.Interface) bool {
+			a.IPv6, b.IPv6 = netip.Addr{}, netip.Addr{}
+			return sameInterface(a, b)
+		}
+	}
 	stale := slices.ContainsFunc(have, func(h driver.Interface) bool {
-		return !slices.ContainsFunc(want, func(w driver.Interface) bool { return sameInterface(h, w) })
+		return !slices.ContainsFunc(want, func(w driver.Interface) bool { return same(h, w) })
 	})
 	missing := slices.ContainsFunc(want, func(w driver.Interface) bool {
-		return !slices.ContainsFunc(have, func(h driver.Interface) bool { return sameInterface(h, w) })
+		return !slices.ContainsFunc(have, func(h driver.Interface) bool { return same(h, w) })
 	})
 	if vm != nil && vm.State == driver.VMRunning && (stale || missing) {
 		if err := a.stopVM(ctx, uid); err != nil {

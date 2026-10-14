@@ -192,7 +192,13 @@ type Interface struct {
 	// With the network's prefix length, such as 10.0.0.5/24.
 	Address string `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
 	// The default route through this interface; empty for none.
-	Gateway       string `protobuf:"bytes,3,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	Gateway string `protobuf:"bytes,3,opt,name=gateway,proto3" json:"gateway,omitempty"`
+	// The interface's public IPv6 address, such as 2001:db8::5/128; empty for
+	// none.
+	Ipv6 string `protobuf:"bytes,4,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
+	// The IPv6 default route through this interface, a link-local address
+	// such as fe80::1; empty for none.
+	Ipv6Gateway   string `protobuf:"bytes,5,opt,name=ipv6_gateway,json=ipv6Gateway,proto3" json:"ipv6_gateway,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -244,6 +250,20 @@ func (x *Interface) GetAddress() string {
 func (x *Interface) GetGateway() string {
 	if x != nil {
 		return x.Gateway
+	}
+	return ""
+}
+
+func (x *Interface) GetIpv6() string {
+	if x != nil {
+		return x.Ipv6
+	}
+	return ""
+}
+
+func (x *Interface) GetIpv6Gateway() string {
+	if x != nil {
+		return x.Ipv6Gateway
 	}
 	return ""
 }
@@ -875,11 +895,13 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\x03env\x18\x02 \x03(\tR\x03env\x12\x1f\n" +
 	"\vworking_dir\x18\x03 \x01(\tR\n" +
 	"workingDir\x12\x12\n" +
-	"\x04user\x18\x04 \x01(\tR\x04user\"Q\n" +
+	"\x04user\x18\x04 \x01(\tR\x04user\"\x88\x01\n" +
 	"\tInterface\x12\x10\n" +
 	"\x03mac\x18\x01 \x01(\tR\x03mac\x12\x18\n" +
 	"\aaddress\x18\x02 \x01(\tR\aaddress\x12\x18\n" +
-	"\agateway\x18\x03 \x01(\tR\agateway\">\n" +
+	"\agateway\x18\x03 \x01(\tR\agateway\x12\x12\n" +
+	"\x04ipv6\x18\x04 \x01(\tR\x04ipv6\x12!\n" +
+	"\fipv6_gateway\x18\x05 \x01(\tR\vipv6Gateway\">\n" +
 	"\vStopRequest\x12/\n" +
 	"\x05grace\x18\x01 \x01(\v2\x19.google.protobuf.DurationR\x05grace\"\x0e\n" +
 	"\fStopResponse\"\r\n" +

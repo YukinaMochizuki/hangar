@@ -100,6 +100,7 @@ type tapMeta struct {
 	MAC     string       `json:"mac"`
 	Address netip.Prefix `json:"ipv4"`
 	Gateway netip.Addr   `json:"gateway"`
+	IPv6    netip.Addr   `json:"ipv6,omitzero"`
 }
 
 func encodeAlias(v any) (string, error) {
@@ -114,7 +115,7 @@ func encodeAlias(v any) (string, error) {
 }
 
 func tapMetaOf(i driver.Interface) tapMeta {
-	return tapMeta{Machine: i.MachineUID, Name: i.Name, MAC: i.MAC, Address: i.Address, Gateway: i.Gateway}
+	return tapMeta{Machine: i.MachineUID, Name: i.Name, MAC: i.MAC, Address: i.Address, Gateway: i.Gateway, IPv6: i.IPv6}
 }
 
 // decodeTap reads a tap's alias; ok is false for one the driver did not
@@ -138,7 +139,7 @@ func decodeVeth(alias string) (string, bool) {
 func (m tapMeta) iface(networkUID, device string) driver.Interface {
 	return driver.Interface{
 		MachineUID: m.Machine, Name: m.Name, NetworkUID: networkUID, MAC: m.MAC,
-		Address: m.Address, Gateway: m.Gateway, Device: device,
+		Address: m.Address, Gateway: m.Gateway, IPv6: m.IPv6, Device: device,
 	}
 }
 
@@ -177,6 +178,9 @@ func checkInterface(i driver.Interface) error {
 	}
 	if !i.Address.IsValid() || !i.Address.Addr().Is4() || !i.Gateway.Is4() {
 		return fmt.Errorf("interface %s of machine %s needs an IPv4 address and gateway", i.Name, i.MachineUID)
+	}
+	if i.IPv6.IsValid() && (!i.IPv6.Is6() || i.IPv6.Is4In6() || i.IPv6.Zone() != "" || !i.IPv6.IsGlobalUnicast()) {
+		return fmt.Errorf("interface %s of machine %s: %s is not a global IPv6 address", i.Name, i.MachineUID, i.IPv6)
 	}
 	return nil
 }

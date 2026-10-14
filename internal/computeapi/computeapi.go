@@ -5,6 +5,9 @@
 package computeapi
 
 import (
+	"fmt"
+	"net/netip"
+
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 )
@@ -88,3 +91,13 @@ const (
 	// ReasonDiskNotReady means an attached disk is not on the node yet.
 	ReasonDiskNotReady = "DiskNotReady"
 )
+
+// ParseIPv6Prefix reads the IPv6 prefix a Node reports: a global unicast
+// /64 without host bits.
+func ParseIPv6Prefix(s string) (netip.Prefix, error) {
+	p, err := netip.ParsePrefix(s)
+	if err != nil || !p.Addr().Is6() || p.Addr().Is4In6() || p.Addr().Zone() != "" || p.Bits() != 64 || p != p.Masked() || !p.Addr().IsGlobalUnicast() {
+		return netip.Prefix{}, fmt.Errorf("%q is not a global IPv6 /64 such as 2001:db8:0:1::/64", s)
+	}
+	return p, nil
+}
