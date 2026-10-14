@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -66,6 +67,9 @@ type Host struct {
 	instances     map[string]string
 	instanceCount int
 	sockets       []*socket
+	// guests answer DialSSH; dials are what it was asked to reach.
+	guests map[guestKey]func(net.Conn)
+	dials  []string
 	// firewalls are the policies ensured, by network uid, then machine uid
 	// and interface name.
 	firewalls map[string]map[string]secgroup.Policy

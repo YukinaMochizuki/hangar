@@ -177,6 +177,7 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchUDPPorts(67, 68), accept)},
 		{says: fmt.Sprintf("DHCPv6 replies from the server at %s pass", driver.GatewayIPv6),
 			exprs: slices.Concat(matchEtherType(etherIPv6), matchSaddr6(netip.PrefixFrom(driver.GatewayIPv6, 128)), matchUDPPorts(547, 546), accept)},
+		platformSSH(gateway),
 	})
 	var chains []chainSpec
 	for _, t := range taps {
@@ -291,4 +292,13 @@ func matchDport(from, to uint16) []expr.Any {
 		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
 		&expr.Range{Op: expr.CmpOpEq, Register: 1, FromData: binaryutil.BigEndian.PutUint16(from), ToData: binaryutil.BigEndian.PutUint16(to)},
 	}
+}
+
+// platformSSH lets the platform's SSH reach a tap's port 22 from the
+// gateway, whatever its security groups say; RBAC gates it (vm-ssh.md).
+// Only the namespace's own sockets send from the gateway.
+func platformSSH(gateway netip.Addr) ruleSpec {
+	return ruleSpec{says: fmt.Sprintf("the platform's SSH from %s to port 22 passes", gateway),
+		exprs: slices.Concat(matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchL4(unix.IPPROTO_TCP), matchDport(22, 22),
+			[]expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})}
 }

@@ -139,8 +139,8 @@ type cluster struct {
 	nodeDone chan struct{}
 	nodeRuns int
 	// nodeArgs and nodeEnv are what the agent is started with besides what
-	// startNode gives it.
-	nodeArgs, nodeEnv []string
+	// startNode gives it; apiArgs what the apiserver is, besides startAPI's.
+	nodeArgs, nodeEnv, apiArgs []string
 }
 
 // startCluster sweeps what an earlier run left, starts the apiserver and the
@@ -271,6 +271,7 @@ func (c *cluster) startAPI() {
 		"--node-name", nodeName,
 		"--bootstrap-admin", admin,
 	)
+	cmd.Args = append(cmd.Args, c.apiArgs...)
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uint32(nobody), Gid: uint32(nobody)},

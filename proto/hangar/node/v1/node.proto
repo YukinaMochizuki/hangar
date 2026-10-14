@@ -21,6 +21,12 @@ service NodeService {
   // carry its stdin, a resize or a signal. The responses carry its output
   // and, last, how it ended.
   rpc Exec(stream ExecRequest) returns (stream ExecResponse);
+  // SSH connects to port 22 of a running firmware machine's first
+  // interface, from its network's gateway inside the network's namespace,
+  // and relays bytes both ways for as long as the call lasts. The first
+  // request names the machine, which must be on this node; the node picks
+  // the address. See docs/decisions/vm-ssh.md.
+  rpc SSH(stream SSHRequest) returns (stream SSHResponse);
 }
 
 message LogsRequest {
@@ -121,4 +127,18 @@ message ExecResponse {
     // The last response.
     ExitStatus exit = 3;
   }
+}
+
+message SSHRequest {
+  oneof message {
+    // First, and only first.
+    string machine_uid = 1;
+    // What the client sends, as it comes.
+    bytes data = 2;
+  }
+}
+
+message SSHResponse {
+  // What the guest's sshd sends, as it comes.
+  bytes data = 1;
 }

@@ -64,6 +64,9 @@ type Host struct {
 	// IPv6Prefix is the prefix the network driver was given, invalid for
 	// none; the suite's IPv6 part runs only with one.
 	IPv6Prefix netip.Prefix
+	// ServeGuest has a guest on the interface echo what each TCP connection
+	// to its address on the ports sends, until the test ends.
+	ServeGuest func(t *testing.T, nic driver.Interface, ports ...uint16)
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -94,6 +97,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)
 	part("network sockets", networkSockets, nets)
+	part("dialing SSH", dialSSH, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("network firewall", networkFirewall, nets)
 	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
 	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })

@@ -26,6 +26,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/sshca"
+	"github.com/YukinaMochizuki/hangar/internal/sshws"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
@@ -72,6 +74,9 @@ type Config struct {
 	// ExtraRoles are roles beyond the built-in ones, by name, as tests
 	// need; none replaces a built-in role.
 	ExtraRoles map[string]authz.Role
+	// SSHCA signs keys for hangar ssh, and its public key goes to every
+	// VM's guest; nil is none, and signing fails (docs/decisions/vm-ssh.md).
+	SSHCA *sshca.CA
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -162,6 +167,8 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 	mux.Handle(computev1alpha1connect.NewVirtualMachineLogsServiceHandler(virtualMachineLogs{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.HandleFunc(execws.Pattern, s.containerExec(chain))
+	mux.Handle(computev1alpha1connect.NewVirtualMachineSSHServiceHandler(virtualMachineSSH{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.HandleFunc(sshws.Pattern, s.vmSSH(chain))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})

@@ -347,7 +347,11 @@ anything else needs a reachable address.
     discovery and router advertisements with hop limit 255 (RFC 4861),
     listener messages with hop limit 1, to a tap only from a link-local
     address or, for duplicate address detection, none. So the internet's
-    ICMPv6, of any type, is the groups' to let in, as its echo is. The bridge and the IP
+    ICMPv6, of any type, is the groups' to let in, as its echo is. So does
+    the platform's own SSH path from the gateway, TCP from its address to a
+    tap's port 22, gated by RBAC and minutes-long certificates instead, as
+    AWS SSM is (`vm-ssh.md`): only the namespace's own sockets send from the
+    gateway's address. The bridge and the IP
     stack share one conntrack entry per flow. A tap with no policy yet,
     such as one just made, sends and receives nothing else, and the table
     is made, closed, with the network, before any tap can join it. The

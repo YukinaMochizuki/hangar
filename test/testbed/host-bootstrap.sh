@@ -213,11 +213,29 @@ test_converges_and_is_idempotent() {
 	grep -q "^SKIP cloudflared $HANGAR_CLOUDFLARED_VERSION (no /etc/hangar/cloudflared.env)$" "$work/first-verify.log" ||
 		fail "verify does not skip cloudflared"
 	grep -q '^FAIL' "$work/first-verify.log" && fail "verify failed: $(grep '^FAIL' "$work/first-verify.log")"
+	grep -q '^SKIP SSH CA (no /var/lib/hangar/state/ssh-ca: hangar ssh cannot sign)$' "$work/first-verify.log" ||
+		fail "verify does not skip the SSH CA it has not got"
 	grep -qE '^(apply|would): .*cloudflared' "$log" && fail "the run did something about cloudflared: $(grep -E '^(apply|would): .*cloudflared' "$log")"
 	[ ! -e /usr/local/bin/cloudflared ] && [ ! -e /etc/systemd/system/hangar-cloudflared.service ] ||
 		fail "cloudflared was installed without cloudflared.env"
 	systemctl show -p ExecStart --value hangar-apiserver | grep -q -- '--listen 127.0.0.1:8080 --auth-mode dev --socket' ||
 		fail "an unset HANGAR_AUTH_MODE is not dev auth"
+
+	step "the SSH CA, installed as the runbook says, is the apiserver's, and verify checks it"
+	local since
+	ssh-keygen -q -t ed25519 -N '' -C hangar-ssh-ca -f "$work/ssh-ca"
+	install -m 0644 "$work/ssh-ca" /var/lib/hangar/state/ssh-ca
+	"$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/ca.log" >/dev/null
+	grep -q 'warning: /var/lib/hangar/state/ssh-ca was root:root mode 644' "$work/ca.log" ||
+		fail "bootstrap tightened the SSH CA's key without saying it had been open: $(cat "$work/ca.log")"
+	[ "$(stat -c '%U %a' /var/lib/hangar/state/ssh-ca)" = "hangar 600" ] || fail "bootstrap left the SSH CA's key $(stat -c '%U %a' /var/lib/hangar/state/ssh-ca)"
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	systemctl restart hangar-apiserver
+	sleep 2
+	journalctl -u hangar-apiserver --since "$since" | grep -q 'loaded the SSH CA' || fail "the apiserver did not load the SSH CA"
+	journalctl -u hangar-apiserver --since "$since" | grep -q 'PRIVATE' && fail "the apiserver logged the SSH CA's key"
+	"$host_dir/verify.sh" --env "$env_file" | grep -q '^PASS SSH CA key /var/lib/hangar/state/ssh-ca, hangar.s, mode 600 (hangar ssh)$' ||
+		fail "verify does not check the SSH CA"
 }
 
 # admin_cli ARGS... runs the CLI through the admin socket, as root on the

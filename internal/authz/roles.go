@@ -36,6 +36,9 @@ const (
 	// Exec runs a process in a container; only containers use it. It is
 	// neither Get nor Logs: it reaches everything the container can.
 	Exec Verb = "exec"
+	// SSH logs in to a virtual machine; only they use it. It reaches
+	// everything the VM can, as Exec does a container.
+	SSH Verb = "ssh"
 )
 
 // CreateTenant is the permission to open a tenant of one's own.
@@ -50,6 +53,10 @@ var VirtualMachineLogs = Permission(registry.VirtualMachine, Logs)
 
 // ContainerExec is the permission to run a process in a container.
 var ContainerExec = Permission(registry.Container, Exec)
+
+// VirtualMachineSSH is the permission to log in to a virtual machine: to
+// have a key signed for it, and to reach its port 22.
+var VirtualMachineSSH = Permission(registry.VirtualMachine, SSH)
 
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
@@ -100,10 +107,10 @@ func (r Role) Grants(permission string) bool {
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec, VirtualMachineLogs}, Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}, Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
 	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
 	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec, VirtualMachineLogs}},
+	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}},
 }

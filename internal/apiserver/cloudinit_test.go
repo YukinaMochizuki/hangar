@@ -21,10 +21,10 @@ import (
 func keysQuotedTo(t *testing.T, size int) []string {
 	t.Helper()
 	base := sshKey("ssh-ed25519") + " "
-	fixed := len(vendorData(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: []string{base, base}}))
+	fixed := len(keysConfig(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: []string{base, base}}))
 	lt, c := (size-fixed)/6, (size-fixed)%6
 	keys := []string{base + strings.Repeat("<", lt/2) + strings.Repeat("c", c), base + strings.Repeat("<", lt-lt/2)}
-	if n := len(vendorData(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: keys})); n != size {
+	if n := len(keysConfig(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: keys})); n != size {
 		t.Fatalf("keys of %d bytes of vendor-data, want %d", n, size)
 	}
 	if n := len(keys[0]) + len(keys[1]); n > maxSSHKeysLen || len(keys[1]) > maxSSHKeyLen {
@@ -130,14 +130,14 @@ func TestAMachineRefusedIsReported(t *testing.T) {
 func TestVendorDataGivesTheKeys(t *testing.T) {
 	key := sshKey("ssh-ed25519")
 	odd := strings.TrimSuffix(sshKey("ssh-rsa"), "alice@laptop") + `bob "the" builder: #1`
-	got := vendorData(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: []string{key, odd}})
+	got := keysConfig(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: []string{key, odd}})
 	want := "#cloud-config\nssh_authorized_keys:\n" +
 		"  - \"" + key + "\"\n" +
 		"  - \"" + strings.ReplaceAll(odd, `"`, `\"`) + "\"\n"
 	if got != want {
 		t.Errorf("vendor-data\n%s\nwant\n%s", got, want)
 	}
-	if got := vendorData(&computev1alpha1.VirtualMachineSpec{}); got != "" {
+	if got := keysConfig(&computev1alpha1.VirtualMachineSpec{}); got != "" {
 		t.Errorf("a VM without keys has vendor-data %q", got)
 	}
 }
@@ -162,7 +162,7 @@ func TestAVMsMachineCarriesItsCloudInit(t *testing.T) {
 	m := waitMachine(t, s, system, "vm-web", "placed with its cloud-init", func(m *computev1alpha1.Machine) bool {
 		return m.GetSpec().GetNode() == "n1" && m.GetSpec().GetFirmware().GetCloudInit() != nil
 	})
-	want := &computev1alpha1.MachineCloudInit{InstanceId: uid, UserData: vm.Spec.UserData, VendorData: vendorData(vm.Spec)}
+	want := &computev1alpha1.MachineCloudInit{InstanceId: uid, UserData: vm.Spec.UserData, VendorData: keysConfig(vm.Spec)}
 	if got := m.GetSpec().GetFirmware().GetCloudInit(); !proto.Equal(got, want) {
 		t.Errorf("cloud-init %v, want %v", got, want)
 	}

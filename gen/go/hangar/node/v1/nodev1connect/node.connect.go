@@ -42,6 +42,8 @@ const (
 	NodeServiceLogsProcedure = "/hangar.node.v1.NodeService/Logs"
 	// NodeServiceExecProcedure is the fully-qualified name of the NodeService's Exec RPC.
 	NodeServiceExecProcedure = "/hangar.node.v1.NodeService/Exec"
+	// NodeServiceSSHProcedure is the fully-qualified name of the NodeService's SSH RPC.
+	NodeServiceSSHProcedure = "/hangar.node.v1.NodeService/SSH"
 )
 
 // NodeServiceClient is a client for the hangar.node.v1.NodeService service.
@@ -55,6 +57,12 @@ type NodeServiceClient interface {
 	// carry its stdin, a resize or a signal. The responses carry its output
 	// and, last, how it ended.
 	Exec(context.Context) *connect.BidiStreamForClient[v1.ExecRequest, v1.ExecResponse]
+	// SSH connects to port 22 of a running firmware machine's first
+	// interface, from its network's gateway inside the network's namespace,
+	// and relays bytes both ways for as long as the call lasts. The first
+	// request names the machine, which must be on this node; the node picks
+	// the address. See docs/decisions/vm-ssh.md.
+	SSH(context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse]
 }
 
 // NewNodeServiceClient constructs a client for the hangar.node.v1.NodeService service. By default,
@@ -80,6 +88,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("Exec")),
 			connect.WithClientOptions(opts...),
 		),
+		sSH: connect.NewClient[v1.SSHRequest, v1.SSHResponse](
+			httpClient,
+			baseURL+NodeServiceSSHProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("SSH")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -87,6 +101,7 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 type nodeServiceClient struct {
 	logs *connect.Client[v1.LogsRequest, v1.LogsResponse]
 	exec *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	sSH  *connect.Client[v1.SSHRequest, v1.SSHResponse]
 }
 
 // Logs calls hangar.node.v1.NodeService.Logs.
@@ -97,6 +112,11 @@ func (c *nodeServiceClient) Logs(ctx context.Context, req *connect.Request[v1.Lo
 // Exec calls hangar.node.v1.NodeService.Exec.
 func (c *nodeServiceClient) Exec(ctx context.Context) *connect.BidiStreamForClient[v1.ExecRequest, v1.ExecResponse] {
 	return c.exec.CallBidiStream(ctx)
+}
+
+// SSH calls hangar.node.v1.NodeService.SSH.
+func (c *nodeServiceClient) SSH(ctx context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse] {
+	return c.sSH.CallBidiStream(ctx)
 }
 
 // NodeServiceHandler is an implementation of the hangar.node.v1.NodeService service.
@@ -110,6 +130,12 @@ type NodeServiceHandler interface {
 	// carry its stdin, a resize or a signal. The responses carry its output
 	// and, last, how it ended.
 	Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error
+	// SSH connects to port 22 of a running firmware machine's first
+	// interface, from its network's gateway inside the network's namespace,
+	// and relays bytes both ways for as long as the call lasts. The first
+	// request names the machine, which must be on this node; the node picks
+	// the address. See docs/decisions/vm-ssh.md.
+	SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -131,12 +157,20 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("Exec")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceSSHHandler := connect.NewBidiStreamHandler(
+		NodeServiceSSHProcedure,
+		svc.SSH,
+		connect.WithSchema(nodeServiceMethods.ByName("SSH")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceLogsProcedure:
 			nodeServiceLogsHandler.ServeHTTP(w, r)
 		case NodeServiceExecProcedure:
 			nodeServiceExecHandler.ServeHTTP(w, r)
+		case NodeServiceSSHProcedure:
+			nodeServiceSSHHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -152,4 +186,8 @@ func (UnimplementedNodeServiceHandler) Logs(context.Context, *connect.Request[v1
 
 func (UnimplementedNodeServiceHandler) Exec(context.Context, *connect.BidiStream[v1.ExecRequest, v1.ExecResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.Exec is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.SSH is not implemented"))
 }

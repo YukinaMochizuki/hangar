@@ -49,11 +49,12 @@ booted kernels of their own, moved there too.
   image's default user (`ubuntu` on Ubuntu). The platform's settings go
   in vendor-data, never into the user's document: cloud-init applies
   user-data over vendor-data, so a user-data that sets its own keys, or
-  turns vendor-data off, wins. More of the platform's settings, such as
-  an SSH CA, go there too. A key holds only printable characters and
-  tabs, as cloud-init's YAML parser refuses the whole vendor-data over
-  some others; and the keys, each quoted, fit the machine's 64 KiB of
-  vendor-data, so a VM admitted always gets its machine.
+  turns vendor-data off, wins. With the platform's SSH CA, vendor-data
+  also trusts it for the VM's uid (`vm-ssh.md`). A key holds only
+  printable characters and tabs, as cloud-init's YAML parser refuses the
+  whole vendor-data over some others; and the vendor-data, keys each
+  quoted and the CA's script, fits the machine's 64 KiB, so a VM admitted
+  always gets its machine.
 - **First boot only.** cloud-init runs per instance, and the instance id
   is the VM's uid, so user-data and keys apply on the VM's first boot,
   not again on a restart, nor when its machine is made again. Changing

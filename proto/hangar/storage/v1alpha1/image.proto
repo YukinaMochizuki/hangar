@@ -40,6 +40,9 @@ message ImageSpec {
   // The smallest disk made from it, a quantity such as "10Gi"; empty is the
   // image's own size.
   string min_disk_size = 6;
+  // The user the image's cloud-init makes, such as "ubuntu", whom hangar ssh
+  // logs in as unless told another; empty, it must be told.
+  string default_user = 7;
 }
 
 // ImageStatus is what nodes found of the image. Any node may write it: the
