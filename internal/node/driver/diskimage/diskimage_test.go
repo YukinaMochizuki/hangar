@@ -113,10 +113,11 @@ func TestFetchChecksAndWrites(t *testing.T) {
 	}
 	args, _ := os.ReadFile(filepath.Join(e.tools, "args"))
 	// The format inspected is the one written from, never probed again,
-	// onto a device of zeros that qemu-img neither makes nor writes zeros to.
+	// onto a device of zeros that qemu-img neither makes nor writes zeros to,
+	// and writes past the page cache.
 	if lines := strings.Split(strings.TrimSpace(string(args)), "\n"); len(lines) != 2 ||
 		!strings.HasPrefix(lines[0], "info --output=json "+e.d.cfg.Dir+"/") ||
-		!strings.HasPrefix(lines[1], "convert -q -n --target-is-zero -f qcow2 -O raw "+e.d.cfg.Dir+"/") || !strings.HasSuffix(lines[1], " /dev/zd0") {
+		!strings.HasPrefix(lines[1], "convert -q -n --target-is-zero -t none -T writeback -f qcow2 -O raw "+e.d.cfg.Dir+"/") || !strings.HasSuffix(lines[1], " /dev/zd0") {
 		t.Errorf("qemu-img ran with %q", lines)
 	}
 	if len(e.left()) != 1 {
