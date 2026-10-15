@@ -503,9 +503,16 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 		return resource.ApplyResult{}, err
 	}
 	claim := nameClaim(b.r, key)
-	// The claim comes first, so two creators of one name cannot both win;
-	// it is released again if the object is not created after all.
+	// The claims come first, so two creators of one name cannot both win;
+	// they are released again if no object is created after all, and kept
+	// when one is: by another creator of the same key, which holds them.
+	var global *globalClaim
 	release := func(ctx context.Context) {
+		if global != nil {
+			if _, _, err := b.s.store.Delete(ctx, global.key, 0); err != nil {
+				b.s.log.Error("releasing a claim failed", "kind", b.r.Kind, "claim", global.key.Name, "error", err)
+			}
+		}
 		if !b.hooks.neverReuseNames {
 			return
 		}
@@ -526,12 +533,27 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 			return resource.ApplyResult{}, err
 		}
 	}
+	if b.hooks.claim != nil {
+		c := b.hooks.claim(key)
+		taken, err := b.takeClaim(ctx, c)
+		if err != nil {
+			release(ctx)
+			return resource.ApplyResult{}, err
+		}
+		if taken {
+			global = &c
+		}
+	}
 	// From here on, the caller hanging up must not leave a claim or a half
 	// set up object behind.
 	ctx = context.WithoutCancel(ctx)
 	rev, err := b.s.store.Create(ctx, b.storeKey(key), data)
 	if err != nil {
-		release(ctx)
+		// An object of this key made since the read holds the claims too:
+		// it keeps them, as it would have taken them.
+		if !errors.Is(err, store.ErrExists) {
+			release(ctx)
+		}
 		return resource.ApplyResult{}, err
 	}
 	meta.ResourceVersion = rev
@@ -546,6 +568,39 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 		}
 	}
 	return resource.ApplyResult{Object: in, Created: true}, nil
+}
+
+// globalClaim is a claim an object takes when it is created, on something
+// besides its name that no other object may ever hold (kindHooks.claim).
+type globalClaim struct {
+	key store.Key
+	// holder is who holds it: the same holder takes it again, as an object
+	// made again under its old name.
+	holder string
+	// what names what is claimed, in the words of a refusal.
+	what string
+}
+
+// takeClaim takes c, or finds its holder already holds it, or refuses: it
+// reports whether it took it now, and so is the one to release it if the
+// create goes no further.
+func (b *backend) takeClaim(ctx context.Context, c globalClaim) (bool, error) {
+	_, err := b.s.store.Create(ctx, c.key, []byte(c.holder))
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, store.ErrExists) {
+		return false, err
+	}
+	o, err := b.s.store.Get(ctx, c.key)
+	if err != nil {
+		return false, err
+	}
+	if string(o.Data) != c.holder {
+		return false, failedPrecondition("%s is held by another %s and is never given to another; choose another name",
+			c.what, strings.ToLower(b.r.Kind))
+	}
+	return false, nil
 }
 
 // nameClaimKind holds one record per global name ever used by a kind whose

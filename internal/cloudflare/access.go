@@ -95,6 +95,12 @@ func EmailRule(email string) json.RawMessage {
 	return b
 }
 
+// EveryoneRule matches everyone, signed in or not; with a bypass policy, it
+// lets every request through without Access.
+func EveryoneRule() json.RawMessage {
+	return json.RawMessage(`{"everyone":{}}`)
+}
+
 // AnyValidServiceTokenRule matches every service token of the account.
 func AnyValidServiceTokenRule() json.RawMessage {
 	return json.RawMessage(`{"any_valid_service_token":{}}`)
@@ -130,6 +136,12 @@ type Organization struct {
 	AuthDomain string `json:"auth_domain"`
 }
 
+// EndpointAppPrefix starts the name of every Access application the
+// apiserver makes for a PUBLIC endpoint, followed by its hostname:
+// hangar-cloudflare leaves them alone, and the apiserver finds its own by
+// name.
+const EndpointAppPrefix = "hangar public endpoint: "
+
 func accessPath(account, rest string) string { return "/accounts/" + esc(account) + "/access/" + rest }
 
 // ListAccessApps returns every application of the account. Filtering is the
@@ -151,6 +163,29 @@ func (c *Client) CreateAccessApp(ctx context.Context, account string, in AccessA
 	var a AccessApp
 	_, err := c.do(ctx, http.MethodPost, accessPath(account, "apps"), nil, in, &a)
 	return a, err
+}
+
+// FindAccessApps returns the account's applications named exactly name.
+func (c *Client) FindAccessApps(ctx context.Context, account, name string) ([]AccessApp, error) {
+	q := url.Values{"name": {name}, "exact": {"true"}}
+	apps, err := listAll[AccessApp](ctx, c, accessPath(account, "apps"), q, 100)
+	if err != nil {
+		return nil, err
+	}
+	// The filter is the API's; holding to it here costs nothing.
+	out := apps[:0]
+	for _, a := range apps {
+		if a.Name == name {
+			out = append(out, a)
+		}
+	}
+	return out, nil
+}
+
+// DeleteAccessApp deletes an application.
+func (c *Client) DeleteAccessApp(ctx context.Context, account, id string) error {
+	_, err := c.do(ctx, http.MethodDelete, accessPath(account, "apps/"+esc(id)), nil, nil, nil)
+	return err
 }
 
 // UpdateAccessApp replaces an application.

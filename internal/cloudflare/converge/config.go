@@ -21,7 +21,20 @@ type Config struct {
 	TunnelName        string    `yaml:"tunnel_name"`
 	AllowedEmails     []string  `yaml:"allowed_emails"`
 	IdentityProviders IdPConfig `yaml:"identity_providers"`
+	// Endpoints, if set, sets up the user-content domain public endpoints
+	// are served under (docs/decisions/public-endpoints.md).
+	Endpoints *EndpointsConfig `yaml:"endpoints"`
 }
+
+// EndpointsConfig is the public endpoints' domain.
+type EndpointsConfig struct {
+	// Zone is the user-content zone, apart from the control zone; every
+	// endpoint is a hostname one label below it.
+	Zone string `yaml:"zone"`
+}
+
+// Wildcard is the hostname that covers every endpoint.
+func (e *EndpointsConfig) Wildcard() string { return "*." + e.Zone }
 
 // IdPConfig names the login methods the application offers. Both must
 // already exist in the account.
@@ -89,6 +102,15 @@ func (c *Config) normalize() error {
 	c.AllowedEmails = emails
 	if strings.TrimSpace(c.IdentityProviders.Google) == "" {
 		errs = append(errs, errors.New("identity_providers.google is required"))
+	}
+	if e := c.Endpoints; e != nil {
+		e.Zone = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(e.Zone)), ".")
+		switch {
+		case e.Zone == "" || strings.Contains(e.Zone, "*"):
+			errs = append(errs, errors.New("endpoints.zone must name a zone"))
+		case e.Zone == c.Zone || strings.HasSuffix(e.Zone, "."+c.Zone) || strings.HasSuffix(c.Zone, "."+e.Zone):
+			errs = append(errs, fmt.Errorf("endpoints.zone %q must be a domain apart from the control zone %q: user content never shares one with the API", e.Zone, c.Zone))
+		}
 	}
 	return errors.Join(errs...)
 }

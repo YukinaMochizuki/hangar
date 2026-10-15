@@ -1,9 +1,11 @@
 // Package converge makes Cloudflare match Hangar's public API setup: a
 // remotely-managed tunnel and its ingress, the proxied DNS record that points
 // at it, an Access application with two reusable policies, and a smoke-test
-// service token. It changes only objects it created, which it records in a
-// state file, and writes what the host needs to files, never to its output.
-// It deletes nothing.
+// service token; and, for public endpoints, their domain's wildcard DNS
+// record, ingress and Access application, and the bypass policy the
+// apiserver opens PUBLIC endpoints with. It changes only objects it
+// created, which it records in a state file, and writes what the host needs
+// to files, never to its output. It deletes nothing.
 package converge
 
 import (
@@ -24,7 +26,10 @@ import (
 const (
 	// Origin is where cloudflared sends the API's traffic: the apiserver's
 	// public listener on the host.
-	Origin          = "http://127.0.0.1:8080"
+	Origin = "http://127.0.0.1:8080"
+	// EdgeOrigin is where cloudflared sends public endpoints' traffic:
+	// hangar-edge's listener on the host.
+	EdgeOrigin      = "http://127.0.0.1:8090"
 	catchAll        = "http_status:404"
 	SessionDuration = "24h"
 	SmokeTokenName  = "hangar-smoke"
@@ -35,6 +40,7 @@ const (
 
 	emailsPolicy = "emails"
 	tokensPolicy = "service_tokens"
+	bypassPolicy = "endpoints_bypass"
 )
 
 // ErrNotOwned is returned when an object the tool would manage exists but was
@@ -84,6 +90,8 @@ type run struct {
 	res  *Result
 	zone cloudflare.Zone
 	team string
+	// epZone is the public endpoints' zone, with Config.Endpoints.
+	epZone cloudflare.Zone
 	// teamName is the team domain's first label, which cloudflared's
 	// origin access check takes.
 	teamName string
@@ -98,6 +106,10 @@ type owned struct {
 	app      *cloudflare.AccessApp
 	policies map[string]*cloudflare.AccessPolicy
 	token    *cloudflare.ServiceToken
+	// epDNS and epApp are the public endpoints' wildcard record and
+	// application.
+	epDNS *cloudflare.DNSRecord
+	epApp *cloudflare.AccessApp
 }
 
 // Run compares Cloudflare with the config and, with Apply, converges it.
@@ -123,7 +135,15 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 		return nil, fmt.Errorf("%s was written for hostname %s, the config names %s; changing the hostname is not supported: "+
 			"remove the old setup by hand (docs/runbook/cloudflare.md), or run with a new --out directory", StateFile, st.Hostname, e.Config.Hostname)
 	}
-	st.AccountID, st.Hostname = e.Config.AccountID, e.Config.Hostname
+	var epZone string
+	if e.Config.Endpoints != nil {
+		epZone = e.Config.Endpoints.Zone
+	}
+	if st.EndpointsZone != "" && st.EndpointsZone != epZone {
+		return nil, fmt.Errorf("%s was written for public endpoints in %s, the config names %q; changing or dropping it is not supported: "+
+			"remove the old setup by hand (docs/runbook/cloudflare.md)", StateFile, st.EndpointsZone, epZone)
+	}
+	st.AccountID, st.Hostname, st.EndpointsZone = e.Config.AccountID, e.Config.Hostname, epZone
 	r := &run{Engine: e, ctx: ctx, st: st, res: &Result{}}
 	if err := r.lookups(); err != nil {
 		return nil, err
@@ -131,7 +151,7 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 	if err := r.observe(); err != nil {
 		return nil, err
 	}
-	steps := []func() error{r.policies, r.app, r.tunnel, r.tunnelConfig, r.dnsRecord, r.serviceToken, r.outputs}
+	steps := []func() error{r.policies, r.app, r.endpointsApp, r.tunnel, r.tunnelConfig, r.dnsRecord, r.endpointsDNS, r.serviceToken, r.outputs}
 	for _, s := range steps {
 		if err := s(); err != nil {
 			return r.res, err
@@ -190,6 +210,16 @@ func (r *run) lookups() error {
 		return err
 	}
 	r.idps = []string{google, otp}
+	if ep := r.Config.Endpoints; ep != nil {
+		z, err := r.Client.ZoneByName(r.ctx, acct, ep.Zone)
+		if err != nil {
+			return fmt.Errorf("endpoints.zone: %w", err)
+		}
+		r.epZone = z
+		if r.st.EndpointsZoneID != "" && r.st.EndpointsZoneID != z.ID {
+			return fmt.Errorf("%s records endpoints zone %s, but %s is %s; moving the record between zones is not supported", StateFile, r.st.EndpointsZoneID, ep.Zone, z.ID)
+		}
+	}
 	return nil
 }
 
@@ -286,7 +316,7 @@ func (r *run) observe() error {
 		return err
 	}
 	for _, p := range policies {
-		for _, role := range []string{emailsPolicy, tokensPolicy} {
+		for _, role := range r.policyRoles() {
 			if p.Name == r.policyName(role) && !r.ownsPolicy(p.ID) {
 				foreign("Access policy", p.Name, p.ID)
 			}
@@ -311,6 +341,9 @@ func (r *run) observe() error {
 		if covers(a, cfg.Hostname) && (r.owned.app == nil || a.ID != r.owned.app.ID) {
 			foreign("Access application", a.Name, a.ID)
 		}
+	}
+	if err := r.observeEndpoints(apps, foreign); err != nil {
+		return err
 	}
 
 	if id := r.st.ServiceTokenID; id != "" {
@@ -350,10 +383,21 @@ func (r *run) ownsPolicy(id string) bool {
 }
 
 func (r *run) policyName(role string) string {
-	if role == emailsPolicy {
+	switch role {
+	case emailsPolicy:
 		return r.Config.Hostname + ": allow listed emails"
+	case bypassPolicy:
+		return r.Config.Endpoints.Zone + ": public endpoints, everyone"
 	}
 	return r.Config.Hostname + ": service tokens"
+}
+
+// policyRoles are the reusable policies the config asks for.
+func (r *run) policyRoles() []string {
+	if r.Config.Endpoints != nil {
+		return []string{emailsPolicy, tokensPolicy, bypassPolicy}
+	}
+	return []string{emailsPolicy, tokensPolicy}
 }
 
 // pendingID stands in, while planning, for the ID an object would get.
@@ -396,10 +440,15 @@ func (r *run) wantIngress() []cloudflare.IngressRule {
 		aud = r.owned.app.AUD
 	}
 	access := cloudflare.OriginAccess{Required: true, TeamName: r.teamName, AudTag: []string{aud}}
-	return []cloudflare.IngressRule{
+	rules := []cloudflare.IngressRule{
 		{Hostname: r.Config.Hostname, Service: Origin, OriginRequest: cloudflare.OriginRequestWithAccess(access)},
-		{Service: catchAll},
 	}
+	if ep := r.Config.Endpoints; ep != nil {
+		// No origin access check here: a PUBLIC endpoint's requests come
+		// with no Access token, and hangar-edge checks a PRIVATE one's.
+		rules = append(rules, cloudflare.IngressRule{Hostname: ep.Wildcard(), Service: EdgeOrigin})
+	}
+	return append(rules, cloudflare.IngressRule{Service: catchAll})
 }
 
 func (r *run) tunnelConfig() error {
@@ -548,6 +597,23 @@ func (r *run) dnsRecord() error {
 		r.st.DNSRecordID, r.st.ZoneID = created.ID, r.zone.ID
 		return r.save()
 	}
+	fields := diffRecord(*have, want)
+	if len(fields) == 0 {
+		return nil
+	}
+	r.add(Change{Action: "update", Object: obj, Fields: fields})
+	if !r.Apply {
+		return nil
+	}
+	want.Tags = have.Tags
+	if _, err := r.Client.UpdateDNSRecord(r.ctx, r.zone.ID, have.ID, want); err != nil {
+		return err
+	}
+	r.logf("updated %s", obj)
+	return nil
+}
+
+func diffRecord(have, want cloudflare.DNSRecord) []Field {
 	var fields []Field
 	if have.Type != want.Type {
 		fields = append(fields, Field{"type", have.Type, want.Type})
@@ -564,19 +630,7 @@ func (r *run) dnsRecord() error {
 	if have.Comment != want.Comment {
 		fields = append(fields, Field{"comment", strconv.Quote(have.Comment), strconv.Quote(want.Comment)})
 	}
-	if len(fields) == 0 {
-		return nil
-	}
-	r.add(Change{Action: "update", Object: obj, Fields: fields})
-	if !r.Apply {
-		return nil
-	}
-	want.Tags = have.Tags
-	if _, err := r.Client.UpdateDNSRecord(r.ctx, r.zone.ID, have.ID, want); err != nil {
-		return err
-	}
-	r.logf("updated %s", obj)
-	return nil
+	return fields
 }
 
 func formatRecord(d cloudflare.DNSRecord) string {
@@ -585,12 +639,16 @@ func formatRecord(d cloudflare.DNSRecord) string {
 
 func (r *run) wantPolicy(role string) cloudflare.AccessPolicy {
 	p := cloudflare.AccessPolicy{Name: r.policyName(role), SessionDuration: SessionDuration}
-	if role == emailsPolicy {
+	switch role {
+	case emailsPolicy:
 		p.Decision = "allow"
 		for _, e := range r.Config.AllowedEmails {
 			p.Include = append(p.Include, cloudflare.EmailRule(e))
 		}
-	} else {
+	case bypassPolicy:
+		p.Decision = "bypass"
+		p.Include = []json.RawMessage{cloudflare.EveryoneRule()}
+	default:
 		p.Decision = "non_identity"
 		p.Include = []json.RawMessage{cloudflare.AnyValidServiceTokenRule()}
 	}
@@ -599,7 +657,7 @@ func (r *run) wantPolicy(role string) cloudflare.AccessPolicy {
 }
 
 func (r *run) policies() error {
-	for _, role := range []string{emailsPolicy, tokensPolicy} {
+	for _, role := range r.policyRoles() {
 		want := r.wantPolicy(role)
 		obj := fmt.Sprintf("Access policy %q", want.Name)
 		have := r.owned.policies[role]
@@ -703,14 +761,20 @@ func (r *run) policyLinks() []cloudflare.PolicyLink {
 }
 
 func (r *run) wantApp() cloudflare.AccessAppInput {
+	return r.wantAppFor(r.Config.Hostname)
+}
+
+// wantAppFor is the application for hostname: the listed emails and any
+// service token, through the configured login methods.
+func (r *run) wantAppFor(hostname string) cloudflare.AccessAppInput {
 	return cloudflare.AccessAppInput{
-		Name:                   r.Config.Hostname,
-		Domain:                 r.Config.Hostname,
+		Name:                   hostname,
+		Domain:                 hostname,
 		Type:                   "self_hosted",
 		SessionDuration:        SessionDuration,
 		AllowedIdPs:            r.idps,
 		AutoRedirectToIdentity: false,
-		Destinations:           []cloudflare.AppDestination{{Type: "public", URI: r.Config.Hostname}},
+		Destinations:           []cloudflare.AppDestination{{Type: "public", URI: hostname}},
 		Policies:               r.policyLinks(),
 		// Every setting that lets a request in with less than a full login
 		// is sent at its strict value, so a replace also undoes drift there.
@@ -924,6 +988,13 @@ func (r *run) outputs() error {
 	}{
 		{CloudflaredEnv, "TUNNEL_TOKEN=" + token + "\n", token != ""},
 		{AccessEnv, "HANGAR_CF_TEAM_DOMAIN=" + r.team + "\nHANGAR_CF_AUDIENCE=" + aud + "\n", aud != ""},
+	}
+	if ep := r.Config.Endpoints; ep != nil {
+		content, known := r.edgeEnv()
+		files = append(files, struct {
+			name, content string
+			known         bool
+		}{EdgeEnv, content, known})
 	}
 	for _, f := range files {
 		have, err := readFile(r.Dir, f.name)

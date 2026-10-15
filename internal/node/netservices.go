@@ -129,6 +129,8 @@ func (a *Agent) networkController() *controller.Controller {
 			{Kind: registry.Network.Kind, Map: controller.Self},
 			{Kind: registry.Machine.Kind, Map: a.networksOfMachine},
 			{Kind: registry.SecurityGroup.Kind, Map: networkOfGroup},
+			// A public endpoint opens its machine's port to the edge.
+			{Kind: registry.PublicEndpoint.Kind, Map: a.networksOfEndpointObject, SkipResync: true},
 		},
 		// The network driver's changes, its own included, are when a
 		// namespace comes, goes or is made again.
@@ -208,6 +210,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	var members []secgroup.Member
 	var mine []driver.InterfacePolicy
 	var mineAt []int
+	var mineNames []string
 	for _, o := range objs {
 		m := o.(*computev1alpha1.Machine)
 		for _, nic := range m.GetSpec().GetInterfaces() {
@@ -232,6 +235,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			if m.GetSpec().GetNode() == a.cfg.Name {
 				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
 				mineAt = append(mineAt, len(members))
+				mineNames = append(mineNames, m.GetMetadata().GetName())
 			}
 			members = append(members, secgroup.Member{Addrs: addrs, Groups: nic.GetSecurityGroups()})
 		}
@@ -240,9 +244,17 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	if err != nil {
 		return err
 	}
+	edge, err := a.edgePortsOf(ctx, k.Project)
+	if err != nil {
+		return err
+	}
 	policies := secgroup.Resolve(groups, members)
 	for i, at := range mineAt {
 		mine[i].Policy = policies[at]
+		// Endpoints reach a machine on its first interface alone.
+		if mine[i].Name == "eth0" {
+			mine[i].EdgePorts = edge[mineNames[i]]
+		}
 	}
 	// The network's services follow its machines whatever becomes of the
 	// firewall, which lets them through in any case.
@@ -359,6 +371,16 @@ func notify(ch chan struct{}) {
 	case ch <- struct{}{}:
 	default:
 	}
+}
+
+// networksOfEndpointObject maps a public endpoint to the networks of its
+// project (networksOfEndpoint).
+func (a *Agent) networksOfEndpointObject(ctx context.Context, o store.Object) []controller.Key {
+	var keys []controller.Key
+	for _, n := range a.networksOfEndpoint(ctx, o.Project) {
+		keys = append(keys, controller.Key{Project: o.Project, Name: n})
+	}
+	return keys
 }
 
 // networkOfGroup maps a SecurityGroup to the network it is of.

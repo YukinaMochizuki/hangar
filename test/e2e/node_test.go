@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"slices"
 	"testing"
 	"time"
@@ -56,7 +57,10 @@ type world struct {
 	metadata *metadata.Server
 	// ipv6Prefix, if set before the agent starts, is the host's.
 	ipv6Prefix netip.Prefix
-	stop       func()
+	// edgeDial, if set before the agent starts, is where it takes
+	// hangar-edge's dials, from this process.
+	edgeDial net.Listener
+	stop     func()
 }
 
 func newWorld(t *testing.T) *world {
@@ -112,6 +116,8 @@ func (w *world) startAgent() {
 		DNSUpstreams:      w.dnsUpstreams,
 		Metadata:          w.metadata,
 		IPv6Prefix:        w.ipv6Prefix,
+		EdgeDial:          w.edgeDial,
+		EdgeUIDs:          []uint32{uint32(os.Getuid())},
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),

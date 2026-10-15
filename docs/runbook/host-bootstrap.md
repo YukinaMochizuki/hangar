@@ -101,31 +101,52 @@ with `--release DIR`. `--only <step>` runs a single step
   kernel and initramfs in `/usr/local/lib/hangar/`, each by a rename, then
   records `VERSION` and the checksums by installed path in
   `/usr/local/lib/hangar/`. `verify.sh` checks them with `sha256sum -c`.
-- `services` makes the system user `hangar`, gives it
-  `/var/lib/hangar/state` (mode 700), and writes, enables and starts
-  `hangar-apiserver.service` and `hangar-node.service`:
+- `services` makes the system users `hangar` and `hangar-edge`, gives
+  `hangar` `/var/lib/hangar/state` (mode 700), and writes, enables and
+  starts `hangar-apiserver.service`, `hangar-node.service` and, when
+  `local.env` names the public endpoints' domain, `hangar-edge.service`:
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
     the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
-    for (dev when unset), and two unix sockets that systemd makes and
-    passes it (`hangar-apiserver-node.socket` and
-    `hangar-apiserver-admin.socket`, `PartOf=` the apiserver, so they stop
-    and restart with it): the node socket `/run/hangar/node.sock`
-    (`hangar`'s, 0660), accepting uid 0 as the Node `HANGAR_NODE_NAME`, and
-    the admin socket `/run/hangar/admin.sock` (root's, 0600), where root on
-    the host is `platform.root` whatever the bindings say
-    (`docs/decisions/authentication.md`). `/run/hangar` is root's, 0755,
-    from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can remove or
-    replace neither socket;
+    for (dev when unset), and three unix sockets that systemd makes and
+    passes it (`hangar-apiserver-node.socket`,
+    `hangar-apiserver-admin.socket` and `hangar-apiserver-edge.socket`,
+    `PartOf=` the apiserver, so they stop and restart with it): the node
+    socket `/run/hangar/node.sock` (`hangar`'s, 0660), accepting uid 0 as
+    the Node `HANGAR_NODE_NAME`, the admin socket `/run/hangar/admin.sock`
+    (root's, 0600), where root on the host is `platform.root` whatever the
+    bindings say, and the edge socket `/run/hangar/edge.sock` (root's and
+    group `hangar-edge`'s, 0660), accepting `hangar-edge`'s uid as the Edge
+    principal (`docs/decisions/authentication.md`). `/run/hangar` is
+    root's, 0755, from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can
+    remove or replace no socket. It reads the Cloudflare API token it opens
+    PUBLIC endpoints with from `/var/lib/hangar/state/cloudflare-api-token`
+    (`hangar`'s, 0600), which the operator installs
+    (`docs/runbook/cloudflare.md`); without it the apiserver runs and PUBLIC
+    endpoints stay closed. With `HANGAR_EDGE_DOMAIN`, `HANGAR_CF_ACCOUNT_ID`
+    and `HANGAR_CF_BYPASS_POLICY_ID` in `local.env` (from `edge.env`), it
+    gets `--endpoint-domain`, `--cloudflare-account-id` and
+    `--cloudflare-bypass-policy-id`;
   - the agent as root: `--drivers=host --name HANGAR_NODE_NAME --uplink
     HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --public-ipv6-prefix` the
     /64 of `HANGAR_IPV6_ADDR`, from which every machine interface gets its
     public IPv6 address, `--reserved-disk` the sum
     of both quotas, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
-    plus the host's own overhead), every path its default,
+    plus the host's own overhead), `--edge-dial-socket
+    /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
+    that socket, root's and group `hangar-edge`'s, 0660, and takes
+    `hangar-edge`'s dials alone), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the
     agent runs itself: each VM is a transient unit of its own and outlives
-    a stop or restart of it.
+    a stop or restart of it;
+  - the edge as `hangar-edge`, sandboxed as the apiserver is, only when
+    `local.env` has `HANGAR_EDGE_DOMAIN`, which needs cloudflare auth and
+    `HANGAR_EDGE_CF_AUDIENCE`, `HANGAR_CF_ACCOUNT_ID` and
+    `HANGAR_CF_BYPASS_POLICY_ID` beside it, or the step refuses: on
+    `127.0.0.1:8090`, where cloudflared sends `*.<domain>`, with the
+    apiserver's edge socket and the agent's dial socket
+    (`docs/decisions/public-endpoints.md`). Without `HANGAR_EDGE_DOMAIN` the
+    step stops and disables it, and `verify.sh` checks it is off.
 
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
@@ -137,7 +158,7 @@ with `--release DIR`. `--only <step>` runs a single step
   restart leaves `/var/lib/hangar-bootstrap/restart-<unit>`, so the next run
   restarts it.
 
-  The units are generated in full, so a drop-in for either
+  The units are generated in full, so a drop-in for any
   (`hangar-node.service.d/`, or anything in `systemctl show -p DropInPaths`)
   makes `verify.sh` FAIL and the step refuse until it is removed: change
   the step instead.

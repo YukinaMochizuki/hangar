@@ -24,7 +24,7 @@ func fromGateway(n driver.NetworkSpec, script string) bool {
 }
 
 // TestThePlatformsSSHPath: a guest whose policy lets nothing in is reached
-// on its port 22 by DialSSH, from the gateway, and by nothing else: not by
+// on its port 22 by Dial, from the gateway, and by nothing else: not by
 // another guest, nor UDP from the gateway to its port 22, nor TCP from the
 // gateway's port 22 to its other ports. A policy letting everything in
 // shows each of those would arrive if let.
@@ -56,7 +56,7 @@ s.connect((%q,2222)); s.sendall(b"hi"); assert s.recv(2)==b"hi"`, gw, addr))
 	dialSSH := func() bool {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
-		c, err := d.DialSSH(ctx, netA.UID, locked.nic.Address.Addr())
+		c, err := d.Dial(ctx, netA.UID, netip.AddrPortFrom(locked.nic.Address.Addr(), 22))
 		if err != nil {
 			return false
 		}
@@ -77,7 +77,7 @@ s.connect((%q,2222)); s.sendall(b"hi"); assert s.recv(2)==b"hi"`, gw, addr))
 		got  bool
 		want bool
 	}{
-		{"DialSSH from the gateway", dialSSH(), true},
+		{"Dial to port 22 from the gateway", dialSSH(), true},
 		{"another guest to port 22", connects(other, addr, 22), false},
 		{"UDP from the gateway to port 22", udp22(), false},
 		{"TCP from the gateway's port 22 to port 2222", fromGateway22To2222(), false},

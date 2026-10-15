@@ -44,10 +44,11 @@ type Inputs struct {
 	// Node is hangar-node, built by make e2e-host, or HANGAR_TESTBED_NODE;
 	// a package that uses it checks that it is there.
 	Node string
-	// Apiserver and CLI are hangar-apiserver and hangar, built by make
-	// e2e-host, or HANGAR_TESTBED_APISERVER and HANGAR_TESTBED_CLI; a
-	// package that uses them checks that they are there.
-	Apiserver, CLI string
+	// Apiserver, CLI and Edge are hangar-apiserver, hangar and
+	// hangar-edge, built by make e2e-host, or HANGAR_TESTBED_APISERVER,
+	// HANGAR_TESTBED_CLI and HANGAR_TESTBED_EDGE; a package that uses them
+	// checks that they are there.
+	Apiserver, CLI, Edge string
 	// CHProbe stands in for Cloud Hypervisor to try what a VM's unit
 	// lets it do (test/testbed/vms/chprobe), built by make e2e-host, or
 	// HANGAR_TESTBED_CHPROBE; a package that uses it checks that it is
@@ -238,6 +239,7 @@ func loadInputs() (Inputs, error) {
 		Node:      pick("HANGAR_TESTBED_NODE", "bin/hangar-node"),
 		Apiserver: pick("HANGAR_TESTBED_APISERVER", "bin/hangar-apiserver"),
 		CLI:       pick("HANGAR_TESTBED_CLI", "bin/hangar"),
+		Edge:      pick("HANGAR_TESTBED_EDGE", "bin/hangar-edge"),
 		CHProbe:   pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
 	}
 	if i.Rootfs == "" {

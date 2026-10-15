@@ -127,6 +127,12 @@ type kindHooks struct {
 	// anyNodeReports lets every node agent write the status of any object
 	// of the kind, for what is the same on every node.
 	anyNodeReports bool
+	// claim, if set, is a claim every new object takes, besides its name,
+	// and never gives back once the object is stored, such as an endpoint's
+	// hostname. It is made from the key alone: a create that finds an object
+	// of its key made meanwhile keeps the claim, which only holds if that
+	// object would have taken the same one.
+	claim func(key resource.Key) globalClaim
 	// forNode, if set, clears in place what of obj the node agent of node
 	// may not read, though it reads the rest: what only the node an object
 	// runs on needs, such as a VM's user-data. It is applied to every
@@ -277,6 +283,16 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:   validateAddress,
 			writeLock:  addressLock,
 			finalizers: []string{AddressUnbindFinalizer},
+		}
+	case registry.PublicEndpoint.Kind:
+		// Its hostname is claimed for good when it is made, and it is kept,
+		// deleted, until no Access application of it can be left.
+		return kindHooks{
+			target:     projectTarget,
+			owner:      endpointOwner,
+			validate:   validatePublicEndpoint,
+			claim:      endpointClaim,
+			finalizers: []string{AccessApplicationFinalizer},
 		}
 	case registry.Network.Kind:
 		return kindHooks{
@@ -470,7 +486,11 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 			return invalid("spec.ports[%s]: port %d out of range", port.GetName(), port.GetPort())
 		}
 	}
-	if err := s.validateInterfaces(ctx, obj.(*computev1alpha1.Container).GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
+	meta := obj.(*computev1alpha1.Container).GetMetadata()
+	if err := validateContainerPorts(meta.GetProject(), meta.GetName(), spec.GetPorts()); err != nil {
+		return err
+	}
+	if err := s.validateInterfaces(ctx, meta.GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
 	return s.validateContainerResources(ctx, old, spec.GetResources())

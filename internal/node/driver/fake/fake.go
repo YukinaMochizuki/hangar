@@ -67,12 +67,15 @@ type Host struct {
 	instances     map[string]string
 	instanceCount int
 	sockets       []*socket
-	// guests answer DialSSH; dials are what it was asked to reach.
+	// guests answer Dial; dials are what it was asked to reach.
 	guests map[guestKey]func(net.Conn)
 	dials  []string
 	// firewalls are the policies ensured, by network uid, then machine uid
 	// and interface name.
 	firewalls map[string]map[string]secgroup.Policy
+	// edgePorts are the ports ensured for public endpoints, by network uid,
+	// then machine uid and interface name.
+	edgePorts map[string]map[string][]uint16
 	// firewallLimit, if not 0, bounds a firewall in place of
 	// driver.MaxFirewallRules.
 	firewallLimit int
@@ -129,6 +132,7 @@ func New() *Host {
 		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]secgroup.Policy{},
+		edgePorts: map[string]map[string][]uint16{},
 		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
@@ -456,6 +460,7 @@ func (h *Host) removeNetwork(networkUID string) {
 	delete(h.networks, networkUID)
 	delete(h.instances, networkUID)
 	delete(h.firewalls, networkUID)
+	delete(h.edgePorts, networkUID)
 	for uid, ifs := range h.interfaces {
 		for name, i := range ifs {
 			if i.NetworkUID != networkUID {

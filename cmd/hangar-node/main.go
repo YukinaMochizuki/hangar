@@ -18,7 +18,9 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	osuser "os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -68,6 +70,8 @@ func main() {
 		reservedDisk   = flag.String("reserved-disk", "", "storage kept back from root disks, such as for the image cache, as a quantity such as 50Gi")
 		hostDrivers    = flag.String("drivers", "none", "the host drivers: none, to report the node only; fake, a simulated host; or host, this host's")
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
+		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
+		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
 	)
 	hf.bind(flag.CommandLine)
 	flag.Parse()
@@ -91,6 +95,11 @@ func main() {
 		log.Error("node agent stopped", "error", err)
 		os.Exit(1)
 	}
+	edgeDial, edgeUIDs, err := listenEdgeDial(*edgeSocket, *edgeUser)
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	agent, err := node.New(node.Config{
 		Name:    *name,
 		HTTP:    client.UnixSocket(*socket),
@@ -104,6 +113,8 @@ func main() {
 		Drivers:       d,
 		DNSUpstreams:  upstreams,
 		IPv6Prefix:    prefix,
+		EdgeDial:      edgeDial,
+		EdgeUIDs:      edgeUIDs,
 		Log:           log,
 	})
 	if err == nil {
@@ -115,6 +126,51 @@ func main() {
 		closeDrivers()
 		os.Exit(1)
 	}
+}
+
+// listenEdgeDial makes the edge dial socket at path, root's and user's
+// group's, 0660, and returns it with the uid it takes peers of: user's.
+// Nothing for an empty path.
+func listenEdgeDial(path, user string) (net.Listener, []uint32, error) {
+	if path == "" {
+		return nil, nil, nil
+	}
+	if user == "" {
+		return nil, nil, errors.New("--edge-dial-socket needs --edge-user: the socket takes hangar-edge alone")
+	}
+	u, err := osuser.Lookup(user)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--edge-user: %w", err)
+	}
+	uid, err := strconv.ParseUint(u.Uid, 10, 32)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--edge-user %s: uid %q: %w", user, u.Uid, err)
+	}
+	gid, err := strconv.Atoi(u.Gid)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--edge-user %s: gid %q: %w", user, u.Gid, err)
+	}
+	if uid == 0 {
+		return nil, nil, errors.New("--edge-user is root; hangar-edge runs as its own unprivileged user")
+	}
+	// A socket left by an agent that did not stop cleanly is replaced.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSocket != 0 {
+		_ = os.Remove(path)
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--edge-dial-socket: %w", err)
+	}
+	// Until both hold, the socket is root's alone, as umask leaves it.
+	err = os.Chown(path, 0, gid)
+	if err == nil {
+		err = os.Chmod(path, 0o660)
+	}
+	if err != nil {
+		_ = ln.Close()
+		return nil, nil, fmt.Errorf("--edge-dial-socket: %w", err)
+	}
+	return ln, []uint32{uint32(uid)}, nil
 }
 
 // drivers returns the host drivers the flags select, and what releases

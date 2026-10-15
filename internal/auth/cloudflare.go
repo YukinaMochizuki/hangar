@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 )
@@ -56,23 +57,30 @@ type accessClaims struct {
 }
 
 func (c *Cloudflare) Authenticate(ctx context.Context, header http.Header) (Principal, bool, error) {
+	p, _, ok, err := c.AuthenticateUntil(ctx, header)
+	return p, ok, err
+}
+
+// AuthenticateUntil is Authenticate, and says until when the token holds:
+// what it let in must end then.
+func (c *Cloudflare) AuthenticateUntil(ctx context.Context, header http.Header) (Principal, time.Time, bool, error) {
 	raw := header.Get(CloudflareJWTHeader)
 	if raw == "" {
-		return Principal{}, false, nil
+		return Principal{}, time.Time{}, false, nil
 	}
 	tok, err := c.verifier.Verify(ctx, raw)
 	if err != nil {
-		return Principal{}, false, fmt.Errorf("access token: %w", err)
+		return Principal{}, time.Time{}, false, fmt.Errorf("access token: %w", err)
 	}
 	var claims accessClaims
 	if err := tok.Claims(&claims); err != nil {
-		return Principal{}, false, fmt.Errorf("access token claims: %w", err)
+		return Principal{}, time.Time{}, false, fmt.Errorf("access token claims: %w", err)
 	}
 	switch {
 	case claims.Email != "":
-		return Principal{Type: User, ID: strings.ToLower(claims.Email)}, true, nil
+		return Principal{Type: User, ID: strings.ToLower(claims.Email)}, tok.Expiry, true, nil
 	case claims.CommonName != "":
-		return Principal{Type: ServiceToken, ID: claims.CommonName}, true, nil
+		return Principal{Type: ServiceToken, ID: claims.CommonName}, tok.Expiry, true, nil
 	}
-	return Principal{}, false, errors.New("access token has neither an email nor a service token")
+	return Principal{}, time.Time{}, false, errors.New("access token has neither an email nor a service token")
 }

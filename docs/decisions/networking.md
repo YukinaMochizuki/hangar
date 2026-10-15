@@ -382,7 +382,11 @@ anything else needs a reachable address.
     the platform's own SSH path from the gateway, TCP from its address to a
     tap's port 22, gated by RBAC and minutes-long certificates instead, as
     AWS SSM is (`vm-ssh.md`): only the namespace's own sockets send from the
-    gateway's address. The bridge and the IP
+    gateway's address. So does the edge's path to a public endpoint (decided
+    by the project owner): while an endpoint exists, TCP from the gateway's
+    address to its port passes on the first interface of the machine it
+    reaches, that tap alone, gated by Access and the endpoint's permission
+    in the edge (`public-endpoints.md`); the rule goes with the endpoint. The bridge and the IP
     stack share one conntrack entry per flow. A tap with no policy yet,
     such as one just made, sends and receives nothing else, and the table
     is made, closed, with the network, before any tap can join it. The
@@ -430,14 +434,18 @@ anything else needs a reachable address.
   stays, reserving its address, until its interface has let go of it. No
   two Addresses name one interface, which admission checks under a lock.
   Its status says where it is bound (`Bound`, and the machine).
-- **HTTPS exposure** is a `PublicEndpoint`: one platform tunnel and a wildcard
-  DNS record lead to cloudflared, then to Hangar's own edge proxy, which routes
-  by `Host` into the right namespace. Endpoints are `private` by default
-  (behind Access, with the proxy checking the tenant) and become `public` only
-  when set explicitly. User content uses a different domain from the console,
-  and only first-level wildcard hostnames (Cloudflare's free certificate does
+- **HTTPS exposure** is a `PublicEndpoint` (`public-endpoints.md`): one
+  platform tunnel and a wildcard DNS record lead to cloudflared, then to
+  Hangar's own edge proxy, `hangar-edge`, which routes by `Host` and reaches
+  the machine through the node agent, which dials it from the network's
+  gateway inside its namespace. Endpoints are `private` by default (behind
+  Access, with the edge checking the caller may use the project's
+  endpoints) and become `public` only when set explicitly. User content uses
+  a different domain from the console, `<endpoint>-<project>.hangarlab.dev`,
+  only first-level wildcard hostnames (Cloudflare's free certificate does
   not cover deeper levels). A container port with `public: true` creates an
-  endpoint automatically.
+  endpoint automatically. Security groups do not apply to the edge's path:
+  the endpoint is the explicit opening (above).
 - **SSH** to VMs goes through `hangar ssh` and `hangar ssh-proxy` over a
   WebSocket tunnel: Access, then the apiserver, then the network namespace. No
   new IPv4 ports are opened.
