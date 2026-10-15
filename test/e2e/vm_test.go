@@ -53,8 +53,10 @@ func (w *world) waitVMReason(name, reason string) *computev1alpha1.VirtualMachin
 // boot:end:code, with :stopped for a boot the platform ended.
 func (w *world) vmLogs(name string) []string {
 	w.t.Helper()
-	c := computev1alpha1connect.NewVirtualMachineLogsServiceClient(apiservertest.DevUser(apiservertest.Root), w.env.URL)
-	stream, err := c.VirtualMachineLogs(context.Background(), connect.NewRequest(&computev1alpha1.VirtualMachineLogsRequest{Project: project, Name: name}))
+	c := computev1alpha1connect.NewMachineCapabilityServiceClient(apiservertest.DevUser(apiservertest.Root), w.env.URL)
+	stream, err := c.Logs(context.Background(), connect.NewRequest(&computev1alpha1.LogsRequest{
+		Project: project, Kind: registry.VirtualMachine.Kind, Name: name,
+	}))
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -62,7 +64,7 @@ func (w *world) vmLogs(name string) []string {
 	var out []string
 	for stream.Receive() {
 		for _, r := range stream.Msg().GetRecords() {
-			if end := r.GetEnd(); end != nil {
+			if end := r.GetExit(); end != nil {
 				line := fmt.Sprintf("%d:end:%d", r.GetBoot(), end.GetCode())
 				if end.GetStopped() {
 					line += ":stopped"

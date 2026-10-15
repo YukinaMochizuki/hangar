@@ -11,7 +11,7 @@ import (
 // TestBuiltInRolesHoldExactly pins, for each built-in role, every permission
 // it grants on every kind, so a change to one is a change to this table.
 func TestBuiltInRolesHoldExactly(t *testing.T) {
-	reach := []string{ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}
+	reach := []string{"compute.machines.logs", "compute.machines.exec", "compute.machines.ssh"}
 	isRead := func(v Verb) bool { return v == Get || v == List || v == Watch }
 	isWrite := func(v Verb) bool { return v == Apply || v == Delete }
 	want := map[string]func(r registry.Resource, v Verb, perm string) bool{

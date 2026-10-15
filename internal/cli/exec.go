@@ -18,7 +18,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
-	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 )
@@ -97,10 +96,7 @@ func (a *app) runExec(ctx context.Context, args []string, interactive, tty bool,
 	if err != nil {
 		return err
 	}
-	if r.Kind != registry.Container.Kind {
-		return usageErr("only containers can exec, not %s", r.Plural)
-	}
-	start := &computev1alpha1.ContainerExecStart{Command: args[2:], Stdin: interactive, Tty: tty, User: user, WorkingDir: workdir}
+	start := &computev1alpha1.MachineExecStart{Command: args[2:], Stdin: interactive, Tty: tty, User: user, WorkingDir: workdir}
 	for _, kv := range env {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
@@ -118,7 +114,7 @@ func (a *app) runExec(ctx context.Context, args []string, interactive, tty bool,
 		if err != nil {
 			return fmt.Errorf("reading the terminal's size: %w", err)
 		}
-		start.Size = &computev1alpha1.ContainerExecWindowSize{Rows: uint32(rows), Cols: uint32(cols)}
+		start.Size = &computev1alpha1.MachineExecWindowSize{Rows: uint32(rows), Cols: uint32(cols)}
 	}
 	c, err := a.current()
 	if err != nil {
@@ -133,7 +129,7 @@ func (a *app) runExec(ctx context.Context, args []string, interactive, tty bool,
 		return err
 	}
 	hc, base := a.execHTTPClient(c)
-	return a.exec(ctx, base+execws.Path(project, args[1]), hc, creds, start, term)
+	return a.exec(ctx, base+execws.Path(project, r.Plural, args[1]), hc, creds, start, term)
 }
 
 // execHTTPClient is the client an exec dials with, and the base URL: one
@@ -153,7 +149,7 @@ func (a *app) execHTTPClient(c *Context) (*http.Client, string) {
 
 // exec runs start at url. With term, the terminal is raw while it runs and
 // put back however it ends.
-func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds credentials, start *computev1alpha1.ContainerExecStart, term Terminal) error {
+func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds credentials, start *computev1alpha1.MachineExecStart, term Terminal) error {
 	header := http.Header{}
 	if err := creds.set(ctx, header.Set); err != nil {
 		return err
@@ -192,7 +188,7 @@ func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds crede
 	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.CloseNow() })
 	defer stopOnCancel()
 	s := &execClient{conn: conn, ws: ws, live: live}
-	if err := s.send(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Start{Start: start}}); err != nil {
+	if err := s.send(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Start{Start: start}}); err != nil {
 		return err
 	}
 	go func() {
@@ -232,16 +228,16 @@ func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds crede
 			return exitStatus(exitCodeOf(s.exit))
 		}
 		live.Heard()
-		res := &computev1alpha1.ContainerExecResponse{}
+		res := &computev1alpha1.MachineExecResponse{}
 		if err := proto.Unmarshal(b, res); err != nil {
 			return fmt.Errorf("a message from the server that is not one: %w", err)
 		}
 		switch m := res.GetMessage().(type) {
-		case *computev1alpha1.ContainerExecResponse_Stdout:
+		case *computev1alpha1.MachineExecResponse_Stdout:
 			err = s.output(a.io.Out, m.Stdout)
-		case *computev1alpha1.ContainerExecResponse_Stderr:
+		case *computev1alpha1.MachineExecResponse_Stderr:
 			err = s.output(a.io.Err, m.Stderr)
-		case *computev1alpha1.ContainerExecResponse_Exit:
+		case *computev1alpha1.MachineExecResponse_Exit:
 			s.exit = m.Exit
 		}
 		if err != nil {
@@ -252,7 +248,7 @@ func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds crede
 
 // exitCodeOf is the exit code hangar exits with for the command's exit,
 // which only 0 to 255 can be.
-func exitCodeOf(e *computev1alpha1.ContainerExecExit) int {
+func exitCodeOf(e *computev1alpha1.MachineExecExit) int {
 	if c := e.GetCode(); c >= 0 && c <= 255 {
 		return int(c)
 	}
@@ -301,14 +297,14 @@ func (a *app) relaySignals(s *execClient, term Terminal, cancel context.CancelCa
 			case sig := <-c:
 				if term != nil {
 					if rows, cols, err := term.Size(); err == nil {
-						_ = s.send(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Resize{
-							Resize: &computev1alpha1.ContainerExecWindowSize{Rows: uint32(rows), Cols: uint32(cols)},
+						_ = s.send(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Resize{
+							Resize: &computev1alpha1.MachineExecWindowSize{Rows: uint32(rows), Cols: uint32(cols)},
 						}})
 					}
 					continue
 				}
 				if n, ok := sig.(syscall.Signal); ok {
-					_ = s.send(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Signal{Signal: int32(n)}})
+					_ = s.send(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Signal{Signal: int32(n)}})
 				}
 			}
 		}
@@ -327,10 +323,10 @@ type execClient struct {
 	conn *websocket.Conn
 	ws   context.Context
 	live *execws.Liveness
-	exit *computev1alpha1.ContainerExecExit
+	exit *computev1alpha1.MachineExecExit
 }
 
-func (s *execClient) send(req *computev1alpha1.ContainerExecRequest) error {
+func (s *execClient) send(req *computev1alpha1.MachineExecRequest) error {
 	b, err := proto.Marshal(req)
 	if err != nil {
 		return err
@@ -355,12 +351,12 @@ func (s *execClient) relayStdin(in io.Reader) {
 	for {
 		n, err := in.Read(buf)
 		if n > 0 {
-			if s.send(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: buf[:n]}}) != nil {
+			if s.send(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: buf[:n]}}) != nil {
 				return
 			}
 		}
 		if err != nil {
-			_ = s.send(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_StdinClose{StdinClose: &computev1alpha1.ContainerExecStdinClose{}}})
+			_ = s.send(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_StdinClose{StdinClose: &computev1alpha1.MachineExecStdinClose{}}})
 			return
 		}
 	}

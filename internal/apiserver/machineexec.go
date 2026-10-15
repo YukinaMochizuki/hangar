@@ -3,7 +3,6 @@ package apiserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -16,8 +15,6 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	nodev1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1"
-	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
-	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
@@ -39,63 +36,54 @@ const (
 // errClientGone ends an exec whose client has gone, or stopped answering.
 var errClientGone = connect.NewError(connect.CodeCanceled, errors.New("the client went away"))
 
-// execTarget is what an exec runs in, and the call to its node.
-type execTarget struct {
-	principal auth.Principal
-	key       resource.Key
-	machine   string // uid
-	call      *nodeCall
-}
-
-// containerExec serves a container's exec, a WebSocket on the public
-// listener. Everything that can refuse it does so before the upgrade, and
-// nothing about the container is told before the caller is authorized.
-func (s *Server) containerExec(chain auth.Chain) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		name, ok := execws.NameOf(r)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		key := resource.Key{Project: r.PathValue("project"), Name: name}
-		refuse := func(p auth.Principal, err error) {
-			s.auditRefused(p, key, err)
-			execws.WriteError(w, r, err)
-		}
-		ctx, err := chain.Authenticate(r.Context(), r.Header)
-		if err != nil {
-			refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
-			return
-		}
-		p, _ := auth.FromContext(ctx)
-		x, err := s.execTarget(ctx, key)
-		if err != nil {
-			refuse(p, err)
-			return
-		}
-		defer x.call.release()
-		if !slices.Contains(subprotocols(r), execws.Subprotocol) {
-			refuse(p, invalid("an exec is a WebSocket with the subprotocol %s", execws.Subprotocol))
-			return
-		}
-		timing := s.execTiming()
-		live := execws.NewLiveness(timing.ping, timing.pong)
-		// The Origin check stays on: see docs/decisions/streaming-transport.md.
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			Subprotocols:   []string{execws.Subprotocol},
-			OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
-		})
-		if err != nil {
-			// Accept answered.
-			code := connect.CodeInvalidArgument
-			if r.Header.Get("Origin") != "" && strings.Contains(err.Error(), "Origin") {
-				code = connect.CodePermissionDenied
-			}
-			s.auditRefused(p, key, connect.NewError(code, err))
-			return
-		}
-		s.runExec(ctx, c, x, live)
+// serveExec serves an exec in the machine of the object route names, a
+// WebSocket on the public listener. Everything that can refuse it does so
+// before the upgrade, and nothing about the object is told before the
+// caller is authorized.
+func (s *Server) serveExec(chain auth.Chain, w http.ResponseWriter, r *http.Request, route execws.Route) {
+	key := resource.Key{Project: route.Project, Name: route.Name}
+	refuse := func(p auth.Principal, err error) {
+		s.auditRefused("exec refused", p, route, err)
+		execws.WriteError(w, r, err)
 	}
+	ctx, err := chain.Authenticate(r.Context(), r.Header)
+	if err != nil {
+		refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
+		return
+	}
+	p, _ := auth.FromContext(ctx)
+	kind, err := kindOfPlural(route.Plural)
+	if err != nil {
+		refuse(p, err)
+		return
+	}
+	x, err := s.machineTarget(ctx, kind, key, authz.Exec, nil)
+	if err != nil {
+		refuse(p, err)
+		return
+	}
+	defer x.call.release()
+	if !slices.Contains(subprotocols(r), execws.Subprotocol) {
+		refuse(p, invalid("an exec is a WebSocket with the subprotocol %s", execws.Subprotocol))
+		return
+	}
+	timing := s.execTiming()
+	live := execws.NewLiveness(timing.ping, timing.pong)
+	// The Origin check stays on: see docs/decisions/streaming-transport.md.
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:   []string{execws.Subprotocol},
+		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
+	})
+	if err != nil {
+		// Accept answered.
+		code := connect.CodeInvalidArgument
+		if r.Header.Get("Origin") != "" && strings.Contains(err.Error(), "Origin") {
+			code = connect.CodePermissionDenied
+		}
+		s.auditRefused("exec refused", p, route, connect.NewError(code, err))
+		return
+	}
+	s.runExec(ctx, c, x, live, route)
 }
 
 func subprotocols(r *http.Request) []string {
@@ -108,62 +96,16 @@ func subprotocols(r *http.Request) []string {
 	return out
 }
 
-// execTarget authorizes an exec in the container at key and begins the
-// call to its node, as ContainerLogs does.
-func (s *Server) execTarget(ctx context.Context, key resource.Key) (*execTarget, error) {
-	b := s.backend(registry.Container)
-	p, err := b.begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if err := b.checkKey(key); err != nil {
-		return nil, err
-	}
-	_, obj, err := b.read(ctx, p, authz.Exec, key)
-	if err != nil {
-		return nil, err
-	}
-	c := obj.(*computev1alpha1.Container)
-	mobj, err := s.get(ctx, registry.Machine, resource.Key{Project: key.Project, Name: machineName(key.Name)})
-	if err != nil {
-		return nil, apiError(err)
-	}
-	machine, _ := mobj.(*computev1alpha1.Machine)
-	if machine == nil || !ownedBy(machine.GetMetadata(), c.GetMetadata().GetUid()) {
-		return nil, failedPrecondition("container %q has no machine yet", key.Name)
-	}
-	node := machine.GetSpec().GetNode()
-	if node == "" {
-		return nil, failedPrecondition("container %q is not placed on a node yet", key.Name)
-	}
-	if phase := machine.GetStatus().GetPhase(); phase != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
-		return nil, failedPrecondition("container %q is not running: its machine is %s", key.Name,
-			strings.ToLower(strings.TrimPrefix(phase.String(), "MACHINE_PHASE_")))
-	}
-	project, err := s.get(ctx, registry.Project, resource.Key{Name: key.Project})
-	if err != nil {
-		return nil, apiError(err)
-	}
-	if project == nil {
-		return nil, failedPrecondition("project %q is gone", key.Project)
-	}
-	call, err := s.callNode(p, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), node, fmt.Sprintf("container %q", key.Name))
-	if err != nil {
-		return nil, err
-	}
-	return &execTarget{principal: p, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
-}
-
 // execAudit is what the audit lines of an exec say.
 type execAudit struct {
-	start *computev1alpha1.ContainerExecStart
+	start *computev1alpha1.MachineExecStart
 	exit  *nodev1.ExitStatus
 	began time.Time
 }
 
 // runExec runs an exec on an upgraded WebSocket until the process ends,
 // the client goes, or the node does, and closes the WebSocket.
-func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *execTarget, live *execws.Liveness) {
+func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *machineTarget, live *execws.Liveness, route execws.Route) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	c.SetReadLimit(execws.MaxMessage)
@@ -187,40 +129,39 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *execTarget, 
 	audit := &execAudit{began: time.Now()}
 	err := s.exec(ctx, end, c, x, live, audit)
 	if audit.start == nil {
-		s.auditRefused(x.principal, x.key, err)
+		s.auditRefused("exec refused", x.principal, route, err)
 	} else {
 		s.auditEnded(x, audit, err)
 	}
 	end(err)
 }
 
-// auditRefused logs an exec refused before its process started.
-func (s *Server) auditRefused(p auth.Principal, key resource.Key, err error) {
+// auditRefused logs, as msg, a capability's WebSocket refused before it
+// began: an exec before its process started, an SSH tunnel before it
+// opened. It says what the route names, not the kind it resolves to, as a
+// refusal may come before that.
+func (s *Server) auditRefused(msg string, p auth.Principal, route execws.Route, err error) {
 	principal := ""
 	if p != (auth.Principal{}) {
 		principal = p.String()
 	}
-	s.log.Info("exec refused", "principal", principal, "project", key.Project, "container", key.Name,
+	s.log.Info(msg, "principal", principal, "project", route.Project, "plural", route.Plural, "name", route.Name,
 		"code", connect.CodeOf(err).String(), "error", err.Error())
 }
 
 // auditStarted logs an exec whose process is asked of the node: never its
 // input or output, nor its environment's values.
-func (s *Server) auditStarted(x *execTarget, start *computev1alpha1.ContainerExecStart) {
+func (s *Server) auditStarted(x *machineTarget, start *computev1alpha1.MachineExecStart) {
 	env := make([]string, 0, len(start.GetEnv()))
 	for _, e := range start.GetEnv() {
 		env = append(env, e.GetName())
 	}
-	s.log.Info("exec started", "principal", x.principal.String(), "project", x.key.Project, "container", x.key.Name,
-		"machine", x.machine, "argv", start.GetCommand(), "tty", start.GetTty(), "stdin", start.GetStdin(),
-		"user", start.GetUser(), "workdir", start.GetWorkingDir(), "env_names", env)
+	s.log.Info("exec started", append(x.auditAttrs(), "argv", start.GetCommand(), "tty", start.GetTty(), "stdin", start.GetStdin(),
+		"user", start.GetUser(), "workdir", start.GetWorkingDir(), "env_names", env)...)
 }
 
-func (s *Server) auditEnded(x *execTarget, a *execAudit, err error) {
-	attrs := []any{
-		"principal", x.principal.String(), "project", x.key.Project, "container", x.key.Name, "machine", x.machine,
-		"duration", time.Since(a.began).Round(time.Millisecond).String(),
-	}
+func (s *Server) auditEnded(x *machineTarget, a *execAudit, err error) {
+	attrs := append(x.auditAttrs(), "duration", time.Since(a.began).Round(time.Millisecond).String())
 	if a.exit != nil {
 		attrs = append(attrs, "exit_code", a.exit.GetCode(), "signal", a.exit.GetSignal())
 	}
@@ -233,7 +174,7 @@ func (s *Server) auditEnded(x *execTarget, a *execAudit, err error) {
 // exec relays between the client and the node, one message at a time each
 // way, until end. It reads and writes the WebSocket with ws, which never
 // ends: coder/websocket closes a connection whose I/O is cancelled.
-func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x *execTarget, live *execws.Liveness, audit *execAudit) error {
+func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x *machineTarget, live *execws.Liveness, audit *execAudit) error {
 	ws := context.WithoutCancel(ctx)
 	timing := s.execTiming()
 	noStart := time.AfterFunc(timing.start, func() { end(invalid("no start came in %s", timing.start)) })
@@ -280,15 +221,15 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 			}
 			return x.call.failed(err)
 		}
-		out := &computev1alpha1.ContainerExecResponse{}
+		out := &computev1alpha1.MachineExecResponse{}
 		switch m := res.GetMessage().(type) {
 		case *nodev1.ExecResponse_Stdout:
-			out.Message = &computev1alpha1.ContainerExecResponse_Stdout{Stdout: m.Stdout}
+			out.Message = &computev1alpha1.MachineExecResponse_Stdout{Stdout: m.Stdout}
 		case *nodev1.ExecResponse_Stderr:
-			out.Message = &computev1alpha1.ContainerExecResponse_Stderr{Stderr: m.Stderr}
+			out.Message = &computev1alpha1.MachineExecResponse_Stderr{Stderr: m.Stderr}
 		case *nodev1.ExecResponse_Exit:
 			audit.exit = m.Exit
-			out.Message = &computev1alpha1.ContainerExecResponse_Exit{Exit: &computev1alpha1.ContainerExecExit{
+			out.Message = &computev1alpha1.MachineExecResponse_Exit{Exit: &computev1alpha1.MachineExecExit{
 				Code: m.Exit.GetCode(), Signal: m.Exit.GetSignal(),
 			}}
 		default:
@@ -310,7 +251,7 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 
 // nodeFailed is what an exec fails with when the node's call failed: the
 // call says why on receive.
-func (s *Server) nodeFailed(ctx context.Context, x *execTarget, receive func() (*nodev1.ExecResponse, error)) error {
+func (s *Server) nodeFailed(ctx context.Context, x *machineTarget, receive func() (*nodev1.ExecResponse, error)) error {
 	_, err := receive()
 	if err == nil || ctx.Err() != nil {
 		return errClientGone
@@ -377,21 +318,21 @@ func relayInput(ctx, ws context.Context, c *websocket.Conn, node *nodeSender, st
 		node.live.Heard()
 		out := &nodev1.ExecRequest{}
 		switch m := req.GetMessage().(type) {
-		case *computev1alpha1.ContainerExecRequest_Stdin:
+		case *computev1alpha1.MachineExecRequest_Stdin:
 			if !stdin {
 				return invalid("stdin for an exec started without it")
 			}
 			out.Message = &nodev1.ExecRequest_Stdin{Stdin: m.Stdin}
-		case *computev1alpha1.ContainerExecRequest_StdinClose:
+		case *computev1alpha1.MachineExecRequest_StdinClose:
 			if !stdin {
 				return invalid("stdin for an exec started without it")
 			}
 			out.Message = &nodev1.ExecRequest_StdinClose{StdinClose: &nodev1.ExecStdinClose{}}
-		case *computev1alpha1.ContainerExecRequest_Resize:
+		case *computev1alpha1.MachineExecRequest_Resize:
 			out.Message = &nodev1.ExecRequest_Resize{Resize: &nodev1.WindowSize{Rows: m.Resize.GetRows(), Cols: m.Resize.GetCols()}}
-		case *computev1alpha1.ContainerExecRequest_Signal:
+		case *computev1alpha1.MachineExecRequest_Signal:
 			out.Message = &nodev1.ExecRequest_Signal{Signal: m.Signal}
-		case *computev1alpha1.ContainerExecRequest_Start:
+		case *computev1alpha1.MachineExecRequest_Start:
 			return invalid("an exec starts once")
 		default:
 			continue
@@ -419,7 +360,7 @@ func (s *Server) execTiming() execTiming {
 
 // readExec reads the client's next message. A message that is not one is
 // InvalidArgument.
-func readExec(ctx context.Context, c *websocket.Conn) (*computev1alpha1.ContainerExecRequest, error) {
+func readExec(ctx context.Context, c *websocket.Conn) (*computev1alpha1.MachineExecRequest, error) {
 	typ, b, err := c.Read(ctx)
 	if err != nil {
 		return nil, err
@@ -427,14 +368,14 @@ func readExec(ctx context.Context, c *websocket.Conn) (*computev1alpha1.Containe
 	if typ != websocket.MessageBinary {
 		return nil, invalid("an exec's messages are binary")
 	}
-	req := &computev1alpha1.ContainerExecRequest{}
+	req := &computev1alpha1.MachineExecRequest{}
 	if err := proto.Unmarshal(b, req); err != nil {
-		return nil, invalid("a message that is not a ContainerExecRequest: %v", err)
+		return nil, invalid("a message that is not a MachineExecRequest: %v", err)
 	}
 	return req, nil
 }
 
-func writeExec(ctx context.Context, c *websocket.Conn, res *computev1alpha1.ContainerExecResponse) error {
+func writeExec(ctx context.Context, c *websocket.Conn, res *computev1alpha1.MachineExecResponse) error {
 	b, err := proto.Marshal(res)
 	if err != nil {
 		return err
@@ -442,7 +383,7 @@ func writeExec(ctx context.Context, c *websocket.Conn, res *computev1alpha1.Cont
 	return c.Write(ctx, websocket.MessageBinary, b)
 }
 
-func checkExecStart(start *computev1alpha1.ContainerExecStart) error {
+func checkExecStart(start *computev1alpha1.MachineExecStart) error {
 	switch {
 	case start == nil:
 		return invalid("the first message must start the process")
@@ -457,7 +398,7 @@ func checkExecStart(start *computev1alpha1.ContainerExecStart) error {
 	return nil
 }
 
-func nodeExecStart(machineUID string, start *computev1alpha1.ContainerExecStart) *nodev1.ExecStart {
+func nodeExecStart(machineUID string, start *computev1alpha1.MachineExecStart) *nodev1.ExecStart {
 	out := &nodev1.ExecStart{
 		MachineUid: machineUID, Args: start.GetCommand(), WorkingDir: start.GetWorkingDir(), User: start.GetUser(),
 		Tty: start.GetTty(), Stdin: start.GetStdin(),

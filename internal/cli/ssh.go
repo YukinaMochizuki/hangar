@@ -38,7 +38,7 @@ func (a *app) sshCmd() *cobra.Command {
 		Long: "Logs in to the virtual machine as its image's default user, or -l USER, with\n" +
 			"OpenSSH's ssh and a key made for this login alone, signed by the platform\n" +
 			"for minutes, through hangar ssh-proxy: no key to set up, and no port of\n" +
-			"the VM's open to the internet. It needs compute.virtualmachines.ssh.\n" +
+			"the VM's open to the internet. It needs compute.machines.ssh.\n" +
 			"As with ssh, COMMAND and its ARGs are joined into one line, which the\n" +
 			"user's shell on the VM runs.\n\n" +
 			"The VM's host key is recorded on first use in known_hosts beside the\n" +
@@ -73,7 +73,7 @@ func (a *app) sshProxyCmd() *cobra.Command {
 		Short: "Connect stdin and stdout to a virtual machine's SSH port, as an OpenSSH ProxyCommand",
 		Long: "Relays stdin and stdout to port 22 of the virtual machine's first\n" +
 			"interface, through the API: what hangar ssh gives ssh as its ProxyCommand,\n" +
-			"which an ssh_config may name too. It needs compute.virtualmachines.ssh.",
+			"which an ssh_config may name too. It needs compute.machines.ssh.",
 		Example: "  ssh -o ProxyCommand='hangar ssh-proxy vm web' ubuntu@web",
 		Args:    args(2, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -226,9 +226,9 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 		return err
 	}
 	hc, base := a.httpClient(sc.c)
-	signer := computev1alpha1connect.NewVirtualMachineSSHServiceClient(hc, base, connect.WithInterceptors(sc.creds))
+	signer := computev1alpha1connect.NewMachineCapabilityServiceClient(hc, base, connect.WithInterceptors(sc.creds))
 	res, err := signer.SignSSHKey(ctx, connect.NewRequest(&computev1alpha1.SignSSHKeyRequest{
-		Project: sc.project, Name: name, PublicKey: string(ssh.MarshalAuthorizedKey(sshPub)),
+		Project: sc.project, Kind: registry.VirtualMachine.Kind, Name: name, PublicKey: string(ssh.MarshalAuthorizedKey(sshPub)),
 	}))
 	if err != nil {
 		return err
@@ -354,7 +354,7 @@ func (a *app) sshProxy(ctx context.Context, name string) error {
 	}
 	live := execws.NewLiveness(every, timeout)
 	hc, base := a.execHTTPClient(sc.c)
-	conn, resp, err := websocket.Dial(ctx, base+sshws.Path(sc.project, name), &websocket.DialOptions{
+	conn, resp, err := websocket.Dial(ctx, base+sshws.Path(sc.project, registry.VirtualMachine.Plural, name), &websocket.DialOptions{
 		HTTPClient: hc, HTTPHeader: header, Subprotocols: []string{sshws.Subprotocol},
 		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
 	})

@@ -93,7 +93,7 @@ func (w *world) vmAddrs(name string) map[string]netip.Addr {
 // tunnel opens a VM's SSH tunnel as user.
 func (w *world) tunnel(user, name string) (*websocket.Conn, error) {
 	w.t.Helper()
-	c, resp, err := websocket.Dial(context.Background(), w.env.URL+sshws.Path(project, name), &websocket.DialOptions{
+	c, resp, err := websocket.Dial(context.Background(), w.env.URL+sshws.Path(project, registry.VirtualMachine.Plural, name), &websocket.DialOptions{
 		HTTPHeader: http.Header{auth.DevUserHeader: []string{user}}, Subprotocols: []string{sshws.Subprotocol},
 	})
 	if err != nil {
@@ -132,7 +132,7 @@ func banner(who string) func(net.Conn) {
 // TestTheSSHTunnelReachesOnlyItsVM: a VM's tunnel reaches port 22 of its own
 // first interface, in that interface's network, and nothing else: not
 // another VM, port, address or network, which the caller cannot name. One
-// without compute.virtualmachines.ssh is refused before anything is
+// without compute.machines.ssh is refused before anything is
 // dialled, and a VM that is not running is not reached.
 func TestTheSSHTunnelReachesOnlyItsVM(t *testing.T) {
 	w, _ := sshWorld(t)

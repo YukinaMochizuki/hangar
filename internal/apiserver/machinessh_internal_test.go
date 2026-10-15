@@ -65,8 +65,8 @@ func signAs(t *testing.T, s *Server, p auth.Principal, name, key string) (*compu
 	t.Helper()
 	srv := httptest.NewServer(s.Handler(auth.Chain{fixedAuth{p, true}}))
 	t.Cleanup(srv.Close)
-	res, err := computev1alpha1connect.NewVirtualMachineSSHServiceClient(http.DefaultClient, srv.URL).
-		SignSSHKey(t.Context(), connect.NewRequest(&computev1alpha1.SignSSHKeyRequest{Project: "web", Name: name, PublicKey: key}))
+	res, err := computev1alpha1connect.NewMachineCapabilityServiceClient(http.DefaultClient, srv.URL).
+		SignSSHKey(t.Context(), connect.NewRequest(&computev1alpha1.SignSSHKeyRequest{Project: "web", Kind: registry.VirtualMachine.Kind, Name: name, PublicKey: key}))
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,7 @@ func tunnelAs(t *testing.T, s *Server, p auth.Principal, name string) error {
 	t.Helper()
 	srv := httptest.NewServer(s.Handler(auth.Chain{fixedAuth{p, true}}))
 	t.Cleanup(srv.Close)
-	c, resp, err := websocket.Dial(t.Context(), srv.URL+sshws.Path("web", name), &websocket.DialOptions{Subprotocols: []string{sshws.Subprotocol}})
+	c, resp, err := websocket.Dial(t.Context(), srv.URL+sshws.Path("web", "virtualmachines", name), &websocket.DialOptions{Subprotocols: []string{sshws.Subprotocol}})
 	if err == nil {
 		_ = c.CloseNow()
 		return nil

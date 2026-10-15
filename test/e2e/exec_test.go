@@ -29,7 +29,7 @@ import (
 // refuses it.
 func (w *world) dialExec(user, name string) (*websocket.Conn, error) {
 	w.t.Helper()
-	c, resp, err := websocket.Dial(context.Background(), w.env.URL+execws.Path(project, name), &websocket.DialOptions{
+	c, resp, err := websocket.Dial(context.Background(), w.env.URL+execws.Path(project, registry.Container.Plural, name), &websocket.DialOptions{
 		HTTPHeader:   http.Header{auth.DevUserHeader: []string{user}},
 		Subprotocols: []string{execws.Subprotocol},
 	})
@@ -47,7 +47,7 @@ func (w *world) dialExec(user, name string) (*websocket.Conn, error) {
 	return c, nil
 }
 
-func sendExec(t *testing.T, c *websocket.Conn, req *computev1alpha1.ContainerExecRequest) {
+func sendExec(t *testing.T, c *websocket.Conn, req *computev1alpha1.MachineExecRequest) {
 	t.Helper()
 	b, err := proto.Marshal(req)
 	if err != nil {
@@ -58,13 +58,13 @@ func sendExec(t *testing.T, c *websocket.Conn, req *computev1alpha1.ContainerExe
 	}
 }
 
-func startExec(start *computev1alpha1.ContainerExecStart) *computev1alpha1.ContainerExecRequest {
-	return &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Start{Start: start}}
+func startExec(start *computev1alpha1.MachineExecStart) *computev1alpha1.MachineExecRequest {
+	return &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Start{Start: start}}
 }
 
 type execOutput struct {
 	stdout, stderr string
-	exit           *computev1alpha1.ContainerExecExit
+	exit           *computev1alpha1.MachineExecExit
 	err            error
 }
 
@@ -84,16 +84,16 @@ func readExec(t *testing.T, c *websocket.Conn) (r execOutput) {
 			r.err = execws.ErrorOf(err)
 			return r
 		}
-		res := &computev1alpha1.ContainerExecResponse{}
+		res := &computev1alpha1.MachineExecResponse{}
 		if err := proto.Unmarshal(b, res); err != nil {
 			t.Fatal(err)
 		}
 		switch m := res.GetMessage().(type) {
-		case *computev1alpha1.ContainerExecResponse_Stdout:
+		case *computev1alpha1.MachineExecResponse_Stdout:
 			out.Write(m.Stdout)
-		case *computev1alpha1.ContainerExecResponse_Stderr:
+		case *computev1alpha1.MachineExecResponse_Stderr:
 			errb.Write(m.Stderr)
-		case *computev1alpha1.ContainerExecResponse_Exit:
+		case *computev1alpha1.MachineExecResponse_Exit:
 			r.exit = m.Exit
 		}
 	}
@@ -101,7 +101,7 @@ func readExec(t *testing.T, c *websocket.Conn) (r execOutput) {
 
 // exec runs a command in a container as root, with stdin's messages after
 // the start, to its end.
-func (w *world) exec(name string, start *computev1alpha1.ContainerExecStart, input ...*computev1alpha1.ContainerExecRequest) execOutput {
+func (w *world) exec(name string, start *computev1alpha1.MachineExecStart, input ...*computev1alpha1.MachineExecRequest) execOutput {
 	w.t.Helper()
 	c, err := w.dialExec(apiservertest.Root, name)
 	if err != nil {
@@ -124,43 +124,43 @@ func TestExecInAContainer(t *testing.T) {
 	w.apply(c)
 	w.waitReason("api", "Running")
 
-	r := w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"show", "PATH", "MODE", "EXTRA"}})
+	r := w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"show", "PATH", "MODE", "EXTRA"}})
 	if r.err != nil || r.stdout != "/usr/bin\nprod\n\n\n\n" || r.exit.GetCode() != 0 {
 		t.Errorf("the container's environment: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{
+	r = w.exec("api", &computev1alpha1.MachineExecStart{
 		Command: []string{"show", "MODE", "EXTRA"}, Env: []*computev1alpha1.EnvVar{{Name: "MODE", Value: "dev"}, {Name: "EXTRA", Value: "1"}},
 		User: "1000", WorkingDir: "/tmp",
 	})
 	if r.err != nil || r.stdout != "dev\n1\n/tmp\n1000\n" {
 		t.Errorf("overridden: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"exit", "3", "out", "err"}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"exit", "3", "out", "err"}})
 	if r.err != nil || r.stdout != "out" || r.stderr != "err" || r.exit.GetCode() != 3 {
 		t.Errorf("an exit code: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true},
-		&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: []byte("piped")}},
-		&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_StdinClose{StdinClose: &computev1alpha1.ContainerExecStdinClose{}}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true},
+		&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: []byte("piped")}},
+		&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_StdinClose{StdinClose: &computev1alpha1.MachineExecStdinClose{}}})
 	if r.err != nil || r.stdout != "piped" || r.exit.GetCode() != 0 {
 		t.Errorf("stdin: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"cat"}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"cat"}})
 	if r.err != nil || r.stdout != "" || r.exit.GetCode() != 0 {
 		t.Errorf("no stdin: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"size"}, Tty: true, Stdin: true, Size: &computev1alpha1.ContainerExecWindowSize{Rows: 24, Cols: 80}},
-		&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Resize{Resize: &computev1alpha1.ContainerExecWindowSize{Rows: 30, Cols: 100}}},
-		&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: []byte("\n")}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"size"}, Tty: true, Stdin: true, Size: &computev1alpha1.MachineExecWindowSize{Rows: 24, Cols: 80}},
+		&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Resize{Resize: &computev1alpha1.MachineExecWindowSize{Rows: 30, Cols: 100}}},
+		&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: []byte("\n")}})
 	if r.err != nil || r.stdout != "24 80\n30 100\n" {
 		t.Errorf("a terminal: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"wait", "x"}},
-		&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Signal{Signal: 15}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"wait", "x"}},
+		&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Signal{Signal: 15}})
 	if r.err != nil || r.exit.GetCode() != 143 || r.exit.GetSignal() != 15 {
 		t.Errorf("a signal: %+v", r)
 	}
-	r = w.exec("api", &computev1alpha1.ContainerExecStart{Command: []string{"no-such-program"}})
+	r = w.exec("api", &computev1alpha1.MachineExecStart{Command: []string{"no-such-program"}})
 	if r.err != nil || r.exit.GetCode() != 127 {
 		t.Errorf("not found: %+v", r)
 	}
@@ -184,7 +184,7 @@ func TestAKilledClientKillsItsProcess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sendExec(t, c, startExec(&computev1alpha1.ContainerExecStart{Command: []string{"wait", "x"}, Stdin: true}))
+		sendExec(t, c, startExec(&computev1alpha1.MachineExecStart{Command: []string{"wait", "x"}, Stdin: true}))
 		w.eventually("the process running", func() (bool, string) { return w.host.Execs(uid) == 1, fmt.Sprint(w.host.Execs(uid)) })
 		end(c)
 		w.eventually("the process killed", func() (bool, string) { return w.host.Execs(uid) == 0, fmt.Sprint(w.host.Execs(uid)) })
@@ -200,7 +200,7 @@ const readerRole = "e2e.reader"
 func TestExecNeedsItsOwnPermission(t *testing.T) {
 	w := newIdleWorldWith(t, func(c *apiserver.Config) {
 		c.ExtraRoles = map[string]authz.Role{readerRole: authz.NewRole(authz.TenantLevel,
-			authz.Permission(registry.Container, authz.Get), authz.ContainerLogs)}
+			authz.Permission(registry.Container, authz.Get), authz.MachineLogs)}
 	})
 	w.startAgent()
 	bind := func(name, user, role string, scope *iamv1alpha1.BindingScope) {
@@ -234,7 +234,7 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 		c, err = w.dialExec("owner@example.com", "api")
 		return err == nil, fmt.Sprint(err)
 	})
-	sendExec(t, c, startExec(&computev1alpha1.ContainerExecStart{Command: []string{"echo", "hi"}}))
+	sendExec(t, c, startExec(&computev1alpha1.MachineExecStart{Command: []string{"echo", "hi"}}))
 	if r := readExec(t, c); r.err != nil || r.stdout != "hi\n" {
 		t.Errorf("the owner's exec: %+v", r)
 	}
@@ -242,7 +242,7 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 	if _, err := w.env.As("reader@example.com").Get(context.Background(), registry.Container, client.Key{Project: project, Name: "api"}); err != nil {
 		t.Errorf("the reader getting the container: %v", err)
 	}
-	if _, err := readLogs(context.Background(), w.logsAs("reader@example.com"), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"}); err != nil {
+	if _, err := readLogs(context.Background(), w.logsAs("reader@example.com"), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"}); err != nil {
 		t.Errorf("the reader reading the logs: %v", err)
 	}
 	for _, user := range []string{"reader@example.com", "sponsor@example.com", "member@example.com", "other@example.com", "stranger@example.com"} {
@@ -267,7 +267,7 @@ func TestExecIsRefusedClearly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sendExec(t, c, startExec(&computev1alpha1.ContainerExecStart{Command: []string{"wait", "x"}}))
+	sendExec(t, c, startExec(&computev1alpha1.MachineExecStart{Command: []string{"wait", "x"}}))
 	uid := w.machine("api").GetMetadata().GetUid()
 	w.eventually("the first exec running", func() (bool, string) { return w.host.Execs(uid) == 1, "" })
 	if _, err := w.dialExec(apiservertest.Root, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"time"
 
@@ -29,7 +30,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
-	"github.com/YukinaMochizuki/hangar/internal/sshws"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
@@ -171,18 +171,35 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 	mux := http.NewServeMux()
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
 		connect.WithInterceptors(chain.Interceptor()))
-	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(containerLogs{s}, connect.WithInterceptors(chain.Interceptor())))
-	mux.Handle(computev1alpha1connect.NewVirtualMachineLogsServiceHandler(virtualMachineLogs{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
-	mux.HandleFunc(execws.Pattern, s.containerExec(chain))
-	mux.Handle(computev1alpha1connect.NewVirtualMachineSSHServiceHandler(virtualMachineSSH{s}, connect.WithInterceptors(chain.Interceptor())))
-	mux.HandleFunc(sshws.Pattern, s.vmSSH(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return mux
+}
+
+// openTunnel takes a node agent's tunnel (internal/tunnel). The tunnel is
+// the node the listener's chain authenticates the request as, which on the
+// node socket is the name PeerCred is configured with; nothing the request
+// says names the node.
+func (s *Server) openTunnel(chain auth.Chain) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, err := chain.Authenticate(r.Context(), r.Header)
+		if err != nil {
+			http.Error(w, "unauthenticated: "+err.Error(), http.StatusUnauthorized)
+			return
+		}
+		p, _ := auth.FromContext(ctx)
+		if p.Type != auth.Node || !slices.Contains(s.cfg.Nodes, p.ID) {
+			http.Error(w, p.String()+" is not a node agent this apiserver accepts", http.StatusForbidden)
+			return
+		}
+		s.tunnels.Accept(w, r, p.ID)
+	}
 }
 
 // Run does the server's background work until ctx is done: it keeps the

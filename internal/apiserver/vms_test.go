@@ -21,7 +21,6 @@ import (
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
-	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
@@ -460,15 +459,4 @@ func TestTheDeleteAndTheOwnerReferenceRace(t *testing.T) {
 		}
 	}
 	t.Logf("the delete won %d times, the stale owner reference %d", deletes, refs)
-}
-
-func TestVirtualMachineLogsNeedTheirPermission(t *testing.T) {
-	for role, want := range map[string]bool{"platform.root": true, "tenant.owner": true, "platform.member": false} {
-		if got := authz.Roles[role].Grants(authz.VirtualMachineLogs); got != want {
-			t.Errorf("%s grants %s: %t, want %t", role, authz.VirtualMachineLogs, got, want)
-		}
-	}
-	if authz.VirtualMachineLogs != "compute.virtualmachines.logs" {
-		t.Errorf("the permission is %s", authz.VirtualMachineLogs)
-	}
 }
