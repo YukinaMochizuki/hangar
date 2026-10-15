@@ -24,7 +24,7 @@ func TestThePullerSaysWhenAnImageIsReady(t *testing.T) {
 	ready := make(chan struct{}, 1)
 	p.start(t.Context(), func() { ready <- struct{}{} })
 
-	if _, _, ok, err := p.get("m1", "app", ""); ok || err != nil {
+	if _, _, ok, err := p.get("m1", "app", "", driver.Anonymous, false); ok || err != nil {
 		t.Fatalf("ready before it was pulled: %t %v", ok, err)
 	}
 	letGo()
@@ -33,7 +33,7 @@ func TestThePullerSaysWhenAnImageIsReady(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("never told the image was ready")
 	}
-	digest, config, ok, err := p.get("m1", "app", "")
+	digest, config, ok, err := p.get("m1", "app", "", driver.Anonymous, false)
 	if !ok || err != nil || digest != "sha256:1" || len(config.Cmd) != 1 {
 		t.Errorf("get after ready: %s %+v %t %v", digest, config, ok, err)
 	}
@@ -63,15 +63,15 @@ func TestAnImageAtFaultIsNotTriedAgain(t *testing.T) {
 			p := newPuller(host.Images(), host.Storage(), clock, time.Minute, 2)
 			done := make(chan struct{}, 1)
 			p.start(t.Context(), func() { done <- struct{}{} })
-			if _, _, ok, err := p.get("m1", "app", tt.digest); ok || err != nil {
+			if _, _, ok, err := p.get("m1", "app", tt.digest, driver.Anonymous, false); ok || err != nil {
 				t.Fatalf("first look: %t %v", ok, err)
 			}
 			<-done
-			if _, _, _, err := p.get("m1", "app", tt.digest); !errors.Is(err, tt.err) {
+			if _, _, _, err := p.get("m1", "app", tt.digest, driver.Anonymous, false); !errors.Is(err, tt.err) {
 				t.Fatalf("the failure: %v", err)
 			}
 			clock.Advance(time.Hour)
-			_, _, _, err := p.get("m1", "app", tt.digest)
+			_, _, _, err := p.get("m1", "app", tt.digest, driver.Anonymous, false)
 			if err == nil {
 				<-done
 			} else if tt.again {
@@ -80,7 +80,7 @@ func TestAnImageAtFaultIsNotTriedAgain(t *testing.T) {
 			if err == nil && tt.digest != "" && !tt.again {
 				t.Error("a pinned digest at fault was tried again")
 			}
-			if _, _, _, err := p.get("m1", "app", tt.digest); !errors.Is(err, tt.err) {
+			if _, _, _, err := p.get("m1", "app", tt.digest, driver.Anonymous, false); !errors.Is(err, tt.err) {
 				t.Errorf("an hour later: %v", err)
 			}
 			p.wait()
@@ -106,10 +106,10 @@ func TestAFixedTagIsTriedAgain(t *testing.T) {
 	p.start(t.Context(), func() { done <- struct{}{} })
 	look := func() (string, bool, error) {
 		t.Helper()
-		if _, _, _, err := p.get("m1", "app:1", ""); err == nil {
+		if _, _, _, err := p.get("m1", "app:1", "", driver.Anonymous, false); err == nil {
 			<-done
 		}
-		digest, _, ok, err := p.get("m1", "app:1", "")
+		digest, _, ok, err := p.get("m1", "app:1", "", driver.Anonymous, false)
 		return digest, ok, err
 	}
 	if _, _, err := look(); !errors.Is(err, driver.ErrInvalidImage) {
@@ -151,7 +151,7 @@ func TestTimeoutsBackOff(t *testing.T) {
 				t.Helper()
 				clock.Advance(wait)
 				before := host.Resolved("app")
-				if _, _, _, err := p.get("m1", "app", ""); err == nil {
+				if _, _, _, err := p.get("m1", "app", "", driver.Anonymous, false); err == nil {
 					<-done
 				}
 				return host.Resolved("app") > before
@@ -193,7 +193,7 @@ func TestPullsAreBounded(t *testing.T) {
 	done := make(chan struct{}, 4)
 	p.start(t.Context(), func() { done <- struct{}{} })
 	for i, ref := range []string{"a", "b", "c", "d"} {
-		_, _, _, _ = p.get(fmt.Sprint("m", i), ref, "")
+		_, _, _, _ = p.get(fmt.Sprint("m", i), ref, "", driver.Anonymous, false)
 	}
 	waitFor := func(what string, cond func() bool) {
 		t.Helper()
@@ -248,10 +248,10 @@ func TestUnpacksTakeTurns(t *testing.T) {
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 1)
 	p.start(t.Context(), func() {})
 	begun := func(ref string) bool { n, _, _ := host.Unpacks(ref); return n > 0 }
-	_, _, _, _ = p.get("ma", "a", "")
+	_, _, _, _ = p.get("ma", "a", "", driver.Anonymous, false)
 	waitFor(t, "a unpacking", func() bool { return begun("a") })
 	for i, ref := range refs[1:] {
-		_, _, _, _ = p.get("m"+ref, ref, "")
+		_, _, _, _ = p.get("m"+ref, ref, "", driver.Anonymous, false)
 		waitFor(t, ref+" waiting", func() bool { return p.slots.waiting() == i+1 })
 	}
 	for i, ref := range refs[:len(refs)-1] {
@@ -277,9 +277,9 @@ func TestAJobNoMachineWantsGivesUpItsTurn(t *testing.T) {
 	letGo := host.HoldUnpack("a")
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 1)
 	p.start(t.Context(), func() {})
-	_, _, _, _ = p.get("m1", "a", "")
+	_, _, _, _ = p.get("m1", "a", "", driver.Anonymous, false)
 	waitFor(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
-	_, _, _, _ = p.get("m2", "b", "")
+	_, _, _, _ = p.get("m2", "b", "", driver.Anonymous, false)
 	waitFor(t, "b waiting", func() bool { return p.slots.waiting() == 1 })
 	// m2 is deleted.
 	digests := p.keep(map[string]bool{"m1": true})
@@ -306,7 +306,7 @@ func TestAnImageBeingUnpackedIsSeenThrough(t *testing.T) {
 	letGo := host.HoldUnpack("a")
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 1)
 	p.start(t.Context(), func() {})
-	_, _, _, _ = p.get("m1", "a", "")
+	_, _, _, _ = p.get("m1", "a", "", driver.Anonymous, false)
 	waitFor(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
 	if digests := p.keep(map[string]bool{}); !digests["sha256:a"] {
 		t.Errorf("bases kept: %v, want the one being made", digests)

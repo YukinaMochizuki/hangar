@@ -116,6 +116,9 @@ func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) boo
 	if b.hooks.neverDeleted != "" && p.Type != auth.System && verb == authz.Delete {
 		return false
 	}
+	if b.hooks.hiddenFromNodes && p.Type == auth.Node {
+		return false
+	}
 	if b.hooks.readableByAll && (verb == authz.Get || verb == authz.List || verb == authz.Watch) {
 		return true
 	}
@@ -186,12 +189,21 @@ func (b *backend) Get(ctx context.Context, key resource.Key) (proto.Message, err
 	if err != nil {
 		return nil, err
 	}
-	b.forNode(p, obj)
+	b.answer(p, obj)
 	return obj, nil
 }
 
-// forNode clears from obj what a node agent p may not read (kindHooks.forNode).
-func (b *backend) forNode(p auth.Principal, obj proto.Message) {
+// answer clears from obj, in place, what p may not be answered: what no
+// answer holds (kindHooks.redact), and what a node agent may not read
+// (kindHooks.forNode). Every object a call or event answers goes through
+// it.
+func (b *backend) answer(p auth.Principal, obj proto.Message) {
+	if obj == nil {
+		return
+	}
+	if b.hooks.redact != nil {
+		b.hooks.redact(obj)
+	}
 	if p.Type == auth.Node && b.hooks.forNode != nil {
 		b.hooks.forNode(p.ID, obj)
 	}
@@ -261,7 +273,7 @@ func (b *backend) List(ctx context.Context, opts resource.ListOptions) (resource
 		if !b.allowed(p, authz.List, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			continue
 		}
-		b.forNode(p, obj)
+		b.answer(p, obj)
 		res.Items = append(res.Items, obj)
 	}
 	// A full page means there may be more, even if filtering emptied it.
@@ -356,7 +368,7 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 		if !b.allowed(p, authz.Watch, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			return nil
 		}
-		b.forNode(p, obj)
+		b.answer(p, obj)
 		return send(resource.Event{Type: eventType(ev.Type), Object: obj, Revision: ev.Revision})
 	})
 	// The caller's deadline reaches the server a little before the caller,
@@ -383,14 +395,24 @@ func eventType(t store.EventType) metav1.EventType {
 }
 
 func (b *backend) Apply(ctx context.Context, in proto.Message) (resource.ApplyResult, error) {
-	return b.apply(ctx, in, false)
+	return b.answered(ctx, in, false)
+}
+
+// answered applies in and passes the result through answer, as the caller
+// is answered.
+func (b *backend) answered(ctx context.Context, in proto.Message, createOnly bool) (resource.ApplyResult, error) {
+	res, err := b.apply(ctx, in, createOnly)
+	if p, ok := auth.FromContext(ctx); ok && err == nil {
+		b.answer(p, res.Object)
+	}
+	return res, err
 }
 
 // Create writes in only if no object has its key, and fails with
 // AlreadyExists otherwise. Controllers create with it: one that read
 // "absent" must not overwrite an object written since.
 func (b *backend) Create(ctx context.Context, in proto.Message) (resource.ApplyResult, error) {
-	return b.apply(ctx, in, true)
+	return b.answered(ctx, in, true)
 }
 
 func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) (resource.ApplyResult, error) {
@@ -498,6 +520,11 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	meta.Generation = 1
 	meta.DeleteTime = nil
 	object.SetStatus(in, nil)
+	if b.hooks.seal != nil {
+		if err := b.hooks.seal(b.s, nil, in); err != nil {
+			return resource.ApplyResult{}, err
+		}
+	}
 	data, err := encode(in)
 	if err != nil {
 		return resource.ApplyResult{}, err
@@ -651,6 +678,11 @@ func (b *backend) update(ctx context.Context, p auth.Principal, key resource.Key
 		meta.Annotations = keepReserved(meta.GetAnnotations(), oldMeta.GetAnnotations())
 	}
 	object.CopyStatus(merged, old)
+	if b.hooks.seal != nil {
+		if err := b.hooks.seal(b.s, old, merged); err != nil {
+			return resource.ApplyResult{}, err
+		}
+	}
 	if !object.SpecEqual(old, merged) {
 		meta.Generation++
 	}
@@ -717,6 +749,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		}
 		if len(meta.GetFinalizers()) > 0 {
 			if meta.GetDeleteTime() != nil {
+				b.answer(p, old)
 				return old, nil
 			}
 			meta.DeleteTime = timestamppb.New(b.s.clock.Now())
@@ -732,6 +765,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 				return nil, apiError(err)
 			}
 			meta.ResourceVersion = rev
+			b.answer(p, old)
 			return old, nil
 		}
 		_, _, err = b.s.store.Delete(ctx, b.storeKey(key), cur.Revision)
@@ -741,6 +775,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		if err != nil {
 			return nil, apiError(err)
 		}
+		b.answer(p, old)
 		return old, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))
@@ -791,7 +826,7 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 		if p.Type == auth.Node && b.r.Kind == registry.Node.Kind {
 			b.s.heartbeats.record(key.Name, b.s.clock.Now())
 		}
-		b.forNode(p, obj)
+		b.answer(p, obj)
 		return obj, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))

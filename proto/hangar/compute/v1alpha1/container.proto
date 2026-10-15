@@ -47,6 +47,11 @@ message ContainerSpec {
   // interface on "default". The first holds the default route. Changing
   // them restarts the container.
   repeated NetworkInterface interfaces = 9;
+  // Names Secrets of type registry-auth, in the container's project, whose
+  // logins its node pulls the image with: the first that holds a login for
+  // the image's registry. Changing them restarts nothing; they count at the
+  // next pull. See docs/decisions/secrets.md.
+  repeated string image_pull_secrets = 10;
 }
 
 // ContainerRunState is what a container's user asks of its process. More

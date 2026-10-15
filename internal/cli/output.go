@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	secretsv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 )
 
@@ -80,6 +82,9 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	header := "NAME\tREADY\tAGE"
+	if r.Kind == registry.Secret.Kind {
+		header += "\tREGISTRIES"
+	}
 	if allProjects && r.ProjectScoped() {
 		header = "PROJECT\t" + header
 	}
@@ -87,6 +92,9 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 	for _, o := range objs {
 		meta := object.Meta(o)
 		row := fmt.Sprintf("%s\t%s\t%s", meta.GetName(), readyColumn(o), age(a.opts.Now(), meta))
+		if sec, ok := o.(*secretsv1alpha1.Secret); ok {
+			row += "\t" + cmp.Or(strings.Join(sec.GetStatus().GetRegistries(), ","), "-")
+		}
 		if allProjects && r.ProjectScoped() {
 			row = meta.GetProject() + "\t" + row
 		}

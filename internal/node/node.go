@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
@@ -113,6 +114,8 @@ type Agent struct {
 	disks    storagev1alpha1connect.DiskServiceClient
 	// imagesAPI reaches Images; images makes disk images' bases.
 	imagesAPI storagev1alpha1connect.ImageServiceClient
+	// pullCreds gives the logins machines' images are pulled with.
+	pullCreds nodev1connect.ImagePullCredentialsServiceClient
 	images    *imageMaker
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
@@ -196,6 +199,7 @@ func New(cfg Config) (*Agent, error) {
 		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
 		disks:      storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
 		imagesAPI:  storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		pullCreds:  nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
 		images:     images,
 		netChecked: map[string]int64{},
 		told:       map[string]toldIPv6{},

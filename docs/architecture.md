@@ -59,7 +59,11 @@ a copy of a global `Image`, a distribution's disk image that platform
 administrators add to the catalogue by URL and sha256. A `PublicEndpoint`
 exposes one port of a container or VM over HTTPS at
 `<endpoint>-<project>.hangarlab.dev`, private to those its tenant allows
-unless made public; a container's port marked `public` gets one.
+unless made public; a container's port marked `public` gets one. A
+`Secret` holds a project's credentials, such as registry logins that a
+container names to pull its image with: its values are write-only and
+stored sealed under a key outside the database, and a node gets a login
+only for a pull of a machine placed on it (`decisions/secrets.md`).
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources. A person is a

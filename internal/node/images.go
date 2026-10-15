@@ -14,7 +14,10 @@ import (
 
 // puller prepares images off the host lock, one job per reference however
 // many machines want it, so a slow image holds up no other machine
-// (docs/decisions/node-agent.md).
+// (docs/decisions/node-agent.md). A machine with credentials that has not
+// proven its image yet has a job of its own, which resolves the reference
+// with its credentials; the Images driver serves cached content only to the
+// repository it came from (docs/decisions/secrets.md).
 type puller struct {
 	images  driver.Images
 	storage driver.Storage
@@ -46,6 +49,9 @@ type pull struct {
 	cancel    context.CancelFunc
 	// pinned says the reference names its digest, which never changes.
 	pinned bool
+	// creds are what the job pulls with: the logins of the machine it is
+	// its own for, or of the machine that last started it.
+	creds driver.Credentials
 	// digest is known once the reference is resolved, before the base is
 	// made, so the sweep spares the base while it is being made.
 	digest string
@@ -85,11 +91,14 @@ func (p *puller) start(ctx context.Context, notify func()) {
 	p.ctx, p.notify = ctx, notify
 }
 
-// get returns the image ref names, pinned to digest unless digest is empty,
-// with its base made, for the machine uid. Until it is ready get says so and
-// prepares it; a failure is returned until the next attempt is due.
-func (p *puller) get(uid, ref, digest string) (string, driver.ImageConfig, bool, error) {
+// get returns ref's image for machine uid, pinned to digest (one its status
+// proves) unless empty, with its base made, pulling with creds; own gives a
+// machine with credentials a job of its own (docs/decisions/secrets.md).
+func (p *puller) get(uid, ref, digest string, creds driver.Credentials, own bool) (string, driver.ImageConfig, bool, error) {
 	key := ref + "@" + digest
+	if own && digest == "" {
+		key += "#" + uid
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.wants[uid] = key
@@ -109,7 +118,7 @@ func (p *puller) get(uid, ref, digest string) (string, driver.ImageConfig, bool,
 		return "", driver.ImageConfig{}, false, j.err
 	}
 	ctx, cancel := context.WithCancel(p.ctx)
-	j.running, j.err, j.cancel = true, nil, cancel
+	j.running, j.err, j.cancel, j.creds = true, nil, cancel, creds
 	p.running.Add(1)
 	go p.run(ctx, j, ref)
 	return "", driver.ImageConfig{}, false, nil
@@ -162,7 +171,10 @@ func timedOut(err error) bool {
 }
 
 func (p *puller) prepare(ctx context.Context, j *pull, ref string) error {
-	digest, config, err := p.fetch(ctx, j, ref)
+	p.mu.Lock()
+	creds := j.creds
+	p.mu.Unlock()
+	digest, config, err := p.fetch(ctx, j, ref, creds)
 	if err != nil {
 		return err
 	}
@@ -178,12 +190,12 @@ func (p *puller) prepare(ctx context.Context, j *pull, ref string) error {
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	err = p.storage.EnsureBase(ctx, digest, config.Size, func(dir string) error {
-		err := p.images.Unpack(ctx, ref, digest, dir, driver.Anonymous)
+		err := p.images.Unpack(ctx, ref, digest, dir, creds)
 		switch {
 		case errors.Is(err, driver.ErrNoSpace):
 			return blocked(computeapi.ReasonDiskFailed, err)
 		case err != nil:
-			return blocked(computeapi.ReasonImagePullFailed, err)
+			return pullFailed(err)
 		}
 		return nil
 	})
@@ -194,9 +206,17 @@ func (p *puller) prepare(ctx context.Context, j *pull, ref string) error {
 	return err
 }
 
+// pullFailed says a pull failed, and whether the registry refused it.
+func pullFailed(err error) error {
+	if errors.Is(err, driver.ErrUnauthorized) {
+		return blocked(computeapi.ReasonImagePullUnauthorized, err)
+	}
+	return blocked(computeapi.ReasonImagePullFailed, err)
+}
+
 // fetch resolves the reference and fetches the image into the cache, so
 // unpacking it needs no registry.
-func (p *puller) fetch(ctx context.Context, j *pull, ref string) (string, driver.ImageConfig, error) {
+func (p *puller) fetch(ctx context.Context, j *pull, ref string, creds driver.Credentials) (string, driver.ImageConfig, error) {
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
 	p.mu.Lock()
@@ -205,8 +225,8 @@ func (p *puller) fetch(ctx context.Context, j *pull, ref string) (string, driver
 	p.mu.Unlock()
 	var err error
 	if !pinned {
-		if digest, err = p.images.Resolve(ctx, ref, driver.Anonymous); err != nil {
-			return "", driver.ImageConfig{}, blocked(computeapi.ReasonImagePullFailed, err)
+		if digest, err = p.images.Resolve(ctx, ref, creds); err != nil {
+			return "", driver.ImageConfig{}, pullFailed(err)
 		}
 	}
 	p.mu.Lock()
@@ -216,9 +236,9 @@ func (p *puller) fetch(ctx context.Context, j *pull, ref string) (string, driver
 	if digest == bad {
 		return "", driver.ImageConfig{}, badErr
 	}
-	config, err := p.images.Config(ctx, ref, digest, driver.Anonymous)
+	config, err := p.images.Config(ctx, ref, digest, creds)
 	if err != nil {
-		return "", driver.ImageConfig{}, blocked(computeapi.ReasonImagePullFailed, err)
+		return "", driver.ImageConfig{}, pullFailed(err)
 	}
 	p.mu.Lock()
 	j.config = config
