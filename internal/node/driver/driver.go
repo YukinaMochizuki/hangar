@@ -18,8 +18,11 @@ import (
 	"net"
 	"net/netip"
 	"slices"
+	"strings"
 	"syscall"
 	"time"
+
+	"github.com/google/go-containerregistry/pkg/name"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
@@ -68,11 +71,38 @@ type Login struct {
 // Anonymous pulls from every registry without logging in.
 func Anonymous(context.Context, string) (Login, error) { return Login{}, nil }
 
-// Images resolves and unpacks OCI images for the host's platform, a pulled
-// digest from the host's cache until forgotten. Failed pulls wrap
-// ErrImageNotFound, ErrUnauthorized, ErrRegistryUnreachable or ctx's error.
+// Repository is the repository an image reference names, with its
+// registry, as the cache records where content came from: the one place
+// references are compared so. docker.io/library/x, index.docker.io/library/x
+// and x are one repository, index.docker.io/library/x. A tag or digest is
+// left out, and a digest need not be well formed.
+func Repository(ref string) (string, error) {
+	repo, _, _ := strings.Cut(ref, "@")
+	r, err := name.ParseReference(repo)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
+	}
+	// Docker Hub's API host, which go-containerregistry does not fold.
+	if r.Context().RegistryStr() == "registry-1.docker.io" {
+		if r, err = name.ParseReference(name.DefaultRegistry + "/" + r.Context().RepositoryStr()); err != nil {
+			return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
+		}
+	}
+	return r.Context().Name(), nil
+}
+
+// Images resolves and unpacks OCI images for the host's platform. The host
+// keeps a pulled digest in its cache until forgotten, with the
+// repositories (Repository) it was fetched from in full: Config and Unpack
+// answer a digest from the cache only for a reference naming one of them.
+// For any other, they first fetch the manifest, the config and every layer
+// from the reference's repository with creds, each checked against its
+// digest, even what the cache holds; a repository that cannot serve them
+// fails the pull. Failed pulls wrap ErrImageNotFound, ErrUnauthorized,
+// ErrRegistryUnreachable or ctx's error. See docs/decisions/secrets.md.
 type Images interface {
-	// Resolve returns the digest the reference names now.
+	// Resolve returns the digest the reference names now, as its registry
+	// says: it proves nothing about the content a digest names.
 	Resolve(ctx context.Context, ref string, creds Credentials) (digest string, err error)
 	// Config returns how the image wants to be run.
 	Config(ctx context.Context, ref, digest string, creds Credentials) (ImageConfig, error)

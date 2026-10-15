@@ -124,6 +124,14 @@ func TestConformance(t *testing.T) {
 				r.Private(repo)
 				return full, digest, driver.Login{Username: "user", Password: "pass"}
 			},
+			Claim: func(t *testing.T, name, digest string) string {
+				n++
+				return r.Claim(t, fmt.Sprintf("%s%d", name, n), digest)
+			},
+			Mirror: func(t *testing.T, name, digest string) string {
+				n++
+				return r.Mirror(t, fmt.Sprintf("%d%s", n, name), digest)
+			},
 			Withdraw: func(_ *testing.T, ref string) {
 				repo := strings.SplitN(strings.TrimPrefix(ref, r.Host+"/"), ":", 2)[0]
 				r.Withdraw(repo)

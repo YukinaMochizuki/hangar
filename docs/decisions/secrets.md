@@ -63,23 +63,41 @@ unpacked once into a base, and cloned for every machine of that digest.
   node asks each time the Images driver needs a login, keeps it in memory
   for that pull, and never writes or logs it. The apiserver logs each login
   given (node, machine, secret, registry), never the login.
-- **The cache key is not authorization.** What one machine pulled with its
-  login, another uses only once the registry has resolved the reference with
-  that other machine's own credentials (Kubernetes' AlwaysPullImages lesson,
-  by default). The Images driver answers a cached digest whatever the
-  credentials (its contract, in its conformance suite); the node's puller is
-  where access is proven:
-  - A machine with pull secrets that has not yet proven its image gets a
-    pull job of its own, which resolves the reference (a manifest HEAD, and
-    the digest compared when the reference names one) with its credentials,
-    whatever the host has cached.
-  - Machines without credentials share one job a reference, which resolves
-    anonymously: a public image is shared as before, and a private one is
-    refused to all of them.
-  - A machine whose status records the digest it was pulled for (written by
-    its node only, after such a resolve) has proven it: after an agent
-    restart it is built from the cache without the registry, so what runs
-    keeps running.
+- **The cache key is not authorization.** Content is cached by digest and
+  shared across tenants, but a digest proves only what the content is, not
+  who may have it, and a registry's word that it has a digest proves
+  nothing: any registry, an attacker's included, can answer a manifest HEAD
+  for any digest. So a machine reuses cached content only if this host
+  fetched that digest from the repository its own reference names, and its
+  own resolve against that repository succeeded (Kubernetes'
+  AlwaysPullImages lesson, by default). It holds by these:
+  - **The cache records where content came from.** Each cached digest's
+    record lists its sources: the repositories (registry and repository,
+    normalized in one place, `driver.Repository`, so `docker.io/library/x`,
+    `index.docker.io/library/x` and `x` are one) it was fetched from in
+    full. Only a full fetch adds one, the list is kept with the record
+    across restarts, and a record written before there were sources has
+    none. The Images driver answers a digest from the cache only for a
+    reference naming one of its sources. For any other, it first fetches
+    the manifest, the config and every layer from that reference's
+    repository with the machine's login, each checked against its digest,
+    the layers the cache holds too (hashed as they stream, the cached copy
+    left as it is). A repository that cannot serve them all, as one that
+    only claims the digest cannot, fails the pull and is never added.
+    Anonymously fetched content is therefore reused only by machines
+    naming the same repository. This is the driver's contract, held by its
+    conformance suite's repository-confusion part on the fake and the real
+    driver.
+  - **Each machine with credentials proves its login itself.** A machine
+    with pull secrets that has not yet proven its image gets a pull job of
+    its own, which resolves its reference with its own credentials;
+    machines without credentials share one anonymous job per reference.
+    A machine whose status records the digest it was pulled for (written
+    by its node only, after such a pull) has proven it: after an agent
+    restart it is built from the cache, its repository being a source,
+    without the registry, so what runs keeps running.
+  - The shared base made of a digest is reached only through a job whose
+    pull passed these rules.
 - **Security-sensitive.** The redaction, the node RPC's checks and the
   puller's rule have tests aimed at each (`internal/apiserver`,
   `internal/node`, `test/e2e`), checked by mutating them, and take a
@@ -90,7 +108,10 @@ unpacked once into a base, and cloned for every machine of that digest.
 - Losing the KEK loses every Secret; it is kept in the vault, and the host
   makes one only where none is.
 - A machine pulls a private image even when another on the host has it, at
-  the cost of one registry round trip; the content itself is fetched and
+  the cost of one registry round trip. The first machine to name a digest
+  from a repository the host has not fetched it from costs a full download
+  of its layers again, hashed and dropped, so the cost is one extra download
+  per new source repository of a digest; the content is still stored and
   unpacked once.
 - Deleting or changing a secret does not stop what runs with an image
   pulled with it: it counts at the next image change, or the next machine.

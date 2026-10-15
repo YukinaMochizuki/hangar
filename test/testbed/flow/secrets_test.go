@@ -30,8 +30,10 @@ const rivalProject = "flow-rival"
 // with the login of the secret it names, with the real Images driver, and
 // runs it; a container of another tenant naming the same image by its
 // digest, which is now on the host, is refused, before and after the agent
-// restarts. The registry is go-containerregistry's, served on the host's
-// loopback and asking for a login on its "acme" repositories.
+// restarts, and so is one naming it in a repository of its own that claims
+// the digest but cannot serve its layers. The registry is
+// go-containerregistry's, served on the host's loopback and asking for a
+// login on its "acme" repositories.
 func TestAPrivateRegistry(t *testing.T) {
 	if installed {
 		t.Skip("the installed services run with their own key-encryption key; this test makes its own")
@@ -87,20 +89,27 @@ metadata: {name: %[1]s}
 spec: {tenant: %[1]s}
 `, rivalProject))
 	c.applyYAML(privateContainerYAML("rival", rivalProject, byDigest, ""))
+	// The rival's own repository says it has the digest, and serves its
+	// manifest and config, but none of its layers: the repository-confusion
+	// attack.
+	confused := reg.Claim(t, "rival", digest)
+	c.applyYAML(privateContainerYAML("confused", rivalProject, confused, ""))
 	refused := func(when string) {
 		t.Helper()
-		eventually(t, 2*time.Minute, "the rival container refused "+when, func() (bool, string) {
-			out, err := c.tryCLI(nil, "get", "container", "rival", "-p", rivalProject, "-o", "json")
-			if err != nil {
-				return false, err.Error()
-			}
-			r := conditionIn(out, "Ready")
-			if r != nil && r.GetReason() == "ImagePullUnauthorized" {
-				t.Logf("rival %s: %s: %s", when, r.GetReason(), r.GetMessage())
-				return true, ""
-			}
-			return false, out
-		})
+		for name, reason := range map[string]string{"rival": "ImagePullUnauthorized", "confused": "ImagePullFailed"} {
+			eventually(t, 2*time.Minute, "container "+name+" refused "+when, func() (bool, string) {
+				out, err := c.tryCLI(nil, "get", "container", name, "-p", rivalProject, "-o", "json")
+				if err != nil {
+					return false, err.Error()
+				}
+				r := conditionIn(out, "Ready")
+				if r != nil && r.GetReason() == reason {
+					t.Logf("%s %s: %s: %s", name, when, r.GetReason(), r.GetMessage())
+					return true, ""
+				}
+				return false, out
+			})
+		}
 		if units := hangarUnits(t); len(units) != 1 {
 			t.Errorf("%s: VM units %v, want the private container's alone", when, units)
 		}
@@ -112,7 +121,7 @@ spec: {tenant: %[1]s}
 	refused("after a restart")
 	c.waitReady("private", time.Minute)
 
-	for _, del := range [][]string{{"container", "private"}, {"container", "rival", "-p", rivalProject}} {
+	for _, del := range [][]string{{"container", "private"}, {"container", "rival", "-p", rivalProject}, {"container", "confused", "-p", rivalProject}} {
 		c.cli(append([]string{"delete"}, del...)...)
 		c.cli(append([]string{"wait"}, append(del, "--for=delete", "--timeout=2m")...)...)
 	}

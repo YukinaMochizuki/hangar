@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -56,7 +57,13 @@ func newSecretsWorld(t *testing.T) *world {
 
 func (w *world) applySecret(proj, name string, l driver.Login) {
 	w.t.Helper()
-	cfg := fmt.Sprintf(`{"auths":{"registry.example":{"username":%q,"password":%q}}}`, l.Username, l.Password)
+	w.applySecretFor(proj, name, "registry.example", l)
+}
+
+// applySecretFor applies a registry-auth secret with a login for host.
+func (w *world) applySecretFor(proj, name, host string, l driver.Login) {
+	w.t.Helper()
+	cfg := fmt.Sprintf(`{"auths":{%q:{"username":%q,"password":%q}}}`, host, l.Username, l.Password)
 	if _, err := w.root.Apply(context.Background(), registry.Secret, &secretsv1alpha1.Secret{
 		Metadata: &metav1.ObjectMeta{Project: proj, Name: name},
 		Spec: &secretsv1alpha1.SecretSpec{
@@ -79,20 +86,41 @@ func (w *world) applyIn(proj, name, image string, pullSecrets ...string) {
 }
 
 // waitReasonIn is waitReason for a container in any project.
+//
+// A refused pull is tried again with a backoff, and says Pulling while it
+// is, so on a loaded host the reason can take longer than eventually's
+// usual bound to be seen.
 func (w *world) waitReasonIn(proj, name, reason string) {
 	w.t.Helper()
-	w.eventually(fmt.Sprintf("container %s/%s %s", proj, name, reason), func() (bool, string) {
-		obj, err := w.root.Get(context.Background(), registry.Container, client.Key{Project: proj, Name: name})
-		if connect.CodeOf(err) == connect.CodeNotFound {
-			return false, "not found"
+	deadline := time.Now().Add(time.Minute)
+	var last string
+	for {
+		ok, seen := w.reasonIs(proj, name, reason)
+		if ok {
+			return
 		}
-		if err != nil {
-			w.t.Fatal(err)
+		last = seen
+		if time.Now().After(deadline) {
+			w.t.Fatalf("never happened: container %s/%s %s; last: %s", proj, name, reason, last)
 		}
-		c := obj.(*computev1alpha1.Container)
-		r := ready(c)
-		return r.GetReason() == reason && r.GetObservedGeneration() == c.GetMetadata().GetGeneration(), fmt.Sprintf("%v", r)
-	})
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// reasonIs says whether the container says Ready with the reason, at its
+// current generation, and what it says.
+func (w *world) reasonIs(proj, name, reason string) (bool, string) {
+	w.t.Helper()
+	obj, err := w.root.Get(context.Background(), registry.Container, client.Key{Project: proj, Name: name})
+	if connect.CodeOf(err) == connect.CodeNotFound {
+		return false, "not found"
+	}
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	c := obj.(*computev1alpha1.Container)
+	r := ready(c)
+	return r.GetReason() == reason && r.GetObservedGeneration() == c.GetMetadata().GetGeneration(), fmt.Sprintf("%v", r)
 }
 
 // TestAPrivateImageRunsWithItsSecret: a container pulls a private image
@@ -139,25 +167,34 @@ func TestAnotherTenantCannotRunAPrivateImageFromTheCache(t *testing.T) {
 	}
 
 	w.applySecret(otherProject, "guess", driver.Login{Username: "acme-bot", Password: "guess"})
-	refused := map[string]func(){
-		"by-tag":          func() { w.applyIn(otherProject, "by-tag", privateImage) },
-		"by-digest":       func() { w.applyIn(otherProject, "by-digest", privateByDig) },
-		"by-tag-guessed":  func() { w.applyIn(otherProject, "by-tag-guessed", privateImage, "guess") },
-		"by-digest-guess": func() { w.applyIn(otherProject, "by-digest-guess", privateByDig, "guess") },
+	// The rival's own registry says it has acme's digest, by digest and by a
+	// tag, but cannot serve it: the review's repository-confusion attack.
+	evilByDigest := w.host.ClaimDigest("evil.example/rival/app@"+privateDigest, privateDigest)
+	w.host.ClaimDigest("evil.example/rival/app:1", privateDigest)
+	w.applySecretFor(otherProject, "evil-login", "evil.example", driver.Login{Username: "rival", Password: "rival"})
+	unauthorized, notFound := computeapi.ReasonImagePullUnauthorized, computeapi.ReasonImagePullFailed
+	refused := map[string]struct {
+		apply func()
+		want  string
+	}{
+		"by-tag":          {func() { w.applyIn(otherProject, "by-tag", privateImage) }, unauthorized},
+		"by-digest":       {func() { w.applyIn(otherProject, "by-digest", privateByDig) }, unauthorized},
+		"by-tag-guessed":  {func() { w.applyIn(otherProject, "by-tag-guessed", privateImage, "guess") }, unauthorized},
+		"by-digest-guess": {func() { w.applyIn(otherProject, "by-digest-guess", privateByDig, "guess") }, unauthorized},
 		// acme's secret's name, which in its own project names nothing.
-		"acmes-name": func() { w.applyIn(otherProject, "acmes-name", privateImage, "pull") },
+		"acmes-name":      {func() { w.applyIn(otherProject, "acmes-name", privateImage, "pull") }, apiserver.ReasonImagePullSecretNotFound},
+		"evil-digest":     {func() { w.applyIn(otherProject, "evil-digest", evilByDigest) }, notFound},
+		"evil-tag":        {func() { w.applyIn(otherProject, "evil-tag", "evil.example/rival/app:1") }, notFound},
+		"evil-digest-own": {func() { w.applyIn(otherProject, "evil-digest-own", evilByDigest, "evil-login") }, notFound},
+		"evil-tag-own":    {func() { w.applyIn(otherProject, "evil-tag-own", "evil.example/rival/app:1", "evil-login") }, notFound},
 	}
-	for _, apply := range refused {
-		apply()
+	for _, c := range refused {
+		c.apply()
 	}
 	check := func(when string) {
 		t.Helper()
-		for name := range refused {
-			want := computeapi.ReasonImagePullUnauthorized
-			if name == "acmes-name" {
-				want = apiserver.ReasonImagePullSecretNotFound
-			}
-			w.waitReasonIn(otherProject, name, want)
+		for name, c := range refused {
+			w.waitReasonIn(otherProject, name, c.want)
 			_, _, running := w.vmOfIn(otherProject, name)
 			if running {
 				t.Errorf("%s: %s runs acme's image", when, name)

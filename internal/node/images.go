@@ -16,8 +16,8 @@ import (
 // many machines want it, so a slow image holds up no other machine
 // (docs/decisions/node-agent.md). A machine with credentials that has not
 // proven its image yet has a job of its own, which resolves the reference
-// with its credentials: what another machine pulled is not its to use
-// until the registry says so (docs/decisions/secrets.md).
+// with its credentials; the Images driver serves cached content only to the
+// repository it came from (docs/decisions/secrets.md).
 type puller struct {
 	images  driver.Images
 	storage driver.Storage
@@ -91,18 +91,9 @@ func (p *puller) start(ctx context.Context, notify func()) {
 	p.ctx, p.notify = ctx, notify
 }
 
-// get returns the image ref names, pinned to digest unless digest is empty,
-// with its base made, for the machine uid, pulling with creds. Until it is
-// ready get says so and prepares it; a failure is returned until the next
-// attempt is due.
-//
-// A digest is given only for a machine that has proven it: its status says
-// it was pulled for it, which only this node writes, and only once the
-// registry resolved its reference with its credentials. own says the
-// machine has credentials and no such proof: its job is its own, and
-// resolves the reference with them, whatever the host has cached. Every
-// other job is shared: those of machines without credentials resolve
-// anonymously, and so prove access for each of them.
+// get returns ref's image for machine uid, pinned to digest (one its status
+// proves) unless empty, with its base made, pulling with creds; own gives a
+// machine with credentials a job of its own (docs/decisions/secrets.md).
 func (p *puller) get(uid, ref, digest string, creds driver.Credentials, own bool) (string, driver.ImageConfig, bool, error) {
 	key := ref + "@" + digest
 	if own && digest == "" {

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -52,6 +53,16 @@ func host(h *fake.Host) drivertest.Host {
 			h.AddImage(ref, digest, driver.ImageConfig{Cmd: []string{"true"}})
 			h.MakePrivate(ref, login)
 			return ref, digest, login
+		},
+		Claim: func(_ *testing.T, name, digest string) string {
+			published++
+			return h.ClaimDigest(fmt.Sprintf("evil.example/%s%d", name, published), digest)
+		},
+		Mirror: func(_ *testing.T, name, digest string) string {
+			published++
+			ref := fmt.Sprintf("mirror.example/%d%s", published, name)
+			h.AddImage(ref, digest, driver.ImageConfig{Cmd: []string{"true"}})
+			return ref[:strings.LastIndex(ref, ":")] + "@" + digest
 		},
 		PublishDiskImage: func(_ *testing.T, name string, size int64) (string, string) {
 			published++

@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -162,6 +163,42 @@ func TestAPrivateDigestStaysRefusedAfterARestart(t *testing.T) {
 	if host.Resolved(privateRef) != before {
 		t.Error("A, proven by its status, went to the registry")
 	}
+}
+
+// TestAClaimedDigestIsNotTheCaches: a repository B controls that says it
+// has A's private digest, by digest or by a tag, gets nothing of what A
+// pulled, whether B names it anonymously or with a login of its own, before
+// and after the agent restarts; the review's repository-confusion attack.
+func TestAClaimedDigestIsNotTheCaches(t *testing.T) {
+	host := privateHost()
+	_, settle := pullerOn(t, host)
+	if _, err := settle("a", privateRef, "", login(loginA), true); err != nil {
+		t.Fatal(err)
+	}
+	byDigest := host.ClaimDigest("evil.example/b/app@"+privateDigest, privateDigest)
+	host.ClaimDigest("evil.example/b/app:1", privateDigest)
+	loginB := login(driver.Login{Username: "b", Password: "b"})
+	attack := func(when string) {
+		t.Helper()
+		for i, c := range []struct {
+			ref   string
+			creds driver.Credentials
+			own   bool
+		}{
+			{byDigest, driver.Anonymous, false},
+			{"evil.example/b/app:1", driver.Anonymous, false},
+			{byDigest, loginB, true},
+			{"evil.example/b/app:1", loginB, true},
+		} {
+			got, err := settle(fmt.Sprintf("b%d-%s", i, when), c.ref, "", c.creds, c.own)
+			if err == nil || got == privateDigest {
+				t.Errorf("%s: B got A's private digest by %s: %q %v", when, c.ref, got, err)
+			}
+		}
+	}
+	attack("before")
+	_, settle = pullerOn(t, host)
+	attack("after")
 }
 
 // TestAPublicImageIsShared: machines without credentials share one job for

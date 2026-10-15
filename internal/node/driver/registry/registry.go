@@ -1,8 +1,10 @@
 // Package registry is the host's Images driver: it pulls OCI images from
 // their registries into a cache on the host, keyed by digest, and unpacks
-// them from there with package ocilayer. A cached digest never needs the
-// registry again until it is forgotten. It knows nothing of where an
-// unpacked image goes; see package zfsstore for that.
+// them from there with package ocilayer. A cached digest records the
+// repositories it was fetched from in full, and never needs the registry
+// again for them until it is forgotten; another repository fetches it in
+// full first (driver.Images). It knows nothing of where an unpacked image
+// goes; see package zfsstore for that.
 package registry
 
 import (
@@ -136,6 +138,11 @@ type record struct {
 	Manifest string             `json:"manifest"`
 	Config   driver.ImageConfig `json:"config"`
 	Layers   []layer            `json:"layers"`
+	// Sources are the repositories (driver.Repository) the digest was
+	// fetched from in full, every blob checked against its digest: the
+	// only references the cache answers it for. A record written before
+	// there were sources has none.
+	Sources []string `json:"sources,omitempty"`
 }
 
 type layer struct {
@@ -306,20 +313,35 @@ func (c ctxReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
-// get returns the cached record of digest, pulling it first if need be,
-// with its blobs pinned until release.
+// get returns the cached record of digest, with its blobs pinned until
+// release, for ref: if the cache has it from ref's repository, as it is;
+// otherwise once it is fetched from there in full.
 func (d *Images) get(ctx context.Context, ref, digest string, creds driver.Credentials) (*record, func(), error) {
 	hex, err := hexOf(digest)
 	if err != nil {
 		return nil, nil, err
 	}
-	defer d.digests.Lock(hex)()
-	if rec, release, err := d.cached(hex); err == nil {
-		return rec, release, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	repo, err := driver.Repository(ref)
+	if err != nil {
 		return nil, nil, err
 	}
-	rec, err := d.pull(ctx, ref, digest, hex, creds)
+	defer d.digests.Lock(hex)()
+	rec, release, err := d.cached(hex)
+	switch {
+	case err == nil && slices.Contains(rec.Sources, repo):
+		return rec, release, nil
+	case err == nil:
+		release()
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, nil, err
+	}
+	// The repositories it is known from stay, but a blob gone from the
+	// cache leaves none, as the record is then no use.
+	var sources []string
+	if rec != nil {
+		sources = rec.Sources
+	}
+	rec, err = d.pull(ctx, ref, digest, hex, creds, repo, sources)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -385,9 +407,11 @@ func (d *Images) pinLocked(blobs []string) func() {
 	}
 }
 
-// pull fetches the image digest names for the host's platform into the
-// cache and records it.
-func (d *Images) pull(ctx context.Context, ref, digest, hex string, creds driver.Credentials) (*record, error) {
+// pull fetches the image digest names for the host's platform from repo,
+// ref's repository, in full: the manifest, the config and every layer,
+// each checked against its digest, those the cache holds too. It records
+// it as known from repo besides sources.
+func (d *Images) pull(ctx context.Context, ref, digest, hex string, creds driver.Credentials, repo string, sources []string) (*record, error) {
 	base, err := name.ParseReference(ref)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", driver.ErrImageNotFound, err)
@@ -455,6 +479,7 @@ func (d *Images) pull(ctx context.Context, ref, digest, hex string, creds driver
 			return nil, err
 		}
 	}
+	rec.Sources = append(slices.Clone(sources), repo)
 	return rec, d.writeRecord(hex, rec)
 }
 
@@ -485,12 +510,13 @@ func (d *Images) platformImage(desc *remote.Descriptor) (v1.Image, error) {
 	return nil, fmt.Errorf("%w: no %s/%s image in the index %s", driver.ErrImageNotFound, platform.OS, platform.Architecture, desc.Digest)
 }
 
-// fetchBlob puts a layer in the cache, unless it is there, checked against
-// its size and digest.
+// fetchBlob fetches a layer from ref's repository, checked against its
+// size and digest, into the cache; one the cache holds is fetched all the
+// same, to prove the repository serves it, and the cached copy kept.
 func (d *Images) fetchBlob(ctx context.Context, ref name.Digest, l layer, opts []remote.Option) error {
 	final := d.blobPath(l.Digest)
 	if _, err := os.Stat(final); err == nil {
-		return nil
+		return d.checkBlob(ctx, ref, l, opts)
 	}
 	rl, err := remote.Layer(ref, opts...)
 	if err != nil {
@@ -519,6 +545,29 @@ func (d *Images) fetchBlob(ctx context.Context, ref name.Digest, l layer, opts [
 		return err
 	}
 	return os.Rename(tmp.Name(), final)
+}
+
+// checkBlob fetches a layer from ref's repository and checks it against
+// its size and digest, keeping none of it.
+func (d *Images) checkBlob(ctx context.Context, ref name.Digest, l layer, opts []remote.Option) error {
+	rl, err := remote.Layer(ref, opts...)
+	if err != nil {
+		return classify(ref.String(), err)
+	}
+	rc, err := rl.Compressed()
+	if err != nil {
+		return classify(ref.String(), err)
+	}
+	defer func() { _ = rc.Close() }()
+	h := sha256.New()
+	n, err := io.Copy(h, io.LimitReader(ctxReader{ctx, rc}, l.Size+1))
+	if err != nil {
+		return classify(ref.String(), err)
+	}
+	if got := "sha256:" + hex.EncodeToString(h.Sum(nil)); n != l.Size || got != l.Digest {
+		return fmt.Errorf("%w: %s: the registry sent %d bytes of %s, not %d of %s", driver.ErrDigestMismatch, ref, n, got, l.Size, l.Digest)
+	}
+	return nil
 }
 
 // writeRecord records a pulled digest, durably, once its blobs are in.
