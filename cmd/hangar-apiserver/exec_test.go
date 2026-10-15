@@ -65,7 +65,7 @@ func TestExecOverTheAdminSocket(t *testing.T) {
 		if code == 0 || !strings.Contains(e, "failed_precondition") || !strings.Contains(e, `container "api"`) {
 			t.Fatalf("exec: exit %d: %s; want it refused for the container's state alone", code, e)
 		}
-		if got := l.log.String(); !strings.Contains(got, `msg="exec refused" principal=local:root@n1 project=web plural=containers name=api code=failed_precondition`) {
+		if got := l.log.String(); !strings.Contains(got, `msg="exec refused" principal=local:root@n1 client_ip="" project=web plural=containers name=api code=failed_precondition`) {
 			t.Errorf("the exec is not audited as root on the host:\n%s", got)
 		}
 	})
@@ -75,7 +75,7 @@ func TestExecOverTheAdminSocket(t *testing.T) {
 		if code == 0 || !strings.Contains(e, "unauthenticated") || !strings.Contains(e, "is not root") {
 			t.Fatalf("exec: exit %d: %s; want unauthenticated", code, e)
 		}
-		if got := l.log.String(); !strings.Contains(got, `msg="exec refused" principal="" project=web plural=containers name=api code=unauthenticated`) {
+		if got := l.log.String(); !strings.Contains(got, `msg="exec refused" principal="" client_ip="" project=web plural=containers name=api code=unauthenticated`) {
 			t.Errorf("the refusal is not audited:\n%s", got)
 		}
 	})

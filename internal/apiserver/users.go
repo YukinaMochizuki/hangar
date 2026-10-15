@@ -159,7 +159,7 @@ func (a account) SignUp(ctx context.Context, req *connect.Request[iamv1alpha1.Si
 	if err != nil {
 		return nil, err
 	}
-	a.s.log.Info("signed up", "principal", p.String(), "user", name)
+	a.s.log.Info("signed up", "principal", p.String(), "client_ip", clientIP(ctx), "user", name)
 	return connect.NewResponse(&iamv1alpha1.SignUpResponse{User: res.Object.(*iamv1alpha1.User)}), nil
 }
 

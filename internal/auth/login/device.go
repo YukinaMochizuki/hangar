@@ -261,7 +261,7 @@ func (f *Flow) deviceDecision(w http.ResponseWriter, r *http.Request) {
 		pages.Render(w, http.StatusOK, pages.DeviceDenied, pages.Data{})
 		return
 	}
-	f.cfg.Log.Info("approved a device login", "principal", p.String())
+	f.cfg.Log.Info("approved a device login", "principal", p.String(), "client_ip", clientIP(r.Context()))
 	pages.Render(w, http.StatusOK, pages.DeviceApproved, pages.Data{})
 }
 
