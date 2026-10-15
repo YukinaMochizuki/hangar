@@ -15,7 +15,7 @@ create taps and an nftables table, and turn on IPv4 forwarding.
 | `test/testbed/flow/` | The whole system, as N5 puts it on a host: the real `hangar-apiserver` (as `nobody`) and `hangar-node --drivers=host` (as root, over the apiserver's node socket) as processes, driven by the real `hangar` CLI. One test, `TestFlow`, in ordered scenarios, each checked from the API and from the host: apply and Ready; online through both NATs; stop and start with `runState`, the disk kept; restart under `on-failure`; growing the disk; changing the image; the agent killed mid-pull and started again; a host shutdown (the agent, then each VM's unit stopped with `systemctl stop`), after which `always` and `on-failure` boot again, their Cloud Hypervisor as the VM user it had, and `never` is Exited with 253; `hangar logs` across a restart, with each option, and `logs -f` killed ending the agent's read of the log; `hangar exec` in a busybox container (the container's environment and overrides, stdout and stderr apart, exit codes, `-i` with piped stdin, `-it` on a pty for its size, a resize and Ctrl-C as a key, the terminal put back, SIGINT passed on without `-t`, a CLI killed leaving nothing running in the guest, the apiserver's audit line); delete. Beside it, tests of their own cluster each, `TestAVMBootsWithItsCloudInit` among them: an Ubuntu VM from the image catalogue (the cached image served over HTTPS, its certificate given to the agent as `SSL_CERT_FILE`, the cached firmware as `--vm-firmware`; skipped in an installed run) with a key and a user-data, whose cloud-init reports on the serial console, read with `hangar logs vm`, the file the user-data wrote, its hostname, its instance id and the key from vendor-data (minutes, as the cloud image tests below). `TestContainersHavePublicIPv6` runs its own cluster whose agent has an IPv6 prefix and, as its uplink, a link to an upstream that behaves as OVH's (`tbfup0`, to the namespace `tbf-up6`): a container takes its /128 and default route from the boot disk, reaches the upstream, resolves its name to its /128, and is reached from the upstream only once a group lets it in. Two more tests, each with a cluster of its own, move an Address. In `TestAContainerTakesAMovedAddressLive` the container takes it live, answering within seconds, and the old one's tap receives no ping to it. In `TestAVMTakesAMovedAddress`, with Ubuntu VMs, the old one's tap receives nothing from the moment of the move, and the new one answers at its DHCPv6 renewal |
 | `test/testbed/internal/vmtest/` | Not tests: the harness that boots those guests, for any L4 package. A package calls `vmtest.Main` from its `TestMain`, then `vmtest.New`, `Start`, `Ready`, `Exec` |
 | `test/testbed/host-bootstrap.sh` | `deploy/host` on a VM made to look like a fresh OVH install (`docs/runbook/host-bootstrap.md`) |
-| `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file and `hangar/images`, as a host has them, for `test/testbed/disks` |
+| `test/testbed/setup.sh` | Not tests: makes the pool `hangar` on a sparse file behind a direct-IO loop device and `hangar/images`, as a host has them, for `test/testbed/disks` |
 
 ## Prepare a testbed VM
 
@@ -34,11 +34,16 @@ of memory and 20 GB of disk is enough. As a user with sudo:
 4. A checkout of the branch under test, then `make guest-kernel` (a few
    minutes; `docs/runbook/guest-kernel.md`).
 5. `sudo test/testbed/setup.sh`: `qemu-img` if it is missing, the ZFS
-   pool `hangar`, 24 GB on a sparse file in `/var/tmp`, `hangar/images`
+   pool `hangar`, 24 GB on a sparse file in `/var/tmp` attached as a loop
+   device with direct IO (`zpool status` shows `/dev/loopN`), `hangar/images`
    with an 8 GB quota, and the udev rules for zvols the `zfs` step of
    `deploy/host` installs. It is
    idempotent; a VM that ran `test/testbed/host-bootstrap.sh` has the pool
-   already.
+   already. After a reboot, run it again: it attaches the file and imports
+   the pool. The pool is never on the file itself: a file vdev writes
+   through the root filesystem's page cache, and writeback of a zvol then
+   waits on it under the same global dirty limit, which wedged a full
+   `make e2e-host` with tasks stuck in D state.
 
 ## Run
 

@@ -235,8 +235,10 @@ func (i *fetched) Size() int64 { return i.size }
 
 func (i *fetched) WriteTo(ctx context.Context, dev string) error {
 	// The device is all zeros, so qemu-img writes none; the format is the
-	// one inspected, never probed again.
-	_, err := i.d.qemuImg(ctx, "convert", "-q", "-n", "--target-is-zero", "-f", i.format, "-O", "raw", i.path, dev)
+	// one inspected, never probed again. The device is written past the page
+	// cache and the file read through it (docs/decisions/vm-images.md).
+	_, err := i.d.qemuImg(ctx, "convert", "-q", "-n", "--target-is-zero", "-t", "none", "-T", "writeback",
+		"-f", i.format, "-O", "raw", i.path, dev)
 	return err
 }
 

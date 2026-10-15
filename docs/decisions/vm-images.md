@@ -35,8 +35,12 @@ change; for now only the platform chooses which images exist.
   checked as the file comes. `qemu-img info` must find raw or qcow2 naming
   no backing or data file; `qemu-img convert` then writes it raw onto a
   zvol of its size, the base (`docs/decisions/storage-zfs.md`), and the
-  file is removed. A disk is a clone of the base grown to the disk's size;
-  the guest grows its partition and filesystem itself (cloud-init).
+  file is removed. It writes the zvol with `O_DIRECT` (`-t none`): through
+  the page cache, gigabytes of a zvol's dirty pages hit the kernel's global
+  dirty limit and stall every writer on the host while ZFS drains them. It
+  reads the file through the cache (`-T writeback`), as reads dirty nothing.
+  A disk is a clone of the base grown to the disk's size; the guest grows
+  its partition and filesystem itself (cloud-init).
 - **qemu-img runs as root, unsandboxed.** It parses only files a platform
   administrator chose and pinned by sha256, so it reads nothing a tenant
   controls. Project images would change that: their files would have to be
