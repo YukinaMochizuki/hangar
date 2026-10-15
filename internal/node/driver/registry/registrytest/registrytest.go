@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -41,6 +42,10 @@ type Registry struct {
 	blobGets  map[string]int
 	blocked   map[string]*block
 	trickled  map[string]trickle
+	// pushed are the images pushed, by digest; claimed, by repository, the
+	// digests it answers for with their manifest and config alone.
+	pushed  map[string]v1.Image
+	claimed map[string]map[string]v1.Image
 }
 
 // trickle is how a repository's blobs are sent: so many bytes at once, then
@@ -60,7 +65,10 @@ type block struct {
 // New serves a registry until the test ends.
 func New(t testing.TB) *Registry {
 	t.Helper()
-	r := &Registry{withdrawn: map[string]bool{}, private: map[string]bool{}, tampered: map[string][]byte{}, blobGets: map[string]int{}, blocked: map[string]*block{}, trickled: map[string]trickle{}}
+	r := &Registry{
+		withdrawn: map[string]bool{}, private: map[string]bool{}, tampered: map[string][]byte{}, blobGets: map[string]int{}, blocked: map[string]*block{}, trickled: map[string]trickle{},
+		pushed: map[string]v1.Image{}, claimed: map[string]map[string]v1.Image{},
+	}
 	inner := ggcrregistry.New(ggcrregistry.Logger(log.New(io.Discard, "", 0)))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.mu.Lock()
@@ -69,7 +77,7 @@ func New(t testing.TB) *Registry {
 		if parts := strings.SplitN(strings.TrimPrefix(req.URL.Path, "/v2/"), "/", 2); len(parts) == 2 {
 			repo = parts[0]
 		}
-		withdrawn, private := r.withdrawn[repo], r.private[repo]
+		withdrawn, private, claimed := r.withdrawn[repo], r.private[repo], r.claimed[repo]
 		var tampered []byte
 		if i := strings.Index(req.URL.Path, "/blobs/"); i >= 0 && req.Method == http.MethodGet {
 			d := req.URL.Path[i+len("/blobs/"):]
@@ -101,6 +109,10 @@ func New(t testing.TB) *Registry {
 			http.Error(w, `{"errors":[{"code":"UNAUTHORIZED","message":"log in"}]}`, http.StatusUnauthorized)
 			return
 		}
+		if claimed != nil {
+			serveClaim(w, req, claimed)
+			return
+		}
 		switch {
 		case withdrawn:
 			http.Error(w, "down", http.StatusServiceUnavailable)
@@ -113,6 +125,74 @@ func New(t testing.TB) *Registry {
 	t.Cleanup(srv.Close)
 	r.Host = strings.TrimPrefix(srv.URL, "http://")
 	return r
+}
+
+// Claim makes repo, a repository of its own that is not private, answer
+// for the image of digest, pushed before, as a registry an attacker runs
+// can: a resolve, its manifest and its config, but none of its layers,
+// which the attacker does not have. It returns the reference by digest.
+func (r *Registry) Claim(t testing.TB, repo, digest string) string {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	img := r.pushed[digest]
+	if img == nil {
+		t.Fatalf("claim of %s: no such image pushed", digest)
+	}
+	if r.claimed[repo] == nil {
+		r.claimed[repo] = map[string]v1.Image{}
+	}
+	r.claimed[repo][digest] = img
+	return r.Host + "/" + repo + "@" + digest
+}
+
+// Mirror pushes the image of digest, pushed before, as ref too, blobs and
+// all, as a public mirror of it holds it. It returns the reference by
+// digest.
+func (r *Registry) Mirror(t testing.TB, ref, digest string) string {
+	t.Helper()
+	r.mu.Lock()
+	img := r.pushed[digest]
+	r.mu.Unlock()
+	if img == nil {
+		t.Fatalf("mirror of %s: no such image pushed", digest)
+	}
+	full, _ := r.Push(t, ref, img)
+	return full[:strings.LastIndex(full, ":")] + "@" + digest
+}
+
+// serveClaim answers for claimed images: their manifests and configs, and
+// no blob else.
+func serveClaim(w http.ResponseWriter, req *http.Request, claimed map[string]v1.Image) {
+	path := req.URL.Path
+	if _, d, ok := strings.Cut(path, "/manifests/"); ok {
+		if img := claimed[d]; img != nil {
+			raw, _ := img.RawManifest()
+			mt, _ := img.MediaType()
+			w.Header().Set("Content-Type", string(mt))
+			w.Header().Set("Docker-Content-Digest", d)
+			w.Header().Set("Content-Length", fmt.Sprint(len(raw)))
+			if req.Method != http.MethodHead {
+				_, _ = w.Write(raw)
+			}
+			return
+		}
+	}
+	if _, d, ok := strings.Cut(path, "/blobs/"); ok {
+		for _, img := range claimed {
+			if cd, _ := img.ConfigName(); cd.String() == d {
+				raw, _ := img.RawConfigFile()
+				_, _ = w.Write(raw)
+				return
+			}
+		}
+		http.Error(w, `{"errors":[{"code":"BLOB_UNKNOWN","message":"no such blob"}]}`, http.StatusNotFound)
+		return
+	}
+	if path == "/v2/" {
+		return
+	}
+	http.Error(w, `{"errors":[{"code":"MANIFEST_UNKNOWN","message":"no such manifest"}]}`, http.StatusNotFound)
 }
 
 // Withdraw makes the repository answer 503, as a registry that is down.
@@ -216,6 +296,9 @@ func (r *Registry) Push(t testing.TB, ref string, img v1.Image) (string, string)
 	if err != nil {
 		t.Fatal(err)
 	}
+	r.mu.Lock()
+	r.pushed[d.String()] = img
+	r.mu.Unlock()
 	return full, d.String()
 }
 

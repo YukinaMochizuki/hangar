@@ -198,7 +198,11 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if m.GetStatus().GetImage() == boot.GetImage() {
 		pinned = m.GetStatus().GetImageDigest()
 	}
-	digest, image, ready, err := a.puller.get(uid, boot.GetImage(), pinned)
+	creds, own := driver.Credentials(driver.Anonymous), false
+	if len(boot.GetImagePullSecrets()) > 0 {
+		creds, own = a.pullCredentials(m), true
+	}
+	digest, image, ready, err := a.puller.get(uid, boot.GetImage(), pinned, creds, own)
 	if err != nil {
 		return nil, err // stuck, saying on which step
 	}

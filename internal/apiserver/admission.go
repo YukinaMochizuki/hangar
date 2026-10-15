@@ -139,6 +139,17 @@ type kindHooks struct {
 	// object answered to a node: by get, list, watch and status update.
 	// Nodes may not create, apply or delete.
 	forNode func(node string, obj proto.Message)
+	// hiddenFromNodes refuses node agents every read of the kind, which
+	// they otherwise have on every kind.
+	hiddenFromNodes bool
+	// seal, if set, turns what a caller wrote into what is stored, once
+	// admission has passed it and the object has its uid; old is nil on
+	// create. A stored object equal to old is not written.
+	seal func(s *Server, old, obj proto.Message) error
+	// redact, if set, clears in place what no answer may hold, whoever
+	// asks: a Secret's values. It is applied to every object answered, by
+	// every call and event.
+	redact func(obj proto.Message)
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -308,6 +319,17 @@ func hooksFor(r registry.Resource) kindHooks {
 			owner:        ownedByProject,
 			validate:     validateSecurityGroup,
 			beforeDelete: refuseDeletingGroupInUse,
+		}
+	case registry.Secret.Kind:
+		// Values are write-only and stored sealed; nodes get a login only
+		// through ImagePullCredentialsService. See docs/decisions/secrets.md.
+		return kindHooks{
+			target:          projectTarget,
+			owner:           ownedByProject,
+			validate:        validateSecret,
+			hiddenFromNodes: true,
+			seal:            sealSecret,
+			redact:          redactSecret,
 		}
 	case registry.Node.Kind:
 		return kindHooks{
@@ -491,6 +513,9 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 		return err
 	}
 	if err := s.validateInterfaces(ctx, meta.GetProject(), spec.GetInterfaces()); err != nil {
+		return err
+	}
+	if err := validateImagePullSecrets(spec.GetImagePullSecrets()); err != nil {
 		return err
 	}
 	return s.validateContainerResources(ctx, old, spec.GetResources())

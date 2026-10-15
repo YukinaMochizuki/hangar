@@ -118,7 +118,16 @@ cloud, and some people fund the hardware and should see more of it.
   (its guest's user-data and keys) reaches only the node it is on, which
   serves it to the guest; a `VirtualMachine`'s `userData` and
   `sshAuthorizedKeys` reach no node. Every answer to a node is cleared so,
-  by its kind's `forNode` hook (`internal/apiserver/admission.go`).
+  by its kind's `forNode` hook (`internal/apiserver/admission.go`). Node
+  agents read no `Secret` at all, not even its metadata; a node gets a
+  registry login only through the node-only RPC, for a machine placed on
+  it (`secrets.md`).
+- A `Secret`'s permissions are the generic ones, so the owner and editor
+  roles (and `platform.root`) read its metadata and write it, and the viewer
+  roles read its metadata; nobody, of any role, reads its values back.
+  Naming a secret in a container needs no permission on the secret:
+  whoever may apply a container in a project may name any secret in it,
+  as in Kubernetes (`secrets.md`).
 - No role grants apply or delete on system-managed kinds (`Machine`, `Node`);
   see `docs/decisions/apply-semantics.md`.
 - **Sponsors** (people who fund the hardware) get `platform.sponsor`: aggregated

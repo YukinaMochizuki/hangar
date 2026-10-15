@@ -391,7 +391,7 @@ func TestReportingIsConditionalOnTheContainerAsRead(t *testing.T) {
 	if _, err := s.backend(registry.Container).UpdateStatus(system, key, &computev1alpha1.ContainerStatus{ObservedGeneration: 1}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.reportContainer(system, stale, machine("ct-api", ""), nil, nil); connect.CodeOf(err) != connect.CodeAborted {
+	if err := s.reportContainer(system, stale, machine("ct-api", ""), nil, nil, ""); connect.CodeOf(err) != connect.CodeAborted {
 		t.Errorf("reporting from a stale container: %v, want aborted", err)
 	}
 }

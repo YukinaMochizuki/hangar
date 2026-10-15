@@ -33,12 +33,14 @@ func (a *app) createCmd() *cobra.Command {
 	var displayName, tenant, output string
 	cmd := &cobra.Command{
 		Use:   "create KIND [NAME] --display-name TEXT",
-		Short: "Create a tenant or a project, suggesting its name from the display name",
+		Short: "Create a tenant or a project, suggesting its name from the display name, or a secret",
 		Long: "Creates a tenant, or a project in --tenant. Their names are global and\n" +
 			"never reused, so without NAME one is made from the display name and six\n" +
 			"random digits, such as my-demo-438212, and checked to be free first. The\n" +
 			"display name is what people read, and can change; the name cannot.\n" +
-			"A NAME that is taken, or was ever used, is refused before anything is sent.",
+			"A NAME that is taken, or was ever used, is refused before anything is sent.\n" +
+			"\n" +
+			"\"create secret\" creates or replaces a secret from a file instead.",
 		Example: "  hangar create tenant --display-name \"Alice's lab\"\n" +
 			"  hangar create project --tenant alices-lab-204816 --display-name \"My demo\"\n" +
 			"  hangar create project my-demo --tenant alices-lab-204816 --display-name \"My demo\"",
@@ -105,6 +107,7 @@ func (a *app) createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&displayName, "display-name", "", "the name people read")
 	cmd.Flags().StringVar(&tenant, "tenant", "", "the tenant a project belongs to")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "name")
+	cmd.AddCommand(a.createSecretCmd())
 	return cmd
 }
 

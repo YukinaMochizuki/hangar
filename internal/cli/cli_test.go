@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
+	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 )
 
@@ -46,7 +47,11 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}})
+	keys, err := secrets.NewKeyring(secrets.NewKEK("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys})
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))

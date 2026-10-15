@@ -5,6 +5,7 @@
 package drivertest
 
 import (
+	"context"
 	"errors"
 	"net/netip"
 	"os"
@@ -32,6 +33,18 @@ type Host struct {
 	// Publish makes an image pullable under a reference made of name, and
 	// returns that reference and the image's digest.
 	Publish func(t *testing.T, name string) (ref, digest string)
+	// PublishPrivate publishes as Publish does, in a repository of its own
+	// that asks for the login it returns.
+	PublishPrivate func(t *testing.T, name string) (ref, digest string, login driver.Login)
+	// Claim makes a public repository of its own, named after name, answer
+	// for the published image of digest as a registry an attacker runs can:
+	// a resolve of the digest, and what it knows of the image, but none of
+	// its layers. It returns the reference by digest.
+	Claim func(t *testing.T, name, digest string) (ref string)
+	// Mirror publishes the image of digest, published before, in full in a
+	// public repository of its own, named after name. It returns the
+	// reference by digest.
+	Mirror func(t *testing.T, name, digest string) (ref string)
 	// PublishDiskImage serves a disk image, qcow2, holding a disk of size
 	// bytes, and returns its URL and digest; DiskImages fetches from it.
 	PublishDiskImage func(t *testing.T, name string, size int64) (url, digest string)
@@ -90,6 +103,10 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 		return disks(h) && h.Network != nil && h.Hypervisor != nil && h.Guest != nil && h.AskedToStop != nil
 	}
 	part("images", images, func(h Host) bool { return h.Images != nil })
+	part("private images", privateImages, func(h Host) bool { return h.Images != nil && h.PublishPrivate != nil })
+	part("repository confusion", repositoryConfusion, func(h Host) bool {
+		return h.Images != nil && h.PublishPrivate != nil && h.Claim != nil && h.Mirror != nil
+	})
 	part("storage", storage, disks)
 	part("root sizes", rootSizes, disks)
 	part("deleting disks", deletingDisks, disks)
@@ -164,6 +181,90 @@ func images(t *testing.T, h Host) {
 	must(t, h.Images.Forget(ctx, digest))
 	if _, err := h.Images.Config(ctx, ref, digest, anon); err == nil {
 		t.Error("a forgotten digest answered with the registry down")
+	}
+}
+
+// privateImages: a private repository answers only its login, by tag and by
+// digest. What the host has pulled from a repository it answers from its
+// cache for that repository, whatever the credentials: proving a machine's
+// login is its caller's, by Resolve (docs/decisions/secrets.md).
+func privateImages(t *testing.T, h Host) {
+	ctx := t.Context()
+	ref, digest, login := h.PublishPrivate(t, "private:1")
+	right := driver.Credentials(func(context.Context, string) (driver.Login, error) { return login, nil })
+	wrong := driver.Credentials(func(context.Context, string) (driver.Login, error) {
+		return driver.Login{Username: login.Username, Password: login.Password + "-wrong"}, nil
+	})
+	pinned := ref[:strings.LastIndex(ref, ":")] + "@" + digest
+	for _, c := range []struct {
+		what  string
+		creds driver.Credentials
+	}{{"no login", anon}, {"a wrong login", wrong}} {
+		for _, r := range []string{ref, pinned} {
+			if _, err := h.Images.Resolve(ctx, r, c.creds); !errors.Is(err, driver.ErrUnauthorized) {
+				t.Errorf("resolving %s with %s: %v, want unauthorized", r, c.what, err)
+			}
+		}
+		if _, err := h.Images.Config(ctx, ref, digest, c.creds); !errors.Is(err, driver.ErrUnauthorized) {
+			t.Errorf("pulling with %s: %v, want unauthorized", c.what, err)
+		}
+	}
+	if got, err := h.Images.Resolve(ctx, ref, right); err != nil || got != digest {
+		t.Fatalf("resolving with the login: %s %v", got, err)
+	}
+	if got, err := h.Images.Resolve(ctx, pinned, right); err != nil || got != digest {
+		t.Errorf("resolving %s with the login: %s %v", pinned, got, err)
+	}
+	if _, err := h.Images.Config(ctx, ref, digest, right); err != nil {
+		t.Fatalf("pulling with the login: %v", err)
+	}
+	if err := h.Images.Unpack(ctx, ref, digest, t.TempDir(), right); err != nil {
+		t.Errorf("unpacking with the login: %v", err)
+	}
+	// The cache answers what it holds from the repository named, whoever
+	// asks; the registry still refuses them, which is what proves a login.
+	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
+		t.Errorf("config of a pulled digest of its repository without a login: %v", err)
+	}
+	if _, err := h.Images.Resolve(ctx, pinned, anon); !errors.Is(err, driver.ErrUnauthorized) {
+		t.Errorf("resolving a pulled digest without a login: %v, want unauthorized", err)
+	}
+}
+
+// repositoryConfusion: content the host pulled from one repository is no
+// other's. A repository that says it has the digest, as any registry can,
+// gets nothing from the cache: it must serve the image in full itself, and
+// one that cannot fails, before and after a pull from it is tried; one that
+// does, a genuine mirror, gets it (docs/decisions/secrets.md).
+func repositoryConfusion(t *testing.T, h Host) {
+	ctx := t.Context()
+	ref, digest, login := h.PublishPrivate(t, "private:1")
+	right := driver.Credentials(func(context.Context, string) (driver.Login, error) { return login, nil })
+	if _, err := h.Images.Config(ctx, ref, digest, right); err != nil {
+		t.Fatalf("pulling with the login: %v", err)
+	}
+	evil := h.Claim(t, "evil", digest)
+	// Saying it has the digest is all a resolve proves.
+	if got, err := h.Images.Resolve(ctx, evil, anon); err != nil || got != digest {
+		t.Fatalf("precondition: %s claims %s: %s %v", evil, digest, got, err)
+	}
+	for range 2 {
+		if _, err := h.Images.Config(ctx, evil, digest, anon); err == nil {
+			t.Errorf("config of %s, which serves no layer of it, came from the cache", evil)
+		}
+		if err := h.Images.Unpack(ctx, evil, digest, t.TempDir(), anon); err == nil {
+			t.Errorf("unpacked %s, which serves no layer of it, from the cache", evil)
+		}
+	}
+	mirror := h.Mirror(t, "mirror:1", digest)
+	if _, err := h.Images.Config(ctx, mirror, digest, anon); err != nil {
+		t.Errorf("config of a genuine mirror %s: %v", mirror, err)
+	}
+	if err := h.Images.Unpack(ctx, mirror, digest, t.TempDir(), anon); err != nil {
+		t.Errorf("unpacking a genuine mirror %s: %v", mirror, err)
+	}
+	if _, err := h.Images.Config(ctx, evil, digest, anon); err == nil {
+		t.Errorf("config of %s came from the cache once a mirror had it", evil)
 	}
 }
 

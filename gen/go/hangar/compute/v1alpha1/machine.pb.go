@@ -411,10 +411,14 @@ type ContainerBoot struct {
 	// Overrides the image entrypoint.
 	Command []string `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
 	// Overrides the image command.
-	Args          []string  `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
-	Env           []*EnvVar `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Args []string  `protobuf:"bytes,3,rep,name=args,proto3" json:"args,omitempty"`
+	Env  []*EnvVar `protobuf:"bytes,4,rep,name=env,proto3" json:"env,omitempty"`
+	// Names Secrets in the machine's project to pull the image with, as the
+	// container's spec.imagePullSecrets does. Only the machine's node gets
+	// their logins, one pull at a time (ImagePullCredentialsService).
+	ImagePullSecrets []string `protobuf:"bytes,5,rep,name=image_pull_secrets,json=imagePullSecrets,proto3" json:"image_pull_secrets,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ContainerBoot) Reset() {
@@ -471,6 +475,13 @@ func (x *ContainerBoot) GetArgs() []string {
 func (x *ContainerBoot) GetEnv() []*EnvVar {
 	if x != nil {
 		return x.Env
+	}
+	return nil
+}
+
+func (x *ContainerBoot) GetImagePullSecrets() []string {
+	if x != nil {
+		return x.ImagePullSecrets
 	}
 	return nil
 }
@@ -1469,12 +1480,13 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x05disks\x18\x16 \x03(\v2$.hangar.compute.v1alpha1.MachineDiskR\x05disksB\x06\n" +
 	"\x04boot\"!\n" +
 	"\vMachineDisk\x12\x12\n" +
-	"\x04disk\x18\x01 \x01(\tR\x04disk\"\x86\x01\n" +
+	"\x04disk\x18\x01 \x01(\tR\x04disk\"\xb4\x01\n" +
 	"\rContainerBoot\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x03 \x03(\tR\x04args\x121\n" +
-	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\"u\n" +
+	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\x12,\n" +
+	"\x12image_pull_secrets\x18\x05 \x03(\tR\x10imagePullSecrets\"u\n" +
 	"\fFirmwareBoot\x12\x1b\n" +
 	"\troot_disk\x18\x01 \x01(\tR\brootDisk\x12H\n" +
 	"\n" +

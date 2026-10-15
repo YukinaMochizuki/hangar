@@ -22,6 +22,7 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
@@ -29,6 +30,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
@@ -82,6 +84,10 @@ type Config struct {
 	// PublicEndpoints configures PublicEndpoints: their domain, and the
 	// Cloudflare account their Access applications are made in.
 	PublicEndpoints PublicEndpointsConfig
+	// Secrets seals and opens Secrets' data; nil is no key-encryption key,
+	// and writing a Secret fails (docs/decisions/secrets.md). Call
+	// PrepareSecrets before serving.
+	Secrets *secrets.Keyring
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
@@ -176,6 +182,7 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 		connect.WithInterceptors(chain.Interceptor()))
 	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
+	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(chain.Interceptor())))

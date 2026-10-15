@@ -9,8 +9,9 @@ import (
 	v1alpha11 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	v1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	v1alpha12 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
-	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
-	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	v1alpha13 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
+	v1alpha14 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	v1alpha15 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	slices "slices"
 	strings "strings"
@@ -140,6 +141,16 @@ var (
 		Message:    (*v1alpha12.SecurityGroup)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.SecurityGroupService",
 	}
+	Secret = Resource{
+		Group:      "secrets",
+		Version:    "v1alpha1",
+		Kind:       "Secret",
+		Plural:     "secrets",
+		ShortNames: []string{},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha13.Secret)(nil).ProtoReflect().Type(),
+		Service:    "hangar.secrets.v1alpha1.SecretService",
+	}
 	Disk = Resource{
 		Group:      "storage",
 		Version:    "v1alpha1",
@@ -147,7 +158,7 @@ var (
 		Plural:     "disks",
 		ShortNames: []string{"dk"},
 		Scope:      v1.Scope_SCOPE_PROJECT,
-		Message:    (*v1alpha13.Disk)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha14.Disk)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.DiskService",
 	}
 	Image = Resource{
@@ -157,7 +168,7 @@ var (
 		Plural:     "images",
 		ShortNames: []string{"img"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha13.Image)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha14.Image)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.ImageService",
 	}
 	Project = Resource{
@@ -167,7 +178,7 @@ var (
 		Plural:     "projects",
 		ShortNames: []string{"proj"},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha14.Project)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.Project)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.ProjectService",
 	}
 	Tenant = Resource{
@@ -177,7 +188,7 @@ var (
 		Plural:     "tenants",
 		ShortNames: []string{},
 		Scope:      v1.Scope_SCOPE_GLOBAL,
-		Message:    (*v1alpha14.Tenant)(nil).ProtoReflect().Type(),
+		Message:    (*v1alpha15.Tenant)(nil).ProtoReflect().Type(),
 		Service:    "hangar.tenancy.v1alpha1.TenantService",
 	}
 )
@@ -194,6 +205,7 @@ var All = []Resource{
 	Network,
 	PublicEndpoint,
 	SecurityGroup,
+	Secret,
 	Disk,
 	Image,
 	Project,

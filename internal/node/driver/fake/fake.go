@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/name"
+
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
@@ -34,9 +36,14 @@ type Host struct {
 	tags      map[string]string             // reference to digest
 	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
 	pullErr   map[string]error              // by reference
+	private   map[string]driver.Login       // by repository, the login it asks for
 	unpackErr map[string]error              // by reference, or digest
 	pulled    map[string]bool               // digests in the host's cache
-	resolved  map[string]int                // resolutions, by reference
+	// sources are, by digest in the cache, the repositories it was fetched
+	// from; holds and claims, by repository, the digests a registry serves,
+	// or only says it has.
+	sources, holds, claims map[string]map[string]bool
+	resolved               map[string]int // resolutions, by reference
 
 	bases     map[string]int64 // sizes, by digest
 	baseSize  int64            // of every base made from now on
@@ -125,7 +132,8 @@ type vm struct {
 // New returns an empty host.
 func New() *Host {
 	return &Host{
-		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, pulled: map[string]bool{},
+		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, private: map[string]driver.Login{}, pulled: map[string]bool{},
+		sources: map[string]map[string]bool{}, holds: map[string]map[string]bool{}, claims: map[string]map[string]bool{},
 		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
@@ -165,6 +173,75 @@ func (h *Host) AddImage(ref, digest string, config driver.ImageConfig) {
 	defer h.mu.Unlock()
 	h.tags[ref] = digest
 	h.configs[digest] = config
+	add(h.holds, repositoryOf(ref), digest)
+}
+
+// ClaimDigest has ref's repository answer a resolve of digest, as a
+// registry an attacker runs can, though it cannot serve the image's
+// content; a tag ref names it there too. It returns ref by digest.
+func (h *Host) ClaimDigest(ref, digest string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	repo, _, _ := strings.Cut(ref, "@")
+	h.tags[ref] = digest
+	add(h.claims, repositoryOf(ref), digest)
+	if i := strings.LastIndex(repo, ":"); i > strings.LastIndex(repo, "/") {
+		repo = repo[:i]
+	}
+	return repo + "@" + digest
+}
+
+func add(m map[string]map[string]bool, k, v string) {
+	if m[k] == nil {
+		m[k] = map[string]bool{}
+	}
+	m[k][v] = true
+}
+
+// MakePrivate has the registry ask for login to anything of ref's
+// repository, by tag or digest, as a private repository does: anything else
+// is driver.ErrUnauthorized. What the host has pulled stays its own.
+func (h *Host) MakePrivate(ref string, login driver.Login) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.private[repositoryOf(ref)] = login
+}
+
+// repositoryOf is a reference's repository, as driver.Repository gives it,
+// or the reference itself for one it cannot read.
+func repositoryOf(ref string) string {
+	if repo, err := driver.Repository(ref); err == nil {
+		return repo
+	}
+	return ref
+}
+
+// registryOf is the host a reference's registry is asked for logins by.
+func registryOf(ref string) string {
+	repo, _, _ := strings.Cut(ref, "@")
+	if r, err := name.ParseReference(repo); err == nil {
+		return r.Context().RegistryStr()
+	}
+	return ""
+}
+
+// authorize checks the login creds give for ref's registry against what a
+// private repository asks for, as a registry does before it answers.
+func (h *Host) authorize(ctx context.Context, ref string, creds driver.Credentials) error {
+	h.mu.Lock()
+	want, private := h.private[repositoryOf(ref)]
+	h.mu.Unlock()
+	if !private {
+		return nil
+	}
+	got, err := creds(ctx, registryOf(ref))
+	if err != nil {
+		return fmt.Errorf("%s: %w", ref, err)
+	}
+	if got != want {
+		return fmt.Errorf("%s: %w", ref, driver.ErrUnauthorized)
+	}
+	return nil
 }
 
 // HoldUnpack makes unpacking ref wait, as a large image does, until the
@@ -249,6 +326,16 @@ func (h *Host) FailPull(ref string, err error) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.pullErr[ref] = err
+}
+
+// ForgetSources drops what the host's cache knows of the repositories its
+// content came from, keeping the content, as a cache written before sources
+// were recorded is: each digest must be fetched in full again before the
+// cache answers it.
+func (h *Host) ForgetSources() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sources = map[string]map[string]bool{}
 }
 
 // DefaultBaseSize is the size of a base unless SetBaseSize says otherwise.
@@ -616,7 +703,10 @@ func (h *Host) Unpacked(digest string) int {
 
 type images struct{ h *Host }
 
-func (d images) Resolve(_ context.Context, ref string, _ driver.Credentials) (string, error) {
+func (d images) Resolve(ctx context.Context, ref string, creds driver.Credentials) (string, error) {
+	if err := d.h.authorize(ctx, ref, creds); err != nil {
+		return "", err
+	}
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	d.h.resolved[ref]++
@@ -624,9 +714,11 @@ func (d images) Resolve(_ context.Context, ref string, _ driver.Credentials) (st
 		return "", err
 	}
 	if _, digest, pinned := strings.Cut(ref, "@"); pinned {
-		if _, ok := d.h.configs[digest]; ok {
+		repo := repositoryOf(ref)
+		if d.h.holds[repo][digest] || d.h.claims[repo][digest] {
 			return digest, nil
 		}
+		return "", fmt.Errorf("%s: %w", ref, driver.ErrImageNotFound)
 	}
 	digest, ok := d.h.tags[ref]
 	if !ok {
@@ -635,35 +727,56 @@ func (d images) Resolve(_ context.Context, ref string, _ driver.Credentials) (st
 	return digest, nil
 }
 
-// byDigest looks an image up in the host's cache, or else pulls it as a
-// registry gives ref@digest.
-func (d images) byDigest(ref, digest string) (driver.ImageConfig, error) {
+// byDigest looks an image up in the host's cache, whatever creds give, if
+// it was fetched from ref's repository; or else pulls it in full as that
+// repository gives ref@digest, with creds, which a repository that only
+// claims the digest cannot.
+func (d images) byDigest(ctx context.Context, ref, digest string, creds driver.Credentials) (driver.ImageConfig, error) {
+	repo, err := driver.Repository(ref)
+	if err != nil {
+		return driver.ImageConfig{}, err
+	}
+	d.h.mu.Lock()
+	cached := d.h.sources[digest][repo]
+	d.h.mu.Unlock()
+	if !cached {
+		if err := d.h.authorize(ctx, ref, creds); err != nil {
+			return driver.ImageConfig{}, err
+		}
+	}
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
-	if err := d.h.pullErr[ref]; err != nil && !d.h.pulled[digest] {
-		return driver.ImageConfig{}, err
+	if cached = d.h.sources[digest][repo]; !cached {
+		if err := d.h.pullErr[ref]; err != nil {
+			return driver.ImageConfig{}, err
+		}
+		if !d.h.holds[repo][digest] {
+			return driver.ImageConfig{}, fmt.Errorf("%s@%s: the registry serves none of its blobs: %w", ref, digest, driver.ErrImageNotFound)
+		}
 	}
 	config, ok := d.h.configs[digest]
 	if !ok {
 		return driver.ImageConfig{}, fmt.Errorf("%s@%s: %w", ref, digest, driver.ErrImageNotFound)
 	}
 	d.h.pulled[digest] = true
+	add(d.h.sources, digest, repo)
 	return config, nil
 }
 
-func (d images) Config(_ context.Context, ref, digest string, _ driver.Credentials) (driver.ImageConfig, error) {
-	return d.byDigest(ref, digest)
+func (d images) Config(ctx context.Context, ref, digest string, creds driver.Credentials) (driver.ImageConfig, error) {
+	return d.byDigest(ctx, ref, digest, creds)
 }
 
 func (d images) Forget(_ context.Context, digest string) error {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	delete(d.h.pulled, digest)
+	delete(d.h.sources, digest)
 	return nil
 }
 
-func (d images) Unpack(ctx context.Context, ref, digest, dir string, _ driver.Credentials) error {
-	if _, err := d.byDigest(ref, digest); err != nil {
+func (d images) Unpack(ctx context.Context, ref, digest, dir string, creds driver.Credentials) error {
+	if _, err := d.byDigest(ctx, ref, digest, creds); err != nil {
 		return err
 	}
 	d.h.mu.Lock()

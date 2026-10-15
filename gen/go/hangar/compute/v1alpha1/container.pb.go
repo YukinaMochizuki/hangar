@@ -281,9 +281,14 @@ type ContainerSpec struct {
 	// The networks the container is on, at most 8, each once; empty is one
 	// interface on "default". The first holds the default route. Changing
 	// them restarts the container.
-	Interfaces    []*NetworkInterface `protobuf:"bytes,9,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Interfaces []*NetworkInterface `protobuf:"bytes,9,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	// Names Secrets of type registry-auth, in the container's project, whose
+	// logins its node pulls the image with: the first that holds a login for
+	// the image's registry. Changing them restarts nothing; they count at the
+	// next pull. See docs/decisions/secrets.md.
+	ImagePullSecrets []string `protobuf:"bytes,10,rep,name=image_pull_secrets,json=imagePullSecrets,proto3" json:"image_pull_secrets,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *ContainerSpec) Reset() {
@@ -375,6 +380,13 @@ func (x *ContainerSpec) GetRunState() ContainerRunState {
 func (x *ContainerSpec) GetInterfaces() []*NetworkInterface {
 	if x != nil {
 		return x.Interfaces
+	}
+	return nil
+}
+
+func (x *ContainerSpec) GetImagePullSecrets() []string {
+	if x != nil {
+		return x.ImagePullSecrets
 	}
 	return nil
 }
@@ -1301,7 +1313,7 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04spec\x18\x04 \x01(\v2&.hangar.compute.v1alpha1.ContainerSpecR\x04spec\x12@\n" +
 	"\x06status\x18\x05 \x01(\v2(.hangar.compute.v1alpha1.ContainerStatusR\x06status:!\x8a\xb5\x18\x1d\n" +
 	"\tContainer\x12\n" +
-	"containers\x1a\x02ct \x01\"\xe9\x03\n" +
+	"containers\x1a\x02ct \x01\"\x97\x04\n" +
 	"\rContainerSpec\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
@@ -1313,7 +1325,9 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\trun_state\x18\b \x01(\x0e2*.hangar.compute.v1alpha1.ContainerRunStateR\brunState\x12I\n" +
 	"\n" +
 	"interfaces\x18\t \x03(\v2).hangar.compute.v1alpha1.NetworkInterfaceR\n" +
-	"interfaces\"2\n" +
+	"interfaces\x12,\n" +
+	"\x12image_pull_secrets\x18\n" +
+	" \x03(\tR\x10imagePullSecrets\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\"\x8e\x01\n" +

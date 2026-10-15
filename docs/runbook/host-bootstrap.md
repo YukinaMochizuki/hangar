@@ -220,6 +220,18 @@ reboot) runs the new launcher on the `spec.json` the old agent wrote, and
 boots the new guest kernel and initramfs. A running VM keeps its own until
 then.
 
+**Upgrading to the release that records image sources** (the first with
+Secrets, `docs/decisions/secrets.md`): the node's image cache from before
+has no record of which repository each image came from, and the new agent
+trusts none of it. Running machines are not touched. The new agent fetches
+each machine's image once more, in full, from that machine's own registry,
+in the background soon after it starts, and starting a machine again (a
+host reboot, a stop and start, or a change that restarts it) waits for that
+fetch: a registry that is down blocks the start, the machine saying
+`ImagePullFailed`, until it is back. Expect one download of each image, and
+do not reboot the host or restart machines during the upgrade while a
+registry they need is unreachable.
+
 1. Build it from the commit to deploy, on a testbed VM:
    `HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release`.
    The variable lets it reuse the kernel the testbed image prebuilt when the
@@ -316,6 +328,54 @@ work. A guest takes the CA on its first boot only: VMs made while there
 was none, or under another CA, trust no CA, or the old one. A new key
 therefore holds for VMs made after it; the old one stays in the vault until
 no VM trusts it.
+
+## The secrets key-encryption key
+
+Secrets are stored sealed under a key-encryption key (KEK), a file the
+apiserver alone reads, `/var/lib/hangar/state/secrets-kek`: one line, an id
+and 32 random bytes in base64 (`docs/decisions/secrets.md`). Unlike the SSH
+CA, the `services` step makes it when there is none, on the first run, and
+says so:
+
+```
+note: copy /var/lib/hangar/state/secrets-kek to the vault now: ...
+```
+
+Do that at once. The database alone holds no usable Secret: a restore of it
+without this file, on this host or another, is a store whose Secrets nobody
+can open, and the apiserver refuses to start over them. Restoring a host
+means putting the KEK back from the vault before the apiserver starts:
+
+```sh
+sudo install -m 0600 -o hangar -g hangar secrets-kek /var/lib/hangar/state/secrets-kek
+```
+
+The step never replaces a KEK that is there, and gives one it finds open to
+others back to `hangar`, mode 0600, saying who it was open to; take that as
+the key exposed, and rotate it. `verify.sh` checks it. The apiserver logs
+`loaded the key-encryption key` with the key's id at start, never the key.
+
+**Rotating it.** The apiserver opens Secrets with the previous key and seals
+them again under the new one as it starts, so a rotation is one restart:
+
+1. Move the key aside, keeping its owner and mode:
+   `sudo mv /var/lib/hangar/state/secrets-kek /var/lib/hangar/state/secrets-kek.previous`
+2. Run `deploy/host/bootstrap.sh`, which makes a new key as it would on a
+   new host (no restart yet: the unit is unchanged). Copy the new key to
+   the vault.
+3. `sudo systemctl restart hangar-apiserver`. The unit always passes
+   `--secrets-kek-previous /var/lib/hangar/state/secrets-kek.previous`,
+   skipped when the file is not there. The log says
+   `sealed secrets again under the current key-encryption key` with how
+   many, and the new id.
+4. `sudo shred -u /var/lib/hangar/state/secrets-kek.previous`. Keep the old
+   key in the vault for as long as you keep backups of the database made
+   before the rotation.
+
+A wrong key, a missing previous key during a rotation, or a previous key
+without a current one stops the apiserver at start, naming the secret it
+could not open; put the right files back and start it again. Nothing is
+written until every secret opens.
 
 ## Switching to Cloudflare Access
 
