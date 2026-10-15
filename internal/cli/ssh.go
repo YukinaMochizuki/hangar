@@ -33,7 +33,7 @@ func (a *app) sshCmd() *cobra.Command {
 	var login string
 	var forget bool
 	cmd := &cobra.Command{
-		Use:   "ssh vm/NAME [-- COMMAND [ARG...]]",
+		Use:   "ssh KIND NAME [-- COMMAND [ARG...]]",
 		Short: "Log in to a virtual machine, or run a command in it, over SSH",
 		Long: "Logs in to the virtual machine as its image's default user, or -l USER, with\n" +
 			"OpenSSH's ssh and a key made for this login alone, signed by the platform\n" +
@@ -46,8 +46,8 @@ func (a *app) sshCmd() *cobra.Command {
 			"again is a new entry. A key that changes under the same uid, the VM's\n" +
 			"host keys made again in it or something else answering, is refused\n" +
 			"until --forget-host-key.",
-		Example: "  hangar ssh vm/web\n  hangar ssh vm/web -- uname -a\n  hangar ssh vm/web -- 'df -h / | tail -1'\n  hangar ssh -l alice vm/web\n  hangar ssh --forget-host-key vm/web",
-		Args:    cobra.MinimumNArgs(1),
+		Example: "  hangar ssh vm web\n  hangar ssh vm web -- uname -a\n  hangar ssh vm web -- 'df -h / | tail -1'\n  hangar ssh -l alice vm web\n  hangar ssh --forget-host-key vm web",
+		Args:    cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, remote, err := sshArgs(cmd, args)
 			if err != nil {
@@ -69,15 +69,15 @@ func (a *app) sshCmd() *cobra.Command {
 
 func (a *app) sshProxyCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "ssh-proxy vm/NAME",
+		Use:   "ssh-proxy KIND NAME",
 		Short: "Connect stdin and stdout to a virtual machine's SSH port, as an OpenSSH ProxyCommand",
 		Long: "Relays stdin and stdout to port 22 of the virtual machine's first\n" +
 			"interface, through the API: what hangar ssh gives ssh as its ProxyCommand,\n" +
 			"which an ssh_config may name too. It needs compute.virtualmachines.ssh.",
-		Example: "  ssh -o ProxyCommand='hangar ssh-proxy vm/web' ubuntu@web",
-		Args:    args(1, 1),
+		Example: "  ssh -o ProxyCommand='hangar ssh-proxy vm web' ubuntu@web",
+		Args:    args(2, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, err := vmName(args[0])
+			name, err := vmName(args[0], args[1])
 			if err != nil {
 				return err
 			}
@@ -93,25 +93,23 @@ func sshArgs(cmd *cobra.Command, args []string) (string, []string, error) {
 	if at := cmd.ArgsLenAtDash(); at >= 0 {
 		before, remote = args[:at], args[at:]
 	}
-	if len(before) != 1 {
-		return "", nil, usageErr("want one vm/NAME, then -- and the command")
+	if len(before) != 2 {
+		return "", nil, usageErr("want KIND NAME, then -- and the command")
 	}
-	name, err := vmName(before[0])
+	name, err := vmName(before[0], before[1])
 	return name, remote, err
 }
 
-// vmName reads vm/NAME, or a bare NAME, as a virtual machine's name.
-func vmName(arg string) (string, error) {
-	kind, name, ok := strings.Cut(arg, "/")
-	if !ok {
-		return arg, nil
-	}
+// vmName checks that KIND NAME names a virtual machine, and returns its name.
+// The kind is asked for although only VMs take SSH, so that other kinds can
+// later without the command changing shape.
+func vmName(kind, name string) (string, error) {
 	r, err := findKind(kind)
 	if err != nil {
 		return "", err
 	}
-	if r.Kind != registry.VirtualMachine.Kind || name == "" {
-		return "", usageErr("only virtual machines take SSH, not %s", arg)
+	if r.Kind != registry.VirtualMachine.Kind {
+		return "", usageErr("only virtual machines take SSH, not %s", r.Plural)
 	}
 	return name, nil
 }
@@ -253,7 +251,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 	if a.contextName != "" {
 		proxy = append(proxy, "--context", a.contextName)
 	}
-	proxy = append(proxy, "--project", sc.project, "ssh-proxy", "virtualmachine/"+name)
+	proxy = append(proxy, "--project", sc.project, "ssh-proxy", "virtualmachine", name)
 	quoted := make([]string, len(proxy))
 	for i, s := range proxy {
 		quoted[i] = shellQuote(s)
@@ -292,7 +290,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 	}
 	if ee.ExitCode() == 255 && said.contains(hostKeyChanged) {
 		return fmt.Errorf("virtualmachine/%s's host key is not the one recorded in %s: something else answers, or its host keys were "+
-			"made again in it; if they were, forget the old one with hangar ssh --forget-host-key vm/%s and connect again", name, a.knownHosts(), name)
+			"made again in it; if they were, forget the old one with hangar ssh --forget-host-key vm %s and connect again", name, a.knownHosts(), name)
 	}
 	return exitStatus(ee.ExitCode())
 }

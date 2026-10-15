@@ -21,6 +21,7 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/servicegen"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -172,6 +173,7 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 	mux.HandleFunc(execws.Pattern, s.containerExec(chain))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineSSHServiceHandler(virtualMachineSSH{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(sshws.Pattern, s.vmSSH(chain))
+	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
