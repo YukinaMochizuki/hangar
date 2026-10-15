@@ -40,10 +40,7 @@ func (a *app) logsCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if r.Kind != registry.Container.Kind && r.Kind != registry.VirtualMachine.Kind {
-				return usageErr("only containers and virtual machines have logs, not %s", r.Plural)
-			}
-			req := &computev1alpha1.ContainerLogsRequest{Name: args[1], Follow: follow}
+			req := &computev1alpha1.LogsRequest{Kind: r.Kind, Name: args[1], Follow: follow}
 			switch {
 			case tail >= 0:
 				req.TailLines = &tail
@@ -69,27 +66,10 @@ func (a *app) logsCmd() *cobra.Command {
 				return err
 			}
 			hc, base := a.httpClient(c)
-			p := &logPrinter{out: cmd.OutOrStdout(), err: cmd.ErrOrStderr(), json: output == "json", timestamps: timestamps}
-			if r.Kind == registry.VirtualMachine.Kind {
-				logs := computev1alpha1connect.NewVirtualMachineLogsServiceClient(hc, base, connect.WithInterceptors(creds))
-				stream, err := logs.VirtualMachineLogs(cmd.Context(), connect.NewRequest(&computev1alpha1.VirtualMachineLogsRequest{
-					Project: req.Project, Name: req.Name, Follow: req.Follow, TailLines: req.TailLines, Since: req.Since,
-				}))
-				if err != nil {
-					return err
-				}
-				defer func() { _ = stream.Close() }()
-				for stream.Receive() {
-					for _, rec := range stream.Msg().GetRecords() {
-						if err := p.printVM(rec); err != nil {
-							return err
-						}
-					}
-				}
-				return stream.Err()
-			}
-			logs := computev1alpha1connect.NewContainerLogsServiceClient(hc, base, connect.WithInterceptors(creds))
-			stream, err := logs.ContainerLogs(cmd.Context(), connect.NewRequest(req))
+			p := &logPrinter{out: cmd.OutOrStdout(), err: cmd.ErrOrStderr(), json: output == "json", timestamps: timestamps,
+				vm: r.Kind == registry.VirtualMachine.Kind}
+			logs := computev1alpha1connect.NewMachineCapabilityServiceClient(hc, base, connect.WithInterceptors(creds))
+			stream, err := logs.Logs(cmd.Context(), connect.NewRequest(req))
 			if err != nil {
 				return err
 			}
@@ -112,41 +92,6 @@ func (a *app) logsCmd() *cobra.Command {
 	return cmd
 }
 
-// printVM prints a virtual machine's log record as a container's is
-// printed: its serial console as stdout, and the end of each boot as an
-// exit, saying how the boot ended.
-func (p *logPrinter) printVM(r *computev1alpha1.VirtualMachineLogRecord) error {
-	rec := &computev1alpha1.ContainerLogRecord{Boot: r.GetBoot(), Time: r.GetTime()}
-	end := r.GetEnd()
-	if end == nil {
-		rec.Stream = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDOUT
-		rec.Content = &computev1alpha1.ContainerLogRecord_Data{Data: r.GetData()}
-		return p.print(rec)
-	}
-	rec.Stream = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_EXIT
-	if p.json {
-		return p.printJSON(logJSON{
-			Time: rec.GetTime().AsTime().Format(time.RFC3339Nano), Boot: rec.GetBoot(), Stream: streamName(rec.GetStream()),
-			Exit: &logJSONExit{Code: end.GetCode(), Stopped: end.GetStopped()},
-		})
-	}
-	var msg string
-	switch {
-	case end.GetStopped() && end.GetCode() == 0:
-		msg = "hangar: stopped; the guest powered off"
-	case end.GetStopped():
-		msg = "hangar: stopped; the guest did not power off, and was killed"
-	case end.GetCode() == 0:
-		msg = "hangar: the guest powered off"
-	default:
-		msg = fmt.Sprintf("hangar: the VM ended without powering off, code %d", end.GetCode())
-	}
-	if rec.GetBoot() > 0 {
-		msg += fmt.Sprintf(" (boot %d)", rec.GetBoot())
-	}
-	return p.line(rec, []byte(msg+"\n"))
-}
-
 func parseSince(s string, now time.Time) (time.Time, error) {
 	if d, err := time.ParseDuration(s); err == nil {
 		if d < 0 {
@@ -167,7 +112,9 @@ type logPrinter struct {
 	out, err   io.Writer
 	json       bool
 	timestamps bool
-	midLine    map[io.Writer]bool
+	// vm says how each boot ended as a virtual machine's boots end.
+	vm      bool
+	midLine map[io.Writer]bool
 }
 
 // logJSON is one record as -o json prints it. Data that is not UTF-8 is
@@ -188,15 +135,20 @@ type logJSONExit struct {
 	Stopped bool `json:"stopped,omitempty"`
 }
 
-func streamName(s computev1alpha1.ContainerLogStream) string {
-	return strings.ToLower(strings.TrimPrefix(s.String(), "CONTAINER_LOG_STREAM_"))
+// streamName is a record's stream in -o json. A virtual machine's serial
+// console is its stdout.
+func streamName(s computev1alpha1.MachineLogStream) string {
+	if s == computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_CONSOLE {
+		s = computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_STDOUT
+	}
+	return strings.ToLower(strings.TrimPrefix(s.String(), "MACHINE_LOG_STREAM_"))
 }
 
-func (p *logPrinter) print(rec *computev1alpha1.ContainerLogRecord) error {
+func (p *logPrinter) print(rec *computev1alpha1.MachineLogRecord) error {
 	if p.json {
 		j := logJSON{Time: rec.GetTime().AsTime().Format(time.RFC3339Nano), Boot: rec.GetBoot(), Stream: streamName(rec.GetStream())}
-		if rec.GetStream() == computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_EXIT {
-			j.Exit = &logJSONExit{Code: rec.GetExit().GetCode(), Signal: rec.GetExit().GetSignal()}
+		if st := rec.GetExit(); rec.GetStream() == computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_EXIT {
+			j.Exit = &logJSONExit{Code: st.GetCode(), Signal: st.GetSignal(), Stopped: st.GetStopped()}
 		} else if data := rec.GetData(); utf8.Valid(data) {
 			s := string(data)
 			j.Data = &s
@@ -206,22 +158,27 @@ func (p *logPrinter) print(rec *computev1alpha1.ContainerLogRecord) error {
 		return p.printJSON(j)
 	}
 	switch rec.GetStream() {
-	case computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDOUT:
+	case computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_STDOUT, computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_CONSOLE:
 		return p.write(p.out, rec, rec.GetData())
-	case computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDERR:
+	case computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_STDERR:
 		return p.write(p.err, rec, rec.GetData())
-	case computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_INIT:
+	case computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_INIT:
 		var b []byte
 		for line := range strings.Lines(string(rec.GetData())) {
 			line = strings.TrimSuffix(line, "\n")
 			b = fmt.Appendf(b, "hangar: %s\n", strings.TrimPrefix(line, "hangar-init: "))
 		}
 		return p.line(rec, b)
-	case computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_EXIT:
+	case computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_EXIT:
 		st := rec.GetExit()
-		msg := fmt.Sprintf("hangar: exited with code %d", st.GetCode())
-		if st.GetSignal() != 0 {
-			msg += fmt.Sprintf(", killed by signal %d", st.GetSignal())
+		var msg string
+		if p.vm {
+			msg = vmExit(st)
+		} else {
+			msg = fmt.Sprintf("hangar: exited with code %d", st.GetCode())
+			if st.GetSignal() != 0 {
+				msg += fmt.Sprintf(", killed by signal %d", st.GetSignal())
+			}
 		}
 		if rec.GetBoot() > 0 {
 			msg += fmt.Sprintf(" (boot %d)", rec.GetBoot())
@@ -229,6 +186,20 @@ func (p *logPrinter) print(rec *computev1alpha1.ContainerLogRecord) error {
 		return p.line(rec, []byte(msg+"\n"))
 	}
 	return nil
+}
+
+// vmExit says how a virtual machine's boot ended.
+func vmExit(st *computev1alpha1.MachineExitStatus) string {
+	switch {
+	case st.GetStopped() && st.GetCode() == 0:
+		return "hangar: stopped; the guest powered off"
+	case st.GetStopped():
+		return "hangar: stopped; the guest did not power off, and was killed"
+	case st.GetCode() == 0:
+		return "hangar: the guest powered off"
+	default:
+		return fmt.Sprintf("hangar: the VM ended without powering off, code %d", st.GetCode())
+	}
 }
 
 // printJSON prints one record as -o json does.
@@ -245,7 +216,7 @@ func (p *logPrinter) printJSON(j logJSON) error {
 
 // line writes whole lines of hangar's own to stderr, on a line of their
 // own.
-func (p *logPrinter) line(rec *computev1alpha1.ContainerLogRecord, b []byte) error {
+func (p *logPrinter) line(rec *computev1alpha1.MachineLogRecord, b []byte) error {
 	if p.midLine[p.err] {
 		b = append([]byte{'\n'}, b...)
 		p.midLine[p.err] = false
@@ -253,7 +224,7 @@ func (p *logPrinter) line(rec *computev1alpha1.ContainerLogRecord, b []byte) err
 	return p.write(p.err, rec, b)
 }
 
-func (p *logPrinter) write(w io.Writer, rec *computev1alpha1.ContainerLogRecord, data []byte) error {
+func (p *logPrinter) write(w io.Writer, rec *computev1alpha1.MachineLogRecord, data []byte) error {
 	if len(data) == 0 {
 		return nil
 	}

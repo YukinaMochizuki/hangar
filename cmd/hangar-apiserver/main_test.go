@@ -130,9 +130,9 @@ func TestAdminSocketIsRootOnTheHost(t *testing.T) {
 	if err := grant(bindings(admin, client.UnixSocketURL, nil)); err != nil {
 		t.Fatalf("root on the host, with no binding of its own: %v", err)
 	}
-	// Logs and exec authorize as Get does, then find nothing to read.
-	logs := computev1alpha1connect.NewContainerLogsServiceClient(admin, client.UnixSocketURL)
-	stream, err := logs.ContainerLogs(context.Background(), connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: "web", Name: "api"}))
+	// Root on the host may read logs, and finds nothing to read.
+	logs := computev1alpha1connect.NewMachineCapabilityServiceClient(admin, client.UnixSocketURL)
+	stream, err := logs.Logs(context.Background(), connect.NewRequest(&computev1alpha1.LogsRequest{Project: "web", Kind: "Container", Name: "api"}))
 	if err == nil {
 		for stream.Receive() {
 		}

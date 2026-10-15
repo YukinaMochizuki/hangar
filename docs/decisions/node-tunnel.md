@@ -77,10 +77,12 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     good or is stopped. It reads through rotations, the file rotated between
     included when the log rotates twice between two reads; a third rotation
     that fast loses the file between.
-- **Reading logs is a permission of its own**, `compute.containers.logs`, apart
+- **Reading logs is a permission of its own**, `compute.machines.logs`, apart
   from `get`: output can hold what the spec does not, such as secrets a
-  process prints. `tenant.owner` and `platform.root` hold it; a sponsor does
-  not.
+  process prints. It is the machine's, one for every kind that runs as one
+  (`machine-model.md`), read through `MachineCapabilityService.Logs` by the
+  kind and name of the object. The owner and editor roles and
+  `platform.root` hold it; a sponsor does not.
 - **What the console holds is the tenant's**, so every read is bounded: a
   record holds at most 64 KiB, a tail keeps back about 4 MiB of memory,
   each record counted with what it takes beyond its data (the allocator's
@@ -124,9 +126,10 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     writes, and an empty message written each tick fails on a connection
     that broke. `hangar exec` tells a server gone in the same way.
   - Refused before the WebSocket opens, in this order: whoever is not
-    authorized (`compute.containers.exec`, told nothing of the container,
-    as a read is not), a container without a machine on a node or whose
-    machine is not running (`FailedPrecondition`), a node not connected
+    authorized (`compute.machines.exec`, told nothing of the container,
+    as a read is not; a kind without exec, such as a VM for now, is
+    `Unimplemented` before that), a container without a machine on a node
+    or whose machine is not running (`FailedPrecondition`), a node not connected
     (`Unavailable`), and a caller over the caps on calls to nodes
     (`ResourceExhausted`, shared with logs). After it opens, the node can
     still refuse it, as for a VM that stopped since.
@@ -137,9 +140,10 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     every attempt refused, by whom, for which container, with which code.
     Never its input, its output, or its environment's values.
 - **Running a process in a container is a permission of its own**,
-  `compute.containers.exec`, apart from `get` and `logs`: it reaches
-  everything the container can. `tenant.owner` and `platform.root` hold
-  it; a sponsor does not.
+  `compute.machines.exec`, apart from `get` and `logs`: it reaches
+  everything the container can. It is the machine's, as logs are.
+  The owner and editor roles and `platform.root` hold it; a sponsor does
+  not.
 
 ## Consequences
 

@@ -1,7 +1,9 @@
-// Package execws is the wire of a container's exec between a client and the
+// Package execws is the wire of a machine's exec between a client and the
 // apiserver, which both ends share: a WebSocket of proto messages, its path,
 // and how it says why it failed (proto/hangar/compute/v1alpha1/
-// container_exec.proto). It is not the exec itself.
+// machine_capability.proto). It is not the exec itself. Its route and its
+// errors are every machine capability's WebSocket's, SSH's too
+// (internal/sshws).
 package execws
 
 import (
@@ -26,19 +28,39 @@ const Subprotocol = "hangar.exec.v1alpha1"
 // smaller pieces; it leaves room for a start's command and environment.
 const MaxMessage = 256 << 10
 
-// Path is the exec endpoint of a container.
-func Path(project, name string) string {
-	return "/v1/projects/" + url.PathEscape(project) + "/containers/" + url.PathEscape(name) + ":exec"
+// Action is the suffix of an exec's path.
+const Action = "exec"
+
+// Path is the exec endpoint of the object of the kind plural, such as
+// containers, named name.
+func Path(project, plural, name string) string {
+	return CapabilityPath(project, plural, name, Action)
 }
 
-// Pattern is Path as an http.ServeMux pattern, its last segment the name
-// with ":exec" after it: a wildcard cannot share a segment.
-const Pattern = "GET /v1/projects/{project}/containers/{nameExec}"
+// CapabilityPath is the endpoint of a machine capability's WebSocket, the
+// action exec's or ssh's, of an object.
+func CapabilityPath(project, plural, name, action string) string {
+	return "/v1/projects/" + url.PathEscape(project) + "/" + url.PathEscape(plural) + "/" + url.PathEscape(name) + ":" + action
+}
 
-// NameOf returns the container's name in a request to Pattern, if it is an
-// exec's.
-func NameOf(r *http.Request) (string, bool) {
-	return strings.CutSuffix(r.PathValue("nameExec"), ":exec")
+// Pattern is CapabilityPath as an http.ServeMux pattern, for every kind and
+// action, its last segment the name with ":" and the action after it: a
+// wildcard cannot share a segment.
+const Pattern = "GET /v1/projects/{project}/{plural}/{nameAction}"
+
+// Route is what a request to Pattern names.
+type Route struct {
+	Project, Plural, Name, Action string
+}
+
+// RouteOf returns what a request to Pattern names, if its last segment has
+// an action.
+func RouteOf(r *http.Request) (Route, bool) {
+	name, action, ok := strings.Cut(r.PathValue("nameAction"), ":")
+	if !ok {
+		return Route{}, false
+	}
+	return Route{Project: r.PathValue("project"), Plural: r.PathValue("plural"), Name: name, Action: action}, true
 }
 
 // closeBase plus a Connect code is the close status of an exec failed with

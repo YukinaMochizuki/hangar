@@ -27,12 +27,14 @@ was for, and names no one.
   runs, signing fails saying so, and static keys work. Per-project CAs were
   rejected for now: their keys would need envelope encryption, which the
   platform does not have yet.
-- **The certificate.** `SignSSHKey` (`VirtualMachineSSHService`) needs
-  `compute.virtualmachines.ssh`, which `tenant.owner` and `platform.root`
-  hold, and certifies a user key for one principal, the VM's uid, for five
-  minutes (from one minute back, for a guest's clock), with the caller's
-  identity as its key ID, and every extension but agent forwarding. It is
-  for logging in: the session outlives it. The apiserver logs each
+- **The certificate.** `SignSSHKey` (`MachineCapabilityService`, given the
+  kind and name, VirtualMachine `web`) needs `compute.machines.ssh`, the
+  machine's capability (`machine-model.md`), which the owner and editor
+  roles and `platform.root` hold, and certifies a user key for one
+  principal, the VM's uid, for five minutes (from one minute back, for a
+  guest's clock), with the caller's identity as its key ID, and every
+  extension but agent forwarding. It is for logging in: the session
+  outlives it. The apiserver logs each
   signing, by key fingerprint, never the key.
 - **The guest trusts the CA for its own uid.** The VM's vendor-data
   (`vm-boot.md`) carries, with a CA, a script beside its keys' cloud-config:
@@ -52,8 +54,9 @@ was for, and names no one.
   image's own keys and sshd say.
 - **The path in.** `hangar ssh-proxy vm NAME`, ssh's `ProxyCommand` (usable
   in an ssh_config too), relays its stdin and stdout over a WebSocket,
-  `GET /v1/projects/{project}/virtualmachines/{name}:ssh` with the
-  subprotocol `hangar.ssh.v1alpha1`, through Access to the apiserver, which
+  `GET /v1/projects/{project}/virtualmachines/{name}:ssh`, a machine
+  capability's route with the kind in the path, with the subprotocol
+  `hangar.ssh.v1alpha1`, through Access to the apiserver, which
   checks the same permission and calls the VM's node over the tunnel
   (`SSH` on the node service). The node dials port 22 of the VM's first
   interface's address, from that network's gateway inside its namespace.

@@ -85,9 +85,9 @@ func TestSigningUp(t *testing.T) {
 			return stream.Err()
 		},
 		"reading a container's logs": func() error {
-			logs := computev1alpha1connect.NewContainerLogsServiceClient(http.DefaultClient, e.url,
+			logs := computev1alpha1connect.NewMachineCapabilityServiceClient(http.DefaultClient, e.url,
 				connect.WithInterceptors(headerInterceptor{auth.DevUserHeader, carol}))
-			stream, err := logs.ContainerLogs(ctx, connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: "web", Name: "api"}))
+			stream, err := logs.Logs(ctx, connect.NewRequest(&computev1alpha1.LogsRequest{Project: "web", Kind: "Container", Name: "api"}))
 			if err != nil {
 				return err
 			}

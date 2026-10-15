@@ -11,9 +11,11 @@ streams through Cloudflare are risky.
 ## Decision
 
 - Bidirectional streams use WebSocket, with messages still defined in proto.
-  A container's exec is the first
-  (`proto/hangar/compute/v1alpha1/container_exec.proto`, `internal/execws`):
-  - `GET /v1/projects/{project}/containers/{name}:exec`, authenticated as
+  A machine's exec is the first, and its SSH tunnel follows it
+  (`proto/hangar/compute/v1alpha1/machine_capability.proto`,
+  `internal/execws`):
+  - `GET /v1/projects/{project}/{plural}/{name}:exec`, such as
+    `containers/web:exec`, authenticated as
     any call on the listener is, with a subprotocol naming the messages'
     version (`hangar.exec.v1alpha1`); one proto message per binary
     WebSocket message.

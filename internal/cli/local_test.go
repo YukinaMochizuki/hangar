@@ -88,14 +88,14 @@ func TestLocalSendsNoCredentials(t *testing.T) {
 func TestLocalLogs(t *testing.T) {
 	f := &fakeLogs{recs: twoBootLogs()}
 	mux := http.NewServeMux()
-	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(f))
+	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(fakeCapabilities{c: f, vm: &fakeVMLogs{}}))
 	code, out, errOut := runLocal(t, serveUnix(t, mux), nil, "logs", "ct", "api")
 	if code != 0 || out != "one\ntwo\nthree\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.req.GetProject() != "web" || f.req.GetName() != "api" || f.user != "" {
+	if f.req.GetProject() != "web" || f.req.GetKind() != "Container" || f.req.GetName() != "api" || f.user != "" {
 		t.Errorf("asked for %v as %q", f.req, f.user)
 	}
 }

@@ -3,7 +3,6 @@ package apiserver
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -15,13 +14,14 @@ import (
 	"connectrpc.com/connect"
 	"github.com/coder/websocket"
 	"golang.org/x/crypto/ssh"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	nodev1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
-	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
@@ -33,24 +33,28 @@ import (
 // maxPublicKey bounds a key given to be signed.
 const maxPublicKey = 16 << 10
 
-type virtualMachineSSH struct{ s *Server }
-
-// SignSSHKey certifies the caller's key for the VM; see vm-ssh.md.
-func (h virtualMachineSSH) SignSSHKey(ctx context.Context, req *connect.Request[computev1alpha1.SignSSHKeyRequest]) (*connect.Response[computev1alpha1.SignSSHKeyResponse], error) {
+// SignSSHKey certifies the caller's key for the machine of the named
+// object; see vm-ssh.md.
+func (h machineCapabilities) SignSSHKey(ctx context.Context, req *connect.Request[computev1alpha1.SignSSHKeyRequest]) (*connect.Response[computev1alpha1.SignSSHKeyResponse], error) {
 	s := h.s
 	m := req.Msg
-	key := resource.Key{Project: m.GetProject(), Name: m.GetName()}
-	p, vm, err := s.sshVM(ctx, key)
+	kind, err := kindNamed(m.GetKind())
 	if err != nil {
 		return nil, err
 	}
+	key := resource.Key{Project: m.GetProject(), Name: m.GetName()}
+	r, err := s.reach(ctx, kind, key, authz.SSH, nil)
+	if err != nil {
+		return nil, err
+	}
+	p := r.principal
 	if len(m.GetPublicKey()) > maxPublicKey {
 		return nil, invalid("public_key is %d bytes, at most %d", len(m.GetPublicKey()), maxPublicKey)
 	}
 	if s.cfg.SSHCA == nil {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, sshca.ErrNoCA)
 	}
-	uid := vm.GetMetadata().GetUid()
+	uid := object.Meta(r.obj).GetUid()
 	cert, err := s.cfg.SSHCA.Sign(m.GetPublicKey(), uid, p.String())
 	if err != nil {
 		if errors.Is(err, sshca.ErrNoCA) {
@@ -58,12 +62,12 @@ func (h virtualMachineSSH) SignSSHKey(ctx context.Context, req *connect.Request[
 		}
 		return nil, invalid("public_key: %v", err)
 	}
-	user, err := s.defaultUser(ctx, vm)
+	user, err := s.defaultUser(ctx, r.obj)
 	if err != nil {
 		return nil, err
 	}
 	validBefore := time.Unix(int64(cert.ValidBefore), 0)
-	s.log.Info("ssh key signed", "principal", p.String(), "project", key.Project, "virtual_machine", key.Name, "vm_uid", uid,
+	s.log.Info("ssh key signed", "principal", p.String(), "project", key.Project, "kind", kind.Kind, "name", key.Name, "uid", uid,
 		"key", ssh.FingerprintSHA256(cert.Key), "valid_before", validBefore.UTC().Format(time.RFC3339))
 	return connect.NewResponse(&computev1alpha1.SignSSHKeyResponse{
 		Certificate: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert))),
@@ -71,27 +75,14 @@ func (h virtualMachineSSH) SignSSHKey(ctx context.Context, req *connect.Request[
 	}), nil
 }
 
-// sshVM authorizes logging in to the VM at key, before anything about it is
-// told.
-func (s *Server) sshVM(ctx context.Context, key resource.Key) (auth.Principal, *computev1alpha1.VirtualMachine, error) {
-	b := s.backend(registry.VirtualMachine)
-	p, err := b.begin(ctx)
-	if err != nil {
-		return p, nil, err
+// defaultUser is the default user of the image a virtual machine's root
+// disk was made from, if any says one; an object of another kind has none
+// yet.
+func (s *Server) defaultUser(ctx context.Context, obj proto.Message) (string, error) {
+	vm, ok := obj.(*computev1alpha1.VirtualMachine)
+	if !ok {
+		return "", nil
 	}
-	if err := b.checkKey(key); err != nil {
-		return p, nil, err
-	}
-	_, obj, err := b.read(ctx, p, authz.SSH, key)
-	if err != nil {
-		return p, nil, err
-	}
-	return p, obj.(*computev1alpha1.VirtualMachine), nil
-}
-
-// defaultUser is the default user of the image the VM's root disk was made
-// from, if any says one.
-func (s *Server) defaultUser(ctx context.Context, vm *computev1alpha1.VirtualMachine) (string, error) {
 	image := vm.GetSpec().GetRootDisk().GetFromImage().GetImage().GetName()
 	if name := vm.GetSpec().GetRootDisk().GetDisk(); name != "" {
 		dobj, err := s.get(ctx, registry.Disk, resource.Key{Project: vm.GetMetadata().GetProject(), Name: name})
@@ -113,115 +104,69 @@ func (s *Server) defaultUser(ctx context.Context, vm *computev1alpha1.VirtualMac
 	return img.GetSpec().GetDefaultUser(), nil
 }
 
-// vmSSHTarget is a VM to reach port 22 of, and the call to its node.
-type vmSSHTarget struct {
-	principal auth.Principal
-	key       resource.Key
-	machine   string // uid
-	call      *nodeCall
+// sshFits refuses a machine with no firmware: only a machine that boots a
+// guest OS has an sshd to reach.
+func sshFits(r *reached, machine *computev1alpha1.Machine) error {
+	if machine.GetSpec().GetFirmware() == nil {
+		return failedPrecondition("%s has no machine yet", r)
+	}
+	return nil
 }
 
-// sshTarget authorizes reaching the VM at key and begins the call to its
-// node.
-func (s *Server) sshTarget(ctx context.Context, key resource.Key) (*vmSSHTarget, error) {
-	p, vm, err := s.sshVM(ctx, key)
+// serveSSH serves an SSH tunnel to the machine of the object route names
+// as an exec is served, refusing before the upgrade and telling nothing
+// before authorizing; its node picks the address, the machine's own, and
+// the port, 22.
+func (s *Server) serveSSH(chain auth.Chain, w http.ResponseWriter, r *http.Request, route execws.Route) {
+	key := resource.Key{Project: route.Project, Name: route.Name}
+	refuse := func(p auth.Principal, err error) {
+		s.auditRefused("ssh refused", p, route, err)
+		execws.WriteError(w, r, err)
+	}
+	ctx, err := chain.Authenticate(r.Context(), r.Header)
 	if err != nil {
-		return nil, err
+		refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
+		return
 	}
-	mobj, err := s.get(ctx, registry.Machine, resource.Key{Project: key.Project, Name: vmMachineName(key.Name)})
+	p, _ := auth.FromContext(ctx)
+	kind, err := kindOfPlural(route.Plural)
 	if err != nil {
-		return nil, apiError(err)
+		refuse(p, err)
+		return
 	}
-	machine, _ := mobj.(*computev1alpha1.Machine)
-	if machine == nil || !ownedBy(machine.GetMetadata(), vm.GetMetadata().GetUid()) || machine.GetSpec().GetFirmware() == nil {
-		return nil, failedPrecondition("virtual machine %q has no machine yet", key.Name)
-	}
-	node := machine.GetSpec().GetNode()
-	if node == "" {
-		return nil, failedPrecondition("virtual machine %q is not placed on a node yet", key.Name)
-	}
-	if phase := machine.GetStatus().GetPhase(); phase != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING {
-		return nil, failedPrecondition("virtual machine %q is not running: its machine is %s", key.Name,
-			strings.ToLower(strings.TrimPrefix(phase.String(), "MACHINE_PHASE_")))
-	}
-	project, err := s.get(ctx, registry.Project, resource.Key{Name: key.Project})
+	x, err := s.machineTarget(ctx, kind, key, authz.SSH, sshFits)
 	if err != nil {
-		return nil, apiError(err)
+		refuse(p, err)
+		return
 	}
-	if project == nil {
-		return nil, failedPrecondition("project %q is gone", key.Project)
+	defer x.call.release()
+	if !slices.Contains(subprotocols(r), sshws.Subprotocol) {
+		refuse(p, invalid("an SSH tunnel is a WebSocket with the subprotocol %s", sshws.Subprotocol))
+		return
 	}
-	call, err := s.callNode(p, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), node, fmt.Sprintf("virtual machine %q", key.Name))
+	timing := s.execTiming()
+	live := execws.NewLiveness(timing.ping, timing.pong)
+	// The Origin check stays on, as an exec's.
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols:   []string{sshws.Subprotocol},
+		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
+	})
 	if err != nil {
-		return nil, err
+		s.auditRefused("ssh refused", p, route, connect.NewError(connect.CodeInvalidArgument, err))
+		return
 	}
-	return &vmSSHTarget{principal: p, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
-}
-
-// vmSSH serves a VM's SSH tunnel as an exec is served, refusing before the
-// upgrade and telling nothing before authorizing; its node picks the
-// address, the VM's own, and the port, 22.
-func (s *Server) vmSSH(chain auth.Chain) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		name, ok := sshws.NameOf(r)
-		if !ok {
-			http.NotFound(w, r)
-			return
-		}
-		key := resource.Key{Project: r.PathValue("project"), Name: name}
-		refuse := func(p auth.Principal, err error) {
-			s.auditSSHRefused(p, key, err)
-			execws.WriteError(w, r, err)
-		}
-		ctx, err := chain.Authenticate(r.Context(), r.Header)
-		if err != nil {
-			refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
-			return
-		}
-		p, _ := auth.FromContext(ctx)
-		x, err := s.sshTarget(ctx, key)
-		if err != nil {
-			refuse(p, err)
-			return
-		}
-		defer x.call.release()
-		if !slices.Contains(subprotocols(r), sshws.Subprotocol) {
-			refuse(p, invalid("an SSH tunnel is a WebSocket with the subprotocol %s", sshws.Subprotocol))
-			return
-		}
-		timing := s.execTiming()
-		live := execws.NewLiveness(timing.ping, timing.pong)
-		// The Origin check stays on, as an exec's.
-		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-			Subprotocols:   []string{sshws.Subprotocol},
-			OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
-		})
-		if err != nil {
-			s.auditSSHRefused(p, key, connect.NewError(connect.CodeInvalidArgument, err))
-			return
-		}
-		s.runSSH(ctx, c, x, live)
-	}
-}
-
-func (s *Server) auditSSHRefused(p auth.Principal, key resource.Key, err error) {
-	principal := ""
-	if p != (auth.Principal{}) {
-		principal = p.String()
-	}
-	s.log.Info("ssh refused", "principal", principal, "project", key.Project, "virtual_machine", key.Name,
-		"code", connect.CodeOf(err).String(), "error", err.Error())
+	s.runSSH(ctx, c, x, live)
 }
 
 // runSSH relays the WebSocket and the node's call until either ends, and
 // closes the WebSocket.
-func (s *Server) runSSH(ctx context.Context, c *websocket.Conn, x *vmSSHTarget, live *execws.Liveness) {
+func (s *Server) runSSH(ctx context.Context, c *websocket.Conn, x *machineTarget, live *execws.Liveness) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 	c.SetReadLimit(sshws.MaxMessage)
 	began := time.Now()
 	var in, out atomic.Int64
-	s.log.Info("ssh opened", "principal", x.principal.String(), "project", x.key.Project, "virtual_machine", x.key.Name, "machine", x.machine)
+	s.log.Info("ssh opened", x.auditAttrs()...)
 	var once sync.Once
 	end := func(err error) {
 		once.Do(func() {
@@ -285,8 +230,7 @@ func (s *Server) runSSH(ctx context.Context, c *websocket.Conn, x *vmSSHTarget, 
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		err = cause
 	}
-	attrs := []any{"principal", x.principal.String(), "project", x.key.Project, "virtual_machine", x.key.Name, "machine", x.machine,
-		"duration", time.Since(began).Round(time.Millisecond).String(), "bytes_in", in.Load(), "bytes_out", out.Load()}
+	attrs := append(x.auditAttrs(), "duration", time.Since(began).Round(time.Millisecond).String(), "bytes_in", in.Load(), "bytes_out", out.Load())
 	if err != nil {
 		attrs = append(attrs, "code", connect.CodeOf(err).String(), "error", err.Error())
 	}
