@@ -30,7 +30,7 @@ planned; the code is the authority wherever it exists.
 
 | Component | Runs as | Responsibility |
 |---|---|---|
-| `hangar-apiserver` | unprivileged user | The API (Connect for unary and server-streaming, WebSocket for bidirectional streams), authentication and authorization, admission, the object store, and every controller |
+| `hangar-apiserver` | unprivileged user | The API (Connect for unary and server-streaming, WebSocket for bidirectional streams), authentication and authorization, admission, the object store, and every controller. It signs people in through Google and issues Hangar's own sessions and tokens (`decisions/authentication.md`) |
 | `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, and what it serves each network from inside its namespace: its resolver, the metadata service, and the edge's connections to public endpoints |
 | `hangar-edge` | unprivileged user | The edge proxy for public endpoints (`*.hangarlab.dev`): takes their traffic from cloudflared, checks Access for private ones, routes by `Host`, and reaches machines through the node agent's dial socket (`decisions/public-endpoints.md`) |
 | `hangar-init` | PID 1 in the guest | Boots containers from the platform's initramfs, frames their output on the console, serves exec over vsock, and later handles snapshot hooks (`decisions/guest-agent.md`) |

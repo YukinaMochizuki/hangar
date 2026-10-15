@@ -21,7 +21,6 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 )
@@ -58,7 +57,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	if !loopback(f.listen) {
 		return fmt.Errorf("--listen %q is not a loopback address: only cloudflared may reach the edge", f.listen)
 	}
-	access, err := auth.NewCloudflare(ctx, auth.CloudflareConfig{TeamDomain: f.cfTeamDomain, Audience: f.cfAudience, CertsURL: f.cfCertsURL})
+	access, err := edge.NewAccessVerifier(ctx, edge.AccessConfig{TeamDomain: f.cfTeamDomain, Audience: f.cfAudience, CertsURL: f.cfCertsURL})
 	if err != nil {
 		return err
 	}

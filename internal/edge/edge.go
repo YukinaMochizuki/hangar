@@ -51,7 +51,7 @@ type Config struct {
 }
 
 // Verifier verifies an Access token and says until when it holds;
-// *auth.Cloudflare is one.
+// *AccessVerifier is one.
 type Verifier interface {
 	AuthenticateUntil(ctx context.Context, header http.Header) (auth.Principal, time.Time, bool, error)
 }
@@ -420,7 +420,7 @@ func (e *Edge) rewrite(pr *httputil.ProxyRequest) {
 const accessCookie = "CF_Authorization"
 
 // accessHeaders carry an Access token or a service token's credentials.
-var accessHeaders = []string{auth.CloudflareJWTHeader, "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"}
+var accessHeaders = []string{AccessJWTHeader, "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"}
 
 // StripAccess removes what proves a caller signed in through Access, or
 // lets it: every endpoint shares one Access application, so an endpoint

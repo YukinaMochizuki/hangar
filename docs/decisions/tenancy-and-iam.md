@@ -68,8 +68,9 @@ cloud, and some people fund the hardware and should see more of it.
   - A `RoleBinding` (group `iam`) grants a role to a principal at a scope:
     the platform, a tenant, or a project. The authorizer caches bindings and
     keeps them current through a watch.
-- **Platform membership gates everything.** Signing in through Access only
-  proves who someone is. A platform member holds a platform role
+- **Platform membership gates everything.** Signing in (through Google,
+  `authentication.md`) only proves who someone is, and only someone invited
+  may sign in at all. A platform member holds a platform role
   (`platform.member`, `platform.sponsor` or `platform.root`, which nest in
   that order) and has signed up. Anyone else may do nothing at all, even
   inside a tenant someone shared with them. Service tokens and root on the
@@ -86,7 +87,7 @@ cloud, and some people fund the hardware and should see more of it.
 - **A User is a person's account.** Its name is the username they choose:
   a DNS label, global, never reused (like a tenant name), immutable, and not
   a reserved word such as `admin` or `root`. `spec.email` is the email
-  Access verified for whoever signed up, never taken from a request and
+  the identity provider verified for whoever signed up, never taken from a request and
   never changed. The person's `display_name` is theirs alone, changed
   through `UpdateProfile`: an administrator's apply that leaves it out
   keeps it, and one that sets another is refused. Only `platform.root` sets

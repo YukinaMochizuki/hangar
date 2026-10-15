@@ -44,12 +44,15 @@ func (a *app) configCmd() *cobra.Command {
 			if use || cfg.CurrentContext == "" {
 				cfg.CurrentContext = args[0]
 			}
+			if err := a.prepareConfigDir(); err != nil {
+				return err
+			}
 			return cfg.save(a.configPath())
 		},
 	}
 	set.Flags().StringVar(&c.Endpoint, "endpoint", "", "API URL, such as https://hangar.example.com, or unix:///run/hangar/admin.sock for root on the host")
 	set.Flags().StringVar(&c.Project, "project", "", "default project")
-	set.Flags().StringVar(&c.Auth, "auth", "", "cloudflare (default), dev, or local (the default for a unix:// endpoint)")
+	set.Flags().StringVar(&c.Auth, "auth", "", "oidc (the default: sign in with hangar login), dev, or local (the default for a unix:// endpoint)")
 	set.Flags().StringVar(&c.User, "user", "", "email to send in dev auth")
 	set.Flags().BoolVar(&use, "use", false, "make it the current context")
 
@@ -66,6 +69,9 @@ func (a *app) configCmd() *cobra.Command {
 				return usageErr("no context named %q", args[0])
 			}
 			cfg.CurrentContext = args[0]
+			if err := a.prepareConfigDir(); err != nil {
+				return err
+			}
 			return cfg.save(a.configPath())
 		},
 	}
@@ -103,35 +109,6 @@ func (a *app) configCmd() *cobra.Command {
 
 	cmd.AddCommand(set, useCmd, view)
 	return cmd
-}
-
-func (a *app) loginCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "login",
-		Short: "Sign in through Cloudflare Access (runs cloudflared)",
-		Args:  args(0, 0),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := a.current()
-			if err != nil {
-				return err
-			}
-			if c.local() {
-				return usageErr("the context uses local auth, which needs no login")
-			}
-			out, err := a.runCloudflared(cmd.Context(), "access", "login", c.Endpoint)
-			shown, tok := loginOutput(out)
-			_, _ = fmt.Fprint(cmd.OutOrStdout(), shown)
-			if err != nil {
-				return fmt.Errorf("cloudflared access login: %w", err)
-			}
-			if email := tokenEmail(tok); email != "" {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in to %s as %s\n", c.Endpoint, email)
-			} else {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "logged in to %s\n", c.Endpoint)
-			}
-			return nil
-		},
-	}
 }
 
 func (a *app) applyCmd() *cobra.Command {

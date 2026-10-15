@@ -9,6 +9,69 @@ import (
 	"context"
 )
 
+const consumeCredential = `-- name: ConsumeCredential :execrows
+UPDATE credentials
+SET used_at = ?1
+WHERE hash = ?2 AND used_at = 0
+`
+
+type ConsumeCredentialParams struct {
+	UsedAt int64
+	Hash   string
+}
+
+func (q *Queries) ConsumeCredential(ctx context.Context, arg ConsumeCredentialParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, consumeCredential, arg.UsedAt, arg.Hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const countAuthRequests = `-- name: CountAuthRequests :one
+SELECT COUNT(*) FROM auth_requests
+WHERE substr(key, 1, length(CAST(?1 AS TEXT))) = CAST(?1 AS TEXT)
+  AND expires_at > ?2
+`
+
+type CountAuthRequestsParams struct {
+	Prefix string
+	Now    int64
+}
+
+func (q *Queries) CountAuthRequests(ctx context.Context, arg CountAuthRequestsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAuthRequests, arg.Prefix, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const deleteAuthRequest = `-- name: DeleteAuthRequest :execrows
+DELETE FROM auth_requests
+WHERE key = ?
+`
+
+func (q *Queries) DeleteAuthRequest(ctx context.Context, key string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteAuthRequest, key)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const deleteCredentialFamily = `-- name: DeleteCredentialFamily :execrows
+DELETE FROM credentials
+WHERE family = ?
+`
+
+func (q *Queries) DeleteCredentialFamily(ctx context.Context, family string) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteCredentialFamily, family)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteEventsThrough = `-- name: DeleteEventsThrough :exec
 DELETE FROM events
 WHERE revision <= ?
@@ -16,6 +79,37 @@ WHERE revision <= ?
 
 func (q *Queries) DeleteEventsThrough(ctx context.Context, revision int64) error {
 	_, err := q.db.ExecContext(ctx, deleteEventsThrough, revision)
+	return err
+}
+
+const deleteExpiredAuthRequests = `-- name: DeleteExpiredAuthRequests :exec
+DELETE FROM auth_requests
+WHERE expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredAuthRequests(ctx context.Context, expiresAt int64) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredAuthRequests, expiresAt)
+	return err
+}
+
+const deleteExpiredCredentials = `-- name: DeleteExpiredCredentials :exec
+DELETE FROM credentials
+WHERE expires_at <= ?1
+   OR (idle_until <> 0 AND idle_until <= ?1)
+`
+
+func (q *Queries) DeleteExpiredCredentials(ctx context.Context, now int64) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredCredentials, now)
+	return err
+}
+
+const deleteExpiredRevokedFamilies = `-- name: DeleteExpiredRevokedFamilies :exec
+DELETE FROM revoked_families
+WHERE expires_at <= ?
+`
+
+func (q *Queries) DeleteExpiredRevokedFamilies(ctx context.Context, expiresAt int64) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredRevokedFamilies, expiresAt)
 	return err
 }
 
@@ -33,6 +127,102 @@ type DeleteObjectParams struct {
 func (q *Queries) DeleteObject(ctx context.Context, arg DeleteObjectParams) error {
 	_, err := q.db.ExecContext(ctx, deleteObject, arg.Kind, arg.Project, arg.Name)
 	return err
+}
+
+const familiesOf = `-- name: FamiliesOf :many
+SELECT family, CAST(MAX(expires_at) AS INTEGER) AS expires_at
+FROM credentials
+WHERE principal = ?
+GROUP BY family
+`
+
+type FamiliesOfRow struct {
+	Family    string
+	ExpiresAt int64
+}
+
+func (q *Queries) FamiliesOf(ctx context.Context, principal string) ([]FamiliesOfRow, error) {
+	rows, err := q.db.QueryContext(ctx, familiesOf, principal)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []FamiliesOfRow
+	for rows.Next() {
+		var i FamiliesOfRow
+		if err := rows.Scan(&i.Family, &i.ExpiresAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const familyExpiry = `-- name: FamilyExpiry :one
+SELECT CAST(COALESCE(MAX(expires_at), 0) AS INTEGER) AS expires_at
+FROM credentials
+WHERE family = ?
+`
+
+func (q *Queries) FamilyExpiry(ctx context.Context, family string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, familyExpiry, family)
+	var expires_at int64
+	err := row.Scan(&expires_at)
+	return expires_at, err
+}
+
+const familyRevoked = `-- name: FamilyRevoked :one
+SELECT COUNT(*) FROM revoked_families
+WHERE family = ?
+`
+
+func (q *Queries) FamilyRevoked(ctx context.Context, family string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, familyRevoked, family)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const getAuthRequest = `-- name: GetAuthRequest :one
+SELECT key, data, expires_at
+FROM auth_requests
+WHERE key = ?
+`
+
+func (q *Queries) GetAuthRequest(ctx context.Context, key string) (AuthRequest, error) {
+	row := q.db.QueryRowContext(ctx, getAuthRequest, key)
+	var i AuthRequest
+	err := row.Scan(&i.Key, &i.Data, &i.ExpiresAt)
+	return i, err
+}
+
+const getCredential = `-- name: GetCredential :one
+SELECT hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at
+FROM credentials
+WHERE hash = ?
+`
+
+func (q *Queries) GetCredential(ctx context.Context, hash string) (Credential, error) {
+	row := q.db.QueryRowContext(ctx, getCredential, hash)
+	var i Credential
+	err := row.Scan(
+		&i.Hash,
+		&i.Type,
+		&i.Family,
+		&i.Principal,
+		&i.CreatedAt,
+		&i.ExpiresAt,
+		&i.IdleUntil,
+		&i.LastUsedAt,
+		&i.UsedAt,
+	)
+	return i, err
 }
 
 const getMeta = `-- name: GetMeta :one
@@ -69,6 +259,54 @@ func (q *Queries) GetObject(ctx context.Context, arg GetObjectParams) (Object, e
 		&i.Data,
 	)
 	return i, err
+}
+
+const insertAuthRequest = `-- name: InsertAuthRequest :exec
+INSERT INTO auth_requests (key, data, expires_at)
+VALUES (?, ?, ?)
+`
+
+type InsertAuthRequestParams struct {
+	Key       string
+	Data      []byte
+	ExpiresAt int64
+}
+
+func (q *Queries) InsertAuthRequest(ctx context.Context, arg InsertAuthRequestParams) error {
+	_, err := q.db.ExecContext(ctx, insertAuthRequest, arg.Key, arg.Data, arg.ExpiresAt)
+	return err
+}
+
+const insertCredential = `-- name: InsertCredential :exec
+INSERT INTO credentials (hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertCredentialParams struct {
+	Hash       string
+	Type       string
+	Family     string
+	Principal  string
+	CreatedAt  int64
+	ExpiresAt  int64
+	IdleUntil  int64
+	LastUsedAt int64
+	UsedAt     int64
+}
+
+func (q *Queries) InsertCredential(ctx context.Context, arg InsertCredentialParams) error {
+	_, err := q.db.ExecContext(ctx, insertCredential,
+		arg.Hash,
+		arg.Type,
+		arg.Family,
+		arg.Principal,
+		arg.CreatedAt,
+		arg.ExpiresAt,
+		arg.IdleUntil,
+		arg.LastUsedAt,
+		arg.UsedAt,
+	)
+	return err
 }
 
 const insertEvent = `-- name: InsertEvent :exec
@@ -230,6 +468,22 @@ func (q *Queries) ListObjects(ctx context.Context, arg ListObjectsParams) ([]Obj
 	return items, nil
 }
 
+const revokeFamily = `-- name: RevokeFamily :exec
+INSERT INTO revoked_families (family, expires_at)
+VALUES (?, ?)
+ON CONFLICT (family) DO UPDATE SET expires_at = MAX(revoked_families.expires_at, excluded.expires_at)
+`
+
+type RevokeFamilyParams struct {
+	Family    string
+	ExpiresAt int64
+}
+
+func (q *Queries) RevokeFamily(ctx context.Context, arg RevokeFamilyParams) error {
+	_, err := q.db.ExecContext(ctx, revokeFamily, arg.Family, arg.ExpiresAt)
+	return err
+}
+
 const setMeta = `-- name: SetMeta :exec
 UPDATE meta SET value = ? WHERE key = ?
 `
@@ -242,6 +496,46 @@ type SetMetaParams struct {
 func (q *Queries) SetMeta(ctx context.Context, arg SetMetaParams) error {
 	_, err := q.db.ExecContext(ctx, setMeta, arg.Value, arg.Key)
 	return err
+}
+
+const swapAuthRequest = `-- name: SwapAuthRequest :execrows
+UPDATE auth_requests
+SET data = ?1
+WHERE key = ?2 AND data = ?3
+`
+
+type SwapAuthRequestParams struct {
+	Data []byte
+	Key  string
+	Old  []byte
+}
+
+func (q *Queries) SwapAuthRequest(ctx context.Context, arg SwapAuthRequestParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, swapAuthRequest, arg.Data, arg.Key, arg.Old)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const touchCredential = `-- name: TouchCredential :execrows
+UPDATE credentials
+SET last_used_at = ?, idle_until = ?
+WHERE hash = ?
+`
+
+type TouchCredentialParams struct {
+	LastUsedAt int64
+	IdleUntil  int64
+	Hash       string
+}
+
+func (q *Queries) TouchCredential(ctx context.Context, arg TouchCredentialParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, touchCredential, arg.LastUsedAt, arg.IdleUntil, arg.Hash)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateObject = `-- name: UpdateObject :exec

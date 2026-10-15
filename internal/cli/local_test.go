@@ -74,11 +74,9 @@ func TestLocalSendsNoCredentials(t *testing.T) {
 		headers <- r.Header.Clone()
 		http.Error(w, "no", http.StatusForbidden)
 	}))
-	// Service token variables are for Cloudflare, never for the socket.
-	env := map[string]string{"HANGAR_CF_CLIENT_ID": "id", "HANGAR_CF_CLIENT_SECRET": "secret"}
-	runLocal(t, sock, env, "get", "tenants")
+	runLocal(t, sock, nil, "get", "tenants")
 	h := <-headers
-	for _, k := range []string{"Cf-Access-Client-Id", "Cf-Access-Client-Secret", "Cf-Access-Token", "X-Hangar-Dev-User"} {
+	for _, k := range []string{"Authorization", "Cookie", "X-Hangar-Dev-User"} {
 		if v := h.Get(k); v != "" {
 			t.Errorf("sent %s: %q to the admin socket", k, v)
 		}
@@ -120,7 +118,7 @@ func TestLocalContextChecks(t *testing.T) {
 		want string
 	}{
 		{"relative socket", []string{"--endpoint", "unix://run/admin.sock"}, "absolute path"},
-		{"unix with cloudflare", []string{"--endpoint", "unix:///run/hangar/admin.sock", "--auth", "cloudflare"}, "takes local auth"},
+		{"unix with oidc", []string{"--endpoint", "unix:///run/hangar/admin.sock", "--auth", "oidc"}, "takes local auth"},
 		{"unix with dev", []string{"--endpoint", "unix:///run/hangar/admin.sock", "--auth", "dev", "--user", "a@b.c"}, "takes local auth"},
 		{"local over https", []string{"--endpoint", "https://api.example.com", "--auth", "local"}, "needs a unix:// endpoint"},
 	} {

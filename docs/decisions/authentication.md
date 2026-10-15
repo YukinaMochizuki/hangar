@@ -1,30 +1,127 @@
 # Authentication
 
-Status: accepted, 2026-10.
+Status: accepted, 2026-10. Revised 2026-10 when Hangar took identity over
+from Cloudflare Access.
 
 ## Context
 
-All public traffic goes through Cloudflare Access; Hangar has no login of its
-own and no public pages. Agents need non-interactive credentials. The node is a
-separate root process on the same host.
+Cloudflare is leaving the traffic path (the route from Taiwan to its edge
+runs through the US west coast), so Access no longer proves who someone is.
+The apiserver signs people in itself. People need a Google account and
+nothing else; bindings stay keyed by email. Agents need non-interactive
+credentials. The node is a separate root process on the same host.
 
 ## Decision
 
 - Each listener has a chain of authenticators, and the first that succeeds
   produces a `Principal` of type User, ServiceToken, Node, System, Local or
-  Edge.
-- **Public listener** (loopback only, behind cloudflared): verifies the
-  `Cf-Access-Jwt-Assertion` JWT against the team's JWKS, issuer and audience.
-  It never trusts `Cf-Access-Authenticated-User-Email` or any other header a
-  client could set. A verified email is a User; a service token's client ID is
-  looked up and mapped to a ServiceToken principal bound to a tenant and,
-  optionally, to projects.
-- **Agents** use Cloudflare service tokens, which Hangar creates on request
-  through the Cloudflare API. The Access policy admits listed emails or any
-  valid service token; Hangar decides whom the token belongs to.
-- **People on the CLI** log in through `cloudflared access login`; the CLI gets
-  the JWT from `cloudflared access token` and caches it until expiry. Not a
-  reimplementation of Cloudflare's undocumented CLI flow.
+  Edge. One that recognizes its credential and finds it invalid refuses the
+  request; the chain does not fall through to the next.
+- **People sign in through Google**, with the apiserver as the OpenID
+  Connect relying party (`internal/auth/login`, go-oidc + oauth2). It runs
+  the authorization-code flow with PKCE, a state bound to the browser that
+  started the sign-in, and a nonce checked in the ID token. A sign-in in
+  progress (state, nonce, PKCE verifier, where to go next) is kept in the
+  browser itself, in the short-lived `__Host-hangar_login` cookie, sealed
+  with AES-256-GCM, so starting one writes nothing on the server. The key
+  is made at start and held in memory only; restarting the apiserver makes
+  a new one, which cancels the sign-ins in progress (each person starts
+  again) and is how it rotates. Only an `email_verified` email counts, in
+  lower case, so bindings by email apply unchanged. Only an invited email,
+  one holding a platform role (`tenancy-and-iam.md`), may sign in: anyone
+  else sees the not-invited page and gets no session, so strangers write
+  nothing. The provider is a flag (`--oidc-issuer`), so others can be
+  added as config. There is no email OTP.
+- **Hangar issues its own credentials** after a sign-in
+  (`internal/auth/session`). Every one is opaque: a prefix that says what
+  it is, then 32 random bytes (`internal/auth/token`). Only its SHA-256 is
+  stored, in a store table rather than a kind (`credentials`, migration
+  `00002`), so it never reaches the revision, the event log or a watch, and
+  deleting the row revokes it at once. Every call looks its credential up.
+  Prefixes:
+  - `hgs_`: a browser session.
+  - `hga_`: a CLI access token.
+  - `hgf_`: a CLI refresh token.
+  - `hgr_`: reserved for agents' service tokens, which come later from the
+    same machinery.
+- **Revoking a login marks its family revoked**, in the same transaction
+  that deletes its credentials, until the last of them would have expired.
+  Issuing checks the mark in the transaction that inserts, so a refresh
+  still in flight when its login is revoked (by a replay, a logout or
+  `RevokeSessions`) issues nothing that works. A CLI sign-in approved but
+  not yet claimed, a loopback code not exchanged or a device login not
+  polled, reserves its family when it is approved, recorded under the
+  person, so revoking their logins in between ends it too.
+- **The console** gets the session in the `__Host-hangar_session` cookie:
+  `HttpOnly`, `Secure`, `SameSite=Lax`, for the whole host. It ends 3 days
+  after its last use and 14 days after sign-in, whatever its use.
+  `POST /auth/logout` ends it.
+- **CSRF**: a cookie is ambient, so it counts only on a request the
+  console's own origin made. Its `Origin` must be the public origin
+  exactly, and its `Sec-Fetch-Site`, when the browser sends one, must be
+  `same-origin`. Browsers send `Origin` on every POST and every WebSocket
+  handshake, which is all the API takes from a browser (Connect unary calls
+  are POSTs; exec and ssh are WebSockets). A form's POST carries the page's
+  real origin only if the page's referrer policy allows it: under
+  `no-referrer` it is `Origin: null`, which the check refuses. The sign-in
+  pages are therefore served with `Referrer-Policy: same-origin`, which
+  still sends no referrer to another site, and the console must be too. So a
+  cross-site form, fetch or WebSocket gets nothing from the cookie, and
+  cross-site WebSocket hijacking of exec and ssh is closed too.
+  `SameSite=Lax` is a second layer. There is no CORS. The device approval
+  form and the logout are held to the same rule.
+- **The CLI** (`hangar login`) holds a 1-hour access token, sent as
+  `Authorization: Bearer`, and a refresh token. Each refresh spends the
+  refresh token and issues a new pair in the same login, the family.
+  Presenting a spent refresh token again revokes the whole family, since
+  then two parties hold it. A refresh token ends 30 days after it was
+  issued, and the login 90 days after sign-in, however often it is
+  refreshed. A refresh also asks whether the person is still invited, and
+  ends the login if not. The CLI holds a file lock while it refreshes, so
+  two `hangar` processes do not trip the reuse detection.
+  - **Loopback** (the default): the CLI listens on `127.0.0.1` on a free
+    port and opens `<endpoint>/auth/cli` with its own state and S256 PKCE
+    challenge. The apiserver runs the Google sign-in, then redirects to
+    the loopback with a one-time code valid for 60 s. The CLI exchanges
+    the code, with its verifier and the same redirect, through
+    `SessionService.ExchangeCode`. The redirect must be
+    `http://127.0.0.1:PORT/callback` or `[::1]` (RFC 8252), never
+    `localhost`.
+  - **Device** (`hangar login --device`): Hangar's own RFC 8628 flow, so
+    Google needs only one web client. The CLI gets a device code and an
+    8-letter user code. The person opens `/auth/device` in any browser,
+    signs in to the console there, checks the code and approves it. The
+    CLI polls (`SessionService.PollDeviceLogin`) and gets its tokens once.
+  - The tokens live in `credentials.yaml` next to the config file, never
+    in it, mode 0600, written atomically. The CLI refuses a file others may
+    read. The default config directory, `…/hangar`, is the CLI's own and is
+    kept 0700; a directory `HANGAR_CONFIG` puts it in is left as it is,
+    with a warning if others may read it. It never prints a token, in output or
+    in an error.
+  - `hangar logout` revokes the login; `hangar logout --all` revokes every
+    login of the person (`SessionService.RevokeSessions`), which
+    `platform.root`, and so root on the host, may also do for anyone.
+- **Admission is checked again at every issue**, not only at the Google
+  callback: exchanging a loopback code, approving a device login, handing
+  out its tokens, and every refresh, so a person uninvited meanwhile gets
+  nothing more.
+- **Where sign-in is served**: the `/auth/` pages and `SessionService` are
+  on the public listener only. The admin socket serves `RevokeSessions`
+  alone, so root on the host can end anyone's logins; the node and edge
+  sockets serve none of it.
+- **Limits on what anyone can make it keep**: a browser's or a CLI's
+  sign-in keeps nothing until the provider has verified someone invited.
+  The rows that are kept, device logins started and loopback codes not
+  yet exchanged, are capped at a few thousand of each kind (more are
+  refused as unavailable), each kind on its own, so a flood of one blocks
+  neither the other nor sign-in. A browser session may try ten device
+  codes a minute. Per-address rate limits are the front door's
+  (hangar-edge).
+- **Agents** will use Hangar service tokens (`hgr_`), issued by the same
+  machinery; until then they have no credential of their own on the
+  public listener.
+- Every sign-in page the apiserver or the CLI shows is a plain placeholder
+  in one place, `internal/auth/pages`, for the console's design to replace.
 - **The node** connects over a unix socket and is identified by `SO_PEERCRED`;
   the socket belongs to one host, so the agent acts as the `Node` named by the
   apiserver's `--node-name`. An mTLS authenticator, carrying the node name in
@@ -36,7 +133,7 @@ separate root process on the same host.
   `SO_PEERCRED` alone: uid 0 is the Local principal `local:root@<node>`,
   any other uid is refused. It holds `platform.root` without a RoleBinding,
   and no RoleBinding can name it, so it is the way back in when every
-  binding is wrong or the Access setup is broken: Kubernetes' `admin.conf`.
+  binding is wrong or sign-in is broken: Kubernetes' `admin.conf`.
   Nothing else runs on that listener, and its authenticator reads only
   what that listener recorded of the connection, never a header, so no
   other listener can produce the principal. Every request on it is logged
@@ -55,18 +152,18 @@ separate root process on the same host.
   can produce it. It may get, list and watch public endpoints, role
   bindings, projects and users, everywhere, and do nothing else, whatever
   the bindings say. Users of public endpoints are not principals of the API:
-  the edge authenticates them itself, from the Access token of the
-  endpoint domain's application. An mTLS authenticator joins its chain
-  with more hosts, as the node's.
-- Not a dev listener instead: a remotely-managed tunnel's routes are set
-  in Cloudflare, and one pointed at the wrong origin would expose a
-  listener that takes whoever the caller says it is.
-- **Dev mode** takes the user from a header. It must be enabled explicitly and
-  refuses to start on a non-loopback address. It also refuses any request
+  the edge authenticates them itself. Until it signs them in through
+  Hangar, it verifies the Access token of the endpoint domain's
+  application, with a verifier that lives in `internal/edge`, since nothing
+  else trusts Access. An mTLS authenticator joins its chain with more
+  hosts, as the node's.
+- **Dev mode** takes the user from a header. It must be enabled explicitly
+  (`--auth-mode dev`) and refuses to start on a non-loopback address. It
+  has no sign-in pages and issues nothing. It also refuses any request
   carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`, which cloudflared
   sets on every request it proxies, and `Cf-Connecting-Ip`, `Cdn-Loop` and
   `Cf-Ray` from its edge), and the host runs cloudflared only while the
-  apiserver is in cloudflare auth, which the tunnel's unit checks itself at
+  apiserver is in oidc auth, which the tunnel's unit checks itself at
   every start (`docs/runbook/host-bootstrap.md`), so a tunnel never
   reaches it.
 - Controllers run in-process as the System principal.
@@ -75,5 +172,12 @@ separate root process on the same host.
 
 ## Consequences
 
-Tests sign their own JWTs with a local JWKS issuer, so the real verification
-path runs in tests.
+- Tests run the real sign-in against a local fake provider
+  (`internal/auth/oidctest`): discovery, keys, PKCE and a signed ID token.
+  They cover expiry, revocation, rotation and reuse, a forged state, an
+  unverified email and an uninvited one.
+- Sessions survive an apiserver restart, since they live in the database,
+  and are lost with it: restoring a backup brings back the sessions it
+  held.
+- The apiserver holds the OAuth client's secret, a file only its owner
+  reads (`--oidc-client-secret-file`).

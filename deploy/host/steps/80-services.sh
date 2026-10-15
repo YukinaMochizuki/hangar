@@ -28,6 +28,10 @@ SERVICES_EDGE_LISTEN=127.0.0.1:8090
 # operator installs it (docs/runbook/cloudflare.md); this step never makes
 # one.
 SERVICES_CF_TOKEN=$SERVICES_STATE/cloudflare-api-token
+# The OAuth client's secret the apiserver signs people in with, in oidc
+# auth: the operator installs it (docs/runbook/host-bootstrap.md); this step
+# never makes one.
+SERVICES_OIDC_SECRET=$SERVICES_STATE/oidc-client-secret
 SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
 # The platform's SSH CA, its private key: the operator installs it from the
 # vault (docs/runbook/host-bootstrap.md); this step never makes one.
@@ -89,8 +93,10 @@ services_endpoint_flags() {
 # endpoint settings, nothing when they are whole or absent.
 services_endpoints_problem() {
 	services_edge_on || return 0
-	[ "$(auth_mode)" = cloudflare ] ||
-		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) need cloudflare auth: the edge checks Access tokens"
+	[ "$(auth_mode)" = oidc ] ||
+		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) need oidc auth: the tunnel that brings their traffic never runs in dev auth"
+	[[ $(local_env HANGAR_CF_TEAM_DOMAIN) =~ ^https://[A-Za-z0-9.-]+$ ]] ||
+		printf '%s\n' "public endpoints need HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com in $LOCAL_ENV: the edge checks Access tokens"
 	[[ $(local_env HANGAR_EDGE_DOMAIN) =~ ^[a-z0-9.-]+$ ]] ||
 		printf '%s\n' "HANGAR_EDGE_DOMAIN in $LOCAL_ENV is not a domain"
 	[[ $(local_env HANGAR_EDGE_CF_AUDIENCE) =~ ^[A-Za-z0-9]+$ ]] ||
@@ -125,9 +131,11 @@ services_reserved_disk() {
 # changed unit and restarts the apiserver.
 services_auth_flags() {
 	case $(auth_mode) in
-	cloudflare)
-		printf -- '--auth-mode cloudflare --cf-team-domain %s --cf-audience %s\n' \
-			"$(local_env HANGAR_CF_TEAM_DOMAIN)" "$(local_env HANGAR_CF_AUDIENCE)"
+	oidc)
+		printf -- '--auth-mode oidc --oidc-client-id %s --oidc-client-secret-file %s --public-url %s' \
+			"$(local_env HANGAR_OIDC_CLIENT_ID)" "$SERVICES_OIDC_SECRET" "$(local_env HANGAR_PUBLIC_URL)"
+		[ -z "$(local_env HANGAR_OIDC_ISSUER)" ] || printf -- ' --oidc-issuer %s' "$(local_env HANGAR_OIDC_ISSUER)"
+		printf '\n'
 		;;
 	*) printf -- '--auth-mode dev\n' ;;
 	esac
@@ -407,6 +415,14 @@ services_cf_token_ok() {
 	[ -f "$SERVICES_CF_TOKEN" ] && [ "$(stat -c '%U %G %a' "$SERVICES_CF_TOKEN")" = "$SERVICES_USER $SERVICES_USER 600" ]
 }
 
+services_oidc_secret_ok() {
+	[ -f "$SERVICES_OIDC_SECRET" ] && [ "$(stat -c '%U %G %a' "$SERVICES_OIDC_SECRET")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+services_oidc_secret_how() {
+	printf '%s\n' "install the OAuth client's secret at $SERVICES_OIDC_SECRET, $SERVICES_USER's, mode 0600 (docs/runbook/host-bootstrap.md)"
+}
+
 services_cf_token_how() {
 	printf '%s\n' "install the Cloudflare API token at $SERVICES_CF_TOKEN, $SERVICES_USER's, mode 0600, then restart hangar-apiserver (docs/runbook/cloudflare.md)"
 }
@@ -593,7 +609,18 @@ services_apply() {
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 	# cloudflared never forwards to an apiserver in dev auth, which trusts a
 	# header: it goes before the apiserver could restart in dev.
-	[ "$(auth_mode)" = cloudflare ] || cloudflared_down "the auth mode is dev"
+	[ "$(auth_mode)" = oidc ] || cloudflared_down "the auth mode is dev"
+	# In oidc auth the apiserver does not start without its client secret,
+	# which is the operator's to install, never this step's to make.
+	if [ "$(auth_mode)" = oidc ]; then
+		if [ ! -f "$SERVICES_OIDC_SECRET" ]; then
+			refuse "no OAuth client secret at $SERVICES_OIDC_SECRET: $(services_oidc_secret_how)"
+		elif ! services_oidc_secret_ok; then
+			log "warning: $SERVICES_OIDC_SECRET was $(stat -c '%U:%G mode %a' "$SERVICES_OIDC_SECRET"): whoever could read it may have the secret; consider rolling it at the provider"
+			run "give $SERVICES_OIDC_SECRET to $SERVICES_USER, mode 600" \
+				sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_OIDC_SECRET' && chmod 600 '$SERVICES_OIDC_SECRET'"
+		fi
+	fi
 
 	if ! services_no_dropins; then
 		local what
@@ -734,6 +761,9 @@ services_verify() {
 		fi
 	else
 		check "edge off: $LOCAL_ENV names no public endpoint domain" services_edge_off_ok
+	fi
+	if [ "$(auth_mode)" = oidc ]; then
+		check "OAuth client secret $SERVICES_OIDC_SECRET, $SERVICES_USER's, mode 600" services_oidc_secret_ok
 	fi
 	check "apiserver runs $(auth_mode) auth as $LOCAL_ENV asks: $(services_auth_flags)" services_auth_running_ok
 	check "apiserver listens on loopback only" services_loopback_only
