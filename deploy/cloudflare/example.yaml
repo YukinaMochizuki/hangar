@@ -18,3 +18,8 @@ identity_providers:
   google: Google
   # Optional; empty matches the account's only One-time PIN method.
   one_time_pin: One-time PIN
+# Optional: public endpoints, under a zone of their own, apart from the
+# control zone (user content never shares a domain with the API). Once
+# applied, it can be neither changed nor removed here.
+# endpoints:
+#   zone: example.dev

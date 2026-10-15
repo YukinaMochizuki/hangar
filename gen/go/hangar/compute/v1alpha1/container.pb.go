@@ -439,7 +439,8 @@ type ContainerPort struct {
 	Name     string   `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Port     int32    `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
 	Protocol Protocol `protobuf:"varint,3,opt,name=protocol,proto3,enum=hangar.compute.v1alpha1.Protocol" json:"protocol,omitempty"`
-	// Expose the port over HTTPS through a PublicEndpoint.
+	// Expose the port over HTTPS through a PRIVATE PublicEndpoint the
+	// container owns, named "<container>-<name>". TCP only.
 	Public        bool `protobuf:"varint,4,opt,name=public,proto3" json:"public,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

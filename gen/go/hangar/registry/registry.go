@@ -120,6 +120,16 @@ var (
 		Message:    (*v1alpha12.Network)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkService",
 	}
+	PublicEndpoint = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "PublicEndpoint",
+		Plural:     "publicendpoints",
+		ShortNames: []string{"ep"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.PublicEndpoint)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.PublicEndpointService",
+	}
 	SecurityGroup = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -182,6 +192,7 @@ var All = []Resource{
 	User,
 	Address,
 	Network,
+	PublicEndpoint,
 	SecurityGroup,
 	Disk,
 	Image,

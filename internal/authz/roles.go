@@ -39,10 +39,14 @@ const (
 	// SSH logs in to a machine; only machines use it. It reaches everything
 	// the machine can, as Exec does.
 	SSH Verb = "ssh"
+	// Access uses a private public endpoint: reaches what it serves through
+	// the edge. It is not Get, which reads the endpoint object, nor Apply,
+	// which edits it.
+	Access Verb = "access"
 )
 
 // verbs lists every Verb, for tests that must see each one.
-var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH}
+var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, Access}
 
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
@@ -60,6 +64,10 @@ var (
 	// signed for it, and to reach its port 22.
 	MachineSSH = Permission(registry.Machine, SSH)
 )
+
+// PublicEndpointAccess is the permission to use a private PublicEndpoint
+// of a project through the edge.
+var PublicEndpointAccess = Permission(registry.PublicEndpoint, Access)
 
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
@@ -124,9 +132,9 @@ var readVerbs = []Verb{Get, List, Watch}
 
 // reachPermissions reach into what a machine holds or says: its output, a
 // process in it, a login to it. Root, owners and editors hold them; viewers
-// do not, since output can hold what the spec does not. A new permission of
-// that sort, such as reaching a private PublicEndpoint, belongs here.
-var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH}
+// do not, since output can hold what the spec does not. Reaching what a
+// private PublicEndpoint serves is of that sort too.
+var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, PublicEndpointAccess}
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.

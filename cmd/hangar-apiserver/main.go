@@ -1,6 +1,6 @@
-// Command hangar-apiserver serves the Hangar API on three listeners: a TCP
+// Command hangar-apiserver serves the Hangar API on four listeners: a TCP
 // address behind Cloudflare Access for people and agents, a unix socket for
-// the node agent, and a unix socket for root on the host. See
+// the node agent, one for hangar-edge, and one for root on the host. See
 // docs/decisions/authentication.md.
 package main
 
@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
@@ -40,6 +42,13 @@ type flags struct {
 	cfCertsURL     string
 	bootstrapAdmin string
 	sshCAKey       string
+	edgeSocket     string
+	edgeUID        uint
+	endpointDomain string
+	cfTokenFile    string
+	cfAccountID    string
+	cfBypassPolicy string
+	cfAPIURL       string
 }
 
 func main() {
@@ -56,6 +65,13 @@ func main() {
 	flag.StringVar(&f.cfCertsURL, "cf-certs-url", "", "override for the Access signing keys URL")
 	flag.StringVar(&f.bootstrapAdmin, "bootstrap-admin", "", "email granted platform.root if no one holds it")
 	flag.StringVar(&f.sshCAKey, "ssh-ca-key", "", "the platform SSH CA's private key, an OpenSSH key file only its owner reads; missing, hangar ssh cannot sign")
+	flag.StringVar(&f.edgeSocket, "edge-socket", "", "unix socket for hangar-edge, which reads public endpoints and role bindings; empty disables it")
+	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge socket; required with --edge-socket")
+	flag.StringVar(&f.endpointDomain, "endpoint-domain", apiserver.DefaultEndpointDomain, "the domain public endpoints' hostnames are in")
+	flag.StringVar(&f.cfTokenFile, "cloudflare-api-token-file", "", "a file only its owner reads holding the Cloudflare API token the apiserver calls Cloudflare with; missing, PUBLIC endpoints do not open")
+	flag.StringVar(&f.cfAccountID, "cloudflare-account-id", "", "the Cloudflare account the API token acts in; required with the token")
+	flag.StringVar(&f.cfBypassPolicy, "cloudflare-bypass-policy-id", "", "the reusable Access policy, made by hangar-cloudflare, that lets everyone through to a PUBLIC endpoint; required with the token")
+	flag.StringVar(&f.cfAPIURL, "cloudflare-api-url", "", "override for the Cloudflare API root, for tests")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -106,7 +122,10 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		}
 	}
 
-	var sock, admin net.Listener
+	if f.edgeSocket != "" && f.edgeUID == 0 {
+		return errors.New("--edge-socket needs --edge-uid: hangar-edge runs as its own unprivileged user, never root")
+	}
+	var sock, admin, edge net.Listener
 	if f.socket != "" {
 		if sock, err = socks.listen(nodeSocketName, f.socket, 0o660); err != nil {
 			return err
@@ -118,6 +137,12 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 			return err
 		}
 		defer func() { _ = admin.Close() }()
+	}
+	if f.edgeSocket != "" {
+		if edge, err = socks.listen(edgeSocketName, f.edgeSocket, 0o660); err != nil {
+			return err
+		}
+		defer func() { _ = edge.Close() }()
 	}
 	if err := socks.unused(); err != nil {
 		return err
@@ -133,8 +158,13 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	if err != nil {
 		return err
 	}
+	endpoints, err := endpointsConfig(f, log)
+	if err != nil {
+		return err
+	}
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca,
+		PublicEndpoints: endpoints,
 	})
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return srv.Run(ctx) })
@@ -147,6 +177,14 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		g.Go(func() error {
 			log.Info("serving the node socket", "path", f.socket)
 			return serve(ctx, &http.Server{Handler: srv.Handler(node), Protocols: protocols(), ConnContext: auth.ConnContext}, sock)
+		})
+	}
+	if edge != nil {
+		// Nothing but PeerEdge, which reads only EdgeConnContext's record.
+		chain := auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(f.edgeUID)}, Host: host}}
+		g.Go(func() error {
+			log.Info("serving the edge socket", "path", f.edgeSocket)
+			return serve(ctx, &http.Server{Handler: srv.Handler(chain), Protocols: protocols(), ConnContext: auth.EdgeConnContext}, edge)
 		})
 	}
 	if admin != nil {
@@ -259,4 +297,58 @@ func loadSSHCA(path string, log *slog.Logger) (*sshca.CA, error) {
 	}
 	log.Info("loaded the SSH CA", "ssh_ca_key", path, "public_key", ca.PublicKey())
 	return ca, nil
+}
+
+// endpointsConfig is the public endpoints' config from the flags: with the
+// Cloudflare API token, a client to open PUBLIC endpoints with. With no
+// token file the apiserver runs without one, and says so.
+func endpointsConfig(f flags, log *slog.Logger) (apiserver.PublicEndpointsConfig, error) {
+	cfg := apiserver.PublicEndpointsConfig{Domain: f.endpointDomain}
+	if f.cfTokenFile == "" {
+		log.Warn("no --cloudflare-api-token-file: PUBLIC endpoints do not open")
+		return cfg, nil
+	}
+	token, err := readSecretFile(f.cfTokenFile)
+	if errors.Is(err, fs.ErrNotExist) {
+		log.Warn("the Cloudflare API token file is missing: PUBLIC endpoints do not open", "cloudflare_api_token_file", f.cfTokenFile)
+		return cfg, nil
+	}
+	if err != nil {
+		return cfg, fmt.Errorf("--cloudflare-api-token-file: %w", err)
+	}
+	if f.cfAccountID == "" || f.cfBypassPolicy == "" {
+		return cfg, errors.New("the Cloudflare API token needs --cloudflare-account-id and --cloudflare-bypass-policy-id")
+	}
+	var opts []cloudflare.Option
+	if f.cfAPIURL != "" {
+		opts = append(opts, cloudflare.WithBaseURL(f.cfAPIURL))
+	}
+	c, err := cloudflare.New(token, opts...)
+	if err != nil {
+		return cfg, err
+	}
+	cfg.Cloudflare, cfg.AccountID, cfg.BypassPolicyID = c, f.cfAccountID, f.cfBypassPolicy
+	log.Info("loaded the Cloudflare API token", "cloudflare_api_token_file", f.cfTokenFile, "account", f.cfAccountID)
+	return cfg, nil
+}
+
+// readSecretFile reads a credential from a file only its owner may read,
+// trimmed of surrounding space.
+func readSecretFile(path string) (cloudflare.Secret, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if fi.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("%s is mode %v; a credential is readable by its owner only (0600)", path, fi.Mode().Perm())
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	token := strings.TrimSpace(string(b))
+	if token == "" {
+		return "", fmt.Errorf("%s is empty", path)
+	}
+	return cloudflare.Secret(token), nil
 }

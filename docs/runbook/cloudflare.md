@@ -16,7 +16,16 @@ the Cloudflare API it converges:
   valid service token);
 - a self-hosted Access application for `<hostname>`: session 24h, the Google
   and One-time PIN login methods, no auto-redirect, and those two policies;
-- one service token, `hangar-smoke`, for smoke tests only.
+- one service token, `hangar-smoke`, for smoke tests only;
+- with `endpoints.zone` in the config, public endpoints' side
+  (`docs/decisions/public-endpoints.md`): an ingress rule sending
+  `*.<zone>` to the edge, `http://127.0.0.1:8090`, with no
+  `originRequest.access` (the edge checks a private endpoint's token, and a
+  public one's requests come with none), a proxied CNAME `*.<zone>` to the
+  tunnel in that zone, a self-hosted Access application for `*.<zone>` with
+  the same two policies as the API's, and a reusable policy
+  `<zone>: public endpoints, everyone` (bypass, everyone) for the
+  apiserver to attach to each PUBLIC endpoint's own application.
 
 It changes only what it created. The IDs of those objects are in the output
 directory's `state.json`. It stops, naming the object's ID, before it changes
@@ -68,11 +77,12 @@ The code is `cmd/hangar-cloudflare` and `internal/cloudflare`.
    | Account | Access: Apps and Policies: Edit | The application and its reusable policies |
    | Account | Access: Service Tokens: Edit | Create `hangar-smoke` |
    | Account | Access: Organizations, Identity Providers, and Groups: Read | The team domain and the login methods' IDs |
-   | Zone | DNS: Edit | The CNAME |
-   | Zone | Zone: Read | Find the zone's ID from its name |
+   | Zone | DNS: Edit | The CNAMEs |
+   | Zone | Zone: Read | Find the zones' IDs from their names |
 
    Account resources: include only this account. Zone resources: include
-   only the control zone. Restricting it to the privileged box's IP and giving
+   only the control zone, and the public endpoints' zone if the config
+   names one. Restricting it to the privileged box's IP and giving
    it an expiry are good practice. Newer dashboards may list the tunnel
    permission as Cloudflare One Connector: cloudflared, which the API accepts
    in its place.
@@ -137,6 +147,7 @@ fixes it. Nothing secret is ever printed.
 | `cloudflared.env` | `TUNNEL_TOKEN=…` | The host's `/etc/hangar/cloudflared.env`, root 0600 |
 | `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | Merged into the host's `/etc/hangar/local.env` |
 | `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Wherever smoke tests run; the CLI reads those variables |
+| `edge.env` | With `endpoints.zone`: `HANGAR_EDGE_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE` (the wildcard application's AUD tag), `HANGAR_CF_ACCOUNT_ID` and `HANGAR_CF_BYPASS_POLICY_ID`. Not secret | Merged into the host's `/etc/hangar/local.env` (below) |
 
 Copy files to the host without them passing through a terminal (below).
 
@@ -183,6 +194,57 @@ in `local.env` and re-run `deploy/host`. The host's side of each step is in
 enforces it: cloudflared does not start, by any route, unless the apiserver
 runs in `cloudflare` mode.
 
+## Public endpoints
+
+Public endpoints need the API behind Access first (above): the edge checks
+Access tokens, and runs only in `cloudflare` auth.
+
+1. **The zone.** Add the user-content domain (`hangarlab.dev`) to the
+   account as the first one-time step says, and give the tool's token DNS
+   Edit and Zone Read on it too.
+2. **Converge.** Add `endpoints: {zone: hangarlab.dev}` to the config,
+   `plan`, then `apply`. The wildcard application comes before the ingress,
+   and the record last, so no endpoint's hostname is routed before Access
+   covers it. The zone cannot be changed or removed afterwards, as the
+   hostname cannot.
+3. **The apiserver's token.** The apiserver makes and deletes one Access
+   application per PUBLIC endpoint, with an API token of its own, apart
+   from the tool's: My Profile → API Tokens → Create Token → Custom token,
+   Account → Access: Apps and Policies → Edit, this account only. Restrict
+   it to the host's IP. It will take the service-token permission too, when
+   tokens become self-service. Install it without it passing through a
+   terminal:
+
+   ```sh
+   read -rs T && printf '%s' "$T" | ssh <host> 'sudo install -m 0600 -o hangar -g hangar /dev/stdin /var/lib/hangar/state/cloudflare-api-token'; unset T
+   ```
+
+   Without it the apiserver runs, and PUBLIC endpoints stay not Ready
+   (`CloudflareNotConfigured`); private ones work.
+4. **The host.** Add `edge.env` to `/etc/hangar/local.env` and re-run
+   `deploy/host`, which restarts the apiserver with the endpoint flags and
+   starts `hangar-edge` (`docs/runbook/host-bootstrap.md`):
+
+   ```sh
+   ssh <host> 'sudo tee -a /etc/hangar/local.env >/dev/null' < ~/hangar-cloudflare/edge.env
+   ```
+5. **Check.** Make a container with a public port, or a PublicEndpoint,
+   wait for `Ready`, and open its URL: a PRIVATE one asks you to sign in and
+   then answers; a PUBLIC one answers anyone. A hostname of no endpoint is
+   404.
+
+The apiserver's applications are named `hangar public endpoint: <hostname>`
+and are its own: the tool neither changes them nor counts them as
+conflicts. Another application covering a hostname below the wildcard is a
+note: it shadows an endpoint, and is a human's to remove. The account holds
+500 Access applications by default, which bounds PUBLIC endpoints.
+
+To take endpoints down: remove `HANGAR_EDGE_DOMAIN` from `local.env` and
+re-run `deploy/host`, which stops the edge, so every endpoint's hostname
+answers 502. Removing them from Cloudflare is a human's job in the
+dashboard, as for the rest: the wildcard record first, then the wildcard
+application and every `hangar public endpoint: …` application.
+
 ## When something is off
 
 - **The tunnel is down after the apiserver was stopped and started by
@@ -193,7 +255,9 @@ runs in `cloudflare` mode.
   is from another directory. Restore it. Failing that, write it by hand with
   the IDs from the dashboard (fields `version: 1`, `account_id`, `zone_id`,
   `hostname`, `tunnel_id`, `dns_record_id`, `app_id`, `policies.emails`,
-  `policies.service_tokens`, `service_token_id`), then run `plan`.
+  `policies.service_tokens`, `service_token_id`, and with public endpoints
+  `endpoints_zone`, `endpoints_zone_id`, `endpoints_dns_record_id`,
+  `endpoints_app_id`, `policies.endpoints_bypass`), then run `plan`.
 - **`note: … smoke-token.env is not in the output directory`.** Cloudflare
   returns a client secret only when the token is created. Delete
   `hangar-smoke` in the dashboard (Zero Trust → Access → Service auth) and

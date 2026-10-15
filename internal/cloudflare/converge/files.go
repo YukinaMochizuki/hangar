@@ -15,6 +15,7 @@ const (
 	CloudflaredEnv   = "cloudflared.env"
 	AccessEnv        = "access.env"
 	SmokeTokenEnv    = "smoke-token.env"
+	EdgeEnv          = "edge.env"
 	stateFileVersion = 1
 )
 
@@ -32,6 +33,12 @@ type State struct {
 	// Policies maps a policy's role (emailsPolicy, tokensPolicy) to its ID.
 	Policies       map[string]string `json:"policies,omitempty"`
 	ServiceTokenID string            `json:"service_token_id,omitempty"`
+	// EndpointsZone is the public endpoints' zone the objects below serve;
+	// changing it is refused, as the hostname is.
+	EndpointsZone        string `json:"endpoints_zone,omitempty"`
+	EndpointsZoneID      string `json:"endpoints_zone_id,omitempty"`
+	EndpointsDNSRecordID string `json:"endpoints_dns_record_id,omitempty"`
+	EndpointsAppID       string `json:"endpoints_app_id,omitempty"`
 }
 
 // checkDir refuses an output directory that is not a directory or that

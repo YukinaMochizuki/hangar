@@ -1,7 +1,7 @@
 // Package apiservertest runs a real apiserver for tests outside the
 // apiserver package: a SQLite store in a temporary directory, the public API
-// in dev auth mode, and the node socket, accepting this process as node
-// agent Node.
+// in dev auth mode, the node socket, accepting this process as node agent
+// Node, and the edge socket, accepting it as hangar-edge.
 package apiservertest
 
 import (
@@ -51,7 +51,9 @@ type Env struct {
 	SystemURL string
 	// Socket is the node socket.
 	Socket string
-	Store  store.Store
+	// EdgeSocket is the edge socket, where this process is hangar-edge.
+	EdgeSocket string
+	Store      store.Store
 }
 
 // Start runs an apiserver until the test ends, with Root signed up.
@@ -89,10 +91,21 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		ConnContext: auth.ConnContext,
 	}
 	go func() { _ = node.Serve(ln) }()
+	edgeSock := filepath.Join(dir, "edge.sock")
+	eln, err := net.Listen("unix", edgeSock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edge := &http.Server{
+		Handler:     srv.Handler(auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(os.Getuid())}, Host: Node}}),
+		ConnContext: auth.EdgeConnContext,
+	}
+	go func() { _ = edge.Serve(eln) }()
 	t.Cleanup(func() {
 		public.Close()
 		system.Close()
 		_ = node.Close()
+		_ = edge.Close()
 		cancel()
 		if err := <-done; err != nil {
 			t.Errorf("apiserver: %v", err)
@@ -100,7 +113,7 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
 	})
-	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, Store: st}
+	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, EdgeSocket: edgeSock, Store: st}
 	e.waitInvited(Root)
 	e.SignUp(Root)
 	return e
@@ -165,6 +178,11 @@ func Username(email string) string {
 // AsNode returns a client acting as Node.
 func (e *Env) AsNode() *client.Client {
 	return client.New(client.UnixSocket(e.Socket), client.UnixSocketURL)
+}
+
+// AsEdge returns a client acting as hangar-edge.
+func (e *Env) AsEdge() *client.Client {
+	return client.New(client.UnixSocket(e.EdgeSocket), client.UnixSocketURL)
 }
 
 // AsSystem returns a client acting as the System principal.

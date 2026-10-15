@@ -79,6 +79,9 @@ type Config struct {
 	// SSHCA signs keys for hangar ssh, and its public key goes to every
 	// VM's guest; nil is none, and signing fails (docs/decisions/vm-ssh.md).
 	SSHCA *sshca.CA
+	// PublicEndpoints configures PublicEndpoints: their domain, and the
+	// Cloudflare account their Access applications are made in.
+	PublicEndpoints PublicEndpointsConfig
 	// DisableControllers leaves out the controllers, as tests of the generic
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.

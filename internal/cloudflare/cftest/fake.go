@@ -243,6 +243,16 @@ func New(token, accountID, zone string) *Fake {
 	return f
 }
 
+// AddZone adds another active zone of the account, and returns it.
+func (f *Fake) AddZone(name string) *Zone {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	z := &Zone{ID: hexID(16), Name: name, Status: "active"}
+	z.Account.ID = f.AccountID
+	f.st.Zones = append(f.st.Zones, z)
+	return z
+}
+
 // URL is the API root to give the client.
 func (f *Fake) URL() string { return f.Server.URL + "/client/v4" }
 
@@ -361,6 +371,7 @@ func (f *Fake) routes() {
 	f.handle("POST "+acct+"/access/apps", f.createApp)
 	f.handle("GET "+acct+"/access/apps/{id}", f.getApp)
 	f.handle("PUT "+acct+"/access/apps/{id}", f.putApp)
+	f.handle("DELETE "+acct+"/access/apps/{id}", f.deleteApp)
 
 	f.handle("GET "+acct+"/access/policies", f.listPolicies)
 	f.handle("POST "+acct+"/access/policies", f.createPolicy)
@@ -976,6 +987,17 @@ func (f *Fake) putApp(w http.ResponseWriter, r *http.Request, st *State) {
 	*a = next
 	f.recount(st)
 	reply(w, http.StatusOK, f.appJSON(a, st), nil)
+}
+
+func (f *Fake) deleteApp(w http.ResponseWriter, r *http.Request, st *State) {
+	id := r.PathValue("id")
+	if st.Apps[id] == nil {
+		fail(w, http.StatusNotFound, 12130, "access.api.error.not_found")
+		return
+	}
+	delete(st.Apps, id)
+	f.recount(st)
+	reply(w, http.StatusAccepted, map[string]string{"id": id}, nil)
 }
 
 // Reusable policies.

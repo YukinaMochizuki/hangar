@@ -1,0 +1,152 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// PublicEndpoint exposes one TCP port of a VirtualMachine or Container over
+// HTTPS, at https://<name>-<project>.<endpoint domain>, through Hangar's
+// edge proxy. The hostname is claimed when the endpoint is made and never
+// given to another endpoint. A container port with `public: true` makes
+// one of these. See docs/decisions/public-endpoints.md.
+message PublicEndpoint {
+  option (hangar.meta.v1.resource) = {
+    kind: "PublicEndpoint"
+    plural: "publicendpoints"
+    short_names: ["ep"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  PublicEndpointSpec spec = 4;
+  PublicEndpointStatus status = 5;
+}
+
+// PublicEndpointSpec is what the endpoint reaches and who may use it.
+message PublicEndpointSpec {
+  // The machine the endpoint reaches, on its first interface (eth0). A
+  // target that does not exist yet is waited for.
+  PublicEndpointTarget target = 1;
+  // The TCP port the target serves plain HTTP on, 1 to 65535.
+  int32 port = 2;
+  // Who may use the endpoint; unset is PRIVATE.
+  PublicEndpointAccess access = 3;
+}
+
+// PublicEndpointTarget is a VirtualMachine or Container in the endpoint's
+// project.
+message PublicEndpointTarget {
+  oneof object {
+    // Names a VirtualMachine.
+    string virtual_machine = 1;
+    // Names a Container.
+    string container = 2;
+  }
+}
+
+// PublicEndpointAccess is who may use an endpoint.
+enum PublicEndpointAccess {
+  // Means PRIVATE.
+  PUBLIC_ENDPOINT_ACCESS_UNSPECIFIED = 0;
+  // Only those who hold network.publicendpoints.access on the endpoint's
+  // project, signed in through Cloudflare Access.
+  PUBLIC_ENDPOINT_ACCESS_PRIVATE = 1;
+  // Anyone on the internet, with no sign-in.
+  PUBLIC_ENDPOINT_ACCESS_PUBLIC = 2;
+}
+
+// PublicEndpointStatus is where the endpoint is and whether it serves.
+message PublicEndpointStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The endpoint's hostname, such as "web-demo.hangarlab.dev".
+  string hostname = 3;
+  // The endpoint's URL, such as "https://web-demo.hangarlab.dev".
+  string url = 4;
+  // The Machine the endpoint reaches; empty while its target has none.
+  string machine = 5;
+  // The Node that machine runs on; empty while it is not placed.
+  string node = 6;
+  // The Cloudflare Access application that lets everyone through to a
+  // PUBLIC endpoint; empty for a PRIVATE one.
+  string access_application_id = 7;
+}
+
+// PublicEndpointService manages public endpoints.
+service PublicEndpointService {
+  rpc GetPublicEndpoint(GetPublicEndpointRequest) returns (GetPublicEndpointResponse);
+  rpc ListPublicEndpoints(ListPublicEndpointsRequest) returns (ListPublicEndpointsResponse);
+  rpc WatchPublicEndpoints(WatchPublicEndpointsRequest) returns (stream WatchPublicEndpointsResponse);
+  rpc ApplyPublicEndpoint(ApplyPublicEndpointRequest) returns (ApplyPublicEndpointResponse);
+  rpc DeletePublicEndpoint(DeletePublicEndpointRequest) returns (DeletePublicEndpointResponse);
+  rpc UpdatePublicEndpointStatus(UpdatePublicEndpointStatusRequest) returns (UpdatePublicEndpointStatusResponse);
+}
+
+message GetPublicEndpointRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetPublicEndpointResponse {
+  PublicEndpoint public_endpoint = 1;
+}
+
+message ListPublicEndpointsRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListPublicEndpointsResponse {
+  repeated PublicEndpoint items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchPublicEndpointsRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchPublicEndpointsResponse {
+  hangar.meta.v1.EventType type = 1;
+  PublicEndpoint public_endpoint = 2;
+  int64 revision = 3;
+}
+
+message ApplyPublicEndpointRequest {
+  PublicEndpoint public_endpoint = 1;
+}
+
+message ApplyPublicEndpointResponse {
+  PublicEndpoint public_endpoint = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeletePublicEndpointRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeletePublicEndpointResponse {
+  PublicEndpoint public_endpoint = 1;
+}
+
+message UpdatePublicEndpointStatusRequest {
+  string project = 1;
+  string name = 2;
+  PublicEndpointStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdatePublicEndpointStatusResponse {
+  PublicEndpoint public_endpoint = 1;
+}

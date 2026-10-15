@@ -28,6 +28,9 @@ const (
 	// Local is root on the host, through the admin socket. It holds
 	// platform.root without a RoleBinding, and no RoleBinding can name it.
 	Local
+	// Edge is a hangar-edge process, through the edge socket. It reads the
+	// public endpoints and what decides who may use them, nothing else.
+	Edge
 )
 
 func (t Type) String() string {
@@ -42,6 +45,8 @@ func (t Type) String() string {
 		return "system"
 	case Local:
 		return "local"
+	case Edge:
+		return "edge"
 	}
 	return fmt.Sprintf("Type(%d)", int(t))
 }

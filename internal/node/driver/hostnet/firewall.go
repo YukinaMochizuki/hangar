@@ -22,6 +22,8 @@ import (
 type tapPolicy struct {
 	name   string
 	policy secgroup.Policy
+	// edgePorts are the ports public endpoints reach from the gateway.
+	edgePorts []uint16
 }
 
 func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies []driver.InterfacePolicy) error {
@@ -51,9 +53,9 @@ func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies [
 	if err != nil {
 		return err
 	}
-	byIface := map[string]secgroup.Policy{}
+	byIface := map[string]driver.InterfacePolicy{}
 	for _, p := range policies {
-		byIface[p.MachineUID+"/"+p.Name] = p.Policy
+		byIface[p.MachineUID+"/"+p.Name] = p
 	}
 	var taps []tapPolicy
 	size := 0
@@ -63,8 +65,8 @@ func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies [
 			continue
 		}
 		if p, ok := byIface[m.Machine+"/"+m.Name]; ok {
-			taps = append(taps, tapPolicy{name: l.Attrs().Name, policy: p})
-			size += p.Size()
+			taps = append(taps, tapPolicy{name: l.Attrs().Name, policy: p.Policy, edgePorts: p.EdgePorts})
+			size += p.Policy.Size() + len(p.EdgePorts)
 		}
 	}
 	if size > driver.MaxFirewallRules {
@@ -182,10 +184,11 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 	var chains []chainSpec
 	for _, t := range taps {
 		in, out := "in_"+t.name, "out_"+t.name
-		inRules, err := policyRules(t.name, "in", t.policy.Ingress, true)
+		policyIn, err := policyRules(t.name, "in", t.policy.Ingress, true)
 		if err != nil {
 			return nil, err
 		}
+		inRules := slices.Concat(edgePorts(gateway, t.name, t.edgePorts), policyIn)
 		var outRules []ruleSpec
 		if t.policy.EgressAll {
 			outRules = []ruleSpec{{says: t.name + " sends anything", exprs: accept}}
@@ -292,6 +295,23 @@ func matchDport(from, to uint16) []expr.Any {
 		&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseTransportHeader, Offset: 2, Len: 2},
 		&expr.Range{Op: expr.CmpOpEq, Register: 1, FromData: binaryutil.BigEndian.PutUint16(from), ToData: binaryutil.BigEndian.PutUint16(to)},
 	}
+}
+
+// edgePorts let the edge reach a tap's ports of public endpoints from the
+// gateway, whatever its security groups say, while the endpoints exist;
+// the edge checks who may (docs/decisions/public-endpoints.md). Only the
+// namespace's own sockets send from the gateway.
+func edgePorts(gateway netip.Addr, tap string, ports []uint16) []ruleSpec {
+	ports = slices.Clone(ports)
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+	out := make([]ruleSpec, 0, len(ports))
+	for _, p := range ports {
+		out = append(out, ruleSpec{says: fmt.Sprintf("%s: public endpoints from %s to port %d pass", tap, gateway, p),
+			exprs: slices.Concat(matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchL4(unix.IPPROTO_TCP), matchDport(p, p),
+				[]expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})})
+	}
+	return out
 }
 
 // platformSSH lets the platform's SSH reach a tap's port 22 from the

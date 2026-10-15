@@ -9,16 +9,16 @@ planned; the code is the authority wherever it exists.
               Cloudflare (Access + one Tunnel)
                           │
   ┌───────────────────────┼─────────────────────────────┐ host
-  │  cloudflared ─────────┤                             │
-  │                       ▼                             │
-  │  hangar-apiserver  ◀── watch / status ──┐           │
-  │   Connect + WebSocket, SQLite           │           │
-  │   controllers in the same process       │           │
-  │          │ logs, exec: over a tunnel    │           │
-  │          ▼   the node opens             │           │
-  │  hangar-node (root) ────────────────────┘           │
-  │   ├ edge proxy        ├ network driver (netns, nft) │
-  │   ├ storage (ZFS)     ├ metadata service, DNS       │
+  │  cloudflared ─────────┼───────────────────┐         │
+  │                       ▼ the API           ▼ *.dev   │
+  │  hangar-apiserver ◀── reads ─────── hangar-edge     │
+  │   Connect + WebSocket, SQLite      (unprivileged)   │
+  │   controllers in the same process         │         │
+  │      ▲   │ logs, exec, ssh: over a        │ dial    │
+  │      │   ▼ tunnel the node opens          ▼ socket  │
+  │  watch / status ── hangar-node (root) ◀───┘         │
+  │   ├ storage (ZFS)     ├ network driver (netns, nft) │
+  │   ├ metadata, DNS     ├ dials for the edge          │
   │   └ one systemd unit per Cloud Hypervisor process   │
   │          │ vsock                                    │
   │          ▼                                          │
@@ -31,7 +31,8 @@ planned; the code is the authority wherever it exists.
 | Component | Runs as | Responsibility |
 |---|---|---|
 | `hangar-apiserver` | unprivileged user | The API (Connect for unary and server-streaming, WebSocket for bidirectional streams), authentication and authorization, admission, the object store, and every controller |
-| `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, the edge proxy, and what it serves each network from inside its namespace: its resolver, and the metadata service |
+| `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, and what it serves each network from inside its namespace: its resolver, the metadata service, and the edge's connections to public endpoints |
+| `hangar-edge` | unprivileged user | The edge proxy for public endpoints (`*.hangarlab.dev`): takes their traffic from cloudflared, checks Access for private ones, routes by `Host`, and reaches machines through the node agent's dial socket (`decisions/public-endpoints.md`) |
 | `hangar-init` | PID 1 in the guest | Boots containers from the platform's initramfs, frames their output on the console, serves exec over vsock, and later handles snapshot hooks (`decisions/guest-agent.md`) |
 | `hangar` | the user | CLI. Agent-friendly: non-interactive, `-o json`, stable exit codes |
 | web console | browser | React, using the generated TypeScript client |
@@ -55,7 +56,10 @@ addresses from the apiserver; every project has a `default` network. A
 one machine at a time; it lives on the node of the first machine it was
 attached to, and every later machine with it goes there. A disk is blank or
 a copy of a global `Image`, a distribution's disk image that platform
-administrators add to the catalogue by URL and sha256.
+administrators add to the catalogue by URL and sha256. A `PublicEndpoint`
+exposes one port of a container or VM over HTTPS at
+`<endpoint>-<project>.hangarlab.dev`, private to those its tenant allows
+unless made public; a container's port marked `public` gets one.
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources. A person is a
@@ -80,7 +84,11 @@ and its execs (`decisions/node-tunnel.md`): a node never listens. A client
 reaches an exec through a WebSocket on the apiserver, which relays it to the
 node (`decisions/streaming-transport.md`); `hangar ssh` reaches a virtual
 machine's port 22 the same way, with a key the apiserver's SSH CA signs for
-minutes (`decisions/vm-ssh.md`).
+minutes (`decisions/vm-ssh.md`). A public endpoint's traffic never passes the
+apiserver: cloudflared hands it to `hangar-edge`, which reads only endpoints
+and who may use them from the API, and asks the node agent, over a socket of
+its own, for a connection to the endpoint's port
+(`decisions/public-endpoints.md`).
 
 ## Where the reasoning lives
 
