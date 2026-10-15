@@ -41,6 +41,9 @@ const (
 	SSH Verb = "ssh"
 )
 
+// verbs lists every Verb, for tests that must see each one.
+var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH}
+
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
 
@@ -84,8 +87,10 @@ const (
 type Role struct {
 	// Level is the only scope level the role can be bound at.
 	Level ScopeLevel
-	// verbs are granted on every kind.
+	// verbs are granted on every kind but those in except.
 	verbs []Verb
+	// except are kinds verbs are not granted on, as "<group>.<plural>".
+	except []string
 	// permissions are granted one by one.
 	permissions []string
 	// Member makes whoever holds the role, at platform level, a platform
@@ -101,16 +106,54 @@ func NewRole(level ScopeLevel, permissions ...string) Role {
 
 // Grants reports whether the role includes the permission.
 func (r Role) Grants(permission string) bool {
-	return slices.Contains(r.verbs, verbOf(permission)) || slices.Contains(r.permissions, permission)
+	if slices.Contains(r.permissions, permission) {
+		return true
+	}
+	return slices.Contains(r.verbs, verbOf(permission)) && !slices.Contains(r.except, permissionKind(permission))
 }
+
+// permissionKind is the "<group>.<plural>" a permission is on.
+func permissionKind(permission string) string {
+	return permission[:strings.LastIndexByte(permission, '.')]
+}
+
+func kindOfResource(r registry.Resource) string { return r.Group + "." + r.Plural }
+
+// readVerbs are what viewers hold.
+var readVerbs = []Verb{Get, List, Watch}
+
+// reachPermissions reach into what a machine holds or says: its output, a
+// process in it, a login to it. Root, owners and editors hold them; viewers
+// do not, since output can hold what the spec does not. A new permission of
+// that sort, such as reaching a private PublicEndpoint, belongs here.
+var reachPermissions = []string{ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: []string{CreateTenant, ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}, Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append([]string{CreateTenant}, reachPermissions...), Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
 	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
 	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
-	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: []string{ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}},
+	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: reachPermissions},
+	"tenant.viewer":    {Level: TenantLevel, verbs: readVerbs},
+	"project.owner":    {Level: ProjectLevel, verbs: userVerbs, permissions: reachPermissions},
+	// An editor changes what runs in the project, not who may: it writes no
+	// RoleBinding. Nor does it write the Project itself: deleting it takes
+	// everything in it and its name for good.
+	"project.editor": {Level: ProjectLevel, verbs: userVerbs, except: []string{kindOfResource(registry.RoleBinding), kindOfResource(registry.Project)},
+		permissions: append(slices.Clone(reachPermissions), readPermissions(registry.RoleBinding, registry.Project)...)},
+	"project.viewer": {Level: ProjectLevel, verbs: readVerbs},
+}
+
+// readPermissions are the read verbs on the kinds given.
+func readPermissions(rs ...registry.Resource) []string {
+	var out []string
+	for _, r := range rs {
+		for _, v := range readVerbs {
+			out = append(out, Permission(r, v))
+		}
+	}
+	return out
 }
