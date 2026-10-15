@@ -39,9 +39,27 @@ cloud, and some people fund the hardware and should see more of it.
     special actions are declared explicitly, such as
     `compute.containers.logs` and `compute.containers.exec`,
     `compute.virtualmachines.logs` and `compute.virtualmachines.ssh`, which
-    `tenant.owner` and `platform.root` hold (`node-tunnel.md`, `vm-ssh.md`).
-  - Roles bundle permissions. They are built in for now (`platform.root`,
-    `platform.sponsor`, `tenant.owner`) and may become resources later.
+    the owner and editor roles and `platform.root` hold (`node-tunnel.md`,
+    `vm-ssh.md`).
+  - Roles bundle permissions, and a check compares the permission asked
+    for with every bound role's, never a role's name. They are built in
+    for now and may become resources later. Below the platform they follow
+    GCP's basic roles:
+    - `tenant.owner` holds everything in the tenant.
+    - `tenant.viewer` reads everything in the tenant: get, list and watch,
+      without logs, exec or ssh, since output can hold what the spec does
+      not.
+    - `project.owner` holds what `tenant.owner` does, in one project,
+      including its RoleBindings and deleting the project itself, as a GCP
+      project owner may.
+    - `project.editor` changes what runs in the project, with logs, exec
+      and ssh, which agents need. It does not change who may: it writes no
+      RoleBinding. Nor does it write the Project itself, since deleting it
+      takes everything in it and its name for good.
+    - `project.viewer` reads the project.
+
+    A role names the one scope level it can be bound at, so whoever may
+    write bindings in a project can grant only project roles there.
   - A `RoleBinding` (group `iam`) grants a role to a principal at a scope:
     the platform, a tenant, or a project. The authorizer caches bindings and
     keeps them current through a watch.
