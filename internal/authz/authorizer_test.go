@@ -76,6 +76,11 @@ func memberBinding(user string) *iamv1alpha1.RoleBinding {
 	}}
 }
 
+// signedUp is the User of a person who has signed up.
+func signedUp(email string) *iamv1alpha1.User {
+	return &iamv1alpha1.User{Spec: &iamv1alpha1.UserSpec{Email: email}}
+}
+
 var alice = auth.Principal{Type: auth.User, ID: "alice@example.com"}
 
 func TestFreshSeesEarlierWrites(t *testing.T) {
@@ -84,6 +89,7 @@ func TestFreshSeesEarlierWrites(t *testing.T) {
 	put(t, st, registry.Project, "web", &tenancyv1alpha1.Project{Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "acme"}})
 	put(t, st, registry.RoleBinding, "b", ownerBinding(alice.ID, "acme"))
 	put(t, st, registry.RoleBinding, "m", memberBinding(alice.ID))
+	put(t, st, registry.User, "alice", signedUp(alice.ID))
 	if err := a.Fresh(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +106,7 @@ func TestCoverage(t *testing.T) {
 	put(t, st, registry.Project, "other", &tenancyv1alpha1.Project{Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "bobco"}})
 	put(t, st, registry.RoleBinding, "b", ownerBinding(alice.ID, "acme"))
 	put(t, st, registry.RoleBinding, "m", memberBinding(alice.ID))
+	put(t, st, registry.User, "alice", signedUp(alice.ID))
 	put(t, st, registry.RoleBinding, "carol", ownerBinding("carol@example.com", "acme"))
 	if err := a.Fresh(t.Context()); err != nil {
 		t.Fatal(err)
@@ -145,6 +152,7 @@ func TestBindingDeletionRevokes(t *testing.T) {
 	st, a := setup(t, 0)
 	put(t, st, registry.RoleBinding, "b", ownerBinding(alice.ID, "acme"))
 	put(t, st, registry.RoleBinding, "m", memberBinding(alice.ID))
+	put(t, st, registry.User, "alice", signedUp(alice.ID))
 	perm := authz.Permission(registry.Tenant, authz.Get)
 	if err := a.Fresh(t.Context()); err != nil {
 		t.Fatal(err)
@@ -160,5 +168,70 @@ func TestBindingDeletionRevokes(t *testing.T) {
 	}
 	if a.Allowed(alice, perm, authz.Target{Tenant: "acme"}) {
 		t.Error("a deleted binding still grants")
+	}
+}
+
+// TestMembershipNeedsAUser: a platform role invites a person, and only with
+// their own User are they a member. Losing either ends it; service tokens and
+// root on the host need neither.
+func TestMembershipNeedsAUser(t *testing.T) {
+	st, a := setup(t, 0)
+	put(t, st, registry.RoleBinding, "b", ownerBinding(alice.ID, "acme"))
+	put(t, st, registry.RoleBinding, "m", memberBinding(alice.ID))
+	// Someone else's User proves nothing about alice.
+	put(t, st, registry.User, "bob", signedUp("bob@example.com"))
+	if err := a.Fresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	get := authz.Permission(registry.Tenant, authz.Get)
+	if a.IsMember(alice) || !a.IsInvited(alice) || a.Allowed(alice, get, authz.Target{Tenant: "acme"}) || a.Allowed(alice, authz.CreateTenant, authz.Target{}) {
+		t.Errorf("invited, not signed up: member %t, invited %t", a.IsMember(alice), a.IsInvited(alice))
+	}
+	if _, ok := a.Username(alice); ok {
+		t.Error("a username for someone who never signed up")
+	}
+	bob := auth.Principal{Type: auth.User, ID: "bob@example.com"}
+	if a.IsMember(bob) || a.IsInvited(bob) {
+		t.Error("a User without a platform role makes a member")
+	}
+
+	put(t, st, registry.User, "alice", signedUp(alice.ID))
+	if err := a.Fresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if name, ok := a.Username(alice); !a.IsMember(alice) || !ok || name != "alice" || !a.Allowed(alice, get, authz.Target{Tenant: "acme"}) {
+		t.Errorf("signed up: member %t, username %q", a.IsMember(alice), name)
+	}
+
+	// Deleting the binding ends membership; the User stays.
+	if _, _, err := st.Delete(t.Context(), store.Key{Kind: registry.RoleBinding.Kind, Name: "m"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Fresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.Username(alice); a.IsMember(alice) || a.IsInvited(alice) || !ok {
+		t.Errorf("binding deleted: member %t, invited %t, username kept %t", a.IsMember(alice), a.IsInvited(alice), ok)
+	}
+
+	// Invited again but with the User deleted, they are not a member either.
+	put(t, st, registry.RoleBinding, "m2", memberBinding(alice.ID))
+	if _, _, err := st.Delete(t.Context(), store.Key{Kind: registry.User.Kind, Name: "alice"}, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Fresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.Username(alice); a.IsMember(alice) || ok {
+		t.Error("a deleted User still makes a member")
+	}
+
+	for _, p := range []auth.Principal{{Type: auth.ServiceToken, ID: "agent.access"}, localRoot, {Type: auth.Node, ID: "n1"}, auth.SystemPrincipal} {
+		if !a.IsMember(p) || a.IsInvited(p) {
+			t.Errorf("%s: member %t, invited %t; want a member, not invited", p, a.IsMember(p), a.IsInvited(p))
+		}
+	}
+	if !a.Allowed(localRoot, authz.Permission(registry.User, authz.Apply), authz.Target{}) {
+		t.Error("root on the host may not change users")
 	}
 }

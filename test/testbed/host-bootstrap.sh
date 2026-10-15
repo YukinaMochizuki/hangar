@@ -296,6 +296,14 @@ EOF
 	chmod 600 /run/hangar/admin.sock
 	grep -q 'is not root' "$work/nobody.log" || fail "the apiserver did not refuse nobody's uid: $(cat "$work/nobody.log")"
 
+	step "the bootstrap admin signs up, as after a host's first start"
+	local signup
+	signup=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@testbed.invalid' \
+		-H 'Content-Type: application/json' -d '{"username": "tb-admin"}' \
+		http://127.0.0.1:8080/hangar.iam.v1alpha1.AccountService/SignUp)
+	# 409: signed up on an earlier run against the same store.
+	case $signup in 200 | 409) ;; *) fail "the bootstrap admin could not sign up: HTTP $signup" ;; esac
+
 	step "dev auth refuses what came through Cloudflare"
 	[ "$(list_nodes_status)" = 200 ] || fail "dev auth on loopback refused the bootstrap admin"
 	local h

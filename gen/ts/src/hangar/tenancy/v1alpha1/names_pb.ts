@@ -17,7 +17,7 @@ export const file_hangar_tenancy_v1alpha1_names: GenFile = /*@__PURE__*/
  */
 export type CheckNameRequest = Message<"hangar.tenancy.v1alpha1.CheckNameRequest"> & {
   /**
-   * "Tenant" or "Project".
+   * "Tenant", "Project" or "User".
    *
    * @generated from field: string kind = 1;
    */
@@ -41,8 +41,8 @@ export const CheckNameRequestSchema: GenMessage<CheckNameRequest> = /*@__PURE__*
  */
 export type CheckNameResponse = Message<"hangar.tenancy.v1alpha1.CheckNameResponse"> & {
   /**
-   * True when no object of the kind has ever had the name. Creating can still
-   * fail if someone takes it in between.
+   * True when no object of the kind has ever had the name, and it is not
+   * reserved. Creating can still fail if someone takes it in between.
    *
    * @generated from field: bool available = 1;
    */
@@ -57,18 +57,19 @@ export const CheckNameResponseSchema: GenMessage<CheckNameResponse> = /*@__PURE_
   messageDesc(file_hangar_tenancy_v1alpha1_names, 1);
 
 /**
- * NameService answers whether a tenant or project name can still be taken.
- * Those names are global and never reused, so clients suggest one from a
- * display name and ask here before creating it. It is not a resource's
- * service, so it is written by hand rather than generated. See
- * docs/decisions/tenancy-and-iam.md.
+ * NameService answers whether a tenant, project or user name can still be
+ * taken. Those names are global and never reused, so clients suggest one from
+ * a display name, or a person picks a username, and ask here before creating
+ * it. It is not a resource's service, so it is written by hand rather than
+ * generated. See docs/decisions/tenancy-and-iam.md.
  *
  * @generated from service hangar.tenancy.v1alpha1.NameService
  */
 export const NameService: GenService<{
   /**
-   * CheckName needs only platform membership. It says whether the name is
-   * free, never who holds it.
+   * CheckName needs only platform membership; for a User, being invited is
+   * enough, as signing up checks first. It says whether the name is free,
+   * never who holds it.
    *
    * @generated from rpc hangar.tenancy.v1alpha1.NameService.CheckName
    */

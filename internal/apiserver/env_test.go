@@ -95,30 +95,56 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	return e
 }
 
-// addMember makes a person a platform member, as an administrator does.
+// addMember makes a person a platform member, as an administrator inviting
+// them and they signing up do.
 func (e *env) addMember(email string) {
 	e.t.Helper()
-	must[iamv1alpha1.ApplyRoleBindingResponse](e.t)(e.as(root).bindings.ApplyRoleBinding(context.Background(),
-		binding("member-"+strings.NewReplacer("@", "-", ".", "-").Replace(email), email, "platform.member", platformScope())))
+	e.invite(email, "platform.member")
+	e.signUp(email)
 }
 
-// waitBootstrapped waits until the bootstrap admin can act, so tests start
-// from a known state.
+// invite binds a person a platform role, as the bootstrap admin.
+func (e *env) invite(email, role string) {
+	e.t.Helper()
+	must[iamv1alpha1.ApplyRoleBindingResponse](e.t)(e.as(root).bindings.ApplyRoleBinding(context.Background(),
+		binding(role[strings.LastIndexByte(role, '.')+1:]+"-"+usernameOf(email), email, role, platformScope())))
+}
+
+// signUp signs an invited person up with the username usernameOf makes from
+// their email.
+func (e *env) signUp(email string) {
+	e.t.Helper()
+	must[iamv1alpha1.SignUpResponse](e.t)(e.as(email).accounts.SignUp(context.Background(),
+		connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: usernameOf(email)})))
+}
+
+// usernameOf is the username test helpers sign a person up with: their
+// email, with '@' and '.' made '-'.
+func usernameOf(email string) string {
+	return strings.NewReplacer("@", "-", ".", "-").Replace(email)
+}
+
+// waitBootstrapped waits until the bootstrap admin's grant is written, which
+// happens in the background at start, signs them up, and waits until they
+// can act, so tests start from a known state.
 func (e *env) waitBootstrapped() {
 	e.t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		_, err := e.as(root).tenants.ListTenants(context.Background(), connect.NewRequest(&tenancyv1alpha1.ListTenantsRequest{}))
-		if err == nil {
-			rbs, err := e.as(root).bindings.ListRoleBindings(context.Background(), connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{}))
-			if err == nil && len(rbs.Msg.GetItems()) > 0 {
-				return
-			}
+		me, err := e.as(root).accounts.WhoAmI(context.Background(), connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
+		if err == nil && me.Msg.GetInvited() {
+			break
 		}
 		if time.Now().After(deadline) {
-			e.t.Fatal("bootstrap admin never became usable")
+			e.t.Fatal("bootstrap admin never invited")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	e.signUp(root)
+	rbs := must[iamv1alpha1.ListRoleBindingsResponse](e.t)(e.as(root).bindings.ListRoleBindings(context.Background(),
+		connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{})))
+	if len(rbs.GetItems()) == 0 {
+		e.t.Fatal("the bootstrap admin sees no bindings")
 	}
 }
 
@@ -127,6 +153,9 @@ type clients struct {
 	tenants    tenancyv1alpha1connect.TenantServiceClient
 	projects   tenancyv1alpha1connect.ProjectServiceClient
 	bindings   iamv1alpha1connect.RoleBindingServiceClient
+	users      iamv1alpha1connect.UserServiceClient
+	accounts   iamv1alpha1connect.AccountServiceClient
+	names      tenancyv1alpha1connect.NameServiceClient
 	containers computev1alpha1connect.ContainerServiceClient
 	machines   computev1alpha1connect.MachineServiceClient
 	nodes      computev1alpha1connect.NodeServiceClient
@@ -137,6 +166,9 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		tenants:    tenancyv1alpha1connect.NewTenantServiceClient(hc, url, opts...),
 		projects:   tenancyv1alpha1connect.NewProjectServiceClient(hc, url, opts...),
 		bindings:   iamv1alpha1connect.NewRoleBindingServiceClient(hc, url, opts...),
+		users:      iamv1alpha1connect.NewUserServiceClient(hc, url, opts...),
+		accounts:   iamv1alpha1connect.NewAccountServiceClient(hc, url, opts...),
+		names:      tenancyv1alpha1connect.NewNameServiceClient(hc, url, opts...),
 		containers: computev1alpha1connect.NewContainerServiceClient(hc, url, opts...),
 		machines:   computev1alpha1connect.NewMachineServiceClient(hc, url, opts...),
 		nodes:      computev1alpha1connect.NewNodeServiceClient(hc, url, opts...),

@@ -108,6 +108,10 @@ type kindHooks struct {
 	// itself: no role, however broad, lets anyone else apply or delete such
 	// an object.
 	systemManaged bool
+	// neverDeleted, if set, refuses every delete of the kind but the
+	// apiserver's own, whatever the caller's roles, before anything else is
+	// done; it is what the refusal tells the caller.
+	neverDeleted string
 	// finalizers are added to every new object of the kind; the controller
 	// that owns each removes it.
 	finalizers []string
@@ -197,6 +201,19 @@ func hooksFor(r registry.Resource) kindHooks {
 				return registry.Resource{}, resource.Key{}, false
 			},
 			validate: validateRoleBinding,
+		}
+	case registry.User.Kind:
+		// A person signs up through AccountService, which creates their User
+		// as the system; otherwise only platform.root reads and changes Users,
+		// as no tenant grant covers the platform. No one deletes one: one
+		// email has one User for good. Its applies hold its lock: that no two
+		// Users share an email is checked against the others (validateUser).
+		return kindHooks{
+			target:          platformTarget,
+			neverReuseNames: true,
+			validate:        validateUser,
+			writeLock:       userLock,
+			neverDeleted:    "users are never deleted; to remove a member, delete their platform role binding",
 		}
 	case registry.Container.Kind:
 		// Deleting a container waits for its machine to be gone from the

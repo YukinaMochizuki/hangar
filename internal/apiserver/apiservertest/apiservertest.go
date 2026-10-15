@@ -11,11 +11,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/types/known/emptypb"
 
+	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
@@ -29,7 +33,7 @@ import (
 const (
 	// Node is the Node the agent on the socket acts as.
 	Node = "n1"
-	// Root holds platform.root.
+	// Root holds platform.root, and has signed up once Start returns.
 	Root = "root@example.com"
 	// Tenant and Project are what Setup creates.
 	Tenant  = "acme"
@@ -50,8 +54,9 @@ type Env struct {
 	Store  store.Store
 }
 
-// Start runs an apiserver until the test ends. configure may adjust its
-// config; the store, the bootstrap admin and the node are already set.
+// Start runs an apiserver until the test ends, with Root signed up.
+// configure may adjust its config; the store, the bootstrap admin and the
+// node are already set.
 func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -95,7 +100,66 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
 	})
-	return &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, Store: st}
+	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, Store: st}
+	e.waitInvited(Root)
+	e.SignUp(Root)
+	return e
+}
+
+// waitInvited waits until the person holds a platform role, as the bootstrap
+// admin does once its grant, written in the background at start, is in.
+func (e *Env) waitInvited(email string) {
+	e.t.Helper()
+	accounts := iamv1alpha1connect.NewAccountServiceClient(DevUser(email), e.URL)
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		me, err := accounts.WhoAmI(context.Background(), connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
+		if err == nil && me.Msg.GetInvited() {
+			return
+		}
+		if time.Now().After(deadline) {
+			e.t.Fatalf("%s never invited: %v", email, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// AddMember makes a person a platform member with the platform role, as
+// Root inviting them and they signing up do.
+func (e *Env) AddMember(email, role string) {
+	e.t.Helper()
+	e.Invite(email, role)
+	e.SignUp(email)
+}
+
+// Invite binds a person the platform role, as Root.
+func (e *Env) Invite(email, role string) {
+	e.t.Helper()
+	if _, err := e.As(Root).Apply(context.Background(), registry.RoleBinding, &iamv1alpha1.RoleBinding{
+		Metadata: &metav1.ObjectMeta{Name: role[strings.LastIndexByte(role, '.')+1:] + "-" + Username(email)},
+		Spec: &iamv1alpha1.RoleBindingSpec{
+			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: email}},
+			Role:    role,
+			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}},
+		},
+	}); err != nil {
+		e.t.Fatalf("inviting %s: %v", email, err)
+	}
+}
+
+// SignUp signs an invited person up, as Username(email).
+func (e *Env) SignUp(email string) {
+	e.t.Helper()
+	accounts := iamv1alpha1connect.NewAccountServiceClient(DevUser(email), e.URL)
+	if _, err := accounts.SignUp(context.Background(), connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: Username(email)})); err != nil {
+		e.t.Fatalf("signing %s up: %v", email, err)
+	}
+}
+
+// Username is the username the helpers sign a person up with: their email,
+// with '@' and '.' made '-'.
+func Username(email string) string {
+	return strings.NewReplacer("@", "-", ".", "-").Replace(email)
 }
 
 // AsNode returns a client acting as Node.
@@ -133,21 +197,12 @@ func (d devUser) RoundTrip(r *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-// Setup creates Tenant and its Project as Root, waiting for the bootstrap
-// admin's grant, which is written in the background at start.
+// Setup creates Tenant and its Project as Root.
 func (e *Env) Setup() {
 	e.t.Helper()
 	root := e.As(Root)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		_, err := root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: Tenant}})
-		if err == nil {
-			break
-		}
-		if connect.CodeOf(err) != connect.CodePermissionDenied || time.Now().After(deadline) {
-			e.t.Fatalf("creating the tenant: %v", err)
-		}
-		time.Sleep(10 * time.Millisecond)
+	if _, err := root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: Tenant}}); err != nil {
+		e.t.Fatalf("creating the tenant: %v", err)
 	}
 	if _, err := root.Apply(context.Background(), registry.Project, &tenancyv1alpha1.Project{
 		Metadata: &metav1.ObjectMeta{Name: Project}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: Tenant},

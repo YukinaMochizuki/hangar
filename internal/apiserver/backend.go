@@ -64,28 +64,56 @@ func encode(m proto.Message) ([]byte, error) {
 	return proto.Marshal(c)
 }
 
-// begin authenticates the call and brings the authorization view up to date
-// with every write committed before it.
+// begin authenticates the call, brings the authorization view up to date
+// with every write committed before it, and refuses anyone who is not a
+// platform member.
 func (b *backend) begin(ctx context.Context) (auth.Principal, error) {
+	return b.s.begin(ctx, false)
+}
+
+// begin authenticates a call and brings the authorization view up to date
+// with every write committed before it. Only platform members get further,
+// and, when invitedSuffices, people invited who have not signed up yet; see
+// docs/decisions/tenancy-and-iam.md.
+func (s *Server) begin(ctx context.Context, invitedSuffices bool) (auth.Principal, error) {
+	p, err := s.authenticated(ctx)
+	if err != nil {
+		return p, err
+	}
+	switch {
+	case s.authz.IsMember(p):
+		return p, nil
+	case s.authz.IsInvited(p):
+		if invitedSuffices {
+			return p, nil
+		}
+		return p, denied("%s has not signed up yet; run hangar signup --username NAME first", p)
+	}
+	// Someone who signed in but was never added to the platform may do
+	// nothing at all.
+	return p, denied("%s is not a platform member yet; an administrator has to add them", p)
+}
+
+// authenticated returns the caller, with the authorization view brought up to
+// date with every write committed before the call, whoever they are.
+func (s *Server) authenticated(ctx context.Context) (auth.Principal, error) {
 	p, ok := auth.FromContext(ctx)
 	if !ok {
 		return auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, auth.ErrNoCredentials)
 	}
 	if p.Type != auth.System {
-		if err := b.s.authz.Fresh(ctx); err != nil {
+		if err := s.authz.Fresh(ctx); err != nil {
 			return p, apiError(err)
 		}
-	}
-	// Someone who signed in but was never added to the platform may do
-	// nothing at all; see docs/decisions/tenancy-and-iam.md.
-	if !b.s.authz.IsMember(p) {
-		return p, denied("%s is not a platform member yet; an administrator has to add them", p)
 	}
 	return p, nil
 }
 
 func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) bool {
 	if b.hooks.systemManaged && p.Type != auth.System && !readsOrReports(verb) {
+		return false
+	}
+	if b.hooks.neverDeleted != "" && p.Type != auth.System && verb == authz.Delete {
 		return false
 	}
 	if b.hooks.readableByAll && (verb == authz.Get || verb == authz.List || verb == authz.Watch) {
@@ -487,6 +515,10 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	}
 	if b.hooks.neverReuseNames {
 		if _, err := b.s.store.Create(ctx, claim, nil); errors.Is(err, store.ErrExists) {
+			if b.r.Kind == registry.User.Kind {
+				return resource.ApplyResult{}, failedPrecondition(
+					"username %q has been used before and is never reused; choose another username", key.Name)
+			}
 			return resource.ApplyResult{}, failedPrecondition(
 				"%s name %q has been used before and is never reused; choose another and use display_name for the name people see",
 				strings.ToLower(b.r.Kind), key.Name)
@@ -601,6 +633,9 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 	p, err := b.begin(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if b.hooks.neverDeleted != "" && p.Type != auth.System {
+		return nil, denied("%s may not delete %s: %s", p, b.asked(key), b.hooks.neverDeleted)
 	}
 	if err := b.checkKey(key); err != nil {
 		return nil, err

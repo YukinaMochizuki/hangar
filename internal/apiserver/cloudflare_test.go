@@ -8,6 +8,8 @@ import (
 
 	"connectrpc.com/connect"
 
+	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
@@ -40,12 +42,22 @@ func TestCloudflareListener(t *testing.T) {
 			connect.WithInterceptors(headerInterceptor{name, value}))
 	}
 	// The bootstrap grant is written in the background at start; until it
-	// lands, alice is not a member yet.
-	var res *connect.Response[tenancyv1alpha1.ApplyTenantResponse]
-	eventually(t, "the bootstrap admin can act", func() bool {
-		res, err = client(auth.CloudflareJWTHeader, iss.UserToken(t, "Alice@Example.com")).ApplyTenant(ctx, connect.NewRequest(tenant("acme")))
-		return err == nil
+	// lands, alice is not invited yet. Then she signs up, with the email
+	// her token carries.
+	accounts := iamv1alpha1connect.NewAccountServiceClient(http.DefaultClient, public.URL,
+		connect.WithInterceptors(headerInterceptor{auth.CloudflareJWTHeader, iss.UserToken(t, "Alice@Example.com")}))
+	eventually(t, "the bootstrap admin is invited", func() bool {
+		me, err := accounts.WhoAmI(ctx, connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
+		return err == nil && me.Msg.GetInvited()
 	})
+	signedUp := must[iamv1alpha1.SignUpResponse](t)(accounts.SignUp(ctx, connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: "alice"})))
+	if got := signedUp.GetUser().GetSpec().GetEmail(); got != "alice@example.com" {
+		t.Errorf("signed up with email %q", got)
+	}
+	res, err := client(auth.CloudflareJWTHeader, iss.UserToken(t, "Alice@Example.com")).ApplyTenant(ctx, connect.NewRequest(tenant("acme")))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !res.Msg.GetCreated() {
 		t.Error("tenant not created")
 	}

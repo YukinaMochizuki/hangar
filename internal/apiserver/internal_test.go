@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,17 +51,8 @@ func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user
 		_ = st.Close()
 	})
 	system = auth.WithPrincipal(ctx, auth.SystemPrincipal)
+	addMember(t, s, "alice@example.com")
 	user = auth.WithPrincipal(ctx, auth.Principal{Type: auth.User, ID: "alice@example.com"})
-	if _, err := s.backend(registry.RoleBinding).Apply(system, &iamv1alpha1.RoleBinding{
-		Metadata: &metav1.ObjectMeta{Name: "member-alice"},
-		Spec: &iamv1alpha1.RoleBindingSpec{
-			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "alice@example.com"}},
-			Role:    "platform.member",
-			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := s.backend(registry.Tenant).Apply(user, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "acme"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -79,6 +71,45 @@ func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user
 		}
 	}
 	return s, system, user
+}
+
+// addMember makes a person a platform member, as an administrator inviting
+// them and they signing up do.
+func addMember(t *testing.T, s *Server, email string) {
+	t.Helper()
+	invite(t, s, email, "platform.member")
+	signUp(t, s, email)
+}
+
+// invite binds a person a platform role, as an administrator does.
+func invite(t *testing.T, s *Server, email, role string) {
+	t.Helper()
+	if _, err := s.backend(registry.RoleBinding).Apply(auth.WithPrincipal(context.Background(), auth.SystemPrincipal), &iamv1alpha1.RoleBinding{
+		Metadata: &metav1.ObjectMeta{Name: role[strings.LastIndexByte(role, '.')+1:] + "-" + usernameOf(email)},
+		Spec: &iamv1alpha1.RoleBindingSpec{
+			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: email}},
+			Role:    role,
+			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// signUp signs an invited person up with the username usernameOf makes from
+// their email.
+func signUp(t *testing.T, s *Server, email string) {
+	t.Helper()
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.User, ID: email})
+	if _, err := (account{s}).SignUp(ctx, connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: usernameOf(email)})); err != nil {
+		t.Fatalf("signing %s up: %v", email, err)
+	}
+}
+
+// usernameOf is the username test helpers sign a person up with: their
+// email, with '@' and '.' made '-'.
+func usernameOf(email string) string {
+	return strings.NewReplacer("@", "-", ".", "-").Replace(email)
 }
 
 func ctr(name string) *computev1alpha1.Container {

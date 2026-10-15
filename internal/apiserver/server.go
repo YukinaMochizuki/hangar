@@ -19,6 +19,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
@@ -115,6 +116,9 @@ type Server struct {
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex
+	// users serializes every apply and delete of a User, so no two have one
+	// email.
+	users sync.Mutex
 }
 
 // New returns a server over cfg.Store.
@@ -174,6 +178,7 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 	mux.Handle(computev1alpha1connect.NewVirtualMachineSSHServiceHandler(virtualMachineSSH{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc(sshws.Pattern, s.vmSSH(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
