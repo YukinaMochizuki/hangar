@@ -58,7 +58,9 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	// The API tests use containers as examples of any kind; the controllers
 	// would write to them behind the tests' back. The controllers' own tests
 	// run them, and the CLI tests go through them end to end.
-	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}, DisableControllers: true}
+	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}, DisableControllers: true,
+		// Tests size machines and open tenants freely; the quota tests set limits.
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -152,6 +154,7 @@ func (e *env) waitBootstrapped() {
 type clients struct {
 	tenants    tenancyv1alpha1connect.TenantServiceClient
 	projects   tenancyv1alpha1connect.ProjectServiceClient
+	plans      tenancyv1alpha1connect.PlanServiceClient
 	bindings   iamv1alpha1connect.RoleBindingServiceClient
 	users      iamv1alpha1connect.UserServiceClient
 	accounts   iamv1alpha1connect.AccountServiceClient
@@ -165,6 +168,7 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 	return clients{
 		tenants:    tenancyv1alpha1connect.NewTenantServiceClient(hc, url, opts...),
 		projects:   tenancyv1alpha1connect.NewProjectServiceClient(hc, url, opts...),
+		plans:      tenancyv1alpha1connect.NewPlanServiceClient(hc, url, opts...),
 		bindings:   iamv1alpha1connect.NewRoleBindingServiceClient(hc, url, opts...),
 		users:      iamv1alpha1connect.NewUserServiceClient(hc, url, opts...),
 		accounts:   iamv1alpha1connect.NewAccountServiceClient(hc, url, opts...),

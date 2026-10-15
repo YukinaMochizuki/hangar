@@ -134,7 +134,7 @@ func IsPublic(ep *networkv1alpha1.PublicEndpoint) bool {
 // validatePublicEndpoint checks an endpoint's spec and its hostname label.
 // That no other endpoint holds the hostname is the claim's to decide, on
 // create (endpointClaim).
-func validatePublicEndpoint(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
+func validatePublicEndpoint(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
 	ep := obj.(*networkv1alpha1.PublicEndpoint)
 	spec := ep.GetSpec()
 	_, name, ok := endpointTargetOf(spec)
@@ -154,21 +154,8 @@ func validatePublicEndpoint(ctx context.Context, s *Server, _ auth.Principal, ol
 	default:
 		return invalid("spec.access %v is not PRIVATE or PUBLIC", spec.GetAccess())
 	}
-	if err := checkEndpointLabel(endpointLabel(ep.GetMetadata().GetProject(), ep.GetMetadata().GetName())); err != nil {
-		return err
-	}
-	if old == nil {
-		return s.admitEndpointCount(ctx, ep)
-	}
-	return nil
-}
-
-// admitEndpointCount is where the endpoint limit of a tenant's Plan applies
-// (quotas, docs/decisions/tenancy-and-iam.md); it admits any count while no
-// Plan sets one. PUBLIC endpoints each take one of the Cloudflare account's
-// Access applications, 500 by default.
-func (s *Server) admitEndpointCount(context.Context, *networkv1alpha1.PublicEndpoint) error {
-	return nil
+	// How many endpoints a tenant may have is its quota's (quotaCounters).
+	return checkEndpointLabel(endpointLabel(ep.GetMetadata().GetProject(), ep.GetMetadata().GetName()))
 }
 
 // endpointClaim is the claim an endpoint takes on its hostname label when

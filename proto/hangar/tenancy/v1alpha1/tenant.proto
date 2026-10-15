@@ -4,6 +4,7 @@ package hangar.tenancy.v1alpha1;
 
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
+import "hangar/tenancy/v1alpha1/plan.proto";
 
 // Tenant is who: the people and identities that own projects. Membership is
 // expressed with RoleBindings scoped to the tenant.
@@ -32,6 +33,12 @@ message TenantSpec {
 message TenantStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
+  // The Plan the tenant has: spec.plan, or "default".
+  string plan = 3;
+  // The plan's limits; an unset field has no limit.
+  Limits limits = 4;
+  // What all the tenant's projects hold.
+  Usage usage = 5;
 }
 
 // TenantService manages tenants.

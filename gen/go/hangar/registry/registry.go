@@ -171,6 +171,16 @@ var (
 		Message:    (*v1alpha14.Image)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.ImageService",
 	}
+	Plan = Resource{
+		Group:      "tenancy",
+		Version:    "v1alpha1",
+		Kind:       "Plan",
+		Plural:     "plans",
+		ShortNames: []string{},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha15.Plan)(nil).ProtoReflect().Type(),
+		Service:    "hangar.tenancy.v1alpha1.PlanService",
+	}
 	Project = Resource{
 		Group:      "tenancy",
 		Version:    "v1alpha1",
@@ -208,6 +218,7 @@ var All = []Resource{
 	Secret,
 	Disk,
 	Image,
+	Plan,
 	Project,
 	Tenant,
 }

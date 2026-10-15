@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+package hangar.tenancy.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Plan is a tenant's budget: the limits on what all its projects together
+// may hold. Platform administrators keep the plans; a tenant names one in
+// spec.plan, and one that names none has the plan "default", which the
+// apiserver makes when it first starts. See docs/decisions/tenancy-and-iam.md.
+message Plan {
+  option (hangar.meta.v1.resource) = {
+    kind: "Plan"
+    plural: "plans"
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  PlanSpec spec = 4;
+  PlanStatus status = 5;
+}
+
+// PlanSpec is the desired state of a plan.
+message PlanSpec {
+  string display_name = 1;
+  // A field left unset has no limit.
+  Limits limits = 2;
+}
+
+// PlanStatus is the observed state of a plan.
+message PlanStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// Limits caps what a tenant, or one of its projects, may hold. Where
+// Limits is set says what an unset field means. cpu and memory count only
+// machines asked to run; a stopped machine still counts its disk and its
+// place among machines.
+message Limits {
+  // vCPUs, a quantity in Kubernetes syntax, such as "8" or "2500m".
+  optional string cpu = 1;
+  // Memory, a quantity such as "16Gi".
+  optional string memory = 2;
+  // Disk space, a quantity such as "200Gi": containers' disks, Disks, and
+  // the root disks VMs have made from images.
+  optional string disk = 3;
+  // Containers and virtual machines, together.
+  optional int32 machines = 4;
+  // Projects of the tenant. Only a Plan sets it.
+  optional int32 projects = 5;
+  // Networks, each project's default network among them.
+  optional int32 networks = 6;
+  optional int32 addresses = 7;
+  optional int32 public_endpoints = 8;
+  optional int32 service_tokens = 9;
+}
+
+// Usage is what a tenant, or one of its projects, holds, counted as Limits
+// counts it.
+message Usage {
+  string cpu = 1;
+  string memory = 2;
+  string disk = 3;
+  int32 machines = 4;
+  int32 projects = 5;
+  int32 networks = 6;
+  int32 addresses = 7;
+  int32 public_endpoints = 8;
+  int32 service_tokens = 9;
+}
+
+// PlanService manages plans.
+service PlanService {
+  rpc GetPlan(GetPlanRequest) returns (GetPlanResponse);
+  rpc ListPlans(ListPlansRequest) returns (ListPlansResponse);
+  rpc WatchPlans(WatchPlansRequest) returns (stream WatchPlansResponse);
+  rpc ApplyPlan(ApplyPlanRequest) returns (ApplyPlanResponse);
+  rpc DeletePlan(DeletePlanRequest) returns (DeletePlanResponse);
+  rpc UpdatePlanStatus(UpdatePlanStatusRequest) returns (UpdatePlanStatusResponse);
+}
+
+message GetPlanRequest {
+  string name = 1;
+}
+
+message GetPlanResponse {
+  Plan plan = 1;
+}
+
+message ListPlansRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListPlansResponse {
+  repeated Plan items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchPlansRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchPlansResponse {
+  hangar.meta.v1.EventType type = 1;
+  Plan plan = 2;
+  int64 revision = 3;
+}
+
+message ApplyPlanRequest {
+  Plan plan = 1;
+}
+
+message ApplyPlanResponse {
+  Plan plan = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeletePlanRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeletePlanResponse {
+  Plan plan = 1;
+}
+
+message UpdatePlanStatusRequest {
+  string name = 1;
+  PlanStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdatePlanStatusResponse {
+  Plan plan = 1;
+}

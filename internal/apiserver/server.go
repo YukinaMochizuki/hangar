@@ -24,6 +24,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/servicegen"
@@ -92,6 +93,13 @@ type Config struct {
 	// machinery do: they use real kinds as examples and need nothing else
 	// writing to them. A real apiserver always runs them.
 	DisableControllers bool
+	// DefaultMaxOwnedTenants is how many tenants someone may own whose User
+	// sets no limit of its own; zero means DefaultMaxOwnedTenants.
+	DefaultMaxOwnedTenants int
+	// DefaultPlanLimits are what the default Plan is made with, the first
+	// time the apiserver starts on a store; nil means
+	// PlaceholderDefaultLimits.
+	DefaultPlanLimits *tenancyv1alpha1.Limits
 }
 
 // Server is the API server. Create it with New, start its background work
@@ -128,6 +136,16 @@ type Server struct {
 	// users serializes every apply and delete of a User, so no two have one
 	// email.
 	users sync.Mutex
+	// quota serializes every write that can raise what a tenant holds, but
+	// the apiserver's own, from counting what the tenant holds to the write,
+	// so concurrent writes cannot together overshoot a limit. The backend
+	// takes it after the kind's writeLock. It holds only while one apiserver
+	// process writes the store; see docs/decisions/tenancy-and-iam.md.
+	quota sync.Mutex
+	// plans serializes every apply and delete of a Plan or a Tenant, so no
+	// tenant comes to name a plan being deleted. Whoever holds it and quota
+	// takes plans first.
+	plans sync.Mutex
 }
 
 // New returns a server over cfg.Store.
@@ -155,6 +173,9 @@ func New(cfg Config) *Server {
 	}
 	if cfg.NodeMonitorInterval == 0 {
 		cfg.NodeMonitorInterval = 10 * time.Second
+	}
+	if cfg.DefaultMaxOwnedTenants == 0 {
+		cfg.DefaultMaxOwnedTenants = DefaultMaxOwnedTenants
 	}
 	s := &Server{
 		cfg:       cfg,
@@ -213,10 +234,15 @@ func (s *Server) openTunnel(chain auth.Chain) http.HandlerFunc {
 }
 
 // Run does the server's background work until ctx is done: it keeps the
-// authorization view current, bootstraps the first admin, registers nodes,
-// watches their heartbeats, runs the controllers, collects garbage and
-// compacts history.
+// authorization view current, makes the default plan, bootstraps the first
+// admin, registers nodes, watches their heartbeats, runs the controllers,
+// collects garbage and compacts history.
 func (s *Server) Run(ctx context.Context) error {
+	// Before anything else, so a tenant opened as soon as the first admin
+	// can has its plan.
+	if err := s.ensureDefaultPlan(ctx); err != nil {
+		return err
+	}
 	g, gctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
 		<-gctx.Done()
