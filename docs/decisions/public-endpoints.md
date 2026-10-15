@@ -32,8 +32,9 @@ fixed set of people and service tokens (`authentication.md`).
   with `--` in its third and fourth places (kept for internationalized
   names), and one starting with `hangar-`, kept for the platform's own.
   Every endpoint label has a `-`, so it never equals a platform name without
-  one. A limit on endpoints per project belongs to quotas
-  (`admitEndpointCount` in `internal/apiserver/publicendpoints.go`).
+  one. Endpoints count toward the tenant's `publicEndpoints` quota, one
+  each; a container counts one for each public port, in place of the
+  endpoint it owns for it (`internal/apiserver/quota.go`).
 - **A container port with `public: true`** gets a `PRIVATE` endpoint the
   container owns, `<container>-<port name>`, which follows the port and goes
   with it. One of that name the container does not own is left alone, and

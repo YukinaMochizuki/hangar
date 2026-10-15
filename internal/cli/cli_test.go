@@ -20,6 +20,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
@@ -51,7 +52,9 @@ func newWorld(t *testing.T) *world {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys})
+	// Tests size machines and open tenants freely, past any quota.
+	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys,
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000})
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))

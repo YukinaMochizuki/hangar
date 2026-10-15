@@ -52,6 +52,9 @@ type flags struct {
 	cfAPIURL       string
 	secretsKEK     string
 	previousKEKs   []string
+	// maxOwnedTenants is the default cap on the tenants one person or
+	// service token owns.
+	maxOwnedTenants int
 }
 
 func main() {
@@ -80,6 +83,8 @@ func main() {
 		f.previousKEKs = append(f.previousKEKs, s)
 		return nil
 	})
+	flag.IntVar(&f.maxOwnedTenants, "default-max-owned-tenants", apiserver.DefaultMaxOwnedTenants,
+		"how many tenants one person or service token may own, unless their User says otherwise; at least 1")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -111,6 +116,9 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	}
 	defer func() { _ = st.Close() }()
 
+	if f.maxOwnedTenants < 1 {
+		return fmt.Errorf("--default-max-owned-tenants is %d; it must be at least 1", f.maxOwnedTenants)
+	}
 	if f.socket != "" && f.nodeName == "" {
 		return errors.New("--socket needs --node-name: the agent on it acts as that Node")
 	}
@@ -176,7 +184,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	}
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
-		PublicEndpoints: endpoints,
+		PublicEndpoints: endpoints, DefaultMaxOwnedTenants: f.maxOwnedTenants,
 	})
 	// A key-encryption key that does not open what is stored stops the
 	// apiserver here, before it serves anything.

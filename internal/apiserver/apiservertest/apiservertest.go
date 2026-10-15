@@ -66,7 +66,10 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := apiserver.Config{Store: st, BootstrapAdmin: Root, Nodes: []string{Node}}
+	// Tests size machines and open tenants freely, unless configure sets
+	// limits.
+	cfg := apiserver.Config{Store: st, BootstrapAdmin: Root, Nodes: []string{Node},
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
 	if configure != nil {
 		configure(&cfg)
 	}

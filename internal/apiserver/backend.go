@@ -444,6 +444,10 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 		mu.Lock()
 		defer mu.Unlock()
 	}
+	if p.Type != auth.System && countsTowardQuota(b.r.Kind) {
+		b.s.quota.Lock()
+		defer b.s.quota.Unlock()
+	}
 
 	for range maxRetries {
 		cur, err := b.s.store.Get(ctx, b.storeKey(key))
@@ -488,6 +492,9 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	meta := object.Meta(in)
 	if err := checkMetaKeys(p, meta, nil); err != nil {
 		return resource.ApplyResult{}, err
+	}
+	if b.hooks.onCreate != nil {
+		b.hooks.onCreate(p, in)
 	}
 	if err := b.s.admit(ctx, b, p, nil, in); err != nil {
 		return resource.ApplyResult{}, err

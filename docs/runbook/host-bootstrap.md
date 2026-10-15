@@ -19,7 +19,8 @@ gives the host its prefix's `::` address; the bootstrap fixes both.
 
 Add `deploy/host/hosts/<hostname>.env` for the host. Every value in it is
 explicit (uplink name, public IPv4, IPv6 address and gateway, the two swap
-partitions, the dataset quotas, the memory kept from VMs, the Node's name);
+partitions, the dataset quotas, the memory kept from VMs, the Node's name,
+how many tenants one person may own unless their User says otherwise);
 the scripts never guess a disk or an interface.
 
 One value stays on the host and out of the repo: the bootstrap admin, the
@@ -108,8 +109,9 @@ with `--release DIR`. `--only <step>` runs a single step
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
     the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
-    for (dev when unset), and three unix sockets that systemd makes and
-    passes it (`hangar-apiserver-node.socket`,
+    for (dev when unset), `--default-max-owned-tenants
+    HANGAR_DEFAULT_MAX_OWNED_TENANTS`, and three unix sockets that systemd
+    makes and passes it (`hangar-apiserver-node.socket`,
     `hangar-apiserver-admin.socket` and `hangar-apiserver-edge.socket`,
     `PartOf=` the apiserver, so they stop and restart with it): the node
     socket `/run/hangar/node.sock` (`hangar`'s, 0660), accepting uid 0 as
@@ -206,6 +208,18 @@ with `--release DIR`. `--only <step>` runs a single step
 
 ## Deploying a new hangar version
 
+Upgrading past the change that added quotas: add
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (3 unless the owner says otherwise) to
+the host env file first; the run refuses to start without it. The first
+start of that version makes the `default` Plan with placeholder limits,
+and every tenant without a plan of its own, existing ones included, gets
+them at once. Set the real limits right after the deploy ("Quotas" below).
+A tenant already past a placeholder limit keeps what it has, but nothing
+in it can grow until the limit is raised. The per-person tenant cap counts
+the tenants each person opened by the `hangarlab.cloud/opened-by`
+annotation, which only tenants opened from that version on carry: tenants
+opened before it count toward no one's cap.
+
 Upgrading past the change that added `User` (`hangar signup`): from the
 first start of that version, every existing member, the owner included, is
 refused on every call until they run `hangar signup --username NAME` once;
@@ -295,6 +309,46 @@ in any auth mode, once:
 else does (`sudo hangar --context local apply -f` a RoleBinding). Each
 request on the socket is in the apiserver's log as `admin socket request`,
 with the caller's pid, as `local:root@<node>`.
+
+## Quotas
+
+The limits every tenant has unless it names a plan are the `default` Plan
+(`docs/decisions/tenancy-and-iam.md`). The apiserver makes it once, on a
+new store, with placeholder limits (8 cpu, 16Gi memory, 200Gi disk, 10
+machines, 5 projects, 10 networks, 5 addresses, 5 public endpoints, 5
+service tokens) that were chosen by no one. The owner sets the real ones at
+deploy, as platform root, with apply; a field left out has no limit:
+
+```yaml
+apiVersion: tenancy.hangarlab.cloud/v1alpha1
+kind: Plan
+metadata:
+  name: default
+spec:
+  displayName: Default
+  limits:
+    cpu: 8
+    memory: 16Gi
+    disk: 200Gi
+    machines: 10
+    projects: 5
+    networks: 10
+    addresses: 5
+    publicEndpoints: 5
+    serviceTokens: 5
+```
+
+`sudo hangar --context local apply -f default-plan.yaml` on the host, or
+the same from a workstation as platform root. A sponsor's tenant gets a
+bigger plan: apply another Plan, then set the tenant's `spec.plan` to it.
+`hangar get tenant NAME -o yaml` shows a tenant's plan, its limits and its
+usage in `status`.
+
+How many tenants one person or service token may own is
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS` in the host env file, which the
+`services` step passes as `--default-max-owned-tenants`; changing it
+restarts the apiserver. For one person, set `spec.maxOwnedTenants` on their
+User instead (`hangar get user NAME -o yaml`, edit, apply).
 
 ## The platform's SSH CA
 

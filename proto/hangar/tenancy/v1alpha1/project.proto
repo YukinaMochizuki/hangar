@@ -4,6 +4,7 @@ package hangar.tenancy.v1alpha1;
 
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
+import "hangar/tenancy/v1alpha1/plan.proto";
 
 // Project is where resources live: the unit of quota, networking and access.
 // Project names are unique across the platform.
@@ -26,12 +27,23 @@ message ProjectSpec {
   // Name of the owning Tenant.
   string tenant = 1 [(hangar.meta.v1.field).immutable = true];
   string display_name = 2;
+  // A budget within the tenant's, such as one to cap what an agent's
+  // project may hold. An unset field leaves the tenant's limit, and none
+  // may be above it; projects may not be set. Only someone who may apply
+  // the tenant's projects at the tenant changes it, so a project's own
+  // owner cannot raise it.
+  Limits limits = 3;
 }
 
 // ProjectStatus is the observed state of a project.
 message ProjectStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
+  // The limits that hold for the project: the smaller of spec.limits and
+  // the tenant's. An unset field has no limit.
+  Limits limits = 3;
+  // What the project holds.
+  Usage usage = 4;
 }
 
 // ProjectService manages projects.

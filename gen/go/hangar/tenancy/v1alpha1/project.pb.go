@@ -104,8 +104,14 @@ func (x *Project) GetStatus() *ProjectStatus {
 type ProjectSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Name of the owning Tenant.
-	Tenant        string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
-	DisplayName   string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	Tenant      string `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// A budget within the tenant's, such as one to cap what an agent's
+	// project may hold. An unset field leaves the tenant's limit, and none
+	// may be above it; projects may not be set. Only someone who may apply
+	// the tenant's projects at the tenant changes it, so a project's own
+	// owner cannot raise it.
+	Limits        *Limits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -154,13 +160,25 @@ func (x *ProjectSpec) GetDisplayName() string {
 	return ""
 }
 
+func (x *ProjectSpec) GetLimits() *Limits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
 // ProjectStatus is the observed state of a project.
 type ProjectStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ObservedGeneration int64                  `protobuf:"varint,1,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The limits that hold for the project: the smaller of spec.limits and
+	// the tenant's. An unset field has no limit.
+	Limits *Limits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
+	// What the project holds.
+	Usage         *Usage `protobuf:"bytes,4,opt,name=usage,proto3" json:"usage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProjectStatus) Reset() {
@@ -203,6 +221,20 @@ func (x *ProjectStatus) GetObservedGeneration() int64 {
 func (x *ProjectStatus) GetConditions() []*v1.Condition {
 	if x != nil {
 		return x.Conditions
+	}
+	return nil
+}
+
+func (x *ProjectStatus) GetLimits() *Limits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *ProjectStatus) GetUsage() *Usage {
+	if x != nil {
+		return x.Usage
 	}
 	return nil
 }
@@ -835,7 +867,7 @@ var File_hangar_tenancy_v1alpha1_project_proto protoreflect.FileDescriptor
 
 const file_hangar_tenancy_v1alpha1_project_proto_rawDesc = "" +
 	"\n" +
-	"%hangar/tenancy/v1alpha1/project.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\x91\x02\n" +
+	"%hangar/tenancy/v1alpha1/project.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/tenancy/v1alpha1/plan.proto\"\x91\x02\n" +
 	"\aProject\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -843,15 +875,18 @@ const file_hangar_tenancy_v1alpha1_project_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x128\n" +
 	"\x04spec\x18\x04 \x01(\v2$.hangar.tenancy.v1alpha1.ProjectSpecR\x04spec\x12>\n" +
 	"\x06status\x18\x05 \x01(\v2&.hangar.tenancy.v1alpha1.ProjectStatusR\x06status:\x1f\x8a\xb5\x18\x1b\n" +
-	"\aProject\x12\bprojects\x1a\x04proj \x02\"P\n" +
+	"\aProject\x12\bprojects\x1a\x04proj \x02\"\x89\x01\n" +
 	"\vProjectSpec\x12\x1e\n" +
 	"\x06tenant\x18\x01 \x01(\tB\x06\x8a\xb5\x18\x02\b\x01R\x06tenant\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"{\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x127\n" +
+	"\x06limits\x18\x03 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\"\xea\x01\n" +
 	"\rProjectStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"'\n" +
+	"conditions\x127\n" +
+	"\x06limits\x18\x03 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\x124\n" +
+	"\x05usage\x18\x04 \x01(\v2\x1e.hangar.tenancy.v1alpha1.UsageR\x05usage\"'\n" +
 	"\x11GetProjectRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"P\n" +
 	"\x12GetProjectResponse\x12:\n" +
@@ -931,40 +966,45 @@ var file_hangar_tenancy_v1alpha1_project_proto_goTypes = []any{
 	(*UpdateProjectStatusRequest)(nil),  // 13: hangar.tenancy.v1alpha1.UpdateProjectStatusRequest
 	(*UpdateProjectStatusResponse)(nil), // 14: hangar.tenancy.v1alpha1.UpdateProjectStatusResponse
 	(*v1.ObjectMeta)(nil),               // 15: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),                // 16: hangar.meta.v1.Condition
-	(v1.EventType)(0),                   // 17: hangar.meta.v1.EventType
+	(*Limits)(nil),                      // 16: hangar.tenancy.v1alpha1.Limits
+	(*v1.Condition)(nil),                // 17: hangar.meta.v1.Condition
+	(*Usage)(nil),                       // 18: hangar.tenancy.v1alpha1.Usage
+	(v1.EventType)(0),                   // 19: hangar.meta.v1.EventType
 }
 var file_hangar_tenancy_v1alpha1_project_proto_depIdxs = []int32{
 	15, // 0: hangar.tenancy.v1alpha1.Project.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	1,  // 1: hangar.tenancy.v1alpha1.Project.spec:type_name -> hangar.tenancy.v1alpha1.ProjectSpec
 	2,  // 2: hangar.tenancy.v1alpha1.Project.status:type_name -> hangar.tenancy.v1alpha1.ProjectStatus
-	16, // 3: hangar.tenancy.v1alpha1.ProjectStatus.conditions:type_name -> hangar.meta.v1.Condition
-	0,  // 4: hangar.tenancy.v1alpha1.GetProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
-	0,  // 5: hangar.tenancy.v1alpha1.ListProjectsResponse.items:type_name -> hangar.tenancy.v1alpha1.Project
-	17, // 6: hangar.tenancy.v1alpha1.WatchProjectsResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 7: hangar.tenancy.v1alpha1.WatchProjectsResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
-	0,  // 8: hangar.tenancy.v1alpha1.ApplyProjectRequest.project:type_name -> hangar.tenancy.v1alpha1.Project
-	0,  // 9: hangar.tenancy.v1alpha1.ApplyProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
-	0,  // 10: hangar.tenancy.v1alpha1.DeleteProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
-	2,  // 11: hangar.tenancy.v1alpha1.UpdateProjectStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.ProjectStatus
-	0,  // 12: hangar.tenancy.v1alpha1.UpdateProjectStatusResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
-	3,  // 13: hangar.tenancy.v1alpha1.ProjectService.GetProject:input_type -> hangar.tenancy.v1alpha1.GetProjectRequest
-	5,  // 14: hangar.tenancy.v1alpha1.ProjectService.ListProjects:input_type -> hangar.tenancy.v1alpha1.ListProjectsRequest
-	7,  // 15: hangar.tenancy.v1alpha1.ProjectService.WatchProjects:input_type -> hangar.tenancy.v1alpha1.WatchProjectsRequest
-	9,  // 16: hangar.tenancy.v1alpha1.ProjectService.ApplyProject:input_type -> hangar.tenancy.v1alpha1.ApplyProjectRequest
-	11, // 17: hangar.tenancy.v1alpha1.ProjectService.DeleteProject:input_type -> hangar.tenancy.v1alpha1.DeleteProjectRequest
-	13, // 18: hangar.tenancy.v1alpha1.ProjectService.UpdateProjectStatus:input_type -> hangar.tenancy.v1alpha1.UpdateProjectStatusRequest
-	4,  // 19: hangar.tenancy.v1alpha1.ProjectService.GetProject:output_type -> hangar.tenancy.v1alpha1.GetProjectResponse
-	6,  // 20: hangar.tenancy.v1alpha1.ProjectService.ListProjects:output_type -> hangar.tenancy.v1alpha1.ListProjectsResponse
-	8,  // 21: hangar.tenancy.v1alpha1.ProjectService.WatchProjects:output_type -> hangar.tenancy.v1alpha1.WatchProjectsResponse
-	10, // 22: hangar.tenancy.v1alpha1.ProjectService.ApplyProject:output_type -> hangar.tenancy.v1alpha1.ApplyProjectResponse
-	12, // 23: hangar.tenancy.v1alpha1.ProjectService.DeleteProject:output_type -> hangar.tenancy.v1alpha1.DeleteProjectResponse
-	14, // 24: hangar.tenancy.v1alpha1.ProjectService.UpdateProjectStatus:output_type -> hangar.tenancy.v1alpha1.UpdateProjectStatusResponse
-	19, // [19:25] is the sub-list for method output_type
-	13, // [13:19] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	16, // 3: hangar.tenancy.v1alpha1.ProjectSpec.limits:type_name -> hangar.tenancy.v1alpha1.Limits
+	17, // 4: hangar.tenancy.v1alpha1.ProjectStatus.conditions:type_name -> hangar.meta.v1.Condition
+	16, // 5: hangar.tenancy.v1alpha1.ProjectStatus.limits:type_name -> hangar.tenancy.v1alpha1.Limits
+	18, // 6: hangar.tenancy.v1alpha1.ProjectStatus.usage:type_name -> hangar.tenancy.v1alpha1.Usage
+	0,  // 7: hangar.tenancy.v1alpha1.GetProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
+	0,  // 8: hangar.tenancy.v1alpha1.ListProjectsResponse.items:type_name -> hangar.tenancy.v1alpha1.Project
+	19, // 9: hangar.tenancy.v1alpha1.WatchProjectsResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 10: hangar.tenancy.v1alpha1.WatchProjectsResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
+	0,  // 11: hangar.tenancy.v1alpha1.ApplyProjectRequest.project:type_name -> hangar.tenancy.v1alpha1.Project
+	0,  // 12: hangar.tenancy.v1alpha1.ApplyProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
+	0,  // 13: hangar.tenancy.v1alpha1.DeleteProjectResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
+	2,  // 14: hangar.tenancy.v1alpha1.UpdateProjectStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.ProjectStatus
+	0,  // 15: hangar.tenancy.v1alpha1.UpdateProjectStatusResponse.project:type_name -> hangar.tenancy.v1alpha1.Project
+	3,  // 16: hangar.tenancy.v1alpha1.ProjectService.GetProject:input_type -> hangar.tenancy.v1alpha1.GetProjectRequest
+	5,  // 17: hangar.tenancy.v1alpha1.ProjectService.ListProjects:input_type -> hangar.tenancy.v1alpha1.ListProjectsRequest
+	7,  // 18: hangar.tenancy.v1alpha1.ProjectService.WatchProjects:input_type -> hangar.tenancy.v1alpha1.WatchProjectsRequest
+	9,  // 19: hangar.tenancy.v1alpha1.ProjectService.ApplyProject:input_type -> hangar.tenancy.v1alpha1.ApplyProjectRequest
+	11, // 20: hangar.tenancy.v1alpha1.ProjectService.DeleteProject:input_type -> hangar.tenancy.v1alpha1.DeleteProjectRequest
+	13, // 21: hangar.tenancy.v1alpha1.ProjectService.UpdateProjectStatus:input_type -> hangar.tenancy.v1alpha1.UpdateProjectStatusRequest
+	4,  // 22: hangar.tenancy.v1alpha1.ProjectService.GetProject:output_type -> hangar.tenancy.v1alpha1.GetProjectResponse
+	6,  // 23: hangar.tenancy.v1alpha1.ProjectService.ListProjects:output_type -> hangar.tenancy.v1alpha1.ListProjectsResponse
+	8,  // 24: hangar.tenancy.v1alpha1.ProjectService.WatchProjects:output_type -> hangar.tenancy.v1alpha1.WatchProjectsResponse
+	10, // 25: hangar.tenancy.v1alpha1.ProjectService.ApplyProject:output_type -> hangar.tenancy.v1alpha1.ApplyProjectResponse
+	12, // 26: hangar.tenancy.v1alpha1.ProjectService.DeleteProject:output_type -> hangar.tenancy.v1alpha1.DeleteProjectResponse
+	14, // 27: hangar.tenancy.v1alpha1.ProjectService.UpdateProjectStatus:output_type -> hangar.tenancy.v1alpha1.UpdateProjectStatusResponse
+	22, // [22:28] is the sub-list for method output_type
+	16, // [16:22] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_hangar_tenancy_v1alpha1_project_proto_init() }
@@ -972,6 +1012,7 @@ func file_hangar_tenancy_v1alpha1_project_proto_init() {
 	if File_hangar_tenancy_v1alpha1_project_proto != nil {
 		return
 	}
+	file_hangar_tenancy_v1alpha1_plan_proto_init()
 	file_hangar_tenancy_v1alpha1_project_proto_msgTypes[11].OneofWrappers = []any{}
 	file_hangar_tenancy_v1alpha1_project_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}
