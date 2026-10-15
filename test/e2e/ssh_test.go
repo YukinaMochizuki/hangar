@@ -315,7 +315,7 @@ func TestHangarSSH(t *testing.T) {
 		t.Fatal(e)
 	}
 
-	code, out, errOut := run("ssh", "vm/web", "--", "uname", "-a")
+	code, out, errOut := run("ssh", "vm", "web", "--", "uname", "-a")
 	if want := fmt.Sprintf("user:%s ran \"uname -a\" as ubuntu\n", apiservertest.Root); code != 0 || out != want {
 		t.Fatalf("hangar ssh: exit %d: %q, want %q\n%s", code, out, want, errOut)
 	}
@@ -323,23 +323,23 @@ func TestHangarSSH(t *testing.T) {
 	if err != nil || !strings.HasPrefix(string(known), uid+" ssh-ed25519 ") {
 		t.Errorf("known_hosts %q %v", known, err)
 	}
-	if code, out, _ := run("ssh", "-l", "alice", "virtualmachine/web", "--", "id"); code != 0 || !strings.HasSuffix(out, " as alice\n") {
+	if code, out, _ := run("ssh", "-l", "alice", "virtualmachine", "web", "--", "id"); code != 0 || !strings.HasSuffix(out, " as alice\n") {
 		t.Errorf("-l alice: exit %d: %q", code, out)
 	}
-	if code, out, _ := run("ssh", "-l", "root", "vm/web", "--", "id"); code == 0 {
+	if code, out, _ := run("ssh", "-l", "root", "vm", "web", "--", "id"); code == 0 {
 		t.Errorf("logged in as root: %q", out)
 	}
 
 	// The VM's host key changes, as when it is made again.
 	w.host.ServeGuest(def, at, guestSSHD(t, ca, uid, hostKey()))
-	code, _, errOut = run("ssh", "vm/web", "--", "true")
-	if code == 0 || !strings.Contains(errOut, "hangar ssh --forget-host-key vm/web") {
+	code, _, errOut = run("ssh", "vm", "web", "--", "true")
+	if code == 0 || !strings.Contains(errOut, "hangar ssh --forget-host-key vm web") {
 		t.Errorf("a changed host key: exit %d:\n%s", code, errOut)
 	}
-	if code, out, _ := run("ssh", "--forget-host-key", "vm/web"); code != 0 || out != "forgot virtualmachine/web's host key\n" {
+	if code, out, _ := run("ssh", "--forget-host-key", "vm", "web"); code != 0 || out != "forgot virtualmachine/web's host key\n" {
 		t.Errorf("--forget-host-key: exit %d: %q", code, out)
 	}
-	if code, _, errOut := run("ssh", "vm/web", "--", "true"); code != 0 {
+	if code, _, errOut := run("ssh", "vm", "web", "--", "true"); code != 0 {
 		t.Errorf("after forgetting the host key: exit %d:\n%s", code, errOut)
 	}
 }

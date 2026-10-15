@@ -17,7 +17,7 @@ was for, and names no one.
 ## Decision
 
 - **Short-lived certificates first, static keys second.** `hangar ssh
-  vm/NAME [-- COMMAND]` makes a key for this login alone, has the apiserver
+  vm NAME [-- COMMAND]` makes a key for this login alone, has the apiserver
   sign it, and runs OpenSSH's `ssh` with it: no key to set up. A VM's
   `sshAuthorizedKeys` keep working beside it.
 - **One platform SSH CA.** Its private key is a file the apiserver alone
@@ -50,7 +50,7 @@ was for, and names no one.
   user but root: whoever may log in to the VM may become any of its users
   through the default user's sudo anyway. Root's login stays what the
   image's own keys and sshd say.
-- **The path in.** `hangar ssh-proxy vm/NAME`, ssh's `ProxyCommand` (usable
+- **The path in.** `hangar ssh-proxy vm NAME`, ssh's `ProxyCommand` (usable
   in an ssh_config too), relays its stdin and stdout over a WebSocket,
   `GET /v1/projects/{project}/virtualmachines/{name}:ssh` with the
   subprotocol `hangar.ssh.v1alpha1`, through Access to the apiserver, which
@@ -70,7 +70,7 @@ was for, and names no one.
   the CLI's config (`~/.config/hangar/known_hosts`), under the VM's uid. A
   VM made again has a new uid, and so a new entry. A key that changes under
   the same uid, its guest's host keys made again in it or something else
-  answering, is refused, naming `hangar ssh --forget-host-key vm/NAME`.
+  answering, is refused, naming `hangar ssh --forget-host-key vm NAME`.
 
 ## Consequences
 
