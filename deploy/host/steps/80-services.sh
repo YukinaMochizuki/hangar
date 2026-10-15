@@ -32,6 +32,14 @@ SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
 # The platform's SSH CA, its private key: the operator installs it from the
 # vault (docs/runbook/host-bootstrap.md); this step never makes one.
 SERVICES_SSH_CA=$SERVICES_STATE/ssh-ca
+# The key-encryption key Secrets are sealed under (docs/decisions/secrets.md).
+# Unlike the SSH CA, this step makes it if it is missing, so Secrets work on a
+# new host; the operator then copies it to the vault, since a backup of the
+# database is of no use without it.
+SERVICES_SECRETS_KEK=$SERVICES_STATE/secrets-kek
+# The key a rotation replaces, there only while one is under way; the
+# apiserver opens what it sealed and seals it again under the new one.
+SERVICES_SECRETS_KEK_PREVIOUS=$SERVICES_SECRETS_KEK.previous
 # The ids each VM's Cloud Hypervisor runs as, one a VM, its uid and gid
 # (DefaultVMUsers in internal/node/driver/chvm, which refuses to start on a
 # host where anything else has one). Kept under this name in /etc/subuid
@@ -251,7 +259,7 @@ Group=$SERVICES_USER
 EnvironmentFile=$LOCAL_ENV
 # The public API is on loopback in either auth mode: cloudflared reaches it
 # there. The node socket accepts root's agent; the admin socket, root.
-ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags)
+ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS
 Sockets=$(for s in $SERVICES_SOCKETS; do printf '%s.socket ' "$s"; done | sed 's/ $//')
 Restart=on-failure
 RestartSec=2
@@ -409,6 +417,29 @@ services_state_ok() {
 
 services_ssh_ca_ok() {
 	[ -f "$SERVICES_SSH_CA" ] && [ "$(stat -c '%U %G %a' "$SERVICES_SSH_CA")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+services_secrets_kek_ok() {
+	[ -f "$SERVICES_SECRETS_KEK" ] && [ "$(stat -c '%U %G %a' "$SERVICES_SECRETS_KEK")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+services_secrets_kek_previous_ok() {
+	[ "$(stat -c '%U %G %a' "$SERVICES_SECRETS_KEK_PREVIOUS")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+# services_make_secrets_kek writes a new key-encryption key, an id and 32
+# random bytes in base64, its owner's alone from the start, and never shows
+# it.
+services_make_secrets_kek() {
+	local tmp
+	tmp=$(umask 077 && mktemp "$SERVICES_SECRETS_KEK.XXXXXX") || return 1
+	if ! printf 'kek-%s %s\n' "$(date -u +%Y%m%d%H%M%S)" "$(head -c 32 /dev/urandom | base64 -w0)" >"$tmp" ||
+		! chown "$SERVICES_USER:$SERVICES_USER" "$tmp" || ! chmod 600 "$tmp" || ! mv -n "$tmp" "$SERVICES_SECRETS_KEK"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	# mv -n leaves tmp if a key appeared meanwhile: that one is kept.
+	rm -f "$tmp"
 }
 
 services_ssh_ca_how() {
@@ -605,6 +636,19 @@ services_apply() {
 			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_CF_TOKEN' && chmod 600 '$SERVICES_CF_TOKEN'"
 	fi
 
+	# The key-encryption key is made here once and never again: a new one
+	# would leave every stored Secret unopenable, and the apiserver would
+	# refuse to start (docs/runbook/host-bootstrap.md says how to rotate it).
+	if [ ! -e "$SERVICES_SECRETS_KEK" ]; then
+		run "make the secrets key-encryption key at $SERVICES_SECRETS_KEK, $SERVICES_USER's, mode 600" services_make_secrets_kek
+		[ "$DRY_RUN" = 1 ] ||
+			log "note: copy $SERVICES_SECRETS_KEK to the vault now: without it a backup of the database holds no usable Secret (docs/runbook/host-bootstrap.md)"
+	elif ! services_secrets_kek_ok; then
+		log "warning: $SERVICES_SECRETS_KEK was $(stat -c '%U:%G mode %a' "$SERVICES_SECRETS_KEK"): whoever could read it can open every Secret; consider rotating it (docs/runbook/host-bootstrap.md)"
+		run "give $SERVICES_SECRETS_KEK to $SERVICES_USER, mode 600" \
+			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_SECRETS_KEK' && chmod 600 '$SERVICES_SECRETS_KEK'"
+	fi
+
 	put_file "$SERVICES_TMPFILES" 644 "$(services_tmpfiles)"
 	# A runtime directory the apiserver once had is its; tmpfiles gives it
 	# to root.
@@ -666,6 +710,10 @@ services_verify() {
 		check "SSH CA key $SERVICES_SSH_CA, $SERVICES_USER's, mode 600 (hangar ssh)" services_ssh_ca_ok
 	else
 		skip "SSH CA" "no $SERVICES_SSH_CA: hangar ssh cannot sign"
+	fi
+	check "secrets key-encryption key $SERVICES_SECRETS_KEK, $SERVICES_USER's, mode 600" services_secrets_kek_ok
+	if [ -e "$SERVICES_SECRETS_KEK_PREVIOUS" ]; then
+		check "previous key-encryption key $SERVICES_SECRETS_KEK_PREVIOUS, $SERVICES_USER's, mode 600 (a rotation under way)" services_secrets_kek_previous_ok
 	fi
 	local units
 	units=$(services_units | tr '\n' ' ' | sed 's/ $//')

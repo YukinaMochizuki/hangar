@@ -64,7 +64,15 @@ func (s *Server) controllers() []*controller.Controller {
 				// An Address binding, moving or going changes the interfaces
 				// of the containers it binds or leaves.
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.Container), SkipResync: true},
+				// A secret appearing or going is what a container waiting on
+				// one reports.
+				{Kind: registry.Secret.Kind, Map: s.containersInProject, SkipResync: true},
 			},
+		},
+		{
+			Name: "secret", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileSecret),
+			Watches:    []controller.Watch{{Kind: registry.Secret.Kind, Map: controller.Self}},
 		},
 		{
 			Name: "virtualmachine", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
@@ -320,7 +328,7 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	m, err = s.ensureMachine(ctx, c, m)
 	var stuck *blocked
 	if errors.As(err, &stuck) {
-		return s.reportContainer(ctx, c, m, nil, stuck)
+		return s.reportContainer(ctx, c, m, nil, stuck, "")
 	}
 	// An Address moving to it is waited on, and the container reported
 	// meanwhile.
@@ -338,7 +346,11 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 			node = nobj.(*computev1alpha1.Node)
 		}
 	}
-	return cmp.Or(s.reportContainer(ctx, c, m, node, nil), waiting)
+	missing, err := s.missingPullSecret(ctx, c)
+	if err != nil {
+		return err
+	}
+	return cmp.Or(s.reportContainer(ctx, c, m, node, nil, missing), waiting)
 }
 
 // splitWaiting splits err into what is waited on, wrapping
@@ -483,6 +495,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 		RunState:  runState,
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
+			ImagePullSecrets: slices.Clone(cs.GetImagePullSecrets()),
 		}},
 		Interfaces:    machineInterfaces(cs.GetInterfaces()),
 		RestartPolicy: restart,
@@ -509,8 +522,10 @@ func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alp
 
 // reportContainer writes the container's status, conditional on c as read:
 // from a reconcile that is stuck, or else from its machine and that
-// machine's node.
-func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine, node *computev1alpha1.Node, stuck *blocked) error {
+// machine's node. A container not ready that names an image pull secret
+// that does not exist, missingSecret, says so instead: its image cannot be
+// pulled with it.
+func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine, node *computev1alpha1.Node, stuck *blocked, missingSecret string) error {
 	gen := c.GetMetadata().GetGeneration()
 	var ready, stopped *metav1.Condition
 	if stuck != nil {
@@ -518,6 +533,12 @@ func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Contain
 		stopped = &metav1.Condition{Type: ContainerStopped, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: stuck.reason, Message: stuck.message}
 	} else {
 		ready = machineReadiness(m, node)
+		if missingSecret != "" && ready.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_TRUE {
+			ready = &metav1.Condition{
+				Type: ContainerReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: ReasonImagePullSecretNotFound,
+				Message: fmt.Sprintf("image pull secret %q does not exist in project %q", missingSecret, c.GetMetadata().GetProject()),
+			}
+		}
 		stopped = machineStopped(c.GetSpec().GetRunState() == computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED, "container", m, node)
 	}
 	ready.ObservedGeneration = gen

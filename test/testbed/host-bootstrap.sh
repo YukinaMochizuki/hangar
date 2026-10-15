@@ -236,6 +236,20 @@ test_converges_and_is_idempotent() {
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'PRIVATE' && fail "the apiserver logged the SSH CA's key"
 	"$host_dir/verify.sh" --env "$env_file" | grep -q '^PASS SSH CA key /var/lib/hangar/state/ssh-ca, hangar.s, mode 600 (hangar ssh)$' ||
 		fail "verify does not check the SSH CA"
+
+	step "the first run made the secrets key-encryption key, the apiserver's alone, and runs after it keep it"
+	local kek=/var/lib/hangar/state/secrets-kek before
+	[ "$(stat -c '%U %G %a' "$kek")" = "hangar hangar 600" ] || fail "the KEK is $(stat -c '%U:%G %a' "$kek")"
+	grep -qE '^kek-[0-9]{14} [A-Za-z0-9+/]{43}=$' "$kek" || fail "the KEK file is not an id and 32 bytes in base64"
+	grep -q "note: copy $kek to the vault now" "$log" || fail "the first run did not say to keep the KEK in the vault"
+	grep -qF "$(cut -d' ' -f2 "$kek")" "$log" && fail "the run logged the KEK"
+	before=$(sha256sum "$kek")
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>&1
+	[ "$(sha256sum "$kek")" = "$before" ] || fail "a later run replaced the KEK"
+	journalctl -u hangar-apiserver --since "$since" | grep -q 'loaded the key-encryption key' || fail "the apiserver did not load the KEK"
+	journalctl -u hangar-apiserver --since "$since" | grep -qF "$(cut -d' ' -f2 "$kek")" && fail "the apiserver logged the KEK"
+	"$host_dir/verify.sh" --env "$env_file" | grep -q "^PASS secrets key-encryption key $kek, hangar.s, mode 600$" ||
+		fail "verify does not check the KEK"
 }
 
 # admin_cli ARGS... runs the CLI through the admin socket, as root on the

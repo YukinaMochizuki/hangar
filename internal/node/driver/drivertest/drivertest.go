@@ -5,6 +5,7 @@
 package drivertest
 
 import (
+	"context"
 	"errors"
 	"net/netip"
 	"os"
@@ -32,6 +33,9 @@ type Host struct {
 	// Publish makes an image pullable under a reference made of name, and
 	// returns that reference and the image's digest.
 	Publish func(t *testing.T, name string) (ref, digest string)
+	// PublishPrivate publishes as Publish does, in a repository of its own
+	// that asks for the login it returns.
+	PublishPrivate func(t *testing.T, name string) (ref, digest string, login driver.Login)
 	// PublishDiskImage serves a disk image, qcow2, holding a disk of size
 	// bytes, and returns its URL and digest; DiskImages fetches from it.
 	PublishDiskImage func(t *testing.T, name string, size int64) (url, digest string)
@@ -90,6 +94,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 		return disks(h) && h.Network != nil && h.Hypervisor != nil && h.Guest != nil && h.AskedToStop != nil
 	}
 	part("images", images, func(h Host) bool { return h.Images != nil })
+	part("private images", privateImages, func(h Host) bool { return h.Images != nil && h.PublishPrivate != nil })
 	part("storage", storage, disks)
 	part("root sizes", rootSizes, disks)
 	part("deleting disks", deletingDisks, disks)
@@ -164,6 +169,53 @@ func images(t *testing.T, h Host) {
 	must(t, h.Images.Forget(ctx, digest))
 	if _, err := h.Images.Config(ctx, ref, digest, anon); err == nil {
 		t.Error("a forgotten digest answered with the registry down")
+	}
+}
+
+// privateImages: a private repository answers only its login, by tag and by
+// digest. What the host has pulled it answers from its cache whatever the
+// credentials: proving a machine's access is its caller's, by Resolve
+// (docs/decisions/secrets.md).
+func privateImages(t *testing.T, h Host) {
+	ctx := t.Context()
+	ref, digest, login := h.PublishPrivate(t, "private:1")
+	right := driver.Credentials(func(context.Context, string) (driver.Login, error) { return login, nil })
+	wrong := driver.Credentials(func(context.Context, string) (driver.Login, error) {
+		return driver.Login{Username: login.Username, Password: login.Password + "-wrong"}, nil
+	})
+	pinned := ref[:strings.LastIndex(ref, ":")] + "@" + digest
+	for _, c := range []struct {
+		what  string
+		creds driver.Credentials
+	}{{"no login", anon}, {"a wrong login", wrong}} {
+		for _, r := range []string{ref, pinned} {
+			if _, err := h.Images.Resolve(ctx, r, c.creds); !errors.Is(err, driver.ErrUnauthorized) {
+				t.Errorf("resolving %s with %s: %v, want unauthorized", r, c.what, err)
+			}
+		}
+		if _, err := h.Images.Config(ctx, ref, digest, c.creds); !errors.Is(err, driver.ErrUnauthorized) {
+			t.Errorf("pulling with %s: %v, want unauthorized", c.what, err)
+		}
+	}
+	if got, err := h.Images.Resolve(ctx, ref, right); err != nil || got != digest {
+		t.Fatalf("resolving with the login: %s %v", got, err)
+	}
+	if got, err := h.Images.Resolve(ctx, pinned, right); err != nil || got != digest {
+		t.Errorf("resolving %s with the login: %s %v", pinned, got, err)
+	}
+	if _, err := h.Images.Config(ctx, ref, digest, right); err != nil {
+		t.Fatalf("pulling with the login: %v", err)
+	}
+	if err := h.Images.Unpack(ctx, ref, digest, t.TempDir(), right); err != nil {
+		t.Errorf("unpacking with the login: %v", err)
+	}
+	// The cache answers what it holds, whoever asks; the registry still
+	// refuses them, which is what proves access.
+	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
+		t.Errorf("config of a pulled digest without a login: %v", err)
+	}
+	if _, err := h.Images.Resolve(ctx, pinned, anon); !errors.Is(err, driver.ErrUnauthorized) {
+		t.Errorf("resolving a pulled digest without a login: %v, want unauthorized", err)
 	}
 }
 

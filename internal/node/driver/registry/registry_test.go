@@ -117,6 +117,13 @@ func TestConformance(t *testing.T) {
 				n++
 				return r.Push(t, ref, image(t, "amd64", []string{"true"}, gzLayer(t, "f", fmt.Sprint(n))))
 			},
+			PublishPrivate: func(t *testing.T, ref string) (string, string, driver.Login) {
+				n++
+				repo := fmt.Sprintf("private%d", n)
+				full, digest := r.Push(t, strings.Replace(ref, "private", repo, 1), image(t, "amd64", []string{"true"}, gzLayer(t, "f", fmt.Sprint(n))))
+				r.Private(repo)
+				return full, digest, driver.Login{Username: "user", Password: "pass"}
+			},
 			Withdraw: func(_ *testing.T, ref string) {
 				repo := strings.SplitN(strings.TrimPrefix(ref, r.Host+"/"), ":", 2)[0]
 				r.Withdraw(repo)

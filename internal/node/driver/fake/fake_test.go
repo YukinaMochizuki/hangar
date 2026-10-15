@@ -45,6 +45,14 @@ func host(h *fake.Host) drivertest.Host {
 			h.AddImage(name, digest, driver.ImageConfig{Cmd: []string{"true"}})
 			return name, digest
 		},
+		PublishPrivate: func(_ *testing.T, name string) (string, string, driver.Login) {
+			published++
+			ref, digest := "private.example/"+name, fmt.Sprintf("sha256:%d", published)
+			login := driver.Login{Username: "user", Password: "pass"}
+			h.AddImage(ref, digest, driver.ImageConfig{Cmd: []string{"true"}})
+			h.MakePrivate(ref, login)
+			return ref, digest, login
+		},
 		PublishDiskImage: func(_ *testing.T, name string, size int64) (string, string) {
 			published++
 			url, digest := "https://images.example/"+name, fmt.Sprintf("sha256:%064x", published)

@@ -174,7 +174,11 @@ with the host after any of these, and nothing would notice.
   disk, whatever else changes. A new image rebuilds the root disk (see
   `machine-model.md`); any other change restarts the VM on the disk it has. A
   digest the host has pulled is read from its cache until its base goes, so
-  a running machine never depends on the registry.
+  a running machine never depends on the registry. A machine with image
+  pull secrets resolves its reference with its own login, in a pull of its
+  own, before it uses what the host holds; only machines without
+  credentials share a pull, which resolves anonymously, and a digest in a
+  machine's status needs resolving no more (`secrets.md`).
 - **What runs keeps running.** A step the agent cannot check again (the
   registry, a driver list, the network's object) leaves the status of a
   machine running its current spec as it is, with one exception: once the

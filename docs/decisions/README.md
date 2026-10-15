@@ -28,5 +28,6 @@ the change.
 | `node-tunnel.md` | The apiserver calls a node over a tunnel the node opens; a container's logs are one stream across its boots; an exec runs as `docker exec` does, as long as its call |
 | `guest-kernel.md` | One platform guest kernel and initramfs for containers: LTS only, allnoconfig + fragment, no modules, `quiet` |
 | `vm-boot.md` | Virtual machines boot their image's own kernel through EDK2 firmware; serial console as log, power button to stop, no restart policy |
+| `secrets.md` | Secrets are write-only and sealed at rest under a KEK file; nodes get a login per pull; a private image is shared only after the machine's own resolve |
 | `vm-ssh.md` | `hangar ssh`: minutes-long certificates of one platform CA for the VM's uid, over a WebSocket to port 22 from the network's gateway |
 | `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` checks Access and reaches machines through the node's dial socket; per-host bypass applications for `PUBLIC` ones |

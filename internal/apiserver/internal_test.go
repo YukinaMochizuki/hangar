@@ -35,8 +35,14 @@ func running(t *testing.T) (s *Server, system, user context.Context) {
 // runningWith is running with a config adjusted by configure.
 func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user context.Context) {
 	t.Helper()
+	return runningAt(t, filepath.Join(t.TempDir(), "hangar.db"), configure)
+}
+
+// runningAt is runningWith on the database file db, which a test can read.
+func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, system, user context.Context) {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
+	st, err := sqlite.Open(ctx, db)
 	if err != nil {
 		t.Fatal(err)
 	}

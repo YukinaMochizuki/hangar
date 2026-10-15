@@ -50,6 +50,12 @@ what it cannot.
       keys), `forNode` clears it from every answer to a node, and a test
       reads the object by get, list and watch as that node, another node and
       its owner (`docs/decisions/tenancy-and-iam.md`).
+- [ ] If the kind holds what no one may read back, as a Secret's values,
+      `redact` clears it from every answer, `seal` turns it into what is
+      stored, and `hiddenFromNodes` keeps node agents from reading the kind
+      at all; tests read it by get, list, watch, apply and delete, and grep
+      the database file and the log for a canary
+      (`docs/decisions/secrets.md`).
 
 - [ ] A kind that runs as a machine is registered in `machineKinds`
       (`internal/apiserver/machinecapability.go`) with its machine's name and

@@ -76,7 +76,10 @@ const (
 	ReasonBooting         = "Booting"
 	ReasonStopped         = "Stopped"
 	ReasonImagePullFailed = "ImagePullFailed"
-	ReasonDiskFailed      = "DiskFailed"
+	// ReasonImagePullUnauthorized means the registry refused the machine's
+	// login, or asked for one it has none of.
+	ReasonImagePullUnauthorized = "ImagePullUnauthorized"
+	ReasonDiskFailed            = "DiskFailed"
 	// ReasonDiskTooSmall means the machine asks for a root disk smaller than
 	// its image.
 	ReasonDiskTooSmall  = "DiskTooSmall"

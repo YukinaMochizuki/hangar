@@ -59,6 +59,10 @@ message ContainerBoot {
   // Overrides the image command.
   repeated string args = 3;
   repeated EnvVar env = 4;
+  // Names Secrets in the machine's project to pull the image with, as the
+  // container's spec.imagePullSecrets does. Only the machine's node gets
+  // their logins, one pull at a time (ImagePullCredentialsService).
+  repeated string image_pull_secrets = 5;
 }
 
 // FirmwareBoot boots a disk's own operating system through the platform's

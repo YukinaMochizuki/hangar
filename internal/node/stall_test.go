@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/jonboulle/clockwork"
 
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry/registrytest"
@@ -63,20 +64,20 @@ func TestAStalledRegistryHoldsUpNoOtherImage(t *testing.T) {
 	p.start(t.Context(), func() { done <- struct{}{} })
 	t.Cleanup(p.wait)
 
-	_, _, _, _ = p.get("m1", refs["stalled1"], "")
-	_, _, _, _ = p.get("m2", refs["stalled2"], "")
+	_, _, _, _ = p.get("m1", refs["stalled1"], "", driver.Anonymous, false)
+	_, _, _, _ = p.get("m2", refs["stalled2"], "", driver.Anonymous, false)
 	for _, a := range arrived {
 		<-a
 	}
 	start := time.Now()
-	_, _, _, _ = p.get("m3", refs["good"], "")
+	_, _, _, _ = p.get("m3", refs["good"], "", driver.Anonymous, false)
 	for {
 		select {
 		case <-done:
 		case <-time.After(10 * time.Second):
 			t.Fatalf("the good image not ready after %v, behind two stalled ones", time.Since(start))
 		}
-		if _, _, ok, err := p.get("m3", refs["good"], ""); ok || err != nil {
+		if _, _, ok, err := p.get("m3", refs["good"], "", driver.Anonymous, false); ok || err != nil {
 			if err != nil {
 				t.Fatal(err)
 			}
