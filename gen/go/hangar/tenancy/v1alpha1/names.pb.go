@@ -23,7 +23,7 @@ const (
 
 type CheckNameRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// "Tenant" or "Project".
+	// "Tenant", "Project" or "User".
 	Kind          string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
 	Name          string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -76,8 +76,8 @@ func (x *CheckNameRequest) GetName() string {
 
 type CheckNameResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// True when no object of the kind has ever had the name. Creating can still
-	// fail if someone takes it in between.
+	// True when no object of the kind has ever had the name, and it is not
+	// reserved. Creating can still fail if someone takes it in between.
 	Available     bool `protobuf:"varint,1,opt,name=available,proto3" json:"available,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

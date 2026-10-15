@@ -39,8 +39,9 @@ const (
 
 // NameServiceClient is a client for the hangar.tenancy.v1alpha1.NameService service.
 type NameServiceClient interface {
-	// CheckName needs only platform membership. It says whether the name is
-	// free, never who holds it.
+	// CheckName needs only platform membership; for a User, being invited is
+	// enough, as signing up checks first. It says whether the name is free,
+	// never who holds it.
 	CheckName(context.Context, *connect.Request[v1alpha1.CheckNameRequest]) (*connect.Response[v1alpha1.CheckNameResponse], error)
 }
 
@@ -76,8 +77,9 @@ func (c *nameServiceClient) CheckName(ctx context.Context, req *connect.Request[
 
 // NameServiceHandler is an implementation of the hangar.tenancy.v1alpha1.NameService service.
 type NameServiceHandler interface {
-	// CheckName needs only platform membership. It says whether the name is
-	// free, never who holds it.
+	// CheckName needs only platform membership; for a User, being invited is
+	// enough, as signing up checks first. It says whether the name is free,
+	// never who holds it.
 	CheckName(context.Context, *connect.Request[v1alpha1.CheckNameRequest]) (*connect.Response[v1alpha1.CheckNameResponse], error)
 }
 

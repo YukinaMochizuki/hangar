@@ -64,19 +64,43 @@ cloud, and some people fund the hardware and should see more of it.
     the platform, a tenant, or a project. The authorizer caches bindings and
     keeps them current through a watch.
 - **Platform membership gates everything.** Signing in through Access only
-  proves who someone is. A person with no platform role (`platform.member`,
-  `platform.sponsor` or `platform.root`, which nest in that order) may do
-  nothing at all, even inside a tenant someone shared with them; the console
-  will show them a waiting page. Membership is a platform-scoped RoleBinding
-  on their email, so an administrator can add people before they ever sign
-  in. Service tokens are not subject to membership: they hold only what is
-  bound to them.
+  proves who someone is. A platform member holds a platform role
+  (`platform.member`, `platform.sponsor` or `platform.root`, which nest in
+  that order) and has signed up. Anyone else may do nothing at all, even
+  inside a tenant someone shared with them. Service tokens and root on the
+  host are not subject to membership: they hold only what is bound to them,
+  or `platform.root`, and need no User.
+- **Invitation, then onboarding.** An administrator invites a person by
+  binding them a platform role on their email, before they ever sign in.
+  The person then signs up once (`hangar signup --username NAME`, later the
+  console's onboarding page), which creates their `User` (group `iam`). Until
+  then every call refuses them and names `hangar signup`, except
+  `AccountService` (`WhoAmI`, `SignUp`, `UpdateProfile`) and checking a
+  username with `CheckName`. `WhoAmI` answers anyone signed in, so the
+  console can choose between a waiting page, onboarding and the app.
+- **A User is a person's account.** Its name is the username they choose:
+  a DNS label, global, never reused (like a tenant name), immutable, and not
+  a reserved word such as `admin` or `root`. `spec.email` is the email
+  Access verified for whoever signed up, never taken from a request and
+  never changed. The person's `display_name` is theirs alone, changed
+  through `UpdateProfile`: an administrator's apply that leaves it out
+  keeps it, and one that sets another is refused. Only `platform.root` sets
+  `max_owned_tenants`, the cap on tenants they may own (unset is the
+  platform default). Only signing up creates a User, as the apiserver
+  itself. Otherwise Users go through ordinary RBAC: their target is the
+  platform, so only `platform.root` reads, lists or changes them, and a
+  person reads their own through `WhoAmI`. Bindings stay keyed by email,
+  so an invitation can come before the User.
+- **A User is never deleted.** No one deletes one through the API, not
+  `platform.root` and not root on the host: as with the system-managed
+  kinds, no role grants it. One email has one User, for good, and its
+  username stays taken.
+- **Removing someone is deleting their platform binding.** Their
+  membership ends and their User stays; inviting them again restores it.
 - Members may create tenants, and creating one grants its creator
   `tenant.owner` (a binding owned by the tenant, so it goes with it). A
-  `--bootstrap-admin` flag grants `platform.root` once, on an empty store.
-- People are not resources: an identity is the email Access verified, as in
-  GCP IAM. A `User` kind for profiles, keys and join requests may come with
-  the console; bindings stay keyed by email so pre-binding keeps working.
+  `--bootstrap-admin` flag grants `platform.root` once, on an empty store;
+  that invites the first administrator, who then signs up like anyone else.
 - Roles carry the scope level they can be bound at, so a tenant owner cannot
   bind a platform role at all, and can grant roles only inside their tenant.
   A binding's scope is immutable: it belongs to that tenant or project.

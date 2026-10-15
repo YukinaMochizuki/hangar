@@ -189,24 +189,26 @@ func TestNoOtherListenerIsRoot(t *testing.T) {
 
 func TestDevRefusesTunnelledRequests(t *testing.T) {
 	l := start(t, uint32(os.Getuid()))
-	list := func(h http.Header) error {
-		_, err := bindings(http.DefaultClient, l.public, h).ListRoleBindings(context.Background(), connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{}))
+	// WhoAmI answers whoever authenticates, member or not.
+	whoami := func(h http.Header) error {
+		_, err := iamv1alpha1connect.NewAccountServiceClient(http.DefaultClient, l.public, connect.WithInterceptors(connect.UnaryInterceptorFunc(
+			func(next connect.UnaryFunc) connect.UnaryFunc {
+				return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+					for k, v := range h {
+						req.Header()[k] = v
+					}
+					return next(ctx, req)
+				}
+			}))).WhoAmI(context.Background(), connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
 		return err
 	}
-	// The bootstrap admin's grant is written in the background at start.
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		err := list(http.Header{auth.DevUserHeader: {"root@example.com"}})
-		if err == nil {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the bootstrap admin on loopback: %v", err)
-		}
+	if err := whoami(http.Header{auth.DevUserHeader: {"root@example.com"}}); err != nil {
+		t.Fatalf("the bootstrap admin on loopback: %v", err)
 	}
 	// Cf-Warp-Tag-Id is what cloudflared itself adds to every request it
 	// proxies; the rest come from Cloudflare's edge.
 	for _, k := range []string{"Cf-Warp-Tag-Id", "Cdn-Loop", "Cf-Connecting-Ip", "Cf-Ray"} {
-		err := list(http.Header{auth.DevUserHeader: {"root@example.com"}, k: {"x"}})
+		err := whoami(http.Header{auth.DevUserHeader: {"root@example.com"}, k: {"x"}})
 		if connect.CodeOf(err) != connect.CodeUnauthenticated {
 			t.Errorf("the bootstrap admin with %s: %v; want unauthenticated", k, err)
 		}

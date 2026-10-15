@@ -57,6 +57,7 @@ one:
 export HANGAR_CONFIG=/tmp/hangar-dev.yaml
 go run ./cmd/hangar config set-context dev --endpoint http://127.0.0.1:8080 \
   --auth dev --user you@example.com --project web --use
+go run ./cmd/hangar signup --username you   # once: the grant only invites you
 go run ./cmd/hangar apply -f my-stack.yaml
 go run ./cmd/hangar get containers -o json
 ```
@@ -96,9 +97,9 @@ They change only `spec.runState`, so a later `apply` of a manifest without
 `runState` starts the container again. Without a node, `--wait` waits until
 `--timeout`.
 
-To act as someone else, add them as a member first (a platform RoleBinding
-with role `platform.member` for their email, applied as the admin) and make a
-second context with `--user`.
+To act as someone else, invite them first (a platform RoleBinding with role
+`platform.member` for their email, applied as the admin), make a second
+context with `--user`, and sign up in it.
 
 To have a node, pass `--socket /tmp/hangar-node.sock --node-uid $(id -u)
 --node-name dev` to the apiserver, which then registers a `Node` named `dev`,

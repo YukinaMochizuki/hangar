@@ -33,6 +33,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewRoleBindingServiceHandler(&roleBindingService{b: backends(registry.RoleBinding)}, opts...))
+	mux.Handle(iamv1alpha1connect.NewUserServiceHandler(&userService{b: backends(registry.User)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
@@ -355,6 +356,69 @@ func (s *roleBindingService) UpdateRoleBindingStatus(ctx context.Context, req *c
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha11.UpdateRoleBindingStatusResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+}
+
+type userService struct {
+	b resource.Backend
+}
+
+func (s *userService) GetUser(ctx context.Context, req *connect.Request[v1alpha11.GetUserRequest]) (*connect.Response[v1alpha11.GetUserResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.GetUserResponse{User: obj.(*v1alpha11.User)}), nil
+}
+
+func (s *userService) ListUsers(ctx context.Context, req *connect.Request[v1alpha11.ListUsersRequest]) (*connect.Response[v1alpha11.ListUsersResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha11.ListUsersResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha11.User))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *userService) WatchUsers(ctx context.Context, req *connect.Request[v1alpha11.WatchUsersRequest], stream *connect.ServerStream[v1alpha11.WatchUsersResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha11.WatchUsersResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.User = ev.Object.(*v1alpha11.User)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *userService) ApplyUser(ctx context.Context, req *connect.Request[v1alpha11.ApplyUserRequest]) (*connect.Response[v1alpha11.ApplyUserResponse], error) {
+	in := req.Msg.GetUser()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("user is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.ApplyUserResponse{User: res.Object.(*v1alpha11.User), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *userService) DeleteUser(ctx context.Context, req *connect.Request[v1alpha11.DeleteUserRequest]) (*connect.Response[v1alpha11.DeleteUserResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.DeleteUserResponse{User: obj.(*v1alpha11.User)}), nil
+}
+
+func (s *userService) UpdateUserStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateUserStatusRequest]) (*connect.Response[v1alpha11.UpdateUserStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.UpdateUserStatusResponse{User: obj.(*v1alpha11.User)}), nil
 }
 
 type addressService struct {

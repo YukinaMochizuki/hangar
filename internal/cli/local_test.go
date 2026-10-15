@@ -61,7 +61,8 @@ kind: RoleBinding
 metadata: {name: root-again}
 spec: {subject: {user: carol@example.com}, role: platform.root, scope: {platform: {}}}
 `, "apply", "-f", "-")
-	w.as("carol@example.com")
+	// carol had no User yet, so she signs up before the grant counts.
+	w.signUp("carol@example.com")
 	if out := w.must("", "get", "rolebindings", "-o", "name"); !strings.Contains(out, "rolebinding/root-again") {
 		t.Errorf("the binding root made does not grant: %q", out)
 	}

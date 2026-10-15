@@ -42,7 +42,7 @@ type subject struct {
 }
 
 // Authorizer answers authorization questions from an in-memory view of
-// RoleBindings and Projects, kept current by watching the store.
+// RoleBindings, Projects and Users, kept current by watching the store.
 type Authorizer struct {
 	store store.Store
 	// extra are roles beyond Roles, which never replace one of them.
@@ -55,6 +55,10 @@ type Authorizer struct {
 	grants   map[subject][]grant
 	// tenantOf maps project names to their tenant.
 	tenantOf map[string]string
+	// usernames maps each signed-up person's email to their User's name, and
+	// emails is its inverse, so a deleted User can be dropped by name.
+	usernames map[string]string
+	emails    map[string]string
 	// rev is the store revision the view reflects.
 	rev int64
 	// advanced is closed and replaced whenever rev moves.
@@ -69,17 +73,19 @@ type bindingEntry struct {
 // New returns an authorizer over st. Call Run before using it.
 func New(st store.Store, extra map[string]Role) *Authorizer {
 	return &Authorizer{
-		store:    st,
-		extra:    maps.Clone(extra),
-		bindings: map[string]bindingEntry{},
-		grants:   map[subject][]grant{},
-		tenantOf: map[string]string{},
-		advanced: make(chan struct{}),
+		store:     st,
+		extra:     maps.Clone(extra),
+		bindings:  map[string]bindingEntry{},
+		grants:    map[subject][]grant{},
+		tenantOf:  map[string]string{},
+		usernames: map[string]string{},
+		emails:    map[string]string{},
+		advanced:  make(chan struct{}),
 	}
 }
 
-// Run loads the current bindings and projects and follows every write until
-// ctx is done.
+// Run loads the current bindings, projects and users and follows every write
+// until ctx is done.
 func (a *Authorizer) Run(ctx context.Context) error {
 	for {
 		err := a.sync(ctx)
@@ -103,20 +109,29 @@ func (a *Authorizer) sync(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	users, _, err := a.store.List(ctx, store.ListOptions{Kind: registry.User.Kind})
+	if err != nil {
+		return err
+	}
 	a.mu.Lock()
 	a.bindings = map[string]bindingEntry{}
 	a.tenantOf = map[string]string{}
+	a.usernames = map[string]string{}
+	a.emails = map[string]string{}
 	for _, o := range bindings {
 		a.putBinding(o)
 	}
 	for _, o := range projects {
 		a.putProject(o)
 	}
+	for _, o := range users {
+		a.putUser(o)
+	}
 	a.rebuildGrants()
 	a.advance(rev)
 	a.mu.Unlock()
-	// Projects were listed at or after rev; replaying from rev reapplies
-	// full-state events, which converges to the same view.
+	// Projects and users were listed at or after rev; replaying from rev
+	// reapplies full-state events, which converges to the same view.
 	return a.store.Watch(ctx, store.WatchOptions{SinceRevision: rev}, func(ev store.Event) error {
 		a.mu.Lock()
 		defer a.mu.Unlock()
@@ -133,6 +148,12 @@ func (a *Authorizer) sync(ctx context.Context) error {
 				delete(a.tenantOf, ev.Object.Name)
 			} else {
 				a.putProject(ev.Object)
+			}
+		case registry.User.Kind:
+			if ev.Type == store.EventDeleted {
+				a.dropUser(ev.Object.Name)
+			} else {
+				a.putUser(ev.Object)
 			}
 		}
 		a.advance(ev.Revision)
@@ -200,6 +221,30 @@ func (a *Authorizer) putProject(o store.Object) {
 	a.tenantOf[o.Name] = p.GetSpec().GetTenant()
 }
 
+func (a *Authorizer) putUser(o store.Object) {
+	var u iamv1alpha1.User
+	if err := proto.Unmarshal(o.Data, &u); err != nil {
+		return
+	}
+	// A User's email never changes, but replace whatever the name had.
+	a.dropUser(o.Name)
+	email := u.GetSpec().GetEmail()
+	if email == "" {
+		return
+	}
+	a.usernames[email] = o.Name
+	a.emails[o.Name] = email
+}
+
+func (a *Authorizer) dropUser(name string) {
+	if email, ok := a.emails[name]; ok {
+		delete(a.emails, name)
+		if a.usernames[email] == name {
+			delete(a.usernames, email)
+		}
+	}
+}
+
 func (a *Authorizer) rebuildGrants() {
 	a.grants = map[subject][]grant{}
 	for _, e := range a.bindings {
@@ -218,7 +263,7 @@ func (a *Authorizer) advance(rev int64) {
 }
 
 // Fresh waits until the view reflects every write committed before the call,
-// so a request sees bindings and projects created by earlier requests.
+// so a request sees bindings, projects and users created by earlier requests.
 func (a *Authorizer) Fresh(ctx context.Context) error {
 	want, err := a.store.Revision(ctx)
 	if err != nil {
@@ -274,8 +319,8 @@ func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool
 	return false
 }
 
-// IsMember reports whether a person is a platform member. Other principals
-// are not subject to membership and always report true.
+// IsMember reports whether a person is a platform member: invited, and signed
+// up. Other principals are not subject to membership and always report true.
 func (a *Authorizer) IsMember(p auth.Principal) bool {
 	if p.Type != auth.User {
 		return true
@@ -285,8 +330,38 @@ func (a *Authorizer) IsMember(p auth.Principal) bool {
 	return a.member(p)
 }
 
-// member reports platform membership. Callers hold a.mu.
+// IsInvited reports whether a person holds a platform role, which invites
+// them to sign up, whether or not they have. It is false for every other
+// principal.
+func (a *Authorizer) IsInvited(p auth.Principal) bool {
+	if p.Type != auth.User {
+		return false
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.invited(p)
+}
+
+// Username returns the name of a person's User, if they have signed up.
+func (a *Authorizer) Username(p auth.Principal) (string, bool) {
+	if p.Type != auth.User {
+		return "", false
+	}
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	name, ok := a.usernames[p.ID]
+	return name, ok
+}
+
+// member reports platform membership: a platform role and a User. Callers
+// hold a.mu.
 func (a *Authorizer) member(p auth.Principal) bool {
+	_, signedUp := a.usernames[p.ID]
+	return signedUp && a.invited(p)
+}
+
+// invited reports whether p holds a platform role. Callers hold a.mu.
+func (a *Authorizer) invited(p auth.Principal) bool {
 	for _, g := range a.grants[subject{p.Type, p.ID}] {
 		if g.platform && g.role.Member {
 			return true
