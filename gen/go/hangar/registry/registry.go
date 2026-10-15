@@ -90,6 +90,16 @@ var (
 		Message:    (*v1alpha11.RoleBinding)(nil).ProtoReflect().Type(),
 		Service:    "hangar.iam.v1alpha1.RoleBindingService",
 	}
+	User = Resource{
+		Group:      "iam",
+		Version:    "v1alpha1",
+		Kind:       "User",
+		Plural:     "users",
+		ShortNames: []string{},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha11.User)(nil).ProtoReflect().Type(),
+		Service:    "hangar.iam.v1alpha1.UserService",
+	}
 	Address = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -169,6 +179,7 @@ var All = []Resource{
 	Node,
 	VirtualMachine,
 	RoleBinding,
+	User,
 	Address,
 	Network,
 	SecurityGroup,

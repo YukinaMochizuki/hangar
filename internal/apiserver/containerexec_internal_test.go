@@ -167,9 +167,9 @@ func newExecWorld(t *testing.T, configure func(*Config)) *execWorld {
 		}
 	})
 	w.s = s
+	addMember(t, s, "bob@example.com")
+	addMember(t, s, "carol@example.com")
 	for _, rb := range []*iamv1alpha1.RoleBinding{
-		binding("member-bob", "bob@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
-		binding("member-carol", "carol@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
 		binding("reader-carol", "carol@example.com", readerRole, &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}),
 	} {
 		if _, err := s.backend(registry.RoleBinding).Apply(system, rb); err != nil {

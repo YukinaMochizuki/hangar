@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
@@ -224,11 +223,10 @@ func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	platform := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}}
 	for _, u := range []string{"owner@example.com", "other@example.com", "member@example.com"} {
-		bind("member-"+strings.Split(u, "@")[0], u, "platform.member", platform)
+		w.env.AddMember(u, "platform.member")
 	}
-	bind("sponsor", "sponsor@example.com", "platform.sponsor", platform)
+	w.env.AddMember("sponsor@example.com", "platform.sponsor")
 	bind("owner", "owner@example.com", "tenant.owner", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}})
 	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
 		t.Fatal(err)
@@ -392,9 +390,8 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	platform := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}}
+	w.env.AddMember("owner@example.com", "platform.member")
 	for name, b := range map[string]*iamv1alpha1.RoleBindingSpec{
-		"member-owner": {Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "owner@example.com"}}, Role: "platform.member", Scope: platform},
 		"owner": {Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "owner@example.com"}}, Role: "tenant.owner",
 			Scope: &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}}},
 	} {

@@ -12,7 +12,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
-	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
@@ -25,19 +24,11 @@ func asNode(ctx context.Context, name string) context.Context {
 	return auth.WithPrincipal(ctx, auth.Principal{Type: auth.Node, ID: name})
 }
 
-// asRoot makes root@example.com a platform root and acts as them.
+// asRoot makes root@example.com a platform root, signed up, and acts as them.
 func asRoot(t *testing.T, s *Server, system context.Context) context.Context {
 	t.Helper()
-	if _, err := s.backend(registry.RoleBinding).Apply(system, &iamv1alpha1.RoleBinding{
-		Metadata: &metav1.ObjectMeta{Name: "root"},
-		Spec: &iamv1alpha1.RoleBindingSpec{
-			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "root@example.com"}},
-			Role:    "platform.root",
-			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}},
-		},
-	}); err != nil {
-		t.Fatal(err)
-	}
+	invite(t, s, "root@example.com", "platform.root")
+	signUp(t, s, "root@example.com")
 	return auth.WithPrincipal(system, auth.Principal{Type: auth.User, ID: "root@example.com"})
 }
 

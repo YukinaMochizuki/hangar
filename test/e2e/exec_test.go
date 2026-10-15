@@ -11,7 +11,6 @@ import (
 	"connectrpc.com/connect"
 	"github.com/coder/websocket"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/emptypb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
@@ -215,12 +214,11 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	platform := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{Platform: &emptypb.Empty{}}}
 	tenant := &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}}
 	for _, u := range []string{"owner", "other", "member", "reader"} {
-		bind("member-"+u, u+"@example.com", "platform.member", platform)
+		w.env.AddMember(u+"@example.com", "platform.member")
 	}
-	bind("sponsor", "sponsor@example.com", "platform.sponsor", platform)
+	w.env.AddMember("sponsor@example.com", "platform.sponsor")
 	bind("owner", "owner@example.com", "tenant.owner", tenant)
 	bind("reader", "reader@example.com", readerRole, tenant)
 	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {

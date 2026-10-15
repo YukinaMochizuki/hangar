@@ -435,9 +435,10 @@ func TestPlatformMembership(t *testing.T) {
 	must[tenancyv1alpha1.GetTenantResponse](t)(c.tenants.GetTenant(ctx, connect.NewRequest(&tenancyv1alpha1.GetTenantRequest{Name: "acme"})))
 	must[tenancyv1alpha1.ApplyTenantResponse](t)(c.tenants.ApplyTenant(ctx, connect.NewRequest(tenant("carolco"))))
 
-	// Sponsors are members too.
+	// Sponsors are members too, once signed up.
 	const dave = "dave@example.com"
-	must[iamv1alpha1.ApplyRoleBindingResponse](t)(e.as(root).bindings.ApplyRoleBinding(ctx, binding("sponsor-dave", dave, "platform.sponsor", platformScope())))
+	e.invite(dave, "platform.sponsor")
+	e.signUp(dave)
 	must[tenancyv1alpha1.ApplyTenantResponse](t)(e.as(dave).tenants.ApplyTenant(ctx, connect.NewRequest(tenant("daveco"))))
 }
 

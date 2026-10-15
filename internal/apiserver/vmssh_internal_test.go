@@ -93,9 +93,9 @@ func TestSigningAKeyForAVM(t *testing.T) {
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, vmFromImage("web", "noble")); err != nil {
 		t.Fatal(err)
 	}
+	addMember(t, s, "bob@example.com")
+	addMember(t, s, "carol@example.com")
 	for _, rb := range []*iamv1alpha1.RoleBinding{
-		binding("member-bob", "bob@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
-		binding("member-carol", "carol@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
 		binding("reader-carol", "carol@example.com", vmReaderRole, &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}),
 	} {
 		if _, err := s.backend(registry.RoleBinding).Apply(system, rb); err != nil {
@@ -275,9 +275,9 @@ func sshTunnelWorld(t *testing.T) (*Server, context.Context, *computev1alpha1.Ma
 		c.Nodes = []string{"n1"}
 		c.ExtraRoles = map[string]authz.Role{vmReaderRole: authz.NewRole(authz.TenantLevel, authz.Permission(registry.VirtualMachine, authz.Get))}
 	})
+	addMember(t, s, "bob@example.com")
+	addMember(t, s, "carol@example.com")
 	for _, rb := range []*iamv1alpha1.RoleBinding{
-		binding("member-bob", "bob@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
-		binding("member-carol", "carol@example.com", "platform.member", &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}}),
 		binding("reader-carol", "carol@example.com", vmReaderRole, &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}),
 	} {
 		if _, err := s.backend(registry.RoleBinding).Apply(system, rb); err != nil {

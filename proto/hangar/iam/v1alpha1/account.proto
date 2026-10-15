@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "hangar/iam/v1alpha1/user.proto";
+
+// AccountService is a person's own account: who they are signed in as, and
+// signing up. Someone invited (holding a platform role) who has not signed up
+// yet may call it, though every other call refuses them. It is not a
+// resource's service, so it is written by hand rather than generated. See
+// docs/decisions/tenancy-and-iam.md.
+service AccountService {
+  // WhoAmI answers any authenticated caller, about themselves only.
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
+  // SignUp creates the caller's User. Only an invited person who has no User
+  // yet may call it.
+  rpc SignUp(SignUpRequest) returns (SignUpResponse);
+  // UpdateProfile changes the caller's own display name, and nothing else.
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+}
+
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  // The kind of caller: "user", "serviceToken", "local", "node" or "system".
+  string type = 1;
+  // The caller's identity: a person's email, a service token's client ID.
+  string id = 2;
+  // For a person, whether they hold a platform role: whether they have been
+  // invited. Always false for anyone else.
+  bool invited = 3;
+  // Whether the caller may use Hangar: a person who was invited and signed
+  // up, or any other caller.
+  bool member = 4;
+  // The caller's User, if they have signed up.
+  User user = 5;
+}
+
+message SignUpRequest {
+  // The username: a DNS label, never used before and not reserved.
+  string username = 1;
+  string display_name = 2;
+}
+
+message SignUpResponse {
+  User user = 1;
+}
+
+message UpdateProfileRequest {
+  string display_name = 1;
+}
+
+message UpdateProfileResponse {
+  User user = 1;
+}

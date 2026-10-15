@@ -58,7 +58,9 @@ a copy of a global `Image`, a distribution's disk image that platform
 administrators add to the catalogue by URL and sha256.
 
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
-to a `Tenant`; tenants hold people, projects hold resources.
+to a `Tenant`; tenants hold people, projects hold resources. A person is a
+global `User`, which they create by signing up once a platform-role
+`RoleBinding` on their email has invited them (`decisions/tenancy-and-iam.md`).
 
 ## Data flow for a change
 

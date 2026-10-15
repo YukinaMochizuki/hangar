@@ -1,0 +1,118 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// User is a person who has signed up: the onboarding they complete once a
+// platform-role RoleBinding on their email has invited them. Its name is the
+// username they chose, global and never reused. Only AccountService.SignUp
+// creates one; RoleBindings stay keyed by email. See
+// docs/decisions/tenancy-and-iam.md.
+message User {
+  option (hangar.meta.v1.resource) = {
+    kind: "User"
+    plural: "users"
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  UserSpec spec = 4;
+  UserStatus status = 5;
+}
+
+// UserSpec is the desired state of a user.
+message UserSpec {
+  // The email Cloudflare Access verified for the person who signed up. It is
+  // taken from their identity, never from a request, and one email has at
+  // most one User.
+  string email = 1 [(hangar.meta.v1.field).immutable = true];
+  // The name people read. It is the user's own: they change it with
+  // AccountService.UpdateProfile. An apply that leaves it empty keeps it,
+  // and one that sets another is refused.
+  string display_name = 2;
+  // How many tenants the user may own. Unset means the platform default.
+  // Only platform.root sets it.
+  optional int32 max_owned_tenants = 3;
+}
+
+// UserStatus is the observed state of a user.
+message UserStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// UserService manages users. Only platform.root holds its permissions; a
+// person reads their own User through AccountService.WhoAmI. DeleteUser
+// refuses everyone: a User is never deleted, and removing a member is
+// deleting their platform RoleBinding.
+service UserService {
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+  rpc WatchUsers(WatchUsersRequest) returns (stream WatchUsersResponse);
+  rpc ApplyUser(ApplyUserRequest) returns (ApplyUserResponse);
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  rpc UpdateUserStatus(UpdateUserStatusRequest) returns (UpdateUserStatusResponse);
+}
+
+message GetUserRequest {
+  string name = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListUsersResponse {
+  repeated User items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchUsersRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchUsersResponse {
+  hangar.meta.v1.EventType type = 1;
+  User user = 2;
+  int64 revision = 3;
+}
+
+message ApplyUserRequest {
+  User user = 1;
+}
+
+message ApplyUserResponse {
+  User user = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteUserRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteUserResponse {
+  User user = 1;
+}
+
+message UpdateUserStatusRequest {
+  string name = 1;
+  UserStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateUserStatusResponse {
+  User user = 1;
+}

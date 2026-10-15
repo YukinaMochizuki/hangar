@@ -35,6 +35,8 @@ type world struct {
 	// admin is the admin socket, where the test's own uid is root.
 	admin  string
 	config string
+	// rootSignedUp is set once the bootstrap admin has signed up.
+	rootSignedUp bool
 }
 
 func newWorld(t *testing.T) *world {
@@ -81,31 +83,65 @@ func newWorld(t *testing.T) *world {
 	return w
 }
 
-// addMembers makes people platform members, as the bootstrap admin, the way
-// an administrator would with the CLI.
+// addMembers makes people platform members the way it is done with the
+// CLI: the bootstrap admin invites them, and each signs up as usernameOf
+// their email. The bootstrap admin signs up first, once.
 func (w *world) addMembers(emails ...string) {
+	w.t.Helper()
+	w.signUpRoot()
+	w.invite("platform.member", emails...)
+	for _, e := range emails {
+		w.signUp(e)
+	}
+}
+
+// invite binds people a platform role as the bootstrap admin, who must have
+// signed up.
+func (w *world) invite(role string, emails ...string) {
 	w.t.Helper()
 	w.as("root@example.com")
 	var docs []string
-	for i, e := range emails {
+	for _, e := range emails {
 		docs = append(docs, fmt.Sprintf(`apiVersion: iam.hangarlab.cloud/v1alpha1
 kind: RoleBinding
-metadata: {name: member-%d}
-spec: {subject: {user: %q}, role: platform.member, scope: {platform: {}}}
-`, i, e))
+metadata: {name: %s-%s}
+spec: {subject: {user: %q}, role: %s, scope: {platform: {}}}
+`, role[strings.LastIndexByte(role, '.')+1:], usernameOf(e), e, role))
 	}
-	// The bootstrap admin's grant is written in the background at start.
+	w.must(strings.Join(docs, "---\n"), "apply", "-f", "-")
+}
+
+// signUp signs an invited person up as usernameOf their email, and leaves
+// the world acting as them.
+func (w *world) signUp(email string) {
+	w.t.Helper()
+	w.as(email)
+	w.must("", "signup", "--username", usernameOf(email))
+}
+
+// signUpRoot signs the bootstrap admin up once its grant, written in the
+// background at start, is in.
+func (w *world) signUpRoot() {
+	w.t.Helper()
+	if w.rootSignedUp {
+		return
+	}
+	w.as("root@example.com")
 	deadline := time.Now().Add(10 * time.Second)
-	for {
-		r := w.run(strings.Join(docs, "---\n"), "apply", "-f", "-")
-		if r.code == 0 {
-			return
-		}
+	for !strings.Contains(w.must("", "whoami"), "invited, not signed up") {
 		if time.Now().After(deadline) {
-			w.t.Fatalf("adding members: exit %d: %s", r.code, r.err)
+			w.t.Fatal("the bootstrap admin was never invited")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
+	w.signUp("root@example.com")
+	w.rootSignedUp = true
+}
+
+// usernameOf is the username test helpers sign a person up with: their
+// email, with '@' and '.' made '-'.
+func usernameOf(email string) string {
+	return strings.NewReplacer("@", "-", ".", "-").Replace(email)
 }
 
 type result struct {

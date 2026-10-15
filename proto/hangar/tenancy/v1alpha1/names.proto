@@ -2,25 +2,26 @@ syntax = "proto3";
 
 package hangar.tenancy.v1alpha1;
 
-// NameService answers whether a tenant or project name can still be taken.
-// Those names are global and never reused, so clients suggest one from a
-// display name and ask here before creating it. It is not a resource's
-// service, so it is written by hand rather than generated. See
-// docs/decisions/tenancy-and-iam.md.
+// NameService answers whether a tenant, project or user name can still be
+// taken. Those names are global and never reused, so clients suggest one from
+// a display name, or a person picks a username, and ask here before creating
+// it. It is not a resource's service, so it is written by hand rather than
+// generated. See docs/decisions/tenancy-and-iam.md.
 service NameService {
-  // CheckName needs only platform membership. It says whether the name is
-  // free, never who holds it.
+  // CheckName needs only platform membership; for a User, being invited is
+  // enough, as signing up checks first. It says whether the name is free,
+  // never who holds it.
   rpc CheckName(CheckNameRequest) returns (CheckNameResponse);
 }
 
 message CheckNameRequest {
-  // "Tenant" or "Project".
+  // "Tenant", "Project" or "User".
   string kind = 1;
   string name = 2;
 }
 
 message CheckNameResponse {
-  // True when no object of the kind has ever had the name. Creating can still
-  // fail if someone takes it in between.
+  // True when no object of the kind has ever had the name, and it is not
+  // reserved. Creating can still fail if someone takes it in between.
   bool available = 1;
 }

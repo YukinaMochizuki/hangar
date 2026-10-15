@@ -37,6 +37,13 @@ The apiserver reads it through `EnvironmentFile=`. The same file later
 sets the auth mode ("Switching to Cloudflare Access" below); without that,
 the public API is in dev auth.
 
+The grant only invites the bootstrap admin: like everyone, they sign up
+once after the first start, before any other call works
+(`docs/decisions/tenancy-and-iam.md`). From a workstation whose context
+signs in as that email, `hangar signup --username <name>`; `hangar whoami`
+shows where they stand. Root on the host, through the admin socket, needs
+no User.
+
 Build a release, `make release`, on a machine with the guest kernel's
 toolchain (`docs/runbook/guest-kernel.md`; the committed kernel config is
 Ubuntu 24.04's GCC's, so a testbed VM, not a workspace). It writes
@@ -177,6 +184,13 @@ with `--release DIR`. `--only <step>` runs a single step
   side (`docs/runbook/cloudflare.md`), not here.
 
 ## Deploying a new hangar version
+
+Upgrading past the change that added `User` (`hangar signup`): from the
+first start of that version, every existing member, the owner included, is
+refused on every call until they run `hangar signup --username NAME` once;
+their bindings stay and count again as soon as they have. Plan the deploy
+with them. Service tokens, such as `hangar-smoke`, and root on the host
+through the admin socket are unaffected.
 
 VMs keep running across it: restarting `hangar-node` leaves their units
 alone. A VM's unit runs `/usr/local/bin/hangar-node vmm` as its launcher, so
