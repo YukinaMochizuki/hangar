@@ -4,7 +4,8 @@
 # pool named hangar (file-backed), and an uplink whose IPv6 is the prefix's ::
 # address behind an on-link gateway outside the /64 (a veth into a netns).
 # HANGAR_TESTBED_RELEASE names a release directory (make release) for the
-# release and services steps.
+# release and services steps; HANGAR_TESTBED_FRONT_DOOR the directory
+# test/testbed/front-door-kit.sh made, for the front door's test CA.
 #
 # Run as root on a throwaway VM only: it rewrites fstab, netplan and sysctl,
 # and installs and starts hangar's services.
@@ -17,6 +18,7 @@ host_dir=$repo/deploy/host
 work=/var/tmp/hangar-testbed
 env_file=$work/testbed.env
 release=${HANGAR_TESTBED_RELEASE:-}
+front_door_kit=${HANGAR_TESTBED_FRONT_DOOR:-}
 
 swap0=
 swap1=
@@ -27,6 +29,9 @@ step() { echo; echo "### $*" >&2; }
 [ "$(id -u)" = 0 ] || fail "must run as root"
 [ -f "$release/SHA256SUMS" ] || fail "HANGAR_TESTBED_RELEASE must name a release directory (make release)"
 release=$(cd "$release" && pwd)
+[ -x "$front_door_kit/hangar-edge" ] && [ -x "$front_door_kit/pebble" ] ||
+	fail "HANGAR_TESTBED_FRONT_DOOR must name the directory test/testbed/front-door-kit.sh made"
+front_door_kit=$(cd "$front_door_kit" && pwd)
 
 # state_digest summarises everything a dry run must leave untouched.
 state_digest() {
@@ -235,7 +240,10 @@ test_converges_and_is_idempotent() {
 	sleep 2
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'loaded the SSH CA' || fail "the apiserver did not load the SSH CA"
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'PRIVATE' && fail "the apiserver logged the SSH CA's key"
-	"$host_dir/verify.sh" --env "$env_file" | grep -q '^PASS SSH CA key /var/lib/hangar/state/ssh-ca, hangar.s, mode 600 (hangar ssh)$' ||
+	# Read from a file: grep -q ending the pipe early would kill verify.sh
+	# with SIGPIPE, and pipefail fail the check.
+	"$host_dir/verify.sh" --env "$env_file" >"$work/ca-verify.log" || true
+	grep -q '^PASS SSH CA key /var/lib/hangar/state/ssh-ca, hangar.s, mode 600 (hangar ssh)$' "$work/ca-verify.log" ||
 		fail "verify does not check the SSH CA"
 
 	step "the first run made the secrets key-encryption key, the apiserver's alone, and runs after it keep it"
@@ -249,7 +257,8 @@ test_converges_and_is_idempotent() {
 	[ "$(sha256sum "$kek")" = "$before" ] || fail "a later run replaced the KEK"
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'loaded the key-encryption key' || fail "the apiserver did not load the KEK"
 	journalctl -u hangar-apiserver --since "$since" | grep -qF "$(cut -d' ' -f2 "$kek")" && fail "the apiserver logged the KEK"
-	"$host_dir/verify.sh" --env "$env_file" | grep -q "^PASS secrets key-encryption key $kek, hangar.s, mode 600$" ||
+	"$host_dir/verify.sh" --env "$env_file" >"$work/kek-verify.log" || true
+	grep -q "^PASS secrets key-encryption key $kek, hangar.s, mode 600$" "$work/kek-verify.log" ||
 		fail "verify does not check the KEK"
 }
 
@@ -572,8 +581,10 @@ test_oidc_cutover() {
 	wait_cf_active || fail "cloudflared did not come up once the apiserver was back: $(cf_state)"
 
 	step "the guard also refuses an apiserver whose loaded unit would restart it in dev auth"
-	# The log is read by the second: nothing from before may share it.
-	sleep 1
+	# The log is read by the second: nothing from before may share it, the
+	# tunnel's "Starting tunnel" included, which it logs a moment after
+	# systemd has it active.
+	sleep 2
 	since=$(date '+%Y-%m-%d %H:%M:%S')
 	sed -i 's/--auth-mode oidc --oidc-client-id [^ ]* --oidc-client-secret-file [^ ]* --public-url [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
 	systemctl daemon-reload
@@ -660,6 +671,220 @@ test_oidc_cutover() {
 	rm /etc/hangar/cloudflared.env
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged once cloudflared.env is gone"
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once cloudflared.env is gone"
+}
+
+# The console's origin with the front door: sign-in's public URL.
+TB_FRONT_DOOR_URL=https://console.cp.test
+
+# front_door_env off|edge|on sets the edge's settings in local.env: none,
+# the edge on loopback for public endpoints (with the Access application
+# it checks private ones against), or the front door too, with
+# certificates from pebble over DNS-01 the edge answers itself.
+front_door_env() {
+	sed -i '/^HANGAR_EDGE_/d; /^HANGAR_CP_DOMAIN=/d; /^HANGAR_ACME_/d; /^HANGAR_CF_TEAM_DOMAIN=/d; /^HANGAR_CF_ACCOUNT_ID=/d; /^HANGAR_CF_BYPASS_POLICY_ID=/d' /etc/hangar/local.env
+	[ "$1" != off ] || return 0
+	cat >>/etc/hangar/local.env <<EOF
+HANGAR_EDGE_DOMAIN=user.test
+HANGAR_CF_TEAM_DOMAIN=https://testbed.cloudflareaccess.com
+HANGAR_EDGE_CF_AUDIENCE=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+HANGAR_CF_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+HANGAR_CF_BYPASS_POLICY_ID=6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f
+EOF
+	[ "$1" = on ] || return 0
+	cat >>/etc/hangar/local.env <<EOF
+HANGAR_CP_DOMAIN=cp.test
+HANGAR_ACME_CA=https://127.0.0.1:14000/dir
+HANGAR_ACME_CA_ROOT=/etc/hangar/pebble-ca.pem
+HANGAR_ACME_DNS=testbed:127.0.0.1:8053
+EOF
+}
+
+# from_outside CMD... runs CMD in the upstream's namespace: as the internet
+# reaches the host, through its uplink.
+from_outside() { ip netns exec tb-upstream "$@"; }
+
+# door_curl [--outside] ADDR NAME PATH asks the front door at ADDR (an
+# address as curl takes it) for https://NAME/PATH, trusting pebble's root,
+# and prints the body and the status; from outside, through the uplink.
+door_curl() {
+	local in=()
+	if [ "$1" = --outside ]; then
+		in=(ip netns exec tb-upstream)
+		shift
+	fi
+	"${in[@]}" curl -s -m 5 --cacert "$work/front-door/root.pem" --resolve "$2:443:$1" -w ' %{http_code}' "https://$2$3"
+}
+
+test_front_door() {
+	step "the front door: hangar-edge, never root, takes :443 and :80 from systemd for IPv4 and IPv6, with certificates over DNS-01"
+	local tls=$work/front-door edge_release=$work/release-edge log=$work/door.log out v4 v6=2001:db8:0:1::1 pid since
+	v4=$(ip -4 -o addr show dev tb-uplink scope global | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+	# The VM's own default route, learned on its real link, beats the
+	# uplink's for IPv6; on a host the uplink is the only one. Replies to
+	# the upstream leave by the uplink for this test.
+	ip -6 route replace 2001:db8:0:ff::/64 dev tb-uplink
+	# The release, but with the edge that answers DNS-01 itself.
+	rm -rf "$edge_release"
+	cp -r "$release" "$edge_release"
+	install -m 0755 "$front_door_kit/hangar-edge" "$edge_release/hangar-edge"
+	(cd "$edge_release" && rm SHA256SUMS && sha256sum -- * >SHA256SUMS)
+	mkdir -p "$tls"
+	cat >"$tls/pebble.json" <<EOF
+{"pebble": {"listenAddress": "127.0.0.1:14000", "managementListenAddress": "127.0.0.1:15000",
+ "certificate": "$front_door_kit/pebble-cert.pem", "privateKey": "$front_door_kit/pebble-key.pem",
+ "httpPort": 5002, "tlsPort": 5001, "ocspResponderURL": "", "externalAccountBindingRequired": false,
+ "retryAfter": {"authz": 1, "order": 1}, "keyAlgorithm": "ecdsa",
+ "profiles": {"default": {"description": "testbed", "validityPeriod": 7776000}}}}
+EOF
+	systemd-run --quiet --unit=tb-pebble -E PEBBLE_VA_NOSLEEP=1 -E PEBBLE_WFE_NONCEREJECT=0 \
+		"$front_door_kit/pebble" -config "$tls/pebble.json" -dnsserver 127.0.0.1:8053
+	install -m 0644 "$front_door_kit/pebble-ca.pem" /etc/hangar/pebble-ca.pem
+	auth_env oidc
+	front_door_env on
+	# Sign-in's provider returns to the public URL, which must be the
+	# console's site the front door serves.
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" --only edge 2>"$log"; then
+		fail "the front door ran with sign-in's public URL elsewhere"
+	fi
+	grep -q "HANGAR_PUBLIC_URL in /etc/hangar/local.env must be $TB_FRONT_DOOR_URL" "$log" || fail "unexpected refusal: $(cat "$log")"
+	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
+
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" 2>&1 | tee "$log"
+	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$log" || fail "summary does not match its changes"
+	grep -qx 'apply: start hangar-edge' "$log" || fail "the edge was not started"
+	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release")
+	[ "$out" = "changes: 0" ] || fail "the run after the front door reported $out"
+	pid=$(main_pid hangar-edge)
+	[ "$(stat -c %U "/proc/$pid")" = hangar-edge ] || fail "the edge runs as $(stat -c %U "/proc/$pid")"
+	[ "$(stat -c '%U %a' /var/lib/hangar-edge)" = "hangar-edge 700" ] || fail "the edge's state is $(stat -c '%U %a' /var/lib/hangar-edge)"
+	ss -Hltn | awk '{print $4}' | grep -qx '\*:443' || fail ":443 is not bound for every address: $(ss -Hltn)"
+
+	step "the certificates come, and each site answers on IPv4 and IPv6, from the host and from outside"
+	# One certificate each, as they come: every name has its own.
+	for _ in $(seq 1 60); do
+		curl -sk https://127.0.0.1:15000/roots/0 >"$tls/root.pem" 2>/dev/null &&
+			[ "$(door_curl 127.0.0.1 api.cp.test /healthz)" = "ok
+ 200" ] && door_curl 127.0.0.1 console.cp.test / >/dev/null &&
+			door_curl 127.0.0.1 web-demo.user.test / >/dev/null && break
+		sleep 1
+	done
+	[ "$(door_curl 127.0.0.1 api.cp.test /healthz)" = "ok
+ 200" ] || fail "no API through the front door: $(door_curl 127.0.0.1 api.cp.test /healthz; journalctl -u hangar-edge --no-pager -n 30)"
+
+	step "verify checks the front door, its certificates included"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the front door: $(grep FAIL "$work/door-verify.log")"
+	for out in 'certificate for api.cp.test in /var/lib/hangar-edge, more than 14 days left' \
+		'certificate for console.cp.test in /var/lib/hangar-edge, more than 14 days left' \
+		'certificate for \*.user.test in /var/lib/hangar-edge, more than 14 days left' 'edge runs as hangar-edge with no capability' 'edge listens on loopback, and on :443 and :80 for every address' \
+		'public socket /run/hangar/public.sock, root.s and hangar-edge.s group.s, 660' 'table inet hangar-host as loaded: input dropped but TCP 22, 80, 443'; do
+		grep -q "^PASS $out" "$work/door-verify.log" || fail "verify does not check: $out"
+	done
+	grep -q '^SKIP Cloudflare DNS token (DNS-01 is answered by testbed:127.0.0.1:8053)$' "$work/door-verify.log" || fail "verify does not skip the DNS token"
+	# A certificate verify cannot find fails it.
+	mv /var/lib/hangar-edge/certificates /var/lib/hangar-edge/certificates.tb
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log"; then fail "verify passed with no certificates in storage"; fi
+	[ "$(grep -c '^FAIL certificate for ' "$work/door-verify.log")" = 3 ] || fail "verify does not fail each certificate: $(grep FAIL "$work/door-verify.log")"
+	mv /var/lib/hangar-edge/certificates.tb /var/lib/hangar-edge/certificates
+	[ "$(door_curl '[::1]' api.cp.test /healthz)" = "ok
+ 200" ] || fail "the API at [::1]: $(door_curl '[::1]' api.cp.test /healthz)"
+	for addr in "$v4" "[$v6]"; do
+		out=$(door_curl --outside "$addr" api.cp.test /healthz) || out="curl failed: $out"
+		[ "$out" = "ok
+ 200" ] || fail "the API from outside at $addr: $out"
+	done
+	[ "$(door_curl "$v4" console.cp.test /projects/demo)" = "the console is not installed
+ 503" ] || fail "the console without its files: $(door_curl "$v4" console.cp.test /projects/demo)"
+	[ "$(door_curl --outside "[$v6]" web-demo.user.test /)" = "no such endpoint
+ 404" ] || fail "an endpoint that is not there: $(door_curl --outside "[$v6]" web-demo.user.test /)"
+	door_curl --outside "$v4" other.cp.test / >/dev/null && fail "a handshake for a name the front door has no certificate for"
+	out=$(from_outside curl -s -m 5 -o /dev/null -w '%{http_code} %{redirect_url}' --resolve "api.cp.test:80:$v4" 'http://api.cp.test/a?b')
+	[ "$out" = '308 https://api.cp.test/a?b' ] || fail ":80 does not redirect: $out"
+	# Sign-in reaches the apiserver through :443: on the API's host it sends
+	# the browser to the console's, the public URL, as the apiserver does.
+	out=$(from_outside curl -s -m 5 -o /dev/null -w '%{http_code} %{redirect_url}' --cacert "$work/front-door/root.pem" \
+		--resolve "api.cp.test:443:$v4" 'https://api.cp.test/auth/login?return=/x')
+	[ "$out" = "302 $TB_FRONT_DOOR_URL/auth/login?return=/x" ] || fail "sign-in through the front door: $out"
+
+	step "the firewall keeps the outside from everything but 22, 80 and 443, IPv4 and IPv6"
+	systemd-run --quiet --unit=tb-listen python3 -m http.server 9999 --bind ::
+	sleep 1
+	curl -s -m 3 -o /dev/null "http://$v4:9999/" || fail "the test listener does not answer on the host"
+	for addr in "$v4" "[$v6]"; do
+		from_outside curl -s -m 3 -o /dev/null "http://$addr:9999/" && fail "the outside reached :9999 at $addr"
+		from_outside timeout 3 bash -c "exec 3<>/dev/tcp/${addr//[\[\]]/}/22" || fail "the outside cannot reach SSH at $addr"
+	done
+	systemctl stop tb-listen
+
+	step "with the firewall in place, a guest still reaches the outside over IPv4 NAT and IPv6, and is reached over IPv6"
+	# A stand-in for a guest: a namespace behind a veth, masqueraded out of
+	# the uplink, with a /128 of the host's prefix routed to it and answered
+	# for upstream by proxy NDP, as the node agent routes a machine. Its
+	# traffic is forwarded, which the host's firewall leaves alone.
+	local g6=2001:db8:0:1::99
+	ip netns add tb-guest
+	ip link add tbg-host type veth peer name tbg-guest netns tb-guest
+	ip link set tbg-host addrgenmode none
+	ip addr add 10.199.0.1/30 dev tbg-host
+	ip -6 addr add fe80::1/64 dev tbg-host nodad
+	ip link set tbg-host up
+	ip -n tb-guest link set lo up
+	ip -n tb-guest addr add 10.199.0.2/30 dev tbg-guest
+	ip -n tb-guest -6 addr add "$g6/128" dev tbg-guest nodad
+	ip -n tb-guest link set tbg-guest up
+	ip -n tb-guest route add default via 10.199.0.1
+	ip -n tb-guest -6 route add default via fe80::1 dev tbg-guest
+	ip -6 route add "$g6/128" dev tbg-host
+	ip -6 neigh add proxy "$g6" dev tb-uplink
+	nft -f - <<'EOF'
+table ip tb-guest-nat {
+	chain postrouting {
+		type nat hook postrouting priority srcnat;
+		ip saddr 10.199.0.0/30 oifname "tb-uplink" masquerade
+	}
+}
+EOF
+	nft list table inet hangar-host >/dev/null || fail "the host's firewall is not loaded"
+	ip netns exec tb-guest ping -c 2 -W 2 192.0.2.1 >/dev/null || fail "the guest does not reach the outside over IPv4 NAT"
+	ip netns exec tb-guest ping -6 -c 2 -W 2 2001:db8:0:ff::ffff >/dev/null || fail "the guest does not reach the outside over IPv6"
+	from_outside ping -6 -c 2 -W 2 "$g6" >/dev/null || fail "the outside does not reach the guest over IPv6"
+	ip -6 neigh del proxy "$g6" dev tb-uplink
+	ip -6 route del "$g6/128" dev tbg-host
+	nft delete table ip tb-guest-nat
+	ip netns del tb-guest
+
+	step "a restarted edge serves its certificates from its storage, and asks the CA for nothing"
+	sleep 1
+	since=$(date '+%Y-%m-%d %H:%M:%S')
+	systemctl restart hangar-edge
+	for _ in $(seq 1 20); do
+		[ "$(door_curl 127.0.0.1 api.cp.test /healthz)" = "ok
+ 200" ] && break
+		sleep 0.5
+	done
+	[ "$(door_curl 127.0.0.1 api.cp.test /healthz)" = "ok
+ 200" ] || fail "no API after a restart"
+	journalctl -u hangar-edge --since "$since" --no-pager -o cat | grep -q 'obtaining certificate' && fail "the restarted edge asked the CA again"
+
+	step "the front door off: its sockets and the public socket go, and :443 with them"
+	front_door_env edge
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" >/dev/null 2>"$log" || fail "turning the front door off: $(cat "$log")"
+	ss -Hltn | awk '{print $4}' | grep -qE ':(443|80)$' && fail "something still listens on :443 or :80: $(ss -Hltnp)"
+	[ ! -e /run/hangar/public.sock ] || fail "the public socket is still there"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release")" = "changes: 0" ] || fail "not converged with the front door off"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the front door off: $(grep FAIL "$work/door-verify.log")"
+	grep -q '^PASS edge listens on loopback only$' "$work/door-verify.log" || fail "verify does not check the edge on loopback"
+
+	step "the edge off, dev auth and the release back"
+	front_door_env off
+	auth_env dev
+	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$log" || fail "turning the edge off: $(cat "$log")"
+	systemctl is-active --quiet hangar-edge && fail "the edge still runs"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged with the edge off"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the edge off: $(grep FAIL "$work/door-verify.log")"
+	systemctl stop tb-pebble
+	rm -f /etc/hangar/pebble-ca.pem
+	rm -rf "$edge_release"
+	ip -6 route del 2001:db8:0:ff::/64 dev tb-uplink
 }
 
 test_refuses_tampered_release() {
@@ -966,6 +1191,7 @@ test_admin_socket
 test_node_reconnects
 test_cloudflared_needs_oidc_auth
 test_oidc_cutover
+test_front_door
 test_refuses_tampered_release
 test_refuses_half_applied_release
 test_refuses_without_local_env
