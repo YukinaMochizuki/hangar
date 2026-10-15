@@ -6,61 +6,56 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 )
 
-// TestReadingLogsIsItsOwnPermission: reading a container's output is not
-// reading the container; a tenant's owner and the platform's root may do
-// both, a sponsor or a member neither.
-func TestReadingLogsIsItsOwnPermission(t *testing.T) {
-	if ContainerLogs != "compute.containers.logs" {
-		t.Errorf("the permission is %q", ContainerLogs)
+// TestMachineCapabilitiesAreTheirOwnPermissions: reading a machine's output,
+// running a process in it and logging in to it are permissions on the
+// Machine kind, apart from one another and from reading the object; a
+// tenant's owner and the platform's root hold them, a sponsor or a member
+// none. No other kind has them: the kind a caller names never decides.
+func TestMachineCapabilitiesAreTheirOwnPermissions(t *testing.T) {
+	for perm, want := range map[string]string{
+		MachineLogs: "compute.machines.logs", MachineExec: "compute.machines.exec", MachineSSH: "compute.machines.ssh",
+	} {
+		if perm != want {
+			t.Errorf("the permission is %q, want %q", perm, want)
+		}
 	}
 	for role, want := range map[string]bool{
 		"platform.root": true, "tenant.owner": true,
 		"platform.sponsor": false, "platform.member": false,
 	} {
-		if got := Roles[role].Grants(ContainerLogs); got != want {
-			t.Errorf("%s grants reading logs: %t, want %t", role, got, want)
+		for _, perm := range []string{MachineLogs, MachineExec, MachineSSH} {
+			if got := Roles[role].Grants(perm); got != want {
+				t.Errorf("%s grants %s: %t, want %t", role, perm, got, want)
+			}
 		}
 	}
-	if Roles["tenant.owner"].Grants(Permission(registry.Machine, Logs)) {
-		t.Error("the logs verb is granted on a kind other than containers")
-	}
-}
-
-// TestExecIsItsOwnPermission: running a process in a container is neither
-// reading it nor reading its output; a tenant's owner and the platform's
-// root may, a sponsor or a member not.
-func TestExecIsItsOwnPermission(t *testing.T) {
-	if ContainerExec != "compute.containers.exec" {
-		t.Errorf("the permission is %q", ContainerExec)
-	}
-	for role, want := range map[string]bool{
-		"platform.root": true, "tenant.owner": true,
-		"platform.sponsor": false, "platform.member": false,
-	} {
-		if got := Roles[role].Grants(ContainerExec); got != want {
-			t.Errorf("%s grants exec: %t, want %t", role, got, want)
+	for _, r := range registry.All {
+		if r.Kind == registry.Machine.Kind {
+			continue
 		}
-	}
-	if Roles["tenant.owner"].Grants(Permission(registry.Machine, Exec)) {
-		t.Error("the exec verb is granted on a kind other than containers")
+		for _, v := range []Verb{Logs, Exec, SSH} {
+			if Roles["platform.root"].Grants(Permission(r, v)) {
+				t.Errorf("%s is granted on %s, not a machine", v, r.Plural)
+			}
+		}
 	}
 }
 
 // TestARoleOfOnesOwn: NewRole grants what it is given, and only that, from
 // a copy; an authorizer's extra roles never replace a built-in one.
 func TestARoleOfOnesOwn(t *testing.T) {
-	perms := []string{ContainerLogs}
+	perms := []string{MachineLogs}
 	r := NewRole(TenantLevel, perms...)
-	perms[0] = ContainerExec
-	if !r.Grants(ContainerLogs) || r.Grants(ContainerExec) || r.Grants(Permission(registry.Container, Get)) {
+	perms[0] = MachineExec
+	if !r.Grants(MachineLogs) || r.Grants(MachineExec) || r.Grants(Permission(registry.Container, Get)) {
 		t.Errorf("a role of logs alone grants logs %t, exec %t, get %t",
-			r.Grants(ContainerLogs), r.Grants(ContainerExec), r.Grants(Permission(registry.Container, Get)))
+			r.Grants(MachineLogs), r.Grants(MachineExec), r.Grants(Permission(registry.Container, Get)))
 	}
 	a := New(nil, map[string]Role{"test.logs": r, "tenant.owner": NewRole(TenantLevel)})
-	if got, ok := a.Role("test.logs"); !ok || !got.Grants(ContainerLogs) {
+	if got, ok := a.Role("test.logs"); !ok || !got.Grants(MachineLogs) {
 		t.Error("an extra role is not found")
 	}
-	if got, _ := a.Role("tenant.owner"); !got.Grants(ContainerExec) {
+	if got, _ := a.Role("tenant.owner"); !got.Grants(MachineExec) {
 		t.Error("an extra role replaced a built-in one")
 	}
 	if _, ok := New(nil, nil).Role("test.logs"); ok {

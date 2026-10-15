@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -21,16 +22,16 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 )
 
-// fakeLogs serves ContainerLogs with fixed records, recording the
+// fakeLogs serves a container's logs with fixed records, recording the
 // request and who sent it.
 type fakeLogs struct {
 	mu   sync.Mutex
-	req  *computev1alpha1.ContainerLogsRequest
+	req  *computev1alpha1.LogsRequest
 	user string
-	recs []*computev1alpha1.ContainerLogRecord
+	recs []*computev1alpha1.MachineLogRecord
 }
 
-func (f *fakeLogs) ContainerLogs(_ context.Context, req *connect.Request[computev1alpha1.ContainerLogsRequest], stream *connect.ServerStream[computev1alpha1.ContainerLogsResponse]) error {
+func (f *fakeLogs) logs(req *connect.Request[computev1alpha1.LogsRequest], stream *connect.ServerStream[computev1alpha1.LogsResponse]) error {
 	f.mu.Lock()
 	f.req, f.user = req.Msg, req.Header().Get(auth.DevUserHeader)
 	recs := f.recs
@@ -38,45 +39,49 @@ func (f *fakeLogs) ContainerLogs(_ context.Context, req *connect.Request[compute
 	if req.Msg.GetName() == "absent" {
 		return connect.NewError(connect.CodeNotFound, nil)
 	}
-	return stream.Send(&computev1alpha1.ContainerLogsResponse{Records: recs})
+	return stream.Send(&computev1alpha1.LogsResponse{Records: recs})
 }
 
-// fakeVMLogs serves VirtualMachineLogs with fixed records, recording the
-// request.
-type fakeVMLogs struct {
-	mu   sync.Mutex
-	req  *computev1alpha1.VirtualMachineLogsRequest
-	recs []*computev1alpha1.VirtualMachineLogRecord
+// fakeVMLogs serves a VM's logs with fixed records, recording the request.
+type fakeVMLogs struct{ fakeLogs }
+
+// fakeCapabilities serves MachineCapabilityService.Logs, a container's
+// from c and a VM's from vm.
+type fakeCapabilities struct {
+	computev1alpha1connect.UnimplementedMachineCapabilityServiceHandler
+	c  *fakeLogs
+	vm *fakeVMLogs
 }
 
-func (f *fakeVMLogs) VirtualMachineLogs(_ context.Context, req *connect.Request[computev1alpha1.VirtualMachineLogsRequest], stream *connect.ServerStream[computev1alpha1.VirtualMachineLogsResponse]) error {
-	f.mu.Lock()
-	f.req = req.Msg
-	recs := f.recs
-	f.mu.Unlock()
-	if req.Msg.GetName() == "absent" {
-		return connect.NewError(connect.CodeNotFound, nil)
+func (f fakeCapabilities) Logs(_ context.Context, req *connect.Request[computev1alpha1.LogsRequest], stream *connect.ServerStream[computev1alpha1.LogsResponse]) error {
+	switch req.Msg.GetKind() {
+	case "Container":
+		return f.c.logs(req, stream)
+	case "VirtualMachine":
+		return f.vm.logs(req, stream)
 	}
-	return stream.Send(&computev1alpha1.VirtualMachineLogsResponse{Records: recs})
+	return connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%ss do not run as machines", strings.ToLower(req.Msg.GetKind())))
 }
 
 var logT0 = time.Date(2026, 10, 12, 9, 0, 0, 0, time.UTC)
 
-func serial(boot int64, sec int, text string) *computev1alpha1.VirtualMachineLogRecord {
-	return &computev1alpha1.VirtualMachineLogRecord{Boot: boot, Time: timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
-		Content: &computev1alpha1.VirtualMachineLogRecord_Data{Data: []byte(text)}}
+func serial(boot int64, sec int, text string) *computev1alpha1.MachineLogRecord {
+	return &computev1alpha1.MachineLogRecord{Boot: boot, Stream: computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_CONSOLE,
+		Time:    timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
+		Content: &computev1alpha1.MachineLogRecord_Data{Data: []byte(text)}}
 }
 
-func bootEnd(boot int64, sec int, code int32, stopped bool) *computev1alpha1.VirtualMachineLogRecord {
-	return &computev1alpha1.VirtualMachineLogRecord{Boot: boot, Time: timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
-		Content: &computev1alpha1.VirtualMachineLogRecord_End{End: &computev1alpha1.VirtualMachineBootEnd{Code: code, Stopped: stopped}}}
+func bootEnd(boot int64, sec int, code int32, stopped bool) *computev1alpha1.MachineLogRecord {
+	return &computev1alpha1.MachineLogRecord{Boot: boot, Stream: computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_EXIT,
+		Time:    timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
+		Content: &computev1alpha1.MachineLogRecord_Exit{Exit: &computev1alpha1.MachineExitStatus{Code: code, Stopped: stopped}}}
 }
 
 // fourVMBoots are a VM's boots, ended each way one can end: stopped as
 // its guest powered off, its guest powering off on its own, a crash, and
 // stopped with its guest killed.
-func fourVMBoots() []*computev1alpha1.VirtualMachineLogRecord {
-	return []*computev1alpha1.VirtualMachineLogRecord{
+func fourVMBoots() []*computev1alpha1.MachineLogRecord {
+	return []*computev1alpha1.MachineLogRecord{
 		serial(1, 0, "BdsDxe: starting Boot0001\n"),
 		serial(1, 1, "ubuntu login: "),
 		bootEnd(1, 2, 0, true),
@@ -88,25 +93,25 @@ func fourVMBoots() []*computev1alpha1.VirtualMachineLogRecord {
 	}
 }
 
-func data(boot int64, s computev1alpha1.ContainerLogStream, sec int, text string) *computev1alpha1.ContainerLogRecord {
-	return &computev1alpha1.ContainerLogRecord{Boot: boot, Stream: s, Time: timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
-		Content: &computev1alpha1.ContainerLogRecord_Data{Data: []byte(text)}}
+func data(boot int64, s computev1alpha1.MachineLogStream, sec int, text string) *computev1alpha1.MachineLogRecord {
+	return &computev1alpha1.MachineLogRecord{Boot: boot, Stream: s, Time: timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
+		Content: &computev1alpha1.MachineLogRecord_Data{Data: []byte(text)}}
 }
 
-func exit(boot int64, sec int, code, signal int32) *computev1alpha1.ContainerLogRecord {
-	return &computev1alpha1.ContainerLogRecord{Boot: boot, Stream: computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_EXIT,
+func exit(boot int64, sec int, code, signal int32) *computev1alpha1.MachineLogRecord {
+	return &computev1alpha1.MachineLogRecord{Boot: boot, Stream: computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_EXIT,
 		Time:    timestamppb.New(logT0.Add(time.Duration(sec) * time.Second)),
-		Content: &computev1alpha1.ContainerLogRecord_Exit{Exit: &computev1alpha1.ContainerExitStatus{Code: code, Signal: signal}}}
+		Content: &computev1alpha1.MachineLogRecord_Exit{Exit: &computev1alpha1.MachineExitStatus{Code: code, Signal: signal}}}
 }
 
 const (
-	stdout = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDOUT
-	stderr = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_STDERR
-	initS  = computev1alpha1.ContainerLogStream_CONTAINER_LOG_STREAM_INIT
+	stdout = computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_STDOUT
+	stderr = computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_STDERR
+	initS  = computev1alpha1.MachineLogStream_MACHINE_LOG_STREAM_INIT
 )
 
-func twoBootLogs() []*computev1alpha1.ContainerLogRecord {
-	return []*computev1alpha1.ContainerLogRecord{
+func twoBootLogs() []*computev1alpha1.MachineLogRecord {
+	return []*computev1alpha1.MachineLogRecord{
 		data(1, initS, 0, "hangar-init: starting the container\n"),
 		data(1, stdout, 1, "one\ntw"),
 		data(1, stdout, 2, "o\n"),
@@ -126,8 +131,7 @@ func runLogs(t *testing.T, f *fakeLogs, args ...string) (int, string, string) {
 func runLogsOf(t *testing.T, f *fakeLogs, vf *fakeVMLogs, args ...string) (int, string, string) {
 	t.Helper()
 	mux := http.NewServeMux()
-	mux.Handle(computev1alpha1connect.NewContainerLogsServiceHandler(f))
-	mux.Handle(computev1alpha1connect.NewVirtualMachineLogsServiceHandler(vf))
+	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(fakeCapabilities{c: f, vm: vf}))
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	config := filepath.Join(t.TempDir(), "config.yaml")
@@ -162,7 +166,7 @@ func TestLogsSplitsTheStreams(t *testing.T) {
 	if errOut != want {
 		t.Errorf("stderr\n%q\nwant\n%q", errOut, want)
 	}
-	if f.req.GetProject() != "web" || f.req.GetName() != "api" || f.req.GetFollow() || f.req.TailLines != nil || f.req.Since != nil || f.user != "alice@example.com" {
+	if f.req.GetProject() != "web" || f.req.GetKind() != "Container" || f.req.GetName() != "api" || f.req.GetFollow() || f.req.TailLines != nil || f.req.Since != nil || f.user != "alice@example.com" {
 		t.Errorf("asked %v as %q", f.req, f.user)
 	}
 }
@@ -186,7 +190,6 @@ func TestLogsOptions(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"logs", "ct"},
-		{"logs", "machine", "x"},
 		{"logs", "ct", "api", "--since", "yesterday"},
 		{"logs", "ct", "api", "-o", "yaml"},
 		{"logs", "ct", "api", "--tail", "-2"},
@@ -197,6 +200,10 @@ func TestLogsOptions(t *testing.T) {
 	}
 	if code, _, _ := runLogs(t, f, "logs", "ct", "absent"); code != cli.ExitNotFound {
 		t.Errorf("a container not found: exit %d", code)
+	}
+	// Which kinds have logs is the server's to say.
+	if code, _, e := runLogs(t, f, "logs", "network", "default"); code == 0 || !strings.Contains(e, "networks do not run as machines") {
+		t.Errorf("logs of a network: exit %d, stderr %q", code, e)
 	}
 }
 
@@ -244,7 +251,7 @@ func TestLogsJSON(t *testing.T) {
 // each boot ended to stderr, in words; the options are passed on, and the
 // logs of a container are not read.
 func TestLogsOfAVirtualMachine(t *testing.T) {
-	f, vf := &fakeLogs{}, &fakeVMLogs{recs: fourVMBoots()}
+	f, vf := &fakeLogs{}, &fakeVMLogs{fakeLogs{recs: fourVMBoots()}}
 	code, out, errOut := runLogsOf(t, f, vf, "logs", "vm", "web")
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)
@@ -259,7 +266,7 @@ func TestLogsOfAVirtualMachine(t *testing.T) {
 	if errOut != want {
 		t.Errorf("stderr\n%q\nwant\n%q", errOut, want)
 	}
-	if vf.req.GetProject() != "web" || vf.req.GetName() != "web" || vf.req.GetFollow() || vf.req.TailLines != nil || vf.req.Since != nil {
+	if vf.req.GetProject() != "web" || vf.req.GetKind() != "VirtualMachine" || vf.req.GetName() != "web" || vf.req.GetFollow() || vf.req.TailLines != nil || vf.req.Since != nil {
 		t.Errorf("asked %v", vf.req)
 	}
 	if f.req != nil {

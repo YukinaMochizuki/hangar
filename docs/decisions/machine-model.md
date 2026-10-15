@@ -18,7 +18,8 @@ Hypervisor directly, without Kata or Kubernetes.
   Docker (overlayfs, netfilter, cgroup v2, bridge, veth).
 - Users see `Container` and `VirtualMachine`. Controllers translate both into
   an internal `Machine`, the only kind the node handles. Snapshots, disks,
-  networking and quotas exist once, at the `Machine` level.
+  networking, quotas, and logs, exec and ssh exist once, at the `Machine`
+  level.
 - A `Container`'s root disk lives and dies with it: kept across restarts,
   rebuilt when the image changes. A `VirtualMachine`'s root disk is a durable
   `Disk`.
@@ -56,6 +57,22 @@ Hypervisor directly, without Kata or Kubernetes.
   read their machines (it is where placement and boot failures show) but never
   write them: `Machine` and `Node` are system-managed kinds, whose spec only the
   apiserver writes, whatever role the caller holds.
+- Logs, exec and ssh are capabilities of the `Machine`, each one permission,
+  `compute.machines.logs`, `compute.machines.exec` and
+  `compute.machines.ssh`, held in the machine's project, and one API,
+  `MachineCapabilityService` (`Logs`, `SignSSHKey`) and the WebSockets
+  `/v1/projects/{project}/{plural}/{name}:exec` and `:ssh`. A caller names
+  what it made, by kind and name, such as Container `web`, never the machine;
+  the apiserver maps the kind to its machine in one table
+  (`internal/apiserver/machinecapability.go`), and takes the machine only if
+  the named object owns it, so an object made again under a deleted one's
+  name never reaches the old machine. A kind lacking a capability, exec on a
+  VM or ssh to a container for now, fails with `Unimplemented`, from the kind
+  alone, before the permission is checked or anything read; adding one
+  changes neither the API nor the permissions. They are no write to the
+  Machine: holding them leaves it system-managed. A log's records are the machine's, not the
+  kind's: a container's carry its process's streams and exits, a VM's, which
+  boots firmware, its serial console and how each boot ended.
 - `Node` is a global kind, one per host. The apiserver creates it for each node
   agent it is configured to accept; the agent only reports status (capacity,
   heartbeat), and the apiserver marks a node `Ready=Unknown` when the reports

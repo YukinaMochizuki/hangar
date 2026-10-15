@@ -16,13 +16,14 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 )
 
-// logsOf reads a container's logs as principal p, to the first error.
-func logsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
+// machineLogsOf reads the logs of the object of kind name as principal p, to
+// the first error.
+func machineLogsOf(t *testing.T, s *Server, p auth.Principal, kind, name string) error {
 	t.Helper()
 	srv := httptest.NewServer(s.Handler(auth.Chain{fixedAuth{p, true}}))
 	t.Cleanup(srv.Close)
-	stream, err := computev1alpha1connect.NewContainerLogsServiceClient(http.DefaultClient, srv.URL).
-		ContainerLogs(t.Context(), connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: "web", Name: name}))
+	stream, err := computev1alpha1connect.NewMachineCapabilityServiceClient(http.DefaultClient, srv.URL).
+		Logs(t.Context(), connect.NewRequest(&computev1alpha1.LogsRequest{Project: "web", Kind: kind, Name: name}))
 	if err != nil {
 		return err
 	}
@@ -30,6 +31,12 @@ func logsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
 	for stream.Receive() {
 	}
 	return stream.Err()
+}
+
+// logsOf reads a container's logs as principal p, to the first error.
+func logsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
+	t.Helper()
+	return machineLogsOf(t, s, p, registry.Container.Kind, name)
 }
 
 // TestARecreatedContainerDoesNotReadTheOldMachinesLog: a container made
@@ -94,17 +101,7 @@ func TestGettingAContainerIsNotReadingItsLogs(t *testing.T) {
 // vmLogsOf reads a VM's serial console as principal p, to the first error.
 func vmLogsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
 	t.Helper()
-	srv := httptest.NewServer(s.Handler(auth.Chain{fixedAuth{p, true}}))
-	t.Cleanup(srv.Close)
-	stream, err := computev1alpha1connect.NewVirtualMachineLogsServiceClient(http.DefaultClient, srv.URL).
-		VirtualMachineLogs(t.Context(), connect.NewRequest(&computev1alpha1.VirtualMachineLogsRequest{Project: "web", Name: name}))
-	if err != nil {
-		return err
-	}
-	defer func() { _ = stream.Close() }()
-	for stream.Receive() {
-	}
-	return stream.Err()
+	return machineLogsOf(t, s, p, registry.VirtualMachine.Kind, name)
 }
 
 // TestGettingAVirtualMachineIsNotReadingItsLogs: the node agent may get any

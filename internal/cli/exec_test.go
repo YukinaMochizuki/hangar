@@ -36,13 +36,17 @@ import (
 // named absent is refused before the upgrade.
 type execServer struct {
 	mu     sync.Mutex
-	start  *computev1alpha1.ContainerExecStart
+	start  *computev1alpha1.MachineExecStart
 	user   string
 	path   string
-	inputs []*computev1alpha1.ContainerExecRequest
+	inputs []*computev1alpha1.MachineExecRequest
 }
 
 func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.Contains(r.URL.Path, "/virtualmachines/") {
+		execws.WriteError(w, r, connect.NewError(connect.CodeUnimplemented, errors.New("exec is not supported on virtual machines yet")))
+		return
+	}
 	if strings.Contains(r.URL.Path, "/absent:") {
 		execws.WriteError(w, r, connect.NewError(connect.CodeNotFound, errors.New(`container "absent" not found`)))
 		return
@@ -53,23 +57,23 @@ func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = c.CloseNow() }()
 	ctx := r.Context()
-	read := func() (*computev1alpha1.ContainerExecRequest, error) {
+	read := func() (*computev1alpha1.MachineExecRequest, error) {
 		_, b, err := c.Read(ctx)
 		if err != nil {
 			return nil, err
 		}
-		req := &computev1alpha1.ContainerExecRequest{}
+		req := &computev1alpha1.MachineExecRequest{}
 		return req, proto.Unmarshal(b, req)
 	}
-	write := func(res *computev1alpha1.ContainerExecResponse) {
+	write := func(res *computev1alpha1.MachineExecResponse) {
 		b, _ := proto.Marshal(res)
 		_ = c.Write(ctx, websocket.MessageBinary, b)
 	}
 	stdout := func(s string) {
-		write(&computev1alpha1.ContainerExecResponse{Message: &computev1alpha1.ContainerExecResponse_Stdout{Stdout: []byte(s)}})
+		write(&computev1alpha1.MachineExecResponse{Message: &computev1alpha1.MachineExecResponse_Stdout{Stdout: []byte(s)}})
 	}
 	exit := func(code, sig int32) {
-		write(&computev1alpha1.ContainerExecResponse{Message: &computev1alpha1.ContainerExecResponse_Exit{Exit: &computev1alpha1.ContainerExecExit{Code: code, Signal: sig}}})
+		write(&computev1alpha1.MachineExecResponse{Message: &computev1alpha1.MachineExecResponse_Exit{Exit: &computev1alpha1.MachineExecExit{Code: code, Signal: sig}}})
 		_ = c.Close(websocket.StatusNormalClosure, "")
 	}
 	first, err := read()
@@ -83,7 +87,7 @@ func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch first.GetStart().GetCommand()[0] {
 	case "out":
 		stdout("to stdout\n")
-		write(&computev1alpha1.ContainerExecResponse{Message: &computev1alpha1.ContainerExecResponse_Stderr{Stderr: []byte("to stderr\n")}})
+		write(&computev1alpha1.MachineExecResponse{Message: &computev1alpha1.MachineExecResponse_Stderr{Stderr: []byte("to stderr\n")}})
 		exit(7, 0)
 		return
 	case "fail":
@@ -117,21 +121,21 @@ func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.inputs = append(f.inputs, req)
 		f.mu.Unlock()
 		switch m := req.GetMessage().(type) {
-		case *computev1alpha1.ContainerExecRequest_Stdin:
+		case *computev1alpha1.MachineExecRequest_Stdin:
 			stdout(string(m.Stdin))
-		case *computev1alpha1.ContainerExecRequest_StdinClose:
+		case *computev1alpha1.MachineExecRequest_StdinClose:
 			exit(0, 0)
 			return
-		case *computev1alpha1.ContainerExecRequest_Resize:
+		case *computev1alpha1.MachineExecRequest_Resize:
 			stdout(fmt.Sprintf("%d %d\n", m.Resize.GetRows(), m.Resize.GetCols()))
-		case *computev1alpha1.ContainerExecRequest_Signal:
+		case *computev1alpha1.MachineExecRequest_Signal:
 			exit(128+m.Signal, m.Signal)
 			return
 		}
 	}
 }
 
-func (f *execServer) got() (*computev1alpha1.ContainerExecStart, []*computev1alpha1.ContainerExecRequest) {
+func (f *execServer) got() (*computev1alpha1.MachineExecStart, []*computev1alpha1.MachineExecRequest) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.start, slices.Clone(f.inputs)
@@ -287,7 +291,7 @@ func TestExecSplitsTheStreamsAndExitsAsTheCommand(t *testing.T) {
 		t.Errorf("exit %d, stdout %q, stderr %q", code, out, errOut)
 	}
 	start, _ := r.server.got()
-	want := &computev1alpha1.ContainerExecStart{
+	want := &computev1alpha1.MachineExecStart{
 		Command: []string{"out", "-x"}, Env: []*computev1alpha1.EnvVar{{Name: "A", Value: "b=c"}}, User: "1000", WorkingDir: "/srv",
 	}
 	if !proto.Equal(start, want) {
@@ -425,7 +429,7 @@ func TestExecFailures(t *testing.T) {
 		{[]string{"exec", "ct", "api", "--", "fail"}, cli.ExitExecFailed, "not running"},
 		{[]string{"exec", "ct", "api", "out"}, cli.ExitExecFailed, "usage"},
 		{[]string{"exec", "ct", "api", "--"}, cli.ExitExecFailed, "usage"},
-		{[]string{"exec", "machine", "api", "--", "out"}, cli.ExitExecFailed, "only containers"},
+		{[]string{"exec", "vm", "web", "--", "out"}, cli.ExitExecFailed, "exec is not supported on virtual machines yet"},
 		{[]string{"exec", "--env", "X", "ct", "api", "--", "out"}, cli.ExitExecFailed, "KEY=VALUE"},
 	} {
 		code, _, errOut := r.run(t, tc.args...)

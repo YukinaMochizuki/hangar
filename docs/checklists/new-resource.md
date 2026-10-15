@@ -48,6 +48,12 @@ what it cannot.
       reads the object by get, list and watch as that node, another node and
       its owner (`docs/decisions/tenancy-and-iam.md`).
 
+- [ ] A kind that runs as a machine is registered in `machineKinds`
+      (`internal/apiserver/machinecapability.go`) with its machine's name and
+      the capabilities it has, so logs, exec and ssh reach it under
+      `compute.machines.*`; any other capability answers `Unimplemented`
+      (`docs/decisions/machine-model.md`).
+
 ## Docs
 
 - [ ] `docs/architecture.md` mentions the kind if it changes the picture.

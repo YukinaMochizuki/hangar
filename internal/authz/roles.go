@@ -30,14 +30,14 @@ const (
 	// Create opens a new tenant without any grant inside it; only tenants
 	// use it.
 	Create Verb = "create"
-	// Logs reads what a container or a virtual machine wrote; only they use
-	// it. It is not Get: output can hold what the spec does not.
+	// Logs reads what a machine wrote; only machines use it, whatever kind
+	// runs as one. It is not Get: output can hold what the spec does not.
 	Logs Verb = "logs"
-	// Exec runs a process in a container; only containers use it. It is
-	// neither Get nor Logs: it reaches everything the container can.
+	// Exec runs a process in a machine; only machines use it. It is neither
+	// Get nor Logs: it reaches everything the machine can.
 	Exec Verb = "exec"
-	// SSH logs in to a virtual machine; only they use it. It reaches
-	// everything the VM can, as Exec does a container.
+	// SSH logs in to a machine; only machines use it. It reaches everything
+	// the machine can, as Exec does.
 	SSH Verb = "ssh"
 )
 
@@ -47,19 +47,19 @@ var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, 
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
 
-// ContainerLogs is the permission to read a container's output.
-var ContainerLogs = Permission(registry.Container, Logs)
-
-// VirtualMachineLogs is the permission to read a virtual machine's serial
-// console.
-var VirtualMachineLogs = Permission(registry.VirtualMachine, Logs)
-
-// ContainerExec is the permission to run a process in a container.
-var ContainerExec = Permission(registry.Container, Exec)
-
-// VirtualMachineSSH is the permission to log in to a virtual machine: to
-// have a key signed for it, and to reach its port 22.
-var VirtualMachineSSH = Permission(registry.VirtualMachine, SSH)
+// A machine's capabilities are permissions on the Machine kind, whatever
+// kind the caller names: a container's logs and a virtual machine's are one
+// permission. See docs/decisions/machine-model.md.
+var (
+	// MachineLogs is the permission to read what a machine wrote: a
+	// container's output, a virtual machine's serial console.
+	MachineLogs = Permission(registry.Machine, Logs)
+	// MachineExec is the permission to run a process in a machine.
+	MachineExec = Permission(registry.Machine, Exec)
+	// MachineSSH is the permission to log in to a machine: to have a key
+	// signed for it, and to reach its port 22.
+	MachineSSH = Permission(registry.Machine, SSH)
+)
 
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
@@ -126,7 +126,7 @@ var readVerbs = []Verb{Get, List, Watch}
 // process in it, a login to it. Root, owners and editors hold them; viewers
 // do not, since output can hold what the spec does not. A new permission of
 // that sort, such as reaching a private PublicEndpoint, belongs here.
-var reachPermissions = []string{ContainerLogs, ContainerExec, VirtualMachineLogs, VirtualMachineSSH}
+var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH}
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.

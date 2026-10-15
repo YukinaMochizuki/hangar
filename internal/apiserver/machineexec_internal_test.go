@@ -160,7 +160,7 @@ func newExecWorld(t *testing.T, configure func(*Config)) *execWorld {
 	s, system, user := runningWith(t, func(c *Config) {
 		c.Nodes = []string{"n1"}
 		c.ExtraRoles = map[string]authz.Role{readerRole: authz.NewRole(authz.TenantLevel,
-			authz.Permission(registry.Container, authz.Get), authz.ContainerLogs)}
+			authz.Permission(registry.Container, authz.Get), authz.MachineLogs)}
 		c.Logger = slog.New(slog.NewJSONHandler(w.log, nil))
 		if configure != nil {
 			configure(c)
@@ -246,7 +246,7 @@ func (w *execWorld) connectNode(t *testing.T) {
 // dial opens an exec as user, failing as the server refuses it.
 func (w *execWorld) dial(t *testing.T, user, name string) (*websocket.Conn, error) {
 	t.Helper()
-	c, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", name), &websocket.DialOptions{
+	c, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "containers", name), &websocket.DialOptions{
 		HTTPHeader:   http.Header{auth.DevUserHeader: []string{user}},
 		Subprotocols: []string{execws.Subprotocol},
 	})
@@ -265,7 +265,7 @@ func (w *execWorld) dial(t *testing.T, user, name string) (*websocket.Conn, erro
 	return c, nil
 }
 
-func send(t *testing.T, c *websocket.Conn, req *computev1alpha1.ContainerExecRequest) {
+func send(t *testing.T, c *websocket.Conn, req *computev1alpha1.MachineExecRequest) {
 	t.Helper()
 	b, err := proto.Marshal(req)
 	if err != nil {
@@ -276,13 +276,13 @@ func send(t *testing.T, c *websocket.Conn, req *computev1alpha1.ContainerExecReq
 	}
 }
 
-func startReq(start *computev1alpha1.ContainerExecStart) *computev1alpha1.ContainerExecRequest {
-	return &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Start{Start: start}}
+func startReq(start *computev1alpha1.MachineExecStart) *computev1alpha1.MachineExecRequest {
+	return &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Start{Start: start}}
 }
 
 type wsResult struct {
 	stdout, stderr string
-	exit           *computev1alpha1.ContainerExecExit
+	exit           *computev1alpha1.MachineExecExit
 	// err is what the WebSocket closed with: nil for a normal closure.
 	err error
 }
@@ -303,16 +303,16 @@ func readAll(t *testing.T, c *websocket.Conn) (r wsResult) {
 			r.err = execws.ErrorOf(err)
 			return r
 		}
-		res := &computev1alpha1.ContainerExecResponse{}
+		res := &computev1alpha1.MachineExecResponse{}
 		if err := proto.Unmarshal(b, res); err != nil {
 			t.Fatal(err)
 		}
 		switch m := res.GetMessage().(type) {
-		case *computev1alpha1.ContainerExecResponse_Stdout:
+		case *computev1alpha1.MachineExecResponse_Stdout:
 			out.Write(m.Stdout)
-		case *computev1alpha1.ContainerExecResponse_Stderr:
+		case *computev1alpha1.MachineExecResponse_Stderr:
 			errb.Write(m.Stderr)
-		case *computev1alpha1.ContainerExecResponse_Exit:
+		case *computev1alpha1.MachineExecResponse_Exit:
 			r.exit = m.Exit
 		}
 	}
@@ -336,9 +336,9 @@ func TestAnExecRelaysAProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{
 		Command: []string{"echo", "hello", "there"}, Env: []*computev1alpha1.EnvVar{{Name: "A", Value: "b=c"}},
-		User: "1000", WorkingDir: "/srv", Tty: true, Size: &computev1alpha1.ContainerExecWindowSize{Rows: 24, Cols: 80},
+		User: "1000", WorkingDir: "/srv", Tty: true, Size: &computev1alpha1.MachineExecWindowSize{Rows: 24, Cols: 80},
 	}))
 	r := readAll(t, c)
 	if r.err != nil || r.stdout != "hello there" || r.stderr != "to stderr" || r.exit.GetCode() != 3 {
@@ -356,7 +356,7 @@ func TestAnExecRelaysAProcess(t *testing.T) {
 	_ = w.node.waitEnded(t)
 	started := w.auditLine(t, "exec started")
 	wantFields(t, started, map[string]any{
-		"principal": "user:alice@example.com", "project": "web", "container": "api", "machine": w.uid,
+		"principal": "user:alice@example.com", "project": "web", "kind": "Container", "name": "api", "machine": w.uid,
 		"argv": []any{"echo", "hello", "there"}, "tty": true, "stdin": false, "user": "1000", "workdir": "/srv",
 		"env_names": []any{"A"},
 	})
@@ -432,11 +432,11 @@ func TestEveryRefusedExecIsLogged(t *testing.T) {
 	reportMachine(t, w.s, system, m.(*computev1alpha1.Machine), computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, 1)
 	_, _ = w.dial(t, "alice@example.com", "api")
 	want := []map[string]any{
-		{"principal": "user:carol@example.com", "container": "api", "code": "permission_denied"},
-		{"principal": "", "container": "api", "code": "unauthenticated"},
-		{"principal": "user:alice@example.com", "container": "api", "code": "resource_exhausted"},
-		{"principal": "user:alice@example.com", "container": "api", "code": "invalid_argument"},
-		{"principal": "user:alice@example.com", "container": "api", "code": "failed_precondition"},
+		{"principal": "user:carol@example.com", "plural": "containers", "name": "api", "code": "permission_denied"},
+		{"principal": "", "plural": "containers", "name": "api", "code": "unauthenticated"},
+		{"principal": "user:alice@example.com", "plural": "containers", "name": "api", "code": "resource_exhausted"},
+		{"principal": "user:alice@example.com", "plural": "containers", "name": "api", "code": "invalid_argument"},
+		{"principal": "user:alice@example.com", "plural": "containers", "name": "api", "code": "failed_precondition"},
 	}
 	var got []map[string]any
 	deadline := time.Now().Add(5 * time.Second)
@@ -461,9 +461,9 @@ func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true}))
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: []byte("secret input")}})
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_StdinClose{StdinClose: &computev1alpha1.ContainerExecStdinClose{}}})
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: []byte("secret input")}})
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_StdinClose{StdinClose: &computev1alpha1.MachineExecStdinClose{}}})
 	if r := readAll(t, c); r.err != nil || r.stdout != "secret input" || r.exit.GetCode() != 0 {
 		t.Errorf("stdin: %+v", r)
 	}
@@ -475,8 +475,8 @@ func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Tty: true}))
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Resize{Resize: &computev1alpha1.ContainerExecWindowSize{Rows: 30, Cols: 100}}})
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Tty: true}))
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Resize{Resize: &computev1alpha1.MachineExecWindowSize{Rows: 30, Cols: 100}}})
 	select {
 	case size := <-w.node.resizes:
 		if size.GetRows() != 30 || size.GetCols() != 100 {
@@ -485,7 +485,7 @@ func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the resize never reached the node")
 	}
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Signal{Signal: 2}})
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Signal{Signal: 2}})
 	if r := readAll(t, c); r.err != nil || r.exit.GetCode() != 130 || r.exit.GetSignal() != 2 {
 		t.Errorf("signal: %+v", r)
 	}
@@ -495,8 +495,8 @@ func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}}))
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: []byte("x")}})
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}}))
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: []byte("x")}})
 	wantCodeOf(t, readAll(t, c).err, connect.CodeInvalidArgument, "stdin without asking for it")
 }
 
@@ -546,7 +546,7 @@ func TestAnExecIsRefusedBeforeTheUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}}))
 	<-w.node.starts
 	_, err = w.dial(t, "alice@example.com", "api")
 	wantCodeOf(t, err, connect.CodeResourceExhausted, "a second exec over the cap")
@@ -568,7 +568,7 @@ func TestAnExecIsRefusedBeforeTheUpgrade(t *testing.T) {
 
 	// No subprotocol.
 	reportMachine(t, w.s, system, m.(*computev1alpha1.Machine), computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, 1)
-	_, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "api"), &websocket.DialOptions{
+	_, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "containers", "api"), &websocket.DialOptions{
 		HTTPHeader: http.Header{auth.DevUserHeader: []string{"alice@example.com"}},
 	})
 	if err == nil || resp == nil {
@@ -585,7 +585,7 @@ func TestAnExecFailsAfterTheUpgradeWithItsCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"fail"}}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"fail"}}))
 	r := readAll(t, c)
 	wantCodeOf(t, r.err, connect.CodeFailedPrecondition, "the node failing the exec")
 	if r.err != nil && !strings.Contains(r.err.Error(), "not running") {
@@ -602,7 +602,7 @@ func TestAnExecFailsAfterTheUpgradeWithItsCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{}))
 	wantCodeOf(t, readAll(t, c).err, connect.CodeInvalidArgument, "no command")
 }
 
@@ -622,7 +622,7 @@ func TestAClientGoingAwayEndsTheNodesCall(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true}))
+		send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
 		<-w.node.starts
 		end(c)
 		if err := w.node.waitEnded(t); !errors.Is(err, context.Canceled) {
@@ -639,7 +639,7 @@ func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
 	done := make(chan wsResult, 1)
 	go func() { done <- readAll(t, c) }()
 	time.Sleep(500 * time.Millisecond) // many pings
@@ -650,7 +650,7 @@ func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
 		t.Fatalf("the node's call ended while idle: %v", err)
 	default:
 	}
-	send(t, c, &computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_StdinClose{StdinClose: &computev1alpha1.ContainerExecStdinClose{}}})
+	send(t, c, &computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_StdinClose{StdinClose: &computev1alpha1.MachineExecStdinClose{}}})
 	if r := <-done; r.err != nil || r.exit.GetCode() != 0 {
 		t.Errorf("%+v", r)
 	}
@@ -666,7 +666,7 @@ func TestAClientThatStopsReadingHoldsUpItsNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"flood"}}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"flood"}}))
 	var last int64
 	for stable := 0; stable < 10; time.Sleep(50 * time.Millisecond) {
 		n := w.node.flooded.Load()
@@ -698,14 +698,14 @@ func TestExecsLeaveNothingRunning(t *testing.T) {
 		}
 		switch i % 3 {
 		case 0:
-			send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"echo"}}))
+			send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"echo"}}))
 			readAll(t, c)
 		case 1:
-			send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}}))
+			send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}}))
 			<-w.node.starts
 			_ = c.CloseNow()
 		case 2:
-			send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"fail"}}))
+			send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"fail"}}))
 			readAll(t, c)
 		}
 		_ = w.node.waitEnded(t)
@@ -763,7 +763,7 @@ func TestAClientWhoseStdinIsBackedUpStays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"sink"}, Stdin: true}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"sink"}, Stdin: true}))
 	<-w.node.starts
 	readErr := make(chan error, 1)
 	go func() {
@@ -774,7 +774,7 @@ func TestAClientWhoseStdinIsBackedUpStays(t *testing.T) {
 			}
 		}
 	}()
-	chunk, _ := proto.Marshal(&computev1alpha1.ContainerExecRequest{Message: &computev1alpha1.ContainerExecRequest_Stdin{Stdin: make([]byte, 32<<10)}})
+	chunk, _ := proto.Marshal(&computev1alpha1.MachineExecRequest{Message: &computev1alpha1.MachineExecRequest_Stdin{Stdin: make([]byte, 32<<10)}})
 	go func() {
 		for c.Write(context.Background(), websocket.MessageBinary, chunk) == nil {
 		}
@@ -794,7 +794,7 @@ func TestAClientReadingSlowlyStays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"flood"}}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"flood"}}))
 	readErr := make(chan error, 1)
 	go func() {
 		for { // 64 KiB every 20 ms: about 3 MiB/s
@@ -819,7 +819,7 @@ func TestAClientThatStopsReadingButPingsStays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	send(t, c, startReq(&computev1alpha1.ContainerExecStart{Command: []string{"cat"}, Stdin: true}))
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
 	<-w.node.starts
 	pinging, stop := context.WithCancel(context.Background())
 	defer stop()
@@ -860,7 +860,7 @@ func TestACrossOriginExecIsRefused(t *testing.T) {
 		if tc.origin != "" {
 			h.Set("Origin", tc.origin)
 		}
-		c, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "api"), &websocket.DialOptions{
+		c, resp, err := websocket.Dial(t.Context(), w.url+execws.Path("web", "containers", "api"), &websocket.DialOptions{
 			HTTPHeader: h, Subprotocols: []string{execws.Subprotocol},
 		})
 		if resp == nil {

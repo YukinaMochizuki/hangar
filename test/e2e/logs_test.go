@@ -23,14 +23,14 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 )
 
-func (w *world) logsAs(email string) computev1alpha1connect.ContainerLogsServiceClient {
-	return computev1alpha1connect.NewContainerLogsServiceClient(apiservertest.DevUser(email), w.env.URL)
+func (w *world) logsAs(email string) computev1alpha1connect.MachineCapabilityServiceClient {
+	return computev1alpha1connect.NewMachineCapabilityServiceClient(apiservertest.DevUser(email), w.env.URL)
 }
 
 // readLogs reads a container's logs to their end, rendered as
 // boot:stream:data lines, an exit as boot:exit:code.
-func readLogs(ctx context.Context, c computev1alpha1connect.ContainerLogsServiceClient, req *computev1alpha1.ContainerLogsRequest) ([]string, error) {
-	stream, err := c.ContainerLogs(ctx, connect.NewRequest(req))
+func readLogs(ctx context.Context, c computev1alpha1connect.MachineCapabilityServiceClient, req *computev1alpha1.LogsRequest) ([]string, error) {
+	stream, err := c.Logs(ctx, connect.NewRequest(req))
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +42,10 @@ func readLogs(ctx context.Context, c computev1alpha1connect.ContainerLogsService
 	return out, stream.Err()
 }
 
-func render(recs []*computev1alpha1.ContainerLogRecord) []string {
+func render(recs []*computev1alpha1.MachineLogRecord) []string {
 	var out []string
 	for _, r := range recs {
-		s := strings.ToLower(strings.TrimPrefix(r.GetStream().String(), "CONTAINER_LOG_STREAM_"))
+		s := strings.ToLower(strings.TrimPrefix(r.GetStream().String(), "MACHINE_LOG_STREAM_"))
 		if r.GetExit() != nil {
 			out = append(out, fmt.Sprintf("%d:exit:%d", r.GetBoot(), r.GetExit().GetCode()))
 			continue
@@ -67,7 +67,7 @@ type follower struct {
 func (w *world) follow(email, name string) *follower {
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &follower{done: make(chan struct{}), cancel: cancel}
-	stream, err := w.logsAs(email).ContainerLogs(ctx, connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: project, Name: name, Follow: true}))
+	stream, err := w.logsAs(email).Logs(ctx, connect.NewRequest(&computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name, Follow: true}))
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestContainerLogs(t *testing.T) {
 	var lines []string
 	w.eventually("the output in the logs", func() (bool, string) {
 		var err error
-		lines, err = readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		lines, err = readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return err == nil && contains(lines, "1:stdout:hello", "1:stderr:oops"), fmt.Sprint(lines, err)
 	})
 	if !strings.HasPrefix(lines[0], "1:init:") {
@@ -170,14 +170,14 @@ func TestContainerLogs(t *testing.T) {
 		return w.host.LogReaders() == 0, fmt.Sprint(w.host.LogReaders())
 	})
 
-	tail, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api", TailLines: ptr(int64(1))})
+	tail, err := readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api", TailLines: ptr(int64(1))})
 	if err != nil || len(tail) != 1 || tail[0] != "2:stdout:again" {
 		t.Errorf("a tail of one line: %q %v", tail, err)
 	}
 
 	w.delete("api")
 	w.waitGone("api")
-	if _, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"}); connect.CodeOf(err) != connect.CodeNotFound {
+	if _, err := readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"}); connect.CodeOf(err) != connect.CodeNotFound {
 		t.Errorf("the logs of a container deleted: %v", err)
 	}
 	w.waitHostEmpty()
@@ -235,8 +235,8 @@ func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
 
 	// The agent is not started: the machine is never placed.
 	w.apply(container("api", "nginx"))
-	req := func(name string) *computev1alpha1.ContainerLogsRequest {
-		return &computev1alpha1.ContainerLogsRequest{Project: project, Name: name}
+	req := func(name string) *computev1alpha1.LogsRequest {
+		return &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name}
 	}
 	w.eventually("the owner told the container has no machine yet", func() (bool, string) {
 		_, err := readLogs(context.Background(), w.logsAs("owner@example.com"), req("api"))
@@ -254,7 +254,7 @@ func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
 	if _, err := w.env.As("owner@example.com").Get(context.Background(), registry.Container, client.Key{Project: project, Name: "api"}); err != nil {
 		t.Errorf("the owner reading the container: %v", err)
 	}
-	if _, err := readLogs(context.Background(), w.logsAs("owner@example.com"), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api", TailLines: ptr(int64(-1))}); connect.CodeOf(err) != connect.CodeInvalidArgument {
+	if _, err := readLogs(context.Background(), w.logsAs("owner@example.com"), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api", TailLines: ptr(int64(-1))}); connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Errorf("a negative tail: %v", err)
 	}
 
@@ -280,11 +280,11 @@ func TestLogsOfANodeDown(t *testing.T) {
 	}
 	w.eventually("a read failing as unavailable", func() (bool, string) {
 		start := time.Now()
-		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return connect.CodeOf(err) == connect.CodeUnavailable && time.Since(start) < time.Second, fmt.Sprint(err)
 	})
 	var ce *connect.Error
-	_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+	_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 	if !errors.As(err, &ce) || !strings.Contains(ce.Message(), "not connected") {
 		t.Errorf("the error says %v", err)
 	}
@@ -292,7 +292,7 @@ func TestLogsOfANodeDown(t *testing.T) {
 	// The node back, so are its logs.
 	w.startAgent()
 	w.eventually("the logs readable again", func() (bool, string) {
-		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.ContainerLogsRequest{Project: project, Name: "api"})
+		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return err == nil, fmt.Sprint(err)
 	})
 }
@@ -322,7 +322,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 	w.waitReason("job", "Running")
 	root := w.logsAs(apiservertest.Root)
 	read := func(project, name string) error {
-		_, err := readLogs(context.Background(), root, &computev1alpha1.ContainerLogsRequest{Project: project, Name: name})
+		_, err := readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
 		return err
 	}
 	w.eventually("the other tenant's container readable", func() (bool, string) {
@@ -405,7 +405,7 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 	w.apply(theirs)
 	w.waitReason("api", "Running")
 	read := func(who, project, name string) error {
-		_, err := readLogs(ctx, w.logsAs(who), &computev1alpha1.ContainerLogsRequest{Project: project, Name: name})
+		_, err := readLogs(ctx, w.logsAs(who), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
 		return err
 	}
 	w.eventually("the other tenant's container readable", func() (bool, string) {
@@ -415,7 +415,7 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 
 	started := "1:init:hangar-init: starting the container"
 	f1 := w.follow(apiservertest.Root, "api")
-	stream, err := w.logsAs(apiservertest.Root).ContainerLogs(ctx, connect.NewRequest(&computev1alpha1.ContainerLogsRequest{Project: "elsewhere", Name: "theirs", Follow: true}))
+	stream, err := w.logsAs(apiservertest.Root).Logs(ctx, connect.NewRequest(&computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: "elsewhere", Name: "theirs", Follow: true}))
 	if err != nil {
 		t.Fatal(err)
 	}

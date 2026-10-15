@@ -36,11 +36,14 @@ cloud, and some people fund the hardware and should see more of it.
 - **Permissions, roles, bindings** (GCP IAM style):
   - Permissions are `<group>.<plural>.<verb>`, generated from resource
     declarations (`get`, `list`, `watch`, `apply`, `delete`, `updateStatus`);
-    special actions are declared explicitly, such as
-    `compute.containers.logs` and `compute.containers.exec`,
-    `compute.virtualmachines.logs` and `compute.virtualmachines.ssh`, which
-    the owner and editor roles and `platform.root` hold (`node-tunnel.md`,
-    `vm-ssh.md`).
+    special actions are declared explicitly. Logs, exec and ssh are
+    capabilities of the machine an object runs as, whatever its kind:
+    `compute.machines.logs`, `compute.machines.exec` and
+    `compute.machines.ssh`, checked in the project of the machine behind
+    the Container or VirtualMachine the caller names. The owner and editor
+    roles and `platform.root` hold them (`machine-model.md`,
+    `node-tunnel.md`, `vm-ssh.md`). Holding them is no write to the
+    Machine, which stays system-managed.
   - Roles bundle permissions, and a check compares the permission asked
     for with every bound role's, never a role's name. They are built in
     for now and may become resources later. Below the platform they follow

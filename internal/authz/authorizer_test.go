@@ -137,7 +137,7 @@ func TestCoverage(t *testing.T) {
 		{"node writes spec", auth.Principal{Type: auth.Node, ID: "local"}, authz.Permission(registry.Container, authz.Apply), authz.Target{Project: "web"}, false},
 		{"root on the host, unbound, binds", localRoot, authz.Permission(registry.RoleBinding, authz.Apply), authz.Target{}, true},
 		{"root on the host, other tenant's project", localRoot, get, authz.Target{Project: "other"}, true},
-		{"root on the host execs", localRoot, authz.ContainerExec, authz.Target{Project: "web"}, true},
+		{"root on the host execs", localRoot, authz.MachineExec, authz.Target{Project: "web"}, true},
 		{"root on the host writes status", localRoot, status, authz.Target{Project: "web"}, false},
 		{"a user named as root on the host", auth.Principal{Type: auth.User, ID: localRoot.ID}, get, authz.Target{Project: "web"}, false},
 	}

@@ -1,0 +1,211 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/compute/v1alpha1/container.proto";
+
+// MachineCapabilityService reaches into what a machine holds or says: its
+// output, a process in it, a login to it. Each capability is one of the
+// Machine, whatever kind runs as it, and one permission, such as
+// compute.machines.logs. A caller names the object it made, by kind and
+// name, never the machine; the apiserver resolves the machine. A
+// capability the kind does not have yet fails with Unimplemented. It is not
+// a resource's service, so it is written by hand rather than generated. See
+// docs/decisions/machine-model.md.
+//
+// Exec and SSH are WebSockets, not Connect calls: a browser cannot make a
+// bidirectional Connect call (docs/decisions/streaming-transport.md). The
+// client opens
+//
+//   GET /v1/projects/{project}/{plural}/{name}:exec
+//   GET /v1/projects/{project}/{plural}/{name}:ssh
+//
+// where plural names the kind as its resource does, such as containers or
+// virtualmachines, authenticated as a Connect call is. A refusal before
+// the upgrade is an HTTP error with a body of {"code", "message"}, as a
+// Connect error; one after it closes the WebSocket with 4000 plus the
+// Connect code, such as 4009 for FailedPrecondition, and the message as
+// its reason.
+//
+// An exec has the subprotocol hangar.exec.v1alpha1 and needs
+// compute.machines.exec. Each binary message is one MachineExecRequest
+// from the client, the first of them a start, or one MachineExecResponse
+// from the server. After the exit the server closes it with 1000. Either
+// end may send a message with no field set, which the other ignores: a
+// keepalive.
+//
+// An SSH tunnel has the subprotocol hangar.ssh.v1alpha1 and needs
+// compute.machines.ssh. Its binary messages are the SSH connection's
+// bytes to and from port 22 of the machine; see docs/decisions/vm-ssh.md.
+service MachineCapabilityService {
+  // Logs streams what the object's machine wrote, oldest first, as one
+  // stream across every boot its node keeps, with the end of each boot;
+  // with follow it goes on with what is written. It needs
+  // compute.machines.logs. An object whose machine is not on a node yet
+  // fails with FailedPrecondition, and one whose node is not connected
+  // with Unavailable.
+  rpc Logs(LogsRequest) returns (stream LogsResponse);
+  // SignSSHKey certifies a public key, for minutes, for the object's
+  // principal, its uid, which the machine's sshd accepts for any of its
+  // users but root; hangar ssh does it for its caller. It needs
+  // compute.machines.ssh. Without the platform's SSH CA it fails with
+  // FailedPrecondition. See docs/decisions/vm-ssh.md.
+  rpc SignSSHKey(SignSSHKeyRequest) returns (SignSSHKeyResponse);
+}
+
+message LogsRequest {
+  string project = 1;
+  // The object's kind, such as Container or VirtualMachine.
+  string kind = 2;
+  string name = 3;
+  // Goes on with what is written until the call ends, or the machine,
+  // once running, ends for good or is stopped.
+  bool follow = 4;
+  // Keeps only the last lines of what the log holds; unset keeps them
+  // all. Each line of output, and each boot's end, is one.
+  optional int64 tail_lines = 5;
+  // Drops records older than this, by the time the record gives.
+  google.protobuf.Timestamp since = 6;
+}
+
+message LogsResponse {
+  repeated MachineLogRecord records = 1;
+}
+
+// MachineLogRecord is one piece of a machine's output, or the end of a
+// boot. A container's records but their boot are what the container
+// asserts: its own process can write any records, an exit's included. A
+// virtual machine's are timed by its host as they came.
+message MachineLogRecord {
+  // Numbers the machine's boots from 1, a restart being a new boot; 0
+  // means unknown.
+  int64 boot = 1;
+  MachineLogStream stream = 2;
+  google.protobuf.Timestamp time = 3;
+  oneof content {
+    // What was written.
+    bytes data = 4;
+    // How the boot ended, with the stream EXIT.
+    MachineExitStatus exit = 5;
+  }
+}
+
+// MachineLogStream says what a record carries.
+enum MachineLogStream {
+  MACHINE_LOG_STREAM_UNSPECIFIED = 0;
+  // A container's process's stdout.
+  MACHINE_LOG_STREAM_STDOUT = 1;
+  // A container's process's stderr.
+  MACHINE_LOG_STREAM_STDERR = 2;
+  // hangar-init's own messages, such as why a process could not start.
+  MACHINE_LOG_STREAM_INIT = 3;
+  // The end of a boot.
+  MACHINE_LOG_STREAM_EXIT = 4;
+  // A virtual machine's serial console.
+  MACHINE_LOG_STREAM_CONSOLE = 5;
+}
+
+// MachineExitStatus is how a boot ended.
+message MachineExitStatus {
+  // A container's process's exit code, 253 when the guest recorded none,
+  // as after a crash. A virtual machine's is 0 when the guest powered off
+  // and 253 when the VM ended otherwise, as by a crash or a kill.
+  int32 code = 1;
+  // The signal that ended a container's process, 0 if none.
+  int32 signal = 2;
+  // The platform ended a virtual machine's boot, pressing its power
+  // button: the VM was stopped, or its host shut down, and it boots again
+  // when started or when its host is back. Only a boot whose guest powered
+  // off on its own, code 0 and not stopped, leaves the VM off until it is
+  // stopped and started.
+  bool stopped = 3;
+}
+
+message SignSSHKeyRequest {
+  string project = 1;
+  // The object's kind, such as VirtualMachine.
+  string kind = 4;
+  string name = 2;
+  // One public key in authorized_keys form, such as "ssh-ed25519 AAAA...".
+  string public_key = 3;
+}
+
+message SignSSHKeyResponse {
+  // The certificate, in authorized_keys form.
+  string certificate = 1;
+  // The object's uid, the certificate's one principal, by which hangar ssh
+  // also knows the machine's host key.
+  string principal = 2;
+  // The image's default user, whom hangar ssh logs in as unless told
+  // another; empty if the object names no image that has one.
+  string default_user = 3;
+  google.protobuf.Timestamp valid_before = 4;
+}
+
+// MachineExecRequest is a message from an exec's client.
+message MachineExecRequest {
+  oneof message {
+    // The first message, and only the first.
+    MachineExecStart start = 1;
+    // Bytes for the process's stdin; only after a start with stdin.
+    bytes stdin = 2;
+    // Closes the process's stdin; on a terminal it sends end-of-file.
+    MachineExecStdinClose stdin_close = 3;
+    // The terminal's new size, with tty.
+    MachineExecWindowSize resize = 4;
+    // A signal number to send the process, such as 2 for SIGINT.
+    int32 signal = 5;
+  }
+}
+
+// MachineExecStart runs a process in the machine, as docker exec does in a
+// container: with the container's environment, user and working directory,
+// unless overridden.
+message MachineExecStart {
+  // The program, looked up on the PATH of the process's environment, and
+  // its arguments.
+  repeated string command = 1;
+  // Gives the process a stdin to read; without it, its stdin is closed
+  // from the start, or, on a terminal, nothing is ever typed.
+  bool stdin = 2;
+  // Runs the process on a terminal; its stdout and stderr are then one
+  // stream, sent as stdout.
+  bool tty = 3;
+  // The terminal's first size, with tty.
+  MachineExecWindowSize size = 4;
+  // As an OCI image gives it, such as "1000" or "nobody:nogroup"; empty
+  // keeps the container's.
+  string user = 5;
+  // Set over the container's environment.
+  repeated EnvVar env = 6;
+  // Empty keeps the container's.
+  string working_dir = 7;
+}
+
+message MachineExecStdinClose {}
+
+message MachineExecWindowSize {
+  uint32 rows = 1;
+  uint32 cols = 2;
+}
+
+// MachineExecResponse is a message from the server.
+message MachineExecResponse {
+  oneof message {
+    bytes stdout = 1;
+    bytes stderr = 2;
+    // How the process ended; the last message.
+    MachineExecExit exit = 3;
+  }
+}
+
+// MachineExecExit is how an exec's process ended.
+message MachineExecExit {
+  // The exit code; 128 plus the signal's number when a signal ended it.
+  // A program that cannot run ends with 127 if it is not found and 126
+  // otherwise, as in a shell.
+  int32 code = 1;
+  // The signal that ended it, 0 if none.
+  int32 signal = 2;
+}
