@@ -1,0 +1,325 @@
+package storetest
+
+import (
+	"errors"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/store"
+)
+
+// CredentialStore is a store.Credentials that can be closed.
+type CredentialStore interface {
+	store.Credentials
+	Close() error
+}
+
+// RunCredentials runs the store.Credentials contract. open must return a new,
+// empty store; RunCredentials closes it.
+func RunCredentials(t *testing.T, open func(t *testing.T) CredentialStore) {
+	tests := []struct {
+		name string
+		fn   func(t *testing.T, s store.Credentials)
+	}{
+		{"CredentialCreateGet", testCredentialCreateGet},
+		{"CredentialTouch", testCredentialTouch},
+		{"CredentialConsumedOnce", testCredentialConsumedOnce},
+		{"CredentialRevoke", testCredentialRevoke},
+		{"RevokedFamilyTakesNothing", testRevokedFamilyTakesNothing},
+		{"CredentialsAllOrNone", testCredentialsAllOrNone},
+		{"AuthRequests", testAuthRequests},
+		{"AuthRequestTakenOnce", testAuthRequestTakenOnce},
+		{"DeleteExpired", testDeleteExpired},
+		{"CountAuthRequests", testCountAuthRequests},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := open(t)
+			t.Cleanup(func() { _ = s.Close() })
+			tt.fn(t, s)
+		})
+	}
+}
+
+// at is a fixed time at millisecond precision, which every store keeps.
+var at = time.UnixMilli(1_800_000_000_000)
+
+func credential(hash, family, principal string) store.Credential {
+	return store.Credential{
+		Hash: hash, Type: "refresh", Family: family, Principal: principal,
+		CreatedAt: at, ExpiresAt: at.Add(time.Hour), IdleUntil: at.Add(time.Minute),
+	}
+}
+
+func testCredentialCreateGet(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	c := credential("h1", "f1", "user:a@example.com")
+	if err := s.CreateCredentials(ctx, c); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, c); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("second create: %v, want ErrExists", err)
+	}
+	got, err := s.GetCredential(ctx, "h1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameCredential(got, c) {
+		t.Errorf("got %+v, want %+v", got, c)
+	}
+	if _, err := s.GetCredential(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("missing credential: %v, want ErrNotFound", err)
+	}
+}
+
+func testCredentialTouch(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	if err := s.CreateCredentials(ctx, credential("h1", "f1", "p")); err != nil {
+		t.Fatal(err)
+	}
+	used, idle := at.Add(time.Second), at.Add(2*time.Minute)
+	if err := s.TouchCredential(ctx, "h1", used, idle); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetCredential(ctx, "h1")
+	if !got.LastUsedAt.Equal(used) || !got.IdleUntil.Equal(idle) {
+		t.Errorf("after touch: last used %v idle %v", got.LastUsedAt, got.IdleUntil)
+	}
+	if err := s.TouchCredential(ctx, "nope", used, idle); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("touch a missing credential: %v, want ErrNotFound", err)
+	}
+}
+
+// testCredentialConsumedOnce: of many concurrent consumers exactly one wins,
+// and the rest see ErrConflict with the credential.
+func testCredentialConsumedOnce(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	if err := s.CreateCredentials(ctx, credential("h1", "f1", "p")); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	wins, conflicts := 0, 0
+	for range 8 {
+		wg.Go(func() {
+			c, err := s.ConsumeCredential(ctx, "h1", at.Add(time.Second))
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil && c.UsedAt.IsZero():
+				wins++
+			case errors.Is(err, store.ErrConflict) && c.Family == "f1":
+				conflicts++
+			default:
+				t.Errorf("consume: %+v, %v", c, err)
+			}
+		})
+	}
+	wg.Wait()
+	if wins != 1 || conflicts != 7 {
+		t.Errorf("%d consumed it and %d conflicted, want 1 and 7", wins, conflicts)
+	}
+	got, _ := s.GetCredential(ctx, "h1")
+	if !got.UsedAt.Equal(at.Add(time.Second)) {
+		t.Errorf("used at %v", got.UsedAt)
+	}
+	if _, err := s.ConsumeCredential(ctx, "nope", at); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("consume a missing credential: %v, want ErrNotFound", err)
+	}
+}
+
+func testCredentialRevoke(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	for _, c := range []store.Credential{
+		credential("a1", "fa", "user:a"), credential("a2", "fa", "user:a"),
+		credential("a3", "fb", "user:a"), credential("b1", "fc", "user:b"),
+	} {
+		if err := s.CreateCredentials(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.RevokeCredentialFamily(ctx, "fa", at); err != nil || n != 2 {
+		t.Fatalf("delete family: %d, %v", n, err)
+	}
+	if _, err := s.GetCredential(ctx, "a1"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a revoked family's credential: %v", err)
+	}
+	if _, err := s.GetCredential(ctx, "a3"); err != nil {
+		t.Errorf("another family went too: %v", err)
+	}
+	if n, err := s.RevokeCredentialsOf(ctx, "user:a", at); err != nil || n != 1 {
+		t.Fatalf("delete principal's: %d, %v", n, err)
+	}
+	if _, err := s.GetCredential(ctx, "b1"); err != nil {
+		t.Errorf("another principal's went too: %v", err)
+	}
+}
+
+func testAuthRequests(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	r := store.AuthRequest{Key: "k", Data: []byte("v1"), ExpiresAt: at}
+	if err := s.CreateAuthRequest(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateAuthRequest(ctx, r); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("second create: %v, want ErrExists", err)
+	}
+	if err := s.SwapAuthRequest(ctx, "k", []byte("other"), []byte("v2")); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("swap from stale data: %v, want ErrConflict", err)
+	}
+	if err := s.SwapAuthRequest(ctx, "k", []byte("v1"), []byte("v2")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetAuthRequest(ctx, "k")
+	if err != nil || string(got.Data) != "v2" || !got.ExpiresAt.Equal(at) {
+		t.Errorf("after swap: %+v, %v", got, err)
+	}
+	if err := s.SwapAuthRequest(ctx, "nope", nil, nil); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("swap a missing request: %v, want ErrNotFound", err)
+	}
+	if _, err := s.GetAuthRequest(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("get a missing request: %v, want ErrNotFound", err)
+	}
+}
+
+func testAuthRequestTakenOnce(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	if err := s.CreateAuthRequest(ctx, store.AuthRequest{Key: "k", Data: []byte("v"), ExpiresAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	took := 0
+	for range 8 {
+		wg.Go(func() {
+			r, err := s.TakeAuthRequest(ctx, "k")
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil && string(r.Data) == "v":
+				took++
+			case errors.Is(err, store.ErrNotFound):
+			default:
+				t.Errorf("take: %+v, %v", r, err)
+			}
+		})
+	}
+	wg.Wait()
+	if took != 1 {
+		t.Errorf("%d took the request, want 1", took)
+	}
+}
+
+func testDeleteExpired(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	live := credential("live", "f", "p")
+	expired := credential("expired", "f", "p")
+	expired.ExpiresAt = at
+	idle := credential("idle", "f", "p")
+	idle.IdleUntil = at
+	noIdle := credential("noidle", "f", "p")
+	noIdle.IdleUntil = time.Time{}
+	for _, c := range []store.Credential{live, expired, idle, noIdle} {
+		if err := s.CreateCredentials(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []store.AuthRequest{{Key: "old", ExpiresAt: at}, {Key: "new", ExpiresAt: at.Add(time.Second)}} {
+		if err := s.CreateAuthRequest(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.DeleteExpired(ctx, at); err != nil {
+		t.Fatal(err)
+	}
+	for hash, want := range map[string]bool{"live": true, "expired": false, "idle": false, "noidle": true} {
+		_, err := s.GetCredential(ctx, hash)
+		if got := err == nil; got != want {
+			t.Errorf("credential %s kept: %t, want %t (%v)", hash, got, want, err)
+		}
+	}
+	if _, err := s.GetAuthRequest(ctx, "old"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("expired request kept: %v", err)
+	}
+	if _, err := s.GetAuthRequest(ctx, "new"); err != nil {
+		t.Errorf("live request deleted: %v", err)
+	}
+}
+
+func sameCredential(a, b store.Credential) bool {
+	return a.Hash == b.Hash && a.Type == b.Type && a.Family == b.Family && a.Principal == b.Principal &&
+		a.CreatedAt.Equal(b.CreatedAt) && a.ExpiresAt.Equal(b.ExpiresAt) && a.IdleUntil.Equal(b.IdleUntil) &&
+		a.LastUsedAt.Equal(b.LastUsedAt) && a.UsedAt.Equal(b.UsedAt)
+}
+
+// testRevokedFamilyTakesNothing: once a family is revoked, by itself or with
+// its principal's, nothing more is issued into it until the mark expires;
+// other families are untouched.
+func testRevokedFamilyTakesNothing(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	for _, c := range []store.Credential{credential("a1", "fa", "user:a"), credential("b1", "fb", "user:b")} {
+		if err := s.CreateCredentials(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.RevokeCredentialFamily(ctx, "fa", at.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, credential("a2", "fa", "user:a")); !errors.Is(err, store.ErrRevoked) {
+		t.Errorf("issuing into a revoked family: %v, want ErrRevoked", err)
+	}
+	if _, err := s.RevokeCredentialsOf(ctx, "user:b", at); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, credential("b2", "fb", "user:b")); !errors.Is(err, store.ErrRevoked) {
+		t.Errorf("issuing into a family revoked with its principal: %v, want ErrRevoked", err)
+	}
+	if err := s.CreateCredentials(ctx, credential("c1", "fc", "user:a")); err != nil {
+		t.Errorf("a new family of a revoked principal: %v", err)
+	}
+	// The mark lasts as long as the family's last credential would have.
+	if err := s.DeleteExpired(ctx, at.Add(30*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, credential("a3", "fa", "user:a")); !errors.Is(err, store.ErrRevoked) {
+		t.Errorf("the mark went before the family's credentials would have expired: %v", err)
+	}
+	if err := s.DeleteExpired(ctx, at.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, credential("a4", "fa", "user:a")); err != nil {
+		t.Errorf("an expired mark still refuses: %v", err)
+	}
+}
+
+func testCredentialsAllOrNone(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	if err := s.CreateCredentials(ctx, credential("x", "f", "p")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateCredentials(ctx, credential("y", "f", "p"), credential("x", "f", "p")); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("a batch with a taken hash: %v", err)
+	}
+	if _, err := s.GetCredential(ctx, "y"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("half a batch was stored: %v", err)
+	}
+}
+
+func testCountAuthRequests(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	for i, exp := range []time.Time{at, at.Add(time.Minute), at.Add(time.Hour)} {
+		if err := s.CreateAuthRequest(ctx, store.AuthRequest{Key: "a:" + string(rune('a'+i)), ExpiresAt: exp}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.CreateAuthRequest(ctx, store.AuthRequest{Key: "b:x", ExpiresAt: at.Add(time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.CountAuthRequests(ctx, "a:", at); err != nil || n != 2 {
+		t.Errorf("count a: %d, %v; want 2", n, err)
+	}
+	if n, err := s.CountAuthRequests(ctx, "b:", at); err != nil || n != 1 {
+		t.Errorf("count b: %d, %v; want 1", n, err)
+	}
+}

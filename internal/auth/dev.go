@@ -24,7 +24,7 @@ type Dev struct{}
 func (Dev) Authenticate(_ context.Context, header http.Header) (Principal, bool, error) {
 	for _, h := range cloudflareEdgeHeaders {
 		if _, ok := header[http.CanonicalHeaderKey(h)]; ok {
-			return Principal{}, false, errors.New("dev auth refuses requests that came through Cloudflare (" + h + " is set); switch the apiserver to cloudflare auth")
+			return Principal{}, false, errors.New("dev auth refuses requests that came through Cloudflare (" + h + " is set); switch the apiserver to oidc auth")
 		}
 	}
 	email := strings.ToLower(strings.TrimSpace(header.Get(DevUserHeader)))

@@ -1,7 +1,7 @@
-// Package authtest stands in for Cloudflare Access in tests: it serves a
+// Package accesstest stands in for Cloudflare Access in tests: it serves a
 // signing key set and issues tokens shaped like the ones Access signs, so the
 // real verification path runs against them.
-package authtest
+package accesstest
 
 import (
 	"crypto/rand"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/edge"
 )
 
 // Issuer is a fake Access team: its URL is the issuer and team domain.
@@ -44,8 +44,8 @@ func NewIssuer(t testing.TB) *Issuer {
 }
 
 // Config is the authenticator configuration that trusts this issuer.
-func (i *Issuer) Config() auth.CloudflareConfig {
-	return auth.CloudflareConfig{TeamDomain: i.URL, Audience: i.Audience}
+func (i *Issuer) Config() edge.AccessConfig {
+	return edge.AccessConfig{TeamDomain: i.URL, Audience: i.Audience}
 }
 
 // UserToken returns a valid token for a person.

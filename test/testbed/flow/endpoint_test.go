@@ -20,10 +20,10 @@ import (
 	"time"
 
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
-	"github.com/YukinaMochizuki/hangar/internal/auth"
-	"github.com/YukinaMochizuki/hangar/internal/auth/authtest"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare/cftest"
+	hangaredge "github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/edge/accesstest"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/hostnet"
 	"github.com/YukinaMochizuki/hangar/test/testbed/internal/vmtest"
 )
@@ -34,12 +34,12 @@ const edgeDomain = "hangarlab.test"
 // Access issuer it trusts.
 type edge struct {
 	addr   string
-	issuer *authtest.Issuer
+	issuer *accesstest.Issuer
 }
 
 // startEdge runs hangar-edge, unprivileged, on loopback, reading the API on
 // the apiserver's edge socket and dialling through the agent's.
-func startEdge(t *testing.T, iss *authtest.Issuer) *edge {
+func startEdge(t *testing.T, iss *accesstest.Issuer) *edge {
 	t.Helper()
 	nobody := lookupUID(t, "nobody")
 	bin := filepath.Join(apiDir, "hangar-edge")
@@ -88,7 +88,7 @@ func (e *edge) get(t *testing.T, host, token string) (int, string) {
 	}
 	req.Host = host
 	if token != "" {
-		req.Header.Set(auth.CloudflareJWTHeader, token)
+		req.Header.Set(hangaredge.AccessJWTHeader, token)
 	}
 	resp, err := (&http.Client{Timeout: 15 * time.Second}).Do(req)
 	if err != nil {
@@ -159,7 +159,7 @@ func TestPublicEndpointsOnARealHost(t *testing.T) {
 		}
 		c.nodeArgs = []string{"--edge-dial-socket", filepath.Join(apiDir, "edge-dial.sock"), "--edge-user", "nobody"}
 	})
-	iss := authtest.NewIssuer(t)
+	iss := accesstest.NewIssuer(t)
 	e := startEdge(t, iss)
 
 	c.applyYAML(lockedGroupYAML())

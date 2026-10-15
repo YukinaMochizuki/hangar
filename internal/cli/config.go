@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 
 	"sigs.k8s.io/yaml"
 )
@@ -23,8 +24,9 @@ type Context struct {
 	Endpoint string `json:"endpoint"`
 	// Project is the default for project-scoped kinds.
 	Project string `json:"project,omitempty"`
-	// Auth is cloudflare (the default), dev, or local: root on the host,
-	// through a unix:// endpoint, the only auth such an endpoint takes.
+	// Auth is oidc (the default: a login from hangar login), dev, or local:
+	// root on the host, through a unix:// endpoint, the only auth such an
+	// endpoint takes.
 	Auth string `json:"auth,omitempty"`
 	// User is the email dev auth sends.
 	User string `json:"user,omitempty"`
@@ -55,6 +57,8 @@ func (c *Context) check() error {
 		return usageErr("endpoint %q is a unix socket, which takes local auth, not %s", c.Endpoint, c.Auth)
 	case !unix && c.Auth == "local":
 		return usageErr("local auth needs a unix:// endpoint, not %q", c.Endpoint)
+	case c.Auth == "cloudflare":
+		return usageErr("cloudflare auth is gone: Hangar signs you in itself; run hangar config set-context NAME --endpoint %s --auth oidc, then hangar login", c.Endpoint)
 	}
 	return nil
 }
@@ -97,6 +101,36 @@ func (c *Config) save(path string) error {
 		return err
 	}
 	return os.WriteFile(path, b, 0o600)
+}
+
+// prepareConfigDir makes the directory of the config file, which also holds
+// credentials.yaml, private. The default one, …/hangar, is the CLI's own,
+// so an existing one others may read is made 0700. One HANGAR_CONFIG names
+// may be anything, such as a home directory or a checkout, so it is left as
+// it is, with a warning if others may read it; credentials.yaml itself is
+// 0600 either way.
+func (a *app) prepareConfigDir() error {
+	dir := filepath.Dir(a.configPath())
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	fi, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if fi.Mode().Perm()&0o077 == 0 {
+		return nil
+	}
+	if a.env("HANGAR_CONFIG") == "" {
+		if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) == os.Getuid() {
+			return os.Chmod(dir, 0o700)
+		}
+	}
+	if fi.Mode().Perm()&0o044 != 0 && !a.warnedConfigDir {
+		a.warnedConfigDir = true
+		_, _ = fmt.Fprintf(a.io.Err, "warning: %s, which holds your logins, is mode %v: others can see which files are in it; credentials.yaml itself is readable by you only\n", dir, fi.Mode().Perm())
+	}
+	return nil
 }
 
 func (c *Config) names() []string {

@@ -23,9 +23,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
-	"github.com/YukinaMochizuki/hangar/internal/auth/authtest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/edge/accesstest"
 	"github.com/YukinaMochizuki/hangar/internal/edgedial"
 )
 
@@ -38,7 +38,7 @@ type world struct {
 	t      *testing.T
 	env    *apiservertest.Env
 	root   *client.Client
-	issuer *authtest.Issuer
+	issuer *accesstest.Issuer
 	url    string
 	edge   *edge.Edge
 }
@@ -49,7 +49,7 @@ func backend(t *testing.T, port int32) string {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = fmt.Fprintf(w, "port %d jwt=%q token=%q id=%q secret=%q cookie=%q", port, r.Header.Get(auth.CloudflareJWTHeader),
+		_, _ = fmt.Fprintf(w, "port %d jwt=%q token=%q id=%q secret=%q cookie=%q", port, r.Header.Get(edge.AccessJWTHeader),
 			r.Header.Get("Cf-Access-Token"), r.Header.Get("Cf-Access-Client-Id"), r.Header.Get("Cf-Access-Client-Secret"),
 			strings.Join(r.Header.Values("Cookie"), " | "))
 	})
@@ -101,8 +101,8 @@ func newWorld(t *testing.T) *world {
 	served := make(chan error, 1)
 	go func() { served <- node.Serve(ctx, ln) }()
 
-	iss := authtest.NewIssuer(t)
-	access, err := auth.NewCloudflare(ctx, iss.Config())
+	iss := accesstest.NewIssuer(t)
+	access, err := edge.NewAccessVerifier(ctx, iss.Config())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func (w *world) eventually(what string, cond func() (bool, string)) {
 	}
 }
 
-func jwt(token string) http.Header { return http.Header{auth.CloudflareJWTHeader: {token}} }
+func jwt(token string) http.Header { return http.Header{edge.AccessJWTHeader: {token}} }
 
 // TestAPortChangeReachesTheNewPort: once the edge sees an endpoint's new
 // port, no request reaches the old one, however warm its connections were.
@@ -234,7 +234,7 @@ func TestOnlyAValidTokenOfTheApplicationIsLetIn(t *testing.T) {
 
 func TestStripAccess(t *testing.T) {
 	h := http.Header{}
-	h.Set(auth.CloudflareJWTHeader, "jwt")
+	h.Set(edge.AccessJWTHeader, "jwt")
 	h.Set("cf-access-token", "token")
 	h.Set("CF-ACCESS-CLIENT-ID", "id")
 	h.Set("Cf-Access-Client-Secret", "secret")
@@ -242,7 +242,7 @@ func TestStripAccess(t *testing.T) {
 	h.Add("Cookie", "cf_authorization=b;lang=en")
 	h.Add("Cookie", " CF_Authorization =c; session=1")
 	edge.StripAccess(h)
-	for _, k := range []string{auth.CloudflareJWTHeader, "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"} {
+	for _, k := range []string{edge.AccessJWTHeader, "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"} {
 		if v := h.Values(k); len(v) != 0 {
 			t.Errorf("%s kept: %v", k, v)
 		}

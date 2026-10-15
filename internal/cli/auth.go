@@ -1,16 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
-	"encoding/json"
-	"fmt"
-	"os/exec"
-	"regexp"
-	"strings"
-	"sync"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -56,29 +47,14 @@ func (c credentials) WrapStreamingHandler(next connect.StreamingHandlerFunc) con
 	return next
 }
 
-// Service token credentials come from the environment, never the config file,
-// so agents can be handed them without writing secrets to disk.
-const (
-	envClientID     = "HANGAR_CF_CLIENT_ID"
-	envClientSecret = "HANGAR_CF_CLIENT_SECRET"
-)
-
 func (a *app) credentials(c *Context) (credentials, error) {
 	if err := c.check(); err != nil {
 		return credentials{}, err
 	}
 	// The admin socket knows its caller from the kernel; it has no use for a
-	// credential, and must not be handed one meant for Cloudflare.
+	// credential, and must not be handed one.
 	if c.local() {
 		return credentials{header: func(context.Context) (map[string]string, error) { return nil, nil }}, nil
-	}
-	if id, secret := a.env(envClientID), a.env(envClientSecret); id != "" || secret != "" {
-		if id == "" || secret == "" {
-			return credentials{}, usageErr("set both %s and %s, or neither", envClientID, envClientSecret)
-		}
-		return credentials{header: func(context.Context) (map[string]string, error) {
-			return map[string]string{"CF-Access-Client-Id": id, "CF-Access-Client-Secret": secret}, nil
-		}}, nil
 	}
 	switch c.Auth {
 	case "dev":
@@ -88,112 +64,15 @@ func (a *app) credentials(c *Context) (credentials, error) {
 		return credentials{header: func(context.Context) (map[string]string, error) {
 			return map[string]string{auth.DevUserHeader: c.User}, nil
 		}}, nil
-	case "", "cloudflare":
-		t := &accessToken{run: a.runCloudflared, app: c.Endpoint, now: time.Now}
+	case "", "oidc":
+		ts := a.tokens(c)
 		return credentials{header: func(ctx context.Context) (map[string]string, error) {
-			tok, err := t.get(ctx)
+			tok, err := ts.access(ctx)
 			if err != nil {
 				return nil, err
 			}
-			return map[string]string{"cf-access-token": tok}, nil
+			return map[string]string{"Authorization": "Bearer " + tok.Reveal()}, nil
 		}}, nil
 	}
-	return credentials{}, usageErr("unknown auth %q; want cloudflare, dev or local", c.Auth)
-}
-
-// accessToken fetches a Cloudflare Access token through cloudflared and
-// reuses it until shortly before it expires.
-type accessToken struct {
-	run func(ctx context.Context, args ...string) (string, error)
-	app string
-	now func() time.Time
-
-	mu      sync.Mutex
-	token   string
-	expires time.Time
-}
-
-func (t *accessToken) get(ctx context.Context) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.token != "" && t.now().Before(t.expires.Add(-time.Minute)) {
-		return t.token, nil
-	}
-	out, err := t.run(ctx, "access", "token", "-app="+t.app)
-	tok := strings.TrimSpace(out)
-	if err != nil || tok == "" || strings.Contains(tok, " ") {
-		return "", fmt.Errorf("no Cloudflare Access token for %s; run `hangar login` first", t.app)
-	}
-	t.token, t.expires = tok, expiry(tok, t.now())
-	return tok, nil
-}
-
-// jwtLike matches a line holding a JWT: three base64url segments.
-var jwtLike = regexp.MustCompile(`[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]{2,}\.[A-Za-z0-9_-]+`)
-
-// loginOutput splits what `cloudflared access login` printed into what the
-// user should see and the token it fetched. cloudflared prints the token
-// itself, which must never reach a terminal or a log; the rest, such as the
-// URL to open when it can't start a browser, passes through.
-func loginOutput(out string) (shown, token string) {
-	var b strings.Builder
-	for line := range strings.Lines(out) {
-		trimmed := strings.TrimSpace(line)
-		switch {
-		case jwtLike.MatchString(trimmed) && !strings.Contains(trimmed, "://"):
-			if token == "" {
-				token = jwtLike.FindString(trimmed)
-			}
-		case strings.HasPrefix(trimmed, "Successfully fetched your token"):
-		case trimmed == "" && b.Len() == 0:
-		default:
-			b.WriteString(line)
-		}
-	}
-	return strings.TrimRight(b.String(), "\n\t ") + strings.Repeat("\n", min(b.Len(), 1)), token
-}
-
-// tokenEmail reads a JWT's email claim without verifying it, to say who
-// logged in; the server verifies the token on every call.
-func tokenEmail(tok string) string {
-	parts := strings.Split(tok, ".")
-	if len(parts) != 3 {
-		return ""
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return ""
-	}
-	var claims struct {
-		Email string `json:"email"`
-	}
-	if json.Unmarshal(payload, &claims) != nil {
-		return ""
-	}
-	return claims.Email
-}
-
-// expiry reads a JWT's exp claim without verifying it: the server verifies,
-// and the client only needs to know when to fetch a new one.
-func expiry(tok string, now time.Time) time.Time {
-	parts := strings.Split(tok, ".")
-	if len(parts) == 3 {
-		if payload, err := base64.RawURLEncoding.DecodeString(parts[1]); err == nil {
-			var claims struct {
-				Exp int64 `json:"exp"`
-			}
-			if json.Unmarshal(payload, &claims) == nil && claims.Exp > 0 {
-				return time.Unix(claims.Exp, 0)
-			}
-		}
-	}
-	return now
-}
-
-func runCloudflared(ctx context.Context, args ...string) (string, error) {
-	var out bytes.Buffer
-	cmd := exec.CommandContext(ctx, "cloudflared", args...)
-	cmd.Stdout = &out
-	err := cmd.Run()
-	return out.String(), err
+	return credentials{}, usageErr("unknown auth %q; want oidc, dev or local (set it with --auth oidc)", c.Auth)
 }

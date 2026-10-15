@@ -372,8 +372,9 @@ test_node_reconnects() {
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the socket"
 }
 
-TB_TEAM=https://testbed.cloudflareaccess.com
-TB_AUD=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+TB_CLIENT_ID=testbed-client.apps.googleusercontent.com
+TB_PUBLIC_URL=https://console.testbed.example
+TB_OIDC_SECRET=/var/lib/hangar/state/oidc-client-secret
 
 # fake_token N prints a well-formed tunnel token for no tunnel: cloudflared
 # takes it, and Cloudflare refuses it.
@@ -387,12 +388,16 @@ put_tunnel_token() {
 	echo "TUNNEL_TOKEN=$(fake_token "$1")" >/etc/hangar/cloudflared.env
 }
 
-# auth_env MODE sets the auth settings in local.env: cloudflare with the
-# testbed's team and AUD, or none, which is dev.
+# auth_env MODE sets the auth settings in local.env: oidc with the
+# testbed's client and public URL, and the client secret the operator
+# installs, or none, which is dev. The apiserver reaches the provider only
+# when someone signs in, so it runs without one here.
 auth_env() {
-	sed -i '/^HANGAR_AUTH_MODE=/d; /^HANGAR_CF_/d' /etc/hangar/local.env
-	if [ "$1" = cloudflare ]; then
-		printf 'HANGAR_AUTH_MODE=cloudflare\nHANGAR_CF_TEAM_DOMAIN=%s\nHANGAR_CF_AUDIENCE=%s\n' "$TB_TEAM" "$TB_AUD" >>/etc/hangar/local.env
+	sed -i '/^HANGAR_AUTH_MODE=/d; /^HANGAR_OIDC_/d; /^HANGAR_PUBLIC_URL=/d' /etc/hangar/local.env
+	if [ "$1" = oidc ]; then
+		printf 'HANGAR_AUTH_MODE=oidc\nHANGAR_OIDC_CLIENT_ID=%s\nHANGAR_PUBLIC_URL=%s\n' "$TB_CLIENT_ID" "$TB_PUBLIC_URL" >>/etc/hangar/local.env
+		install -o hangar -g hangar -m 0600 /dev/null "$TB_OIDC_SECRET"
+		echo testbed-client-secret >"$TB_OIDC_SECRET"
 	fi
 }
 
@@ -440,7 +445,7 @@ wait_cf_active() {
 	return 1
 }
 
-test_cloudflared_needs_cloudflare_auth() {
+test_cloudflared_needs_oidc_auth() {
 	step "cloudflared is refused while the apiserver is in dev auth, and nothing installed"
 	local before
 	put_tunnel_token 1
@@ -456,37 +461,45 @@ test_cloudflared_needs_cloudflare_auth() {
 	fi
 	grep -q '^apply: ' "$work/cf.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/cf.log")"
 	if "$host_dir/verify.sh" --env "$env_file" >"$work/cf-verify.log"; then fail "verify passed with cloudflared.env in dev auth"; fi
-	grep -q '^FAIL hangar-cloudflared only with the apiserver in cloudflare auth$' "$work/cf-verify.log" ||
+	grep -q '^FAIL hangar-cloudflared only with the apiserver in oidc auth$' "$work/cf-verify.log" ||
 		fail "verify does not say why: $(grep FAIL "$work/cf-verify.log")"
 	rm /etc/hangar/cloudflared.env
 
-	step "a cloudflare mode without its team domain and AUD is refused before any step"
-	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cf.log"; then fail "bootstrap ran with half a cloudflare mode"; fi
-	{ grep -q 'HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com' "$work/cf.log" &&
-		grep -q 'HANGAR_CF_AUDIENCE=' "$work/cf.log"; } || fail "unexpected refusal: $(cat "$work/cf.log")"
+	step "an oidc mode without its client ID and public URL is refused before any step"
+	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cf.log"; then fail "bootstrap ran with half an oidc mode"; fi
+	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cf.log" &&
+		grep -q 'HANGAR_PUBLIC_URL=https://' "$work/cf.log"; } || fail "unexpected refusal: $(cat "$work/cf.log")"
 	grep -q '^== ' "$work/cf.log" && fail "steps ran before the refusal"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half a cloudflare mode"; fi
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half an oidc mode"; fi
 	auth_env dev
 }
 
-test_cloudflare_cutover() {
-	step "cloudflare auth in local.env restarts the apiserver in it, still on loopback"
+test_oidc_cutover() {
+	step "the retired cloudflare mode is refused before any step"
+	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
+	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log"; then fail "bootstrap ran in the retired cloudflare mode"; fi
+	grep -q 'must be dev or oidc, not cloudflare' "$work/cut.log" || fail "unexpected refusal: $(cat "$work/cut.log")"
+	auth_env dev
+
+	step "oidc auth in local.env restarts the apiserver in it, still on loopback"
 	local api_pid node_pid out
 	api_pid=$(main_pid hangar-apiserver)
 	node_pid=$(main_pid hangar-node)
-	auth_env cloudflare
+	auth_env oidc
 	"$host_dir/bootstrap.sh" --env "$env_file" --only services >/dev/null 2>"$work/cut.log"
 	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
 	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver runs its old auth"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the node was restarted for the apiserver's auth"
 	systemctl show -p ExecStart --value hangar-apiserver |
-		grep -q -- "--listen 127.0.0.1:8080 --auth-mode cloudflare --cf-team-domain $TB_TEAM --cf-audience $TB_AUD --socket" ||
-		fail "the apiserver's unit does not have cloudflare auth"
-	[ "$(list_nodes_status)" = 401 ] || fail "cloudflare auth took a dev header"
-	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "the admin socket does not work in cloudflare auth"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify in cloudflare auth: $(grep FAIL "$work/cut-verify.log")"
-	grep -q "^PASS apiserver runs cloudflare auth as /etc/hangar/local.env asks: --auth-mode cloudflare --cf-team-domain $TB_TEAM --cf-audience $TB_AUD$" "$work/cut-verify.log" ||
+		grep -q -- "--listen 127.0.0.1:8080 --auth-mode oidc --oidc-client-id $TB_CLIENT_ID --oidc-client-secret-file $TB_OIDC_SECRET --public-url $TB_PUBLIC_URL --socket" ||
+		fail "the apiserver's unit does not have oidc auth"
+	[ "$(list_nodes_status)" = 401 ] || fail "oidc auth took a dev header"
+	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "the admin socket does not work in oidc auth"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify in oidc auth: $(grep FAIL "$work/cut-verify.log")"
+	grep -q "^PASS OAuth client secret $TB_OIDC_SECRET, hangar's, mode 600$" "$work/cut-verify.log" || fail "verify does not check the client secret"
+	grep -q "^PASS apiserver runs oidc auth as /etc/hangar/local.env asks: --auth-mode oidc --oidc-client-id $TB_CLIENT_ID --oidc-client-secret-file $TB_OIDC_SECRET --public-url $TB_PUBLIC_URL$" "$work/cut-verify.log" ||
 		fail "verify does not check the auth flags"
 	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared without its env"
 
@@ -541,7 +554,7 @@ test_cloudflare_cutover() {
 	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the apiserver was restarted for the token"
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the new token"
 
-	step "the unit's own guard: no tunnel while the apiserver is stopped, back once it runs in cloudflare auth"
+	step "the unit's own guard: no tunnel while the apiserver is stopped, back once it runs in oidc auth"
 	local since
 	since=$(date '+%Y-%m-%d %H:%M:%S')
 	cf_pid=$(main_pid hangar-cloudflared)
@@ -562,11 +575,11 @@ test_cloudflare_cutover() {
 	# The log is read by the second: nothing from before may share it.
 	sleep 1
 	since=$(date '+%Y-%m-%d %H:%M:%S')
-	sed -i 's/--auth-mode cloudflare --cf-team-domain [^ ]* --cf-audience [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
+	sed -i 's/--auth-mode oidc --oidc-client-id [^ ]* --oidc-client-secret-file [^ ]* --public-url [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
 	systemctl daemon-reload
 	systemctl restart hangar-cloudflared 2>/dev/null && fail "cloudflared restarted in front of a unit in dev auth"
 	sleep 2
-	cf_journal "$since" | grep -q "refusing to start the tunnel: hangar-apiserver's unit would restart it without --auth-mode cloudflare" ||
+	cf_journal "$since" | grep -q "refusing to start the tunnel: hangar-apiserver's unit would restart it without --auth-mode oidc" ||
 		fail "the guard did not refuse the loaded unit: $(cf_journal "$since" | tail -n 5)"
 	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of a unit in dev auth"
 	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
@@ -602,17 +615,17 @@ test_cloudflare_cutover() {
 	put_tunnel_token 1
 	# Past two of its 5 s retries.
 	sleep 12
-	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver runs --auth-mode dev, not cloudflare' ||
+	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver runs --auth-mode dev, not oidc' ||
 		fail "the guard did not refuse dev auth: $(cf_journal "$since" | tail -n 5)"
 	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of dev auth"
 	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared is active in front of dev auth"
 	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying in dev auth"; fi
-	grep -q '^FAIL hangar-cloudflared down while the apiserver is not in cloudflare auth$' "$work/cut-verify.log" ||
+	grep -q '^FAIL hangar-cloudflared down while the apiserver is not in oidc auth$' "$work/cut-verify.log" ||
 		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
 	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"; then
 		fail "the cloudflared step went through in dev auth"
 	fi
-	grep -q '^apply: stop and disable hangar-cloudflared: the apiserver is not in cloudflare auth$' "$work/cut.log" ||
+	grep -q '^apply: stop and disable hangar-cloudflared: the apiserver is not in oidc auth$' "$work/cut.log" ||
 		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
 	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
 	rm /etc/hangar/cloudflared.env
@@ -628,7 +641,7 @@ test_cloudflare_cutover() {
 	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the hand-started tunnel"
 
 	step "dev auth with the tunnel up stops the tunnel before the apiserver changes"
-	auth_env cloudflare
+	auth_env oidc
 	put_tunnel_token 1
 	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>&1
 	systemctl is-active --quiet hangar-cloudflared || fail "cloudflared did not come back"
@@ -951,8 +964,8 @@ test_dry_run_changes_nothing
 test_converges_and_is_idempotent
 test_admin_socket
 test_node_reconnects
-test_cloudflared_needs_cloudflare_auth
-test_cloudflare_cutover
+test_cloudflared_needs_oidc_auth
+test_oidc_cutover
 test_refuses_tampered_release
 test_refuses_half_applied_release
 test_refuses_without_local_env

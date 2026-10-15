@@ -42,9 +42,10 @@ type IO struct {
 
 // Options replace the outside world in tests; zero values use the real one.
 type Options struct {
-	HTTPClient     connect.HTTPClient
-	RunCloudflared func(ctx context.Context, args ...string) (string, error)
-	Now            func() time.Time
+	HTTPClient connect.HTTPClient
+	// OpenBrowser opens a URL in a browser, for hangar login.
+	OpenBrowser func(url string) error
+	Now         func() time.Time
 	// Signals relays the process's signals sigs to c, as signal.Notify
 	// does, until stop.
 	Signals func(c chan<- os.Signal, sigs ...os.Signal) (stop func())
@@ -71,8 +72,8 @@ func Run(ctx context.Context, args []string, stdio IO, opts Options) int {
 	if a.opts.HTTPClient == nil {
 		a.opts.HTTPClient = http.DefaultClient
 	}
-	if a.opts.RunCloudflared == nil {
-		a.opts.RunCloudflared = runCloudflared
+	if a.opts.OpenBrowser == nil {
+		a.opts.OpenBrowser = openBrowser
 	}
 	if a.opts.Now == nil {
 		a.opts.Now = time.Now
@@ -167,6 +168,9 @@ type app struct {
 
 	contextName string
 	project     string
+	// warnedConfigDir is set once the config directory's mode was warned
+	// about.
+	warnedConfigDir bool
 }
 
 func (a *app) root() *cobra.Command {
@@ -179,12 +183,8 @@ func (a *app) root() *cobra.Command {
 	root.PersistentFlags().StringVar(&a.contextName, "context", "", "context to use instead of the current one")
 	root.PersistentFlags().StringVarP(&a.project, "project", "p", "", "project for project-scoped kinds, instead of the context's")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &exitError{code: ExitUsage, err: err} })
-	root.AddCommand(a.configCmd(), a.loginCmd(), a.signupCmd(), a.whoamiCmd(), a.applyCmd(), a.createCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd())
+	root.AddCommand(a.configCmd(), a.loginCmd(), a.logoutCmd(), a.signupCmd(), a.whoamiCmd(), a.applyCmd(), a.createCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd())
 	return root
-}
-
-func (a *app) runCloudflared(ctx context.Context, args ...string) (string, error) {
-	return a.opts.RunCloudflared(ctx, args...)
 }
 
 func (a *app) configPath() string { return configPath(a.env) }

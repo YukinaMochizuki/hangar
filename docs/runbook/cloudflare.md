@@ -145,46 +145,37 @@ fixes it. Nothing secret is ever printed.
 |---|---|---|
 | `state.json` | The IDs of the objects the tool created. Not secret, but it is what proves ownership: keep it | Stays here |
 | `cloudflared.env` | `TUNNEL_TOKEN=…` | The host's `/etc/hangar/cloudflared.env`, root 0600 |
-| `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | Merged into the host's `/etc/hangar/local.env` |
-| `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Wherever smoke tests run; the CLI reads those variables |
+| `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | `HANGAR_CF_TEAM_DOMAIN` is merged into the host's `/etc/hangar/local.env` for hangar-edge, with public endpoints; the apiserver no longer reads either |
+| `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Nowhere for now: the CLI no longer reads those variables, and the API no longer takes Access service tokens; smoke moves to a Hangar service token |
 | `edge.env` | With `endpoints.zone`: `HANGAR_EDGE_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE` (the wildcard application's AUD tag), `HANGAR_CF_ACCOUNT_ID` and `HANGAR_CF_BYPASS_POLICY_ID`. Not secret | Merged into the host's `/etc/hangar/local.env` (below) |
 
 Copy files to the host without them passing through a terminal (below).
 
 ## Putting it on the host
 
-**Switch the auth mode to `cloudflare` first, then install the tunnel
-token. Roll back in reverse.** Until the apiserver runs in `cloudflare` mode
-it runs `dev` auth, which takes the caller's identity from a header any
-client can set (`X-Hangar-Dev-User`). Once cloudflared connects, the public
-hostname reaches that listener: with the origin still in `dev` mode,
-anyone whose request gets through (every allowed person and service token,
-and everyone if Access is ever misconfigured) could claim any identity,
-`platform.root` included, with a header. The ingress's own access check
-does not help there: it checks that the request has a valid Access token,
-not who the header says it is.
+**Switch the auth mode to `oidc` first, then install the tunnel token. Roll
+back in reverse.** Until the apiserver runs in `oidc` mode it runs `dev`
+auth, which takes the caller's identity from a header any client can set
+(`X-Hangar-Dev-User`). Once cloudflared connects, the public hostname
+reaches that listener: with the origin still in `dev` mode, anyone whose
+request gets through could claim any identity, `platform.root` included,
+with a header.
 
-1. **Auth mode.** Add the two lines of `access.env` and
-   `HANGAR_AUTH_MODE=cloudflare` to the host's `/etc/hangar/local.env`
-   (root, 0600), each key once:
-
-   ```sh
-   ssh <host> 'sudo tee -a /etc/hangar/local.env >/dev/null' < ~/hangar-cloudflare/access.env
-   ssh <host> 'echo HANGAR_AUTH_MODE=cloudflare | sudo tee -a /etc/hangar/local.env >/dev/null'
-   ```
-
-   Re-run `deploy/host`, whose services step restarts the apiserver with
-   `--auth-mode cloudflare`, and check with `verify.sh` that the running
-   flags match `local.env`. Do not go on until they do.
+1. **Auth mode.** Set up sign-in through Google on the host
+   (`docs/runbook/host-bootstrap.md`, "Switching to sign-in through
+   Google"): the OAuth client's secret, then `HANGAR_AUTH_MODE=oidc`,
+   `HANGAR_OIDC_CLIENT_ID` and `HANGAR_PUBLIC_URL` in
+   `/etc/hangar/local.env`. Re-run `deploy/host`, whose services step
+   restarts the apiserver with `--auth-mode oidc`, and check with
+   `verify.sh` that the running flags match `local.env`. Do not go on until
+   they do.
 2. **Tunnel token.** Install it, then re-run `deploy/host`, which installs
    and starts cloudflared once the file exists:
 
    ```sh
    ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflared.env' < ~/hangar-cloudflare/cloudflared.env
    ```
-3. **Check** from outside: `hangar` through Access works, and so does a
-   call with the smoke token's `HANGAR_CF_CLIENT_ID` and
-   `HANGAR_CF_CLIENT_SECRET`.
+3. **Check** from outside: `hangar login`, then `hangar whoami`.
 
 To roll back: first take the tunnel down (remove
 `/etc/hangar/cloudflared.env` and re-run `deploy/host`, whose cloudflared
@@ -192,12 +183,14 @@ step then stops and disables the service), then set `HANGAR_AUTH_MODE=dev`
 in `local.env` and re-run `deploy/host`. The host's side of each step is in
 `docs/runbook/host-bootstrap.md`; the order is the one above, and the host
 enforces it: cloudflared does not start, by any route, unless the apiserver
-runs in `cloudflare` mode.
+runs in `oidc` mode.
 
 ## Public endpoints
 
-Public endpoints need the API behind Access first (above): the edge checks
-Access tokens, and runs only in `cloudflare` auth.
+Public endpoints need the API in `oidc` auth first (above), since the
+tunnel that brings their traffic never runs otherwise. The edge still
+checks Access tokens of the wildcard application, so it needs
+`HANGAR_CF_TEAM_DOMAIN` from `access.env` in `local.env`.
 
 1. **The zone.** Add the user-content domain (`hangarlab.dev`) to the
    account as the first one-time step says, and give the tool's token DNS

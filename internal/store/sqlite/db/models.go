@@ -4,6 +4,24 @@
 
 package db
 
+type AuthRequest struct {
+	Key       string
+	Data      []byte
+	ExpiresAt int64
+}
+
+type Credential struct {
+	Hash       string
+	Type       string
+	Family     string
+	Principal  string
+	CreatedAt  int64
+	ExpiresAt  int64
+	IdleUntil  int64
+	LastUsedAt int64
+	UsedAt     int64
+}
+
 type Event struct {
 	Revision int64
 	Type     int64
@@ -24,4 +42,9 @@ type Object struct {
 	Name     string
 	Revision int64
 	Data     []byte
+}
+
+type RevokedFamily struct {
+	Family    string
+	ExpiresAt int64
 }
