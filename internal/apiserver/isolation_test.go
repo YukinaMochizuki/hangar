@@ -212,6 +212,11 @@ func TestMoreDenials(t *testing.T) {
 	selfPlanned.Tenant.Spec.Plan = "big"
 	_, err = b.tenants.ApplyTenant(ctx, connect.NewRequest(selfPlanned))
 	wantCode(t, err, connect.CodePermissionDenied, "a new tenant choosing its plan")
+	_, err = e.as(root).tenants.ApplyTenant(ctx, connect.NewRequest(planned))
+	wantCode(t, err, connect.CodeFailedPrecondition, "a plan that does not exist")
+	must[tenancyv1alpha1.ApplyPlanResponse](t)(e.as(root).plans.ApplyPlan(ctx, connect.NewRequest(&tenancyv1alpha1.ApplyPlanRequest{
+		Plan: &tenancyv1alpha1.Plan{Metadata: &metav1.ObjectMeta{Name: "big"}},
+	})))
 	must[tenancyv1alpha1.ApplyTenantResponse](t)(e.as(root).tenants.ApplyTenant(ctx, connect.NewRequest(planned)))
 
 	_, err = e.asNode().containers.UpdateContainerStatus(ctx, connect.NewRequest(&computev1alpha1.UpdateContainerStatusRequest{Project: "web", Name: "api"}))

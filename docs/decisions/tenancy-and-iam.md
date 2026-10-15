@@ -135,11 +135,77 @@ cloud, and some people fund the hardware and should see more of it.
   cost and traffic), never the contents of other tenants' resources.
 - **More quota is not a permission.** A tenant references a `Plan` (a
   platform-level resource defining quota limits), and a sponsor's tenant gets a
-  larger plan. `Tenant.spec.plan` exists from the start; plans and quotas are
-  enforced later.
+  larger plan. See "Quotas" below.
 - Platform roles, from most to least powerful: root, maintainer (a future
   operations role whose access to tenant details is audited), sponsor, regular
   user.
+
+### Quotas
+
+The tenant is the team, as on DigitalOcean and Fly, so the budget is the
+tenant's: what all its projects together hold, against its Plan.
+
+- `Plan` is a global kind only platform administrators read and write. Its
+  `spec.limits` caps cpu, memory, disk, machines, projects, networks,
+  addresses, public endpoints and service tokens; a field left unset has no
+  limit. A tenant with an empty `spec.plan` has the plan `default`, which the
+  apiserver makes, with placeholder limits, the first time it starts on a
+  store. The default limits are data: the administrator changes them with
+  apply. The default plan, and a plan a tenant names, cannot be deleted.
+- A tenant owner may give a project `spec.limits`, a budget inside the
+  tenant's, such as one to cap an agent's project. It may not be above the
+  tenant's limits, and the limits that hold for a project are the smaller of
+  the two. Changing it needs apply on projects at the tenant (a grant on the
+  tenant or the platform), so a role held on the project alone cannot raise
+  its own budget, however broad.
+- Containers and VMs count alike, as the machines they become, with the
+  defaults and the rounding their controllers apply: what the node is asked
+  for. cpu and memory count only machines asked to run; a stopped machine
+  counts its disk and its place among machines (the AWS and GCP model), so
+  starting one is checked and can be refused. Disk is containers' disks,
+  Disks, and the root disks VMs have made from images. Such a root disk
+  counts once, by its VM: the size the VM asks for, or, once the Disk
+  exists, the larger of that and the Disk's spec and status sizes. So
+  shrinking the VM's size frees nothing the disk still holds, and growing
+  the Disk itself raises the VM's count and is checked. A project counts its
+  `default` network from the moment it is created.
+- Admission refuses, with `ResourceExhausted`, a write that would take a
+  tenant or project past a limit, naming the limit, its value, the usage and
+  what the write would bring it to. Only what the write raises is checked:
+  a tenant over a lowered limit can still shrink and change anything else.
+  An update counts as what it stores, with the stored uid, owner references
+  and reserved annotations, so a manifest applied again unchanged raises
+  nothing.
+- The apiserver's own writes are not checked; what they add was already
+  counted at the user's write that caused them. The default network counts
+  from its project's creation. A VM's root disk counts from the VM's
+  creation, at the VM's size, which the VM controller makes the Disk at.
+- A tenant's `status` holds its plan, the plan's limits and its usage; a
+  project's holds the limits that hold for it and its usage. A controller
+  writes them, for people to read; admission counts from the store itself.
+- The real per-account limit is the number of tenants one person opens,
+  because every tenant gets a plan of its own. Each tenant records who
+  opened it in the reserved annotation `hangarlab.cloud/opened-by`, which
+  the apiserver sets at creation and no one else can set, change or drop;
+  the tenant's bindings stay free to change. The live tenants someone opened
+  are capped by their User's `spec.maxOwnedTenants`, which only
+  `platform.root` sets, or else by the apiserver flag
+  `--default-max-owned-tenants` (3), which also caps service tokens.
+  Platform root is not capped. The cap is not a Plan field: a Plan is one
+  tenant's budget.
+- **Concurrent writes cannot together overshoot a limit** because every write
+  that can raise a tenant's usage, but the apiserver's own, holds one
+  apiserver-wide mutex (`Server.quota`) from counting the tenant's usage in
+  the store to the write. This holds only while a single apiserver process
+  writes the store. Running more than one apiserver needs another way, such
+  as counting and writing in one store transaction, before it ships.
+- The lock has a cost: every such write counts its tenant twice (before and
+  after), listing each counted kind in each of the tenant's projects, and
+  the writes are serialized across all tenants, not per tenant. That is
+  cheap at the platform's size today; a tenant with many projects, or many
+  tenants writing at once, makes it the place to look first, with a lock per
+  tenant (the tenant-count cap would then need one per opener) as the next
+  step.
 
 ## Consequences
 

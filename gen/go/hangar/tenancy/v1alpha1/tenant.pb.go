@@ -160,8 +160,14 @@ type TenantStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ObservedGeneration int64                  `protobuf:"varint,1,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// The Plan the tenant has: spec.plan, or "default".
+	Plan string `protobuf:"bytes,3,opt,name=plan,proto3" json:"plan,omitempty"`
+	// The plan's limits; an unset field has no limit.
+	Limits *Limits `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
+	// What all the tenant's projects hold.
+	Usage         *Usage `protobuf:"bytes,5,opt,name=usage,proto3" json:"usage,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TenantStatus) Reset() {
@@ -204,6 +210,27 @@ func (x *TenantStatus) GetObservedGeneration() int64 {
 func (x *TenantStatus) GetConditions() []*v1.Condition {
 	if x != nil {
 		return x.Conditions
+	}
+	return nil
+}
+
+func (x *TenantStatus) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
+}
+
+func (x *TenantStatus) GetLimits() *Limits {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *TenantStatus) GetUsage() *Usage {
+	if x != nil {
+		return x.Usage
 	}
 	return nil
 }
@@ -836,7 +863,7 @@ var File_hangar_tenancy_v1alpha1_tenant_proto protoreflect.FileDescriptor
 
 const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"\n" +
-	"$hangar/tenancy/v1alpha1/tenant.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\x86\x02\n" +
+	"$hangar/tenancy/v1alpha1/tenant.proto\x12\x17hangar.tenancy.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/tenancy/v1alpha1/plan.proto\"\x86\x02\n" +
 	"\x06Tenant\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -848,12 +875,15 @@ const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"\n" +
 	"TenantSpec\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\x12\x12\n" +
-	"\x04plan\x18\x02 \x01(\tR\x04plan\"z\n" +
+	"\x04plan\x18\x02 \x01(\tR\x04plan\"\xfd\x01\n" +
 	"\fTenantStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"&\n" +
+	"conditions\x12\x12\n" +
+	"\x04plan\x18\x03 \x01(\tR\x04plan\x127\n" +
+	"\x06limits\x18\x04 \x01(\v2\x1f.hangar.tenancy.v1alpha1.LimitsR\x06limits\x124\n" +
+	"\x05usage\x18\x05 \x01(\v2\x1e.hangar.tenancy.v1alpha1.UsageR\x05usage\"&\n" +
 	"\x10GetTenantRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"L\n" +
 	"\x11GetTenantResponse\x127\n" +
@@ -933,39 +963,43 @@ var file_hangar_tenancy_v1alpha1_tenant_proto_goTypes = []any{
 	(*UpdateTenantStatusResponse)(nil), // 14: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
 	(*v1.ObjectMeta)(nil),              // 15: hangar.meta.v1.ObjectMeta
 	(*v1.Condition)(nil),               // 16: hangar.meta.v1.Condition
-	(v1.EventType)(0),                  // 17: hangar.meta.v1.EventType
+	(*Limits)(nil),                     // 17: hangar.tenancy.v1alpha1.Limits
+	(*Usage)(nil),                      // 18: hangar.tenancy.v1alpha1.Usage
+	(v1.EventType)(0),                  // 19: hangar.meta.v1.EventType
 }
 var file_hangar_tenancy_v1alpha1_tenant_proto_depIdxs = []int32{
 	15, // 0: hangar.tenancy.v1alpha1.Tenant.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	1,  // 1: hangar.tenancy.v1alpha1.Tenant.spec:type_name -> hangar.tenancy.v1alpha1.TenantSpec
 	2,  // 2: hangar.tenancy.v1alpha1.Tenant.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
 	16, // 3: hangar.tenancy.v1alpha1.TenantStatus.conditions:type_name -> hangar.meta.v1.Condition
-	0,  // 4: hangar.tenancy.v1alpha1.GetTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 5: hangar.tenancy.v1alpha1.ListTenantsResponse.items:type_name -> hangar.tenancy.v1alpha1.Tenant
-	17, // 6: hangar.tenancy.v1alpha1.WatchTenantsResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 7: hangar.tenancy.v1alpha1.WatchTenantsResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 8: hangar.tenancy.v1alpha1.ApplyTenantRequest.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 9: hangar.tenancy.v1alpha1.ApplyTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	0,  // 10: hangar.tenancy.v1alpha1.DeleteTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	2,  // 11: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
-	0,  // 12: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
-	3,  // 13: hangar.tenancy.v1alpha1.TenantService.GetTenant:input_type -> hangar.tenancy.v1alpha1.GetTenantRequest
-	5,  // 14: hangar.tenancy.v1alpha1.TenantService.ListTenants:input_type -> hangar.tenancy.v1alpha1.ListTenantsRequest
-	7,  // 15: hangar.tenancy.v1alpha1.TenantService.WatchTenants:input_type -> hangar.tenancy.v1alpha1.WatchTenantsRequest
-	9,  // 16: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:input_type -> hangar.tenancy.v1alpha1.ApplyTenantRequest
-	11, // 17: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:input_type -> hangar.tenancy.v1alpha1.DeleteTenantRequest
-	13, // 18: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:input_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
-	4,  // 19: hangar.tenancy.v1alpha1.TenantService.GetTenant:output_type -> hangar.tenancy.v1alpha1.GetTenantResponse
-	6,  // 20: hangar.tenancy.v1alpha1.TenantService.ListTenants:output_type -> hangar.tenancy.v1alpha1.ListTenantsResponse
-	8,  // 21: hangar.tenancy.v1alpha1.TenantService.WatchTenants:output_type -> hangar.tenancy.v1alpha1.WatchTenantsResponse
-	10, // 22: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:output_type -> hangar.tenancy.v1alpha1.ApplyTenantResponse
-	12, // 23: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:output_type -> hangar.tenancy.v1alpha1.DeleteTenantResponse
-	14, // 24: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:output_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
-	19, // [19:25] is the sub-list for method output_type
-	13, // [13:19] is the sub-list for method input_type
-	13, // [13:13] is the sub-list for extension type_name
-	13, // [13:13] is the sub-list for extension extendee
-	0,  // [0:13] is the sub-list for field type_name
+	17, // 4: hangar.tenancy.v1alpha1.TenantStatus.limits:type_name -> hangar.tenancy.v1alpha1.Limits
+	18, // 5: hangar.tenancy.v1alpha1.TenantStatus.usage:type_name -> hangar.tenancy.v1alpha1.Usage
+	0,  // 6: hangar.tenancy.v1alpha1.GetTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 7: hangar.tenancy.v1alpha1.ListTenantsResponse.items:type_name -> hangar.tenancy.v1alpha1.Tenant
+	19, // 8: hangar.tenancy.v1alpha1.WatchTenantsResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 9: hangar.tenancy.v1alpha1.WatchTenantsResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 10: hangar.tenancy.v1alpha1.ApplyTenantRequest.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 11: hangar.tenancy.v1alpha1.ApplyTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	0,  // 12: hangar.tenancy.v1alpha1.DeleteTenantResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	2,  // 13: hangar.tenancy.v1alpha1.UpdateTenantStatusRequest.status:type_name -> hangar.tenancy.v1alpha1.TenantStatus
+	0,  // 14: hangar.tenancy.v1alpha1.UpdateTenantStatusResponse.tenant:type_name -> hangar.tenancy.v1alpha1.Tenant
+	3,  // 15: hangar.tenancy.v1alpha1.TenantService.GetTenant:input_type -> hangar.tenancy.v1alpha1.GetTenantRequest
+	5,  // 16: hangar.tenancy.v1alpha1.TenantService.ListTenants:input_type -> hangar.tenancy.v1alpha1.ListTenantsRequest
+	7,  // 17: hangar.tenancy.v1alpha1.TenantService.WatchTenants:input_type -> hangar.tenancy.v1alpha1.WatchTenantsRequest
+	9,  // 18: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:input_type -> hangar.tenancy.v1alpha1.ApplyTenantRequest
+	11, // 19: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:input_type -> hangar.tenancy.v1alpha1.DeleteTenantRequest
+	13, // 20: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:input_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusRequest
+	4,  // 21: hangar.tenancy.v1alpha1.TenantService.GetTenant:output_type -> hangar.tenancy.v1alpha1.GetTenantResponse
+	6,  // 22: hangar.tenancy.v1alpha1.TenantService.ListTenants:output_type -> hangar.tenancy.v1alpha1.ListTenantsResponse
+	8,  // 23: hangar.tenancy.v1alpha1.TenantService.WatchTenants:output_type -> hangar.tenancy.v1alpha1.WatchTenantsResponse
+	10, // 24: hangar.tenancy.v1alpha1.TenantService.ApplyTenant:output_type -> hangar.tenancy.v1alpha1.ApplyTenantResponse
+	12, // 25: hangar.tenancy.v1alpha1.TenantService.DeleteTenant:output_type -> hangar.tenancy.v1alpha1.DeleteTenantResponse
+	14, // 26: hangar.tenancy.v1alpha1.TenantService.UpdateTenantStatus:output_type -> hangar.tenancy.v1alpha1.UpdateTenantStatusResponse
+	21, // [21:27] is the sub-list for method output_type
+	15, // [15:21] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_hangar_tenancy_v1alpha1_tenant_proto_init() }
@@ -973,6 +1007,7 @@ func file_hangar_tenancy_v1alpha1_tenant_proto_init() {
 	if File_hangar_tenancy_v1alpha1_tenant_proto != nil {
 		return
 	}
+	file_hangar_tenancy_v1alpha1_plan_proto_init()
 	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[11].OneofWrappers = []any{}
 	file_hangar_tenancy_v1alpha1_tenant_proto_msgTypes[13].OneofWrappers = []any{}
 	type x struct{}

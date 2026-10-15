@@ -64,17 +64,19 @@ func (r *racedCreates) Create(ctx context.Context, key store.Key, data []byte) (
 
 // TestASameHolderRaceKeepsTheHostname: two creators of one endpoint at
 // once; the one that took the hostname's claim finds the endpoint made by
-// the other, which holds it too, and the claim stays.
+// the other, which holds it too, and the claim stays. One creator is the
+// apiserver, as its container endpoint controller is: two callers' creates
+// are serialized by the quota lock, which the apiserver's own do not take.
 func TestASameHolderRaceKeepsTheHostname(t *testing.T) {
 	var raced *racedCreates
-	s, _, user := runningWith(t, func(c *Config) {
+	s, system, user := runningWith(t, func(c *Config) {
 		raced = &racedCreates{Store: c.Store, kind: registry.PublicEndpoint.Kind, arrived: make(chan struct{}), first: make(chan struct{})}
 		c.Store = raced
 	})
 	errs := make([]error, 2)
 	var wg sync.WaitGroup
-	for i := range errs {
-		ctx := context.WithValue(user, creatorKey{}, i)
+	for i, who := range []context.Context{system, user} {
+		ctx := context.WithValue(who, creatorKey{}, i)
 		wg.Go(func() {
 			_, errs[i] = s.backend(registry.PublicEndpoint).Apply(ctx, endpoint("site", "api", 80, private))
 		})

@@ -67,6 +67,7 @@ func start(t *testing.T, uid uint32) listeners {
 	f := flags{
 		db: filepath.Join(dir, "hangar.db"), listen: addr, socket: l.node, adminSocket: l.admin,
 		nodeUID: uint(os.Getuid()), nodeName: "n1", authMode: "dev", bootstrapAdmin: "root@example.com",
+		maxOwnedTenants: 3,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)

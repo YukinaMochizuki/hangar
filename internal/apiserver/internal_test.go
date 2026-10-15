@@ -46,7 +46,9 @@ func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, sys
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := Config{Store: st, Clock: clockwork.NewFakeClock(), DisableControllers: true}
+	// Tests size machines and open tenants freely; the quota tests set limits.
+	cfg := Config{Store: st, Clock: clockwork.NewFakeClock(), DisableControllers: true,
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
 	configure(&cfg)
 	s = New(cfg)
 	done := make(chan error, 1)

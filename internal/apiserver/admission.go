@@ -102,6 +102,10 @@ type kindHooks struct {
 	// beforeDelete may refuse a delete; it runs when the delete is asked
 	// for, not again while finalizers hold the object.
 	beforeDelete func(ctx context.Context, s *Server, obj proto.Message) error
+	// onCreate, if set, records on a new object what the apiserver keeps
+	// about who creates it; it runs once the caller's metadata is checked,
+	// before admission.
+	onCreate func(p auth.Principal, obj proto.Message)
 	// afterCreate runs once a new object is stored.
 	afterCreate func(ctx context.Context, s *Server, p auth.Principal, obj proto.Message) error
 	// systemManaged keeps every write but status updates to the apiserver
@@ -174,7 +178,11 @@ func hooksFor(r registry.Resource) kindHooks {
 			neverReuseNames:   true,
 			cascades:          true,
 			validate:          validateTenant,
+			onCreate:          stampOpener,
 			afterCreate:       grantTenantOwner,
+			// Shared with Plan: that a tenant's plan exists is checked against
+			// the plans, and deleting a plan against the tenants.
+			writeLock: planLock,
 		}
 	case registry.Project.Kind:
 		return kindHooks{
@@ -331,6 +339,15 @@ func hooksFor(r registry.Resource) kindHooks {
 			seal:            sealSecret,
 			redact:          redactSecret,
 		}
+	case registry.Plan.Kind:
+		// Platform administrators keep the plans; a tenant reads its own
+		// plan's limits in its status.
+		return kindHooks{
+			target:       platformTarget,
+			validate:     validatePlan,
+			beforeDelete: refuseDeletingPlanInUse,
+			writeLock:    planLock,
+		}
 	case registry.Node.Kind:
 		return kindHooks{
 			target:        platformTarget,
@@ -347,6 +364,8 @@ func hooksFor(r registry.Resource) kindHooks {
 func platformTarget(*Server, resource.Key, proto.Message, bool) authz.Target { return authz.Target{} }
 
 func attachLock(s *Server) *sync.Mutex { return &s.attach }
+
+func planLock(s *Server) *sync.Mutex { return &s.plans }
 
 // machineForNode keeps a machine's cloud-init data, its guest's user-data
 // and keys, from every node but the one it is on, which serves it.
@@ -366,9 +385,11 @@ func (s *Server) admit(ctx context.Context, b *backend, p auth.Principal, old, o
 		}
 	}
 	if b.hooks.validate != nil {
-		return b.hooks.validate(ctx, s, p, old, obj)
+		if err := b.hooks.validate(ctx, s, p, old, obj); err != nil {
+			return err
+		}
 	}
-	return nil
+	return s.checkQuota(ctx, b.r, p, old, obj)
 }
 
 // ownerRef returns a reference to the object a new one belongs to, which
@@ -402,8 +423,8 @@ func (s *Server) ownerRef(ctx context.Context, b *backend, obj proto.Message) (*
 }
 
 // validateTenant keeps quota a platform decision: only someone who may manage
-// the whole platform can choose a tenant's plan.
-func validateTenant(_ context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
+// the whole platform can choose a tenant's plan, which must exist.
+func validateTenant(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
 	plan := obj.(*tenancyv1alpha1.Tenant).GetSpec().GetPlan()
 	var oldPlan string
 	if old != nil {
@@ -411,6 +432,13 @@ func validateTenant(_ context.Context, s *Server, p auth.Principal, old, obj pro
 	}
 	if plan != oldPlan && !s.authz.Allowed(p, authz.Permission(registry.Tenant, authz.Apply), authz.Target{}) {
 		return denied("only platform administrators set spec.plan")
+	}
+	if plan != oldPlan && plan != "" {
+		if o, err := s.get(ctx, registry.Plan, resource.Key{Name: plan}); err != nil {
+			return err
+		} else if o == nil {
+			return failedPrecondition("spec.plan: plan %q does not exist", plan)
+		}
 	}
 	return nil
 }
@@ -435,12 +463,15 @@ func (s *Server) requireLive(ctx context.Context, r registry.Resource, project, 
 	return nil
 }
 
-func validateProject(ctx context.Context, s *Server, _ auth.Principal, _, obj proto.Message) error {
+func validateProject(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
 	tenant := obj.(*tenancyv1alpha1.Project).GetSpec().GetTenant()
 	if tenant == "" {
 		return invalid("spec.tenant is required")
 	}
-	return s.requireLive(ctx, registry.Tenant, "", tenant)
+	if err := s.requireLive(ctx, registry.Tenant, "", tenant); err != nil {
+		return err
+	}
+	return s.validateProjectLimits(ctx, p, old, obj)
 }
 
 func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, _, obj proto.Message) error {

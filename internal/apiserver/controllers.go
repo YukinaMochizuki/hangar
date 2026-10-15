@@ -160,6 +160,7 @@ func (s *Server) controllers() []*controller.Controller {
 				{Kind: registry.Disk.Kind, Map: s.unscheduledMachines, SkipResync: true},
 			},
 		},
+		s.usageController(),
 	}
 }
 
