@@ -220,6 +220,18 @@ reboot) runs the new launcher on the `spec.json` the old agent wrote, and
 boots the new guest kernel and initramfs. A running VM keeps its own until
 then.
 
+**Upgrading to the release that records image sources** (the first with
+Secrets, `docs/decisions/secrets.md`): the node's image cache from before
+has no record of which repository each image came from, and the new agent
+trusts none of it. Running machines are not touched. The new agent fetches
+each machine's image once more, in full, from that machine's own registry,
+in the background soon after it starts, and starting a machine again (a
+host reboot, a stop and start, or a change that restarts it) waits for that
+fetch: a registry that is down blocks the start, the machine saying
+`ImagePullFailed`, until it is back. Expect one download of each image, and
+do not reboot the host or restart machines during the upgrade while a
+registry they need is unreachable.
+
 1. Build it from the commit to deploy, on a testbed VM:
    `HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release`.
    The variable lets it reuse the kernel the testbed image prebuilt when the

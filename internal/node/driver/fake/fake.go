@@ -328,6 +328,16 @@ func (h *Host) FailPull(ref string, err error) {
 	h.pullErr[ref] = err
 }
 
+// ForgetSources drops what the host's cache knows of the repositories its
+// content came from, keeping the content, as a cache written before sources
+// were recorded is: each digest must be fetched in full again before the
+// cache answers it.
+func (h *Host) ForgetSources() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.sources = map[string]map[string]bool{}
+}
+
 // DefaultBaseSize is the size of a base unless SetBaseSize says otherwise.
 const DefaultBaseSize = 64 << 20
 

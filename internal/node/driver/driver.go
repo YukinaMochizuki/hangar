@@ -74,19 +74,35 @@ func Anonymous(context.Context, string) (Login, error) { return Login{}, nil }
 // Repository is the repository an image reference names, with its
 // registry, as the cache records where content came from: the one place
 // references are compared so. docker.io/library/x, index.docker.io/library/x
-// and x are one repository, index.docker.io/library/x. A tag or digest is
-// left out, and a digest need not be well formed.
+// and x are one repository, index.docker.io/library/x; the host is lower
+// case, without its scheme's default port (443, or 80 for a registry
+// reached over plain HTTP). A tag or digest is left out, and a digest need
+// not be well formed.
 func Repository(ref string) (string, error) {
 	repo, _, _ := strings.Cut(ref, "@")
 	r, err := name.ParseReference(repo)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
 	}
-	// Docker Hub's API host, which go-containerregistry does not fold.
-	if r.Context().RegistryStr() == "registry-1.docker.io" {
-		if r, err = name.ParseReference(name.DefaultRegistry + "/" + r.Context().RepositoryStr()); err != nil {
-			return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
-		}
+	host := strings.ToLower(r.Context().RegistryStr())
+	reg, err := name.NewRegistry(host)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
+	}
+	switch reg.Scheme() {
+	case "https":
+		host = strings.TrimSuffix(host, ":443")
+	case "http":
+		host = strings.TrimSuffix(host, ":80")
+	}
+	// Docker Hub's other names, which go-containerregistry does not fold
+	// once spelled otherwise.
+	if host == "docker.io" || host == "registry-1.docker.io" {
+		host = name.DefaultRegistry
+	}
+	// Parsed again, so Docker Hub's official images get their library/.
+	if r, err = name.ParseReference(host + "/" + r.Context().RepositoryStr()); err != nil {
+		return "", fmt.Errorf("%w: %w", ErrImageNotFound, err)
 	}
 	return r.Context().Name(), nil
 }

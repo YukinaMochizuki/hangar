@@ -209,6 +209,48 @@ func TestAnotherTenantCannotRunAPrivateImageFromTheCache(t *testing.T) {
 	w.waitReason("app", "Running")
 }
 
+// TestAnUpgradedNodeFetchesEachImageAgain: a node upgraded from a release
+// whose cache recorded no sources trusts none of what it holds. A machine
+// running keeps running, its registry down or not; starting it again needs
+// its image fetched once from its own registry, which a registry that is
+// down blocks until it is back (docs/runbook/host-bootstrap.md).
+func TestAnUpgradedNodeFetchesEachImageAgain(t *testing.T) {
+	w := newWorld(t)
+	c := container("api", "nginx")
+	w.apply(c)
+	w.waitReason("api", "Running")
+	before, _, _ := w.vmOfIn(project, "api")
+
+	// The upgrade: the agent restarts on a cache with no sources, and the
+	// registry is down meanwhile.
+	w.stopAgent()
+	w.host.ForgetSources()
+	w.host.FailPull("nginx", fmt.Errorf("%w: the registry is down", driver.ErrRegistryUnreachable))
+	w.startAgent()
+	// The new agent checks the machine, and its image, within this; its
+	// pull fails meanwhile.
+	time.Sleep(time.Second)
+	w.waitReason("api", "Running")
+	if vm, _, running := w.vmOfIn(project, "api"); !running || !vm.Started.Equal(before.Started) {
+		t.Fatal("a running machine was stopped or restarted for its image's registry being down")
+	}
+
+	// Starting it again needs the image fetched from its registry.
+	c.Spec.RunState = computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED
+	w.apply(c)
+	w.waitStopped("api", metav1.ConditionStatus_CONDITION_STATUS_TRUE)
+	c.Spec.RunState = computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_RUNNING
+	w.apply(c)
+	w.waitReasonIn(project, "api", computeapi.ReasonImagePullFailed)
+	if _, _, running := w.vmOfIn(project, "api"); running {
+		t.Error("the machine started from a cache with no sources, its registry down")
+	}
+
+	// The registry back, the one fetch lets it start.
+	w.host.FailPull("nginx", nil)
+	w.waitReasonIn(project, "api", "Running")
+}
+
 // vmOfIn says whether the container's machine has a VM running.
 func (w *world) vmOfIn(proj, name string) (driver.VM, driver.VMSpec, bool) {
 	obj, err := w.root.Get(context.Background(), registry.Machine, client.Key{Project: proj, Name: "ct-" + name})

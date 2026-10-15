@@ -13,6 +13,7 @@ func TestRepository(t *testing.T) {
 	same := []string{
 		"x", "x:1", "x@" + digest, "library/x", "docker.io/library/x", "index.docker.io/library/x:2",
 		"docker.io/x", "index.docker.io/library/x@" + digest, "registry-1.docker.io/library/x",
+		"Docker.IO/library/x", "INDEX.docker.io/x:1", "index.docker.io:443/library/x", "Registry-1.Docker.io:443/x",
 	}
 	want := "index.docker.io/library/x"
 	for _, ref := range same {
@@ -26,6 +27,14 @@ func TestRepository(t *testing.T) {
 		"docker.io/acme/x":                  "index.docker.io/acme/x",
 		"127.0.0.1:5000/acme/x@sha256:1":    "127.0.0.1:5000/acme/x",
 		"registry.example/library/x:latest": "registry.example/library/x",
+		// A host is lower case, and without its scheme's default port.
+		"GHCR.io/acme/x:1":             "ghcr.io/acme/x",
+		"ghcr.io:443/acme/x@" + digest: "ghcr.io/acme/x",
+		"Registry.Example:443/acme/x":  "registry.example/acme/x",
+		"localhost:80/acme/x":          "localhost/acme/x",
+		"LocalHost:5000/acme/x":        "localhost:5000/acme/x",
+		"registry.example:8443/acme/x": "registry.example:8443/acme/x",
+		"registry.example:80/acme/x":   "registry.example:80/acme/x",
 	}
 	for ref, want := range others {
 		if got, err := driver.Repository(ref); err != nil || got != want {

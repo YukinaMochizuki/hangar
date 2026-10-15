@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -38,6 +39,31 @@ func sourcesOf(t *testing.T, cache, digest string) []string {
 	return rec.Sources
 }
 
+// dropSources rewrites the cache's record of digest as one written before
+// there were sources.
+func dropSources(t *testing.T, cache, digest string) {
+	t.Helper()
+	record := filepath.Join(cache, "images", strings.TrimPrefix(digest, "sha256:")+".json")
+	b, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := rec["sources"]; !ok {
+		t.Fatalf("a new record has no sources: %s", b)
+	}
+	delete(rec, "sources")
+	if b, err = json.Marshal(rec); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(record, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func repoOf(t *testing.T, ref string) string {
 	t.Helper()
 	repo, err := driver.Repository(ref)
@@ -61,25 +87,7 @@ func TestARecordWithoutSourcesHasNone(t *testing.T) {
 	}
 	layers, _ := img.Layers()
 	ld, _ := layers[0].Digest()
-	record := filepath.Join(cache, "images", strings.TrimPrefix(digest, "sha256:")+".json")
-	b, err := os.ReadFile(record)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var rec map[string]any
-	if err := json.Unmarshal(b, &rec); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok := rec["sources"]; !ok {
-		t.Fatalf("a new record has no sources: %s", b)
-	}
-	delete(rec, "sources")
-	if b, err = json.Marshal(rec); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(record, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	dropSources(t, cache, digest)
 
 	// The agent restarts on the old cache.
 	d = newImages(t, cache, ocilayer.Limits{})
@@ -96,6 +104,33 @@ func TestARecordWithoutSourcesHasNone(t *testing.T) {
 	before = r.BlobGets(ld.String())
 	if err := d.Unpack(t.Context(), ref, digest, t.TempDir(), anon); err != nil || r.BlobGets(ld.String()) != before {
 		t.Errorf("its source again went to the registry: %v, %d fetches", err, r.BlobGets(ld.String())-before)
+	}
+}
+
+// TestAnOldRecordNeedsItsRegistry: what a node cached before this release
+// was proven under a rule that let any repository claim a digest, so it is
+// not trusted: after the upgrade, the first use of each such digest needs
+// its own registry, and a registry that is down fails it, though the cache
+// holds every blob. docs/runbook/host-bootstrap.md tells operators so.
+func TestAnOldRecordNeedsItsRegistry(t *testing.T) {
+	r := registrytest.New(t)
+	cache := t.TempDir()
+	ref, digest := r.Push(t, "old:1", image(t, "amd64", []string{"true"}, gzLayer(t, "f", "old")))
+	if _, err := newImages(t, cache, ocilayer.Limits{}).Config(t.Context(), ref, digest, anon); err != nil {
+		t.Fatal(err)
+	}
+	dropSources(t, cache, digest)
+	r.Withdraw("old")
+	// The upgraded agent starts on the old cache.
+	d := newImages(t, cache, ocilayer.Limits{})
+	if _, err := d.Config(t.Context(), ref, digest, anon); !errors.Is(err, driver.ErrRegistryUnreachable) {
+		t.Errorf("config of an old record with its registry down: %v, want unreachable", err)
+	}
+	if err := d.Unpack(t.Context(), ref, digest, t.TempDir(), anon); !errors.Is(err, driver.ErrRegistryUnreachable) {
+		t.Errorf("unpacking an old record with its registry down: %v, want unreachable", err)
+	}
+	if got := sourcesOf(t, cache, digest); len(got) != 0 {
+		t.Errorf("a failed fetch left sources %v", got)
 	}
 }
 

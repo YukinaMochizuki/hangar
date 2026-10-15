@@ -74,10 +74,12 @@ unpacked once into a base, and cloned for every machine of that digest.
   - **The cache records where content came from.** Each cached digest's
     record lists its sources: the repositories (registry and repository,
     normalized in one place, `driver.Repository`, so `docker.io/library/x`,
-    `index.docker.io/library/x` and `x` are one) it was fetched from in
-    full. Only a full fetch adds one, the list is kept with the record
-    across restarts, and a record written before there were sources has
-    none. The Images driver answers a digest from the cache only for a
+    `index.docker.io/library/x` and `x` are one, with the host in lower
+    case and without its default port) it was fetched from in full. Only a
+    full fetch adds one, and the list is kept with the record across
+    restarts. A record written before there were sources has none, and is
+    not trusted: it was proven under a rule that let any repository claim
+    a digest. The Images driver answers a digest from the cache only for a
     reference naming one of its sources. For any other, it first fetches
     the manifest, the config and every layer from that reference's
     repository with the machine's login, each checked against its digest,
@@ -95,7 +97,10 @@ unpacked once into a base, and cloned for every machine of that digest.
     A machine whose status records the digest it was pulled for (written
     by its node only, after such a pull) has proven it: after an agent
     restart it is built from the cache, its repository being a source,
-    without the registry, so what runs keeps running.
+    without the registry. Whatever the registry does, a machine running
+    its current spec keeps running and its status stands: only starting
+    one needs its image, after a host reboot, a stop and start, or a
+    change that restarts it.
   - The shared base made of a digest is reached only through a job whose
     pull passed these rules.
 - **Security-sensitive.** The redaction, the node RPC's checks and the
@@ -113,6 +118,13 @@ unpacked once into a base, and cloned for every machine of that digest.
   of its layers again, hashed and dropped, so the cost is one extra download
   per new source repository of a digest; the content is still stored and
   unpacked once.
+- After the upgrade to the release that records sources, nothing in a
+  node's cache has any: the agent fetches each machine's image in full
+  from its own registry once, in the background, and starting a machine
+  again (after a host reboot, a stop and start, or a change that restarts
+  it) waits for that fetch, so a registry that is down blocks the start
+  until it is back. Running machines are not touched
+  (`docs/runbook/host-bootstrap.md`, `TestAnUpgradedNodeFetchesEachImageAgain`).
 - Deleting or changing a secret does not stop what runs with an image
   pulled with it: it counts at the next image change, or the next machine.
 - The node cannot learn which secrets exist: it gets a login for a machine,
