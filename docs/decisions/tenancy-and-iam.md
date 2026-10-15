@@ -16,7 +16,19 @@ cloud, and some people fund the hardware and should see more of it.
   they are chosen by the user, globally unique, and stay claimed after the
   object is deleted, so a name can never come to mean someone else's object.
   What people read is `display_name`, which is free-form, need not be unique,
-  and can change. Tooling may suggest IDs with a numeric suffix.
+  and can change.
+- **Clients suggest IDs; the server only checks them.** As the GCP console
+  does, `hangar create` (and later the console) makes an ID from the display
+  name and six random digits, such as `my-demo-438212`, and asks
+  `NameService.CheckName` whether it is free: no object has it now and none
+  ever had it. The check needs only platform membership and says nothing of
+  who holds a name. The server does not generate names, because apply finds
+  an object by its name: a generated one would make every apply of the same
+  file a new object. A name taken between the check and the create fails
+  the create, or, when the caller may change the object that took it, turns
+  it into an update, which `hangar create` reports as an error. The slug is cut to 20
+  characters, so an ID leaves room in a hostname label for what is put
+  before it, as a PublicEndpoint's hostname does.
 - **Deleting a tenant or project deletes everything in it.** It is marked as
   being deleted, its contents (projects, resources, role bindings scoped to it)
   are deleted in the background, and only then does it go. A grace period

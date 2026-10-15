@@ -179,7 +179,7 @@ func (a *app) root() *cobra.Command {
 	root.PersistentFlags().StringVar(&a.contextName, "context", "", "context to use instead of the current one")
 	root.PersistentFlags().StringVarP(&a.project, "project", "p", "", "project for project-scoped kinds, instead of the context's")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &exitError{code: ExitUsage, err: err} })
-	root.AddCommand(a.configCmd(), a.loginCmd(), a.applyCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd())
+	root.AddCommand(a.configCmd(), a.loginCmd(), a.applyCmd(), a.createCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd())
 	return root
 }
 

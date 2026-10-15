@@ -97,18 +97,18 @@ spec:
 	}
 	var last string
 	eventually(t, 12*time.Minute, "hangar ssh logging in", func() (bool, string) {
-		out, err := sshOut("vm/sshy", "--", "echo hello from $(hostname) as $(id -un)")
+		out, err := sshOut("vm", "sshy", "--", "echo hello from $(hostname) as $(id -un)")
 		last = fmt.Sprintf("%q %v", out, err)
 		return err == nil && out == "hello from sshy as ubuntu\n", last
 	})
 	t.Logf("hangar ssh logged in %v after the apply", time.Since(start).Round(time.Second))
-	if out, err := sshOut("vm/sshy", "--", "cat ~/.ssh/authorized_keys 2>/dev/null; true"); err != nil || strings.Contains(out, "ssh-") {
+	if out, err := sshOut("vm", "sshy", "--", "cat ~/.ssh/authorized_keys 2>/dev/null; true"); err != nil || strings.Contains(out, "ssh-") {
 		t.Errorf("the default user has static keys: %q %v", out, err)
 	}
-	if out, err := sshOut("-l", "alice", "vm/sshy", "--", "id", "-un"); err != nil || out != "alice\n" {
+	if out, err := sshOut("-l", "alice", "vm", "sshy", "--", "id", "-un"); err != nil || out != "alice\n" {
 		t.Errorf("-l alice: %q %v", out, err)
 	}
-	if out, err := sshOut("-l", "root", "vm/sshy", "--", "id", "-un"); err == nil {
+	if out, err := sshOut("-l", "root", "vm", "sshy", "--", "id", "-un"); err == nil {
 		t.Errorf("logged in as root: %q", out)
 	}
 	// The static key logs in with OpenSSH alone, hangar ssh-proxy its
@@ -116,7 +116,7 @@ spec:
 	c.cli("wait", "vm", "keyed", "--for=condition=Ready", "--timeout=10m")
 	eventually(t, 5*time.Minute, "ssh with the static key", func() (bool, string) {
 		cmd := exec.Command("ssh", "-i", keyFile, "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", "-o", "BatchMode=yes",
-			"-o", "ProxyCommand="+vmtest.Artifacts().CLI+" ssh-proxy vm/keyed",
+			"-o", "ProxyCommand="+vmtest.Artifacts().CLI+" ssh-proxy vm keyed",
 			"-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "ubuntu@keyed", "echo", "by", "the", "static", "key")
 		cmd.Env = append(os.Environ(), "HANGAR_CONFIG="+filepath.Join(workDir, "cli.yaml"))
 		out, err := cmd.CombinedOutput()
@@ -126,7 +126,7 @@ spec:
 	// static key is given.
 	ok := false
 	for deadline := time.Now().Add(2 * time.Minute); !ok && time.Now().Before(deadline); time.Sleep(2 * time.Second) {
-		out, err := sshOut("vm/keyed", "--", "echo by the CA")
+		out, err := sshOut("vm", "keyed", "--", "echo by the CA")
 		ok = err == nil && out == "by the CA\n"
 	}
 	if !ok {
@@ -199,7 +199,7 @@ spec:
 	c.startNode()
 	eventually(t, time.Minute, "the gateway reaching sshd once the agent is back", fromGateway)
 	eventually(t, time.Minute, "hangar ssh once the agent is back", func() (bool, string) {
-		out, err := sshOut("vm/sshy", "--", "echo", "back")
+		out, err := sshOut("vm", "sshy", "--", "echo", "back")
 		return err == nil && out == "back\n", fmt.Sprintf("%q %v", out, err)
 	})
 
