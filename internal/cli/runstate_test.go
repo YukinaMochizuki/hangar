@@ -335,6 +335,9 @@ type vmJSON struct {
 		Resources map[string]string `json:"resources"`
 		RootDisk  json.RawMessage   `json:"rootDisk"`
 	} `json:"spec"`
+	Status struct {
+		ObservedGeneration string `json:"observedGeneration"`
+	} `json:"status"`
 }
 
 func (w *world) vm(name string) vmJSON {
@@ -384,9 +387,22 @@ func TestStopStartAVirtualMachine(t *testing.T) {
 	// reads so.
 	node := w.node()
 	node.ready()
-	m := node.placed("vm-web")
+	// The node reports against the machine as it is once the controller has
+	// carried the VM's latest spec to it; until then the machine may still be
+	// at the stop, and a report for that generation reads as Updating.
+	deadline := time.Now().Add(10 * time.Second)
+	for v := w.vm("web"); v.Status.ObservedGeneration != v.Metadata.Generation; v = w.vm("web") {
+		if time.Now().After(deadline) {
+			t.Fatalf("the VM controller never observed generation %s: %+v", v.Metadata.Generation, v)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 	ended := func(phase computev1alpha1.MachinePhase, reason, msg string) {
 		t.Helper()
+		m := node.placed("vm-web")
+		if m.GetSpec().GetRunState() != computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING {
+			t.Fatalf("machine run state %v, want running", m.GetSpec().GetRunState())
+		}
 		node.report(m, phase, m.GetMetadata().GetGeneration(), &metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reason, Message: msg,
 			ObservedGeneration: m.GetMetadata().GetGeneration(),
