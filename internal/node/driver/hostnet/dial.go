@@ -11,13 +11,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// sshPort is the one port DialSSH reaches.
-const sshPort = 22
-
-// DialSSH connects in the network's namespace, from its gateway's address
-// and by its bridge, so the connection is the one the firewall lets through
-// to a tap (platformSSH).
-func (d *Driver) DialSSH(ctx context.Context, networkUID string, addr netip.Addr) (net.Conn, error) {
+// Dial connects in the network's namespace, from its gateway's address and
+// by its bridge, so the connection is the one the firewall lets through to
+// a tap: to port 22 (platformSSH) or one of its edge ports (edgePorts).
+func (d *Driver) Dial(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
 	if err := checkUID(networkUID); err != nil {
 		return nil, err
 	}
@@ -57,7 +54,7 @@ func (d *Driver) DialSSH(ctx context.Context, networkUID string, addr netip.Addr
 	var conn net.Conn
 	err = inNS(ns, func() error {
 		var err error
-		conn, err = dialer.DialContext(ctx, "tcp4", netip.AddrPortFrom(addr, sshPort).String())
+		conn, err = dialer.DialContext(ctx, "tcp4", addr.String())
 		return err
 	})
 	if err != nil {

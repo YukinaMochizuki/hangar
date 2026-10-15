@@ -11,7 +11,8 @@ separate root process on the same host.
 ## Decision
 
 - Each listener has a chain of authenticators, and the first that succeeds
-  produces a `Principal` of type User, ServiceToken, Node, System or Local.
+  produces a `Principal` of type User, ServiceToken, Node, System, Local or
+  Edge.
 - **Public listener** (loopback only, behind cloudflared): verifies the
   `Cf-Access-Jwt-Assertion` JWT against the team's JWKS, issuer and audience.
   It never trusts `Cf-Access-Authenticated-User-Email` or any other header a
@@ -45,6 +46,18 @@ separate root process on the same host.
   in its own runtime directory, which systemd chowns to it and removes on
   stop. The node socket is made the same way. The CLI reaches it as a
   `unix://` endpoint with `local` auth, which sends no credential.
+- **The edge** (`hangar-edge`, `public-endpoints.md`) connects over a
+  fourth unix socket, the edge socket (`/run/hangar/edge.sock`, root's and
+  the edge group's, 0660), and is identified by `SO_PEERCRED` alone: the
+  uid of the edge's user (`--edge-uid`, never root) is the Edge principal
+  `edge:<host>`, any other is refused. Its authenticator reads only what
+  that listener recorded, as the admin socket's does, so no other listener
+  can produce it. It may get, list and watch public endpoints, role
+  bindings, projects and users, everywhere, and do nothing else, whatever
+  the bindings say. Users of public endpoints are not principals of the API:
+  the edge authenticates them itself, from the Access token of the
+  endpoint domain's application. An mTLS authenticator joins its chain
+  with more hosts, as the node's.
 - Not a dev listener instead: a remotely-managed tunnel's routes are set
   in Cloudflare, and one pointed at the wrong origin would expose a
   listener that takes whoever the caller says it is.

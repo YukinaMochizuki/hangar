@@ -19,6 +19,7 @@ import (
 const (
 	nodeSocketName  = "node"
 	adminSocketName = "admin"
+	edgeSocketName  = "edge"
 )
 
 // sockets are the unix sockets the apiserver serves: those systemd passed it,

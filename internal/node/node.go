@@ -86,6 +86,11 @@ type Config struct {
 	// its machines' public addresses come from; invalid for none, and the
 	// node's machines then have no IPv6.
 	IPv6Prefix netip.Prefix
+	// EdgeDial, if set, is the listener hangar-edge asks for connections to
+	// public endpoints' ports on (internal/edgedial), from the peer uids
+	// EdgeUIDs alone; without it no endpoint is reached on this node.
+	EdgeDial net.Listener
+	EdgeUIDs []uint32
 	// MaxUnpackWork bounds the work unpacking one image takes, in
 	// ocilayer's steps: the Images driver is built with it as
 	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
@@ -247,6 +252,9 @@ func (a *Agent) Run(ctx context.Context) error {
 			defer wg.Done()
 			a.sweepLoop(ctx)
 		}()
+		if a.cfg.EdgeDial != nil {
+			wg.Go(func() { a.serveEdgeDial(ctx) })
+		}
 	} else {
 		a.cfg.Log.Warn("no host drivers: reporting the node, running no machines")
 	}

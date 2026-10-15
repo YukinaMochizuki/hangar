@@ -22,6 +22,7 @@ type Peer struct {
 type (
 	nodePeerKey  struct{}
 	adminPeerKey struct{}
+	edgePeerKey  struct{}
 )
 
 // ConnContext records the peer credentials of unix socket connections. Use it
@@ -35,6 +36,13 @@ func ConnContext(ctx context.Context, c net.Conn) context.Context {
 // listener, and on no other.
 func AdminConnContext(ctx context.Context, c net.Conn) context.Context {
 	return withPeer(ctx, c, adminPeerKey{})
+}
+
+// EdgeConnContext records the peer credentials of unix socket connections
+// for PeerEdge. Use it as the http.Server's ConnContext on the edge
+// listener, and on no other.
+func EdgeConnContext(ctx context.Context, c net.Conn) context.Context {
+	return withPeer(ctx, c, edgePeerKey{})
 }
 
 // AdminPeer returns the credentials AdminConnContext recorded for the
@@ -74,6 +82,31 @@ func (p PeerCred) Authenticate(ctx context.Context, _ http.Header) (Principal, b
 		return Principal{}, false, errors.New("the node socket has no node name configured")
 	}
 	return Principal{Type: Node, ID: p.NodeName}, true, nil
+}
+
+// PeerEdge authenticates hangar-edge on the edge socket by the uid the
+// kernel reports for the peer. It reads only what EdgeConnContext
+// recorded, and no header, so no other listener can produce its principal.
+// See docs/decisions/authentication.md.
+type PeerEdge struct {
+	// UIDs are the uids accepted as hangar-edge.
+	UIDs []uint32
+	// Host names the host in the principal's ID.
+	Host string
+}
+
+func (e PeerEdge) Authenticate(ctx context.Context, _ http.Header) (Principal, bool, error) {
+	cred, ok := ctx.Value(edgePeerKey{}).(*Peer)
+	if !ok {
+		return Principal{}, false, nil
+	}
+	if !slices.Contains(e.UIDs, cred.UID) {
+		return Principal{}, false, fmt.Errorf("peer uid %d is not hangar-edge", cred.UID)
+	}
+	if e.Host == "" {
+		return Principal{}, false, errors.New("the edge socket has no host name configured")
+	}
+	return Principal{Type: Edge, ID: e.Host}, true, nil
 }
 
 // LocalRoot authenticates root on the host's admin socket, the break-glass

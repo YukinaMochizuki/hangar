@@ -232,9 +232,12 @@ type Network interface {
 	// known by the MAC it sends from, which the interface's binding makes
 	// its own; it returns the Instance it serves, as ListenUDP does.
 	ListenPackets(ctx context.Context, networkUID string, kind PacketKind) (PacketConn, string, error)
-	// DialSSH connects to port 22 of addr, a machine's, from the network's
-	// gateway in its namespace: the platform's SSH (docs/decisions/vm-ssh.md).
-	DialSSH(ctx context.Context, networkUID string, addr netip.Addr) (net.Conn, error)
+	// Dial connects over TCP to addr, a machine's, from the network's
+	// gateway in its namespace: the platform's own ways in, its SSH
+	// (docs/decisions/vm-ssh.md) and public endpoints
+	// (docs/decisions/public-endpoints.md). The firewall lets them in to
+	// port 22 of every interface, and to an interface's EdgePorts.
+	Dial(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error)
 	// Instance names what a network's sockets serve, until it is made again;
 	// "" means there is nothing to serve.
 	Instance(ctx context.Context, networkUID string) (string, error)
@@ -281,6 +284,9 @@ type InterfacePolicy struct {
 	// Name is the interface's name in the machine, such as eth0.
 	Name   string
 	Policy secgroup.Policy
+	// EdgePorts are the TCP ports of the interface that public endpoints
+	// reach, which Dial from the gateway passes whatever Policy says.
+	EdgePorts []uint16
 }
 
 // MetadataAddr is the metadata service's address in every network, as

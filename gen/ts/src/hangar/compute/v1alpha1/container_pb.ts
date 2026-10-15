@@ -183,7 +183,8 @@ export type ContainerPort = Message<"hangar.compute.v1alpha1.ContainerPort"> & {
   protocol: Protocol;
 
   /**
-   * Expose the port over HTTPS through a PublicEndpoint.
+   * Expose the port over HTTPS through a PRIVATE PublicEndpoint the
+   * container owns, named "<container>-<name>". TCP only.
    *
    * @generated from field: bool public = 4;
    */

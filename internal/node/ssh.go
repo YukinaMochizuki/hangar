@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"time"
 
 	"connectrpc.com/connect"
@@ -48,7 +49,7 @@ func (s nodeService) SSH(ctx context.Context, stream *connect.BidiStream[nodev1.
 		return err
 	}
 	dctx, cancel := context.WithTimeout(ctx, sshDialTimeout)
-	conn, err := s.a.cfg.Drivers.Network.DialSSH(dctx, nic.NetworkUID, nic.Address.Addr())
+	conn, err := s.a.cfg.Drivers.Network.Dial(dctx, nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), sshPort))
 	cancel()
 	if err != nil {
 		return connect.NewError(connect.CodeUnavailable, fmt.Errorf("machine %s's port %d: %w", uid, sshPort, err))

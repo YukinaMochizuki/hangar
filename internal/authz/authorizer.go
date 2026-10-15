@@ -7,6 +7,7 @@ import (
 	"maps"
 	"slices"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -45,6 +46,16 @@ type subject struct {
 // RoleBindings, Projects and Users, kept current by watching the store.
 type Authorizer struct {
 	store store.Store
+	// source, when store is nil, is what the view follows instead: the
+	// API, from outside the apiserver (NewFromSource).
+	source Source
+	// synced is closed once a view following source has been loaded the
+	// first time.
+	synced     chan struct{}
+	syncedOnce sync.Once
+	// changes signals, without blocking, each change to a view following a
+	// source.
+	changes chan struct{}
 	// extra are roles beyond Roles, which never replace one of them.
 	extra map[string]Role
 
@@ -81,12 +92,61 @@ func New(st store.Store, extra map[string]Role) *Authorizer {
 		usernames: map[string]string{},
 		emails:    map[string]string{},
 		advanced:  make(chan struct{}),
+		synced:    make(chan struct{}),
+		changes:   make(chan struct{}, 1),
 	}
 }
+
+// Source is what an authorizer outside the apiserver follows: the API, as
+// hangar-edge reads it. controller.APISource is one. Objects come encoded as
+// the store holds them.
+type Source interface {
+	// List returns every object of kind, and a revision from which a watch
+	// misses no change made after the list.
+	List(ctx context.Context, kind string) ([]store.Object, int64, error)
+	// Watch calls fn for each change to an object of one of kinds after
+	// since; it returns when the watch ends, nil if the source ended it.
+	Watch(ctx context.Context, kinds []string, since int64, fn func(store.Event) error) error
+}
+
+// NewFromSource returns an authorizer whose view follows src rather than a
+// store. It answers Allowed and IsMember from what it has seen so far;
+// Fresh and WaitFor are the apiserver's alone. Call Run before using it,
+// and wait for Synced before trusting a refusal.
+func NewFromSource(src Source, extra map[string]Role) *Authorizer {
+	a := New(nil, extra)
+	a.source = src
+	return a
+}
+
+// Synced is closed once a view following a source has been loaded the
+// first time.
+func (a *Authorizer) Synced() <-chan struct{} { return a.synced }
+
+func (a *Authorizer) markSynced() { a.syncedOnce.Do(func() { close(a.synced) }) }
+
+// Changes delivers once after any change to a view following a source,
+// however many changes there were since it was last read: a caller holding
+// grants given earlier checks them again.
+func (a *Authorizer) Changes() <-chan struct{} { return a.changes }
+
+func (a *Authorizer) changed() {
+	select {
+	case a.changes <- struct{}{}:
+	default:
+	}
+}
+
+// sourceRetry is how long an authorizer following a source waits before it
+// lists again after a failure, such as the apiserver restarting.
+var sourceRetry = time.Second
 
 // Run loads the current bindings, projects and users and follows every write
 // until ctx is done.
 func (a *Authorizer) Run(ctx context.Context) error {
+	if a.store == nil {
+		return a.runSource(ctx)
+	}
 	for {
 		err := a.sync(ctx)
 		if ctx.Err() != nil {
@@ -135,30 +195,97 @@ func (a *Authorizer) sync(ctx context.Context) error {
 	return a.store.Watch(ctx, store.WatchOptions{SinceRevision: rev}, func(ev store.Event) error {
 		a.mu.Lock()
 		defer a.mu.Unlock()
-		switch ev.Object.Kind {
-		case registry.RoleBinding.Kind:
-			if ev.Type == store.EventDeleted {
-				delete(a.bindings, ev.Object.Name)
-			} else {
-				a.putBinding(ev.Object)
-			}
-			a.rebuildGrants()
-		case registry.Project.Kind:
-			if ev.Type == store.EventDeleted {
-				delete(a.tenantOf, ev.Object.Name)
-			} else {
-				a.putProject(ev.Object)
-			}
-		case registry.User.Kind:
-			if ev.Type == store.EventDeleted {
-				a.dropUser(ev.Object.Name)
-			} else {
-				a.putUser(ev.Object)
-			}
-		}
+		a.apply(ev)
 		a.advance(ev.Revision)
 		return nil
 	})
+}
+
+// runSource follows the source until ctx is done, listing again whenever a
+// watch ends or fails: an outside caller outlives apiserver restarts.
+func (a *Authorizer) runSource(ctx context.Context) error {
+	for {
+		err := a.syncSource(ctx)
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil && !errors.Is(err, store.ErrCompacted) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(sourceRetry):
+			}
+		}
+	}
+}
+
+// syncSource loads the view from the source and follows it. Each kind is
+// listed on its own, so the watch starts from the earlier revision;
+// replaying full-state events converges to the same view.
+func (a *Authorizer) syncSource(ctx context.Context) error {
+	bindings, brev, err := a.source.List(ctx, registry.RoleBinding.Kind)
+	if err != nil {
+		return err
+	}
+	projects, prev, err := a.source.List(ctx, registry.Project.Kind)
+	if err != nil {
+		return err
+	}
+	users, urev, err := a.source.List(ctx, registry.User.Kind)
+	if err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.bindings = map[string]bindingEntry{}
+	a.tenantOf = map[string]string{}
+	a.usernames = map[string]string{}
+	a.emails = map[string]string{}
+	for _, o := range bindings {
+		a.putBinding(o)
+	}
+	for _, o := range projects {
+		a.putProject(o)
+	}
+	for _, o := range users {
+		a.putUser(o)
+	}
+	a.rebuildGrants()
+	a.mu.Unlock()
+	a.markSynced()
+	a.changed()
+	kinds := []string{registry.RoleBinding.Kind, registry.Project.Kind, registry.User.Kind}
+	return a.source.Watch(ctx, kinds, min(brev, prev, urev), func(ev store.Event) error {
+		a.mu.Lock()
+		a.apply(ev)
+		a.mu.Unlock()
+		a.changed()
+		return nil
+	})
+}
+
+// apply changes the view by one event. Callers hold a.mu.
+func (a *Authorizer) apply(ev store.Event) {
+	switch ev.Object.Kind {
+	case registry.RoleBinding.Kind:
+		if ev.Type == store.EventDeleted {
+			delete(a.bindings, ev.Object.Name)
+		} else {
+			a.putBinding(ev.Object)
+		}
+		a.rebuildGrants()
+	case registry.Project.Kind:
+		if ev.Type == store.EventDeleted {
+			delete(a.tenantOf, ev.Object.Name)
+		} else {
+			a.putProject(ev.Object)
+		}
+	case registry.User.Kind:
+		if ev.Type == store.EventDeleted {
+			a.dropUser(ev.Object.Name)
+		} else {
+			a.putUser(ev.Object)
+		}
+	}
 }
 
 func (a *Authorizer) putBinding(o store.Object) {
@@ -265,6 +392,9 @@ func (a *Authorizer) advance(rev int64) {
 // Fresh waits until the view reflects every write committed before the call,
 // so a request sees bindings, projects and users created by earlier requests.
 func (a *Authorizer) Fresh(ctx context.Context) error {
+	if a.store == nil {
+		return errors.New("an authorizer following a source cannot tell what the store has committed")
+	}
 	want, err := a.store.Revision(ctx)
 	if err != nil {
 		return err
@@ -289,6 +419,19 @@ func (a *Authorizer) WaitFor(ctx context.Context, want int64) error {
 	}
 }
 
+// EdgeReads are all hangar-edge may do, everywhere: read the public
+// endpoints, and the bindings, projects and users that decide who may use
+// them (docs/decisions/public-endpoints.md).
+var EdgeReads = func() []string {
+	var out []string
+	for _, r := range []registry.Resource{registry.PublicEndpoint, registry.RoleBinding, registry.Project, registry.User} {
+		for _, v := range []Verb{Get, List, Watch} {
+			out = append(out, Permission(r, v))
+		}
+	}
+	return out
+}()
+
 // LocalRootRole is the role root on the host holds, through the admin socket.
 const LocalRootRole = "platform.root"
 
@@ -303,6 +446,8 @@ func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool
 		// Root on the host holds platform.root whatever the bindings say, so
 		// it can mend them.
 		return Roles[LocalRootRole].Grants(permission)
+	case auth.Edge:
+		return slices.Contains(EdgeReads, permission)
 	}
 	a.mu.RLock()
 	defer a.mu.RUnlock()

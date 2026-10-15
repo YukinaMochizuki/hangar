@@ -1,11 +1,15 @@
-# The apiserver and the node agent as systemd services. The apiserver runs as
-# its own unprivileged user with its database on hangar/state and the public
-# API on loopback, in the auth mode local.env asks for (dev when unset). Its
-# two unix sockets, the node agent's and root's admin socket, are made by
-# systemd (socket units) in /run/hangar, a directory root owns, so the
-# apiserver can neither take root's socket nor replace either. The agent runs
-# as root on this host's drivers. A unit changed, or a binary the release step
-# replaced, restarts that service, here and nowhere else.
+# The apiserver, the node agent and the edge as systemd services. The
+# apiserver runs as its own unprivileged user with its database on
+# hangar/state and the public API on loopback, in the auth mode local.env
+# asks for (dev when unset). Its three unix sockets, the node agent's, the
+# edge's and root's admin socket, are made by systemd (socket units) in
+# /run/hangar, a directory root owns, so the apiserver can neither take
+# root's socket nor replace any. The agent runs as root on this host's
+# drivers, and makes the edge's dial socket there itself. The edge
+# (hangar-edge) runs as a user of its own, on loopback, and only when
+# local.env names the public endpoints' domain (docs/runbook/cloudflare.md).
+# A unit changed, or a binary the release step replaced, restarts that
+# service, here and nowhere else.
 
 SERVICES_USER=hangar
 SERVICES_STATE=/var/lib/hangar/state
@@ -13,6 +17,17 @@ SERVICES_LISTEN=127.0.0.1:8080
 SERVICES_RUN=/run/hangar
 SERVICES_SOCKET=$SERVICES_RUN/node.sock
 SERVICES_ADMIN_SOCKET=$SERVICES_RUN/admin.sock
+# The edge: its user, the apiserver's socket it reads the API on, the agent's
+# socket it reaches machines through, and where cloudflared sends it
+# requests (converge.EdgeOrigin in internal/cloudflare/converge).
+SERVICES_EDGE_USER=hangar-edge
+SERVICES_EDGE_SOCKET=$SERVICES_RUN/edge.sock
+SERVICES_EDGE_DIAL=$SERVICES_RUN/edge-dial.sock
+SERVICES_EDGE_LISTEN=127.0.0.1:8090
+# The Cloudflare API token the apiserver opens PUBLIC endpoints with: the
+# operator installs it (docs/runbook/cloudflare.md); this step never makes
+# one.
+SERVICES_CF_TOKEN=$SERVICES_STATE/cloudflare-api-token
 SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
 # The platform's SSH CA, its private key: the operator installs it from the
 # vault (docs/runbook/host-bootstrap.md); this step never makes one.
@@ -24,9 +39,59 @@ SERVICES_SSH_CA=$SERVICES_STATE/ssh-ca
 SERVICES_VM_IDS_NAME=hangar-vms
 SERVICES_VM_IDS_FIRST=200000
 SERVICES_VM_IDS_COUNT=65536
-SERVICES_UNITS="hangar-apiserver hangar-node"
+SERVICES_UNITS="hangar-apiserver hangar-node hangar-edge"
 # The apiserver's sockets: socket units of their own, part of its service.
-SERVICES_SOCKETS="hangar-apiserver-node hangar-apiserver-admin"
+SERVICES_SOCKETS="hangar-apiserver-node hangar-apiserver-admin hangar-apiserver-edge"
+
+# services_edge_on holds when local.env names the public endpoints' domain:
+# then the edge runs.
+services_edge_on() { [ -n "$(local_env HANGAR_EDGE_DOMAIN)" ]; }
+
+# services_units prints the units this host runs: the edge only when it is
+# on.
+services_units() {
+	local u
+	for u in $SERVICES_UNITS; do
+		[ "$u" != hangar-edge ] || services_edge_on || continue
+		printf '%s\n' "$u"
+	done
+}
+
+# services_edge_uid prints the edge user's uid, or nothing before the user
+# exists (a dry run on a fresh host).
+services_edge_uid() { id -u "$SERVICES_EDGE_USER" 2>/dev/null || true; }
+
+# services_endpoint_flags prints the apiserver's flags for public
+# endpoints: their domain, and with the Cloudflare API token, the account
+# and the bypass policy hangar-cloudflare made.
+services_endpoint_flags() {
+	local domain account bypass
+	domain=$(local_env HANGAR_EDGE_DOMAIN)
+	account=$(local_env HANGAR_CF_ACCOUNT_ID)
+	bypass=$(local_env HANGAR_CF_BYPASS_POLICY_ID)
+	printf -- '--edge-socket %s --edge-uid %s --cloudflare-api-token-file %s' \
+		"$SERVICES_EDGE_SOCKET" "$(services_edge_uid)" "$SERVICES_CF_TOKEN"
+	[ -z "$domain" ] || printf -- ' --endpoint-domain %s' "$domain"
+	[ -z "$account" ] || printf -- ' --cloudflare-account-id %s' "$account"
+	[ -z "$bypass" ] || printf -- ' --cloudflare-bypass-policy-id %s' "$bypass"
+	printf '\n'
+}
+
+# services_endpoints_problem prints what is wrong with local.env's public
+# endpoint settings, nothing when they are whole or absent.
+services_endpoints_problem() {
+	services_edge_on || return 0
+	[ "$(auth_mode)" = cloudflare ] ||
+		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) need cloudflare auth: the edge checks Access tokens"
+	[[ $(local_env HANGAR_EDGE_DOMAIN) =~ ^[a-z0-9.-]+$ ]] ||
+		printf '%s\n' "HANGAR_EDGE_DOMAIN in $LOCAL_ENV is not a domain"
+	[[ $(local_env HANGAR_EDGE_CF_AUDIENCE) =~ ^[A-Za-z0-9]+$ ]] ||
+		printf '%s\n' "public endpoints need HANGAR_EDGE_CF_AUDIENCE=<the wildcard Access application's AUD tag, from edge.env> in $LOCAL_ENV"
+	[[ $(local_env HANGAR_CF_ACCOUNT_ID) =~ ^[0-9a-f]{32}$ ]] ||
+		printf '%s\n' "public endpoints need HANGAR_CF_ACCOUNT_ID=<from edge.env> in $LOCAL_ENV"
+	[[ $(local_env HANGAR_CF_BYPASS_POLICY_ID) =~ ^[0-9a-f-]+$ ]] ||
+		printf '%s\n' "public endpoints need HANGAR_CF_BYPASS_POLICY_ID=<from edge.env> in $LOCAL_ENV"
+}
 
 services_unit_path() { printf '/etc/systemd/system/%s.service\n' "$1"; }
 services_socket_path() { printf '/etc/systemd/system/%s.socket\n' "$1"; }
@@ -128,6 +193,25 @@ SocketMode=0660
 EOF
 }
 
+services_socket_hangar_apiserver_edge() {
+	cat <<EOF
+# Written by deploy/host/steps/80-services.sh.
+[Unit]
+Description=Hangar API server: the edge's socket
+PartOf=hangar-apiserver.service
+
+[Socket]
+ListenStream=$SERVICES_EDGE_SOCKET
+FileDescriptorName=edge
+Service=hangar-apiserver.service
+# The apiserver also checks the peer is the edge's uid; this keeps everyone
+# else from even connecting.
+SocketUser=root
+SocketGroup=$SERVICES_EDGE_USER
+SocketMode=0660
+EOF
+}
+
 services_socket_hangar_apiserver_admin() {
 	cat <<EOF
 # Written by deploy/host/steps/80-services.sh.
@@ -167,13 +251,13 @@ Group=$SERVICES_USER
 EnvironmentFile=$LOCAL_ENV
 # The public API is on loopback in either auth mode: cloudflared reaches it
 # there. The node socket accepts root's agent; the admin socket, root.
-ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA
+ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags)
 Sockets=$(for s in $SERVICES_SOCKETS; do printf '%s.socket ' "$s"; done | sed 's/ $//')
 Restart=on-failure
 RestartSec=2
 UMask=0077
 
-# It needs its database, the two sockets systemd passes it, and nothing else.
+# It needs its database, the sockets systemd passes it, and nothing else.
 ReadWritePaths=$SERVICES_STATE
 ProtectSystem=strict
 ProtectHome=yes
@@ -226,13 +310,66 @@ ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/images
 ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
-ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --reserved-memory $HANGAR_RESERVED_MEMORY
+ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER
 Restart=always
 RestartSec=2
 # Each VM is a transient unit of its own (hangar-vm-*.service), outside this
 # cgroup, so a stop or restart of the agent kills the agent and what it runs
 # itself (zfs, mkfs), and never a VM.
 KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+services_unit_hangar_edge() {
+	cat <<EOF
+# Written by deploy/host/steps/80-services.sh.
+[Unit]
+Description=Hangar edge: public endpoints
+After=network.target hangar-apiserver.service hangar-node.service
+
+[Service]
+Type=exec
+User=$SERVICES_EDGE_USER
+Group=$SERVICES_EDGE_USER
+# cloudflared sends it every request for a public endpoint, on loopback; it
+# reads the API on the apiserver's edge socket and reaches machines through
+# the agent's dial socket, both its group's.
+ExecStart=/usr/local/bin/hangar-edge --listen $SERVICES_EDGE_LISTEN --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --cf-team-domain $(local_env HANGAR_CF_TEAM_DOMAIN) --cf-audience $(local_env HANGAR_EDGE_CF_AUDIENCE)
+Restart=always
+RestartSec=2
+UMask=0077
+
+# It needs its two sockets and the network, nothing else.
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateIPC=yes
+ProtectProc=invisible
+ProcSubset=pid
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RemoveIPC=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
 
 [Install]
 WantedBy=multi-user.target
@@ -252,10 +389,18 @@ services_local_env_how() {
 }
 
 services_user_ok() {
-	local uid shell
-	uid=$(id -u "$SERVICES_USER" 2>/dev/null) || return 1
-	shell=$(getent passwd "$SERVICES_USER" | cut -d: -f7)
+	local user=${1:-$SERVICES_USER} uid shell
+	uid=$(id -u "$user" 2>/dev/null) || return 1
+	shell=$(getent passwd "$user" | cut -d: -f7)
 	[ "$uid" -lt 1000 ] && [ "$uid" != 0 ] && [ "$shell" = /usr/sbin/nologin ]
+}
+
+services_cf_token_ok() {
+	[ -f "$SERVICES_CF_TOKEN" ] && [ "$(stat -c '%U %G %a' "$SERVICES_CF_TOKEN")" = "$SERVICES_USER $SERVICES_USER 600" ]
+}
+
+services_cf_token_how() {
+	printf '%s\n' "install the Cloudflare API token at $SERVICES_CF_TOKEN, $SERVICES_USER's, mode 0600, then restart hangar-apiserver (docs/runbook/cloudflare.md)"
 }
 
 services_state_ok() {
@@ -292,7 +437,7 @@ services_stale() {
 
 services_units_ok() {
 	local u
-	for u in $SERVICES_UNITS; do
+	for u in $(services_units); do
 		services_unit "$u" | cmp -s - "$(services_unit_path "$u")" || return 1
 		[ "$(systemctl show -p NeedDaemonReload --value "$u.service")" = no ] || return 1
 	done
@@ -311,7 +456,7 @@ services_run_ok() {
 # loaded: one would change what runs without changing the unit verify compares.
 services_dropins() {
 	local u d units=()
-	for u in $SERVICES_UNITS; do units+=("$u.service"); done
+	for u in $(services_units); do units+=("$u.service"); done
 	for u in $SERVICES_SOCKETS; do units+=("$u.socket"); done
 	for u in "${units[@]}"; do
 		for d in /etc /run /usr/local/lib /usr/lib /lib; do
@@ -325,7 +470,7 @@ services_no_dropins() { [ -z "$(services_dropins)" ]; }
 
 services_running_ok() {
 	local u
-	for u in $SERVICES_UNITS; do
+	for u in $(services_units); do
 		systemctl is-enabled --quiet "$u.service" && systemctl is-active --quiet "$u.service" || return 1
 		! services_stale "$u" || return 1
 	done
@@ -337,6 +482,29 @@ services_socket_ok() {
 
 services_admin_socket_ok() {
 	[ -S "$SERVICES_ADMIN_SOCKET" ] && [ "$(stat -c '%U %G %a' "$SERVICES_ADMIN_SOCKET")" = "root root 600" ]
+}
+
+services_edge_socket_ok() {
+	[ -S "$SERVICES_EDGE_SOCKET" ] && [ "$(stat -c '%U %G %a' "$SERVICES_EDGE_SOCKET")" = "root $SERVICES_EDGE_USER 660" ]
+}
+
+services_edge_dial_ok() {
+	[ -S "$SERVICES_EDGE_DIAL" ] && [ "$(stat -c '%U %G %a' "$SERVICES_EDGE_DIAL")" = "root $SERVICES_EDGE_USER 660" ]
+}
+
+# services_edge_off_ok holds when the edge, off, neither runs nor starts at
+# boot.
+services_edge_off_ok() {
+	! systemctl is-active --quiet hangar-edge.service && ! systemctl is-enabled --quiet hangar-edge.service 2>/dev/null
+}
+
+# services_edge_loopback_only holds when the edge's TCP listeners are all on
+# loopback, and it has one.
+services_edge_loopback_only() {
+	local pid addrs
+	pid=$(systemctl show -p MainPID --value hangar-edge.service)
+	addrs=$(ss -Hltnp | grep "pid=$pid," | awk '{print $4}')
+	[ -n "$addrs" ] && ! grep -qvE '^(127\.[0-9.]+|\[::1\]):[0-9]+$' <<<"$addrs"
 }
 
 # services_auth_running_ok holds when the apiserver runs the auth flags
@@ -390,7 +558,7 @@ services_apply() {
 		log "warning: $LOCAL_ENV is missing or wrong; a real run refuses until you $how"
 	fi
 	local problem
-	problem=$(auth_problem)
+	problem=$(auth_problem; services_endpoints_problem)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 	# cloudflared never forwards to an apiserver in dev auth, which trusts a
 	# header: it goes before the apiserver could restart in dev.
@@ -407,9 +575,11 @@ services_apply() {
 	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
 	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
 
-	id -u "$SERVICES_USER" >/dev/null 2>&1 ||
-		run "create system user $SERVICES_USER" useradd --system --user-group \
-			--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$SERVICES_USER"
+	for u in "$SERVICES_USER" "$SERVICES_EDGE_USER"; do
+		id -u "$u" >/dev/null 2>&1 ||
+			run "create system user $u" useradd --system --user-group \
+				--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$u"
+	done
 	# Under --dry-run the zfs step may not have made the dataset yet.
 	if [ ! -d "$SERVICES_STATE" ] || ! services_state_ok; then
 		run "give $SERVICES_STATE to $SERVICES_USER, mode 700" \
@@ -424,6 +594,15 @@ services_apply() {
 		log "warning: $SERVICES_SSH_CA was $(stat -c '%U:%G mode %a' "$SERVICES_SSH_CA"): whoever could read it may have the SSH CA's key; consider a new one (docs/runbook/host-bootstrap.md)"
 		run "give $SERVICES_SSH_CA to $SERVICES_USER, mode 600" \
 			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_SSH_CA' && chmod 600 '$SERVICES_SSH_CA'"
+	fi
+	# Without the Cloudflare token the apiserver runs, and PUBLIC endpoints
+	# do not open.
+	if [ ! -f "$SERVICES_CF_TOKEN" ]; then
+		! services_edge_on || log "warning: no Cloudflare API token at $SERVICES_CF_TOKEN: PUBLIC endpoints do not open until you $(services_cf_token_how)"
+	elif ! services_cf_token_ok; then
+		log "warning: $SERVICES_CF_TOKEN was $(stat -c '%U:%G mode %a' "$SERVICES_CF_TOKEN"): whoever could read it may have the token; consider rolling it (docs/runbook/cloudflare.md)"
+		run "give $SERVICES_CF_TOKEN to $SERVICES_USER, mode 600" \
+			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_CF_TOKEN' && chmod 600 '$SERVICES_CF_TOKEN'"
 	fi
 
 	put_file "$SERVICES_TMPFILES" 644 "$(services_tmpfiles)"
@@ -444,7 +623,7 @@ services_apply() {
 		fi
 		[ "$(systemctl show -p NeedDaemonReload --value "$u.socket")" = no ] || reload=1
 	done
-	for u in $SERVICES_UNITS; do
+	for u in $(services_units); do
 		if [ ! -x "/usr/local/bin/$u" ]; then
 			[ "$DRY_RUN" = 1 ] || die "/usr/local/bin/$u is not installed; the release step installs it"
 		fi
@@ -458,9 +637,15 @@ services_apply() {
 	done
 	[ "$reload" = 0 ] || run "reload systemd for the hangar units" systemctl daemon-reload
 
+	# The edge off: it neither runs nor starts at boot. Its unit is left as
+	# it was, for when it is on again.
+	if ! services_edge_on && ! services_edge_off_ok; then
+		run "stop and disable hangar-edge: $LOCAL_ENV names no public endpoint domain" \
+			systemctl disable --now hangar-edge.service
+	fi
 	# The apiserver first: the agent dials its socket (and retries until it
-	# is there).
-	for u in $SERVICES_UNITS; do
+	# is there), and the edge both.
+	for u in $(services_units); do
 		systemctl is-enabled --quiet "$u.service" || run "enable $u" systemctl enable "$u.service"
 		if ! systemctl is-active --quiet "$u.service"; then
 			run "start $u" sh -c "systemctl start $u.service && rm -f $(services_marker "$u")"
@@ -473,6 +658,7 @@ services_apply() {
 services_verify() {
 	check "$LOCAL_ENV root's, 0600 or 0640, with HANGAR_BOOTSTRAP_ADMIN" services_local_env_ok
 	check "system user $SERVICES_USER" services_user_ok
+	check "system user $SERVICES_EDGE_USER" services_user_ok "$SERVICES_EDGE_USER"
 	check "the VMs' ids $SERVICES_VM_IDS_FIRST+$SERVICES_VM_IDS_COUNT kept in /etc/subuid and /etc/subgid" services_vm_ids_kept
 	check "no user, group or other subordinate range has one of the VMs' ids" services_vm_ids_free
 	check "$SERVICES_STATE is $SERVICES_USER's, mode 700" services_state_ok
@@ -481,12 +667,26 @@ services_verify() {
 	else
 		skip "SSH CA" "no $SERVICES_SSH_CA: hangar ssh cannot sign"
 	fi
-	check "units $SERVICES_UNITS, sockets $SERVICES_SOCKETS and $SERVICES_TMPFILES as generated and loaded" services_units_ok
-	check "no drop-ins for $SERVICES_UNITS $SERVICES_SOCKETS" services_no_dropins
-	check "units $SERVICES_UNITS enabled, active, running what is installed" services_running_ok
+	local units
+	units=$(services_units | tr '\n' ' ' | sed 's/ $//')
+	check "units $units, sockets $SERVICES_SOCKETS and $SERVICES_TMPFILES as generated and loaded" services_units_ok
+	check "no drop-ins for $units $SERVICES_SOCKETS" services_no_dropins
+	check "units $units enabled, active, running what is installed" services_running_ok
 	check "$SERVICES_RUN root's, 755" services_run_ok
 	check "node socket $SERVICES_SOCKET, $SERVICES_USER's, 660" services_socket_ok
 	check "admin socket $SERVICES_ADMIN_SOCKET, root's, 600" services_admin_socket_ok
+	check "edge socket $SERVICES_EDGE_SOCKET, root's and $SERVICES_EDGE_USER's group's, 660" services_edge_socket_ok
+	check "edge dial socket $SERVICES_EDGE_DIAL, root's and $SERVICES_EDGE_USER's group's, 660" services_edge_dial_ok
+	if services_edge_on; then
+		check "edge listens on loopback only" services_edge_loopback_only
+		if [ -e "$SERVICES_CF_TOKEN" ]; then
+			check "Cloudflare API token $SERVICES_CF_TOKEN, $SERVICES_USER's, mode 600 (PUBLIC endpoints)" services_cf_token_ok
+		else
+			skip "Cloudflare API token" "no $SERVICES_CF_TOKEN: PUBLIC endpoints do not open"
+		fi
+	else
+		check "edge off: $LOCAL_ENV names no public endpoint domain" services_edge_off_ok
+	fi
 	check "apiserver runs $(auth_mode) auth as $LOCAL_ENV asks: $(services_auth_flags)" services_auth_running_ok
 	check "apiserver listens on loopback only" services_loopback_only
 	check "node $HANGAR_NODE_NAME Ready (hangar get node)" services_node_ready

@@ -43,6 +43,9 @@ what it cannot.
       node, for what holds on every node, as an Image's). A global kind every
       tenant reads, as the Image catalogue, sets `readableByAll`. Tests show a
       caller with the broadest role is still refused.
+- [ ] If a new object claims something global besides its name, which no
+      other object may ever hold, as an endpoint's hostname does,
+      `hooksFor` sets `claim`, and a test races creators of it.
 - [ ] If the kind holds what node agents may not read (a guest's user-data,
       keys), `forNode` clears it from every answer to a node, and a test
       reads the object by get, list and watch as that node, another node and

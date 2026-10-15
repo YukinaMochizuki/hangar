@@ -16,6 +16,7 @@ release_files() {
 	printf '%s\n' \
 		hangar-apiserver:/usr/local/bin/hangar-apiserver:755 \
 		hangar-node:/usr/local/bin/hangar-node:755 \
+		hangar-edge:/usr/local/bin/hangar-edge:755 \
 		hangar:/usr/local/bin/hangar:755 \
 		"vmlinux:$RELEASE_LIB/vmlinux:644" \
 		"initramfs.cpio:$RELEASE_LIB/initramfs.cpio:644"

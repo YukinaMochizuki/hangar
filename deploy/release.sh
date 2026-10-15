@@ -57,7 +57,7 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 
 log "release $version"
-for cmd in hangar-apiserver hangar-node hangar; do
+for cmd in hangar-apiserver hangar-node hangar-edge hangar; do
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-buildid= \
 		-o "$stage/$cmd" "./cmd/$cmd"
 done

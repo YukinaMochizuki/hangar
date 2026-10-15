@@ -15,7 +15,7 @@ Hypervisor microVMs on one host, deployed there by `deploy/host`.
 |---|---|
 | `proto/hangar/<group>/<version>/` | API schema, the single source of truth for resources |
 | `gen/go`, `gen/ts` | Generated code. Committed, never edited by hand |
-| `cmd/` | Binaries: `hangar-apiserver`, `hangar-node`, `hangar-init`, `hangar` (CLI), `hangar-cloudflare` (Cloudflare setup) |
+| `cmd/` | Binaries: `hangar-apiserver`, `hangar-node`, `hangar-edge` (public endpoints' proxy), `hangar-init`, `hangar` (CLI), `hangar-cloudflare` (Cloudflare setup) |
 | `internal/` | Implementation, split by function rather than by binary |
 | `sdk/go` | Public Go client |
 | `web/` | React console |

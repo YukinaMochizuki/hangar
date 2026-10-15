@@ -15,7 +15,8 @@ type guestKey struct {
 }
 
 // ServeGuest has serve answer each connection made to addr in the network,
-// as a guest's server would; nil stops it. DialSSH reaches port 22 alone.
+// as a guest's server would; nil stops it. Dial reaches it on port 22, or
+// on a port the interface's edge ports hold, as the real firewall lets.
 func (h *Host) ServeGuest(networkUID string, addr netip.AddrPort, serve func(net.Conn)) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -30,15 +31,14 @@ func (h *Host) ServeGuest(networkUID string, addr netip.AddrPort, serve func(net
 	h.guests[k] = serve
 }
 
-// Dials lists what DialSSH reached for, as "network address:22".
+// Dials lists what Dial reached for, as "network address:port".
 func (h *Host) Dials() []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return append([]string(nil), h.dials...)
 }
 
-func (d network) DialSSH(_ context.Context, networkUID string, to netip.Addr) (net.Conn, error) {
-	addr := netip.AddrPortFrom(to, 22)
+func (d network) Dial(_ context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	if d.h.netErr != nil {
@@ -48,6 +48,10 @@ func (d network) DialSSH(_ context.Context, networkUID string, to netip.Addr) (n
 		return nil, fmt.Errorf("network %s has no namespace on the host", networkUID)
 	}
 	d.h.dials = append(d.h.dials, networkUID+" "+addr.String())
+	if !d.h.edgeOpen(networkUID, addr) {
+		// The real firewall drops it, and the dial times out.
+		return nil, fmt.Errorf("network %s: dial %s: the firewall drops it: %w", networkUID, addr, syscall.ETIMEDOUT)
+	}
 	serve, ok := d.h.guests[guestKey{networkUID, addr}]
 	if !ok {
 		return nil, fmt.Errorf("network %s: dial %s: %w", networkUID, addr, syscall.ECONNREFUSED)

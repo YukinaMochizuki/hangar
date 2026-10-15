@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// dialSSH: DialSSH reaches port 22 of a machine's address in its network,
+// dialSSH: Dial reaches port 22 of a machine's address in its network,
 // from the gateway, whatever the interface's firewall says, and nothing
 // when no guest answers there, in a network not on the host, or at an
 // address of nobody.
@@ -25,7 +25,7 @@ func dialSSH(t *testing.T, h Host) {
 		t.Helper()
 		dctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		defer cancel()
-		if c, err := h.Network.DialSSH(dctx, network, addr); err == nil {
+		if c, err := h.Network.Dial(dctx, network, netip.AddrPortFrom(addr, 22)); err == nil {
 			_ = c.Close()
 			t.Errorf("dialled %s", what)
 		}
@@ -38,7 +38,7 @@ func dialSSH(t *testing.T, h Host) {
 	h.ServeGuest(t, nic, 22)
 	dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	c, err := h.Network.DialSSH(dctx, testNet.UID, nic.Address.Addr())
+	c, err := h.Network.Dial(dctx, testNet.UID, netip.AddrPortFrom(nic.Address.Addr(), 22))
 	if err != nil {
 		t.Fatalf("dialling the guest's port 22: %v", err)
 	}

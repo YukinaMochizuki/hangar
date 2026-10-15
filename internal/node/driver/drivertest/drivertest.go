@@ -103,6 +103,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network changes", networkChanges, nets)
 	part("network sockets", networkSockets, nets)
 	part("dialing SSH", dialSSH, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
+	part("dialing edge ports", dialEdgePorts, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("network firewall", networkFirewall, nets)
 	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
 	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })

@@ -94,6 +94,27 @@ func (s *Server) controllers() []*controller.Controller {
 			},
 		},
 		{
+			Name: "publicendpoint", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcilePublicEndpoint),
+			Watches: []controller.Watch{
+				{Kind: registry.PublicEndpoint.Kind, Map: controller.Self},
+				// Its target's machine coming, going, running or moving.
+				{Kind: registry.Machine.Kind, Map: s.endpointsOfMachine, SkipResync: true},
+				// A node going quiet changes whether its endpoints serve.
+				{Kind: registry.Node.Kind, Map: s.endpointsOnNode, SkipResync: true},
+			},
+		},
+		{
+			Name: "container-endpoints", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileContainerEndpoints),
+			Watches: []controller.Watch{
+				{Kind: registry.Container.Kind, Map: controller.Self},
+				// An endpoint it owns changed or deleted, or one holding a name
+				// it wants gone.
+				{Kind: registry.PublicEndpoint.Kind, Map: s.containersOfEndpoint, SkipResync: true},
+			},
+		},
+		{
 			Name: "disk", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileDisk),
 			Watches: []controller.Watch{
