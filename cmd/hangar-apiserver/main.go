@@ -1,6 +1,7 @@
 // Command hangar-apiserver serves the Hangar API on four listeners: a TCP
-// address behind Cloudflare Access for people and agents, a unix socket for
-// the node agent, one for hangar-edge, and one for root on the host. See
+// address for people and agents, who sign in through Google (OIDC) and then
+// hold Hangar's own sessions, a unix socket for the node agent, one for
+// hangar-edge, and one for root on the host. See
 // docs/decisions/authentication.md.
 package main
 
@@ -23,6 +24,8 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/login"
+	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
@@ -38,9 +41,10 @@ type flags struct {
 	nodeUID        uint
 	nodeName       string
 	authMode       string
-	cfTeamDomain   string
-	cfAudience     string
-	cfCertsURL     string
+	oidcIssuer     string
+	oidcClientID   string
+	oidcSecretFile string
+	publicURL      string
 	bootstrapAdmin string
 	sshCAKey       string
 	edgeSocket     string
@@ -60,15 +64,16 @@ type flags struct {
 func main() {
 	var f flags
 	flag.StringVar(&f.db, "db", "hangar.db", "path of the SQLite database")
-	flag.StringVar(&f.listen, "listen", "127.0.0.1:8080", "address for the public API (behind cloudflared)")
+	flag.StringVar(&f.listen, "listen", "127.0.0.1:8080", "address for the public API")
 	flag.StringVar(&f.socket, "socket", "", "unix socket for the node agent; empty disables it")
 	flag.StringVar(&f.adminSocket, "admin-socket", "", "unix socket for root on this host, as platform.root; empty disables it")
 	flag.UintVar(&f.nodeUID, "node-uid", 0, "uid accepted as the node agent on the socket")
 	flag.StringVar(&f.nodeName, "node-name", "", "name of the Node the agent on the socket runs; required with --socket")
-	flag.StringVar(&f.authMode, "auth-mode", "cloudflare", "how public callers authenticate: cloudflare or dev")
-	flag.StringVar(&f.cfTeamDomain, "cf-team-domain", "", "Access team domain, such as https://team.cloudflareaccess.com")
-	flag.StringVar(&f.cfAudience, "cf-audience", "", "AUD tag of the Access application")
-	flag.StringVar(&f.cfCertsURL, "cf-certs-url", "", "override for the Access signing keys URL")
+	flag.StringVar(&f.authMode, "auth-mode", "oidc", "how public callers authenticate: oidc (sign-in through the OIDC provider, then Hangar's sessions) or dev")
+	flag.StringVar(&f.oidcIssuer, "oidc-issuer", "https://accounts.google.com", "the OIDC provider people sign in through")
+	flag.StringVar(&f.oidcClientID, "oidc-client-id", "", "the apiserver's OAuth client ID at the provider; required with oidc auth")
+	flag.StringVar(&f.oidcSecretFile, "oidc-client-secret-file", "", "a file only its owner reads (0600) holding the OAuth client's secret; required with oidc auth")
+	flag.StringVar(&f.publicURL, "public-url", "", "the console's origin, such as https://console.hangarlab.cloud; the provider redirects to its /auth/callback; required with oidc auth")
 	flag.StringVar(&f.bootstrapAdmin, "bootstrap-admin", "", "email granted platform.root if no one holds it")
 	flag.StringVar(&f.sshCAKey, "ssh-ca-key", "", "the platform SSH CA's private key, an OpenSSH key file only its owner reads; missing, hangar ssh cannot sign")
 	flag.StringVar(&f.edgeSocket, "edge-socket", "", "unix socket for hangar-edge, which reads public endpoints and role bindings; empty disables it")
@@ -106,8 +111,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 }
 
 func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) error {
-	public, err := publicChain(ctx, f)
-	if err != nil {
+	if err := checkAuthFlags(f); err != nil {
 		return err
 	}
 	st, err := sqlite.Open(ctx, f.db)
@@ -186,6 +190,10 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
 		PublicEndpoints: endpoints, DefaultMaxOwnedTenants: f.maxOwnedTenants,
 	})
+	public, err := publicChain(f, srv, st)
+	if err != nil {
+		return err
+	}
 	// A key-encryption key that does not open what is stored stops the
 	// apiserver here, before it serves anything.
 	if err := srv.PrepareSecrets(ctx); err != nil {
@@ -195,7 +203,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	g.Go(func() error { return srv.Run(ctx) })
 	g.Go(func() error {
 		log.Info("serving the public API", "address", ln.Addr().String(), "auth", f.authMode)
-		return serve(ctx, &http.Server{Handler: srv.Handler(public), Protocols: protocols()}, ln)
+		return serve(ctx, &http.Server{Handler: srv.PublicHandler(public), Protocols: protocols()}, ln)
 	})
 	if sock != nil {
 		node := auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(f.nodeUID)}, NodeName: f.nodeName}}
@@ -218,7 +226,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		root := auth.Chain{auth.LocalRoot{Host: host, UID: adminUID}}
 		g.Go(func() error {
 			log.Info("serving the admin socket", "path", f.adminSocket)
-			h := auditAdmin(log, root, srv.Handler(root))
+			h := auditAdmin(log, root, srv.AdminHandler(root))
 			return serve(ctx, &http.Server{Handler: h, Protocols: protocols(), ConnContext: auth.AdminConnContext}, admin)
 		})
 	}
@@ -246,23 +254,40 @@ func auditAdmin(log *slog.Logger, chain auth.Chain, next http.Handler) http.Hand
 	})
 }
 
-func publicChain(ctx context.Context, f flags) (auth.Chain, error) {
+// checkAuthFlags refuses an auth mode that is not whole, before anything
+// opens.
+func checkAuthFlags(f flags) error {
 	switch f.authMode {
-	case "cloudflare":
-		cf, err := auth.NewCloudflare(ctx, auth.CloudflareConfig{
-			TeamDomain: f.cfTeamDomain, Audience: f.cfAudience, CertsURL: f.cfCertsURL,
-		})
-		if err != nil {
-			return nil, err
+	case "oidc":
+		if f.oidcClientID == "" || f.oidcSecretFile == "" || f.publicURL == "" {
+			return errors.New("oidc auth needs --oidc-client-id, --oidc-client-secret-file and --public-url")
 		}
-		return auth.Chain{cf}, nil
+		if _, err := login.ParseOrigin(f.publicURL); err != nil {
+			return fmt.Errorf("--public-url: %w", err)
+		}
+		return nil
 	case "dev":
 		if !loopback(f.listen) {
-			return nil, fmt.Errorf("dev auth trusts a plain header, so it only runs on a loopback address, not %q", f.listen)
+			return fmt.Errorf("dev auth trusts a plain header, so it only runs on a loopback address, not %q", f.listen)
 		}
+		return nil
+	}
+	return fmt.Errorf("unknown auth mode %q; want oidc or dev", f.authMode)
+}
+
+// publicChain is the public listener's authentication: in oidc auth, the
+// credentials sign-in issues, kept in st; in dev auth, the dev header.
+func publicChain(f flags, srv *apiserver.Server, st *sqlite.Store) (auth.Chain, error) {
+	if f.authMode == "dev" {
 		return auth.Chain{auth.Dev{}}, nil
 	}
-	return nil, fmt.Errorf("unknown auth mode %q; want cloudflare or dev", f.authMode)
+	secret, err := readSecretFile(f.oidcSecretFile)
+	if err != nil {
+		return nil, fmt.Errorf("--oidc-client-secret-file: %w", err)
+	}
+	return srv.EnableOIDC(apiserver.OIDCConfig{
+		Issuer: f.oidcIssuer, ClientID: f.oidcClientID, ClientSecret: token.Secret(secret), PublicURL: f.publicURL,
+	}, st)
 }
 
 func loopback(addr string) bool {

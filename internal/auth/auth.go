@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"connectrpc.com/connect"
 )
@@ -16,10 +17,10 @@ import (
 type Type int
 
 const (
-	// User is a person, identified by an email Cloudflare Access verified.
+	// User is a person, identified by an email their identity provider
+	// verified.
 	User Type = iota + 1
-	// ServiceToken is an agent, identified by its Access service token's
-	// client ID.
+	// ServiceToken is an agent, identified by its service token.
 	ServiceToken
 	// Node is a hangar-node process.
 	Node
@@ -58,6 +59,19 @@ type Principal struct {
 }
 
 func (p Principal) String() string { return p.Type.String() + ":" + p.ID }
+
+// ParsePrincipal reads what Principal.String wrote.
+func ParsePrincipal(s string) (Principal, error) {
+	name, id, ok := strings.Cut(s, ":")
+	if ok && id != "" {
+		for t := User; t <= Edge; t++ {
+			if t.String() == name {
+				return Principal{Type: t, ID: id}, nil
+			}
+		}
+	}
+	return Principal{}, fmt.Errorf("%q is not a principal", s)
+}
 
 // SystemPrincipal is the identity in-process controllers act as.
 var SystemPrincipal = Principal{Type: System, ID: "apiserver"}

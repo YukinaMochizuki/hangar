@@ -1,0 +1,99 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// SessionService gives the CLI its credentials and takes them back. A person
+// signs in at the provider in a browser, through the apiserver's /auth/
+// pages, and the CLI then exchanges what that left it: the one-time code its
+// loopback listener got, or its device code. Every call but RevokeSessions
+// needs no other credential, since what it carries is one. It is not a
+// resource's service, so it is written by hand rather than generated. See
+// docs/decisions/authentication.md.
+service SessionService {
+  // ExchangeCode trades the one-time code from a loopback sign-in, with
+  // its PKCE verifier and the redirect it was sent to, for tokens.
+  rpc ExchangeCode(ExchangeCodeRequest) returns (ExchangeCodeResponse);
+  // Refresh trades a refresh token for new tokens. The refresh token is
+  // spent: presenting it again revokes its whole login.
+  rpc Refresh(RefreshRequest) returns (RefreshResponse);
+  // StartDeviceLogin starts a sign-in for a device without a browser.
+  rpc StartDeviceLogin(StartDeviceLoginRequest) returns (StartDeviceLoginResponse);
+  // PollDeviceLogin answers FAILED_PRECONDITION while the person has not
+  // approved yet, RESOURCE_EXHAUSTED when polled faster than the interval,
+  // PERMISSION_DENIED when they denied it, and the tokens once approved.
+  rpc PollDeviceLogin(PollDeviceLoginRequest) returns (PollDeviceLoginResponse);
+  // Logout revokes the login a refresh token belongs to. An unknown token
+  // is no error.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+  // RevokeSessions revokes every login of a person: the caller's own, or
+  // anyone's for a caller who administers users (platform.root).
+  rpc RevokeSessions(RevokeSessionsRequest) returns (RevokeSessionsResponse);
+}
+
+// Tokens are a CLI login's credentials. Both are opaque.
+message Tokens {
+  // access_token goes in `Authorization: Bearer`, until access_expire_time.
+  string access_token = 1;
+  google.protobuf.Timestamp access_expire_time = 2;
+  // refresh_token gets the next access token, once.
+  string refresh_token = 3;
+  // email is who signed in.
+  string email = 4;
+}
+
+message ExchangeCodeRequest {
+  string code = 1;
+  string code_verifier = 2;
+  string redirect_uri = 3;
+}
+
+message ExchangeCodeResponse {
+  Tokens tokens = 1;
+}
+
+message RefreshRequest {
+  string refresh_token = 1;
+}
+
+message RefreshResponse {
+  Tokens tokens = 1;
+}
+
+message StartDeviceLoginRequest {}
+
+message StartDeviceLoginResponse {
+  // device_code is the CLI's secret to poll with.
+  string device_code = 1;
+  // user_code is what the person enters, as XXXX-XXXX.
+  string user_code = 2;
+  string verification_uri = 3;
+  string verification_uri_complete = 4;
+  google.protobuf.Timestamp expire_time = 5;
+  int32 interval_seconds = 6;
+}
+
+message PollDeviceLoginRequest {
+  string device_code = 1;
+}
+
+message PollDeviceLoginResponse {
+  Tokens tokens = 1;
+}
+
+message LogoutRequest {
+  string refresh_token = 1;
+}
+
+message LogoutResponse {}
+
+message RevokeSessionsRequest {
+  // email is whose logins to revoke; empty is the caller's own.
+  string email = 1;
+}
+
+message RevokeSessionsResponse {
+  // revoked is how many credentials were revoked.
+  int32 revoked = 1;
+}

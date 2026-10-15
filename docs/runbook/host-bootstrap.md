@@ -35,7 +35,7 @@ echo 'HANGAR_BOOTSTRAP_ADMIN=<email>' | sudo tee /etc/hangar/local.env
 
 The `services` step refuses to run without it, and `verify.sh` checks it.
 The apiserver reads it through `EnvironmentFile=`. The same file later
-sets the auth mode ("Switching to Cloudflare Access" below); without that,
+sets the auth mode ("Switching to sign-in through Google" below); without that,
 the public API is in dev auth.
 
 The grant only invites the bootstrap admin: like everyone, they sign up
@@ -109,7 +109,9 @@ with `--release DIR`. `--only <step>` runs a single step
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
     the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
-    for (dev when unset), `--default-max-owned-tenants
+    for (dev when unset; in oidc auth with the OAuth client's secret from
+    `/var/lib/hangar/state/oidc-client-secret`, "Switching to sign-in
+    through Google" below), `--default-max-owned-tenants
     HANGAR_DEFAULT_MAX_OWNED_TENANTS`, and three unix sockets that systemd
     makes and passes it (`hangar-apiserver-node.socket`,
     `hangar-apiserver-admin.socket` and `hangar-apiserver-edge.socket`,
@@ -142,8 +144,8 @@ with `--release DIR`. `--only <step>` runs a single step
     agent runs itself: each VM is a transient unit of its own and outlives
     a stop or restart of it;
   - the edge as `hangar-edge`, sandboxed as the apiserver is, only when
-    `local.env` has `HANGAR_EDGE_DOMAIN`, which needs cloudflare auth and
-    `HANGAR_EDGE_CF_AUDIENCE`, `HANGAR_CF_ACCOUNT_ID` and
+    `local.env` has `HANGAR_EDGE_DOMAIN`, which needs oidc auth and
+    `HANGAR_CF_TEAM_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE`, `HANGAR_CF_ACCOUNT_ID` and
     `HANGAR_CF_BYPASS_POLICY_ID` beside it, or the step refuses: on
     `127.0.0.1:8090`, where cloudflared sends `*.<domain>`, with the
     apiserver's edge socket and the agent's dial socket
@@ -170,8 +172,8 @@ with `--release DIR`. `--only <step>` runs a single step
   them too, and stopping it stops them: start them again yourself after
   starting it.
 - `cloudflared` runs the Cloudflare tunnel, and only when
-  `/etc/hangar/cloudflared.env` exists ("Switching to Cloudflare Access"
-  below); without it the step installs nothing, stops and disables a
+  `/etc/hangar/cloudflared.env` exists ("Switching to sign-in through
+  Google" below); without it the step installs nothing, stops and disables a
   tunnel that is up, and `verify.sh` reports its checks as SKIP. With it,
   it installs `cloudflared` at the version and checksum pinned in
   `versions.env` as `/usr/local/bin/cloudflared`, and writes, enables and
@@ -182,24 +184,24 @@ with `--release DIR`. `--only <step>` runs a single step
   `/run/hangar`, `/var/lib/hangar` and `/etc/hangar` inaccessible
   (`systemd-analyze security hangar-cloudflared` shows the rest). It
   refuses, and stops a tunnel that is up, unless the apiserver runs in
-  cloudflare auth, as `local.env` asks and as it was started: a tunnel
+  oidc auth, as `local.env` asks and as it was started: a tunnel
   must never reach an apiserver in dev auth, which trusts a header. The
   unit holds to that itself, however it is started (by hand, by
   `Restart=always` retrying, at boot): its `ExecStartPre=+` runs
   `/usr/local/libexec/hangar-cloudflared-guard`, which refuses unless the
-  running apiserver's command line has `--auth-mode cloudflare` and so does
+  running apiserver's command line has `--auth-mode oidc` and so does
   its loaded unit, which a restart on failure would run, each set exactly
-  once as `--auth-mode cloudflare`. It is `PartOf=` the apiserver, so it
+  once as `--auth-mode oidc`. It is `PartOf=` the apiserver, so it
   stops with it and its guard looks again when the apiserver restarts.
   `PartOf=` does not start it again: after a manual `systemctl stop
   hangar-apiserver` and `start`, the tunnel stays down (closed, not open)
   until `sudo systemctl start hangar-cloudflared`, a run of the
   `cloudflared` step, or a reboot; `systemctl restart hangar-apiserver`
   brings both back. A refused start keeps retrying every 5 s, so it
-  comes up on its own once the apiserver is in cloudflare auth. The step
+  comes up on its own once the apiserver is in oidc auth. The step
   and `verify.sh` count any state but `inactive` and `failed` as up,
   retrying included: such a unit with no `cloudflared.env`, or with the
-  apiserver not in cloudflare auth, fails `verify.sh` and is stopped and
+  apiserver not in oidc auth, fails `verify.sh` and is stopped and
   disabled by the step. The `services` step, for the same reason, stops
   the tunnel before it would restart the apiserver into dev auth. A
   changed unit, a replaced binary or a new token restarts the tunnel. The
@@ -431,30 +433,49 @@ without a current one stops the apiserver at start, naming the secret it
 could not open; put the right files back and start it again. Nothing is
 written until every secret opens.
 
-## Switching to Cloudflare Access
+## Switching to sign-in through Google
 
-The public API moves from dev auth to Access tokens before any tunnel
-exists, so a tunnel never reaches a header-trusting apiserver; local
-administration goes through the admin socket throughout. Both values in
-this section stay on the host only.
+The public API moves from dev auth to oidc auth, where the apiserver signs
+people in through Google and issues its own sessions
+(`docs/decisions/authentication.md`), before any tunnel exists, so a tunnel
+never reaches a header-trusting apiserver; local administration goes
+through the admin socket throughout. Everything in this section stays on
+the host only.
 
-1. Add the Access application's settings to `/etc/hangar/local.env`, next
-   to `HANGAR_BOOTSTRAP_ADMIN` (the last two are the `access.env`
-   `cmd/hangar-cloudflare` writes, `docs/runbook/cloudflare.md`):
+1. In the Google Cloud console, make an OAuth client of type "Web
+   application" with the authorized redirect URI
+   `<public URL>/auth/callback`, such as
+   `https://console.hangarlab.cloud/auth/callback`. The CLI and the
+   console share it; the device login needs no client of its own.
+2. Install its secret as `/var/lib/hangar/state/oidc-client-secret`,
+   `hangar`'s, mode 0600, without it passing through a terminal or the
+   shell history, for example from a file copied to the host:
 
    ```sh
-   HANGAR_AUTH_MODE=cloudflare
-   HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com
-   HANGAR_CF_AUDIENCE=<the Access application's AUD tag>
+   sudo install -o hangar -g hangar -m 0600 /dev/null /var/lib/hangar/state/oidc-client-secret
+   sudo sh -c 'cat client-secret.txt >/var/lib/hangar/state/oidc-client-secret' && shred -u client-secret.txt
    ```
 
+3. Add the client's settings to `/etc/hangar/local.env`, next to
+   `HANGAR_BOOTSTRAP_ADMIN`:
+
+   ```sh
+   HANGAR_AUTH_MODE=oidc
+   HANGAR_OIDC_CLIENT_ID=<the client ID, such as 123-abc.apps.googleusercontent.com>
+   HANGAR_PUBLIC_URL=https://console.hangarlab.cloud
+   ```
+
+   `HANGAR_OIDC_ISSUER` names another provider; Google is the default.
    Then `sudo deploy/host/bootstrap.sh --only services`. It refuses, before
-   changing anything, when the mode is neither `dev` nor `cloudflare` or
-   either value is missing. Otherwise the unit gets `--auth-mode cloudflare
-   --cf-team-domain … --cf-audience …` and the apiserver restarts, still on
-   `127.0.0.1:8080`. From here on a dev header on the public listener is
-   refused; use the admin socket.
-2. Put the tunnel's token in `/etc/hangar/cloudflared.env`, root's, mode
+   changing anything, when the mode is neither `dev` nor `oidc`, a value is
+   missing, or the secret file is; a secret file anyone else could read is
+   given back to `hangar`, mode 0600, with a warning to roll the secret.
+   Otherwise the unit gets `--auth-mode oidc --oidc-client-id …
+   --oidc-client-secret-file … --public-url …` and the apiserver restarts,
+   still on `127.0.0.1:8080`. From here on a dev header on the public
+   listener is refused; use the admin socket. The apiserver reaches Google
+   only when someone signs in.
+4. Put the tunnel's token in `/etc/hangar/cloudflared.env`, root's, mode
    0600. `cmd/hangar-cloudflare` writes the file, ready to copy, and
    `docs/runbook/cloudflare.md` says how to copy it without it passing
    through a terminal; by hand it is:
@@ -465,26 +486,39 @@ this section stay on the host only.
    ```
 
    Then `sudo deploy/host/bootstrap.sh --only cloudflared`.
-3. Verify: `sudo deploy/host/verify.sh` passes, with `PASS apiserver runs
-   cloudflare auth …` and the cloudflared lines instead of SKIP;
-   `journalctl -u hangar-cloudflared` shows `Registered tunnel connection`;
-   from a workstation, `hangar login` then `hangar get nodes` against
-   `https://api.hangarlab.cloud`; and `curl -s -o /dev/null -w '%{http_code}'
-   https://api.hangarlab.cloud/healthz` without a session is a redirect to
-   Access, not 200. A full `bootstrap.sh` then prints `changes: 0`.
+5. Verify: `sudo deploy/host/verify.sh` passes, with `PASS OAuth client
+   secret …`, `PASS apiserver runs oidc auth …` and the cloudflared lines
+   instead of SKIP; `journalctl -u hangar-cloudflared` shows `Registered
+   tunnel connection`; from a workstation, `hangar login` (or `hangar login
+   --device` without a browser) then `hangar whoami` against
+   `https://api.hangarlab.cloud`. Everyone signs in again: no Access token
+   counts any more. A full `bootstrap.sh` then prints `changes: 0`.
 
-A new token is the same step 2: the run restarts the tunnel.
+A new tunnel token is the same step 4: the run restarts the tunnel. A new
+client secret is step 2, then `sudo systemctl restart hangar-apiserver`.
+
+To end every login of a person, for a lost laptop or a stolen token: they
+run `hangar logout --all`, or root on the host revokes them through the
+admin socket:
+
+```sh
+sudo curl -s --unix-socket /run/hangar/admin.sock -H 'Content-Type: application/json' \
+  -d '{"email":"bob@example.com"}' http://local/hangar.iam.v1alpha1.SessionService/RevokeSessions
+```
+
+It answers how many credentials it revoked. Deleting their platform
+binding also stops them at once, since every call checks membership, and
+their next refresh ends the login.
 
 To roll back to dev auth, in the reverse order:
 
 1. `sudo rm /etc/hangar/cloudflared.env`, then `sudo
    deploy/host/bootstrap.sh --only cloudflared`: it stops and disables
    `hangar-cloudflared` (the binary and unit stay, unused).
-2. Remove the three `HANGAR_AUTH_MODE` and `HANGAR_CF_*` lines from
-   `local.env` (or set `HANGAR_AUTH_MODE=dev`), then `sudo
+2. Remove the `HANGAR_AUTH_MODE`, `HANGAR_OIDC_*` and `HANGAR_PUBLIC_URL`
+   lines from `local.env` (or set `HANGAR_AUTH_MODE=dev`), then `sudo
    deploy/host/bootstrap.sh --only services`: the apiserver restarts in
-   dev auth. `verify.sh` passes and reports
-   cloudflared as SKIP.
+   dev auth. `verify.sh` passes and reports cloudflared as SKIP.
 
 Getting the order wrong is caught, not just documented: with
 `cloudflared.env` present and dev auth asked for, a full run stops the
@@ -493,6 +527,10 @@ fails until one of the two files is fixed. Dev auth also refuses any
 request carrying a header Cloudflare adds: `Cf-Warp-Tag-Id`, which
 cloudflared sets on every request it proxies, and `Cf-Connecting-Ip`,
 `Cdn-Loop` and `Cf-Ray` from its edge.
+
+A host whose `local.env` still says `HANGAR_AUTH_MODE=cloudflare` is
+refused before any step: that mode is gone, and the switch above is the
+way on.
 
 ## When the network step fails
 
@@ -628,9 +666,10 @@ by the apiserver's uid check; dev auth refuses Cloudflare's edge headers;
 the agent reconnects when the apiserver and its sockets restart, and a
 socket restarted alone is reported and repaired; without `cloudflared.env`
 nothing about cloudflared changes and verify reports SKIP; with it, in dev
-auth, the step refuses and installs nothing; half a cloudflare mode is
-refused before any step; the switch to cloudflare auth restarts the
-apiserver with the flags, still on loopback; then, with a fake token,
+auth, the step refuses and installs nothing; half an oidc mode, and the
+retired cloudflare mode, are refused before any step; the switch to oidc
+auth restarts the apiserver with the flags and the client secret, still on
+loopback; then, with a fake token,
 cloudflared is installed, enabled and started, and a second run changes
 nothing; `systemd-analyze security` rates the tunnel's unit at most 2.0,
 and a probe under the same sandbox can neither open a unix socket nor

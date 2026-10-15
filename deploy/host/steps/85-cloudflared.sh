@@ -2,8 +2,8 @@
 # tunnel whose token is in cloudflared.env, as a sandboxed user of its own that
 # can reach the network and nothing of hangar's. Without cloudflared.env the
 # host runs no tunnel: nothing is installed, and a tunnel already up is
-# stopped. It only ever forwards to an apiserver verifying Access tokens, never
-# to one in dev auth, which trusts a header.
+# stopped. It only ever forwards to an apiserver in oidc auth, which signs
+# people in itself, never to one in dev auth, which trusts a header.
 
 CLOUDFLARED_BIN=/usr/local/bin/cloudflared
 CLOUDFLARED_UNIT_PATH=/etc/systemd/system/$CLOUDFLARED_UNIT.service
@@ -13,7 +13,7 @@ CLOUDFLARED_GUARD=/usr/local/libexec/hangar-cloudflared-guard
 CLOUDFLARED_METRICS=127.0.0.1:20241
 
 # cloudflared_guard is the unit's own check, every time it starts, however it
-# was started: the apiserver runs, in cloudflare auth, and a restart would
+# was started: the apiserver runs, in oidc auth, and a restart would
 # keep it there. The running process says what the tunnel would reach now;
 # the loaded unit what a restart of the apiserver (on failure, without this
 # unit's PartOf= seeing it) would bring up instead.
@@ -43,13 +43,13 @@ pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
 [ -n "$pid" ] && [ "$pid" != 0 ] || refuse "hangar-apiserver is not running"
 [ -r "/proc/$pid/cmdline" ] || refuse "cannot read hangar-apiserver's command line"
 mode=$(tr '\0' '\n' <"/proc/$pid/cmdline" | auth_mode_of)
-[ "$mode" = cloudflare ] ||
-	refuse "hangar-apiserver runs --auth-mode ${mode:-(none, or not exactly once)}, not cloudflare"
+[ "$mode" = oidc ] ||
+	refuse "hangar-apiserver runs --auth-mode ${mode:-(none, or not exactly once)}, not oidc"
 # ExecStart reads { path=... ; argv[]=ARGS ; ... }; no argument has a space.
 mode=$(systemctl show -p ExecStart --value hangar-apiserver.service |
 	sed -n 's/.*argv\[\]=\([^;]*\) ;.*/\1/p' | tr ' ' '\n' | auth_mode_of)
-[ "$mode" = cloudflare ] ||
-	refuse "hangar-apiserver's unit would restart it without --auth-mode cloudflare"
+[ "$mode" = oidc ] ||
+	refuse "hangar-apiserver's unit would restart it without --auth-mode oidc"
 EOF
 }
 
@@ -172,10 +172,10 @@ cloudflared_stale() {
 cloudflared_auth_problem() {
 	local running
 	running=$(apiserver_auth_mode)
-	if [ "$(auth_mode)" != cloudflare ] || [ -n "$(auth_problem)" ]; then
-		printf '%s\n' "$LOCAL_ENV asks for $(auth_mode) auth, not a whole cloudflare one"
-	elif [ "$running" != cloudflare ]; then
-		printf '%s\n' "the apiserver runs ${running:-nothing}, not cloudflare auth; run the services step first"
+	if [ "$(auth_mode)" != oidc ] || [ -n "$(auth_problem)" ]; then
+		printf '%s\n' "$LOCAL_ENV asks for $(auth_mode) auth, not a whole oidc one"
+	elif [ "$running" != oidc ]; then
+		printf '%s\n' "the apiserver runs ${running:-nothing}, not oidc auth; run the services step first"
 	fi
 }
 
@@ -188,7 +188,7 @@ cloudflared_apply() {
 	local problem
 	problem=$(cloudflared_auth_problem)
 	if [ -n "$problem" ]; then
-		cloudflared_down "the apiserver is not in cloudflare auth"
+		cloudflared_down "the apiserver is not in oidc auth"
 		refuse "$CLOUDFLARED_ENV is there, but $problem: cloudflared never forwards to an apiserver in dev auth (docs/runbook/host-bootstrap.md)"
 	fi
 
@@ -239,11 +239,11 @@ cloudflared_verify() {
 	check "$CLOUDFLARED_ENV root's, 0600, with TUNNEL_TOKEN" cloudflared_env_ok
 	local problem
 	problem=$(cloudflared_auth_problem)
-	check "$CLOUDFLARED_UNIT only with the apiserver in cloudflare auth" test -z "$problem"
+	check "$CLOUDFLARED_UNIT only with the apiserver in oidc auth" test -z "$problem"
 	if [ -n "$problem" ]; then
 		# Starting or waiting to retry counts: its guard is all that stands
 		# between it and the apiserver.
-		cloudflared_up && check "$CLOUDFLARED_UNIT down while the apiserver is not in cloudflare auth" false
+		cloudflared_up && check "$CLOUDFLARED_UNIT down while the apiserver is not in oidc auth" false
 		return 0
 	fi
 	check "$name" cloudflared_is_pinned

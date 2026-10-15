@@ -121,13 +121,15 @@ auth_problem() {
 	mode=$(auth_mode)
 	case $mode in
 	dev) ;;
-	cloudflare)
-		[[ $(local_env HANGAR_CF_TEAM_DOMAIN) =~ ^https://[A-Za-z0-9.-]+$ ]] ||
-			printf '%s\n' "cloudflare auth needs HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com in $LOCAL_ENV"
-		[[ $(local_env HANGAR_CF_AUDIENCE) =~ ^[A-Za-z0-9]+$ ]] ||
-			printf '%s\n' "cloudflare auth needs HANGAR_CF_AUDIENCE=<the Access application's AUD tag> in $LOCAL_ENV"
+	oidc)
+		[[ $(local_env HANGAR_OIDC_CLIENT_ID) =~ ^[A-Za-z0-9._-]+$ ]] ||
+			printf '%s\n' "oidc auth needs HANGAR_OIDC_CLIENT_ID=<the OAuth client's ID, such as 123-abc.apps.googleusercontent.com> in $LOCAL_ENV"
+		[[ $(local_env HANGAR_PUBLIC_URL) =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] ||
+			printf '%s\n' "oidc auth needs HANGAR_PUBLIC_URL=https://<the console's host> in $LOCAL_ENV"
+		[ -z "$(local_env HANGAR_OIDC_ISSUER)" ] || [[ $(local_env HANGAR_OIDC_ISSUER) =~ ^https://[A-Za-z0-9./-]+$ ]] ||
+			printf '%s\n' "HANGAR_OIDC_ISSUER in $LOCAL_ENV is not an https URL"
 		;;
-	*) printf '%s\n' "HANGAR_AUTH_MODE in $LOCAL_ENV must be dev or cloudflare, not $mode" ;;
+	*) printf '%s\n' "HANGAR_AUTH_MODE in $LOCAL_ENV must be dev or oidc, not $mode" ;;
 	esac
 }
 

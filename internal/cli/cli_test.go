@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -629,79 +628,5 @@ func TestPermissionDenied(t *testing.T) {
 	r := w.run("", "get", "container", "api")
 	if r.code != cli.ExitError || !strings.Contains(r.err, "permission_denied") {
 		t.Errorf("bob reading alice's container: exit %d: %s", r.code, r.err)
-	}
-}
-
-// capture is an endpoint that records request headers and rejects every call.
-func capture(t *testing.T) (string, func() []http.Header) {
-	var mu sync.Mutex
-	var got []http.Header
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mu.Lock()
-		got = append(got, r.Header.Clone())
-		mu.Unlock()
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte(`{"code":"unauthenticated","message":"test"}`))
-	}))
-	t.Cleanup(srv.Close)
-	return srv.URL, func() []http.Header {
-		mu.Lock()
-		defer mu.Unlock()
-		return got
-	}
-}
-
-func TestServiceTokenCredentials(t *testing.T) {
-	w := &world{t: t, config: filepath.Join(t.TempDir(), "config.yaml")}
-	url, headers := capture(t)
-	w.must("", "config", "set-context", "prod", "--endpoint", url)
-	env := map[string]string{"HANGAR_CF_CLIENT_ID": "id.access", "HANGAR_CF_CLIENT_SECRET": "s3cret"}
-	w.runEnv("", env, "get", "tenants")
-	h := headers()
-	if len(h) != 1 || h[0].Get("CF-Access-Client-Id") != "id.access" || h[0].Get("CF-Access-Client-Secret") != "s3cret" {
-		t.Errorf("service token headers not sent: %v", h)
-	}
-	if r := w.runEnv("", map[string]string{"HANGAR_CF_CLIENT_ID": "only-id"}, "get", "tenants"); r.code != cli.ExitUsage {
-		t.Errorf("half a service token: exit %d, want usage", r.code)
-	}
-}
-
-func TestCloudflaredCredentials(t *testing.T) {
-	url, headers := capture(t)
-	config := filepath.Join(t.TempDir(), "config.yaml")
-	var calls [][]string
-	token := "e30.eyJleHAiOjQxMDI0NDQ4MDB9.sig" // exp in 2100
-	run := func(args ...string) result {
-		var out, errb bytes.Buffer
-		code := cli.Run(context.Background(), args, cli.IO{
-			In: strings.NewReader(""), Out: &out, Err: &errb,
-			Env: func(k string) string {
-				if k == "HANGAR_CONFIG" {
-					return config
-				}
-				return ""
-			},
-		}, cli.Options{RunCloudflared: func(_ context.Context, a ...string) (string, error) {
-			calls = append(calls, a)
-			return token + "\n", nil
-		}})
-		return result{code, out.String(), errb.String()}
-	}
-	if r := run("config", "set-context", "prod", "--endpoint", url); r.code != 0 {
-		t.Fatal(r.err)
-	}
-	run("login")
-	if len(calls) != 1 || strings.Join(calls[0], " ") != "access login "+url {
-		t.Errorf("login ran cloudflared %v", calls)
-	}
-	calls = nil
-	run("get", "tenants", "tenant-a", "tenant-b")
-	h := headers()
-	if len(h) < 1 || h[0].Get("cf-access-token") != token {
-		t.Errorf("Access token not sent: %v", h)
-	}
-	if len(calls) != 1 || strings.Join(calls[0], " ") != "access token -app="+url {
-		t.Errorf("cloudflared calls %v, want one token fetch", calls)
 	}
 }

@@ -1,0 +1,6 @@
+{{define "title"}}Sign in the hangar CLI{{end}}
+{{define "body"}}<form method="get" action="/auth/device">
+<p><label for="user_code">Enter the code your terminal shows</label></p>
+<p><input id="user_code" name="user_code" autocomplete="off" autocapitalize="characters" spellcheck="false" value="{{.UserCode}}" required></p>
+<p><button type="submit">Continue</button></p>
+</form>{{end}}

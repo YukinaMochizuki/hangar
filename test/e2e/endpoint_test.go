@@ -28,12 +28,11 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
-	"github.com/YukinaMochizuki/hangar/internal/auth"
-	"github.com/YukinaMochizuki/hangar/internal/auth/authtest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare/cftest"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/edge/accesstest"
 )
 
 const endpointDomain = "hangarlab.test"
@@ -42,7 +41,7 @@ const endpointDomain = "hangarlab.test"
 // agent taking dials, and hangar-edge in front, trusting issuer's tokens.
 type edgeWorld struct {
 	*world
-	issuer *authtest.Issuer
+	issuer *accesstest.Issuer
 	// url is the edge's listener, which a request reaches with any Host.
 	url string
 }
@@ -76,8 +75,8 @@ func newEdgeWorld(t *testing.T) *edgeWorld {
 	}
 	w.startAgent()
 
-	iss := authtest.NewIssuer(t)
-	access, err := auth.NewCloudflare(t.Context(), iss.Config())
+	iss := accesstest.NewIssuer(t)
+	access, err := edge.NewAccessVerifier(t.Context(), iss.Config())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +114,7 @@ func (w *edgeWorld) guestHTTP(container string, port uint16, who string, next <-
 		for _, c := range r.Cookies() {
 			cookies = append(cookies, c.Name)
 		}
-		_, _ = fmt.Fprintf(rw, "%s host=%s jwt=%q cookies=%s proto=%s", who, r.Host, r.Header.Get(auth.CloudflareJWTHeader),
+		_, _ = fmt.Fprintf(rw, "%s host=%s jwt=%q cookies=%s proto=%s", who, r.Host, r.Header.Get(edge.AccessJWTHeader),
 			strings.Join(cookies, ","), r.Header.Get("X-Forwarded-Proto"))
 	})
 	mux.HandleFunc("/stream", func(rw http.ResponseWriter, _ *http.Request) {
@@ -188,7 +187,7 @@ func (w *edgeWorld) get(host, path, token string, cookies ...*http.Cookie) (int,
 	}
 	req.Host = host
 	if token != "" {
-		req.Header.Set(auth.CloudflareJWTHeader, token)
+		req.Header.Set(edge.AccessJWTHeader, token)
 	}
 	for _, c := range cookies {
 		req.AddCookie(c)

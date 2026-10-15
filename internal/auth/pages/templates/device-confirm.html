@@ -1,0 +1,8 @@
+{{define "title"}}Sign in the hangar CLI{{end}}
+{{define "body"}}<p>Sign in the hangar CLI as {{.Email}}?</p>
+<p>Only approve if you just ran <code>hangar login --device</code> and it shows {{.UserCode}}.</p>
+<form method="post" action="/auth/device">
+<input type="hidden" name="user_code" value="{{.UserCode}}">
+<button type="submit" name="decision" value="approve">Approve</button>
+<button type="submit" name="decision" value="deny">Deny</button>
+</form>{{end}}

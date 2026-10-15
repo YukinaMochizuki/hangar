@@ -32,6 +32,12 @@ those rules.
 - [ ] Every new RPC or action has a permission, and a test proves a principal
       without it is denied.
 - [ ] Nothing trusts a header that a client can set directly.
+- [ ] A secret Hangar issues or holds stays a `token.Secret` until the one
+      place that sends or stores it, so no log line, error or CLI output
+      shows it; tests check the output for it.
+- [ ] Anything a browser's session cookie authenticates holds to the
+      same-origin rule (`session.SameOrigin`), and no GET a cookie
+      authenticates changes anything, a WebSocket handshake aside.
 
 ## Changes touching a host driver (`internal/node/...`)
 
