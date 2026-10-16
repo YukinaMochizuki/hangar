@@ -235,6 +235,7 @@ func (c *cluster) setUp() {
 	t := c.t
 	t.Helper()
 	c.cli("config", "set-context", "testbed", "--endpoint", "http://"+c.apiAddr(), "--auth", "dev", "--user", admin, "--project", project)
+	c.signUpAdmin()
 	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Tenant
 metadata: {name: %s}
@@ -924,4 +925,21 @@ func tail(path string) string {
 		lines = lines[len(lines)-60:]
 	}
 	return strings.Join(lines, "\n")
+}
+
+// signUpAdmin signs the admin up, as every member must before anything but
+// signing up: once the apiserver has invited the bootstrap admin, which it
+// does in the background as it starts. An admin already signed up, as on an
+// installed host, is fine.
+func (c *cluster) signUpAdmin() {
+	t := c.t
+	t.Helper()
+	username := strings.NewReplacer("@", "-", ".", "-").Replace(admin)
+	eventually(t, 30*time.Second, "the admin signed up", func() (bool, string) {
+		_, err := c.tryCLI(nil, "signup", "--username", username)
+		if err == nil || strings.Contains(err.Error(), "already signed up") {
+			return true, ""
+		}
+		return false, err.Error()
+	})
 }

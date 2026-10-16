@@ -7,10 +7,10 @@ import (
 
 // TestSeal: a sealed sign-in opens to what was sealed, and nothing else
 // opens: not a changed byte, not what another apiserver (another key)
-// sealed.
+// sealed, not what was sealed for another purpose.
 func TestSeal(t *testing.T) {
 	newFlow := func() *Flow {
-		s, err := newSealer()
+		s, err := NewSealer(signInPurpose)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,5 +44,9 @@ func TestSeal(t *testing.T) {
 		if _, err := f.open(bad); err == nil {
 			t.Errorf("opened %q", bad)
 		}
+	}
+	other := &Sealer{aead: f.sealer.aead, purpose: []byte("something else")}
+	if err := other.Open(s, new(inFlight)); err == nil {
+		t.Error("the same key for another purpose opened it")
 	}
 }

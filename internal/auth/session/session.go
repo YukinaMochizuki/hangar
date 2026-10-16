@@ -32,6 +32,10 @@ const (
 	// TypeService is an agent's service token. Its principal holds one at a
 	// time, each in a family of its own.
 	TypeService = "service"
+	// TypeEndpoint is a browser's session on one private endpoint, the
+	// host its audience names, in the family of the console session it was
+	// handed off from.
+	TypeEndpoint = "endpoint"
 )
 
 // familySep ends the token's uid in a service credential's family.
@@ -47,6 +51,9 @@ const (
 	AccessTTL   = time.Hour
 	RefreshIdle = 30 * 24 * time.Hour
 	RefreshMax  = 90 * 24 * time.Hour
+	// EndpointTTL is how long a private endpoint's session lasts, whatever
+	// its use, and never past the console session it came from.
+	EndpointTTL = 24 * time.Hour
 
 	// touchEvery is how often a use is written back, at most: the idle
 	// limit moves in steps of it rather than on every call.
@@ -124,6 +131,9 @@ type Spec struct {
 	ExpiresAt time.Time
 	// IdleUntil is when it ends unless used; zero is never.
 	IdleUntil time.Time
+	// Audience is the one host it counts on; empty is wherever its type
+	// does.
+	Audience string
 }
 
 // Issue creates a credential and returns its secret, which exists nowhere
@@ -145,7 +155,7 @@ func (m *Manager) credential(spec Spec) (token.Secret, store.Credential) {
 	secret := token.New(spec.Prefix)
 	return secret, store.Credential{
 		Hash: secret.Hash(), Type: spec.Type, Family: spec.Family, Principal: spec.Principal.String(),
-		CreatedAt: m.now(), ExpiresAt: spec.ExpiresAt, IdleUntil: spec.IdleUntil,
+		CreatedAt: m.now(), ExpiresAt: spec.ExpiresAt, IdleUntil: spec.IdleUntil, Audience: spec.Audience,
 	}
 }
 
@@ -177,6 +187,18 @@ func (m *Manager) StartBrowser(ctx context.Context, p auth.Principal) (Browser, 
 	return Browser{Secret: s, ExpiresAt: exp}, err
 }
 
+// StartEndpoint signs a principal in on one private endpoint's host, from
+// the console session found: in its family, so ending that session ends
+// this one too, for EndpointTTL and never past the console session's end.
+func (m *Manager) StartEndpoint(ctx context.Context, from Found, host string) (Browser, error) {
+	if host == "" || from.Family == "" {
+		return Browser{}, errors.New("an endpoint session needs a host and a console session")
+	}
+	exp := earliest(m.now().Add(EndpointTTL), from.LoginEnd)
+	s, _, err := m.Issue(ctx, Spec{Type: TypeEndpoint, Prefix: token.Endpoint, Family: from.Family, Principal: from.Principal, ExpiresAt: exp, Audience: host})
+	return Browser{Secret: s, ExpiresAt: exp}, err
+}
+
 // Tokens are what a CLI login holds.
 type Tokens struct {
 	Access          token.Secret
@@ -204,6 +226,14 @@ func (m *Manager) Reserve(ctx context.Context, p auth.Principal, ttl time.Durati
 		CreatedAt: now, ExpiresAt: now.Add(ttl),
 	}
 	return family, m.create(ctx, c)
+}
+
+// Release ends a family Reserve made that will not be claimed, so it keeps
+// nothing: its reservation is deleted, and the family marked revoked until
+// the reservation would have expired.
+func (m *Manager) Release(ctx context.Context, family string) error {
+	_, err := m.store.RevokeCredentialFamily(ctx, family, m.now())
+	return err
 }
 
 // StartCLIIn signs a principal in on a CLI in the family Reserve made. It
@@ -302,60 +332,86 @@ func (m *Manager) IssueService(ctx context.Context, p auth.Principal, uid string
 	return ServiceToken{Secret: secret, IssuedAt: now, ExpiresAt: c.ExpiresAt}, nil
 }
 
+// Found is a credential found valid.
+type Found struct {
+	Principal auth.Principal
+	// Family is the login it belongs to.
+	Family string
+	// Until is when it ends unless used again; what it lets in ends then.
+	Until time.Time
+	// LoginEnd is when it ends whatever its use.
+	LoginEnd time.Time
+}
+
 // Lookup returns who holds a credential of the type, and records its use.
+// A credential bound to a host is refused: only Check, given that host,
+// takes it.
 func (m *Manager) Lookup(ctx context.Context, s token.Secret, typ string) (auth.Principal, error) {
+	f, err := m.Check(ctx, s, typ, "")
+	return f.Principal, err
+}
+
+// Check is Lookup for a credential whose audience is exactly audience,
+// empty for one bound to no host, and says more of what it found. Unknown,
+// revoked, expired, of another type and for another host are refused alike.
+func (m *Manager) Check(ctx context.Context, s token.Secret, typ, audience string) (Found, error) {
 	hash := s.Hash()
 	c, err := m.store.GetCredential(ctx, hash)
 	if errors.Is(err, store.ErrNotFound) {
-		return auth.Principal{}, ErrInvalid
+		return Found{}, ErrInvalid
 	}
 	if err != nil {
-		return auth.Principal{}, err
+		return Found{}, err
 	}
 	now := m.now()
 	// The store found the row by its hash; comparing again in constant time
 	// costs nothing and depends on no index's comparison.
-	if subtle.ConstantTimeCompare([]byte(c.Hash), []byte(hash)) != 1 {
-		return auth.Principal{}, ErrInvalid
+	if subtle.ConstantTimeCompare([]byte(c.Hash), []byte(hash)) != 1 || c.Audience != audience {
+		return Found{}, ErrInvalid
 	}
 	if c.Type != typ || !c.UsedAt.IsZero() || expired(c, now) {
-		return auth.Principal{}, ErrInvalid
+		return Found{}, ErrInvalid
+	}
+	p, err := auth.ParsePrincipal(c.Principal)
+	if err != nil {
+		return Found{}, ErrInvalid
 	}
 	if c.Type == TypeService && m.live != nil {
-		p, err := auth.ParsePrincipal(c.Principal)
-		if err != nil {
-			return auth.Principal{}, ErrInvalid
-		}
 		uid, _, ok := strings.Cut(c.Family, familySep)
 		if !ok {
-			return auth.Principal{}, ErrInvalid
+			return Found{}, ErrInvalid
 		}
 		if live, err := m.live(ctx, p, uid); err != nil {
-			return auth.Principal{}, err
+			return Found{}, err
 		} else if !live {
-			return auth.Principal{}, ErrInvalid
+			return Found{}, ErrInvalid
 		}
 	}
 	if c.Type == TypeService && now.Sub(c.LastUsedAt) >= touchEvery {
 		if err := m.store.TouchCredential(ctx, c.Hash, now, time.Time{}); errors.Is(err, store.ErrNotFound) {
-			return auth.Principal{}, ErrInvalid
+			return Found{}, ErrInvalid
 		} else if err != nil {
-			return auth.Principal{}, err
+			return Found{}, err
 		}
-		if p, err := auth.ParsePrincipal(c.Principal); err == nil && m.used != nil {
+		if m.used != nil {
 			m.used(p, now)
 		}
 	}
 	if idle := idleFor(c.Type); idle > 0 && now.Sub(c.LastUsedAt) >= touchEvery {
-		err := m.store.TouchCredential(ctx, c.Hash, now, earliest(now.Add(idle), c.ExpiresAt))
+		c.IdleUntil = earliest(now.Add(idle), c.ExpiresAt)
+		err := m.store.TouchCredential(ctx, c.Hash, now, c.IdleUntil)
 		if errors.Is(err, store.ErrNotFound) {
-			return auth.Principal{}, ErrInvalid
+			return Found{}, ErrInvalid
 		}
 		if err != nil {
-			return auth.Principal{}, err
+			return Found{}, err
 		}
 	}
-	return auth.ParsePrincipal(c.Principal)
+	until := c.ExpiresAt
+	if !c.IdleUntil.IsZero() {
+		until = earliest(until, c.IdleUntil)
+	}
+	return Found{Principal: p, Family: c.Family, Until: until, LoginEnd: c.ExpiresAt}, nil
 }
 
 // Revoke ends the login a credential belongs to: every credential issued

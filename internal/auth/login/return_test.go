@@ -29,8 +29,8 @@ func TestSafeReturn(t *testing.T) {
 		"evil.example":                     "/",
 		"/ok\\":                            "/",
 	} {
-		if got := safeReturn(in); got != want {
-			t.Errorf("safeReturn(%q) = %q, want %q", in, got, want)
+		if got := SafeReturn(in); got != want {
+			t.Errorf("SafeReturn(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

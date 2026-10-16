@@ -3,7 +3,6 @@ package e2e
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -24,45 +23,33 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
+	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/client"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare/cftest"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
-	"github.com/YukinaMochizuki/hangar/internal/edge/accesstest"
 )
 
 const endpointDomain = "hangarlab.test"
 
-// edgeWorld is a world with Cloudflare's fake behind the apiserver, a node
-// agent taking dials, and hangar-edge in front, trusting issuer's tokens.
+// edgeWorld is a world with a node agent taking dials and hangar-edge in
+// front. sessions issues endpoint sessions into the apiserver's store, as
+// the console's handoff does.
 type edgeWorld struct {
 	*world
-	issuer *accesstest.Issuer
+	sessions *session.Manager
 	// url is the edge's listener, which a request reaches with any Host.
 	url string
 }
 
 func newEdgeWorld(t *testing.T) *edgeWorld {
 	t.Helper()
-	const token, account = "cf-token", "0123456789abcdef0123456789abcdef"
-	f := cftest.New(token, account, endpointDomain)
-	t.Cleanup(f.Close)
-	cf, err := cloudflare.New(token, cloudflare.WithBaseURL(f.URL()), cloudflare.WithRetry(1, time.Millisecond))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bypass, err := cf.CreateAccessPolicy(t.Context(), account, cloudflare.AccessPolicy{
-		Name: "bypass", Decision: "bypass", Include: []json.RawMessage{cloudflare.EveryoneRule()},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	w := newIdleWorldWith(t, func(c *apiserver.Config) {
-		c.PublicEndpoints = apiserver.PublicEndpointsConfig{Domain: endpointDomain, Cloudflare: cf, AccountID: account, BypassPolicyID: bypass.ID}
+		c.PublicEndpoints = apiserver.PublicEndpointsConfig{Domain: endpointDomain}
 	})
 	dir, err := os.MkdirTemp("", "edge")
 	if err != nil {
@@ -75,17 +62,13 @@ func newEdgeWorld(t *testing.T) *edgeWorld {
 	}
 	w.startAgent()
 
-	iss := accesstest.NewIssuer(t)
-	access, err := edge.NewAccessVerifier(t.Context(), iss.Config())
-	if err != nil {
-		t.Fatal(err)
-	}
 	e := edge.New(edge.Config{
-		API: w.env.AsEdge(),
+		API:  w.env.AsEdge(),
+		Auth: networkv1alpha1connect.NewEndpointAuthServiceClient(client.UnixSocket(w.env.EdgeSocket), client.UnixSocketURL),
 		DialNode: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", sock)
 		},
-		Domain: endpointDomain, Access: access, Retry: 20 * time.Millisecond,
+		Domain: endpointDomain, ConsoleURL: "https://console.cp.test", Retry: 20 * time.Millisecond,
 		Log: slog.New(slog.DiscardHandler),
 	})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -97,7 +80,26 @@ func newEdgeWorld(t *testing.T) *edgeWorld {
 		cancel()
 		<-done
 	})
-	return &edgeWorld{world: w, issuer: iss, url: srv.URL}
+	return &edgeWorld{world: w, sessions: session.New(w.env.Credentials, session.Options{}), url: srv.URL}
+}
+
+// session is a session of email on host, as the console's handoff makes one.
+func (w *edgeWorld) session(email, host string) string {
+	w.t.Helper()
+	ctx := context.Background()
+	b, err := w.sessions.StartBrowser(ctx, auth.Principal{Type: auth.User, ID: email})
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	f, err := w.sessions.Check(ctx, b.Secret, session.TypeSession, "")
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	e, err := w.sessions.StartEndpoint(ctx, f, host)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return e.Secret.Reveal()
 }
 
 // guestHTTP serves HTTP on the container's eth0 at port, as a guest's web
@@ -114,8 +116,7 @@ func (w *edgeWorld) guestHTTP(container string, port uint16, who string, next <-
 		for _, c := range r.Cookies() {
 			cookies = append(cookies, c.Name)
 		}
-		_, _ = fmt.Fprintf(rw, "%s host=%s jwt=%q cookies=%s proto=%s", who, r.Host, r.Header.Get(edge.AccessJWTHeader),
-			strings.Join(cookies, ","), r.Header.Get("X-Forwarded-Proto"))
+		_, _ = fmt.Fprintf(rw, "%s host=%s cookies=%s proto=%s", who, r.Host, strings.Join(cookies, ","), r.Header.Get("X-Forwarded-Proto"))
 	})
 	mux.HandleFunc("/stream", func(rw http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(rw, "first\n")
@@ -177,8 +178,12 @@ func (l *oneConn) Close() error {
 
 func (l *oneConn) Addr() net.Addr { return l.c.LocalAddr() }
 
-// get asks the edge for path on host, with the token if set, and returns
-// the status and body.
+// noRedirects follows no redirect, as the edge's hand-off of a browser
+// without a session is one.
+var noRedirects = &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+
+// get asks the edge for path on host, with the endpoint session if set, and
+// returns the status and body.
 func (w *edgeWorld) get(host, path, token string, cookies ...*http.Cookie) (int, string) {
 	w.t.Helper()
 	req, err := http.NewRequestWithContext(w.t.Context(), http.MethodGet, w.url+path, nil)
@@ -187,12 +192,12 @@ func (w *edgeWorld) get(host, path, token string, cookies ...*http.Cookie) (int,
 	}
 	req.Host = host
 	if token != "" {
-		req.Header.Set(edge.AccessJWTHeader, token)
+		req.AddCookie(&http.Cookie{Name: edge.EndpointCookie, Value: token})
 	}
 	for _, c := range cookies {
 		req.AddCookie(c)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := noRedirects.Do(req)
 	if err != nil {
 		w.t.Fatal(err)
 	}
@@ -226,9 +231,8 @@ func (w *edgeWorld) endpointReady(name string) *networkv1alpha1.PublicEndpoint {
 
 // TestPublicEndpointsThroughTheEdge: a container's public port and an
 // endpoint made by hand are reached through the edge by Host, private ones
-// only by whom their tenant allows, with Access's proof of sign-in left
-// behind, streams and upgrades going through, and nothing once the
-// endpoint is gone.
+// only by whom their tenant allows, with the session left behind, streams
+// and upgrades going through, and nothing once the endpoint is gone.
 func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 	w := newEdgeWorld(t)
 	c := container("api", "nginx")
@@ -251,19 +255,20 @@ func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 		t.Errorf("the edge's ports: %v", ports)
 	}
 
-	// Private: nobody without a sign-in, nobody outside the tenant.
-	rootToken := w.issuer.UserToken(t, apiservertest.Root)
+	// Private: nobody without a sign-in, who is sent to sign in, nobody
+	// outside the tenant.
+	rootToken := w.session(apiservertest.Root, privateHost)
 	w.waitServing(privateHost, rootToken, http.StatusOK)
-	if status, _ := w.get(privateHost, "/", ""); status != http.StatusUnauthorized {
-		t.Errorf("a private endpoint without a token: %d", status)
+	if status, _ := w.get(privateHost, "/", ""); status != http.StatusFound {
+		t.Errorf("a private endpoint without a session: %d", status)
 	}
-	if status, _ := w.get(privateHost, "/", w.issuer.UserToken(t, "mallory@example.com")); status != http.StatusForbidden {
+	if status, _ := w.get(privateHost, "/", w.session("mallory@example.com", privateHost)); status != http.StatusForbidden {
 		t.Errorf("a private endpoint by a stranger: %d", status)
 	}
 	// A member of the platform with no grant in the tenant is refused, and
 	// one given the tenant is let in.
 	w.env.AddMember("bob@example.com", "platform.member")
-	bob := w.issuer.UserToken(t, "bob@example.com")
+	bob := w.session("bob@example.com", privateHost)
 	w.waitServing(privateHost, bob, http.StatusForbidden)
 	if _, err := w.root.Apply(t.Context(), registry.RoleBinding, roleBinding("bob-owner", "bob@example.com", "tenant.owner",
 		&iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}})); err != nil {
@@ -271,8 +276,8 @@ func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 	}
 	w.waitServing(privateHost, bob, http.StatusOK)
 	// What proves the sign-in never reaches the guest; other cookies do.
-	_, body := w.get(privateHost, "/", rootToken, &http.Cookie{Name: "CF_Authorization", Value: rootToken}, &http.Cookie{Name: "theme", Value: "dark"})
-	if want := "api:8080 host=" + privateHost + ` jwt="" cookies=theme proto=https`; body != want {
+	_, body := w.get(privateHost, "/", rootToken, &http.Cookie{Name: "theme", Value: "dark"})
+	if want := "api:8080 host=" + privateHost + ` cookies=theme proto=https`; body != want {
 		t.Errorf("the guest saw %q, want %q", body, want)
 	}
 
@@ -413,7 +418,7 @@ func TestAPortChangeThroughTheEdge(t *testing.T) {
 	w.guestHTTP("api", 8081, "api:8081", nil)
 	w.endpointReady("api-http")
 	privateHost := "api-http-web." + endpointDomain
-	token := w.issuer.UserToken(t, apiservertest.Root)
+	token := w.session(apiservertest.Root, privateHost)
 	if body := w.waitServing(privateHost, token, http.StatusOK); !strings.HasPrefix(body, "api:8080 ") {
 		t.Fatalf("before the change: %q", body)
 	}

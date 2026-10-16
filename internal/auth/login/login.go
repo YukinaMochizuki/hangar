@@ -8,7 +8,6 @@ package login
 
 import (
 	"context"
-	"crypto/cipher"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -19,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -118,6 +118,10 @@ type Config struct {
 	// Admit says whether a verified person may sign in at all: whether
 	// they were invited.
 	Admit func(context.Context, auth.Principal) (bool, error)
+	// Endpoint says whether a person may use the PRIVATE endpoint at a
+	// host, for the handoff to it (PathEndpointLogin); nil serves no
+	// handoff.
+	Endpoint func(ctx context.Context, p auth.Principal, host string) (EndpointVerdict, error)
 	// HTTPClient calls the provider; nil is a client with a timeout.
 	HTTPClient *http.Client
 	// DeviceInterval is how often a CLI may poll a device login; zero is
@@ -136,7 +140,7 @@ type Flow struct {
 	// attempts limits device code lookups per browser session.
 	attempts attempts
 	// sealer seals loginCookie.
-	sealer cipher.AEAD
+	sealer *Sealer
 
 	mu       sync.Mutex
 	oauth    *oauth2.Config
@@ -168,7 +172,7 @@ func New(cfg Config) (*Flow, error) {
 	if cfg.MaxPending == 0 {
 		cfg.MaxPending = DefaultMaxPending
 	}
-	sealer, err := newSealer()
+	sealer, err := NewSealer(signInPurpose)
 	if err != nil {
 		return nil, err
 	}
@@ -208,6 +212,9 @@ func (f *Flow) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PathDevice, f.onPublicHost(f.devicePage))
 	mux.HandleFunc("POST "+PathDevice, f.deviceDecision)
 	mux.HandleFunc("POST "+PathLogout, f.logout)
+	if f.cfg.Endpoint != nil {
+		mux.HandleFunc("GET "+PathEndpointLogin, f.onPublicHost(f.endpointLogin))
+	}
 }
 
 // onPublicHost sends a browser that came in on another host, such as the
@@ -250,7 +257,7 @@ type grant struct {
 }
 
 func (f *Flow) startBrowser(w http.ResponseWriter, r *http.Request) {
-	f.begin(w, r, pending{Return: safeReturn(r.URL.Query().Get("return"))})
+	f.begin(w, r, pending{Return: SafeReturn(r.URL.Query().Get("return"))})
 }
 
 func (f *Flow) startCLI(w http.ResponseWriter, r *http.Request) {
@@ -338,12 +345,16 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, p.Return, http.StatusSeeOther)
 		return
 	}
-	if err := f.roomForOneMore(ctx, codeKey); err != nil {
-		if errors.Is(err, ErrBusy) {
-			f.refuse(w, r, p, http.StatusServiceUnavailable, err.Error(), "")
-			return
-		}
+	// The family is reserved before the code is kept, so that a revoke of
+	// the person's logins in between is never missed. So the cap is looked
+	// at first, and a code that still finds it full, having lost a race to
+	// another, releases its reservation: a refused sign-in keeps nothing.
+	if n, err := f.cfg.Store.CountAuthRequests(ctx, codeKey, f.cfg.Sessions.Now()); err != nil {
 		f.internal(w, err)
+		return
+	} else if n >= f.cfg.MaxPending {
+		f.cfg.Log.Warn("refused a login: too many waiting", "kind", strings.TrimSuffix(codeKey, ":"))
+		f.refuse(w, r, p, http.StatusServiceUnavailable, ErrBusy.Error(), "")
 		return
 	}
 	family, err := f.cfg.Sessions.Reserve(ctx, pr, codeTTL+time.Minute)
@@ -352,7 +363,15 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := token.Random()
-	if err := f.put(ctx, codeKey+token.Hash(code), grant{Principal: pr.String(), Redirect: p.Redirect, Challenge: p.Challenge, Family: family}, codeTTL); err != nil {
+	if err := f.putWithin(ctx, []store.AuthLimit{f.shared(codeKey)},
+		row{codeKey + token.Hash(code), grant{Principal: pr.String(), Redirect: p.Redirect, Challenge: p.Challenge, Family: family}, codeTTL}); err != nil {
+		if rerr := f.cfg.Sessions.Release(ctx, family); rerr != nil {
+			f.cfg.Log.Warn("could not release a reserved login", "error", rerr)
+		}
+		if errors.Is(err, store.ErrLimit) {
+			f.refuse(w, r, p, http.StatusServiceUnavailable, ErrBusy.Error(), "")
+			return
+		}
 		f.internal(w, err)
 		return
 	}
@@ -456,18 +475,40 @@ func (f *Flow) startCLILogin(ctx context.Context, p auth.Principal, family strin
 	return f.cfg.Sessions.StartCLIIn(ctx, p, family)
 }
 
-// roomForOneMore returns ErrBusy when as many logins of the kind keyed by
-// prefix are waiting as the cap allows.
-func (f *Flow) roomForOneMore(ctx context.Context, prefix string) error {
-	n, err := f.cfg.Store.CountAuthRequests(ctx, prefix, f.cfg.Sessions.Now())
-	if err != nil {
-		return err
+// shared is the cap on the logins of the kind keyed by prefix waiting at
+// once, everyone's together.
+func (f *Flow) shared(prefix string) store.AuthLimit {
+	return store.AuthLimit{Prefix: prefix, Max: f.cfg.MaxPending}
+}
+
+// row is a record to keep under a key for a time.
+type row struct {
+	key string
+	v   any
+	ttl time.Duration
+}
+
+// putWithin stores the records, all or none, if every limit has room, in
+// one store transaction, so that of logins started at once no more are
+// kept than the limits allow. A limit at its cap is store.ErrLimit, as a
+// *store.LimitError naming it.
+func (f *Flow) putWithin(ctx context.Context, limits []store.AuthLimit, rows ...row) error {
+	now := f.cfg.Sessions.Now()
+	rs := make([]store.AuthRequest, 0, len(rows))
+	for _, r := range rows {
+		b, err := json.Marshal(r.v)
+		if err != nil {
+			return err
+		}
+		rs = append(rs, store.AuthRequest{Key: r.key, Data: b, ExpiresAt: now.Add(r.ttl)})
 	}
-	if n >= f.cfg.MaxPending {
-		f.cfg.Log.Warn("refused a login: too many waiting", "kind", strings.TrimSuffix(prefix, ":"), "waiting", n)
-		return ErrBusy
+	err := f.cfg.Store.CreateAuthRequestsWithin(ctx, now, limits, rs...)
+	// A shared cap reached is worth an operator's look; a person's own, its
+	// caller says.
+	if le := (*store.LimitError)(nil); errors.As(err, &le) && slices.Contains([]string{deviceKey, codeKey, endpointKey}, le.Prefix) {
+		f.cfg.Log.Warn("refused a login: too many waiting", "kind", strings.TrimSuffix(le.Prefix, ":"))
 	}
-	return nil
+	return err
 }
 
 // attempts counts recent device code attempts by key, in this process.
@@ -587,12 +628,13 @@ func (f *Flow) internal(w http.ResponseWriter, err error) {
 	f.fail(w, http.StatusInternalServerError, "an internal error; try again")
 }
 
-// safeReturn keeps a return path on this origin, or makes it "/". Browsers
+// SafeReturn keeps a return path on the origin it is used on, or makes it
+// "/", for the sign-in and for hangar-edge's endpoint handoff. Browsers
 // read //host and /\host as another host, and drop tabs and newlines
 // before they look, so /\t/host is one too: only a clean absolute path
 // passes, with no backslash and no control byte, raw or escaped, and no
 // scheme or host however url.Parse reads it.
-func safeReturn(s string) string {
+func SafeReturn(s string) string {
 	if !cleanPath(s) {
 		return "/"
 	}

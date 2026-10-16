@@ -2,6 +2,7 @@ package storetest
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -34,6 +35,7 @@ func RunCredentials(t *testing.T, open func(t *testing.T) CredentialStore) {
 		{"AuthRequestTakenOnce", testAuthRequestTakenOnce},
 		{"DeleteExpired", testDeleteExpired},
 		{"CountAuthRequests", testCountAuthRequests},
+		{"AuthRequestsWithinLimits", testAuthRequestsWithinLimits},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -72,6 +74,14 @@ func testCredentialCreateGet(t *testing.T, s store.Credentials) {
 	}
 	if _, err := s.GetCredential(ctx, "nope"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("missing credential: %v, want ErrNotFound", err)
+	}
+	bound := credential("h2", "f1", "user:a@example.com")
+	bound.Audience = "web-demo.example.dev"
+	if err := s.CreateCredentials(ctx, bound); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetCredential(ctx, "h2"); err != nil || !sameCredential(got, bound) {
+		t.Errorf("got %+v, %v; want %+v", got, err, bound)
 	}
 }
 
@@ -314,7 +324,7 @@ func testDeleteExpired(t *testing.T, s store.Credentials) {
 func sameCredential(a, b store.Credential) bool {
 	return a.Hash == b.Hash && a.Type == b.Type && a.Family == b.Family && a.Principal == b.Principal &&
 		a.CreatedAt.Equal(b.CreatedAt) && a.ExpiresAt.Equal(b.ExpiresAt) && a.IdleUntil.Equal(b.IdleUntil) &&
-		a.LastUsedAt.Equal(b.LastUsedAt) && a.UsedAt.Equal(b.UsedAt)
+		a.LastUsedAt.Equal(b.LastUsedAt) && a.UsedAt.Equal(b.UsedAt) && a.Audience == b.Audience
 }
 
 // testRevokedFamilyTakesNothing: once a family is revoked, by itself or with
@@ -385,5 +395,65 @@ func testCountAuthRequests(t *testing.T, s store.Credentials) {
 	}
 	if n, err := s.CountAuthRequests(ctx, "b:", at); err != nil || n != 1 {
 		t.Errorf("count b: %d, %v; want 1", n, err)
+	}
+}
+
+// testAuthRequestsWithinLimits: requests are stored all or none, only while
+// every limit has room as of now, expired ones not counting; of many
+// concurrent calls under one limit, exactly as many as it allows get in.
+func testAuthRequestsWithinLimits(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	req := func(key string, ttl time.Duration) store.AuthRequest {
+		return store.AuthRequest{Key: key, Data: []byte("{}"), ExpiresAt: at.Add(ttl)}
+	}
+	limits := []store.AuthLimit{{Prefix: "a:", Max: 2}, {Prefix: "a:p1:", Max: 1}}
+	if err := s.CreateAuthRequestsWithin(ctx, at, limits, req("a:p1:x", time.Minute), req("b:x", time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	// p1 is at its limit: nothing of the call is stored.
+	err := s.CreateAuthRequestsWithin(ctx, at, limits, req("a:p1:y", time.Minute), req("b:y", time.Minute))
+	var le *store.LimitError
+	if !errors.Is(err, store.ErrLimit) || !errors.As(err, &le) || le.Prefix != "a:p1:" {
+		t.Fatalf("past a limit: %v, want ErrLimit for a:p1:", err)
+	}
+	if _, err := s.GetAuthRequest(ctx, "b:y"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a refused call stored part of itself: %v", err)
+	}
+	// A key taken refuses the whole call.
+	if err := s.CreateAuthRequestsWithin(ctx, at, nil, req("c:x", time.Minute), req("b:x", time.Minute)); !errors.Is(err, store.ErrExists) {
+		t.Fatalf("a key taken: %v, want ErrExists", err)
+	}
+	if _, err := s.GetAuthRequest(ctx, "c:x"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("a refused call stored part of itself: %v", err)
+	}
+	// Once p1's expires, it counts no more.
+	if err := s.CreateAuthRequestsWithin(ctx, at.Add(2*time.Minute), limits, req("a:p1:z", 3*time.Minute)); err != nil {
+		t.Errorf("after the waiting one expired: %v", err)
+	}
+
+	// Concurrent calls under one limit: exactly Max get in.
+	const max, callers = 5, 40
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	in, limited := 0, 0
+	for i := range callers {
+		wg.Go(func() {
+			err := s.CreateAuthRequestsWithin(ctx, at, []store.AuthLimit{{Prefix: "race:", Max: max}},
+				req(fmt.Sprintf("race:%d", i), time.Minute), req(fmt.Sprintf("race-data:%d", i), time.Minute))
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case err == nil:
+				in++
+			case errors.Is(err, store.ErrLimit):
+				limited++
+			default:
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	if in != max || limited != callers-max {
+		t.Errorf("%d concurrent calls under a limit of %d: %d in, %d refused", callers, max, in, limited)
 	}
 }

@@ -23,9 +23,14 @@ const (
 	Access = "hga_"
 	// Refresh is a CLI's refresh token.
 	Refresh = "hgf_"
-	// Service is reserved for agents' service tokens.
+	// Service is an agent's service token.
 	Service = "hgr_"
+	// Endpoint is a browser's session cookie on one private endpoint.
+	Endpoint = "hge_"
 )
+
+// Prefixes is every prefix there is.
+var Prefixes = []string{Session, Access, Refresh, Service, Endpoint}
 
 // randomBytes is how much randomness a token carries.
 const randomBytes = 32
@@ -53,7 +58,7 @@ func (s Secret) Reveal() string { return string(s) }
 // Prefix returns the secret's prefix, such as "hga_", or "" if it has none
 // Hangar knows.
 func (s Secret) Prefix() string {
-	for _, p := range []string{Session, Access, Refresh, Service} {
+	for _, p := range Prefixes {
 		if strings.HasPrefix(string(s), p) {
 			return p
 		}

@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// EndpointAuthService is how hangar-edge learns who calls a PRIVATE public
+// endpoint. It is served on the apiserver's edge socket alone, to the Edge
+// principal alone. What a credential may do there is the edge's to decide,
+// with the authorization data it follows; these calls only say who holds
+// it and until when. Any other caller gets FAILED_PRECONDITION. It is not a
+// resource's service, so it is written by hand rather than generated. See
+// docs/decisions/public-endpoints.md.
+service EndpointAuthService {
+  // ExchangeEndpointCode trades the one-time code the console's
+  // endpoint-login handed a browser for a session on that endpoint's host
+  // alone. The code is spent whatever the outcome, and counts only for the
+  // host and the state it was issued with. UNAUTHENTICATED for any code
+  // that does not; PERMISSION_DENIED for one whose person may no longer use
+  // the endpoint, or is no longer invited.
+  rpc ExchangeEndpointCode(ExchangeEndpointCodeRequest) returns (ExchangeEndpointCodeResponse);
+  // CheckEndpointCredential says who holds a credential presented to the
+  // host: an endpoint session issued for that host, a CLI access token or
+  // a service token. UNAUTHENTICATED for any other, unknown, revoked or
+  // expired one alike.
+  rpc CheckEndpointCredential(CheckEndpointCredentialRequest) returns (CheckEndpointCredentialResponse);
+}
+
+message ExchangeEndpointCodeRequest {
+  string code = 1;
+  // The endpoint's hostname the browser brought the code to.
+  string host = 2;
+  // The state the edge started the handoff with.
+  string state = 3;
+}
+
+message ExchangeEndpointCodeResponse {
+  // The endpoint session, for the host's cookie. Opaque.
+  string session = 1;
+  google.protobuf.Timestamp expire_time = 2;
+  // Who signed in, such as "user:ada@example.com".
+  string principal = 3;
+}
+
+message CheckEndpointCredentialRequest {
+  string credential = 1;
+  string host = 2;
+}
+
+message CheckEndpointCredentialResponse {
+  // Who holds it, such as "user:ada@example.com" or
+  // "serviceToken:web/deployer".
+  string principal = 1;
+  // When it ends, unless used before for one that ends when idle; what it
+  // let in ends then.
+  google.protobuf.Timestamp expire_time = 2;
+}

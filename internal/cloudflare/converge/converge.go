@@ -2,10 +2,9 @@
 // remotely-managed tunnel and its ingress, the proxied DNS record that points
 // at it, an Access application with two reusable policies, and a smoke-test
 // service token; and, for public endpoints, their domain's wildcard DNS
-// record, ingress and Access application, and the bypass policy the
-// apiserver opens PUBLIC endpoints with. It changes only objects it
-// created, which it records in a state file, and writes what the host needs
-// to files, never to its output. It deletes nothing.
+// record and ingress (hangar-edge signs their callers in itself). It changes
+// only objects it created, which it records in a state file, and writes
+// what the host needs to files, never to its output. It deletes nothing.
 package converge
 
 import (
@@ -40,7 +39,9 @@ const (
 
 	emailsPolicy = "emails"
 	tokensPolicy = "service_tokens"
-	bypassPolicy = "endpoints_bypass"
+	// oldBypassPolicy is the role, in the state file, of the policy PUBLIC
+	// endpoints' Access applications took, which nothing uses any more.
+	oldBypassPolicy = "endpoints_bypass"
 )
 
 // ErrNotOwned is returned when an object the tool would manage exists but was
@@ -106,10 +107,8 @@ type owned struct {
 	app      *cloudflare.AccessApp
 	policies map[string]*cloudflare.AccessPolicy
 	token    *cloudflare.ServiceToken
-	// epDNS and epApp are the public endpoints' wildcard record and
-	// application.
+	// epDNS is the public endpoints' wildcard record.
 	epDNS *cloudflare.DNSRecord
-	epApp *cloudflare.AccessApp
 }
 
 // Run compares Cloudflare with the config and, with Apply, converges it.
@@ -151,7 +150,7 @@ func (e *Engine) Run(ctx context.Context) (*Result, error) {
 	if err := r.observe(); err != nil {
 		return nil, err
 	}
-	steps := []func() error{r.policies, r.app, r.endpointsApp, r.tunnel, r.tunnelConfig, r.dnsRecord, r.endpointsDNS, r.serviceToken, r.outputs}
+	steps := []func() error{r.policies, r.app, r.tunnel, r.tunnelConfig, r.dnsRecord, r.endpointsDNS, r.serviceToken, r.outputs}
 	for _, s := range steps {
 		if err := s(); err != nil {
 			return r.res, err
@@ -342,7 +341,7 @@ func (r *run) observe() error {
 			foreign("Access application", a.Name, a.ID)
 		}
 	}
-	if err := r.observeEndpoints(apps, foreign); err != nil {
+	if err := r.observeEndpoints(foreign); err != nil {
 		return err
 	}
 
@@ -386,17 +385,12 @@ func (r *run) policyName(role string) string {
 	switch role {
 	case emailsPolicy:
 		return r.Config.Hostname + ": allow listed emails"
-	case bypassPolicy:
-		return r.Config.Endpoints.Zone + ": public endpoints, everyone"
 	}
 	return r.Config.Hostname + ": service tokens"
 }
 
 // policyRoles are the reusable policies the config asks for.
 func (r *run) policyRoles() []string {
-	if r.Config.Endpoints != nil {
-		return []string{emailsPolicy, tokensPolicy, bypassPolicy}
-	}
 	return []string{emailsPolicy, tokensPolicy}
 }
 
@@ -444,8 +438,8 @@ func (r *run) wantIngress() []cloudflare.IngressRule {
 		{Hostname: r.Config.Hostname, Service: Origin, OriginRequest: cloudflare.OriginRequestWithAccess(access)},
 	}
 	if ep := r.Config.Endpoints; ep != nil {
-		// No origin access check here: a PUBLIC endpoint's requests come
-		// with no Access token, and hangar-edge checks a PRIVATE one's.
+		// No origin access check here: hangar-edge signs a PRIVATE
+		// endpoint's callers in itself, and a PUBLIC one takes anyone.
 		rules = append(rules, cloudflare.IngressRule{Hostname: ep.Wildcard(), Service: EdgeOrigin})
 	}
 	return append(rules, cloudflare.IngressRule{Service: catchAll})
@@ -645,9 +639,6 @@ func (r *run) wantPolicy(role string) cloudflare.AccessPolicy {
 		for _, e := range r.Config.AllowedEmails {
 			p.Include = append(p.Include, cloudflare.EmailRule(e))
 		}
-	case bypassPolicy:
-		p.Decision = "bypass"
-		p.Include = []json.RawMessage{cloudflare.EveryoneRule()}
 	default:
 		p.Decision = "non_identity"
 		p.Include = []json.RawMessage{cloudflare.AnyValidServiceTokenRule()}

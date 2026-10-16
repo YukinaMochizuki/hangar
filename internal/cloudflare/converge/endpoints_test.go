@@ -35,21 +35,19 @@ func TestEndpointsApplyFromEmpty(t *testing.T) {
 	e := newEndpointsEnv(t)
 	e.mustRun(true)
 	st := e.state()
-	if st.EndpointsZone != testEndpointZone || st.EndpointsAppID == "" || st.EndpointsDNSRecordID == "" || st.Policies[bypassPolicy] == "" {
+	if st.EndpointsZone != testEndpointZone || st.EndpointsDNSRecordID == "" || st.EndpointsAppID != "" || st.Policies[oldBypassPolicy] != "" {
 		t.Fatalf("state: %+v", st)
 	}
 	e.f.Mutate(func(s *cftest.State) {
-		app := s.Apps[st.EndpointsAppID]
-		if app == nil || app.Domain != testWildcard || len(app.Links) != 2 ||
-			app.Links[0].ID != st.Policies[emailsPolicy] || app.Links[1].ID != st.Policies[tokensPolicy] {
-			t.Errorf("the wildcard application: %+v", app)
+		for _, a := range s.Apps {
+			if a.ID != st.AppID {
+				t.Errorf("an Access application besides the API's: %+v", a)
+			}
 		}
-		bypass := s.Policies[st.Policies[bypassPolicy]]
-		if bypass == nil || bypass.Decision != "bypass" || len(bypass.Include) != 1 || string(bypass.Include[0]) != `{"everyone":{}}` {
-			t.Errorf("the bypass policy: %+v", bypass)
-		}
-		if bypass.AppCount != 0 {
-			t.Errorf("the bypass policy is on %d applications; only the apiserver's PUBLIC endpoints take it", bypass.AppCount)
+		for _, p := range s.Policies {
+			if p.Decision == "bypass" {
+				t.Errorf("a bypass policy: %+v", p)
+			}
 		}
 		ing := s.Configs[st.TunnelID].Config.Ingress
 		if len(ing) != 3 || ing[0].Hostname != testHost || ing[1].Hostname != testWildcard || ing[1].Service != EdgeOrigin ||
@@ -61,25 +59,19 @@ func TestEndpointsApplyFromEmpty(t *testing.T) {
 			d.Content != st.TunnelID+".cfargotunnel.com" {
 			t.Errorf("the wildcard record: %+v", d)
 		}
-		var aud string
-		if app != nil {
-			aud = app.AUD
-		}
-		b, err := os.ReadFile(filepath.Join(e.dir, EdgeEnv))
-		want := "HANGAR_EDGE_DOMAIN=" + testEndpointZone + "\nHANGAR_EDGE_CF_AUDIENCE=" + aud + "\nHANGAR_CF_ACCOUNT_ID=" + testAccount +
-			"\nHANGAR_CF_BYPASS_POLICY_ID=" + st.Policies[bypassPolicy] + "\n"
-		if err != nil || string(b) != want {
-			t.Errorf("%s: %q, %v; want %q", EdgeEnv, b, err, want)
-		}
 	})
-	if res := e.mustRun(false); len(res.Changes) != 0 {
-		t.Errorf("a second run finds changes: %v", objects(res))
+	b, err := os.ReadFile(filepath.Join(e.dir, EdgeEnv))
+	if want := "HANGAR_EDGE_DOMAIN=" + testEndpointZone + "\n"; err != nil || string(b) != want {
+		t.Errorf("%s: %q, %v; want %q", EdgeEnv, b, err, want)
+	}
+	if res := e.mustRun(false); len(res.Changes) != 0 || len(res.Notes) != 0 {
+		t.Errorf("a second run finds changes %v, notes %v", objects(res), res.Notes)
 	}
 }
 
-// TestEndpointsCoveredBeforeRouted: the wildcard application comes before
-// the ingress that routes the wildcard, and the record last.
-func TestEndpointsCoveredBeforeRouted(t *testing.T) {
+// TestEndpointsRoutedAfterTheIngress: the ingress that routes the wildcard
+// comes before the record that sends it to the tunnel.
+func TestEndpointsRoutedAfterTheIngress(t *testing.T) {
 	e := newEndpointsEnv(t)
 	var zoneID string
 	e.f.Mutate(func(s *cftest.State) { zoneID = s.Zones[1].ID })
@@ -87,81 +79,71 @@ func TestEndpointsCoveredBeforeRouted(t *testing.T) {
 	at := func(match func(cftest.Request) bool) int {
 		return slices.IndexFunc(writes, match)
 	}
-	app := at(func(r cftest.Request) bool {
-		return r.Method == http.MethodPost && strings.HasSuffix(r.Path, "/access/apps")
-	})
-	// The API's application is made first, the wildcard's second.
-	wildcardApp := -1
-	for i := app + 1; i < len(writes); i++ {
-		if writes[i].Method == http.MethodPost && strings.HasSuffix(writes[i].Path, "/access/apps") {
-			wildcardApp = i
-			break
-		}
-	}
 	ingress := at(func(r cftest.Request) bool {
 		return r.Method == http.MethodPut && strings.HasSuffix(r.Path, "/configurations")
 	})
 	record := at(func(r cftest.Request) bool {
 		return r.Method == http.MethodPost && strings.Contains(r.Path, "/zones/"+zoneID+"/dns_records")
 	})
-	if app < 0 || app >= wildcardApp || wildcardApp >= ingress || ingress >= record {
-		t.Fatalf("writes in the wrong order (app %d, wildcard app %d, ingress %d, record %d): %v", app, wildcardApp, ingress, record, writes)
+	if ingress < 0 || ingress >= record {
+		t.Fatalf("writes in the wrong order (ingress %d, record %d): %v", ingress, record, writes)
 	}
 }
 
-// TestEndpointsLeaveTheApiserversApplicationsAlone: the apiserver's
-// applications, one hostname below the wildcard each, are neither its to
-// change nor a conflict; another one there is a note, and one on the
-// wildcard itself a conflict.
-func TestEndpointsLeaveTheApiserversApplicationsAlone(t *testing.T) {
+// TestOldEndpointAccessIsNoted: the Access objects an earlier version made
+// for public endpoints, the wildcard application and the bypass policy, and
+// the apiserver's applications for PUBLIC endpoints, are no longer used:
+// a run names the first two, to be deleted by hand, and changes none of
+// them, nor counts any as a conflict.
+func TestOldEndpointAccessIsNoted(t *testing.T) {
 	e := newEndpointsEnv(t)
 	e.mustRun(true)
-	host := "web-demo." + testEndpointZone
-	addApp(e.f, "aaaaaaaa-0000-0000-0000-00000000000a", host)
+	const oldApp, oldPolicy, publicApp = "aaaaaaaa-0000-0000-0000-00000000000a", "bbbbbbbb-0000-0000-0000-00000000000b", "cccccccc-0000-0000-0000-00000000000c"
+	addApp(e.f, oldApp, testWildcard)
+	addApp(e.f, publicApp, "web-demo."+testEndpointZone)
 	e.f.Mutate(func(s *cftest.State) {
-		s.Apps["aaaaaaaa-0000-0000-0000-00000000000a"].Name = cloudflare.EndpointAppPrefix + host
+		s.Apps[publicApp].Name = cloudflare.EndpointAppPrefix + "web-demo." + testEndpointZone
+		s.Policies[oldPolicy] = &cftest.Policy{ID: oldPolicy, Name: testEndpointZone + ": public endpoints, everyone", Decision: "bypass",
+			Reusable: true, Include: []json.RawMessage{json.RawMessage(`{"everyone":{}}`)}}
 	})
+	st := e.state()
+	st.EndpointsAppID = oldApp
+	st.Policies[oldBypassPolicy] = oldPolicy
+	b, err := json.Marshal(st)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(e.dir, StateFile), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var res *Result
 	writes := e.writesDuring(func() { res = e.mustRun(true) })
-	if len(writes) != 0 || len(res.Changes) != 0 || len(res.Notes) != 0 {
-		t.Fatalf("with an apiserver's application: writes %v, changes %v, notes %v", writes, objects(res), res.Notes)
+	if len(writes) != 0 || len(res.Changes) != 0 {
+		t.Errorf("with the old objects: writes %v, changes %v", writes, objects(res))
 	}
-
-	addApp(e.f, "aaaaaaaa-0000-0000-0000-00000000000b", "other-demo."+testEndpointZone)
-	res = e.mustRun(false)
-	if len(res.Notes) != 1 || !strings.Contains(res.Notes[0], "other-demo."+testEndpointZone) {
-		t.Errorf("another application below the wildcard: notes %v", res.Notes)
+	notes := strings.Join(res.Notes, "\n")
+	if len(res.Notes) != 2 || !strings.Contains(notes, oldApp) || !strings.Contains(notes, oldPolicy) || !strings.Contains(notes, "delete it by hand") {
+		t.Errorf("notes %q; want the old application and policy named", res.Notes)
 	}
-
-	addApp(e.f, "aaaaaaaa-0000-0000-0000-00000000000c", testWildcard)
-	if _, err := e.run(false); !errors.Is(err, ErrNotOwned) || !strings.Contains(err.Error(), "aaaaaaaa-0000-0000-0000-00000000000c") {
-		t.Errorf("another application on the wildcard: %v", err)
+	e.f.Mutate(func(s *cftest.State) {
+		if s.Apps[oldApp] == nil || s.Apps[publicApp] == nil || s.Policies[oldPolicy] == nil {
+			t.Error("an old object went")
+		}
+	})
+	if got := e.state(); got.EndpointsAppID != oldApp || got.Policies[oldBypassPolicy] != oldPolicy {
+		t.Errorf("the state forgot the old objects: %+v", got)
 	}
 }
 
-func TestEndpointsRefuseObjectsItDidNotCreate(t *testing.T) {
-	for name, add := range map[string]func(f *cftest.Fake){
-		"wildcard record": func(f *cftest.Fake) {
-			f.Mutate(func(s *cftest.State) {
-				s.DNS["ffff"] = &cftest.DNSRecord{ID: "ffff", ZoneID: s.Zones[1].ID, Type: "A", Name: testWildcard, Content: "192.0.2.1", TTL: 1}
-			})
-		},
-		"bypass policy": func(f *cftest.Fake) {
-			f.Mutate(func(s *cftest.State) {
-				s.Policies["bbbb"] = &cftest.Policy{ID: "bbbb", Name: testEndpointZone + ": public endpoints, everyone", Decision: "bypass",
-					Reusable: true, Include: []json.RawMessage{json.RawMessage(`{"everyone":{}}`)}}
-			})
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			e := newEndpointsEnv(t)
-			add(e.f)
-			var err error
-			writes := e.writesDuring(func() { _, err = e.run(true) })
-			if !errors.Is(err, ErrNotOwned) || len(writes) != 0 {
-				t.Fatalf("apply: %v, writes %v", err, writes)
-			}
-		})
+func TestEndpointsRefuseARecordItDidNotCreate(t *testing.T) {
+	e := newEndpointsEnv(t)
+	e.f.Mutate(func(s *cftest.State) {
+		s.DNS["ffff"] = &cftest.DNSRecord{ID: "ffff", ZoneID: s.Zones[1].ID, Type: "A", Name: testWildcard, Content: "192.0.2.1", TTL: 1}
+	})
+	var err error
+	writes := e.writesDuring(func() { _, err = e.run(true) })
+	if !errors.Is(err, ErrNotOwned) || len(writes) != 0 {
+		t.Fatalf("apply: %v, writes %v", err, writes)
 	}
 }
 

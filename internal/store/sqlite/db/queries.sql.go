@@ -203,7 +203,7 @@ func (q *Queries) GetAuthRequest(ctx context.Context, key string) (AuthRequest, 
 }
 
 const getCredential = `-- name: GetCredential :one
-SELECT hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at
+SELECT hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at, audience
 FROM credentials
 WHERE hash = ?
 `
@@ -221,6 +221,7 @@ func (q *Queries) GetCredential(ctx context.Context, hash string) (Credential, e
 		&i.IdleUntil,
 		&i.LastUsedAt,
 		&i.UsedAt,
+		&i.Audience,
 	)
 	return i, err
 }
@@ -278,8 +279,8 @@ func (q *Queries) InsertAuthRequest(ctx context.Context, arg InsertAuthRequestPa
 }
 
 const insertCredential = `-- name: InsertCredential :exec
-INSERT INTO credentials (hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO credentials (hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at, audience)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertCredentialParams struct {
@@ -292,6 +293,7 @@ type InsertCredentialParams struct {
 	IdleUntil  int64
 	LastUsedAt int64
 	UsedAt     int64
+	Audience   string
 }
 
 func (q *Queries) InsertCredential(ctx context.Context, arg InsertCredentialParams) error {
@@ -305,6 +307,7 @@ func (q *Queries) InsertCredential(ctx context.Context, arg InsertCredentialPara
 		arg.IdleUntil,
 		arg.LastUsedAt,
 		arg.UsedAt,
+		arg.Audience,
 	)
 	return err
 }

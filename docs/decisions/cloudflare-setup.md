@@ -42,14 +42,13 @@ public endpoints), so the client has to be reusable Go.
 - **It deletes nothing.** Removing an object is a human's decision, in the
   dashboard.
 - **Public endpoints** (`public-endpoints.md`), when the config names their
-  zone, add the zone's wildcard DNS record, a wildcard ingress rule to the
-  edge with no origin access check, an Access application for the wildcard
-  with the same two policies, and a reusable bypass policy. The zone is
-  fixed for a state file, as the hostname is. The Access application of
-  each `PUBLIC` endpoint is the apiserver's: it makes and deletes it with a
-  token of its own, names it `hangar public endpoint: <hostname>`, and this
-  tool neither changes it nor counts it a conflict; any other application
-  one level below the wildcard is a note, as it shadows an endpoint.
+  zone, add the zone's wildcard DNS record and a wildcard ingress rule to
+  the edge with no origin access check: the edge signs a private
+  endpoint's callers in itself. The zone is fixed for a state file, as the
+  hostname is. The wildcard Access application and the bypass policy an
+  earlier version made for endpoints, and the apiserver's applications for
+  PUBLIC ones, are no longer used; a run names the first two as notes, to
+  be deleted by hand, since the tool deletes nothing.
 - **Secrets go to files, never to output.** The tunnel token, and the
   smoke token's client secret (returned once, at creation), are written 0600
   to the output directory; the client's `Secret` type formats as a

@@ -63,12 +63,12 @@ type Device struct {
 
 // StartDevice starts a device login.
 func (f *Flow) StartDevice(ctx context.Context) (Device, error) {
-	if err := f.roomForOneMore(ctx, deviceKey); err != nil {
-		return Device{}, err
-	}
 	code := token.Secret(token.Random())
 	devKey := deviceKey + code.Hash()
-	if err := f.put(ctx, devKey, device{Status: "pending"}, DeviceTTL); err != nil {
+	if err := f.putWithin(ctx, []store.AuthLimit{f.shared(deviceKey)}, row{devKey, device{Status: "pending"}, DeviceTTL}); err != nil {
+		if errors.Is(err, store.ErrLimit) {
+			return Device{}, ErrBusy
+		}
 		return Device{}, err
 	}
 	for range 5 {
