@@ -34,6 +34,30 @@ to boot again.
   or a resize is not held up behind input the process has yet to read. Past
   4 MiB queued the caller waits, its signals with it, as over ssh: stdin is
   never dropped, since a pipe's must arrive whole.
+- **The agent serves the host alone.** A container's `USER` is a privilege
+  boundary inside the guest, as it is under Docker: a process running as
+  `nobody` must not become root in its own guest. The agent would be the
+  way around it, since Exec runs as whatever user its caller names, and
+  Stop and SetIPv6 act on the whole guest. So there are two layers, each
+  enough on its own:
+  - hangar-init answers only connections whose peer is the host, CID 2
+    (`VMADDR_CID_HOST`), and closes any other before reading from it
+    (`internal/guest/agent` `HostOnly`), logging refusals at most once a
+    minute;
+  - the guest kernel has no vsock loopback (`CONFIG_VSOCKETS_LOOPBACK` off,
+    `docs/decisions/guest-kernel.md`), so no process in the guest can
+    connect to a vsock port of its own guest at all, through CID 1 or the
+    guest's own CID. One connecting to CID 2 reaches the host, never the
+    agent.
+
+  Both exist because each can be lost without anyone noticing: the kernel's
+  is a config line a fragment change, a kernel bump or another kernel (as
+  the testbed can boot) undoes, and it covers every vsock listener the
+  guest will ever have, not only this one; the agent's holds whatever
+  kernel the guest boots, and depends only on the peer address the kernel
+  reports, which no unprivileged process can choose. The testbed checks
+  from a `USER nobody` container that nothing in the guest reaches the
+  agent (`docs/runbook/testbed.md`); the agent's check has a unit test.
 - **Output goes to the virtio console, framed** (`internal/guest/console`):
   every write of the container's stdout and stderr, hangar-init's own
   messages, and, last, how the process ended. Cloud Hypervisor hands the
@@ -91,6 +115,11 @@ to boot again.
   are whatever the guest asserts: a guest forging records, or a header
   whose payload takes in hangar-init's exit record, sets its own exit code
   and garbles its own log, which harms only itself (`node-agent.md`).
+- Root in a guest is not held back by any of this: it is the tenant's,
+  can replace hangar-init's answers (above), and needs no agent to do what
+  the agent does. The boundary is between users inside one guest; the one
+  between the guest and the host is the hypervisor's
+  (`docs/decisions/node-agent.md`).
 - What needs root in the guest (mounting, switching root, the network) is
   exercised on the testbed (`docs/decisions/testing-strategy.md`, L4); the
   rest is tested in any workspace.

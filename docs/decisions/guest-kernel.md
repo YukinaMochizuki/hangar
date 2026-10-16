@@ -89,6 +89,9 @@ each option named in the fragment:
   `CONFIG_BPF_UNPRIV_DEFAULT_OFF`, `CONFIG_X86_INTEL_MEMORY_PROTECTION_KEYS`
   for userspace that uses it, and `CONFIG_UNWINDER_ORC` for oops reports
   that can be read.
+- No vsock within the guest: `CONFIG_VSOCKETS_LOOPBACK` is off, so no
+  process in the guest can connect to the guest agent, which serves the
+  host alone (`docs/decisions/guest-agent.md`).
 
 It costs boot time and syscall speed; `docs/runbook/testbed.md` records
 what was measured when it was turned on.

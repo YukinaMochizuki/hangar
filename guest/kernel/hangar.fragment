@@ -177,6 +177,10 @@ CONFIG_VIRTIO_MEM=y
 CONFIG_BLK_DEV=y
 CONFIG_VSOCKETS=y
 CONFIG_VIRTIO_VSOCKETS=y
+# No vsock between processes of one guest: the guest agent runs anything as
+# any user its caller names, so it must be reachable from the host alone
+# (docs/decisions/guest-agent.md). hangar-init checks the peer too.
+CONFIG_VSOCKETS_LOOPBACK=n
 
 # --- block / fs ---
 CONFIG_BLOCK=y

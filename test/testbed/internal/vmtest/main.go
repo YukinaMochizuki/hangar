@@ -54,6 +54,11 @@ type Inputs struct {
 	// HANGAR_TESTBED_CHPROBE; a package that uses it checks that it is
 	// there.
 	CHProbe string
+	// VsockProbe tries to reach the guest agent from inside a guest
+	// (test/testbed/guest/vsockprobe), built by make e2e-host, or
+	// HANGAR_TESTBED_VSOCKPROBE; a package that uses it checks that it is
+	// there.
+	VsockProbe string
 }
 
 var in Inputs
@@ -233,14 +238,15 @@ func loadInputs() (Inputs, error) {
 		return filepath.Join(root, def)
 	}
 	i := Inputs{
-		Kernel:    pick("HANGAR_TESTBED_KERNEL", "bin/guest/vmlinux"),
-		Initramfs: pick("HANGAR_TESTBED_INITRAMFS", "bin/guest/initramfs.cpio"),
-		Rootfs:    pick("HANGAR_TESTBED_ROOTFS", ""),
-		Node:      pick("HANGAR_TESTBED_NODE", "bin/hangar-node"),
-		Apiserver: pick("HANGAR_TESTBED_APISERVER", "bin/hangar-apiserver"),
-		CLI:       pick("HANGAR_TESTBED_CLI", "bin/hangar"),
-		Edge:      pick("HANGAR_TESTBED_EDGE", "bin/hangar-edge"),
-		CHProbe:   pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
+		Kernel:     pick("HANGAR_TESTBED_KERNEL", "bin/guest/vmlinux"),
+		Initramfs:  pick("HANGAR_TESTBED_INITRAMFS", "bin/guest/initramfs.cpio"),
+		Rootfs:     pick("HANGAR_TESTBED_ROOTFS", ""),
+		Node:       pick("HANGAR_TESTBED_NODE", "bin/hangar-node"),
+		Apiserver:  pick("HANGAR_TESTBED_APISERVER", "bin/hangar-apiserver"),
+		CLI:        pick("HANGAR_TESTBED_CLI", "bin/hangar"),
+		Edge:       pick("HANGAR_TESTBED_EDGE", "bin/hangar-edge"),
+		CHProbe:    pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
+		VsockProbe: pick("HANGAR_TESTBED_VSOCKPROBE", "bin/vsock-probe"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")
