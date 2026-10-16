@@ -58,6 +58,9 @@ state_digest() {
 
 prepare() {
 	step "prepare a host that looks freshly installed"
+	# A VM image's package lists are as old as the image, and the versions
+	# they name leave the mirror: refresh them first.
+	apt-get update -q >/dev/null
 	DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends \
 		zfsutils-linux python3-yaml dnsmasq-base >/dev/null
 	mkdir -p "$work"
