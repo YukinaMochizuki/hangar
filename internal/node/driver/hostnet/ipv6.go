@@ -451,10 +451,11 @@ func dumped[T any](list func() ([]T, error)) ([]T, error) {
 	return list()
 }
 
-// rootChains6 is the root namespace's ip6 table, seven rules whose number
-// does not depend on how many networks there are;
-// docs/decisions/networking.md lists them.
-func rootChains6(uplink string, prefix netip.Prefix) []chainSpec {
+// rootChains6 is the root namespace's ip6 table, whose rules' number does
+// not depend on how many networks there are; docs/decisions/networking.md
+// lists them. host is the host's own address, where networks may reach the
+// front door; unset, they reach nothing of the host's.
+func rootChains6(uplink string, prefix netip.Prefix, host netip.Addr) []chainSpec {
 	drop := []expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}
 	accept := []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}}
 	fromNet := matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix)
@@ -489,16 +490,16 @@ func rootChains6(uplink string, prefix netip.Prefix) []chainSpec {
 		},
 		{
 			name: "input", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookInput, prio: *nftables.ChainPriorityFilter,
-			rules: []ruleSpec{{
+			rules: slices.Concat([]ruleSpec{{
 				says:  "neighbour solicitations from a network",
 				exprs: slices.Concat(fromNet, matchICMPv6Type(135), accept),
 			}, {
 				says:  "neighbour advertisements from a network",
 				exprs: slices.Concat(fromNet, matchICMPv6Type(136), accept),
-			}, {
+			}}, frontDoorRules(host, matchDaddr6), []ruleSpec{{
 				says:  "only replies from a network into the host",
 				exprs: slices.Concat(fromNet, dropUnlessReply()),
-			}},
+			}}),
 		},
 	}
 }

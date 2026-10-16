@@ -2,6 +2,7 @@ package front
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -17,9 +18,16 @@ import (
 // the host's only listener on :443 and :80. A client is an IPv4 address or
 // an IPv6 /64, which is what one subscriber usually holds; the /56 and the
 // /48 around it are capped too, so a network that hands out many /64s does
-// not take every connection. The defaults, and why, are in
-// docs/decisions/front-door.md.
+// not take every connection. The host's own prefixes are the exception:
+// every machine on the host has an address of its /64, so there each
+// address is a client of its own, and the /56 and /48 caps do not apply.
+// The defaults, and why, are in docs/decisions/front-door.md.
 type Limits struct {
+	// OwnPrefixes are the host's own: its machines' addresses, which reach
+	// the front door from inside the host. An address in one is a client
+	// by itself.
+	OwnPrefixes []netip.Prefix
+
 	// Conns caps the open connections, from everyone.
 	Conns int
 	// ConnsPerClient caps one client's open connections; one more is
@@ -110,18 +118,38 @@ func (l Limits) Validate() error {
 			return errors.New("every limit must be positive: " + n.name)
 		}
 	}
+	for _, p := range l.OwnPrefixes {
+		// Wider than a /48, every client of the internet could be counted
+		// by its address alone, so no /64 would be held to one limit.
+		if !p.IsValid() || !p.Addr().Is6() || p.Addr().Is4In6() || p.Bits() < 48 || p != p.Masked() {
+			return fmt.Errorf("an own prefix is an IPv6 network of /48 or narrower, as the host's own /64 is, not %s", p)
+		}
+	}
 	return nil
 }
 
-// client is who a limit is kept for: an IPv4 address, or an IPv6 /64.
-func client(addr netip.Addr) netip.Prefix {
+// client is who a limit is kept for: an IPv4 address, or an IPv6 /64, or
+// in one of the host's own prefixes, the address alone.
+func (l Limits) client(addr netip.Addr) netip.Prefix {
 	addr = addr.Unmap()
 	bits := 32
 	if addr.Is6() {
 		bits = 64
+		if l.own(addr) {
+			bits = 128
+		}
 	}
 	p, _ := addr.Prefix(bits)
 	return p
+}
+
+func (l Limits) own(addr netip.Addr) bool {
+	for _, p := range l.OwnPrefixes {
+		if p.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 // addrOf is the address in a connection's or a request's remote address.
@@ -134,10 +162,11 @@ func addrOf(remote string) (netip.Addr, bool) {
 }
 
 // networks are the IPv6 networks around addr whose connections are capped
-// together, with their caps; none for IPv4.
+// together, with their caps; none for IPv4, nor for the host's own
+// prefixes, whose neighbours are the host's machines and the host.
 func (l Limits) networks(addr netip.Addr) []network {
 	addr = addr.Unmap()
-	if !addr.Is6() {
+	if !addr.Is6() || l.own(addr) {
 		return nil
 	}
 	p56, _ := addr.Prefix(56)
@@ -217,7 +246,7 @@ func (k *counts) openConn(addr netip.Addr) (release func(), why string) {
 			return nil, n.why
 		}
 	}
-	cc := k.get(client(addr))
+	cc := k.get(k.l.client(addr))
 	if cc.conns >= k.l.ConnsPerClient {
 		return nil, "too many connections from the client"
 	}
@@ -282,7 +311,7 @@ func (k *counts) limitRequests(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		release, retry, ok := k.startRequest(client(addr))
+		release, retry, ok := k.startRequest(k.l.client(addr))
 		if !ok {
 			tooMany(w, retry)
 			return

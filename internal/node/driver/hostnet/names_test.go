@@ -1,12 +1,15 @@
 package hostnet
 
 import (
+	"encoding/binary"
 	"net/netip"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/expr"
+	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
@@ -194,6 +197,100 @@ func TestChains(t *testing.T) {
 	r.exprs = r.exprs[:len(r.exprs)-1]
 	if after, _ := r.comment(); after == before {
 		t.Error("a rule's comment does not change with its expressions")
+	}
+}
+
+// inputOf is a table's input chain.
+func inputOf(t *testing.T, chains []chainSpec) chainSpec {
+	t.Helper()
+	for _, c := range chains {
+		if c.name == "input" {
+			return c
+		}
+	}
+	t.Fatal("no input chain")
+	return chainSpec{}
+}
+
+// dportsOf is the destination port range r matches, if any.
+func dportsOf(r ruleSpec) (from, to uint16, ok bool) {
+	for _, e := range r.exprs {
+		if x, isRange := e.(*expr.Range); isRange {
+			return binary.BigEndian.Uint16(x.FromData), binary.BigEndian.Uint16(x.ToData), true
+		}
+	}
+	return 0, 0, false
+}
+
+// matchesMeta says whether r compares meta key's value with data, as
+// matchL4 and matchIfnamePrefix do: the meta load, then the compare.
+func matchesMeta(r ruleSpec, key expr.MetaKey, data []byte) bool {
+	for i, e := range r.exprs[:len(r.exprs)-1] {
+		m, ok := e.(*expr.Meta)
+		if !ok || m.Key != key {
+			continue
+		}
+		if c, ok := r.exprs[i+1].(*expr.Cmp); ok && c.Op == expr.CmpOpEq && slices.Equal(c.Data, data) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestTheFrontDoorIsTheHostsOnlyWayIn: a network may open TCP to the
+// host's public addresses on :80 and :443 alone, the front door's ports
+// anyone reaches there, and nothing else of the host; the rules come
+// before the drop, and exist only for an address the host was given.
+func TestTheFrontDoorIsTheHostsOnlyWayIn(t *testing.T) {
+	v4 := netip.MustParseAddr("192.0.2.1")
+	v6 := netip.MustParseAddr("2001:db8:0:1::1")
+	prefix := netip.MustParsePrefix("2001:db8:0:1::/64")
+	for _, c := range []struct {
+		name   string
+		chains []chainSpec
+		addr   netip.Addr
+		before int
+	}{
+		{"IPv4", rootChains("eth0", v4), v4, 0},
+		{"IPv6", rootChains6("eth0", prefix, v6), v6, 2},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			rules := inputOf(t, c.chains).rules
+			if len(rules) != c.before+3 {
+				t.Fatalf("%d input rules, want %d", len(rules), c.before+3)
+			}
+			for i, port := range []uint16{80, 443} {
+				r := rules[c.before+i]
+				from, to, ok := dportsOf(r)
+				if verdictOf(r) != expr.VerdictAccept || !matchesAddr(r, c.addr) || !ok || from != port || to != port {
+					t.Errorf("rule %d (%s): verdict %v, address %t, ports %d-%d %t; want accept TCP %d at %s", c.before+i, r.says, verdictOf(r), matchesAddr(r, c.addr), from, to, ok, port, c.addr)
+				}
+				// TCP alone, so UDP to 443 (QUIC) stays out, and only from a
+				// network's link, so it opens nothing on the host's others.
+				if !matchesMeta(r, expr.MetaKeyL4PROTO, []byte{unix.IPPROTO_TCP}) {
+					t.Errorf("rule %d (%s) does not match TCP alone", c.before+i, r.says)
+				}
+				if !matchesMeta(r, expr.MetaKeyIIFNAME, []byte(vethPrefix)) {
+					t.Errorf("rule %d (%s) does not match a network's link, %s*", c.before+i, r.says, vethPrefix)
+				}
+			}
+			if last := rules[len(rules)-1]; verdictOf(last) != expr.VerdictDrop || !strings.Contains(last.says, "only replies") {
+				t.Errorf("the last input rule is %q, %v; want the drop of all but replies", last.says, verdictOf(last))
+			}
+		})
+	}
+	// Without the host's addresses, a network reaches nothing of it.
+	if n := len(inputOf(t, rootChains("eth0", netip.Addr{})).rules); n != 1 {
+		t.Errorf("IPv4 without a public address: %d input rules, want the drop alone", n)
+	}
+	if n := len(inputOf(t, rootChains6("eth0", prefix, netip.Addr{})).rules); n != 3 {
+		t.Errorf("IPv6 without the host's address: %d input rules, want neighbour discovery and the drop", n)
+	}
+	// Another address is another rule, so a changed flag rewrites the table.
+	a := comments(t, rootChains6("eth0", prefix, v6))
+	b := comments(t, rootChains6("eth0", prefix, netip.MustParseAddr("2001:db8:0:1::2")))
+	if slices.Equal(a, b) {
+		t.Error("front door rules for two addresses share every comment")
 	}
 }
 

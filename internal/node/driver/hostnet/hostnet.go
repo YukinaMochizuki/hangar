@@ -42,6 +42,11 @@ type Config struct {
 	// IPv6Prefix is the host's public /64, on the uplink's link, which
 	// interfaces' IPv6 addresses are of. Unset, the networks have no IPv6.
 	IPv6Prefix netip.Prefix
+	// PublicIPv6 is the host's own public IPv6 address. The networks reach
+	// the front door's ports there, as they do at PublicIPv4, so a machine
+	// can call the platform by its public names; unset, they reach nothing
+	// of the host's over IPv6.
+	PublicIPv6 netip.Addr
 }
 
 // Driver is a driver.Network on this host. It must run in the root network
@@ -68,6 +73,9 @@ func New(cfg Config) (*Driver, error) {
 	}
 	if cfg.PublicIPv4.IsValid() && !cfg.PublicIPv4.Is4() {
 		return nil, fmt.Errorf("public address %s is not IPv4", cfg.PublicIPv4)
+	}
+	if cfg.PublicIPv6.IsValid() && (!cfg.PublicIPv6.Is6() || cfg.PublicIPv6.Is4In6() || cfg.PublicIPv6.Zone() != "") {
+		return nil, fmt.Errorf("public address %s is not IPv6", cfg.PublicIPv6)
 	}
 	if cfg.IPv6Prefix.IsValid() {
 		if _, err := computeapi.ParseIPv6Prefix(cfg.IPv6Prefix.String()); err != nil {
@@ -221,7 +229,7 @@ func (d *Driver) ensureRoot() error {
 		return err
 	}
 	if d.cfg.IPv6Prefix.IsValid() {
-		err = ensureTable(conn, nftables.TableFamilyIPv6, rootChains6(d.cfg.Uplink, d.cfg.IPv6Prefix))
+		err = ensureTable(conn, nftables.TableFamilyIPv6, rootChains6(d.cfg.Uplink, d.cfg.IPv6Prefix, d.cfg.PublicIPv6))
 	} else {
 		err = deleteTable(conn, nftables.TableFamilyIPv6)
 	}

@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -84,6 +85,14 @@ func main() {
 	flag.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
 	flag.DurationVar(&f.endpointResponseTimeout, "endpoint-response-header-timeout", 100*time.Second, "how long an endpoint has to start its answer")
 	limitFlags(&f.limits)
+	flag.Func("own-prefix", "the host's own IPv6 prefix, such as its /64, whose addresses, its machines', are each a client of the limits by itself; repeatable", func(s string) error {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return err
+		}
+		f.limits.OwnPrefixes = append(f.limits.OwnPrefixes, p)
+		return nil
+	})
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))

@@ -63,8 +63,10 @@ edge_sockets() {
 edge_front_flags() {
 	services_front_door_on || return 0
 	local v
-	printf -- ' --cp-domain %s --public-socket %s --cert-storage %s --console-dir %s --acme-email %s' \
-		"$(local_env HANGAR_CP_DOMAIN)" "$SERVICES_PUBLIC_SOCKET" "$EDGE_STATE" "$EDGE_CONSOLE_DIR" "$(local_env HANGAR_ACME_EMAIL)"
+	# The host's /64 holds its machines' addresses, which reach the front
+	# door from inside the host: each is a client of the limits by itself.
+	printf -- ' --cp-domain %s --public-socket %s --cert-storage %s --console-dir %s --acme-email %s --own-prefix %s' \
+		"$(local_env HANGAR_CP_DOMAIN)" "$SERVICES_PUBLIC_SOCKET" "$EDGE_STATE" "$EDGE_CONSOLE_DIR" "$(local_env HANGAR_ACME_EMAIL)" "$(ipv6_prefix "$HANGAR_IPV6_ADDR")"
 	v=$(local_env HANGAR_ACME_CA)
 	[ -z "$v" ] || printf -- ' --acme-ca %s' "$v"
 	v=$(local_env HANGAR_ACME_CA_ROOT)
