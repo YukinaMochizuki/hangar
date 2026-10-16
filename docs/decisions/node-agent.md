@@ -276,9 +276,12 @@ from 1114 to 175 MiB within 30 s, where without the balloon it stayed at
 1115 MiB. What the guest keeps in its page cache is in use and stays: it
 returns only once the guest drops it. The platform kernel has
 `CONFIG_VIRTIO_BALLOON` and `CONFIG_PAGE_REPORTING`; a firmware VM's
-operating system needs its own. Placement still reserves a machine's whole
-memory, so this frees the host's memory for its page cache and the ARC,
-not for more machines.
+operating system needs its own, as Ubuntu 24.04's has: a 2 GiB Ubuntu VM
+that filled and freed its 983 MiB `/dev/shm` fell from 1782 to 859 MiB
+within 60 s, and without the balloon stayed at 1837 MiB (measured once,
+by hand, with a unit planted in the cloud image). Placement still
+reserves a machine's whole memory, so this frees the host's memory for
+its page cache and the ARC, not for more machines.
 
 Not `ProtectSystem=strict`, which binds the host's root again over the
 empty one; not `PrivateTmp` or `ProtectHome=tmpfs`, which add directories
