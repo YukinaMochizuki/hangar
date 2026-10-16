@@ -42,8 +42,7 @@ credentials. The node is a separate root process on the same host.
   - `hgs_`: a browser session.
   - `hga_`: a CLI access token.
   - `hgf_`: a CLI refresh token.
-  - `hgr_`: reserved for agents' service tokens, which come later from the
-    same machinery.
+  - `hgr_`: an agent's service token.
 - **Revoking a login marks its family revoked**, in the same transaction
   that deletes its credentials, until the last of them would have expired.
   Issuing checks the mark in the transaction that inserts, so a refresh
@@ -117,9 +116,50 @@ credentials. The node is a separate root process on the same host.
   neither the other nor sign-in. A browser session may try ten device
   codes a minute. Per-address rate limits are the front door's
   (hangar-edge).
-- **Agents** will use Hangar service tokens (`hgr_`), issued by the same
-  machinery; until then they have no credential of their own on the
-  public listener.
+- **Agents use service tokens** (`hgr_`), issued by the same machinery.
+  - A `ServiceToken` (group `iam`) is a project's, and is collected with
+    it. It authenticates as `serviceToken:<project>/<name>`, which is also
+    the subject a RoleBinding names it by (`tenancy-and-iam.md`). The token
+    holds only what such bindings grant, and needs no User.
+  - `ServiceTokenIssuerService` issues the secret, returned once:
+    `CreateServiceToken` makes the token, with a project RoleBinding for an
+    optional role, authorized as the caller so no one grants a token more
+    than they could by hand. `RotateServiceToken` issues a new secret.
+    Both need the token's apply permission, which only owners and
+    `platform.root` hold: `project.editor` reads tokens but writes none.
+    A token made by plain apply has no secret until it is rotated.
+  - A secret lasts a year unless asked otherwise, between an hour and
+    three years. Its status shows its first characters, when it was issued
+    and expires, and when it was last used, to within an hour.
+  - A token holds one credential at a time, in a family of its own:
+    issuing replaces whatever it held in one store transaction
+    (`ReplaceCredentials`), so the old secret stops working the moment the
+    new one is stored, and of two issued at once one survives.
+  - Deleting a token revokes its credential once the delete is stored. An
+    issue racing the delete reads the token after storing its credential,
+    and revokes it again if the token is being deleted, so no secret
+    outlives its token. Deleting the project deletes its tokens the same
+    way. The token is gone only once a last revoke, before its finalizer
+    is removed, has succeeded.
+  - A credential's family starts with its token's uid, and every use asks
+    whether a token of that uid exists and is not being deleted. So a
+    secret whose revoke failed still authenticates nothing, and never
+    passes to a later token of the same name.
+  - A service token is `Authorization: Bearer hgr_…` on the public
+    listener, in oidc and dev auth alike. The lookup is by the SHA-256
+    index, then a constant-time compare. Unknown, expired, rotated and
+    deleted tokens are refused alike. The node, edge and admin sockets take
+    none.
+  - The CLI sends `HANGAR_TOKEN` when it is set, in place of the context's
+    credentials, or reads the file a context with `auth: token` names
+    (`tokenFile`). It follows symlinks, as orchestrators mount secrets
+    through them (Kubernetes' `..data/` layout), and opens the file
+    without blocking, so a FIFO cannot hang it. Then it checks the file it
+    opened: it must be a regular file whose mode gives the group and others
+    nothing, or it is refused. The secret is never in `config.yaml`.
+    `hangar token create` and `rotate` print it once, alone on stdout, or
+    write it to a new 0600 file with `--secret-file`; nothing else prints
+    it.
 - Every sign-in page the apiserver or the CLI shows is a plain placeholder
   in one place, `internal/auth/pages`, for the console's design to replace.
 - **The node** connects over a unix socket and is identified by `SO_PEERCRED`;

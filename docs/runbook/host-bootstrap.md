@@ -226,8 +226,15 @@ Upgrading past the change that added `User` (`hangar signup`): from the
 first start of that version, every existing member, the owner included, is
 refused on every call until they run `hangar signup --username NAME` once;
 their bindings stay and count again as soon as they have. Plan the deploy
-with them. Service tokens, such as `hangar-smoke`, and root on the host
+with them. Service tokens, such as the smoke token, and root on the host
 through the admin socket are unaffected.
+
+Upgrading past the change that added Hangar's own service tokens: a
+RoleBinding's `service_token` subject now names a `ServiceToken` as
+`<project>/<name>`, not a Cloudflare Access client ID, so a binding made
+for an Access token grants nothing any more. Make the smoke token ("The
+smoke token" below) and delete the old binding. Editors
+(`project.editor`) can no longer write service tokens; owners can.
 
 VMs keep running across it: restarting `hangar-node` leaves their units
 alone. A VM's unit runs `/usr/local/bin/hangar-node vmm` as its launcher, so
@@ -531,6 +538,49 @@ cloudflared sets on every request it proxies, and `Cf-Connecting-Ip`,
 A host whose `local.env` still says `HANGAR_AUTH_MODE=cloudflare` is
 refused before any step: that mode is gone, and the switch above is the
 way on.
+
+## The smoke token
+
+Smoke tests act as the service token `smoke` in the `smoke` project of the
+`smoke` tenant, bound `project.editor` there and nothing else
+(`docs/decisions/authentication.md`). Its secret lives on the host only,
+in `/etc/hangar/smoke-token`, root's, mode 0600. The Cloudflare Access
+token `hangar-smoke` (`docs/runbook/cloudflare.md`) no longer
+authenticates anything.
+
+Make it once, as root through the admin socket, which needs no login.
+The secret goes straight into the file and is never printed:
+
+```sh
+sudo hangar --context local get project smoke    # the tenant and project exist on prod already
+sudo hangar --context local token create smoke --project smoke --role project.editor \
+  --description "smoke tests" --secret-file /etc/hangar/smoke-token
+```
+
+Here `local` is a context with endpoint
+`unix:///run/hangar/admin.sock`. On a host without them, apply the `smoke`
+tenant and project first. On a host that had the Cloudflare-era smoke
+binding (a RoleBinding whose subject is the `hangar-smoke` Access token's
+client ID), delete it: it names no token and grants nothing.
+
+`sudo deploy/host/verify.sh` then reports `PASS smoke token
+/etc/hangar/smoke-token, root's, mode 600, is serviceToken:smoke/smoke and
+lists the smoke project's containers`, and `SKIP smoke token` while the
+file is missing. The check signs in with the token and lists containers in
+`smoke`, so a token that authenticates but lost its binding fails it.
+A smoke run reads it as `HANGAR_TOKEN=$(sudo cat /etc/hangar/smoke-token)`,
+or through a context with `--auth token --token-file
+/etc/hangar/smoke-token`.
+
+The secret lasts a year. Before it ends, or whenever it may have leaked:
+
+```sh
+sudo hangar --context local token rotate smoke --project smoke --secret-file /etc/hangar/smoke-token.new &&
+  sudo mv /etc/hangar/smoke-token.new /etc/hangar/smoke-token
+```
+
+The old secret stops working at once. `hangar token get --project smoke`
+shows when the current one expires and when it was last used.
 
 ## When the network step fails
 

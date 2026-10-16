@@ -59,15 +59,30 @@ cloud, and some people fund the hardware and should see more of it.
       project owner may.
     - `project.editor` changes what runs in the project, with logs, exec
       and ssh, which agents need. It does not change who may: it writes no
-      RoleBinding. Nor does it write the Project itself, since deleting it
-      takes everything in it and its name for good.
+      RoleBinding, and no ServiceToken, since creating or rotating one
+      hands out its secret and with it whatever the token's bindings grant,
+      an owner's included. It reads both. Nor does it write the Project
+      itself, since deleting it takes everything in it and its name for
+      good.
     - `project.viewer` reads the project.
 
     A role names the one scope level it can be bound at, so whoever may
     write bindings in a project can grant only project roles there.
   - A `RoleBinding` (group `iam`) grants a role to a principal at a scope:
     the platform, a tenant, or a project. The authorizer caches bindings and
-    keeps them current through a watch.
+    keeps them current through a watch. Its subject is a person's email or
+    a service token as `<project>/<name>` (`authentication.md`). A binding
+    naming a token can be made only while the token exists, and only by
+    someone who may read it; any other token is refused as one that does
+    not exist, so a binding reveals no other tenant's tokens. The binding
+    is owned by the token as well as by its scope, and cannot be changed
+    to name anyone else: deleting the token deletes the binding, and the
+    token's own deletion waits for it, so a later token of the same name
+    starts with no bindings. Making such a binding, from its check to its
+    write, and the token's cascade, from looking for its bindings to
+    letting it go, hold one lock per token, so no binding is written
+    unseen while its token goes. Its owner reference names the token's
+    project, since the binding is global.
 - **Platform membership gates everything.** Signing in (through Google,
   `authentication.md`) only proves who someone is, and only someone invited
   may sign in at all. A platform member holds a platform role

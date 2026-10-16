@@ -32,6 +32,10 @@ SERVICES_CF_TOKEN=$SERVICES_STATE/cloudflare-api-token
 # auth: the operator installs it (docs/runbook/host-bootstrap.md); this step
 # never makes one.
 SERVICES_OIDC_SECRET=$SERVICES_STATE/oidc-client-secret
+# The smoke tests' service token, smoke/smoke: the operator makes it with
+# hangar token create (docs/runbook/host-bootstrap.md); this step never
+# makes one, and only checks it when it is there.
+SERVICES_SMOKE_TOKEN=/etc/hangar/smoke-token
 SERVICES_TMPFILES=/etc/tmpfiles.d/hangar.conf
 # The platform's SSH CA, its private key: the operator installs it from the
 # vault (docs/runbook/host-bootstrap.md); this step never makes one.
@@ -431,6 +435,28 @@ services_state_ok() {
 	[ "$(stat -c '%U %G %a' "$SERVICES_STATE")" = "$SERVICES_USER $SERVICES_USER 700" ]
 }
 
+# services_smoke_token_ok checks the smoke token is root's, 0600,
+# authenticates as smoke/smoke on the public listener, and holds what smoke
+# needs there: listing the smoke project's containers. hangar reads it from
+# the file; it never passes through an argument or the environment.
+services_smoke_token_ok() {
+	local cfg out ok=1
+	[ -f "$SERVICES_SMOKE_TOKEN" ] && [ "$(stat -c '%U %G %a' "$SERVICES_SMOKE_TOKEN")" = "root root 600" ] || return 1
+	cfg=$(mktemp)
+	cat >"$cfg" <<EOF
+currentContext: smoke
+contexts:
+  smoke: {endpoint: "http://$SERVICES_LISTEN", auth: token, tokenFile: "$SERVICES_SMOKE_TOKEN", project: smoke}
+EOF
+	out=$(HANGAR_CONFIG=$cfg HANGAR_TOKEN='' /usr/local/bin/hangar whoami 2>/dev/null) || true
+	if [ "$out" = "serviceToken:smoke/smoke" ] &&
+		HANGAR_CONFIG=$cfg HANGAR_TOKEN='' /usr/local/bin/hangar get containers -o name >/dev/null 2>&1; then
+		ok=0
+	fi
+	rm -f "$cfg"
+	return "$ok"
+}
+
 services_ssh_ca_ok() {
 	[ -f "$SERVICES_SSH_CA" ] && [ "$(stat -c '%U %G %a' "$SERVICES_SSH_CA")" = "$SERVICES_USER $SERVICES_USER 600" ]
 }
@@ -768,4 +794,9 @@ services_verify() {
 	check "apiserver runs $(auth_mode) auth as $LOCAL_ENV asks: $(services_auth_flags)" services_auth_running_ok
 	check "apiserver listens on loopback only" services_loopback_only
 	check "node $HANGAR_NODE_NAME Ready (hangar get node)" services_node_ready
+	if [ -e "$SERVICES_SMOKE_TOKEN" ]; then
+		check "smoke token $SERVICES_SMOKE_TOKEN, root's, mode 600, is serviceToken:smoke/smoke and lists the smoke project's containers" services_smoke_token_ok
+	else
+		skip "smoke token" "no $SERVICES_SMOKE_TOKEN: no smoke test runs"
+	fi
 }
