@@ -265,6 +265,21 @@ tables, which grow with the guest; a guest that barely ran peaked at 113,
 MiB past a 16 GiB guest) leave room for that many times over, and for the
 unit's page cache, which is reclaimed before the limit kills anything.
 
+Every VM has a balloon that is never inflated, `--balloon
+size=0,free_page_reporting=on`: the guest reports the pages it frees and
+Cloud Hypervisor gives them back to the host, so a running VM holds what
+its guest uses, not the most it ever touched. Without it, guest memory is
+private anonymous memory faulted in on first touch and held until Cloud
+Hypervisor exits. Measured (2026-10, `TestFreedMemoryReturns` in
+`test/testbed/vms`), a 2 GiB container that filled and freed 1 GiB fell
+from 1114 to 175 MiB within 30 s, where without the balloon it stayed at
+1115 MiB. What the guest keeps in its page cache is in use and stays: it
+returns only once the guest drops it. The platform kernel has
+`CONFIG_VIRTIO_BALLOON` and `CONFIG_PAGE_REPORTING`; a firmware VM's
+operating system needs its own. Placement still reserves a machine's whole
+memory, so this frees the host's memory for its page cache and the ARC,
+not for more machines.
+
 Not `ProtectSystem=strict`, which binds the host's root again over the
 empty one; not `PrivateTmp` or `ProtectHome=tmpfs`, which add directories
 Cloud Hypervisor could write; not `ProtectHome=yes`, which drops binds
