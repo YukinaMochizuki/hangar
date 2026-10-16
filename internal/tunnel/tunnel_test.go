@@ -177,15 +177,13 @@ func noLeaks(t *testing.T) {
 	t.Helper()
 	before := runtime.NumGoroutine()
 	t.Cleanup(func() {
-		deadline := time.Now().Add(5 * time.Second)
-		for runtime.NumGoroutine() > before {
-			if time.Now().After(deadline) {
+		testutil.EventuallyWithin(t, 5*time.Second, "no goroutine outliving the test", func() (bool, string) {
+			if n := runtime.NumGoroutine(); n > before {
 				buf := make([]byte, 1<<20)
-				t.Errorf("%d goroutines, %d before:\n%s", runtime.NumGoroutine(), before, buf[:runtime.Stack(buf, true)])
-				return
+				return false, fmt.Sprintf("%d goroutines, %d before:\n%s", n, before, buf[:runtime.Stack(buf, true)])
 			}
-			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // polls in Cleanup, where t.Context is done and Eventually cannot wait
-		}
+			return true, ""
+		})
 	})
 }
 

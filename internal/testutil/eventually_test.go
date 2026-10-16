@@ -48,6 +48,18 @@ func TestEventuallyWaitsForTheCondition(t *testing.T) {
 	}
 }
 
+func TestEventuallyWaitsInACleanup(t *testing.T) {
+	var n atomic.Int32
+	t.Run("cleanup", func(t *testing.T) {
+		t.Cleanup(func() {
+			testutil.Eventually(t, "the third call", func() bool { return n.Add(1) >= 3 })
+		})
+	})
+	if n.Load() != 3 {
+		t.Errorf("polled %d times in a cleanup; want 3", n.Load())
+	}
+}
+
 func TestEventuallyReportsWhatItLastSaw(t *testing.T) {
 	var n atomic.Int32
 	got := run(t, func(tb testing.TB) {

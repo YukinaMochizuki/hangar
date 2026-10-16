@@ -26,6 +26,8 @@ func Eventually[C Cond](t testing.TB, what string, cond C) {
 
 // EventuallyWithin is Eventually with a bound of its own, for a condition
 // that waits on something slower than a process, such as a real VM booting.
+// Both work in a t.Cleanup too, where t.Context is already done, so neither
+// stops early for it: the bound alone ends the wait.
 func EventuallyWithin[C Cond](t testing.TB, within time.Duration, what string, cond C) {
 	t.Helper()
 	check := asCheck(cond)
@@ -41,11 +43,7 @@ func EventuallyWithin[C Cond](t testing.TB, within time.Duration, what string, c
 			}
 			t.Fatalf("not within %v: %s; last seen: %s", within, what, last)
 		}
-		select {
-		case <-t.Context().Done():
-			t.Fatalf("test ended while waiting: %s", what)
-		case <-time.After(pause):
-		}
+		<-time.After(pause)
 	}
 }
 
@@ -63,11 +61,7 @@ func Unchanged(t testing.TB, what string, window time.Duration, version func() (
 	}
 	deadline := time.Now().Add(window)
 	for time.Now().Before(deadline) {
-		select {
-		case <-t.Context().Done():
-			t.Fatalf("test ended while checking: %s", what)
-		case <-time.After(5 * time.Millisecond):
-		}
+		<-time.After(5 * time.Millisecond)
 		now, err := version()
 		if err != nil {
 			t.Fatalf("%s: %v", what, err)
