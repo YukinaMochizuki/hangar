@@ -64,7 +64,7 @@ stand in front of the internet with nothing else in front of it.
     that is neither a file nor has an extension served `index.html`. The
     files are opened inside the directory alone (`os.Root`).
   - `<label>.<user-domain>` goes to the public endpoints
-    (`public-endpoints.md`), whose Access check stays until it is replaced.
+    (`public-endpoints.md`), whose callers the edge signs in itself.
   - Responses of `api.` and `console.` on :443 carry
     `Strict-Transport-Security: max-age=31536000`, without
     `includeSubDomains` or preload; the endpoints' carry none, as each

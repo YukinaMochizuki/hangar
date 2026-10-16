@@ -141,14 +141,11 @@ with `--release DIR`. `--only <step>` runs a single step
     and believes the client address it sends (`--public-socket`); turning
     the front door off stops and removes it. `/run/hangar` is
     root's, 0755, from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can
-    remove or replace no socket. It reads the Cloudflare API token it opens
-    PUBLIC endpoints with from `/var/lib/hangar/state/cloudflare-api-token`
-    (`hangar`'s, 0600), which the operator installs
-    (`docs/runbook/cloudflare.md`); without it the apiserver runs and PUBLIC
-    endpoints stay closed. With `HANGAR_EDGE_DOMAIN`, `HANGAR_CF_ACCOUNT_ID`
-    and `HANGAR_CF_BYPASS_POLICY_ID` in `local.env` (from `edge.env`), it
-    gets `--endpoint-domain`, `--cloudflare-account-id` and
-    `--cloudflare-bypass-policy-id`;
+    remove or replace no socket. With `HANGAR_EDGE_DOMAIN` in `local.env`
+    (from `edge.env`), it gets `--endpoint-domain`. It no longer calls
+    Cloudflare: the step warns while a token it once did with is left at
+    `/var/lib/hangar/state/cloudflare-api-token` ("Retiring the endpoints'
+    Access objects" in `docs/runbook/cloudflare.md`);
   - the agent as root: `--drivers=host --name HANGAR_NODE_NAME --uplink
     HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --public-ipv6-prefix` the
     /64 of `HANGAR_IPV6_ADDR`, from which every machine interface gets its
@@ -219,12 +216,11 @@ with `--release DIR`. `--only <step>` runs a single step
   side (`docs/runbook/cloudflare.md`), not here.
 - `edge` runs `hangar-edge.service` as `hangar-edge`, sandboxed as the
   apiserver is, only when `local.env` has `HANGAR_EDGE_DOMAIN`, which needs
-  oidc auth and `HANGAR_CF_TEAM_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE`,
-  `HANGAR_CF_ACCOUNT_ID` and `HANGAR_CF_BYPASS_POLICY_ID` beside it, or the
-  step refuses: on
-  `127.0.0.1:8090`, where cloudflared sends `*.<domain>`, with the
-  apiserver's edge socket and the agent's dial socket
-  (`docs/decisions/public-endpoints.md`). With `HANGAR_CP_DOMAIN` too it
+  oidc auth, or the step refuses: on `127.0.0.1:8090`, where cloudflared
+  sends `*.<domain>`, with the apiserver's edge socket and the agent's dial
+  socket, sending browsers not yet signed in to a private endpoint to the
+  console, `HANGAR_PUBLIC_URL` (`--console-url`;
+  `docs/decisions/public-endpoints.md`). With `HANGAR_CP_DOMAIN` too it
   is also the front door on :443 and :80 ("The front door" below). Without
   `HANGAR_EDGE_DOMAIN` the step stops and disables it and its sockets, and
   `verify.sh` checks it is off. A changed unit or socket unit, or a
@@ -243,7 +239,9 @@ With the front door on, `hangar-edge` takes :443 and :80 on every address,
 IPv4 and IPv6, ends TLS with certificates it gets over ACME DNS-01, and
 routes `api.<cp-domain>`, `console.<cp-domain>` and `*.<user-domain>`
 (`docs/decisions/front-door.md`). It runs beside the tunnel until the
-cutover from Cloudflare, which is a DNS change.
+cutover from Cloudflare, which is a DNS change. The cutover also deletes,
+by hand, the Access objects public endpoints no longer use ("Retiring the
+endpoints' Access objects" in `docs/runbook/cloudflare.md`).
 
 1. Install the DNS token as `/etc/hangar/cloudflare-dns-token`, root's,
    0600 (`docs/runbook/cloudflare.md` says how to make it). The `edge` step

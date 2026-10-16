@@ -37,7 +37,16 @@ those rules.
       shows it; tests check the output for it.
 - [ ] Anything a browser's session cookie authenticates holds to the
       same-origin rule (`session.SameOrigin`), and no GET a cookie
-      authenticates changes anything, a WebSocket handshake aside.
+      authenticates changes anything, with two named exceptions:
+      - a WebSocket handshake, which carries `Origin` and is held to the
+        rule;
+      - `/auth/endpoint-login`, a cross-site GET by design, which writes a
+        one-time code. The code goes only to the endpoint's own callback, and
+        counts only from the browser holding the edge's state cookie for that
+        handoff, so the site that sent the browser gets nothing from it
+        (`docs/decisions/public-endpoints.md`).
+
+      Any other is a finding.
 
 ## Changes touching a host driver (`internal/node/...`)
 
