@@ -315,7 +315,7 @@ func TestTheLauncherExitsAsTheContainer(t *testing.T) {
 			if exists(filepath.Join(dir, legacyVsockFile)) {
 				t.Error("the legacy socket was left")
 			}
-			for _, want := range []string{"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw", "fd=3,mac=02:00:00:00:00:01", "tty"} {
+			for _, want := range []string{"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw", "fd=3,mac=02:00:00:00:00:01", "tty", "size=0,free_page_reporting=on"} {
 				if !slices.Contains(ch.Args, want) {
 					t.Errorf("Cloud Hypervisor's arguments %q lack %q", ch.Args, want)
 				}

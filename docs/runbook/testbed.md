@@ -123,6 +123,9 @@ with `useradd` would. `HANGAR_TESTBED_MEASURE_MEMORY=1` also runs
 `TestMemoryOverhead`, which fills guests of 1, 4 and 16 GiB and logs how
 much memory their units take; it needs a testbed of 24 GiB
 (`docs/decisions/node-agent.md` records what it measured).
+`TestFreedMemoryReturns`, which runs every time, has a 2 GiB guest fill
+and free 1 GiB and fails unless its unit gives most of it back to the host
+within 30 s, through free page reporting; it takes about two minutes.
 `hangar-testbed-reset` does not know them yet: after a run killed outright,
 the next run's sweep, or `systemctl stop 'hangar-vm-*'`, removes them.
 
