@@ -16,6 +16,7 @@ import (
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // askMetadata asks the metadata service of the network for a NoCloud
@@ -32,7 +33,7 @@ func (w *world) askMetadata(network, addr, doc string) (int, string) {
 // served waits for the machine at addr to be served doc as want.
 func (w *world) served(addr, doc, want string) {
 	w.t.Helper()
-	w.eventually(fmt.Sprintf("%s served %s %q", addr, doc, want), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("%s served %s %q", addr, doc, want), func() (bool, string) {
 		code, body := w.askMetadata("default", addr, doc)
 		return code == http.StatusOK && body == want, fmt.Sprintf("%d %q", code, body)
 	})
@@ -89,7 +90,7 @@ func TestAVirtualMachinesCloudInit(t *testing.T) {
 	before := w.host.Snapshot().VMs[uid]
 	w.applyVMWith("web", "#cloud-config\n{}\n", key)
 	w.served(webAddr, "user-data", "#cloud-config\n{}\n")
-	time.Sleep(200 * time.Millisecond)
+	testutil.Unchanged(w.t, "web's VM, given new user-data", 200*time.Millisecond, w.vmVersion(uid))
 	if now := w.host.Snapshot().VMs[uid]; now.Boots != before.Boots || !now.Started.Equal(before.Started) || now.State != driver.VMRunning {
 		t.Errorf("new user-data restarted the VM: %+v, was %+v", now, before)
 	}

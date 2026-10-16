@@ -3,10 +3,10 @@ package apiserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/jonboulle/clockwork"
@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // running starts a server without controllers and returns it with contexts
@@ -189,23 +190,15 @@ func TestFinalizers(t *testing.T) {
 	if err := s.RemoveFinalizer(system, registry.Container, key, "hangarlab.cloud/machine"); err != nil {
 		t.Fatal(err)
 	}
-	eventuallyGone(t, b, user, key)
+	testutil.Eventually(t, "api deleted", deleted(b, user, key))
 }
 
-// eventuallyGone waits for an object to be deleted, as happens in the
+// deleted says whether the object at key is gone from b, as happens in the
 // background once its finalizers are done.
-func eventuallyGone(t *testing.T, b *backend, ctx context.Context, key resource.Key) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+func deleted(b *backend, ctx context.Context, key resource.Key) func() (bool, string) {
+	return func() (bool, string) {
 		_, err := b.Get(ctx, key)
-		if connect.CodeOf(err) == connect.CodeNotFound {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s %s still there: %v", b.r.Kind, key.Name, err)
-		}
-		time.Sleep(5 * time.Millisecond)
+		return connect.CodeOf(err) == connect.CodeNotFound, fmt.Sprint(err)
 	}
 }
 
@@ -299,8 +292,8 @@ func TestSweepCollectsOrphans(t *testing.T) {
 	}
 
 	s.sweep(system)
-	eventuallyGone(t, b, user, resource.Key{Project: "web", Name: "orphan"})
-	eventuallyGone(t, b, user, resource.Key{Project: "web", Name: "impostor"})
+	testutil.Eventually(t, "orphan collected", deleted(b, user, resource.Key{Project: "web", Name: "orphan"}))
+	testutil.Eventually(t, "impostor collected", deleted(b, user, resource.Key{Project: "web", Name: "impostor"}))
 	if _, err := b.Get(user, resource.Key{Project: "web", Name: "owned"}); err != nil {
 		t.Errorf("the sweep collected an object whose owner exists: %v", err)
 	}
@@ -309,17 +302,7 @@ func TestSweepCollectsOrphans(t *testing.T) {
 	if _, err := b.Delete(user, resource.Key{Project: "web", Name: "owner"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		_, err := b.Get(user, resource.Key{Project: "web", Name: "owned"})
-		if connect.CodeOf(err) == connect.CodeNotFound {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("deleting the owner did not collect its dependent")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "deleting the owner collects its dependent", deleted(b, user, resource.Key{Project: "web", Name: "owned"}))
 }
 
 func TestStoredBytesCarryNoResourceVersion(t *testing.T) {

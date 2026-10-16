@@ -28,6 +28,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // oidcCLI is an apiserver in oidc auth over TLS, with a fake provider, and
@@ -198,11 +199,11 @@ func (w *oidcCLI) noSecrets(r result, secrets ...string) {
 func (w *oidcCLI) login(email string, args ...string) result {
 	w.t.Helper()
 	w.provider.SignIn(email, true)
-	r := w.run(append([]string{"login"}, args...)...)
-	for deadline := time.Now().Add(10 * time.Second); email == "alice@example.com" && r.code != 0 && time.Now().Before(deadline); {
-		time.Sleep(50 * time.Millisecond)
+	var r result
+	testutil.Eventually(w.t, email+" logged in", func() (bool, string) {
 		r = w.run(append([]string{"login"}, args...)...)
-	}
+		return r.code == 0 || email != "alice@example.com", r.err
+	})
 	return r
 }
 
@@ -391,16 +392,13 @@ func TestLoginDevice(t *testing.T) {
 	go func() { done <- w.runWith(&errb, "login", "--device") }()
 	complete := regexp.MustCompile(`\(or open (\S+)\)`)
 	var page string
-	deadline := time.Now().Add(10 * time.Second)
-	for page == "" && time.Now().Before(deadline) {
-		if m := complete.FindStringSubmatch(errb.String()); m != nil {
+	testutil.Eventually(t, "a device URL printed", func() (bool, string) {
+		out := errb.String()
+		if m := complete.FindStringSubmatch(out); m != nil {
 			page = m[1]
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if page == "" {
-		t.Fatalf("no device URL printed:\n%s", errb.String())
-	}
+		return page != "", "\n" + out
+	})
 	code, _ := url.Parse(page)
 	// The browser is still signed in from the first login.
 	resp, err := w.browser.Get(page)

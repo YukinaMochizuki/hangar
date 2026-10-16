@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // controlled starts a server with its controllers and the given nodes.
@@ -57,67 +59,60 @@ func sized(name string, memMiB int64) *computev1alpha1.Container {
 	return c
 }
 
-// waitMachine waits until the machine exists and satisfies ok.
-func waitMachine(t *testing.T, s *Server, system context.Context, name string, what string, ok func(*computev1alpha1.Machine) bool) *computev1alpha1.Machine {
+// waitObject waits until the object of kind r at key exists and satisfies
+// ok, and returns it.
+func waitObject[T proto.Message](t *testing.T, s *Server, system context.Context, r registry.Resource, key resource.Key, what string, ok func(T) bool) T {
 	t.Helper()
-	var last *computev1alpha1.Machine
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, registry.Machine, resource.Key{Project: "web", Name: name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj != nil {
-			last = obj.(*computev1alpha1.Machine)
-			if ok(last) {
-				return last
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("machine %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func waitContainer(t *testing.T, s *Server, system context.Context, name, what string, ok func(*computev1alpha1.Container) bool) *computev1alpha1.Container {
-	t.Helper()
-	var last *computev1alpha1.Container
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, registry.Container, resource.Key{Project: "web", Name: name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj != nil {
-			last = obj.(*computev1alpha1.Container)
-			if ok(last) {
-				return last
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("container %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
-func waitGone(t *testing.T, s *Server, system context.Context, r registry.Resource, name string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, r, resource.Key{Project: "web", Name: name})
+	var last T
+	testutil.Eventually(t, what, func() (bool, string) {
+		obj, err := s.get(system, r, key)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if obj == nil {
-			return
+			return false, "none"
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s %s never went away: %v", r.Kind, name, obj)
+		last = obj.(T)
+		return ok(last), fmt.Sprint(last)
+	})
+	return last
+}
+
+// versionOf reads the resourceVersion of the object of kind r at key, for
+// testutil.Unchanged, which then fails if the object is gone.
+func versionOf(s *Server, system context.Context, r registry.Resource, key resource.Key) func() (string, error) {
+	return func() (string, error) {
+		obj, err := s.get(system, r, key)
+		if err != nil {
+			return "", err
 		}
-		time.Sleep(5 * time.Millisecond)
+		if obj == nil {
+			return "", errors.New("gone")
+		}
+		return fmt.Sprint(obj.(interface{ GetMetadata() *metav1.ObjectMeta }).GetMetadata().GetResourceVersion()), nil
 	}
+}
+
+// waitMachine waits until the machine exists and satisfies ok.
+func waitMachine(t *testing.T, s *Server, system context.Context, name string, what string, ok func(*computev1alpha1.Machine) bool) *computev1alpha1.Machine {
+	t.Helper()
+	return waitObject(t, s, system, registry.Machine, resource.Key{Project: "web", Name: name}, "machine "+name+" "+what, ok)
+}
+
+func waitContainer(t *testing.T, s *Server, system context.Context, name, what string, ok func(*computev1alpha1.Container) bool) *computev1alpha1.Container {
+	t.Helper()
+	return waitObject(t, s, system, registry.Container, resource.Key{Project: "web", Name: name}, "container "+name+" "+what, ok)
+}
+
+func waitGone(t *testing.T, s *Server, system context.Context, r registry.Resource, name string) {
+	t.Helper()
+	testutil.Eventually(t, r.Kind+" "+name+" gone", func() (bool, string) {
+		obj, err := s.get(system, r, resource.Key{Project: "web", Name: name})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return obj == nil, fmt.Sprint(obj)
+	})
 }
 
 // reportMachine writes a machine's status as its node does, keeping the
@@ -278,7 +273,7 @@ func TestASettledSystemStaysQuiet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if after, _ := s.store.Revision(system); after != before {
 		t.Errorf("a settled system wrote %d more times", after-before)
 	}
@@ -296,10 +291,8 @@ func TestDeletingAContainerWaitsForItsNode(t *testing.T) {
 	m := waitMachine(t, s, system, "ct-api", "marked for deletion", func(m *computev1alpha1.Machine) bool {
 		return m.GetMetadata().GetDeleteTime() != nil
 	})
-	time.Sleep(100 * time.Millisecond)
-	if obj, _ := s.get(system, registry.Container, resource.Key{Project: "web", Name: "api"}); obj == nil {
-		t.Fatal("the container went before its node released the machine")
-	}
+	testutil.Unchanged(t, "container api, before its node released the machine", 100*time.Millisecond,
+		versionOf(s, system, registry.Container, resource.Key{Project: "web", Name: "api"}))
 
 	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, m.GetMetadata().GetGeneration(),
 		&metav1.Condition{Type: MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})

@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -24,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // setDefaultPlan gives the default plan limits, as an administrator does.
@@ -552,12 +552,11 @@ func TestPlans(t *testing.T) {
 	}
 }
 
-// eventually waits until the status of tenant acme and project web, as
+// waitUsage waits until the status of tenant acme and project web, as
 // their owner reads them, satisfy ok.
-func eventually(t *testing.T, s *Server, user context.Context, what string, ok func(*tenancyv1alpha1.TenantStatus, *tenancyv1alpha1.ProjectStatus) bool) {
+func waitUsage(t *testing.T, s *Server, user context.Context, what string, ok func(*tenancyv1alpha1.TenantStatus, *tenancyv1alpha1.ProjectStatus) bool) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, what, func() (bool, string) {
 		tobj, err := s.backend(registry.Tenant).Get(user, resource.Key{Name: "acme"})
 		if err != nil {
 			t.Fatal(err)
@@ -567,14 +566,8 @@ func eventually(t *testing.T, s *Server, user context.Context, what string, ok f
 			t.Fatal(err)
 		}
 		ts, ps := tobj.(*tenancyv1alpha1.Tenant).GetStatus(), pobj.(*tenancyv1alpha1.Project).GetStatus()
-		if ok(ts, ps) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%s: tenant status %v, project status %v", what, ts, ps)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return ok(ts, ps), fmt.Sprintf("tenant status %v, project status %v", ts, ps)
+	})
 }
 
 // TestUsageIsReported runs the controllers: the tenant's and project's
@@ -593,7 +586,7 @@ func TestUsageIsReported(t *testing.T) {
 	}
 	wantUsage := &tenancyv1alpha1.Usage{Cpu: "1", Memory: "512Mi", Disk: "10Gi", Machines: 1, Projects: 1, Networks: 2}
 	planLimits := &tenancyv1alpha1.Limits{Cpu: proto.String("4"), Machines: proto.Int32(5)}
-	eventually(t, s, user, "a new container and network", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
+	waitUsage(t, s, user, "a new container and network", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetPlan() == DefaultPlan && proto.Equal(ts.GetLimits(), planLimits) && proto.Equal(ts.GetUsage(), wantUsage) &&
 			proto.Equal(ps.GetLimits(), planLimits) && proto.Equal(ps.GetUsage(), wantUsage)
 	})
@@ -602,7 +595,7 @@ func TestUsageIsReported(t *testing.T) {
 	if _, err := s.backend(registry.Container).Apply(user, stopped(ctr("c1"))); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, s, user, "a stopped container", func(ts *tenancyv1alpha1.TenantStatus, _ *tenancyv1alpha1.ProjectStatus) bool {
+	waitUsage(t, s, user, "a stopped container", func(ts *tenancyv1alpha1.TenantStatus, _ *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetUsage().GetCpu() == "0" && ts.GetUsage().GetMemory() == "0" && ts.GetUsage().GetDisk() == "10Gi"
 	})
 
@@ -615,7 +608,7 @@ func TestUsageIsReported(t *testing.T) {
 	}
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Cpu: proto.String("8"), Machines: proto.Int32(1), Memory: proto.String("2Gi")})
 	wantProject := &tenancyv1alpha1.Limits{Cpu: proto.String("1500m"), Machines: proto.Int32(1), Memory: proto.String("2Gi")}
-	eventually(t, s, user, "project limits and a changed plan", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
+	waitUsage(t, s, user, "project limits and a changed plan", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetLimits().GetCpu() == "8" && proto.Equal(ps.GetLimits(), wantProject)
 	})
 
@@ -623,7 +616,7 @@ func TestUsageIsReported(t *testing.T) {
 	if _, err := s.backend(registry.Disk).Apply(user, quotaDisk("data", "5Gi", nil)); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, s, user, "a new disk", func(ts *tenancyv1alpha1.TenantStatus, _ *tenancyv1alpha1.ProjectStatus) bool {
+	waitUsage(t, s, user, "a new disk", func(ts *tenancyv1alpha1.TenantStatus, _ *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetUsage().GetDisk() == "15Gi"
 	})
 
@@ -631,7 +624,7 @@ func TestUsageIsReported(t *testing.T) {
 	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: "back"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, s, user, "a deleted network", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
+	waitUsage(t, s, user, "a deleted network", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
 		return ts.GetUsage().GetNetworks() == 1 && ps.GetUsage().GetNetworks() == 1
 	})
 }

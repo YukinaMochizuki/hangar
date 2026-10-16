@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // seen records the keys a controller reconciled.
@@ -41,17 +42,6 @@ func (s *seen) count(k controller.Key) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.keys[k]
-}
-
-func waitUntil(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("never happened: %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
 }
 
 func container(name string) *computev1alpha1.Container {
@@ -97,8 +87,8 @@ func TestAPISourceFollowsTheAPI(t *testing.T) {
 	})
 
 	before := controller.Key{Project: apiservertest.Project, Name: "before"}
-	waitUntil(t, "an existing container reconciled", func() bool { return r.count(before) >= 1 })
-	waitUntil(t, "its machine, a second kind, reconciled", func() bool {
+	testutil.Eventually(t, "an existing container reconciled", func() bool { return r.count(before) >= 1 })
+	testutil.Eventually(t, "its machine, a second kind, reconciled", func() bool {
 		return r.count(controller.Key{Project: apiservertest.Project, Name: "machine:ct-before"}) >= 1
 	})
 
@@ -106,7 +96,7 @@ func TestAPISourceFollowsTheAPI(t *testing.T) {
 	if _, err := root.Apply(ctx, registry.Container, container("after")); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "a new container reconciled", func() bool { return r.count(after) >= 1 })
+	testutil.Eventually(t, "a new container reconciled", func() bool { return r.count(after) >= 1 })
 
 	// A role binding has no finalizers: deleting it is a single event.
 	binding := controller.Key{Name: "member-bob"}
@@ -120,11 +110,11 @@ func TestAPISourceFollowsTheAPI(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "a new role binding reconciled", func() bool { return r.count(binding) == 1 })
+	testutil.Eventually(t, "a new role binding reconciled", func() bool { return r.count(binding) == 1 })
 	if _, err := root.Delete(ctx, registry.RoleBinding, client.Key{Name: binding.Name}); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "a deleted role binding reconciled", func() bool { return r.count(binding) == 2 })
+	testutil.Eventually(t, "a deleted role binding reconciled", func() bool { return r.count(binding) == 2 })
 }
 
 // TestAPISourceReportsCompaction: watching from history the apiserver no
@@ -215,7 +205,7 @@ func TestAPISourceCallsFnOneAtATime(t *testing.T) {
 	if _, err := env.As(apiservertest.Root).Apply(ctx, registry.Container, container("api")); err != nil {
 		t.Fatal(err)
 	}
-	waitUntil(t, "events of both kinds", done.Load)
+	testutil.Eventually(t, "events of both kinds", done.Load)
 	cancel()
 	<-finished
 }

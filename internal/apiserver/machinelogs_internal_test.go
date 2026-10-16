@@ -1,6 +1,7 @@
 package apiserver
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // machineLogsOf reads the logs of the object of kind name as principal p, to
@@ -72,13 +74,10 @@ func TestARecreatedContainerDoesNotReadTheOldMachinesLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	// No node is connected: the call gets as far as the node.
-	deadline := time.Now().Add(5 * time.Second)
-	for err := logsOf(t, s, alice, "api"); connect.CodeOf(err) != connect.CodeUnavailable; err = logsOf(t, s, alice, "api") {
-		if time.Now().After(deadline) {
-			t.Fatalf("the logs of the machine's own container: %v, want unavailable", err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "the logs of the machine's own container say unavailable", func() (bool, string) {
+		err := logsOf(t, s, alice, "api")
+		return connect.CodeOf(err) == connect.CodeUnavailable, fmt.Sprint(err)
+	})
 }
 
 // TestGettingAContainerIsNotReadingItsLogs: the node agent may get any

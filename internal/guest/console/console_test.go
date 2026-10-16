@@ -40,7 +40,7 @@ func TestRecordsCrossATerminalWhole(t *testing.T) {
 	w := console.NewWriter(tty, at)
 	_ = w.Write(console.Stdout, []byte("hello\nworld\r\n\x03\x04"))
 	_ = w.WriteExit(console.ExitStatus{Code: 10})
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 	_ = tty.Close()
 
 	r := console.NewReader(bytes.NewReader(<-read))

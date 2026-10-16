@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -46,24 +45,7 @@ const (
 
 func waitEndpoint(t *testing.T, s *Server, system context.Context, name, what string, ok func(*networkv1alpha1.PublicEndpoint) bool) *networkv1alpha1.PublicEndpoint {
 	t.Helper()
-	var last *networkv1alpha1.PublicEndpoint
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, registry.PublicEndpoint, resource.Key{Project: "web", Name: name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj != nil {
-			last = obj.(*networkv1alpha1.PublicEndpoint)
-			if ok(last) {
-				return last
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("public endpoint %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	return waitObject(t, s, system, registry.PublicEndpoint, resource.Key{Project: "web", Name: name}, "public endpoint "+name+" "+what, ok)
 }
 
 func endpointReady(ep *networkv1alpha1.PublicEndpoint) *metav1.Condition {

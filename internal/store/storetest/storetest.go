@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // Run runs the whole contract. open must return a new, empty store; Run
@@ -222,22 +223,17 @@ func watch(t *testing.T, s store.Store, opts store.WatchOptions) *collector {
 	return c
 }
 
-// waitFor waits until the collector has n events and returns them.
-func (c *collector) waitFor(t *testing.T, n int) []store.Event {
+// waitEvents waits until the collector has n events and returns them.
+func (c *collector) waitEvents(t *testing.T, n int) []store.Event {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var got []store.Event
+	testutil.Eventually(t, fmt.Sprintf("%d events", n), func() (bool, string) {
 		c.mu.Lock()
-		got := slices.Clone(c.events)
+		got = slices.Clone(c.events)
 		c.mu.Unlock()
-		if len(got) >= n {
-			return got
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("got %d events, want %d: %v", len(got), n, describe(got))
-		}
-		time.Sleep(time.Millisecond)
-	}
+		return len(got) >= n, fmt.Sprint(describe(got))
+	})
+	return got
 }
 
 func describe(evs []store.Event) []string {
@@ -272,13 +268,13 @@ func testWatchReplayThenLive(t *testing.T, s store.Store) {
 	must[int64](t)(s.Update(ctx, k, []byte("v3"), 0))
 
 	c := watch(t, s, store.WatchOptions{Kind: "Container", SinceRevision: 1})
-	c.waitFor(t, 2)
+	c.waitEvents(t, 2)
 	must[int64](t)(s.Update(ctx, k, []byte("v4"), 0))
 	if _, _, err := s.Delete(ctx, k, 0); err != nil {
 		t.Fatal(err)
 	}
 
-	got := c.waitFor(t, 4)
+	got := c.waitEvents(t, 4)
 	if !slices.Equal(revisions(got), []int64{2, 3, 4, 5}) {
 		t.Fatalf("revisions %v, want 2 3 4 5", revisions(got))
 	}
@@ -298,9 +294,9 @@ func testWatchFromZero(t *testing.T, s store.Store) {
 	must[int64](t)(s.Create(ctx, key("Tenant", "", "a"), nil))
 	must[int64](t)(s.Create(ctx, key("Tenant", "", "b"), nil))
 	c := watch(t, s, store.WatchOptions{SinceRevision: 0})
-	c.waitFor(t, 2)
+	c.waitEvents(t, 2)
 	must[int64](t)(s.Create(ctx, key("Tenant", "", "c"), nil))
-	if got := c.waitFor(t, 3); !slices.Equal(revisions(got), []int64{1, 2, 3}) {
+	if got := c.waitEvents(t, 3); !slices.Equal(revisions(got), []int64{1, 2, 3}) {
 		t.Errorf("watch from 0 saw %v, want all history then live", revisions(got))
 	}
 }
@@ -312,7 +308,7 @@ func testWatchFilters(t *testing.T, s store.Store) {
 	must[int64](t)(s.Create(ctx, key("Machine", "p1", "x"), nil))
 	must[int64](t)(s.Create(ctx, key("Container", "p1", "x"), nil))
 	must[int64](t)(s.Create(ctx, key("Container", "p1", "y"), nil))
-	got := c.waitFor(t, 2)
+	got := c.waitEvents(t, 2)
 	if !slices.Equal(revisions(got), []int64{base + 3, base + 4}) {
 		t.Errorf("filtered watch delivered %v", describe(got))
 	}
@@ -332,15 +328,14 @@ func testWatchProgressAdvances(t *testing.T, s store.Store) {
 	progress := make(chan struct{})
 	c, _ := watchFromHere(t, s, store.WatchOptions{Kind: "Container", Project: "p1", Progress: progress})
 	must[int64](t)(s.Create(ctx, key("Container", "p1", "x"), nil))
-	c.waitFor(t, 1)
+	c.waitEvents(t, 1)
 	// Writes the watch filters out still advance the revision it reports,
 	// once the watch has processed them.
 	must[int64](t)(s.Create(ctx, key("Machine", "p1", "x"), nil))
 	rev := must[int64](t)(s.Create(ctx, key("Container", "p2", "x"), nil))
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, fmt.Sprintf("progress at %d", rev), func() (bool, string) {
 		progress <- struct{}{}
-		got := c.waitFor(t, 2)
+		got := c.waitEvents(t, 2)
 		last := got[len(got)-1]
 		if last.Type != store.EventProgress || last.Object.Key != (store.Key{}) || last.Object.Data != nil {
 			t.Fatalf("want a bare progress event, got %v", describe(got))
@@ -348,17 +343,11 @@ func testWatchProgressAdvances(t *testing.T, s store.Store) {
 		if last.Revision > rev {
 			t.Fatalf("progress reported %d, beyond the last write %d", last.Revision, rev)
 		}
-		if last.Revision == rev {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("progress stuck at %d, want %d", last.Revision, rev)
-		}
 		c.mu.Lock()
 		c.events = c.events[:1]
 		c.mu.Unlock()
-		time.Sleep(time.Millisecond)
-	}
+		return last.Revision == rev, fmt.Sprint(last.Revision)
+	})
 }
 
 func testWatchSlowConsumer(t *testing.T, s store.Store) {
@@ -395,21 +384,17 @@ func testWatchSlowConsumer(t *testing.T, s store.Store) {
 	}
 	close(release)
 
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	var cur []int64
+	// Thousands of events through SQLite take seconds under the race
+	// detector.
+	testutil.EventuallyWithin(t, 30*time.Second, "the slow consumer at the last event", func() (bool, string) {
 		mu.Lock()
-		cur := slices.Clone(got)
+		cur = slices.Clone(got)
 		mu.Unlock()
-		if len(cur) > 0 && cur[len(cur)-1] == start+n {
-			if !slices.Equal(cur, span(start+1, start+n)) {
-				t.Fatalf("slow consumer saw %d events from %d, want every revision from %d once", len(cur), cur[0], start+1)
-			}
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("slow consumer stalled after %d events", len(cur))
-		}
-		time.Sleep(5 * time.Millisecond)
+		return len(cur) > 0 && cur[len(cur)-1] == start+n, fmt.Sprintf("%d events", len(cur))
+	})
+	if !slices.Equal(cur, span(start+1, start+n)) {
+		t.Fatalf("slow consumer saw %d events from %d, want every revision from %d once", len(cur), cur[0], start+1)
 	}
 }
 
@@ -435,15 +420,15 @@ func testWatchStartsDuringWrites(t *testing.T, s store.Store) {
 				last = rev
 			}
 		}()
-		time.Sleep(time.Millisecond)
+		time.Sleep(time.Millisecond) //nolint:forbidigo // lets background work run
 		since := must[int64](t)(s.Revision(ctx))
 		c := watch(t, s, store.WatchOptions{SinceRevision: since})
 		// Writing on until the watch has delivered well past its replay
 		// makes sure it also went through the handoff to live events.
-		c.waitFor(t, 200)
+		c.waitEvents(t, 200)
 		close(stop)
 		lastRev := <-written
-		got := c.waitFor(t, int(lastRev-since))
+		got := c.waitEvents(t, int(lastRev-since))
 		if !slices.Equal(revisions(got), span(since+1, lastRev)) {
 			t.Fatalf("round %d: watch from %d saw %d events, want every revision through %d once", round, since, len(got), lastRev)
 		}
@@ -471,7 +456,7 @@ func testConcurrentWriters(t *testing.T, s store.Store) {
 	if rev := must[int64](t)(s.Revision(ctx)); rev != base+writers*each {
 		t.Errorf("revision %d after %d writes from %d", rev, writers*each, base)
 	}
-	got := c.waitFor(t, writers*each)
+	got := c.waitEvents(t, writers*each)
 	if !slices.Equal(revisions(got), span(base+1, base+writers*each)) {
 		t.Errorf("concurrent writes were not seen once each, in order")
 	}
@@ -490,7 +475,7 @@ func testCompaction(t *testing.T, s store.Store) {
 		t.Errorf("watch below the compaction point: %v, want ErrCompacted", err)
 	}
 	c := watch(t, s, store.WatchOptions{SinceRevision: 3})
-	if got := c.waitFor(t, 2); !slices.Equal(revisions(got), []int64{4, 5}) {
+	if got := c.waitEvents(t, 2); !slices.Equal(revisions(got), []int64{4, 5}) {
 		t.Errorf("watch at the compaction point saw %v, want 4 5", revisions(got))
 	}
 	if err := s.Compact(ctx, 99); err == nil {
@@ -581,19 +566,16 @@ func (w *blockedWatch) snapshot() []store.Event {
 	return slices.Clone(w.events)
 }
 
-func (w *blockedWatch) waitFor(t *testing.T, cond func([]store.Event) bool) []store.Event {
+func (w *blockedWatch) waitEvents(t *testing.T, what string, cond func([]store.Event) bool) []store.Event {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for {
-		got := w.snapshot()
-		if cond(got) {
-			return got
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("condition never held; %d events", len(got))
-		}
-		time.Sleep(time.Millisecond)
-	}
+	var got []store.Event
+	// Thousands of events through SQLite take seconds under the race
+	// detector.
+	testutil.EventuallyWithin(t, 30*time.Second, what, func() (bool, string) {
+		got = w.snapshot()
+		return cond(got), fmt.Sprintf("%d events", len(got))
+	})
+	return got
 }
 
 // testWatchProgressNeverAhead checks the promise behind EventProgress: every
@@ -623,7 +605,7 @@ func testWatchProgressNeverAhead(t *testing.T, s store.Store) {
 	}()
 	close(w.release)
 
-	got := w.waitFor(t, func(evs []store.Event) bool {
+	got := w.waitEvents(t, "every progress asked for and every matching event", func(evs []store.Event) bool {
 		n := 0
 		for _, ev := range evs {
 			if ev.Type == store.EventProgress {
@@ -703,7 +685,7 @@ func testCompactionOvertakesSlowWatch(t *testing.T, s store.Store) {
 	for i := range n {
 		must[int64](t)(s.Create(ctx, key("Container", "p", fmt.Sprintf("c%d", i)), nil))
 	}
-	w.waitFor(t, func(evs []store.Event) bool { return len(evs) >= 1 })
+	w.waitEvents(t, "the first event", func(evs []store.Event) bool { return len(evs) >= 1 })
 	if err := s.Compact(ctx, since+n); err != nil {
 		t.Fatal(err)
 	}

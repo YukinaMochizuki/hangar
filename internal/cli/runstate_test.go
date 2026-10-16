@@ -14,6 +14,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // containerJSON is the part of a container the stop and start tests look at.
@@ -206,17 +207,12 @@ func TestStopStartWait(t *testing.T) {
 	// nextGeneration waits for the machine to take a new spec.
 	nextGeneration := func(after int64) *computev1alpha1.Machine {
 		t.Helper()
-		deadline := time.Now().Add(10 * time.Second)
-		for {
-			m := node.placed("ct-api")
-			if m.GetMetadata().GetGeneration() > after {
-				return m
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("the machine never took the new spec")
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
+		var m *computev1alpha1.Machine
+		testutil.Eventually(t, "the machine taking the new spec", func() bool {
+			m = node.placed("ct-api")
+			return m.GetMetadata().GetGeneration() > after
+		})
+		return m
 	}
 
 	ch := run("stop", "ct", "api", "--wait", "--timeout=10s")
@@ -390,13 +386,10 @@ func TestStopStartAVirtualMachine(t *testing.T) {
 	// The node reports against the machine as it is once the controller has
 	// carried the VM's latest spec to it; until then the machine may still be
 	// at the stop, and a report for that generation reads as Updating.
-	deadline := time.Now().Add(10 * time.Second)
-	for v := w.vm("web"); v.Status.ObservedGeneration != v.Metadata.Generation; v = w.vm("web") {
-		if time.Now().After(deadline) {
-			t.Fatalf("the VM controller never observed generation %s: %+v", v.Metadata.Generation, v)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the VM controller observing the VM's generation", func() (bool, string) {
+		v := w.vm("web")
+		return v.Status.ObservedGeneration == v.Metadata.Generation, fmt.Sprintf("%+v", v)
+	})
 	ended := func(phase computev1alpha1.MachinePhase, reason, msg string) {
 		t.Helper()
 		m := node.placed("vm-web")
@@ -407,13 +400,10 @@ func TestStopStartAVirtualMachine(t *testing.T) {
 			Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reason, Message: msg,
 			ObservedGeneration: m.GetMetadata().GetGeneration(),
 		})
-		deadline := time.Now().Add(10 * time.Second)
-		for !strings.Contains(w.must("", "get", "vm", "web", "-o", "json"), `"`+reason+`"`) {
-			if time.Now().After(deadline) {
-				t.Fatalf("the VM never read as %s: %s", reason, w.must("", "get", "vm", "web", "-o", "json"))
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
+		testutil.Eventually(t, "the VM reading as "+reason, func() (bool, string) {
+			out := w.must("", "get", "vm", "web", "-o", "json")
+			return strings.Contains(out, `"`+reason+`"`), out
+		})
 	}
 
 	// It crashed, and waits out its restart's backoff: it boots again on

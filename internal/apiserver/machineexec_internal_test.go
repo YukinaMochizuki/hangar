@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -33,6 +34,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
@@ -231,16 +233,10 @@ func (w *execWorld) connectNode(t *testing.T) {
 		}, Handler: mux}).Run(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if _, err := w.s.tunnels.Node("n1"); err == nil {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("n1's tunnel never opened")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "n1's tunnel open", func() (bool, string) {
+		_, err := w.s.tunnels.Node("n1")
+		return err == nil, fmt.Sprint(err)
+	})
 }
 
 // dial opens an exec as user, failing as the server refuses it.
@@ -374,19 +370,19 @@ func TestAnExecRelaysAProcess(t *testing.T) {
 // auditLine waits for the first log line of msg and returns its fields.
 func (w *execWorld) auditLine(t *testing.T, msg string) map[string]any {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		for line := range strings.Lines(w.log.String()) {
+	var found map[string]any
+	testutil.EventuallyWithin(t, 5*time.Second, fmt.Sprintf("a %q line", msg), func() (bool, string) {
+		log := w.log.String()
+		for line := range strings.Lines(log) {
 			var fields map[string]any
 			if json.Unmarshal([]byte(line), &fields) == nil && fields["msg"] == msg {
-				return fields
+				found = fields
+				return true, ""
 			}
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no %q line in:\n%s", msg, w.log.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return false, "\n" + log
+	})
+	return found
 }
 
 // auditLines returns the fields of every log line of msg so far.
@@ -439,13 +435,10 @@ func TestEveryRefusedExecIsLogged(t *testing.T) {
 		{"principal": "user:alice@example.com", "plural": "containers", "name": "api", "code": "failed_precondition"},
 	}
 	var got []map[string]any
-	deadline := time.Now().Add(5 * time.Second)
-	for got = w.auditLines("exec refused"); len(got) < len(want); got = w.auditLines("exec refused") {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d refusals logged, want %d:\n%s", len(got), len(want), w.log.String())
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, fmt.Sprintf("%d refusals logged", len(want)), func() (bool, string) {
+		got = w.auditLines("exec refused")
+		return len(got) >= len(want), fmt.Sprintf("%d in:\n%s", len(got), w.log.String())
+	})
 	for i := range want {
 		wantFields(t, got[i], want[i])
 	}
@@ -642,7 +635,8 @@ func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
 	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
 	done := make(chan wsResult, 1)
 	go func() { done <- readAll(t, c) }()
-	time.Sleep(500 * time.Millisecond) // many pings
+	// Many pings.
+	time.Sleep(500 * time.Millisecond) //nolint:forbidigo // real time
 	select {
 	case r := <-done:
 		t.Fatalf("the exec ended while idle: %+v", r)
@@ -668,15 +662,13 @@ func TestAClientThatStopsReadingHoldsUpItsNode(t *testing.T) {
 	}
 	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"flood"}}))
 	var last int64
-	for stable := 0; stable < 10; time.Sleep(50 * time.Millisecond) {
-		n := w.node.flooded.Load()
-		if n == last && n > 0 {
-			stable++
-		} else {
-			stable = 0
+	since := time.Now()
+	testutil.Eventually(t, "the node's output stalled", func() (bool, string) {
+		if n := w.node.flooded.Load(); n != last {
+			last, since = n, time.Now()
 		}
-		last = n
-	}
+		return last > 0 && time.Since(since) >= 500*time.Millisecond, fmt.Sprintf("%d bytes", last)
+	})
 	// The stream's window, the WebSocket's buffers and the sockets' on
 	// loopback; the apiserver holds a message at a time.
 	if last > 32<<20 {
@@ -719,25 +711,23 @@ func TestExecsLeaveNothingRunning(t *testing.T) {
 	for i := range 30 {
 		once(i)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for runtime.NumGoroutine() > before+5 {
-		if time.Now().After(deadline) {
+	testutil.Eventually(t, "the goroutines of 30 execs gone", func() (bool, string) {
+		if n := runtime.NumGoroutine(); n > before+5 {
 			buf := make([]byte, 1<<20)
-			t.Fatalf("%d goroutines after 30 execs, %d before:\n%s", runtime.NumGoroutine(), before, buf[:runtime.Stack(buf, true)])
+			return false, fmt.Sprintf("%d goroutines, %d before:\n%s", n, before, buf[:runtime.Stack(buf, true)])
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return true, ""
+	})
 	// The last exec's handler may still be closing its WebSocket.
 	calls := func() int {
 		w.s.nodeCalls.mu.Lock()
 		defer w.s.nodeCalls.mu.Unlock()
 		return w.s.nodeCalls.perNode["n1"]
 	}
-	for deadline := time.Now().Add(10 * time.Second); calls() != 0; time.Sleep(10 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d calls to n1 still counted", calls())
-		}
-	}
+	testutil.Eventually(t, "no call to n1 counted", func() (bool, string) {
+		n := calls()
+		return n == 0, fmt.Sprintf("%d calls", n)
+	})
 }
 
 // liveFor fails the test if the exec on c, or its node's call, ends
@@ -802,7 +792,7 @@ func TestAClientReadingSlowlyStays(t *testing.T) {
 				readErr <- err
 				return
 			}
-			time.Sleep(20 * time.Millisecond)
+			time.Sleep(20 * time.Millisecond) //nolint:forbidigo // stands for a client that reads slowly
 		}
 	}()
 	w.liveFor(t, c, 1500*time.Millisecond, readErr)

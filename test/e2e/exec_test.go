@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // dialExec opens an exec in a container as user, failing as the apiserver
@@ -185,9 +186,9 @@ func TestAKilledClientKillsItsProcess(t *testing.T) {
 			t.Fatal(err)
 		}
 		sendExec(t, c, startExec(&computev1alpha1.MachineExecStart{Command: []string{"wait", "x"}, Stdin: true}))
-		w.eventually("the process running", func() (bool, string) { return w.host.Execs(uid) == 1, fmt.Sprint(w.host.Execs(uid)) })
+		testutil.Eventually(w.t, "the process running", func() (bool, string) { return w.host.Execs(uid) == 1, fmt.Sprint(w.host.Execs(uid)) })
 		end(c)
-		w.eventually("the process killed", func() (bool, string) { return w.host.Execs(uid) == 0, fmt.Sprint(w.host.Execs(uid)) })
+		testutil.Eventually(w.t, "the process killed", func() (bool, string) { return w.host.Execs(uid) == 0, fmt.Sprint(w.host.Execs(uid)) })
 	}
 }
 
@@ -229,7 +230,7 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 	w.waitReason("api", "Running")
 
 	var c *websocket.Conn
-	w.eventually("the owner's exec", func() (bool, string) {
+	testutil.Eventually(w.t, "the owner's exec", func() (bool, string) {
 		var err error
 		c, err = w.dialExec("owner@example.com", "api")
 		return err == nil, fmt.Sprint(err)
@@ -269,15 +270,15 @@ func TestExecIsRefusedClearly(t *testing.T) {
 	}
 	sendExec(t, c, startExec(&computev1alpha1.MachineExecStart{Command: []string{"wait", "x"}}))
 	uid := w.machine("api").GetMetadata().GetUid()
-	w.eventually("the first exec running", func() (bool, string) { return w.host.Execs(uid) == 1, "" })
+	testutil.Eventually(w.t, "the first exec running", func() (bool, string) { return w.host.Execs(uid) == 1, "" })
 	if _, err := w.dialExec(apiservertest.Root, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("an exec over the cap: %v", err)
 	}
 	_ = c.CloseNow()
-	w.eventually("the first exec ended", func() (bool, string) { return w.host.Execs(uid) == 0, "" })
+	testutil.Eventually(w.t, "the first exec ended", func() (bool, string) { return w.host.Execs(uid) == 0, "" })
 
 	w.stopAgent()
-	w.eventually("the node's tunnel gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the node's tunnel gone", func() (bool, string) {
 		_, err := w.dialExec(apiservertest.Root, "api")
 		return connect.CodeOf(err) == connect.CodeUnavailable, fmt.Sprint(err)
 	})
@@ -286,7 +287,7 @@ func TestExecIsRefusedClearly(t *testing.T) {
 	ct, _ := get[*computev1alpha1.Container](w, registry.Container, "api")
 	ct.Spec.RunState = computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED
 	w.apply(ct)
-	w.eventually("a stopped container told it is not running", func() (bool, string) {
+	testutil.Eventually(w.t, "a stopped container told it is not running", func() (bool, string) {
 		_, err := w.dialExec(apiservertest.Root, "api")
 		return connect.CodeOf(err) == connect.CodeFailedPrecondition && strings.Contains(fmt.Sprint(err), "not running"), fmt.Sprint(err)
 	})

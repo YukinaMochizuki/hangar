@@ -81,8 +81,9 @@ func TestStoppingClosesConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	_, _ = c.Write([]byte("GET /nocloud/meta-data HTTP/1.1\r\nHost: x\r\n")) // never finished
-	time.Sleep(50 * time.Millisecond)
+	// A request never finished.
+	_, _ = c.Write([]byte("GET /nocloud/meta-data HTTP/1.1\r\nHost: x\r\n"))
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 	stop()
 	select {
 	case err := <-done:

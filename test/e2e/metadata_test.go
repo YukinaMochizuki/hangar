@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestEachNetworkHasItsMetadataService: a network on the host has its
@@ -19,7 +20,7 @@ func TestEachNetworkHasItsMetadataService(t *testing.T) {
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
 	var status string
-	w.eventually("the metadata service refusing a stranger", func() (bool, string) {
+	testutil.Eventually(w.t, "the metadata service refusing a stranger", func() (bool, string) {
 		at, ok := w.host.ServiceAddr(w.networkUID("default"), "tcp", netip.AddrPortFrom(driver.MetadataAddr, 80))
 		if !ok {
 			return false, "nothing listens"

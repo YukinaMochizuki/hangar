@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // ExecPrograms are the programs the exec part runs in a guest, as the
@@ -109,7 +110,7 @@ func exec(t *testing.T, h Host) {
 	}
 	spec := vmSpec(t, h, "m1", driver.RestartAlways)
 	must(t, h.Hypervisor.Start(ctx, spec))
-	eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+	testutil.EventuallyWithin(t, vmWait, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
 	run := func(spec driver.ExecSpec) driver.ExecSession { return startExec(t, ctx, h, spec) }
 	proc := func(args []string) driver.RunSpec { return driver.RunSpec{Command: args} }
 
@@ -181,7 +182,7 @@ func exec(t *testing.T, h Host) {
 		_, err := s.Recv()
 		recvDone <- err
 	}()
-	eventually(t, "the waiting process's child running", func() bool { return running() == "1" })
+	testutil.EventuallyWithin(t, vmWait, "the waiting process's child running", func() bool { return running() == "1" })
 	cancel()
 	select {
 	case err := <-recvDone:
@@ -191,7 +192,7 @@ func exec(t *testing.T, h Host) {
 	case <-time.After(30 * time.Second):
 		t.Fatal("Recv did not end with the exec's context")
 	}
-	eventually(t, "the waiting process's child killed", func() bool { return running() == "0" })
+	testutil.EventuallyWithin(t, vmWait, "the waiting process's child killed", func() bool { return running() == "0" })
 
 	must(t, h.Hypervisor.Stop(ctx, "m1"))
 	must(t, h.Hypervisor.DeleteLogs(ctx, "m1"))

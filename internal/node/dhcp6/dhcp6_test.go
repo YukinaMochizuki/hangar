@@ -208,7 +208,7 @@ func TestServeAnswersBoundedByMAC(t *testing.T) {
 		t.Errorf("answer from %s:%d to %s:%d at %s, want fe80::1:547 to the client's %s:546 at its MAC",
 			got.Src, port(got.Payload[0:2]), got.Dst, port(got.Payload[2:4]), first.mac, clientLL)
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

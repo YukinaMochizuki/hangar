@@ -29,6 +29,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 	"github.com/YukinaMochizuki/hangar/internal/edgedial"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const domain = "hangarlab.test"
@@ -281,28 +282,13 @@ func (w *world) do(method, h, path string, header http.Header) (*answer, string)
 	return &answer{StatusCode: resp.StatusCode, Header: resp.Header}, string(b)
 }
 
-func (w *world) eventually(what string, cond func() (bool, string)) {
-	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		ok, last := cond()
-		if ok {
-			return
-		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("never happened: %s; last: %s", what, last)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
-
 // TestAPortChangeReachesTheNewPort: once the edge sees an endpoint's new
 // port, no request reaches the old one, however warm its connections were.
 func TestAPortChangeReachesTheNewPort(t *testing.T) {
 	w := newWorld(t)
 	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE)
 	root := w.rootCookie()
-	w.eventually("the endpoint on 8080", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint on 8080", func() (bool, string) {
 		_, body := w.get(root)
 		return strings.HasPrefix(body, "port 8080 "), body
 	})
@@ -311,7 +297,7 @@ func TestAPortChangeReachesTheNewPort(t *testing.T) {
 		w.get(root)
 	}
 	w.endpoint(8081, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE)
-	w.eventually("the endpoint on 8081", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint on 8081", func() (bool, string) {
 		_, body := w.get(root)
 		return strings.HasPrefix(body, "port 8081 "), body
 	})
@@ -342,7 +328,7 @@ func TestAHostWithATrailingDotOrAPortReachesItsEndpoint(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(b)
 	}
-	w.eventually("the endpoint", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint", func() (bool, string) {
 		code, body := get(host)
 		return code == http.StatusOK && strings.HasPrefix(body, "port 8080 "), fmt.Sprint(code, body)
 	})
@@ -379,7 +365,7 @@ func TestABodyPastItsCapIsTooLarge(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(b)
 	}
-	w.eventually("the endpoint", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint", func() (bool, string) {
 		code, body := post(100)
 		return code == http.StatusOK && body == "port 8080 read 100", fmt.Sprint(code, body)
 	})
@@ -450,7 +436,7 @@ func TestAnUpgradeEndsWithItsGrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	bob := cookie(w.endpointSession("bob@example.com", host, time.Time{}))
-	w.eventually("bob let in", func() (bool, string) {
+	testutil.Eventually(w.t, "bob let in", func() (bool, string) {
 		status, body := w.get(bob)
 		return status == http.StatusOK, body
 	})
@@ -476,7 +462,7 @@ func TestAnUpgradeEndsWithItsSession(t *testing.T) {
 	w := newWorldConfig(t, apiservertest.Start(t, nil), func(c *edge.Config) { c.Recheck = time.Hour })
 	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE)
 	root := w.rootCookie()
-	w.eventually("the endpoint served", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint served", func() (bool, string) {
 		status, body := w.get(root)
 		return status == http.StatusOK, body
 	})
@@ -492,7 +478,7 @@ func TestAnUpgradeEndsWithItsSession(t *testing.T) {
 	// Made public: no token let its upgrades in, so none ends them; one
 	// lasts past where the short token's ended.
 	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
-	w.eventually("the endpoint public", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint public", func() (bool, string) {
 		status, body := w.get(nil)
 		return status == http.StatusOK, body
 	})
@@ -524,7 +510,7 @@ func TestAGrantTakenAwayWhileARequestRegistersEndsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	bob := cookie(w.endpointSession("bob@example.com", host, time.Time{}))
-	w.eventually("bob let in", func() (bool, string) {
+	testutil.Eventually(w.t, "bob let in", func() (bool, string) {
 		status, body := w.get(bob)
 		return status == http.StatusOK, body
 	})
@@ -540,9 +526,9 @@ func TestAGrantTakenAwayWhileARequestRegistersEndsIt(t *testing.T) {
 		}
 		deadline := time.Now().Add(5 * time.Second)
 		for edge.MayUse(w.edge, bobP, apiservertest.Project) && time.Now().Before(deadline) {
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond) //nolint:forbidigo // polls off the test's goroutine, where Eventually cannot fail the test
 		}
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 	})
 	if status, body := w.get(bob); status != http.StatusForbidden {
 		t.Errorf("a request whose grant went while it registered: %d %s", status, body)
@@ -556,7 +542,7 @@ func TestAGrantTakenAwayWhileARequestRegistersEndsIt(t *testing.T) {
 func TestARequestTheEdgeEndsIsAnswered(t *testing.T) {
 	w := newWorld(t)
 	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
-	w.eventually("the endpoint", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint", func() (bool, string) {
 		status, body := w.get(nil)
 		return status == http.StatusOK, fmt.Sprint(status, body)
 	})

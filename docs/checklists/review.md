@@ -17,6 +17,11 @@ those rules.
 - [ ] Tests exercise the behaviour at the right layer (see
       `docs/decisions/testing-strategy.md`). A test that cannot fail when the
       behaviour breaks does not count.
+- [ ] Tests do not synchronise on sleep: they wait for what they need, and
+      every sleep left carries its reason (see "Waiting in tests" in
+      `docs/decisions/testing-strategy.md`).
+- [ ] A "did not happen" check looks at the object itself, such as its
+      resourceVersion, never at the store-wide revision (same section).
 - [ ] Docs follow the change: if it alters how something is done, the matching
       checklist or runbook is updated in the same PR, and new docs are listed in
       `AGENTS.md`.

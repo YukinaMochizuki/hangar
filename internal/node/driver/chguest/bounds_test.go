@@ -2,6 +2,7 @@ package chguest_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func openFDs(t *testing.T) int {
@@ -42,13 +44,10 @@ func TestReadyLeavesNothingOpen(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for openFDs(t) > fds+2 || runtime.NumGoroutine() > goroutines+5 {
-		if time.Now().After(deadline) {
-			t.Fatalf("after 50 pings: %d fds (from %d), %d goroutines (from %d)", openFDs(t), fds, runtime.NumGoroutine(), goroutines)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "the fds and goroutines of 50 pings gone", func() (bool, string) {
+		nfds, ngo := openFDs(t), runtime.NumGoroutine()
+		return nfds <= fds+2 && ngo <= goroutines+5, fmt.Sprintf("%d fds (from %d), %d goroutines (from %d)", nfds, fds, ngo, goroutines)
+	})
 }
 
 // hostile answers a ping with more than any guest should send.
@@ -71,7 +70,7 @@ func TestAGuestCannotSendTheNodeTooMuch(t *testing.T) {
 func TestPingSaysHowLongTheGuestHasBeenUp(t *testing.T) {
 	c, done := guestOn(fakeCH(t, agent.Port)).Client("m1")
 	defer done()
-	time.Sleep(10 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond) //nolint:forbidigo // the uptime the ping reports
 	res, err := c.Ping(t.Context(), connect.NewRequest(&guestv1.PingRequest{}))
 	if err != nil || res.Msg.GetVersion() != "test" || res.Msg.GetUptime().AsDuration() < 10*time.Millisecond {
 		t.Errorf("ping %v %v", res, err)

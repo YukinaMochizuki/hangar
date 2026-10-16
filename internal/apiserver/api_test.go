@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const (
@@ -79,17 +81,10 @@ func TestLifecycle(t *testing.T) {
 
 	// A container goes once garbage collection has seen to what it owns.
 	must[computev1alpha1.DeleteContainerResponse](t)(a.containers.DeleteContainer(ctx, connect.NewRequest(&computev1alpha1.DeleteContainerRequest{Project: "web", Name: "api"})))
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, "Get after Delete says not_found", func() (bool, string) {
 		_, err := a.containers.GetContainer(ctx, getContainer("web", "api"))
-		if connect.CodeOf(err) == connect.CodeNotFound {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("Get after Delete: %v, want not_found", err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return connect.CodeOf(err) == connect.CodeNotFound, fmt.Sprint(err)
+	})
 }
 
 func TestAuthorization(t *testing.T) {
@@ -346,13 +341,10 @@ func TestTenantDeletionCollectsItsBindings(t *testing.T) {
 		t.Fatalf("creating a tenant made %d owner bindings", owners())
 	}
 	must[tenancyv1alpha1.DeleteTenantResponse](t)(e.as(alice).tenants.DeleteTenant(ctx, connect.NewRequest(&tenancyv1alpha1.DeleteTenantRequest{Name: "acme"})))
-	deadline := time.Now().Add(10 * time.Second)
-	for owners() != 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the owner binding outlived its tenant")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the owner binding goes with its tenant", func() (bool, string) {
+		n := owners()
+		return n == 0, fmt.Sprintf("%d owner bindings", n)
+	})
 }
 
 func TestBootstrapIsOnce(t *testing.T) {
@@ -363,7 +355,7 @@ func TestBootstrapIsOnce(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(runCtx) }()
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
@@ -396,13 +388,7 @@ func TestBootstrapAfterAStartWithoutAdmin(t *testing.T) {
 		runCtx, cancel := context.WithCancel(ctx)
 		done := make(chan error, 1)
 		go func() { done <- apiserver.New(cfg).Run(runCtx) }()
-		deadline := time.Now().Add(10 * time.Second)
-		for !until() {
-			if time.Now().After(deadline) {
-				t.Fatal("the server never got there")
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
+		testutil.Eventually(t, "the server gets there", until)
 		cancel()
 		if err := <-done; err != nil {
 			t.Fatal(err)

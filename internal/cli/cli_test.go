@@ -25,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // world is a running apiserver plus a config directory, for running the CLI
@@ -135,13 +136,10 @@ func (w *world) signUpRoot() {
 		return
 	}
 	w.as("root@example.com")
-	deadline := time.Now().Add(10 * time.Second)
-	for !strings.Contains(w.must("", "whoami"), "invited, not signed up") {
-		if time.Now().After(deadline) {
-			w.t.Fatal("the bootstrap admin was never invited")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(w.t, "the bootstrap admin invited", func() (bool, string) {
+		out := w.must("", "whoami")
+		return strings.Contains(out, "invited, not signed up"), out
+	})
 	w.signUp("root@example.com")
 	w.rootSignedUp = true
 }
@@ -233,17 +231,16 @@ func (n *fakeNode) ready() {
 // it.
 func (n *fakeNode) placed(name string) *computev1alpha1.Machine {
 	n.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	var m *computev1alpha1.Machine
+	testutil.Eventually(n.t, "machine "+name+" placed", func() (bool, string) {
 		res, err := n.machines.GetMachine(context.Background(), connect.NewRequest(&computev1alpha1.GetMachineRequest{Project: "web", Name: name}))
-		if err == nil && res.Msg.GetMachine().GetSpec().GetNode() == testNode {
-			return res.Msg.GetMachine()
+		if err != nil {
+			return false, err.Error()
 		}
-		if time.Now().After(deadline) {
-			n.t.Fatalf("machine %s never placed: %v", name, err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		m = res.Msg.GetMachine()
+		return m.GetSpec().GetNode() == testNode, fmt.Sprint(m.GetSpec())
+	})
+	return m
 }
 
 // report writes a machine's status as the node does: phase, the generation it
@@ -557,7 +554,7 @@ func TestWait(t *testing.T) {
 	waitFor := func(args ...string) chan result {
 		ch := make(chan result, 1)
 		go func() { ch <- w.run("", args...) }()
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 		return ch
 	}
 	finished := func(ch chan result) result {
@@ -589,13 +586,10 @@ func TestWait(t *testing.T) {
 	w.must(strings.Replace(strings.Split(stack, "---\n")[2], "nginx:1", "nginx:2", 1), "apply", "-f", "-")
 	ch = waitFor("wait", "container", "api", "--for=condition=Ready", "--timeout=10s")
 	before := m.GetMetadata().GetGeneration()
-	deadline := time.Now().Add(10 * time.Second)
-	for m = node.placed("ct-api"); m.GetMetadata().GetGeneration() == before; m = node.placed("ct-api") {
-		if time.Now().After(deadline) {
-			t.Fatal("the machine never took the new image")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the machine taking the new image", func() bool {
+		m = node.placed("ct-api")
+		return m.GetMetadata().GetGeneration() != before
+	})
 	node.report(m, running, before)
 	select {
 	case r := <-ch:

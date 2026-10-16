@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/net/http2"
 
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
@@ -147,21 +148,10 @@ func startAgentLive(t *testing.T, a *apiserver, handler http.Handler, dial func(
 	return ag
 }
 
-func eventually(t *testing.T, what string, within time.Duration, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(within)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("not within %v: %s", within, what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
-
 func tunnelOf(t *testing.T, a *apiserver) *tunnel.Tunnel {
 	t.Helper()
 	var tun *tunnel.Tunnel
-	eventually(t, "a tunnel open", 5*time.Second, func() bool {
+	testutil.EventuallyWithin(t, 5*time.Second, "a tunnel open", func() bool {
 		var err error
 		tun, err = a.hub.Node("n1")
 		return err == nil
@@ -194,7 +184,7 @@ func noLeaks(t *testing.T) {
 				t.Errorf("%d goroutines, %d before:\n%s", runtime.NumGoroutine(), before, buf[:runtime.Stack(buf, true)])
 				return
 			}
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // polls in Cleanup, where t.Context is done and Eventually cannot wait
 		}
 	})
 }
@@ -209,7 +199,7 @@ func TestARoundTrip(t *testing.T) {
 	}
 	hello(t, tun)
 	// Idle beyond its liveness, the tunnel stays up: pings keep it.
-	time.Sleep(5 * (fast.Idle + fast.Timeout))
+	time.Sleep(5 * (fast.Idle + fast.Timeout)) //nolint:forbidigo // real time
 	select {
 	case <-tun.Done():
 		t.Fatal("an idle tunnel dropped")
@@ -231,7 +221,7 @@ func TestAStoppingAgentLetsItsCallsAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	eventually(t, "the call begun", 5*time.Second, func() bool { return n.streams.Load() == 1 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the call begun", func() bool { return n.streams.Load() == 1 })
 	go ag.stop()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil || string(b) != "the agent is stopping" {
@@ -275,11 +265,13 @@ func TestCallsNotReadDoNotStopTheOthers(t *testing.T) {
 				t.Cleanup(func() { _ = resp.Body.Close() })
 			}
 			// The floods fill what the windows let them, then stall.
-			last := int64(-1)
-			for n.flooded.Load() != last {
-				last = n.flooded.Load()
-				time.Sleep(200 * time.Millisecond)
-			}
+			last, since := int64(-1), time.Now()
+			testutil.Eventually(t, "the floods stalled", func() (bool, string) {
+				if f := n.flooded.Load(); f != last {
+					last, since = f, time.Now()
+				}
+				return time.Since(since) >= 200*time.Millisecond, fmt.Sprintf("%d bytes", last)
+			})
 			t.Logf("%d calls not read hold %d KiB", held, last>>10)
 
 			ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
@@ -337,9 +329,9 @@ func TestADisconnectMidStream(t *testing.T) {
 	if took := time.Since(start); took > time.Second {
 		t.Errorf("the read failed %v after the drop", took)
 	}
-	eventually(t, "the node's call ended", 5*time.Second, func() bool { return n.streams.Load() == 0 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the node's call ended", func() bool { return n.streams.Load() == 0 })
 
-	eventually(t, "the tunnel opened again", 5*time.Second, func() bool { return ag.opened.Load() >= 2 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the tunnel opened again", func() bool { return ag.opened.Load() >= 2 })
 	again := tunnelOf(t, a)
 	if again == tun {
 		t.Fatal("the dropped tunnel is still the node's")
@@ -361,10 +353,10 @@ func TestCancellingACallEndsItOnTheNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the node's call begun", 5*time.Second, func() bool { return n.streams.Load() == 1 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the node's call begun", func() bool { return n.streams.Load() == 1 })
 	cancel()
 	_ = resp.Body.Close()
-	eventually(t, "the node's call ended", 5*time.Second, func() bool { return n.streams.Load() == 0 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the node's call ended", func() bool { return n.streams.Load() == 0 })
 	hello(t, tun)
 }
 
@@ -473,8 +465,8 @@ func TestAPingUnansweredDropsTheTunnel(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("the call on the dropped tunnel did not fail")
 	}
-	eventually(t, "the agent opened another tunnel", 5*time.Second, func() bool { return ag.opened.Load() >= 2 })
-	eventually(t, "the node's call ended", 5*time.Second, func() bool { return n.streams.Load() == 0 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the agent opened another tunnel", func() bool { return ag.opened.Load() >= 2 })
+	testutil.EventuallyWithin(t, 5*time.Second, "the node's call ended", func() bool { return n.streams.Load() == 0 })
 	hello(t, tunnelOf(t, a))
 }
 
@@ -542,7 +534,7 @@ func TestANewerTunnelReplacesTheOlder(t *testing.T) {
 	firstServed := serve()
 	first := tunnelOf(t, a)
 	serve()
-	eventually(t, "the second tunnel the node's", 5*time.Second, func() bool {
+	testutil.EventuallyWithin(t, 5*time.Second, "the second tunnel the node's", func() bool {
 		t2, err := a.hub.Node("n1")
 		return err == nil && t2 != first
 	})

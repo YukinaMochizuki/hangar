@@ -18,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // applyAddress binds Address name to the target, or to nothing if target
@@ -73,7 +74,7 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 
 	w.applyAddress("ip", toContainer("api"))
 	var addr netip.Addr
-	w.eventually("the address reserved and bound to api", func() (bool, string) {
+	testutil.Eventually(w.t, "the address reserved and bound to api", func() (bool, string) {
 		a, _ := get[*networkv1alpha1.Address](w, registry.Address, "ip")
 		p, err := netip.ParsePrefix(a.GetStatus().GetIpv6())
 		addr = p.Addr()
@@ -82,18 +83,18 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 	if !hostPrefix.Contains(addr) {
 		t.Fatalf("the address %s is not of the host's prefix", addr)
 	}
-	w.eventually("api holding the address on the host and in its guest", func() (bool, string) {
+	testutil.Eventually(w.t, "api holding the address on the host and in its guest", func() (bool, string) {
 		g := w.host.GuestIPv6(ctUID)
 		return w.hostIPv6(ctUID) == addr && len(g) == 1 && g[0].Address == addr, fmt.Sprint(w.hostIPv6(ctUID), g)
 	})
 
 	w.applyAddress("ip", toVM("web"))
-	w.eventually("web holding the address on the host, leased it by DHCPv6", func() (bool, string) {
+	testutil.Eventually(w.t, "web holding the address on the host, leased it by DHCPv6", func() (bool, string) {
 		got := w.leasedTo(netUID, vmMAC)
 		return w.hostIPv6(vmUID) == addr && got == addr, fmt.Sprint(w.hostIPv6(vmUID), got)
 	})
 	var auto netip.Addr
-	w.eventually("api given an automatic address, on the host and in its guest", func() (bool, string) {
+	testutil.Eventually(w.t, "api given an automatic address, on the host and in its guest", func() (bool, string) {
 		auto = w.hostIPv6(ctUID)
 		g := w.host.GuestIPv6(ctUID)
 		return auto.IsValid() && auto != addr && len(g) == 1 && g[0].Address == auto, fmt.Sprint(auto, g)
@@ -102,12 +103,12 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 	if _, err := w.root.Delete(context.Background(), registry.Address, client.Key{Project: project, Name: "ip"}); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("web given an automatic address once the address went", func() (bool, string) {
+	testutil.Eventually(w.t, "web given an automatic address once the address went", func() (bool, string) {
 		got := w.leasedTo(netUID, vmMAC)
 		h := w.hostIPv6(vmUID)
 		return h.IsValid() && h != addr && got == h, fmt.Sprint(h, got)
 	})
-	w.eventually("the address gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the address gone", func() (bool, string) {
 		_, ok := get[*networkv1alpha1.Address](w, registry.Address, "ip")
 		return !ok, ""
 	})
@@ -120,7 +121,7 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 	w.host.OldGuest(ctUID, true)
 	defer w.host.DelayStop(ctUID, 300*time.Millisecond)()
 	w.applyAddress("old", toContainer("api"))
-	w.eventually("api started again with the address on its boot disk", func() (bool, string) {
+	testutil.Eventually(w.t, "api started again with the address on its boot disk", func() (bool, string) {
 		a, _ := get[*networkv1alpha1.Address](w, registry.Address, "old")
 		p, err := netip.ParsePrefix(a.GetStatus().GetIpv6())
 		v := w.host.Snapshot().VMs[ctUID]
@@ -128,7 +129,7 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 			v.Spec.Interfaces[0].IPv6 == p.Addr(), fmt.Sprint(v.Spec.Interfaces, v.Started)
 	})
 	again := w.host.Snapshot().VMs[ctUID].Started
-	time.Sleep(500 * time.Millisecond)
+	testutil.Unchanged(w.t, "api's VM, started again", 500*time.Millisecond, w.vmVersion(ctUID))
 	if v := w.host.Snapshot().VMs[ctUID]; !v.Started.Equal(again) {
 		t.Errorf("api started again more than once: %v then %v", again, v.Started)
 	}
@@ -138,7 +139,7 @@ func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
 func (w *world) addressOf(name string) netip.Addr {
 	w.t.Helper()
 	var addr netip.Addr
-	w.eventually("address "+name+" reserved", func() (bool, string) {
+	testutil.Eventually(w.t, "address "+name+" reserved", func() (bool, string) {
 		a, _ := get[*networkv1alpha1.Address](w, registry.Address, name)
 		p, err := netip.ParsePrefix(a.GetStatus().GetIpv6())
 		addr = p.Addr()
@@ -233,7 +234,7 @@ func TestNoTwoInterfacesHoldAnAddress(t *testing.T) {
 	started := w.started(apiUID, dbUID)
 	w.applyAddress("ip", toContainer("api"))
 	addr := w.addressOf("ip")
-	w.eventually("api holding the address", func() (bool, string) {
+	testutil.Eventually(w.t, "api holding the address", func() (bool, string) {
 		return w.hostIPv6(apiUID) == addr, w.hostIPv6(apiUID).String()
 	})
 
@@ -244,13 +245,13 @@ func TestNoTwoInterfacesHoldAnAddress(t *testing.T) {
 	stop := w.watchHolders(addr, "ct-db")
 	w.startAgent()
 	w.applyAddress("ip", toContainer("db"))
-	w.eventually("db holding the address, on the host and in its guest, with api's image still being made", func() (bool, string) {
+	testutil.Eventually(w.t, "db holding the address, on the host and in its guest, with api's image still being made", func() (bool, string) {
 		ok, g := w.guestHolds(dbUID, addr)
 		return ok && w.hostIPv6(dbUID) == addr, fmt.Sprint(w.hostIPv6(apiUID), w.hostIPv6(dbUID), g)
 	})
 	stop()
 	letGo()
-	w.eventually("api told an automatic address", func() (bool, string) {
+	testutil.Eventually(w.t, "api told an automatic address", func() (bool, string) {
 		h := w.hostIPv6(apiUID)
 		ok, g := w.guestHolds(apiUID, h)
 		return ok && h.IsValid() && h != addr, g
@@ -274,13 +275,13 @@ func TestAGuestIsToldItsAddressAfterTheAgentRestarts(t *testing.T) {
 	apiUID := w.machine("api").GetMetadata().GetUid()
 	started := w.started(apiUID)
 	addr := w.addressOf("ip")
-	w.eventually("api booted with the address", func() (bool, string) {
+	testutil.Eventually(w.t, "api booted with the address", func() (bool, string) {
 		v := w.host.Snapshot().VMs[apiUID]
 		ok, g := w.guestHolds(apiUID, addr)
 		return ok && len(v.Spec.Interfaces) == 1 && v.Spec.Interfaces[0].IPv6 == addr, g
 	})
 	w.applyAddress("ip", toContainer("db"))
-	w.eventually("api told an automatic address", func() (bool, string) {
+	testutil.Eventually(w.t, "api told an automatic address", func() (bool, string) {
 		h := w.hostIPv6(apiUID)
 		ok, g := w.guestHolds(apiUID, h)
 		return ok && h.IsValid() && h != addr, g
@@ -289,7 +290,7 @@ func TestAGuestIsToldItsAddressAfterTheAgentRestarts(t *testing.T) {
 	w.stopAgent()
 	w.applyAddress("ip", toContainer("api"))
 	w.startAgent()
-	w.eventually("api holding the address again, on the host and in its guest", func() (bool, string) {
+	testutil.Eventually(w.t, "api holding the address again, on the host and in its guest", func() (bool, string) {
 		ok, g := w.guestHolds(apiUID, addr)
 		return ok && w.hostIPv6(apiUID) == addr, fmt.Sprint(w.hostIPv6(apiUID), g)
 	})
@@ -308,7 +309,7 @@ func TestAGuestThatRebootsIsToldItsAddressAgain(t *testing.T) {
 	apiUID := w.machine("api").GetMetadata().GetUid()
 	w.applyAddress("ip", toContainer("api"))
 	addr := w.addressOf("ip")
-	w.eventually("api's guest told the address", func() (bool, string) { return w.guestHolds(apiUID, addr) })
+	testutil.Eventually(w.t, "api's guest told the address", func() (bool, string) { return w.guestHolds(apiUID, addr) })
 	if v := w.host.Snapshot().VMs[apiUID]; v.Spec.Interfaces[0].IPv6 == addr {
 		t.Fatal("api's boot disk carries the address: the test sees nothing")
 	}
@@ -316,7 +317,7 @@ func TestAGuestThatRebootsIsToldItsAddressAgain(t *testing.T) {
 	if err := w.host.Exit(apiUID, 1); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("api's guest, booted again, told the address again", func() (bool, string) {
+	testutil.Eventually(w.t, "api's guest, booted again, told the address again", func() (bool, string) {
 		ok, g := w.guestHolds(apiUID, addr)
 		return ok && w.host.Snapshot().VMs[apiUID].Boots == 2, g
 	})
@@ -343,7 +344,7 @@ func TestAnUpgradeRestartsNoContainer(t *testing.T) {
 	w.startAgent()
 	w.applyAddress("ip", toContainer("api"))
 	addr := w.addressOf("ip")
-	w.eventually("api holding the address, on the host and in its guest", func() (bool, string) {
+	testutil.Eventually(w.t, "api holding the address, on the host and in its guest", func() (bool, string) {
 		ok, g := w.guestHolds(apiUID, addr)
 		return ok && w.hostIPv6(apiUID) == addr, g
 	})
@@ -355,7 +356,7 @@ func TestAnUpgradeRestartsNoContainer(t *testing.T) {
 // made after starts with an address.
 func (w *world) waitNodePrefix() {
 	w.t.Helper()
-	w.eventually("the node reporting its prefix", func() (bool, string) {
+	testutil.Eventually(w.t, "the node reporting its prefix", func() (bool, string) {
 		obj, err := w.root.Get(context.Background(), registry.Node, client.Key{Name: apiservertest.Node})
 		if err != nil {
 			return false, err.Error()

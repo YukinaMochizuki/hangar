@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/http2"
 
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
 )
 
@@ -108,12 +109,10 @@ func TestOnlyANodeOpensATunnel(t *testing.T) {
 	}
 	// The hub takes the tunnel once it has answered the upgrade.
 	var tun *tunnel.Tunnel
-	for deadline := time.Now().Add(5 * time.Second); tun == nil; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the tunnel was never taken as n1's")
-		}
+	testutil.EventuallyWithin(t, 5*time.Second, "the tunnel taken as n1's", func() bool {
 		tun, _ = s.tunnels.Node("n1")
-	}
+		return tun != nil
+	})
 	resp, err := tun.HTTPClient().Get("http://n1/")
 	if err != nil {
 		t.Fatal(err)

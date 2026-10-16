@@ -16,6 +16,7 @@ import (
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func (w *world) applyGroup(name string, spec *networkv1alpha1.SecurityGroupSpec) {
@@ -38,7 +39,7 @@ func (w *world) policyOf(name, what string, ok func(secgroup.Policy) bool) {
 // that ok accepts.
 func (w *world) machinePolicy(name, what string, ok func(secgroup.Policy) bool) {
 	w.t.Helper()
-	w.eventually(fmt.Sprintf("%s's policy %s", name, what), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("%s's policy %s", name, what), func() (bool, string) {
 		m, found := get[*computev1alpha1.Machine](w, registry.Machine, name)
 		if !found {
 			return false, "no machine"

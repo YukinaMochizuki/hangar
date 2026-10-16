@@ -21,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // address is an Address of project web bound to container ctr's interface,
@@ -43,24 +44,7 @@ func applyAddress(t *testing.T, s *Server, user context.Context, a *networkv1alp
 // waitAddress waits until the Address satisfies ok.
 func waitAddress(t *testing.T, s *Server, system context.Context, name, what string, ok func(*networkv1alpha1.Address) bool) *networkv1alpha1.Address {
 	t.Helper()
-	var last *networkv1alpha1.Address
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, registry.Address, resource.Key{Project: "web", Name: name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj != nil {
-			last = obj.(*networkv1alpha1.Address)
-			if ok(last) {
-				return last
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("address %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	return waitObject(t, s, system, registry.Address, resource.Key{Project: "web", Name: name}, "address "+name+" "+what, ok)
 }
 
 func boundReason(a *networkv1alpha1.Address) string {
@@ -389,7 +373,8 @@ func TestATargetIsOfItsAddressesProject(t *testing.T) {
 	if ipv6Of(m) == a.GetStatus().GetIpv6() {
 		t.Errorf("project other's api holds project web's address %s", ipv6Of(m))
 	}
-	time.Sleep(100 * time.Millisecond)
+	testutil.Unchanged(t, "project web's address", 100*time.Millisecond,
+		versionOf(s, system, registry.Address, resource.Key{Project: "web", Name: "ip"}))
 	a = waitAddress(t, s, system, "ip", "still waiting", func(*networkv1alpha1.Address) bool { return true })
 	if boundReason(a) != ReasonTargetNotFound || a.GetStatus().GetMachine() != "" {
 		t.Errorf("project web's address is %s by %q", boundReason(a), a.GetStatus().GetMachine())
@@ -419,22 +404,5 @@ func TestAddressesCatchUpOnStart(t *testing.T) {
 // waitMachineIn waits until machine name of project satisfies ok.
 func waitMachineIn(t *testing.T, s *Server, system context.Context, project, name, what string, ok func(*computev1alpha1.Machine) bool) *computev1alpha1.Machine {
 	t.Helper()
-	var last *computev1alpha1.Machine
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		obj, err := s.get(system, registry.Machine, resource.Key{Project: project, Name: name})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj != nil {
-			last = obj.(*computev1alpha1.Machine)
-			if ok(last) {
-				return last
-			}
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("machine %s/%s never %s; last seen: %v", project, name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	return waitObject(t, s, system, registry.Machine, resource.Key{Project: project, Name: name}, "machine "+project+"/"+name+" "+what, ok)
 }

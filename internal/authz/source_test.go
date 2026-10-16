@@ -2,6 +2,7 @@ package authz_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -13,18 +14,15 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // waitAllowed waits until a says want for p's permission on the target.
 func waitAllowed(t *testing.T, a *authz.Authorizer, p auth.Principal, perm string, target authz.Target, want bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for a.Allowed(p, perm, target) != want {
-		if time.Now().After(deadline) {
-			t.Fatalf("%v %s on %v: never %t", p, perm, target, want)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, fmt.Sprintf("%v %s on %v: %t", p, perm, target, want), func() bool {
+		return a.Allowed(p, perm, target) == want
+	})
 }
 
 // TestAnAuthorizerFollowsASource: an authorizer outside the apiserver, as

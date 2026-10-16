@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestEachNetworkHandsOutItsAddresses: a machine asking its network's DHCP
@@ -50,7 +52,7 @@ func TestEachNetworkHandsOutItsAddresses(t *testing.T) {
 		}
 		return dhcpv4.FromBytes(buf[:n])
 	}
-	w.eventually("api offered "+want, func() (bool, string) {
+	testutil.Eventually(w.t, "api offered "+want, func() (bool, string) {
 		offer, err := ask(mac)
 		return err == nil && offer.MessageType() == dhcpv4.MessageTypeOffer && offer.YourIPAddr.String() == want &&
 			offer.HostName() == "api", fmt.Sprintf("%v %v", offer, err)

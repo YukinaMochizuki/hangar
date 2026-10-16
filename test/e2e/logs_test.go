@@ -21,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func (w *world) logsAs(email string) computev1alpha1connect.MachineCapabilityServiceClient {
@@ -137,7 +138,7 @@ func TestContainerLogs(t *testing.T) {
 	}
 	root := w.logsAs(apiservertest.Root)
 	var lines []string
-	w.eventually("the output in the logs", func() (bool, string) {
+	testutil.Eventually(w.t, "the output in the logs", func() (bool, string) {
 		var err error
 		lines, err = readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return err == nil && contains(lines, "1:stdout:hello", "1:stderr:oops"), fmt.Sprint(lines, err)
@@ -147,15 +148,15 @@ func TestContainerLogs(t *testing.T) {
 	}
 
 	f := w.follow(apiservertest.Root, "api")
-	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:stdout:hello") })
+	testutil.Eventually(w.t, "the follow reading the log", func() (bool, string) { return f.has("1:stdout:hello") })
 	if err := w.host.Exit(uid, 1); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the restart", func() (bool, string) { return w.host.Snapshot().VMs[uid].Boots == 2, "" })
+	testutil.Eventually(w.t, "the restart", func() (bool, string) { return w.host.Snapshot().VMs[uid].Boots == 2, "" })
 	if err := w.host.Print(uid, console.Stdout, "again\n"); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the follow seeing the exit and the next boot", func() (bool, string) {
+	testutil.Eventually(w.t, "the follow seeing the exit and the next boot", func() (bool, string) {
 		if ok, last := f.has("1:exit:1"); !ok {
 			return false, last
 		}
@@ -166,7 +167,7 @@ func TestContainerLogs(t *testing.T) {
 	}
 	f.cancel()
 	_ = f.ended(t, 5*time.Second)
-	w.eventually("the node's read ended with the client", func() (bool, string) {
+	testutil.Eventually(w.t, "the node's read ended with the client", func() (bool, string) {
 		return w.host.LogReaders() == 0, fmt.Sprint(w.host.LogReaders())
 	})
 
@@ -194,7 +195,7 @@ func TestAFollowEndsWithTheContainer(t *testing.T) {
 	w.apply(c)
 	w.waitReason("job", "Running")
 	f := w.follow(apiservertest.Root, "job")
-	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
+	testutil.Eventually(w.t, "the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
 	if err := w.host.Exit(w.machine("job").GetMetadata().GetUid(), 3); err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +239,7 @@ func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
 	req := func(name string) *computev1alpha1.LogsRequest {
 		return &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name}
 	}
-	w.eventually("the owner told the container has no machine yet", func() (bool, string) {
+	testutil.Eventually(w.t, "the owner told the container has no machine yet", func() (bool, string) {
 		_, err := readLogs(context.Background(), w.logsAs("owner@example.com"), req("api"))
 		return connect.CodeOf(err) == connect.CodeFailedPrecondition, fmt.Sprint(err)
 	})
@@ -272,13 +273,13 @@ func TestLogsOfANodeDown(t *testing.T) {
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
 	f := w.follow(apiservertest.Root, "api")
-	w.eventually("the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
+	testutil.Eventually(w.t, "the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
 
 	w.stopAgent()
 	if err := f.ended(t, 5*time.Second); connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Errorf("the follow ended with %v, want unavailable", err)
 	}
-	w.eventually("a read failing as unavailable", func() (bool, string) {
+	testutil.Eventually(w.t, "a read failing as unavailable", func() (bool, string) {
 		start := time.Now()
 		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return connect.CodeOf(err) == connect.CodeUnavailable && time.Since(start) < time.Second, fmt.Sprint(err)
@@ -291,7 +292,7 @@ func TestLogsOfANodeDown(t *testing.T) {
 
 	// The node back, so are its logs.
 	w.startAgent()
-	w.eventually("the logs readable again", func() (bool, string) {
+	testutil.Eventually(w.t, "the logs readable again", func() (bool, string) {
 		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
 		return err == nil, fmt.Sprint(err)
 	})
@@ -325,7 +326,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 		_, err := readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
 		return err
 	}
-	w.eventually("the other tenant's container readable", func() (bool, string) {
+	testutil.Eventually(w.t, "the other tenant's container readable", func() (bool, string) {
 		err := read("elsewhere", "theirs")
 		return err == nil, fmt.Sprint(err)
 	})
@@ -333,7 +334,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 	started := "1:init:hangar-init: starting the container"
 	f1 := w.follow(apiservertest.Root, "api")
 	f2 := w.follow(apiservertest.Root, "job")
-	w.eventually("both follows open", func() (bool, string) {
+	testutil.Eventually(w.t, "both follows open", func() (bool, string) {
 		ok1, _ := f1.has(started)
 		ok2, _ := f2.has(started)
 		return ok1 && ok2, ""
@@ -357,18 +358,18 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 	if err := f2.ended(t, 10*time.Second); err != nil {
 		t.Errorf("the job's follow ended with %v", err)
 	}
-	w.eventually("a slot free once the follow ended", func() (bool, string) {
+	testutil.Eventually(w.t, "a slot free once the follow ended", func() (bool, string) {
 		err := read(project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
 	f3 := w.follow(apiservertest.Root, "api")
-	w.eventually("the third follow open", func() (bool, string) { return f3.has(started) })
+	testutil.Eventually(w.t, "the third follow open", func() (bool, string) { return f3.has(started) })
 	if err := read(project, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("a call at the cap again: %v", err)
 	}
 	f1.cancel()
 	_ = f1.ended(t, 5*time.Second)
-	w.eventually("a slot free once the follow was cancelled", func() (bool, string) {
+	testutil.Eventually(w.t, "a slot free once the follow was cancelled", func() (bool, string) {
 		err := read(project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
@@ -408,7 +409,7 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 		_, err := readLogs(ctx, w.logsAs(who), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
 		return err
 	}
-	w.eventually("the other tenant's container readable", func() (bool, string) {
+	testutil.Eventually(w.t, "the other tenant's container readable", func() (bool, string) {
 		err := read(apiservertest.Root, "elsewhere", "theirs")
 		return err == nil, fmt.Sprint(err)
 	})
@@ -423,7 +424,7 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 	if !stream.Receive() {
 		t.Fatalf("the follow in the other tenant: %v", stream.Err())
 	}
-	w.eventually("the follow open", func() (bool, string) { return f1.has(started) })
+	testutil.Eventually(w.t, "the follow open", func() (bool, string) { return f1.has(started) })
 
 	for _, where := range [][2]string{{project, "api"}, {"elsewhere", "theirs"}} {
 		err := read(apiservertest.Root, where[0], where[1])
@@ -431,13 +432,13 @@ func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 			t.Errorf("root's third call, in %s: %v, want resource exhausted", where[0], err)
 		}
 	}
-	w.eventually("the owner reading the logs", func() (bool, string) {
+	testutil.Eventually(w.t, "the owner reading the logs", func() (bool, string) {
 		err := read("owner@example.com", project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
 	f1.cancel()
 	_ = f1.ended(t, 5*time.Second)
-	w.eventually("root's slot back once its follow was cancelled", func() (bool, string) {
+	testutil.Eventually(w.t, "root's slot back once its follow was cancelled", func() (bool, string) {
 		err := read(apiservertest.Root, project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
