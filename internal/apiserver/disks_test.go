@@ -17,6 +17,7 @@ import (
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 func disk(name, size string) *storagev1alpha1.Disk {
@@ -419,7 +420,7 @@ func TestDiskControllerCatchesUpOnStart(t *testing.T) {
 }
 
 // TestASettledDiskStaysQuiet: once a disk's status matches, nothing more is
-// written.
+// written to it.
 func TestASettledDiskStaysQuiet(t *testing.T) {
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 4096, 100)
@@ -429,19 +430,34 @@ func TestASettledDiskStaysQuiet(t *testing.T) {
 	if _, err := s.backend(registry.Machine).Apply(system, withDisks(machine("ct-a", ""), "data")); err != nil {
 		t.Fatal(err)
 	}
-	waitDisk(t, s, system, "data", "bound and attached", func(d *storagev1alpha1.Disk) bool {
-		return d.GetStatus().GetMachine() == "ct-a" && d.GetStatus().GetNode() == "n1"
+	// The scheduler binds the disk before it writes the machine, so the disk
+	// can settle while the machine is still being placed; those writes may
+	// wake the disk controller, which must then find nothing to write.
+	waitMachine(t, s, system, "ct-a", "scheduled", func(m *computev1alpha1.Machine) bool {
+		return conditions.IsTrue(m.GetStatus().GetConditions(), MachineScheduled)
+	})
+	waitDisk(t, s, system, "data", "bound, attached and allocated", func(d *storagev1alpha1.Disk) bool {
+		return d.GetStatus().GetMachine() == "ct-a" && d.GetStatus().GetNode() == "n1" &&
+			conditions.IsTrue(d.GetStatus().GetConditions(), DiskAllocated)
 	})
 	reportDiskCond(t, s, system, "data", &metav1.Condition{Type: DiskReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Created"})
-	waitDisk(t, s, system, "data", "in use", func(d *storagev1alpha1.Disk) bool {
+	settled := waitDisk(t, s, system, "data", "in use", func(d *storagev1alpha1.Disk) bool {
 		return d.GetStatus().GetPhase() == storagev1alpha1.DiskPhase_DISK_PHASE_IN_USE
 	})
-	before, err := s.store.Revision(system)
-	if err != nil {
+	ctx, cancel := context.WithTimeout(system, 300*time.Millisecond)
+	defer cancel()
+	var writes int
+	watch := store.WatchOptions{Kind: registry.Disk.Kind, Project: "web", SinceRevision: settled.GetMetadata().GetResourceVersion()}
+	err := s.store.Watch(ctx, watch, func(e store.Event) error {
+		if e.Object.Name == "data" {
+			writes++
+		}
+		return nil
+	})
+	if err != nil && ctx.Err() == nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if after, _ := s.store.Revision(system); after != before {
-		t.Errorf("a settled disk was written %d more times", after-before)
+	if writes > 0 {
+		t.Errorf("a settled disk was written %d more times", writes)
 	}
 }

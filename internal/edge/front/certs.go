@@ -32,7 +32,8 @@ type CertConfig struct {
 	// certificate is checked against: a test CA's.
 	CARoots *x509.CertPool
 	// Email is the ACME account's contact, told of problems with the
-	// certificates; it may be empty.
+	// certificates. It is required: without it certmagic uses an email it
+	// remembers for the whole process, which a race can set to "default".
 	Email string
 	// DNS sets and removes the TXT records DNS-01 challenges ask for. It is
 	// the only challenge the front door solves, so certificates are issued
@@ -61,6 +62,9 @@ func Certificates(ctx context.Context, cc CertConfig) (*tls.Config, error) {
 	}
 	if len(cc.Names) == 0 {
 		return nil, errors.New("no names to get certificates for")
+	}
+	if cc.Email == "" {
+		return nil, errors.New("certificates need an email for the ACME account")
 	}
 	if cc.CA == "" {
 		cc.CA = LetsEncrypt

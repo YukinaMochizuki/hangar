@@ -9,10 +9,12 @@ package acmetest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/libdns/libdns"
@@ -40,13 +42,8 @@ func Start(addr string, zones ...string) (*Server, error) {
 	for _, z := range zones {
 		s.zones = append(s.zones, dns.Fqdn(strings.ToLower(z)))
 	}
-	pc, err := net.ListenPacket("udp", addr)
+	pc, ln, err := listen(addr)
 	if err != nil {
-		return nil, err
-	}
-	ln, err := net.Listen("tcp", pc.LocalAddr().String())
-	if err != nil {
-		_ = pc.Close()
 		return nil, err
 	}
 	s.Addr = pc.LocalAddr().String()
@@ -64,6 +61,29 @@ func Start(addr string, zones ...string) (*Server, error) {
 		}
 	}
 	return s, nil
+}
+
+// listen listens on addr over UDP and on the same port over TCP. A port
+// the system picked for UDP may be taken for TCP, so then it tries again.
+func listen(addr string) (net.PacketConn, net.Listener, error) {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	for try := 1; ; try++ {
+		pc, err := net.ListenPacket("udp", addr)
+		if err != nil {
+			return nil, nil, err
+		}
+		ln, err := net.Listen("tcp", pc.LocalAddr().String())
+		if err == nil {
+			return pc, ln, nil
+		}
+		_ = pc.Close()
+		if port != "0" || !errors.Is(err, syscall.EADDRINUSE) || try == 20 {
+			return nil, nil, err
+		}
+	}
 }
 
 // Close stops the server.

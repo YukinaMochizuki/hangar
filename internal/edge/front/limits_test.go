@@ -243,11 +243,44 @@ func TestRequestRate(t *testing.T) {
 	}
 }
 
-func TestRequestLimits(t *testing.T) {
+// TestRequestsInFlight: past its requests in flight a client is refused. Its
+// door is its own: at one in flight, a request sent once the last answer
+// arrived may be refused too, as the proxy flushes it before it returns.
+func TestRequestsInFlight(t *testing.T) {
 	release := make(chan struct{})
 	o := defaultOptions()
 	o.api = fakeAPI(release)
 	o.limits.RequestsPerClient = 1
+	d := startDoor(t, newCA(t), o)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+apiHost+"/stream", nil)
+	resp, err := d.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := do(t, d.client, http.MethodGet, "https://"+apiHost+"/", nil, nil); code != http.StatusTooManyRequests {
+		t.Errorf("a second request while the stream runs: %d; want 429", code)
+	}
+	close(release)
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		code, _, _ := do(t, d.client, http.MethodGet, "https://"+apiHost+"/", nil, nil)
+		if code == http.StatusOK {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("after the stream ended: %d", code)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func TestRequestLimits(t *testing.T) {
+	o := defaultOptions()
 	o.limits.APIBodyBytes = 1024
 	o.limits.EndpointBodyBytes = 2048
 	o.limits.MaxHeaderBytes = 4096
@@ -255,32 +288,6 @@ func TestRequestLimits(t *testing.T) {
 	o.limits.ReadHeaderTimeout = 500 * time.Millisecond
 	d := startDoor(t, newCA(t), o)
 
-	t.Run("requests in flight", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://"+apiHost+"/stream", nil)
-		resp, err := d.client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if code, _, _ := do(t, d.client, http.MethodGet, "https://"+apiHost+"/", nil, nil); code != http.StatusTooManyRequests {
-			t.Errorf("a second request while the stream runs: %d; want 429", code)
-		}
-		close(release)
-		_, _ = io.Copy(io.Discard, resp.Body)
-		_ = resp.Body.Close()
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			code, _, _ := do(t, d.client, http.MethodGet, "https://"+apiHost+"/", nil, nil)
-			if code == http.StatusOK {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("after the stream ended: %d", code)
-			}
-			time.Sleep(50 * time.Millisecond)
-		}
-	})
 	t.Run("bodies", func(t *testing.T) {
 		chunked := func(n int) io.Reader { return io.MultiReader(bytes.NewReader(make([]byte, n))) }
 		for _, tt := range []struct {
