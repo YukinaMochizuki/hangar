@@ -5,8 +5,11 @@ package network
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"os/exec"
@@ -253,7 +256,7 @@ func policy6(i driver.Interface, from ...string) driver.InterfacePolicy {
 // another network, cannot pass as another or as a router or DHCPv6 server,
 // and the host repairs its routes and proxy entries when they drift.
 func TestIPv6(t *testing.T) {
-	d := newDriver(t, hostnet.Config{Uplink: upstreamLink, PublicIPv4: netip.MustParseAddr(hostAddr), IPv6Prefix: prefix6})
+	d := newDriver(t, hostnet.Config{Uplink: upstreamLink, PublicIPv4: netip.MustParseAddr(hostAddr), IPv6Prefix: prefix6, PublicIPv6: netip.MustParseAddr(hostAddr6)})
 	nics := []driver.Interface{nic6("a1", netA, 2), nic6("a2", netA, 3), nic6("b1", netB, 2)}
 	made := ensure(t, d, []driver.NetworkSpec{netA, netB}, nics...)
 	logHost(t)
@@ -303,6 +306,60 @@ func TestIPv6(t *testing.T) {
 		}
 		if a1.reaches("10.1.0.2") {
 			t.Error("a1 reaches b1's private IPv4 address")
+		}
+	})
+	t.Run("the front door alone of the host, at its public addresses", func(t *testing.T) {
+		// The host listens on every address, as the edge's sockets do, on
+		// the front door's ports and on one more.
+		for _, port := range []string{"80", "443", "8443"} {
+			ln, err := net.Listen("tcp", ":"+port)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = ln.Close() })
+			go func() {
+				_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = io.WriteString(w, "host:"+port) }))
+			}()
+		}
+		get := func(g *guest, url string) string {
+			out, _ := exec.Command("ip", "netns", "exec", g.ns, "curl", "-sS", "-m", "3", url).CombinedOutput()
+			return strings.TrimSpace(string(out))
+		}
+		for _, g := range []*guest{a1, b1} {
+			for _, host := range []string{"[" + hostAddr6 + "]", hostAddr} {
+				for _, port := range []string{"80", "443"} {
+					if got := get(g, "http://"+host+":"+port+"/"); got != "host:"+port {
+						t.Errorf("%s to the front door at %s:%s: %q", g.ns, host, port, got)
+					}
+				}
+				if got := get(g, "http://"+host+":8443/"); strings.Contains(got, "host:") {
+					t.Errorf("%s reaches the host's :8443 at %s", g.ns, host)
+				}
+			}
+			// Not at the host's other addresses: its end of the transit link.
+			if got := get(g, "http://100.64.0.0:443/"); strings.Contains(got, "host:") {
+				t.Errorf("%s reaches the front door's port at the host's transit address", g.ns)
+			}
+		}
+		// UDP to 443, as QUIC would be, is not the front door's.
+		udp, err := net.ListenPacket("udp", ":443")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = udp.Close() }()
+		for _, host := range []string{hostAddr6, hostAddr} {
+			script := fmt.Sprintf("import socket\ns=socket.socket(socket.AF_INET6 if ':' in %q else socket.AF_INET, socket.SOCK_DGRAM)\nfor _ in range(3): s.sendto(b'quic', (%q, 443))", host, host)
+			if out, err := exec.Command("ip", "netns", "exec", a1.ns, "python3", "-c", script).CombinedOutput(); err != nil {
+				t.Fatalf("a1 sending UDP to %s: %v %s", host, err, out)
+			}
+		}
+		_ = udp.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, from, err := udp.ReadFrom(make([]byte, 64)); err == nil {
+			t.Errorf("a1 reaches the host's UDP 443, from %s", from)
+		}
+		// The host still answers no ping from a network.
+		if a1.reaches6(hostAddr6) || a1.reaches(hostAddr) {
+			t.Error("a1 pings the host")
 		}
 	})
 	t.Run("another network reaches a guest only as its groups allow", func(t *testing.T) {

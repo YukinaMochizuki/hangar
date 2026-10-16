@@ -218,17 +218,23 @@ test_converges_and_is_idempotent() {
 	"$host_dir/verify.sh" --env "$env_file" | tee "$work/first-verify.log"
 	[ "$(cat /usr/local/lib/hangar/VERSION)" = "$(cat "$release/VERSION")" ] || fail "installed VERSION is not the release's"
 
-	step "without cloudflared.env there is no tunnel, and verify skips it"
-	grep -q "^SKIP cloudflared $HANGAR_CLOUDFLARED_VERSION (no /etc/hangar/cloudflared.env)$" "$work/first-verify.log" ||
-		fail "verify does not skip cloudflared"
+	step "no step installs the Cloudflare tunnel, and verify finds nothing of it"
+	grep -q '^PASS Cloudflare tunnel retired: nothing of it left$' "$work/first-verify.log" ||
+		fail "verify does not check the tunnel is gone"
 	grep -q '^FAIL' "$work/first-verify.log" && fail "verify failed: $(grep '^FAIL' "$work/first-verify.log")"
 	grep -q '^SKIP SSH CA (no /var/lib/hangar/state/ssh-ca: hangar ssh cannot sign)$' "$work/first-verify.log" ||
 		fail "verify does not skip the SSH CA it has not got"
 	grep -qE '^(apply|would): .*cloudflared' "$log" && fail "the run did something about cloudflared: $(grep -E '^(apply|would): .*cloudflared' "$log")"
 	[ ! -e /usr/local/bin/cloudflared ] && [ ! -e /etc/systemd/system/hangar-cloudflared.service ] ||
-		fail "cloudflared was installed without cloudflared.env"
+		fail "cloudflared was installed"
 	systemctl show -p ExecStart --value hangar-apiserver | grep -q -- '--listen 127.0.0.1:8080 --auth-mode dev --socket' ||
 		fail "an unset HANGAR_AUTH_MODE is not dev auth"
+
+	# Where machines reach the front door: the agent's rules for it are
+	# test/testbed/network's to test. The address is the env file's in its
+	# canonical form, as load_env makes it.
+	systemctl show -p ExecStart --value hangar-node | grep -q -- '--public-ipv4 192.0.2.10 --public-ipv6 2001:db8:0:1::1 --public-ipv6-prefix 2001:db8:0:1::/64' ||
+		fail "the agent is not given the host's addresses: $(systemctl show -p ExecStart --value hangar-node)"
 
 	step "the SSH CA, installed as the runbook says, is the apiserver's, and verify checks it"
 	local since
@@ -388,18 +394,6 @@ TB_CLIENT_ID=testbed-client.apps.googleusercontent.com
 TB_PUBLIC_URL=https://console.testbed.example
 TB_OIDC_SECRET=/var/lib/hangar/state/oidc-client-secret
 
-# fake_token N prints a well-formed tunnel token for no tunnel: cloudflared
-# takes it, and Cloudflare refuses it.
-fake_token() {
-	printf '{"a":"%s","t":"%s","s":"%s"}' 0123456789abcdef0123456789abcdef 6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f \
-		"$(printf 'testbed-%s' "$1" | base64 -w0)" | base64 -w0
-}
-
-put_tunnel_token() {
-	install -m 0600 /dev/null /etc/hangar/cloudflared.env
-	echo "TUNNEL_TOKEN=$(fake_token "$1")" >/etc/hangar/cloudflared.env
-}
-
 # auth_env MODE sets the auth settings in local.env: oidc with the
 # testbed's client and public URL, and the client secret the operator
 # installs, or none, which is dev. The apiserver reaches the provider only
@@ -413,78 +407,27 @@ auth_env() {
 	fi
 }
 
-# sandbox_probe [PROPERTY...] runs a probe under hangar-cloudflared's
-# [Service] settings, but for ExecStart and the restart policy, with
-# PROPERTYs on top, and prints what it could reach.
-sandbox_probe() {
-	local props=() line
-	while IFS= read -r line; do
-		case $line in '' | '#'* | '['* | ExecStart=* | ExecStartPre=* | Restart=* | RestartSec=* | Type=*) continue ;; esac
-		props+=(-p "$line")
-	done < <(sed -n '/^\[Service\]/,/^\[Install\]/p' /etc/systemd/system/hangar-cloudflared.service)
-	systemd-run --quiet --wait --pipe --collect "${props[@]}" "$@" /usr/bin/python3 - <<'EOF'
-import os, socket
-print("uid", os.getuid())
-for p in ["/run/hangar/admin.sock", "/run/hangar/node.sock"]:
-    try:
-        s = socket.socket(socket.AF_UNIX)
-        s.connect(p)
-        print("connected", p)
-    except OSError as e:
-        print("refused", p, e.strerror)
-for d in ["/run/hangar", "/var/lib/hangar", "/var/lib/hangar/state", "/etc/hangar"]:
-    try:
-        print("listed", d, os.listdir(d))
-    except OSError as e:
-        print("denied", d, e.strerror)
+# old_tunnel leaves what an earlier release installed for the Cloudflare
+# tunnel, as a host has it at the cutover: a unit, running, its guard and
+# its binary, and the token's file. The binary only sleeps.
+old_tunnel() {
+	install -m 0755 /bin/sleep /usr/local/bin/cloudflared
+	install -D -m 0755 /dev/null /usr/local/libexec/hangar-cloudflared-guard
+	printf '#!/bin/sh\nexit 0\n' >/usr/local/libexec/hangar-cloudflared-guard
+	cat >/etc/systemd/system/hangar-cloudflared.service <<'EOF'
+[Unit]
+Description=Cloudflare Tunnel to the Hangar API (an earlier release's)
+[Service]
+ExecStartPre=+/usr/local/libexec/hangar-cloudflared-guard
+ExecStart=/usr/local/bin/cloudflared infinity
+Restart=always
+[Install]
+WantedBy=multi-user.target
 EOF
-}
-
-# cf_state prints the tunnel unit's state as ACTIVE/SUB, such as
-# activating/auto-restart.
-cf_state() { systemctl show -p ActiveState,SubState --value hangar-cloudflared | paste -sd/; }
-
-# cf_journal SINCE prints the tunnel unit's log since SINCE.
-cf_journal() { journalctl -u hangar-cloudflared --since "$1" --no-pager -o cat; }
-
-# wait_cf_active waits up to 20 s for cloudflared to be running.
-wait_cf_active() {
-	local i
-	for i in $(seq 1 20); do
-		[ "$(cf_state)" = active/running ] && return 0
-		sleep 1
-	done
-	return 1
-}
-
-test_cloudflared_needs_oidc_auth() {
-	step "cloudflared is refused while the apiserver is in dev auth, and nothing installed"
-	local before
-	put_tunnel_token 1
-	before=$(state_digest)
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared 2>"$work/cf.log"; then
-		fail "the cloudflared step ran with the apiserver in dev auth"
-	fi
-	grep -q 'never forwards to an apiserver in dev auth' "$work/cf.log" || fail "unexpected refusal: $(cat "$work/cf.log")"
-	[ "$(state_digest)" = "$before" ] || fail "the refusal changed the host"
-	[ ! -e /usr/local/bin/cloudflared ] || fail "cloudflared was installed"
-	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cf.log"; then
-		fail "a whole run went through with cloudflared.env in dev auth"
-	fi
-	grep -q '^apply: ' "$work/cf.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/cf.log")"
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/cf-verify.log"; then fail "verify passed with cloudflared.env in dev auth"; fi
-	grep -q '^FAIL hangar-cloudflared only with the apiserver in oidc auth$' "$work/cf-verify.log" ||
-		fail "verify does not say why: $(grep FAIL "$work/cf-verify.log")"
-	rm /etc/hangar/cloudflared.env
-
-	step "an oidc mode without its client ID and public URL is refused before any step"
-	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cf.log"; then fail "bootstrap ran with half an oidc mode"; fi
-	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cf.log" &&
-		grep -q 'HANGAR_PUBLIC_URL=https://' "$work/cf.log"; } || fail "unexpected refusal: $(cat "$work/cf.log")"
-	grep -q '^== ' "$work/cf.log" && fail "steps ran before the refusal"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half an oidc mode"; fi
-	auth_env dev
+	systemctl daemon-reload
+	systemctl enable --now hangar-cloudflared 2>/dev/null
+	install -m 0600 /dev/null /etc/hangar/cloudflared.env
+	echo 'TUNNEL_TOKEN=testbed-not-a-token' >/etc/hangar/cloudflared.env
 }
 
 test_oidc_cutover() {
@@ -495,8 +438,17 @@ test_oidc_cutover() {
 	grep -q 'must be dev or oidc, not cloudflare' "$work/cut.log" || fail "unexpected refusal: $(cat "$work/cut.log")"
 	auth_env dev
 
+	step "an oidc mode without its client ID and public URL is refused before any step"
+	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log"; then fail "bootstrap ran with half an oidc mode"; fi
+	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cut.log" &&
+		grep -q 'HANGAR_PUBLIC_URL=https://' "$work/cut.log"; } || fail "unexpected refusal: $(cat "$work/cut.log")"
+	grep -q '^== ' "$work/cut.log" && fail "steps ran before the refusal"
+	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half an oidc mode"; fi
+	auth_env dev
+
 	step "oidc auth in local.env restarts the apiserver in it, still on loopback"
-	local api_pid node_pid out
+	local api_pid node_pid
 	api_pid=$(main_pid hangar-apiserver)
 	node_pid=$(main_pid hangar-node)
 	auth_env oidc
@@ -513,177 +465,72 @@ test_oidc_cutover() {
 	grep -q "^PASS OAuth client secret $TB_OIDC_SECRET, hangar's, mode 600$" "$work/cut-verify.log" || fail "verify does not check the client secret"
 	grep -q "^PASS apiserver runs oidc auth as /etc/hangar/local.env asks: --auth-mode oidc --oidc-client-id $TB_CLIENT_ID --oidc-client-secret-file $TB_OIDC_SECRET --public-url $TB_PUBLIC_URL$" "$work/cut-verify.log" ||
 		fail "verify does not check the auth flags"
-	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared without its env"
 
-	step "then the tunnel token: cloudflared installed, enabled and started, and a second run changes nothing"
-	put_tunnel_token 1
-	"$host_dir/bootstrap.sh" --env "$env_file" 2>&1 | tee "$work/cut.log"
-	grep -qx "changes: $(grep -c '^apply: ' "$work/cut.log")" "$work/cut.log" || fail "summary does not match its changes"
-	for out in "install cloudflared $HANGAR_CLOUDFLARED_VERSION" 'write /etc/systemd/system/hangar-cloudflared.service' \
-		'enable hangar-cloudflared' 'start hangar-cloudflared'; do
-		grep -qx "apply: $out" "$work/cut.log" || fail "the run did not $out"
-	done
-	echo "$HANGAR_CLOUDFLARED_SHA256  /usr/local/bin/cloudflared" | sha256sum -c --quiet - || fail "cloudflared is not the pinned one"
-	systemctl is-active --quiet hangar-cloudflared || fail "cloudflared is not active"
-	out=$("$host_dir/bootstrap.sh" --env "$env_file")
-	[ "$out" = "changes: 0" ] || fail "the run after cloudflared reported $out"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify with cloudflared: $(grep FAIL "$work/cut-verify.log")"
-	grep -q "^PASS unit hangar-cloudflared enabled, active, running what is installed$" "$work/cut-verify.log" || fail "verify does not check cloudflared"
-	systemctl show -p ExecStart --value hangar-cloudflared | grep -q -- '--no-autoupdate --metrics 127.0.0.1:20241 run' || fail "cloudflared's command line"
+	step "a tunnel an earlier release left runs on while its cloudflared.env is there"
+	old_tunnel
+	systemctl is-active --quiet hangar-cloudflared || fail "the earlier release's tunnel does not run"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log")" = "changes: 0" ] || fail "a run changed something with the tunnel there: $(cat "$work/cut.log")"
+	grep -q 'warning: the Cloudflare tunnel (hangar-cloudflared) is no longer installed by any step; it is left as it is until you delete /etc/hangar/cloudflared.env' "$work/cut.log" ||
+		fail "the run does not say the tunnel is left: $(cat "$work/cut.log")"
+	systemctl is-active --quiet hangar-cloudflared || fail "the run stopped the tunnel before its env file went"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify with the tunnel left: $(grep FAIL "$work/cut-verify.log")"
+	grep -q '^SKIP Cloudflare tunnel retired (/etc/hangar/cloudflared.env is still there' "$work/cut-verify.log" ||
+		fail "verify does not skip the tunnel while its env file is there"
 
-	step "cloudflared's sandbox keeps it from the admin socket and hangar's state"
-	systemd-analyze security hangar-cloudflared --no-pager | tee "$work/cf-security.log" | tail -n 1
-	systemd-analyze security hangar-apiserver --no-pager | tail -n 1
-	local pid uid score
-	score=$(sed -n 's/.*Overall exposure level for hangar-cloudflared.service: \([0-9.]*\).*/\1/p' "$work/cf-security.log")
-	awk -v s="$score" 'BEGIN { exit !(s != "" && s <= 2.0) }' || fail "cloudflared's exposure is $score, want at most 2.0"
-	pid=$(main_pid hangar-cloudflared)
-	uid=$(stat -c %u "/proc/$pid")
-	{ [ "$uid" != 0 ] && ! getent passwd "$uid" | grep -q '^hangar:'; } || fail "cloudflared runs as uid $uid"
-	# In its own mount namespace, hangar's directories are empty and closed.
-	for d in /run/hangar /var/lib/hangar /etc/hangar; do
-		[ -z "$(nsenter -t "$pid" -m ls -A "$d")" ] || fail "cloudflared sees $d: $(nsenter -t "$pid" -m ls -A "$d")"
-		[ "$(nsenter -t "$pid" -m stat -c %a "$d")" = 0 ] || fail "$d is open in cloudflared's namespace"
-	done
-	sandbox_probe | tee "$work/probe.log"
-	grep -q '^uid 0$' "$work/probe.log" && fail "the probe ran as root"
-	grep -qE '^(connected|listed) ' "$work/probe.log" && fail "the sandbox let the probe in: $(grep -E '^(connected|listed) ' "$work/probe.log")"
-	[ "$(grep -c '^refused .* Address family not supported by protocol$' "$work/probe.log")" = 2 ] || fail "unix sockets were not refused outright"
-	[ "$(grep -c '^denied .* Permission denied$' "$work/probe.log")" = 4 ] || fail "hangar's directories were not all denied"
-	# With unix sockets allowed, the paths alone still keep it out.
-	sandbox_probe -p RestrictAddressFamilies=AF_UNIX | tee "$work/probe.log"
-	grep -qE '^(connected|listed) ' "$work/probe.log" && fail "the paths let the probe in: $(grep -E '^(connected|listed) ' "$work/probe.log")"
-	[ "$(grep -c '^refused /run/hangar/.* Permission denied$' "$work/probe.log")" = 2 ] || fail "the sockets were not denied by path"
+	step "dev auth asked for with the tunnel up stops the tunnel before the apiserver restarts"
+	auth_env dev
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "the switch to dev auth: $(cat "$work/cut.log")"
+	local stop restart
+	stop=$(grep -n '^apply: stop and disable hangar-cloudflared: the auth mode is dev$' "$work/cut.log" | cut -d: -f1)
+	restart=$(grep -n '^apply: restart hangar-apiserver$' "$work/cut.log" | cut -d: -f1)
+	[ -n "$stop" ] && [ -n "$restart" ] && [ "$stop" -lt "$restart" ] ||
+		fail "the tunnel was not stopped before the apiserver went to dev: $(cat "$work/cut.log")"
+	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel runs in front of dev auth"
+	auth_env oidc
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "back to oidc auth: $(cat "$work/cut.log")"
+	systemctl start hangar-cloudflared
 
-	step "a new tunnel token restarts cloudflared, and only it"
-	local cf_pid
-	cf_pid=$(main_pid hangar-cloudflared)
-	api_pid=$(main_pid hangar-apiserver)
-	put_tunnel_token 2
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
-	grep -q '^apply: restart hangar-cloudflared$' "$work/cut.log" || fail "a new token did not restart cloudflared: $(cat "$work/cut.log")"
-	[ "$(main_pid hangar-cloudflared)" != "$cf_pid" ] || fail "cloudflared runs the old token"
-	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the apiserver was restarted for the token"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the new token"
-
-	step "the unit's own guard: no tunnel while the apiserver is stopped, back once it runs in oidc auth"
-	local since
-	since=$(date '+%Y-%m-%d %H:%M:%S')
-	cf_pid=$(main_pid hangar-cloudflared)
-	systemctl restart hangar-apiserver
-	wait_cf_active || fail "cloudflared did not come back with the apiserver: $(cf_state)"
-	[ "$(main_pid hangar-cloudflared)" != "$cf_pid" ] || fail "restarting the apiserver did not restart cloudflared (PartOf=)"
-	systemctl stop hangar-apiserver
-	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared outlived a stopped apiserver"
-	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started with the apiserver stopped"
-	sleep 2
-	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver is not running' ||
-		fail "the guard did not refuse a stopped apiserver: $(cf_journal "$since" | tail -n 5)"
-	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
-	systemctl start hangar-apiserver
-	wait_cf_active || fail "cloudflared did not come up once the apiserver was back: $(cf_state)"
-
-	step "the guard also refuses an apiserver whose loaded unit would restart it in dev auth"
-	# The log is read by the second: nothing from before may share it, the
-	# tunnel's "Starting tunnel" included, which it logs a moment after
-	# systemd has it active.
-	sleep 2
-	since=$(date '+%Y-%m-%d %H:%M:%S')
-	sed -i 's/--auth-mode oidc --oidc-client-id [^ ]* --oidc-client-secret-file [^ ]* --public-url [^ ]*/--auth-mode dev/' /etc/systemd/system/hangar-apiserver.service
-	systemctl daemon-reload
-	systemctl restart hangar-cloudflared 2>/dev/null && fail "cloudflared restarted in front of a unit in dev auth"
-	sleep 2
-	cf_journal "$since" | grep -q "refusing to start the tunnel: hangar-apiserver's unit would restart it without --auth-mode oidc" ||
-		fail "the guard did not refuse the loaded unit: $(cf_journal "$since" | tail -n 5)"
-	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of a unit in dev auth"
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
-	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "bootstrap did not put the unit back: $(cat "$work/cut.log")"
-	wait_cf_active || fail "cloudflared did not come back with the unit: $(cf_state)"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the guard"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the guard: $(grep FAIL "$work/cut-verify.log")"
-
-	step "rolling back: the tunnel stops without cloudflared.env, then the apiserver goes back to dev auth"
+	step "with cloudflared.env deleted, the run retires the tunnel: nothing of it is left"
 	rm /etc/hangar/cloudflared.env
-	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
-	grep -q '^apply: stop and disable hangar-cloudflared: /etc/hangar/cloudflared.env is gone$' "$work/cut.log" ||
-		fail "the tunnel was not stopped: $(cat "$work/cut.log")"
-	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared still runs"
-	systemctl is-enabled --quiet hangar-cloudflared && fail "cloudflared is still enabled"
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "retiring the tunnel: $(cat "$work/cut.log")"
+	grep -q '^apply: retire the Cloudflare tunnel: stop and disable hangar-cloudflared, remove /etc/systemd/system/hangar-cloudflared.service /usr/local/libexec/hangar-cloudflared-guard /usr/local/bin/cloudflared$' "$work/cut.log" ||
+		fail "the run did not retire the tunnel: $(cat "$work/cut.log")"
+	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel still runs"
+	local f
+	for f in /etc/systemd/system/hangar-cloudflared.service /usr/local/libexec/hangar-cloudflared-guard /usr/local/bin/cloudflared; do
+		[ ! -e "$f" ] || fail "$f is left"
+	done
+	[ "$(systemctl show -p LoadState --value hangar-cloudflared)" = not-found ] || fail "systemd still knows the tunnel's unit"
+	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the tunnel went"
+	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the tunnel went: $(grep FAIL "$work/cut-verify.log")"
+	grep -q '^PASS Cloudflare tunnel retired: nothing of it left$' "$work/cut-verify.log" || fail "verify does not check the tunnel is gone"
+
+	step "a tunnel put back by hand, with no env file, fails verify, and the run removes it"
+	old_tunnel
+	rm /etc/hangar/cloudflared.env
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with the tunnel back"; fi
+	grep -q '^FAIL Cloudflare tunnel retired: nothing of it left$' "$work/cut-verify.log" || fail "verify does not say why: $(grep FAIL "$work/cut-verify.log")"
+	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel still runs"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once the tunnel is gone again"
+
+	step "rolling back to dev auth"
 	auth_env dev
 	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
 	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
 	[ "$(list_nodes_status)" = 200 ] || fail "dev auth is not back"
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the rollback"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the rollback: $(grep FAIL "$work/cut-verify.log")"
-	grep -q '^SKIP cloudflared' "$work/cut-verify.log" || fail "verify does not skip cloudflared after the rollback"
-
-	step "started by hand without its env file in dev auth: verify fails, and the env file appearing does not bring it up"
-	sleep 1
-	since=$(date '+%Y-%m-%d %H:%M:%S')
-	systemctl start hangar-cloudflared 2>/dev/null && fail "cloudflared started without its env file"
-	sleep 1
-	[ "$(cf_state)" = activating/auto-restart ] || fail "cloudflared is $(cf_state), not retrying"
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying"; fi
-	grep -q '^FAIL hangar-cloudflared down (activating/auto-restart): there is no /etc/hangar/cloudflared.env$' "$work/cut-verify.log" ||
-		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
-	put_tunnel_token 1
-	# Past two of its 5 s retries.
-	sleep 12
-	cf_journal "$since" | grep -q 'refusing to start the tunnel: hangar-apiserver runs --auth-mode dev, not oidc' ||
-		fail "the guard did not refuse dev auth: $(cf_journal "$since" | tail -n 5)"
-	cf_journal "$since" | grep -q 'Starting tunnel' && fail "cloudflared ran in front of dev auth"
-	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared is active in front of dev auth"
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with cloudflared retrying in dev auth"; fi
-	grep -q '^FAIL hangar-cloudflared down while the apiserver is not in oidc auth$' "$work/cut-verify.log" ||
-		fail "verify does not say why: $(grep -E '^(FAIL|SKIP)' "$work/cut-verify.log")"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"; then
-		fail "the cloudflared step went through in dev auth"
-	fi
-	grep -q '^apply: stop and disable hangar-cloudflared: the apiserver is not in oidc auth$' "$work/cut.log" ||
-		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
-	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
-	rm /etc/hangar/cloudflared.env
-
-	step "started by hand without its env file, and removed by the step without it"
-	systemctl start hangar-cloudflared 2>/dev/null || true
-	sleep 1
-	"$host_dir/bootstrap.sh" --env "$env_file" --only cloudflared >/dev/null 2>"$work/cut.log"
-	grep -q '^apply: stop and disable hangar-cloudflared: /etc/hangar/cloudflared.env is gone$' "$work/cut.log" ||
-		fail "the step did not stop the retrying tunnel: $(cat "$work/cut.log")"
-	[ "$(cf_state)" = inactive/dead ] || fail "cloudflared is $(cf_state) after the step"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the hand-started tunnel"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the hand-started tunnel"
-
-	step "dev auth with the tunnel up stops the tunnel before the apiserver changes"
-	auth_env oidc
-	put_tunnel_token 1
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>&1
-	systemctl is-active --quiet hangar-cloudflared || fail "cloudflared did not come back"
-	auth_env dev
-	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"; then
-		fail "a run went through with cloudflared.env in dev auth"
-	fi
-	local stop restart
-	stop=$(grep -n '^apply: stop and disable hangar-cloudflared: the auth mode is dev$' "$work/cut.log" | cut -d: -f1)
-	restart=$(grep -n '^apply: restart hangar-apiserver$' "$work/cut.log" | cut -d: -f1)
-	[ -n "$stop" ] && [ -n "$restart" ] && [ "$stop" -lt "$restart" ] ||
-		fail "cloudflared was not stopped before the apiserver went to dev: $(cat "$work/cut.log")"
-	grep -q 'never forwards to an apiserver in dev auth' "$work/cut.log" || fail "the run does not say why it refused"
-	systemctl is-active --quiet hangar-cloudflared && fail "cloudflared runs in front of dev auth"
-	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with cloudflared.env in dev auth"; fi
-	rm /etc/hangar/cloudflared.env
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged once cloudflared.env is gone"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once cloudflared.env is gone"
+	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the rollback"
 }
 
 # The console's origin with the front door: sign-in's public URL.
 TB_FRONT_DOOR_URL=https://console.cp.test
 
-# front_door_env off|edge|on sets the edge's settings in local.env: none,
-# the edge on loopback for public endpoints, or the front door too, with
-# certificates from pebble over DNS-01 the edge answers itself. Settings
-# the edge took before it signed private endpoints' callers in itself go
-# too.
+# front_door_env off|endpoints|on sets the edge's settings in local.env:
+# none, the public endpoints' domain alone, which the edge step refuses,
+# or the front door, with certificates from pebble over DNS-01 the edge
+# answers itself. Settings the edge took before it signed private
+# endpoints' callers in itself go too.
 front_door_env() {
 	sed -i '/^HANGAR_EDGE_/d; /^HANGAR_CP_DOMAIN=/d; /^HANGAR_ACME_/d; /^HANGAR_CF_TEAM_DOMAIN=/d; /^HANGAR_CF_ACCOUNT_ID=/d; /^HANGAR_CF_BYPASS_POLICY_ID=/d' /etc/hangar/local.env
 	[ "$1" != off ] || return 0
@@ -776,15 +623,30 @@ EOF
 	[ "$(door_curl 127.0.0.1 api.cp.test /healthz)" = "ok
  200" ] || fail "no API through the front door: $(door_curl 127.0.0.1 api.cp.test /healthz; journalctl -u hangar-edge --no-pager -n 30)"
 
-	step "verify checks the front door, its certificates included"
+	step "verify checks the front door, its certificates and what it serves on :443 included"
+	# verify.sh checks what :443 serves against the system's roots, which a
+	# real CA's chain to; pebble's, here, joins them for the test.
+	install -m 0644 "$tls/root.pem" /usr/local/share/ca-certificates/tb-pebble.crt
+	update-ca-certificates >/dev/null 2>&1
 	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the front door: $(grep FAIL "$work/door-verify.log")"
 	for out in 'certificate for api.cp.test in /var/lib/hangar-edge, more than 14 days left' \
 		'certificate for console.cp.test in /var/lib/hangar-edge, more than 14 days left' \
-		'certificate for \*.user.test in /var/lib/hangar-edge, more than 14 days left' 'edge runs as hangar-edge with no capability' 'edge listens on loopback, and on :443 and :80 for every address' \
+		'certificate for \*.user.test in /var/lib/hangar-edge, more than 14 days left' 'edge runs as hangar-edge with no capability' \
+		'edge listens on :443 and :80 for every address, and nothing else' \
+		'edge on :443 serves api.cp.test a trusted certificate with more than 14 days left, and /healthz is ok' \
+		'edge on :443 serves console.cp.test a trusted certificate with more than 14 days left' \
+		'edge on :443 serves \*.user.test a trusted certificate with more than 14 days left' \
 		'public socket /run/hangar/public.sock, root.s and hangar-edge.s group.s, 660' 'table inet hangar-host as loaded: input dropped but TCP 22, 80, 443'; do
 		grep -q "^PASS $out" "$work/door-verify.log" || fail "verify does not check: $out"
 	done
 	grep -q '^SKIP Cloudflare DNS token (DNS-01 is answered by testbed:127.0.0.1:8053)$' "$work/door-verify.log" || fail "verify does not skip the DNS token"
+	# What :443 serves, untrusted, fails verify.
+	rm /usr/local/share/ca-certificates/tb-pebble.crt
+	update-ca-certificates --fresh >/dev/null 2>&1
+	if "$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log"; then fail "verify passed with :443 serving certificates no root trusts"; fi
+	[ "$(grep -c '^FAIL edge on :443 serves ' "$work/door-verify.log")" = 3 ] || fail "verify does not fail each name :443 serves: $(grep FAIL "$work/door-verify.log")"
+	install -m 0644 "$tls/root.pem" /usr/local/share/ca-certificates/tb-pebble.crt
+	update-ca-certificates >/dev/null 2>&1
 	# A certificate verify cannot find fails it.
 	mv /var/lib/hangar-edge/certificates /var/lib/hangar-edge/certificates.tb
 	if "$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log"; then fail "verify passed with no certificates in storage"; fi
@@ -870,24 +732,28 @@ EOF
  200" ] || fail "no API after a restart"
 	journalctl -u hangar-edge --since "$since" --no-pager -o cat | grep -q 'obtaining certificate' && fail "the restarted edge asked the CA again"
 
-	step "the front door off: its sockets and the public socket go, and :443 with them"
-	front_door_env edge
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" >/dev/null 2>"$log" || fail "turning the front door off: $(cat "$log")"
-	ss -Hltn | awk '{print $4}' | grep -qE ':(443|80)$' && fail "something still listens on :443 or :80: $(ss -Hltnp)"
-	[ ! -e /run/hangar/public.sock ] || fail "the public socket is still there"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release")" = "changes: 0" ] || fail "not converged with the front door off"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the front door off: $(grep FAIL "$work/door-verify.log")"
-	grep -q '^PASS edge listens on loopback only$' "$work/door-verify.log" || fail "verify does not check the edge on loopback"
+	step "public endpoints without the front door are refused: the edge serves nowhere else"
+	front_door_env endpoints
+	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" --only edge >/dev/null 2>"$log"; then
+		fail "the edge step ran with public endpoints and no front door"
+	fi
+	grep -q 'public endpoints (HANGAR_EDGE_DOMAIN) are served by the front door alone: set HANGAR_CP_DOMAIN' "$log" || fail "unexpected refusal: $(cat "$log")"
+	grep -q '^apply: ' "$log" && fail "the refused run changed something: $(grep '^apply: ' "$log")"
+	systemctl is-active --quiet hangar-edge || fail "the refused run stopped the edge"
 
-	step "the edge off, dev auth and the release back"
+	step "the front door off: the edge, its sockets and the public socket go, and :443 and :80 with them"
 	front_door_env off
 	auth_env dev
 	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$log" || fail "turning the edge off: $(cat "$log")"
 	systemctl is-active --quiet hangar-edge && fail "the edge still runs"
+	ss -Hltn | awk '{print $4}' | grep -qE ':(443|80)$' && fail "something still listens on :443 or :80: $(ss -Hltnp)"
+	[ ! -e /run/hangar/public.sock ] || fail "the public socket is still there"
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged with the edge off"
 	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the edge off: $(grep FAIL "$work/door-verify.log")"
+	grep -q '^PASS edge off: /etc/hangar/local.env names no public endpoint domain$' "$work/door-verify.log" || fail "verify does not check the edge is off"
 	systemctl stop tb-pebble
-	rm -f /etc/hangar/pebble-ca.pem
+	rm -f /etc/hangar/pebble-ca.pem /usr/local/share/ca-certificates/tb-pebble.crt
+	update-ca-certificates --fresh >/dev/null 2>&1
 	rm -rf "$edge_release"
 	ip -6 route del 2001:db8:0:ff::/64 dev tb-uplink
 }
@@ -1194,7 +1060,6 @@ test_dry_run_changes_nothing
 test_converges_and_is_idempotent
 test_admin_socket
 test_node_reconnects
-test_cloudflared_needs_oidc_auth
 test_oidc_cutover
 test_front_door
 test_refuses_tampered_release

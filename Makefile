@@ -61,6 +61,8 @@ e2e:
 
 # Real-host tests (L4), on a testbed VM only: they boot guests as root.
 # docs/runbook/testbed.md says what they need and how to provide it.
+# Their hangar-edge has the testbed tag, so it answers a test CA's DNS-01
+# challenges itself: never a release's.
 # hangar-node is static, as a release builds it, and so is the probe that
 # stands in for Cloud Hypervisor: a VM's unit has no dynamic loader. The
 # vsock probe runs in a guest, from its root disk, so it is static too.
@@ -69,7 +71,8 @@ E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
 e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
-	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar-edge ./cmd/hangar
+	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
 	CGO_ENABLED=0 go build -tags testbed -o bin/vsock-probe ./test/testbed/guest/vsockprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
@@ -84,7 +87,8 @@ e2e-host-vms: guest-initramfs $(E2E_HOST_ROOTFS)
 
 # The full flow alone: the real apiserver, node and CLI on every real driver.
 e2e-host-flow: guest-initramfs $(E2E_HOST_ROOTFS)
-	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar-edge ./cmd/hangar
+	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/flow/ $(if $(RUN),-run '$(RUN)')
 
