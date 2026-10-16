@@ -148,10 +148,13 @@ var Roles = map[string]Role{
 	"tenant.viewer":    {Level: TenantLevel, verbs: readVerbs},
 	"project.owner":    {Level: ProjectLevel, verbs: userVerbs, permissions: reachPermissions},
 	// An editor changes what runs in the project, not who may: it writes no
-	// RoleBinding. Nor does it write the Project itself: deleting it takes
-	// everything in it and its name for good.
-	"project.editor": {Level: ProjectLevel, verbs: userVerbs, except: []string{kindOfResource(registry.RoleBinding), kindOfResource(registry.Project)},
-		permissions: append(slices.Clone(reachPermissions), readPermissions(registry.RoleBinding, registry.Project)...)},
+	// RoleBinding, and no ServiceToken, since creating or rotating one hands
+	// out its secret, and with it whatever the token's bindings grant, an
+	// owner's included. Nor does it write the Project itself: deleting it
+	// takes everything in it and its name for good.
+	"project.editor": {Level: ProjectLevel, verbs: userVerbs,
+		except:      []string{kindOfResource(registry.RoleBinding), kindOfResource(registry.ServiceToken), kindOfResource(registry.Project)},
+		permissions: append(slices.Clone(reachPermissions), readPermissions(registry.RoleBinding, registry.ServiceToken, registry.Project)...)},
 	"project.viewer": {Level: ProjectLevel, verbs: readVerbs},
 }
 

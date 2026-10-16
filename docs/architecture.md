@@ -69,6 +69,9 @@ Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources. A person is a
 global `User`, which they create by signing up once a platform-role
 `RoleBinding` on their email has invited them (`decisions/tenancy-and-iam.md`).
+An agent is a project's `ServiceToken`, whose secret it sends as a bearer
+token; bindings name it as `<project>/<name>`, and it holds only what they
+grant (`decisions/authentication.md`).
 A tenant's budget is a global `Plan`, which admission checks every write
 that would raise the tenant's usage against; a project may have a smaller
 budget of its own, and both report their usage in `status`.

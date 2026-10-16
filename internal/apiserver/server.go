@@ -102,6 +102,11 @@ type Config struct {
 	// time the apiserver starts on a store; nil means
 	// PlaceholderDefaultLimits.
 	DefaultPlanLimits *tenancyv1alpha1.Limits
+	// Credentials keeps the credentials the apiserver issues: service
+	// tokens' secrets in any auth mode, and with EnableOIDC the sessions of
+	// people who sign in. Nil issues none, and ServiceTokenIssuerService
+	// fails.
+	Credentials store.Credentials
 }
 
 // Server is the API server. Create it with New, start its background work
@@ -148,10 +153,23 @@ type Server struct {
 	// tenant comes to name a plan being deleted. Whoever holds it and quota
 	// takes plans first.
 	plans sync.Mutex
-	// sessions and login are set by EnableOIDC: sign-in through the
-	// provider, and the credentials it issues. Both are nil without it.
+	// sessions issues and checks credentials, over Config.Credentials; nil
+	// without them. login is set by EnableOIDC: sign-in through the
+	// provider; nil without it.
 	sessions *session.Manager
 	login    *login.Flow
+	// tokenSecrets serializes issuing each service token's secrets, so its
+	// status names the secret that works. A delete does not take it; see
+	// issueTokenSecret. Keyed by <project>/<name>.
+	tokenSecrets keyLocks
+	// tokenBindings serializes, for each service token, making a
+	// RoleBinding that names it, from the check that the token stands to
+	// the write, with the token's cascade, from looking for the bindings it
+	// owns to letting the token go: so no binding is written for a token
+	// that is going, unseen by its cascade. Keyed by <project>/<name>.
+	tokenBindings keyLocks
+	// tokenUses queues service tokens' uses to record in their status.
+	tokenUses chan tokenUse
 }
 
 // New returns a server over cfg.Store.
@@ -192,6 +210,10 @@ func New(cfg Config) *Server {
 		backends:  map[string]*backend{},
 		tunnels:   &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
 		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
+		tokenUses: make(chan tokenUse, 256),
+	}
+	if cfg.Credentials != nil {
+		s.sessions = s.newSessions(cfg.Credentials)
 	}
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}
@@ -217,6 +239,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(chain.Interceptor())))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
@@ -277,6 +300,7 @@ func (s *Server) Run(ctx context.Context) error {
 	g.Go(func() error { return s.runCompaction(gctx) })
 	if s.sessions != nil {
 		g.Go(func() error { return s.sessions.Run(gctx) })
+		g.Go(func() error { return s.recordTokenUses(gctx) })
 	}
 	// Background work ends when the caller's ctx does; only a failure before
 	// that is an error.

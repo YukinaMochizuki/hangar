@@ -269,9 +269,10 @@ func (x *ObjectMeta) GetOwnerReferences() []*OwnerReference {
 	return nil
 }
 
-// OwnerReference points at the object that owns this one. An owner is either
-// in the same project or a global object; when it is deleted, its dependents
-// are garbage collected.
+// OwnerReference points at the object that owns this one. An owner is in the
+// same project, a global object, or, for a global object, one in the project
+// the reference names; when it is deleted, its dependents are garbage
+// collected.
 type OwnerReference struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
@@ -279,7 +280,11 @@ type OwnerReference struct {
 	Name       string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	Uid        string                 `protobuf:"bytes,4,opt,name=uid,proto3" json:"uid,omitempty"`
 	// The owner is the controller responsible for this object.
-	Controller    bool `protobuf:"varint,5,opt,name=controller,proto3" json:"controller,omitempty"`
+	Controller bool `protobuf:"varint,5,opt,name=controller,proto3" json:"controller,omitempty"`
+	// The owner's project, when the owner is project-scoped and this object
+	// is global, as a RoleBinding owned by the ServiceToken it names. Empty
+	// otherwise.
+	Project       string `protobuf:"bytes,6,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -347,6 +352,13 @@ func (x *OwnerReference) GetController() bool {
 		return x.Controller
 	}
 	return false
+}
+
+func (x *OwnerReference) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 // Condition is one observed aspect of an object's state, such as "Ready".
@@ -468,7 +480,7 @@ const file_hangar_meta_v1_meta_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
 	"\x10AnnotationsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8b\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa5\x01\n" +
 	"\x0eOwnerReference\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -477,7 +489,8 @@ const file_hangar_meta_v1_meta_proto_rawDesc = "" +
 	"\x03uid\x18\x04 \x01(\tR\x03uid\x12\x1e\n" +
 	"\n" +
 	"controller\x18\x05 \x01(\bR\n" +
-	"controller\"\x89\x02\n" +
+	"controller\x12\x18\n" +
+	"\aproject\x18\x06 \x01(\tR\aproject\"\x89\x02\n" +
 	"\tCondition\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x127\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x1f.hangar.meta.v1.ConditionStatusR\x06status\x12\x16\n" +

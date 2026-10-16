@@ -15,9 +15,15 @@ import (
 // host itself, so no sibling domain can plant or read one.
 const CookieName = "__Host-hangar_session"
 
-// Bearer authenticates `Authorization: Bearer <token>` with a CLI access
-// token.
-type Bearer struct{ M *Manager }
+// Bearer authenticates `Authorization: Bearer <token>` with an agent's
+// service token or, unless AccessOff, a CLI access token. Any other token,
+// and one unknown, revoked or expired, is refused alike.
+type Bearer struct {
+	M *Manager
+	// AccessOff refuses CLI access tokens, for a listener where no one
+	// signs in and only service tokens count.
+	AccessOff bool
+}
 
 func (b Bearer) Authenticate(ctx context.Context, header http.Header) (auth.Principal, bool, error) {
 	v := header.Get("Authorization")
@@ -29,10 +35,16 @@ func (b Bearer) Authenticate(ctx context.Context, header http.Header) (auth.Prin
 		return auth.Principal{}, false, errors.New("the Authorization header takes a Bearer token")
 	}
 	s := token.Secret(strings.TrimSpace(raw))
-	if s.Prefix() != token.Access {
+	var typ string
+	switch {
+	case s.Prefix() == token.Access && !b.AccessOff:
+		typ = TypeAccess
+	case s.Prefix() == token.Service:
+		typ = TypeService
+	default:
 		return auth.Principal{}, false, ErrInvalid
 	}
-	p, err := b.M.Lookup(ctx, s, TypeAccess)
+	p, err := b.M.Lookup(ctx, s, typ)
 	if err != nil {
 		return auth.Principal{}, false, err
 	}

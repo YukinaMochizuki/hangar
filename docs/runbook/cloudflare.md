@@ -146,7 +146,7 @@ fixes it. Nothing secret is ever printed.
 | `state.json` | The IDs of the objects the tool created. Not secret, but it is what proves ownership: keep it | Stays here |
 | `cloudflared.env` | `TUNNEL_TOKEN=…` | The host's `/etc/hangar/cloudflared.env`, root 0600 |
 | `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | `HANGAR_CF_TEAM_DOMAIN` is merged into the host's `/etc/hangar/local.env` for hangar-edge, with public endpoints; the apiserver no longer reads either |
-| `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Nowhere for now: the CLI no longer reads those variables, and the API no longer takes Access service tokens; smoke moves to a Hangar service token |
+| `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Nowhere: the CLI no longer reads those variables, and the API no longer takes Access service tokens. Smoke tests use the Hangar service token `smoke/smoke` instead ("The smoke token" in `docs/runbook/host-bootstrap.md`) |
 | `edge.env` | With `endpoints.zone`: `HANGAR_EDGE_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE` (the wildcard application's AUD tag), `HANGAR_CF_ACCOUNT_ID` and `HANGAR_CF_BYPASS_POLICY_ID`. Not secret | Merged into the host's `/etc/hangar/local.env` (below) |
 
 Copy files to the host without them passing through a terminal (below).

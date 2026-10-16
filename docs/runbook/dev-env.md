@@ -62,6 +62,14 @@ go run ./cmd/hangar apply -f my-stack.yaml
 go run ./cmd/hangar get containers -o json
 ```
 
+Dev auth takes service tokens too, so an agent's path can be tried locally:
+
+```sh
+export HANGAR_TOKEN=$(go run ./cmd/hangar token create agent --role project.editor)
+go run ./cmd/hangar whoami          # serviceToken:web/agent
+unset HANGAR_TOKEN
+```
+
 A container in `my-stack.yaml` might read:
 
 ```yaml

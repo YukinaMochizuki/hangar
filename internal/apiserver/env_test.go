@@ -43,6 +43,8 @@ type env struct {
 	clock  *clockwork.FakeClock
 	url    string
 	socket string
+	// dbDir holds the store's database files.
+	dbDir string
 }
 
 type envOption func(*apiserver.Config)
@@ -50,7 +52,8 @@ type envOption func(*apiserver.Config)
 func newEnv(t *testing.T, opts ...envOption) *env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
+	dbDir := t.TempDir()
+	st, err := sqlite.Open(ctx, filepath.Join(dbDir, "hangar.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +63,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	// run them, and the CLI tests go through them end to end.
 	cfg := apiserver.Config{Store: st, Clock: clock, BootstrapAdmin: root, Nodes: []string{testNode}, DisableControllers: true,
 		// Tests size machines and open tenants freely; the quota tests set limits.
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st}
 	for _, o := range opts {
 		o(&cfg)
 	}
@@ -68,7 +71,11 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 
-	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))
+	chain := auth.Chain{auth.Dev{}}
+	if tokens, ok := srv.ServiceTokens(); ok {
+		chain = append(chain, tokens)
+	}
+	public := httptest.NewServer(srv.Handler(chain))
 
 	sock := filepath.Join(t.TempDir(), "node.sock")
 	ln, err := net.Listen("unix", sock)
@@ -90,7 +97,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		}
 		_ = st.Close()
 	})
-	e := &env{t: t, srv: srv, store: st, clock: clock, url: public.URL, socket: sock}
+	e := &env{t: t, srv: srv, store: st, clock: clock, url: public.URL, socket: sock, dbDir: dbDir}
 	e.waitBootstrapped()
 	e.addMember(alice)
 	e.addMember(bob)
@@ -162,6 +169,8 @@ type clients struct {
 	containers computev1alpha1connect.ContainerServiceClient
 	machines   computev1alpha1connect.MachineServiceClient
 	nodes      computev1alpha1connect.NodeServiceClient
+	tokens     iamv1alpha1connect.ServiceTokenServiceClient
+	issuer     iamv1alpha1connect.ServiceTokenIssuerServiceClient
 }
 
 func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption) clients {
@@ -176,7 +185,15 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		containers: computev1alpha1connect.NewContainerServiceClient(hc, url, opts...),
 		machines:   computev1alpha1connect.NewMachineServiceClient(hc, url, opts...),
 		nodes:      computev1alpha1connect.NewNodeServiceClient(hc, url, opts...),
+		tokens:     iamv1alpha1connect.NewServiceTokenServiceClient(hc, url, opts...),
+		issuer:     iamv1alpha1connect.NewServiceTokenIssuerServiceClient(hc, url, opts...),
 	}
+}
+
+// withToken returns clients authenticated by a bearer token, such as a
+// service token's secret.
+func (e *env) withToken(secret string) clients {
+	return newClients(http.DefaultClient, e.url, connect.WithInterceptors(headerInterceptor{"Authorization", "Bearer " + secret}))
 }
 
 // as returns clients authenticated as a user through dev auth; an empty email

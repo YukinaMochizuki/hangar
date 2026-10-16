@@ -230,9 +230,9 @@ type projectObjects map[string][]proto.Message
 // toward its project's and tenant's quotas; in holds the project's objects
 // of every kind here, for a kind whose count depends on another's. A kind
 // counts exactly when it is here: admission checks its writes, which hold
-// Server.quota, and the usage controller watches it. A ServiceToken will
-// count one, in dimServiceTokens, by an entry here with countsOne.
+// Server.quota, and the usage controller watches it.
 var quotaCounters = map[string]func(obj proto.Message, in projectObjects) amounts{
+	registry.ServiceToken.Kind:   countsOne(dimServiceTokens),
 	registry.Container.Kind:      containerAmounts,
 	registry.VirtualMachine.Kind: vmAmounts,
 	registry.Disk.Kind:           diskAmounts,

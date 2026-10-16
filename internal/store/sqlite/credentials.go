@@ -19,27 +19,33 @@ var _ store.Credentials = (*Store)(nil)
 
 func (s *Store) CreateCredentials(ctx context.Context, cs ...store.Credential) error {
 	return s.credTx(ctx, func(q *db.Queries) error {
-		for _, c := range cs {
-			if n, err := q.FamilyRevoked(ctx, c.Family); err != nil {
-				return err
-			} else if n > 0 {
-				return store.ErrRevoked
-			}
-			if _, err := q.GetCredential(ctx, c.Hash); err == nil {
-				return store.ErrExists
-			} else if !errors.Is(err, sql.ErrNoRows) {
-				return err
-			}
-			if err := q.InsertCredential(ctx, db.InsertCredentialParams{
-				Hash: c.Hash, Type: c.Type, Family: c.Family, Principal: c.Principal,
-				CreatedAt: millis(c.CreatedAt), ExpiresAt: millis(c.ExpiresAt), IdleUntil: millis(c.IdleUntil),
-				LastUsedAt: millis(c.LastUsedAt), UsedAt: millis(c.UsedAt),
-			}); err != nil {
-				return err
-			}
-		}
-		return nil
+		return createCredentials(ctx, q, cs...)
 	})
+}
+
+// createCredentials stores credentials in the caller's transaction, refusing
+// a revoked family or a hash taken.
+func createCredentials(ctx context.Context, q *db.Queries, cs ...store.Credential) error {
+	for _, c := range cs {
+		if n, err := q.FamilyRevoked(ctx, c.Family); err != nil {
+			return err
+		} else if n > 0 {
+			return store.ErrRevoked
+		}
+		if _, err := q.GetCredential(ctx, c.Hash); err == nil {
+			return store.ErrExists
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err := q.InsertCredential(ctx, db.InsertCredentialParams{
+			Hash: c.Hash, Type: c.Type, Family: c.Family, Principal: c.Principal,
+			CreatedAt: millis(c.CreatedAt), ExpiresAt: millis(c.ExpiresAt), IdleUntil: millis(c.IdleUntil),
+			LastUsedAt: millis(c.LastUsedAt), UsedAt: millis(c.UsedAt),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) GetCredential(ctx context.Context, hash string) (store.Credential, error) {
@@ -116,6 +122,21 @@ func (s *Store) RevokeCredentialsOf(ctx context.Context, principal string, until
 		return nil
 	})
 	return int(n), err
+}
+
+func (s *Store) ReplaceCredentials(ctx context.Context, c store.Credential, until time.Time) error {
+	return s.credTx(ctx, func(q *db.Queries) error {
+		families, err := q.FamiliesOf(ctx, c.Principal)
+		if err != nil {
+			return err
+		}
+		for _, f := range families {
+			if _, err := revokeFamily(ctx, q, f.Family, max(f.ExpiresAt, millis(until))); err != nil {
+				return err
+			}
+		}
+		return createCredentials(ctx, q, c)
+	})
 }
 
 // revokeFamily marks a family revoked until expires (Unix milliseconds) and

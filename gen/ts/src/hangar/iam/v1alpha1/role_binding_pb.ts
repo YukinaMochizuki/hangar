@@ -102,7 +102,7 @@ export type Subject = Message<"hangar.iam.v1alpha1.Subject"> & {
    */
   subject: {
     /**
-     * An email address verified by Cloudflare Access.
+     * An email address the identity provider verified, in lower case.
      *
      * @generated from field: string user = 1;
      */
@@ -110,7 +110,9 @@ export type Subject = Message<"hangar.iam.v1alpha1.Subject"> & {
     case: "user";
   } | {
     /**
-     * The client ID of a Cloudflare Access service token.
+     * A ServiceToken, as <project>/<name>. It must exist when the binding
+     * is made, and owns the binding: deleting the token deletes it, so a
+     * later token of the same name starts with no bindings.
      *
      * @generated from field: string service_token = 2;
      */

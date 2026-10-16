@@ -120,6 +120,18 @@ func usernameOf(email string) string {
 	return strings.NewReplacer("@", "-", ".", "-").Replace(email)
 }
 
+// serviceToken makes a ServiceToken, as the system, so bindings can name
+// it, and returns a context acting as it.
+func serviceToken(t *testing.T, s *Server, system context.Context, project, name string) context.Context {
+	t.Helper()
+	if _, err := s.backend(registry.ServiceToken).Apply(system, &iamv1alpha1.ServiceToken{
+		Metadata: &metav1.ObjectMeta{Project: project, Name: name},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return auth.WithPrincipal(context.Background(), tokenPrincipal(resource.Key{Project: project, Name: name}))
+}
+
 func ctr(name string) *computev1alpha1.Container {
 	return &computev1alpha1.Container{
 		Metadata: &metav1.ObjectMeta{Project: "web", Name: name},

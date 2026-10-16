@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -32,6 +33,13 @@ func (a *app) configCmd() *cobra.Command {
 			if c.Endpoint == "" {
 				return usageErr("--endpoint is required")
 			}
+			if c.TokenFile != "" {
+				abs, err := filepath.Abs(c.TokenFile)
+				if err != nil {
+					return err
+				}
+				c.TokenFile = abs
+			}
 			if err := c.check(); err != nil {
 				return err
 			}
@@ -52,8 +60,9 @@ func (a *app) configCmd() *cobra.Command {
 	}
 	set.Flags().StringVar(&c.Endpoint, "endpoint", "", "API URL, such as https://hangar.example.com, or unix:///run/hangar/admin.sock for root on the host")
 	set.Flags().StringVar(&c.Project, "project", "", "default project")
-	set.Flags().StringVar(&c.Auth, "auth", "", "oidc (the default: sign in with hangar login), dev, or local (the default for a unix:// endpoint)")
+	set.Flags().StringVar(&c.Auth, "auth", "", "oidc (the default: sign in with hangar login), token (a service token from --token-file), dev, or local (the default for a unix:// endpoint)")
 	set.Flags().StringVar(&c.User, "user", "", "email to send in dev auth")
+	set.Flags().StringVar(&c.TokenFile, "token-file", "", "file holding the service token, mode 0600, for token auth")
 	set.Flags().BoolVar(&use, "use", false, "make it the current context")
 
 	useCmd := &cobra.Command{

@@ -27,7 +27,7 @@ func TestBuiltInRolesHoldExactly(t *testing.T) {
 			return isRead(v) || isWrite(v) || slices.Contains(reach, perm)
 		},
 		"project.editor": func(r registry.Resource, v Verb, perm string) bool {
-			if r.Kind == registry.RoleBinding.Kind || r.Kind == registry.Project.Kind {
+			if r.Kind == registry.RoleBinding.Kind || r.Kind == registry.ServiceToken.Kind || r.Kind == registry.Project.Kind {
 				return isRead(v)
 			}
 			return isRead(v) || isWrite(v) || slices.Contains(reach, perm)

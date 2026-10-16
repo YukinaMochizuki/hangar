@@ -27,6 +27,8 @@ func RunCredentials(t *testing.T, open func(t *testing.T) CredentialStore) {
 		{"CredentialConsumedOnce", testCredentialConsumedOnce},
 		{"CredentialRevoke", testCredentialRevoke},
 		{"RevokedFamilyTakesNothing", testRevokedFamilyTakesNothing},
+		{"ReplaceCredentials", testReplaceCredentials},
+		{"ReplaceCredentialsLeavesOne", testReplaceCredentialsLeavesOne},
 		{"CredentialsAllOrNone", testCredentialsAllOrNone},
 		{"AuthRequests", testAuthRequests},
 		{"AuthRequestTakenOnce", testAuthRequestTakenOnce},
@@ -153,6 +155,68 @@ func testCredentialRevoke(t *testing.T, s store.Credentials) {
 	}
 	if _, err := s.GetCredential(ctx, "b1"); err != nil {
 		t.Errorf("another principal's went too: %v", err)
+	}
+}
+
+func testReplaceCredentials(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	for _, c := range []store.Credential{
+		credential("a1", "fa", "serviceToken:p/a"), credential("a2", "fb", "serviceToken:p/a"),
+		credential("b1", "fc", "serviceToken:p/b"),
+	} {
+		if err := s.CreateCredentials(ctx, c); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.ReplaceCredentials(ctx, credential("a3", "fd", "serviceToken:p/a"), at); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"a1", "a2"} {
+		if _, err := s.GetCredential(ctx, h); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("replaced credential %s: %v, want ErrNotFound", h, err)
+		}
+	}
+	for _, h := range []string{"a3", "b1"} {
+		if _, err := s.GetCredential(ctx, h); err != nil {
+			t.Errorf("credential %s: %v", h, err)
+		}
+	}
+	// The replaced families stay revoked: nothing is issued into them again.
+	if err := s.CreateCredentials(ctx, credential("a4", "fa", "serviceToken:p/a")); !errors.Is(err, store.ErrRevoked) {
+		t.Errorf("issue into a replaced family: %v, want ErrRevoked", err)
+	}
+	// Nor does a replacement go into one.
+	if err := s.ReplaceCredentials(ctx, credential("a5", "fb", "serviceToken:p/a"), at); !errors.Is(err, store.ErrRevoked) {
+		t.Errorf("replace into a revoked family: %v, want ErrRevoked", err)
+	}
+	if _, err := s.GetCredential(ctx, "a3"); err != nil {
+		t.Errorf("a refused replacement took the current credential: %v", err)
+	}
+}
+
+func testReplaceCredentialsLeavesOne(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	const n = 8
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c := credential(string(rune('a'+i)), string(rune('A'+i)), "serviceToken:p/a")
+			if err := s.ReplaceCredentials(ctx, c, at); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	left := 0
+	for i := range n {
+		if _, err := s.GetCredential(ctx, string(rune('a'+i))); err == nil {
+			left++
+		}
+	}
+	if left != 1 {
+		t.Errorf("%d credentials left after concurrent replacements, want 1", left)
 	}
 }
 
