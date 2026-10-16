@@ -303,6 +303,23 @@ edge_listens_ok() {
 	! grep -vxE '\*:(443|80)|(127\.[0-9.]+|\[::1\]):[0-9]+' <<<"$addrs" | grep -q .
 }
 
+# edge_serves_ok NAME holds when the edge on this host's :443 answers a TLS
+# handshake for NAME with a certificate that is valid for NAME, has more
+# than EDGE_CERT_MIN_DAYS days left, and is trusted by the system's roots;
+# and, for the API, its /healthz says ok. It is what a client from outside
+# would see, short of DNS.
+edge_serves_ok() {
+	local name=$1 host cert
+	host=${name/#\*/edge-check}
+	cert=$(openssl s_client -connect 127.0.0.1:443 -servername "$host" -verify_hostname "$host" -verify_return_error </dev/null 2>/dev/null |
+		openssl x509 2>/dev/null) || return 1
+	[ -n "$cert" ] || return 1
+	openssl x509 -noout -checkend $((EDGE_CERT_MIN_DAYS * 86400)) <<<"$cert" >/dev/null || return 1
+	case $name in
+	api.*) [ "$(curl -sS --max-time 10 --resolve "$host:443:127.0.0.1" "https://$host/healthz")" = ok ] ;;
+	esac
+}
+
 # edge_tunnel_left prints what an earlier release installed for the
 # Cloudflare tunnel and is still on the host.
 edge_tunnel_left() {
@@ -382,7 +399,7 @@ edge_verify() {
 		check "edge off: $LOCAL_ENV names no public endpoint domain" edge_off_ok
 		return 0
 	fi
-	local units n
+	local units n also
 	units=$(edge_sockets | paste -sd' ' -)
 	units="$EDGE_UNIT${units:+ $units}"
 	check "edge units $units as generated and loaded" edge_units_ok
@@ -392,6 +409,12 @@ edge_verify() {
 	check "edge listens on :443 and :80 for every address, and nothing else but on loopback" edge_listens_ok
 	for n in $(edge_cert_names); do
 		check "certificate for ${n/#wildcard_/*} in $EDGE_STATE, more than $EDGE_CERT_MIN_DAYS days left" edge_cert_ok "$n"
+	done
+	for n in $(edge_cert_names); do
+		n=${n/#wildcard_/*}
+		also=
+		case $n in api.*) also=", and /healthz is ok" ;; esac
+		check "edge on :443 serves $n a trusted certificate with more than $EDGE_CERT_MIN_DAYS days left$also" edge_serves_ok "$n"
 	done
 	if edge_needs_dns_token; then
 		check "Cloudflare DNS token $EDGE_DNS_TOKEN, root's, mode 600" edge_dns_token_ok

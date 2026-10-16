@@ -5,8 +5,9 @@ Status: accepted, 2026-10.
 ## Context
 
 One OVH host with one IPv4 address and an IPv6 /64. OVH's IPv6 is on-link with
-MAC filtering at the switch. Ordinary HTTPS should go through Cloudflare;
-anything else needs a reachable address.
+MAC filtering at the switch. Ordinary HTTPS goes through the host's front
+door, hangar-edge (`front-door.md`); anything else needs a reachable
+address.
 
 ## Decision
 
@@ -104,9 +105,11 @@ anything else needs a reachable address.
     same packet from anywhere; a public address is no more trusted from a
     neighbouring network than from anywhere else, and the host is not the
     one place it cannot be reached from. Private IPv4 between networks
-    stays blocked, the host stays unreachable, and a network sends only
-    from its own /128s. Table `ip hangar` in the root namespace has five
-    rules however many networks there are:
+    stays blocked, the host stays unreachable but for the front door's
+    ports at its public addresses, which anyone reaches (decided by the
+    project owner), and a network sends only from its own /128s. Table
+    `ip hangar` in the root namespace has five rules, seven with a public
+    address set, however many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
       iif oif missing`), so a network sends only as its own transit address;
@@ -117,10 +120,15 @@ anything else needs a reachable address.
       uplink, so docker bridges, VPNs and the like, and the host's DNAT into
       them, stay out of reach. With the rule before, no connection into a
       network exists whose replies could leave by another link;
-    - input: from `hnv*`, drop all but replies, so a network cannot reach
-      the host.
+    - input: from `hnv*`, accept TCP to 80 and to 443 at the configured
+      public address, the front door's ports, which anyone reaches there
+      (two rules, none with no address set), then drop all but replies, so
+      a network reaches nothing else of the host. A machine calling the
+      platform by its public names, `api.` or an endpoint, so reaches the
+      front door without leaving the host.
   - With an IPv6 prefix, table `ip6 hangar` in the root namespace has
-    seven, however many networks there are:
+    seven, nine with the host's own address set (`--public-ipv6`), however
+    many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on, so a network sends only from its
       own /128s (each is routed to its network's veth) or link-local;
@@ -131,8 +139,9 @@ anything else needs a reachable address.
       network, drop all but replies. A destination reaches a network's
       veth only by its /128's route, so only live addresses are let in;
     - input: from `hnv*`, take neighbour solicitations and advertisements,
-      for the transit link's link-local addresses, and drop all but
-      replies.
+      for the transit link's link-local addresses, accept TCP to 80 and to
+      443 at the host's own address, the front door's, as for IPv4, and
+      drop all but replies.
   - Table `ip hangar` in each namespace has four: in prerouting, before
     conntrack, accept DHCP from `hn-br` sent from no address to the
     broadcast (UDP 68 to 67), which a guest without an address yet sends
@@ -434,21 +443,21 @@ anything else needs a reachable address.
   stays, reserving its address, until its interface has let go of it. No
   two Addresses name one interface, which admission checks under a lock.
   Its status says where it is bound (`Bound`, and the machine).
-- **HTTPS exposure** is a `PublicEndpoint` (`public-endpoints.md`): one
-  platform tunnel and a wildcard DNS record lead to cloudflared, then to
-  Hangar's own edge proxy, `hangar-edge`, which routes by `Host` and reaches
-  the machine through the node agent, which dials it from the network's
-  gateway inside its namespace. Endpoints are `private` by default (behind
-  Access, with the edge checking the caller may use the project's
-  endpoints) and become `public` only when set explicitly. User content uses
-  a different domain from the console, `<endpoint>-<project>.hangarlab.dev`,
-  only first-level wildcard hostnames (Cloudflare's free certificate does
-  not cover deeper levels). A container port with `public: true` creates an
+- **HTTPS exposure** is a `PublicEndpoint` (`public-endpoints.md`): a
+  wildcard DNS record leads to the host's front door, Hangar's own edge
+  proxy, `hangar-edge`, which routes by `Host` and reaches the machine
+  through the node agent, which dials it from the network's gateway inside
+  its namespace. Endpoints are `private` by default (the edge signs their
+  callers in and checks they may use the project's endpoints) and become
+  `public` only when set explicitly. User content uses a different domain
+  from the console, `<endpoint>-<project>.hangarlab.dev`, only first-level
+  wildcard hostnames (the wildcard certificate does not cover deeper
+  levels). A container port with `public: true` creates an
   endpoint automatically. Security groups do not apply to the edge's path:
   the endpoint is the explicit opening (above).
 - **SSH** to VMs goes through `hangar ssh` and `hangar ssh-proxy` over a
-  WebSocket tunnel: Access, then the apiserver, then the network namespace. No
-  new IPv4 ports are opened.
+  WebSocket tunnel: the front door, then the apiserver, then the network
+  namespace. No new IPv4 ports are opened.
 - **Abuse protection**: port 25 is blocked by default, egress is rate-limited,
   and NAT is logged, because abuse from the single IPv4 address could get the
   host shut down.

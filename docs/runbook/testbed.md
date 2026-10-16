@@ -165,6 +165,21 @@ the dataset and both directories, and kill an agent or apiserver a run
 killed outright left. `hangar-testbed-reset` removes the dataset but not
 the units or `/var/tmp/hangar-testbed-flow`; the next run's sweep does.
 
+`TestTheDirectPath` (`RUN=TestTheDirectPath`) is the platform as a host runs
+it with nothing in front of it: its cluster's apiserver is in oidc auth
+against a fake provider in the test (`internal/auth/oidctest`), set up
+through the admin socket, and `hangar-edge`, as `nobody`, is the front door
+on `127.0.0.1:443` and `:80` (the test lets unprivileged processes bind
+them, `net.ipv4.ip_unprivileged_port_start`, and puts it back), with
+certificates from pebble, run in the test, over DNS-01 the edge answers
+itself. So `make e2e-host` and `make e2e-host-flow` build `bin/hangar-edge`
+with the `testbed` tag; never install it on a host. A browser, whose names
+under `.test` reach 127.0.0.1, signs in to the console through the front
+door and signs up; a service token reaches the API at `api.`; an nginx
+container's private endpoint hands the signed-in browser off from the
+console, and a stranger gets nothing; a public endpoint serves anyone. Its
+logs include `front-door.log`. Ports 80 and 443 on loopback must be free.
+
 `HANGAR_TESTBED_FLOW_INSTALLED=1` runs the same flow against the services
 `deploy/host` installed instead (`docs/runbook/host-bootstrap.md`), on the
 default dataset `hangar` and `/var/lib/hangar/{images,vms}`, with

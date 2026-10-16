@@ -1,45 +1,30 @@
-# Cloudflare: tunnel, DNS and Access
+# Cloudflare: DNS, and the cutover from the tunnel
 
-`hangar-cloudflare` sets up Cloudflare's side of the public API, the way
-`deploy/host` sets up the host. It is idempotent and safe to re-run. Through
-the Cloudflare API it converges:
+Cloudflare is the platform's DNS and nothing else: every name points
+straight at the host, DNS-only (grey-cloud), and hangar-edge, the front
+door, takes the traffic itself (`docs/decisions/front-door.md`). Cloudflare's
+DNS API also answers the front door's ACME DNS-01 challenges, with a token
+of the edge's own ("The front door's DNS token" below).
 
-- a remotely-managed tunnel (`config_src: cloudflare`) whose ingress sends
-  `<hostname>` to `http://127.0.0.1:8080` and everything else to
-  `http_status:404`; the hostname's rule sets `originRequest.access`
-  (`required: true`, the team name, the application's AUD), so cloudflared
-  itself drops any request without a valid Access token for the application;
-- a proxied CNAME `<hostname>` → `<tunnel id>.cfargotunnel.com`, commented
-  `managed by hangar-cloudflare`;
-- two reusable Access policies, `<hostname>: allow listed emails` (allow,
-  the config's emails) and `<hostname>: service tokens` (`non_identity`, any
-  valid service token);
-- a self-hosted Access application for `<hostname>`: session 24h, the Google
-  and One-time PIN login methods, no auto-redirect, and those two policies;
-- one service token, `hangar-smoke`, for smoke tests only;
-- with `endpoints.zone` in the config, public endpoints' side
-  (`docs/decisions/public-endpoints.md`): an ingress rule sending
-  `*.<zone>` to the edge, `http://127.0.0.1:8090`, with no
-  `originRequest.access` (the edge signs a private endpoint's callers in
-  itself, and a public one takes anyone), and a proxied CNAME `*.<zone>` to
-  the tunnel in that zone. No Access object stands in front of an
-  endpoint.
+`hangar-cloudflare` sets up the records, the way `deploy/host` sets up the
+host. It is idempotent and safe to re-run. Through the Cloudflare API it
+converges, each pointing at the host's addresses in the config, proxied off,
+TTL automatic (300 s), commented `managed by hangar-cloudflare`:
 
-It changes only what it created. The IDs of those objects are in the output
-directory's `state.json`. It stops, naming the object's ID, before it changes
-anything, when an object not in the state collides with one of its own: a
-tunnel or policy of the same name, a service token called `hangar-smoke`, a
-DNS record at the hostname, or an Access application that covers the
-hostname or a path under it (through its domain, a destination, or a legacy
-self-hosted domain). It never deletes anything.
+- `api.<zone>`, A and AAAA: the public API;
+- `console.<zone>`, A and AAAA: the console, and sign-in;
+- with `endpoints.zone` in the config, `*.<endpoints zone>`, A and AAAA:
+  every public endpoint (`docs/decisions/public-endpoints.md`).
 
-On a first apply it creates the policies and the application first, then
-the tunnel and its ingress, and the DNS record last, so the hostname is never
-routed before Access covers it.
+It changes only what it created. The IDs of those records are in the output
+directory's `state.json`. It stops, naming the record's ID, before it
+changes anything, when a record not in the state answers for one of its
+names: an A, AAAA or CNAME there. Records of other types at those names are
+not its business. It never deletes anything.
 
-The hostname cannot be changed: the state records it, and a config naming
-another is refused. To move, remove the old setup by hand (see the end of
-this file) and start again, or run with a new `--out` directory.
+The zones cannot be changed: the state records them, and a config naming
+another is refused. To move, remove the old records by hand and start
+again, or run with a new `--out` directory.
 
 The code is `cmd/hangar-cloudflare` and `internal/cloudflare`.
 
@@ -47,54 +32,32 @@ The code is `cmd/hangar-cloudflare` and `internal/cloudflare`.
 
 1. **Zones.** Buy the domains and add each to the Cloudflare account
    (Add a domain, Free plan), then set the registrar's nameservers to the ones
-   Cloudflare shows. Wait until the zone is Active. The API hostname lives in
-   the control zone.
-2. **Zero Trust.** Open Zero Trust in the dashboard, pick the team name, and
-   choose the Free plan. The team domain is
-   `https://<team>.cloudflareaccess.com`; the tool reads it from the API, so
-   it is never typed into the config.
-3. **Google OAuth client.** In the Google Cloud console, in a project for
-   this, configure the OAuth consent screen (user type External, in
-   production), then create an OAuth client ID:
-   - Application type: Web application.
-   - Authorized JavaScript origins: `https://<team>.cloudflareaccess.com`.
-   - Authorized redirect URIs:
-     `https://<team>.cloudflareaccess.com/cdn-cgi/access/callback`.
-
-   Keep the client ID and secret for the next step only.
-4. **Login methods.** Zero Trust → Settings → Authentication → Login methods
-   → Add new → Google. Paste the client ID and secret, name it (the name goes
-   in the config's `identity_providers.google`), save, and use Test. Check
-   that One-time PIN is in the list too; add it the same way if not.
-5. **API token.** My Profile → API Tokens → Create Token → Custom token.
-   Permissions:
-
-   | Scope | Permission | Used for |
-   |---|---|---|
-   | Account | Cloudflare Tunnel: Edit | Create the tunnel, set its ingress, and read its token (the token endpoint needs Edit) |
-   | Account | Access: Apps and Policies: Edit | The application and its reusable policies |
-   | Account | Access: Service Tokens: Edit | Create `hangar-smoke` |
-   | Account | Access: Organizations, Identity Providers, and Groups: Read | The team domain and the login methods' IDs |
-   | Zone | DNS: Edit | The CNAMEs |
-   | Zone | Zone: Read | Find the zones' IDs from their names |
-
-   Account resources: include only this account. Zone resources: include
-   only the control zone, and the public endpoints' zone if the config
-   names one. Restricting it to the privileged box's IP and giving
-   it an expiry are good practice. Newer dashboards may list the tunnel
-   permission as Cloudflare One Connector: cloudflared, which the API accepts
-   in its place.
+   Cloudflare shows. Wait until the zone is Active. The API and the console
+   live in the control zone, endpoints in the user-content zone.
+2. **API token.** My Profile → API Tokens → Create Token → Custom token.
+   Permissions: Zone → Zone → Read (to find the zones' IDs from their
+   names) and Zone → DNS → Edit (the records). Zone resources: Include →
+   Specific zone, the control zone and the user-content zone, nothing
+   else. Restricting it to the privileged box's IP and giving it an expiry
+   are good practice. It needs no account permission.
 
 ## Config
 
 Copy `deploy/cloudflare/example.yaml` to a file outside the repo, in the
-privileged box, and fill it in. Unknown keys are errors. The API token is
-never in the file.
+privileged box, and fill it in: the account, the control zone, the host's
+public IPv4 and IPv6 addresses (the host env file's `HANGAR_PUBLIC_IPV4`,
+and `HANGAR_IPV6_ADDR` without its length), and the user-content zone.
+Unknown keys are errors, so a config written for the tunnel and Access
+(`hostname`, `tunnel_name`, `allowed_emails`, `identity_providers`) is
+refused: keep it, for a rollback, but write the new one apart. The API
+token is never in the file.
 
 ## Running it
 
-From the repo, in the privileged box. Read the token without echoing it, so
-it stays out of the shell history:
+From the repo, in the privileged box, with the state in place
+(`<out>/state.json`; production keeps it in another repository, which says
+where). Read the token without echoing it, so it stays out of the shell
+history:
 
 ```sh
 read -rs CLOUDFLARE_API_TOKEN && export CLOUDFLARE_API_TOKEN
@@ -106,152 +69,53 @@ go run ./cmd/hangar-cloudflare verify --config ~/cloudflare.yaml --out ~/hangar-
 - `plan` prints what `apply` would create, update or write, and changes
   nothing: its client refuses any request but GET, and it writes no file.
 - `apply` converges and prints what it changed. A second `apply` prints
-  `No changes.`
+  `No changes.` Copy `state.json` back to where it is kept, and commit it,
+  whenever it changed.
 - `verify` is `plan` with an exit code: 0 when nothing differs, 3 on drift,
-  1 on an error (including a refusal), 2 on a usage error. It reports:
-  - the tunnel: an ingress rule changed, added or removed, including its
-    `originRequest` (the access check removed, not required, another AUD or
-    team), and a top-level `originRequest` set;
-  - the DNS record: its type, name, content, proxied flag or comment;
-  - a policy: a rule added, removed or changed (include, exclude, require),
-    its decision or its session;
-  - the application: its name, domain, session, login methods,
-    auto-redirect, destinations, self-hosted domains or attached policies,
-    and any setting that lets a request in with less than a full login or
-    weakens its cookie (`options_preflight_bypass`,
-    `allow_authenticate_via_warp`, `cors_headers`, `allow_iframe`,
-    `use_clientless_isolation_app_launcher_url`,
-    `http_only_cookie_attribute` off, `same_site_cookie_attribute` none);
-  - any managed object deleted, and an output file missing or stale.
+  1 on an error (including a refusal), 2 on a usage error. It reports a
+  record's type, name, content, proxied flag, TTL or comment changed, a
+  managed record deleted, and a state file still in the old format.
 
-  A tunnel with `warp-routing` enabled is a note, not drift: the field is
-  read-only (assigning the tunnel a private network route turns it on), so
-  `apply` could not change it.
+`plan` and `verify` also print notes, which are not drift: the IDs of what
+an earlier version made for the tunnel and Access (the tunnel, the Access
+application and policies, the smoke service token), kept in the state's
+`retired` entry, for someone to delete by hand once the cutover is settled
+(below).
 
 Requests that get a 429 or a 5xx are retried with backoff (honouring
 `Retry-After`), except a create that got a 5xx, which may have succeeded; the
 next run then finds the duplicate and refuses it, naming its ID. Each request
 times out after 30 s and the whole run after `--timeout` (5m).
 
-## The output directory
+## The output directory and the state
 
-Created mode 0700, every file in it 0600. An existing directory that group
-or others can access is refused, before any API call, with the `chmod` that
-fixes it. Nothing secret is ever printed.
+The output directory is created mode 0700, every file in it 0600. An
+existing directory that group or others can access is refused, before any
+API call, with the `chmod` that fixes it: an earlier version kept the
+tunnel's token there, and a rollback runs that version again.
 
-| File | Holds | Goes to |
-|---|---|---|
-| `state.json` | The IDs of the objects the tool created. Not secret, but it is what proves ownership: keep it | Stays here |
-| `cloudflared.env` | `TUNNEL_TOKEN=…` | The host's `/etc/hangar/cloudflared.env`, root 0600 |
-| `access.env` | `HANGAR_CF_TEAM_DOMAIN=…` and `HANGAR_CF_AUDIENCE=…` (the application's AUD tag) | Nowhere: neither the apiserver nor hangar-edge reads either any more |
-| `smoke-token.env` | `HANGAR_CF_CLIENT_ID=…` and `HANGAR_CF_CLIENT_SECRET=…`, written only when the token is created | Nowhere: the CLI no longer reads those variables, and the API no longer takes Access service tokens. Smoke tests use the Hangar service token `smoke/smoke` instead ("The smoke token" in `docs/runbook/host-bootstrap.md`) |
-| `edge.env` | With `endpoints.zone`: `HANGAR_EDGE_DOMAIN`. Not secret | Merged into the host's `/etc/hangar/local.env` (below) |
-
-Copy files to the host without them passing through a terminal (below).
-
-## Putting it on the host
-
-**Switch the auth mode to `oidc` first, then install the tunnel token. Roll
-back in reverse.** Until the apiserver runs in `oidc` mode it runs `dev`
-auth, which takes the caller's identity from a header any client can set
-(`X-Hangar-Dev-User`). Once cloudflared connects, the public hostname
-reaches that listener: with the origin still in `dev` mode, anyone whose
-request gets through could claim any identity, `platform.root` included,
-with a header.
-
-1. **Auth mode.** Set up sign-in through Google on the host
-   (`docs/runbook/host-bootstrap.md`, "Switching to sign-in through
-   Google"): the OAuth client's secret, then `HANGAR_AUTH_MODE=oidc`,
-   `HANGAR_OIDC_CLIENT_ID` and `HANGAR_PUBLIC_URL` in
-   `/etc/hangar/local.env`. Re-run `deploy/host`, whose services step
-   restarts the apiserver with `--auth-mode oidc`, and check with
-   `verify.sh` that the running flags match `local.env`. Do not go on until
-   they do.
-2. **Tunnel token.** Install it, then re-run `deploy/host`, which installs
-   and starts cloudflared once the file exists:
-
-   ```sh
-   ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflared.env' < ~/hangar-cloudflare/cloudflared.env
-   ```
-3. **Check** from outside: `hangar login`, then `hangar whoami`.
-
-To roll back: first take the tunnel down (remove
-`/etc/hangar/cloudflared.env` and re-run `deploy/host`, whose cloudflared
-step then stops and disables the service), then set `HANGAR_AUTH_MODE=dev`
-in `local.env` and re-run `deploy/host`. The host's side of each step is in
-`docs/runbook/host-bootstrap.md`; the order is the one above, and the host
-enforces it: cloudflared does not start, by any route, unless the apiserver
-runs in `oidc` mode.
-
-## Public endpoints
-
-Public endpoints need the API in `oidc` auth first (above): the console
-signs a private endpoint's callers in, and hands them off to the edge
-(`docs/decisions/public-endpoints.md`), which sends them to
-`HANGAR_PUBLIC_URL`.
-
-1. **The zone.** Add the user-content domain (`hangarlab.dev`) to the
-   account as the first one-time step says, and give the tool's token DNS
-   Edit and Zone Read on it too.
-2. **Converge.** Add `endpoints: {zone: hangarlab.dev}` to the config,
-   `plan`, then `apply`. The ingress comes before the record, so no
-   endpoint's hostname is routed before the tunnel knows where to send it.
-   The zone cannot be changed or removed afterwards, as the hostname
-   cannot.
-3. **The host.** Add `edge.env` to `/etc/hangar/local.env` and re-run
-   `deploy/host`, which restarts the apiserver with the endpoint flags and
-   starts `hangar-edge` (`docs/runbook/host-bootstrap.md`). A host that
-   had them still has `HANGAR_EDGE_CF_AUDIENCE`, `HANGAR_CF_ACCOUNT_ID` and
-   `HANGAR_CF_BYPASS_POLICY_ID` in `local.env`: nothing reads them, delete
-   them.
-
-   ```sh
-   ssh <host> 'sudo tee -a /etc/hangar/local.env >/dev/null' < ~/hangar-cloudflare/edge.env
-   ```
-4. **Check.** Make a container with a public port, or a PublicEndpoint,
-   wait for `Ready`, and open its URL: a PRIVATE one sends you to the
-   console to sign in, and then answers; a PUBLIC one answers anyone. A
-   hostname of no endpoint is 404.
-
-To take endpoints down: remove `HANGAR_EDGE_DOMAIN` from `local.env` and
-re-run `deploy/host`, which stops the edge, so every endpoint's hostname
-answers 502. Removing them from Cloudflare is a human's job in the
-dashboard, as for the rest: the wildcard record.
-
-### Retiring the endpoints' Access objects
-
-Before hangar-edge signed private endpoints' callers in itself, the tool
-made a wildcard Access application for `*.<zone>` and a reusable bypass
-policy, and the apiserver made one application per PUBLIC endpoint, named
-`hangar public endpoint: <hostname>`, with an API token of its own. None of
-them is used any more, and the tool deletes nothing, so at the cutover
-delete them by hand, once the new release runs (before, the old release's
-edge still needs them: its private endpoints would refuse everyone, and
-Access would ask its public ones' visitors to sign in):
-
-1. `plan` names the wildcard application's and the bypass policy's IDs in
-   its notes (`endpoints_app_id` and `policies.endpoints_bypass` in
-   `state.json`).
-2. In the dashboard (Zero Trust → Access → Applications), delete every
-   application named `hangar public endpoint: …`, then the wildcard
-   application, then (Access → Policies) the bypass policy.
-3. Revoke the apiserver's Cloudflare API token (My Profile → API Tokens),
-   and on the host delete `/var/lib/hangar/state/cloudflare-api-token`;
-   `deploy/host` warns while the file is there.
-4. Remove `endpoints_app_id` and `policies.endpoints_bypass` from
-   `state.json`, then `plan` again: no notes about them.
+`state.json` holds IDs alone, nothing secret, but it is what proves
+ownership: keep it. This version writes `version: 2`: the records by name
+and type, under `records`, the zones, and `retired`. It reads a
+`version: 1` state, the tunnel's, as well: the API's CNAME becomes the
+API's A record, and the endpoints' wildcard CNAME theirs, each changed in
+place (one record, one ID), so neither name is ever without an answer; the
+tunnel and Access objects go under `retired`. `plan` shows that as
+`> write state.json`, and `apply` writes it. The previous release's tool
+reads only `version: 1`: keep the old file (the other repository's history
+has it) for a rollback.
 
 ## The front door's DNS token
 
 The front door (`docs/decisions/front-door.md`) gets its certificates over
 ACME DNS-01: `hangar-edge` writes the challenge's TXT record in the zone
 through Cloudflare's DNS API, with a token of its own, apart from the
-tool's and the apiserver's. Its ACME account also needs an email,
-`HANGAR_ACME_EMAIL` in `/etc/hangar/local.env`
-(`docs/runbook/host-bootstrap.md`): without one, certmagic's process-wide
-email discovery can register the account as `mailto:default` on a first
-start, which the CA refuses, so the `edge` step refuses the front door.
-Make the token in My Profile → API Tokens → Create Token → Custom token:
+tool's. Its ACME account also needs an email, `HANGAR_ACME_EMAIL` in
+`/etc/hangar/local.env` (`docs/runbook/host-bootstrap.md`): without one,
+certmagic's process-wide email discovery can register the account as
+`mailto:default` on a first start, which the CA refuses, so the `edge` step
+refuses the front door. Make the token in My Profile → API Tokens → Create
+Token → Custom token:
 
 - Permissions: Zone → Zone → Read, and Zone → DNS → Edit.
 - Zone resources: Include → Specific zone, the control plane's zone
@@ -259,38 +123,274 @@ Make the token in My Profile → API Tokens → Create Token → Custom token:
   else.
 - Client IP address filtering: the host's IPv4 and IPv6 addresses.
 
-Install it as root's, 0600, without it passing through a terminal:
+Install it as root's, 0600, without it passing through a terminal. From a
+box that holds it in its environment:
 
 ```sh
-read -rs T && printf '%s' "$T" | ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflare-dns-token'; unset T
+printenv HANGAR_EDGE_DNS_TOKEN | ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflare-dns-token'
 ```
+
+or, typed: `read -rs T && printf '%s' "$T" | ssh <host> 'sudo install -m
+0600 -o root -g root /dev/stdin /etc/hangar/cloudflare-dns-token'; unset T`.
+The edge reads the file trimmed, so `printenv`'s newline does no harm.
 
 systemd hands it to the edge as a credential; nothing else on the host
 reads it. To roll it, make a new one, install it the same way, run
 `sudo systemctl restart hangar-edge`, then delete the old one in the
 dashboard. Then follow "The front door" in `docs/runbook/host-bootstrap.md`.
 
+## The cutover from the tunnel
+
+Before it, the public API ran behind a Cloudflare Tunnel and Access: a
+proxied CNAME `api.<zone>` → `<tunnel id>.cfargotunnel.com`, cloudflared on
+the host, an Access application, two reusable policies and the
+`hangar-smoke` service token, all made by the earlier version of this tool,
+and the apiserver in `cloudflare` auth. After it, DNS points at the host,
+the front door serves `api.`, `console.` and the endpoints, and the
+apiserver signs people in itself (`docs/decisions/authentication.md`). It is
+one switch: there is no time with both paths in use.
+
+### What the owner provides, and where it lands
+
+| Value | Where it lands | Notes |
+|---|---|---|
+| Google OAuth client, type Web application, redirect URI `https://console.<cp zone>/auth/callback`, consent screen External and in production | Its ID: `HANGAR_OIDC_CLIENT_ID` in `/etc/hangar/local.env`. Its secret: `/var/lib/hangar/state/oidc-client-secret`, `hangar`'s, 0600 | No JavaScript origin is needed; the CLI and the console share the client |
+| The front door's DNS token (above) | `/etc/hangar/cloudflare-dns-token`, root's, 0600 | Zone Read and DNS Edit on both zones, the host's addresses only |
+| The ACME account's email | `HANGAR_ACME_EMAIL` in `local.env` | Let's Encrypt writes to it about the certificates |
+| The Google account the owner signs in with | `HANGAR_BOOTSTRAP_ADMIN` in `local.env` | Sign-in admits only invited emails; it was the Access identity before |
+| The tool's API token gains Zone Read and DNS Edit on the user-content zone | The privileged box's `CLOUDFLARE_API_TOKEN` | Keep its account permissions until a rollback is off the table: the previous release's tool needs them |
+| `state.json` | `<out>/state.json` in the privileged box, from where it is kept | Commit it back after each apply that changed it |
+
+Not values, but settled before the day: a release built from the commit to
+deploy, with its `SHA256SUMS` digest ("Deploying a new hangar version" in
+`docs/runbook/host-bootstrap.md`); the previous release's directory and its
+`deploy/` kept on the host, as `/var/tmp/hangar/release/hangar-<previous>`
+and `/var/tmp/hangar/deploy-previous`; the new config file in the
+privileged box, beside the old one; a CLI built from the new release on
+the owner's workstation, with the previous one kept.
+
+### Order
+
+From step 4 until DNS points at the host (step 6) and old answers have
+expired, **only the admin socket on the host works**: the tunnel still
+carries `api.<zone>`, but Access tokens no longer count with the apiserver
+in oidc auth, and signing in needs `console.<zone>`, which has no record
+yet. Plan for about a quarter of an hour, most of it waiting for
+certificates and for DNS caches. VMs and containers keep running
+throughout.
+
+1. **Back up the host's settings.**
+
+   ```sh
+   sudo cp -a /etc/hangar/local.env /etc/hangar/local.env.pre-cutover
+   ```
+
+   The store is snapshotted at step 4, right before the deploy, since the
+   platform keeps taking writes until then.
+2. **Plan the DNS, changing nothing.** In the privileged box, with the
+   state copied in and the new config: `plan`. Expect `> write
+   state.json`, `~ update DNS A record api.<zone>` with `type: CNAME -> A`,
+   `content: <tunnel id>.cfargotunnel.com -> <host IPv4>` and `proxied:
+   true -> false`, then `+ create` for the API's AAAA, the console's A and
+   AAAA, and the wildcard's A and AAAA, and notes naming the retired
+   tunnel and Access objects. Anything else: stop and find out why.
+3. **Install the secrets and the settings on the host.** From the box that
+   holds the values in its environment, without them passing through a
+   terminal:
+
+   ```sh
+   printenv HANGAR_OIDC_CLIENT_SECRET | ssh <host> 'sudo install -o hangar -g hangar -m 0600 /dev/stdin /var/lib/hangar/state/oidc-client-secret'
+   printenv HANGAR_EDGE_DNS_TOKEN | ssh <host> 'sudo install -o root -g root -m 0600 /dev/stdin /etc/hangar/cloudflare-dns-token'
+   ```
+
+   In `/etc/hangar/local.env`, delete `HANGAR_AUTH_MODE=cloudflare`,
+   `HANGAR_CF_TEAM_DOMAIN`, `HANGAR_CF_AUDIENCE` and any other `HANGAR_CF_*`
+   or `HANGAR_EDGE_CF_*` line, check `HANGAR_BOOTSTRAP_ADMIN`, and add:
+
+   ```sh
+   HANGAR_AUTH_MODE=oidc
+   HANGAR_OIDC_CLIENT_ID=<the client ID>
+   HANGAR_PUBLIC_URL=https://console.hangarlab.cloud
+   HANGAR_EDGE_DOMAIN=hangarlab.dev
+   HANGAR_CP_DOMAIN=hangarlab.cloud
+   HANGAR_ACME_EMAIL=<the owner's address>
+   ```
+
+   Check: `sudo stat -c '%U %G %a %s' /var/lib/hangar/state/oidc-client-secret
+   /etc/hangar/cloudflare-dns-token` says `hangar hangar 600` and `root root
+   600`, sizes not 0. Never `cat` them.
+4. **Snapshot the store, then deploy the release.** First, so the
+   snapshot holds every write the old release took:
+
+   ```sh
+   sudo zfs snapshot hangar/state@pre-cutover
+   zfs list -t snapshot hangar/state
+   ```
+
+   The listing must end with `hangar/state@pre-cutover`: a rollback can
+   only go back to the latest snapshot without destroying the ones after
+   it. Then deploy, as "Deploying a new hangar version" in
+   `docs/runbook/host-bootstrap.md` says, with `deploy/` and the release
+   from the commit. The dry run lists the new units and `would: restart`
+   for the apiserver, the agent (its unit changed) and the edge's start;
+   the real run warns that the tunnel is left while `cloudflared.env` is
+   there, and, the first time, to copy the secrets key-encryption key to
+   the vault: do that now. The window above starts here.
+
+   Check: `sudo hangar --context local get nodes` shows the node Ready;
+   `systemctl list-units --no-pager 'hangar-*'` shows the edge, its two
+   sockets and the apiserver's public socket active; `verify.sh` passes
+   but for the front door's certificates, which come next.
+5. **The certificates.** `journalctl -u hangar-edge | grep 'certificate
+   obtained'` shows one for each of `api.`, `console.` and `*.<user zone>`
+   within a minute or two.
+
+   Check: `sudo deploy/host/verify.sh` passes, its `edge on :443 serves …`
+   lines included. From outside the host, before DNS:
+   `curl --resolve api.hangarlab.cloud:443:15.235.221.177 https://api.hangarlab.cloud/healthz`
+   prints `ok`, and the same over `[2402:1f00:8001:27b1::1]`.
+6. **Switch DNS.** In the privileged box: `apply`, then `verify` (exit 0),
+   then commit `state.json` where it is kept.
+
+   Check: `dig +short api.hangarlab.cloud A @1.1.1.1` is the host's IPv4,
+   `AAAA` its IPv6, and so for `console.hangarlab.cloud` and
+   `anything.hangarlab.dev`; then `curl https://api.hangarlab.cloud/healthz`
+   prints `ok` with no `--resolve`. Wait five minutes, the old record's TTL,
+   before the next step, so no cache still sends anyone to the tunnel.
+
+   **If the API refuses the type change**, `apply` stops at `DNS A record
+   api.<zone>` with that record unchanged, still the tunnel's CNAME, and
+   says so. Delete that CNAME in the dashboard (its ID is the state's
+   `api.<zone> A`), then `apply` again, which creates the A record. Between
+   the two the name has no answer, and a resolver that asks then may keep
+   that for up to the zone's negative TTL (the SOA minimum, 30 minutes on
+   Cloudflare): do it quickly.
+7. **Stop cloudflared.** Move the tunnel's token aside, for a rollback,
+   then a full run retires the tunnel: it stops and disables
+   `hangar-cloudflared` and removes its unit, its guard and the binary.
+
+   ```sh
+   sudo mv /etc/hangar/cloudflared.env /etc/hangar/cloudflared.env.retired
+   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy/host/bootstrap.sh
+   sudo journalctl -u hangar-bootstrap --no-pager | grep 'retire the Cloudflare tunnel'
+   sudo /var/tmp/hangar/deploy/host/verify.sh
+   sudo /var/tmp/hangar/deploy/host/bootstrap.sh
+   ```
+
+   Check: `verify.sh` says `PASS Cloudflare tunnel retired: nothing of it
+   left`, and the next run `changes: 0`.
+8. **The owner signs in again**, on the workstation, with the new CLI:
+   `hangar config set-context prod --endpoint https://api.hangarlab.cloud
+   --auth oidc`, then `hangar login` (or `hangar login --device`), then
+   `hangar whoami`. A person who never signed up runs `hangar signup
+   --username NAME` once. `https://console.hangarlab.cloud/auth/login`
+   signs in a browser; the console's own pages answer 503 until a release
+   carries its files.
+9. **Recreate the smoke token**, as "The smoke token" in
+   `docs/runbook/host-bootstrap.md` says, and delete the binding the
+   Access-era token held (`smoke-token-owner`).
+
+   Check: `verify.sh` says `PASS smoke token …`.
+
+### Afterwards
+
+Once rolling back is off the table (a week, say):
+
+- Delete in the dashboard what `plan`'s notes name: the tunnel (Zero Trust
+  → Networks → Tunnels), the Access application, its two policies and the
+  `hangar-smoke` service token; and, on a host that ran public endpoints
+  behind Access, what "Retiring the endpoints' Access objects" below says.
+  Then remove the `retired` entry from `state.json`, `plan` again (no
+  notes), and commit it.
+- Revoke the apiserver's old Cloudflare API token, if there was one, and
+  delete `/var/lib/hangar/state/cloudflare-api-token` on the host;
+  `deploy/host` warns while it is there.
+- Cut the tool's token down to Zone Read and DNS Edit on the two zones.
+- On the host: `sudo zfs destroy hangar/state@pre-cutover` and
+  `sudo rm /etc/hangar/local.env.pre-cutover /etc/hangar/cloudflared.env.retired`.
+
+### Rollback
+
+At any step, back to the previous release and DNS through the tunnel. The
+host goes first, so the tunnel is up when DNS comes back to it. Everything
+the platform stored since the snapshot of step 4 is lost with it: sign-ins
+and anything applied in between. Before step 4 nothing has changed but
+`local.env` and two new files: put `local.env.pre-cutover` back, and that
+is all.
+
+1. **The host.** Stop the new release's front door and apiserver, put the
+   settings and the store back, and run the previous release's `deploy/`:
+
+   ```sh
+   sudo systemctl disable --now hangar-edge.service hangar-edge-https.socket hangar-edge-http.socket
+   sudo systemctl stop hangar-apiserver
+   sudo cp -a /etc/hangar/local.env.pre-cutover /etc/hangar/local.env
+   sudo zfs rollback hangar/state@pre-cutover
+   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy-previous/host/bootstrap.sh --release /var/tmp/hangar/release/hangar-<previous>
+   ```
+
+   `zfs rollback` goes back to the latest snapshot only: it refuses while
+   a later one exists (`zfs list -t snapshot hangar/state` shows them,
+   oldest first). `zfs rollback -r` then destroys every snapshot after
+   `@pre-cutover` on the way; do not use it until you know what they hold.
+
+   After step 7, put the tunnel's token back first, before that run:
+   `sudo mv /etc/hangar/cloudflared.env.retired /etc/hangar/cloudflared.env`.
+   The previous release's `deploy/` reinstalls cloudflared from it. The
+   firewall and `/etc/hangar/cloudflare-dns-token` stay: the firewall lets
+   in all an earlier release needs, and nothing reads the token.
+
+   Check: `journalctl -u hangar-cloudflared` shows `Registered tunnel
+   connection`; `cat /usr/local/lib/hangar/VERSION` is the previous
+   revision; `verify.sh` from `deploy-previous` passes.
+2. **DNS.** In the dashboard, delete the records this version created: the
+   AAAA of `api.<zone>`, and the A and AAAA of `console.<zone>` and of
+   `*.<user zone>`. Then, in the privileged box, check out the previous
+   release, put the `version: 1` `state.json` from before the cutover in
+   an output directory, and run its tool's `apply` with the old config: it
+   turns `api.<zone>`'s A record, the same record, back into the proxied
+   CNAME to the tunnel. Keep that `state.json` as the current one.
+
+   Check: `dig +short api.hangarlab.cloud @1.1.1.1` answers Cloudflare's
+   addresses again, and the previous CLI (`hangar.old`) signs in through
+   Access.
+
+## Retiring the endpoints' Access objects
+
+Before hangar-edge signed private endpoints' callers in itself, the tool
+made a wildcard Access application for `*.<zone>` and a reusable bypass
+policy, and the apiserver made one application per PUBLIC endpoint, named
+`hangar public endpoint: <hostname>`, with an API token of its own. None of
+them is used any more, and the tool deletes nothing, so delete them by
+hand, once the new release runs (before, the old release's edge still needs
+them: its private endpoints would refuse everyone, and Access would ask its
+public ones' visitors to sign in):
+
+1. `plan` names the wildcard application's and the bypass policy's IDs in
+   its notes (`endpoints_access_app` and `access_policy_endpoints_bypass`
+   under `retired` in `state.json`).
+2. In the dashboard (Zero Trust → Access → Applications), delete every
+   application named `hangar public endpoint: …`, then the wildcard
+   application, then (Access → Policies) the bypass policy.
+3. Revoke the apiserver's Cloudflare API token (My Profile → API Tokens),
+   and on the host delete `/var/lib/hangar/state/cloudflare-api-token`;
+   `deploy/host` warns while the file is there.
+4. Remove those entries from `state.json`, then `plan` again: no notes
+   about them.
+
+A host whose state names no endpoints' zone never had them.
+
 ## When something is off
 
-- **The tunnel is down after the apiserver was stopped and started by
-  hand.** The tunnel's unit stops with the apiserver and does not start
-  with it again; on the host, `sudo systemctl start hangar-cloudflared` or
-  re-run `deploy/host` (`docs/runbook/host-bootstrap.md`).
-- **A refusal names an object you know is ours.** `state.json` was lost or
-  is from another directory. Restore it. Failing that, write it by hand with
-  the IDs from the dashboard (fields `version: 1`, `account_id`, `zone_id`,
-  `hostname`, `tunnel_id`, `dns_record_id`, `app_id`, `policies.emails`,
-  `policies.service_tokens`, `service_token_id`, and with public endpoints
-  `endpoints_zone`, `endpoints_zone_id`, `endpoints_dns_record_id`), then
-  run `plan`.
-- **`note: … smoke-token.env is not in the output directory`.** Cloudflare
-  returns a client secret only when the token is created. Delete
-  `hangar-smoke` in the dashboard (Zero Trust → Access → Service auth) and
-  run `apply`, which creates a new one and writes the file.
-- **`note: … expires at …`.** The smoke token lasts a year. Delete it and
-  `apply`, as above.
-- **Removing everything.** The tool deletes nothing. Take the host off the
-  tunnel first (the rollback above), then in the dashboard delete the DNS
-  record, the tunnel, the application, the two policies and the service
-  token, in that order, so the hostname is never routed without Access in
-  front. Then delete `state.json`.
+- **A refusal names a record you know is ours.** `state.json` was lost or
+  is from another directory. Restore it. Failing that, write it by hand
+  with the IDs from the dashboard (fields `version: 2`, `account_id`,
+  `zone`, `zone_id`, `endpoints_zone`, `endpoints_zone_id`, and `records`
+  mapping `"<name> <type>"` to the record's ID), then run `plan`.
+- **verify reports `proxied: true -> false`.** Someone turned the proxy on
+  in the dashboard: traffic then goes through Cloudflare again, which the
+  front door does not expect (its client addresses become Cloudflare's).
+  `apply` turns it off.
+- **Removing everything.** The tool deletes nothing. Delete the records in
+  the dashboard, then `state.json`. The names then stop answering: the
+  host serves nothing anyone can find.

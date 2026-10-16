@@ -10,8 +10,9 @@ IPv4-only client cannot reach one, and ordinary HTTPS goes through
 hangar-edge, the front door (`front-door.md`). User content must not share a
 registrable domain with the console and the API, so it lives under its own
 domain, `hangarlab.dev`. The wildcard certificate covers one level only.
-Cloudflare is leaving the traffic path, and Access with it, so Hangar
-signs the callers of private endpoints in itself (`authentication.md`).
+Cloudflare has left the traffic path, and Access with it (HiNet routes
+traffic to Cloudflare through the US west coast), so Hangar signs the
+callers of private endpoints in itself (`authentication.md`).
 
 ## Decision
 
@@ -157,10 +158,14 @@ signs the callers of private endpoints in itself (`authentication.md`).
   `hangar ssh`: while an endpoint exists, its machine's interface has a rule
   passing TCP from the gateway's address to the endpoint's port
   (`networking.md`). The endpoint is the explicit opening.
-- **Cloudflare's side**, until the cutover: `hangar-cloudflare` makes the
-  domain's wildcard DNS record and the tunnel's wildcard ingress rule to the
-  edge, with no `originRequest.access` (`cloudflare-setup.md`). No Access
-  object stands in front of an endpoint.
+- **Cloudflare's side** is DNS alone: `hangar-cloudflare` makes the
+  domain's wildcard A and AAAA records, DNS-only, at the host, whose front
+  door takes every endpoint's traffic itself (`cloudflare-setup.md`). No
+  Access object stands in front of an endpoint.
+- **Machines on the host reach endpoints** by their public names, as
+  anyone does: the node lets its networks open TCP 80 and 443 at the
+  host's public addresses, the front door's, and nothing else of the host
+  (`networking.md`).
 
 ## Consequences
 
@@ -185,4 +190,6 @@ signs the callers of private endpoints in itself (`authentication.md`).
   redirects; a session replayed on another host; lookalike cookie names;
   revoked grants and credentials ending upgrades; what is stripped; and no
   secret in the logs. `internal/apiserver` covers endpoint-login and
-  `EndpointAuthService`.
+  `EndpointAuthService`. On a testbed, `test/testbed/flow`'s
+  `TestTheDirectPath` runs a handoff and a public endpoint through the
+  real front door to a real machine.

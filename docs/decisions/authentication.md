@@ -5,8 +5,10 @@ from Cloudflare Access.
 
 ## Context
 
-Cloudflare is leaving the traffic path (the route from Taiwan to its edge
-runs through the US west coast), so Access no longer proves who someone is.
+Cloudflare has left the traffic path (HiNet routes traffic to it through
+the US west coast), so Access no longer proves who someone is: clients
+reach the host directly, through the front door (`front-door.md`), and
+Cloudflare is DNS alone (`cloudflare-setup.md`).
 The apiserver signs people in itself. People need a Google account and
 nothing else; bindings stay keyed by email. Agents need non-interactive
 credentials. The node is a separate root process on the same host.
@@ -232,13 +234,12 @@ credentials. The node is a separate root process on the same host.
 - **Dev mode** takes the user from a header. It must be enabled explicitly
   (`--auth-mode dev`) and refuses to start on a non-loopback address, or
   with a public socket. It has no sign-in pages and issues nothing. It also
-  refuses any request
-  carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`, which cloudflared
-  sets on every request it proxies, and `Cf-Connecting-Ip`, `Cdn-Loop` and
-  `Cf-Ray` from its edge), and the host runs cloudflared only while the
-  apiserver is in oidc auth, which the tunnel's unit checks itself at
-  every start (`docs/runbook/host-bootstrap.md`), so a tunnel never
-  reaches it.
+  refuses any request carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`,
+  which cloudflared sets on every request it proxies, and
+  `Cf-Connecting-Ip`, `Cdn-Loop` and `Cf-Ray` from its edge): no step
+  installs a tunnel any more, but one an earlier release left on a host is
+  stopped before the apiserver could restart in dev auth
+  (`docs/runbook/host-bootstrap.md`).
 - Controllers run in-process as the System principal.
 - A third principal source, workload identity issued through the metadata
   service, is reserved for later.

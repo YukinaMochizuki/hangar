@@ -27,8 +27,9 @@ stand in front of the internet with nothing else in front of it.
   (`systemctl restart hangar-edge`, or the `edge` step after a unit or
   binary changed) restarts the sockets too: for that moment :443 and :80
   are closed, and new connections are refused. The edge is the front door
-  when it is given `--cp-domain`; without it, it serves public endpoints on
-  loopback alone, as before.
+  when it is given `--cp-domain`, and on a host it runs only as the front
+  door: public endpoints are served nowhere else. Its plain-HTTP listener
+  on loopback (`--listen`) is for tests alone, off unless given.
 - **TLS with certificates it gets itself** (`internal/edge/front/certs.go`):
   certmagic, over ACME DNS-01 only, with libdns/cloudflare and a Cloudflare
   token that may edit DNS in the two zones and nothing else.
@@ -41,7 +42,7 @@ stand in front of the internet with nothing else in front of it.
     nothing. Renewal is certmagic's; `verify.sh` fails a name whose
     certificate in storage has 14 days left or fewer.
   - The token is a root-owned 0600 file that systemd hands the edge as a
-    credential (`LoadCredential=`). It is not the apiserver's Access token.
+    credential (`LoadCredential=`). It is not `hangar-cloudflare`'s.
   - `--acme-ca` names the CA: Let's Encrypt by default, its staging
     directory or pebble for tests. `--acme-ca-root` trusts a test CA's
     directory.
@@ -86,7 +87,8 @@ stand in front of the internet with nothing else in front of it.
     `__Host-` cookies and the WebSocket `Origin` check need
     (`streaming-transport.md`). The edge ends TLS, so the browser's origin
     is https.
-  - The loopback TCP listener stays for cloudflared until the cutover.
+  - The apiserver's loopback TCP listener stays, for the host itself;
+    the firewall keeps it from everyone else.
 - **The client's address is `Hangar-Client-Ip`, and only the edge says it.**
   - The edge drops whatever the client sent of `Hangar-Client-Ip`,
     `Forwarded`, `X-Real-Ip`, `Cf-Connecting-Ip` and `True-Client-Ip`, and
@@ -98,7 +100,12 @@ stand in front of the internet with nothing else in front of it.
     header and takes the connection's address (`auth.ClientIPFromConn`).
     Its audit lines, sign-in's included, carry it as `client_ip`.
 - **Limits** (`internal/edge/front/limits.go`; each is a flag of
-  hangar-edge). A client is an IPv4 address or an IPv6 /64.
+  hangar-edge). A client is an IPv4 address or an IPv6 /64, but in the
+  host's own /64 (`--own-prefix`): every machine on the host has an
+  address of it, so there each address is a client, and the /56 and /48
+  caps do not count it. A machine's IPv4, NATed, arrives as its network's
+  address on the host's side, so the machines of one network are one
+  client over IPv4.
 
   | Limit | Default | Past it |
   |---|---|---|
@@ -130,6 +137,11 @@ stand in front of the internet with nothing else in front of it.
     uplink's DHCPv4 replies, and TCP 22, 80 and 443.
   - It has no forward chain: the guests' traffic is the node agent's tables'
     alone (`networking.md`).
+  - Machines on the host reach the front door at the host's public
+    addresses, TCP 80 and 443 alone, as the internet does: the node
+    agent's input rule lets those in from its networks and drops the rest
+    (`networking.md`). A machine calling the platform by its public names,
+    `api.` or an endpoint, so gets through without leaving the host.
   - A unit of its own loads it before the network comes up. It is never
     loaded by `nftables.service`, whose stock config flushes every table.
 - **The pages the front door answers with itself are plain-text
@@ -139,16 +151,18 @@ stand in front of the internet with nothing else in front of it.
 ## Consequences
 
 - Cloudflare no longer sees the traffic, and nothing filters it before the
-  host: the limits and the firewall are all there is.
-- The cutover is a DNS change. The front door runs beside the tunnel until
-  then, with its certificates already in place.
-- A guest reaching the host's own public address is dropped by the node
-  agent's input rule (`networking.md`). So a machine calling
-  `api.<cp-domain>` by name does not get through to the front door from
-  inside the host.
+  host: the limits and the firewall are all there is. Cloudflare is DNS
+  alone (`cloudflare-setup.md`).
+- The cutover from the tunnel is one switch: deploy, the certificates,
+  then DNS, with the tunnel removed afterwards; between the deploy and DNS
+  only the admin socket works (`docs/runbook/cloudflare.md`).
 - Tests: `internal/edge/front` issues real certificates from pebble, in the
   test process, with a DNS server of its own (`acmetest`). On a testbed,
   `test/testbed/host-bootstrap.sh` runs the deploy, the socket activation,
   the firewall and pebble against a hangar-edge built with the `testbed`
   tag, which can answer DNS-01 itself (`--acme-dns testbed:<addr>`). A
-  release is never built with that tag.
+  release is never built with that tag. The L4 flow
+  (`test/testbed/flow`, `TestTheDirectPath`) runs the whole direct path
+  with real machines: a sign-in against a fake provider through the front
+  door, the API through it, a private endpoint's handoff and a public
+  endpoint.
