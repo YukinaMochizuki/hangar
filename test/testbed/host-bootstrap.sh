@@ -693,6 +693,7 @@ EOF
 	[ "$1" = on ] || return 0
 	cat >>/etc/hangar/local.env <<EOF
 HANGAR_CP_DOMAIN=cp.test
+HANGAR_ACME_EMAIL=edge@example.com
 HANGAR_ACME_CA=https://127.0.0.1:14000/dir
 HANGAR_ACME_CA_ROOT=/etc/hangar/pebble-ca.pem
 HANGAR_ACME_DNS=testbed:127.0.0.1:8053
@@ -742,12 +743,16 @@ EOF
 	auth_env oidc
 	front_door_env on
 	# Sign-in's provider returns to the public URL, which must be the
-	# console's site the front door serves.
+	# console's site the front door serves; and the ACME account needs an
+	# email.
+	sed -i '/^HANGAR_ACME_EMAIL=/d' /etc/hangar/local.env
 	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" --only edge 2>"$log"; then
-		fail "the front door ran with sign-in's public URL elsewhere"
+		fail "the front door ran with sign-in's public URL elsewhere and no ACME email"
 	fi
 	grep -q "HANGAR_PUBLIC_URL in /etc/hangar/local.env must be $TB_FRONT_DOOR_URL" "$log" || fail "unexpected refusal: $(cat "$log")"
+	grep -q "needs HANGAR_ACME_EMAIL in /etc/hangar/local.env" "$log" || fail "no refusal for the missing ACME email: $(cat "$log")"
 	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
+	echo 'HANGAR_ACME_EMAIL=edge@example.com' >>/etc/hangar/local.env
 
 	"$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" 2>&1 | tee "$log"
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$log" || fail "summary does not match its changes"

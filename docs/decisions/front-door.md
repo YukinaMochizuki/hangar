@@ -45,6 +45,12 @@ stand in front of the internet with nothing else in front of it.
   - `--acme-ca` names the CA: Let's Encrypt by default, its staging
     directory or pebble for tests. `--acme-ca-root` trusts a test CA's
     directory.
+  - `--acme-email` is required with `--cp-domain`. Without an email,
+    certmagic takes one it discovers for the whole process: when one name
+    looks in storage while another is saving the new account, it can
+    discover `default`, and register the account as `mailto:default`,
+    which the CA refuses. The front door's names are obtained at once, so a
+    first start can hit this; an email set is never replaced.
   - Until a certificate exists, a handshake for its name fails, and nothing
     else does. A server name the front door has no certificate for, or
     none, fails the handshake: there is no default certificate and no

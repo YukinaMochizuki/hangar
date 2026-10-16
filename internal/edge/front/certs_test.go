@@ -1,13 +1,28 @@
 package front_test
 
 import (
+	"context"
 	"crypto/tls"
 	"io/fs"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/YukinaMochizuki/hangar/internal/edge/front"
+	"github.com/YukinaMochizuki/hangar/internal/edge/front/acmetest"
 )
+
+// TestCertificatesNeedAnEmail: without an ACME email, certificates are
+// refused before anything asks a CA.
+func TestCertificatesNeedAnEmail(t *testing.T) {
+	_, err := front.Certificates(context.Background(), front.CertConfig{
+		Storage: t.TempDir(), DNS: &acmetest.Server{}, Names: []string{apiHost},
+	})
+	if err == nil || !strings.Contains(err.Error(), "email") {
+		t.Fatalf("no email: %v", err)
+	}
+}
 
 // TestCertificatesOverDNS01: the front door gets its certificates from an
 // ACME CA through DNS-01 alone, the control plane's names and the
