@@ -67,7 +67,7 @@ func (h machineCapabilities) SignSSHKey(ctx context.Context, req *connect.Reques
 		return nil, err
 	}
 	validBefore := time.Unix(int64(cert.ValidBefore), 0)
-	s.log.Info("ssh key signed", "principal", p.String(), "project", key.Project, "kind", kind.Kind, "name", key.Name, "uid", uid,
+	s.log.Info("ssh key signed", "principal", p.String(), "client_ip", clientIP(ctx), "project", key.Project, "kind", kind.Kind, "name", key.Name, "uid", uid,
 		"key", ssh.FingerprintSHA256(cert.Key), "valid_before", validBefore.UTC().Format(time.RFC3339))
 	return connect.NewResponse(&computev1alpha1.SignSSHKeyResponse{
 		Certificate: strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cert))),
@@ -120,7 +120,7 @@ func sshFits(r *reached, machine *computev1alpha1.Machine) error {
 func (s *Server) serveSSH(chain auth.Chain, w http.ResponseWriter, r *http.Request, route execws.Route) {
 	key := resource.Key{Project: route.Project, Name: route.Name}
 	refuse := func(p auth.Principal, err error) {
-		s.auditRefused("ssh refused", p, route, err)
+		s.auditRefused("ssh refused", p, clientIP(r.Context()), route, err)
 		execws.WriteError(w, r, err)
 	}
 	ctx, err := chain.Authenticate(r.Context(), r.Header)
@@ -152,7 +152,7 @@ func (s *Server) serveSSH(chain auth.Chain, w http.ResponseWriter, r *http.Reque
 		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
 	})
 	if err != nil {
-		s.auditRefused("ssh refused", p, route, connect.NewError(connect.CodeInvalidArgument, err))
+		s.auditRefused("ssh refused", p, clientIP(r.Context()), route, connect.NewError(connect.CodeInvalidArgument, err))
 		return
 	}
 	s.runSSH(ctx, c, x, live)

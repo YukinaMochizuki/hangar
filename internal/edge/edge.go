@@ -47,7 +47,10 @@ type Config struct {
 	// Retry is how long the edge waits before reading the endpoints again
 	// after a failure; zero means a second.
 	Retry time.Duration
-	Log   *slog.Logger
+	// ResponseHeaderTimeout is how long an endpoint has to start its
+	// answer; zero is forever.
+	ResponseHeaderTimeout time.Duration
+	Log                   *slog.Logger
 }
 
 // Verifier verifies an Access token and says until when it holds;
@@ -113,8 +116,11 @@ func New(cfg Config) *Edge {
 		synced:  make(chan struct{}),
 	}
 	e.proxy = &httputil.ReverseProxy{
-		Rewrite:   e.rewrite,
-		Transport: &http.Transport{DialContext: e.dialEndpoint, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second, DisableCompression: true},
+		Rewrite: e.rewrite,
+		Transport: &http.Transport{
+			DialContext: e.dialEndpoint, MaxIdleConnsPerHost: 16, IdleConnTimeout: 90 * time.Second, DisableCompression: true,
+			ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
+		},
 		// Streams and server-sent events reach the client as they come.
 		FlushInterval: -1,
 		ErrorHandler:  e.proxyError,
@@ -311,6 +317,15 @@ func (e *Edge) recheck(ctx context.Context) {
 	}
 }
 
+// Hostname is a request's Host, or a TLS server name, as the edge and the
+// front door match it: without a port or a trailing dot, in lower case.
+func Hostname(host string) string {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.ToLower(strings.TrimSuffix(host, "."))
+}
+
 // label is an endpoint's hostname label, as the apiserver makes it.
 func label(project, name string) string { return name + "-" + project }
 
@@ -322,11 +337,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the edge is starting; try again shortly", http.StatusServiceUnavailable)
 		return
 	}
-	host := strings.ToLower(r.Host)
-	if h, _, err := net.SplitHostPort(host); err == nil {
-		host = h
-	}
-	l, ok := strings.CutSuffix(host, "."+e.cfg.Domain)
+	l, ok := strings.CutSuffix(Hostname(r.Host), "."+e.cfg.Domain)
 	if !ok || l == "" || strings.Contains(l, ".") {
 		http.Error(w, "no such endpoint", http.StatusNotFound)
 		return
@@ -411,7 +422,8 @@ func (e *Edge) rewrite(pr *httputil.ProxyRequest) {
 	pr.SetURL(&url.URL{Scheme: "http", Host: ep.key() + endpointHost})
 	pr.Out.Host = pr.In.Host
 	pr.SetXForwarded()
-	// Cloudflare ended the client's TLS.
+	// The front door (internal/edge/front), or Cloudflare, ended the
+	// client's TLS.
 	pr.Out.Header.Set("X-Forwarded-Proto", "https")
 	StripAccess(pr.Out.Header)
 }
@@ -526,6 +538,11 @@ func (e *Edge) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 	}
 	if errors.Is(err, context.Canceled) {
 		return // the client went away
+	}
+	// The front door caps the body (internal/edge/front).
+	if mbe := (*http.MaxBytesError)(nil); errors.As(err, &mbe) {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
 	}
 	e.cfg.Log.Info("an endpoint did not answer", "endpoint", ep.project+"/"+ep.name, "error", err)
 	http.Error(w, msg, status)

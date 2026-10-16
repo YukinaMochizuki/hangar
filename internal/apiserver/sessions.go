@@ -166,7 +166,7 @@ func (h sessions) RevokeSessions(ctx context.Context, req *connect.Request[iamv1
 	if err != nil {
 		return nil, apiError(err)
 	}
-	h.s.log.Info("revoked logins", "principal", target.String(), "by", p.String(), "credentials", n)
+	h.s.log.Info("revoked logins", "principal", target.String(), "by", p.String(), "client_ip", clientIP(ctx), "credentials", n)
 	return connect.NewResponse(&iamv1alpha1.RevokeSessionsResponse{Revoked: int32(n)}), nil
 }
 

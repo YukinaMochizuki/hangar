@@ -43,7 +43,7 @@ var errClientGone = connect.NewError(connect.CodeCanceled, errors.New("the clien
 func (s *Server) serveExec(chain auth.Chain, w http.ResponseWriter, r *http.Request, route execws.Route) {
 	key := resource.Key{Project: route.Project, Name: route.Name}
 	refuse := func(p auth.Principal, err error) {
-		s.auditRefused("exec refused", p, route, err)
+		s.auditRefused("exec refused", p, clientIP(r.Context()), route, err)
 		execws.WriteError(w, r, err)
 	}
 	ctx, err := chain.Authenticate(r.Context(), r.Header)
@@ -80,7 +80,7 @@ func (s *Server) serveExec(chain auth.Chain, w http.ResponseWriter, r *http.Requ
 		if r.Header.Get("Origin") != "" && strings.Contains(err.Error(), "Origin") {
 			code = connect.CodePermissionDenied
 		}
-		s.auditRefused("exec refused", p, route, connect.NewError(code, err))
+		s.auditRefused("exec refused", p, clientIP(r.Context()), route, connect.NewError(code, err))
 		return
 	}
 	s.runExec(ctx, c, x, live, route)
@@ -129,7 +129,7 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *machineTarge
 	audit := &execAudit{began: time.Now()}
 	err := s.exec(ctx, end, c, x, live, audit)
 	if audit.start == nil {
-		s.auditRefused("exec refused", x.principal, route, err)
+		s.auditRefused("exec refused", x.principal, x.client, route, err)
 	} else {
 		s.auditEnded(x, audit, err)
 	}
@@ -138,14 +138,14 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *machineTarge
 
 // auditRefused logs, as msg, a capability's WebSocket refused before it
 // began: an exec before its process started, an SSH tunnel before it
-// opened. It says what the route names, not the kind it resolves to, as a
-// refusal may come before that.
-func (s *Server) auditRefused(msg string, p auth.Principal, route execws.Route, err error) {
+// opened, and the caller's address. It says what the route names, not the
+// kind it resolves to, as a refusal may come before that.
+func (s *Server) auditRefused(msg string, p auth.Principal, client string, route execws.Route, err error) {
 	principal := ""
 	if p != (auth.Principal{}) {
 		principal = p.String()
 	}
-	s.log.Info(msg, "principal", principal, "project", route.Project, "plural", route.Plural, "name", route.Name,
+	s.log.Info(msg, "principal", principal, "client_ip", client, "project", route.Project, "plural", route.Plural, "name", route.Name,
 		"code", connect.CodeOf(err).String(), "error", err.Error())
 }
 
