@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -71,24 +72,28 @@ func TestSolicitationsAreAnsweredAtMostEveryMinInterval(t *testing.T) {
 	if !IsSolicitation(solicitation(255)) || IsSolicitation(solicitation(64)) {
 		t.Fatal("a solicitation is one with hop limit 255 only")
 	}
-	p := &pipe{in: make(chan []byte, 256), out: make(chan []byte, 256), deadline: make(chan struct{})}
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- Serve(ctx, p, slog.New(slog.DiscardHandler)) }()
-	<-p.out // the first, sent at once
-	for range 100 {
-		p.in <- solicitation(255)
-	}
-	time.Sleep(MinInterval / 2) //nolint:forbidigo // real time
-	if n := len(p.out); n != 0 {
-		t.Errorf("%d advertisements within %v of the last", n, MinInterval/2)
-	}
-	time.Sleep(MinInterval/2 + maxResponseDelay + 200*time.Millisecond) //nolint:forbidigo // real time
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if n := len(p.out); n != 1 {
-		t.Errorf("%d advertisements for 100 solicitations, want 1", n)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		p := &pipe{in: make(chan []byte, 256), out: make(chan []byte, 256), deadline: make(chan struct{})}
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- Serve(ctx, p, slog.New(slog.DiscardHandler)) }()
+		<-p.out // the first, sent at once
+		for range 100 {
+			p.in <- solicitation(255)
+		}
+		time.Sleep(MinInterval - time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := len(p.out); n != 0 {
+			t.Errorf("%d advertisements within %v of the last", n, MinInterval)
+		}
+		time.Sleep(maxResponseDelay + time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if n := len(p.out); n != 1 {
+			t.Errorf("%d advertisements for 100 solicitations, want 1", n)
+		}
+	})
 }

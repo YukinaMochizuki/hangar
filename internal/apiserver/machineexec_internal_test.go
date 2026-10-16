@@ -635,8 +635,9 @@ func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
 	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
 	done := make(chan wsResult, 1)
 	go func() { done <- readAll(t, c) }()
-	// Many pings.
-	time.Sleep(500 * time.Millisecond) //nolint:forbidigo // real time
+	// Many pings, idle longer than ExecPing and ExecPong together. It is
+	// real time: the server is on SQLite, which synctest cannot hold.
+	time.Sleep(500 * time.Millisecond) //nolint:forbidigo // real elapsed time the pings must outlast
 	select {
 	case r := <-done:
 		t.Fatalf("the exec ended while idle: %+v", r)

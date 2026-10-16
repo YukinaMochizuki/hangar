@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -26,12 +27,13 @@ import (
 // fast is a liveness tests can wait out.
 var fast = tunnel.Liveness{Idle: 100 * time.Millisecond, Timeout: 100 * time.Millisecond}
 
-// apiserver is a hub behind a unix socket served as the apiserver serves
+// apiserver is a hub behind a socket served as the apiserver serves
 // its node socket, HTTP/1.1 and cleartext HTTP/2, taking every tunnel as
 // node n1's.
 type apiserver struct {
-	hub  *tunnel.Hub
-	sock string
+	hub *tunnel.Hub
+	// dial connects to its socket.
+	dial func(ctx context.Context) (net.Conn, error)
 }
 
 func newAPIServer(t *testing.T) *apiserver {
@@ -40,12 +42,28 @@ func newAPIServer(t *testing.T) *apiserver {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	sock := filepath.Join(dir, "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &apiserver{hub: &tunnel.Hub{Liveness: fast}, sock: sock}
+	return serveAPIServer(t, ln, func(ctx context.Context) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "unix", sock)
+	})
+}
+
+// newPipeAPIServer is newAPIServer on net.Pipe connections, which a
+// synctest bubble can hold, as it cannot a socket.
+func newPipeAPIServer(t *testing.T) *apiserver {
+	t.Helper()
+	ln := &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+	return serveAPIServer(t, ln, ln.dial)
+}
+
+func serveAPIServer(t *testing.T, ln net.Listener, dial func(context.Context) (net.Conn, error)) *apiserver {
+	t.Helper()
+	a := &apiserver{hub: &tunnel.Hub{Liveness: fast}, dial: dial}
 	mux := http.NewServeMux()
 	mux.HandleFunc(tunnel.Path, func(w http.ResponseWriter, r *http.Request) { a.hub.Accept(w, r, "n1") })
 	p := &http.Protocols{}
@@ -56,14 +74,50 @@ func newAPIServer(t *testing.T) *apiserver {
 	t.Cleanup(func() {
 		_ = srv.Close()
 		a.hub.Close()
-		_ = os.RemoveAll(dir)
 	})
 	return a
 }
 
-func (a *apiserver) dial(ctx context.Context) (net.Conn, error) {
-	return (&net.Dialer{}).DialContext(ctx, "unix", a.sock)
+// pipeListener accepts the server ends of the net.Pipe connections dial
+// makes.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
 }
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+func (l *pipeListener) dial(ctx context.Context) (net.Conn, error) {
+	client, server := net.Pipe()
+	select {
+	case l.conns <- server:
+		return client, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
 
 // node is the handler an agent serves: /hello answers, /stream writes a
 // line every 10 ms until its call ends, counting the streams under way.
@@ -188,22 +242,25 @@ func noLeaks(t *testing.T) {
 }
 
 func TestARoundTrip(t *testing.T) {
-	noLeaks(t)
-	a := newAPIServer(t)
-	startAgent(t, a, &node{}, a.dial)
-	tun := tunnelOf(t, a)
-	if tun.Node() != "n1" {
-		t.Errorf("the tunnel is node %q's", tun.Node())
-	}
-	hello(t, tun)
-	// Idle beyond its liveness, the tunnel stays up: pings keep it.
-	time.Sleep(5 * (fast.Idle + fast.Timeout)) //nolint:forbidigo // real time
-	select {
-	case <-tun.Done():
-		t.Fatal("an idle tunnel dropped")
-	default:
-	}
-	hello(t, tun)
+	synctest.Test(t, func(t *testing.T) {
+		noLeaks(t)
+		a := newPipeAPIServer(t)
+		startAgent(t, a, &node{}, a.dial)
+		tun := tunnelOf(t, a)
+		if tun.Node() != "n1" {
+			t.Errorf("the tunnel is node %q's", tun.Node())
+		}
+		hello(t, tun)
+		// Idle beyond its liveness, the tunnel stays up: pings keep it.
+		time.Sleep(5 * (fast.Idle + fast.Timeout)) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		select {
+		case <-tun.Done():
+			t.Fatal("an idle tunnel dropped")
+		default:
+		}
+		hello(t, tun)
+	})
 }
 
 // TestAStoppingAgentLetsItsCallsAnswer: an agent stopping ends its calls,

@@ -62,18 +62,36 @@ exposed, so a flake is always fixed at its root:
 
 ## Waiting in tests
 
-A test waits for what it needs, not for time to pass. `internal/testutil`
-holds the helpers: `Eventually` polls a condition up to one default bound and
-reports what it last saw (`EventuallyWithin` takes a bound of its own, such
-as a real VM's), and `Unchanged` checks that "nothing happened" by watching
-one object's state, such as its resourceVersion, over a window; never the
-store-wide revision, which unrelated writes move. golangci-lint's forbidigo
-flags `time.Sleep` in tests and test-support packages, outside
-`test/testbed`. A sleep that stays says why with
-`//nolint:forbidigo // <reason>`: real work or real elapsed time the test
-needs; `lets background work run`, before a check `Unchanged` cannot make;
-or `real time`, for an in-process timing measurement that real time makes
-flaky. The last two are marked exactly so, so they can be found and
+A test waits for what it needs, not for time to pass. Which tool it waits
+with depends on its layer:
+
+- **In-process tests (L0) that time something** (a grace period, a
+  backoff, a rate, a ticker, a liveness ping) run inside
+  `testing/synctest`'s `synctest.Test`. Time there is virtual: it moves
+  only when every goroutine of the bubble is blocked, so a slow runner
+  cannot stretch what the test measures. `synctest.Wait` replaces "let
+  the background work run", and `time.Sleep` moves the clock.
+  A bubble cannot hold a goroutine blocked on a socket or on SQLite, so a
+  test that needs real TCP or the store stays out, or moves to `net.Pipe`
+  or an in-memory fake where that keeps what it checks.
+- **L1 and L2 tests**, which run the apiserver, SQLite and the node agent,
+  wait for the controllers with WaitSettled
+  (`internal/controller/controllertest`).
+- **The shared `Eventually`** is for what neither covers: a condition in
+  a test outside a bubble that nothing can be asked about.
+
+`internal/testutil` holds the shared helpers: `Eventually` polls a condition
+up to one default bound and reports what it last saw (`EventuallyWithin`
+takes a bound of its own, such as a real VM's), and `Unchanged` checks that
+"nothing happened" by watching one object's state, such as its
+resourceVersion, over a window; never the store-wide revision, which
+unrelated writes move. golangci-lint's forbidigo flags `time.Sleep` in
+tests and test-support packages, outside `test/testbed`. A sleep that stays
+says why with `//nolint:forbidigo // <reason>`: real work or real elapsed
+time the test needs; `virtual time`, for a sleep in a synctest bubble,
+which moves the bubble's clock and waits for nothing real; or
+`lets background work run`, before a check `Unchanged` cannot make. The
+last two are marked exactly so, so they can be found, and the last
 replaced.
 
 ## Consequences

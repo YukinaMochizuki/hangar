@@ -7,10 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -135,82 +140,181 @@ func dialTCP(t *testing.T, addr string) net.Conn {
 	return c
 }
 
-func TestConnectionsPerClient(t *testing.T) {
-	o := defaultOptions()
-	o.limits.ConnsPerClient = 2
-	d := startDoor(t, newCA(t), o)
+// pipeDoor is a front door on net.Pipe connections, each from client:
+// what its tests check is decided as a connection is accepted, before TLS,
+// and a synctest bubble can hold a pipe, as it cannot a socket.
+type pipeDoor struct {
+	https, http *pipeListener
+	log         *syncBuffer
+}
 
-	// keep opens a connection the front door keeps, once those startDoor
-	// and the test closed have left its count.
-	keep := func() net.Conn {
-		var c net.Conn
-		testutil.EventuallyWithin(t, 5*time.Second, "a connection within the limit kept", func() bool {
-			c = dialTCP(t, d.https)
-			return !closedSoon(c, 200*time.Millisecond)
-		})
-		return c
+// client is the address every connection to a pipeDoor comes from.
+var client = net.IPv4(192, 0, 2, 1)
+
+// startPipeDoor runs a pipeDoor with limits l until the test ends; prepare,
+// if set, is given the front door before it serves.
+func startPipeDoor(t *testing.T, l front.Limits, prepare func(*front.Front)) *pipeDoor {
+	t.Helper()
+	d := &pipeDoor{https: newPipeListener(), http: newPipeListener(), log: &syncBuffer{}}
+	f, err := front.New(front.Config{
+		CPDomain: cpDomain, UserDomain: userDomain,
+		DialAPI:   func(context.Context) (net.Conn, error) { return nil, errors.New("no apiserver") },
+		Endpoints: http.NotFoundHandler(), Limits: l,
+		Log: slog.New(slog.NewTextHandler(d.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	first := keep()
-	keep()
-	if !closedSoon(dialTCP(t, d.https), 2*time.Second) {
-		t.Error("a third connection was kept")
+	if prepare != nil {
+		prepare(f)
 	}
-	// :80's count the same.
-	if !closedSoon(dialTCP(t, d.http), 2*time.Second) {
-		t.Error("a third connection, on :80, was kept")
+	noCertificate := &tls.Config{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		return nil, errors.New("no certificate")
+	}}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- f.Serve(ctx, front.Listeners{HTTPS: d.https, HTTP: d.http}, noCertificate) }()
+	t.Cleanup(func() {
+		cancel()
+		if err := <-done; err != nil {
+			t.Errorf("serve: %v", err)
+		}
+	})
+	return d
+}
+
+// pipeListener accepts the server ends of the net.Pipe connections dial
+// makes.
+type pipeListener struct {
+	conns  chan net.Conn
+	closed chan struct{}
+	once   sync.Once
+	port   atomic.Int32
+}
+
+func newPipeListener() *pipeListener {
+	return &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.closed:
+		return nil, net.ErrClosed
 	}
-	_ = first.Close()
-	keep()
-	if !strings.Contains(d.log.String(), "too many connections from the client") {
-		t.Errorf("the refusals are not in the log")
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(192, 0, 2, 100), Port: 443} }
+
+// dial connects to l from client, until the test ends.
+func (l *pipeListener) dial(t *testing.T) net.Conn {
+	t.Helper()
+	c, s := net.Pipe()
+	t.Cleanup(func() { _ = c.Close() })
+	select {
+	case l.conns <- &fromClient{Conn: s, remote: &net.TCPAddr{IP: client, Port: 40000 + int(l.port.Add(1))}}:
+	case <-l.closed:
+		t.Fatal("the front door stopped listening")
 	}
+	return c
+}
+
+// fromClient is a connection's server end, from its remote address.
+type fromClient struct {
+	net.Conn
+	remote net.Addr
+}
+
+func (c *fromClient) RemoteAddr() net.Addr { return c.remote }
+
+func TestConnectionsPerClient(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := defaultOptions().limits
+		l.ConnsPerClient = 2
+		d := startPipeDoor(t, l, nil)
+		first := d.https.dial(t)
+		for i, c := range []net.Conn{first, d.https.dial(t)} {
+			if closedSoon(c, time.Second) {
+				t.Fatalf("connection %d, within the limit, was closed", i)
+			}
+		}
+		if !closedSoon(d.https.dial(t), time.Second) {
+			t.Error("a third connection was kept")
+		}
+		// :80's count the same.
+		if !closedSoon(d.http.dial(t), time.Second) {
+			t.Error("a third connection, on :80, was kept")
+		}
+		_ = first.Close()
+		synctest.Wait()
+		if closedSoon(d.https.dial(t), time.Second) {
+			t.Error("a connection was closed once another had left the count")
+		}
+		if !strings.Contains(d.log.String(), "too many connections from the client") {
+			t.Errorf("the refusals are not in the log")
+		}
+	})
 }
 
 // TestRefusalsAreSummedUpInTheLog: the connections refused are summed up
 // by a ticker, with no further refusal needed to bring the line out.
 func TestRefusalsAreSummedUpInTheLog(t *testing.T) {
-	o := defaultOptions()
-	o.limits.ConnsPerClient = 1
-	o.prepare = func(f *front.Front) { front.SetRefusalSummaryEvery(f, 300*time.Millisecond) }
-	d := startDoor(t, newCA(t), o)
-	// One connection kept, once startDoor's own have left the count.
-	testutil.EventuallyWithin(t, 5*time.Second, "a connection kept", func() bool {
-		return !closedSoon(dialTCP(t, d.https), 200*time.Millisecond)
-	})
-	// Past any summary of startDoor's refusals.
-	time.Sleep(time.Second) //nolint:forbidigo // real time
-	from := len(d.log.String())
-	for range 3 {
-		if !closedSoon(dialTCP(t, d.https), 2*time.Second) {
-			t.Fatal("a second connection from the client was kept")
+	synctest.Test(t, func(t *testing.T) {
+		const every = 300 * time.Millisecond
+		l := defaultOptions().limits
+		l.ConnsPerClient = 1
+		d := startPipeDoor(t, l, func(f *front.Front) { front.SetRefusalSummaryEvery(f, every) })
+		d.https.dial(t)
+		for range 3 {
+			d.https.dial(t)
 		}
-	}
-	// Nothing more is refused; the summary comes on its own.
-	const summary = `msg="refused connections past the limits" by_reason="map[too many connections from the client:`
-	testutil.EventuallyWithin(t, 5*time.Second, "a summary of the refusals in the log", func() (bool, string) {
-		log := d.log.String()[from:]
-		return strings.Contains(log, summary), "\n" + log
+		synctest.Wait()
+		const summary = `msg="refused connections past the limits" by_reason="map[too many connections from the client:3]"`
+		if strings.Contains(d.log.String(), "refused connections past the limits") {
+			t.Fatalf("a summary before the ticker's first tick:\n%s", d.log.String())
+		}
+		// Nothing more is refused; the summary comes on its own.
+		time.Sleep(every) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if log := d.log.String(); strings.Count(log, summary) != 1 {
+			t.Errorf("want one summary of the 3 refusals at the first tick, in:\n%s", log)
+		}
 	})
 }
 
 func TestConnectionRate(t *testing.T) {
-	// The certificates are in storage before the door starts, so its
-	// first handshakes, one a name, succeed and take 3 of the burst.
-	c := newCA(t)
-	o := defaultOptions()
-	o.storage = t.TempDir()
-	startDoor(t, c, o)
-	o.limits.ConnRate, o.limits.ConnBurst = 0.1, 6
-	d := startDoor(t, c, o)
-	var closed int
-	for range 5 {
-		if closedSoon(dialTCP(t, d.https), 300*time.Millisecond) {
-			closed++
+	synctest.Test(t, func(t *testing.T) {
+		l := defaultOptions().limits
+		l.ConnRate, l.ConnBurst = 0.1, 3
+		d := startPipeDoor(t, l, nil)
+		start := time.Now()
+		var conns []net.Conn
+		for range 5 {
+			conns = append(conns, d.https.dial(t))
 		}
-	}
-	if closed < 2 || closed == 5 {
-		t.Errorf("%d of 5 connections closed; want those past the burst of 6 alone", closed)
-	}
+		var closed []bool
+		for _, c := range conns {
+			closed = append(closed, closedSoon(c, time.Second))
+		}
+		if want := []bool{false, false, false, true, true}; !slices.Equal(closed, want) {
+			t.Errorf("closed %v; want those past the burst of 3 alone", closed)
+		}
+		// At 0.1 a second, the rate gives a connection back after ten.
+		time.Sleep(time.Until(start.Add(9 * time.Second))) //nolint:forbidigo // virtual time
+		if !closedSoon(d.https.dial(t), time.Second) {
+			t.Error("a connection was kept before the rate gave one back")
+		}
+		time.Sleep(time.Until(start.Add(11 * time.Second))) //nolint:forbidigo // virtual time
+		if closedSoon(d.https.dial(t), time.Second) {
+			t.Error("a connection was closed after the rate gave one back")
+		}
+	})
 }
 
 func TestRequestRate(t *testing.T) {

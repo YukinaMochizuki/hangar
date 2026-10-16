@@ -13,7 +13,9 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
@@ -407,28 +409,55 @@ func TestStartWritesAFirmwareVM(t *testing.T) {
 	}
 }
 
+// lockedBuffer is a log the test reads while its writer runs.
+type lockedBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (l *lockedBuffer) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *lockedBuffer) Bytes() []byte {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return bytes.Clone(l.b.Bytes())
+}
+
 // TestTheSerialConsoleIsFramedByLine: a console written a byte at a time is
 // framed at line ends, and a prompt with no line end once it is quiet.
 func TestTheSerialConsoleIsFramedByLine(t *testing.T) {
-	r, w := io.Pipe()
-	var log bytes.Buffer
-	f := &serialFramer{log: &log, now: time.Now}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		f.pump(r)
-	}()
-	for _, b := range []byte("Ubuntu 24.04 LTS\nweb login: ") {
-		if _, err := w.Write([]byte{b}); err != nil {
-			t.Fatal(err)
+	var log lockedBuffer
+	synctest.Test(t, func(t *testing.T) {
+		r, w := io.Pipe()
+		f := &serialFramer{log: &log, now: time.Now}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			f.pump(r)
+		}()
+		for _, b := range []byte("Ubuntu 24.04 LTS\nweb login: ") {
+			if _, err := w.Write([]byte{b}); err != nil {
+				t.Fatal(err)
+			}
 		}
-	}
-	time.Sleep(4 * serialFlush) //nolint:forbidigo // real time
-	_, _ = w.Write([]byte(strings.Repeat("x", maxSerialRecord+1)))
-	_ = w.Close()
-	<-done
+		// Quiet for less than serialFlush, the prompt waits for more.
+		time.Sleep(serialFlush - time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if bytes.Contains(log.Bytes(), []byte("web login")) {
+			t.Error("the prompt was framed before the console was quiet")
+		}
+		time.Sleep(time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		_, _ = w.Write([]byte(strings.Repeat("x", maxSerialRecord+1)))
+		_ = w.Close()
+		<-done
+	})
 	var got []string
-	rd := console.NewReader(&log)
+	rd := console.NewReader(bytes.NewReader(log.Bytes()))
 	for {
 		rec, err := rd.Next()
 		if err != nil {
