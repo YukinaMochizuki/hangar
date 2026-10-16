@@ -15,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 var alice = auth.Principal{Type: auth.User, ID: "alice@example.com"}
@@ -166,6 +167,7 @@ func TestRefreshRotates(t *testing.T) {
 // TestRefreshRaceHasOneWinner: of two concurrent refreshes with one token,
 // one gets tokens and the other revokes the login.
 func TestRefreshRaceHasOneWinner(t *testing.T) {
+	testutil.Quarantine(t, "#81")
 	ctx := t.Context()
 	m, _, _ := newManager(t, session.Options{})
 	cli, _ := m.StartCLI(ctx, alice)

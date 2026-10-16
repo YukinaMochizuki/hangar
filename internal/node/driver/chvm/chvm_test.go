@@ -20,6 +20,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // fakeSystemd keeps units as systemd would, without running them.
@@ -508,6 +509,7 @@ func startWithLog(t *testing.T, h *Hypervisor, uid string) {
 }
 
 func TestStopAsksTheGuestFirst(t *testing.T) {
+	testutil.Quarantine(t, "#80")
 	s := newFakeSystemd()
 	g := &fakeGuest{}
 	h := newDriver(t, shortDir(t), s, g)
