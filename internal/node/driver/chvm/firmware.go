@@ -59,15 +59,16 @@ func pressPowerButton(ctx context.Context, socket string) error {
 }
 
 // firmwareArgs is Cloud Hypervisor's command line for a firmware VM: the
-// firmware, its volumes at their nodes in dir, the root first, the taps on
-// fds 3 and on, its serial console to the FIFO, no virtio console, and its
-// API socket.
+// firmware, the balloon for free page reporting, its volumes at their nodes
+// in dir, the root first, the taps on fds 3 and on, its serial console to
+// the FIFO, no virtio console, and its API socket.
 func firmwareArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
 		"--firmware", ln.Firmware,
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
+		"--balloon", freePageReporting,
 		"--platform", "serial_number=" + NoCloudSerial,
 		"--disk",
 	}

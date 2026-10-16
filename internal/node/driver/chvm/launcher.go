@@ -697,6 +697,12 @@ func kvmGroups(kvm string) (string, error) {
 	return "", fmt.Errorf("%s is open to neither its group nor everyone", kvm)
 }
 
+// freePageReporting is the balloon every VM has: never inflated, it only
+// carries the pages the guest reports free, which Cloud Hypervisor gives
+// back to the host. Without it a guest's memory, once touched, stays in use
+// on the host until the VM stops (docs/decisions/node-agent.md).
+const freePageReporting = "size=0,free_page_reporting=on"
+
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
 // the boot disk and the volumes, at their nodes in dir, and the taps on fds
 // 3 and on, as the launcher passes them.
@@ -708,6 +714,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--cmdline", ln.Cmdline,
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
+		"--balloon", freePageReporting,
 		"--disk",
 		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
