@@ -60,6 +60,78 @@ func TestMemoryOverhead(t *testing.T) {
 	}
 }
 
+// freeScript fills 1 GiB of the guest's /dev/shm and frees it again, then
+// reads a file of 256 MiB on its root disk into the page cache and drops
+// the cache, saying when each step is done; then it waits.
+const freeScript = `dd if=/dev/zero of=/dev/shm/fill bs=1M count=1024 2>/dev/null
+echo filled
+sleep 15
+rm /dev/shm/fill
+echo freed
+sleep 45
+dd if=/dev/zero of=/cache bs=1M count=256 2>/dev/null && sync && cat /cache >/dev/null
+echo cached
+sleep 15
+echo 3 >/proc/sys/vm/drop_caches && echo dropped || echo not dropped
+while :; do sleep 1 & wait $!; done`
+
+// TestFreedMemoryReturns: memory a running guest frees goes back to the
+// host. A 2 GiB guest fills 1 GiB of /dev/shm, then frees it, and its
+// unit's memory must fall by most of that within its page reporting's
+// delay. The page cache, dropped in the guest, is only logged: what a
+// guest keeps cached stays in use.
+func TestFreedMemoryReturns(t *testing.T) {
+	h := newHost(t)
+	const uid = "mem-free"
+	spec := h.machine(t, uid, driver.RestartNever, freeScript)
+	spec.MemoryMiB = 2048
+	if err := h.hv.Start(context.Background(), spec); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = h.hv.Stop(context.Background(), uid) })
+	current := func() int64 {
+		v, _ := exec.Command("systemctl", "show", "-P", "MemoryCurrent", "hangar-vm-"+uid+".service").Output()
+		n, _ := strconv.ParseInt(strings.TrimSpace(string(v)), 10, 64)
+		return n >> 20
+	}
+	await := func(line string) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Minute)
+		for !strings.Contains(stdoutOf(t, uid), line+"\n") {
+			if time.Now().After(deadline) || !unitActive(uid) {
+				dump(t, uid)
+				t.Fatalf("%s never said %q", uid, line)
+			}
+			time.Sleep(time.Second)
+		}
+	}
+	// The lowest the unit's memory falls to within d.
+	lowest := func(d time.Duration) int64 {
+		low := current()
+		for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(time.Second) {
+			low = min(low, current())
+		}
+		return low
+	}
+
+	await("filled")
+	time.Sleep(5 * time.Second)
+	filled := current()
+	await("freed")
+	freed := lowest(30 * time.Second)
+	t.Logf("1 GiB of /dev/shm: %d MiB filled, %d MiB within 30 s of freeing it", filled, freed)
+
+	await("cached")
+	cached := current()
+	await("dropped")
+	dropped := lowest(30 * time.Second)
+	t.Logf("256 MiB of page cache: %d MiB cached, %d MiB within 30 s of dropping it", cached, dropped)
+
+	if filled-freed < 768 {
+		t.Errorf("freeing 1 GiB in the guest gave back %d MiB to the host, want 768 or more", filled-freed)
+	}
+}
+
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	return lines[len(lines)-1]
