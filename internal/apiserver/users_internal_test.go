@@ -23,12 +23,12 @@ import (
 // but creates none.
 func TestNoUserForServiceTokensOrLocalRoot(t *testing.T) {
 	s, system, _ := running(t)
-	token := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.ServiceToken, ID: "agent.access"})
+	token := serviceToken(t, s, system, "web", "agent")
 	local := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.Local, ID: "root@n1"})
 	if _, err := s.backend(registry.RoleBinding).Apply(system, &iamv1alpha1.RoleBinding{
 		Metadata: &metav1.ObjectMeta{Name: "agent"},
 		Spec: &iamv1alpha1.RoleBindingSpec{
-			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_ServiceToken{ServiceToken: "agent.access"}},
+			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_ServiceToken{ServiceToken: "web/agent"}},
 			Role:    "tenant.owner",
 			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}},
 		},

@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// ServiceToken is an agent's credential: an opaque `hgr_` secret it sends
+// as `Authorization: Bearer`, which authenticates it as the principal
+// serviceToken:<project>/<name>. That is also the subject a RoleBinding
+// names it by, and the token holds only what such bindings grant. Hangar
+// keeps only the secret's SHA-256, outside objects: ServiceTokenIssuerService
+// returns the secret once, when it creates or rotates the token, and nothing
+// shows it again. A token made by apply has no secret until it is rotated.
+// Every RoleBinding naming the token is owned by it, and deleting the token
+// revokes its secret at once and deletes them. See
+// docs/decisions/authentication.md.
+message ServiceToken {
+  option (hangar.meta.v1.resource) = {
+    kind: "ServiceToken"
+    plural: "servicetokens"
+    short_names: ["st"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  ServiceTokenSpec spec = 4;
+  ServiceTokenStatus status = 5;
+}
+
+// ServiceTokenSpec is the desired state of a service token.
+message ServiceTokenSpec {
+  // What the token is for, for people to read.
+  string description = 1;
+}
+
+// ServiceTokenStatus is what can be said of a service token's secret
+// without it. The apiserver alone writes it.
+message ServiceTokenStatus {
+  int64 observed_generation = 1;
+  // None yet: whether the token has a secret, and until when, is
+  // secret_prefix and expire_time.
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The secret's first characters, such as hgr_Ab3dE9xQ, to tell which
+  // secret someone holds. Empty while it has none.
+  string secret_prefix = 3;
+  // When the current secret was issued.
+  google.protobuf.Timestamp issue_time = 4;
+  // When the current secret stops working.
+  google.protobuf.Timestamp expire_time = 5;
+  // When the token was last used, to within an hour; unset if never.
+  google.protobuf.Timestamp last_use_time = 6;
+}
+
+// ServiceTokenService manages service tokens. Its permissions are
+// iam.servicetokens.*: only owners (tenant.owner, project.owner) and
+// platform.root may apply or delete one, since whoever holds a token's
+// secret acts with its bindings. ServiceTokenIssuerService issues secrets.
+service ServiceTokenService {
+  rpc GetServiceToken(GetServiceTokenRequest) returns (GetServiceTokenResponse);
+  rpc ListServiceTokens(ListServiceTokensRequest) returns (ListServiceTokensResponse);
+  rpc WatchServiceTokens(WatchServiceTokensRequest) returns (stream WatchServiceTokensResponse);
+  rpc ApplyServiceToken(ApplyServiceTokenRequest) returns (ApplyServiceTokenResponse);
+  rpc DeleteServiceToken(DeleteServiceTokenRequest) returns (DeleteServiceTokenResponse);
+  rpc UpdateServiceTokenStatus(UpdateServiceTokenStatusRequest) returns (UpdateServiceTokenStatusResponse);
+}
+
+message GetServiceTokenRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetServiceTokenResponse {
+  ServiceToken service_token = 1;
+}
+
+message ListServiceTokensRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListServiceTokensResponse {
+  repeated ServiceToken items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchServiceTokensRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchServiceTokensResponse {
+  hangar.meta.v1.EventType type = 1;
+  ServiceToken service_token = 2;
+  int64 revision = 3;
+}
+
+message ApplyServiceTokenRequest {
+  ServiceToken service_token = 1;
+}
+
+message ApplyServiceTokenResponse {
+  ServiceToken service_token = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteServiceTokenRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteServiceTokenResponse {
+  ServiceToken service_token = 1;
+}
+
+message UpdateServiceTokenStatusRequest {
+  string project = 1;
+  string name = 2;
+  ServiceTokenStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateServiceTokenStatusResponse {
+  ServiceToken service_token = 1;
+}

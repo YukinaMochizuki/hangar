@@ -35,6 +35,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewRoleBindingServiceHandler(&roleBindingService{b: backends(registry.RoleBinding)}, opts...))
+	mux.Handle(iamv1alpha1connect.NewServiceTokenServiceHandler(&serviceTokenService{b: backends(registry.ServiceToken)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewUserServiceHandler(&userService{b: backends(registry.User)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
@@ -361,6 +362,69 @@ func (s *roleBindingService) UpdateRoleBindingStatus(ctx context.Context, req *c
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha11.UpdateRoleBindingStatusResponse{RoleBinding: obj.(*v1alpha11.RoleBinding)}), nil
+}
+
+type serviceTokenService struct {
+	b resource.Backend
+}
+
+func (s *serviceTokenService) GetServiceToken(ctx context.Context, req *connect.Request[v1alpha11.GetServiceTokenRequest]) (*connect.Response[v1alpha11.GetServiceTokenResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.GetServiceTokenResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
+}
+
+func (s *serviceTokenService) ListServiceTokens(ctx context.Context, req *connect.Request[v1alpha11.ListServiceTokensRequest]) (*connect.Response[v1alpha11.ListServiceTokensResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha11.ListServiceTokensResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha11.ServiceToken))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *serviceTokenService) WatchServiceTokens(ctx context.Context, req *connect.Request[v1alpha11.WatchServiceTokensRequest], stream *connect.ServerStream[v1alpha11.WatchServiceTokensResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha11.WatchServiceTokensResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.ServiceToken = ev.Object.(*v1alpha11.ServiceToken)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *serviceTokenService) ApplyServiceToken(ctx context.Context, req *connect.Request[v1alpha11.ApplyServiceTokenRequest]) (*connect.Response[v1alpha11.ApplyServiceTokenResponse], error) {
+	in := req.Msg.GetServiceToken()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_token is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.ApplyServiceTokenResponse{ServiceToken: res.Object.(*v1alpha11.ServiceToken), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *serviceTokenService) DeleteServiceToken(ctx context.Context, req *connect.Request[v1alpha11.DeleteServiceTokenRequest]) (*connect.Response[v1alpha11.DeleteServiceTokenResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.DeleteServiceTokenResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
+}
+
+func (s *serviceTokenService) UpdateServiceTokenStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateServiceTokenStatusRequest]) (*connect.Response[v1alpha11.UpdateServiceTokenStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.UpdateServiceTokenStatusResponse{ServiceToken: obj.(*v1alpha11.ServiceToken)}), nil
 }
 
 type userService struct {
