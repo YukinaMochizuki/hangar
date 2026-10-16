@@ -28,7 +28,7 @@ streams through Cloudflare are risky.
     writes a message with no field set, which the other ignores; how
     either tells the other gone is in `node-tunnel.md`.
   - The server checks the handshake's `Origin`, refusing another site's
-    with 403. A browser sends Cloudflare Access's cookie with any
+    with 403. A browser sends the console's session cookie with any
     WebSocket to this host, whichever site opens it, so without the check
     any page its user visits could exec in their containers. It is never
     turned off, nor widened to match a `Host` a proxy rewrote: a proxy in
@@ -37,7 +37,8 @@ streams through Cloudflare are risky.
 - `Watch` sends a `BOOKMARK` every 30 seconds as a heartbeat, so idle streams
   survive proxies and clients advance their revision.
 - The server speaks HTTP/1.1 and h2c on the same port, so Connect streaming
-  works whichever protocol cloudflared uses to reach it.
+  works whichever a client on the host speaks; the front door, hangar-edge,
+  forwards to it over HTTP/1.1 and flushes at once (`front-door.md`).
 
 ## Consequences
 

@@ -27,7 +27,7 @@ func limitsFor(per56, per48 int) Limits {
 // TestAClientIsAnIPv4AddressOrAnIPv6Slash64: the prefix every per-client
 // limit is kept for.
 func TestAClientIsAnIPv4AddressOrAnIPv6Slash64(t *testing.T) {
-	c := func(a string) netip.Prefix { return client(netip.MustParseAddr(a)) }
+	c := func(a string) netip.Prefix { return DefaultLimits.client(netip.MustParseAddr(a)) }
 	for in, want := range map[string]string{
 		"192.0.2.7":                  "192.0.2.7/32",
 		"::ffff:192.0.2.7":           "192.0.2.7/32",
@@ -54,6 +54,54 @@ func TestAClientIsAnIPv4AddressOrAnIPv6Slash64(t *testing.T) {
 	}
 	if c("2001:db8:1:2::1") == c("2001:db8:1:3::1") {
 		t.Error("two /64s are one client")
+	}
+}
+
+// TestTheHostsMachinesAreEachAClient: in the host's own prefix, where every
+// machine on the host has its address, each address is a client of its
+// own, so one machine cannot spend the others' limits; outside it a /64 is
+// still one.
+func TestTheHostsMachinesAreEachAClient(t *testing.T) {
+	l := DefaultLimits
+	l.OwnPrefixes = []netip.Prefix{netip.MustParsePrefix("2001:db8:1:2::/64")}
+	if err := l.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	c := func(a string) netip.Prefix { return l.client(netip.MustParseAddr(a)) }
+	if got := c("2001:db8:1:2::5").String(); got != "2001:db8:1:2::5/128" {
+		t.Errorf("a machine's client is %s", got)
+	}
+	if c("2001:db8:1:2::5") == c("2001:db8:1:2::6") {
+		t.Error("two machines of the host are one client")
+	}
+	if got := c("2001:db8:1:3::5").String(); got != "2001:db8:1:3::/64" {
+		t.Errorf("outside the own prefix: %s", got)
+	}
+	if got := c("192.0.2.7").String(); got != "192.0.2.7/32" {
+		t.Errorf("IPv4: %s", got)
+	}
+
+	// Requests: one machine past its rate leaves another its own.
+	l.RequestRate, l.RequestBurst = 0.001, 2
+	k := newCounts(l)
+	for i := range 2 {
+		if _, _, ok := k.startRequest(c("2001:db8:1:2::5")); !ok {
+			t.Fatalf("request %d within the burst refused", i)
+		}
+	}
+	if _, _, ok := k.startRequest(c("2001:db8:1:2::5")); ok {
+		t.Fatal("a request past the burst was let through")
+	}
+	if _, _, ok := k.startRequest(c("2001:db8:1:2::6")); !ok {
+		t.Error("another machine of the host was held to the first one's rate")
+	}
+
+	for _, bad := range []string{"::/0", "2001:db8::/32", "192.0.2.0/24", "2001:db8:1:2::1/64"} {
+		l := DefaultLimits
+		l.OwnPrefixes = []netip.Prefix{netip.MustParsePrefix(bad)}
+		if l.Validate() == nil {
+			t.Errorf("own prefix %s accepted", bad)
+		}
 	}
 }
 
@@ -113,6 +161,22 @@ func TestAnIPv6NetworkIsCappedAboveItsClients(t *testing.T) {
 		}
 		if admitted, _, whys := open(k, "2001:db8:6::1"); !admitted[0] {
 			t.Errorf("another /48 refused: %q", whys[0])
+		}
+	})
+	t.Run("the host's own /64 has none", func(t *testing.T) {
+		l := limitsFor(1, 1)
+		l.OwnPrefixes = []netip.Prefix{netip.MustParsePrefix("2001:db8:7:1::/64")}
+		k := newCounts(l)
+		admitted, _, whys := open(k, "2001:db8:7:1::10", "2001:db8:7:1::11", "2001:db8:7:1::12")
+		for i, ok := range admitted {
+			if !ok {
+				t.Errorf("machine %d of the host refused: %q", i, whys[i])
+			}
+		}
+		// Its neighbours outside the /64 are capped as ever.
+		admitted, _, _ = open(k, "2001:db8:7:2::1", "2001:db8:7:3::1")
+		if !admitted[0] || admitted[1] {
+			t.Errorf("outside the own /64: %v, want the /56's cap of one", admitted)
 		}
 	})
 	t.Run("IPv4 has no network cap", func(t *testing.T) {

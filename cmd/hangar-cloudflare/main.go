@@ -1,7 +1,6 @@
-// Command hangar-cloudflare converges Cloudflare's side of the public API: the
-// tunnel, its DNS record, and the Access application, policies and smoke
-// token; and of public endpoints, their domain's wildcard record and
-// ingress. See docs/runbook/cloudflare.md.
+// Command hangar-cloudflare converges Cloudflare's DNS for the front door:
+// DNS-only A and AAAA records at the host for the API, the console and the
+// public endpoints' wildcard. See docs/runbook/cloudflare.md.
 package main
 
 import (

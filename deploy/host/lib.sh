@@ -15,11 +15,14 @@ INITRAMFS_MARKER=$STATE_DIR/initramfs-pending
 INITRAMFS_PENDING=0
 ROLLBACK_UNIT=hangar-netplan-rollback
 # What stays on the host and out of the repo: the bootstrap admin's email
-# (the human's Cloudflare Access identity). The operator writes it by hand.
+# (the Google account the person signs in with), the auth mode and the
+# front door's settings. The operator writes it by hand.
 # shellcheck disable=SC2034
 LOCAL_ENV=/etc/hangar/local.env
-# The Cloudflare tunnel's token, written by hand like LOCAL_ENV; without it
-# the host runs no tunnel.
+# The retired Cloudflare tunnel's token, which an earlier release ran the
+# tunnel with: while it is there the edge step leaves a tunnel the host
+# still runs alone, and once the operator deletes it the step removes the
+# tunnel (the cutover in docs/runbook/cloudflare.md).
 # shellcheck disable=SC2034
 CLOUDFLARED_ENV=/etc/hangar/cloudflared.env
 CLOUDFLARED_UNIT=hangar-cloudflared
@@ -135,7 +138,7 @@ auth_problem() {
 
 # apiserver_auth_mode prints the auth mode the running apiserver was started
 # with, nothing when it is not running or does not set it exactly once as
-# --auth-mode VALUE (the same reading as cloudflared's guard).
+# --auth-mode VALUE (the same reading as the retired tunnel's guard).
 apiserver_auth_mode() {
 	local pid
 	pid=$(systemctl show -p MainPID --value hangar-apiserver.service)

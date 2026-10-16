@@ -141,7 +141,15 @@ type cluster struct {
 	// nodeArgs and nodeEnv are what the agent is started with besides what
 	// startNode gives it; apiArgs what the apiserver is, besides startAPI's.
 	nodeArgs, nodeEnv, apiArgs []string
+	// authArgs set the apiserver's auth mode, dev unless a test says
+	// otherwise. In any other mode the CLI acts as root on the host,
+	// through the admin socket, which needs no sign-in.
+	authArgs []string
 }
+
+func (c *cluster) devAuth() bool { return c.authArgs == nil }
+
+func (c *cluster) adminSocket() string { return filepath.Join(apiDir, "admin.sock") }
 
 // startCluster sweeps what an earlier run left, starts the apiserver and the
 // agent, and makes the tenant and project the tests use.
@@ -234,8 +242,12 @@ func (c *cluster) sweepInstalled() {
 func (c *cluster) setUp() {
 	t := c.t
 	t.Helper()
-	c.cli("config", "set-context", "testbed", "--endpoint", "http://"+c.apiAddr(), "--auth", "dev", "--user", admin, "--project", project)
-	c.signUpAdmin()
+	if c.devAuth() {
+		c.cli("config", "set-context", "testbed", "--endpoint", "http://"+c.apiAddr(), "--auth", "dev", "--user", admin, "--project", project)
+		c.signUpAdmin()
+	} else {
+		c.cli("config", "set-context", "testbed", "--endpoint", "unix://"+c.adminSocket(), "--auth", "local", "--project", project)
+	}
 	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangarlab.cloud/v1alpha1
 kind: Tenant
 metadata: {name: %s}
@@ -251,7 +263,8 @@ spec: {tenant: %s}
 func (c *cluster) apiAddr() string { return apiAddr }
 
 // startAPI runs the apiserver as nobody, as an unprivileged user runs it on
-// a host, with dev auth on loopback and the node socket accepting root.
+// a host, with dev auth on loopback, or authArgs' with the admin socket,
+// and the node socket accepting root.
 func (c *cluster) startAPI() {
 	t := c.t
 	t.Helper()
@@ -266,12 +279,17 @@ func (c *cluster) startAPI() {
 	cmd := exec.Command(bin,
 		"--db", filepath.Join(apiDir, "hangar.db"),
 		"--listen", c.apiAddr(),
-		"--auth-mode", "dev",
 		"--socket", filepath.Join(apiDir, "node.sock"),
 		"--node-uid", "0",
 		"--node-name", nodeName,
 		"--bootstrap-admin", admin,
 	)
+	if c.devAuth() {
+		cmd.Args = append(cmd.Args, "--auth-mode", "dev")
+	} else {
+		cmd.Args = append(cmd.Args, c.authArgs...)
+		cmd.Args = append(cmd.Args, "--admin-socket", c.adminSocket())
+	}
 	cmd.Args = append(cmd.Args, c.apiArgs...)
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{
