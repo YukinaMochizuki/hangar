@@ -4,22 +4,17 @@
 
 # The Cloudflare account (32 hex characters, on the dashboard's overview).
 account_id: 00000000000000000000000000000000
-# The control zone, which holds the API's hostname.
+# The control plane's zone: the API is api.<zone>, the console
+# console.<zone>.
 zone: example.com
-# The public API's hostname, inside the zone.
-hostname: api.example.com
-# The tunnel's name, as the dashboard shows it.
-tunnel_name: hangar
-# Who may sign in through Google or a one-time PIN.
-allowed_emails:
-  - you@example.com
-# The login methods' names under Zero Trust > Settings > Authentication.
-identity_providers:
-  google: Google
-  # Optional; empty matches the account's only One-time PIN method.
-  one_time_pin: One-time PIN
+# The host's public addresses, which every record points at (A and AAAA,
+# DNS-only).
+addresses:
+  ipv4: 192.0.2.1
+  ipv6: 2001:db8::1
 # Optional: public endpoints, under a zone of their own, apart from the
-# control zone (user content never shares a domain with the API). Once
-# applied, it can be neither changed nor removed here.
-# endpoints:
-#   zone: example.dev
+# control zone (user content never shares a domain with the API); the tool
+# points *.<zone> at the host. Once applied, it can be neither changed nor
+# removed here.
+endpoints:
+  zone: example.dev
