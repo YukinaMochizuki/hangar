@@ -38,6 +38,28 @@ ordinary workspaces and CI runners cannot provide.
 - **L4 tests live under `test/testbed/`**, behind the `testbed` build tag,
   and `make e2e-host` runs them on the testbed (`docs/runbook/testbed.md`).
 
+## Flaky tests
+
+About half the flaky tests so far were real bugs that only concurrency
+exposed, so a flake is always fixed at its root:
+
+- **No timeout bumps, no retries.** A failing test is never rerun until it
+  passes, in CI or by hand, and a deadline grows only when it was wrong for a
+  reason other than speed.
+- **Merges need green CI**, including in packages a change does not touch.
+- **Quarantine is the only way out**, and it is visible: a known flake calls
+  `testutil.Quarantine(t, "#N")`, which names the GitHub issue tracking its
+  root cause. It then skips in PR CI and still runs in the stress job.
+- **The stress job** (`.github/workflows/stress.yml`) is run by hand
+  (`workflow_dispatch`, on any branch, optionally limited to some packages):
+  `go test -race -shuffle=on -count=20` with `GOMAXPROCS=2` and CPU load in
+  the background, with quarantined tests included
+  (`HANGAR_RUN_QUARANTINED=1`). It shakes out flakes that one CI run rarely
+  hits. A failure it finds is a new issue, or a comment on the one that
+  already tracks the test.
+- **A test leaves quarantine** in the change that fixes its root cause, once
+  the stress job has passed on that change's branch for the test's package.
+
 ## Consequences
 
 Most features can be tested end to end without KVM. Only the thin layer of real
