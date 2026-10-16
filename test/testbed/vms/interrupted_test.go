@@ -219,13 +219,14 @@ func TestTheDriverReconnectsToSystemd(t *testing.T) {
 	}
 }
 
-// heartbeat floods the serial console with 64 KiB at a time, and says on
-// stdout each time it has.
+// heartbeat floods the serial console with 4 KiB at a time, and says on
+// stdout each time it has. The serial console carries as little as 10 KB/s
+// on a nested testbed, so a beat comes about twice a second.
 const heartbeat = `trap 'exit 0' TERM
 echo ready
 i=0
 while :; do
-	head -c 65536 /dev/zero | tr '\0' s > /dev/ttyS0
+	head -c 4096 /dev/zero | tr '\0' s > /dev/ttyS0
 	i=$((i+1))
 	echo beat $i
 	sleep 0.1
@@ -244,20 +245,22 @@ func TestAFailingSerialLogDoesNotFreezeTheGuest(t *testing.T) {
 	h := newHost(t)
 	spec := h.machine(t, "heartbeat", driver.RestartAlways, heartbeat)
 	dir := filepath.Join(vmDir, "heartbeat")
-	// The serial console carries about 50 KB/s: a log left near its cap
-	// by an earlier run, which the launcher appends to, rotates within
-	// seconds.
+	// A log left near its cap by an earlier run, which the launcher
+	// appends to, rotates within seconds; not before the guest is ready,
+	// its kernel's boot taking a few KB.
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, chvm.SerialLog), make([]byte, chvm.DefaultSerialMax-200<<10), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, chvm.SerialLog), make([]byte, chvm.DefaultSerialMax-64<<10), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = exec.Command("chattr", "-i", dir).Run() })
+	// The unit's journal holds earlier runs' failures too.
+	since := time.Now().Format(time.DateTime)
 	startAndWait(t, h, spec)
 	mustRun(t, "chattr", "+i", dir)
 	failed := func() bool {
-		out, _ := exec.Command("journalctl", "--no-pager", "-u", "hangar-vm-heartbeat.service", "-g", "the serial log fails").Output()
+		out, _ := exec.Command("journalctl", "--no-pager", "-u", "hangar-vm-heartbeat.service", "--since", since, "-g", "the serial log fails").Output()
 		return strings.Contains(string(out), "the serial log fails")
 	}
 	deadline := time.Now().Add(time.Minute)
