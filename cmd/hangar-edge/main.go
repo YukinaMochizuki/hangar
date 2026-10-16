@@ -313,13 +313,19 @@ func dnsProvider(ctx context.Context, f flags, log *slog.Logger) (certmagic.DNSP
 }
 
 // readSecretFile reads a credential from a file only its owner may read,
-// trimmed of surrounding space.
+// trimmed of surrounding space. In systemd's credentials directory, which
+// only the unit can enter, newer systemd gives the file 0440: group read is
+// allowed there.
 func readSecretFile(path string) (string, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
+	deny := os.FileMode(0o077)
+	if d := os.Getenv("CREDENTIALS_DIRECTORY"); d != "" && filepath.Dir(filepath.Clean(path)) == filepath.Clean(d) {
+		deny = 0o037
+	}
+	if fi.Mode().Perm()&deny != 0 {
 		return "", fmt.Errorf("%s is mode %v; a credential is readable by its owner only (0600)", path, fi.Mode().Perm())
 	}
 	b, err := os.ReadFile(path)
