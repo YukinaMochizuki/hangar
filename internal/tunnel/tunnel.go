@@ -192,6 +192,8 @@ func (a *Agent) serve(ctx context.Context, handler http.Handler, calls *calls) (
 		a.Opened()
 	}
 	live := a.Liveness.orDefault()
+	// x/net deprecates http2.Server; net/http's cannot serve one accepted conn.
+	//nolint:staticcheck // SA1019: see above
 	srv := &http2.Server{
 		ReadIdleTimeout: live.Idle, PingTimeout: live.Timeout, WriteByteTimeout: live.Timeout,
 		MaxConcurrentStreams:     MaxStreams,
@@ -203,7 +205,7 @@ func (a *Agent) serve(ctx context.Context, handler http.Handler, calls *calls) (
 		_ = conn.Close()
 	})
 	defer stop()
-	srv.ServeConn(conn, &http2.ServeConnOpts{Context: ctx, Handler: handler})
+	srv.ServeConn(conn, &http2.ServeConnOpts{Context: ctx, Handler: handler}) //nolint:staticcheck // SA1019: see the server above
 	_ = conn.Close()
 	return true, errors.New("the connection ended")
 }
