@@ -43,6 +43,10 @@ credentials. The node is a separate root process on the same host.
   - `hga_`: a CLI access token.
   - `hgf_`: a CLI refresh token.
   - `hgr_`: an agent's service token.
+  - `hge_`: a browser's session on one private endpoint's host
+    (`public-endpoints.md`), in the login of the console session it was
+    handed off from. A credential may name one host, its audience, and then
+    counts there alone.
 - **Revoking a login marks its family revoked**, in the same transaction
   that deletes its credentials, until the last of them would have expired.
   Issuing checks the mark in the transaction that inserts, so a refresh
@@ -68,7 +72,16 @@ credentials. The node is a separate root process on the same host.
   cross-site form, fetch or WebSocket gets nothing from the cookie, and
   cross-site WebSocket hijacking of exec and ssh is closed too.
   `SameSite=Lax` is a second layer. There is no CORS. The device approval
-  form and the logout are held to the same rule.
+  form and the logout are held to the same rule. No GET the cookie
+  authenticates changes anything, with two exceptions, named so no other
+  slips in (`docs/checklists/review.md`): the WebSocket handshake, which
+  carries `Origin` and is held to the rule, and `/auth/endpoint-login`, a
+  GET from an endpoint's site by design, which writes a one-time code
+  (`public-endpoints.md`). It is safe because the code goes only to that
+  endpoint's own callback, and the edge takes it only from the browser
+  holding the state cookie it set when that handoff started: whoever sent
+  the browser there gets nothing from it, and cannot plant their own code
+  in someone else's browser.
 - **The CLI** (`hangar login`) holds a 1-hour access token, sent as
   `Authorization: Bearer`, and a refresh token. Each refresh spends the
   refresh token and issues a new pair in the same login, the family.
@@ -104,18 +117,22 @@ credentials. The node is a separate root process on the same host.
   callback: exchanging a loopback code, approving a device login, handing
   out its tokens, and every refresh, so a person uninvited meanwhile gets
   nothing more.
-- **Where sign-in is served**: the `/auth/` pages and `SessionService` are
-  on the public listener and on the public socket, which is that listener
-  for the front door, and nowhere else. The admin socket serves
-  `RevokeSessions` alone, so root on the host can end anyone's logins; the
-  node and edge sockets serve none of it.
+- **Where sign-in is served**: the `/auth/` pages, `/auth/endpoint-login`
+  among them, and `SessionService` are on the public listener and on the
+  public socket, which is that listener for the front door, and nowhere
+  else. The admin socket serves `RevokeSessions` alone, so root on the host
+  can end anyone's logins; the node and edge sockets serve none of it.
 - **Limits on what anyone can make it keep**: a browser's or a CLI's
   sign-in keeps nothing until the provider has verified someone invited.
-  The rows that are kept, device logins started and loopback codes not
-  yet exchanged, are capped at a few thousand of each kind (more are
-  refused as unavailable), each kind on its own, so a flood of one blocks
-  neither the other nor sign-in. A browser session may try ten device
-  codes a minute. Per-address rate limits are the front door's
+  The rows that are kept, device logins started, loopback codes and
+  endpoint handoff codes not yet exchanged, are capped at a few thousand of
+  each kind (more are refused as unavailable), each kind on its own, so a
+  flood of one blocks neither the others nor sign-in. Endpoint codes, which
+  any signed-in person can make, are also capped at 20 waiting per person,
+  so no one fills the shared cap for everyone else. Each cap is counted
+  and the row kept in one store transaction, so requests at once get no
+  more than it. A browser session may
+  try ten device codes a minute. Per-address rate limits are the front door's
   (hangar-edge).
 - **Agents use service tokens** (`hgr_`), issued by the same machinery.
   - A `ServiceToken` (group `iam`) is a project's, and is collected with
@@ -161,8 +178,9 @@ credentials. The node is a separate root process on the same host.
     `hangar token create` and `rotate` print it once, alone on stdout, or
     write it to a new 0600 file with `--secret-file`; nothing else prints
     it.
-- Every sign-in page the apiserver or the CLI shows is a plain placeholder
-  in one place, `internal/auth/pages`, for the console's design to replace.
+- Every sign-in page the apiserver, the CLI or hangar-edge shows is a plain
+  placeholder in one place, `internal/auth/pages`, for the console's design
+  to replace.
 - **The node** connects over a unix socket and is identified by `SO_PEERCRED`;
   the socket belongs to one host, so the agent acts as the `Node` named by the
   apiserver's `--node-name`. An mTLS authenticator, carrying the node name in
@@ -192,12 +210,14 @@ credentials. The node is a separate root process on the same host.
   that listener recorded, as the admin socket's does, so no other listener
   can produce it. It may get, list and watch public endpoints, role
   bindings, projects and users, everywhere, and do nothing else, whatever
-  the bindings say. Users of public endpoints are not principals of the API:
-  the edge authenticates them itself. Until it signs them in through
-  Hangar, it verifies the Access token of the endpoint domain's
-  application, with a verifier that lives in `internal/edge`, since nothing
-  else trusts Access. An mTLS authenticator joins its chain with more
-  hosts, as the node's.
+  the bindings say. Users of public endpoints are not principals of the
+  API: the edge decides whether they may use an endpoint. To learn who they
+  are, it asks the apiserver on the edge socket, which alone serves it
+  `EndpointAuthService`: who holds a credential brought to an endpoint (an
+  endpoint session for that host, a CLI access token or a service token),
+  and an endpoint session for a one-time code the console's
+  `/auth/endpoint-login` issued (`public-endpoints.md`). An mTLS
+  authenticator joins its chain with more hosts, as the node's.
 - **The public API from the front door** (`front-door.md`) comes in on a
   fifth unix socket, the public socket (`/run/hangar/public.sock`, root's
   and the edge group's, 0660). It is the public listener over again, the

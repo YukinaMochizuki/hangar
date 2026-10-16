@@ -24,10 +24,11 @@ SERVICES_EDGE_DIAL=$SERVICES_RUN/edge-dial.sock
 # The apiserver's public socket: the API from the front door, hangar-edge's
 # alone, with each client's address (docs/decisions/front-door.md).
 SERVICES_PUBLIC_SOCKET=$SERVICES_RUN/public.sock
-# The Cloudflare API token the apiserver opens PUBLIC endpoints with: the
-# operator installs it (docs/runbook/cloudflare.md); this step never makes
-# one.
-SERVICES_CF_TOKEN=$SERVICES_STATE/cloudflare-api-token
+# Where the Cloudflare API token was that the apiserver opened PUBLIC
+# endpoints with, before hangar-edge signed endpoints' callers in itself:
+# nothing reads it now, and this step says so while it is there
+# (docs/runbook/cloudflare.md).
+SERVICES_RETIRED_CF_TOKEN=$SERVICES_STATE/cloudflare-api-token
 # The OAuth client's secret the apiserver signs people in with, in oidc
 # auth: the operator installs it (docs/runbook/host-bootstrap.md); this step
 # never makes one.
@@ -84,20 +85,14 @@ services_sockets() {
 # exists (a dry run on a fresh host).
 services_edge_uid() { id -u "$SERVICES_EDGE_USER" 2>/dev/null || true; }
 
-# services_endpoint_flags prints the apiserver's flags for public
-# endpoints: their domain, and with the Cloudflare API token, the account
-# and the bypass policy hangar-cloudflare made.
+# services_endpoint_flags prints the apiserver's flags for hangar-edge and
+# public endpoints: the edge's sockets, and the endpoints' domain.
 services_endpoint_flags() {
-	local domain account bypass
+	local domain
 	domain=$(local_env HANGAR_EDGE_DOMAIN)
-	account=$(local_env HANGAR_CF_ACCOUNT_ID)
-	bypass=$(local_env HANGAR_CF_BYPASS_POLICY_ID)
-	printf -- '--edge-socket %s --edge-uid %s --cloudflare-api-token-file %s' \
-		"$SERVICES_EDGE_SOCKET" "$(services_edge_uid)" "$SERVICES_CF_TOKEN"
+	printf -- '--edge-socket %s --edge-uid %s' "$SERVICES_EDGE_SOCKET" "$(services_edge_uid)"
 	! services_front_door_on || printf -- ' --public-socket %s' "$SERVICES_PUBLIC_SOCKET"
 	[ -z "$domain" ] || printf -- ' --endpoint-domain %s' "$domain"
-	[ -z "$account" ] || printf -- ' --cloudflare-account-id %s' "$account"
-	[ -z "$bypass" ] || printf -- ' --cloudflare-bypass-policy-id %s' "$bypass"
 	printf '\n'
 }
 
@@ -106,17 +101,9 @@ services_endpoint_flags() {
 services_endpoints_problem() {
 	services_edge_on || return 0
 	[ "$(auth_mode)" = oidc ] ||
-		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) need oidc auth: the tunnel that brings their traffic never runs in dev auth"
-	[[ $(local_env HANGAR_CF_TEAM_DOMAIN) =~ ^https://[A-Za-z0-9.-]+$ ]] ||
-		printf '%s\n' "public endpoints need HANGAR_CF_TEAM_DOMAIN=https://<team>.cloudflareaccess.com in $LOCAL_ENV: the edge checks Access tokens"
+		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) need oidc auth: the console signs their callers in"
 	[[ $(local_env HANGAR_EDGE_DOMAIN) =~ ^[a-z0-9.-]+$ ]] ||
 		printf '%s\n' "HANGAR_EDGE_DOMAIN in $LOCAL_ENV is not a domain"
-	[[ $(local_env HANGAR_EDGE_CF_AUDIENCE) =~ ^[A-Za-z0-9]+$ ]] ||
-		printf '%s\n' "public endpoints need HANGAR_EDGE_CF_AUDIENCE=<the wildcard Access application's AUD tag, from edge.env> in $LOCAL_ENV"
-	[[ $(local_env HANGAR_CF_ACCOUNT_ID) =~ ^[0-9a-f]{32}$ ]] ||
-		printf '%s\n' "public endpoints need HANGAR_CF_ACCOUNT_ID=<from edge.env> in $LOCAL_ENV"
-	[[ $(local_env HANGAR_CF_BYPASS_POLICY_ID) =~ ^[0-9a-f-]+$ ]] ||
-		printf '%s\n' "public endpoints need HANGAR_CF_BYPASS_POLICY_ID=<from edge.env> in $LOCAL_ENV"
 	local cp
 	cp=$(local_env HANGAR_CP_DOMAIN)
 	[ -z "$cp" ] || [[ $cp =~ ^[a-z0-9.-]+\.[a-z]+$ ]] ||
@@ -395,20 +382,12 @@ services_user_ok() {
 	[ "$uid" -lt 1000 ] && [ "$uid" != 0 ] && [ "$shell" = /usr/sbin/nologin ]
 }
 
-services_cf_token_ok() {
-	[ -f "$SERVICES_CF_TOKEN" ] && [ "$(stat -c '%U %G %a' "$SERVICES_CF_TOKEN")" = "$SERVICES_USER $SERVICES_USER 600" ]
-}
-
 services_oidc_secret_ok() {
 	[ -f "$SERVICES_OIDC_SECRET" ] && [ "$(stat -c '%U %G %a' "$SERVICES_OIDC_SECRET")" = "$SERVICES_USER $SERVICES_USER 600" ]
 }
 
 services_oidc_secret_how() {
 	printf '%s\n' "install the OAuth client's secret at $SERVICES_OIDC_SECRET, $SERVICES_USER's, mode 0600 (docs/runbook/host-bootstrap.md)"
-}
-
-services_cf_token_how() {
-	printf '%s\n' "install the Cloudflare API token at $SERVICES_CF_TOKEN, $SERVICES_USER's, mode 0600, then restart hangar-apiserver (docs/runbook/cloudflare.md)"
 }
 
 services_state_ok() {
@@ -648,15 +627,10 @@ services_apply() {
 		run "give $SERVICES_SSH_CA to $SERVICES_USER, mode 600" \
 			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_SSH_CA' && chmod 600 '$SERVICES_SSH_CA'"
 	fi
-	# Without the Cloudflare token the apiserver runs, and PUBLIC endpoints
-	# do not open.
-	if [ ! -f "$SERVICES_CF_TOKEN" ]; then
-		! services_edge_on || log "warning: no Cloudflare API token at $SERVICES_CF_TOKEN: PUBLIC endpoints do not open until you $(services_cf_token_how)"
-	elif ! services_cf_token_ok; then
-		log "warning: $SERVICES_CF_TOKEN was $(stat -c '%U:%G mode %a' "$SERVICES_CF_TOKEN"): whoever could read it may have the token; consider rolling it (docs/runbook/cloudflare.md)"
-		run "give $SERVICES_CF_TOKEN to $SERVICES_USER, mode 600" \
-			sh -c "chown $SERVICES_USER:$SERVICES_USER '$SERVICES_CF_TOKEN' && chmod 600 '$SERVICES_CF_TOKEN'"
-	fi
+	# The apiserver no longer calls Cloudflare: a token left from before is
+	# for the operator to revoke and delete, never this step's to touch.
+	[ ! -e "$SERVICES_RETIRED_CF_TOKEN" ] ||
+		log "warning: $SERVICES_RETIRED_CF_TOKEN is no longer used: revoke the token in Cloudflare and delete the file (docs/runbook/cloudflare.md)"
 
 	# The key-encryption key is made here once and never again: a new one
 	# would leave every stored Secret unopenable, and the apiserver would
@@ -751,13 +725,6 @@ services_verify() {
 	check "admin socket $SERVICES_ADMIN_SOCKET, root's, 600" services_admin_socket_ok
 	check "edge socket $SERVICES_EDGE_SOCKET, root's and $SERVICES_EDGE_USER's group's, 660" services_edge_socket_ok
 	check "edge dial socket $SERVICES_EDGE_DIAL, root's and $SERVICES_EDGE_USER's group's, 660" services_edge_dial_ok
-	if services_edge_on; then
-		if [ -e "$SERVICES_CF_TOKEN" ]; then
-			check "Cloudflare API token $SERVICES_CF_TOKEN, $SERVICES_USER's, mode 600 (PUBLIC endpoints)" services_cf_token_ok
-		else
-			skip "Cloudflare API token" "no $SERVICES_CF_TOKEN: PUBLIC endpoints do not open"
-		fi
-	fi
 	if services_front_door_on; then
 		check "public socket $SERVICES_PUBLIC_SOCKET, root's and $SERVICES_EDGE_USER's group's, 660" services_public_socket_ok
 	else

@@ -339,9 +339,7 @@ func diskAmounts(obj proto.Message, in projectObjects) amounts {
 }
 
 // endpointAmounts is one public endpoint, which containerAmounts counts
-// instead for an endpoint a container in has made for a public port. Each
-// PUBLIC endpoint also takes one of the Cloudflare account's Access
-// applications, 500 by default, across every tenant.
+// instead for an endpoint a container in has made for a public port.
 func endpointAmounts(obj proto.Message, in projectObjects) amounts {
 	ep := obj.(*networkv1alpha1.PublicEndpoint)
 	var a amounts

@@ -38,7 +38,10 @@ type State struct {
 	EndpointsZone        string `json:"endpoints_zone,omitempty"`
 	EndpointsZoneID      string `json:"endpoints_zone_id,omitempty"`
 	EndpointsDNSRecordID string `json:"endpoints_dns_record_id,omitempty"`
-	EndpointsAppID       string `json:"endpoints_app_id,omitempty"`
+	// EndpointsAppID is the endpoints' wildcard Access application an
+	// earlier version made, which nothing uses any more. It is kept so a run
+	// can name it, to be deleted by hand.
+	EndpointsAppID string `json:"endpoints_app_id,omitempty"`
 }
 
 // checkDir refuses an output directory that is not a directory or that

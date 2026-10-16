@@ -2,7 +2,6 @@ package apiserver
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -10,6 +9,7 @@ import (
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -19,9 +19,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare/cftest"
+	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 // endpoint is a PublicEndpoint of project web reaching container ctr's port.
@@ -112,7 +112,7 @@ func TestPublicEndpointAdmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fs := got.(*networkv1alpha1.PublicEndpoint).GetMetadata().GetFinalizers(); len(fs) != 1 || fs[0] != AccessApplicationFinalizer {
+	if fs := got.(*networkv1alpha1.PublicEndpoint).GetMetadata().GetFinalizers(); len(fs) != 0 {
 		t.Errorf("a new endpoint's finalizers: %v", fs)
 	}
 }
@@ -134,9 +134,6 @@ func TestAHostnameIsClaimedForGood(t *testing.T) {
 
 	key := resource.Key{Project: "web", Name: "a-b"}
 	if _, err := b.Delete(user, key, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.RemoveFinalizer(system, registry.PublicEndpoint, key, AccessApplicationFinalizer); err != nil {
 		t.Fatal(err)
 	}
 	waitGone(t, s, system, registry.PublicEndpoint, "a-b")
@@ -245,7 +242,7 @@ func TestAnEndpointFollowsItsTarget(t *testing.T) {
 	ep = waitEndpoint(t, s, system, "site", "ready", func(ep *networkv1alpha1.PublicEndpoint) bool {
 		return conditions.IsTrue(ep.GetStatus().GetConditions(), PublicEndpointReady)
 	})
-	if ep.GetStatus().GetNode() != "n1" || conditions.Find(ep.GetStatus().GetConditions(), PublicEndpointAccessApplication) != nil {
+	if ep.GetStatus().GetNode() != "n1" || len(ep.GetStatus().GetConditions()) != 1 {
 		t.Errorf("a ready private endpoint: %v", ep.GetStatus())
 	}
 	if _, err := s.backend(registry.Container).Delete(user, resource.Key{Project: "web", Name: "api"}, nil); err != nil {
@@ -256,7 +253,9 @@ func TestAnEndpointFollowsItsTarget(t *testing.T) {
 	})
 }
 
-func TestAPublicEndpointNeedsCloudflare(t *testing.T) {
+// TestAPublicEndpointNeedsNothingMore: a PUBLIC endpoint is ready once its
+// machine runs, as a PRIVATE one is, and goes at once when deleted.
+func TestAPublicEndpointNeedsNothingMore(t *testing.T) {
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -264,173 +263,68 @@ func TestAPublicEndpointNeedsCloudflare(t *testing.T) {
 	if _, err := s.backend(registry.PublicEndpoint).Apply(user, endpoint("site", "api", 8080, public)); err != nil {
 		t.Fatal(err)
 	}
-	waitEndpoint(t, s, system, "site", "not configured", func(ep *networkv1alpha1.PublicEndpoint) bool {
-		return endpointReady(ep).GetReason() == ReasonCloudflareNotConfigured
+	waitEndpoint(t, s, system, "site", "ready", func(ep *networkv1alpha1.PublicEndpoint) bool {
+		return conditions.IsTrue(ep.GetStatus().GetConditions(), PublicEndpointReady)
 	})
-	// Without an application to delete, it goes at once.
 	if _, err := s.backend(registry.PublicEndpoint).Delete(user, resource.Key{Project: "web", Name: "site"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	waitGone(t, s, system, registry.PublicEndpoint, "site")
 }
 
-const (
-	cfToken   = "cf-token-for-tests"
-	cfAccount = "0123456789abcdef0123456789abcdef"
-)
-
-// withCloudflare points the server's endpoints at a fake Cloudflare with a
-// bypass policy, as hangar-cloudflare leaves it.
-func withCloudflare(t *testing.T) (*cftest.Fake, func(*Config)) {
-	t.Helper()
-	f := cftest.New(cfToken, cfAccount, "hangarlab.dev")
-	t.Cleanup(f.Close)
-	c, err := cloudflare.New(cfToken, cloudflare.WithBaseURL(f.URL()), cloudflare.WithRetry(1, time.Millisecond))
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := c.CreateAccessPolicy(t.Context(), cfAccount, cloudflare.AccessPolicy{
-		Name: "hangarlab.dev: public endpoints, everyone", Decision: "bypass", Include: []json.RawMessage{cloudflare.EveryoneRule()},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return f, func(cfg *Config) {
-		cfg.PublicEndpoints = PublicEndpointsConfig{Cloudflare: c, AccountID: cfAccount, BypassPolicyID: p.ID}
-	}
-}
-
-// apps returns the fake's applications, by hostname.
-func apps(f *cftest.Fake) map[string][]*cftest.App {
-	out := map[string][]*cftest.App{}
-	f.Mutate(func(s *cftest.State) {
-		for _, a := range s.Apps {
-			c := *a
-			out[a.Domain] = append(out[a.Domain], &c)
-		}
-	})
-	return out
-}
-
-func TestAPublicEndpointOpensThroughAnAccessApplication(t *testing.T) {
-	f, cf := withCloudflare(t)
-	s, system, user := runningWith(t, func(c *Config) {
-		c.DisableControllers = false
-		c.Nodes = []string{"n1"}
-		c.NodeMonitorInterval = 1000 * time.Hour
-		cf(c)
-	})
-	waitNode(t, s, "n1")
-	nodeWithRoom(t, s, system, "n1", 4096)
-	applyCtr(t, s, user, ctr("api"))
-	runningMachine(t, s, system, "api")
+// TestAnEndpointLosesWhatAccessLeft: an endpoint stored while PUBLIC ones
+// had a Cloudflare Access application, with its finalizer and condition,
+// loses both at its next reconcile, and so is not held on delete.
+func TestAnEndpointLosesWhatAccessLeft(t *testing.T) {
+	s, system, user := running(t)
 	b := s.backend(registry.PublicEndpoint)
 	if _, err := b.Apply(user, endpoint("site", "api", 8080, public)); err != nil {
 		t.Fatal(err)
 	}
-	const host = "site-web.hangarlab.dev"
-	ep := waitEndpoint(t, s, system, "site", "ready", func(ep *networkv1alpha1.PublicEndpoint) bool {
-		return conditions.IsTrue(ep.GetStatus().GetConditions(), PublicEndpointReady)
-	})
-	got := apps(f)[host]
-	if len(got) != 1 || got[0].ID != ep.GetStatus().GetAccessApplicationId() || got[0].Name != cloudflare.EndpointAppPrefix+host ||
-		len(got[0].Links) != 1 || got[0].Links[0].ID != s.cfg.PublicEndpoints.BypassPolicyID {
-		t.Fatalf("the endpoint's application: %+v; status %v", got, ep.GetStatus())
-	}
-
-	// Private again: the application goes.
-	if _, err := b.Apply(user, endpoint("site", "api", 8080, private)); err != nil {
-		t.Fatal(err)
-	}
-	waitEndpoint(t, s, system, "site", "private", func(ep *networkv1alpha1.PublicEndpoint) bool {
-		return ep.GetStatus().GetAccessApplicationId() == "" && conditions.IsTrue(ep.GetStatus().GetConditions(), PublicEndpointReady) &&
-			ep.GetStatus().GetObservedGeneration() == 2
-	})
-	if n := len(apps(f)[host]); n != 0 {
-		t.Errorf("%d applications left for a private endpoint", n)
-	}
-
-	// Public, then deleted: the application goes, then the endpoint.
-	if _, err := b.Apply(user, endpoint("site", "api", 8080, public)); err != nil {
-		t.Fatal(err)
-	}
-	waitEndpoint(t, s, system, "site", "public again", func(ep *networkv1alpha1.PublicEndpoint) bool {
-		return ep.GetStatus().GetAccessApplicationId() != ""
-	})
-	if _, err := b.Delete(user, resource.Key{Project: "web", Name: "site"}, nil); err != nil {
-		t.Fatal(err)
-	}
-	waitGone(t, s, system, registry.PublicEndpoint, "site")
-	if n := len(apps(f)[host]); n != 0 {
-		t.Errorf("%d applications left after the endpoint went", n)
-	}
-}
-
-// TestAnAccessApplicationMadeButNotRecordedIsFound: a reconcile that made
-// the application and stopped before recording it left its intent; the
-// next one adopts it rather than make another, and deletes it when it is
-// no longer wanted. Reconciles run by hand, each as after a restart.
-func TestAnAccessApplicationMadeButNotRecordedIsFound(t *testing.T) {
-	f, cf := withCloudflare(t)
-	s, system, user := runningWith(t, cf)
-	b := s.backend(registry.PublicEndpoint)
 	key := resource.Key{Project: "web", Name: "site"}
-	const host = "site-web.hangarlab.dev"
+	skey := store.Key{Kind: registry.PublicEndpoint.Kind, Project: "web", Name: "site"}
+	o, err := s.store.Get(system, skey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ep networkv1alpha1.PublicEndpoint
+	if err := proto.Unmarshal(o.Data, &ep); err != nil {
+		t.Fatal(err)
+	}
+	ep.Metadata.Finalizers = append(ep.Metadata.Finalizers, oldAccessFinalizer)
+	ep.Status = &networkv1alpha1.PublicEndpointStatus{Conditions: []*metav1.Condition{{
+		Type: oldAccessCondition, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Created",
+	}}}
+	data, err := proto.Marshal(&ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Update(system, skey, data, o.Revision); err != nil {
+		t.Fatal(err)
+	}
 	reconcile := func() {
 		t.Helper()
 		if err := s.reconcilePublicEndpoint(system, controller.Key{Project: "web", Name: "site"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	read := func() *networkv1alpha1.PublicEndpoint {
-		t.Helper()
-		obj, err := s.get(system, registry.PublicEndpoint, key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if obj == nil {
-			return nil
-		}
-		return obj.(*networkv1alpha1.PublicEndpoint)
-	}
-	if _, err := b.Apply(user, endpoint("site", "api", 8080, public)); err != nil {
-		t.Fatal(err)
-	}
-	reconcile() // the intent
-	if r := conditions.Find(read().GetStatus().GetConditions(), PublicEndpointAccessApplication).GetReason(); r != ReasonAccessCreating {
-		t.Fatalf("after the first reconcile: %s", r)
-	}
-	if n := len(apps(f)); n != 0 {
-		t.Fatalf("an application made before its intent was stored: %d", n)
-	}
-	// As if the reconcile had made it and stopped.
-	made, err := s.cfg.PublicEndpoints.Cloudflare.CreateAccessApp(system, cfAccount, s.bypassApp(host))
+	reconcile()
+	reconcile()
+	obj, err := s.get(system, registry.PublicEndpoint, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reconcile()
-	if id := read().GetStatus().GetAccessApplicationId(); id != made.ID || len(apps(f)[host]) != 1 {
-		t.Fatalf("recorded %q, made %q; applications %d", id, made.ID, len(apps(f)[host]))
+	got := obj.(*networkv1alpha1.PublicEndpoint)
+	if fs := got.GetMetadata().GetFinalizers(); len(fs) != 0 {
+		t.Errorf("finalizers left: %v", fs)
 	}
-
-	// Recorded, then lost again with a crash: the status says Creating and
-	// names none. Deleting the endpoint still finds it.
-	ep := read()
-	st := proto.Clone(ep.GetStatus()).(*networkv1alpha1.PublicEndpointStatus)
-	st.AccessApplicationId = ""
-	st.Conditions = conditions.Set(st.GetConditions(), &metav1.Condition{
-		Type: PublicEndpointAccessApplication, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: ReasonAccessCreating,
-	}, time.Now())
-	if _, err := b.UpdateStatus(system, key, st, nil); err != nil {
-		t.Fatal(err)
+	if c := conditions.Find(got.GetStatus().GetConditions(), oldAccessCondition); c != nil {
+		t.Errorf("the Access condition left: %v", c)
 	}
 	if _, err := b.Delete(user, key, nil); err != nil {
 		t.Fatal(err)
 	}
-	reconcile()
-	if read() != nil || len(apps(f)[host]) != 0 {
-		t.Errorf("after deleting: endpoint %v, applications %d", read(), len(apps(f)[host]))
-	}
+	waitGone(t, s, system, registry.PublicEndpoint, "site")
 }
 
 // TestAContainersPublicPortsGetEndpoints: each public port gets a private
@@ -503,5 +397,62 @@ func TestPublicPortAdmission(t *testing.T) {
 	c.Spec.Ports = []*computev1alpha1.ContainerPort{{Name: "dns", Port: 53, Protocol: computev1alpha1.Protocol_PROTOCOL_UDP}}
 	if _, err := s.backend(registry.Container).Apply(user, c); err != nil {
 		t.Errorf("a UDP port that is not public: %v", err)
+	}
+}
+
+// TestEndpointLoginsVerdict: endpoint-login hands off to an endpoint that
+// stands, by a host exactly one label below the domain, and to none being
+// deleted, nor to a PUBLIC one. (No endpoint's label holds a dot, so a host
+// of more labels could not name one anyway; the check stands in case.)
+func TestEndpointLoginsVerdict(t *testing.T) {
+	s, system, user := running(t)
+	b := s.backend(registry.PublicEndpoint)
+	for _, ep := range []*networkv1alpha1.PublicEndpoint{endpoint("site", "api", 8080, private), endpoint("open", "api", 8080, public)} {
+		if _, err := b.Apply(user, ep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, _ := auth.FromContext(user)
+	verdict := func(host string) login.EndpointVerdict {
+		t.Helper()
+		v, err := s.endpointVerdict(system, p, host)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	if v := verdict("site-web.hangarlab.dev"); v != login.EndpointAllowed {
+		t.Fatalf("a standing endpoint: %v", v)
+	}
+	if v := verdict("open-web.hangarlab.dev"); v != login.EndpointUnknown {
+		t.Errorf("a public endpoint: %v", v)
+	}
+	// Exactly one label below the domain, and the domain itself, alone.
+	for _, h := range []string{"a.site-web.hangarlab.dev", "site-web.a.hangarlab.dev", ".hangarlab.dev", "hangarlab.dev", "site-web.hangarlab.dev.evil", "site-webhangarlab.dev"} {
+		if v := verdict(h); v != login.EndpointUnknown {
+			t.Errorf("%s: %v", h, v)
+		}
+	}
+	// Being deleted: held by a finalizer, with its delete time set.
+	skey := store.Key{Kind: registry.PublicEndpoint.Kind, Project: "web", Name: "site"}
+	o, err := s.store.Get(system, skey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ep networkv1alpha1.PublicEndpoint
+	if err := proto.Unmarshal(o.Data, &ep); err != nil {
+		t.Fatal(err)
+	}
+	ep.Metadata.Finalizers = append(ep.Metadata.Finalizers, "example.com/hold")
+	ep.Metadata.DeleteTime = timestamppb.Now()
+	data, err := proto.Marshal(&ep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.store.Update(system, skey, data, o.Revision); err != nil {
+		t.Fatal(err)
+	}
+	if v := verdict("site-web.hangarlab.dev"); v != login.EndpointUnknown {
+		t.Errorf("an endpoint being deleted: %v", v)
 	}
 }

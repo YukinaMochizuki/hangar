@@ -51,7 +51,7 @@ enum PublicEndpointAccess {
   // Means PRIVATE.
   PUBLIC_ENDPOINT_ACCESS_UNSPECIFIED = 0;
   // Only those who hold network.publicendpoints.access on the endpoint's
-  // project, signed in through Cloudflare Access.
+  // project, signed in through Hangar or holding a Hangar token.
   PUBLIC_ENDPOINT_ACCESS_PRIVATE = 1;
   // Anyone on the internet, with no sign-in.
   PUBLIC_ENDPOINT_ACCESS_PUBLIC = 2;
@@ -69,9 +69,10 @@ message PublicEndpointStatus {
   string machine = 5;
   // The Node that machine runs on; empty while it is not placed.
   string node = 6;
-  // The Cloudflare Access application that lets everyone through to a
-  // PUBLIC endpoint; empty for a PRIVATE one.
-  string access_application_id = 7;
+  // Held a Cloudflare Access application's id while PUBLIC endpoints had
+  // one.
+  reserved 7;
+  reserved "access_application_id";
 }
 
 // PublicEndpointService manages public endpoints.

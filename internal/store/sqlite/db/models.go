@@ -20,6 +20,7 @@ type Credential struct {
 	IdleUntil  int64
 	LastUsedAt int64
 	UsedAt     int64
+	Audience   string
 }
 
 type Event struct {

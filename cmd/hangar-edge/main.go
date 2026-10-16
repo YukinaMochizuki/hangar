@@ -19,6 +19,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -30,6 +31,7 @@ import (
 	"github.com/libdns/cloudflare"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 	"github.com/YukinaMochizuki/hangar/internal/edge/front"
@@ -49,7 +51,7 @@ const dnsTokenCredential = "cloudflare-dns-token"
 
 type flags struct {
 	listen, apiSocket, dialSocket, domain string
-	cfTeamDomain, cfAudience, cfCertsURL  string
+	consoleURL                            string
 
 	cpDomain, publicSocket       string
 	httpsListen, httpListen      string
@@ -67,10 +69,8 @@ func main() {
 	flag.StringVar(&f.apiSocket, "api-socket", "/run/hangar/edge.sock", "the apiserver's edge socket")
 	flag.StringVar(&f.dialSocket, "dial-socket", "/run/hangar/edge-dial.sock", "the node agent's edge dial socket")
 	flag.StringVar(&f.domain, "domain", "hangarlab.dev", "the domain public endpoints' hostnames are in; the apiserver's --endpoint-domain")
-	flag.StringVar(&f.cfTeamDomain, "cf-team-domain", "", "Access team domain, such as https://team.cloudflareaccess.com")
-	flag.StringVar(&f.cfAudience, "cf-audience", "", "AUD tag of the endpoint domain's wildcard Access application")
-	flag.StringVar(&f.cfCertsURL, "cf-certs-url", "", "override for the Access signing keys URL")
 
+	flag.StringVar(&f.consoleURL, "console-url", "", "the console's origin, whose endpoint-login signs browsers in to private endpoints; empty is https://console.<--cp-domain>")
 	flag.StringVar(&f.cpDomain, "cp-domain", "", "the control plane's domain, which serves api.<it> and console.<it>; empty, the front door is off")
 	flag.StringVar(&f.publicSocket, "public-socket", "/run/hangar/public.sock", "the apiserver's public socket, the API from :443 goes to")
 	flag.StringVar(&f.httpsListen, "https-listen", "", "address for :443 when systemd passes no socket; under systemd its socket unit says")
@@ -120,6 +120,23 @@ func limitFlags(l *front.Limits) {
 	flag.DurationVar(&l.HTTP2WriteByteTimeout, "http2-write-byte-timeout", d.HTTP2WriteByteTimeout, "time an HTTP/2 connection has to take any of what is written to it")
 }
 
+// consoleOrigin is the console's origin the edge sends browsers to, to be
+// signed in to a private endpoint: --console-url, else the front door's
+// console.
+func consoleOrigin(f flags) (string, error) {
+	if f.consoleURL == "" {
+		if f.cpDomain == "" {
+			return "", errors.New("private endpoints need --console-url, or --cp-domain to make it of")
+		}
+		return "https://console." + f.cpDomain, nil
+	}
+	u, err := url.Parse(f.consoleURL)
+	if err != nil || u.Scheme != "https" || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.User != nil {
+		return "", fmt.Errorf("--console-url %q is not an https origin, such as https://console.example.com", f.consoleURL)
+	}
+	return "https://" + u.Host, nil
+}
+
 // stateDir is systemd's StateDirectory= for the unit, where the
 // certificates are kept unless a flag says otherwise.
 func stateDir() string {
@@ -154,7 +171,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	}
 	defer socks.Close()
 
-	access, err := edge.NewAccessVerifier(ctx, edge.AccessConfig{TeamDomain: f.cfTeamDomain, Audience: f.cfAudience, CertsURL: f.cfCertsURL})
+	consoleURL, err := consoleOrigin(f)
 	if err != nil {
 		return err
 	}
@@ -163,8 +180,9 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		DialNode: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", f.dialSocket)
 		},
+		Auth:                  networkv1alpha1connect.NewEndpointAuthServiceClient(client.UnixSocket(f.apiSocket), client.UnixSocketURL),
 		Domain:                f.domain,
-		Access:                access,
+		ConsoleURL:            consoleURL,
 		ResponseHeaderTimeout: f.endpointResponseTimeout,
 		Log:                   log,
 	})

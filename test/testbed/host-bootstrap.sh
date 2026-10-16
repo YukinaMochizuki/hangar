@@ -58,6 +58,9 @@ state_digest() {
 
 prepare() {
 	step "prepare a host that looks freshly installed"
+	# A VM image's package lists are as old as the image, and the versions
+	# they name leave the mirror: refresh them first.
+	apt-get update -q >/dev/null
 	DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends \
 		zfsutils-linux python3-yaml dnsmasq-base >/dev/null
 	mkdir -p "$work"
@@ -677,18 +680,15 @@ test_oidc_cutover() {
 TB_FRONT_DOOR_URL=https://console.cp.test
 
 # front_door_env off|edge|on sets the edge's settings in local.env: none,
-# the edge on loopback for public endpoints (with the Access application
-# it checks private ones against), or the front door too, with
-# certificates from pebble over DNS-01 the edge answers itself.
+# the edge on loopback for public endpoints, or the front door too, with
+# certificates from pebble over DNS-01 the edge answers itself. Settings
+# the edge took before it signed private endpoints' callers in itself go
+# too.
 front_door_env() {
 	sed -i '/^HANGAR_EDGE_/d; /^HANGAR_CP_DOMAIN=/d; /^HANGAR_ACME_/d; /^HANGAR_CF_TEAM_DOMAIN=/d; /^HANGAR_CF_ACCOUNT_ID=/d; /^HANGAR_CF_BYPASS_POLICY_ID=/d' /etc/hangar/local.env
 	[ "$1" != off ] || return 0
 	cat >>/etc/hangar/local.env <<EOF
 HANGAR_EDGE_DOMAIN=user.test
-HANGAR_CF_TEAM_DOMAIN=https://testbed.cloudflareaccess.com
-HANGAR_EDGE_CF_AUDIENCE=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-HANGAR_CF_ACCOUNT_ID=0123456789abcdef0123456789abcdef
-HANGAR_CF_BYPASS_POLICY_ID=6f1c1b8e-2b1a-4c3d-9e8f-0a1b2c3d4e5f
 EOF
 	[ "$1" = on ] || return 0
 	cat >>/etc/hangar/local.env <<EOF

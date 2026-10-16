@@ -1,16 +1,17 @@
 # Public endpoints: one hostname each under a user-content domain, served by an edge of its own
 
-Status: accepted, 2026-10.
+Status: accepted, 2026-10. Revised 2026-10 when hangar-edge took over
+signing private endpoints' callers in from Cloudflare Access.
 
 ## Context
 
 Machines have private IPv4 addresses and public IPv6 ones, so an
-IPv4-only client cannot reach one, and ordinary HTTPS should go through
-Cloudflare anyway (`networking.md`). User content must not share a
+IPv4-only client cannot reach one, and ordinary HTTPS goes through
+hangar-edge, the front door (`front-door.md`). User content must not share a
 registrable domain with the console and the API, so it lives under its own
-domain, `hangarlab.dev`, which goes on the Public Suffix List. Cloudflare's
-free certificate covers one level of wildcard only, and Access admits a
-fixed set of people and service tokens (`authentication.md`).
+domain, `hangarlab.dev`. The wildcard certificate covers one level only.
+Cloudflare is leaving the traffic path, and Access with it, so Hangar
+signs the callers of private endpoints in itself (`authentication.md`).
 
 ## Decision
 
@@ -18,10 +19,9 @@ fixed set of people and service tokens (`authentication.md`).
   Container or VirtualMachine, on its first interface, at
   `https://<endpoint>-<project>.<domain>`. It is `PRIVATE` unless set
   `PUBLIC`. Its status says its URL, the machine and node it reaches, and
-  whether it is `Ready`: its machine runs, and a `PUBLIC` one's Access
-  application is in place. The domain is the apiserver's
+  whether it is `Ready`: its machine runs. The domain is the apiserver's
   `--endpoint-domain`, `hangarlab.dev` by default. The backend speaks
-  plain HTTP; Cloudflare holds the TLS.
+  plain HTTP; the front door holds the TLS.
 - **The hostname is claimed for good** (decided by the project owner). `-`
   joins two names that may hold it themselves (`web-my` of `demo-1`, `web`
   of `my-demo-1`), so the hostname label is claimed when the endpoint is
@@ -48,34 +48,97 @@ fixed set of people and service tokens (`authentication.md`).
   bound to service tokens. People are held to platform membership as
   everywhere.
 - **The edge is a separate, unprivileged `hangar-edge`** (decided by the
-  project owner): cloudflared sends it every request for a hostname under the
-  domain, on loopback, and it routes each by `Host`. User traffic never
-  passes the apiserver, and the edge can scale apart from it.
+  project owner): the front door sends it every request for a hostname
+  under the domain, and it routes each by `Host`. User traffic never passes
+  the apiserver, and the edge can scale apart from it.
   - It reads the API as the `Edge` principal (`authentication.md`): get,
     list and watch public endpoints, role bindings, projects and users,
     everywhere, and nothing else; it writes nothing. From them it keeps its
     own view of the endpoints and an authorizer (`authz.NewFromSource`), the
     same rules the apiserver runs, and serves nothing until both are read.
-  - For a `PRIVATE` endpoint it verifies the Access token
-    (`Cf-Access-Jwt-Assertion`) against the domain's wildcard application,
-    and checks the permission; no token is 401, no permission 403. A
-    `PUBLIC` endpoint takes anyone.
-  - It strips the Access token, the `CF_Authorization` cookie (by name,
-    in any case and spacing) and a service token's headers
-    (`Cf-Access-Token`, `Cf-Access-Client-Id`, `Cf-Access-Client-Secret`)
-    before the request goes on. Every endpoint shares one Access
-    application, so an endpoint handed a visitor's token could replay it
-    to any other endpoint that visitor may use.
+  - For a `PRIVATE` endpoint it finds who calls, then checks the permission
+    on every request; no valid credential is 401 (a browser is sent to sign
+    in instead), no permission 403. A `PUBLIC` endpoint takes anyone.
   - It streams responses as they come and passes upgrades (WebSockets)
     through. Nothing it let through outlives what let it through: an
     endpoint's connections are closed, and its requests ended, when it goes
     or anything it stands on changes (its port, target, machine or
     access), and the transport keeps its connections under a key of all of
-    those, so a request after a change never takes one opened before. A
-    request to a PRIVATE endpoint, a stream or an upgrade included, ends
-    when its caller's Access token expires, and when, at any change to the
-    bindings, projects or users the edge follows, its caller may no longer
-    use the endpoint. A PUBLIC endpoint's requests have no token to end with.
+    those, so a request after a change never takes one opened before.
+- **Who calls a private endpoint** (decided by the project owner, as Access
+  and oauth2-proxy do it). The edge takes one of:
+  - its own session cookie for that host, `__Host-hangar-endpoint`, which a
+    sign-in handoff from the console sets;
+  - `Authorization: Bearer` with a CLI access token (`hga_`) or a service
+    token (`hgr_`), for agents.
+  Any other `Authorization` is the endpoint's own: the edge ignores it and
+  passes it on. The edge asks the apiserver who holds a credential, on
+  every request, over the edge socket (`EndpointAuthService`, served there
+  alone and to the `Edge` principal alone; the socket's peer uid is the
+  edge's, `authentication.md`). There is no cache: a revoked credential
+  counts on the next request.
+- **The handoff.** A browser (a GET or HEAD that is a navigation) without a
+  valid session is sent to the console:
+  1. The edge redirects to the console's `/auth/endpoint-login` (its
+     `--console-url`, `https://console.<cp-domain>` by default) with the
+     host and a state. The state, the path to return to and the
+     host stay in this browser, sealed (AES-GCM, a key the edge makes at
+     start and holds in memory) in a cookie of the endpoint's host,
+     `__Host-hangar-endpoint-state-<id>`, for 10 minutes; the id lets
+     several tabs hand off at once. The return path never leaves the edge.
+  2. Endpoint-login, the apiserver's, signs the person in to the console
+     first if they are not (`authentication.md`), and with a console session
+     goes on without asking (decided by the owner). It is a GET from another
+     site by design: what it makes goes nowhere but to the endpoint's own
+     callback. It checks that the host is exactly one PRIVATE endpoint's,
+     `<label>.<domain>`, and that the person may use it; otherwise it shows
+     a page and redirects nowhere.
+  3. It issues a one-time code: 32 random bytes, stored as its SHA-256 only,
+     bound to the host, the person, the state and the console session's
+     login, valid 60 seconds, and sends the browser to
+     `https://<host>/.hangar/callback` with the code and the state. Codes
+     not yet exchanged are capped as the CLI's are, and at 20 per person,
+     so no one fills the shared cap for others.
+  4. The edge's callback takes the code only from the browser holding that
+     state's cookie, for that host, in time, and trades it with the
+     apiserver, which spends it whatever the outcome and checks the host,
+     the state, the invitation and the permission again.
+  5. The edge sets `__Host-hangar-endpoint` (Secure, HttpOnly,
+     SameSite=Lax, for the whole host and no other) and sends the browser
+     back to the path it asked for, checked as sign-in's return paths are.
+  An edge restart makes a new key, so a handoff in progress then fails at
+  the callback, and the next page load starts another.
+- **An endpoint session** (`hge_`) counts on its host alone (the
+  credential's audience). It lasts a day and never past the console
+  session it came from, whatever its use, and is in that session's login:
+  signing out of the console, or revoking the person's logins, ends it
+  (decided by the owner).
+- **What ends a request in flight** to a PRIVATE endpoint, a stream or an
+  upgrade included: its credential's expiry; any change to the bindings,
+  projects or users the edge follows after which its caller may not use
+  the endpoint; and, within 30 seconds (the edge checks every credential in
+  flight again that often), the credential's revoke: a sign-out, a revoke of
+  the person's logins, a service token rotated or deleted. A PUBLIC
+  endpoint's requests have no credential to end with.
+- **What never reaches an endpoint** (decided by the owner). The edge keeps
+  `/.hangar/` for itself on every endpoint, public ones too, however the path
+  is spelled (case, dot segments, encoded dots, a backslash, a
+  `;parameter`): the callback, and 404. Before forwarding, it removes every
+  cookie whose name starts with `__Host-hangar` (in any case), Hangar's
+  bearer tokens, every `Hangar-` header a client sent, and what Access used
+  (`Cf-Access-*`, `CF_Authorization`). An endpoint answering with a
+  `Set-Cookie` for one of Hangar's names has it dropped, so its answers cannot
+  plant or clear one; its own scripts can still write one where none is
+  set, on its own host alone, which the edge takes only if it issued that
+  value for that host. No header tells an endpoint who calls; a signed one is
+  possible later work.
+- **Cookie tossing.** Every endpoint is a host under one domain, and a
+  tenant's can set a cookie with `Domain=` the endpoint domain. The edge
+  reads only `__Host-` names, which a browser takes only from the host
+  itself, with no `Domain`, so no other endpoint can plant or overwrite
+  them; a lookalike without the prefix is ignored. The endpoint domain
+  should still go on the Public Suffix List, so browsers keep every
+  endpoint's cookies to itself.
 - **The edge reaches a machine through the node agent's dial socket**
   (`internal/edgedial`), a unix socket the agent makes, root's and the edge
   group's, 0660, which takes the edge's uid alone (`SO_PEERCRED`). A dial
@@ -94,31 +157,10 @@ fixed set of people and service tokens (`authentication.md`).
   `hangar ssh`: while an endpoint exists, its machine's interface has a rule
   passing TCP from the gateway's address to the endpoint's port
   (`networking.md`). The endpoint is the explicit opening.
-- **Cloudflare's side.** `hangar-cloudflare` makes the domain's wildcard
-  DNS record, the tunnel's wildcard ingress rule to the edge, an Access
-  application for the wildcard (the same people and service tokens as the
-  API's), and a reusable bypass policy (`cloudflare-setup.md`). The
-  wildcard ingress sets no `originRequest.access`, which would turn away a
-  `PUBLIC` endpoint's requests: the edge checks a `PRIVATE` one's token
-  itself.
-  - Access cannot let one hostname of an application through without a
-    login, so each `PUBLIC` endpoint gets an Access application of its own,
-    for its hostname, with the bypass policy (decided by the project owner).
-    Being more specific, Access applies it instead of the wildcard's. The
-    apiserver makes and deletes it with a Cloudflare API token, a 0600 file
-    (`--cloudflare-api-token-file`), named for no one use: service tokens
-    will take it too. Without the token, `PUBLIC` endpoints are not `Ready`
-    (`CloudflareNotConfigured`).
-  - The application is named `hangar public endpoint: <hostname>`, so it is
-    found again by name. Before one is made, the endpoint's status records
-    that it is being made (`AccessApplication`, `Creating`); an apiserver
-    that stops between making it and recording its id finds it by name
-    and adopts it, and one that is deleted or made `PRIVATE` meanwhile has
-    it deleted all the same. Every endpoint carries a finalizer until no
-    application of it can be left.
-  - The account holds 500 Access applications by default (Cloudflare One
-    account limits, as of 2026-09; more on Enterprise only), shared with the
-    platform's own, which bounds `PUBLIC` endpoints until quotas do.
+- **Cloudflare's side**, until the cutover: `hangar-cloudflare` makes the
+  domain's wildcard DNS record and the tunnel's wildcard ingress rule to the
+  edge, with no `originRequest.access` (`cloudflare-setup.md`). No Access
+  object stands in front of an endpoint.
 
 ## Consequences
 
@@ -126,7 +168,21 @@ fixed set of people and service tokens (`authentication.md`).
   before the node has written the firewall rule; the edge's first requests
   then fail with 502.
 - A request to an endpoint whose machine does not run is 503; to a
-  hostname of no endpoint, 404.
+  hostname of no endpoint, 404. One the edge ends itself before the endpoint
+  answers (the endpoint changed, or the caller's credential or grant ended)
+  is 503 too, to try again.
 - Endpoints work for one host: the edge dials the local node's socket. More
   hosts need the edge to pick the node of the endpoint's machine
   (`status.node`), and the socket a network transport.
+- Every request to a PRIVATE endpoint asks the apiserver about its
+  credential, one read on the edge socket: endpoints need the apiserver up,
+  and an apiserver away is 503 there.
+- The sign-in pages of the handoff, endpoint-login's and the callback's,
+  are the plain placeholders in `internal/auth/pages`, as sign-in's are.
+- Tests: `internal/edge` runs the whole handoff against a fake provider
+  (`internal/auth/oidctest`), with the console and the edge on TLS; codes
+  used twice, late, for another host or from another browser; open
+  redirects; a session replayed on another host; lookalike cookie names;
+  revoked grants and credentials ending upgrades; what is stripped; and no
+  secret in the logs. `internal/apiserver` covers endpoint-login and
+  `EndpointAuthService`.

@@ -1,10 +1,12 @@
-// Package edge is hangar-edge: the HTTP proxy cloudflared sends every
-// request for a public endpoint's hostname to. It routes by Host to the
-// endpoint, checks that a PRIVATE endpoint's caller signed in through
-// Access and may use it, and reaches the endpoint's machine through the
-// node agent's edge dial socket (internal/edgedial). It runs unprivileged,
-// and reads the API as the Edge principal: public endpoints, role bindings
-// and projects, nothing else. See docs/decisions/public-endpoints.md.
+// Package edge is hangar-edge's proxy for public endpoints: the front door
+// (internal/edge/front) sends it every request for an endpoint's hostname.
+// It routes by Host to the endpoint, makes sure a PRIVATE endpoint's caller
+// is signed in there, through a handoff from the console, or holds a Hangar
+// token, and may use it, and reaches the endpoint's machine through the node
+// agent's edge dial socket (internal/edgedial). It runs unprivileged, and
+// reads the API as the Edge principal: public endpoints, role bindings,
+// projects and users, and who holds a credential, nothing else. See
+// docs/decisions/public-endpoints.md.
 package edge
 
 import (
@@ -24,8 +26,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/login"
+	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
@@ -39,11 +44,21 @@ type Config struct {
 	API *client.Client
 	// DialNode connects to the node agent's edge dial socket.
 	DialNode func(ctx context.Context) (net.Conn, error)
+	// Auth reaches the apiserver's EndpointAuthService on the edge socket:
+	// who holds a credential, and endpoint sessions for handoff codes.
+	Auth networkv1alpha1connect.EndpointAuthServiceClient
 	// Domain holds every endpoint's hostname, one label below it.
 	Domain string
-	// Access verifies the Access token of the endpoint domain's wildcard
-	// application, which every PRIVATE endpoint is behind.
-	Access Verifier
+	// ConsoleURL is the console's origin, such as
+	// https://console.example.com, whose endpoint-login hands a browser
+	// off to a PRIVATE endpoint.
+	ConsoleURL string
+	// Recheck is how often the credentials of requests in flight to PRIVATE
+	// endpoints are checked again, so a revoked one ends what it let in;
+	// zero means DefaultRecheck.
+	Recheck time.Duration
+	// Now is the clock handoffs are timed by; nil is time.Now.
+	Now func() time.Time
 	// Retry is how long the edge waits before reading the endpoints again
 	// after a failure; zero means a second.
 	Retry time.Duration
@@ -53,11 +68,9 @@ type Config struct {
 	Log                   *slog.Logger
 }
 
-// Verifier verifies an Access token and says until when it holds;
-// *AccessVerifier is one.
-type Verifier interface {
-	AuthenticateUntil(ctx context.Context, header http.Header) (auth.Principal, time.Time, bool, error)
-}
+// DefaultRecheck is how often, at most, a request in flight is let go on
+// with a credential revoked since it started.
+const DefaultRecheck = 30 * time.Second
 
 // Edge serves public endpoints. Create it with New, run its view of the API
 // with Run, and serve it as an http.Handler.
@@ -65,6 +78,9 @@ type Edge struct {
 	cfg   Config
 	authz *authz.Authorizer
 	proxy *httputil.ReverseProxy
+	// sealer seals the handoffs in progress into the browsers that start
+	// them, under a key made at start and held only in memory.
+	sealer *login.Sealer
 
 	mu sync.RWMutex
 	// byLabel and byUID are the live endpoints, by hostname label and uid.
@@ -75,8 +91,8 @@ type Edge struct {
 	// or anything of it changes (endpoint).
 	conns map[string]map[net.Conn]bool
 	// active are the requests being served, which end when the endpoint
-	// changes, and, for a PRIVATE one, when their caller's token expires or
-	// the caller may no longer use the endpoint.
+	// changes, and, for a PRIVATE one, when their caller's credential
+	// expires or is revoked, or the caller may no longer use the endpoint.
 	active map[*request]bool
 
 	synced     chan struct{}
@@ -106,8 +122,20 @@ func New(cfg Config) *Edge {
 	if cfg.Retry == 0 {
 		cfg.Retry = time.Second
 	}
+	if cfg.Recheck == 0 {
+		cfg.Recheck = DefaultRecheck
+	}
+	if cfg.Now == nil {
+		cfg.Now = time.Now
+	}
+	sealer, err := login.NewSealer(handoffPurpose)
+	if err != nil {
+		// Only crypto/rand failing, which it does not.
+		panic(err)
+	}
 	e := &Edge{
 		cfg:     cfg,
+		sealer:  sealer,
 		authz:   authz.NewFromSource(controller.APISource{Client: cfg.API}, nil),
 		byLabel: map[string]endpoint{},
 		byUID:   map[string]endpoint{},
@@ -122,8 +150,9 @@ func New(cfg Config) *Edge {
 			ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
 		},
 		// Streams and server-sent events reach the client as they come.
-		FlushInterval: -1,
-		ErrorHandler:  e.proxyError,
+		FlushInterval:  -1,
+		ErrorHandler:   e.proxyError,
+		ModifyResponse: dropPlatformCookies,
 	}
 	return e
 }
@@ -133,6 +162,7 @@ func (e *Edge) Run(ctx context.Context) error {
 	errc := make(chan error, 1)
 	go func() { errc <- e.authz.Run(ctx) }()
 	go e.recheck(ctx)
+	go e.recheckCredentials(ctx)
 	for ctx.Err() == nil {
 		if err := e.follow(ctx); err != nil && ctx.Err() == nil {
 			e.cfg.Log.Error("following public endpoints failed; reading them again", "error", err)
@@ -293,8 +323,19 @@ type request struct {
 	ep endpoint
 	// caller is who asked, for a PRIVATE endpoint; nil for a PUBLIC one.
 	caller *auth.Principal
+	// cred and host are the credential the caller presented and where, to
+	// check again while the request lasts.
+	cred token.Secret
+	host string
+	// cancel ends the request, as the edge's own doing (errEnded).
 	cancel context.CancelFunc
 }
+
+// errEnded is the cause of a request the edge ended itself: its endpoint
+// changed or went, or its caller's credential or grant did. Before any of
+// the answer is sent, such a request is answered 503 rather than nothing,
+// which a client would take for an empty 200.
+var errEnded = errors.New("the edge ended the request")
 
 // recheck ends, at each change to the authorization data, the requests to
 // PRIVATE endpoints whose callers may no longer use them: an upgraded
@@ -349,27 +390,31 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such endpoint", http.StatusNotFound)
 		return
 	}
-	ctx, cancel := context.WithCancel(r.Context())
-	defer cancel()
-	req := &request{ep: ep, cancel: cancel}
+	host := Hostname(r.Host)
+	// /.hangar/ is the edge's own, on every endpoint: never forwarded.
+	if p, ok := reservedPath(r.URL.Path); ok {
+		if !ep.public && p == login.EndpointCallbackPath && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			e.callback(w, r, host, ep)
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	ctx, cancelCause := context.WithCancelCause(r.Context())
+	defer cancelCause(nil)
+	cancel := func() { cancelCause(errEnded) }
+	req := &request{ep: ep, cancel: cancel, host: host}
 	if !ep.public {
-		p, until, ok, err := e.cfg.Access.AuthenticateUntil(r.Context(), r.Header)
-		if err != nil || !ok {
-			e.cfg.Log.Info("a private endpoint refused: no valid Access token", "endpoint", ep.project+"/"+ep.name, "error", err)
-			http.Error(w, "sign in through Cloudflare Access to use this endpoint", http.StatusUnauthorized)
+		p, cred, until, ok := e.authenticate(w, r, host, ep)
+		if !ok {
 			return
 		}
 		if !e.authz.Allowed(p, authz.PublicEndpointAccess, authz.Target{Project: ep.project}) {
-			e.cfg.Log.Info("a private endpoint refused", "endpoint", ep.project+"/"+ep.name, "principal", p.String())
-			http.Error(w, fmt.Sprintf("%s may not use this endpoint", p.ID), http.StatusForbidden)
+			e.deny(w, r, host, ep, p)
 			return
 		}
-		req.caller = &p
-		// What the token let in ends with it. Access's tokens all expire;
-		// one that says nothing lets nothing outlast this request's start.
-		if until.IsZero() {
-			until = time.Now()
-		}
+		req.caller, req.cred = &p, cred
+		// What the credential let in ends with it.
 		stop := time.AfterFunc(time.Until(until), cancel)
 		defer stop.Stop()
 	}
@@ -395,8 +440,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// check above and the registration is in neither, and a recheck after
 	// a later change sees the request.
 	if req.caller != nil && !e.authz.Allowed(*req.caller, authz.PublicEndpointAccess, authz.Target{Project: ep.project}) {
-		e.cfg.Log.Info("a private endpoint refused", "endpoint", ep.project+"/"+ep.name, "principal", req.caller.String())
-		http.Error(w, fmt.Sprintf("%s may not use this endpoint", req.caller.ID), http.StatusForbidden)
+		e.deny(w, r, host, ep, *req.caller)
 		return
 	}
 	e.proxy.ServeHTTP(w, r.WithContext(context.WithValue(ctx, targetKey{}, ep)))
@@ -422,25 +466,52 @@ func (e *Edge) rewrite(pr *httputil.ProxyRequest) {
 	pr.SetURL(&url.URL{Scheme: "http", Host: ep.key() + endpointHost})
 	pr.Out.Host = pr.In.Host
 	pr.SetXForwarded()
-	// The front door (internal/edge/front), or Cloudflare, ended the
-	// client's TLS.
+	// The front door (internal/edge/front) ended the client's TLS.
 	pr.Out.Header.Set("X-Forwarded-Proto", "https")
-	StripAccess(pr.Out.Header)
+	StripCredentials(pr.Out.Header)
 }
 
-// accessCookie is the cookie Access keeps a signed-in session in.
+// accessCookie is the cookie Cloudflare Access kept a signed-in session in.
 const accessCookie = "CF_Authorization"
 
-// accessHeaders carry an Access token or a service token's credentials.
-var accessHeaders = []string{AccessJWTHeader, "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"}
+// accessHeaders carried an Access token or a service token's credentials.
+var accessHeaders = []string{"Cf-Access-Jwt-Assertion", "Cf-Access-Token", "Cf-Access-Client-Id", "Cf-Access-Client-Secret"}
 
-// StripAccess removes what proves a caller signed in through Access, or
-// lets it: every endpoint shares one Access application, so an endpoint
-// given a visitor's token, or a service token's secret, could use it on any
-// other endpoint that visitor may use.
-func StripAccess(h http.Header) {
+// platformCookiePrefix starts the name of every cookie of Hangar's own: the
+// endpoint session and its handoffs, and the console's session and sign-in.
+// In any case, so no spelling of one reaches an endpoint.
+const platformCookiePrefix = "__host-hangar"
+
+// platformHeaderPrefix starts every header of Hangar's own, such as
+// Hangar-Client-Ip: no endpoint takes one a client wrote, so none can pass
+// for something the platform says.
+const platformHeaderPrefix = "Hangar-"
+
+// StripCredentials removes from a request on its way to an endpoint whatever
+// signs its caller in anywhere, so no endpoint can replay it, on itself or
+// elsewhere: Hangar's cookies and bearer tokens, and what Cloudflare Access
+// used. It also drops every Hangar- header a client sent. A cookie or an
+// Authorization of the endpoint's own is left as it is.
+func StripCredentials(h http.Header) {
+	for k := range h {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), platformHeaderPrefix) {
+			delete(h, k)
+		}
+	}
 	for _, k := range accessHeaders {
 		h.Del(k)
+	}
+	if vs := h.Values("Authorization"); len(vs) > 0 {
+		var kept []string
+		for _, v := range vs {
+			if _, ours := hangarBearer(v); !ours {
+				kept = append(kept, v)
+			}
+		}
+		h.Del("Authorization")
+		for _, v := range kept {
+			h.Add("Authorization", v)
+		}
 	}
 	lines := h.Values("Cookie")
 	if len(lines) == 0 {
@@ -451,7 +522,7 @@ func StripAccess(h http.Header) {
 		for part := range strings.SplitSeq(line, ";") {
 			name, _, _ := strings.Cut(strings.TrimSpace(part), "=")
 			name = strings.TrimSpace(name)
-			if name == "" || strings.EqualFold(name, accessCookie) {
+			if name == "" || strings.EqualFold(name, accessCookie) || strings.HasPrefix(strings.ToLower(name), platformCookiePrefix) {
 				continue
 			}
 			kept = append(kept, strings.TrimSpace(part))
@@ -461,6 +532,37 @@ func StripAccess(h http.Header) {
 	if len(kept) > 0 {
 		h.Set("Cookie", strings.Join(kept, "; "))
 	}
+}
+
+// hangarBearer reads an Authorization value: the token, and whether it is a
+// Bearer token of Hangar's, by its prefix.
+func hangarBearer(v string) (token.Secret, bool) {
+	// Split on any whitespace, tabs included, as servers read the header.
+	f := strings.Fields(v)
+	if len(f) < 2 || !strings.EqualFold(f[0], "Bearer") {
+		return "", false
+	}
+	s := token.Secret(f[1])
+	return s, s.Prefix() != ""
+}
+
+// dropPlatformCookies keeps an endpoint from setting, or clearing, a cookie
+// of Hangar's on its own host: its answer's Set-Cookie of such a name goes.
+func dropPlatformCookies(resp *http.Response) error {
+	vs := resp.Header.Values("Set-Cookie")
+	if len(vs) == 0 {
+		return nil
+	}
+	resp.Header.Del("Set-Cookie")
+	for _, v := range vs {
+		name, _, _ := strings.Cut(v, "=")
+		name = strings.TrimSpace(name)
+		if strings.HasPrefix(strings.ToLower(name), platformCookiePrefix) {
+			continue
+		}
+		resp.Header.Add("Set-Cookie", v)
+	}
+	return nil
 }
 
 // dialEndpoint opens a connection to the endpoint addr names, through the
@@ -526,6 +628,12 @@ func (t *tracked) CloseWrite() error {
 
 func (e *Edge) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 	ep, _ := r.Context().Value(targetKey{}).(endpoint)
+	// The edge ended it, closing its connection too: whatever the error, the
+	// client is to try again.
+	if errors.Is(context.Cause(r.Context()), errEnded) {
+		http.Error(w, "the endpoint changed, or the sign-in ended; try again", http.StatusServiceUnavailable)
+		return
+	}
 	status, msg := http.StatusBadGateway, "the endpoint's machine did not answer"
 	var de *edgedial.Error
 	if errors.As(err, &de) {

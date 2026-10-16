@@ -41,6 +41,8 @@ type oidcWorld struct {
 	provider *oidctest.Provider
 	tls      *http.Client
 	srv      *apiserver.Server
+	// dir holds the store's files.
+	dir string
 }
 
 func newOIDCWorld(t *testing.T) *oidcWorld {
@@ -52,12 +54,24 @@ func newOIDCWorld(t *testing.T) *oidcWorld {
 // zero is the default.
 func newOIDCWorldWith(t *testing.T, maxPending int) *oidcWorld {
 	t.Helper()
+	return newOIDCWorldConfig(t, maxPending, nil)
+}
+
+// newOIDCWorldConfig is newOIDCWorldWith with configure adjusting the
+// apiserver's config.
+func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.Config)) *oidcWorld {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
+	dir := t.TempDir()
+	st, err := sqlite.Open(ctx, filepath.Join(dir, "hangar.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "alice@example.com", DefaultPlanLimits: &tenancyv1alpha1.Limits{}})
+	cfg := apiserver.Config{Store: st, BootstrapAdmin: "alice@example.com", DefaultPlanLimits: &tenancyv1alpha1.Limits{}}
+	if configure != nil {
+		configure(&cfg)
+	}
+	srv := apiserver.New(cfg)
 	var handler http.Handler
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	ts.StartTLS()
@@ -78,7 +92,7 @@ func newOIDCWorldWith(t *testing.T, maxPending int) *oidcWorld {
 		<-done
 		_ = st.Close()
 	})
-	return &oidcWorld{t: t, url: ts.URL, provider: p, tls: ts.Client(), srv: srv}
+	return &oidcWorld{t: t, url: ts.URL, provider: p, tls: ts.Client(), srv: srv, dir: dir}
 }
 
 // browser is a fresh browser: a cookie jar that follows redirects.
@@ -715,7 +729,7 @@ func TestSignInOnlyOnThePublicListener(t *testing.T) {
 // its own, so a flood of one blocks neither the other nor sign-in itself.
 func TestAnonymousSignInsWriteNothing(t *testing.T) {
 	w := newOIDCWorldWith(t, 3)
-	w.adminInvites("bob@example.com")
+	alice := w.adminInvites("bob@example.com")
 	ctx := t.Context()
 	noFollow := w.browser()
 	noFollow.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
@@ -753,9 +767,17 @@ func TestAnonymousSignInsWriteNothing(t *testing.T) {
 			t.Fatalf("CLI sign-in %d: %v", i, got)
 		}
 	}
-	got, _, _ := w.cliSignIn("bob@example.com")
-	if got.Get("error") != "access_denied" || !strings.Contains(got.Get("error_description"), "too many") {
-		t.Errorf("a CLI code past its cap: %v", got)
+	for range 3 {
+		got, _, _ := w.cliSignIn("bob@example.com")
+		if got.Get("error") != "access_denied" || !strings.Contains(got.Get("error_description"), "too many") {
+			t.Errorf("a CLI code past its cap: %v", got)
+		}
+	}
+	// A refused CLI sign-in reserved no login: bob holds his browser
+	// session and the three codes' reservations, nothing more.
+	res := must[iamv1alpha1.RevokeSessionsResponse](t)(w.sessions(alice).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{Email: "bob@example.com"})))
+	if res.GetRevoked() != 4 {
+		t.Errorf("bob held %d credentials; want 4: refused sign-ins kept reservations", res.GetRevoked())
 	}
 }
 

@@ -1,7 +1,8 @@
 // Package apiservertest runs a real apiserver for tests outside the
 // apiserver package: a SQLite store in a temporary directory, the public API
 // in dev auth mode, the node socket, accepting this process as node agent
-// Node, and the edge socket, accepting it as hangar-edge.
+// Node, and the edge socket, accepting it as hangar-edge. StartOIDC also
+// signs people in through an OpenID Connect provider, such as oidctest's.
 package apiservertest
 
 import (
@@ -54,12 +55,31 @@ type Env struct {
 	// EdgeSocket is the edge socket, where this process is hangar-edge.
 	EdgeSocket string
 	Store      store.Store
+	// Credentials is the store's credentials, which the apiserver keeps
+	// sessions and tokens in.
+	Credentials store.Credentials
+	// Public is the public listener's handler with sign-in, for StartOIDC;
+	// nil for Start.
+	Public http.Handler
 }
 
 // Start runs an apiserver until the test ends, with Root signed up.
 // configure may adjust its config; the store, the bootstrap admin and the
 // node are already set.
 func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
+	t.Helper()
+	return start(t, configure, nil)
+}
+
+// StartOIDC is Start with sign-in through the provider oidc names: Env.Public
+// serves it, and the console's endpoint-login, for a test to put behind the
+// console's origin, oidc.PublicURL.
+func StartOIDC(t *testing.T, configure func(*apiserver.Config), oidc apiserver.OIDCConfig) *Env {
+	t.Helper()
+	return start(t, configure, &oidc)
+}
+
+func start(t *testing.T, configure func(*apiserver.Config), oidc *apiserver.OIDCConfig) *Env {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
@@ -69,11 +89,19 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 	// Tests size machines and open tenants freely, unless configure sets
 	// limits.
 	cfg := apiserver.Config{Store: st, BootstrapAdmin: Root, Nodes: []string{Node},
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st}
 	if configure != nil {
 		configure(&cfg)
 	}
 	srv := apiserver.New(cfg)
+	var publicHandler http.Handler
+	if oidc != nil {
+		chain, err := srv.EnableOIDC(*oidc, st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		publicHandler = srv.PublicHandler(chain)
+	}
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 
@@ -100,7 +128,7 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		t.Fatal(err)
 	}
 	edge := &http.Server{
-		Handler:     srv.Handler(auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(os.Getuid())}, Host: Node}}),
+		Handler:     srv.EdgeHandler(auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(os.Getuid())}, Host: Node}}),
 		ConnContext: auth.EdgeConnContext,
 	}
 	go func() { _ = edge.Serve(eln) }()
@@ -116,7 +144,7 @@ func Start(t *testing.T, configure func(*apiserver.Config)) *Env {
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
 	})
-	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, EdgeSocket: edgeSock, Store: st}
+	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, EdgeSocket: edgeSock, Store: st, Credentials: st, Public: publicHandler}
 	e.waitInvited(Root)
 	e.SignUp(Root)
 	return e

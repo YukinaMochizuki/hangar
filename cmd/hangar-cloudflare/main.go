@@ -1,8 +1,7 @@
 // Command hangar-cloudflare converges Cloudflare's side of the public API: the
 // tunnel, its DNS record, and the Access application, policies and smoke
-// token; and of public endpoints, their domain's wildcard record, ingress
-// and Access application, and the bypass policy PUBLIC endpoints take. See
-// docs/runbook/cloudflare.md.
+// token; and of public endpoints, their domain's wildcard record and
+// ingress. See docs/runbook/cloudflare.md.
 package main
 
 import (

@@ -10,6 +10,25 @@ import (
 // revoked.
 var ErrRevoked = errors.New("store: credential family revoked")
 
+// ErrLimit means a request was not stored, as as many under a limit's
+// prefix are waiting as the limit allows.
+var ErrLimit = errors.New("store: too many requests waiting")
+
+// LimitError is ErrLimit for the limit of Prefix.
+type LimitError struct{ Prefix string }
+
+func (e *LimitError) Error() string { return ErrLimit.Error() + " under " + e.Prefix }
+
+// Is makes a LimitError ErrLimit to errors.Is.
+func (e *LimitError) Is(target error) bool { return target == ErrLimit }
+
+// AuthLimit caps how many requests whose key starts with Prefix may be
+// waiting, not expired, at once.
+type AuthLimit struct {
+	Prefix string
+	Max    int
+}
+
 // Credential is a secret Hangar issued, kept by its hash alone. The store
 // gives no meaning to its fields beyond the operations below; internal/auth
 // does. Zero times are unset.
@@ -29,6 +48,9 @@ type Credential struct {
 	LastUsedAt time.Time
 	// UsedAt is when ConsumeCredential took it; zero while it has not.
 	UsedAt time.Time
+	// Audience is the one host the credential counts on, such as a private
+	// endpoint's; empty, it counts wherever its type does.
+	Audience string
 }
 
 // AuthRequest is a login in progress under an opaque key, with data only its
@@ -75,6 +97,12 @@ type Credentials interface {
 	// CreateAuthRequest stores a new login in progress; ErrExists if the
 	// key is taken.
 	CreateAuthRequest(ctx context.Context, r AuthRequest) error
+	// CreateAuthRequestsWithin stores new requests, all or none, in one
+	// transaction that first counts, as of now, the requests waiting under
+	// each limit: ErrLimit, as a *LimitError naming the limit, if any is at
+	// its Max; ErrExists if a key is taken. Of concurrent calls, no more get
+	// in than the limits allow.
+	CreateAuthRequestsWithin(ctx context.Context, now time.Time, limits []AuthLimit, rs ...AuthRequest) error
 	// GetAuthRequest returns the request with the key, or ErrNotFound.
 	GetAuthRequest(ctx context.Context, key string) (AuthRequest, error)
 	// SwapAuthRequest replaces the request's data, but only while it is

@@ -95,10 +95,12 @@ EOF
 	fi
 	cat <<EOF
 # cloudflared sends it every request for a public endpoint, on loopback; it
-# reads the API on the apiserver's edge socket, forwards the API from :443
-# to its public socket, and reaches machines through the agent's dial
-# socket, all its group's.
-ExecStart=/usr/local/bin/hangar-edge --listen $EDGE_LISTEN --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --cf-team-domain $(local_env HANGAR_CF_TEAM_DOMAIN) --cf-audience $(local_env HANGAR_EDGE_CF_AUDIENCE)$(edge_front_flags)
+# reads the API on the apiserver's edge socket, and asks it there who
+# calls a private endpoint, forwards the API from :443 to its public
+# socket, and reaches machines through the agent's dial socket, all its
+# group's. A browser not yet signed in to a private endpoint goes to the
+# console, HANGAR_PUBLIC_URL, to be.
+ExecStart=/usr/local/bin/hangar-edge --listen $EDGE_LISTEN --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --console-url $(local_env HANGAR_PUBLIC_URL)$(edge_front_flags)
 Restart=always
 RestartSec=2
 UMask=0077

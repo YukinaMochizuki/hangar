@@ -17,7 +17,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -32,48 +31,31 @@ type PublicEndpointsConfig struct {
 	// Domain holds every endpoint's hostname; empty is
 	// DefaultEndpointDomain.
 	Domain string
-	// Cloudflare makes and deletes the Access application that lets
-	// everyone through to a PUBLIC endpoint, in AccountID, with the
-	// reusable bypass policy BypassPolicyID that hangar-cloudflare made.
-	// Nil leaves PUBLIC endpoints not Ready (CloudflareNotConfigured).
-	Cloudflare     *cloudflare.Client
-	AccountID      string
-	BypassPolicyID string
 }
 
 // PublicEndpoint condition types and reasons, the public endpoint
 // controller's alone.
 const (
 	// PublicEndpointReady says whether the endpoint serves: its target's
-	// machine runs, and a PUBLIC endpoint's Access application is in place.
+	// machine runs.
 	PublicEndpointReady = "Ready"
-	// PublicEndpointAccessApplication says where a PUBLIC endpoint's Access
-	// application stands. Its reason Creating is written before the
-	// application is made, so an application made by a reconcile that
-	// stopped before recording it is still looked for and deleted.
-	PublicEndpointAccessApplication = "AccessApplication"
 
-	ReasonEndpointReady           = "Ready"
-	ReasonMachineNotReady         = "MachineNotReady"
-	ReasonCloudflareNotConfigured = "CloudflareNotConfigured"
-	ReasonAccessApplicationFailed = "AccessApplicationFailed"
-	ReasonAccessCreating          = "Creating"
-	ReasonAccessCreated           = "Created"
-	ReasonAccessNotNeeded         = "NotNeeded"
+	ReasonEndpointReady   = "Ready"
+	ReasonMachineNotReady = "MachineNotReady"
 )
 
-// AccessApplicationFinalizer keeps a deleted endpoint until no Access
-// application of it may be left in Cloudflare; the public endpoint
-// controller removes it then.
-const AccessApplicationFinalizer = registry.Domain + "/access-application"
+// oldAccessCondition and oldAccessFinalizer are what endpoints carried while
+// a PUBLIC one had a Cloudflare Access application: an endpoint made then
+// loses both at its next reconcile, so none waits on a finalizer no one
+// removes.
+const (
+	oldAccessCondition = "AccessApplication"
+	oldAccessFinalizer = registry.Domain + "/access-application"
+)
 
 // endpointHostnameClaim is the claim kind every endpoint's hostname label
 // is held under, forever, by its project and name.
 const endpointHostnameClaim = "PublicEndpointHostname"
-
-// accessAppPrefix names every Access application the apiserver makes, so
-// one can be found again by its hostname alone.
-const accessAppPrefix = cloudflare.EndpointAppPrefix
 
 // endpointLabel is an endpoint's hostname label, the first and only label
 // before the endpoint domain.
@@ -203,10 +185,7 @@ func endpointOwner(ctx context.Context, s *Server, obj proto.Message) (registry.
 	return ownedByProject(ctx, s, obj)
 }
 
-// reconcilePublicEndpoint reports where an endpoint's target runs, keeps a
-// PUBLIC endpoint's Access application in Cloudflare and a PRIVATE one
-// without, and lets a deleted endpoint go once no application of it can be
-// left.
+// reconcilePublicEndpoint reports where an endpoint's target runs.
 func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) error {
 	key := resource.Key{Project: k.Project, Name: k.Name}
 	obj, err := s.get(ctx, registry.PublicEndpoint, key)
@@ -214,13 +193,11 @@ func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) 
 		return err
 	}
 	ep := obj.(*networkv1alpha1.PublicEndpoint)
+	if slices.Contains(ep.GetMetadata().GetFinalizers(), oldAccessFinalizer) {
+		return s.RemoveFinalizer(ctx, registry.PublicEndpoint, key, oldAccessFinalizer)
+	}
 	if ep.GetMetadata().GetDeleteTime() != nil {
-		if mayHaveAccessApp(ep) {
-			if err := s.deleteAccessApps(ctx, ep); err != nil {
-				return err
-			}
-		}
-		return s.RemoveFinalizer(ctx, registry.PublicEndpoint, key, AccessApplicationFinalizer)
+		return nil
 	}
 	gen := ep.GetMetadata().GetGeneration()
 	status := &networkv1alpha1.PublicEndpointStatus{}
@@ -235,20 +212,11 @@ func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) 
 		return err
 	}
 	status.Machine, status.Node = machine, node
-
-	access, appErr := s.convergeAccessApp(ctx, ep, status)
-	var intent bool
-	if access != nil {
-		access.ObservedGeneration = gen
-		intent = access.GetReason() == ReasonAccessCreating && !creatingStored(ep)
-		status.Conditions = conditions.Set(status.GetConditions(), access, s.clock.Now())
-	}
+	status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == oldAccessCondition })
 	ready := &metav1.Condition{Type: PublicEndpointReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, ObservedGeneration: gen}
 	switch {
 	case running.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_TRUE:
 		ready.Reason, ready.Message = running.GetReason(), running.GetMessage()
-	case IsPublic(ep) && access.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_TRUE:
-		ready.Reason, ready.Message = access.GetReason(), access.GetMessage()
 	default:
 		ready.Status, ready.Reason = metav1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonEndpointReady
 		ready.Message = status.GetUrl() + " reaches port " + fmt.Sprint(ep.GetSpec().GetPort()) + " of " + machine
@@ -259,13 +227,8 @@ func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) 
 		if _, err := s.backend(registry.PublicEndpoint).UpdateStatus(s.system(ctx), key, status, &rv); err != nil {
 			return err
 		}
-		if intent {
-			// The application is made once the intent is stored; the
-			// status written queues the endpoint again.
-			return nil
-		}
 	}
-	return appErr
+	return nil
 }
 
 // endpointMachine finds the machine an endpoint reaches and says whether it
@@ -303,133 +266,6 @@ func (s *Server) endpointMachine(ctx context.Context, ep *networkv1alpha1.Public
 	}
 	return "", "", &metav1.Condition{Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: ReasonTargetNotFound,
 		Message: fmt.Sprintf("%s %s does not exist, or has no machine yet", kind, name)}, nil
-}
-
-// mayHaveAccessApp reports whether an Access application of ep may exist:
-// one is recorded, or one was about to be made.
-func mayHaveAccessApp(ep *networkv1alpha1.PublicEndpoint) bool {
-	return ep.GetStatus().GetAccessApplicationId() != "" || creatingStored(ep)
-}
-
-// creatingStored reports whether the stored endpoint records that its Access
-// application is being made.
-func creatingStored(ep *networkv1alpha1.PublicEndpoint) bool {
-	return conditions.Find(ep.GetStatus().GetConditions(), PublicEndpointAccessApplication).GetReason() == ReasonAccessCreating
-}
-
-// accessAppName is the name of the Access application of hostname: fixed,
-// so an application made but not recorded is found again.
-func accessAppName(hostname string) string { return accessAppPrefix + hostname }
-
-// convergeAccessApp makes a PUBLIC endpoint's Access application, adopting
-// one made before, or deletes a PRIVATE endpoint's, and records it in
-// status. It returns the AccessApplication condition, nil for an endpoint
-// that never had one, and an error to retry with.
-func (s *Server) convergeAccessApp(ctx context.Context, ep *networkv1alpha1.PublicEndpoint, status *networkv1alpha1.PublicEndpointStatus) (*metav1.Condition, error) {
-	cond := func(st metav1.ConditionStatus, reason, msg string) *metav1.Condition {
-		return &metav1.Condition{Type: PublicEndpointAccessApplication, Status: st, Reason: reason, Message: msg}
-	}
-	cf := s.cfg.PublicEndpoints
-	if !IsPublic(ep) {
-		if !mayHaveAccessApp(ep) {
-			if conditions.Find(status.GetConditions(), PublicEndpointAccessApplication) == nil {
-				return nil, nil
-			}
-			return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessNotNeeded, "a private endpoint needs no Access application"), nil
-		}
-		if err := s.deleteAccessApps(ctx, ep); err != nil {
-			return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessApplicationFailed, err.Error()), err
-		}
-		status.AccessApplicationId = ""
-		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessNotNeeded, "a private endpoint needs no Access application"), nil
-	}
-	if cf.Cloudflare == nil {
-		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonCloudflareNotConfigured,
-			"the apiserver has no Cloudflare API token, so it cannot open a public endpoint"), nil
-	}
-	host := s.endpointHostname(ep)
-	if id := status.GetAccessApplicationId(); id != "" {
-		app, err := cf.Cloudflare.GetAccessApp(ctx, cf.AccountID, id)
-		switch {
-		case err == nil && strings.EqualFold(app.Domain, host):
-			return cond(metav1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAccessCreated, "Access application "+id+" lets everyone through"), nil
-		case err == nil || cloudflare.IsNotFound(err):
-			// Gone, or no longer this hostname's (changed in the dashboard,
-			// which nobody should do): made again below.
-			status.AccessApplicationId = ""
-		default:
-			return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessApplicationFailed, err.Error()), err
-		}
-	}
-	if !creatingStored(ep) {
-		// Recorded before anything is made: a reconcile that stops between
-		// making the application and recording it leaves it findable.
-		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessCreating, "the Access application is being made"), nil
-	}
-	apps, err := cf.Cloudflare.FindAccessApps(ctx, cf.AccountID, accessAppName(host))
-	if err != nil {
-		return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessCreating, err.Error()), err
-	}
-	var app cloudflare.AccessApp
-	if i := slices.IndexFunc(apps, func(a cloudflare.AccessApp) bool { return strings.EqualFold(a.Domain, host) }); i >= 0 {
-		app = apps[i]
-		s.log.Info("adopted an Access application made before", "hostname", host, "id", app.ID)
-	} else {
-		if app, err = cf.Cloudflare.CreateAccessApp(ctx, cf.AccountID, s.bypassApp(host)); err != nil {
-			return cond(metav1.ConditionStatus_CONDITION_STATUS_FALSE, ReasonAccessCreating, err.Error()), err
-		}
-		s.log.Info("made an Access application for a public endpoint", "hostname", host, "id", app.ID)
-	}
-	status.AccessApplicationId = app.ID
-	return cond(metav1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonAccessCreated, "Access application "+app.ID+" lets everyone through"), nil
-}
-
-// bypassApp is the Access application that lets everyone through to
-// hostname: more specific than the wildcard application every other
-// endpoint is behind, so Access applies it instead.
-func (s *Server) bypassApp(hostname string) cloudflare.AccessAppInput {
-	return cloudflare.AccessAppInput{
-		Name:                    accessAppName(hostname),
-		Domain:                  hostname,
-		Type:                    "self_hosted",
-		SessionDuration:         "24h",
-		AllowedIdPs:             []string{},
-		Destinations:            []cloudflare.AppDestination{{Type: "public", URI: hostname}},
-		Policies:                []cloudflare.PolicyLink{{ID: s.cfg.PublicEndpoints.BypassPolicyID, Precedence: 1}},
-		HTTPOnlyCookieAttribute: true,
-		SameSiteCookieAttribute: "lax",
-	}
-}
-
-// deleteAccessApps deletes every Access application of ep's hostname: the
-// one recorded and any made but not recorded.
-func (s *Server) deleteAccessApps(ctx context.Context, ep *networkv1alpha1.PublicEndpoint) error {
-	cf := s.cfg.PublicEndpoints
-	if cf.Cloudflare == nil {
-		return fmt.Errorf("%w: public endpoint %s/%s may have an Access application, and the apiserver has no Cloudflare API token to delete it with",
-			controller.ErrWaiting, ep.GetMetadata().GetProject(), ep.GetMetadata().GetName())
-	}
-	host := s.endpointHostname(ep)
-	ids := map[string]bool{}
-	if id := ep.GetStatus().GetAccessApplicationId(); id != "" {
-		ids[id] = true
-	}
-	apps, err := cf.Cloudflare.FindAccessApps(ctx, cf.AccountID, accessAppName(host))
-	if err != nil {
-		return err
-	}
-	for _, a := range apps {
-		if strings.EqualFold(a.Domain, host) {
-			ids[a.ID] = true
-		}
-	}
-	for id := range ids {
-		if err := cf.Cloudflare.DeleteAccessApp(ctx, cf.AccountID, id); err != nil && !cloudflare.IsNotFound(err) {
-			return err
-		}
-		s.log.Info("deleted a public endpoint's Access application", "hostname", host, "id", id)
-	}
-	return nil
 }
 
 // endpointsOfMachine maps a machine to the endpoints that reach its owner,

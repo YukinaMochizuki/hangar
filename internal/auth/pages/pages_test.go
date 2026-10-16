@@ -25,3 +25,16 @@ func TestReferrerPolicyKeepsTheOrigin(t *testing.T) {
 		}
 	}
 }
+
+// TestNoReferrerSendsNone: a page asked for no referrer says so in its
+// header and its own meta, which would otherwise override the header.
+func TestNoReferrerSendsNone(t *testing.T) {
+	rec := httptest.NewRecorder()
+	pages.Render(rec, 400, pages.EndpointFailed, pages.Data{NoReferrer: true})
+	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {
+		t.Errorf("Referrer-Policy %q", got)
+	}
+	if body := rec.Body.String(); !strings.Contains(body, `<meta name="referrer" content="no-referrer">`) || strings.Contains(body, "same-origin") {
+		t.Errorf("the page's own referrer policy is not no-referrer")
+	}
+}

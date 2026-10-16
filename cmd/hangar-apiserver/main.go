@@ -28,7 +28,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sdsocket"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
@@ -54,10 +53,6 @@ type flags struct {
 	publicSocket   string
 	edgeUID        uint
 	endpointDomain string
-	cfTokenFile    string
-	cfAccountID    string
-	cfBypassPolicy string
-	cfAPIURL       string
 	secretsKEK     string
 	previousKEKs   []string
 	// maxOwnedTenants is the default cap on the tenants one person or
@@ -84,10 +79,6 @@ func main() {
 	flag.StringVar(&f.publicSocket, "public-socket", "", "unix socket hangar-edge forwards the public API to, from :443, with each client's address; empty disables it")
 	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge and public sockets; required with either")
 	flag.StringVar(&f.endpointDomain, "endpoint-domain", apiserver.DefaultEndpointDomain, "the domain public endpoints' hostnames are in")
-	flag.StringVar(&f.cfTokenFile, "cloudflare-api-token-file", "", "a file only its owner reads holding the Cloudflare API token the apiserver calls Cloudflare with; missing, PUBLIC endpoints do not open")
-	flag.StringVar(&f.cfAccountID, "cloudflare-account-id", "", "the Cloudflare account the API token acts in; required with the token")
-	flag.StringVar(&f.cfBypassPolicy, "cloudflare-bypass-policy-id", "", "the reusable Access policy, made by hangar-cloudflare, that lets everyone through to a PUBLIC endpoint; required with the token")
-	flag.StringVar(&f.cfAPIURL, "cloudflare-api-url", "", "override for the Cloudflare API root, for tests")
 	flag.StringVar(&f.secretsKEK, "secrets-kek", "", "the key-encryption key Secrets are sealed under, a file only its owner reads; missing, Secrets cannot be written, and the apiserver will not start while any are stored")
 	flag.Func("secrets-kek-previous", "a previous key-encryption key, only to open what it sealed, which is sealed again under --secrets-kek at start; repeatable", func(s string) error {
 		f.previousKEKs = append(f.previousKEKs, s)
@@ -198,17 +189,13 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	if err != nil {
 		return err
 	}
-	endpoints, err := endpointsConfig(f, log)
-	if err != nil {
-		return err
-	}
 	keys, err := loadKeyring(f.secretsKEK, f.previousKEKs, log)
 	if err != nil {
 		return err
 	}
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
-		PublicEndpoints: endpoints, DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
+		PublicEndpoints: apiserver.PublicEndpointsConfig{Domain: f.endpointDomain}, DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
 	})
 	public, err := publicChain(f, srv, st)
 	if err != nil {
@@ -246,7 +233,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 		chain := auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(f.edgeUID)}, Host: host}}
 		g.Go(func() error {
 			log.Info("serving the edge socket", "path", f.edgeSocket)
-			return serve(ctx, &http.Server{Handler: srv.Handler(chain), Protocols: protocols(), ConnContext: auth.EdgeConnContext}, edge)
+			return serve(ctx, &http.Server{Handler: srv.EdgeHandler(chain), Protocols: protocols(), ConnContext: auth.EdgeConnContext}, edge)
 		})
 	}
 	if admin != nil {
@@ -324,7 +311,7 @@ func publicChain(f flags, srv *apiserver.Server, st *sqlite.Store) (auth.Chain, 
 		return nil, fmt.Errorf("--oidc-client-secret-file: %w", err)
 	}
 	return srv.EnableOIDC(apiserver.OIDCConfig{
-		Issuer: f.oidcIssuer, ClientID: f.oidcClientID, ClientSecret: token.Secret(secret), PublicURL: f.publicURL,
+		Issuer: f.oidcIssuer, ClientID: f.oidcClientID, ClientSecret: secret, PublicURL: f.publicURL,
 	}, st)
 }
 
@@ -433,42 +420,9 @@ func loadSSHCA(path string, log *slog.Logger) (*sshca.CA, error) {
 	return ca, nil
 }
 
-// endpointsConfig is the public endpoints' config from the flags: with the
-// Cloudflare API token, a client to open PUBLIC endpoints with. With no
-// token file the apiserver runs without one, and says so.
-func endpointsConfig(f flags, log *slog.Logger) (apiserver.PublicEndpointsConfig, error) {
-	cfg := apiserver.PublicEndpointsConfig{Domain: f.endpointDomain}
-	if f.cfTokenFile == "" {
-		log.Warn("no --cloudflare-api-token-file: PUBLIC endpoints do not open")
-		return cfg, nil
-	}
-	token, err := readSecretFile(f.cfTokenFile)
-	if errors.Is(err, fs.ErrNotExist) {
-		log.Warn("the Cloudflare API token file is missing: PUBLIC endpoints do not open", "cloudflare_api_token_file", f.cfTokenFile)
-		return cfg, nil
-	}
-	if err != nil {
-		return cfg, fmt.Errorf("--cloudflare-api-token-file: %w", err)
-	}
-	if f.cfAccountID == "" || f.cfBypassPolicy == "" {
-		return cfg, errors.New("the Cloudflare API token needs --cloudflare-account-id and --cloudflare-bypass-policy-id")
-	}
-	var opts []cloudflare.Option
-	if f.cfAPIURL != "" {
-		opts = append(opts, cloudflare.WithBaseURL(f.cfAPIURL))
-	}
-	c, err := cloudflare.New(token, opts...)
-	if err != nil {
-		return cfg, err
-	}
-	cfg.Cloudflare, cfg.AccountID, cfg.BypassPolicyID = c, f.cfAccountID, f.cfBypassPolicy
-	log.Info("loaded the Cloudflare API token", "cloudflare_api_token_file", f.cfTokenFile, "account", f.cfAccountID)
-	return cfg, nil
-}
-
 // readSecretFile reads a credential from a file only its owner may read,
 // trimmed of surrounding space.
-func readSecretFile(path string) (cloudflare.Secret, error) {
+func readSecretFile(path string) (token.Secret, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return "", err
@@ -480,9 +434,9 @@ func readSecretFile(path string) (cloudflare.Secret, error) {
 	if err != nil {
 		return "", err
 	}
-	token := strings.TrimSpace(string(b))
-	if token == "" {
+	secret := strings.TrimSpace(string(b))
+	if secret == "" {
 		return "", fmt.Errorf("%s is empty", path)
 	}
-	return cloudflare.Secret(token), nil
+	return token.Secret(secret), nil
 }

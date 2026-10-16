@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="referrer" content="same-origin">
+<meta name="referrer" content="{{if .NoReferrer}}no-referrer{{else}}same-origin{{end}}">
 <title>{{template "title" .}} - Hangar</title>
 </head>
 <body>
