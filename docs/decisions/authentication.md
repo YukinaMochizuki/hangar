@@ -106,9 +106,10 @@ credentials. The node is a separate root process on the same host.
   out its tokens, and every refresh, so a person uninvited meanwhile gets
   nothing more.
 - **Where sign-in is served**: the `/auth/` pages and `SessionService` are
-  on the public listener only. The admin socket serves `RevokeSessions`
-  alone, so root on the host can end anyone's logins; the node and edge
-  sockets serve none of it.
+  on the public listener and on the public socket, which is that listener
+  for the front door, and nowhere else. The admin socket serves
+  `RevokeSessions` alone, so root on the host can end anyone's logins; the
+  node and edge sockets serve none of it.
 - **Limits on what anyone can make it keep**: a browser's or a CLI's
   sign-in keeps nothing until the provider has verified someone invited.
   The rows that are kept, device logins started and loopback codes not
@@ -157,9 +158,21 @@ credentials. The node is a separate root process on the same host.
   application, with a verifier that lives in `internal/edge`, since nothing
   else trusts Access. An mTLS authenticator joins its chain with more
   hosts, as the node's.
+- **The public API from the front door** (`front-door.md`) comes in on a
+  fifth unix socket, the public socket (`/run/hangar/public.sock`, root's
+  and the edge group's, 0660). It is the public listener over again, the
+  same handler and chain, sign-in and `SessionService` included, served to
+  the edge's uid alone (`SO_PEERCRED`); anyone else is refused before the
+  request is read. The edge passes `Host`, `Origin` and the cookies on
+  unchanged and ends TLS itself, so the exact-origin check and the
+  `__Host-` cookies hold as on the public origin. It vouches for nothing
+  but the client's address, which it sends in `Hangar-Client-Ip` and which
+  is believed nowhere else; sign-in's audit lines carry it. The apiserver
+  refuses the socket in dev auth.
 - **Dev mode** takes the user from a header. It must be enabled explicitly
-  (`--auth-mode dev`) and refuses to start on a non-loopback address. It
-  has no sign-in pages and issues nothing. It also refuses any request
+  (`--auth-mode dev`) and refuses to start on a non-loopback address, or
+  with a public socket. It has no sign-in pages and issues nothing. It also
+  refuses any request
   carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`, which cloudflared
   sets on every request it proxies, and `Cf-Connecting-Ip`, `Cdn-Loop` and
   `Cf-Ray` from its edge), and the host runs cloudflared only while the

@@ -76,8 +76,8 @@ It refuses when nothing is, and when the installed files do not match the
 checksums recorded for them (a run that died half-way, or a file replaced
 by hand), so that no service restarts onto files of two releases; rerun
 with `--release DIR`. `--only <step>` runs a single step
-(`packages`, `swap-raid`, `zfs`, `network`, `sysctl`, `upgrades`, `release`,
-`services`, `cloudflared`).
+(`packages`, `swap-raid`, `zfs`, `network`, `firewall`, `sysctl`, `upgrades`,
+`release`, `services`, `cloudflared`, `edge`).
 
 ## Datasets, upgrades, the release and the services
 
@@ -90,6 +90,20 @@ with `--release DIR`. `--only <step>` runs a single step
   `hangar/state` at `/var/lib/hangar/state` (the `services` step owns its
   mount point) and `hangar/poc`, for throwaway experiments, never mounted:
   volumes under it are reached as `/dev/zvol` paths.
+- `firewall` writes `/etc/hangar/firewall.nft` (root's, 0600) and
+  `hangar-firewall.service`, which loads it before the network comes up,
+  and loads it itself whenever the file changed or the table is not what it
+  loaded last (`/var/lib/hangar-bootstrap/firewall.live`). It is one nft
+  table, `inet hangar-host`, whose input chain drops everything, IPv4 and
+  IPv6, on every interface but loopback, except replies, ICMP and ICMPv6,
+  the uplink's DHCPv4 replies, and TCP 22 (SSH), 80 and 443 (the front
+  door; `docs/decisions/front-door.md`). It has no forward chain, so the
+  guests' traffic is the node agent's tables' alone. Before it loads the
+  table it warns of every listener it closes: anything listening on an
+  address other than loopback, on a port other than those. It never uses
+  `nftables.service`, whose stock `/etc/nftables.conf` flushes every
+  table, the node agent's too: do not enable it. To open a port, change
+  `FIREWALL_TCP_PORTS` in the step and re-run it.
 - `upgrades` keeps Ubuntu's unattended upgrades to their default origins
   (security only), never reboots, and moves `apt-daily.timer` to 03:30 and
   `apt-daily-upgrade.timer` to 04:00 Asia/Singapore, with no random delay
@@ -104,8 +118,7 @@ with `--release DIR`. `--only <step>` runs a single step
   `/usr/local/lib/hangar/`. `verify.sh` checks them with `sha256sum -c`.
 - `services` makes the system users `hangar` and `hangar-edge`, gives
   `hangar` `/var/lib/hangar/state` (mode 700), and writes, enables and
-  starts `hangar-apiserver.service`, `hangar-node.service` and, when
-  `local.env` names the public endpoints' domain, `hangar-edge.service`:
+  starts `hangar-apiserver.service` and `hangar-node.service`:
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
     the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
@@ -121,7 +134,12 @@ with `--release DIR`. `--only <step>` runs a single step
     (root's, 0600), where root on the host is `platform.root` whatever the
     bindings say, and the edge socket `/run/hangar/edge.sock` (root's and
     group `hangar-edge`'s, 0660), accepting `hangar-edge`'s uid as the Edge
-    principal (`docs/decisions/authentication.md`). `/run/hangar` is
+    principal (`docs/decisions/authentication.md`). With the front door on
+    ("The front door" below), a fourth, `hangar-apiserver-public.socket`:
+    `/run/hangar/public.sock` (root's and group `hangar-edge`'s, 0660),
+    where the apiserver serves the public API to `hangar-edge`'s uid alone,
+    and believes the client address it sends (`--public-socket`); turning
+    the front door off stops and removes it. `/run/hangar` is
     root's, 0755, from `/etc/tmpfiles.d/hangar.conf`, so the apiserver can
     remove or replace no socket. It reads the Cloudflare API token it opens
     PUBLIC endpoints with from `/var/lib/hangar/state/cloudflare-api-token`
@@ -142,15 +160,7 @@ with `--release DIR`. `--only <step>` runs a single step
     `hangar-edge`'s dials alone), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the
     agent runs itself: each VM is a transient unit of its own and outlives
-    a stop or restart of it;
-  - the edge as `hangar-edge`, sandboxed as the apiserver is, only when
-    `local.env` has `HANGAR_EDGE_DOMAIN`, which needs oidc auth and
-    `HANGAR_CF_TEAM_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE`, `HANGAR_CF_ACCOUNT_ID` and
-    `HANGAR_CF_BYPASS_POLICY_ID` beside it, or the step refuses: on
-    `127.0.0.1:8090`, where cloudflared sends `*.<domain>`, with the
-    apiserver's edge socket and the agent's dial socket
-    (`docs/decisions/public-endpoints.md`). Without `HANGAR_EDGE_DOMAIN` the
-    step stops and disables it, and `verify.sh` checks it is off.
+    a stop or restart of it.
 
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
@@ -207,6 +217,82 @@ with `--release DIR`. `--only <step>` runs a single step
   changed unit, a replaced binary or a new token restarts the tunnel. The
   tunnel's routes, DNS and Access application are set on Cloudflare's
   side (`docs/runbook/cloudflare.md`), not here.
+- `edge` runs `hangar-edge.service` as `hangar-edge`, sandboxed as the
+  apiserver is, only when `local.env` has `HANGAR_EDGE_DOMAIN`, which needs
+  oidc auth and `HANGAR_CF_TEAM_DOMAIN`, `HANGAR_EDGE_CF_AUDIENCE`,
+  `HANGAR_CF_ACCOUNT_ID` and `HANGAR_CF_BYPASS_POLICY_ID` beside it, or the
+  step refuses: on
+  `127.0.0.1:8090`, where cloudflared sends `*.<domain>`, with the
+  apiserver's edge socket and the agent's dial socket
+  (`docs/decisions/public-endpoints.md`). With `HANGAR_CP_DOMAIN` too it
+  is also the front door on :443 and :80 ("The front door" below). Without
+  `HANGAR_EDGE_DOMAIN` the step stops and disables it and its sockets, and
+  `verify.sh` checks it is off. A changed unit or socket unit, or a
+  replaced binary, restarts it, and the restart restarts its sockets
+  (`PartOf=`): :443 and :80 are closed for that moment, and new
+  connections are refused. So is `systemctl restart hangar-edge` by hand.
+  A restart systemd does on its own after a crash (`Restart=always`) keeps
+  the sockets, and new connections wait for the edge. `verify.sh` checks
+  it runs as `hangar-edge` with no capability at all, and listens on
+  loopback alone, or with the front door on, on loopback and on `*:443`
+  and `*:80`.
+
+## The front door
+
+With the front door on, `hangar-edge` takes :443 and :80 on every address,
+IPv4 and IPv6, ends TLS with certificates it gets over ACME DNS-01, and
+routes `api.<cp-domain>`, `console.<cp-domain>` and `*.<user-domain>`
+(`docs/decisions/front-door.md`). It runs beside the tunnel until the
+cutover from Cloudflare, which is a DNS change.
+
+1. Install the DNS token as `/etc/hangar/cloudflare-dns-token`, root's,
+   0600 (`docs/runbook/cloudflare.md` says how to make it). The `edge` step
+   refuses the front door without it.
+2. Add to `/etc/hangar/local.env`, beside the edge's settings:
+
+   ```sh
+   HANGAR_CP_DOMAIN=hangarlab.cloud      # api. and console. are under it
+   HANGAR_ACME_EMAIL=<ops address>       # optional: told of certificate problems
+   ```
+
+   In oidc auth, `HANGAR_PUBLIC_URL` must then be
+   `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its
+   `/auth/callback`, which the front door hands the apiserver with the rest
+   of sign-in (`docs/decisions/authentication.md`); the `edge` step
+   refuses another.
+
+   `HANGAR_ACME_CA` names another ACME directory, such as Let's Encrypt's
+   staging (`https://acme-staging-v02.api.letsencrypt.org/directory`), and
+   `HANGAR_ACME_CA_ROOT` a PEM file of the only roots its TLS is checked
+   against. Both are for tests. So is `HANGAR_ACME_DNS`, which only an
+   edge built with the `testbed` tag takes (`docs/runbook/testbed.md`).
+3. Re-run `deploy/host`. The `services` step restarts the apiserver with
+   its public socket, and the `edge` step writes
+   `hangar-edge-https.socket` (`ListenStream=443`) and
+   `hangar-edge-http.socket` (`ListenStream=80`), both
+   `BindIPv6Only=both`, and restarts the edge with them,
+   `StateDirectory=hangar-edge` and the token as a credential
+   (`LoadCredential=cloudflare-dns-token:/etc/hangar/cloudflare-dns-token`).
+4. Watch it get its certificates: `journalctl -u hangar-edge | grep
+   'certificate obtained'`, one for each of the three names, within a
+   minute or two. Until then a handshake for a name without one fails. They
+   are kept in `/var/lib/hangar-edge` (the edge's, 0700) and renewed on
+   their own; a restart serves them from there. `verify.sh` fails each name
+   that has no certificate there with more than 14 days left, so it fails
+   until they are in; later it means a renewal has been failing for two
+   weeks, as certmagic renews with about 30 left (`journalctl -u
+   hangar-edge` says why). Check one before DNS points at the host: `curl
+   --resolve api.<cp-domain>:443:<host IPv4> https://api.<cp-domain>/healthz`
+   prints `ok`.
+
+The console's files are served from `/usr/local/share/hangar/console`; until
+a release puts them there, the console's pages answer 503 "the console is
+not installed", and its API paths work. The limits (connections and
+requests per client, sizes, timeouts, HTTP/2) are `hangar-edge`'s flags,
+with the defaults in `docs/decisions/front-door.md`; change them in the
+`edge` step. To turn the front door off, remove `HANGAR_CP_DOMAIN` and
+re-run: the sockets and the apiserver's public socket go, and :443 and :80
+with them.
 
 ## Deploying a new hangar version
 
@@ -683,6 +769,17 @@ apiserver unit in dev auth is refused too. A tunnel started by hand
 without its env file retries, fails `verify.sh`, is not let through by the
 env file appearing while the apiserver is in dev auth, and is stopped by
 the step, with the env file or without.
+The front door (`HANGAR_TESTBED_FRONT_DOOR=DIR`, from
+`test/testbed/front-door-kit.sh DIR`: a `hangar-edge` built with the
+`testbed` tag, and pebble): with pebble as the CA and the edge answering
+DNS-01 itself, the edge runs as `hangar-edge` with no capability on the
+:443 and :80 systemd binds, and a second run changes nothing; the API, the
+console and the endpoints answer with pebble's certificates on IPv4 and
+IPv6, from the host and through the uplink, and :80 redirects; from
+outside, 22 is open and a listener on another port is not, on either
+address; a restarted edge serves its certificates from its storage without
+asking the CA; and turning the front door, then the edge, off frees :443
+and removes the public socket.
 It does not reboot. Run it as root on a disposable VM only. `make lint-sh` runs
 shellcheck over every script.
 

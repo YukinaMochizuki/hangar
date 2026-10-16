@@ -3,8 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/oidctest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 )
 
@@ -45,13 +46,14 @@ func (s *syncBuffer) String() string {
 }
 
 type listeners struct {
-	public, node, admin string
-	log                 *syncBuffer
+	public, node, admin, publicSocket string
+	log                               *syncBuffer
 }
 
 // start runs the apiserver as main does, with dev auth on the public
-// listener, the node socket and the admin socket, where uid is root.
-func start(t *testing.T, uid uint32) listeners {
+// listener, the node socket and the admin socket, where uid is root. opts
+// change the flags before it starts.
+func start(t *testing.T, uid uint32, opts ...func(*flags)) listeners {
 	t.Helper()
 	old := adminUID
 	adminUID = uid
@@ -63,11 +65,17 @@ func start(t *testing.T, uid uint32) listeners {
 	}
 	addr := port.Addr().String()
 	_ = port.Close()
-	l := listeners{public: "http://" + addr, node: filepath.Join(dir, "node.sock"), admin: filepath.Join(dir, "admin.sock"), log: &syncBuffer{}}
+	l := listeners{
+		public: "http://" + addr, node: filepath.Join(dir, "node.sock"), admin: filepath.Join(dir, "admin.sock"),
+		publicSocket: filepath.Join(dir, "public.sock"), log: &syncBuffer{},
+	}
 	f := flags{
 		db: filepath.Join(dir, "hangar.db"), listen: addr, socket: l.node, adminSocket: l.admin,
 		nodeUID: uint(os.Getuid()), nodeName: "n1", authMode: "dev", bootstrapAdmin: "root@example.com",
 		maxOwnedTenants: 3,
+	}
+	for _, o := range opts {
+		o(&f)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
@@ -188,6 +196,100 @@ func TestNoOtherListenerIsRoot(t *testing.T) {
 	}
 }
 
+// TestPublicSocketIsTheEdgesOnly: the socket hangar-edge forwards the
+// public API to is the public listener for the edge's uid alone, sign-in
+// included, which must say each client's address; it never runs in dev
+// auth.
+func TestPublicSocketIsTheEdgesOnly(t *testing.T) {
+	p := oidctest.New(t)
+	secret := filepath.Join(t.TempDir(), "oidc-client-secret")
+	if err := os.WriteFile(secret, []byte(p.ClientSecret), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const console = "console.cp.test"
+	oidc := func(edgeUID uint) func(*flags) {
+		return func(f *flags) {
+			f.authMode, f.oidcIssuer, f.oidcClientID, f.oidcSecretFile = "oidc", p.URL, p.ClientID, secret
+			f.publicURL = "https://" + console
+			f.publicSocket, f.edgeUID = filepath.Join(filepath.Dir(f.db), "public.sock"), edgeUID
+		}
+	}
+	// call sends a request to the public socket, as the edge does, for
+	// the console's host, and returns its status and Location.
+	call := func(path, method, target string, h http.Header) (int, string) {
+		var body io.Reader
+		if method == http.MethodPost {
+			body = strings.NewReader("{}")
+		}
+		req, err := http.NewRequest(method, client.UnixSocketURL+target, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = console
+		if h != nil {
+			req.Header = h.Clone()
+		}
+		if method == http.MethodPost {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		c := client.UnixSocket(path)
+		c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = io.Copy(io.Discard, resp.Body)
+		return resp.StatusCode, resp.Header.Get("Location")
+	}
+	const whoami = "/hangar.iam.v1alpha1.AccountService/WhoAmI"
+	t.Run("the edge, with an address", func(t *testing.T) {
+		if os.Getuid() == 0 {
+			t.Skip("the edge's uid is never root, and this test's peer is; internal/auth's tests cover the check")
+		}
+		l := start(t, uint32(os.Getuid()), oidc(uint(os.Getuid())))
+		if info, err := os.Stat(l.publicSocket); err != nil || info.Mode().Perm() != 0o660 {
+			t.Errorf("public socket %v, %v; want mode 0660", info.Mode(), err)
+		}
+		h := http.Header{auth.ClientIPHeader: {"2001:db8::7"}}
+		// Sign-in is served here, as on the public listener: it sends the
+		// browser on to the provider.
+		if code, location := call(l.publicSocket, http.MethodGet, "/auth/login", h); code != http.StatusFound || !strings.HasPrefix(location, p.URL) {
+			t.Errorf("sign-in through the edge: %d to %q; want 302 to the provider", code, location)
+		}
+		// The edge vouches for the address, never for the caller.
+		if code, _ := call(l.publicSocket, http.MethodPost, whoami, h); code != http.StatusUnauthorized {
+			t.Errorf("no credential through the edge: %d; want 401", code)
+		}
+		if code, _ := call(l.publicSocket, http.MethodPost, whoami, nil); code != http.StatusBadRequest {
+			t.Errorf("no client address: %d; want 400", code)
+		}
+	})
+	t.Run("another uid", func(t *testing.T) {
+		l := start(t, uint32(os.Getuid()), oidc(uint(os.Getuid())+1))
+		for _, target := range []string{whoami, "/auth/login"} {
+			method := http.MethodPost
+			if target == "/auth/login" {
+				method = http.MethodGet
+			}
+			if code, _ := call(l.publicSocket, method, target, http.Header{auth.ClientIPHeader: {"192.0.2.1"}}); code != http.StatusForbidden {
+				t.Errorf("%s from a uid that is not the edge's: %d; want 403", target, code)
+			}
+		}
+	})
+	t.Run("never in dev auth", func(t *testing.T) {
+		dir := t.TempDir()
+		f := flags{
+			db: filepath.Join(dir, "hangar.db"), listen: "127.0.0.1:0", authMode: "dev",
+			publicSocket: filepath.Join(dir, "public.sock"), edgeUID: 1000, maxOwnedTenants: 3,
+		}
+		err := run(context.Background(), f, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		if err == nil || !strings.Contains(err.Error(), "never serves --public-socket") {
+			t.Errorf("dev auth with a public socket: %v; want refused", err)
+		}
+	})
+}
+
 func TestDevRefusesTunnelledRequests(t *testing.T) {
 	l := start(t, uint32(os.Getuid()))
 	// WhoAmI answers whoever authenticates, member or not.
@@ -214,58 +316,4 @@ func TestDevRefusesTunnelledRequests(t *testing.T) {
 			t.Errorf("the bootstrap admin with %s: %v; want unauthenticated", k, err)
 		}
 	}
-}
-
-func TestSockets(t *testing.T) {
-	dir := t.TempDir()
-	inherit := func(t *testing.T, name, path string) *sockets {
-		ln, err := net.Listen("unix", path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = ln.Close() })
-		return &sockets{inherited: map[string]net.Listener{name: ln}, activated: true}
-	}
-	t.Run("the one systemd passed", func(t *testing.T) {
-		p := filepath.Join(dir, "a.sock")
-		s := inherit(t, adminSocketName, p)
-		ln, err := s.listen(adminSocketName, p, 0o600)
-		if err != nil || ln.Addr().String() != p {
-			t.Fatalf("got %v, %v", ln, err)
-		}
-		if err := s.unused(); err != nil {
-			t.Error(err)
-		}
-	})
-	t.Run("one at another path", func(t *testing.T) {
-		s := inherit(t, adminSocketName, filepath.Join(dir, "b.sock"))
-		if _, err := s.listen(adminSocketName, filepath.Join(dir, "other.sock"), 0o600); err == nil {
-			t.Fatal("took a socket at another path")
-		}
-	})
-	t.Run("none of that name under systemd", func(t *testing.T) {
-		s := inherit(t, nodeSocketName, filepath.Join(dir, "c.sock"))
-		p := filepath.Join(dir, "d.sock")
-		if _, err := s.listen(adminSocketName, p, 0o600); err == nil {
-			t.Fatal("made its own socket under systemd")
-		}
-		if _, err := os.Stat(p); !errors.Is(err, os.ErrNotExist) {
-			t.Errorf("left a socket at %s: %v", p, err)
-		}
-		if err := s.unused(); err == nil || !strings.Contains(err.Error(), nodeSocketName) {
-			t.Errorf("unused: %v", err)
-		}
-	})
-	t.Run("its own without systemd", func(t *testing.T) {
-		s := &sockets{inherited: map[string]net.Listener{}}
-		p := filepath.Join(dir, "e.sock")
-		ln, err := s.listen(adminSocketName, p, 0o600)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = ln.Close() }()
-		if info, err := os.Stat(p); err != nil || info.Mode().Perm() != 0o600 {
-			t.Errorf("made %v, %v", info.Mode(), err)
-		}
-	})
 }

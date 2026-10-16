@@ -168,10 +168,13 @@ func (s *Server) callMachine(ctx context.Context, r *reached, machine *computev1
 // node.
 type machineTarget struct {
 	principal auth.Principal
-	kind      registry.Resource
-	key       resource.Key
-	machine   string // uid
-	call      *nodeCall
+	// client is the caller's address, as the listener established it
+	// (auth.ClientIP); empty on a unix socket.
+	client  string
+	kind    registry.Resource
+	key     resource.Key
+	machine string // uid
+	call    *nodeCall
 }
 
 // machineTarget reaches the running machine of the object of kind at key
@@ -199,12 +202,22 @@ func (s *Server) machineTarget(ctx context.Context, kind registry.Resource, key 
 	if err != nil {
 		return nil, err
 	}
-	return &machineTarget{principal: r.principal, kind: kind, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
+	return &machineTarget{principal: r.principal, client: clientIP(ctx), kind: kind, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
 }
 
 // auditAttrs are what every audit line of a capability on x says of it.
 func (x *machineTarget) auditAttrs() []any {
-	return []any{"principal", x.principal.String(), "project", x.key.Project, "kind", x.kind.Kind, "name", x.key.Name, "machine", x.machine}
+	return []any{"principal", x.principal.String(), "client_ip", x.client, "project", x.key.Project, "kind", x.kind.Kind, "name", x.key.Name, "machine", x.machine}
+}
+
+// clientIP is the address the request came from, as its listener
+// established it (auth.ClientIP), for the audit lines; empty when the
+// listener has none, a unix socket's.
+func clientIP(ctx context.Context) string {
+	if ip, ok := auth.ClientIP(ctx); ok {
+		return ip.String()
+	}
+	return ""
 }
 
 // machineSocket serves the WebSockets of the machines' capabilities, an

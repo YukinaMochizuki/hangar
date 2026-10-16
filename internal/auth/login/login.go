@@ -320,7 +320,7 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		f.cfg.Log.Info("refused a sign-in: not invited", "email", email)
+		f.cfg.Log.Info("refused a sign-in: not invited", "email", email, "client_ip", clientIP(ctx))
 		f.refuse(w, r, p, http.StatusForbidden, email+" has not been invited to Hangar; ask an administrator to invite this address", email)
 		return
 	}
@@ -330,7 +330,7 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 			f.internal(w, err)
 			return
 		}
-		f.cfg.Log.Info("signed in on a browser", "principal", pr.String())
+		f.cfg.Log.Info("signed in on a browser", "principal", pr.String(), "client_ip", clientIP(ctx))
 		http.SetCookie(w, &http.Cookie{
 			Name: session.CookieName, Value: s.Secret.Reveal(), Path: "/", Expires: s.ExpiresAt,
 			Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode,
@@ -356,7 +356,7 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 		f.internal(w, err)
 		return
 	}
-	f.cfg.Log.Info("signed in for a CLI", "principal", pr.String())
+	f.cfg.Log.Info("signed in for a CLI", "principal", pr.String(), "client_ip", clientIP(ctx))
 	http.Redirect(w, r, withQuery(p.Redirect, url.Values{"code": {code}, "state": {p.State}}), http.StatusSeeOther)
 }
 
@@ -658,4 +658,14 @@ func (b *flexibleBool) UnmarshalJSON(data []byte) error {
 		*b = flexibleBool(v == "true")
 	}
 	return nil
+}
+
+// clientIP is the address the request came from, as its listener
+// established it (auth.ClientIP), for the audit lines; empty when the
+// listener has none.
+func clientIP(ctx context.Context) string {
+	if ip, ok := auth.ClientIP(ctx); ok {
+		return ip.String()
+	}
+	return ""
 }

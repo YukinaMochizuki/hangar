@@ -30,4 +30,5 @@ the change.
 | `vm-boot.md` | Virtual machines boot their image's own kernel through EDK2 firmware; serial console as log, power button to stop, no restart policy |
 | `secrets.md` | Secrets are write-only and sealed at rest under a KEK file; nodes get a login per pull; a private image is shared only after the machine's own resolve |
 | `vm-ssh.md` | `hangar ssh`: minutes-long certificates of one platform CA for the VM's uid, over a WebSocket to port 22 from the network's gateway |
+| `front-door.md` | `hangar-edge` is the only listener on :443 and :80, bound by systemd, with certificates over ACME DNS-01; routes by Host to the API, the console and the endpoints; per-client limits; a host firewall that opens 22, 80 and 443 alone |
 | `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` checks Access and reaches machines through the node's dial socket; per-host bypass applications for `PUBLIC` ones |

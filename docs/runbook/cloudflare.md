@@ -238,6 +238,31 @@ answers 502. Removing them from Cloudflare is a human's job in the
 dashboard, as for the rest: the wildcard record first, then the wildcard
 application and every `hangar public endpoint: …` application.
 
+## The front door's DNS token
+
+The front door (`docs/decisions/front-door.md`) gets its certificates over
+ACME DNS-01: `hangar-edge` writes the challenge's TXT record in the zone
+through Cloudflare's DNS API, with a token of its own, apart from the
+tool's and the apiserver's. Make it in My Profile → API Tokens → Create
+Token → Custom token:
+
+- Permissions: Zone → Zone → Read, and Zone → DNS → Edit.
+- Zone resources: Include → Specific zone, the control plane's zone
+  (`hangarlab.cloud`) and the user-content zone (`hangarlab.dev`), nothing
+  else.
+- Client IP address filtering: the host's IPv4 and IPv6 addresses.
+
+Install it as root's, 0600, without it passing through a terminal:
+
+```sh
+read -rs T && printf '%s' "$T" | ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflare-dns-token'; unset T
+```
+
+systemd hands it to the edge as a credential; nothing else on the host
+reads it. To roll it, make a new one, install it the same way, run
+`sudo systemctl restart hangar-edge`, then delete the old one in the
+dashboard. Then follow "The front door" in `docs/runbook/host-bootstrap.md`.
+
 ## When something is off
 
 - **The tunnel is down after the apiserver was stopped and started by

@@ -43,8 +43,8 @@ type world struct {
 	edge   *edge.Edge
 }
 
-// backend serves, on port, "/" saying the port, and "/upgrade" switching
-// to an echo of the raw connection.
+// backend serves, on port, "/" saying the port, "/read" reading the whole
+// body first, and "/upgrade" switching to an echo of the raw connection.
 func backend(t *testing.T, port int32) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -52,6 +52,10 @@ func backend(t *testing.T, port int32) string {
 		_, _ = fmt.Fprintf(w, "port %d jwt=%q token=%q id=%q secret=%q cookie=%q", port, r.Header.Get(edge.AccessJWTHeader),
 			r.Header.Get("Cf-Access-Token"), r.Header.Get("Cf-Access-Client-Id"), r.Header.Get("Cf-Access-Client-Secret"),
 			strings.Join(r.Header.Values("Cookie"), " | "))
+	})
+	mux.HandleFunc("/read", func(w http.ResponseWriter, r *http.Request) {
+		n, _ := io.Copy(io.Discard, r.Body)
+		_, _ = fmt.Fprintf(w, "port %d read %d", port, n)
 	})
 	mux.HandleFunc("/upgrade", func(w http.ResponseWriter, _ *http.Request) {
 		c, brw, err := http.NewResponseController(w).Hijack()
@@ -201,6 +205,72 @@ func TestAPortChangeReachesTheNewPort(t *testing.T) {
 		if _, body := w.get(root); !strings.HasPrefix(body, "port 8081 ") {
 			t.Fatalf("request %d after the change reached %q", i, body)
 		}
+	}
+}
+
+// TestAHostWithATrailingDotOrAPortReachesItsEndpoint: the edge matches a
+// Host as edge.Hostname has it, so the absolute name and an explicit port
+// reach the same endpoint as the plain name.
+func TestAHostWithATrailingDotOrAPortReachesItsEndpoint(t *testing.T) {
+	w := newWorld(t)
+	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	get := func(h string) (int, string) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, w.url+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = h
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	w.eventually("the endpoint", func() (bool, string) {
+		code, body := get(host)
+		return code == http.StatusOK && strings.HasPrefix(body, "port 8080 "), fmt.Sprint(code, body)
+	})
+	for _, h := range []string{host + ".", host + ":443", strings.ToUpper(host) + ".:443"} {
+		if code, body := get(h); code != http.StatusOK || !strings.HasPrefix(body, "port 8080 ") {
+			t.Errorf("Host %s: %d %q; want the endpoint", h, code, body)
+		}
+	}
+}
+
+// TestABodyPastItsCapIsTooLarge: a body the front door caps
+// (internal/edge/front) and that runs past the cap on its way to the
+// endpoint is answered 413, not as an endpoint that did not answer.
+func TestABodyPastItsCapIsTooLarge(t *testing.T) {
+	w := newWorld(t)
+	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	capped := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(rw, r.Body, 100)
+		w.edge.ServeHTTP(rw, r)
+	}))
+	defer capped.Close()
+	post := func(n int) (int, string) {
+		// No length, so nothing but reading it finds it too long.
+		req, err := http.NewRequest(http.MethodPost, capped.URL+"/read", io.MultiReader(strings.NewReader(strings.Repeat("a", n))))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	w.eventually("the endpoint", func() (bool, string) {
+		code, body := post(100)
+		return code == http.StatusOK && body == "port 8080 read 100", fmt.Sprint(code, body)
+	})
+	if code, body := post(100 << 10); code != http.StatusRequestEntityTooLarge {
+		t.Errorf("past the cap: %d %q; want 413", code, body)
 	}
 }
 

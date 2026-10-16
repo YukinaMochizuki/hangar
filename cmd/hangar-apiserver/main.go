@@ -1,8 +1,10 @@
-// Command hangar-apiserver serves the Hangar API on four listeners: a TCP
-// address for people and agents, who sign in through Google (OIDC) and then
-// hold Hangar's own sessions, a unix socket for the node agent, one for
-// hangar-edge, and one for root on the host. See
-// docs/decisions/authentication.md.
+// Command hangar-apiserver serves the Hangar API on five listeners: a TCP
+// address on loopback for people and agents, who sign in through Google
+// (OIDC) and then hold Hangar's own sessions; a unix socket hangar-edge
+// forwards the same public API to from :443, with each client's address;
+// one for the node agent; one for hangar-edge's own reads; and one for root
+// on the host. See docs/decisions/authentication.md and
+// docs/decisions/front-door.md.
 package main
 
 import (
@@ -28,6 +30,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/sdsocket"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
@@ -48,6 +51,7 @@ type flags struct {
 	bootstrapAdmin string
 	sshCAKey       string
 	edgeSocket     string
+	publicSocket   string
 	edgeUID        uint
 	endpointDomain string
 	cfTokenFile    string
@@ -77,7 +81,8 @@ func main() {
 	flag.StringVar(&f.bootstrapAdmin, "bootstrap-admin", "", "email granted platform.root if no one holds it")
 	flag.StringVar(&f.sshCAKey, "ssh-ca-key", "", "the platform SSH CA's private key, an OpenSSH key file only its owner reads; missing, hangar ssh cannot sign")
 	flag.StringVar(&f.edgeSocket, "edge-socket", "", "unix socket for hangar-edge, which reads public endpoints and role bindings; empty disables it")
-	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge socket; required with --edge-socket")
+	flag.StringVar(&f.publicSocket, "public-socket", "", "unix socket hangar-edge forwards the public API to, from :443, with each client's address; empty disables it")
+	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge and public sockets; required with either")
 	flag.StringVar(&f.endpointDomain, "endpoint-domain", apiserver.DefaultEndpointDomain, "the domain public endpoints' hostnames are in")
 	flag.StringVar(&f.cfTokenFile, "cloudflare-api-token-file", "", "a file only its owner reads holding the Cloudflare API token the apiserver calls Cloudflare with; missing, PUBLIC endpoints do not open")
 	flag.StringVar(&f.cfAccountID, "cloudflare-account-id", "", "the Cloudflare account the API token acts in; required with the token")
@@ -102,15 +107,24 @@ func main() {
 }
 
 func run(ctx context.Context, f flags, log *slog.Logger) error {
-	socks, err := inheritSockets()
+	socks, err := sdsocket.Inherit()
 	if err != nil {
 		return err
 	}
-	defer socks.close()
+	defer socks.Close()
 	return serveAll(ctx, f, log, socks)
 }
 
-func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) error {
+// Names systemd gives the sockets it passes (FileDescriptorName=), set in
+// deploy/host/steps/80-services.sh.
+const (
+	nodeSocketName   = "node"
+	adminSocketName  = "admin"
+	edgeSocketName   = "edge"
+	publicSocketName = "public"
+)
+
+func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.Sockets) error {
 	if err := checkAuthFlags(f); err != nil {
 		return err
 	}
@@ -142,29 +156,35 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 		}
 	}
 
-	if f.edgeSocket != "" && f.edgeUID == 0 {
-		return errors.New("--edge-socket needs --edge-uid: hangar-edge runs as its own unprivileged user, never root")
+	if (f.edgeSocket != "" || f.publicSocket != "") && f.edgeUID == 0 {
+		return errors.New("--edge-socket and --public-socket need --edge-uid: hangar-edge runs as its own unprivileged user, never root")
 	}
-	var sock, admin, edge net.Listener
+	var sock, admin, edge, publicSock net.Listener
 	if f.socket != "" {
-		if sock, err = socks.listen(nodeSocketName, f.socket, 0o660); err != nil {
+		if sock, err = socks.Unix(nodeSocketName, f.socket, 0o660); err != nil {
 			return err
 		}
 		defer func() { _ = sock.Close() }()
 	}
 	if f.adminSocket != "" {
-		if admin, err = socks.listen(adminSocketName, f.adminSocket, 0o600); err != nil {
+		if admin, err = socks.Unix(adminSocketName, f.adminSocket, 0o600); err != nil {
 			return err
 		}
 		defer func() { _ = admin.Close() }()
 	}
 	if f.edgeSocket != "" {
-		if edge, err = socks.listen(edgeSocketName, f.edgeSocket, 0o660); err != nil {
+		if edge, err = socks.Unix(edgeSocketName, f.edgeSocket, 0o660); err != nil {
 			return err
 		}
 		defer func() { _ = edge.Close() }()
 	}
-	if err := socks.unused(); err != nil {
+	if f.publicSocket != "" {
+		if publicSock, err = socks.Unix(publicSocketName, f.publicSocket, 0o660); err != nil {
+			return err
+		}
+		defer func() { _ = publicSock.Close() }()
+	}
+	if err := socks.Unused(); err != nil {
 		return err
 	}
 	// Keepalive and a user timeout drop a dead client under an exec whose
@@ -203,8 +223,17 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	g.Go(func() error { return srv.Run(ctx) })
 	g.Go(func() error {
 		log.Info("serving the public API", "address", ln.Addr().String(), "auth", f.authMode)
-		return serve(ctx, &http.Server{Handler: srv.PublicHandler(public), Protocols: protocols()}, ln)
+		return serve(ctx, &http.Server{Handler: auth.ClientIPFromConn(srv.PublicHandler(public)), Protocols: protocols()}, ln)
 	})
+	if publicSock != nil {
+		// The public listener's own handler, sign-in included, from
+		// hangar-edge alone, which says each request's client address.
+		h := auth.TrustClientIPFrom([]uint32{uint32(f.edgeUID)}, srv.PublicHandler(public))
+		g.Go(func() error {
+			log.Info("serving the public API to hangar-edge", "path", f.publicSocket, "auth", f.authMode)
+			return serve(ctx, &http.Server{Handler: h, Protocols: protocols(), ConnContext: auth.ProxyConnContext}, publicSock)
+		})
+	}
 	if sock != nil {
 		node := auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(f.nodeUID)}, NodeName: f.nodeName}}
 		g.Go(func() error {
@@ -269,6 +298,10 @@ func checkAuthFlags(f flags) error {
 	case "dev":
 		if !loopback(f.listen) {
 			return fmt.Errorf("dev auth trusts a plain header, so it only runs on a loopback address, not %q", f.listen)
+		}
+		// What reaches the public socket comes from the internet.
+		if f.publicSocket != "" {
+			return errors.New("dev auth trusts a plain header, so it never serves --public-socket, which hangar-edge forwards the internet to")
 		}
 		return nil
 	}
