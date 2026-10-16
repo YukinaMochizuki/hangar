@@ -246,7 +246,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 		chain := auth.Chain{auth.PeerEdge{UIDs: []uint32{uint32(f.edgeUID)}, Host: host}}
 		g.Go(func() error {
 			log.Info("serving the edge socket", "path", f.edgeSocket)
-			return serve(ctx, &http.Server{Handler: srv.Handler(chain), Protocols: protocols(), ConnContext: auth.EdgeConnContext}, edge)
+			return serve(ctx, &http.Server{Handler: srv.EdgeHandler(chain), Protocols: protocols(), ConnContext: auth.EdgeConnContext}, edge)
 		})
 	}
 	if admin != nil {

@@ -50,7 +50,7 @@ func (s *Server) EnableOIDC(cfg OIDCConfig, creds store.Credentials) (auth.Chain
 	}
 	flow, err := login.New(login.Config{
 		Issuer: cfg.Issuer, ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, PublicURL: cfg.PublicURL,
-		Sessions: s.sessions, Store: creds, Admit: s.admitted, HTTPClient: cfg.HTTPClient, DeviceInterval: cfg.DeviceInterval, MaxPending: cfg.MaxPending, Log: s.log,
+		Sessions: s.sessions, Store: creds, Admit: s.admitted, Endpoint: s.endpointVerdict, HTTPClient: cfg.HTTPClient, DeviceInterval: cfg.DeviceInterval, MaxPending: cfg.MaxPending, Log: s.log,
 	})
 	if err != nil {
 		return nil, err

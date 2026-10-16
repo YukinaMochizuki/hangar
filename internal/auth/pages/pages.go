@@ -1,5 +1,6 @@
 // Package pages renders every page a person sees during sign-in, from the
-// apiserver and from the CLI's loopback listener. They are deliberately
+// apiserver, from the CLI's loopback listener and from hangar-edge, which
+// hands a browser off to a private endpoint. They are deliberately
 // plain placeholders: the templates under templates/ are the one place the
 // visual design replaces, and nothing else in the sign-in code writes HTML.
 package pages
@@ -37,10 +38,19 @@ const (
 	DeviceDenied Page = "device-denied"
 	// DeviceUnknown: no device login has the code.
 	DeviceUnknown Page = "device-unknown"
+	// EndpointDenied: the person signed in may not use the private
+	// endpoint. Data: Email, Host.
+	EndpointDenied Page = "endpoint-denied"
+	// EndpointUnknown: no private endpoint has the host. Data: Host.
+	EndpointUnknown Page = "endpoint-unknown"
+	// EndpointFailed: hangar-edge could not sign the browser in to the
+	// private endpoint it came back to. Data: Host, Reason.
+	EndpointFailed Page = "endpoint-failed"
 )
 
 // All is every page, for tests and screenshots.
-var All = []Page{SignInFailed, NotInvited, CLISignedIn, CLIFailed, DeviceEnter, DeviceConfirm, DeviceApproved, DeviceDenied, DeviceUnknown}
+var All = []Page{SignInFailed, NotInvited, CLISignedIn, CLIFailed, DeviceEnter, DeviceConfirm, DeviceApproved, DeviceDenied, DeviceUnknown,
+	EndpointDenied, EndpointUnknown, EndpointFailed}
 
 var templates = func() map[Page]*template.Template {
 	m := map[Page]*template.Template{}
@@ -56,6 +66,20 @@ type Data struct {
 	Email    string
 	Endpoint string
 	UserCode string
+	Host     string
+	// NoReferrer sends no referrer at all, even to the page's own origin:
+	// for a page on a host whose other pages are not Hangar's, such as an
+	// endpoint's callback, whose URL holds a one-time code. Such a page
+	// may hold no form.
+	NoReferrer bool
+}
+
+// referrerPolicy is the page's referrer policy, as header and meta say it.
+func referrerPolicy(d Data) string {
+	if d.NoReferrer {
+		return "no-referrer"
+	}
+	return "same-origin"
 }
 
 // Render writes the page with the status. The page may not be framed,
@@ -73,7 +97,7 @@ func Render(w http.ResponseWriter, status int, p Page, d Data) {
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("Content-Security-Policy", "default-src 'none'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 	h.Set("X-Frame-Options", "DENY")
-	h.Set("Referrer-Policy", "same-origin")
+	h.Set("Referrer-Policy", referrerPolicy(d))
 	h.Set("Cache-Control", "no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)

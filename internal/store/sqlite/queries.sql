@@ -51,11 +51,11 @@ SELECT value FROM meta WHERE key = ?;
 UPDATE meta SET value = ? WHERE key = ?;
 
 -- name: InsertCredential :exec
-INSERT INTO credentials (hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO credentials (hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at, audience)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: GetCredential :one
-SELECT hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at
+SELECT hash, type, family, principal, created_at, expires_at, idle_until, last_used_at, used_at, audience
 FROM credentials
 WHERE hash = ?;
 

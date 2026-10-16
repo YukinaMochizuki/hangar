@@ -40,7 +40,7 @@ func createCredentials(ctx context.Context, q *db.Queries, cs ...store.Credentia
 		if err := q.InsertCredential(ctx, db.InsertCredentialParams{
 			Hash: c.Hash, Type: c.Type, Family: c.Family, Principal: c.Principal,
 			CreatedAt: millis(c.CreatedAt), ExpiresAt: millis(c.ExpiresAt), IdleUntil: millis(c.IdleUntil),
-			LastUsedAt: millis(c.LastUsedAt), UsedAt: millis(c.UsedAt),
+			LastUsedAt: millis(c.LastUsedAt), UsedAt: millis(c.UsedAt), Audience: c.Audience,
 		}); err != nil {
 			return err
 		}
@@ -159,6 +159,33 @@ func (s *Store) CreateAuthRequest(ctx context.Context, r store.AuthRequest) erro
 	})
 }
 
+func (s *Store) CreateAuthRequestsWithin(ctx context.Context, now time.Time, limits []store.AuthLimit, rs ...store.AuthRequest) error {
+	// Write transactions run one at a time (the write connection takes its
+	// lock as it begins), so nothing lands between the count and the insert.
+	return s.credTx(ctx, func(q *db.Queries) error {
+		for _, l := range limits {
+			n, err := q.CountAuthRequests(ctx, db.CountAuthRequestsParams{Prefix: l.Prefix, Now: millis(now)})
+			if err != nil {
+				return err
+			}
+			if int(n) >= l.Max {
+				return &store.LimitError{Prefix: l.Prefix}
+			}
+		}
+		for _, r := range rs {
+			if _, err := q.GetAuthRequest(ctx, r.Key); err == nil {
+				return store.ErrExists
+			} else if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			if err := q.InsertAuthRequest(ctx, db.InsertAuthRequestParams{Key: r.Key, Data: nonNil(r.Data), ExpiresAt: millis(r.ExpiresAt)}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Store) GetAuthRequest(ctx context.Context, key string) (store.AuthRequest, error) {
 	if s.closing.Load() {
 		return store.AuthRequest{}, store.ErrClosed
@@ -262,7 +289,7 @@ func credentialFromRow(r db.Credential) store.Credential {
 	return store.Credential{
 		Hash: r.Hash, Type: r.Type, Family: r.Family, Principal: r.Principal,
 		CreatedAt: fromMillis(r.CreatedAt), ExpiresAt: fromMillis(r.ExpiresAt), IdleUntil: fromMillis(r.IdleUntil),
-		LastUsedAt: fromMillis(r.LastUsedAt), UsedAt: fromMillis(r.UsedAt),
+		LastUsedAt: fromMillis(r.LastUsedAt), UsedAt: fromMillis(r.UsedAt), Audience: r.Audience,
 	}
 }
 
