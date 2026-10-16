@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -106,9 +107,11 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	reaper := supervise.NewReaper()
 	stopper := &supervise.Stopper{}
 	v6 := boot.NewIPv6(cfg.GetInterfaces())
-	if err := serveAgent(reaper, stopper, workload, v6, started, logf); err != nil {
+	if ln, err := vsock.Listen(agent.Port, nil); err != nil {
 		// The container runs all the same; the node sees it does not answer.
 		logf("hangar-init: guest agent: %v", err)
+	} else {
+		serveAgent(ln, reaper, stopper, workload, v6, started, logf)
 	}
 
 	devnull, err := os.Open(os.DevNull)
@@ -169,13 +172,11 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	return console.ExitStatus{Code: int32(exit.Code), Signal: int32(exit.Signal)}, nil
 }
 
-// serveAgent serves the guest agent on vsock, processes it starts going to
-// the workload cgroup; a Stop goes to stopper.
-func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, started time.Time, logf func(string, ...any)) error {
-	ln, err := vsock.Listen(agent.Port, nil)
-	if err != nil {
-		return err
-	}
+// serveAgent serves the guest agent on the vsock listener ln to the host
+// alone, processes it starts going to the workload cgroup; a Stop goes to
+// stopper. It returns at once; serving ends when ln is closed.
+func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, started time.Time, logf func(string, ...any)) {
+	ln = agent.HostOnly(ln, logf)
 	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
 		Reaper: reaper, Root: "/", Version: buildinfo.Version(), Started: started, Cgroup: workload,
 		OnPanic: func(r any) { logf("hangar-init: guest agent: %v", r) },
@@ -194,7 +195,6 @@ func serveAgent(reaper *supervise.Reaper, stopper *supervise.Stopper, workload *
 	protocols := &http.Protocols{}
 	protocols.SetUnencryptedHTTP2(true)
 	go func() { _ = (&http.Server{Handler: h, Protocols: protocols}).Serve(ln) }()
-	return nil
 }
 
 // powerOff ends the guest: every process is asked to stop, then made to,
