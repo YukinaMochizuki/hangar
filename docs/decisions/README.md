@@ -18,9 +18,9 @@ the change.
 | `sqlite-store.md` | SQLite with a global revision and a replayable event log |
 | `buf-breaking-wire-json.md` | WIRE_JSON breaking checks are enforced even in alpha |
 | `tenancy-and-iam.md` | Tenant and Project; permissions, roles and bindings |
-| `authentication.md` | Cloudflare Access for people and agents; peer credentials for the node |
-| `cloudflare-setup.md` | Cloudflare's side is converged by `hangar-cloudflare`, which changes only what its state file records |
-| `networking.md` | Per-network namespaces, security groups, routed IPv6, one tunnel |
+| `authentication.md` | Sign-in through Google and Hangar's own sessions and tokens for people and agents; peer credentials for the node, the edge and root on the host |
+| `cloudflare-setup.md` | Cloudflare is DNS alone: DNS-only records at the host, converged by `hangar-cloudflare`, which changes only what its state file records |
+| `networking.md` | Per-network namespaces, security groups, routed IPv6; networks reach only the front door's ports of the host |
 | `streaming-transport.md` | Bidirectional streams over WebSocket |
 | `testing-strategy.md` | Test layers, fakes held honest by conformance tests, a disposable testbed |
 | `node-agent.md` | The node agent keeps no state, reads the host back, and sweeps what nothing accounts for |
@@ -31,4 +31,4 @@ the change.
 | `secrets.md` | Secrets are write-only and sealed at rest under a KEK file; nodes get a login per pull; a private image is shared only after the machine's own resolve |
 | `vm-ssh.md` | `hangar ssh`: minutes-long certificates of one platform CA for the VM's uid, over a WebSocket to port 22 from the network's gateway |
 | `front-door.md` | `hangar-edge` is the only listener on :443 and :80, bound by systemd, with certificates over ACME DNS-01; routes by Host to the API, the console and the endpoints; per-client limits; a host firewall that opens 22, 80 and 443 alone |
-| `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` checks Access and reaches machines through the node's dial socket; per-host bypass applications for `PUBLIC` ones |
+| `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` signs private ones' callers in itself and reaches machines through the node's dial socket |

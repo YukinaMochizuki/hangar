@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/cloudflare/cftest"
-	"github.com/YukinaMochizuki/hangar/internal/cloudflare/converge"
 )
 
 const (
@@ -26,17 +25,14 @@ type harness struct {
 
 func newHarness(t *testing.T) *harness {
 	f := cftest.New(apiToken, account, "hangar.example")
+	f.AddZone("hangar-user.example")
 	t.Cleanup(f.Close)
 	dir := t.TempDir()
 	config := filepath.Join(dir, "cloudflare.yaml")
 	err := os.WriteFile(config, []byte(`account_id: `+account+`
 zone: hangar.example
-hostname: api.hangar.example
-tunnel_name: hangar
-allowed_emails: [owner@example.com]
-identity_providers:
-  google: Google
-  one_time_pin: One-time PIN
+addresses: {ipv4: 192.0.2.10, ipv6: "2001:db8:1::1"}
+endpoints: {zone: hangar-user.example}
 `), 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -54,36 +50,11 @@ func (h *harness) run(mode string, env map[string]string) (code int, stdout, std
 	return code, o.String(), e.String()
 }
 
-// secrets returns every credential the fake holds or was given.
-func (h *harness) secrets() []string {
-	s := []string{apiToken}
-	h.f.Mutate(func(st *cftest.State) {
-		for _, t := range st.Tunnels {
-			s = append(s, t.Token)
-		}
-		for _, t := range st.ServiceTokens {
-			s = append(s, t.Secret)
-		}
-	})
-	return s
-}
-
-func (h *harness) noSecrets(outputs ...string) {
-	h.t.Helper()
-	for _, s := range h.secrets() {
-		for _, o := range outputs {
-			if strings.Contains(o, s) {
-				h.t.Fatalf("output contains a secret:\n%s", o)
-			}
-		}
-	}
-}
-
 func TestPlanApplyVerify(t *testing.T) {
 	h := newHarness(t)
 
 	code, out, errOut := h.run("plan", nil)
-	if code != exitOK || !strings.Contains(out, "Plan: 10 change(s).") {
+	if code != exitOK || !strings.Contains(out, "Plan: 6 change(s).") || !strings.Contains(out, "+ create DNS AAAA record console.hangar.example") {
 		t.Fatalf("plan: %d\n%s%s", code, out, errOut)
 	}
 	if len(h.f.Writes()) != 0 {
@@ -92,47 +63,31 @@ func TestPlanApplyVerify(t *testing.T) {
 	if _, err := os.Stat(h.out); !os.IsNotExist(err) {
 		t.Fatal("plan created the output directory")
 	}
-
-	code, out, errOut = h.run("verify", nil)
-	if code != exitDrift {
+	if code, out, errOut = h.run("verify", nil); code != exitDrift {
 		t.Fatalf("verify before apply: %d\n%s%s", code, out, errOut)
 	}
-
-	code, out, errOut = h.run("apply", nil)
-	if code != exitOK || !strings.Contains(out, "Applied 10 change(s).") {
+	if code, out, errOut = h.run("apply", nil); code != exitOK || !strings.Contains(out, "Applied 6 change(s).") {
 		t.Fatalf("apply: %d\n%s%s", code, out, errOut)
 	}
-	h.noSecrets(out, errOut)
-	b, err := os.ReadFile(filepath.Join(h.out, converge.SmokeTokenEnv))
-	if err != nil || !strings.Contains(string(b), "HANGAR_CF_CLIENT_SECRET=") {
-		t.Fatalf("smoke token file: %q %v", b, err)
-	}
-
-	code, out, errOut = h.run("apply", nil)
-	if code != exitOK || !strings.Contains(out, "No changes.") {
+	if code, out, errOut = h.run("apply", nil); code != exitOK || !strings.Contains(out, "No changes.") {
 		t.Fatalf("second apply: %d\n%s%s", code, out, errOut)
 	}
-	code, out, errOut = h.run("verify", nil)
-	if code != exitOK || !strings.Contains(out, "No changes.") {
+	if code, out, errOut = h.run("verify", nil); code != exitOK || !strings.Contains(out, "No changes.") {
 		t.Fatalf("verify: %d\n%s%s", code, out, errOut)
 	}
-	h.noSecrets(out, errOut)
 
-	// Drift in the tunnel token output and the ingress: verify fails and
-	// prints neither token.
-	if err := os.WriteFile(filepath.Join(h.out, converge.CloudflaredEnv), []byte("TUNNEL_TOKEN=old\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	// Someone turns the proxy on in the dashboard: verify fails and says so.
 	h.f.Mutate(func(st *cftest.State) {
-		for _, c := range st.Configs {
-			c.Config.Ingress[0].Service = "http://127.0.0.1:1"
+		for _, d := range st.DNS {
+			if d.Name == "api.hangar.example" && d.Type == "A" {
+				d.Proxied = true
+			}
 		}
 	})
 	code, out, errOut = h.run("verify", nil)
-	if code != exitDrift || !strings.Contains(out, "> write output cloudflared.env") || !strings.Contains(out, "~ update tunnel \"hangar\" configuration") {
+	if code != exitDrift || !strings.Contains(out, "~ update DNS A record api.hangar.example") || !strings.Contains(out, "proxied: true\n      -> false") {
 		t.Fatalf("verify with drift: %d\n%s%s", code, out, errOut)
 	}
-	h.noSecrets(out, errOut)
 	if code, out, _ = h.run("apply", nil); code != exitOK {
 		t.Fatalf("apply: %d %s", code, out)
 	}
@@ -143,16 +98,31 @@ func TestPlanApplyVerify(t *testing.T) {
 
 func TestRefusalIsClearAndChangesNothing(t *testing.T) {
 	h := newHarness(t)
-	theirs := h.f.AddTunnel("hangar", "cloudflare")
+	var zone string
+	h.f.Mutate(func(st *cftest.State) { zone = st.Zones[0].ID })
+	theirs := h.f.AddRecord(zone, cftest.DNSRecord{Type: "A", Name: "api.hangar.example", Content: "198.51.100.1"})
 	code, out, errOut := h.run("apply", nil)
-	if code != exitError || !strings.Contains(errOut, "refusing to change objects hangar-cloudflare did not create") ||
-		!strings.Contains(errOut, `tunnel "hangar" (id `+theirs.ID+")") {
+	if code != exitError || !strings.Contains(errOut, "refusing to change records hangar-cloudflare did not create") ||
+		!strings.Contains(errOut, "DNS A record api.hangar.example (id "+theirs.ID+")") {
 		t.Fatalf("apply: %d\n%s%s", code, out, errOut)
 	}
 	if len(h.f.Writes()) != 0 {
 		t.Fatalf("writes: %v", h.f.Writes())
 	}
-	h.noSecrets(out, errOut)
+}
+
+func TestOldConfigIsRefused(t *testing.T) {
+	h := newHarness(t)
+	if err := os.WriteFile(h.config, []byte("account_id: "+account+"\nzone: hangar.example\nhostname: api.hangar.example\ntunnel_name: hangar\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := h.run("plan", nil)
+	if code != exitError || !strings.Contains(errOut, "the tunnel and Access keys are gone") {
+		t.Fatalf("plan: %d\n%s%s", code, out, errOut)
+	}
+	if len(h.f.Requests()) != 0 {
+		t.Fatal("a refused config reached the API")
+	}
 }
 
 func TestUsage(t *testing.T) {

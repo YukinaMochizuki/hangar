@@ -533,7 +533,7 @@ func TestANewerTunnelReplacesTheOlder(t *testing.T) {
 		done = make(chan struct{})
 		go func() {
 			defer close(done)
-			(&http2.Server{}).ServeConn(c, &http2.ServeConnOpts{Handler: &node{}})
+			(&http2.Server{}).ServeConn(c, &http2.ServeConnOpts{Handler: &node{}}) //nolint:staticcheck // SA1019: as the agent serves, tunnel.go
 			_ = c.Close()
 		}()
 		t.Cleanup(func() { _ = c.Close(); <-done })

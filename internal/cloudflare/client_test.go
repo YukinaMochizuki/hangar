@@ -44,16 +44,29 @@ func newFake(t *testing.T) *cftest.Fake {
 	return f
 }
 
+func zoneID(t *testing.T, c *cloudflare.Client) string {
+	t.Helper()
+	z, err := c.ZoneByName(context.Background(), account, "hangar.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return z.ID
+}
+
+func record(addr string) cloudflare.DNSRecord {
+	return cloudflare.DNSRecord{Type: "A", Name: "api.hangar.example", Content: addr, TTL: 1}
+}
+
 func TestSendsBearerToken(t *testing.T) {
 	f := newFake(t)
-	if _, err := newClient(t, f, nil).Organization(context.Background(), account); err != nil {
+	if _, err := newClient(t, f, nil).ZoneByName(context.Background(), account, "hangar.example"); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.Requests()[0].Auth; got != "Bearer "+token {
 		t.Fatalf("Authorization %q", got)
 	}
 	bad, _ := cloudflare.New("wrong", cloudflare.WithBaseURL(f.URL()))
-	_, err := bad.Organization(context.Background(), account)
+	_, err := bad.ZoneByName(context.Background(), account, "hangar.example")
 	var ae *cloudflare.APIError
 	if !errors.As(err, &ae) || ae.Status != http.StatusUnauthorized || ae.Errors[0].Code != 10000 {
 		t.Fatalf("wrong token: %v", err)
@@ -67,7 +80,7 @@ func TestRetriesWithBackoffAndRetryAfter(t *testing.T) {
 	f.Fail("", http.StatusTooManyRequests, 1, "7")
 	f.Fail("", http.StatusInternalServerError, 1, "")
 	f.Fail("", http.StatusBadGateway, 1, "")
-	if _, err := c.Organization(context.Background(), account); err != nil {
+	if _, err := c.ZoneByName(context.Background(), account, "hangar.example"); err != nil {
 		t.Fatal(err)
 	}
 	want := []time.Duration{7 * time.Second, 200 * time.Millisecond, 400 * time.Millisecond}
@@ -83,7 +96,7 @@ func TestGivesUpAfterMaxAttempts(t *testing.T) {
 	f := newFake(t)
 	c := newClient(t, f, nil, cloudflare.WithRetry(3, time.Millisecond))
 	f.Fail("", http.StatusServiceUnavailable, 10, "")
-	_, err := c.Organization(context.Background(), account)
+	_, err := c.ZoneByName(context.Background(), account, "hangar.example")
 	var ae *cloudflare.APIError
 	if !errors.As(err, &ae) || ae.Status != http.StatusServiceUnavailable {
 		t.Fatalf("err %v", err)
@@ -97,12 +110,13 @@ func TestPostRetriesOnlyOn429(t *testing.T) {
 	f := newFake(t)
 	c := newClient(t, f, nil)
 	f.Fail(http.MethodPost, http.StatusTooManyRequests, 1, "")
-	if _, err := c.CreateTunnel(context.Background(), account, "a"); err != nil {
+	zone := zoneID(t, c)
+	if _, err := c.CreateDNSRecord(context.Background(), zone, record("192.0.2.1")); err != nil {
 		t.Fatalf("429 then success: %v", err)
 	}
 	f.Fail(http.MethodPost, http.StatusInternalServerError, 1, "")
 	before := len(f.Requests())
-	if _, err := c.CreateTunnel(context.Background(), account, "b"); err == nil {
+	if _, err := c.CreateDNSRecord(context.Background(), zone, record("192.0.2.2")); err == nil {
 		t.Fatal("a POST that got a 500 was retried")
 	}
 	if n := len(f.Requests()) - before; n != 1 {
@@ -113,11 +127,13 @@ func TestPostRetriesOnlyOn429(t *testing.T) {
 func TestClientErrorsAreNotRetried(t *testing.T) {
 	f := newFake(t)
 	c := newClient(t, f, nil)
-	_, err := c.GetTunnel(context.Background(), account, "00000000-0000-0000-0000-000000000000")
+	zone := zoneID(t, c)
+	before := len(f.Requests())
+	_, err := c.GetDNSRecord(context.Background(), zone, "0000000000000000")
 	if !cloudflare.IsNotFound(err) {
 		t.Fatalf("err %v, want not found", err)
 	}
-	if n := len(f.Requests()); n != 1 {
+	if n := len(f.Requests()) - before; n != 1 {
 		t.Fatalf("404 retried: %d requests", n)
 	}
 }
@@ -125,16 +141,16 @@ func TestClientErrorsAreNotRetried(t *testing.T) {
 func TestReadOnlyRefusesWritesBeforeSending(t *testing.T) {
 	f := newFake(t)
 	c := newClient(t, f, nil, cloudflare.ReadOnly())
-	if _, err := c.CreateTunnel(context.Background(), account, "x"); !errors.Is(err, cloudflare.ErrReadOnly) {
+	if _, err := c.CreateDNSRecord(context.Background(), "z", record("192.0.2.1")); !errors.Is(err, cloudflare.ErrReadOnly) {
 		t.Fatalf("err %v", err)
 	}
-	if _, err := c.PutTunnelConfiguration(context.Background(), account, "x", cloudflare.TunnelConfig{}); !errors.Is(err, cloudflare.ErrReadOnly) {
+	if _, err := c.UpdateDNSRecord(context.Background(), "z", "x", record("192.0.2.1")); !errors.Is(err, cloudflare.ErrReadOnly) {
 		t.Fatalf("err %v", err)
 	}
 	if n := len(f.Requests()); n != 0 {
 		t.Fatalf("read-only client sent %d requests", n)
 	}
-	if _, err := c.ListTunnels(context.Background(), account, "x"); err != nil {
+	if _, err := c.ZoneByName(context.Background(), account, "hangar.example"); err != nil {
 		t.Fatalf("read-only GET: %v", err)
 	}
 }
@@ -142,21 +158,14 @@ func TestReadOnlyRefusesWritesBeforeSending(t *testing.T) {
 func TestListsEveryPage(t *testing.T) {
 	f := newFake(t)
 	f.MaxPerPage = 2
-	for i := range 5 {
-		f.AddTunnel(fmt.Sprintf("t%d", i), "cloudflare")
-		f.AddServiceToken(fmt.Sprintf("s%d", i))
-	}
 	c := newClient(t, f, nil)
-	ctx := context.Background()
-	// Tunnels page with total_pages; service tokens, like all Access lists,
-	// only with total_count.
-	tunnels, err := c.ListTunnels(ctx, account, "")
-	if err != nil || len(tunnels) != 5 {
-		t.Fatalf("tunnels: %d %v", len(tunnels), err)
+	zone := zoneID(t, c)
+	for i := range 5 {
+		f.AddRecord(zone, cftest.DNSRecord{Type: "A", Name: "api.hangar.example", Content: fmt.Sprintf("192.0.2.%d", i+1)})
 	}
-	tokens, err := c.ListServiceTokens(ctx, account, "")
-	if err != nil || len(tokens) != 5 {
-		t.Fatalf("service tokens: %d %v", len(tokens), err)
+	records, err := c.ListDNSRecords(context.Background(), zone, "api.hangar.example")
+	if err != nil || len(records) != 5 {
+		t.Fatalf("records: %d %v", len(records), err)
 	}
 }
 
@@ -164,13 +173,13 @@ func TestPagingStopsWithoutResultInfo(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
-		_, _ = fmt.Fprint(w, `{"success":true,"errors":[],"messages":[],"result":[{"id":"a","name":"x","type":"google"}]}`)
+		_, _ = fmt.Fprint(w, `{"success":true,"errors":[],"messages":[],"result":[{"id":"a","name":"x.example","type":"A","content":"192.0.2.1"}]}`)
 	}))
 	defer srv.Close()
 	c, _ := cloudflare.New(token, cloudflare.WithBaseURL(srv.URL))
-	idps, err := c.ListIdentityProviders(context.Background(), account)
-	if err != nil || len(idps) != 1 || calls != 1 {
-		t.Fatalf("idps %v err %v calls %d", idps, err, calls)
+	records, err := c.ListDNSRecords(context.Background(), "z", "x.example")
+	if err != nil || len(records) != 1 || calls != 1 {
+		t.Fatalf("records %v err %v calls %d", records, err, calls)
 	}
 }
 
@@ -180,7 +189,7 @@ func TestUnsuccessfulEnvelopeIsAnError(t *testing.T) {
 	}))
 	defer srv.Close()
 	c, _ := cloudflare.New(token, cloudflare.WithBaseURL(srv.URL), cloudflare.WithRetry(1, 0))
-	_, err := c.Organization(context.Background(), account)
+	_, err := c.GetDNSRecord(context.Background(), "z", "a")
 	var ae *cloudflare.APIError
 	if !errors.As(err, &ae) || ae.Errors[0].Code != 1234 {
 		t.Fatalf("err %v", err)
@@ -196,16 +205,9 @@ func TestSecretsNeverFormat(t *testing.T) {
 	}
 	f := newFake(t)
 	c := newClient(t, f, nil)
-	created, err := c.CreateServiceToken(context.Background(), account, "x", "8760h")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created.ClientSecret.Reveal() == "" || strings.Contains(fmt.Sprintf("%+v", created), created.ClientSecret.Reveal()) {
-		t.Fatalf("service token secret missing or formatted: %+v", created)
-	}
 	// Errors carry the method and path, never the token.
 	f.Fail("", http.StatusBadRequest, 1, "")
-	_, err = c.Organization(context.Background(), account)
+	_, err := c.ZoneByName(context.Background(), account, "hangar.example")
 	if err == nil || strings.Contains(err.Error(), token) {
 		t.Fatalf("error %v", err)
 	}
@@ -224,7 +226,7 @@ func TestTimeoutBoundsEachAttempt(t *testing.T) {
 	c, _ := cloudflare.New(token, cloudflare.WithBaseURL(srv.URL), cloudflare.WithRetry(2, time.Millisecond),
 		cloudflare.WithHTTPClient(&http.Client{Timeout: 50 * time.Millisecond}))
 	start := time.Now()
-	if _, err := c.Organization(context.Background(), account); err == nil {
+	if _, err := c.GetDNSRecord(context.Background(), "z", "a"); err == nil {
 		t.Fatal("no timeout")
 	}
 	if d := time.Since(start); d > 5*time.Second {

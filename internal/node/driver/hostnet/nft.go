@@ -47,6 +47,29 @@ func (r ruleSpec) comment() (string, error) {
 	return fmt.Sprintf("hangar: %s [%s]", r.says, hex.EncodeToString(h.Sum(nil))[:16]), nil
 }
 
+// frontDoorPorts are the host's own TCP ports a network may reach, at the
+// host's public addresses: the front door's, which anyone on the internet
+// reaches there too (docs/decisions/front-door.md). A machine calling the
+// platform by its public names gets to the host this way.
+var frontDoorPorts = []uint16{80, 443}
+
+// frontDoorRules accept new connections from a network to the front door's
+// ports at addr, matched by daddr; none without an address.
+func frontDoorRules(addr netip.Addr, daddr func(netip.Prefix) []expr.Any) []ruleSpec {
+	if !addr.IsValid() {
+		return nil
+	}
+	var out []ruleSpec
+	for _, p := range frontDoorPorts {
+		out = append(out, ruleSpec{
+			says: fmt.Sprintf("TCP %d at %s from a network, the front door", p, addr),
+			exprs: slices.Concat(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix), daddr(netip.PrefixFrom(addr, addr.BitLen())),
+				matchL4(unix.IPPROTO_TCP), matchDport(p, p), []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}}),
+		})
+	}
+	return out
+}
+
 // rootChains is the root namespace's table, whose size does not depend on
 // how many networks there are; docs/decisions/networking.md lists its rules.
 func rootChains(uplink string, public netip.Addr) []chainSpec {
@@ -88,10 +111,10 @@ func rootChains(uplink string, public netip.Addr) []chainSpec {
 		},
 		{
 			name: "input", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookInput, prio: *nftables.ChainPriorityFilter,
-			rules: []ruleSpec{{
+			rules: append(frontDoorRules(public, matchDaddr), ruleSpec{
 				says:  "only replies from a network into the host",
 				exprs: append(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix), dropUnlessReply()...),
-			}},
+			}),
 		},
 	}
 }

@@ -44,6 +44,7 @@ const defaultCmdline = "console=ttyS0 root=/dev/vda rw quiet spectre_bhi=on"
 // hostFlags are what the host drivers are built with.
 type hostFlags struct {
 	network, uplink, publicIPv4     string
+	publicIPv6                      string
 	ipv6Prefix                      string
 	dataset, imageDir               string
 	maxUnpackWork                   int64
@@ -224,7 +225,13 @@ func network(hf hostFlags) (*hostnet.Driver, error) {
 	if err != nil {
 		return nil, err
 	}
-	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public, IPv6Prefix: prefix})
+	var public6 netip.Addr
+	if hf.publicIPv6 != "" {
+		if public6, err = netip.ParseAddr(hf.publicIPv6); err != nil {
+			return nil, fmt.Errorf("--public-ipv6: %w", err)
+		}
+	}
+	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public, IPv6Prefix: prefix, PublicIPv6: public6})
 	if err != nil {
 		return nil, fmt.Errorf("network driver: %w", err)
 	}
@@ -237,6 +244,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.network, "network-driver", "fake", "with --drivers=fake, the network driver: fake, or host for this host's (needs --uplink)")
 	fs.StringVar(&hf.uplink, "uplink", "", "with this host's network driver, the link the host reaches the internet through")
 	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the address networks' traffic leaves the uplink as; empty for the uplink's own")
+	fs.StringVar(&hf.publicIPv6, "public-ipv6", "", "with this host's network driver, the host's own public IPv6 address, where machines reach the front door (:80 and :443) as they do at --public-ipv4; empty, they reach nothing of the host's over IPv6")
 	fs.StringVar(&hf.ipv6Prefix, "public-ipv6-prefix", "", "the host's public IPv6 /64, such as 2001:db8:0:1::/64, on the uplink's link, from which each machine interface gets an address; empty for no IPv6 in the networks")
 	fs.StringVar(&hf.dataset, "zfs-dataset", "hangar", "for --drivers=host, the dataset root disks and image bases go under")
 	fs.StringVar(&hf.imageDir, "image-dir", "/var/lib/hangar/images", "for --drivers=host, where images are cached, unpacked and downloaded: the hangar/images dataset's mount point")

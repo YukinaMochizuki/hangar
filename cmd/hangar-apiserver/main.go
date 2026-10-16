@@ -328,7 +328,8 @@ func loopback(addr string) bool {
 }
 
 // protocols serves HTTP/1.1 and cleartext HTTP/2 on the same port, so
-// streaming works whichever cloudflared uses to reach the origin.
+// streaming works whichever a client on the host speaks; the front door
+// speaks HTTP/1.1.
 func protocols() *http.Protocols {
 	p := &http.Protocols{}
 	p.SetHTTP1(true)

@@ -61,6 +61,7 @@ func open(t *testing.T, sock string) error {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		//nolint:staticcheck // SA1019: as the agent serves a tunnel, internal/tunnel
 		(&http2.Server{}).ServeConn(c, &http2.ServeConnOpts{Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = io.WriteString(w, "the agent")
 		})})

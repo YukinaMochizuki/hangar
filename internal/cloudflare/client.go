@@ -1,7 +1,7 @@
-// Package cloudflare is a small client for the Cloudflare API v4: the
-// tunnel, DNS, Access and Zero Trust organization endpoints Hangar uses, and
-// nothing else. It knows the API's shapes, its envelope, paging and retry
-// rules; deciding what should exist is left to its callers.
+// Package cloudflare is a small client for the Cloudflare API v4: the zone
+// and DNS record endpoints Hangar uses, and nothing else. It knows the
+// API's shapes, its envelope, paging and retry rules; deciding what should
+// exist is left to its callers.
 package cloudflare
 
 import (

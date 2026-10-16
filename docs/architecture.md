@@ -6,11 +6,11 @@ planned; the code is the authority wherever it exists.
 ## Shape
 
 ```
-     Cloudflare (Access + one Tunnel)     the internet, :443 and :80
-                          │                      │
-  ┌───────────────────────┼──────────────────────┼──────┐ host
-  │  cloudflared ─────────┼───────────────────┐  │      │
-  │                       ▼ the API           ▼  ▼      │
+                                   the internet, :443 and :80
+                                   (Cloudflare: DNS alone)
+                                                 │
+  ┌──────────────────────────────────────────────┼──────┐ host
+  │                                              ▼      │
   │  hangar-apiserver ◀── reads, the API ── hangar-edge │
   │   Connect + WebSocket, SQLite      (unprivileged)   │
   │   controllers in the same process         │         │
@@ -32,7 +32,7 @@ planned; the code is the authority wherever it exists.
 |---|---|---|
 | `hangar-apiserver` | unprivileged user | The API (Connect for unary and server-streaming, WebSocket for bidirectional streams), authentication and authorization, admission, the object store, and every controller. It signs people in through Google and issues Hangar's own sessions and tokens (`decisions/authentication.md`) |
 | `hangar-node` | root | Turns `Machine` objects into running Cloud Hypervisor processes; owns host storage, networking, and what it serves each network from inside its namespace: its resolver, the metadata service, and the edge's connections to public endpoints |
-| `hangar-edge` | unprivileged user | The front door: the only listener on :443 and :80, which systemd binds for it, ending TLS with certificates it gets over ACME DNS-01 and routing by `Host` to the API, the console's files and the public endpoints, within per-client limits (`decisions/front-door.md`). For public endpoints (`*.hangarlab.dev`) it also takes cloudflared's traffic until the cutover, signs private ones' callers in itself, through a handoff from the console or a Hangar token, and reaches machines through the node agent's dial socket (`decisions/public-endpoints.md`) |
+| `hangar-edge` | unprivileged user | The front door: the only listener on :443 and :80, which systemd binds for it, ending TLS with certificates it gets over ACME DNS-01 and routing by `Host` to the API, the console's files and the public endpoints, within per-client limits (`decisions/front-door.md`). For public endpoints (`*.hangarlab.dev`) it signs private ones' callers in itself, through a handoff from the console or a Hangar token, and reaches machines through the node agent's dial socket (`decisions/public-endpoints.md`) |
 | `hangar-init` | PID 1 in the guest | Boots containers from the platform's initramfs, frames their output on the console, serves exec over vsock, and later handles snapshot hooks (`decisions/guest-agent.md`) |
 | `hangar` | the user | CLI. Agent-friendly: non-interactive, `-o json`, stable exit codes |
 | web console | browser | React, using the generated TypeScript client |
@@ -97,11 +97,14 @@ machine's port 22 the same way, with a key the apiserver's SSH CA signs for
 minutes (`decisions/vm-ssh.md`). From the internet, everything comes in
 through `hangar-edge` on :443, which hands the API to the apiserver over a
 unix socket of its own, saying each client's address
-(`decisions/front-door.md`). A public endpoint's traffic never passes the
-apiserver: `hangar-edge` takes it on :443, or from cloudflared until the
-cutover, reads only endpoints
-and who may use them from the API, and asks the node agent, over a socket of
-its own, for a connection to the endpoint's port
+(`decisions/front-door.md`); Cloudflare is the DNS alone, pointing every
+name at the host (`decisions/cloudflare-setup.md`). Machines on the host
+reach the front door at the host's public addresses too, :80 and :443
+alone, so they call the platform by its public names. A public
+endpoint's traffic never passes the apiserver: `hangar-edge` takes it on
+:443, reads only endpoints and who may use them from the API, and asks the
+node agent, over a socket of its own, for a connection to the endpoint's
+port
 (`decisions/public-endpoints.md`).
 
 ## Where the reasoning lives

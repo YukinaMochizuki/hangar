@@ -27,8 +27,9 @@ ordinary workspaces and CI runners cannot provide.
   and the real driver, so a fake that drifts from reality fails on the testbed.
   That is what lets L2 be trusted.
 - **The control plane injects a clock**, so timeouts, compaction and heartbeats
-  can be fast-forwarded, and verifies Access JWTs against a configurable JWKS
-  URL, so tests sign their own tokens and run the real verification code.
+  can be fast-forwarded, and signs people in through a configurable OIDC
+  issuer, so tests run the real sign-in against a fake provider
+  (`internal/auth/oidctest`) that signs its own ID tokens.
 - **The testbed is a disposable VM** with nested KVM, set up by a script in the
   repo (`test/testbed/`) that shares most steps with host provisioning
   (`deploy/`), so host setup is exercised continuously. Production-only
