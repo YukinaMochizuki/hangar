@@ -64,7 +64,7 @@ func TestTheDecisionRecordNamesOnlyFragmentOptions(t *testing.T) {
 
 // offHardening is what the decision record's hardening section names but
 // keeps off, each with its reason there.
-var offHardening = map[string]bool{"CONFIG_MITIGATION_SLS": true}
+var offHardening = map[string]bool{"CONFIG_MITIGATION_SLS": true, "CONFIG_VSOCKETS_LOOPBACK": true}
 
 // Every hardening option the decision record names is on in the fragment,
 // but the few it says stay off.

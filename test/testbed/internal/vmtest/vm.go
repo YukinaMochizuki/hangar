@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -25,6 +26,9 @@ import (
 )
 
 var vmCount atomic.Int32
+
+// GuestCID is the vsock CID every guest is given.
+const GuestCID = 3
 
 // VM is one guest under Cloud Hypervisor.
 type VM struct {
@@ -105,6 +109,27 @@ func New(t testing.TB, cfg *guestv1.BootConfig) *VM {
 // framed virtio console), serial (the kernel's), ch.log, vsock.
 func (v *VM) Path(name string) string { return filepath.Join(v.dir, name) }
 
+// Put copies the host's file src into the root disk's top directory as name,
+// owned by root with mode 0755, before Start.
+func (v *VM) Put(src, name string) {
+	t := v.t
+	t.Helper()
+	if strings.Contains(name, "/") {
+		t.Fatalf("Put: %q is not a name in the top directory", name)
+	}
+	cmds := fmt.Sprintf("cd /\nwrite %s %s\nsif %s mode 0100755\nsif %s uid 0\nsif %s gid 0\n", src, name, name, name, name)
+	cmd := exec.Command("debugfs", "-w", "-f", "-", v.Path("root.img"))
+	cmd.Stdin = strings.NewReader(cmds)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("debugfs: %v: %s", err, out)
+	}
+	// debugfs exits 0 whatever its commands did.
+	out, err := exec.Command("debugfs", "-R", "stat /"+name, v.Path("root.img")).CombinedOutput()
+	if err != nil || !regexp.MustCompile(`Type: regular\s+Mode:\s+0755`).Match(out) || !regexp.MustCompile(`User:\s+0\s+Group:\s+0\s`).Match(out) {
+		t.Fatalf("%s did not land as a root-owned 0755 file in the root disk: %v: %s", name, err, out)
+	}
+}
+
 // Start launches Cloud Hypervisor as the node will: the root disk on vda,
 // the boot disk on vdb, the virtio console to a file, hybrid vsock.
 func (v *VM) Start() {
@@ -119,7 +144,7 @@ func (v *VM) Start() {
 		"--memory", "size=2048M",
 		"--disk", "path="+v.Path("root.img")+",image_type=raw", "path="+v.Path("boot.img")+",image_type=raw,readonly=on",
 		"--net", fmt.Sprintf("tap=%s%d,ip=%s,mask=255.255.255.0,mac=%s", tapPrefix, v.n, gw, mac),
-		"--vsock", "cid=3,socket="+v.Path("vsock"),
+		"--vsock", fmt.Sprintf("cid=%d,socket=%s", GuestCID, v.Path("vsock")),
 		"--console", "file="+v.Path("console"),
 		"--serial", "file="+v.Path("serial"),
 	)
