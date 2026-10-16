@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,8 +13,12 @@ func TestSecretFileModes(t *testing.T) {
 	creds := t.TempDir()
 	other := t.TempDir()
 	t.Setenv("CREDENTIALS_DIRECTORY", creds)
+	// Each case gets a file of its own: a file an earlier case left
+	// read-only cannot be written again by anyone but root.
+	n := 0
 	write := func(dir string, mode os.FileMode) string {
-		p := filepath.Join(dir, "token")
+		n++
+		p := filepath.Join(dir, fmt.Sprintf("token%d", n))
 		if err := os.WriteFile(p, []byte(" tok\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
