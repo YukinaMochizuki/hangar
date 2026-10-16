@@ -24,12 +24,16 @@ type Context struct {
 	Endpoint string `json:"endpoint"`
 	// Project is the default for project-scoped kinds.
 	Project string `json:"project,omitempty"`
-	// Auth is oidc (the default: a login from hangar login), dev, or local:
-	// root on the host, through a unix:// endpoint, the only auth such an
-	// endpoint takes.
+	// Auth is oidc (the default: a login from hangar login), token (an
+	// agent's service token, read from TokenFile), dev, or local: root on
+	// the host, through a unix:// endpoint, the only auth such an endpoint
+	// takes.
 	Auth string `json:"auth,omitempty"`
 	// User is the email dev auth sends.
 	User string `json:"user,omitempty"`
+	// TokenFile is the file token auth reads the service token from, on
+	// every run. The token itself is never in this file.
+	TokenFile string `json:"tokenFile,omitempty"`
 }
 
 // unixScheme starts an endpoint that is a unix socket on this host, such as
@@ -57,6 +61,10 @@ func (c *Context) check() error {
 		return usageErr("endpoint %q is a unix socket, which takes local auth, not %s", c.Endpoint, c.Auth)
 	case !unix && c.Auth == "local":
 		return usageErr("local auth needs a unix:// endpoint, not %q", c.Endpoint)
+	case c.Auth == "token" && c.TokenFile == "":
+		return usageErr("token auth needs --token-file, the file holding the service token")
+	case c.Auth != "token" && c.TokenFile != "":
+		return usageErr("--token-file goes with --auth token")
 	case c.Auth == "cloudflare":
 		return usageErr("cloudflare auth is gone: Hangar signs you in itself; run hangar config set-context NAME --endpoint %s --auth oidc, then hangar login", c.Endpoint)
 	}

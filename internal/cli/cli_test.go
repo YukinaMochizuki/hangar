@@ -53,10 +53,11 @@ func newWorld(t *testing.T) *world {
 	}
 	// Tests size machines and open tenants freely, past any quota.
 	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys,
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000})
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st})
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
-	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}}))
+	tokens, _ := srv.ServiceTokens()
+	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}, tokens}))
 	sock := filepath.Join(t.TempDir(), "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
