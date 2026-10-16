@@ -41,10 +41,13 @@ type OIDCConfig struct {
 
 // EnableOIDC turns on sign-in through the provider, keeping what it issues
 // in creds, and returns the chain that authenticates what it issues: CLI
-// access tokens, then browser session cookies. Call it before PublicHandler
-// and Run.
+// access tokens and service tokens, then browser session cookies. creds
+// must be Config.Credentials, when that is set. Call it before
+// PublicHandler and Run.
 func (s *Server) EnableOIDC(cfg OIDCConfig, creds store.Credentials) (auth.Chain, error) {
-	s.sessions = session.New(creds, session.Options{Now: s.clock.Now, Log: s.log, Admit: s.admitted})
+	if s.sessions == nil {
+		s.sessions = s.newSessions(creds)
+	}
 	flow, err := login.New(login.Config{
 		Issuer: cfg.Issuer, ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, PublicURL: cfg.PublicURL,
 		Sessions: s.sessions, Store: creds, Admit: s.admitted, HTTPClient: cfg.HTTPClient, DeviceInterval: cfg.DeviceInterval, MaxPending: cfg.MaxPending, Log: s.log,
@@ -54,6 +57,21 @@ func (s *Server) EnableOIDC(cfg OIDCConfig, creds store.Credentials) (auth.Chain
 	}
 	s.login = flow
 	return auth.Chain{session.Bearer{M: s.sessions}, session.Cookie{M: s.sessions, Origin: flow.Origin()}}, nil
+}
+
+// newSessions is the credentials manager over creds.
+func (s *Server) newSessions(creds store.Credentials) *session.Manager {
+	return session.New(creds, session.Options{Now: s.clock.Now, Log: s.log, Admit: s.admitted, ServiceUsed: s.serviceTokenUsed, ServiceLive: s.serviceTokenLive})
+}
+
+// ServiceTokens authenticates service tokens alone, for a public listener
+// where no one signs in, as in dev auth; ok is false without
+// Config.Credentials. With EnableOIDC its chain takes them already.
+func (s *Server) ServiceTokens() (a auth.Authenticator, ok bool) {
+	if s.sessions == nil {
+		return nil, false
+	}
+	return session.Bearer{M: s.sessions, AccessOff: true}, true
 }
 
 // admitted says whether a person may sign in: whether they hold a platform

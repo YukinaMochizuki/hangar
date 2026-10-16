@@ -147,11 +147,15 @@ func (s *Server) deleteDependents(ctx context.Context, ownerUID string) {
 // cascade deletes what a cascading object owns, and removes its finalizer
 // once nothing is left, which completes its deletion. Role bindings scoped to
 // it are not waited for: they go after it, so whoever it grants keeps seeing
-// the deletion through to the end.
+// the deletion through to the end. A service token's own bindings are: its
+// name is free again only once nothing grants anything under it.
 func (s *Server) cascade(ctx context.Context, b *backend, key resource.Key, obj proto.Message) {
+	if b.hooks.cascadeLock != nil {
+		defer b.hooks.cascadeLock(s, key)()
+	}
 	remaining := 0
 	err := s.dependents(ctx, object.Meta(obj).GetUid(), func(db *backend, dkey resource.Key) {
-		if db.r.Kind == registry.RoleBinding.Kind {
+		if db.r.Kind == registry.RoleBinding.Kind && b.r.Kind != registry.ServiceToken.Kind {
 			return
 		}
 		remaining++
@@ -165,6 +169,14 @@ func (s *Server) cascade(ctx context.Context, b *backend, key resource.Key, obj 
 	}
 	if remaining > 0 {
 		return
+	}
+	if b.hooks.beforeGone != nil {
+		if err := b.hooks.beforeGone(ctx, s, key); err != nil {
+			if ctx.Err() == nil {
+				s.log.Error("an object being deleted cannot go yet", "kind", b.r.Kind, "project", key.Project, "name", key.Name, "error", err)
+			}
+			return
+		}
 	}
 	if err := s.RemoveFinalizer(ctx, b.r, key, dependentsFinalizer); err != nil && ctx.Err() == nil {
 		s.log.Error("finishing a cascading delete failed", "kind", b.r.Kind, "name", key.Name, "error", err)
@@ -182,7 +194,7 @@ func (s *Server) finishOwners(ctx context.Context, project string, deleted proto
 		b := s.backend(r)
 		key := resource.Key{Name: ref.GetName()}
 		if r.ProjectScoped() {
-			key.Project = project
+			key.Project = ownerProject(project, ref)
 		}
 		o, err := s.store.Get(ctx, b.storeKey(key))
 		if err != nil {
@@ -242,7 +254,9 @@ func (s *Server) ownerAlive(ctx context.Context, project string, ref *metav1.Own
 	if !ok {
 		return false, nil
 	}
-	if !r.ProjectScoped() {
+	if r.ProjectScoped() {
+		project = ownerProject(project, ref)
+	} else {
 		project = ""
 	}
 	o, err := s.store.Get(ctx, store.Key{Kind: r.Kind, Project: project, Name: ref.GetName()})
@@ -257,6 +271,15 @@ func (s *Server) ownerAlive(ctx context.Context, project string, ref *metav1.Own
 		return false, err
 	}
 	return object.Meta(owner).GetUid() == ref.GetUid(), nil
+}
+
+// ownerProject is the project of a project-scoped owner: the one its
+// reference names, for a global dependent, or else the dependent's own.
+func ownerProject(dependentProject string, ref *metav1.OwnerReference) string {
+	if ref.GetProject() != "" {
+		return ref.GetProject()
+	}
+	return dependentProject
 }
 
 // collect deletes one object as the system. A failure is logged rather than

@@ -480,17 +480,17 @@ func TestOwnedTenantsAreCapped(t *testing.T) {
 	wantExhausted(t, newTenant(bob, "bob3"), "owns 2 tenants", "bob's third tenant")
 
 	// A service token is capped by the platform default.
+	token := serviceToken(t, s, system, "web", "tok")
 	if _, err := s.backend(registry.RoleBinding).Apply(system, &iamv1alpha1.RoleBinding{
 		Metadata: &metav1.ObjectMeta{Name: "member-token"},
 		Spec: &iamv1alpha1.RoleBindingSpec{
-			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_ServiceToken{ServiceToken: "tok"}},
+			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_ServiceToken{ServiceToken: "web/tok"}},
 			Role:    "platform.member",
 			Scope:   &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Platform{}},
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	token := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.ServiceToken, ID: "tok"})
 	for _, name := range []string{"tok1", "tok2"} {
 		if err := newTenant(token, name); err != nil {
 			t.Fatalf("the token's tenant %s: %v", name, err)

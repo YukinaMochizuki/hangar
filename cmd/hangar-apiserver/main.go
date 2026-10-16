@@ -188,7 +188,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sockets) er
 	}
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
-		PublicEndpoints: endpoints, DefaultMaxOwnedTenants: f.maxOwnedTenants,
+		PublicEndpoints: endpoints, DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
 	})
 	public, err := publicChain(f, srv, st)
 	if err != nil {
@@ -276,10 +276,15 @@ func checkAuthFlags(f flags) error {
 }
 
 // publicChain is the public listener's authentication: in oidc auth, the
-// credentials sign-in issues, kept in st; in dev auth, the dev header.
+// credentials sign-in issues, kept in st, and service tokens; in dev auth,
+// the dev header, then service tokens.
 func publicChain(f flags, srv *apiserver.Server, st *sqlite.Store) (auth.Chain, error) {
 	if f.authMode == "dev" {
-		return auth.Chain{auth.Dev{}}, nil
+		tokens, ok := srv.ServiceTokens()
+		if !ok {
+			return nil, errors.New("dev auth takes service tokens, which need the credentials store")
+		}
+		return auth.Chain{auth.Dev{}, tokens}, nil
 	}
 	secret, err := readSecretFile(f.oidcSecretFile)
 	if err != nil {

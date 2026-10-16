@@ -496,6 +496,9 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	if b.hooks.onCreate != nil {
 		b.hooks.onCreate(p, in)
 	}
+	if b.hooks.createLock != nil {
+		defer b.hooks.createLock(b.s, in)()
+	}
 	if err := b.s.admit(ctx, b, p, nil, in); err != nil {
 		return resource.ApplyResult{}, err
 	}
@@ -509,6 +512,15 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	}
 	if owner != nil && !slices.ContainsFunc(meta.OwnerReferences, func(r *metav1.OwnerReference) bool { return r.GetUid() == owner.GetUid() }) {
 		meta.OwnerReferences = append(meta.OwnerReferences, owner)
+	}
+	if b.hooks.alsoOwnedBy != nil {
+		owner, err := b.hooks.alsoOwnedBy(ctx, b.s, p, in)
+		if err != nil {
+			return resource.ApplyResult{}, err
+		}
+		if owner != nil && !slices.ContainsFunc(meta.OwnerReferences, func(r *metav1.OwnerReference) bool { return r.GetUid() == owner.GetUid() }) {
+			meta.OwnerReferences = append(meta.OwnerReferences, owner)
+		}
 	}
 	if b.hooks.cascades && !slices.Contains(meta.Finalizers, dependentsFinalizer) {
 		meta.Finalizers = append(meta.Finalizers, dependentsFinalizer)
@@ -756,6 +768,9 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		}
 		if len(meta.GetFinalizers()) > 0 {
 			if meta.GetDeleteTime() != nil {
+				if err := b.afterDelete(ctx, key); err != nil {
+					return nil, err
+				}
 				b.answer(p, old)
 				return old, nil
 			}
@@ -772,6 +787,9 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 				return nil, apiError(err)
 			}
 			meta.ResourceVersion = rev
+			if err := b.afterDelete(ctx, key); err != nil {
+				return nil, err
+			}
 			b.answer(p, old)
 			return old, nil
 		}
@@ -782,10 +800,26 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		if err != nil {
 			return nil, apiError(err)
 		}
+		if err := b.afterDelete(ctx, key); err != nil {
+			return nil, err
+		}
 		b.answer(p, old)
 		return old, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))
+}
+
+// afterDelete runs the kind's afterDelete hook, if it has one, once a delete
+// is stored. Its failure fails the call, which the caller retries: the
+// object is still there, being deleted, and the hook runs again.
+func (b *backend) afterDelete(ctx context.Context, key resource.Key) error {
+	if b.hooks.afterDelete == nil {
+		return nil
+	}
+	if err := b.hooks.afterDelete(context.WithoutCancel(ctx), b.s, key); err != nil {
+		return apiError(err)
+	}
+	return nil
 }
 
 func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status proto.Message, expected *int64) (proto.Message, error) {

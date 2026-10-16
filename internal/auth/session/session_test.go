@@ -403,6 +403,128 @@ func TestBearer(t *testing.T) {
 	}
 }
 
+var agent = auth.Principal{Type: auth.ServiceToken, ID: "web/deployer"}
+
+// TestServiceTokens: a service token works until it expires, as a bearer
+// token, and issuing another replaces it; its uses are reported at most
+// once a minute; access-token-free bearers take only service tokens.
+func TestServiceTokens(t *testing.T) {
+	ctx := t.Context()
+	var mu sync.Mutex
+	var uses []time.Time
+	m, c, _ := newManager(t, session.Options{ServiceUsed: func(p auth.Principal, at time.Time) {
+		if p != agent {
+			t.Errorf("use reported for %v", p)
+		}
+		mu.Lock()
+		uses = append(uses, at)
+		mu.Unlock()
+	}})
+	first, err := m.IssueService(ctx, agent, "uid-1", 2*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Secret.Prefix() != token.Service || !first.ExpiresAt.Equal(first.IssuedAt.Add(2*time.Hour)) {
+		t.Fatalf("issued %v until %v", first.Secret, first.ExpiresAt)
+	}
+	bearer := session.Bearer{M: m}
+	authn := func(b session.Bearer, s token.Secret) (auth.Principal, error) {
+		p, ok, err := b.Authenticate(ctx, http.Header{"Authorization": {"Bearer " + s.Reveal()}})
+		if err == nil && !ok {
+			err = errors.New("not recognized")
+		}
+		return p, err
+	}
+	if p, err := authn(bearer, first.Secret); err != nil || p != agent {
+		t.Fatalf("service token: %v, %v", p, err)
+	}
+	if _, err := m.Lookup(ctx, first.Secret, session.TypeAccess); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("a service token as an access token: %v", err)
+	}
+	// Uses within a minute are reported once.
+	if _, err := authn(bearer, first.Secret); err != nil {
+		t.Fatal(err)
+	}
+	c.Advance(time.Minute)
+	if _, err := authn(bearer, first.Secret); err != nil {
+		t.Fatal(err)
+	}
+	mu.Lock()
+	if len(uses) != 2 {
+		t.Errorf("%d uses reported, want 2: %v", len(uses), uses)
+	}
+	mu.Unlock()
+
+	second, err := m.IssueService(ctx, agent, "uid-1", 2*time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authn(bearer, first.Secret); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("a replaced service token: %v", err)
+	}
+	if _, err := authn(bearer, second.Secret); err != nil {
+		t.Errorf("its replacement: %v", err)
+	}
+
+	// Without access tokens, a bearer takes service tokens alone.
+	cli, _ := m.StartCLI(ctx, alice)
+	tokensOnly := session.Bearer{M: m, AccessOff: true}
+	if _, err := authn(tokensOnly, cli.Access); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("an access token where only service tokens count: %v", err)
+	}
+	if _, err := authn(tokensOnly, second.Secret); err != nil {
+		t.Errorf("a service token where only they count: %v", err)
+	}
+	for _, s := range []token.Secret{"hgr_nope", token.New(token.Service)} {
+		if _, err := authn(bearer, s); !errors.Is(err, session.ErrInvalid) {
+			t.Errorf("an unknown service token: %v", err)
+		}
+	}
+
+	c.Advance(2 * time.Hour)
+	if _, err := authn(bearer, second.Secret); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("an expired service token: %v", err)
+	}
+	// Revoking the principal ends it, as deleting the token does.
+	third, _ := m.IssueService(ctx, agent, "uid-1", time.Hour)
+	if _, err := m.RevokePrincipal(ctx, agent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := authn(bearer, third.Secret); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("a revoked service token: %v", err)
+	}
+}
+
+// TestServiceTokenNeedsItsToken: a service token works only while the token
+// of the uid it was issued to stands, and is refused, as an unknown one is,
+// once that token is gone or another holds its name.
+func TestServiceTokenNeedsItsToken(t *testing.T) {
+	ctx := t.Context()
+	var mu sync.Mutex
+	standing := "uid-1"
+	m, _, _ := newManager(t, session.Options{ServiceLive: func(_ context.Context, p auth.Principal, uid string) (bool, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		return p == agent && uid == standing, nil
+	}})
+	issued, err := m.IssueService(ctx, agent, "uid-1", time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Lookup(ctx, issued.Secret, session.TypeService); err != nil {
+		t.Fatalf("while its token stands: %v", err)
+	}
+	mu.Lock()
+	standing = "uid-2" // a token of the same name, made again
+	mu.Unlock()
+	if _, err := m.Lookup(ctx, issued.Secret, session.TypeService); !errors.Is(err, session.ErrInvalid) {
+		t.Errorf("once another token holds the name: %v", err)
+	}
+	if _, err := m.IssueService(ctx, agent, "a.b", time.Hour); err == nil {
+		t.Error("a uid holding the family separator was taken")
+	}
+}
+
 // TestSecretsDoNotPrint: a secret never shows in fmt or in an error.
 func TestSecretsDoNotPrint(t *testing.T) {
 	s := token.New(token.Access)

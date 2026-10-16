@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "google/protobuf/duration.proto";
+import "hangar/iam/v1alpha1/role_binding.proto";
+import "hangar/iam/v1alpha1/service_token.proto";
+
+// ServiceTokenIssuerService issues service tokens' secrets. Each call
+// returns a secret once: Hangar keeps only its SHA-256, so nothing can show
+// it again. Both calls need iam.servicetokens.apply in the token's project,
+// which only owners and platform.root hold. It is not a resource's service,
+// so it is written by hand rather than generated. See
+// docs/decisions/authentication.md.
+service ServiceTokenIssuerService {
+  // CreateServiceToken creates a token with its first secret, and, with a
+  // role, a RoleBinding granting it that role in the project. The binding
+  // is authorized as the caller: no one grants a token more than they could
+  // grant by hand. The name must be free (ALREADY_EXISTS otherwise).
+  rpc CreateServiceToken(CreateServiceTokenRequest) returns (CreateServiceTokenResponse);
+  // RotateServiceToken issues a new secret for a token. The one it had
+  // stops working the moment the new one is stored.
+  rpc RotateServiceToken(RotateServiceTokenRequest) returns (RotateServiceTokenResponse);
+}
+
+message CreateServiceTokenRequest {
+  string project = 1;
+  string name = 2;
+  string description = 3;
+  // A role to bind the token to in the project, such as project.editor;
+  // empty binds nothing.
+  string role = 4;
+  // How long the secret works: at least an hour, at most three years.
+  // Unset is a year.
+  google.protobuf.Duration duration = 5;
+}
+
+message CreateServiceTokenResponse {
+  ServiceToken service_token = 1;
+  // The secret, hgr_ and 43 more characters. It is never shown again.
+  string secret = 2;
+  // The binding made for the role, if one was asked for.
+  RoleBinding role_binding = 3;
+}
+
+message RotateServiceTokenRequest {
+  string project = 1;
+  string name = 2;
+  // As CreateServiceTokenRequest.duration.
+  google.protobuf.Duration duration = 3;
+}
+
+message RotateServiceTokenResponse {
+  ServiceToken service_token = 1;
+  // The new secret. It is never shown again.
+  string secret = 2;
+}

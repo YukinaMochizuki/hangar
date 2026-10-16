@@ -97,11 +97,32 @@ type kindHooks struct {
 	// owner returns the object a new one belongs to, if any: deleting the
 	// owner deletes it.
 	owner func(ctx context.Context, s *Server, obj proto.Message) (registry.Resource, resource.Key, bool)
+	// alsoOwnedBy returns a second owner a new object belongs to, if any,
+	// which must exist, not be on its way out, and be one p may read: as a
+	// RoleBinding naming a ServiceToken is the token's.
+	alsoOwnedBy func(ctx context.Context, s *Server, p auth.Principal, obj proto.Message) (*metav1.OwnerReference, error)
+	// createLock, if set, is taken from the admission of a new object to
+	// its write, and returns what releases it.
+	createLock func(s *Server, obj proto.Message) (unlock func())
+	// cascadeLock, if set, is taken by the garbage collector for the whole
+	// of a cascade of the object, from looking for what it owns to letting
+	// it go, and returns what releases it.
+	cascadeLock func(s *Server, key resource.Key) (unlock func())
 	// validate checks rules specific to the kind; old is nil on create.
 	validate func(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error
 	// beforeDelete may refuse a delete; it runs when the delete is asked
 	// for, not again while finalizers hold the object.
 	beforeDelete func(ctx context.Context, s *Server, obj proto.Message) error
+	// afterDelete runs once a delete is stored, whether it marked the
+	// object or removed it, and again on every later delete of an object
+	// being deleted, so it must be idempotent: it ends what the object
+	// stands for outside the store, as a ServiceToken's secret.
+	afterDelete func(ctx context.Context, s *Server, key resource.Key) error
+	// beforeGone runs when a cascading object has nothing left and is about
+	// to go; its failure keeps the object, being deleted, and the garbage
+	// collector tries again. It ends for good what afterDelete may have
+	// failed to.
+	beforeGone func(ctx context.Context, s *Server, key resource.Key) error
 	// onCreate, if set, records on a new object what the apiserver keeps
 	// about who creates it; it runs once the caller's metadata is checked,
 	// before admission.
@@ -225,7 +246,25 @@ func hooksFor(r registry.Resource) kindHooks {
 				}
 				return registry.Resource{}, resource.Key{}, false
 			},
-			validate: validateRoleBinding,
+			// And one naming a service token goes with the token.
+			alsoOwnedBy: bindingTokenOwner,
+			// Shared with the token's cascade: see Server.tokenBindings.
+			createLock: lockBindingToken,
+			validate:   validateRoleBinding,
+		}
+	case registry.ServiceToken.Kind:
+		// Deleting a token revokes its secret at once and waits for the
+		// RoleBindings naming it, so no later token of its name finds them.
+		// See servicetokens.go.
+		return kindHooks{
+			target:          projectTarget,
+			owner:           ownedByProject,
+			validate:        validateServiceToken,
+			cascades:        true,
+			hiddenFromNodes: true,
+			afterDelete:     revokeServiceToken,
+			beforeGone:      revokeServiceToken,
+			cascadeLock:     lockTokenCascade,
 		}
 	case registry.User.Kind:
 		// A person signs up through AccountService, which creates their User
@@ -474,7 +513,7 @@ func validateProject(ctx context.Context, s *Server, p auth.Principal, old, obj 
 	return s.validateProjectLimits(ctx, p, old, obj)
 }
 
-func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, _, obj proto.Message) error {
+func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	spec := obj.(*iamv1alpha1.RoleBinding).GetSpec()
 	role, ok := s.authz.Role(spec.GetRole())
 	if !ok {
@@ -486,11 +525,19 @@ func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, _, ob
 			return invalid("spec.subject.user must be a lowercase email address")
 		}
 	case *iamv1alpha1.Subject_ServiceToken:
-		if sub.ServiceToken == "" {
-			return invalid("spec.subject.service_token must not be empty")
+		if _, err := parseTokenSubject(sub.ServiceToken); err != nil {
+			return err
 		}
 	default:
 		return invalid("spec.subject is required")
+	}
+	// A binding naming a token is owned by it from its creation, so it
+	// cannot come to name another, nor a token's binding someone else.
+	if old != nil {
+		was := old.(*iamv1alpha1.RoleBinding).GetSpec().GetSubject()
+		if (was.GetServiceToken() != "" || spec.GetSubject().GetServiceToken() != "") && !proto.Equal(was, spec.GetSubject()) {
+			return invalid("spec.subject cannot change on a binding that names a service token; delete it and make another")
+		}
 	}
 	var level authz.ScopeLevel
 	switch t := spec.GetScope().GetTarget().(type) {

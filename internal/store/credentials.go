@@ -65,6 +65,12 @@ type Credentials interface {
 	// credential in, as RevokeCredentialFamily does, and returns how many
 	// credentials it deleted.
 	RevokeCredentialsOf(ctx context.Context, principal string, until time.Time) (int, error)
+	// ReplaceCredentials revokes every family the principal holds a
+	// credential in, as RevokeCredentialsOf does, and stores c, all in one
+	// transaction: of any number of concurrent calls for one principal,
+	// exactly the credential of the last to commit is left. c must be the
+	// principal's, in a family not revoked (ErrRevoked).
+	ReplaceCredentials(ctx context.Context, c Credential, until time.Time) error
 
 	// CreateAuthRequest stores a new login in progress; ErrExists if the
 	// key is taken.

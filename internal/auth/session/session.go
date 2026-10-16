@@ -8,9 +8,11 @@ package session
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -27,7 +29,13 @@ const (
 	// claimed. Its hash is of nothing anyone holds, so it never
 	// authenticates.
 	TypeReserved = "reserved"
+	// TypeService is an agent's service token. Its principal holds one at a
+	// time, each in a family of its own.
+	TypeService = "service"
 )
+
+// familySep ends the token's uid in a service credential's family.
+const familySep = "."
 
 // Lifetimes. A browser session ends after SessionIdle without use, and
 // SessionMax after sign-in whatever its use. A CLI login's refresh tokens
@@ -66,6 +74,10 @@ type Manager struct {
 	log   *slog.Logger
 	// admit says whether a principal may still renew a login.
 	admit func(context.Context, auth.Principal) (bool, error)
+	// used hears of a service token's use, at most once per touchEvery.
+	used func(auth.Principal, time.Time)
+	// live says whether the service token of a uid still stands.
+	live func(ctx context.Context, p auth.Principal, uid string) (bool, error)
 }
 
 // Options configure a Manager; zero values are the defaults.
@@ -76,11 +88,19 @@ type Options struct {
 	// Admit is asked at every refresh whether the principal may still
 	// sign in; a no revokes the login. Nil admits everyone.
 	Admit func(context.Context, auth.Principal) (bool, error)
+	// ServiceUsed is told when a service token is used, at most once a
+	// minute per token, to record it where people can see it. It must not
+	// block. Nil is no one.
+	ServiceUsed func(p auth.Principal, at time.Time)
+	// ServiceLive is asked on every use of a service token whether the
+	// token it was issued to, by uid, still exists and is not being
+	// deleted; a no refuses it, as an unknown one is. Nil asks no one.
+	ServiceLive func(ctx context.Context, p auth.Principal, uid string) (bool, error)
 }
 
 // New returns a Manager over the store.
 func New(st store.Credentials, opts Options) *Manager {
-	m := &Manager{store: st, now: opts.Now, log: opts.Log, admit: opts.Admit}
+	m := &Manager{store: st, now: opts.Now, log: opts.Log, admit: opts.Admit, used: opts.ServiceUsed, live: opts.ServiceLive}
 	if m.now == nil {
 		m.now = time.Now
 	}
@@ -256,9 +276,36 @@ func (m *Manager) Refresh(ctx context.Context, refresh token.Secret) (Tokens, er
 	return m.cliTokens(ctx, p, c.Family, c.ExpiresAt)
 }
 
+// ServiceToken is a service token just issued: its secret, which exists
+// nowhere else, and when it ends.
+type ServiceToken struct {
+	Secret    token.Secret
+	IssuedAt  time.Time
+	ExpiresAt time.Time
+}
+
+// IssueService issues a service token for the principal, the token of the
+// uid, valid for ttl, in place of any it held: from the moment it is stored
+// the earlier one authenticates nothing, and of two issued at once only one
+// is left. The uid goes in the credential's family, so the secret works only
+// while that very token stands (Options.ServiceLive), never for a later one
+// of the same name.
+func (m *Manager) IssueService(ctx context.Context, p auth.Principal, uid string, ttl time.Duration) (ServiceToken, error) {
+	if uid == "" || strings.Contains(uid, familySep) {
+		return ServiceToken{}, fmt.Errorf("issue a service token: bad uid %q", uid)
+	}
+	now := m.now()
+	secret, c := m.credential(Spec{Type: TypeService, Prefix: token.Service, Family: uid + familySep + token.Random(), Principal: p, ExpiresAt: now.Add(ttl)})
+	if err := m.store.ReplaceCredentials(ctx, c, now); err != nil {
+		return ServiceToken{}, fmt.Errorf("issue a service token: %w", err)
+	}
+	return ServiceToken{Secret: secret, IssuedAt: now, ExpiresAt: c.ExpiresAt}, nil
+}
+
 // Lookup returns who holds a credential of the type, and records its use.
 func (m *Manager) Lookup(ctx context.Context, s token.Secret, typ string) (auth.Principal, error) {
-	c, err := m.store.GetCredential(ctx, s.Hash())
+	hash := s.Hash()
+	c, err := m.store.GetCredential(ctx, hash)
 	if errors.Is(err, store.ErrNotFound) {
 		return auth.Principal{}, ErrInvalid
 	}
@@ -266,8 +313,38 @@ func (m *Manager) Lookup(ctx context.Context, s token.Secret, typ string) (auth.
 		return auth.Principal{}, err
 	}
 	now := m.now()
+	// The store found the row by its hash; comparing again in constant time
+	// costs nothing and depends on no index's comparison.
+	if subtle.ConstantTimeCompare([]byte(c.Hash), []byte(hash)) != 1 {
+		return auth.Principal{}, ErrInvalid
+	}
 	if c.Type != typ || !c.UsedAt.IsZero() || expired(c, now) {
 		return auth.Principal{}, ErrInvalid
+	}
+	if c.Type == TypeService && m.live != nil {
+		p, err := auth.ParsePrincipal(c.Principal)
+		if err != nil {
+			return auth.Principal{}, ErrInvalid
+		}
+		uid, _, ok := strings.Cut(c.Family, familySep)
+		if !ok {
+			return auth.Principal{}, ErrInvalid
+		}
+		if live, err := m.live(ctx, p, uid); err != nil {
+			return auth.Principal{}, err
+		} else if !live {
+			return auth.Principal{}, ErrInvalid
+		}
+	}
+	if c.Type == TypeService && now.Sub(c.LastUsedAt) >= touchEvery {
+		if err := m.store.TouchCredential(ctx, c.Hash, now, time.Time{}); errors.Is(err, store.ErrNotFound) {
+			return auth.Principal{}, ErrInvalid
+		} else if err != nil {
+			return auth.Principal{}, err
+		}
+		if p, err := auth.ParsePrincipal(c.Principal); err == nil && m.used != nil {
+			m.used(p, now)
+		}
 	}
 	if idle := idleFor(c.Type); idle > 0 && now.Sub(c.LastUsedAt) >= touchEvery {
 		err := m.store.TouchCredential(ctx, c.Hash, now, earliest(now.Add(idle), c.ExpiresAt))
