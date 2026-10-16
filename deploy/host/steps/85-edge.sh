@@ -58,10 +58,8 @@ edge_sockets() {
 edge_front_flags() {
 	services_front_door_on || return 0
 	local v
-	printf -- ' --cp-domain %s --public-socket %s --cert-storage %s --console-dir %s' \
-		"$(local_env HANGAR_CP_DOMAIN)" "$SERVICES_PUBLIC_SOCKET" "$EDGE_STATE" "$EDGE_CONSOLE_DIR"
-	v=$(local_env HANGAR_ACME_EMAIL)
-	[ -z "$v" ] || printf -- ' --acme-email %s' "$v"
+	printf -- ' --cp-domain %s --public-socket %s --cert-storage %s --console-dir %s --acme-email %s' \
+		"$(local_env HANGAR_CP_DOMAIN)" "$SERVICES_PUBLIC_SOCKET" "$EDGE_STATE" "$EDGE_CONSOLE_DIR" "$(local_env HANGAR_ACME_EMAIL)"
 	v=$(local_env HANGAR_ACME_CA)
 	[ -z "$v" ] || printf -- ' --acme-ca %s' "$v"
 	v=$(local_env HANGAR_ACME_CA_ROOT)
@@ -205,6 +203,10 @@ edge_problem() {
 	services_front_door_on || return 0
 	edge_needs_dns_token && ! edge_dns_token_ok &&
 		printf '%s\n' "the front door (HANGAR_CP_DOMAIN) needs its DNS token: $(edge_dns_token_how)"
+	# Without an email certmagic may register the ACME account as
+	# mailto:default on a first start (docs/decisions/front-door.md).
+	[ -n "$(local_env HANGAR_ACME_EMAIL)" ] ||
+		printf '%s\n' "the front door (HANGAR_CP_DOMAIN) needs HANGAR_ACME_EMAIL in $LOCAL_ENV, the ACME account's contact"
 	# Sign-in's provider returns to the public URL's /auth/callback, which
 	# only the console's site hands the apiserver.
 	local want

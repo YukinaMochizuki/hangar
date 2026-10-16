@@ -243,8 +243,12 @@ application and every `hangar public endpoint: …` application.
 The front door (`docs/decisions/front-door.md`) gets its certificates over
 ACME DNS-01: `hangar-edge` writes the challenge's TXT record in the zone
 through Cloudflare's DNS API, with a token of its own, apart from the
-tool's and the apiserver's. Make it in My Profile → API Tokens → Create
-Token → Custom token:
+tool's and the apiserver's. Its ACME account also needs an email,
+`HANGAR_ACME_EMAIL` in `/etc/hangar/local.env`
+(`docs/runbook/host-bootstrap.md`): without one, certmagic's process-wide
+email discovery can register the account as `mailto:default` on a first
+start, which the CA refuses, so the `edge` step refuses the front door.
+Make the token in My Profile → API Tokens → Create Token → Custom token:
 
 - Permissions: Zone → Zone → Read, and Zone → DNS → Edit.
 - Zone resources: Include → Specific zone, the control plane's zone

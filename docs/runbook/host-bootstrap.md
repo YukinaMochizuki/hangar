@@ -252,8 +252,14 @@ cutover from Cloudflare, which is a DNS change.
 
    ```sh
    HANGAR_CP_DOMAIN=hangarlab.cloud      # api. and console. are under it
-   HANGAR_ACME_EMAIL=<ops address>       # optional: told of certificate problems
+   HANGAR_ACME_EMAIL=ops@example.com     # the owner's address: the ACME account's contact
    ```
+
+   `HANGAR_ACME_EMAIL` is required; the `edge` step and `hangar-edge`
+   refuse the front door without it. Without an email, certmagic's
+   process-wide email discovery can register the account as
+   `mailto:default` on a first start, which the CA refuses
+   (`docs/decisions/front-door.md`).
 
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its

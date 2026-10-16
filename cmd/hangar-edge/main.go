@@ -78,7 +78,7 @@ func main() {
 	flag.StringVar(&f.certStorage, "cert-storage", stateDir(), "directory the certificates, their keys and the ACME account are kept in, the edge's alone")
 	flag.StringVar(&f.acmeCA, "acme-ca", front.LetsEncrypt, "ACME directory URL; "+front.LetsEncryptStaging+" for a testbed")
 	flag.StringVar(&f.acmeCARoot, "acme-ca-root", "", "PEM file of the only roots the ACME directory's TLS certificate is checked against, for a test CA")
-	flag.StringVar(&f.acmeMail, "acme-email", "", "contact for the ACME account, told of problems with the certificates")
+	flag.StringVar(&f.acmeMail, "acme-email", "", "contact for the ACME account, told of problems with the certificates; required with --cp-domain")
 	flag.StringVar(&f.acmeDNS, "acme-dns", "cloudflare", "how DNS-01 challenges are answered: cloudflare"+testDNSUsage)
 	flag.StringVar(&f.dnsTokenFile, "cloudflare-dns-token-file", credential(dnsTokenCredential), "file only its owner reads holding a Cloudflare token that may edit DNS in the two domains' zones")
 	flag.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
@@ -139,6 +139,9 @@ func credential(name string) string {
 }
 
 func run(ctx context.Context, f flags, log *slog.Logger) error {
+	if err := checkFlags(f); err != nil {
+		return err
+	}
 	if os.Geteuid() == 0 {
 		return errors.New("hangar-edge runs as its own unprivileged user, never root")
 	}
@@ -203,6 +206,15 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		})
 	}
 	return g.Wait()
+}
+
+// checkFlags refuses flags the edge cannot run with, before it starts
+// anything.
+func checkFlags(f flags) error {
+	if f.cpDomain != "" && f.acmeMail == "" {
+		return errors.New("the front door (--cp-domain) needs --acme-email: without it certmagic may register the ACME account as mailto:default on a first start, which the CA refuses (docs/decisions/front-door.md)")
+	}
+	return nil
 }
 
 // frontDoor sets up the front door on :443 and :80 and returns what serves

@@ -76,6 +76,7 @@ func (c *testCA) certs(t *testing.T, storage string, log *slog.Logger) *tls.Conf
 		Storage: storage, CA: c.pebble.Directory, CARoots: c.pebble.DirectoryRoots,
 		DNS: c.dns, Resolvers: []string{c.dns.Addr},
 		Names: []string{apiHost, consoleHost, "*." + userDomain}, Log: log,
+		Email: "edge@example.com",
 	})
 	if err != nil {
 		t.Fatal(err)

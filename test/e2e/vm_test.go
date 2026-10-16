@@ -53,12 +53,40 @@ func (w *world) waitVMReason(name, reason string) *computev1alpha1.VirtualMachin
 // boot:end:code, with :stopped for a boot the platform ended.
 func (w *world) vmLogs(name string) []string {
 	w.t.Helper()
+	out, err := w.readVMLogs(name)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	return out
+}
+
+// vmLogsOnceConnected is vmLogs once the node is connected: an agent just
+// started dials the apiserver in the background, and until it has, a call
+// to its node is Unavailable.
+func (w *world) vmLogsOnceConnected(name string) []string {
+	w.t.Helper()
+	var out []string
+	w.eventually("the logs of "+name, func() (bool, string) {
+		var err error
+		out, err = w.readVMLogs(name)
+		if connect.CodeOf(err) == connect.CodeUnavailable {
+			return false, err.Error()
+		}
+		if err != nil {
+			w.t.Fatal(err)
+		}
+		return true, ""
+	})
+	return out
+}
+
+func (w *world) readVMLogs(name string) ([]string, error) {
 	c := computev1alpha1connect.NewMachineCapabilityServiceClient(apiservertest.DevUser(apiservertest.Root), w.env.URL)
 	stream, err := c.Logs(context.Background(), connect.NewRequest(&computev1alpha1.LogsRequest{
 		Project: project, Kind: registry.VirtualMachine.Kind, Name: name,
 	}))
 	if err != nil {
-		w.t.Fatal(err)
+		return nil, err
 	}
 	defer func() { _ = stream.Close() }()
 	var out []string
@@ -76,9 +104,9 @@ func (w *world) vmLogs(name string) []string {
 		}
 	}
 	if err := stream.Err(); err != nil {
-		w.t.Fatal(err)
+		return nil, err
 	}
-	return out
+	return out, nil
 }
 
 // TestAVirtualMachineRuns follows a VM from apply, through its root disk
@@ -163,7 +191,7 @@ func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
 	bootedAgain := func(boot int) {
 		t.Helper()
 		w.eventually(fmt.Sprintf("boot %d", boot), func() (bool, string) {
-			lines := w.vmLogs("web")
+			lines := w.vmLogsOnceConnected("web")
 			vm := w.host.Snapshot().VMs[uid]
 			return vm.State == driver.VMRunning && len(lines) > 0 && lines[len(lines)-1] == fmt.Sprintf("%d:Booting from the root disk", boot),
 				fmt.Sprintf("%+v, logs %q", vm, lines)
@@ -198,11 +226,14 @@ func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
 	w.host.Reboot()
 	w.startAgent()
 	w.waitVMReason("web", computeapi.ReasonPoweredOff)
+	// The status says PoweredOff from before the reboot, so wait for the
+	// agent to be back before giving it time to wrongly boot the VM.
+	lines := w.vmLogsOnceConnected("web")
 	time.Sleep(200 * time.Millisecond)
 	if vm := w.host.Snapshot().VMs[uid]; vm.State != driver.VMExited {
 		t.Errorf("a VM whose guest powered off, after a reboot: %+v", vm)
 	}
-	if lines := w.vmLogs("web"); lines[len(lines)-1] != "3:end:0" {
+	if lines[len(lines)-1] != "3:end:0" {
 		t.Errorf("logs after the power-off and the reboot %q", lines)
 	}
 
