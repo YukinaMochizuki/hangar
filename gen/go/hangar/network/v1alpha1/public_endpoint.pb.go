@@ -29,7 +29,7 @@ const (
 	// Means PRIVATE.
 	PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_UNSPECIFIED PublicEndpointAccess = 0
 	// Only those who hold network.publicendpoints.access on the endpoint's
-	// project, signed in through Cloudflare Access.
+	// project, signed in through Hangar or holding a Hangar token.
 	PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE PublicEndpointAccess = 1
 	// Anyone on the internet, with no sign-in.
 	PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC PublicEndpointAccess = 2
@@ -320,12 +320,9 @@ type PublicEndpointStatus struct {
 	// The Machine the endpoint reaches; empty while its target has none.
 	Machine string `protobuf:"bytes,5,opt,name=machine,proto3" json:"machine,omitempty"`
 	// The Node that machine runs on; empty while it is not placed.
-	Node string `protobuf:"bytes,6,opt,name=node,proto3" json:"node,omitempty"`
-	// The Cloudflare Access application that lets everyone through to a
-	// PUBLIC endpoint; empty for a PRIVATE one.
-	AccessApplicationId string `protobuf:"bytes,7,opt,name=access_application_id,json=accessApplicationId,proto3" json:"access_application_id,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	Node          string `protobuf:"bytes,6,opt,name=node,proto3" json:"node,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *PublicEndpointStatus) Reset() {
@@ -396,13 +393,6 @@ func (x *PublicEndpointStatus) GetMachine() string {
 func (x *PublicEndpointStatus) GetNode() string {
 	if x != nil {
 		return x.Node
-	}
-	return ""
-}
-
-func (x *PublicEndpointStatus) GetAccessApplicationId() string {
-	if x != nil {
-		return x.AccessApplicationId
 	}
 	return ""
 }
@@ -1093,7 +1083,7 @@ const file_hangar_network_v1alpha1_public_endpoint_proto_rawDesc = "" +
 	"\x14PublicEndpointTarget\x12)\n" +
 	"\x0fvirtual_machine\x18\x01 \x01(\tH\x00R\x0evirtualMachine\x12\x1e\n" +
 	"\tcontainer\x18\x02 \x01(\tH\x00R\tcontainerB\b\n" +
-	"\x06object\"\x92\x02\n" +
+	"\x06object\"\xfb\x01\n" +
 	"\x14PublicEndpointStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1102,8 +1092,7 @@ const file_hangar_network_v1alpha1_public_endpoint_proto_rawDesc = "" +
 	"\bhostname\x18\x03 \x01(\tR\bhostname\x12\x10\n" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x18\n" +
 	"\amachine\x18\x05 \x01(\tR\amachine\x12\x12\n" +
-	"\x04node\x18\x06 \x01(\tR\x04node\x122\n" +
-	"\x15access_application_id\x18\a \x01(\tR\x13accessApplicationId\"H\n" +
+	"\x04node\x18\x06 \x01(\tR\x04nodeJ\x04\b\a\x10\bR\x15access_application_id\"H\n" +
 	"\x18GetPublicEndpointRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"m\n" +

@@ -343,14 +343,12 @@ func hooksFor(r registry.Resource) kindHooks {
 			finalizers: []string{AddressUnbindFinalizer},
 		}
 	case registry.PublicEndpoint.Kind:
-		// Its hostname is claimed for good when it is made, and it is kept,
-		// deleted, until no Access application of it can be left.
+		// Its hostname is claimed for good when it is made.
 		return kindHooks{
-			target:     projectTarget,
-			owner:      endpointOwner,
-			validate:   validatePublicEndpoint,
-			claim:      endpointClaim,
-			finalizers: []string{AccessApplicationFinalizer},
+			target:   projectTarget,
+			owner:    endpointOwner,
+			validate: validatePublicEndpoint,
+			claim:    endpointClaim,
 		}
 	case registry.Network.Kind:
 		return kindHooks{
