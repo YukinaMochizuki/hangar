@@ -2,8 +2,8 @@
 // front door (internal/edge/front): the only listener on :443 and :80,
 // which systemd passes it, ending TLS with certificates it gets over ACME
 // DNS-01, and routing by Host to the apiserver, the console's files and the
-// public endpoints. It also takes cloudflared's requests for
-// public endpoints, on loopback (--listen). It runs as its own
+// public endpoints. For tests, it can also serve public endpoints over plain
+// HTTP on loopback (--listen). It runs as its own
 // unprivileged user, reads the API through the apiserver's edge socket,
 // forwards the API through its public socket, and reaches machines through
 // the node agent's edge dial socket. See docs/decisions/public-endpoints.md
@@ -65,7 +65,7 @@ type flags struct {
 
 func main() {
 	var f flags
-	flag.StringVar(&f.listen, "listen", "127.0.0.1:8090", "loopback address cloudflared sends public endpoints' requests to; empty disables it")
+	flag.StringVar(&f.listen, "listen", "", "loopback address to serve public endpoints on over plain HTTP, for tests; empty, the default, serves none")
 	flag.StringVar(&f.apiSocket, "api-socket", "/run/hangar/edge.sock", "the apiserver's edge socket")
 	flag.StringVar(&f.dialSocket, "dial-socket", "/run/hangar/edge-dial.sock", "the node agent's edge dial socket")
 	flag.StringVar(&f.domain, "domain", "hangarlab.dev", "the domain public endpoints' hostnames are in; the apiserver's --endpoint-domain")
@@ -163,7 +163,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		return errors.New("hangar-edge runs as its own unprivileged user, never root")
 	}
 	if f.listen != "" && !loopback(f.listen) {
-		return fmt.Errorf("--listen %q is not a loopback address: only cloudflared may reach the edge there", f.listen)
+		return fmt.Errorf("--listen %q is not a loopback address: it serves plain HTTP, for tests on the host alone", f.listen)
 	}
 	socks, err := sdsocket.Inherit()
 	if err != nil {
@@ -209,7 +209,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		}
 		srv := &http.Server{Handler: e, ReadHeaderTimeout: 30 * time.Second, IdleTimeout: 2 * time.Minute}
 		g.Go(func() error {
-			log.Info("serving public endpoints to cloudflared", "address", ln.Addr().String(), "domain", f.domain)
+			log.Info("serving public endpoints over plain HTTP on loopback", "address", ln.Addr().String(), "domain", f.domain)
 			err := srv.Serve(ln)
 			if errors.Is(err, http.ErrServerClosed) {
 				return nil

@@ -288,8 +288,8 @@ User=$SERVICES_USER
 Group=$SERVICES_USER
 # HANGAR_BOOTSTRAP_ADMIN, kept on the host only.
 EnvironmentFile=$LOCAL_ENV
-# The public API is on loopback in either auth mode: cloudflared reaches it
-# there, and the front door through the public socket. The node socket
+# The public API is on loopback in either auth mode, for the host itself,
+# and the front door reaches it through the public socket. The node socket
 # accepts root's agent; the admin socket, root.
 ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS --default-max-owned-tenants $HANGAR_DEFAULT_MAX_OWNED_TENANTS
 Sockets=$(for s in $(services_sockets); do printf '%s.socket ' "$s"; done | sed 's/ $//')
@@ -581,8 +581,9 @@ services_apply() {
 	local problem
 	problem=$(auth_problem; services_endpoints_problem)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
-	# cloudflared never forwards to an apiserver in dev auth, which trusts a
-	# header: it goes before the apiserver could restart in dev.
+	# A tunnel an earlier release left running never forwards to an
+	# apiserver in dev auth, which trusts a header: it goes before the
+	# apiserver could restart in dev.
 	[ "$(auth_mode)" = oidc ] || cloudflared_down "the auth mode is dev"
 	# In oidc auth the apiserver does not start without its client secret,
 	# which is the operator's to install, never this step's to make.

@@ -1,7 +1,6 @@
 # The edge, hangar-edge, as a systemd service of its own user, only when
-# local.env names the public endpoints' domain (HANGAR_EDGE_DOMAIN). It
-# takes cloudflared's requests for public endpoints on loopback. With the
-# control plane's domain too (HANGAR_CP_DOMAIN) it is the front door
+# local.env names the public endpoints' domain (HANGAR_EDGE_DOMAIN) and the
+# control plane's (HANGAR_CP_DOMAIN). It is the front door
 # (docs/decisions/front-door.md): systemd binds :443 and :80, on IPv4 and
 # IPv6, and passes them to it (socket units), so it never runs as root nor
 # holds a capability. It keeps its certificates in its state directory,
@@ -11,6 +10,11 @@
 # changed, or a binary the release step replaced, restarts it and its
 # sockets, which closes :443 and :80 for that moment; a crash restart keeps
 # the sockets.
+#
+# The step also retires the Cloudflare tunnel, which no step installs any
+# more: a tunnel a host still runs is left alone while cloudflared.env is
+# there, and removed once the operator deletes the file (the cutover in
+# docs/runbook/cloudflare.md).
 
 # The services step's helpers and names: the edge's user and sockets, the
 # restart markers.
@@ -30,9 +34,10 @@ EDGE_STATE=/var/lib/hangar-edge
 # verify.sh fails a certificate with this many days left or fewer: certmagic
 # renews a 90-day one with about 30 left, so one this close has failed to.
 EDGE_CERT_MIN_DAYS=14
-# Where cloudflared sends it requests for public endpoints
-# (converge.EdgeOrigin in internal/cloudflare/converge).
-EDGE_LISTEN=127.0.0.1:8090
+# What an earlier release installed for the Cloudflare tunnel.
+CLOUDFLARED_BIN=/usr/local/bin/cloudflared
+CLOUDFLARED_UNIT_PATH=/etc/systemd/system/$CLOUDFLARED_UNIT.service
+CLOUDFLARED_GUARD=/usr/local/libexec/hangar-cloudflared-guard
 
 # edge_acme_dns prints how DNS-01 is answered: cloudflare unless local.env
 # says otherwise, which only a testbed's edge, built with the testbed tag,
@@ -94,13 +99,12 @@ LoadCredential=$EDGE_DNS_CREDENTIAL:$EDGE_DNS_TOKEN
 EOF
 	fi
 	cat <<EOF
-# cloudflared sends it every request for a public endpoint, on loopback; it
-# reads the API on the apiserver's edge socket, and asks it there who
+# It reads the API on the apiserver's edge socket, and asks it there who
 # calls a private endpoint, forwards the API from :443 to its public
 # socket, and reaches machines through the agent's dial socket, all its
 # group's. A browser not yet signed in to a private endpoint goes to the
 # console, HANGAR_PUBLIC_URL, to be.
-ExecStart=/usr/local/bin/hangar-edge --listen $EDGE_LISTEN --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --console-url $(local_env HANGAR_PUBLIC_URL)$(edge_front_flags)
+ExecStart=/usr/local/bin/hangar-edge --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --console-url $(local_env HANGAR_PUBLIC_URL)$(edge_front_flags)
 Restart=always
 RestartSec=2
 UMask=0077
@@ -199,10 +203,14 @@ edge_dns_token_how() {
 	printf '%s\n' "install the Cloudflare DNS token at $EDGE_DNS_TOKEN, root's, mode 0600 (docs/runbook/cloudflare.md)"
 }
 
-# edge_problem prints why the front door cannot run as local.env asks,
-# nothing when it can or is off.
+# edge_problem prints why the edge cannot run as local.env asks, nothing
+# when it can or is off.
 edge_problem() {
-	services_front_door_on || return 0
+	services_edge_on || return 0
+	if ! services_front_door_on; then
+		printf '%s\n' "public endpoints (HANGAR_EDGE_DOMAIN) are served by the front door alone: set HANGAR_CP_DOMAIN in $LOCAL_ENV too"
+		return 0
+	fi
 	edge_needs_dns_token && ! edge_dns_token_ok &&
 		printf '%s\n' "the front door (HANGAR_CP_DOMAIN) needs its DNS token: $(edge_dns_token_how)"
 	# Without an email certmagic may register the ACME account as
@@ -280,24 +288,46 @@ edge_unprivileged() {
 		grep -qE '^CapPrm:[[:space:]]+0+$' "/proc/$pid/status"
 }
 
-# edge_listens_ok holds when the edge's TCP listeners are loopback's, and,
-# with the front door on, :443 and :80 on every address.
+# edge_listens_ok holds when the edge's TCP listeners are :443 and :80 on
+# every address, and nothing else but loopback's (a testbed's edge answers
+# DNS-01 there itself).
 edge_listens_ok() {
 	local pid addrs want
 	pid=$(edge_pid)
 	addrs=$(ss -Hltnp | grep "pid=$pid," | awk '{print $4}' | sort -u)
-	[ -n "$addrs" ] || return 1
-	if services_front_door_on; then
-		for want in '*:443' '*:80'; do
-			grep -qxF "$want" <<<"$addrs" || return 1
-		done
-		addrs=$(grep -vxE '\*:(443|80)' <<<"$addrs" || true)
+	for want in '*:443' '*:80'; do
+		grep -qxF "$want" <<<"$addrs" || return 1
+	done
+	! grep -vxE '\*:(443|80)|(127\.[0-9.]+|\[::1\]):[0-9]+' <<<"$addrs" | grep -q .
+}
+
+# edge_tunnel_left prints what an earlier release installed for the
+# Cloudflare tunnel and is still on the host.
+edge_tunnel_left() {
+	local f
+	for f in "$CLOUDFLARED_UNIT_PATH" "$CLOUDFLARED_GUARD" "$CLOUDFLARED_BIN"; do
+		[ ! -e "$f" ] || printf '%s\n' "$f"
+	done
+	! cloudflared_up || printf '%s\n' "$CLOUDFLARED_UNIT running"
+}
+
+# edge_retire_tunnel removes the Cloudflare tunnel once the operator deleted
+# its token's file, and leaves it alone while the file is there.
+edge_retire_tunnel() {
+	local left
+	left=$(edge_tunnel_left)
+	[ -n "$left" ] || return 0
+	if [ -e "$CLOUDFLARED_ENV" ]; then
+		log "warning: the Cloudflare tunnel ($CLOUDFLARED_UNIT) is no longer installed by any step; it is left as it is until you delete $CLOUDFLARED_ENV (docs/runbook/cloudflare.md, the cutover)"
+		return 0
 	fi
-	! grep -qvE '^(127\.[0-9.]+|\[::1\]):[0-9]+$' <<<"$addrs"
+	run "retire the Cloudflare tunnel: stop and disable $CLOUDFLARED_UNIT, remove $(printf '%s\n' "$left" | grep '^/' | paste -sd' ' -)" \
+		sh -c "systemctl disable --now $CLOUDFLARED_UNIT.service 2>/dev/null || true; rm -f '$CLOUDFLARED_UNIT_PATH' '$CLOUDFLARED_GUARD' '$CLOUDFLARED_BIN' && systemctl daemon-reload && { systemctl reset-failed $CLOUDFLARED_UNIT.service 2>/dev/null || true; }"
 }
 
 edge_apply() {
 	local s before reload=0 problem
+	edge_retire_tunnel
 	if ! services_edge_on; then
 		edge_off_ok || run "stop and disable $EDGE_UNIT and its sockets: $LOCAL_ENV names no public endpoint domain" \
 			sh -c "systemctl disable --now $EDGE_UNIT.service; for s in $EDGE_SOCKETS; do systemctl stop \$s.socket 2>/dev/null || true; done"
@@ -311,16 +341,6 @@ edge_apply() {
 	fi
 	[ -x /usr/local/bin/hangar-edge ] || [ "$DRY_RUN" = 1 ] || die "/usr/local/bin/hangar-edge is not installed; the release step installs it"
 
-	# Sockets left from when the front door was on go: nothing may hold :443
-	# or :80 for an edge that does not serve them.
-	if ! services_front_door_on; then
-		for s in $EDGE_SOCKETS; do
-			[ -e "$(services_socket_path "$s")" ] || continue
-			services_mark "$EDGE_UNIT"
-			run "stop and remove $s: the front door is off" sh -c "systemctl stop $s.socket; rm -f $(services_socket_path "$s")"
-			reload=1
-		done
-	fi
 	# A socket is part of the edge: a changed one restarts it, and the
 	# restart restarts the socket, closing :443 and :80 for that moment.
 	for s in $(edge_sockets); do
@@ -351,29 +371,29 @@ edge_apply() {
 }
 
 edge_verify() {
+	if [ -e "$CLOUDFLARED_ENV" ]; then
+		skip "Cloudflare tunnel retired" "$CLOUDFLARED_ENV is still there, so the step leaves the tunnel as it is (the cutover)"
+	else
+		check "Cloudflare tunnel retired: nothing of it left" test -z "$(edge_tunnel_left)"
+	fi
 	if ! services_edge_on; then
 		check "edge off: $LOCAL_ENV names no public endpoint domain" edge_off_ok
 		return 0
 	fi
-	local units
+	local units n
 	units=$(edge_sockets | paste -sd' ' -)
 	units="$EDGE_UNIT${units:+ $units}"
 	check "edge units $units as generated and loaded" edge_units_ok
 	check "no drop-ins for $units" test -z "$(edge_dropins)"
 	check "unit $EDGE_UNIT enabled, active, running what is installed" edge_running_ok
 	check "edge runs as $SERVICES_EDGE_USER with no capability" edge_unprivileged
-	if services_front_door_on; then
-		check "edge listens on loopback, and on :443 and :80 for every address" edge_listens_ok
-		local n
-		for n in $(edge_cert_names); do
-			check "certificate for ${n/#wildcard_/*} in $EDGE_STATE, more than $EDGE_CERT_MIN_DAYS days left" edge_cert_ok "$n"
-		done
-		if edge_needs_dns_token; then
-			check "Cloudflare DNS token $EDGE_DNS_TOKEN, root's, mode 600" edge_dns_token_ok
-		else
-			skip "Cloudflare DNS token" "DNS-01 is answered by $(edge_acme_dns)"
-		fi
+	check "edge listens on :443 and :80 for every address, and nothing else but on loopback" edge_listens_ok
+	for n in $(edge_cert_names); do
+		check "certificate for ${n/#wildcard_/*} in $EDGE_STATE, more than $EDGE_CERT_MIN_DAYS days left" edge_cert_ok "$n"
+	done
+	if edge_needs_dns_token; then
+		check "Cloudflare DNS token $EDGE_DNS_TOKEN, root's, mode 600" edge_dns_token_ok
 	else
-		check "edge listens on loopback only" edge_listens_ok
+		skip "Cloudflare DNS token" "DNS-01 is answered by $(edge_acme_dns)"
 	fi
 }
