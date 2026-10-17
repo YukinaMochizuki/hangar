@@ -14,9 +14,25 @@ import (
 // file nor looks like one gets: the console routes in the browser.
 const consoleIndex = "index.html"
 
+// consoleCSP is the console's Content-Security-Policy. The console is a
+// built bundle of files from its own origin, with no inline script or
+// style, and it calls only its own origin, the API's paths there included.
+// No other site may frame it, so none can make a click on it look like a
+// click on theirs.
+const consoleCSP = "default-src 'self'; script-src 'self'; style-src 'self'; " +
+	"img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; " +
+	"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
 // serveConsole serves the console's files from ConsoleDir. The directory is
 // opened at each request, so a release that replaces it is served at once.
 func (f *Front) serveConsole(w http.ResponseWriter, r *http.Request) {
+	h := w.Header()
+	h.Set("Content-Security-Policy", consoleCSP)
+	// The apiserver believes the session cookie only on a request whose
+	// Origin is the console's, and a browser sends a form's real Origin only
+	// if the page's referrer policy lets it (docs/decisions/authentication.md).
+	// same-origin still sends no referrer to any other site.
+	h.Set("Referrer-Policy", "same-origin")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		page(w, http.StatusMethodNotAllowed, pageMethod)
@@ -61,7 +77,6 @@ func (f *Front) serveConsole(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = file.Close() }()
 
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(f.cfg.Limits.ConsoleWriteTimeout))
-	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	switch {
 	case name == consoleIndex:

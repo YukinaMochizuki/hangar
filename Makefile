@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
@@ -14,7 +14,7 @@ all: check
 
 deps: node_modules/.modules.yaml
 
-node_modules/.modules.yaml: package.json pnpm-lock.yaml gen/ts/package.json
+node_modules/.modules.yaml: package.json pnpm-lock.yaml gen/ts/package.json web/package.json
 	pnpm install --frozen-lockfile
 
 gen: deps
@@ -111,15 +111,23 @@ gen-check: deps
 		rm -rf $$snap; exit 1; \
 	fi; rm -rf $$snap
 
-check: lint breaking test gen-check
+check: lint breaking test test-web gen-check
+
+# The console (web/): its types, its lint and its unit tests.
+test-web: deps
+	pnpm --dir web typecheck
+	pnpm --dir web lint
+	pnpm --dir web test
 
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
 
 # What a host runs, in bin/release/hangar-<revision>/ with SHA256SUMS: the
-# binaries, the guest kernel and the initramfs (docs/runbook/host-bootstrap.md).
-# Builds the kernel, so it takes minutes and needs a C toolchain. OUT=DIR
-# writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted changes.
+# binaries, the guest kernel and the initramfs, and the console's files as
+# console.tar (docs/runbook/host-bootstrap.md). Builds the kernel, so it takes
+# minutes and needs a C toolchain, and the console, so it needs Node and pnpm.
+# OUT=DIR writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted
+# changes.
 release:
 	deploy/release.sh $(if $(ALLOW_DIRTY),--allow-dirty) $(OUT)
 

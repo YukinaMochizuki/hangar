@@ -147,6 +147,20 @@ func TestRouting(t *testing.T) {
 			if code != tt.code || body != tt.body || h.Get("Cache-Control") != tt.cache {
 				t.Errorf("%s %s: %d %q cache %q; want %d %q cache %q", tt.method, tt.path, code, body, h.Get("Cache-Control"), tt.code, tt.body, tt.cache)
 			}
+			// The console's own responses carry its policies; the API's
+			// are the apiserver's.
+			wantRP, wantCSP := "same-origin", "default-src 'self'; script-src 'self'; style-src 'self'; "+
+				"img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "+
+				"base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+			if strings.HasPrefix(tt.path, "/hangar.") || strings.HasPrefix(tt.path, "/v1/") {
+				wantRP, wantCSP = "", ""
+			}
+			if got := h.Get("Referrer-Policy"); got != wantRP {
+				t.Errorf("%s %s: Referrer-Policy %q, want %q", tt.method, tt.path, got, wantRP)
+			}
+			if got := h.Get("Content-Security-Policy"); got != wantCSP {
+				t.Errorf("%s %s: Content-Security-Policy %q, want %q", tt.method, tt.path, got, wantCSP)
+			}
 		}
 	})
 	t.Run("endpoints", func(t *testing.T) {
@@ -334,5 +348,38 @@ func TestConsoleNotInstalled(t *testing.T) {
 		if code, _, _ := do(t, d.client, http.MethodGet, "https://"+consoleHost+"/v1/x", nil, nil); code != 200 {
 			t.Errorf("console dir %q, API path: %d", dir, code)
 		}
+	}
+}
+
+// TestConsoleDirIsALink: the release step makes the console's directory a
+// symbolic link to one release's files and swaps it for the next's; the
+// edge serves whichever it points at, without a restart.
+func TestConsoleDirIsALink(t *testing.T) {
+	c := newCA(t)
+	first := consoleFiles(t)
+	second := t.TempDir()
+	if err := os.WriteFile(filepath.Join(second, "index.html"), []byte("<p>next release</p>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "console")
+	if err := os.Symlink(first, link); err != nil {
+		t.Fatal(err)
+	}
+	o := defaultOptions()
+	o.consoleDir = link
+	d := startDoor(t, c, o)
+	if code, body, _ := do(t, d.client, http.MethodGet, "https://"+consoleHost+"/projects/demo", nil, nil); code != 200 || body != "<p>placeholder console</p>" {
+		t.Errorf("through the link: %d %q", code, body)
+	}
+	// The swap the release step makes: a new link renamed over the old.
+	next := link + ".new"
+	if err := os.Symlink(second, next); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(next, link); err != nil {
+		t.Fatal(err)
+	}
+	if code, body, _ := do(t, d.client, http.MethodGet, "https://"+consoleHost+"/", nil, nil); code != 200 || body != "<p>next release</p>" {
+		t.Errorf("after the swap: %d %q", code, body)
 	}
 }
