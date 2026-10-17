@@ -1,6 +1,7 @@
 package fake_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
@@ -82,6 +84,14 @@ func host(h *fake.Host) drivertest.Host {
 				h.ServeGuest(nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), p), echo)
 			}
 		},
+		Connect: func(t *testing.T, nic driver.Interface, srcPort uint16) (netip.AddrPort, netip.AddrPort) {
+			dst := netip.MustParseAddrPort("198.51.100.7:443")
+			seen, err := h.Connect(nic, srcPort, dst)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return dst, seen
+		},
 		Exit: func(t *testing.T, machineUID string, code int) {
 			if err := h.Exit(machineUID, code); err != nil {
 				t.Fatal(err)
@@ -104,4 +114,47 @@ func host(h *fake.Host) drivertest.Host {
 func echo(c net.Conn) {
 	defer func() { _ = c.Close() }()
 	_, _ = io.Copy(c, c)
+}
+
+// TestConnectDoesNotHoldTheHost: a FollowNAT whose handler asks the host
+// for something while Connect sends more than its queue holds is not
+// deadlocked: Connect sends off the host's lock.
+func TestConnectDoesNotHoldTheHost(t *testing.T) {
+	h := fake.New()
+	n := h.Network()
+	nw := driver.NetworkSpec{UID: "n1", CIDR: netip.MustParsePrefix("10.0.0.0/24"), Transit: netip.MustParsePrefix("100.64.0.0/31")}
+	if err := n.EnsureNetwork(t.Context(), nw); err != nil {
+		t.Fatal(err)
+	}
+	nic, err := n.EnsureInterface(t.Context(), driver.Interface{MachineUID: "m1", Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
+		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	started, got := make(chan struct{}), make(chan struct{}, 1000)
+	go func() {
+		_ = n.(driver.NATFlows).FollowNAT(ctx, driver.NATHandler{
+			Started: func(time.Time) { close(started) },
+			Flow: func(driver.NATFlow) {
+				_, _ = n.Interfaces(ctx) // takes the host's lock
+				got <- struct{}{}
+			},
+			Lost: func(driver.NATLost) {},
+		})
+	}()
+	<-started
+	done := make(chan struct{})
+	go func() {
+		for i := range 200 {
+			_, _ = h.Connect(nic, uint16(40000+i), netip.MustParseAddrPort("198.51.100.7:443"))
+		}
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Connect and the follower deadlocked")
+	}
 }

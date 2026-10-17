@@ -62,6 +62,9 @@ type Driver struct {
 	watches map[string]*watch
 	// stopPoll ends the polling of proxy entries.
 	stopPoll chan struct{}
+	// natJoins are what each FollowNAT holds, with what releases it.
+	natMu    sync.Mutex
+	natJoins map[*natJoin]func()
 }
 
 var _ driver.Network = (*Driver)(nil)
@@ -136,6 +139,7 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	d.reviveNAT(n.UID)
 	if v, err := sysctl("net.ipv4.ip_forward"); err != nil {
 		return err
 	} else if v != "1" {
@@ -203,6 +207,9 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 		return err
 	}
 	if err := ensureTable(conn, nftables.TableFamilyIPv4, nsChains(n.CIDR, nsTransit)); err != nil {
+		return fmt.Errorf("network %s: %w", n.UID, err)
+	}
+	if err := ensureNamedTable(conn, nftables.TableFamilyINet, LimitTable, limitChains()); err != nil {
 		return fmt.Errorf("network %s: %w", n.UID, err)
 	}
 	if err := sweepTaps(h); err != nil {
@@ -497,60 +504,67 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.stopWatch(networkUID)
-	veths, err := d.vethsOf(networkUID)
-	if err != nil {
-		return err
-	}
-	for _, l := range veths {
-		if err := d.root.LinkDel(l); err != nil && !isNotFound(err) {
+	// A socket in its namespace would keep the namespace alive; a deletion
+	// that fails leaves the network joined as before.
+	if err := d.forgettingNAT(networkUID, func() error {
+		veths, err := d.vethsOf(networkUID)
+		if err != nil {
 			return err
 		}
-	}
-	ns, ok, err := openNS(networkUID)
-	if err != nil {
-		return err
-	}
-	if ok {
-		// Emptied first, so nothing is left should something else hold
-		// the namespace after it is unmounted.
-		err := func() error {
-			defer func() { _ = ns.Close() }()
-			h, err := netlink.NewHandleAt(ns)
-			if err != nil {
+		for _, l := range veths {
+			if err := d.root.LinkDel(l); err != nil && !isNotFound(err) {
 				return err
 			}
-			defer h.Close()
-			links, err := h.LinkList()
-			if err != nil {
-				return err
-			}
-			for _, l := range links {
-				if strings.HasPrefix(l.Attrs().Name, Prefix) {
-					if err := h.LinkDel(l); err != nil && !isNotFound(err) {
-						return err
+		}
+		ns, ok, err := openNS(networkUID)
+		if err != nil {
+			return err
+		}
+		if ok {
+			// Emptied first, so nothing is left should something else hold
+			// the namespace after it is unmounted.
+			err := func() error {
+				defer func() { _ = ns.Close() }()
+				h, err := netlink.NewHandleAt(ns)
+				if err != nil {
+					return err
+				}
+				defer h.Close()
+				links, err := h.LinkList()
+				if err != nil {
+					return err
+				}
+				for _, l := range links {
+					if strings.HasPrefix(l.Attrs().Name, Prefix) {
+						if err := h.LinkDel(l); err != nil && !isNotFound(err) {
+							return err
+						}
 					}
 				}
-			}
-			conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+				conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+				if err != nil {
+					return err
+				}
+				if err := deleteTable(conn, nftables.TableFamilyBridge); err != nil {
+					return err
+				}
+				if err := deleteNamedTable(conn, nftables.TableFamilyBridge, FirewallTable); err != nil {
+					return err
+				}
+				if err := deleteNamedTable(conn, nftables.TableFamilyINet, LimitTable); err != nil {
+					return err
+				}
+				if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
+					return err
+				}
+				return deleteTable(conn, nftables.TableFamilyIPv4)
+			}()
 			if err != nil {
-				return err
+				return fmt.Errorf("network %s: %w", networkUID, err)
 			}
-			if err := deleteTable(conn, nftables.TableFamilyBridge); err != nil {
-				return err
-			}
-			if err := deleteNamedTable(conn, nftables.TableFamilyBridge, FirewallTable); err != nil {
-				return err
-			}
-			if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
-				return err
-			}
-			return deleteTable(conn, nftables.TableFamilyIPv4)
-		}()
-		if err != nil {
-			return fmt.Errorf("network %s: %w", networkUID, err)
 		}
-	}
-	if err := deleteNS(networkUID); err != nil {
+		return deleteNS(networkUID)
+	}); err != nil {
 		return err
 	}
 	if err := d.syncIPv6(); err != nil {

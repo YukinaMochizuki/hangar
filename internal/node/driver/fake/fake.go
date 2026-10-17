@@ -90,6 +90,10 @@ type Host struct {
 	// invalid for none. packetConns are every packet socket handed out.
 	ipv6Prefix  netip.Prefix
 	packetConns []*packetConn
+	// natFollowers are the FollowNATs under way; natPort the last public
+	// port handed out.
+	natFollowers map[*natFollower]bool
+	natPort      uint16
 
 	vms        map[string]*vm
 	logs       map[string]*consoleLog // console logs kept, by machine uid

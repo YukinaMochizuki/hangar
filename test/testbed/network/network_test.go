@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,7 @@ func wipe(t *testing.T) {
 // TestConformance runs the suite's network parts; the rest it skips.
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
+		guests := map[string]*guest{}
 		return drivertest.Host{
 			Network: newDriver(t, hostnet.Config{Uplink: upstreamLink}),
 			ServeGuest: func(t *testing.T, nic driver.Interface, ports ...uint16) {
@@ -77,6 +79,25 @@ func TestConformance(t *testing.T) {
 					ints[i] = int(p)
 				}
 				echoServer(t, newGuest(t, nic), ints...)
+			},
+			// The guest holds its tap only while it connects, so the suite
+			// can delete the interface after.
+			Connect: func(t *testing.T, nic driver.Interface, srcPort uint16) (netip.AddrPort, netip.AddrPort) {
+				g := guests[nic.MachineUID]
+				if g == nil {
+					g = newGuest(t, nic)
+					guests[nic.MachineUID] = g
+				} else {
+					g.plug(t)
+				}
+				defer g.unplug()
+				out, err := exec.Command("ip", "netns", "exec", g.ns, "curl", "-sS", "-m", "3", "--local-port", strconv.Itoa(int(srcPort)),
+					"http://"+upstreamAddr+":"+sourcePort+"/").CombinedOutput()
+				seen, perr := netip.ParseAddrPort(strings.TrimSpace(string(out)))
+				if err != nil || perr != nil {
+					t.Fatalf("%s: %v %v: %s", g.ns, err, perr, out)
+				}
+				return netip.MustParseAddrPort(upstreamAddr + ":" + sourcePort), seen
 			},
 		}
 	})

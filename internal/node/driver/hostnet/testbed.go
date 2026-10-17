@@ -35,6 +35,10 @@ func BreakNftWatch(d *Driver, networkUID string) bool {
 	return true
 }
 
+// EventsRead is how many conntrack events FollowNAT has read in this
+// process, those its socket filter passed.
+func EventsRead() int64 { return eventsRead.Load() }
+
 // FailSubscriptions makes the named subscriptions ("links", "addrs" or
 // "routes") of watches started from now on fail; none makes them work again.
 func FailSubscriptions(what ...string) error {

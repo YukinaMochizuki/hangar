@@ -169,8 +169,12 @@ func comments(t *testing.T, chains []chainSpec) []string {
 
 func TestChains(t *testing.T) {
 	masq := comments(t, rootChains("eth0", netip.Addr{}))
-	if len(masq) != 5 {
-		t.Fatalf("%d root rules, want 5: %q", len(masq), masq)
+	if len(masq) != 9 {
+		t.Fatalf("%d root rules, want 9: %q", len(masq), masq)
+	}
+	// docs/decisions/networking.md counts them.
+	if n := len(comments(t, rootChains6("eth0", netip.MustParsePrefix("2001:db8:0:1::/64"), netip.Addr{}))); n != 10 {
+		t.Errorf("%d root IPv6 rules, want 10", n)
 	}
 	// A change of parameters must change a comment, or tableIs would take
 	// the old rules for the new.

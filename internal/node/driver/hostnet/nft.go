@@ -70,6 +70,51 @@ func frontDoorRules(addr netip.Addr, daddr func(netip.Prefix) []expr.Any) []rule
 	return out
 }
 
+// mailPorts are the TCP ports no network may connect to: SMTP and SMTP over
+// TLS, the ports spam is sent from. 587, submission, needs an account at the
+// server, so it stays open (docs/decisions/networking.md, "Abuse
+// protection").
+var mailPorts = []uint16{25, 465}
+
+// abuseRules come first in a forward chain of either family: from a
+// network, no TCP to the mail ports, and nothing conntrack finds invalid,
+// which no connection, rate limit or NAT log accounts for.
+func abuseRules() []ruleSpec {
+	fromNet := matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix)
+	drop := []expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}
+	var out []ruleSpec
+	for _, p := range mailPorts {
+		out = append(out, ruleSpec{
+			says:  fmt.Sprintf("no TCP %d from a network", p),
+			exprs: slices.Concat(fromNet, matchL4(unix.IPPROTO_TCP), matchDport(p, p), drop),
+		})
+	}
+	return append(out, ruleSpec{
+		says:  "nothing invalid from a network",
+		exprs: slices.Concat(fromNet, matchCtState(expr.CtStateBitINVALID), drop),
+	})
+}
+
+// natMarkTag, in a conntrack mark, says the connection came from a
+// network; the other bits hold its veth's index. Indexes are not reused
+// while the host runs, so a network made again on another's transit link
+// is told apart (FollowNAT).
+const natMarkTag = 1 << 31
+
+// markNetworkRule marks each new connection from a network, last in the
+// IPv4 forward chain, so only those that leave are marked.
+func markNetworkRule() ruleSpec {
+	return ruleSpec{
+		says: "a network's new connections are marked with its veth",
+		exprs: slices.Concat(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix), matchCtState(expr.CtStateBitNEW), []expr.Any{
+			&expr.Meta{Key: expr.MetaKeyIIF, Register: 1},
+			&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4,
+				Mask: binaryutil.NativeEndian.PutUint32(^uint32(natMarkTag)), Xor: binaryutil.NativeEndian.PutUint32(natMarkTag)},
+			&expr.Ct{Key: expr.CtKeyMARK, Register: 1, SourceRegister: true},
+		}),
+	}
+}
+
 // rootChains is the root namespace's table, whose size does not depend on
 // how many networks there are; docs/decisions/networking.md lists its rules.
 func rootChains(uplink string, public netip.Addr) []chainSpec {
@@ -98,16 +143,16 @@ func rootChains(uplink string, public netip.Addr) []chainSpec {
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
-			rules: []ruleSpec{{
+			rules: append(abuseRules(), ruleSpec{
 				says:  "only replies into a network",
 				exprs: append(matchIfnamePrefix(expr.MetaKeyOIFNAME, vethPrefix), dropUnlessReply()...),
-			}, {
+			}, ruleSpec{
 				// The rule above lets no connection into a network that a reply
 				// from it could leave by another link.
 				says: fmt.Sprintf("a network reaches only %s", uplink),
 				exprs: append(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix),
 					append(matchIfnameNot(expr.MetaKeyOIFNAME, uplink), &expr.Verdict{Kind: expr.VerdictDrop})...),
-			}},
+			}, markNetworkRule()),
 		},
 		{
 			name: "input", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookInput, prio: *nftables.ChainPriorityFilter,

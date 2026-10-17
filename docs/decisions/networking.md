@@ -108,18 +108,21 @@ address.
     stays blocked, the host stays unreachable but for the front door's
     ports at its public addresses, which anyone reaches (decided by the
     project owner), and a network sends only from its own /128s. Table
-    `ip hangar` in the root namespace has five rules, seven with a public
+    `ip hangar` in the root namespace has nine rules, eleven with a public
     address set, however many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
       iif oif missing`), so a network sends only as its own transit address;
     - postrouting: 100.64.0.0/10 leaving the uplink is SNATed to the
       configured public address (masqueraded if none is set);
-    - forward: into `hnv*`, drop all but replies, which isolates networks
-      from each other; from `hnv*`, drop what leaves by any link but the
-      uplink, so docker bridges, VPNs and the like, and the host's DNAT into
-      them, stay out of reach. With the rule before, no connection into a
-      network exists whose replies could leave by another link;
+    - forward, six: from `hnv*`, drop TCP to ports 25 and 465, and what
+      conntrack finds invalid (the abuse protection below); into `hnv*`,
+      drop all but replies, which isolates networks from each other; from
+      `hnv*`, drop what leaves by any link but the uplink, so docker
+      bridges, VPNs and the like, and the host's DNAT into them, stay out
+      of reach. With the rule before, no connection into a network exists
+      whose replies could leave by another link. Last, mark a new
+      connection from `hnv*` with its veth (the NAT log, below);
     - input: from `hnv*`, accept TCP to 80 and to 443 at the configured
       public address, the front door's ports, which anyone reaches there
       (two rules, none with no address set), then drop all but replies, so
@@ -127,17 +130,18 @@ address.
       platform by its public names, `api.` or an endpoint, so reaches the
       front door without leaving the host.
   - With an IPv6 prefix, table `ip6 hangar` in the root namespace has
-    seven, nine with the host's own address set (`--public-ipv6`), however
-    many networks there are:
+    ten, twelve with the host's own address set (`--public-ipv6`),
+    however many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on, so a network sends only from its
       own /128s (each is routed to its network's veth) or link-local;
-    - forward: from `hnv*`, drop TCP to port 25 (the abuse protection
-      below); from `hnv*`, drop what leaves by a link that is neither the
-      uplink nor another network's veth; into `hnv*`, drop what is not for
-      the prefix; into `hnv*` from anything but the uplink or another
-      network, drop all but replies. A destination reaches a network's
-      veth only by its /128's route, so only live addresses are let in;
+    - forward, six: from `hnv*`, drop TCP to ports 25 and 465, and what
+      conntrack finds invalid (the abuse protection below); from `hnv*`,
+      drop what leaves by a link that is neither the uplink nor another
+      network's veth; into `hnv*`, drop what is not for the prefix; into
+      `hnv*` from anything but the uplink or another network, drop all but
+      replies. A destination reaches a network's veth only by its /128's
+      route, so only live addresses are let in;
     - input: from `hnv*`, take neighbour solicitations and advertisements,
       for the transit link's link-local addresses, accept TCP to 80 and to
       443 at the host's own address, the front door's, as for IPv4, and
@@ -163,6 +167,10 @@ address.
     exists in a namespace. A guest taking an address of the
     namespace's own, its transit address or the gateway, is dropped by the
     kernel as a martian.
+  - Table `inet hangar_limit` in each namespace has one rule, in forward:
+    a new connection from `hn-br` out of `hn-up` past the network's rate is
+    dropped (the abuse protection below). It is written, read back and
+    replaced as the driver's other tables are.
   - Table `bridge hangar` in each namespace binds each interface, in its
     prerouting, before the bridge forwards a frame or delivers it to the
     namespace: a tap sends only from its interface's MAC; IPv4 only from
@@ -458,9 +466,119 @@ address.
 - **SSH** to VMs goes through `hangar ssh` and `hangar ssh-proxy` over a
   WebSocket tunnel: the front door, then the apiserver, then the network
   namespace. No new IPv4 ports are opened.
-- **Abuse protection**: port 25 is blocked by default, egress is rate-limited,
-  and NAT is logged, because abuse from the single IPv4 address could get the
-  host shut down.
+- **Abuse protection**: abuse from the single IPv4 address could get the
+  host shut down, so mail ports are closed, new connections are
+  rate-limited, and IPv4 NAT is logged, for every network alike, with no
+  exception by plan for now (decided by the project owner).
+  - TCP from a network to ports 25 (SMTP) and 465 (SMTP over TLS) is
+    dropped on the host, in the root tables' forward chains, over IPv4 and
+    IPv6. 587 (submission) stays open: it needs an account at the server,
+    so it sends no more spam than the account's owner lets it.
+  - A network opens at most 100 new connections a second, after a burst of
+    300, IPv4 and IPv6 together from one bucket (decided by the project
+    owner): `inet hangar_limit` in its namespace drops a packet starting a
+    connection out of `hn-up` past it. Only new connections count, so flows
+    already admitted carry on, and so does what stays in the network: its
+    own services and its machines talking to each other. A dropped
+    connection is retried by its client, as any lost SYN is. Each network
+    has a bucket of its own, so one network's flood holds back no other;
+    the host as a whole is bounded by how many networks it has.
+  - What conntrack finds invalid from a network is dropped on the host,
+    over both families: no connection, rate limit or log accounts for it.
+    Over IPv4 it held already, as the rule now says outright: an invalid
+    packet is not NATed in the namespace, so it reaches the host from a
+    machine's address, which the reverse-path filter drops.
+  - Every new IPv4 connection out of a network is logged, never with a
+    payload, and nothing of IPv6, where each machine is its own address
+    ("Public IPv6", above). A line holds `time`, `event` (`new`),
+    `proto`, `public_ip` and `public_port` (the source the internet sees),
+    `dst_ip` and `dst_port`, `project`, `network` and `network_uid`,
+    `machine` (its name in the project) and `machine_uid`, `inner_ip` and
+    `inner_port` (the machine's own source), and `transit_ip` and
+    `transit_port` (the source between the two NATs). A protocol without
+    ports, as ICMP, has none. What cannot be told, as the machine of a
+    connection its network no longer knows, is `unknown`, never left out.
+  - The public port exists only after the host's SNAT, and the machine
+    only before the namespace's, so the log joins the two layers
+    (`hostnet` `FollowNAT`). The root table marks each new IPv4
+    connection from a network with the index of its veth and a tag bit
+    (`ct mark`). The agent listens to the host's conntrack events for new
+    connections through a socket filter that passes only tagged ones, so
+    the host's own traffic never reaches it: ti-mo/conntrack has no filter
+    for events, and the kernel none but a socket's (classic BPF, as
+    conntrack-tools uses). Each event carries both tuples, the transit
+    source and the public source; the veth names the network, and the
+    network's own conntrack, asked for the one connection whose reply goes
+    to that transit address and port, gives the machine's address and
+    port. Link indexes are not reused while the host runs, so a network
+    made on the transit link of one deleted is told apart, and the
+    socket held in a deleted network's namespace is closed with it. The
+    agent then names the machine from what its network services read
+    from the API. Nothing is read per packet, from a table dump or from
+    another log, and nothing depends on journald or conntrack tools, which
+    differ between the testbed's Ubuntu 24.04 and the host's 26.04.
+  - Conntrack's events carry no time for a new connection, so a line's
+    time is when the agent read the event: one goroutine reads events into
+    a bounded queue (4096), another joins and writes them.
+  - The log lives on its own dataset, `hangar/natlog` at
+    `/var/log/hangar/nat`, root's alone, compressed, with a refquota of 20
+    GiB (decided by the project owner), which deploy/host makes; a refquota,
+    so a snapshot cannot keep removed days counted. The agent writes it
+    itself (`internal/node/natlog`), a JSON line a connection, a file a UTC
+    hour, `nat-YYYY-MM-DD-HH.jsonl`, compressed once the hour is over
+    (decided by the project owner), so only the current hour is plain; a
+    record that comes late for an hour the log has moved on from goes to the
+    hour being written, as that one may be compressed. A compression is
+    written aside, synced, renamed into place and only then is the plain
+    file removed; an hour a crash left with both is settled when the log
+    opens, keeping the gzip if it holds the whole hour, else the plain file,
+    to be compressed again. It removes a day, all its hours, 30 days after
+    the day ended (decided by the project owner). Past 90% of the refquota
+    it removes the oldest days first, never today's, as many as their sizes
+    cover the excess, and writes a `retention` line saying how many days the
+    log now holds; when the removal was for a write the quota refused, that
+    line is held and written before the next one that can be. ZFS frees a
+    removed file's space seconds later (on the testbed, 4 to 5 s with a
+    quota, at once with the refquota the dataset has, with no file of the
+    agent's or anyone's held open), so what was removed counts as free until
+    usage shows it, counting what was written since, as a flood writes
+    faster than the space shows, and a write refused meanwhile waits for
+    that room rather than take another day; if the space has not come back
+    within a minute, past what was written since, the agent says so once in
+    its own log, and counts it as free until it does: days are then removed
+    only for usage past the cap without it, and a write the quota refuses
+    takes none. ZFS holds back writes near a quota by a fixed amount, not a
+    share of it: on the testbed (OpenZFS 2.2.2), appends slowed below about
+    25 MiB free and nearly stopped at 5 MiB, and an 8 MiB write was refused
+    with 7.5 MiB free, 88% of a 64 MiB quota. 90% of 20 GiB leaves 2 GiB,
+    far above that; a write refused all the same takes the oldest day
+    whatever the usage reads, and the log opens on a full dataset. A line is
+    about 400 bytes, about 32 compressed (realistic lines, measured with
+    Go's gzip); the rate limit bounds a network to 100 new connections a
+    second, about 3.5 GB a day plain, 280 MB compressed.
+  - What remains: a flood still removes older days early once the log as a
+    whole passes 90%, oldest first, and one large enough for today alone to
+    pass it removes every day before today, leaving the log holding today.
+    That takes 18 GiB of today's compressed hours, about 600 million
+    connections in a day, about 7,000 a second all day long: some 70
+    networks at the rate limit throughout (a plain day would have taken 48
+    million, some 6 networks).
+  - A window the log may be missing connections in is written into it as a
+    gap, never left silent. The gap since the log's last record (the
+    agent stopping writes a stop) closes only once the agent's
+    subscription is in place, as does the one after following failed,
+    from the last thing written. A full socket or queue writes the window
+    since the last event queued. A write that fails is told in the
+    agent's log once, as is writing working again, which first writes the
+    gap since the first write that failed. The socket's buffer holds every
+    network's burst at once (300 events of about 2 KiB each a network,
+    within 8 to 128 MiB).
+  - `hangar-node natlog --port P --at T` finds the machine for a report
+    (`docs/runbook/host-bootstrap.md`). The log records when a connection
+    started, not when it ended, so the answer is the last connection from
+    that port to start by T. It warns of the gaps in the window, and when
+    the window starts before the oldest day the log holds, and shows the
+    retention lines in it.
 
 ## Consequences
 

@@ -104,8 +104,12 @@ type Config struct {
 	// ocilayer's steps: the Images driver is built with it as
 	// registry.Config.Limits.MaxWork. Zero means ocilayer.DefaultMaxWork.
 	MaxUnpackWork int64
-	Clock         clockwork.Clock
-	Log           *slog.Logger
+	// NATLog is the directory of the log of IPv4 connections out of the
+	// host's networks (internal/node/natlog), if the network driver can
+	// tell them; empty logs none.
+	NATLog string
+	Clock  clockwork.Clock
+	Log    *slog.Logger
 }
 
 // DefaultMaxPulls is how many images a node prepares at once by default:
@@ -325,6 +329,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		if a.cfg.EdgeDial != nil {
 			wg.Go(func() { a.serveEdgeDial(ctx) })
 		}
+		wg.Go(func() { a.followNAT(ctx) })
 	} else {
 		a.cfg.Log.Warn("no host drivers: reporting the node, running no machines")
 	}

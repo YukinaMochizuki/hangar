@@ -8,6 +8,9 @@
 // launcher runs Cloud Hypervisor through, as the VM's user. hangar-node
 // check-placement takes the placement flags alone and fails, saying why,
 // unless the node would report each as given.
+//
+// hangar-node natlog --port PORT --at TIME finds the machine an abuse
+// report about the host's IPv4 address names, in the agent's NAT log.
 package main
 
 import (
@@ -66,6 +69,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "check-placement" {
 		os.Exit(checkPlacementMain(os.Args[2:], os.Stderr))
 	}
+	if code, ok := natlogCommand(os.Args[1:]); ok {
+		os.Exit(code)
+	}
 	var hf hostFlags
 	var (
 		name           = flag.String("name", "", "the Node this agent reports as; the apiserver's --node-name")
@@ -78,6 +84,7 @@ func main() {
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
 		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
 		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
+		natLog         = flag.String("nat-log-dir", defaultNATLog, "with this host's network driver, where each new IPv4 connection out of the networks is logged for 30 days, root's alone; empty logs none")
 	)
 	placement := bindPlacement(flag.CommandLine)
 	hf.bind(flag.CommandLine)
@@ -124,6 +131,7 @@ func main() {
 		IPv6Prefix:    prefix,
 		EdgeDial:      edgeDial,
 		EdgeUIDs:      edgeUIDs,
+		NATLog:        *natLog,
 		Log:           log,
 	})
 	if err == nil {

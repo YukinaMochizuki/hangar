@@ -30,6 +30,8 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/spf13/cobra v1.10.2
+	github.com/ti-mo/conntrack v0.6.0
+	github.com/ti-mo/netfilter v0.5.3
 	github.com/vishvananda/netlink v1.3.1
 	github.com/vishvananda/netns v0.0.5
 	go.uber.org/zap v1.28.0
@@ -64,6 +66,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.29 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect

@@ -97,8 +97,12 @@ with `--release DIR`. `--only <step>` runs a single step
 - `zfs` also makes `hangar/images` (`/var/lib/hangar/images`,
   `setuid=off exec=off devices=off`, quota `HANGAR_IMAGES_QUOTA`) and
   `hangar/vms` (`/var/lib/hangar/vms`, `setuid=off exec=off`, quota
-  `HANGAR_VMS_QUOTA`), both mount points `0700` and root's, mounted by
-  `zfs-mount.service` at boot. `hangar/vms` must outlive a reboot: the node
+  `HANGAR_VMS_QUOTA`) and `hangar/natlog` (`/var/log/hangar/nat`, the NAT
+  log, `setuid=off exec=off devices=off compression=on`, refquota 20G, which
+  the agent keeps under 90% of, so a snapshot cannot keep removed days
+  counted), all mount points `0700` and root's,
+  mounted by `zfs-mount.service` at boot; `hangar-node` does not start
+  without the NAT log's mounted. `hangar/vms` must outlive a reboot: the node
   reads each VM's `spec.json` and `exit.json` after one. It also keeps
   `hangar/state` at `/var/lib/hangar/state` (the `services` step owns its
   mount point) and `hangar/poc`, for throwaway experiments, never mounted:
@@ -797,6 +801,47 @@ The hypervisor driver (`internal/node/driver/chvm`,
 - The binary `hangar-node` stays where it was when VMs were started: their
   units run it as their launcher, by the path the agent ran from. Replacing
   it in place upgrades every VM's launcher at its next start.
+
+## Finding the machine behind an abuse report
+
+An abuse report about the host's IPv4 address names a source port and a
+time. Every machine leaves as that address, so only the NAT log tells which
+one it was (`docs/decisions/networking.md`, "Abuse protection"). As root:
+
+```sh
+sudo hangar-node natlog --port 40123 --at 2026-10-17T09:30:00Z
+```
+
+It lists every connection from that public port that started in the 24 hours
+before `--at` (`--before`) up to 5 minutes after it (`--after`, for a
+reporter's clock running behind), with its project, network, machine (name
+and uid) and the machine's own address and port. The one marked `*` is the
+last to start by `--at`: the one the report names, unless it had ended by
+then, which the log does not record. A `warning` line names a window in
+which connections may be missing from the log (the agent was stopped, or it
+fell behind, or the log could not be written), or says the window starts
+before the oldest day the log holds; a report there cannot be answered from
+the log alone. A `note` line shows a `retention` line in the window: the log
+removed days early, as it filled its dataset. `--ip` narrows to one public
+address, `--json` prints the records as the log holds them. A machine
+deleted since keeps the name and uid it had in the log.
+
+The log is `/var/log/hangar/nat` (`hangar-node --nat-log-dir`), the
+`hangar/natlog` dataset (above), root's alone: a file a UTC hour,
+`nat-YYYY-MM-DD-HH.jsonl`, compressed (`.jsonl.gz`) once the hour is over;
+`zcat` reads them. The agent removes a day 30 days after it ended, or
+sooner, oldest first and never today, when the dataset passes 90% of its 20
+GiB refquota; a `retention` line in the log then says how many days it holds
+(`zgrep '"retention"'`). If the space of removed days does not come back
+within a minute, the agent says so once in its own log and counts it as free
+until it does, so the dataset may stay past the cap meanwhile: see what
+holds the dataset (`zfs list -o space hangar/natlog`, `lsof +L1`). A line is
+about 400 bytes per new IPv4 connection out of a network, about 32
+compressed; the rate limit keeps one network to 100 a second at most. It
+needs conntrack events, which the kernel turns on for any listener by
+default (`net.netfilter.nf_conntrack_events` 1 or 2); with them off the
+agent logs nothing but gaps, and says so in its own log, as it does once
+when writing the log fails and once when it works again.
 
 ## Things that are easy to get wrong
 

@@ -38,6 +38,9 @@ const (
 	hostAddr     = "198.51.100.2"
 	upstreamAddr = "198.51.100.1"
 	upstreamURL  = "http://" + upstreamAddr + ":8080/"
+	// sourcePort is where the upstream answers with the address and port
+	// a request came from, as an abuse report names them.
+	sourcePort = "8081"
 	// The upstream's IPv6 is OVH's: the host's /64 is on-link at the
 	// upstream, which asks for each address by neighbour solicitation and
 	// delivers only to the MAC that answers, and the upstream's own
@@ -159,18 +162,30 @@ func upstreamUp() error {
 		return err
 	}
 	defer func() { _ = ns.Close() }()
-	// Port 25 too, which a network may not reach.
-	for _, at := range []string{upstreamAddr + ":8080", "[" + upstreamAddr6 + "]:8080", "[" + upstreamAddr6 + "]:25"} {
+	// The mail ports too, which a network may not reach but for 587, on
+	// both families. Each answers with the address a request came from;
+	// sourcePort with its port too.
+	var at []string
+	for _, host := range []string{upstreamAddr, "[" + upstreamAddr6 + "]"} {
+		for _, port := range []string{"8080", "25", "465", "587"} {
+			at = append(at, host+":"+port)
+		}
+	}
+	for _, a := range append(at, upstreamAddr+":"+sourcePort) {
 		var ln net.Listener
 		if err := inNS(ns, func() (err error) {
-			ln, err = net.Listen("tcp", at)
+			ln, err = net.Listen("tcp", a)
 			return err
 		}); err != nil {
 			return err
 		}
+		whole := strings.HasSuffix(a, ":"+sourcePort)
 		go func() {
 			_ = http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				host, _, _ := net.SplitHostPort(r.RemoteAddr)
+				if whole {
+					host = r.RemoteAddr
+				}
 				_, _ = fmt.Fprint(w, host)
 			}))
 		}()

@@ -3,6 +3,8 @@
 package flow
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,6 +23,8 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/node/natlog"
+	"github.com/YukinaMochizuki/hangar/test/testbed/internal/vmtest"
 )
 
 // scratch lists what the image and storage drivers hold in their scratch
@@ -202,6 +206,57 @@ func (f *flow) online(t *testing.T) {
 		t.Errorf("web left as %s, the host leaves as %s", m[1], hostIP)
 	}
 	t.Logf("web fetched http://cloudflare.com/cdn-cgi/trace and left as %s, as the host does", m[1])
+	f.natLogged(t, uid)
+}
+
+// natLogged checks the agent logged web's connection out, and that the
+// runbook's command, given its public port and a time just after it
+// started, names web (docs/runbook/host-bootstrap.md).
+func (f *flow) natLogged(t *testing.T, uid string) {
+	t.Helper()
+	m := f.c.machine("web")
+	inner, _, _ := strings.Cut(m.GetSpec().GetInterfaces()[0].GetIpv4(), "/")
+	var logged natlog.Record
+	eventually(t, 30*time.Second, "web's connection to port 80 in the NAT log", func() (bool, string) {
+		var seen []string
+		// Each hour's file, compressed once the hour is over.
+		files, _ := filepath.Glob(filepath.Join(natLogDir, "nat-*.jsonl*"))
+		for _, file := range files {
+			b, _ := os.ReadFile(file)
+			if strings.HasSuffix(file, ".gz") {
+				if zr, err := gzip.NewReader(bytes.NewReader(b)); err == nil {
+					b, _ = io.ReadAll(zr)
+				}
+			}
+			for _, line := range strings.Split(string(b), "\n") {
+				var r natlog.Record
+				if json.Unmarshal([]byte(line), &r) != nil || r.Event != natlog.EventNew {
+					continue
+				}
+				seen = append(seen, line)
+				if r.MachineUID == uid && r.Protocol == "tcp" && r.DstPort == 80 {
+					logged = r
+				}
+			}
+		}
+		return logged.PublicPort != 0, strings.Join(seen, "\n")
+	})
+	if logged.Machine != "web" || logged.Project != project || logged.Network != "default" || logged.InnerIP != inner || logged.PublicIP == natlog.Unknown {
+		t.Errorf("web's connection is logged as %+v, want web of %s on default at %s", logged, project, inner)
+	}
+	out := mustRun(t, vmtest.Artifacts().Node, "natlog", "--dir", natLogDir, "--port", strconv.Itoa(int(logged.PublicPort)),
+		"--at", logged.Time.Add(time.Second).Format(time.RFC3339), "--json")
+	var last natlog.Record
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		var r natlog.Record
+		if json.Unmarshal([]byte(line), &r) == nil && r.Event == natlog.EventNew && !r.Time.After(logged.Time.Add(time.Second)) {
+			last = r
+		}
+	}
+	if last.MachineUID != uid || last.Machine != "web" {
+		t.Errorf("hangar-node natlog --port %d names %q (%s), want web (%s):\n%s", logged.PublicPort, last.Machine, last.MachineUID, uid, out)
+	}
+	t.Logf("the NAT log names web for %s:%d: %s", logged.PublicIP, logged.PublicPort, out)
 }
 
 // hostEgress is the address the host's own traffic reaches Cloudflare
