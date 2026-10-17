@@ -154,6 +154,11 @@ func (s *Store) list(ctx context.Context, opts store.ListOptions) ([]store.Objec
 	if err != nil {
 		return nil, 0, err
 	}
+	objs, err := listObjects(ctx, q, opts)
+	return objs, rev, err
+}
+
+func listObjects(ctx context.Context, q *db.Queries, opts store.ListOptions) ([]store.Object, error) {
 	limit := int64(opts.Limit)
 	if limit <= 0 {
 		limit = -1
@@ -166,18 +171,120 @@ func (s *Store) list(ctx context.Context, opts store.ListOptions) ([]store.Objec
 		MaxRows:      limit,
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	out := make([]store.Object, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, objectFromRow(r))
 	}
-	return out, rev, nil
+	return out, nil
 }
 
 func (s *Store) Create(ctx context.Context, key store.Key, data []byte) (int64, error) {
+	return s.write(ctx, func(t *txn) (int64, error) { return t.Create(ctx, key, data) })
+}
+
+func (s *Store) Update(ctx context.Context, key store.Key, data []byte, expected int64) (int64, error) {
+	return s.write(ctx, func(t *txn) (int64, error) { return t.Update(ctx, key, data, expected) })
+}
+
+func (s *Store) Delete(ctx context.Context, key store.Key, expected int64) (store.Object, int64, error) {
+	var last store.Object
+	rev, err := s.write(ctx, func(t *txn) (int64, error) {
+		var rev int64
+		var err error
+		last, rev, err = t.Delete(ctx, key, expected)
+		return rev, err
+	})
+	return last, rev, err
+}
+
+// write runs one write as a transaction of its own.
+func (s *Store) write(ctx context.Context, fn func(t *txn) (int64, error)) (int64, error) {
+	var rev int64
+	err := s.txn(ctx, func(t *txn) error {
+		var err error
+		rev, err = fn(t)
+		return err
+	})
+	return rev, err
+}
+
+func (s *Store) Txn(ctx context.Context, fn func(tx store.Tx) error) error {
+	return s.txn(ctx, func(t *txn) error { return fn(t) })
+}
+
+// txn runs fn in a write transaction, under s.mu from start to end, so the
+// revisions it takes are the next ones, it commits in revision order, and
+// its events reach live watches in order once it has committed.
+func (s *Store) txn(ctx context.Context, fn func(t *txn) error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return store.ErrClosed
+	}
+	tx, err := s.wdb.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	t := &txn{q: s.q.WithTx(tx), rev: s.rev}
+	if err := fn(t); err != nil {
+		return err
+	}
+	if t.broken != nil {
+		return t.broken
+	}
+	if len(t.events) == 0 {
+		return nil
+	}
+	if err := t.q.SetMeta(ctx, db.SetMetaParams{Key: "revision", Value: t.rev}); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	s.rev = t.rev
+	for _, ev := range t.events {
+		s.publish(ev)
+	}
+	return nil
+}
+
+// txn is a write transaction: the store.Tx of Store.Txn.
+type txn struct {
+	q *db.Queries
+	// rev is the revision of the last write made in it, or the store's.
+	rev int64
+	// events are its writes' events, published once it commits.
+	events []store.Event
+	// broken is the failure that ended it, if one did (write).
+	broken error
+}
+
+var _ store.Tx = (*txn)(nil)
+
+func (t *txn) Get(ctx context.Context, key store.Key) (store.Object, error) {
+	row, err := t.q.GetObject(ctx, getParams(key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return store.Object{}, store.ErrNotFound
+	}
+	if err != nil {
+		return store.Object{}, err
+	}
+	return objectFromRow(row), nil
+}
+
+func (t *txn) List(ctx context.Context, opts store.ListOptions) ([]store.Object, int64, error) {
+	objs, err := listObjects(ctx, t.q, opts)
+	return objs, t.rev, err
+}
+
+func (t *txn) Revision(context.Context) (int64, error) { return t.rev, nil }
+
+func (t *txn) Create(ctx context.Context, key store.Key, data []byte) (int64, error) {
 	data = nonNil(data)
-	return s.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
+	return t.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
 		if _, err := q.GetObject(ctx, getParams(key)); err == nil {
 			return store.Event{}, store.ErrExists
 		} else if !errors.Is(err, sql.ErrNoRows) {
@@ -190,9 +297,9 @@ func (s *Store) Create(ctx context.Context, key store.Key, data []byte) (int64, 
 	})
 }
 
-func (s *Store) Update(ctx context.Context, key store.Key, data []byte, expected int64) (int64, error) {
+func (t *txn) Update(ctx context.Context, key store.Key, data []byte, expected int64) (int64, error) {
 	data = nonNil(data)
-	return s.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
+	return t.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
 		if _, err := current(ctx, q, key, expected); err != nil {
 			return store.Event{}, err
 		}
@@ -203,9 +310,9 @@ func (s *Store) Update(ctx context.Context, key store.Key, data []byte, expected
 	})
 }
 
-func (s *Store) Delete(ctx context.Context, key store.Key, expected int64) (store.Object, int64, error) {
+func (t *txn) Delete(ctx context.Context, key store.Key, expected int64) (store.Object, int64, error) {
 	var last store.Object
-	rev, err := s.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
+	rev, err := t.write(ctx, func(q *db.Queries, rev int64) (store.Event, error) {
 		cur, err := current(ctx, q, key, expected)
 		if err != nil {
 			return store.Event{}, err
@@ -233,41 +340,32 @@ func current(ctx context.Context, q *db.Queries, key store.Key, expected int64) 
 	return objectFromRow(row), nil
 }
 
-// write runs one mutation as the next revision: fn changes the objects table
-// and describes the change, and write records the event, commits, and
-// publishes it to live watches.
-func (s *Store) write(ctx context.Context, fn func(q *db.Queries, rev int64) (store.Event, error)) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return 0, store.ErrClosed
+// write runs one mutation as the transaction's next revision and records its
+// event. A write fn refuses with a store error has written nothing; any other
+// failure may follow a write, so it fails the rest of the transaction.
+func (t *txn) write(ctx context.Context, fn func(q *db.Queries, rev int64) (store.Event, error)) (int64, error) {
+	if t.broken != nil {
+		return 0, t.broken
 	}
-	rev := s.rev + 1
-	tx, err := s.wdb.BeginTx(ctx, nil)
-	if err != nil {
+	rev := t.rev + 1
+	ev, err := fn(t.q, rev)
+	if errors.Is(err, store.ErrExists) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) {
 		return 0, err
 	}
-	defer func() { _ = tx.Rollback() }()
-	q := s.q.WithTx(tx)
-	ev, err := fn(q, rev)
 	if err != nil {
+		t.broken = err
 		return 0, err
 	}
 	ev.Revision = rev
-	if err := q.InsertEvent(ctx, db.InsertEventParams{
+	if err := t.q.InsertEvent(ctx, db.InsertEventParams{
 		Revision: rev, Type: int64(ev.Type),
 		Kind: ev.Object.Kind, Project: ev.Object.Project, Name: ev.Object.Name, Data: ev.Object.Data,
 	}); err != nil {
+		t.broken = err
 		return 0, err
 	}
-	if err := q.SetMeta(ctx, db.SetMetaParams{Key: "revision", Value: rev}); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
-		return 0, err
-	}
-	s.rev = rev
-	s.publish(ev)
+	t.rev = rev
+	t.events = append(t.events, ev)
 	return rev, nil
 }
 
