@@ -329,7 +329,11 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	m, err = s.ensureMachine(ctx, c, m)
 	var stuck *blocked
 	if errors.As(err, &stuck) {
-		return s.reportContainer(ctx, c, m, nil, stuck, "")
+		node, err := s.nodeOf(ctx, m)
+		if err != nil {
+			return err
+		}
+		return s.reportContainer(ctx, c, m, node, stuck, "")
 	}
 	// An Address moving to it is waited on, and the container reported
 	// meanwhile.
@@ -337,21 +341,40 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	if err != nil {
 		return err
 	}
-	var node *computev1alpha1.Node
-	if name := m.GetSpec().GetNode(); name != "" {
-		nobj, err := s.get(ctx, registry.Node, resource.Key{Name: name})
-		if err != nil {
-			return err
-		}
-		if nobj != nil {
-			node = nobj.(*computev1alpha1.Node)
-		}
+	node, err := s.nodeOf(ctx, m)
+	if err != nil {
+		return err
 	}
 	missing, err := s.missingPullSecret(ctx, c)
 	if err != nil {
 		return err
 	}
 	return cmp.Or(s.reportContainer(ctx, c, m, node, nil, missing), waiting)
+}
+
+// nodeOf reads the node m is placed on: nil while it is on none, or if the
+// node is gone.
+func (s *Server) nodeOf(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Node, error) {
+	name := m.GetSpec().GetNode()
+	if name == "" {
+		return nil, nil
+	}
+	obj, err := s.get(ctx, registry.Node, resource.Key{Name: name})
+	node, _ := obj.(*computev1alpha1.Node)
+	return node, err
+}
+
+// placementOf is the placement the owner of uid reports: that of the node
+// its machine m is on, as the node describes itself now. Nil while m is
+// not its owner's or is on no node. A copy of the node's Placement, which
+// holds nothing about the host but its hardware, is all of the node that
+// reaches the owner's tenant.
+func placementOf(uid string, m *computev1alpha1.Machine, node *computev1alpha1.Node) *computev1alpha1.Placement {
+	p := node.GetStatus().GetPlacement()
+	if p == nil || !ownedBy(m.GetMetadata(), uid) || m.GetSpec().GetNode() != node.GetMetadata().GetName() {
+		return nil
+	}
+	return proto.Clone(p).(*computev1alpha1.Placement)
 }
 
 // splitWaiting splits err into what is waited on, wrapping
@@ -523,9 +546,9 @@ func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alp
 
 // reportContainer writes the container's status, conditional on c as read:
 // from a reconcile that is stuck, or else from its machine and that
-// machine's node. A container not ready that names an image pull secret
-// that does not exist, missingSecret, says so instead: its image cannot be
-// pulled with it.
+// machine's node, whose placement it carries either way. A container not
+// ready that names an image pull secret that does not exist, missingSecret,
+// says so instead: its image cannot be pulled with it.
 func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine, node *computev1alpha1.Node, stuck *blocked, missingSecret string) error {
 	gen := c.GetMetadata().GetGeneration()
 	var ready, stopped *metav1.Condition
@@ -551,6 +574,7 @@ func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Contain
 	status.ObservedGeneration = gen
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
 	status.Conditions = conditions.Set(status.GetConditions(), stopped, s.clock.Now())
+	status.Placement = placementOf(c.GetMetadata().GetUid(), m, node)
 	if proto.Equal(status, c.GetStatus()) {
 		return nil
 	}

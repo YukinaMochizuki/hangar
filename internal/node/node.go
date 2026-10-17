@@ -62,6 +62,14 @@ type Config struct {
 	// Reserved is kept back from machines for the host itself, in
 	// quantities.
 	Reserved *computev1alpha1.NodeResources
+	// Placement describes the host: the only source of its region, site
+	// and chassis, and what it sets wins over what is read of the host.
+	Placement *computev1alpha1.Placement
+	// CPU reads the host's CPU model and generation, and Disks, Memory and
+	// Network describe its disks, memory and ports, read once as Run
+	// starts. They default to reading this host.
+	CPU                    func() (*computev1alpha1.Placement, error)
+	Disks, Memory, Network func() (string, error)
 	// HeartbeatInterval is how often the agent reports. The default of ten
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
 	// spare.
@@ -145,6 +153,12 @@ type Agent struct {
 	machinesCtl, networksCtl, disksCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
+	// cpuRead is how the last read of the host's CPU went; only report
+	// uses it.
+	cpuRead readState
+	// storage, memory and network are what Run read of the host as it
+	// started.
+	storage, memory, network string
 }
 
 // New returns an agent for cfg.
@@ -159,6 +173,18 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Host == nil {
 		cfg.Host = hostResources
+	}
+	if cfg.CPU == nil {
+		cfg.CPU = hostCPU
+	}
+	if cfg.Disks == nil {
+		cfg.Disks = hostDisks
+	}
+	if cfg.Memory == nil {
+		cfg.Memory = hostMemory
+	}
+	if cfg.Network == nil {
+		cfg.Network = hostNetwork
 	}
 	if cfg.Reserved == nil {
 		cfg.Reserved = &computev1alpha1.NodeResources{}
@@ -188,6 +214,7 @@ func New(cfg Config) (*Agent, error) {
 		cfg.Log = slog.Default()
 	}
 	cfg.Log = cfg.Log.With("node", cfg.Name)
+	cfg.Placement = configuredPlacement(cfg.Placement, cfg.Log)
 	var puller *puller
 	var netsvc *netServices
 	var images *imageMaker
@@ -252,6 +279,10 @@ func (a *Agent) ControllerStatus() []controller.Status {
 // done. Failures are logged and retried, never fatal: the apiserver judges
 // a node by its reports.
 func (a *Agent) Run(ctx context.Context) error {
+	// Before anything reports the node.
+	a.storage = a.readOnce("disks", "storage", a.cfg.Disks)
+	a.memory = a.readOnce("memory", "memory", a.cfg.Memory)
+	a.network = a.readOnce("network", "network", a.cfg.Network)
 	// Stops and asks of guests end with ctx; the sweep and the reconciles
 	// begin them.
 	defer a.stops.wg.Wait()
@@ -400,7 +431,7 @@ func (a *Agent) machinesOnNetwork(ctx context.Context, o store.Object) []control
 }
 
 // report writes the node's status: what the host has, what is left for
-// machines, and that the agent is alive.
+// machines, what it is, and that the agent is alive.
 func (a *Agent) report(ctx context.Context) error {
 	capacity, err := a.cfg.Host()
 	if err != nil {
@@ -438,6 +469,7 @@ func (a *Agent) report(ctx context.Context) error {
 	if a.cfg.IPv6Prefix.IsValid() {
 		status.Ipv6Prefix = a.cfg.IPv6Prefix.String()
 	}
+	status.Placement = placement(a.hardware(n.GetStatus().GetPlacement()), a.cfg.Placement)
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
 		Type: computeapi.NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		ObservedGeneration: n.GetMetadata().GetGeneration(),

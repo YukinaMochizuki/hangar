@@ -577,7 +577,10 @@ type VirtualMachineStatus struct {
 	// Names the Disk the VM boots from.
 	RootDisk string `protobuf:"bytes,3,opt,name=root_disk,json=rootDisk,proto3" json:"root_disk,omitempty"`
 	// The VM's interfaces, with their addresses once assigned.
-	Interfaces    []*VirtualMachineInterfaceStatus `protobuf:"bytes,4,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	Interfaces []*VirtualMachineInterfaceStatus `protobuf:"bytes,4,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
+	// The hardware of the node the VM is placed on, as that node describes
+	// it now; unset until it is placed.
+	Placement     *Placement `protobuf:"bytes,5,opt,name=placement,proto3" json:"placement,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -636,6 +639,13 @@ func (x *VirtualMachineStatus) GetRootDisk() string {
 func (x *VirtualMachineStatus) GetInterfaces() []*VirtualMachineInterfaceStatus {
 	if x != nil {
 		return x.Interfaces
+	}
+	return nil
+}
+
+func (x *VirtualMachineStatus) GetPlacement() *Placement {
+	if x != nil {
+		return x.Placement
 	}
 	return nil
 }
@@ -1383,7 +1393,7 @@ var File_hangar_compute_v1alpha1_virtual_machine_proto protoreflect.FileDescript
 
 const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\n" +
-	"-hangar/compute/v1alpha1/virtual_machine.proto\x12\x17hangar.compute.v1alpha1\x1a'hangar/compute/v1alpha1/interface.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/storage/v1alpha1/disk.proto\"\xb2\x02\n" +
+	"-hangar/compute/v1alpha1/virtual_machine.proto\x12\x17hangar.compute.v1alpha1\x1a'hangar/compute/v1alpha1/interface.proto\x1a'hangar/compute/v1alpha1/placement.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\x1a\"hangar/storage/v1alpha1/disk.proto\"\xb2\x02\n" +
 	"\x0eVirtualMachine\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -1415,7 +1425,7 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\x04size\x18\x02 \x01(\tR\x04size\x12X\n" +
 	"\rdelete_policy\x18\x03 \x01(\x0e23.hangar.compute.v1alpha1.VirtualMachineDeletePolicyR\fdeletePolicy\"(\n" +
 	"\x12VirtualMachineDisk\x12\x12\n" +
-	"\x04disk\x18\x01 \x01(\tR\x04disk\"\xf7\x01\n" +
+	"\x04disk\x18\x01 \x01(\tR\x04disk\"\xb9\x02\n" +
 	"\x14VirtualMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1424,7 +1434,8 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\troot_disk\x18\x03 \x01(\tR\brootDisk\x12V\n" +
 	"\n" +
 	"interfaces\x18\x04 \x03(\v26.hangar.compute.v1alpha1.VirtualMachineInterfaceStatusR\n" +
-	"interfaces\"u\n" +
+	"interfaces\x12@\n" +
+	"\tplacement\x18\x05 \x01(\v2\".hangar.compute.v1alpha1.PlacementR\tplacement\"u\n" +
 	"\x1dVirtualMachineInterfaceStatus\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
@@ -1532,7 +1543,8 @@ var file_hangar_compute_v1alpha1_virtual_machine_proto_goTypes = []any{
 	(*NetworkInterface)(nil),                   // 23: hangar.compute.v1alpha1.NetworkInterface
 	(*v1alpha1.ImageSource)(nil),               // 24: hangar.storage.v1alpha1.ImageSource
 	(*v1.Condition)(nil),                       // 25: hangar.meta.v1.Condition
-	(v1.EventType)(0),                          // 26: hangar.meta.v1.EventType
+	(*Placement)(nil),                          // 26: hangar.compute.v1alpha1.Placement
+	(v1.EventType)(0),                          // 27: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_virtual_machine_proto_depIdxs = []int32{
 	22, // 0: hangar.compute.v1alpha1.VirtualMachine.metadata:type_name -> hangar.meta.v1.ObjectMeta
@@ -1548,32 +1560,33 @@ var file_hangar_compute_v1alpha1_virtual_machine_proto_depIdxs = []int32{
 	0,  // 10: hangar.compute.v1alpha1.VirtualMachineImageDisk.delete_policy:type_name -> hangar.compute.v1alpha1.VirtualMachineDeletePolicy
 	25, // 11: hangar.compute.v1alpha1.VirtualMachineStatus.conditions:type_name -> hangar.meta.v1.Condition
 	9,  // 12: hangar.compute.v1alpha1.VirtualMachineStatus.interfaces:type_name -> hangar.compute.v1alpha1.VirtualMachineInterfaceStatus
-	2,  // 13: hangar.compute.v1alpha1.GetVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 14: hangar.compute.v1alpha1.ListVirtualMachinesResponse.items:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	26, // 15: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.type:type_name -> hangar.meta.v1.EventType
-	2,  // 16: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 17: hangar.compute.v1alpha1.ApplyVirtualMachineRequest.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 18: hangar.compute.v1alpha1.ApplyVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 19: hangar.compute.v1alpha1.DeleteVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	8,  // 20: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
-	2,  // 21: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	10, // 22: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:input_type -> hangar.compute.v1alpha1.GetVirtualMachineRequest
-	12, // 23: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:input_type -> hangar.compute.v1alpha1.ListVirtualMachinesRequest
-	14, // 24: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:input_type -> hangar.compute.v1alpha1.WatchVirtualMachinesRequest
-	16, // 25: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:input_type -> hangar.compute.v1alpha1.ApplyVirtualMachineRequest
-	18, // 26: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:input_type -> hangar.compute.v1alpha1.DeleteVirtualMachineRequest
-	20, // 27: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
-	11, // 28: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:output_type -> hangar.compute.v1alpha1.GetVirtualMachineResponse
-	13, // 29: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:output_type -> hangar.compute.v1alpha1.ListVirtualMachinesResponse
-	15, // 30: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:output_type -> hangar.compute.v1alpha1.WatchVirtualMachinesResponse
-	17, // 31: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:output_type -> hangar.compute.v1alpha1.ApplyVirtualMachineResponse
-	19, // 32: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:output_type -> hangar.compute.v1alpha1.DeleteVirtualMachineResponse
-	21, // 33: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
-	28, // [28:34] is the sub-list for method output_type
-	22, // [22:28] is the sub-list for method input_type
-	22, // [22:22] is the sub-list for extension type_name
-	22, // [22:22] is the sub-list for extension extendee
-	0,  // [0:22] is the sub-list for field type_name
+	26, // 13: hangar.compute.v1alpha1.VirtualMachineStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
+	2,  // 14: hangar.compute.v1alpha1.GetVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 15: hangar.compute.v1alpha1.ListVirtualMachinesResponse.items:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	27, // 16: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.type:type_name -> hangar.meta.v1.EventType
+	2,  // 17: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 18: hangar.compute.v1alpha1.ApplyVirtualMachineRequest.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 19: hangar.compute.v1alpha1.ApplyVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 20: hangar.compute.v1alpha1.DeleteVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	8,  // 21: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
+	2,  // 22: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	10, // 23: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:input_type -> hangar.compute.v1alpha1.GetVirtualMachineRequest
+	12, // 24: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:input_type -> hangar.compute.v1alpha1.ListVirtualMachinesRequest
+	14, // 25: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:input_type -> hangar.compute.v1alpha1.WatchVirtualMachinesRequest
+	16, // 26: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:input_type -> hangar.compute.v1alpha1.ApplyVirtualMachineRequest
+	18, // 27: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:input_type -> hangar.compute.v1alpha1.DeleteVirtualMachineRequest
+	20, // 28: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
+	11, // 29: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:output_type -> hangar.compute.v1alpha1.GetVirtualMachineResponse
+	13, // 30: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:output_type -> hangar.compute.v1alpha1.ListVirtualMachinesResponse
+	15, // 31: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:output_type -> hangar.compute.v1alpha1.WatchVirtualMachinesResponse
+	17, // 32: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:output_type -> hangar.compute.v1alpha1.ApplyVirtualMachineResponse
+	19, // 33: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:output_type -> hangar.compute.v1alpha1.DeleteVirtualMachineResponse
+	21, // 34: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
+	29, // [29:35] is the sub-list for method output_type
+	23, // [23:29] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_virtual_machine_proto_init() }
@@ -1582,6 +1595,7 @@ func file_hangar_compute_v1alpha1_virtual_machine_proto_init() {
 		return
 	}
 	file_hangar_compute_v1alpha1_interface_proto_init()
+	file_hangar_compute_v1alpha1_placement_proto_init()
 	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3].OneofWrappers = []any{
 		(*VirtualMachineRootDisk_FromImage)(nil),
 		(*VirtualMachineRootDisk_Disk)(nil),

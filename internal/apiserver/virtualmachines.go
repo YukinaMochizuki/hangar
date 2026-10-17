@@ -384,32 +384,36 @@ func (s *Server) reconcileVirtualMachine(ctx context.Context, k controller.Key) 
 		return err
 	}
 	m, _ := mobj.(*computev1alpha1.Machine)
+	// A reconcile that is stuck still reports where the machine runs.
+	reportStuck := func(m *computev1alpha1.Machine, stuck *blocked) error {
+		node, err := s.nodeOf(ctx, m)
+		if err != nil {
+			return err
+		}
+		return s.reportVirtualMachine(ctx, vm, m, node, stuck)
+	}
 	var stuck *blocked
 	if err := s.ensureRootDisk(ctx, vm); errors.As(err, &stuck) {
-		return s.reportVirtualMachine(ctx, vm, m, nil, stuck)
+		return reportStuck(m, stuck)
 	} else if err != nil {
 		return err
 	}
 	want, err := vmMachineSpec(vm, s.cfg.SSHCA.PublicKey())
 	if err != nil {
-		return s.reportVirtualMachine(ctx, vm, m, nil, &blocked{"InvalidResources", err.Error()})
+		return reportStuck(m, &blocked{"InvalidResources", err.Error()})
 	}
 	m, err = s.ensureMachineOf(ctx, registry.VirtualMachine, vm.GetMetadata(), vmMachineName(k.Name), want, m)
 	if errors.As(err, &stuck) {
-		return s.reportVirtualMachine(ctx, vm, m, nil, stuck)
+		return reportStuck(m, stuck)
 	}
 	// An Address moving to it is waited on, and the VM reported meanwhile.
 	waiting, err := splitWaiting(err)
 	if err != nil {
 		return err
 	}
-	var node *computev1alpha1.Node
-	if name := m.GetSpec().GetNode(); name != "" {
-		nobj, err := s.get(ctx, registry.Node, resource.Key{Name: name})
-		if err != nil {
-			return err
-		}
-		node, _ = nobj.(*computev1alpha1.Node)
+	node, err := s.nodeOf(ctx, m)
+	if err != nil {
+		return err
 	}
 	return cmp.Or(s.reportVirtualMachine(ctx, vm, m, node, nil), waiting)
 }
@@ -510,7 +514,7 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 
 // reportVirtualMachine writes a VM's status, conditional on vm as read:
 // from a reconcile that is stuck, or else from its machine m and that
-// machine's node.
+// machine's node, whose placement it carries either way.
 func (s *Server) reportVirtualMachine(ctx context.Context, vm *computev1alpha1.VirtualMachine, m *computev1alpha1.Machine, node *computev1alpha1.Node, stuck *blocked) error {
 	gen := vm.GetMetadata().GetGeneration()
 	var ready, stopped *metav1.Condition
@@ -530,6 +534,7 @@ func (s *Server) reportVirtualMachine(ctx context.Context, vm *computev1alpha1.V
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
 	status.Conditions = conditions.Set(status.GetConditions(), stopped, s.clock.Now())
 	status.RootDisk = vmRootDisk(vm)
+	status.Placement = placementOf(vm.GetMetadata().GetUid(), m, node)
 	status.Interfaces = nil
 	if ownedBy(m.GetMetadata(), vm.GetMetadata().GetUid()) {
 		for _, nic := range m.GetSpec().GetInterfaces() {

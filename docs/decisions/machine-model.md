@@ -79,7 +79,9 @@ Hypervisor directly, without Kata or Kubernetes.
   stop, timing them on its own clock so host clock skew cannot fake or hide
   silence. A node agent writes the status of its own `Node` and of the
   machines placed on it, nothing else. `Machine.spec.node` is set once and
-  never changes; moving a machine means a new one.
+  never changes; moving a machine means a new one. What tenants see of
+  their machine's node is its hardware, a copy of its `Placement` on the
+  container's or VM's status (`docs/decisions/machine-placement.md`).
 - Resources are Kubernetes-style quantities: `cpu: 2`, `memory: 512Mi`,
   `disk: 10Gi`. A `Container` keeps what its user wrote; its `Machine` gets
   canonical forms (whole vCPUs, memory in whole `Mi` and disk in whole `Gi`,

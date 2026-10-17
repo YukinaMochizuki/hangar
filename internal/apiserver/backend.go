@@ -848,6 +848,11 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 	if status == nil || !status.ProtoReflect().IsValid() {
 		return nil, invalid("status is required")
 	}
+	if v := b.hooks.validateStatus; v != nil {
+		if err := v(status); err != nil {
+			return nil, invalid("status: %v", err)
+		}
+	}
 	for range maxRetries {
 		cur, obj, err := b.read(ctx, p, authz.UpdateStatus, key)
 		if err != nil {
