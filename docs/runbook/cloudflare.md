@@ -38,13 +38,13 @@ The code is `cmd/hangar-cloudflare` and `internal/cloudflare`.
    Permissions: Zone → Zone → Read (to find the zones' IDs from their
    names) and Zone → DNS → Edit (the records). Zone resources: Include →
    Specific zone, the control zone and the user-content zone, nothing
-   else. Restricting it to the privileged box's IP and giving it an expiry
+   else. Restricting it to the IP of the machine you run the tool from and giving it an expiry
    are good practice. It needs no account permission.
 
 ## Config
 
-Copy `deploy/cloudflare/example.yaml` to a file outside the repo, in the
-privileged box, and fill it in: the account, the control zone, the host's
+Copy `deploy/cloudflare/example.yaml` to a file outside the repo, on the
+machine you run the tool from, and fill it in: the account, the control zone, the host's
 public IPv4 and IPv6 addresses (the host env file's `HANGAR_PUBLIC_IPV4`,
 and `HANGAR_IPV6_ADDR` without its length), and the user-content zone.
 Unknown keys are errors, so a config written for the tunnel and Access
@@ -54,7 +54,7 @@ token is never in the file.
 
 ## Running it
 
-From the repo, in the privileged box, with the state in place
+From the repo, on the machine you run the tool from, with the state in place
 (`<out>/state.json`; production keeps it in another repository, which says
 where). Read the token without echoing it, so it stays out of the shell
 history:
@@ -124,7 +124,7 @@ Token → Custom token:
 - Client IP address filtering: the host's IPv4 and IPv6 addresses.
 
 Install it as root's, 0600, without it passing through a terminal. From a
-box that holds it in its environment:
+shell that holds it in its environment:
 
 ```sh
 printenv HANGAR_EDGE_DNS_TOKEN | ssh <host> 'sudo install -m 0600 -o root -g root /dev/stdin /etc/hangar/cloudflare-dns-token'
@@ -150,25 +150,25 @@ the front door serves `api.`, `console.` and the endpoints, and the
 apiserver signs people in itself (`docs/decisions/authentication.md`). It is
 one switch: there is no time with both paths in use.
 
-### What the owner provides, and where it lands
+### What the operator provides, and where it lands
 
 | Value | Where it lands | Notes |
 |---|---|---|
 | Google OAuth client, type Web application, redirect URI `https://console.<cp zone>/auth/callback`, consent screen External and in production | Its ID: `HANGAR_OIDC_CLIENT_ID` in `/etc/hangar/local.env`. Its secret: `/var/lib/hangar/state/oidc-client-secret`, `hangar`'s, 0600 | No JavaScript origin is needed; the CLI and the console share the client |
 | The front door's DNS token (above) | `/etc/hangar/cloudflare-dns-token`, root's, 0600 | Zone Read and DNS Edit on both zones, the host's addresses only |
 | The ACME account's email | `HANGAR_ACME_EMAIL` in `local.env` | Let's Encrypt writes to it about the certificates |
-| The Google account the owner signs in with | `HANGAR_BOOTSTRAP_ADMIN` in `local.env` | Sign-in admits only invited emails; it was the Access identity before |
-| The tool's API token gains Zone Read and DNS Edit on the user-content zone | The privileged box's `CLOUDFLARE_API_TOKEN` | Keep its account permissions until a rollback is off the table: the previous release's tool needs them |
-| `state.json` | `<out>/state.json` in the privileged box, from where it is kept | Commit it back after each apply that changed it |
+| The Google account the operator signs in with | `HANGAR_BOOTSTRAP_ADMIN` in `local.env` | Sign-in admits only invited emails; it was the Access identity before |
+| The tool's API token gains Zone Read and DNS Edit on the user-content zone | `CLOUDFLARE_API_TOKEN` where the tool runs | Keep its account permissions until a rollback is off the table: the previous release's tool needs them |
+| `state.json` | `<out>/state.json` where the tool runs, from where it is kept | Commit it back after each apply that changed it |
 
 Not values, but settled before the day: the tag of the release to deploy
 and the `SHA256SUMS` digest its notes state ("Deploying a new hangar
 version" in `docs/runbook/host-bootstrap.md`); the previous release fetched
 on the host as well, `PREV` its tag, so `/var/tmp/hangar/release/PREV` and
 `/var/tmp/hangar/deploy-PREV` are there (`sudo hangar-fetch-release PREV
-<its digest>`, "Going back to an earlier tag" there); the new config file in the
-privileged box, beside the old one; a CLI built from the new release on
-the owner's workstation, with the previous one kept.
+<its digest>`, "Going back to an earlier tag" there); the new config file where
+the tool runs, beside the old one; a CLI built from the new release on
+the operator's workstation, with the previous one kept.
 
 ### Order
 
@@ -188,14 +188,14 @@ throughout.
 
    The store is snapshotted at step 4, right before the deploy, since the
    platform keeps taking writes until then.
-2. **Plan the DNS, changing nothing.** In the privileged box, with the
+2. **Plan the DNS, changing nothing.** Where the tool runs, with the
    state copied in and the new config: `plan`. Expect `> write
    state.json`, `~ update DNS A record api.<zone>` with `type: CNAME -> A`,
    `content: <tunnel id>.cfargotunnel.com -> <host IPv4>` and `proxied:
    true -> false`, then `+ create` for the API's AAAA, the console's A and
    AAAA, and the wildcard's A and AAAA, and notes naming the retired
    tunnel and Access objects. Anything else: stop and find out why.
-3. **Install the secrets and the settings on the host.** From the box that
+3. **Install the secrets and the settings on the host.** From a shell that
    holds the values in its environment, without them passing through a
    terminal:
 
@@ -214,7 +214,7 @@ throughout.
    HANGAR_PUBLIC_URL=https://console.hangarlab.cloud
    HANGAR_EDGE_DOMAIN=hangarlab.dev
    HANGAR_CP_DOMAIN=hangarlab.cloud
-   HANGAR_ACME_EMAIL=<the owner's address>
+   HANGAR_ACME_EMAIL=<the operator's address>
    ```
 
    Check: `sudo stat -c '%U %G %a %s' /var/lib/hangar/state/oidc-client-secret
@@ -250,7 +250,7 @@ throughout.
    lines included. From outside the host, before DNS:
    `curl --resolve api.hangarlab.cloud:443:203.0.113.10 https://api.hangarlab.cloud/healthz`
    prints `ok`, and the same over `[2001:db8:1::1]`.
-6. **Switch DNS.** In the privileged box: `apply`, then `verify` (exit 0),
+6. **Switch DNS.** Where the tool runs: `apply`, then `verify` (exit 0),
    then commit `state.json` where it is kept.
 
    Check: `dig +short api.hangarlab.cloud A @1.1.1.1` is the host's IPv4,
@@ -283,7 +283,7 @@ throughout.
 
    Check: `verify.sh` says `PASS Cloudflare tunnel retired: nothing of it
    left`, and the next run `changes: 0`.
-8. **The owner signs in again**, on the workstation, with the new CLI:
+8. **The operator signs in again**, on the workstation, with the new CLI:
    `hangar config set-context prod --endpoint https://api.hangarlab.cloud
    --auth oidc`, then `hangar login` (or `hangar login --device`), then
    `hangar whoami`. A person who never signed up runs `hangar signup
@@ -349,7 +349,7 @@ is all.
    revision; `verify.sh` from `deploy-PREV` passes.
 2. **DNS.** In the dashboard, delete the records this version created: the
    AAAA of `api.<zone>`, and the A and AAAA of `console.<zone>` and of
-   `*.<user zone>`. Then, in the privileged box, check out the previous
+   `*.<user zone>`. Then, where the tool runs, check out the previous
    release, put the `version: 1` `state.json` from before the cutover in
    an output directory, and run its tool's `apply` with the old config: it
    turns `api.<zone>`'s A record, the same record, back into the proxied

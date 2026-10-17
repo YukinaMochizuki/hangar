@@ -6,8 +6,8 @@ Go and Node, at the versions in `go.mod` (the `go` line) and `.nvmrc`, plus pnpm
 through corepack (`corepack enable pnpm`; the version is pinned by
 `packageManager` in `package.json`). Nothing else is installed globally.
 
-The devcontainer (`.devcontainer/`) provides all three. A workspace box built
-from this repo gets it automatically.
+The devcontainer (`.devcontainer/`) provides all three. Any environment that
+builds a dev container from this repo gets it automatically.
 
 ## Where each tool is pinned
 

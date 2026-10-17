@@ -8,7 +8,7 @@ import (
 
 // Every page the front door itself answers with, in one place. They are
 // deliberately plain placeholders: what a person sees in a browser is
-// designed with the owner, separately, and these are not that design. The
+// a design of its own, still to come, and these are not that design. The
 // endpoints' own pages are in internal/edge.
 const (
 	pageNoSuchHost      = "no such host"

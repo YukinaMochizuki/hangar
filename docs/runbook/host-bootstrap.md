@@ -303,7 +303,7 @@ tunnel, the cutover there says in which order. It needs oidc auth
    ```sh
    HANGAR_EDGE_DOMAIN=hangarlab.dev      # public endpoints are under it
    HANGAR_CP_DOMAIN=hangarlab.cloud      # api. and console. are under it
-   HANGAR_ACME_EMAIL=ops@example.com     # the owner's address: the ACME account's contact
+   HANGAR_ACME_EMAIL=ops@example.com     # the operator's address: the ACME account's contact
    ```
 
    `HANGAR_ACME_EMAIL` is required; the `edge` step and `hangar-edge`
@@ -384,8 +384,8 @@ Keep the moved directory until the new release is verified: going back to
 the release installed before runs from the copy in it. Then remove it.
 
 Upgrading past the change that added quotas: add
-`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (1, one tenant per person, as the
-owner decided) to the host env file first; the run refuses to start
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (1, one tenant per person) to the host
+env file first; the run refuses to start
 without it. The first start of that version makes the `default` Plan
 with placeholder limits, and every tenant without a plan of its own,
 existing ones included, gets them at once. Set the real limits right
@@ -399,7 +399,7 @@ opened before it count toward no one's cap.
 Upgrading past the change that added Invitations and the tenant signing
 up opens: existing Users keep what they have, and only people who sign up
 from then on get a tenant and a project made for them, which counts toward
-their cap. The owner decided on one tenant per person: the apiserver's
+their cap. It is one tenant per person: the apiserver's
 default cap is 1, that tenant, and the host env file sets
 `HANGAR_DEFAULT_MAX_OWNED_TENANTS=1` to match. People who already own more
 tenants keep them all; only opening another is refused. Platform root
@@ -408,7 +408,7 @@ below). The `default` Plan already in the store keeps its limits; set the
 new ones by hand ("Quotas" below).
 
 Upgrading past the change that added `User` (`hangar signup`): from the
-first start of that version, every existing member, the owner included, is
+first start of that version, every existing member, the operator included, is
 refused on every call until they run `hangar signup --username NAME` once;
 their bindings stay and count again as soon as they have. Plan the deploy
 with them. Service tokens, such as the smoke token, and root on the host
@@ -576,7 +576,7 @@ once, on a new store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
 projects, 5 networks, 5 addresses, 10 public endpoints and 10 service
 tokens. From then on the plan is data: the apiserver never changes it
 again, so a store made before these limits keeps the ones it was made
-with, and the owner sets them, as platform root, with apply; a field left
+with, and the operator sets them, as platform root, with apply; a field left
 out has no limit:
 
 ```yaml

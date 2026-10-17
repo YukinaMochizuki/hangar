@@ -5,8 +5,9 @@ from Cloudflare Access.
 
 ## Context
 
-Cloudflare has left the traffic path (HiNet routes traffic to it through
-the US west coast), so Access no longer proves who someone is: clients
+Cloudflare has left the traffic path (from the region the platform is used
+from, traffic through Cloudflare's proxy took a long detour that added
+latency to every request), so Access no longer proves who someone is: clients
 reach the host directly, through the front door (`front-door.md`), and
 Cloudflare is DNS alone (`cloudflare-setup.md`).
 The apiserver signs people in itself. People need a Google account and
@@ -120,7 +121,7 @@ credentials. The node is a separate root process on the same host.
   out its tokens, and every refresh, so a person uninvited meanwhile gets
   nothing more.
 - **A long-lived stream is checked again every 30 seconds** while it is
-  open (decided by the owner). This covers every Connect streaming call
+  open. This covers every Connect streaming call
   (every `Watch`, a log followed) and the exec and SSH WebSockets
   (`streaming-transport.md`). One mechanism in the auth layer holds them
   all (`auth.Chain.Hold`; the Connect interceptor uses it for every
@@ -140,8 +141,7 @@ credentials. The node is a separate root process on the same host.
     and 90 days after sign-in. Revoking the login ends it within 30
     seconds, or about 90 seconds if the store cannot decide. That covers
     a sign-out, `RevokeSessions`, and a refresh token presented twice.
-    This replaced a bound of the access token's hour (decided by the
-    owner), so that a long SSH session or an agent's watch is not cut
+    This replaced a bound of the access token's hour, so that a long SSH session or an agent's watch is not cut
     every hour.
   - It asks again every authorization decision the handler registered
     when it let the stream in (`auth.Recheck`). For a watch, that is
