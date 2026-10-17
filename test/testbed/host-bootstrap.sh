@@ -217,6 +217,10 @@ test_converges_and_is_idempotent() {
 	step "verify passes"
 	"$host_dir/verify.sh" --env "$env_file" | tee "$work/first-verify.log"
 	[ "$(cat /usr/local/lib/hangar/VERSION)" = "$(cat "$release/VERSION")" ] || fail "installed VERSION is not the release's"
+	grep -q "^PASS the console served is the installed release's$" "$work/first-verify.log" ||
+		fail "verify does not check the console"
+	[ -L /usr/local/share/hangar/console ] && [ -f /usr/local/share/hangar/console/index.html ] ||
+		fail "the release step did not install the console"
 
 	step "no step installs the Cloudflare tunnel, and verify finds nothing of it"
 	grep -q '^PASS Cloudflare tunnel retired: nothing of it left$' "$work/first-verify.log" ||
@@ -659,8 +663,11 @@ EOF
 		[ "$out" = "ok
  200" ] || fail "the API from outside at $addr: $out"
 	done
-	[ "$(door_curl "$v4" console.cp.test /projects/demo)" = "the console is not installed
- 503" ] || fail "the console without its files: $(door_curl "$v4" console.cp.test /projects/demo)"
+	out=$(door_curl "$v4" console.cp.test /projects/demo)
+	case $out in
+	*'<div id="root"></div>'*' 200') ;;
+	*) fail "the console's page for a path of its own: $out" ;;
+	esac
 	[ "$(door_curl --outside "[$v6]" web-demo.user.test /)" = "no such endpoint
  404" ] || fail "an endpoint that is not there: $(door_curl --outside "[$v6]" web-demo.user.test /)"
 	door_curl --outside "$v4" other.cp.test / >/dev/null && fail "a handshake for a name the front door has no certificate for"

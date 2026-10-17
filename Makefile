@@ -123,9 +123,11 @@ dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
 
 # What a host runs, in bin/release/hangar-<revision>/ with SHA256SUMS: the
-# binaries, the guest kernel and the initramfs (docs/runbook/host-bootstrap.md).
-# Builds the kernel, so it takes minutes and needs a C toolchain. OUT=DIR
-# writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted changes.
+# binaries, the guest kernel and the initramfs, and the console's files as
+# console.tar (docs/runbook/host-bootstrap.md). Builds the kernel, so it takes
+# minutes and needs a C toolchain, and the console, so it needs Node and pnpm.
+# OUT=DIR writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted
+# changes.
 release:
 	deploy/release.sh $(if $(ALLOW_DIRTY),--allow-dirty) $(OUT)
 

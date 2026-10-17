@@ -27,8 +27,8 @@ EDGE_SOCKETS="hangar-edge-https hangar-edge-http"
 # passes the edge under EDGE_DNS_CREDENTIAL (LoadCredential=).
 EDGE_DNS_TOKEN=/etc/hangar/cloudflare-dns-token
 EDGE_DNS_CREDENTIAL=cloudflare-dns-token
-# Where the release puts the console's files; while it has none, the
-# console's pages say it is not installed.
+# Where the release step puts the console's files (70-release.sh); while it
+# has none, the console's pages say it is not installed.
 EDGE_CONSOLE_DIR=/usr/local/share/hangar/console
 EDGE_STATE=/var/lib/hangar-edge
 # verify.sh fails a certificate with this many days left or fewer: certmagic
