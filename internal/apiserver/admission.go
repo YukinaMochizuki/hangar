@@ -149,6 +149,9 @@ type kindHooks struct {
 	// They are taken in order; whoever takes users and plans takes users
 	// first.
 	writeLocks func(s *Server) []*sync.Mutex
+	// othersWriteLock, if set, is held as writeLocks are, after them, by
+	// every apply and delete of the kind but the apiserver's own.
+	othersWriteLock func(s *Server) *sync.Mutex
 	// readableByAll lets everyone allowed to use Hangar at all get, list and
 	// watch every object of the kind, whatever their grants.
 	readableByAll bool
@@ -184,6 +187,9 @@ type kindHooks struct {
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
 	redact func(obj proto.Message)
+	// warn, if set, returns what the caller of a successful apply should
+	// know about the stored object, which the answer carries as warnings.
+	warn func(s *Server, obj proto.Message) []string
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -260,6 +266,10 @@ func hooksFor(r registry.Resource) kindHooks {
 			// Shared with the token's cascade: see Server.tokenBindings.
 			createLock: lockBindingToken,
 			validate:   validateRoleBinding,
+			warn:       warnRoleBinding,
+			// A tenant keeps one tenant.owner binding (checkOwnerLeft).
+			beforeDelete:    refuseRemovingLastOwner,
+			othersWriteLock: ownersLock,
 		}
 	case registry.ServiceToken.Kind:
 		// Deleting a token revokes its secret at once and waits for the
@@ -573,7 +583,7 @@ func validateProject(ctx context.Context, s *Server, p auth.Principal, old, obj 
 	return s.validateProjectLimits(ctx, p, old, obj)
 }
 
-func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
+func validateRoleBinding(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
 	spec := obj.(*iamv1alpha1.RoleBinding).GetSpec()
 	role, ok := s.authz.Role(spec.GetRole())
 	if !ok {
@@ -619,7 +629,31 @@ func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, old, 
 	if role.Level != level {
 		return invalid("role %q cannot be bound at this scope", spec.GetRole())
 	}
+	// The scope is immutable, so a binding stops making an owner of its
+	// tenant only by a change of role.
+	if old != nil {
+		if tenant, was := ownerTenant(old.(*iamv1alpha1.RoleBinding)); was {
+			if _, is := ownerTenant(obj.(*iamv1alpha1.RoleBinding)); !is {
+				return s.checkOwnerLeft(ctx, p, authz.Apply, tenant, map[string]bool{object.Meta(old).GetName(): true})
+			}
+		}
+	}
 	return nil
+}
+
+// warnRoleBinding says when a binding below the platform names a person who
+// is not a platform member, whose grants count for nothing until they are
+// one. Whether they were invited is not said: that is the platform's.
+func warnRoleBinding(s *Server, obj proto.Message) []string {
+	spec := obj.(*iamv1alpha1.RoleBinding).GetSpec()
+	email := spec.GetSubject().GetUser()
+	if email == "" || spec.GetScope().GetPlatform() != nil {
+		return nil
+	}
+	if s.authz.IsMember(auth.Principal{Type: auth.User, ID: email}) {
+		return nil
+	}
+	return []string{fmt.Sprintf("%s is not a platform member yet; the binding takes effect once an administrator invites them and they sign up", email)}
 }
 
 func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {

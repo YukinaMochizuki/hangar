@@ -156,6 +156,10 @@ type Server struct {
 	// nameSuffix makes the random part of the name signing up gives a
 	// person's first tenant and project.
 	nameSuffix func() string
+	// owners serializes every apply and delete of a RoleBinding but the
+	// apiserver's own, so no two writes each leave the other's tenant owner
+	// as the last one and together leave none (checkOwnerLeft).
+	owners sync.Mutex
 	// sessions issues and checks credentials, over Config.Credentials; nil
 	// without them. login is set by EnableOIDC: sign-in through the
 	// provider; nil without it.
@@ -260,6 +264,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))

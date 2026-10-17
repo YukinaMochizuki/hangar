@@ -189,6 +189,7 @@ type clients struct {
 	bindings   iamv1alpha1connect.RoleBindingServiceClient
 	users      iamv1alpha1connect.UserServiceClient
 	accounts   iamv1alpha1connect.AccountServiceClient
+	members    iamv1alpha1connect.MemberServiceClient
 	names      tenancyv1alpha1connect.NameServiceClient
 	containers computev1alpha1connect.ContainerServiceClient
 	machines   computev1alpha1connect.MachineServiceClient
@@ -205,6 +206,7 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		bindings:   iamv1alpha1connect.NewRoleBindingServiceClient(hc, url, opts...),
 		users:      iamv1alpha1connect.NewUserServiceClient(hc, url, opts...),
 		accounts:   iamv1alpha1connect.NewAccountServiceClient(hc, url, opts...),
+		members:    iamv1alpha1connect.NewMemberServiceClient(hc, url, opts...),
 		names:      tenancyv1alpha1connect.NewNameServiceClient(hc, url, opts...),
 		containers: computev1alpha1connect.NewContainerServiceClient(hc, url, opts...),
 		machines:   computev1alpha1connect.NewMachineServiceClient(hc, url, opts...),
