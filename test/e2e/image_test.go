@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -16,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -131,8 +131,9 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 		s := w.host.Snapshot()
 		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
 	})
-	// Several sweeps.
-	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// Several sweeps, once the disks' own work is done.
+	w.waitSettled()
+	w.sweeps(3)
 	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudSHA}) {
 		t.Fatalf("image bases with no disk of the image: %v", bases)
 	}
@@ -168,8 +169,9 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 		s := w.host.Snapshot()
 		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
 	})
-	// Several sweeps.
-	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// Several sweeps, once the disks' own work is done.
+	w.waitSettled()
+	w.sweeps(3)
 	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudFixed}) {
 		t.Fatalf("image bases with no disk of the image: %v", bases)
 	}
@@ -215,7 +217,8 @@ func TestAnImageAtFault(t *testing.T) {
 		return r.GetReason() == computeapi.ReasonDiskNotReady, fmt.Sprintf("%v", r)
 	})
 	fetched := w.host.Fetches(cloudURL)
-	time.Sleep(time.Second) //nolint:forbidigo // lets background work run
+	// Its disk, failing, is tried again: the image is not fetched for it.
+	w.reconciled("disks", controller.Key{Project: project, Name: "root"}, 2)
 	if n := w.host.Fetches(cloudURL); n != fetched || n != 1 {
 		t.Errorf("an image at fault was fetched %d times, then %d", fetched, n)
 	}

@@ -341,10 +341,10 @@ func TestTenantDeletionCollectsItsBindings(t *testing.T) {
 		t.Fatalf("creating a tenant made %d owner bindings", owners())
 	}
 	must[tenancyv1alpha1.DeleteTenantResponse](t)(e.as(alice).tenants.DeleteTenant(ctx, connect.NewRequest(&tenancyv1alpha1.DeleteTenantRequest{Name: "acme"})))
-	testutil.Eventually(t, "the owner binding goes with its tenant", func() (bool, string) {
-		n := owners()
-		return n == 0, fmt.Sprintf("%d owner bindings", n)
-	})
+	e.waitSettled()
+	if n := owners(); n != 0 {
+		t.Fatalf("%d owner bindings outlived their tenant", n)
+	}
 }
 
 func TestBootstrapIsOnce(t *testing.T) {
@@ -355,7 +355,8 @@ func TestBootstrapIsOnce(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(runCtx) }()
-	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// Bootstrap runs once at start and reports nothing when it does nothing.
+	testutil.Unchanged(t, "the bootstrap binding, a second server starting", 100*time.Millisecond, e.storedVersion(bootstrapBinding))
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

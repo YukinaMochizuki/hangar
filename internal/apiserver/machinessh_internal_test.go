@@ -332,32 +332,32 @@ func TestTheSSHTunnelTakesOnlyTheVMsOwnMachine(t *testing.T) {
 	alice := auth.Principal{Type: auth.User, ID: "alice@example.com"}
 	theirs := m.Metadata.OwnerReferences[0].Uid
 	m.Metadata.OwnerReferences[0].Uid = "the-deleted-vms-uid"
-	// The garbage collector may delete the orphan as soon as it is written;
-	// as every machine, it stays until its node releases it.
+	// The garbage collector deletes the orphan; as every machine, it stays
+	// until its node releases it.
 	m.Metadata.Finalizers = []string{NodeCleanupFinalizer}
-	applied, err := s.backend(registry.Machine).Apply(system, m)
-	if err != nil {
+	if _, err := s.backend(registry.Machine).Apply(system, m); err != nil {
 		t.Fatal(err)
 	}
-	reportMachine(t, s, system, applied.Object.(*computev1alpha1.Machine), computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, 1)
-	err = tunnelAs(t, s, alice, "web")
+	waitSettled(t, s)
+	key := resource.Key{Project: "web", Name: m.GetMetadata().GetName()}
+	orphan := getMachine(t, s, system, key)
+	if orphan.GetMetadata().GetDeleteTime() == nil {
+		t.Fatal("the garbage collector left the old VM's machine")
+	}
+	reportMachine(t, s, system, orphan, computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, 1)
+	err := tunnelAs(t, s, alice, "web")
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "the tunnel to an old VM's machine")
 	if err != nil && !strings.Contains(err.Error(), "has no machine yet") {
 		t.Errorf("the refusal: %v", err)
 	}
-	// Deleted, as the garbage collector may have done already, and released
-	// by its node, it goes.
-	key := resource.Key{Project: "web", Name: m.GetMetadata().GetName()}
-	if _, err := s.backend(registry.Machine).Delete(system, key, nil); err != nil {
-		t.Fatal(err)
-	}
+	// Released by its node, it goes.
 	if err := s.RemoveFinalizer(system, registry.Machine, key, NodeCleanupFinalizer); err != nil {
 		t.Fatal(err)
 	}
 	waitGone(t, s, system, registry.Machine, key.Name)
 
 	m.Metadata.OwnerReferences[0].Uid = theirs
-	applied, err = s.backend(registry.Machine).Apply(system, m)
+	applied, err := s.backend(registry.Machine).Apply(system, m)
 	if err != nil {
 		t.Fatal(err)
 	}

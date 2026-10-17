@@ -75,8 +75,35 @@ with depends on its layer:
   test that needs real TCP or the store stays out, or moves to `net.Pipe`
   or an in-memory fake where that keeps what it checks.
 - **L1 and L2 tests**, which run the apiserver, SQLite and the node agent,
-  wait for the controllers with WaitSettled
-  (`internal/controller/controllertest`).
+  wait for the controllers with `WaitSettled`
+  (`internal/controller/controllertest`; the apiserver harnesses and
+  `test/e2e` wrap it). It returns once two polls in a row, each reading
+  the same store revision before and after the statuses, find every
+  controller (and the apiserver's garbage collector) with an empty queue,
+  nothing in flight, no retry of a failure pending, and every change
+  through that revision followed. A listing counts as in flight from the
+  moment the watch or list before it ended. Keys waiting on something
+  outside the platform (`controller.ErrWaiting`) are returned rather than
+  waited for.
+  - **Followed** is proven by progress events from the controller's
+    `controller.Source`: inside the apiserver its store watch sees every
+    write, of any kind; a node agent's comes from the API's bookmarks, the
+    lowest across the kinds it watches, so `apiservertest` sends them every
+    10ms.
+  - **The same revision around and across polls** closes the gap between
+    reading the revision and reading the statuses: a reconcile that wrote
+    meanwhile moves it.
+  - **It sees writes only.** What reaches a controller from outside the
+    store (a `Trigger`, a host event) is invisible until it queues a key: a
+    test waits for its visible effect first. A key whose reconciles keep
+    failing never settles; its retry counts the reconciles in a row that
+    failed or waited (`controller.Retry.Attempts`), so a test waits for
+    the ones begun after it asks. The node agent counts what it does
+    outside its controllers (`node.Agent.Activity`): the sweeps of the host
+    its loop has finished, and the network changes it has taken in. The
+    garbage collector retries what failed only in its periodic sweep, which
+    WaitSettled does not see. With a fake clock, a retry after a failure
+    comes only once the test advances the clock.
 - **The shared `Eventually`** is for what neither covers: a condition in
   a test outside a bubble that nothing can be asked about.
 
@@ -88,11 +115,11 @@ resourceVersion, over a window; never the store-wide revision, which
 unrelated writes move. golangci-lint's forbidigo flags `time.Sleep` in
 tests and test-support packages, outside `test/testbed`. A sleep that stays
 says why with `//nolint:forbidigo // <reason>`: real work or real elapsed
-time the test needs; `virtual time`, for a sleep in a synctest bubble,
-which moves the bubble's clock and waits for nothing real; or
-`lets background work run`, before a check `Unchanged` cannot make. The
-last two are marked exactly so, so they can be found, and the last
-replaced.
+time the test needs; or `virtual time`, for a sleep in a synctest bubble,
+which moves the bubble's clock and waits for nothing real, marked exactly
+so, so it can be found. A sleep that only lets background work run is
+never the answer: wait for it with one of the above, or check the one
+object's state with `Unchanged`.
 
 ## Consequences
 

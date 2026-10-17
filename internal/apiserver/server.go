@@ -32,6 +32,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
@@ -169,6 +170,10 @@ type Server struct {
 	tokenBindings keyLocks
 	// tokenUses queues service tokens' uses to record in their status.
 	tokenUses chan tokenUse
+	// controllers are what Run runs, unless the config disables them; gc
+	// is how far garbage collection has come.
+	controllers []*controller.Controller
+	gc          gcProgress
 }
 
 // New returns a server over cfg.Store.
@@ -217,7 +222,20 @@ func New(cfg Config) *Server {
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}
 	}
+	if !cfg.DisableControllers {
+		s.controllers = s.newControllers()
+	}
 	return s
+}
+
+// ControllerStatus reports what each controller and the garbage collector
+// are doing.
+func (s *Server) ControllerStatus() []controller.Status {
+	st := []controller.Status{s.gc.status()}
+	for _, c := range s.controllers {
+		st = append(st, c.Status())
+	}
+	return st
 }
 
 func (s *Server) backend(r registry.Resource) *backend { return s.backends[r.Kind] }
@@ -290,10 +308,8 @@ func (s *Server) Run(ctx context.Context) error {
 	})
 	g.Go(func() error { return s.ensureNodes(gctx) })
 	g.Go(func() error { return s.runNodeMonitor(gctx) })
-	if !s.cfg.DisableControllers {
-		for _, c := range s.controllers() {
-			g.Go(func() error { return c.Run(gctx) })
-		}
+	for _, c := range s.controllers {
+		g.Go(func() error { return c.Run(gctx) })
 	}
 	g.Go(func() error { return s.runGC(gctx) })
 	g.Go(func() error { return s.runCompaction(gctx) })

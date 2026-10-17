@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,6 +40,18 @@ type world struct {
 	config string
 	// rootSignedUp is set once the bootstrap admin has signed up.
 	rootSignedUp bool
+	// watches counts the watches the public API has been asked for.
+	watches *atomic.Int64
+}
+
+// countWatches counts in n the watch calls next serves.
+func countWatches(next http.Handler, n *atomic.Int64) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/Watch") {
+			n.Add(1)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newWorld(t *testing.T) *world {
@@ -58,7 +71,8 @@ func newWorld(t *testing.T) *world {
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	tokens, _ := srv.ServiceTokens()
-	public := httptest.NewServer(srv.Handler(auth.Chain{auth.Dev{}, tokens}))
+	watches := &atomic.Int64{}
+	public := httptest.NewServer(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches))
 	sock := filepath.Join(t.TempDir(), "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -87,7 +101,7 @@ func newWorld(t *testing.T) *world {
 		<-done
 		_ = st.Close()
 	})
-	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml")}
+	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml"), watches: watches}
 	w.addMembers("alice@example.com", "bob@example.com")
 	return w
 }
@@ -551,10 +565,14 @@ func TestWait(t *testing.T) {
 	w.as("alice@example.com")
 	w.must(stack, "apply", "-f", "-")
 
+	// waitFor runs the command until it watches, so what follows is
+	// something it must see happen.
 	waitFor := func(args ...string) chan result {
+		t.Helper()
+		before := w.watches.Load()
 		ch := make(chan result, 1)
 		go func() { ch <- w.run("", args...) }()
-		time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
+		testutil.Eventually(t, strings.Join(args, " ")+" watching", func() bool { return w.watches.Load() > before })
 		return ch
 	}
 	finished := func(ch chan result) result {

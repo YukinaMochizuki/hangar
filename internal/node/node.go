@@ -140,6 +140,11 @@ type Agent struct {
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
 	netTrigger chan struct{}
+	// machinesCtl, networksCtl and disksCtl are the controllers Run runs
+	// with drivers.
+	machinesCtl, networksCtl, disksCtl *controller.Controller
+	// sweeps counts the sweeps sweepLoop has finished.
+	sweeps atomic.Int64
 }
 
 // New returns an agent for cfg.
@@ -211,7 +216,36 @@ func New(cfg Config) (*Agent, error) {
 		netTrigger: make(chan struct{}, 1),
 	}
 	a.diskTrigger = make(chan struct{}, 1)
+	if cfg.Drivers != nil {
+		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
+	}
 	return a, nil
+}
+
+// Activity counts what the agent has done outside its controllers.
+type Activity struct {
+	// Sweeps counts the sweeps of the host its loop has finished.
+	Sweeps int64
+	// NetworkChanges counts the network driver's change signals it has
+	// taken in, each before the machines are checked again for it.
+	NetworkChanges int64
+}
+
+// Activity reports what the agent has done outside its controllers.
+func (a *Agent) Activity() Activity {
+	return Activity{Sweeps: a.sweeps.Load(), NetworkChanges: a.netEpoch.Load()}
+}
+
+// ControllerStatus reports what each of the agent's controllers is doing;
+// without drivers it runs none.
+func (a *Agent) ControllerStatus() []controller.Status {
+	var st []controller.Status
+	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl} {
+		if c != nil {
+			st = append(st, c.Status())
+		}
+	}
+	return st
 }
 
 // Run reports the node and, with drivers, runs its machines, until ctx is
@@ -233,12 +267,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Add(4)
 		go func() {
 			defer wg.Done()
-			_ = a.machineController(ctx).Run(ctx)
+			a.followHost(ctx)
+			_ = a.machinesCtl.Run(ctx)
 			a.puller.wait() // its jobs end with ctx
 		}()
 		go func() {
 			defer wg.Done()
-			_ = a.networkController().Run(ctx)
+			_ = a.networksCtl.Run(ctx)
 			a.netsvc.services.CloseAll()
 		}()
 		go func() {
@@ -249,7 +284,7 @@ func (a *Agent) Run(ctx context.Context) error {
 				default:
 				}
 			})
-			_ = a.diskController().Run(ctx)
+			_ = a.disksCtl.Run(ctx)
 			a.images.wait() // its jobs end with ctx
 		}()
 		go func() {
@@ -283,6 +318,7 @@ func (a *Agent) sweepLoop(ctx context.Context) {
 		if err := a.sweep(ctx); err != nil && ctx.Err() == nil {
 			a.cfg.Log.Error("sweeping the host failed", "error", err)
 		}
+		a.sweeps.Add(1)
 		select {
 		case <-ctx.Done():
 			return
@@ -291,10 +327,9 @@ func (a *Agent) sweepLoop(ctx context.Context) {
 	}
 }
 
-// machineController runs the machines placed on this node. Besides changes
-// to machines and their networks, anything the drivers notice on the host
-// checks every machine again.
-func (a *Agent) machineController(ctx context.Context) *controller.Controller {
+// followHost has anything the drivers notice on the host check every
+// machine again, and an image made ready its machines.
+func (a *Agent) followHost(ctx context.Context) {
 	forward := func(from <-chan struct{}, noted func()) {
 		for {
 			select {
@@ -313,6 +348,11 @@ func (a *Agent) machineController(ctx context.Context) *controller.Controller {
 	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
 	// An image made ready is looked at as soon as it is.
 	a.puller.start(ctx, a.recheck)
+}
+
+// machineController runs the machines placed on this node, on changes to
+// machines and their networks and disks, and on what followHost notices.
+func (a *Agent) machineController() *controller.Controller {
 	return &controller.Controller{
 		Name:       "machines",
 		Source:     controller.APISource{Client: a.api},

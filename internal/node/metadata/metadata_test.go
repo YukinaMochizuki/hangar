@@ -8,8 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"sync"
 	"testing"
 	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func newServer() *Server {
@@ -65,6 +68,21 @@ func TestWhatIsNotServed(t *testing.T) {
 	}
 }
 
+// acceptSignal closes accepted once a connection has been accepted.
+type acceptSignal struct {
+	net.Listener
+	accepted chan struct{}
+	once     sync.Once
+}
+
+func (a *acceptSignal) Accept() (net.Conn, error) {
+	c, err := a.Listener.Accept()
+	if err == nil {
+		a.once.Do(func() { close(a.accepted) })
+	}
+	return c, err
+}
+
 // TestStoppingClosesConnections: Serve ends soon after its ctx, however long
 // a client keeps its connection.
 func TestStoppingClosesConnections(t *testing.T) {
@@ -75,7 +93,8 @@ func TestStoppingClosesConnections(t *testing.T) {
 	}
 	ctx, stop := context.WithCancel(t.Context())
 	done := make(chan error, 1)
-	go func() { done <- s.Serve(ctx, "n1", l) }()
+	accepted := &acceptSignal{Listener: l, accepted: make(chan struct{})}
+	go func() { done <- s.Serve(ctx, "n1", accepted) }()
 	c, err := net.Dial("tcp", l.Addr().String())
 	if err != nil {
 		t.Fatal(err)
@@ -83,7 +102,11 @@ func TestStoppingClosesConnections(t *testing.T) {
 	defer func() { _ = c.Close() }()
 	// A request never finished.
 	_, _ = c.Write([]byte("GET /nocloud/meta-data HTTP/1.1\r\nHost: x\r\n"))
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
+	select {
+	case <-accepted.accepted:
+	case <-time.After(testutil.Wait):
+		t.Fatal("Serve never took the connection")
+	}
 	stop()
 	select {
 	case err := <-done:

@@ -44,7 +44,7 @@ const (
 	DefaultNetwork = "default"
 )
 
-func (s *Server) controllers() []*controller.Controller {
+func (s *Server) newControllers() []*controller.Controller {
 	return []*controller.Controller{
 		{
 			Name: "container", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,

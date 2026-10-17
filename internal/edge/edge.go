@@ -219,6 +219,9 @@ func (e *Edge) follow(ctx context.Context) error {
 	e.replace(byUID)
 	e.syncedOnce.Do(func() { close(e.synced) })
 	return src.Watch(ctx, []string{registry.PublicEndpoint.Kind}, rev, func(ev store.Event) error {
+		if ev.Type == store.EventProgress {
+			return nil
+		}
 		ep, live := decode(ev.Object)
 		if ep.uid == "" {
 			return nil // not an endpoint the edge can read
