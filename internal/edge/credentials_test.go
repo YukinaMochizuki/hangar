@@ -502,27 +502,95 @@ func TestEndpointCookiesAreHostOnly(t *testing.T) {
 		{"a=1; Domains=x; X-Domain=y", "a=1; Domains=x; X-Domain=y"},
 		{"a=1", "a=1"},
 	} {
-		resp := &http.Response{Header: http.Header{"Set-Cookie": {tc.in}}}
-		if err := edge.ConfineEndpointCookies(resp); err != nil {
-			t.Fatal(err)
-		}
-		if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, []string{tc.want}) {
+		h := http.Header{"Set-Cookie": {tc.in}}
+		edge.ConfineCookies(h)
+		if got := h.Values("Set-Cookie"); !slices.Equal(got, []string{tc.want}) {
 			t.Errorf("%q became %q; want %q", tc.in, got, tc.want)
 		}
 	}
 
-	resp := &http.Response{Header: http.Header{"Set-Cookie": {
+	h := http.Header{"Set-Cookie": {
 		"a=1; Domain=" + domain + "; Path=/",
 		edge.EndpointCookie + "=planted; Secure; Path=/",
 		"b=2; Secure",
 		"c=3; HttpOnly; domain=." + domain,
-	}}}
-	if err := edge.ConfineEndpointCookies(resp); err != nil {
+	}}
+	edge.ConfineCookies(h)
+	want := []string{"a=1; Path=/", "b=2; Secure", "c=3; HttpOnly"}
+	if got := h.Values("Set-Cookie"); !slices.Equal(got, want) {
+		t.Errorf("several: %q; want %q", got, want)
+	}
+}
+
+// TestEveryHeaderBlockKeepsCookiesHostOnly: on the bytes a client gets, an
+// endpoint's 103 and 101 carry its cookies host-only and none of Hangar's
+// names, and its trailers carry no Set-Cookie, declared or not, while the
+// rest of them still arrives.
+func TestEveryHeaderBlockKeepsCookiesHostOnly(t *testing.T) {
+	w := newWorld(t)
+	w.endpoint(8080, public)
+	w.served(nil)
+	get := func(path string) string {
+		return rawExchange(t, w.url, "GET "+path+" HTTP/1.1\r\nHost: "+host+"\r\nConnection: close\r\n\r\n", "")
+	}
+
+	hints := get("/early-hints")
+	head, _, _ := strings.Cut(hints, "HTTP/1.1 200")
+	if !strings.HasPrefix(head, "HTTP/1.1 103") || !strings.Contains(head, "\r\nLink: </style.css>; rel=preload\r\n") ||
+		!strings.Contains(head, "\r\nSet-Cookie: hint=1; Path=/\r\n") || strings.Contains(head, "planted") {
+		t.Errorf("the 103: %q", hints)
+	}
+	if !strings.Contains(hints, "port 8080 after hints") {
+		t.Errorf("after the 103: %q", hints)
+	}
+
+	for _, tc := range []struct{ path, cookie, sum string }{
+		{"/trailers", "declared=1", "declared"},
+		{"/undeclared-trailers", "undeclared=1", "undeclared"},
+	} {
+		got := get(tc.path)
+		if strings.Contains(got, tc.cookie) || !strings.Contains(got, "\r\nX-Sum: "+tc.sum+"\r\n") {
+			t.Errorf("%s: %q", tc.path, got)
+		}
+	}
+
+	up := rawExchange(t, w.url, "GET /upgrade HTTP/1.1\r\nHost: "+host+"\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n", "\r\n\r\n")
+	if !strings.HasPrefix(up, "HTTP/1.1 101") || !strings.Contains(up, "\r\nSet-Cookie: ws=1; Path=/\r\n") ||
+		strings.Contains(up, "planted") {
+		t.Errorf("the 101: %q", up)
+	}
+}
+
+// rawExchange sends req to the edge at base exactly as written and returns
+// the bytes it answers with, up to and including the first end, or all of
+// them until it closes when end is "".
+func rawExchange(t *testing.T, base, req, end string) string {
+	t.Helper()
+	c, err := net.Dial("tcp", strings.TrimPrefix(base, "http://"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"a=1; Path=/", "b=2; Secure", "c=3; HttpOnly"}
-	if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, want) {
-		t.Errorf("several: %q; want %q", got, want)
+	defer func() { _ = c.Close() }()
+	_ = c.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.WriteString(c, req); err != nil {
+		t.Fatal(err)
+	}
+	var got []byte
+	buf := make([]byte, 4096)
+	for {
+		n, err := c.Read(buf)
+		got = append(got, buf[:n]...)
+		if end != "" {
+			if i := strings.Index(string(got), end); i >= 0 {
+				return string(got[:i+len(end)])
+			}
+		}
+		if errors.Is(err, io.EOF) {
+			return string(got)
+		}
+		if err != nil {
+			t.Fatalf("after %q: %v", got, err)
+		}
 	}
 }
 

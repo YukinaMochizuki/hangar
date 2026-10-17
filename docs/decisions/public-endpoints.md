@@ -128,7 +128,9 @@ callers of private endpoints in itself (`authentication.md`).
   cookie whose name starts with `__Host-hangar` (in any case), Hangar's
   bearer tokens, every `Hangar-` header a client sent, and what Access used
   (`Cf-Access-*`, `CF_Authorization`). An endpoint answering with a
-  `Set-Cookie` for one of Hangar's names has it dropped, so its answers cannot
+  `Set-Cookie` for one of Hangar's names, in any header block it sends (a
+  1xx such as a 103 or a 101 included), has it dropped, and a `Set-Cookie`
+  trailer is dropped whatever its name, so its answers cannot
   plant or clear one; its own scripts can still write one where none is
   set, on its own host alone, which the edge takes only if it issued that
   value for that host. No header tells an endpoint who calls; a signed one is
@@ -141,8 +143,10 @@ callers of private endpoints in itself (`authentication.md`).
   not on the Public Suffix List (decided by the project owner: at this
   scale the request would likely be refused). Instead the edge makes every
   cookie an endpoint sets host-only: it removes the `Domain` attribute,
-  in any case and wherever it stands, from each `Set-Cookie` of an
-  endpoint's answer and keeps the rest as written. Endpoints are one level
+  in any case and wherever it stands, from each `Set-Cookie` in every
+  header block of an endpoint's answer, 1xx ones included, and keeps the
+  rest as written. Browsers ignore `Set-Cookie` in trailers, so the edge
+  drops it there rather than filtering it. Endpoints are one level
   under the domain, so a `Domain` equal to the endpoint's own host loses
   nothing. The known limits: a cookie a page's script sets
   (`document.cookie`) never passes the edge and can still carry the parent

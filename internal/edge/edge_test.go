@@ -54,9 +54,11 @@ type world struct {
 
 // backend serves, on port, "/" saying the port and what reached it of the
 // credentials a caller may bring, "/read" reading the whole body first,
-// "/set-cookie" setting cookies, Hangar's among them, "/hold" answering
-// nothing (and saying on held that a request reached it), and "/upgrade"
-// switching to an echo of the raw connection. Any other path answers as "/".
+// "/set-cookie" setting cookies, Hangar's among them, "/early-hints" doing so
+// in a 103 first, "/trailers" and "/undeclared-trailers" doing so in trailers
+// it declares or not, "/hold" answering nothing (and saying on held that a
+// request reached it), and "/upgrade" switching, with cookies, to an echo of
+// the raw connection. Any other path answers as "/".
 func backend(t *testing.T, port int32, held chan<- struct{}) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -78,6 +80,27 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		w.Header().Add("Set-Cookie", "__HOST-Hangar_session=planted; Secure; Path=/")
 		_, _ = fmt.Fprintf(w, "port %d set cookies", port)
 	})
+	mux.HandleFunc("/early-hints", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Link", "</style.css>; rel=preload")
+		w.Header().Add("Set-Cookie", "hint=1; Domain="+domain+"; Path=/")
+		w.Header().Add("Set-Cookie", edge.EndpointCookie+"=planted; Secure; Path=/")
+		w.WriteHeader(http.StatusEarlyHints)
+		// A 1xx leaves the header map as it was.
+		clear(w.Header())
+		_, _ = fmt.Fprintf(w, "port %d after hints", port)
+	})
+	mux.HandleFunc("/trailers", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "Set-Cookie, X-Sum")
+		_, _ = fmt.Fprintf(w, "port %d trailers", port)
+		w.Header().Set("Set-Cookie", "declared=1; Path=/")
+		w.Header().Set("X-Sum", "declared")
+	})
+	mux.HandleFunc("/undeclared-trailers", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Sum")
+		_, _ = fmt.Fprintf(w, "port %d trailers", port)
+		w.Header().Set(http.TrailerPrefix+"Set-Cookie", "undeclared=1; Path=/")
+		w.Header().Set("X-Sum", "undeclared")
+	})
 	mux.HandleFunc("/hold", func(_ http.ResponseWriter, r *http.Request) {
 		select {
 		case held <- struct{}{}:
@@ -96,7 +119,8 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 			return
 		}
 		defer func() { _ = c.Close() }()
-		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n")
+		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n" +
+			"Set-Cookie: ws=1; Domain=" + domain + "; Path=/\r\nSet-Cookie: " + edge.EndpointCookie + "=planted; Secure\r\n\r\n")
 		_ = brw.Flush()
 		_, _ = io.Copy(c, brw)
 	})

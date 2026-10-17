@@ -11,9 +11,9 @@ import (
 // registration among the active ones.
 func SetRegistering(e *Edge, f func()) { e.registering = f }
 
-// ConfineEndpointCookies is what the edge does to the Set-Cookie of an
-// endpoint's answer.
-func ConfineEndpointCookies(resp *http.Response) error { return confineEndpointCookies(resp) }
+// ConfineCookies is what the edge does to the Set-Cookie of each header
+// block an endpoint answers with.
+func ConfineCookies(h http.Header) { confineCookies(h) }
 
 // MayUse reports whether e's view lets p use the endpoints of project.
 func MayUse(e *Edge, p auth.Principal, project string) bool {
