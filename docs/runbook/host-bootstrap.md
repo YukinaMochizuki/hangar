@@ -299,13 +299,14 @@ them, as the edge serves them nowhere else.
 ## Deploying a new hangar version
 
 Upgrading past the change that added quotas: add
-`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (3 unless the owner says otherwise) to
-the host env file first; the run refuses to start without it. The first
-start of that version makes the `default` Plan with placeholder limits,
-and every tenant without a plan of its own, existing ones included, gets
-them at once. Set the real limits right after the deploy ("Quotas" below).
-A tenant already past a placeholder limit keeps what it has, but nothing
-in it can grow until the limit is raised. The per-person tenant cap counts
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (1, one tenant per person, as the
+owner decided) to the host env file first; the run refuses to start
+without it. The first start of that version makes the `default` Plan
+with placeholder limits, and every tenant without a plan of its own,
+existing ones included, gets them at once. Set the real limits right
+after the deploy ("Quotas" below). A tenant already past a placeholder
+limit keeps what it has, but nothing in it can grow until the limit is
+raised. The per-person tenant cap counts
 the tenants each person opened by the `hangarlab.cloud/opened-by`
 annotation, which only tenants opened from that version on carry: tenants
 opened before it count toward no one's cap.
@@ -313,10 +314,13 @@ opened before it count toward no one's cap.
 Upgrading past the change that added Invitations and the tenant signing
 up opens: existing Users keep what they have, and only people who sign up
 from then on get a tenant and a project made for them, which counts toward
-their cap. The apiserver's default cap is now 1, that tenant; the host env
-file's `HANGAR_DEFAULT_MAX_OWNED_TENANTS` overrides it, so set it to 1 too
-unless the owner wants new people to open more. The `default` Plan already
-in the store keeps its limits; set the new ones by hand ("Quotas" below).
+their cap. The owner decided on one tenant per person: the apiserver's
+default cap is 1, that tenant, and the host env file sets
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS=1` to match. People who already own more
+tenants keep them all; only opening another is refused. Platform root
+raises one person's cap with `spec.maxOwnedTenants` on their User ("Quotas"
+below). The `default` Plan already in the store keeps its limits; set the
+new ones by hand ("Quotas" below).
 
 Upgrading past the change that added `User` (`hangar signup`): from the
 first start of that version, every existing member, the owner included, is
