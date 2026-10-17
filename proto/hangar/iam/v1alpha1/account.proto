@@ -2,11 +2,13 @@ syntax = "proto3";
 
 package hangar.iam.v1alpha1;
 
+import "hangar/iam/v1alpha1/role_binding.proto";
 import "hangar/iam/v1alpha1/user.proto";
 
-// AccountService is a person's own account: who they are signed in as, and
-// signing up. Someone invited (holding a platform role) who has not signed up
-// yet may call it, though every other call refuses them. It is not a
+// AccountService is a caller's own account: who they are signed in as,
+// signing up, and what they may do. Someone invited (holding a platform role)
+// who has not signed up yet may call WhoAmI, SignUp and UpdateProfile, though
+// every other call refuses them. It is not a
 // resource's service, so it is written by hand rather than generated. See
 // docs/decisions/tenancy-and-iam.md.
 service AccountService {
@@ -19,6 +21,11 @@ service AccountService {
   rpc SignUp(SignUpRequest) returns (SignUpResponse);
   // UpdateProfile changes the caller's own display name, and nothing else.
   rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+  // TestPermissions answers which of the permissions named the caller holds
+  // at a scope, by the checks the calls themselves make. A scope the caller
+  // cannot see answers as one that does not exist: with none. Any platform
+  // member or service token may call it, about itself only.
+  rpc TestPermissions(TestPermissionsRequest) returns (TestPermissionsResponse);
 }
 
 message WhoAmIRequest {}
@@ -58,4 +65,18 @@ message UpdateProfileRequest {
 
 message UpdateProfileResponse {
   User user = 1;
+}
+
+message TestPermissionsRequest {
+  // Where to test: the platform, a tenant or a project.
+  BindingScope scope = 1;
+  // Permission names, such as "compute.containers.apply": between 1 and
+  // 100, each one Hangar knows.
+  repeated string permissions = 2;
+}
+
+message TestPermissionsResponse {
+  // The permissions asked for that the caller holds at the scope, in the
+  // order asked, each once.
+  repeated string permissions = 1;
 }

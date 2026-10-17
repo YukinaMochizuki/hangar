@@ -40,6 +40,9 @@ const (
 	// AccountServiceUpdateProfileProcedure is the fully-qualified name of the AccountService's
 	// UpdateProfile RPC.
 	AccountServiceUpdateProfileProcedure = "/hangar.iam.v1alpha1.AccountService/UpdateProfile"
+	// AccountServiceTestPermissionsProcedure is the fully-qualified name of the AccountService's
+	// TestPermissions RPC.
+	AccountServiceTestPermissionsProcedure = "/hangar.iam.v1alpha1.AccountService/TestPermissions"
 )
 
 // AccountServiceClient is a client for the hangar.iam.v1alpha1.AccountService service.
@@ -53,6 +56,11 @@ type AccountServiceClient interface {
 	SignUp(context.Context, *connect.Request[v1alpha1.SignUpRequest]) (*connect.Response[v1alpha1.SignUpResponse], error)
 	// UpdateProfile changes the caller's own display name, and nothing else.
 	UpdateProfile(context.Context, *connect.Request[v1alpha1.UpdateProfileRequest]) (*connect.Response[v1alpha1.UpdateProfileResponse], error)
+	// TestPermissions answers which of the permissions named the caller holds
+	// at a scope, by the checks the calls themselves make. A scope the caller
+	// cannot see answers as one that does not exist: with none. Any platform
+	// member or service token may call it, about itself only.
+	TestPermissions(context.Context, *connect.Request[v1alpha1.TestPermissionsRequest]) (*connect.Response[v1alpha1.TestPermissionsResponse], error)
 }
 
 // NewAccountServiceClient constructs a client for the hangar.iam.v1alpha1.AccountService service.
@@ -84,14 +92,21 @@ func NewAccountServiceClient(httpClient connect.HTTPClient, baseURL string, opts
 			connect.WithSchema(accountServiceMethods.ByName("UpdateProfile")),
 			connect.WithClientOptions(opts...),
 		),
+		testPermissions: connect.NewClient[v1alpha1.TestPermissionsRequest, v1alpha1.TestPermissionsResponse](
+			httpClient,
+			baseURL+AccountServiceTestPermissionsProcedure,
+			connect.WithSchema(accountServiceMethods.ByName("TestPermissions")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // accountServiceClient implements AccountServiceClient.
 type accountServiceClient struct {
-	whoAmI        *connect.Client[v1alpha1.WhoAmIRequest, v1alpha1.WhoAmIResponse]
-	signUp        *connect.Client[v1alpha1.SignUpRequest, v1alpha1.SignUpResponse]
-	updateProfile *connect.Client[v1alpha1.UpdateProfileRequest, v1alpha1.UpdateProfileResponse]
+	whoAmI          *connect.Client[v1alpha1.WhoAmIRequest, v1alpha1.WhoAmIResponse]
+	signUp          *connect.Client[v1alpha1.SignUpRequest, v1alpha1.SignUpResponse]
+	updateProfile   *connect.Client[v1alpha1.UpdateProfileRequest, v1alpha1.UpdateProfileResponse]
+	testPermissions *connect.Client[v1alpha1.TestPermissionsRequest, v1alpha1.TestPermissionsResponse]
 }
 
 // WhoAmI calls hangar.iam.v1alpha1.AccountService.WhoAmI.
@@ -109,6 +124,11 @@ func (c *accountServiceClient) UpdateProfile(ctx context.Context, req *connect.R
 	return c.updateProfile.CallUnary(ctx, req)
 }
 
+// TestPermissions calls hangar.iam.v1alpha1.AccountService.TestPermissions.
+func (c *accountServiceClient) TestPermissions(ctx context.Context, req *connect.Request[v1alpha1.TestPermissionsRequest]) (*connect.Response[v1alpha1.TestPermissionsResponse], error) {
+	return c.testPermissions.CallUnary(ctx, req)
+}
+
 // AccountServiceHandler is an implementation of the hangar.iam.v1alpha1.AccountService service.
 type AccountServiceHandler interface {
 	// WhoAmI answers any authenticated caller, about themselves only.
@@ -120,6 +140,11 @@ type AccountServiceHandler interface {
 	SignUp(context.Context, *connect.Request[v1alpha1.SignUpRequest]) (*connect.Response[v1alpha1.SignUpResponse], error)
 	// UpdateProfile changes the caller's own display name, and nothing else.
 	UpdateProfile(context.Context, *connect.Request[v1alpha1.UpdateProfileRequest]) (*connect.Response[v1alpha1.UpdateProfileResponse], error)
+	// TestPermissions answers which of the permissions named the caller holds
+	// at a scope, by the checks the calls themselves make. A scope the caller
+	// cannot see answers as one that does not exist: with none. Any platform
+	// member or service token may call it, about itself only.
+	TestPermissions(context.Context, *connect.Request[v1alpha1.TestPermissionsRequest]) (*connect.Response[v1alpha1.TestPermissionsResponse], error)
 }
 
 // NewAccountServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -147,6 +172,12 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 		connect.WithSchema(accountServiceMethods.ByName("UpdateProfile")),
 		connect.WithHandlerOptions(opts...),
 	)
+	accountServiceTestPermissionsHandler := connect.NewUnaryHandler(
+		AccountServiceTestPermissionsProcedure,
+		svc.TestPermissions,
+		connect.WithSchema(accountServiceMethods.ByName("TestPermissions")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.iam.v1alpha1.AccountService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AccountServiceWhoAmIProcedure:
@@ -155,6 +186,8 @@ func NewAccountServiceHandler(svc AccountServiceHandler, opts ...connect.Handler
 			accountServiceSignUpHandler.ServeHTTP(w, r)
 		case AccountServiceUpdateProfileProcedure:
 			accountServiceUpdateProfileHandler.ServeHTTP(w, r)
+		case AccountServiceTestPermissionsProcedure:
+			accountServiceTestPermissionsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -174,4 +207,8 @@ func (UnimplementedAccountServiceHandler) SignUp(context.Context, *connect.Reque
 
 func (UnimplementedAccountServiceHandler) UpdateProfile(context.Context, *connect.Request[v1alpha1.UpdateProfileRequest]) (*connect.Response[v1alpha1.UpdateProfileResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.iam.v1alpha1.AccountService.UpdateProfile is not implemented"))
+}
+
+func (UnimplementedAccountServiceHandler) TestPermissions(context.Context, *connect.Request[v1alpha1.TestPermissionsRequest]) (*connect.Response[v1alpha1.TestPermissionsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.iam.v1alpha1.AccountService.TestPermissions is not implemented"))
 }

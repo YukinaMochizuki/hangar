@@ -4,6 +4,8 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { BindingScope } from "./role_binding_pb";
+import { file_hangar_iam_v1alpha1_role_binding } from "./role_binding_pb";
 import type { User } from "./user_pb";
 import { file_hangar_iam_v1alpha1_user } from "./user_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -12,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/iam/v1alpha1/account.proto.
  */
 export const file_hangar_iam_v1alpha1_account: GenFile = /*@__PURE__*/
-  fileDesc("CiFoYW5nYXIvaWFtL3YxYWxwaGExL2FjY291bnQucHJvdG8SE2hhbmdhci5pYW0udjFhbHBoYTEiDwoNV2hvQW1JUmVxdWVzdCJ0Cg5XaG9BbUlSZXNwb25zZRIMCgR0eXBlGAEgASgJEgoKAmlkGAIgASgJEg8KB2ludml0ZWQYAyABKAgSDgoGbWVtYmVyGAQgASgIEicKBHVzZXIYBSABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIiNwoNU2lnblVwUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkiWgoOU2lnblVwUmVzcG9uc2USJwoEdXNlchgBIAEoCzIZLmhhbmdhci5pYW0udjFhbHBoYTEuVXNlchIOCgZ0ZW5hbnQYAiABKAkSDwoHcHJvamVjdBgDIAEoCSIsChRVcGRhdGVQcm9maWxlUmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkiQAoVVXBkYXRlUHJvZmlsZVJlc3BvbnNlEicKBHVzZXIYASABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIyngIKDkFjY291bnRTZXJ2aWNlElEKBldob0FtSRIiLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVxdWVzdBojLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVzcG9uc2USUQoGU2lnblVwEiIuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXF1ZXN0GiMuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXNwb25zZRJmCg1VcGRhdGVQcm9maWxlEikuaGFuZ2FyLmlhbS52MWFscGhhMS5VcGRhdGVQcm9maWxlUmVxdWVzdBoqLmhhbmdhci5pYW0udjFhbHBoYTEuVXBkYXRlUHJvZmlsZVJlc3BvbnNlQt8BChdjb20uaGFuZ2FyLmlhbS52MWFscGhhMUIMQWNjb3VudFByb3RvUAFaSGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2lhbS92MWFscGhhMTtpYW12MWFscGhhMaICA0hJWKoCE0hhbmdhci5JYW0uVjFhbHBoYTHKAhNIYW5nYXJcSWFtXFYxYWxwaGEx4gIfSGFuZ2FyXElhbVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCFUhhbmdhcjo6SWFtOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_iam_v1alpha1_user]);
+  fileDesc("CiFoYW5nYXIvaWFtL3YxYWxwaGExL2FjY291bnQucHJvdG8SE2hhbmdhci5pYW0udjFhbHBoYTEiDwoNV2hvQW1JUmVxdWVzdCJ0Cg5XaG9BbUlSZXNwb25zZRIMCgR0eXBlGAEgASgJEgoKAmlkGAIgASgJEg8KB2ludml0ZWQYAyABKAgSDgoGbWVtYmVyGAQgASgIEicKBHVzZXIYBSABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIiNwoNU2lnblVwUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkiWgoOU2lnblVwUmVzcG9uc2USJwoEdXNlchgBIAEoCzIZLmhhbmdhci5pYW0udjFhbHBoYTEuVXNlchIOCgZ0ZW5hbnQYAiABKAkSDwoHcHJvamVjdBgDIAEoCSIsChRVcGRhdGVQcm9maWxlUmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkiQAoVVXBkYXRlUHJvZmlsZVJlc3BvbnNlEicKBHVzZXIYASABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIiXwoWVGVzdFBlcm1pc3Npb25zUmVxdWVzdBIwCgVzY29wZRgBIAEoCzIhLmhhbmdhci5pYW0udjFhbHBoYTEuQmluZGluZ1Njb3BlEhMKC3Blcm1pc3Npb25zGAIgAygJIi4KF1Rlc3RQZXJtaXNzaW9uc1Jlc3BvbnNlEhMKC3Blcm1pc3Npb25zGAEgAygJMowDCg5BY2NvdW50U2VydmljZRJRCgZXaG9BbUkSIi5oYW5nYXIuaWFtLnYxYWxwaGExLldob0FtSVJlcXVlc3QaIy5oYW5nYXIuaWFtLnYxYWxwaGExLldob0FtSVJlc3BvbnNlElEKBlNpZ25VcBIiLmhhbmdhci5pYW0udjFhbHBoYTEuU2lnblVwUmVxdWVzdBojLmhhbmdhci5pYW0udjFhbHBoYTEuU2lnblVwUmVzcG9uc2USZgoNVXBkYXRlUHJvZmlsZRIpLmhhbmdhci5pYW0udjFhbHBoYTEuVXBkYXRlUHJvZmlsZVJlcXVlc3QaKi5oYW5nYXIuaWFtLnYxYWxwaGExLlVwZGF0ZVByb2ZpbGVSZXNwb25zZRJsCg9UZXN0UGVybWlzc2lvbnMSKy5oYW5nYXIuaWFtLnYxYWxwaGExLlRlc3RQZXJtaXNzaW9uc1JlcXVlc3QaLC5oYW5nYXIuaWFtLnYxYWxwaGExLlRlc3RQZXJtaXNzaW9uc1Jlc3BvbnNlQt8BChdjb20uaGFuZ2FyLmlhbS52MWFscGhhMUIMQWNjb3VudFByb3RvUAFaSGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2lhbS92MWFscGhhMTtpYW12MWFscGhhMaICA0hJWKoCE0hhbmdhci5JYW0uVjFhbHBoYTHKAhNIYW5nYXJcSWFtXFYxYWxwaGEx4gIfSGFuZ2FyXElhbVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCFUhhbmdhcjo6SWFtOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_iam_v1alpha1_role_binding, file_hangar_iam_v1alpha1_user]);
 
 /**
  * @generated from message hangar.iam.v1alpha1.WhoAmIRequest
@@ -166,9 +168,57 @@ export const UpdateProfileResponseSchema: GenMessage<UpdateProfileResponse> = /*
   messageDesc(file_hangar_iam_v1alpha1_account, 5);
 
 /**
- * AccountService is a person's own account: who they are signed in as, and
- * signing up. Someone invited (holding a platform role) who has not signed up
- * yet may call it, though every other call refuses them. It is not a
+ * @generated from message hangar.iam.v1alpha1.TestPermissionsRequest
+ */
+export type TestPermissionsRequest = Message<"hangar.iam.v1alpha1.TestPermissionsRequest"> & {
+  /**
+   * Where to test: the platform, a tenant or a project.
+   *
+   * @generated from field: hangar.iam.v1alpha1.BindingScope scope = 1;
+   */
+  scope?: BindingScope | undefined;
+
+  /**
+   * Permission names, such as "compute.containers.apply": between 1 and
+   * 100, each one Hangar knows.
+   *
+   * @generated from field: repeated string permissions = 2;
+   */
+  permissions: string[];
+};
+
+/**
+ * Describes the message hangar.iam.v1alpha1.TestPermissionsRequest.
+ * Use `create(TestPermissionsRequestSchema)` to create a new message.
+ */
+export const TestPermissionsRequestSchema: GenMessage<TestPermissionsRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_iam_v1alpha1_account, 6);
+
+/**
+ * @generated from message hangar.iam.v1alpha1.TestPermissionsResponse
+ */
+export type TestPermissionsResponse = Message<"hangar.iam.v1alpha1.TestPermissionsResponse"> & {
+  /**
+   * The permissions asked for that the caller holds at the scope, in the
+   * order asked, each once.
+   *
+   * @generated from field: repeated string permissions = 1;
+   */
+  permissions: string[];
+};
+
+/**
+ * Describes the message hangar.iam.v1alpha1.TestPermissionsResponse.
+ * Use `create(TestPermissionsResponseSchema)` to create a new message.
+ */
+export const TestPermissionsResponseSchema: GenMessage<TestPermissionsResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_iam_v1alpha1_account, 7);
+
+/**
+ * AccountService is a caller's own account: who they are signed in as,
+ * signing up, and what they may do. Someone invited (holding a platform role)
+ * who has not signed up yet may call WhoAmI, SignUp and UpdateProfile, though
+ * every other call refuses them. It is not a
  * resource's service, so it is written by hand rather than generated. See
  * docs/decisions/tenancy-and-iam.md.
  *
@@ -207,6 +257,19 @@ export const AccountService: GenService<{
     methodKind: "unary";
     input: typeof UpdateProfileRequestSchema;
     output: typeof UpdateProfileResponseSchema;
+  },
+  /**
+   * TestPermissions answers which of the permissions named the caller holds
+   * at a scope, by the checks the calls themselves make. A scope the caller
+   * cannot see answers as one that does not exist: with none. Any platform
+   * member or service token may call it, about itself only.
+   *
+   * @generated from rpc hangar.iam.v1alpha1.AccountService.TestPermissions
+   */
+  testPermissions: {
+    methodKind: "unary";
+    input: typeof TestPermissionsRequestSchema;
+    output: typeof TestPermissionsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_iam_v1alpha1_account, 0);
