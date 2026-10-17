@@ -177,6 +177,27 @@ func (q *Queries) FamilyExpiry(ctx context.Context, family string) (int64, error
 	return expires_at, err
 }
 
+const familyHolds = `-- name: FamilyHolds :one
+SELECT COUNT(*)
+FROM credentials
+WHERE family = ?1 AND type = ?2
+  AND expires_at > ?3
+  AND (idle_until = 0 OR idle_until > ?3)
+`
+
+type FamilyHoldsParams struct {
+	Family string
+	Type   string
+	Now    int64
+}
+
+func (q *Queries) FamilyHolds(ctx context.Context, arg FamilyHoldsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, familyHolds, arg.Family, arg.Type, arg.Now)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const familyRevoked = `-- name: FamilyRevoked :one
 SELECT COUNT(*) FROM revoked_families
 WHERE family = ?

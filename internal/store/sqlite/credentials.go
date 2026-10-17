@@ -62,6 +62,17 @@ func (s *Store) GetCredential(ctx context.Context, hash string) (store.Credentia
 	return credentialFromRow(row), nil
 }
 
+func (s *Store) FamilyHolds(ctx context.Context, family, typ string, now time.Time) (bool, error) {
+	if s.closing.Load() {
+		return false, store.ErrClosed
+	}
+	n, err := s.q.FamilyHolds(ctx, db.FamilyHoldsParams{Family: family, Type: typ, Now: millis(now)})
+	if err != nil {
+		return false, s.closedOr(err)
+	}
+	return n > 0, nil
+}
+
 func (s *Store) TouchCredential(ctx context.Context, hash string, lastUsed, idleUntil time.Time) error {
 	return s.credTx(ctx, func(q *db.Queries) error {
 		n, err := q.TouchCredential(ctx, db.TouchCredentialParams{LastUsedAt: millis(lastUsed), IdleUntil: millis(idleUntil), Hash: hash})

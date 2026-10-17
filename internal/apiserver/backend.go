@@ -334,11 +334,18 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 	if err != nil {
 		return invalid("%v", err)
 	}
-	if opts.Project != "" {
-		if err := b.authorize(p, authz.Watch, authz.Target{Project: opts.Project}, b.askedIn(opts.Project)); err != nil {
+	if err := b.mayWatch(p, opts.Project); err != nil {
+		return err
+	}
+	// Each event is judged as it comes; the watch as a whole stands only as
+	// long as its caller may still watch at all.
+	auth.Recheck(ctx, func(ctx context.Context) error {
+		p, err := b.begin(ctx)
+		if err != nil {
 			return err
 		}
-	}
+		return b.mayWatch(p, opts.Project)
+	})
 	since := opts.SinceRevision
 	if since == 0 {
 		if since, err = b.s.store.Revision(ctx); err != nil {
@@ -403,6 +410,15 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 		return nil
 	}
 	return apiError(err)
+}
+
+// mayWatch authorizes a watch in project, or everywhere when it is empty,
+// where each event is authorized on its own.
+func (b *backend) mayWatch(p auth.Principal, project string) error {
+	if project == "" {
+		return nil
+	}
+	return b.authorize(p, authz.Watch, authz.Target{Project: project}, b.askedIn(project))
 }
 
 func eventType(t store.EventType) metav1.EventType {

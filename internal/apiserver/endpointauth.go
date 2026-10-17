@@ -31,7 +31,7 @@ var (
 // endpoint, to the Edge principal alone. No other listener serves it.
 func (s *Server) EdgeHandler(chain auth.Chain) http.Handler {
 	mux := s.mux(chain)
-	mux.Handle(networkv1alpha1connect.NewEndpointAuthServiceHandler(endpointAuth{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(networkv1alpha1connect.NewEndpointAuthServiceHandler(endpointAuth{s}, connect.WithInterceptors(s.interceptor(chain))))
 	return mux
 }
 

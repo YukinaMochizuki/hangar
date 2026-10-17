@@ -85,7 +85,9 @@ func (r *reached) String() string {
 // first, from the kind alone; then check, if any, checks the rest of the
 // request. Nothing about the object is told before the caller is
 // authorized, as the permission is on machines in the object's project:
-// the machine an object runs as is in its project.
+// the machine an object runs as is in its project. A stream that reaches
+// the machine, a log followed, an exec or an SSH tunnel, stands only as long
+// as the caller may still use the capability (auth.Recheck).
 func (s *Server) reach(ctx context.Context, kind registry.Resource, key resource.Key, verb authz.Verb, check func() error) (*reached, error) {
 	machines := s.backend(registry.Machine)
 	p, err := machines.begin(ctx)
@@ -108,11 +110,16 @@ func (s *Server) reach(ctx context.Context, kind registry.Resource, key resource
 			return nil, err
 		}
 	}
-	// Not machines.allowed: a Machine is system-managed, and that refuses
-	// every caller any verb but reads. The capabilities are no write to it.
-	if !s.authz.Allowed(p, authz.Permission(registry.Machine, verb), machines.target(key, nil)) {
-		return nil, denied("%s may not %s %s", p, verb, b.asked(key))
+	if err := s.mayUse(p, b, key, verb); err != nil {
+		return nil, err
 	}
+	auth.Recheck(ctx, func(ctx context.Context) error {
+		p, err := machines.begin(ctx)
+		if err != nil {
+			return err
+		}
+		return s.mayUse(p, b, key, verb)
+	})
 	cur, err := s.store.Get(ctx, b.storeKey(key))
 	if err != nil {
 		return nil, apiError(err)
@@ -122,6 +129,17 @@ func (s *Server) reach(ctx context.Context, kind registry.Resource, key resource
 		return nil, apiError(err)
 	}
 	return &reached{principal: p, kind: kind, key: key, obj: obj}, nil
+}
+
+// mayUse authorizes the capability verb of the machine of the object of b's
+// kind at key.
+func (s *Server) mayUse(p auth.Principal, b *backend, key resource.Key, verb authz.Verb) error {
+	// Not machines.allowed: a Machine is system-managed, and that refuses
+	// every caller any verb but reads. The capabilities are no write to it.
+	if !s.authz.Allowed(p, authz.Permission(registry.Machine, verb), s.backend(registry.Machine).target(key, nil)) {
+		return denied("%s may not %s %s", p, verb, b.asked(key))
+	}
+	return nil
 }
 
 // machineOf is the machine the object r runs as, once it is placed on a

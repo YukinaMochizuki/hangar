@@ -151,7 +151,7 @@ func (w *oidcWorld) cookie(c *http.Client) string {
 	return ""
 }
 
-// headers sets request headers on every call.
+// headers sets request headers on every call, unary or streaming.
 type headers map[string]string
 
 func (h headers) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
@@ -164,7 +164,13 @@ func (h headers) WrapUnary(next connect.UnaryFunc) connect.UnaryFunc {
 }
 
 func (h headers) WrapStreamingClient(next connect.StreamingClientFunc) connect.StreamingClientFunc {
-	return next
+	return func(ctx context.Context, spec connect.Spec) connect.StreamingClientConn {
+		conn := next(ctx, spec)
+		for k, v := range h {
+			conn.RequestHeader().Set(k, v)
+		}
+		return conn
+	}
 }
 
 func (h headers) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
