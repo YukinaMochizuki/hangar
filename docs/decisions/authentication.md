@@ -119,6 +119,61 @@ credentials. The node is a separate root process on the same host.
   callback: exchanging a loopback code, approving a device login, handing
   out its tokens, and every refresh, so a person uninvited meanwhile gets
   nothing more.
+- **A long-lived stream is checked again every 30 seconds** while it is
+  open (decided by the owner). This covers every Connect streaming call
+  (every `Watch`, a log followed) and the exec and SSH WebSockets
+  (`streaming-transport.md`). One mechanism in the auth layer holds them
+  all (`auth.Chain.Hold`; the Connect interceptor uses it for every
+  streaming call). Each round checks the credential, then the decisions:
+  - It checks again the credential the stream was opened with, without
+    counting that as a use: it moves no browser session's idle limit and
+    records no service token's use, so a tab left open still ends at
+    its session's idle limit. A browser session and a service token are
+    checked as themselves. That catches a sign-out, a revoke of the
+    person's logins, and a service token rotated or deleted.
+  - A CLI access token is not checked as itself: the CLI renews its
+    hour without reopening its streams. The round checks the login it
+    was issued in instead. The login stands while it holds a refresh
+    token not past its end nor gone idle, consumed or not. So a stream
+    opened with a CLI access token lives until the login behind it is
+    revoked or ends: at most 30 days after the login's last refresh,
+    and 90 days after sign-in. Revoking the login ends it within 30
+    seconds, or about 90 seconds if the store cannot decide. That covers
+    a sign-out, `RevokeSessions`, and a refresh token presented twice.
+    This replaced a bound of the access token's hour (decided by the
+    owner), so that a long SSH session or an agent's watch is not cut
+    every hour.
+  - It asks again every authorization decision the handler registered
+    when it let the stream in (`auth.Recheck`). For a watch, that is
+    platform membership and, for a watch of one project, the right to
+    watch there. For an exec, an SSH tunnel or a log followed, it is
+    membership and the machine's capability. That catches the
+    RoleBinding that granted access being deleted, and membership
+    being taken away. A watch also judges each event as it comes. A
+    stream that sends something without registering a decision is
+    logged as a warning, since only its credential could end it.
+
+  A refusal ends the stream with the code a refused call gets:
+  `Unauthenticated` for the credential, `PermissionDenied` for a
+  decision. A Connect stream ends with that error; a WebSocket closes with
+  4000 plus the code, whatever it is doing, even blocked writing to a
+  client that reads nothing. A client can tell either from a dropped
+  connection. So a revoke ends the stream within 30 seconds.
+
+  A round that cannot decide refuses nothing. That is a round where the
+  store is unreachable, a check fails other than by refusing, or the round
+  runs past 30 seconds. Two such rounds in a row end the stream with
+  `Unauthenticated`, not `Unavailable`, which a client would take for a
+  dropped connection. So when the store cannot decide, the stream ends
+  within about 90 seconds of a revoke: 30 seconds to the first round, and
+  two rounds of 30 seconds each.
+
+  A round costs what a unary call does: one credential lookup by its
+  index (or, for an access token, by its login's), and the in-memory
+  authorization view. There is no cache. hangar-edge rechecks requests
+  in flight to a private endpoint as often (`public-endpoints.md`). The
+  node agent's tunnel is not rechecked: it is the node socket's peer,
+  which no revoke changes.
 - **Where sign-in is served**: the `/auth/` pages, `/auth/endpoint-login`
   among them, and `SessionService` are on the public listener and on the
   public socket, which is that listener for the front door, and nowhere

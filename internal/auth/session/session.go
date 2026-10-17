@@ -65,7 +65,7 @@ const (
 var (
 	// ErrInvalid means the credential is unknown, revoked, expired or not
 	// of the kind asked for. Callers say no more than that.
-	ErrInvalid = errors.New("the credential is not valid; sign in again")
+	ErrInvalid = auth.ErrInvalidCredential
 	// ErrReused means a refresh token was presented after it had been
 	// used: someone else may hold a copy, so the whole login was revoked.
 	ErrReused = errors.New("the refresh token was already used, so its login has been revoked; sign in again")
@@ -355,6 +355,34 @@ func (m *Manager) Lookup(ctx context.Context, s token.Secret, typ string) (auth.
 // empty for one bound to no host, and says more of what it found. Unknown,
 // revoked, expired, of another type and for another host are refused alike.
 func (m *Manager) Check(ctx context.Context, s token.Secret, typ, audience string) (Found, error) {
+	return m.check(ctx, s, typ, audience, true)
+}
+
+// Stands is Check without counting as a use: it records nothing, so a
+// browser session's idle limit does not move. A held stream rechecks its
+// credential with it.
+func (m *Manager) Stands(ctx context.Context, s token.Secret, typ, audience string) error {
+	_, err := m.check(ctx, s, typ, audience, false)
+	return err
+}
+
+// LoginStands returns ErrInvalid once the CLI login family has ended:
+// revoked, past its end, or with its refresh token gone idle. It records
+// nothing. A stream opened with an access token is rechecked with it rather
+// than with the token, whose hour a CLI renews without reopening its
+// streams.
+func (m *Manager) LoginStands(ctx context.Context, family string) error {
+	ok, err := m.store.FamilyHolds(ctx, family, TypeRefresh, m.now())
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrInvalid
+	}
+	return nil
+}
+
+func (m *Manager) check(ctx context.Context, s token.Secret, typ, audience string, use bool) (Found, error) {
 	hash := s.Hash()
 	c, err := m.store.GetCredential(ctx, hash)
 	if errors.Is(err, store.ErrNotFound) {
@@ -387,6 +415,9 @@ func (m *Manager) Check(ctx context.Context, s token.Secret, typ, audience strin
 			return Found{}, ErrInvalid
 		}
 	}
+	if !use {
+		return found(p, c), nil
+	}
 	if c.Type == TypeService && now.Sub(c.LastUsedAt) >= touchEvery {
 		if err := m.store.TouchCredential(ctx, c.Hash, now, time.Time{}); errors.Is(err, store.ErrNotFound) {
 			return Found{}, ErrInvalid
@@ -407,11 +438,15 @@ func (m *Manager) Check(ctx context.Context, s token.Secret, typ, audience strin
 			return Found{}, err
 		}
 	}
+	return found(p, c), nil
+}
+
+func found(p auth.Principal, c store.Credential) Found {
 	until := c.ExpiresAt
 	if !c.IdleUntil.IsZero() {
 		until = earliest(until, c.IdleUntil)
 	}
-	return Found{Principal: p, Family: c.Family, Until: until, LoginEnd: c.ExpiresAt}, nil
+	return Found{Principal: p, Family: c.Family, Until: until, LoginEnd: c.ExpiresAt}
 }
 
 // Revoke ends the login a credential belongs to: every credential issued

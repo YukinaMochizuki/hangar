@@ -39,18 +39,19 @@ var errClientGone = connect.NewError(connect.CodeCanceled, errors.New("the clien
 // serveExec serves an exec in the machine of the object route names, a
 // WebSocket on the public listener. Everything that can refuse it does so
 // before the upgrade, and nothing about the object is told before the
-// caller is authorized.
+// caller is authorized. It is held as a Connect stream is (auth.Chain.Hold).
 func (s *Server) serveExec(chain auth.Chain, w http.ResponseWriter, r *http.Request, route execws.Route) {
 	key := resource.Key{Project: route.Project, Name: route.Name}
 	refuse := func(p auth.Principal, err error) {
 		s.auditRefused("exec refused", p, clientIP(r.Context()), route, err)
 		execws.WriteError(w, r, err)
 	}
-	ctx, err := chain.Authenticate(r.Context(), r.Header)
+	ctx, release, err := chain.Hold(r.Context(), r.Header, s.clock)
 	if err != nil {
 		refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
 		return
 	}
+	defer release()
 	p, _ := auth.FromContext(ctx)
 	kind, err := kindOfPlural(route.Plural)
 	if err != nil {
@@ -126,6 +127,13 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *machineTarge
 			}
 		})
 	}
+	// A recheck that refuses the caller ends the exec at once, even one
+	// blocked writing to a client that reads nothing.
+	defer context.AfterFunc(ctx, func() {
+		if err := auth.Ended(ctx); err != nil {
+			end(err)
+		}
+	})()
 	audit := &execAudit{began: time.Now()}
 	err := s.exec(ctx, end, c, x, live, audit)
 	if audit.start == nil {

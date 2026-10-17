@@ -220,9 +220,15 @@ func binding(name, user, role string, scope *iamv1alpha1.BindingScope) *iamv1alp
 // ends.
 func (w *execWorld) connectNode(t *testing.T) {
 	t.Helper()
+	w.connectNodeServing(t, w.node)
+}
+
+// connectNodeServing is connectNode with n1 served by h.
+func (w *execWorld) connectNodeServing(t *testing.T, h nodev1connect.NodeServiceHandler) {
+	t.Helper()
 	sock := listen(t, w.s, auth.Chain{auth.PeerCred{NodeUIDs: []uint32{uint32(os.Getuid())}, NodeName: "n1"}})
 	mux := http.NewServeMux()
-	mux.Handle(nodev1connect.NewNodeServiceHandler(w.node))
+	mux.Handle(nodev1connect.NewNodeServiceHandler(h))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {

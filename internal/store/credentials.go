@@ -72,6 +72,10 @@ type Credentials interface {
 	CreateCredentials(ctx context.Context, cs ...Credential) error
 	// GetCredential returns the credential with the hash, or ErrNotFound.
 	GetCredential(ctx context.Context, hash string) (Credential, error)
+	// FamilyHolds reports whether the family holds a credential of the
+	// type that has neither expired nor gone idle by now, consumed or not.
+	// A revoked family holds none.
+	FamilyHolds(ctx context.Context, family, typ string, now time.Time) (bool, error)
 	// TouchCredential records a use: its last use and its new idle limit.
 	// ErrNotFound if it is gone.
 	TouchCredential(ctx context.Context, hash string, lastUsed, idleUntil time.Time) error

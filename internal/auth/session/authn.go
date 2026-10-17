@@ -26,13 +26,31 @@ type Bearer struct {
 }
 
 func (b Bearer) Authenticate(ctx context.Context, header http.Header) (auth.Principal, bool, error) {
+	f, _, _, ok, err := b.authenticate(ctx, header)
+	return f.Principal, ok, err
+}
+
+// AuthenticateStream rechecks a service token as it is, and an access
+// token by the login it was issued in (Manager.LoginStands).
+func (b Bearer) AuthenticateStream(ctx context.Context, header http.Header) (auth.Principal, func(context.Context) error, bool, error) {
+	f, s, typ, ok, err := b.authenticate(ctx, header)
+	if !ok || err != nil {
+		return auth.Principal{}, nil, ok, err
+	}
+	if typ == TypeAccess {
+		return f.Principal, func(ctx context.Context) error { return b.M.LoginStands(ctx, f.Family) }, true, nil
+	}
+	return f.Principal, func(ctx context.Context) error { return b.M.Stands(ctx, s, typ, "") }, true, nil
+}
+
+func (b Bearer) authenticate(ctx context.Context, header http.Header) (Found, token.Secret, string, bool, error) {
 	v := header.Get("Authorization")
 	if v == "" {
-		return auth.Principal{}, false, nil
+		return Found{}, "", "", false, nil
 	}
 	scheme, raw, _ := strings.Cut(v, " ")
 	if !strings.EqualFold(scheme, "Bearer") {
-		return auth.Principal{}, false, errors.New("the Authorization header takes a Bearer token")
+		return Found{}, "", "", false, errors.New("the Authorization header takes a Bearer token")
 	}
 	s := token.Secret(strings.TrimSpace(raw))
 	var typ string
@@ -42,13 +60,13 @@ func (b Bearer) Authenticate(ctx context.Context, header http.Header) (auth.Prin
 	case s.Prefix() == token.Service:
 		typ = TypeService
 	default:
-		return auth.Principal{}, false, ErrInvalid
+		return Found{}, "", "", false, ErrInvalid
 	}
-	p, err := b.M.Lookup(ctx, s, typ)
+	f, err := b.M.Check(ctx, s, typ, "")
 	if err != nil {
-		return auth.Principal{}, false, err
+		return Found{}, "", "", false, err
 	}
-	return p, true, nil
+	return f, s, typ, true, nil
 }
 
 // Cookie authenticates a browser by its session cookie. A cookie goes with
@@ -78,6 +96,17 @@ func (c Cookie) Authenticate(ctx context.Context, header http.Header) (auth.Prin
 		return auth.Principal{}, false, err
 	}
 	return p, true, nil
+}
+
+// AuthenticateStream rechecks the session without counting that as a use,
+// so a tab left open still ends at the session's idle limit.
+func (c Cookie) AuthenticateStream(ctx context.Context, header http.Header) (auth.Principal, func(context.Context) error, bool, error) {
+	p, ok, err := c.Authenticate(ctx, header)
+	if !ok || err != nil {
+		return auth.Principal{}, nil, ok, err
+	}
+	s, _ := SessionFromHeader(header)
+	return p, func(ctx context.Context) error { return c.M.Stands(ctx, s, TypeSession, "") }, true, nil
 }
 
 // SessionFromHeader returns the session cookie the request carries.

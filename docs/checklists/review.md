@@ -47,6 +47,15 @@ those rules.
 - [ ] Every new RPC or action has a permission, and a test proves a principal
       without it is denied.
 - [ ] Nothing trusts a header that a client can set directly.
+- [ ] A new long-lived stream is held: a Connect streaming call is by its
+      interceptor, and any other, such as a WebSocket, calls
+      `auth.Chain.Hold` itself and ends when it is refused. Its handler
+      registers each authorization decision it was let in under with
+      `auth.Recheck`, and a test shows it ending a recheck after the
+      revoke (`docs/decisions/authentication.md`).
+- [ ] A new authenticator of a credential that can be revoked implements
+      `auth.StreamAuthenticator`, whose recheck records no use of the
+      credential.
 - [ ] A secret Hangar issues or holds stays a `token.Secret` until the one
       place that sends or stores it, so no log line, error or CLI output
       shows it; tests check the output for it.

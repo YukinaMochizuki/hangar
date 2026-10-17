@@ -253,18 +253,24 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux := http.NewServeMux()
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
-		connect.WithInterceptors(chain.Interceptor()))
-	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, connect.WithInterceptors(chain.Interceptor())))
+		connect.WithInterceptors(s.interceptor(chain)))
+	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
-	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
-	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(chain.Interceptor())))
-	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(chain.Interceptor())))
-	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(chain.Interceptor())))
+	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return mux
+}
+
+// interceptor authenticates the Connect calls a listener takes with chain,
+// and rechecks its streams on the server's clock.
+func (s *Server) interceptor(chain auth.Chain) connect.Interceptor {
+	return chain.InterceptorOn(s.clock, s.log)
 }
 
 // openTunnel takes a node agent's tunnel (internal/tunnel). The tunnel is
