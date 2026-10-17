@@ -63,7 +63,9 @@ stand in front of the internet with nothing else in front of it.
     returns, `authentication.md`) to the apiserver. Everything else is the
     console's files from a directory (`--console-dir`), with every path
     that is neither a file nor has an extension served `index.html`. The
-    files are opened inside the directory alone (`os.Root`).
+    files are opened inside the directory alone (`os.Root`), and served
+    with the console's `Content-Security-Policy` and `Referrer-Policy`
+    (`console-design.md`).
   - `<label>.<user-domain>` goes to the public endpoints
     (`public-endpoints.md`), whose callers the edge signs in itself.
   - Responses of `api.` and `console.` on :443 carry
