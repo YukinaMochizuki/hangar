@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/placement.proto.
  */
 export const file_hangar_compute_v1alpha1_placement: GenFile = /*@__PURE__*/
-  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9wbGFjZW1lbnQucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExInYKCVBsYWNlbWVudBIOCgZyZWdpb24YASABKAkSDAoEc2l0ZRgCIAEoCRIRCgljcHVfbW9kZWwYAyABKAkSFgoOY3B1X2dlbmVyYXRpb24YBCABKAkSDwoHc3RvcmFnZRgFIAEoCRIPCgdjaGFzc2lzGAYgASgJQv0BChtjb20uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTFCDlBsYWNlbWVudFByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2NvbXB1dGUvdjFhbHBoYTE7Y29tcHV0ZXYxYWxwaGExogIDSENYqgIXSGFuZ2FyLkNvbXB1dGUuVjFhbHBoYTHKAhdIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMeICI0hhbmdhclxDb21wdXRlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpDb21wdXRlOjpWMWFscGhhMWIGcHJvdG8z");
+  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9wbGFjZW1lbnQucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIpcBCglQbGFjZW1lbnQSDgoGcmVnaW9uGAEgASgJEgwKBHNpdGUYAiABKAkSEQoJY3B1X21vZGVsGAMgASgJEhYKDmNwdV9nZW5lcmF0aW9uGAQgASgJEg8KB3N0b3JhZ2UYBSABKAkSDwoHY2hhc3NpcxgGIAEoCRIOCgZtZW1vcnkYByABKAkSDwoHbmV0d29yaxgIIAEoCUL9AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQg5QbGFjZW1lbnRQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9jb21wdXRlL3YxYWxwaGExO2NvbXB1dGV2MWFscGhhMaICA0hDWKoCF0hhbmdhci5Db21wdXRlLlYxYWxwaGExygIXSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTHiAiNIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6Q29tcHV0ZTo6VjFhbHBoYTFiBnByb3RvMw");
 
 /**
  * Placement describes the hardware of a machine's host, never its load;
@@ -67,6 +67,21 @@ export type Placement = Message<"hangar.compute.v1alpha1.Placement"> & {
    * @generated from field: string chassis = 6;
    */
   chassis: string;
+
+  /**
+   * The kind of the host's memory, never its size, such as "DDR4-3200 ECC".
+   *
+   * @generated from field: string memory = 7;
+   */
+  memory: string;
+
+  /**
+   * The host's Ethernet ports by the most speed each supports, never its
+   * link's, such as "2 × 10 GbE".
+   *
+   * @generated from field: string network = 8;
+   */
+  network: string;
 };
 
 /**

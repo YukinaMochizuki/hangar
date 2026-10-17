@@ -24,4 +24,9 @@ message Placement {
   // Names the host's chassis, a DNS-1123 label such as "generic-1u-2x-u2";
   // a client draws one it does not know, or none, as a generic server.
   string chassis = 6;
+  // The kind of the host's memory, never its size, such as "DDR4-3200 ECC".
+  string memory = 7;
+  // The host's Ethernet ports by the most speed each supports, never its
+  // link's, such as "2 × 10 GbE".
+  string network = 8;
 }

@@ -25,6 +25,7 @@ func PlacementFields(p *computev1alpha1.Placement) []PlacementField {
 	return []PlacementField{
 		{"region", &p.Region}, {"site", &p.Site}, {"cpu_model", &p.CpuModel},
 		{"cpu_generation", &p.CpuGeneration}, {"storage", &p.Storage}, {"chassis", &p.Chassis},
+		{"memory", &p.Memory}, {"network", &p.Network},
 	}
 }
 

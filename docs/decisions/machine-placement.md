@@ -25,20 +25,32 @@ through its machines what other tenants run.
   | `cpu_generation` | `Zen 3 (Milan)` | the agent's table of EPYC generations by CPUID family and model, or `--cpu-generation` |
   | `storage` | `2 × NVMe SSD` | the host's physical disks in `/sys/block`, by kind and count, or `--storage`: a block device with a device behind it and not removable, the namespaces of one NVMe controller counted once (loop devices, zvols, RAID arrays and device-mapper targets are not disks) |
   | `chassis` | `generic-1u-2x-u2` | the node's configuration, `--chassis` |
+  | `memory` | `DDR4-3200 ECC` | the SMBIOS table (`/sys/firmware/dmi/tables/DMI`): the type of the installed modules (Memory Device), the slowest speed they run at, and ECC if a system memory array (Physical Memory Array) corrects errors; or `--memory` |
+  | `network` | `2 × 10 GbE` | every physical Ethernet port in `/sys/class/net`, its link up or not, by the most speed it supports: the fastest of the link modes its driver lists over ethtool netlink (`LINKMODES_GET`), never the speed its link runs at; or `--network` |
 
   Every field is empty when the node does not know it.
+- **Nothing in a placement follows use or state.** It says what the host
+  is built of, so nothing in it changes because of what the host does: no
+  load, no free space, no link state, no negotiated speed, no disk dropping
+  off the bus. A port counts whether its cable is in or not, at the speed
+  it is built for.
 - **The node describes itself; the apiserver copies.** The agent reports a
   `Placement` in `NodeStatus.placement` at every heartbeat, from what it
-  reads of the host and what its flags say (a CPU generation or storage
-  given wins over what it reads). The CPU and the disks are read apart: one
-  whose read fails keeps what it last reported while the other is still
-  read, and a read that keeps failing is logged when it starts failing and
-  when it works again, not at every heartbeat. The container and VM
-  controllers set their owner's placement to a copy of the node's whenever
-  they report, a report of a change they cannot apply included, and they
-  reconcile on every Node change, so the placement appears once the machine
-  is placed and follows the node's description when it changes. A machine
-  on no node, or whose node is gone, has none.
+  reads of the host and what its flags say (a CPU generation, storage,
+  memory or network given wins over what it reads). Storage, memory and
+  network are read once, as the agent starts, and kept until it starts
+  again: what the host does meanwhile never changes them. A read that
+  could read only some of the host, such as a port whose speed cannot be
+  read, gives what it could and logs the rest; one that reads nothing is
+  logged, and the field is what the configuration says, or empty. The CPU
+  is read at every heartbeat; a read that fails keeps what was last
+  reported, and one that keeps failing is logged when it starts failing
+  and when it works again. The container and VM controllers set
+  their owner's placement to a copy of the node's whenever they report, a
+  report of a change they cannot apply included, and they reconcile on
+  every Node change, so the placement appears once the machine is placed
+  and follows the node's description when it changes. A machine on no
+  node, or whose node is gone, has none.
 - **Only `Placement` reaches tenants, and it is bounded.** It is a message
   of its own holding hardware alone, and the controllers copy it whole:
   nothing else of the Node (load, capacity, allocatable, addresses,
@@ -47,9 +59,11 @@ through its machines what other tenants run.
   operator must never put load, capacity or anything else that changes
   with use into one. The apiserver refuses a Node status whose placement
   has a field over 64 characters or holding a character that is not
-  printable (`internal/computeapi/placement.go`). The core count is cut
-  from the CPU model, since it is the host's size; the disk count is how
-  the host is built, not what is free on it.
+  printable (`internal/computeapi/placement.go`). Fields say what the
+  hardware is, never how much of it: the core count is cut from the CPU
+  model, since it is the host's size, and memory is described by kind,
+  never by size or module count; the disk and port counts are how the host
+  is built, not what is free on it.
 - **The chassis is an identifier, not a description.** It is a DNS-1123
   label the console maps to an illustration; one it does not know, and an
   empty one, it draws as a generic server. The apiserver refuses a chassis
@@ -58,13 +72,21 @@ through its machines what other tenants run.
   value the apiserver would refuse as empty, and logs that once when it
   starts; a chassis that is not a label is then drawn generic. A value read
   from the host that the apiserver would refuse counts as a failed read.
-- **Production values are the deploy's.** `deploy/host` passes
-  `HANGAR_REGION`, `HANGAR_SITE` and `HANGAR_CHASSIS` from the host env
-  file to the agent when they are set, and nothing when they are not; it
-  refuses a region or site that is not one word of at most 64 characters,
-  and a chassis that is not a DNS-1123 label, so a bad value fails the
-  deploy rather than reaching the agent (`docs/runbook/host-bootstrap.md`).
-  The values in this file are examples.
+- **Production values are the deploy's, checked by the agent's own rule.**
+  `deploy/host` passes `HANGAR_REGION`, `HANGAR_SITE`, `HANGAR_CHASSIS`,
+  `HANGAR_MEMORY` and `HANGAR_NETWORK` from the host env file to the agent
+  when they are set, and nothing when they are not. Before it writes the
+  agent's unit it runs `hangar-node check-placement` on them with the
+  hangar-node the run installs (the release's, once it matches the
+  release's `SHA256SUMS`, with `--release`; else the installed one), which
+  applies the rule the agent and the apiserver apply
+  (`internal/computeapi/placement.go`), and refuses the run if any fails;
+  no second implementation of the rule lives in the deploy. A hangar-node
+  from before `check-placement`, which its usage shows, is never run with
+  it, since it would start an agent: the step warns that the values were
+  not checked. Each value goes into the unit quoted, with what systemd
+  reads in quotes escaped (`\`, `"`, `%`, `$`)
+  (`docs/runbook/host-bootstrap.md`). The values in this file are examples.
 
 ## Consequences
 
@@ -74,5 +96,16 @@ through its machines what other tenants run.
 - The storage line counts every physical disk of the host, the boot disks
   included, not only the pool's: a host whose pool is on some of its disks
   says what it means with `--storage`.
+- Memory is read from the SMBIOS table with no tool (dmidecode reads the
+  same table); a type the agent has no name for, such as a virtual
+  machine's `RAM`, leaves memory empty, and firmware that misreports its
+  modules is corrected with `--memory`.
+- A port whose driver lists no link mode with a speed (a virtual
+  machine's virtio port, among others) cannot be rated: it is left out of
+  the network line, and logged, as the agent starts. With no port rated,
+  the line is what `--network` says, or empty.
+  Ports bonded together count one by one. A line that would pass 64
+  characters is summed up as how many ports there are and the fastest,
+  such as `13 Ethernet ports, up to 100 GbE`.
 - Every heartbeat that changes nothing in the placement changes no
   container or VM: their status is written only when it differs.

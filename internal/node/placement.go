@@ -47,6 +47,8 @@ func placement(hw, conf *computev1alpha1.Placement) *computev1alpha1.Placement {
 		CpuGeneration: cmp.Or(conf.GetCpuGeneration(), hw.GetCpuGeneration()),
 		Storage:       cmp.Or(conf.GetStorage(), hw.GetStorage()),
 		Chassis:       conf.GetChassis(),
+		Memory:        cmp.Or(conf.GetMemory(), hw.GetMemory()),
+		Network:       cmp.Or(conf.GetNetwork(), hw.GetNetwork()),
 	}
 	if proto.Size(p) == 0 {
 		return nil
@@ -54,8 +56,9 @@ func placement(hw, conf *computev1alpha1.Placement) *computev1alpha1.Placement {
 	return p
 }
 
-// hardware reads the host's CPU and disks, each independently: one whose
-// read fails, or reads what a Node may not report, stays as last reported.
+// hardware reads the host's CPU, keeping what was last reported if the
+// read fails or reads what a Node may not report. Storage, memory and
+// network are what the agent read once as it started.
 func (a *Agent) hardware(last *computev1alpha1.Placement) *computev1alpha1.Placement {
 	hw := &computev1alpha1.Placement{}
 	c, err := a.cfg.CPU()
@@ -68,15 +71,25 @@ func (a *Agent) hardware(last *computev1alpha1.Placement) *computev1alpha1.Place
 		c = last
 	}
 	hw.CpuModel, hw.CpuGeneration = c.GetCpuModel(), c.GetCpuGeneration()
-	hw.Storage, err = a.cfg.Disks()
-	if err == nil {
-		err = computeapi.CheckPlacementValue("storage", hw.Storage)
-	}
-	a.disksRead.note(a.cfg.Log, "reading the host's disks", err)
-	if err != nil {
-		hw.Storage = last.GetStorage()
-	}
+	hw.Storage, hw.Memory, hw.Network = a.storage, a.memory, a.network
 	return hw
+}
+
+// readOnce reads the host's what into the Placement field named field,
+// once, as hardware does not change with use. What it could not read is
+// logged; reading nothing leaves the field to the configuration.
+func (a *Agent) readOnce(what, field string, read func() (string, error)) string {
+	v, err := read()
+	if bad := computeapi.CheckPlacementValue(field, v); bad != nil {
+		v, err = "", bad
+	}
+	switch {
+	case err != nil && v == "":
+		a.cfg.Log.Warn("reading the host's "+what+" failed; it is reported as configured, or empty", "error", err)
+	case err != nil:
+		a.cfg.Log.Warn("reading the host's "+what+" left some of it out", "read", v, "error", err)
+	}
+	return v
 }
 
 // readState is whether a read of the host failed last time, so a read that

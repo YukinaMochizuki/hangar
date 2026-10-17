@@ -129,14 +129,65 @@ services_reserved_disk() {
 	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA")))
 }
 
-# services_placement_flags prints the agent's flags for what the host env
-# file says of where the host is and its chassis, each only when it is set:
-# nothing, and the unit is as it was without them
+# services_placement_args sets SERVICES_PLACEMENT to the agent's placement
+# flags for what the host env file sets, each only when it is set
 # (docs/decisions/machine-placement.md).
+services_placement_args() {
+	SERVICES_PLACEMENT=()
+	local pair var
+	for pair in region:HANGAR_REGION site:HANGAR_SITE chassis:HANGAR_CHASSIS \
+		memory:HANGAR_MEMORY network:HANGAR_NETWORK; do
+		var=${pair#*:}
+		[ -z "${!var:-}" ] || SERVICES_PLACEMENT+=("--${pair%%:*}" "${!var}")
+	done
+}
+
+# services_placement_flags prints those flags for the agent's ExecStart,
+# each value quoted, with what systemd reads in quotes escaped: '\', '"',
+# '%' and '$'. Nothing set prints nothing, and the unit is as it was
+# without them.
 services_placement_flags() {
-	[ -z "${HANGAR_REGION:-}" ] || printf -- ' --region %s' "$HANGAR_REGION"
-	[ -z "${HANGAR_SITE:-}" ] || printf -- ' --site %s' "$HANGAR_SITE"
-	[ -z "${HANGAR_CHASSIS:-}" ] || printf -- ' --chassis %s' "$HANGAR_CHASSIS"
+	services_placement_args
+	local i v
+	for ((i = 0; i < ${#SERVICES_PLACEMENT[@]}; i += 2)); do
+		v=${SERVICES_PLACEMENT[i + 1]}
+		v=${v//\\/\\\\}
+		v=${v//\"/\\\"}
+		v=${v//%/%%}
+		v=${v//\$/\$\$}
+		printf -- ' %s "%s"' "${SERVICES_PLACEMENT[i]}" "$v"
+	done
+}
+
+# services_placement_problem prints why the agent would not report the
+# placement the host env file gives as given, by the agent's own check
+# (hangar-node check-placement) in the hangar-node this run installs: the
+# release's with --release, else the installed one. Nothing when it would,
+# or when that hangar-node has no check-placement, which it warns of.
+services_placement_problem() {
+	services_placement_args
+	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || return 0
+	local bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} usage out
+	if [ -n "$dir" ]; then
+		bin=$dir/hangar-node
+		# Run nothing from the release before it matches its checksums.
+		if ! (cd "$dir" && grep -E '^[0-9a-f]{64}  hangar-node$' SHA256SUMS | sha256sum -c --quiet --status); then
+			printf '%s\n' "$bin does not match $dir/SHA256SUMS; the host env file's placement cannot be checked with it"
+			return 0
+		fi
+	elif [ ! -x "$bin" ]; then
+		printf '%s\n' "no $bin to check the host env file's placement with; install a release first"
+		return 0
+	fi
+	# A hangar-node from before check-placement would take the word for its
+	# agent's arguments and start one; what its usage lists says.
+	usage=$("$bin" -h 2>&1) || true
+	if [[ $usage != *check-placement* ]]; then
+		log "warning: $bin has no check-placement; the host env file's placement is not checked this run"
+		return 0
+	fi
+	out=$("$bin" check-placement "${SERVICES_PLACEMENT[@]}" 2>&1) ||
+		printf 'the host env file'\''s placement: %s\n' "$(printf '%s' "$out" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
 }
 
 # services_auth_flags prints the apiserver's flags for the auth mode
@@ -589,7 +640,7 @@ services_apply() {
 		log "warning: $LOCAL_ENV is missing or wrong; a real run refuses until you $how"
 	fi
 	local problem
-	problem=$(auth_problem; services_endpoints_problem)
+	problem=$(auth_problem; services_endpoints_problem; services_placement_problem)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 	# A tunnel an earlier release left running never forwards to an
 	# apiserver in dev auth, which trusts a header: it goes before the

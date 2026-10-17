@@ -5,7 +5,9 @@
 // hangar-node vmm MACHINE_UID is the launcher of one VM, the main process
 // of the VM's systemd unit (internal/node/driver/chvm); the agent starts
 // those units, never this command itself. hangar-node vmm-exec is what the
-// launcher runs Cloud Hypervisor through, as the VM's user.
+// launcher runs Cloud Hypervisor through, as the VM's user. hangar-node
+// check-placement takes the placement flags alone and fails, saying why,
+// unless the node would report each as given.
 package main
 
 import (
@@ -61,6 +63,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "vmm-exec" {
 		os.Exit(chvm.ExecMain(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "check-placement" {
+		os.Exit(checkPlacementMain(os.Args[2:], os.Stderr))
+	}
 	var hf hostFlags
 	var (
 		name           = flag.String("name", "", "the Node this agent reports as; the apiserver's --node-name")
@@ -73,13 +78,10 @@ func main() {
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
 		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
 		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
-		region         = flag.String("region", "", "the region the host is in, such as ap-southeast, which the machines on it report; at most 64 printable characters, or it is reported empty")
-		site           = flag.String("site", "", "the site within the region the host is in, such as SGP02, which the machines on it report; at most 64 printable characters, or it is reported empty")
-		chassis        = flag.String("chassis", "", "names the host's chassis, a DNS-1123 label (at most 63 lowercase letters, digits and '-', starting and ending with a letter or digit) such as generic-1u-2x-u2, which a client draws the machines on it with; empty, or one that is not a label, is reported empty and drawn as a generic server")
-		cpuGeneration  = flag.String("cpu-generation", "", "the CPU's microarchitecture and code name, such as \"Zen 3 (Milan)\"; empty for what the agent knows of the CPU; at most 64 printable characters, or it is reported empty")
-		storage        = flag.String("storage", "", "the host's disks as the machines on it report them, such as \"2 × NVMe SSD\"; empty for the physical disks the agent finds; at most 64 printable characters, or it is reported empty")
 	)
+	placement := bindPlacement(flag.CommandLine)
 	hf.bind(flag.CommandLine)
+	flag.Usage = func() { usage(flag.CommandLine) }
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -114,7 +116,7 @@ func main() {
 			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
 		},
 		Reserved:      &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
-		Placement:     &computev1alpha1.Placement{Region: *region, Site: *site, Chassis: *chassis, CpuGeneration: *cpuGeneration, Storage: *storage},
+		Placement:     placement,
 		MaxPulls:      *maxPulls,
 		MaxUnpackWork: hf.maxUnpackWork,
 		Drivers:       d,

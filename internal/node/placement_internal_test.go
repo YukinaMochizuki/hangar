@@ -130,11 +130,14 @@ func TestStorageKinds(t *testing.T) {
 
 func TestPlacementMerge(t *testing.T) {
 	hw := &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)", Storage: "2 × NVMe SSD",
+		Memory: "DDR4-3200 ECC", Network: "1 × 10 GbE",
 		// Never from the host: these are the configuration's alone.
 		Region: "stale", Site: "stale", Chassis: "stale"}
-	conf := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2", CpuGeneration: "Zen 3"}
+	conf := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2", CpuGeneration: "Zen 3",
+		Network: "2 × 10 GbE"}
 	want := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2",
-		CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3", Storage: "2 × NVMe SSD"}
+		CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3", Storage: "2 × NVMe SSD",
+		Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE"}
 	if got := placement(hw, conf); !proto.Equal(got, want) {
 		t.Errorf("placement %v, want %v", got, want)
 	}

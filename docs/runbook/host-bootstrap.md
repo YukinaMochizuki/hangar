@@ -168,12 +168,20 @@ with `--release DIR`. `--only <step>` runs a single step
     plus the host's own overhead), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
     that socket, root's and group `hangar-edge`'s, 0660, and takes
-    `hangar-edge`'s dials alone), `--region HANGAR_REGION`, `--site
-    HANGAR_SITE` and `--chassis HANGAR_CHASSIS` each only when the host env
-    file sets it (such as `ap-southeast`, `SGP02` and `generic-1u-2x-u2`:
-    region and site one word of at most 64 characters, the chassis a
-    DNS-1123 label, or the run stops as it loads the env file; every tenant
-    on the node reads them, so never put load or capacity in them,
+    `hangar-edge`'s dials alone), `--region`, `--site`, `--chassis`,
+    `--memory` and `--network` from `HANGAR_REGION`, `HANGAR_SITE`,
+    `HANGAR_CHASSIS`, `HANGAR_MEMORY` and `HANGAR_NETWORK`, each only when
+    the host env file sets it and each quoted, with `\`, `"`, `%` and `$`
+    escaped as systemd reads them (such as `ap-southeast`, `SGP02`,
+    `generic-1u-2x-u2`, `DDR4-3200 ECC` and `2 × 10 GbE`; the step refuses
+    the run unless `hangar-node check-placement` accepts them, the agent's
+    own rule: at most 64 printable characters each, the chassis a DNS-1123
+    label. It runs the hangar-node the run installs: with `--release`, the
+    release's, once it matches the release's `SHA256SUMS`; without, the
+    installed one, and if that one has no `check-placement` it warns that
+    the values were not checked instead. Unset, the agent reads memory and
+    network from the host as it starts; every tenant on the node reads
+    them, so never put load or capacity in them,
     `docs/decisions/machine-placement.md`), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the
     agent runs itself: each VM is a transient unit of its own and outlives

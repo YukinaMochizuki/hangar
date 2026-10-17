@@ -43,7 +43,12 @@ type Placement struct {
 	Storage string `protobuf:"bytes,5,opt,name=storage,proto3" json:"storage,omitempty"`
 	// Names the host's chassis, a DNS-1123 label such as "generic-1u-2x-u2";
 	// a client draws one it does not know, or none, as a generic server.
-	Chassis       string `protobuf:"bytes,6,opt,name=chassis,proto3" json:"chassis,omitempty"`
+	Chassis string `protobuf:"bytes,6,opt,name=chassis,proto3" json:"chassis,omitempty"`
+	// The kind of the host's memory, never its size, such as "DDR4-3200 ECC".
+	Memory string `protobuf:"bytes,7,opt,name=memory,proto3" json:"memory,omitempty"`
+	// The host's Ethernet ports by the most speed each supports, never its
+	// link's, such as "2 × 10 GbE".
+	Network       string `protobuf:"bytes,8,opt,name=network,proto3" json:"network,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -120,18 +125,34 @@ func (x *Placement) GetChassis() string {
 	return ""
 }
 
+func (x *Placement) GetMemory() string {
+	if x != nil {
+		return x.Memory
+	}
+	return ""
+}
+
+func (x *Placement) GetNetwork() string {
+	if x != nil {
+		return x.Network
+	}
+	return ""
+}
+
 var File_hangar_compute_v1alpha1_placement_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_placement_proto_rawDesc = "" +
 	"\n" +
-	"'hangar/compute/v1alpha1/placement.proto\x12\x17hangar.compute.v1alpha1\"\xaf\x01\n" +
+	"'hangar/compute/v1alpha1/placement.proto\x12\x17hangar.compute.v1alpha1\"\xe1\x01\n" +
 	"\tPlacement\x12\x16\n" +
 	"\x06region\x18\x01 \x01(\tR\x06region\x12\x12\n" +
 	"\x04site\x18\x02 \x01(\tR\x04site\x12\x1b\n" +
 	"\tcpu_model\x18\x03 \x01(\tR\bcpuModel\x12%\n" +
 	"\x0ecpu_generation\x18\x04 \x01(\tR\rcpuGeneration\x12\x18\n" +
 	"\astorage\x18\x05 \x01(\tR\astorage\x12\x18\n" +
-	"\achassis\x18\x06 \x01(\tR\achassisB\xfd\x01\n" +
+	"\achassis\x18\x06 \x01(\tR\achassis\x12\x16\n" +
+	"\x06memory\x18\a \x01(\tR\x06memory\x12\x18\n" +
+	"\anetwork\x18\b \x01(\tR\anetworkB\xfd\x01\n" +
 	"\x1bcom.hangar.compute.v1alpha1B\x0ePlacementProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1;computev1alpha1\xa2\x02\x03HCX\xaa\x02\x17Hangar.Compute.V1alpha1\xca\x02\x17Hangar\\Compute\\V1alpha1\xe2\x02#Hangar\\Compute\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Compute::V1alpha1b\x06proto3"
 
 var (

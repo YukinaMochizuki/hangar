@@ -125,16 +125,19 @@ func (b *syncBuffer) count(s string) int {
 }
 
 // TestTheNodeReportsItsPlacement: the node describes its host by what the
-// agent reads of its CPU and disks and what its configuration says, less a
-// configured value a Node may not report. A read that fails keeps what it
-// last read, the other read going on, and is logged when it starts failing
-// and when it works again.
+// agent reads of its CPU, disks, memory and network and what its
+// configuration says, less a configured value a Node may not report. The
+// CPU is read at each heartbeat, a read that fails keeping what it last
+// read and being logged when it starts failing and when it works again;
+// storage, memory and network are read once, as the agent starts.
 func TestTheNodeReportsItsPlacement(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	root := env.As(apiservertest.Root)
 	var cpuFails atomic.Bool
-	var disks atomic.Value
+	var disks, network atomic.Value
+	var diskReads, memoryReads, networkReads atomic.Int32
 	disks.Store("2 × NVMe SSD")
+	network.Store("2 × 10 GbE")
 	logs := &syncBuffer{}
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, nil, func(c *node.Config) {
 		c.Log = slog.New(slog.NewTextHandler(logs, nil))
@@ -145,38 +148,85 @@ func TestTheNodeReportsItsPlacement(t *testing.T) {
 			}
 			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)"}, nil
 		}
-		c.Disks = func() (string, error) { return disks.Load().(string), nil }
+		c.Disks = func() (string, error) {
+			diskReads.Add(1)
+			return disks.Load().(string), nil
+		}
+		c.Memory = func() (string, error) {
+			memoryReads.Add(1)
+			return "DDR4-3200 ECC", nil
+		}
+		c.Network = func() (string, error) {
+			networkReads.Add(1)
+			return network.Load().(string), nil
+		}
 	})
 	want := &computev1alpha1.Placement{
 		Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
-		Storage: "2 × NVMe SSD",
+		Storage: "2 × NVMe SSD", Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE",
 	}
-	waitValue(t, "the node describing its host, without the chassis that is no label", getNode(t, root), func(n *computev1alpha1.Node) bool {
+	n := waitValue(t, "the node describing its host, without the chassis that is no label", getNode(t, root), func(n *computev1alpha1.Node) bool {
 		return proto.Equal(n.GetStatus().GetPlacement(), want)
 	})
 	if got := logs.count("reported without chassis"); got != 1 {
 		t.Errorf("the dropped chassis was logged %d times, want once", got)
 	}
 
-	// The CPU's read fails; the disks are still read.
+	// The CPU's read fails, and the disks and network the host would show
+	// now, a disk off the bus and a port gone, are never asked.
 	cpuFails.Store(true)
-	disks.Store("3 × NVMe SSD")
-	want.Storage = "3 × NVMe SSD"
-	n := waitValue(t, "the disks read again while the CPU's read fails", getNode(t, root), func(n *computev1alpha1.Node) bool {
-		return n.GetStatus().GetPlacement().GetStorage() == want.Storage
-	})
+	disks.Store("1 × NVMe SSD")
+	network.Store("1 × 10 GbE")
 	n = waitBeats(t, root, n, 3)
 	if got := n.GetStatus().GetPlacement(); !proto.Equal(got, want) {
 		t.Errorf("while the CPU's read fails the node reports placement %v, want %v", got, want)
 	}
 	if got := logs.count("reading the host's CPU failed"); got != 1 {
-		t.Errorf("a read failing for several heartbeats was logged %d times, want once", got)
+		t.Errorf("the CPU read failing for several heartbeats was logged %d times, want once", got)
+	}
+	if d, m, nw := diskReads.Load(), memoryReads.Load(), networkReads.Load(); d != 1 || m != 1 || nw != 1 {
+		t.Errorf("over several heartbeats the disks were read %d times, memory %d and network %d, want once each", d, m, nw)
 	}
 
 	cpuFails.Store(false)
 	waitBeats(t, root, n, 2)
 	if got := logs.count("reading the host's CPU works again"); got != 1 {
 		t.Errorf("the read working again was logged %d times, want once", got)
+	}
+}
+
+// TestAnUnreadableHostIsDescribedAsConfigured: storage, memory and network
+// that cannot be read are logged once, and are what the configuration says,
+// or empty; what a read gives with an error for the rest is reported, the
+// rest logged once.
+func TestAnUnreadableHostIsDescribedAsConfigured(t *testing.T) {
+	env := apiservertest.Start(t, nil)
+	root := env.As(apiservertest.Root)
+	logs := &syncBuffer{}
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, nil, func(c *node.Config) {
+		c.Log = slog.New(slog.NewTextHandler(logs, nil))
+		c.Placement = &computev1alpha1.Placement{Memory: "DDR4-3200 ECC"}
+		c.CPU = func() (*computev1alpha1.Placement, error) {
+			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313"}, nil
+		}
+		c.Disks = func() (string, error) { return "", errors.New("no /sys/block") }
+		c.Memory = func() (string, error) { return "", errors.New("no SMBIOS table") }
+		c.Network = func() (string, error) {
+			return "1 × 10 GbE", errors.New("eno2: no supported link mode with a speed")
+		}
+	})
+	n := waitValue(t, "the node reporting", getNode(t, root), func(n *computev1alpha1.Node) bool {
+		return n.GetStatus().GetPlacement().GetCpuModel() != ""
+	})
+	n = waitBeats(t, root, n, 3)
+	want := &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", Memory: "DDR4-3200 ECC", Network: "1 × 10 GbE"}
+	if got := n.GetStatus().GetPlacement(); !proto.Equal(got, want) {
+		t.Errorf("placement %v, want %v", got, want)
+	}
+	for _, log := range []string{"reading the host's disks failed", "reading the host's memory failed", "reading the host's network left some of it out"} {
+		if got := logs.count(log); got != 1 {
+			t.Errorf("%q was logged %d times, want once", log, got)
+		}
 	}
 }
 

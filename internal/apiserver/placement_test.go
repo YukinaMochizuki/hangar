@@ -21,7 +21,7 @@ import (
 // milan is a host as its node describes it.
 var milan = &computev1alpha1.Placement{
 	Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
-	Storage: "2 × NVMe SSD", Chassis: "generic-1u-2x-u2",
+	Storage: "2 × NVMe SSD", Chassis: "generic-1u-2x-u2", Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE",
 }
 
 // nodeDescribed reports a node ready with room, an IPv6 prefix and the given
@@ -258,6 +258,8 @@ func TestANodesPlacementIsBounded(t *testing.T) {
 		{CpuModel: "EPYC\x1b[31m"},
 		{Storage: fmt.Sprint("2 ", "\u0000", " NVMe")},
 		{Chassis: "Generic 1U"},
+		{Memory: "DDR4-3200 ECC " + strings.Repeat("x", 51)},
+		{Network: "2 × 10 GbE\r"},
 	} {
 		if err := ok(p); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("placement %v: %v, want InvalidArgument", p, err)

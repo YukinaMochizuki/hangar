@@ -25,6 +25,7 @@ require (
 	github.com/letsencrypt/pebble/v2 v2.10.1
 	github.com/libdns/cloudflare v0.2.2
 	github.com/libdns/libdns v1.1.1
+	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42
 	github.com/mdlayher/vsock v1.3.0
 	github.com/miekg/dns v1.1.73
 	github.com/pressly/goose/v3 v3.28.0
@@ -56,7 +57,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/letsencrypt/challtestsrv v1.4.2 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
-	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
 	github.com/mdlayher/socket v0.6.0 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/mholt/acmez/v3 v3.1.7 // indirect

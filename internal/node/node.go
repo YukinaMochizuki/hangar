@@ -65,10 +65,11 @@ type Config struct {
 	// Placement describes the host: the only source of its region, site
 	// and chassis, and what it sets wins over what is read of the host.
 	Placement *computev1alpha1.Placement
-	// CPU reads the host's CPU model and generation, and Disks its disks.
-	// They default to reading this host.
-	CPU   func() (*computev1alpha1.Placement, error)
-	Disks func() (string, error)
+	// CPU reads the host's CPU model and generation, and Disks, Memory and
+	// Network describe its disks, memory and ports, read once as Run
+	// starts. They default to reading this host.
+	CPU                    func() (*computev1alpha1.Placement, error)
+	Disks, Memory, Network func() (string, error)
 	// HeartbeatInterval is how often the agent reports. The default of ten
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
 	// spare.
@@ -152,9 +153,12 @@ type Agent struct {
 	machinesCtl, networksCtl, disksCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
-	// cpuRead and disksRead are how the host's last reads went; only
-	// report uses them.
-	cpuRead, disksRead readState
+	// cpuRead is how the last read of the host's CPU went; only report
+	// uses it.
+	cpuRead readState
+	// storage, memory and network are what Run read of the host as it
+	// started.
+	storage, memory, network string
 }
 
 // New returns an agent for cfg.
@@ -175,6 +179,12 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Disks == nil {
 		cfg.Disks = hostDisks
+	}
+	if cfg.Memory == nil {
+		cfg.Memory = hostMemory
+	}
+	if cfg.Network == nil {
+		cfg.Network = hostNetwork
 	}
 	if cfg.Reserved == nil {
 		cfg.Reserved = &computev1alpha1.NodeResources{}
@@ -269,6 +279,10 @@ func (a *Agent) ControllerStatus() []controller.Status {
 // done. Failures are logged and retried, never fatal: the apiserver judges
 // a node by its reports.
 func (a *Agent) Run(ctx context.Context) error {
+	// Before anything reports the node.
+	a.storage = a.readOnce("disks", "storage", a.cfg.Disks)
+	a.memory = a.readOnce("memory", "memory", a.cfg.Memory)
+	a.network = a.readOnce("network", "network", a.cfg.Network)
 	// Stops and asks of guests end with ctx; the sweep and the reconciles
 	// begin them.
 	defer a.stops.wg.Wait()
