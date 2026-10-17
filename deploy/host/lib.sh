@@ -203,11 +203,14 @@ load_env() {
 	for v in HANGAR_IMAGES_QUOTA HANGAR_VMS_QUOTA; do
 		[[ ${!v} =~ ^[1-9][0-9]*G$ ]] || die "$v must be a whole number of GiB, such as 100G, not ${!v}"
 	done
-	# Optional; each lands in the agent's unit as one word.
-	for v in HANGAR_REGION HANGAR_SITE HANGAR_CHASSIS; do
-		[ -z "${!v:-}" ] || [[ ${!v} =~ ^[A-Za-z0-9._-]+$ ]] ||
-			die "$v must be one word of letters, digits, '.', '_' and '-', not ${!v}"
+	# Optional; each lands in the agent's unit as one word, and the chassis
+	# is held to the rule the agent and the apiserver hold it to.
+	for v in HANGAR_REGION HANGAR_SITE; do
+		[ -z "${!v:-}" ] || [[ ${!v} =~ ^[A-Za-z0-9._-]{1,64}$ ]] ||
+			die "$v must be one word of at most 64 letters, digits, '.', '_' and '-', not ${!v}"
 	done
+	[ -z "${HANGAR_CHASSIS:-}" ] || [[ $HANGAR_CHASSIS =~ ^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$ ]] ||
+		die "HANGAR_CHASSIS must be a DNS-1123 label (lowercase letters, digits and '-', at most 63), not $HANGAR_CHASSIS"
 	[[ $HANGAR_DEFAULT_MAX_OWNED_TENANTS =~ ^[1-9][0-9]*$ ]] ||
 		die "HANGAR_DEFAULT_MAX_OWNED_TENANTS must be a whole number of at least 1, not $HANGAR_DEFAULT_MAX_OWNED_TENANTS"
 	# ip prints addresses in canonical form; compare against the same form.

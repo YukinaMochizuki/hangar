@@ -170,8 +170,10 @@ with `--release DIR`. `--only <step>` runs a single step
     that socket, root's and group `hangar-edge`'s, 0660, and takes
     `hangar-edge`'s dials alone), `--region HANGAR_REGION`, `--site
     HANGAR_SITE` and `--chassis HANGAR_CHASSIS` each only when the host env
-    file sets it (one word each, such as `ap-southeast`, `SGP02` and
-    `generic-1u-2x-u2`; what tenants see of the host,
+    file sets it (such as `ap-southeast`, `SGP02` and `generic-1u-2x-u2`:
+    region and site one word of at most 64 characters, the chassis a
+    DNS-1123 label, or the run stops as it loads the env file; every tenant
+    on the node reads them, so never put load or capacity in them,
     `docs/decisions/machine-placement.md`), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the
     agent runs itself: each VM is a transient unit of its own and outlives
