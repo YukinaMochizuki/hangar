@@ -62,14 +62,13 @@ type Config struct {
 	// Reserved is kept back from machines for the host itself, in
 	// quantities.
 	Reserved *computev1alpha1.NodeResources
-	// Placement is how the host is described beyond what Hardware reads:
-	// its region, site and chassis come from here alone, and a CPU model,
-	// CPU generation or storage set here wins over what is read. The
-	// chassis, if set, is a DNS-1123 label.
+	// Placement describes the host: the only source of its region, site
+	// and chassis, and what it sets wins over what is read of the host.
 	Placement *computev1alpha1.Placement
-	// Hardware reads the host's CPU and disks into a Placement. Defaults to
-	// reading this host.
-	Hardware func() (*computev1alpha1.Placement, error)
+	// CPU reads the host's CPU model and generation, and Disks its disks.
+	// They default to reading this host.
+	CPU   func() (*computev1alpha1.Placement, error)
+	Disks func() (string, error)
 	// HeartbeatInterval is how often the agent reports. The default of ten
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
 	// spare.
@@ -153,6 +152,9 @@ type Agent struct {
 	machinesCtl, networksCtl, disksCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
+	// cpuRead and disksRead are how the host's last reads went; only
+	// report uses them.
+	cpuRead, disksRead readState
 }
 
 // New returns an agent for cfg.
@@ -168,11 +170,11 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.Host == nil {
 		cfg.Host = hostResources
 	}
-	if cfg.Hardware == nil {
-		cfg.Hardware = hostHardware
+	if cfg.CPU == nil {
+		cfg.CPU = hostCPU
 	}
-	if err := checkPlacement(cfg.Placement); err != nil {
-		return nil, fmt.Errorf("the host's placement: %w", err)
+	if cfg.Disks == nil {
+		cfg.Disks = hostDisks
 	}
 	if cfg.Reserved == nil {
 		cfg.Reserved = &computev1alpha1.NodeResources{}
@@ -202,6 +204,7 @@ func New(cfg Config) (*Agent, error) {
 		cfg.Log = slog.Default()
 	}
 	cfg.Log = cfg.Log.With("node", cfg.Name)
+	cfg.Placement = configuredPlacement(cfg.Placement, cfg.Log)
 	var puller *puller
 	var netsvc *netServices
 	var images *imageMaker
@@ -452,14 +455,7 @@ func (a *Agent) report(ctx context.Context) error {
 	if a.cfg.IPv6Prefix.IsValid() {
 		status.Ipv6Prefix = a.cfg.IPv6Prefix.String()
 	}
-	hw, err := a.cfg.Hardware()
-	if err != nil {
-		// As with the storage's capacity: what was last reported stays
-		// rather than fail the heartbeat.
-		hw = n.GetStatus().GetPlacement()
-		a.cfg.Log.Warn("reading the host's hardware", "error", err)
-	}
-	status.Placement = placement(hw, a.cfg.Placement)
+	status.Placement = placement(a.hardware(n.GetStatus().GetPlacement()), a.cfg.Placement)
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
 		Type: computeapi.NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		ObservedGeneration: n.GetMetadata().GetGeneration(),

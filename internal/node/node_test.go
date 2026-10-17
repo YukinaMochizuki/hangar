@@ -1,11 +1,14 @@
 package node_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -103,45 +106,90 @@ func TestTheNodeReportsItsHost(t *testing.T) {
 	}
 }
 
+// syncBuffer is a log the agent writes while the test reads it.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) count(s string) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return strings.Count(b.buf.String(), s)
+}
+
 // TestTheNodeReportsItsPlacement: the node describes its host by what the
-// agent reads of its hardware and what its configuration says, and keeps
-// what it last read when a read fails.
+// agent reads of its CPU and disks and what its configuration says, less a
+// configured value a Node may not report. A read that fails keeps what it
+// last read, the other read going on, and is logged when it starts failing
+// and when it works again.
 func TestTheNodeReportsItsPlacement(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	root := env.As(apiservertest.Root)
-	var failing atomic.Bool
+	var cpuFails atomic.Bool
+	var disks atomic.Value
+	disks.Store("2 × NVMe SSD")
+	logs := &syncBuffer{}
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, nil, func(c *node.Config) {
-		c.Placement = &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2"}
-		c.Hardware = func() (*computev1alpha1.Placement, error) {
-			if failing.Load() {
+		c.Log = slog.New(slog.NewTextHandler(logs, nil))
+		c.Placement = &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "Generic 1U"}
+		c.CPU = func() (*computev1alpha1.Placement, error) {
+			if cpuFails.Load() {
 				return nil, errors.New("no /proc/cpuinfo")
 			}
-			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)", Storage: "2 × NVMe SSD"}, nil
+			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)"}, nil
 		}
+		c.Disks = func() (string, error) { return disks.Load().(string), nil }
 	})
 	want := &computev1alpha1.Placement{
 		Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
-		Storage: "2 × NVMe SSD", Chassis: "generic-1u-2x-u2",
+		Storage: "2 × NVMe SSD",
 	}
-	n := waitValue(t, "the node describing its host", getNode(t, root), func(n *computev1alpha1.Node) bool {
+	waitValue(t, "the node describing its host, without the chassis that is no label", getNode(t, root), func(n *computev1alpha1.Node) bool {
 		return proto.Equal(n.GetStatus().GetPlacement(), want)
 	})
+	if got := logs.count("reported without chassis"); got != 1 {
+		t.Errorf("the dropped chassis was logged %d times, want once", got)
+	}
 
-	failing.Store(true)
-	beat := n.GetStatus().GetLastHeartbeatTime().AsTime()
-	n = waitValue(t, "a report after the read fails", getNode(t, root), func(n *computev1alpha1.Node) bool {
-		return n.GetStatus().GetLastHeartbeatTime().AsTime().After(beat)
+	// The CPU's read fails; the disks are still read.
+	cpuFails.Store(true)
+	disks.Store("3 × NVMe SSD")
+	want.Storage = "3 × NVMe SSD"
+	n := waitValue(t, "the disks read again while the CPU's read fails", getNode(t, root), func(n *computev1alpha1.Node) bool {
+		return n.GetStatus().GetPlacement().GetStorage() == want.Storage
 	})
+	n = waitBeats(t, root, n, 3)
 	if got := n.GetStatus().GetPlacement(); !proto.Equal(got, want) {
-		t.Errorf("after a failed read the node reports placement %v, want %v", got, want)
+		t.Errorf("while the CPU's read fails the node reports placement %v, want %v", got, want)
+	}
+	if got := logs.count("reading the host's CPU failed"); got != 1 {
+		t.Errorf("a read failing for several heartbeats was logged %d times, want once", got)
+	}
+
+	cpuFails.Store(false)
+	waitBeats(t, root, n, 2)
+	if got := logs.count("reading the host's CPU works again"); got != 1 {
+		t.Errorf("the read working again was logged %d times, want once", got)
 	}
 }
 
-func TestTheAgentRefusesAChassisThatIsNoIdentifier(t *testing.T) {
-	_, err := node.New(node.Config{Name: "n1", Placement: &computev1alpha1.Placement{Chassis: "Generic 1U"}})
-	if err == nil || !strings.Contains(err.Error(), "chassis") {
-		t.Errorf("an agent with chassis %q: %v", "Generic 1U", err)
+// waitBeats waits for the node to report beats more times since n.
+func waitBeats(t *testing.T, root *client.Client, n *computev1alpha1.Node, beats int) *computev1alpha1.Node {
+	t.Helper()
+	for i := range beats {
+		beat := n.GetStatus().GetLastHeartbeatTime().AsTime()
+		n = waitValue(t, fmt.Sprintf("report %d after %v", i+1, beat), getNode(t, root), func(n *computev1alpha1.Node) bool {
+			return n.GetStatus().GetLastHeartbeatTime().AsTime().After(beat)
+		})
 	}
+	return n
 }
 
 func getNode(t *testing.T, root *client.Client) func() (*computev1alpha1.Node, error) {

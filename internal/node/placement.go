@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,19 +17,23 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 )
 
-// chassisRE is what a chassis identifier may be: a DNS-1123 label, so a
-// client can key its illustrations by it.
-var chassisRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
-
-// checkPlacement refuses a configured placement whose chassis is not an
-// identifier.
-func checkPlacement(p *computev1alpha1.Placement) error {
-	if c := p.GetChassis(); c != "" && !chassisRE.MatchString(c) {
-		return fmt.Errorf("chassis %q is not a DNS-1123 label", c)
+// configuredPlacement is conf without the fields a Node may not report,
+// each logged once: a bad description is no reason to stop a node.
+func configuredPlacement(conf *computev1alpha1.Placement, log *slog.Logger) *computev1alpha1.Placement {
+	p := &computev1alpha1.Placement{}
+	if conf != nil {
+		p = proto.Clone(conf).(*computev1alpha1.Placement)
 	}
-	return nil
+	for _, f := range computeapi.PlacementFields(p) {
+		if err := computeapi.CheckPlacementValue(f.Name, *f.Value); err != nil {
+			log.Warn("the configured placement is reported without "+f.Name, "error", err)
+			*f.Value = ""
+		}
+	}
+	return p
 }
 
 // placement is what the node reports of its host: the hardware read from
@@ -49,19 +54,58 @@ func placement(hw, conf *computev1alpha1.Placement) *computev1alpha1.Placement {
 	return p
 }
 
-// hostHardware reads this host's CPU and disks.
-func hostHardware() (*computev1alpha1.Placement, error) {
+// hardware reads the host's CPU and disks, each independently: one whose
+// read fails, or reads what a Node may not report, stays as last reported.
+func (a *Agent) hardware(last *computev1alpha1.Placement) *computev1alpha1.Placement {
+	hw := &computev1alpha1.Placement{}
+	c, err := a.cfg.CPU()
+	if err == nil {
+		err = cmp.Or(computeapi.CheckPlacementValue("cpu_model", c.GetCpuModel()),
+			computeapi.CheckPlacementValue("cpu_generation", c.GetCpuGeneration()))
+	}
+	a.cpuRead.note(a.cfg.Log, "reading the host's CPU", err)
+	if err != nil {
+		c = last
+	}
+	hw.CpuModel, hw.CpuGeneration = c.GetCpuModel(), c.GetCpuGeneration()
+	hw.Storage, err = a.cfg.Disks()
+	if err == nil {
+		err = computeapi.CheckPlacementValue("storage", hw.Storage)
+	}
+	a.disksRead.note(a.cfg.Log, "reading the host's disks", err)
+	if err != nil {
+		hw.Storage = last.GetStorage()
+	}
+	return hw
+}
+
+// readState is whether a read of the host failed last time, so a read that
+// keeps failing is logged when it starts failing and when it reads again,
+// not at every heartbeat.
+type readState struct{ failing bool }
+
+func (r *readState) note(log *slog.Logger, what string, err error) {
+	switch {
+	case err != nil && !r.failing:
+		log.Warn(what+" failed; reporting what was last read until it works", "error", err)
+	case err == nil && r.failing:
+		log.Info(what + " works again")
+	}
+	r.failing = err != nil
+}
+
+// hostCPU reads this host's CPU model and generation.
+func hostCPU() (*computev1alpha1.Placement, error) {
 	cpuinfo, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		return nil, err
 	}
-	storage, err := storageKinds("/sys/block")
-	if err != nil {
-		return nil, err
-	}
 	c := readCPU(cpuinfo)
-	return &computev1alpha1.Placement{CpuModel: c.name, CpuGeneration: c.generation(), Storage: storage}, nil
+	return &computev1alpha1.Placement{CpuModel: c.name, CpuGeneration: c.generation()}, nil
 }
+
+// hostDisks describes this host's disks.
+func hostDisks() (string, error) { return storageKinds("/sys/block") }
 
 // cpu is the first processor in /proc/cpuinfo.
 type cpu struct {
@@ -72,7 +116,9 @@ type cpu struct {
 	name string
 }
 
-var coreCount = regexp.MustCompile(`\s+\d+-Core Processor$`)
+// coreCount is the core count AMD ends its model names with: "16-Core
+// Processor", or "64-Cores" on a Threadripper.
+var coreCount = regexp.MustCompile(`\s+\d+-Cores?(\s+Processor)?$`)
 
 // readCPU reads the first processor's entry from the contents of
 // /proc/cpuinfo. What the entry lacks, as an arm64 host's lacks a model
@@ -135,11 +181,9 @@ func (c cpu) generation() string {
 	return ""
 }
 
-// storageKinds describes the physical disks under sysBlock, /sys/block on a
-// host, by kind and count, such as "2 × NVMe SSD", the most numerous kind
-// first. A block device with no device behind it (a loop device, a zvol, a
-// RAID array, a device-mapper target) is not a disk, nor is a removable one.
-// Namespaces of one NVMe controller are one disk.
+// storageKinds counts the physical disks under sysBlock, /sys/block on a
+// host, by kind, such as "2 × NVMe SSD"; what counts as a disk is in
+// docs/decisions/machine-placement.md.
 func storageKinds(sysBlock string) (string, error) {
 	entries, err := os.ReadDir(sysBlock)
 	if err != nil {

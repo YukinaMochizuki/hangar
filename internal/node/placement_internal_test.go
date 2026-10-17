@@ -1,8 +1,10 @@
 package node
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -34,7 +36,8 @@ func TestReadCPU(t *testing.T) {
 		{"an EPYC 9124", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 17\nmodel name\t: AMD EPYC 9124 16-Core Processor\n", "AMD EPYC 9124", "Zen 4 (Genoa)"},
 		{"an EPYC 7302P", "vendor_id\t: AuthenticAMD\ncpu family\t: 23\nmodel\t\t: 49\nmodel name\t: AMD EPYC 7302P 16-Core Processor\n", "AMD EPYC 7302P", "Zen 2 (Rome)"},
 		// A desktop part sharing Milan's family and model range.
-		{"a Ryzen", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD Ryzen Threadripper PRO 5995WX 64-Cores\n", "AMD Ryzen Threadripper PRO 5995WX 64-Cores", ""},
+		{"a Threadripper", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 1\nmodel name\t: AMD Ryzen Threadripper PRO 5995WX 64-Cores\n", "AMD Ryzen Threadripper PRO 5995WX", ""},
+		{"a core count without Processor", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 33\nmodel name\t: AMD Ryzen 9 5950X 16-Core\n", "AMD Ryzen 9 5950X", ""},
 		{"an EPYC the table does not know", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 160\nmodel name\t: AMD EPYC 9754 128-Core Processor\n", "AMD EPYC 9754", ""},
 		{"a Xeon", "vendor_id\t: GenuineIntel\ncpu family\t: 6\nmodel\t\t: 106\nmodel name\t: Intel(R) Xeon(R) Gold  6338 CPU @ 2.00GHz\n", "Intel(R) Xeon(R) Gold 6338 CPU @ 2.00GHz", ""},
 		{"an arm64 host", "processor\t: 0\nBogoMIPS\t: 50.00\nCPU implementer\t: 0x41\n", "", ""},
@@ -140,10 +143,16 @@ func TestPlacementMerge(t *testing.T) {
 	}
 }
 
-func TestCheckPlacement(t *testing.T) {
-	for chassis, ok := range map[string]bool{"": true, "generic-1u-2x-u2": true, "Generic 1U": false, "-1u": false} {
-		if err := checkPlacement(&computev1alpha1.Placement{Chassis: chassis}); (err == nil) != ok {
-			t.Errorf("chassis %q: %v", chassis, err)
-		}
+func TestConfiguredPlacement(t *testing.T) {
+	conf := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP\x0002", Chassis: "Generic 1U", CpuGeneration: strings.Repeat("z", 65)}
+	got := configuredPlacement(conf, slog.New(slog.DiscardHandler))
+	if want := (&computev1alpha1.Placement{Region: "ap-southeast"}); !proto.Equal(got, want) {
+		t.Errorf("configured placement %v, want %v", got, want)
+	}
+	if conf.GetChassis() != "Generic 1U" {
+		t.Errorf("the configuration given was changed: %v", conf)
+	}
+	if got := configuredPlacement(nil, slog.New(slog.DiscardHandler)); proto.Size(got) != 0 {
+		t.Errorf("no configuration is placement %v", got)
 	}
 }
