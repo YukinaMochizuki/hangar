@@ -57,8 +57,9 @@ type world struct {
 // "/set-cookie" setting cookies, Hangar's among them, "/early-hints" doing so
 // in a 103 first, "/trailers" and "/undeclared-trailers" doing so in trailers
 // it declares or not, "/hold" answering nothing (and saying on held that a
-// request reached it), and "/upgrade" switching, with cookies, to an echo of
-// the raw connection. Any other path answers as "/".
+// request reached it), "/stream" flushing a first chunk of a longer
+// Content-Length and then holding, and "/upgrade" switching, with cookies,
+// to an echo of the raw connection. Any other path answers as "/".
 func backend(t *testing.T, port int32, held chan<- struct{}) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -100,6 +101,13 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		_, _ = fmt.Fprintf(w, "port %d trailers", port)
 		w.Header().Set(http.TrailerPrefix+"Set-Cookie", "undeclared=1; Path=/")
 		w.Header().Set("X-Sum", "undeclared")
+	})
+	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
+		// With a length, the proxy flushes only as the edge configures it to.
+		w.Header().Set("Content-Length", "1000")
+		_, _ = fmt.Fprintf(w, "port %d first", port)
+		_ = http.NewResponseController(w).Flush()
+		<-r.Context().Done()
 	})
 	mux.HandleFunc("/hold", func(_ http.ResponseWriter, r *http.Request) {
 		select {
@@ -202,6 +210,18 @@ func newWorldConfig(t *testing.T, env *apiservertest.Env, configure func(*edge.C
 		<-served
 	})
 	return &world{t: t, env: env, root: root, sessions: session.New(env.Credentials, session.Options{}), url: srv.URL, edge: e, held: held}
+}
+
+// serveH2 serves w's edge over TLS with HTTP/2 as well, as the front door
+// does, which hands it its ResponseWriter as it is, and returns the URL and
+// a client speaking HTTP/2 to it.
+func (w *world) serveH2() (string, *http.Client) {
+	w.t.Helper()
+	srv := httptest.NewUnstartedServer(w.edge)
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	w.t.Cleanup(srv.Close)
+	return srv.URL, srv.Client()
 }
 
 // consoleSession signs email in on a browser, as the console's sign-in
