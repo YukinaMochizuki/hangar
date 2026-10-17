@@ -1,0 +1,142 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/*
+ * Design tokens (docs/decisions/console-design.md). The theme, light or dark,
+ * is chosen by data-theme on <html>; every colour below is read through a CSS
+ * variable, so the theme switches without re-rendering and the accent is
+ * changed in one place: the --accent variables of each theme.
+ */
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --radius: 0.5rem;
+
+  --background: oklch(0.99 0 0);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.975 0.002 286);
+  --foreground: oklch(0.21 0.006 286);
+  --muted: oklch(0.52 0.012 286);
+  --subtle: oklch(0.68 0.01 286);
+  --border: oklch(0.92 0.004 286);
+  --border-strong: oklch(0.86 0.006 286);
+  --ring: var(--accent);
+
+  --ok: oklch(0.62 0.16 152);
+  --pending: oklch(0.72 0.15 85);
+  --fail: oklch(0.58 0.22 18);
+  --off: oklch(0.68 0.01 286);
+
+  /* The illustration's line colour. */
+  --art-line: oklch(0.45 0.01 286);
+  --art-faint: oklch(0.8 0.006 286);
+}
+
+[data-theme="dark"] {
+  --background: oklch(0.155 0.004 286);
+  --surface: oklch(0.185 0.005 286);
+  --surface-2: oklch(0.215 0.006 286);
+  --foreground: oklch(0.96 0.003 286);
+  --muted: oklch(0.7 0.012 286);
+  --subtle: oklch(0.52 0.012 286);
+  --border: oklch(0.27 0.006 286);
+  --border-strong: oklch(0.34 0.008 286);
+
+  --ok: oklch(0.74 0.16 152);
+  --pending: oklch(0.83 0.15 88);
+  --fail: oklch(0.66 0.21 18);
+  --off: oklch(0.55 0.01 286);
+
+  --art-line: oklch(0.72 0.01 286);
+  --art-faint: oklch(0.34 0.008 286);
+}
+
+/*
+ * The accent is international orange, the high-visibility orange of
+ * aerospace: flight recorders, obstruction markings, high-altitude and launch
+ * suits. Toned slightly darker than the pure pigment so it holds contrast as
+ * text. It is for buttons, the selection, links and LEDs alone; states have
+ * their own colours above.
+ */
+:root {
+  --accent: oklch(0.65 0.21 40);
+  --accent-fg: oklch(0.99 0 0);
+  --accent-soft: oklch(0.65 0.21 40 / 0.1);
+}
+[data-theme="dark"] {
+  --accent: oklch(0.71 0.19 44);
+  --accent-fg: oklch(0.16 0.01 44);
+  --accent-soft: oklch(0.71 0.19 44 / 0.14);
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, monospace;
+
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-pending: var(--pending);
+  --color-fail: var(--fail);
+  --color-off: var(--off);
+
+  --radius-sm: calc(var(--radius) - 2px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    color-scheme: light;
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+  }
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* LEDs on the host illustration. */
+@keyframes led-activity {
+  0%, 100% { opacity: 1; }
+  40% { opacity: 0.25; }
+  55% { opacity: 1; }
+  70% { opacity: 0.4; }
+}
+@keyframes led-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}
+.led-activity { animation: led-activity 1.9s steps(1, end) infinite; }
+.led-blink { animation: led-blink 0.9s ease-in-out infinite; }
+.led-blink-slow { animation: led-blink 2.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .led-activity, .led-blink, .led-blink-slow { animation: none; }
+}
+/* Screenshots ask for a still frame. */
+[data-still] .led-activity, [data-still] .led-blink, [data-still] .led-blink-slow { animation: none; }
+[data-still] .animate-ping { animation: none; opacity: 0; }
+[data-still] .animate-pulse, [data-still] .animate-spin { animation: none; }

@@ -16,6 +16,7 @@ jobs:
       proto: ${{ steps.filter.outputs.proto }}
       go: ${{ steps.filter.outputs.go }}
       sh: ${{ steps.filter.outputs.sh }}
+      web: ${{ steps.filter.outputs.web }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -47,6 +48,12 @@ jobs:
               - '**/*.sh'
               - 'deploy/**'
               - 'Makefile'
+            web:
+              - 'web/**'
+              - 'gen/ts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
 
   proto:
     needs: changes
@@ -80,3 +87,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: make lint-sh
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: pnpm --dir web typecheck
+      - run: pnpm --dir web lint
+      - run: pnpm --dir web test
+      - run: pnpm --dir web build

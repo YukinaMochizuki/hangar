@@ -58,10 +58,12 @@ binding naming the email and its Invitation, and prints what it deleted.
 
 Build a release, `make release`, on a machine with the guest kernel's
 toolchain (`docs/runbook/guest-kernel.md`; the committed kernel config is
-Ubuntu 24.04's GCC's, so a testbed VM, not a workspace). It writes
+Ubuntu 24.04's GCC's, so a testbed VM, not a workspace), and with Node and
+pnpm (`docs/runbook/dev-env.md`) for the console. It writes
 `bin/release/hangar-<revision>/`: `hangar-apiserver`, `hangar-node` and
-`hangar` (static), `vmlinux`, `initramfs.cpio`, `VERSION` (the full
-revision, as the binaries report it) and `SHA256SUMS` over all of them. It
+`hangar` (static), `vmlinux`, `initramfs.cpio`, `console.tar` (the
+console's built files), `VERSION` (the full revision, as the binaries
+report it) and `SHA256SUMS` over all of them. It
 refuses a tree with uncommitted changes (`ALLOW_DIRTY=1` for a test build).
 Built twice from one commit with one toolchain, it gives the same
 `SHA256SUMS`. Nothing it builds is committed.
@@ -124,9 +126,18 @@ with `--release DIR`. `--only <step>` runs a single step
 - `release` checks every file of `--release DIR` against its `SHA256SUMS`
   and refuses the whole release on a mismatch or a missing file, before
   installing anything. It installs the binaries in `/usr/local/bin` and the
-  kernel and initramfs in `/usr/local/lib/hangar/`, each by a rename, then
-  records `VERSION` and the checksums by installed path in
-  `/usr/local/lib/hangar/`. `verify.sh` checks them with `sha256sum -c`.
+  kernel, the initramfs and `console.tar` in `/usr/local/lib/hangar/`, each
+  by a rename, then records `VERSION` and the checksums by installed path in
+  `/usr/local/lib/hangar/`. `verify.sh` checks them with `sha256sum -c`. It
+  unpacks the console into `/usr/local/share/hangar/console.d/<checksum>`,
+  with the previous release's assets beside its own so pages opened before
+  the switch still load, and points the link
+  `/usr/local/share/hangar/console` at it in one rename. It keeps the
+  previous release's console and removes older ones; going back to it
+  copies the newer release's assets into it the same way. `verify.sh` checks the
+  link is the installed tar's. A release from before the console carried
+  none, and its record is whole without it. A run without `--release`
+  repairs a console link that does not match the installed tar.
 - `services` makes the system users `hangar` and `hangar-edge`, gives
   `hangar` `/var/lib/hangar/state` (mode 700), and writes, enables and
   starts `hangar-apiserver.service` and `hangar-node.service`:
@@ -286,10 +297,11 @@ tunnel, the cutover there says in which order. It needs oidc auth
    api.<cp-domain>:443:<host IPv4> https://api.<cp-domain>/healthz` prints
    `ok`.
 
-The console's files are served from `/usr/local/share/hangar/console`; until
-a release puts them there, the console's pages answer 503 "the console is
-not installed", and its API paths work. The limits (connections and
-requests per client, sizes, timeouts, HTTP/2) are `hangar-edge`'s flags,
+The console's files are served from `/usr/local/share/hangar/console`, which
+the `release` step keeps; until a release puts them there, the console's
+pages answer 503 "the console is not installed", and its API paths work.
+The limits (connections and requests per client, sizes, timeouts, HTTP/2)
+are `hangar-edge`'s flags,
 with the defaults in `docs/decisions/front-door.md`; change them in the
 `edge` step. To turn the front door off, remove `HANGAR_EDGE_DOMAIN` and
 `HANGAR_CP_DOMAIN` and re-run: the edge, its sockets and the apiserver's

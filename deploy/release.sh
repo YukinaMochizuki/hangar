@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Builds what a host runs, from the checked-out commit, into one directory:
 # hangar-apiserver, hangar-node and hangar (static), the guest kernel and the
-# platform initramfs, VERSION, and SHA256SUMS over all of them. The `release`
-# step of deploy/host installs from that directory (docs/runbook/host-bootstrap.md).
+# platform initramfs, the console's files as console.tar, VERSION, and
+# SHA256SUMS over all of them. The `release` step of deploy/host installs from
+# that directory (docs/runbook/host-bootstrap.md).
 #
 #   release.sh [--allow-dirty] [OUT]
 #
@@ -61,6 +62,12 @@ for cmd in hangar-apiserver hangar-node hangar-edge hangar; do
 	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags=-buildid= \
 		-o "$stage/$cmd" "./cmd/$cmd"
 done
+# The console, built from the lockfile, packed with no time, owner or umask
+# of this machine in it, so the same commit packs the same bytes.
+pnpm install --frozen-lockfile
+pnpm --dir web build
+tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
+	-C web/dist -cf "$stage/console.tar" .
 HANGAR_INITRAMFS_OUT=$stage/guest guest/initramfs/build.sh
 if [ -z "${HANGAR_KERNEL_CACHE:-}" ]; then
 	HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
