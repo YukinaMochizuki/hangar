@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"fmt"
 
 	"connectrpc.com/connect"
@@ -36,7 +37,11 @@ func (a *app) signupCmd() *cobra.Command {
 		Long: "Creates your User, which makes you a platform member once an administrator\n" +
 			"has invited you by binding you a platform role. The username is yours for\n" +
 			"good: global, never reused, and it cannot change. The display name is\n" +
-			"what people read, and can change. Your email comes from your sign-in.",
+			"what people read, and can change. Your email comes from your sign-in.\n" +
+			"\n" +
+			"Signing up also opens a tenant you own and a project in it, both named\n" +
+			"after your username, such as alice-k3m9x, with a default network, and\n" +
+			"makes that project the context's, so you can start right away.",
 		Example: "  hangar signup --username alice --display-name \"Alice Liddell\"",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -58,13 +63,41 @@ func (a *app) signupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "signed up as %s\n", res.Msg.GetUser().GetMetadata().GetName())
+			m := res.Msg
+			w := cmd.OutOrStdout()
+			_, _ = fmt.Fprintf(w, "signed up as %s\n", m.GetUser().GetMetadata().GetName())
+			if m.GetProject() == "" {
+				return nil
+			}
+			_, _ = fmt.Fprintf(w, "opened tenant %s with project %s\n", m.GetTenant(), m.GetProject())
+			if err := a.useProject(m.GetProject()); err != nil {
+				return fmt.Errorf("signed up, but setting project %s on the context failed: %w", m.GetProject(), err)
+			}
+			_, _ = fmt.Fprintf(w, "the context now uses project %s\n", m.GetProject())
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&username, "username", "", "the username, a DNS label such as alice")
 	cmd.Flags().StringVar(&displayName, "display-name", "", "the name people read")
 	return cmd
+}
+
+// useProject makes project the default of the context in effect.
+func (a *app) useProject(project string) error {
+	cfg, err := loadConfig(a.configPath())
+	if err != nil {
+		return err
+	}
+	name := cmp.Or(a.contextName, cfg.CurrentContext)
+	c, ok := cfg.Contexts[name]
+	if !ok {
+		return usageErr("no context named %q", name)
+	}
+	c.Project = project
+	if err := a.prepareConfigDir(); err != nil {
+		return err
+	}
+	return cfg.save(a.configPath())
 }
 
 func (a *app) whoamiCmd() *cobra.Command {

@@ -100,8 +100,11 @@ cloud, and some people fund the hardware and should see more of it.
   lower case), which holds what their User starts with: the `plan` their
   tenants get and `max_owned_tenants`, both optional, the plan one that
   exists and the cap at least 1. `hangar admin invite EMAIL [--plan P]
-  [--max-tenants N] [--role R]` makes both, `hangar admin invitations`
-  lists them and `hangar admin revoke EMAIL` deletes both. Only
+  [--max-tenants N] [--role R]` makes both, keeping a platform binding the
+  person already has rather than adding another. `hangar admin
+  invitations` lists everyone invited who has not signed up, those bound by
+  hand included, and `hangar admin revoke EMAIL` deletes every platform
+  binding naming the email and its Invitation. Only
   `platform.root` reads and writes Invitations; there is none for an email
   that has a User. The person then signs up once (`hangar signup --username
   NAME`, later the console's onboarding page), which creates their `User`

@@ -42,8 +42,19 @@ The grant only invites the bootstrap admin: like everyone, they sign up
 once after the first start, before any other call works
 (`docs/decisions/tenancy-and-iam.md`). From a workstation whose context
 signs in as that email, `hangar signup --username <name>`; `hangar whoami`
-shows where they stand. Root on the host, through the admin socket, needs
-no User.
+shows where they stand. Signing up also opens a tenant and a project for
+them, which their context then uses. Root on the host, through the admin
+socket, needs no User.
+
+Everyone else is invited by platform root: `hangar admin invite EMAIL`,
+with `--plan PLAN` for a paying user's bigger plan (the default plan is a
+trial's) and `--max-tenants N` for more tenants than the platform default.
+Their User starts with both when they sign up. Someone who already holds
+a platform binding keeps it: inviting them adds only the Invitation.
+`hangar admin invitations` lists everyone invited who has not signed up,
+including people bound by hand, who start with the defaults, and `hangar
+admin revoke EMAIL` withdraws an invitation: it deletes every platform
+binding naming the email and its Invitation, and prints what it deleted.
 
 Build a release, `make release`, on a machine with the guest kernel's
 toolchain (`docs/runbook/guest-kernel.md`; the committed kernel config is
@@ -299,6 +310,14 @@ the tenants each person opened by the `hangarlab.cloud/opened-by`
 annotation, which only tenants opened from that version on carry: tenants
 opened before it count toward no one's cap.
 
+Upgrading past the change that added Invitations and the tenant signing
+up opens: existing Users keep what they have, and only people who sign up
+from then on get a tenant and a project made for them, which counts toward
+their cap. The apiserver's default cap is now 1, that tenant; the host env
+file's `HANGAR_DEFAULT_MAX_OWNED_TENANTS` overrides it, so set it to 1 too
+unless the owner wants new people to open more. The `default` Plan already
+in the store keeps its limits; set the new ones by hand ("Quotas" below).
+
 Upgrading past the change that added `User` (`hangar signup`): from the
 first start of that version, every existing member, the owner included, is
 refused on every call until they run `hangar signup --username NAME` once;
@@ -399,11 +418,13 @@ with the caller's pid, as `local:root@<node>`.
 ## Quotas
 
 The limits every tenant has unless it names a plan are the `default` Plan
-(`docs/decisions/tenancy-and-iam.md`). The apiserver makes it once, on a
-new store, with placeholder limits (8 cpu, 16Gi memory, 200Gi disk, 10
-machines, 5 projects, 10 networks, 5 addresses, 5 public endpoints, 5
-service tokens) that were chosen by no one. The owner sets the real ones at
-deploy, as platform root, with apply; a field left out has no limit:
+(`docs/decisions/tenancy-and-iam.md`), a trial's. The apiserver makes it
+once, on a new store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
+projects, 5 networks, 5 addresses, 10 public endpoints and 10 service
+tokens. From then on the plan is data: the apiserver never changes it
+again, so a store made before these limits keeps the ones it was made
+with, and the owner sets them, as platform root, with apply; a field left
+out has no limit:
 
 ```yaml
 apiVersion: tenancy.hangarlab.cloud/v1alpha1
@@ -415,26 +436,35 @@ spec:
   limits:
     cpu: 8
     memory: 16Gi
-    disk: 200Gi
+    disk: 100Gi
     machines: 10
     projects: 5
-    networks: 10
+    networks: 5
     addresses: 5
-    publicEndpoints: 5
-    serviceTokens: 5
+    publicEndpoints: 10
+    serviceTokens: 10
 ```
 
 `sudo hangar --context local apply -f default-plan.yaml` on the host, or
-the same from a workstation as platform root. A sponsor's tenant gets a
-bigger plan: apply another Plan, then set the tenant's `spec.plan` to it.
+the same from a workstation as platform root; `hangar get plan default -o
+yaml` shows what holds. Lowering a limit takes nothing away: a tenant past
+it keeps what it has, and only what would grow it is refused. A paying
+user's tenants get a bigger plan: apply another Plan, then name it in
+their Invitation (`hangar admin invite EMAIL --plan PLAN`) or, once they
+have signed up, in their User's `spec.plan`, which every tenant they open
+from then on gets; set an open tenant's `spec.plan` to move it, and
+`plan: default` to move it back (leaving `plan` out of an apply keeps the
+plan it has).
 `hangar get tenant NAME -o yaml` shows a tenant's plan, its limits and its
 usage in `status`.
 
 How many tenants one person or service token may own is
 `HANGAR_DEFAULT_MAX_OWNED_TENANTS` in the host env file, which the
 `services` step passes as `--default-max-owned-tenants`; changing it
-restarts the apiserver. For one person, set `spec.maxOwnedTenants` on their
-User instead (`hangar get user NAME -o yaml`, edit, apply).
+restarts the apiserver. The tenant signing up opens counts. For one
+person, pass `--max-tenants` when inviting them, or set
+`spec.maxOwnedTenants` on their User once they have signed up (`hangar get
+user NAME -o yaml`, edit, apply).
 
 ## The platform's SSH CA
 
