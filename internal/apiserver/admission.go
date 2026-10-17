@@ -184,6 +184,9 @@ type kindHooks struct {
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
 	redact func(obj proto.Message)
+	// warn, if set, returns what the caller of a successful apply should
+	// know about the stored object, which the answer carries as warnings.
+	warn func(s *Server, obj proto.Message) []string
 }
 
 func projectTarget(_ *Server, key resource.Key, _ proto.Message, _ bool) authz.Target {
@@ -260,6 +263,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			// Shared with the token's cascade: see Server.tokenBindings.
 			createLock: lockBindingToken,
 			validate:   validateRoleBinding,
+			warn:       warnRoleBinding,
 		}
 	case registry.ServiceToken.Kind:
 		// Deleting a token revokes its secret at once and waits for the
@@ -620,6 +624,25 @@ func validateRoleBinding(ctx context.Context, s *Server, _ auth.Principal, old, 
 		return invalid("role %q cannot be bound at this scope", spec.GetRole())
 	}
 	return nil
+}
+
+// warnRoleBinding says when a binding below the platform names a person who
+// is not a platform member, whose grants count for nothing until they are
+// one: the binding is kept, and takes effect then.
+func warnRoleBinding(s *Server, obj proto.Message) []string {
+	spec := obj.(*iamv1alpha1.RoleBinding).GetSpec()
+	email := spec.GetSubject().GetUser()
+	if email == "" || spec.GetScope().GetPlatform() != nil {
+		return nil
+	}
+	p := auth.Principal{Type: auth.User, ID: email}
+	switch {
+	case s.authz.IsMember(p):
+		return nil
+	case s.authz.IsInvited(p):
+		return []string{fmt.Sprintf("%s has not signed up yet; the binding takes effect once they sign up", email)}
+	}
+	return []string{fmt.Sprintf("%s is not a platform member yet; the binding takes effect once an administrator invites them and they sign up", email)}
 }
 
 func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {

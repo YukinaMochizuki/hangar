@@ -260,6 +260,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(s.interceptor(chain))))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))

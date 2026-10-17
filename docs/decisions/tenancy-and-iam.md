@@ -86,6 +86,37 @@ cloud, and some people fund the hardware and should see more of it.
     letting it go, hold one lock per token, so no binding is written
     unseen while its token goes. Its owner reference names the token's
     project, since the binding is global.
+- **Members of a tenant or project are its bindings naming a person.**
+  `MemberService` (`hangar member list|add|set-role|remove`, with
+  `--tenant` or a project) lists, adds, changes and removes them, by
+  scope and email. It adds no data and no rules: every write is the
+  RoleBinding apply or delete it stands for, made as the caller through
+  the same admission, so it needs the RoleBinding permission at the scope
+  and grants nothing applying the binding by hand could not. The roles
+  are the five built in below the platform; the platform scope is
+  refused, since platform membership is an administrator's invitation.
+  What it adds is what the caller could not read: each member's
+  username, and whether the email is a platform member yet.
+  - A binding below the platform naming a person who is not a platform
+    member is made all the same, and the answer warns that it takes
+    effect once an administrator invites them and they sign up. The
+    warning comes from RoleBinding admission, so an applied binding
+    carries it too.
+  - Changing a member's role updates the role of their binding in
+    place, so the binding keeps its name, subject and scope, and there is
+    no moment with no role or two. If they held several bindings at the
+    scope (applied by hand), the one already holding the role, or else
+    the first, is kept and the others are deleted.
+  - Every call brings the authorizer's view up to date with every write
+    committed before it, so a role removed or lowered holds from the
+    next call on.
+  - A project's member list holds only the bindings at the project; its
+    tenant's members reach it too, and are listed with the tenant.
+- **People list only what they reach.** Listing tenants or projects
+  answers those the caller holds a role in, and a project role lists its
+  project, not its tenant; platform roles reach every one.
+  `hangar project list` lists them and `hangar project use NAME` makes one
+  the context's project.
 - **Platform membership gates everything.** Signing in (through Google,
   `authentication.md`) only proves who someone is, and only someone invited
   may sign in at all. A platform member holds a platform role

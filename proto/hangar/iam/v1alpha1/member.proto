@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "hangar/iam/v1alpha1/role_binding.proto";
+
+// MemberService manages the people who hold roles in a tenant or a project.
+// A member is a RoleBinding naming a person's email at that scope, so this
+// service reads and writes RoleBindings, and each call is authorized and
+// admitted exactly as the RoleBinding call it makes: no one grants through it
+// what they could not grant by applying the binding. Service tokens' bindings
+// are not members. The platform scope is refused: platform membership is an
+// administrator's invitation. It is not a resource's service, so it is
+// written by hand rather than generated. See
+// docs/decisions/tenancy-and-iam.md.
+service MemberService {
+  // ListMembers returns every binding naming a person at exactly the scope,
+  // not those at the tenant above a project. It needs iam.rolebindings.list
+  // at the scope.
+  rpc ListMembers(ListMembersRequest) returns (ListMembersResponse);
+  // AddMember binds a person a role at the scope. The email need not be a
+  // platform member: the binding is made, takes effect once they are one,
+  // and the answer says so. It fails with ALREADY_EXISTS when the person
+  // already holds a role there; SetMemberRole changes it.
+  rpc AddMember(AddMemberRequest) returns (AddMemberResponse);
+  // SetMemberRole changes the role a member holds at the scope. Their
+  // binding keeps its scope and subject and has its role updated in place;
+  // if they held more than one there, the others are deleted, so they hold
+  // the one role. It fails with NOT_FOUND when they hold none there.
+  rpc SetMemberRole(SetMemberRoleRequest) returns (SetMemberRoleResponse);
+  // RemoveMember deletes every binding naming the person at the scope. It
+  // fails with NOT_FOUND when they hold none there.
+  rpc RemoveMember(RemoveMemberRequest) returns (RemoveMemberResponse);
+}
+
+// Member is one role a person holds at one scope: one RoleBinding.
+message Member {
+  // The email the binding names, in lower case.
+  string email = 1;
+  string role = 2;
+  BindingScope scope = 3;
+  // The name of the person's User; empty until they sign up.
+  string username = 4;
+  // Whether the person is a platform member, invited and signed up. A
+  // binding of someone who is not takes effect once they are.
+  bool platform_member = 5;
+  // The name of the RoleBinding.
+  string role_binding = 6;
+}
+
+message ListMembersRequest {
+  // A tenant or a project.
+  BindingScope scope = 1;
+}
+
+message ListMembersResponse {
+  // Ordered by email, then role.
+  repeated Member members = 1;
+}
+
+message AddMemberRequest {
+  BindingScope scope = 1;
+  string email = 2;
+  // A role that binds at the scope's level, such as project.editor.
+  string role = 3;
+}
+
+message AddMemberResponse {
+  Member member = 1;
+  // What the caller should know, such as that the person is not a platform
+  // member yet.
+  repeated string warnings = 2;
+}
+
+message SetMemberRoleRequest {
+  BindingScope scope = 1;
+  string email = 2;
+  string role = 3;
+}
+
+message SetMemberRoleResponse {
+  Member member = 1;
+  repeated string warnings = 2;
+}
+
+message RemoveMemberRequest {
+  BindingScope scope = 1;
+  string email = 2;
+}
+
+message RemoveMemberResponse {
+  // The bindings deleted.
+  repeated Member removed = 1;
+}

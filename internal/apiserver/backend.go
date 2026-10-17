@@ -441,6 +441,9 @@ func (b *backend) Apply(ctx context.Context, in proto.Message) (resource.ApplyRe
 // is answered.
 func (b *backend) answered(ctx context.Context, in proto.Message, createOnly bool) (resource.ApplyResult, error) {
 	res, err := b.apply(ctx, in, createOnly)
+	if err == nil && b.hooks.warn != nil {
+		res.Warnings = append(res.Warnings, b.hooks.warn(b.s, res.Object)...)
+	}
 	if p, ok := auth.FromContext(ctx); ok && err == nil {
 		b.answer(p, res.Object)
 	}
