@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
 	"github.com/jonboulle/clockwork"
 	"google.golang.org/protobuf/proto"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // startAgent runs a node agent for env's node until the test ends; adjust
@@ -54,26 +56,23 @@ func startAgent(t *testing.T, env *apiservertest.Env, host, reserved *computev1a
 	})
 }
 
-func waitFor[T proto.Message](t *testing.T, what string, get func() (T, error), ok func(T) bool) T {
+// waitValue waits until get returns a value that satisfies ok, and returns it.
+func waitValue[T proto.Message](t *testing.T, what string, get func() (T, error), ok func(T) bool) T {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		v, err := get()
-		if err == nil && ok(v) {
-			return v
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("never happened: %s (last: %v, %v)", what, v, err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	var v T
+	testutil.Eventually(t, what, func() (bool, string) {
+		var err error
+		v, err = get()
+		return err == nil && ok(v), fmt.Sprint(v, err)
+	})
+	return v
 }
 
 func TestTheNodeReportsItsHost(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, &computev1alpha1.NodeResources{Cpu: "1", Memory: "2G"})
 	root := env.As(apiservertest.Root)
-	n := waitFor(t, "the node reporting ready", func() (*computev1alpha1.Node, error) {
+	n := waitValue(t, "the node reporting ready", func() (*computev1alpha1.Node, error) {
 		obj, err := root.Get(t.Context(), registry.Node, client.Key{Name: apiservertest.Node})
 		if err != nil {
 			return nil, err
@@ -119,7 +118,7 @@ func TestTheAgentKeepsReporting(t *testing.T) {
 	root := env.As(apiservertest.Root)
 	// The apiserver creates the Node in the background; a first report
 	// before that would fail and wait for the next beat.
-	waitFor(t, "the Node created", getNode(t, root), func(*computev1alpha1.Node) bool { return true })
+	waitValue(t, "the Node created", getNode(t, root), func(*computev1alpha1.Node) bool { return true })
 	clock := clockwork.NewFakeClockAt(time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC))
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "1", Memory: "1Gi"}, nil, func(c *node.Config) {
 		c.HeartbeatInterval = 0
@@ -127,7 +126,7 @@ func TestTheAgentKeepsReporting(t *testing.T) {
 	})
 	for beat := range 3 {
 		want := clock.Now()
-		waitFor(t, fmt.Sprintf("report %d", beat), getNode(t, root), func(n *computev1alpha1.Node) bool {
+		waitValue(t, fmt.Sprintf("report %d", beat), getNode(t, root), func(n *computev1alpha1.Node) bool {
 			return n.GetStatus().GetLastHeartbeatTime().AsTime().Equal(want)
 		})
 		if err := clock.BlockUntilContext(t.Context(), 1); err != nil { // the agent waits for its next beat
@@ -143,7 +142,7 @@ func TestTheAgentKeepsReporting(t *testing.T) {
 func TestALiveAgentWinsOverTheMonitor(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	root := env.As(apiservertest.Root)
-	waitFor(t, "the Node created", getNode(t, root), func(*computev1alpha1.Node) bool { return true })
+	waitValue(t, "the Node created", getNode(t, root), func(*computev1alpha1.Node) bool { return true })
 	// The node is marked Unknown in the store, as the apiserver's monitor
 	// does after a silence: before the agent starts, and between each of its
 	// reads and writes.
@@ -178,7 +177,7 @@ func TestALiveAgentWinsOverTheMonitor(t *testing.T) {
 	markUnknown()
 	racing := &http.Client{Transport: afterGetNode{next: client.UnixSocket(env.Socket).Transport, then: markUnknown}}
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "1", Memory: "1Gi"}, nil, func(c *node.Config) { c.HTTP = racing })
-	waitFor(t, "the node ready again", getNode(t, root), func(n *computev1alpha1.Node) bool {
+	waitValue(t, "the node ready again", getNode(t, root), func(n *computev1alpha1.Node) bool {
 		return conditions.IsTrue(n.GetStatus().GetConditions(), computeapi.NodeReady)
 	})
 }
@@ -289,17 +288,27 @@ func TestMachinesArePlacedOnAReportingNode(t *testing.T) {
 		m, err := get()
 		return err == nil && m.GetSpec().GetNode() == apiservertest.Node
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for !placed(machine("ct-a")) && !placed(machine("ct-b")) {
-		if time.Now().After(deadline) {
-			t.Fatal("neither machine was placed")
+	var other string
+	testutil.Eventually(t, "one machine placed", func() bool {
+		switch {
+		case placed(machine("ct-a")):
+			other = "ct-b"
+		case placed(machine("ct-b")):
+			other = "ct-a"
+		default:
+			return false
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if placed(machine("ct-a")) && placed(machine("ct-b")) {
-		t.Error("two 512 MiB machines placed where the node has 624 MiB allocatable")
-	}
+		return true
+	})
+	// The other machine may not exist yet; until it does, it reads as not
+	// placed.
+	testutil.Unchanged(t, "the node of the other machine, where the node has 624 MiB allocatable", 200*time.Millisecond, func() (string, error) {
+		m, err := machine(other)()
+		if connect.CodeOf(err) == connect.CodeNotFound {
+			return "", nil
+		}
+		return m.GetSpec().GetNode(), err
+	})
 }
 
 func TestMemTotal(t *testing.T) {

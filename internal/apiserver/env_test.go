@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"github.com/jonboulle/clockwork"
@@ -25,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const (
@@ -138,17 +139,10 @@ func usernameOf(email string) string {
 // can act, so tests start from a known state.
 func (e *env) waitBootstrapped() {
 	e.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(e.t, "bootstrap admin invited", func() (bool, string) {
 		me, err := e.as(root).accounts.WhoAmI(context.Background(), connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
-		if err == nil && me.Msg.GetInvited() {
-			break
-		}
-		if time.Now().After(deadline) {
-			e.t.Fatal("bootstrap admin never invited")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return err == nil && me.Msg.GetInvited(), fmt.Sprint(err)
+	})
 	e.signUp(root)
 	rbs := must[iamv1alpha1.ListRoleBindingsResponse](e.t)(e.as(root).bindings.ListRoleBindings(context.Background(),
 		connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{})))

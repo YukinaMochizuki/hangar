@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // overlaps records each driver call that touches a machine while its VM is
@@ -150,7 +152,7 @@ func TestAStopRacesNothing(t *testing.T) {
 			defer wg.Done()
 			for ctx.Err() == nil {
 				_ = a.reconcileMachine(ctx, controller.Key{Project: apiservertest.Project, Name: fmt.Sprintf("m%d", i)})
-				time.Sleep(5 * time.Millisecond)
+				time.Sleep(5 * time.Millisecond) //nolint:forbidigo // paces the extra reconciles
 			}
 		}()
 	}
@@ -159,7 +161,7 @@ func TestAStopRacesNothing(t *testing.T) {
 		defer wg.Done()
 		for ctx.Err() == nil {
 			_ = a.sweep(ctx)
-			time.Sleep(5 * time.Millisecond)
+			time.Sleep(5 * time.Millisecond) //nolint:forbidigo // paces the extra sweeps
 		}
 	}()
 	t.Cleanup(func() {
@@ -173,25 +175,39 @@ func TestAStopRacesNothing(t *testing.T) {
 		mwg.Add(1)
 		go func() {
 			defer mwg.Done()
-			churn(t, env, sys, a, host, fmt.Sprintf("m%d", i), fmt.Sprintf("10.0.0.%d/24", 10+i), i%2 == 1)
+			churn(offTestGoroutine{t}, env, sys, a, host, fmt.Sprintf("m%d", i), fmt.Sprintf("10.0.0.%d/24", 10+i), i%2 == 1)
 		}()
 	}
 	mwg.Wait()
 
-	deadline := time.Now().Add(10 * time.Second)
-	for !host.Snapshot().Empty() {
-		if time.Now().After(deadline) {
-			t.Fatalf("left on the host: %+v", host.Snapshot())
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "nothing left on the host", func() (bool, string) {
+		s := host.Snapshot()
+		return s.Empty(), fmt.Sprintf("%+v", s)
+	})
 	o.report(t)
+}
+
+// offTestGoroutine lets a helper that fails with Fatal run on a goroutine
+// the test started: it fails the test and ends only that goroutine, as
+// FailNow may not be called off the test's own.
+type offTestGoroutine struct{ testing.TB }
+
+func (g offTestGoroutine) Fatal(args ...any) {
+	g.Helper()
+	g.Error(args...)
+	runtime.Goexit()
+}
+
+func (g offTestGoroutine) Fatalf(format string, args ...any) {
+	g.Helper()
+	g.Errorf(format, args...)
+	runtime.Goexit()
 }
 
 // churn runs one machine through each way of stopping its VM, then deletes
 // it; lost takes the machine out of the API while its release's stop runs,
 // so the sweep finds what it left.
-func churn(t *testing.T, env *apiservertest.Env, sys *client.Client, a *Agent, host *fake.Host, name, ipv4 string, lost bool) {
+func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, host *fake.Host, name, ipv4 string, lost bool) {
 	m := &computev1alpha1.Machine{
 		Metadata: &metav1.ObjectMeta{Project: apiservertest.Project, Name: name, Finalizers: []string{"hangarlab.cloud/node-cleanup"}},
 		Spec: &computev1alpha1.MachineSpec{
@@ -233,22 +249,18 @@ func churn(t *testing.T, env *apiservertest.Env, sys *client.Client, a *Agent, h
 			m.Spec.Interfaces[0].Ipv4 = ipv4[:len(ipv4)-3] + "1" + ipv4[len(ipv4)-3:]
 		},
 	}
-	if !waitMachine(t, sys, name, running) {
-		return
-	}
+	waitMachine(t, sys, name, "running", running)
 	for i, step := range steps {
 		if !edit(t, sys, name, step) {
 			return
 		}
 		// Every other step lands while the last is still being carried
 		// out.
-		if i%2 == 1 && !waitMachine(t, sys, name, running) {
-			return
+		if i%2 == 1 {
+			waitMachine(t, sys, name, "running", running)
 		}
 	}
-	if !waitMachine(t, sys, name, running) {
-		return
-	}
+	waitMachine(t, sys, name, "running", running)
 	var uid string
 	if lost {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
@@ -267,18 +279,11 @@ func churn(t *testing.T, env *apiservertest.Env, sys *client.Client, a *Agent, h
 	if lost {
 		// Gone from the API while its release's stop runs, as if its
 		// finalizer were taken off by hand; sweeps come by meanwhile.
-		for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(time.Millisecond) {
+		testutil.Eventually(t, "machine "+name+"'s release stopping its VM", func() bool {
 			a.host.Lock()
-			begun := a.stops.running[uid]
-			a.host.Unlock()
-			if begun {
-				break
-			}
-			if time.Now().After(deadline) {
-				t.Errorf("machine %s's release never stopped its VM", name)
-				return
-			}
-		}
+			defer a.host.Unlock()
+			return a.stops.running[uid]
+		})
 		key := store.Key{Kind: registry.Machine.Kind, Project: apiservertest.Project, Name: name}
 		for {
 			obj, err := env.Store.Get(context.Background(), key)
@@ -290,14 +295,14 @@ func churn(t *testing.T, env *apiservertest.Env, sys *client.Client, a *Agent, h
 				break
 			}
 		}
-		time.Sleep(30 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond) //nolint:forbidigo // lets background work run
 	}
-	waitMachine(t, sys, name, nil)
+	waitMachine(t, sys, name, "gone", nil)
 }
 
 // edit changes the machine as it is now, again if another write came in
 // between.
-func edit(t *testing.T, sys *client.Client, name string, change func(*computev1alpha1.Machine)) bool {
+func edit(t testing.TB, sys *client.Client, name string, change func(*computev1alpha1.Machine)) bool {
 	for range 100 {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
 		if err != nil {
@@ -321,28 +326,18 @@ func edit(t *testing.T, sys *client.Client, name string, change func(*computev1a
 }
 
 // waitMachine waits until the machine satisfies ok, or is gone if ok is
-// nil, and says whether it did.
-func waitMachine(t *testing.T, sys *client.Client, name string, ok func(*computev1alpha1.Machine) bool) bool {
-	deadline := time.Now().Add(15 * time.Second)
-	var last *computev1alpha1.Machine
-	for time.Now().Before(deadline) {
+// nil.
+func waitMachine(t testing.TB, sys *client.Client, name, what string, ok func(*computev1alpha1.Machine) bool) {
+	t.Helper()
+	testutil.Eventually(t, "machine "+name+" "+what, func() (bool, string) {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
 		switch {
 		case connect.CodeOf(err) == connect.CodeNotFound:
-			if ok == nil {
-				return true
-			}
+			return ok == nil, "gone"
 		case err != nil:
-			t.Error(err)
-			return false
-		default:
-			last = obj.(*computev1alpha1.Machine)
-			if ok != nil && ok(last) {
-				return true
-			}
+			t.Fatal(err)
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Errorf("machine %s never got there; last: %v", name, last.GetStatus())
-	return false
+		m := obj.(*computev1alpha1.Machine)
+		return ok != nil && ok(m), fmt.Sprint(m.GetStatus())
+	})
 }

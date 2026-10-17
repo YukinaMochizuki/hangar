@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -25,6 +24,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/auth/oidctest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // syncBuffer is a log the apiserver writes while the test reads it.
@@ -86,19 +86,17 @@ func start(t *testing.T, uid uint32, opts ...func(*flags)) listeners {
 			t.Error(err)
 		}
 	})
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(l.admin); err == nil {
-			if c, err := net.Dial("tcp", addr); err == nil {
-				_ = c.Close()
-				break
-			}
+	testutil.Eventually(t, "the apiserver started", func() (bool, string) {
+		if _, err := os.Stat(l.admin); err != nil {
+			return false, l.log.String()
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the apiserver did not start: %s", l.log.String())
+		c, err := net.Dial("tcp", addr)
+		if err != nil {
+			return false, l.log.String()
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		_ = c.Close()
+		return true, ""
+	})
 	return l
 }
 

@@ -26,7 +26,7 @@ type slowWatch struct {
 
 func (s slowWatch) Watch(ctx context.Context, opts store.WatchOptions, send func(store.Event) error) error {
 	return s.Store.Watch(ctx, opts, func(ev store.Event) error {
-		time.Sleep(s.delay)
+		time.Sleep(s.delay) //nolint:forbidigo // stands for a view that lags the store
 		return send(ev)
 	})
 }

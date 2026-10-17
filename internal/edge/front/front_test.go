@@ -18,6 +18,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/edge/front"
 	"github.com/YukinaMochizuki/hangar/internal/edge/front/acmetest"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // The test's domains: the control plane's and the endpoints'.
@@ -209,19 +210,17 @@ func (d *door) handshake(serverName string) (*tls.Conn, error) {
 // test CA issued for each name.
 func (d *door) waitCertificates(t *testing.T, names ...string) {
 	t.Helper()
+	// Issuing through DNS-01 waits on the challenge record to be seen.
 	deadline := time.Now().Add(90 * time.Second)
 	for _, n := range names {
-		for {
+		testutil.EventuallyWithin(t, time.Until(deadline), "a certificate for "+n, func() (bool, string) {
 			c, err := d.handshake(n)
-			if err == nil {
-				_ = c.Close()
-				break
+			if err != nil {
+				return false, err.Error()
 			}
-			if time.Now().After(deadline) {
-				t.Fatalf("no certificate for %s: %v", n, err)
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
+			_ = c.Close()
+			return true, ""
+		})
 	}
 }
 

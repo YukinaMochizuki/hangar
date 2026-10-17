@@ -19,6 +19,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // The test binary plays Cloud Hypervisor when fakeCHEnv is set, doing what
@@ -138,7 +139,7 @@ func fakeCH(mode string) int {
 		select {}
 	case "stoppable":
 		for !exists(filepath.Join(filepath.Dir(vsock), "stop")) {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(10 * time.Millisecond) //nolint:forbidigo // stands for a guest running until it is stopped
 		}
 		_ = w.Write(console.Stdout, []byte("got SIGTERM\n"))
 		_ = w.WriteExit(console.ExitStatus{})
@@ -577,13 +578,7 @@ func stopBySystemd(t *testing.T, l *Launcher, dir string) (int, time.Duration) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan int, 1)
 	go func() { done <- l.Run(ctx, "m1") }()
-	deadline := time.Now().Add(10 * time.Second)
-	for len(records(t, filepath.Join(dir, ConsoleLog))) == 0 {
-		if time.Now().After(deadline) {
-			t.Fatal("the guest never booted")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the guest booted", func() bool { return len(records(t, filepath.Join(dir, ConsoleLog))) > 0 })
 	start := time.Now()
 	cancel()
 	select {
@@ -674,13 +669,7 @@ func TestTheLauncherWaitsWhileStopping(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan int, 1)
 	go func() { done <- l.Run(ctx, "m1") }()
-	deadline := time.Now().Add(10 * time.Second)
-	for !exists(filepath.Join(dir, exitFile)) {
-		if time.Now().After(deadline) {
-			t.Fatal("no exit record")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "an exit record", func() bool { return exists(filepath.Join(dir, exitFile)) })
 	select {
 	case code := <-done:
 		t.Fatalf("exited %d while being stopped", code)

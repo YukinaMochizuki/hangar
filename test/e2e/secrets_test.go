@@ -18,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const (
@@ -88,23 +89,13 @@ func (w *world) applyIn(proj, name, image string, pullSecrets ...string) {
 // waitReasonIn is waitReason for a container in any project.
 //
 // A refused pull is tried again with a backoff, and says Pulling while it
-// is, so on a loaded host the reason can take longer than eventually's
-// usual bound to be seen.
+// is, so on a loaded host the reason can take longer than testutil.Wait to
+// be seen.
 func (w *world) waitReasonIn(proj, name, reason string) {
 	w.t.Helper()
-	deadline := time.Now().Add(time.Minute)
-	var last string
-	for {
-		ok, seen := w.reasonIs(proj, name, reason)
-		if ok {
-			return
-		}
-		last = seen
-		if time.Now().After(deadline) {
-			w.t.Fatalf("never happened: container %s/%s %s; last: %s", proj, name, reason, last)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(w.t, time.Minute, fmt.Sprintf("container %s/%s %s", proj, name, reason), func() (bool, string) {
+		return w.reasonIs(proj, name, reason)
+	})
 }
 
 // reasonIs says whether the container says Ready with the reason, at its
@@ -143,7 +134,7 @@ func TestAPrivateImageRunsWithItsSecret(t *testing.T) {
 	// Naming another secret too, changed after it runs, restarts nothing.
 	vm, _, _ := w.vmOfIn(project, "app")
 	w.applyIn(project, "app", privateImage, "pull", "nope")
-	w.eventually("the change observed", func() (bool, string) {
+	testutil.Eventually(w.t, "the change observed", func() (bool, string) {
 		m := w.machine("app")
 		return m.GetStatus().GetObservedGeneration() == m.GetMetadata().GetGeneration(), ""
 	})
@@ -229,7 +220,7 @@ func TestAnUpgradedNodeFetchesEachImageAgain(t *testing.T) {
 	w.startAgent()
 	// The new agent checks the machine, and its image, within this; its
 	// pull fails meanwhile.
-	time.Sleep(time.Second)
+	testutil.Unchanged(w.t, "api's VM, its registry down", time.Second, w.vmVersion(before.MachineUID))
 	w.waitReason("api", "Running")
 	if vm, _, running := w.vmOfIn(project, "api"); !running || !vm.Started.Equal(before.Started) {
 		t.Fatal("a running machine was stopped or restarted for its image's registry being down")

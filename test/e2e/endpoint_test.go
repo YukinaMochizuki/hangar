@@ -32,6 +32,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const endpointDomain = "hangarlab.test"
@@ -210,7 +211,7 @@ func (w *edgeWorld) get(host, path, token string, cookies ...*http.Cookie) (int,
 func (w *edgeWorld) waitServing(host, token string, status int) string {
 	w.t.Helper()
 	var body string
-	w.eventually(fmt.Sprintf("%s answering %d", host, status), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("%s answering %d", host, status), func() (bool, string) {
 		var got int
 		got, body = w.get(host, "/", token)
 		return got == status, fmt.Sprintf("%d %s", got, body)
@@ -221,7 +222,7 @@ func (w *edgeWorld) waitServing(host, token string, status int) string {
 func (w *edgeWorld) endpointReady(name string) *networkv1alpha1.PublicEndpoint {
 	w.t.Helper()
 	var ep *networkv1alpha1.PublicEndpoint
-	w.eventually("endpoint "+name+" ready", func() (bool, string) {
+	testutil.Eventually(w.t, "endpoint "+name+" ready", func() (bool, string) {
 		var ok bool
 		ep, ok = get[*networkv1alpha1.PublicEndpoint](w.world, registry.PublicEndpoint, name)
 		return ok && conditions.IsTrue(ep.GetStatus().GetConditions(), apiserver.PublicEndpointReady), fmt.Sprintf("%v", ep.GetStatus())
@@ -337,7 +338,7 @@ func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 		t.Errorf("an upgraded connection outlived its endpoint: %v", err)
 	}
 	w.waitServing(publicHost, "", http.StatusNotFound)
-	w.eventually("the deleted endpoint's port closed", func() (bool, string) {
+	testutil.Eventually(w.t, "the deleted endpoint's port closed", func() (bool, string) {
 		got := w.host.EdgePorts(w.networkUID("default"))[m.GetMetadata().GetUid()+"/eth0"]
 		return slices.Equal(got, []uint16{8080}), fmt.Sprintf("%v", got)
 	})
@@ -354,7 +355,7 @@ func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 	c.Spec.Ports[0].Public = false
 	w.apply(c)
 	w.waitServing(privateHost, rootToken, http.StatusNotFound)
-	w.eventually("every port closed", func() (bool, string) {
+	testutil.Eventually(w.t, "every port closed", func() (bool, string) {
 		got := w.host.EdgePorts(w.networkUID("default"))
 		return len(got) == 0, fmt.Sprintf("%v", got)
 	})
@@ -429,11 +430,11 @@ func TestAPortChangeThroughTheEdge(t *testing.T) {
 	c.Spec.Ports[0].Port = 8081
 	w.apply(c)
 	uid := w.machine("api").GetMetadata().GetUid()
-	w.eventually("the node to open 8081 alone", func() (bool, string) {
+	testutil.Eventually(w.t, "the node to open 8081 alone", func() (bool, string) {
 		got := w.host.EdgePorts(w.networkUID("default"))[uid+"/eth0"]
 		return slices.Equal(got, []uint16{8081}), fmt.Sprintf("%v", got)
 	})
-	w.eventually("the edge to see the change", func() (bool, string) {
+	testutil.Eventually(w.t, "the edge to see the change", func() (bool, string) {
 		ep, _ := get[*networkv1alpha1.PublicEndpoint](w.world, registry.PublicEndpoint, "api-http")
 		return ep.GetSpec().GetPort() == 8081, ""
 	})
@@ -451,7 +452,7 @@ func (w *edgeWorld) waitServingAny(host, token string) (int, string) {
 	w.t.Helper()
 	var status int
 	var body string
-	w.eventually(host+" answering", func() (bool, string) {
+	testutil.Eventually(w.t, host+" answering", func() (bool, string) {
 		status, body = w.get(host, "/", token)
 		return status != http.StatusServiceUnavailable, fmt.Sprintf("%d %s", status, body)
 	})

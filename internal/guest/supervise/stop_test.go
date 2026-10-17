@@ -1,6 +1,7 @@
 package supervise_test
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"syscall"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/supervise"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // group starts script leading a session of its own, as the container's
@@ -70,17 +72,10 @@ while :; do sleep 0.05; done`, out)
 // waitOutput waits for f to hold s, so a script's traps are set.
 func waitOutput(t *testing.T, f *os.File, s string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, fmt.Sprintf("%q in the output", s), func() (bool, string) {
 		b, _ := os.ReadFile(f.Name())
-		if strings.Contains(string(b), s) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no %q in %q", s, b)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return strings.Contains(string(b), s), fmt.Sprintf("%q", b)
+	})
 }
 
 func TestStopKillsAfterGrace(t *testing.T) {

@@ -7,6 +7,7 @@ package drivertest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/netip"
 	"os"
 	"slices"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // Host is one host's drivers, with what the suite needs to drive them. A
@@ -297,7 +299,8 @@ func storage(t *testing.T, h Host) {
 			defer wg.Done()
 			if err := h.Storage.EnsureBase(ctx, digest, 0, func(dir string) error {
 				fills.Add(1)
-				time.Sleep(50 * time.Millisecond) // both callers are in by now
+				// Both callers are in by now.
+				time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 				return h.Images.Unpack(ctx, ref, digest, dir, anon)
 			}); err != nil {
 				t.Error(err)
@@ -1042,17 +1045,9 @@ func vmIn(t *testing.T, hv driver.Hypervisor, machine string) (driver.VM, bool) 
 	return driver.VM{}, false
 }
 
-// eventually polls cond for as long as a VM may take to change state.
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("never happened: %s", what)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-}
+// vmWait bounds a wait on a VM changing state, which on a real host
+// boots or stops a guest.
+const vmWait = 30 * time.Second
 
 func hypervisor(t *testing.T, h Host) {
 	ctx := t.Context()
@@ -1065,7 +1060,7 @@ func hypervisor(t *testing.T, h Host) {
 	if !ok || vm.State != driver.VMRunning || vm.SpecHash != spec.Hash() {
 		t.Fatalf("VM %+v listed %t", vm, ok)
 	}
-	eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+	testutil.EventuallyWithin(t, vmWait, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
 
 	must(t, h.Hypervisor.Start(ctx, spec))
 	if again, _ := vmOf(t, h, "m1"); !again.Started.Equal(vm.Started) {
@@ -1117,11 +1112,12 @@ func hypervisor(t *testing.T, h Host) {
 		t.Error("the VM was stopped without its guest being asked to stop its process")
 	}
 	// Stopped, it stays down, though its policy is always.
-	for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Millisecond) {
+	testutil.Unchanged(t, "the stopped VM", 3*time.Second, func() (string, error) {
 		if vm, ok := vmOf(t, h, "m1"); ok {
-			t.Fatalf("a stopped VM came back: %+v", vm)
+			return "", fmt.Errorf("came back: %+v", vm)
 		}
-	}
+		return "not listed", nil
+	})
 	// The log outlives the VM until the machine is gone.
 	if logs, err := h.Hypervisor.Logs(ctx); err != nil || !slices.Contains(logs, "m1") {
 		t.Errorf("logs after the VM stopped: %v %v", logs, err)
@@ -1162,7 +1158,7 @@ func restarts(t *testing.T, h Host) {
 			})
 			must(t, h.Hypervisor.Start(ctx, spec))
 			first, _ := vmOf(t, h, "m1")
-			eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+			testutil.EventuallyWithin(t, vmWait, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
 			for len(h.Hypervisor.Changes()) > 0 { // what starting it signalled
 				<-h.Hypervisor.Changes()
 			}
@@ -1173,12 +1169,12 @@ func restarts(t *testing.T, h Host) {
 				t.Fatal("the VM's exit was never signalled")
 			}
 			if tt.restart {
-				eventually(t, "the VM started again", func() bool {
+				testutil.EventuallyWithin(t, vmWait, "the VM started again", func() bool {
 					vm, ok := vmOf(t, h, "m1")
 					return ok && vm.State == driver.VMRunning && vm.Started.After(first.Started)
 				})
 			} else {
-				eventually(t, "the VM listed as exited", func() bool {
+				testutil.EventuallyWithin(t, vmWait, "the VM listed as exited", func() bool {
 					vm, ok := vmOf(t, h, "m1")
 					return ok && vm.State == driver.VMExited && vm.ExitCode == tt.code
 				})
@@ -1218,18 +1214,13 @@ func guestIPv6(t *testing.T, h Host) {
 	must(t, err)
 	spec.Interfaces = []driver.Interface{booted}
 	must(t, h.Hypervisor.Start(ctx, spec))
-	eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+	testutil.EventuallyWithin(t, vmWait, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
 	holds := func(what string, want []driver.GuestIPv6) {
 		t.Helper()
-		var got []driver.GuestIPv6
-		for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(100 * time.Millisecond) {
-			if got = h.GuestIPv6(t, "m1"); slices.Equal(got, want) {
-				return
-			}
-			if time.Now().After(deadline) {
-				t.Fatalf("never happened: %s; the guest holds %+v, want %+v", what, got, want)
-			}
-		}
+		testutil.EventuallyWithin(t, vmWait, what, func() (bool, string) {
+			got := h.GuestIPv6(t, "m1")
+			return slices.Equal(got, want), fmt.Sprintf("the guest holds %+v, want %+v", got, want)
+		})
 	}
 	bootDisk := driver.GuestIPv6Of(spec.Interfaces)
 	holds("the guest holding its boot disk's address", bootDisk)
@@ -1271,7 +1262,7 @@ func guestIPv6(t *testing.T, h Host) {
 	holds("the guest holding the address it was told, again", moved)
 	before, _ := vmOf(t, h, "m1")
 	h.Exit(t, "m1", 1)
-	eventually(t, "the VM booting again", func() bool {
+	testutil.EventuallyWithin(t, vmWait, "the VM booting again", func() bool {
 		vm, ok := vmOf(t, h, "m1")
 		return ok && vm.State == driver.VMRunning && vm.Started.After(before.Started) && h.Guest.Ready(ctx, "m1") == nil
 	})

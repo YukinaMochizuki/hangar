@@ -37,7 +37,7 @@ func hybridVsock(t *testing.T, path string) *atomic.Int32 {
 				if _, err := bufio.NewReader(c).ReadString('\n'); err == nil {
 					_, _ = c.Write([]byte("OK 1073741824\n"))
 				}
-				time.Sleep(time.Second)
+				time.Sleep(time.Second) //nolint:forbidigo // holds the connection open, as a slow peer would
 			}()
 		}
 	}()

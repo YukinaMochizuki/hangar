@@ -27,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // secretCanary is a password no answer, event, log line or error may hold.
@@ -194,7 +195,7 @@ func TestSecretValuesAreNeverAnswered(t *testing.T) {
 		t.Fatal(err)
 	}
 	noValues(t, "delete", deleted)
-	waitUntil(t, "the watch saw the delete", func() bool {
+	testutil.Eventually(t, "the watch saw the delete", func() bool {
 		mu.Lock()
 		defer mu.Unlock()
 		return slices.ContainsFunc(events, func(ev resource.Event) bool { return ev.Type == metav1.EventType_EVENT_TYPE_DELETED })
@@ -215,15 +216,6 @@ func TestSecretValuesAreNeverAnswered(t *testing.T) {
 
 func secretMeta(m proto.Message) *metav1.ObjectMeta {
 	return m.(*secretsv1alpha1.Secret).GetMetadata()
-}
-
-func waitUntil(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for start := time.Now(); !cond(); time.Sleep(5 * time.Millisecond) {
-		if time.Since(start) > 10*time.Second {
-			t.Fatalf("never: %s", what)
-		}
-	}
 }
 
 // TestSecretDataAtRestIsCiphertext: the database's files, its history

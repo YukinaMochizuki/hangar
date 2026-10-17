@@ -15,19 +15,8 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
-
-// eventually retries cond until it holds or ten seconds pass.
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("never happened: %s", what)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-}
 
 func TestDeletingATenantCascadesAndItsNameIsNeverReused(t *testing.T) {
 	e := newEnv(t)
@@ -42,19 +31,19 @@ func TestDeletingATenantCascadesAndItsNameIsNeverReused(t *testing.T) {
 		t.Error("a tenant with contents was not marked as being deleted")
 	}
 	gone := func(err error) bool { return connect.CodeOf(err) == connect.CodeNotFound }
-	eventually(t, "the container is deleted", func() bool {
+	testutil.Eventually(t, "the container is deleted", func() bool {
 		_, err := r.containers.GetContainer(ctx, getContainer("web", "api"))
 		return gone(err)
 	})
-	eventually(t, "the project is deleted", func() bool {
+	testutil.Eventually(t, "the project is deleted", func() bool {
 		_, err := r.projects.GetProject(ctx, connect.NewRequest(&tenancyv1alpha1.GetProjectRequest{Name: "web"}))
 		return gone(err)
 	})
-	eventually(t, "the tenant is deleted", func() bool {
+	testutil.Eventually(t, "the tenant is deleted", func() bool {
 		_, err := r.tenants.GetTenant(ctx, connect.NewRequest(&tenancyv1alpha1.GetTenantRequest{Name: "acme"}))
 		return gone(err)
 	})
-	eventually(t, "the tenant's bindings are deleted", func() bool {
+	testutil.Eventually(t, "the tenant's bindings are deleted", func() bool {
 		res := must[iamv1alpha1.ListRoleBindingsResponse](t)(r.bindings.ListRoleBindings(ctx, connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{})))
 		for _, rb := range res.GetItems() {
 			if rb.GetSpec().GetScope().GetTenant() == "acme" {
@@ -457,7 +446,7 @@ func TestBootstrapOnlyOnAnEmptyStore(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(runCtx) }()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

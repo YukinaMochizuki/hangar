@@ -58,8 +58,10 @@ func TestTheLauncherGivesUpRootOnceCHRuns(t *testing.T) {
 	started := false
 	// vmm-exec's record appears, while this waits, only if it already runs.
 	l.DropCaps = func() error {
-		for deadline := time.Now().Add(5 * time.Second); !started && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-			started = exists(filepath.Join(dir, chDir, "exec.json"))
+		for deadline := time.Now().Add(5 * time.Second); !started && time.Now().Before(deadline); {
+			if started = exists(filepath.Join(dir, chDir, "exec.json")); !started {
+				time.Sleep(10 * time.Millisecond) //nolint:forbidigo // polls off the test's goroutine, where Eventually cannot fail the test
+			}
 		}
 		return nil
 	}

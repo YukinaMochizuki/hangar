@@ -16,6 +16,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const cloudURL = "https://images.example/noble.img"
@@ -90,7 +91,7 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudSHA}) {
 		t.Errorf("image bases %v", bases)
 	}
-	w.eventually("the VM running with the disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running with the disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 1 && spec.Disks[0].Digest == "sha256:"+cloudSHA, fmt.Sprintf("%+v", spec.Disks)
 	})
@@ -116,7 +117,7 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w.eventually("the machines gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the machines gone", func() (bool, string) {
 		_, a := get[*computev1alpha1.Machine](w, registry.Machine, "vm-a")
 		_, b := get[*computev1alpha1.Machine](w, registry.Machine, "vm-b")
 		return !a && !b, ""
@@ -126,11 +127,12 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w.eventually("no volume left", func() (bool, string) {
+	testutil.Eventually(w.t, "no volume left", func() (bool, string) {
 		s := w.host.Snapshot()
 		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
 	})
-	time.Sleep(400 * time.Millisecond) // several sweeps
+	// Several sweeps.
+	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudSHA}) {
 		t.Fatalf("image bases with no disk of the image: %v", bases)
 	}
@@ -150,7 +152,7 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudFixed, 3*gib)
 	w.applyImage("noble", cloudFixed)
 	w.deleteMachineAndDisk("vm-c", "again")
-	w.eventually("the old digest's base gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the old digest's base gone", func() (bool, string) {
 		bases := w.host.Snapshot().ImageBases
 		return len(bases) == 0, fmt.Sprint(bases)
 	})
@@ -162,11 +164,12 @@ func TestADiskMadeFromAnImage(t *testing.T) {
 		return conditions.IsTrue(d.GetStatus().GetConditions(), computeapi.DiskReady)
 	})
 	w.deleteMachineAndDisk("vm-d", "fixed")
-	w.eventually("no volume left", func() (bool, string) {
+	testutil.Eventually(w.t, "no volume left", func() (bool, string) {
 		s := w.host.Snapshot()
 		return len(s.Volumes) == 0, fmt.Sprintf("%+v", s.Volumes)
 	})
-	time.Sleep(400 * time.Millisecond) // several sweeps
+	// Several sweeps.
+	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if bases := w.host.Snapshot().ImageBases; !slices.Equal(bases, []string{"sha256:" + cloudFixed}) {
 		t.Fatalf("image bases with no disk of the image: %v", bases)
 	}
@@ -181,7 +184,7 @@ func (w *world) deleteMachineAndDisk(machine, disk string) {
 	if _, err := w.system.Delete(context.Background(), registry.Machine, client.Key{Project: project, Name: machine}); err != nil {
 		w.t.Fatal(err)
 	}
-	w.eventually("the machine gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the machine gone", func() (bool, string) {
 		_, ok := get[*computev1alpha1.Machine](w, registry.Machine, machine)
 		return !ok, ""
 	})
@@ -202,17 +205,17 @@ func TestAnImageAtFault(t *testing.T) {
 	w.waitDisk("root", "told the image is at fault", func(d *storagev1alpha1.Disk) bool {
 		return diskReady(d).GetReason() == computeapi.ReasonImagePullFailed && strings.Contains(diskReady(d).GetMessage(), "sha256")
 	})
-	w.eventually("the image marked at fault", func() (bool, string) {
+	testutil.Eventually(w.t, "the image marked at fault", func() (bool, string) {
 		v := conditions.Find(w.image("noble").GetStatus().GetConditions(), computeapi.ImageVerified)
 		return v.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE && v.GetReason() == computeapi.ReasonHashMismatch, fmt.Sprintf("%v", v)
 	})
-	w.eventually("the machine told its disk is not made", func() (bool, string) {
+	testutil.Eventually(w.t, "the machine told its disk is not made", func() (bool, string) {
 		mc := w.machine2("vm-a")
 		r := conditions.Find(mc.GetStatus().GetConditions(), computeapi.MachineReady)
 		return r.GetReason() == computeapi.ReasonDiskNotReady, fmt.Sprintf("%v", r)
 	})
 	fetched := w.host.Fetches(cloudURL)
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) //nolint:forbidigo // lets background work run
 	if n := w.host.Fetches(cloudURL); n != fetched || n != 1 {
 		t.Errorf("an image at fault was fetched %d times, then %d", fetched, n)
 	}
@@ -220,7 +223,7 @@ func TestAnImageAtFault(t *testing.T) {
 	// Fixed, it is fetched again, after a failure that passes.
 	w.host.FailDiskImage(cloudURL, errors.New("connection reset"))
 	w.applyImage("noble", cloudFixed)
-	w.eventually("the fixed image fetched", func() (bool, string) {
+	testutil.Eventually(w.t, "the fixed image fetched", func() (bool, string) {
 		n := w.host.Fetches(cloudURL)
 		return n >= 2, fmt.Sprint(n)
 	})
@@ -228,7 +231,7 @@ func TestAnImageAtFault(t *testing.T) {
 	w.waitDisk("root", "made", func(d *storagev1alpha1.Disk) bool {
 		return conditions.IsTrue(d.GetStatus().GetConditions(), computeapi.DiskReady)
 	})
-	w.eventually("the VM running with the disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running with the disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 1, fmt.Sprintf("%+v", spec.Disks)
 	})

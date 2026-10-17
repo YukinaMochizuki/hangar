@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // fakeConn is a connection that ends with the context it was dialled
@@ -58,11 +60,5 @@ func TestADialPastItsBound(t *testing.T) {
 	}
 	close(release)
 	c := <-made
-	deadline := time.Now().Add(5 * time.Second)
-	for !c.closed.Load() {
-		if time.Now().After(deadline) {
-			t.Fatal("the late connection was left open")
-		}
-		time.Sleep(time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "the late connection closed", c.closed.Load)
 }

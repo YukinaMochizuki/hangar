@@ -30,6 +30,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const project = apiservertest.Project
@@ -186,20 +187,27 @@ func (w *world) machine(name string) *computev1alpha1.Machine {
 	return m
 }
 
-// eventually polls cond, describing what it waits for and, on timeout,
-// what it last saw.
-func (w *world) eventually(what string, cond func() (bool, string)) {
-	w.t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		ok, last := cond()
-		if ok {
-			return
+// vmVersion reads how often the host started machine uid's VM and how it
+// runs, for testutil.Unchanged, which then fails if the host has no VM.
+func (w *world) vmVersion(uid string) func() (string, error) {
+	return func() (string, error) {
+		v, ok := w.host.Snapshot().VMs[uid]
+		if !ok {
+			return "", errors.New("no VM")
 		}
-		if time.Now().After(deadline) {
-			w.t.Fatalf("never happened: %s; last: %s", what, last)
+		return fmt.Sprintf("boots %d, started %v, %v", v.Boots, v.Started, v.State), nil
+	}
+}
+
+// machineVersion reads the resourceVersion of the machine named name, for
+// testutil.Unchanged, which then fails if the machine is gone.
+func (w *world) machineVersion(name string) func() (string, error) {
+	return func() (string, error) {
+		m, ok := get[*computev1alpha1.Machine](w, registry.Machine, name)
+		if !ok {
+			return "", errors.New("gone")
 		}
-		time.Sleep(10 * time.Millisecond)
+		return fmt.Sprint(m.GetMetadata().GetResourceVersion()), nil
 	}
 }
 
@@ -212,7 +220,7 @@ func ready(c *computev1alpha1.Container) *metav1.Condition {
 func (w *world) waitReason(name, reason string) *computev1alpha1.Container {
 	w.t.Helper()
 	var c *computev1alpha1.Container
-	w.eventually(fmt.Sprintf("container %s %s", name, reason), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("container %s %s", name, reason), func() (bool, string) {
 		var ok bool
 		c, ok = get[*computev1alpha1.Container](w, registry.Container, name)
 		r := ready(c)
@@ -229,7 +237,7 @@ func (w *world) waitReason(name, reason string) *computev1alpha1.Container {
 func (w *world) settle(name string) {
 	w.t.Helper()
 	last, since := int64(-1), time.Now()
-	w.eventually("machine of "+name+" quiet", func() (bool, string) {
+	testutil.Eventually(w.t, "machine of "+name+" quiet", func() (bool, string) {
 		rv := w.machine(name).GetMetadata().GetResourceVersion()
 		if rv != last {
 			last, since = rv, time.Now()
@@ -240,7 +248,7 @@ func (w *world) settle(name string) {
 
 func (w *world) waitGone(name string) {
 	w.t.Helper()
-	w.eventually("container "+name+" and its machine gone", func() (bool, string) {
+	testutil.Eventually(w.t, "container "+name+" and its machine gone", func() (bool, string) {
 		_, c := get[*computev1alpha1.Container](w, registry.Container, name)
 		_, m := get[*computev1alpha1.Machine](w, registry.Machine, "ct-"+name)
 		return !c && !m, fmt.Sprintf("container left: %t, machine left: %t", c, m)
@@ -249,7 +257,7 @@ func (w *world) waitGone(name string) {
 
 func (w *world) waitHostEmpty() {
 	w.t.Helper()
-	w.eventually("the host to hold nothing", func() (bool, string) {
+	testutil.Eventually(w.t, "the host to hold nothing", func() (bool, string) {
 		s := w.host.Snapshot()
 		return s.Empty(), fmt.Sprintf("%+v", s)
 	})
@@ -277,7 +285,7 @@ func TestAContainerRuns(t *testing.T) {
 	// Once running, nothing rewrites the machine.
 	w.settle("api")
 	rv := w.machine("api").GetMetadata().GetResourceVersion()
-	time.Sleep(500 * time.Millisecond)
+	testutil.Unchanged(w.t, "a running machine", 500*time.Millisecond, w.machineVersion("ct-api"))
 	if after := w.machine("api").GetMetadata().GetResourceVersion(); after != rv {
 		t.Errorf("a running machine kept being written: resource version %d, then %d", rv, after)
 	}
@@ -333,7 +341,7 @@ func TestChangesReachTheHost(t *testing.T) {
 	c := container("api", "nginx")
 	c.Spec.Args = []string{"-c", "/etc/other.conf"}
 	w.apply(c)
-	w.eventually("the VM restarted with the new arguments", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM restarted with the new arguments", func() (bool, string) {
 		vm := w.host.Snapshot().VMs[uid]
 		return fmt.Sprint(vm.Spec.Run.Command) == "[nginx -c /etc/other.conf]" && vm.State == driver.VMRunning, fmt.Sprintf("%+v", vm)
 	})
@@ -350,7 +358,7 @@ func TestChangesReachTheHost(t *testing.T) {
 	if err := w.host.Exit(uid, 0); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the restart reported", func() (bool, string) {
+	testutil.Eventually(w.t, "the restart reported", func() (bool, string) {
 		boot := w.machine("api").GetStatus().GetBootTime().AsTime()
 		return boot.After(before), fmt.Sprintf("boot time %v", boot)
 	})
@@ -363,7 +371,7 @@ func TestChangesReachTheHost(t *testing.T) {
 	c = container("api", "nginx")
 	c.Spec.Env = []*computev1alpha1.EnvVar{{Name: "MODE", Value: "debug"}}
 	w.apply(c)
-	w.eventually("the VM restarted with the new environment", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM restarted with the new environment", func() (bool, string) {
 		vm := w.host.Snapshot().VMs[uid]
 		return slices.Contains(vm.Spec.Run.Env, "MODE=debug") && vm.State == driver.VMRunning, fmt.Sprintf("%+v", vm)
 	})
@@ -377,12 +385,12 @@ func TestChangesReachTheHost(t *testing.T) {
 
 	w.host.AddImage("nginx:2", "sha256:nginx-3", nginx)
 	w.apply(container("api", "nginx:2"))
-	w.eventually("the disk rebuilt from the new image", func() (bool, string) {
+	testutil.Eventually(w.t, "the disk rebuilt from the new image", func() (bool, string) {
 		s := w.host.Snapshot()
 		return s.Roots[uid].Digest == "sha256:nginx-3" && s.VMs[uid].Spec.Root.Digest == "sha256:nginx-3", fmt.Sprintf("%+v", s.Roots)
 	})
 	w.waitReason("api", "Running")
-	w.eventually("the old image's base swept, and forgotten", func() (bool, string) {
+	testutil.Eventually(w.t, "the old image's base swept, and forgotten", func() (bool, string) {
 		b := w.host.Snapshot().Bases
 		return fmt.Sprint(b) == "[sha256:nginx-3]" && !w.host.Cached("sha256:nginx-1"), fmt.Sprint(b)
 	})
@@ -415,7 +423,7 @@ func TestFailuresAreReportedAndOutlived(t *testing.T) {
 	w.waitReason("db", "Running")
 
 	w.apply(container("slow", "nginx"))
-	w.eventually("slow's machine placed", func() (bool, string) {
+	testutil.Eventually(w.t, "slow's machine placed", func() (bool, string) {
 		m, ok := get[*computev1alpha1.Machine](w, registry.Machine, "ct-slow")
 		return ok && m.GetMetadata().GetUid() != "", ""
 	})
@@ -447,7 +455,7 @@ func TestAnExitedContainerSaysSo(t *testing.T) {
 	if m := w.machine("job"); m.GetStatus().GetPhase() != computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED {
 		t.Errorf("phase %v", m.GetStatus().GetPhase())
 	}
-	time.Sleep(300 * time.Millisecond)
+	testutil.Unchanged(w.t, "a VM its policy keeps down", 300*time.Millisecond, w.vmVersion(uid))
 	if vm := w.host.Snapshot().VMs[uid]; vm.Boots != 1 {
 		t.Errorf("a VM its policy keeps down was started again: %+v", vm)
 	}
@@ -468,16 +476,18 @@ func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 
 	w.stopAgent()
 	w.delete("api")
-	time.Sleep(200 * time.Millisecond)
-	if _, ok := get[*computev1alpha1.Machine](w, registry.Machine, "ct-api"); !ok {
-		t.Fatal("a machine went before its node released it")
-	}
+	testutil.Unchanged(w.t, "the presence of a machine its node has not released", 200*time.Millisecond, func() (string, error) {
+		if _, ok := get[*computev1alpha1.Machine](w, registry.Machine, "ct-api"); !ok {
+			return "", errors.New("gone")
+		}
+		return "present", nil
+	})
 	w.host.Leave("crashed-machine", "crashed-network")
 	w.host.LeaveLog("long-gone-machine")
 
 	w.startAgent()
 	w.waitGone("api")
-	w.eventually("only web left on the host", func() (bool, string) {
+	testutil.Eventually(w.t, "only web left on the host", func() (bool, string) {
 		s := w.host.Snapshot()
 		_, vm := s.VMs[web]
 		return len(s.VMs) == 1 && vm && len(s.Roots) == 1 && len(s.Interfaces) == 1 && len(s.Networks) == 1 &&
@@ -507,7 +517,7 @@ func TestLostNetworkingIsRebuilt(t *testing.T) {
 	w.host.LoseNetwork(net.GetMetadata().GetUid())
 	// A tap made again is not the one the VM holds: the VM is started
 	// again on the new one.
-	w.eventually("the network, the interface and a VM holding it back", func() (bool, string) {
+	testutil.Eventually(w.t, "the network, the interface and a VM holding it back", func() (bool, string) {
 		s := w.host.Snapshot()
 		_, n := s.Networks[net.GetMetadata().GetUid()]
 		vm := s.VMs[uid]

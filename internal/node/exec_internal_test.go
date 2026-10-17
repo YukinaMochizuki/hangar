@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // execNode serves a node's NodeService over HTTP/2 from a fake host.
@@ -211,18 +213,7 @@ func TestAnExecIsRefused(t *testing.T) {
 	if r := nodeExec(t, t.Context(), c, &nodev1.ExecStart{MachineUid: "m1", Args: []string{"cat"}}); connect.CodeOf(r.err) != connect.CodeUnavailable {
 		t.Errorf("a guest that does not answer: %+v", r)
 	}
-	eventuallyNoExecs(t, host, "m1")
-}
-
-func eventuallyNoExecs(t *testing.T, host *fake.Host, uid string) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for host.Execs(uid) != 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d execs still run", host.Execs(uid))
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "no exec running", noExecs(host, "m1"))
 }
 
 // TestACallerGoingAwayEndsTheProcess: the process runs only as long as the
@@ -235,16 +226,10 @@ func TestACallerGoingAwayEndsTheProcess(t *testing.T) {
 	if err := s.Send(&nodev1.ExecRequest{Message: &nodev1.ExecRequest_Start{Start: &nodev1.ExecStart{MachineUid: "m1", Args: []string{"wait", "x"}}}}); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for host.Execs("m1") != 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("the exec never ran")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the exec running", func() bool { return host.Execs("m1") == 1 })
 	cancel()
 	_ = s.CloseResponse()
-	eventuallyNoExecs(t, host, "m1")
+	testutil.Eventually(t, "no exec running", noExecs(host, "m1"))
 }
 
 // TestAVMGoingEndsItsExecs: an exec in a guest that restarts fails, as
@@ -256,13 +241,7 @@ func TestAVMGoingEndsItsExecs(t *testing.T) {
 	go func() {
 		done <- nodeExec(t, t.Context(), c, &nodev1.ExecStart{MachineUid: "m1", Args: []string{"wait", "x"}})
 	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for host.Execs("m1") != 1 {
-		if time.Now().After(deadline) {
-			t.Fatal("the exec never ran")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the exec running", func() bool { return host.Execs("m1") == 1 })
 	if err := host.Exit("m1", 1); err != nil {
 		t.Fatal(err)
 	}
@@ -281,5 +260,13 @@ func TestAnExitCodeOutOfRangeIs255(t *testing.T) {
 		if r.err != nil || r.exit.GetCode() != 255 {
 			t.Errorf("exit %s: %+v", code, r)
 		}
+	}
+}
+
+// noExecs says whether no exec runs in the guest of machine uid.
+func noExecs(host *fake.Host, uid string) func() (bool, string) {
+	return func() (bool, string) {
+		n := host.Execs(uid)
+		return n == 0, fmt.Sprintf("%d execs", n)
 	}
 }

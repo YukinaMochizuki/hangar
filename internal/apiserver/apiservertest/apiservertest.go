@@ -7,6 +7,7 @@ package apiservertest
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -14,7 +15,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -29,6 +29,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const (
@@ -155,17 +156,10 @@ func start(t *testing.T, configure func(*apiserver.Config), oidc *apiserver.OIDC
 func (e *Env) waitInvited(email string) {
 	e.t.Helper()
 	accounts := iamv1alpha1connect.NewAccountServiceClient(DevUser(email), e.URL)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(e.t, email+" invited", func() (bool, string) {
 		me, err := accounts.WhoAmI(context.Background(), connect.NewRequest(&iamv1alpha1.WhoAmIRequest{}))
-		if err == nil && me.Msg.GetInvited() {
-			return
-		}
-		if time.Now().After(deadline) {
-			e.t.Fatalf("%s never invited: %v", email, err)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+		return err == nil && me.Msg.GetInvited(), fmt.Sprint(err)
+	})
 }
 
 // AddMember makes a person a platform member with the platform role, as

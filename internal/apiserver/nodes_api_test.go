@@ -3,12 +3,12 @@ package apiserver_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestNodeOverTheWire covers what the node agent and people see of nodes
@@ -19,18 +19,17 @@ func TestNodeOverTheWire(t *testing.T) {
 	ctx := context.Background()
 
 	var node *computev1alpha1.Node
-	deadline := time.Now().Add(10 * time.Second)
-	for node == nil {
+	testutil.Eventually(t, "node "+testNode+" registered", func() (bool, string) {
 		res, err := e.as(root).nodes.GetNode(ctx, connect.NewRequest(&computev1alpha1.GetNodeRequest{Name: testNode}))
-		switch {
-		case err == nil:
-			node = res.Msg.GetNode()
-		case connect.CodeOf(err) != connect.CodeNotFound || time.Now().After(deadline):
-			t.Fatalf("node %s never registered: %v", testNode, err)
-		default:
-			time.Sleep(5 * time.Millisecond)
+		if err != nil {
+			if connect.CodeOf(err) != connect.CodeNotFound {
+				t.Fatalf("node %s: %v", testNode, err)
+			}
+			return false, err.Error()
 		}
-	}
+		node = res.Msg.GetNode()
+		return node != nil, "no node"
+	})
 
 	_, err := e.as(alice).nodes.GetNode(ctx, connect.NewRequest(&computev1alpha1.GetNodeRequest{Name: testNode}))
 	wantCode(t, err, connect.CodePermissionDenied, "a member reading a node")

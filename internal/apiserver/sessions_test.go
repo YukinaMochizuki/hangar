@@ -31,6 +31,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // oidcWorld is an apiserver in oidc auth, over TLS as in production, with a
@@ -131,7 +132,7 @@ func (w *oidcWorld) signIn(c *http.Client, email string) string {
 func (w *oidcWorld) signInAdmin(c *http.Client, email string) string {
 	w.t.Helper()
 	var cookie string
-	eventually(w.t, "the bootstrap admin can sign in", func() bool {
+	testutil.Eventually(w.t, "the bootstrap admin can sign in", func() bool {
 		w.provider.SignIn(email, true)
 		get(w.t, c, w.url+"/auth/login")
 		cookie = w.cookie(c)
@@ -575,7 +576,7 @@ func TestDeviceSignIn(t *testing.T) {
 		t.Errorf("a code approved twice: %d", status)
 	}
 	var tok *iamv1alpha1.Tokens
-	eventually(t, "the device login is approved", func() bool {
+	testutil.Eventually(t, "the device login is approved", func() bool {
 		tok, err = poll(d.GetDeviceCode())
 		return err == nil
 	})

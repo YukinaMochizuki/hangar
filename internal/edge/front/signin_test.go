@@ -2,6 +2,7 @@ package front_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -12,7 +13,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -25,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestSignInThroughTheFrontDoor: a browser signs in to the console through
@@ -83,8 +84,7 @@ func TestSignInThroughTheFrontDoor(t *testing.T) {
 	// The bootstrap admin is invited once the apiserver has granted her
 	// the role in the background.
 	var final *url.URL
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, "signing in ends at the console", func() (bool, string) {
 		p.SignIn("alice@example.com", true)
 		resp, err := browser.Get(origin + "/auth/login?return=/projects/demo")
 		if err != nil {
@@ -93,17 +93,14 @@ func TestSignInThroughTheFrontDoor(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		_ = resp.Body.Close()
 		final = resp.Request.URL
-		if final.Path == "/projects/demo" {
-			if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "placeholder console") {
-				t.Fatalf("after sign-in, the console: %d %q", resp.StatusCode, b)
-			}
-			break
+		if final.Path != "/projects/demo" {
+			return false, fmt.Sprintf("%s: %d %q", final, resp.StatusCode, b)
 		}
-		if time.Now().After(deadline) {
-			t.Fatalf("signing in ended at %s: %d %q", final, resp.StatusCode, b)
+		if resp.StatusCode != http.StatusOK || !strings.Contains(string(b), "placeholder console") {
+			t.Fatalf("after sign-in, the console: %d %q", resp.StatusCode, b)
 		}
-		time.Sleep(100 * time.Millisecond)
-	}
+		return true, ""
+	})
 	if final.Scheme != "https" || final.Host != consoleHost {
 		t.Errorf("signed in back at %s; want the console's origin", final)
 	}

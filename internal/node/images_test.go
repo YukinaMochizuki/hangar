@@ -12,6 +12,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestThePullerSaysWhenAnImageIsReady: the agent hears as soon as an image
@@ -195,19 +196,11 @@ func TestPullsAreBounded(t *testing.T) {
 	for i, ref := range []string{"a", "b", "c", "d"} {
 		_, _, _, _ = p.get(fmt.Sprint("m", i), ref, "", driver.Anonymous, false)
 	}
-	waitFor := func(what string, cond func() bool) {
-		t.Helper()
-		for start := time.Now(); !cond(); time.Sleep(time.Millisecond) {
-			if time.Since(start) > 30*time.Second {
-				t.Fatalf("never: %s", what)
-			}
-		}
-	}
 	underWay := func() int { _, n, _ := host.Unpacks(""); return n }
-	waitFor("two unpacks under way", func() bool { return underWay() == 2 })
+	testutil.Eventually(t, "two unpacks under way", func() bool { return underWay() == 2 })
 	// Time for more to start, were they not bounded; a bound never fails
 	// on it.
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 	for _, f := range letGo {
 		f()
 	}
@@ -221,16 +214,6 @@ func TestPullsAreBounded(t *testing.T) {
 	for _, ref := range []string{"a", "b", "c", "d"} {
 		if begun, _, _ := host.Unpacks(ref); begun != 1 {
 			t.Errorf("%s unpacked %d times", ref, begun)
-		}
-	}
-}
-
-// waitFor waits, a millisecond at a time, until cond holds.
-func waitFor(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	for start := time.Now(); !cond(); time.Sleep(time.Millisecond) {
-		if time.Since(start) > 30*time.Second {
-			t.Fatalf("never: %s", what)
 		}
 	}
 }
@@ -249,15 +232,15 @@ func TestUnpacksTakeTurns(t *testing.T) {
 	p.start(t.Context(), func() {})
 	begun := func(ref string) bool { n, _, _ := host.Unpacks(ref); return n > 0 }
 	_, _, _, _ = p.get("ma", "a", "", driver.Anonymous, false)
-	waitFor(t, "a unpacking", func() bool { return begun("a") })
+	testutil.Eventually(t, "a unpacking", func() bool { return begun("a") })
 	for i, ref := range refs[1:] {
 		_, _, _, _ = p.get("m"+ref, ref, "", driver.Anonymous, false)
-		waitFor(t, ref+" waiting", func() bool { return p.slots.waiting() == i+1 })
+		testutil.Eventually(t, ref+" waiting", func() bool { return p.slots.waiting() == i+1 })
 	}
 	for i, ref := range refs[:len(refs)-1] {
 		next := refs[i+1]
 		letGo[ref]()
-		waitFor(t, next+" unpacking", func() bool { return begun(next) })
+		testutil.Eventually(t, next+" unpacking", func() bool { return begun(next) })
 		for _, later := range refs[i+2:] {
 			if begun(later) {
 				t.Errorf("%s unpacked before %s, which waited first", later, next)
@@ -278,15 +261,15 @@ func TestAJobNoMachineWantsGivesUpItsTurn(t *testing.T) {
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 1)
 	p.start(t.Context(), func() {})
 	_, _, _, _ = p.get("m1", "a", "", driver.Anonymous, false)
-	waitFor(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
+	testutil.Eventually(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
 	_, _, _, _ = p.get("m2", "b", "", driver.Anonymous, false)
-	waitFor(t, "b waiting", func() bool { return p.slots.waiting() == 1 })
+	testutil.Eventually(t, "b waiting", func() bool { return p.slots.waiting() == 1 })
 	// m2 is deleted.
 	digests := p.keep(map[string]bool{"m1": true})
 	if digests["sha256:b"] || !digests["sha256:a"] {
 		t.Errorf("bases kept: %v, want a's alone", digests)
 	}
-	waitFor(t, "b gone from the queue", func() bool { return p.slots.waiting() == 0 })
+	testutil.Eventually(t, "b gone from the queue", func() bool { return p.slots.waiting() == 0 })
 	letGo()
 	p.wait()
 	if n, _, _ := host.Unpacks("b"); n != 0 {
@@ -307,7 +290,7 @@ func TestAnImageBeingUnpackedIsSeenThrough(t *testing.T) {
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 1)
 	p.start(t.Context(), func() {})
 	_, _, _, _ = p.get("m1", "a", "", driver.Anonymous, false)
-	waitFor(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
+	testutil.Eventually(t, "a unpacking", func() bool { _, n, _ := host.Unpacks("a"); return n == 1 })
 	if digests := p.keep(map[string]bool{}); !digests["sha256:a"] {
 		t.Errorf("bases kept: %v, want the one being made", digests)
 	}

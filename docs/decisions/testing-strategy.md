@@ -60,6 +60,22 @@ exposed, so a flake is always fixed at its root:
 - **A test leaves quarantine** in the change that fixes its root cause, once
   the stress job has passed on that change's branch for the test's package.
 
+## Waiting in tests
+
+A test waits for what it needs, not for time to pass. `internal/testutil`
+holds the helpers: `Eventually` polls a condition up to one default bound and
+reports what it last saw (`EventuallyWithin` takes a bound of its own, such
+as a real VM's), and `Unchanged` checks that "nothing happened" by watching
+one object's state, such as its resourceVersion, over a window; never the
+store-wide revision, which unrelated writes move. golangci-lint's forbidigo
+flags `time.Sleep` in tests and test-support packages, outside
+`test/testbed`. A sleep that stays says why with
+`//nolint:forbidigo // <reason>`: real work or real elapsed time the test
+needs; `lets background work run`, before a check `Unchanged` cannot make;
+or `real time`, for an in-process timing measurement that real time makes
+flaky. The last two are marked exactly so, so they can be found and
+replaced.
+
 ## Consequences
 
 Most features can be tested end to end without KVM. Only the thin layer of real

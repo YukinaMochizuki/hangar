@@ -16,6 +16,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestAStalledStopHoldsUpNoOtherMachine: while one machine's stop waits on
@@ -32,7 +33,7 @@ func TestAStalledStopHoldsUpNoOtherMachine(t *testing.T) {
 	w.editMachine("slow", func(m *computev1alpha1.Machine) {
 		m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	})
-	w.eventually("slow's stop under way", func() (bool, string) {
+	testutil.Eventually(w.t, "slow's stop under way", func() (bool, string) {
 		n := w.host.GuestStops(uid)
 		return n > 0, fmt.Sprintf("%d guest stops", n)
 	})
@@ -75,7 +76,7 @@ func TestAFailedStopIsReportedAndTriedAgain(t *testing.T) {
 	if vm, ok := w.host.Snapshot().VMs[uid]; !ok || vm.State != driver.VMRunning {
 		t.Fatalf("the VM is not running after its stop failed: %+v", vm)
 	}
-	w.eventually("the stop tried again", func() (bool, string) {
+	testutil.Eventually(w.t, "the stop tried again", func() (bool, string) {
 		n := w.host.HypervisorStops(uid)
 		return n >= 2, fmt.Sprintf("%d stops", n)
 	})
@@ -104,7 +105,7 @@ func (w *world) quiet(uid string) int {
 	w.t.Helper()
 	var last map[string]int
 	since := time.Now()
-	w.eventually("machine "+uid+" left alone", func() (bool, string) {
+	testutil.Eventually(w.t, "machine "+uid+" left alone", func() (bool, string) {
 		n := map[string]int{uid: w.host.GuestReadies(uid)}
 		for other := range w.host.Snapshot().VMs {
 			n[other] = w.host.GuestReadies(other)
@@ -134,7 +135,7 @@ func TestAFailingStopBacksOff(t *testing.T) {
 		m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	})
 	// Begun at 0 s, then no sooner than 1, 3 and 7 s: four at most.
-	time.Sleep(12 * time.Second)
+	time.Sleep(12 * time.Second) //nolint:forbidigo // real time
 	if n := w.host.HypervisorStops(b); n < 2 || n > 4 {
 		t.Errorf("a failing stop was tried %d times in 12 s, want 2 to 4", n)
 	}
@@ -191,7 +192,7 @@ func TestNoVMNoStop(t *testing.T) {
 	if _, err := w.system.Delete(context.Background(), registry.Machine, client.Key{Project: project, Name: "c"}); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("machine c released and gone", func() (bool, string) {
+	testutil.Eventually(w.t, "machine c released and gone", func() (bool, string) {
 		_, ok := get[*computev1alpha1.Machine](w, registry.Machine, "c")
 		return !ok, "still there"
 	})

@@ -14,6 +14,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // logHost is a driver over a directory of logs, all ReadLog needs.
@@ -166,14 +167,10 @@ func follow(t *testing.T, h *Hypervisor, opts driver.LogOptions) (*collector, fu
 	}
 }
 
-func waitFor(t *testing.T, c *collector, n int) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for c.len() < n {
-		if time.Now().After(deadline) {
-			t.Fatalf("got %d records, want %d: %q", c.len(), n, c.text())
-		}
-		time.Sleep(5 * time.Millisecond)
+// has says whether c has n records, for testutil.Eventually.
+func has(c *collector, n int) func() (bool, string) {
+	return func() (bool, string) {
+		return c.len() >= n, fmt.Sprintf("%d records: %q", c.len(), c.text())
 	}
 }
 
@@ -186,9 +183,9 @@ func TestFollowingAHalfWrittenRecord(t *testing.T) {
 	defer stop()
 	rec := console.AppendRecord(nil, line(1))
 	appendBytes(t, path, rec[:9])
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // time for the follower to read the half record
 	appendBytes(t, path, rec[9:])
-	waitFor(t, c, 1)
+	testutil.Eventually(t, fmt.Sprint(1, " records"), has(c, 1))
 	same(t, "followed", c.text(), []string{"1:1"})
 }
 
@@ -201,7 +198,7 @@ func TestFollowingThroughRotations(t *testing.T) {
 	h, path := logHost(t, 2*time.Millisecond)
 	c, stop := follow(t, h, driver.LogOptions{Tail: driver.AllLines, Follow: true})
 	defer stop()
-	time.Sleep(20 * time.Millisecond)
+	time.Sleep(20 * time.Millisecond) //nolint:forbidigo // time for the follow to begin before the log exists
 	clog, err := openCapped(path, 200)
 	if err != nil {
 		t.Fatal(err)
@@ -218,11 +215,11 @@ func TestFollowingThroughRotations(t *testing.T) {
 			t.Fatal(err)
 		}
 		if i%7 == 6 {
-			waitFor(t, c, i+1)
+			testutil.Eventually(t, fmt.Sprint(i+1, " records"), has(c, i+1))
 		}
 	}
-	waitFor(t, c, n)
-	time.Sleep(20 * time.Millisecond)
+	testutil.Eventually(t, fmt.Sprint(n, " records"), has(c, n))
+	time.Sleep(20 * time.Millisecond) //nolint:forbidigo // lets background work run
 	got := c.text()
 	if len(got) != n {
 		t.Fatalf("%d records, want %d", len(got), n)

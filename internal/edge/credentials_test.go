@@ -28,6 +28,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const (
@@ -69,7 +70,7 @@ func (w *world) serviceToken(name, role string) token.Secret {
 // endpoint, as it does once the edge has read the endpoint.
 func (w *world) served(h http.Header) {
 	w.t.Helper()
-	w.eventually("the endpoint served", func() (bool, string) {
+	testutil.Eventually(w.t, "the endpoint served", func() (bool, string) {
 		status, body := w.get(h)
 		return status == http.StatusOK, fmt.Sprint(status, body)
 	})
@@ -233,7 +234,7 @@ func TestTheCallbackTakesOnlyItsOwnHandoff(t *testing.T) {
 	// it.
 	w.applyNamed("open", public)
 	openHost := "open-" + apiservertest.Project + "." + domain
-	w.eventually("the public endpoint", func() (bool, string) {
+	testutil.Eventually(w.t, "the public endpoint", func() (bool, string) {
 		resp, body := w.do(http.MethodGet, openHost, "/", nil)
 		return resp.StatusCode == http.StatusOK, body
 	})
@@ -279,7 +280,7 @@ func TestNothingOfHangarsReachesAnEndpoint(t *testing.T) {
 		"private, the app's own":    {extra(http.Header{"Cookie": {session}, "Authorization": {"Bearer app-token"}}), host, `["Bearer app-token"]`},
 	} {
 		var body string
-		w.eventually(what, func() (bool, string) {
+		testutil.Eventually(w.t, what, func() (bool, string) {
 			var resp *answer
 			resp, body = w.do(http.MethodGet, c.hostname, "/", c.h)
 			return resp.StatusCode == http.StatusOK, body
@@ -544,7 +545,7 @@ func TestTheEdgeRefusedIsNotThePersonDenied(t *testing.T) {
 	w.endpoint(8080, private)
 	var to *url.URL
 	var ck *http.Cookie
-	w.eventually("a handoff", func() (bool, string) {
+	testutil.Eventually(w.t, "a handoff", func() (bool, string) {
 		resp, body := w.do(http.MethodGet, host, "/", nil)
 		to, _ = url.Parse(resp.Header.Get("Location"))
 		for _, c := range resp.Cookies() {

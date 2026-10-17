@@ -16,6 +16,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const testPrefix = "2001:db8:0:1::/64"
@@ -103,7 +104,9 @@ func TestAMachineIsPlacedWithItsIPv6(t *testing.T) {
 	if ipv6Of(m) == "" {
 		t.Fatalf("machine placed without IPv6 at generation %d", m.GetMetadata().GetGeneration())
 	}
-	time.Sleep(200 * time.Millisecond)
+	testutil.Unchanged(t, "the placed machine's generation", 200*time.Millisecond, func() (string, error) {
+		return fmt.Sprint(getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-a"}).GetMetadata().GetGeneration()), nil
+	})
 	if again := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-a"}); again.GetMetadata().GetGeneration() != m.GetMetadata().GetGeneration() {
 		t.Errorf("the machine's spec changed after placement, generation %d to %d: %v", m.GetMetadata().GetGeneration(), again.GetMetadata().GetGeneration(), again.GetSpec())
 	}

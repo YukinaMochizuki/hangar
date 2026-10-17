@@ -57,7 +57,7 @@ func firmware(t *testing.T, h Host) {
 		t.Error("deleted the volume a running firmware VM boots from")
 	}
 	// Running for a while, as a guest would before it is stopped.
-	time.Sleep(time.Second)
+	time.Sleep(time.Second) //nolint:forbidigo // stands for a guest running before it is stopped
 
 	must(t, h.Hypervisor.Stop(ctx, "fw"))
 	must(t, h.Hypervisor.Stop(ctx, "fw"))
