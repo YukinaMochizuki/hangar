@@ -134,10 +134,17 @@ func TestAFailingStopBacksOff(t *testing.T) {
 	w.editMachine("b", func(m *computev1alpha1.Machine) {
 		m.Spec.RunState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	})
-	// Begun at 0 s, then no sooner than 1, 3 and 7 s: four at most.
-	time.Sleep(12 * time.Second) //nolint:forbidigo // real time
-	if n := w.host.HypervisorStops(b); n < 2 || n > 4 {
-		t.Errorf("a failing stop was tried %d times in 12 s, want 2 to 4", n)
+	testutil.Eventually(w.t, "the failing stop tried a third time", func() (bool, string) {
+		n := w.host.HypervisorStops(b)
+		return n >= 3, fmt.Sprintf("%d stops", n)
+	})
+	// Each failure's backoff is measured from when it failed, which the
+	// fake host does at once.
+	at := w.host.HypervisorStopTimes(b)
+	for i, backoff := range []time.Duration{time.Second, 2 * time.Second} {
+		if d := at[i+1].Sub(at[i]); d < backoff {
+			t.Errorf("stop %d came %v after the one before, within its backoff of %v", i+2, d, backoff)
+		}
 	}
 	if n := w.host.GuestReadies(a); n != readies {
 		t.Errorf("a healthy machine was reconciled %d times for another's failing stop", n-readies)

@@ -15,7 +15,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
-	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 var alice = auth.Principal{Type: auth.User, ID: "alice@example.com"}
@@ -165,28 +164,46 @@ func TestRefreshRotates(t *testing.T) {
 }
 
 // TestRefreshRaceHasOneWinner: of two concurrent refreshes with one token,
-// one gets tokens and the other revokes the login.
+// one finds it spent and revokes the login. The other gets tokens, or
+// ErrInvalid when the revocation lands between its consume and its issue
+// (TestRevocationBeatsARefreshInFlight forces that). Either way nothing of
+// the login works afterwards.
 func TestRefreshRaceHasOneWinner(t *testing.T) {
-	testutil.Quarantine(t, "#81")
 	ctx := t.Context()
 	m, _, _ := newManager(t, session.Options{})
 	cli, _ := m.StartCLI(ctx, alice)
 	var wg sync.WaitGroup
+	toks := make([]session.Tokens, 2)
 	errs := make([]error, 2)
 	for i := range errs {
-		wg.Go(func() { _, errs[i] = m.Refresh(ctx, cli.Refresh) })
+		wg.Go(func() { toks[i], errs[i] = m.Refresh(ctx, cli.Refresh) })
 	}
 	wg.Wait()
-	ok := 0
+	var won, reused int
 	for _, err := range errs {
-		if err == nil {
-			ok++
-		} else if !errors.Is(err, session.ErrReused) {
+		switch {
+		case err == nil:
+			won++
+		case errors.Is(err, session.ErrReused):
+			reused++
+		case !errors.Is(err, session.ErrInvalid):
 			t.Errorf("refresh: %v", err)
 		}
 	}
-	if ok != 1 {
-		t.Errorf("%d refreshes succeeded, want 1", ok)
+	if won > 1 || reused != 1 {
+		t.Errorf("%d refreshes succeeded and %d found the token spent (%v); want at most 1, and 1", won, reused, errs)
+	}
+	for _, tok := range append(toks, cli) {
+		if tok.Access != "" {
+			if _, err := m.Lookup(ctx, tok.Access, session.TypeAccess); !errors.Is(err, session.ErrInvalid) {
+				t.Errorf("an access token of the login works after the race: %v", err)
+			}
+		}
+		if tok.Refresh != "" {
+			if _, err := m.Refresh(ctx, tok.Refresh); err == nil {
+				t.Error("a refresh token of the login works after the race")
+			}
+		}
 	}
 }
 
@@ -245,8 +262,8 @@ func TestRevocationBeatsARefreshInFlight(t *testing.T) {
 			}
 			close(release)
 			r := <-done
-			if r.err == nil {
-				t.Errorf("the refresh in flight got tokens into a revoked login")
+			if !errors.Is(r.err, session.ErrInvalid) {
+				t.Errorf("the refresh in flight: %v, want ErrInvalid", r.err)
 			}
 			for _, s := range []token.Secret{r.tok.Access, cli.Access} {
 				if s == "" {
