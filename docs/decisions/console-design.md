@@ -172,10 +172,11 @@ no search until search works.
 - A Container or VirtualMachine is shown with the Machine it runs as, found
   by the Machine's owner reference: its phase, node, addresses and boot
   time are there (`machine-model.md`).
-- Where a machine runs is read through one adapter,
-  `web/src/lib/placement.ts`, in the shape of the API's `Placement`. The
-  node name is real; the placement behind it is a fixed table until the API
-  serves it.
+- Where a machine runs is the container's or VM's `status.placement`
+  (`machine-placement.md`), read through one adapter,
+  `web/src/lib/placement.ts`. A machine without one is shown as not placed
+  yet; an empty field shows nothing; a chassis the console has no drawing
+  of, or none, is drawn as a generic server.
 
 ## Consequences
 

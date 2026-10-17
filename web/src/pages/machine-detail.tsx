@@ -496,7 +496,7 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
 
 function RunsOn({ m }: { m: MachineView }) {
   const all = useMachines(m.project);
-  const host = hostFor(m.node);
+  const host = hostFor(m);
   if (!host) {
     return (
       <Card>
