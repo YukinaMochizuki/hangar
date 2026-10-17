@@ -36,6 +36,11 @@ zfs_udev_unprobed() {
 	return 0
 }
 
+# The NAT log's cap (docs/decisions/networking.md, "Abuse protection"): the
+# agent keeps it under 90% of this, removing the oldest days first. A
+# refquota, so a snapshot of the dataset keeps nothing removed counted.
+ZFS_NATLOG_QUOTA=20G
+
 # Each entry is DATASET:MOUNTPOINT:PROPERTIES(comma-separated):MODE, MODE that
 # of the mount point, then root's. What each dataset is for:
 # docs/runbook/host-bootstrap.md.
@@ -44,6 +49,7 @@ zfs_datasets() {
 		"$HANGAR_ZPOOL/state:/var/lib/hangar/state::" \
 		"$HANGAR_ZPOOL/images:/var/lib/hangar/images:setuid=off,exec=off,devices=off,quota=$HANGAR_IMAGES_QUOTA:700" \
 		"$HANGAR_ZPOOL/vms:/var/lib/hangar/vms:setuid=off,exec=off,devices=on,quota=$HANGAR_VMS_QUOTA:700" \
+		"$HANGAR_ZPOOL/natlog:/var/log/hangar/nat:setuid=off,exec=off,devices=off,compression=on,refquota=$ZFS_NATLOG_QUOTA:700" \
 		"$HANGAR_ZPOOL/poc:none::"
 }
 
@@ -56,11 +62,11 @@ zfs_props_ok() {
 }
 
 # zfs_prop_ok DATASET NAME=VALUE holds when the dataset has that value; a
-# quota (NG) is compared in bytes.
+# quota or refquota (NG) is compared in bytes.
 zfs_prop_ok() {
 	local ds=$1 name=${2%%=*} want=${2#*=}
-	if [ "$name" = quota ]; then
-		[ "$(zfs get -H -p -o value quota "$ds")" = "$(bytes_of "$want")" ]
+	if [ "$name" = quota ] || [ "$name" = refquota ]; then
+		[ "$(zfs get -H -p -o value "$name" "$ds")" = "$(bytes_of "$want")" ]
 	else
 		[ "$(zfs_prop "$name" "$ds")" = "$want" ]
 	fi

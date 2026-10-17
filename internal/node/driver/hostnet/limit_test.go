@@ -59,6 +59,86 @@ func TestNoMailFromANetwork(t *testing.T) {
 	}
 }
 
+// ctStateOf is the conntrack state bits r matches, if it matches any.
+func ctStateOf(r ruleSpec) (uint32, bool) {
+	for i, e := range r.exprs {
+		if c, ok := e.(*expr.Ct); ok && c.Key == expr.CtKeySTATE && !c.SourceRegister {
+			if b, ok := r.exprs[i+1].(*expr.Bitwise); ok {
+				return binaryutil.NativeEndian.Uint32(b.Mask), true
+			}
+		}
+	}
+	return 0, false
+}
+
+// TestNothingInvalidLeavesANetwork: in both families, what conntrack finds
+// invalid from a network is dropped before the rules that let anything
+// through, as no connection, limit or log accounts for it.
+func TestNothingInvalidLeavesANetwork(t *testing.T) {
+	prefix := netip.MustParsePrefix("2001:db8:0:1::/64")
+	for name, chains := range map[string][]chainSpec{
+		"IPv4": rootChains("eth0", netip.Addr{}),
+		"IPv6": rootChains6("eth0", prefix, netip.Addr{}),
+	} {
+		rules := forwardOf(t, chains).rules
+		at := slices.IndexFunc(rules, func(r ruleSpec) bool {
+			s, ok := ctStateOf(r)
+			return ok && s == expr.CtStateBitINVALID
+		})
+		if at < 0 {
+			t.Errorf("%s: no rule on invalid packets", name)
+			continue
+		}
+		r := rules[at]
+		if verdictOf(r) != expr.VerdictDrop || !matchesMeta(r, expr.MetaKeyIIFNAME, []byte(vethPrefix)) {
+			t.Errorf("%s: %q is not a drop of what comes from a network", name, r.says)
+		}
+		// Only drops come before it.
+		for _, before := range rules[:at] {
+			if verdictOf(before) != expr.VerdictDrop {
+				t.Errorf("%s: %q, before the invalid drop, is no drop", name, before.says)
+			}
+		}
+	}
+}
+
+// TestNewConnectionsAreMarkedWithTheirVeth: the IPv4 forward chain's last
+// rule sets, on a network's new connections, a mark of the tag and the
+// index of the link they came in by, which FollowNAT reads back.
+func TestNewConnectionsAreMarkedWithTheirVeth(t *testing.T) {
+	rules := forwardOf(t, rootChains("eth0", netip.Addr{})).rules
+	r := rules[len(rules)-1]
+	var iif, set bool
+	var bits *expr.Bitwise
+	for _, e := range r.exprs {
+		switch x := e.(type) {
+		case *expr.Meta:
+			iif = iif || x.Key == expr.MetaKeyIIF
+		case *expr.Bitwise:
+			bits = x
+		case *expr.Ct:
+			set = set || x.Key == expr.CtKeyMARK && x.SourceRegister
+		}
+	}
+	if s, ok := ctStateOf(r); !ok || s != expr.CtStateBitNEW || !matchesMeta(r, expr.MetaKeyIIFNAME, []byte(vethPrefix)) {
+		t.Errorf("%q does not match a network's new connections", r.says)
+	}
+	if !iif || !set || bits == nil {
+		t.Fatalf("%q does not set the mark from the incoming link", r.says)
+	}
+	index := uint32(4242)
+	mark := index&binaryutil.NativeEndian.Uint32(bits.Mask) ^ binaryutil.NativeEndian.Uint32(bits.Xor)
+	if mark != natMarkTag|index {
+		t.Errorf("veth %d is marked %#x, want %#x", index, mark, natMarkTag|index)
+	}
+	// IPv6 is not NATed, so not marked.
+	for _, r := range forwardOf(t, rootChains6("eth0", netip.MustParsePrefix("2001:db8:0:1::/64"), netip.Addr{})).rules {
+		if slices.ContainsFunc(r.exprs, func(e expr.Any) bool { c, ok := e.(*expr.Ct); return ok && c.SourceRegister }) {
+			t.Errorf("IPv6 rule %q sets a conntrack key", r.says)
+		}
+	}
+}
+
 // TestNewConnectionsAreLimited: a network's new connections out of its
 // namespace, of either family, share one bucket of 100 a second after a
 // burst of 300, and only new ones are counted.

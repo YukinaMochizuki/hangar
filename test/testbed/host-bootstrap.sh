@@ -987,6 +987,7 @@ test_node_needs_its_datasets() {
 test_verify_catches_service_drift() {
 	step "verify reports drift in datasets, release, apt timers and services; bootstrap repairs it"
 	zfs set exec=on hangar/images
+	zfs set refquota=none hangar/natlog
 	chmod 755 /var/lib/hangar/vms
 	printf x >>/usr/local/lib/hangar/vmlinux
 	rm /etc/systemd/system/apt-daily-upgrade.timer.d/hangar.conf

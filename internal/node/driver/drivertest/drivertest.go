@@ -87,6 +87,11 @@ type Host struct {
 	// gave it, by MAC, with its global address and, if the default route is
 	// by it, its gateway. The suite's guest IPv6 part runs only with it.
 	GuestIPv6 func(t *testing.T, machineUID string) []driver.GuestIPv6
+	// Connect has a guest on the interface open a TCP connection from
+	// srcPort out of the host, and returns where to and the source seen
+	// there. The NAT part runs only with it, and a Network that is a
+	// driver.NATFlows.
+	Connect func(t *testing.T, nic driver.Interface, srcPort uint16) (dst, seen netip.AddrPort)
 }
 
 // Run runs the suite, each test on a host from fresh.
@@ -124,6 +129,10 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("dialing SSH", dialSSH, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("dialing edge ports", dialEdgePorts, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("network firewall", networkFirewall, nets)
+	part("NAT flows", natFlows, func(h Host) bool {
+		_, ok := h.Network.(driver.NATFlows)
+		return ok && h.Connect != nil
+	})
 	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
 	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })
 	part("hypervisor", hypervisor, vms)

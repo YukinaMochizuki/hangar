@@ -470,7 +470,7 @@ func rootChains6(uplink string, prefix netip.Prefix, host netip.Addr) []chainSpe
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
-			rules: append(noMailRules(), []ruleSpec{{
+			rules: append(abuseRules(), []ruleSpec{{
 				says:  fmt.Sprintf("a network reaches only %s and other networks", uplink),
 				exprs: slices.Concat(fromNet, matchIfnameNot(expr.MetaKeyOIFNAME, uplink), ifnameNotPrefix(expr.MetaKeyOIFNAME, vethPrefix), drop),
 			}, {

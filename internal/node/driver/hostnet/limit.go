@@ -17,11 +17,9 @@ const (
 	newConnBurst = 300
 )
 
-// limitChains is a network namespace's inet table: one bucket for every new
-// connection the network's machines send out of the namespace, of either
-// family, past which they are dropped. A connection's later packets are not
-// new, so flows already admitted are never limited, nor is anything that
-// stays in the namespace, its own services or another machine on the bridge.
+// limitChains is a network namespace's inet table: one bucket, both
+// families, for the new connections its machines send out of hn-up.
+// Established flows and what stays in the network are not counted.
 func limitChains() []chainSpec {
 	return []chainSpec{{
 		name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
@@ -38,12 +36,16 @@ func limitChains() []chainSpec {
 
 // matchNew matches a packet starting a connection, as nft's "ct state new"
 // does.
-func matchNew() []expr.Any {
+func matchNew() []expr.Any { return matchCtState(expr.CtStateBitNEW) }
+
+// matchCtState matches a packet whose conntrack state is bit, as nft's
+// "ct state" does.
+func matchCtState(bit uint32) []expr.Any {
 	return []expr.Any{
 		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
 		&expr.Bitwise{
 			SourceRegister: 1, DestRegister: 1, Len: 4,
-			Mask: binaryutil.NativeEndian.PutUint32(expr.CtStateBitNEW), Xor: make([]byte, 4),
+			Mask: binaryutil.NativeEndian.PutUint32(bit), Xor: make([]byte, 4),
 		},
 		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: make([]byte, 4)},
 	}

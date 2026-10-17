@@ -71,6 +71,8 @@ var (
 	dataset  = pool + "/testbed-flow"
 	imageDir = "/var/lib/hangar/images/testbed-flow"
 	vmDir    = workDir + "/vms"
+	// natLogDir is the agent's NAT log (--nat-log-dir).
+	natLogDir = workDir + "/nat"
 	// nodeName is the Node the apiserver registers and the agent reports.
 	nodeName = "testbed"
 	admin    = "root@testbed.invalid"
@@ -95,6 +97,7 @@ var containers = []string{"web", "crashy", "third", "chatty", "halted", "shell"}
 func useInstalled(t *testing.T) {
 	t.Helper()
 	dataset, imageDir, vmDir = pool, "/var/lib/hangar/images", "/var/lib/hangar/vms"
+	natLogDir = "/var/log/hangar/nat"
 	apiAddr = installedAPI
 	if nodeName = os.Getenv("HANGAR_TESTBED_FLOW_NODE"); nodeName == "" {
 		t.Fatal("HANGAR_TESTBED_FLOW_INSTALLED needs HANGAR_TESTBED_FLOW_NODE, the host's HANGAR_NODE_NAME")
@@ -342,6 +345,7 @@ func (c *cluster) startNode() {
 		"--guest-initramfs", in.Initramfs,
 		"--guest-cmdline", in.Cmdline,
 		"--vm-dir", vmDir,
+		"--nat-log-dir", natLogDir,
 	)
 	cmd.Args = append(cmd.Args, c.nodeArgs...)
 	if len(c.nodeEnv) > 0 {

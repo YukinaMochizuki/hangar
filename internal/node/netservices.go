@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/dhcp6"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
+	"github.com/YukinaMochizuki/hangar/internal/node/natlog"
 	"github.com/YukinaMochizuki/hangar/internal/node/netsvc"
 	"github.com/YukinaMochizuki/hangar/internal/node/ra"
 	"github.com/YukinaMochizuki/hangar/internal/node/resolver"
@@ -45,6 +46,8 @@ type netServices struct {
 	dhcp6    *dhcp6.Server
 	metadata *metadata.Server
 	services *netsvc.Manager
+	// nat names the networks' machines in the NAT log.
+	nat *natlog.Names
 
 	mu sync.Mutex
 	// named is, by machine uid, the networks whose records name the
@@ -114,6 +117,7 @@ func newNetServices(n driver.Network, upstreams []netip.AddrPort, md *metadata.S
 		resolver: r, dhcp: d, dhcp6: d6, metadata: md,
 		services: netsvc.New(n, log, dns, dhcpService, mdService, raService, dhcp6Service),
 		named:    map[string]map[controller.Key]bool{},
+		nat:      natlog.NewNames(),
 	}
 }
 
@@ -203,6 +207,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	names := map[string][]netip.Addr{}
 	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
 	instances := map[netip.Addr]metadata.Instance{}
+	nat := natlog.Network{Project: k.Project, Name: k.Name, Machines: map[netip.Addr]natlog.Machine{}}
 	leases6 := map[string]netip.Addr{}
 	var on []string
 	// Every interface on the network is a member, whichever node runs it;
@@ -231,6 +236,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			}
 			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
 			instances[addr.Addr()] = a.instance(m, name)
+			nat.Machines[addr.Addr()] = natlog.Machine{Name: name, UID: m.GetMetadata().GetUid()}
 			on = append(on, m.GetMetadata().GetUid())
 			if m.GetSpec().GetNode() == a.cfg.Name {
 				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
@@ -263,6 +269,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	s.dhcp.Set(uid, leases)
 	s.dhcp6.Set(uid, leases6)
 	s.metadata.Set(uid, instances)
+	s.nat.Set(uid, nat)
 	if err := a.cfg.Drivers.Network.EnsureFirewall(ctx, uid, mine); err != nil {
 		// Rules that cannot be written must not leave older, perhaps
 		// wider, ones in force: the interfaces get nothing but their
@@ -328,6 +335,7 @@ func (s *netServices) forget(networkUID string) {
 	s.dhcp.Forget(networkUID)
 	s.dhcp6.Forget(networkUID)
 	s.metadata.Forget(networkUID)
+	s.nat.Forget(networkUID)
 }
 
 // machineDNSName is the name a machine answers to in its project: that of the
