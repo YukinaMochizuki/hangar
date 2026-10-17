@@ -54,9 +54,12 @@ type world struct {
 
 // backend serves, on port, "/" saying the port and what reached it of the
 // credentials a caller may bring, "/read" reading the whole body first,
-// "/set-cookie" setting cookies, Hangar's among them, "/hold" answering
-// nothing (and saying on held that a request reached it), and "/upgrade"
-// switching to an echo of the raw connection. Any other path answers as "/".
+// "/set-cookie" setting cookies, Hangar's among them, "/early-hints" doing so
+// in a 103 first, "/trailers" and "/undeclared-trailers" doing so in trailers
+// it declares or not, "/hold" answering nothing (and saying on held that a
+// request reached it), "/stream" flushing a first chunk of a longer
+// Content-Length and then holding, and "/upgrade" switching, with cookies,
+// to an echo of the raw connection. Any other path answers as "/".
 func backend(t *testing.T, port int32, held chan<- struct{}) string {
 	t.Helper()
 	mux := http.NewServeMux()
@@ -73,9 +76,38 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 	})
 	mux.HandleFunc("/set-cookie", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("Set-Cookie", "theme=dark")
+		w.Header().Add("Set-Cookie", "lang=en; Domain="+domain+"; Path=/")
 		w.Header().Add("Set-Cookie", edge.EndpointCookie+"=planted; Secure; Path=/")
 		w.Header().Add("Set-Cookie", "__HOST-Hangar_session=planted; Secure; Path=/")
 		_, _ = fmt.Fprintf(w, "port %d set cookies", port)
+	})
+	mux.HandleFunc("/early-hints", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Link", "</style.css>; rel=preload")
+		w.Header().Add("Set-Cookie", "hint=1; Domain="+domain+"; Path=/")
+		w.Header().Add("Set-Cookie", edge.EndpointCookie+"=planted; Secure; Path=/")
+		w.WriteHeader(http.StatusEarlyHints)
+		// A 1xx leaves the header map as it was.
+		clear(w.Header())
+		_, _ = fmt.Fprintf(w, "port %d after hints", port)
+	})
+	mux.HandleFunc("/trailers", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "Set-Cookie, X-Sum")
+		_, _ = fmt.Fprintf(w, "port %d trailers", port)
+		w.Header().Set("Set-Cookie", "declared=1; Path=/")
+		w.Header().Set("X-Sum", "declared")
+	})
+	mux.HandleFunc("/undeclared-trailers", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Trailer", "X-Sum")
+		_, _ = fmt.Fprintf(w, "port %d trailers", port)
+		w.Header().Set(http.TrailerPrefix+"Set-Cookie", "undeclared=1; Path=/")
+		w.Header().Set("X-Sum", "undeclared")
+	})
+	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
+		// With a length, the proxy flushes only as the edge configures it to.
+		w.Header().Set("Content-Length", "1000")
+		_, _ = fmt.Fprintf(w, "port %d first", port)
+		_ = http.NewResponseController(w).Flush()
+		<-r.Context().Done()
 	})
 	mux.HandleFunc("/hold", func(_ http.ResponseWriter, r *http.Request) {
 		select {
@@ -95,7 +127,8 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 			return
 		}
 		defer func() { _ = c.Close() }()
-		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n")
+		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n" +
+			"Set-Cookie: ws=1; Domain=" + domain + "; Path=/\r\nSet-Cookie: " + edge.EndpointCookie + "=planted; Secure\r\n\r\n")
 		_ = brw.Flush()
 		_, _ = io.Copy(c, brw)
 	})
@@ -177,6 +210,18 @@ func newWorldConfig(t *testing.T, env *apiservertest.Env, configure func(*edge.C
 		<-served
 	})
 	return &world{t: t, env: env, root: root, sessions: session.New(env.Credentials, session.Options{}), url: srv.URL, edge: e, held: held}
+}
+
+// serveH2 serves w's edge over TLS with HTTP/2 as well, as the front door
+// does, which hands it its ResponseWriter as it is, and returns the URL and
+// a client speaking HTTP/2 to it.
+func (w *world) serveH2() (string, *http.Client) {
+	w.t.Helper()
+	srv := httptest.NewUnstartedServer(w.edge)
+	srv.EnableHTTP2 = true
+	srv.StartTLS()
+	w.t.Cleanup(srv.Close)
+	return srv.URL, srv.Client()
 }
 
 // consoleSession signs email in on a browser, as the console's sign-in

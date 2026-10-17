@@ -31,7 +31,7 @@ import (
 // so no other host under the endpoint domain, another tenant's endpoint
 // among them, can plant or overwrite one; a lookalike without the prefix is
 // ignored. The endpoint itself cannot read them (HttpOnly), and its answers
-// cannot set or clear them (dropPlatformCookies). Its own scripts can still
+// cannot set or clear them (confineCookies). Its own scripts can still
 // write one under such a name where none is set, on its own host alone. The
 // edge takes the value only if it issued it for that host, so at most the
 // endpoint signs its visitors in there with a session it already holds.

@@ -150,9 +150,12 @@ func New(cfg Config) *Edge {
 			ResponseHeaderTimeout: cfg.ResponseHeaderTimeout,
 		},
 		// Streams and server-sent events reach the client as they come.
-		FlushInterval:  -1,
-		ErrorHandler:   e.proxyError,
-		ModifyResponse: dropPlatformCookies,
+		FlushInterval: -1,
+		ErrorHandler:  e.proxyError,
+		ModifyResponse: func(resp *http.Response) error {
+			confineCookies(resp.Header)
+			return nil
+		},
 	}
 	return e
 }
@@ -446,7 +449,50 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.deny(w, r, host, ep, *req.caller)
 		return
 	}
-	e.proxy.ServeHTTP(w, r.WithContext(context.WithValue(ctx, targetKey{}, ep)))
+	e.forward(w, r.WithContext(context.WithValue(ctx, targetKey{}, ep)))
+}
+
+// forward proxies r to its endpoint with the endpoint's cookies confined to
+// its host in every header block the client gets. ModifyResponse sees only
+// the final answer (101 included); ReverseProxy writes each 1xx answer to the
+// ResponseWriter from its own client trace, and its trailers into the
+// ResponseWriter's header map after the body, so those two are filtered
+// here. Not a client trace of the edge's own: the proxy's hook has written
+// the 1xx before one composed with it runs.
+func (e *Edge) forward(w http.ResponseWriter, r *http.Request) {
+	// The header map is read for trailers only when the handler returns, so
+	// what the proxy copied there after the body can still be taken out.
+	defer dropTrailerCookies(w.Header())
+	e.proxy.ServeHTTP(informationalFilter{w}, r)
+}
+
+// informationalFilter confines the cookies of each 1xx answer written
+// through it.
+type informationalFilter struct{ http.ResponseWriter }
+
+func (w informationalFilter) WriteHeader(code int) {
+	if code >= 100 && code < 200 {
+		confineCookies(w.Header())
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets http.ResponseController reach the flush and hijack of the
+// ResponseWriter underneath.
+func (w informationalFilter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// dropTrailerCookies removes every Set-Cookie trailer from h, the header map
+// of an answer whose header is written: one the answer declared, which the
+// server sends from h's own key, and one it did not, under
+// http.TrailerPrefix. Browsers ignore Set-Cookie in trailers, and nothing an
+// endpoint does needs it there.
+func dropTrailerCookies(h http.Header) {
+	for k := range h {
+		name, _ := strings.CutPrefix(k, http.TrailerPrefix)
+		if strings.EqualFold(name, "Set-Cookie") {
+			delete(h, k)
+		}
+	}
 }
 
 // key is where ep's connections pool in the transport: its uid and a hash
@@ -549,23 +595,40 @@ func hangarBearer(v string) (token.Secret, bool) {
 	return s, s.Prefix() != ""
 }
 
-// dropPlatformCookies keeps an endpoint from setting, or clearing, a cookie
-// of Hangar's on its own host: its answer's Set-Cookie of such a name goes.
-func dropPlatformCookies(resp *http.Response) error {
-	vs := resp.Header.Values("Set-Cookie")
+// confineCookies keeps the cookies of an endpoint's answer with header h to
+// the endpoint's own host: a Set-Cookie of one of Hangar's names goes, so it
+// cannot set or clear one, and every other loses its Domain attribute, so
+// the browser keeps it host-only rather than sending it to every endpoint
+// under the domain (docs/decisions/public-endpoints.md).
+func confineCookies(h http.Header) {
+	vs := h.Values("Set-Cookie")
 	if len(vs) == 0 {
-		return nil
+		return
 	}
-	resp.Header.Del("Set-Cookie")
+	h.Del("Set-Cookie")
 	for _, v := range vs {
 		name, _, _ := strings.Cut(v, "=")
 		name = strings.TrimSpace(name)
 		if strings.HasPrefix(strings.ToLower(name), platformCookiePrefix) {
 			continue
 		}
-		resp.Header.Add("Set-Cookie", v)
+		h.Add("Set-Cookie", withoutDomain(v))
 	}
-	return nil
+}
+
+// withoutDomain is the Set-Cookie value v without its Domain attributes, the
+// rest kept as written. Attributes split on ";" as browsers split them; a
+// cookie value cannot hold one.
+func withoutDomain(v string) string {
+	parts := strings.Split(v, ";")
+	kept := []string{parts[0]}
+	for _, p := range parts[1:] {
+		attr, _, _ := strings.Cut(p, "=")
+		if !strings.EqualFold(strings.TrimSpace(attr), "Domain") {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, ";")
 }
 
 // dialEndpoint opens a connection to the endpoint addr names, through the
