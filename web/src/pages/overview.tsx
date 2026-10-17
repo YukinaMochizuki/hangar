@@ -144,8 +144,11 @@ function HostCard({ project }: { project: string }) {
   for (const m of items) if (m.node) counts.set(m.node, (counts.get(m.node) ?? 0) + 1);
   const nodes = [...counts.entries()].sort((a, b) => b[1] - a[1]);
   if (nodes.length === 0) return null;
-  const host = hostFor(nodes[0][0])!;
-  const mine = items.filter((m) => m.node === host.node);
+  // The host as any of the project's machines on it describes it; none has
+  // a placement until the apiserver copies the node's.
+  const mine = items.filter((m) => m.node === nodes[0][0]);
+  const host = mine.map(hostFor).find((h) => h !== undefined);
+  if (!host) return null;
   const live = mine.filter(isLive);
   const cpu = live.reduce((n, m) => n + (Number.isFinite(m.cpu) ? m.cpu : 0), 0);
   const mem = live.reduce((n, m) => n + (Number.isFinite(m.memoryGi) ? m.memoryGi : 0), 0);
