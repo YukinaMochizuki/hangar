@@ -2,6 +2,7 @@ package drivertest
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/netip"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // dialEdgePorts: Dial reaches a port other than 22 of a machine's interface
@@ -51,13 +53,7 @@ func dialEdgePorts(t *testing.T, h Host) {
 	// Both named: both reached, once the guest listens.
 	edge(8080, 8081)
 	for _, p := range []uint16{8080, 8081} {
-		deadline := time.Now().Add(10 * time.Second)
-		for !reaches(p) {
-			if time.Now().After(deadline) {
-				t.Fatalf("port %d, named, never reached", p)
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		testutil.Eventually(t, fmt.Sprintf("port %d, named, reached", p), func() bool { return reaches(p) })
 	}
 	// 8082, never named: closed, though the guest listens on it.
 	if reaches(8082) {

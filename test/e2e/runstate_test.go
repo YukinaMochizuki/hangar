@@ -8,6 +8,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // waitStopped waits for the container's Stopped condition to have the
@@ -15,7 +16,7 @@ import (
 func (w *world) waitStopped(name string, status metav1.ConditionStatus) *computev1alpha1.Container {
 	w.t.Helper()
 	var c *computev1alpha1.Container
-	w.eventually(fmt.Sprintf("container %s Stopped=%v", name, status), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("container %s Stopped=%v", name, status), func() (bool, string) {
 		var ok bool
 		c, ok = get[*computev1alpha1.Container](w, registry.Container, name)
 		s := conditions.Find(c.GetStatus().GetConditions(), "Stopped")

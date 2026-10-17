@@ -5,7 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const cliCanary = "cli-canary-9Wd3"
@@ -30,11 +31,10 @@ func TestCreateRegistrySecret(t *testing.T) {
 		t.Errorf("create again from stdin printed %q", out)
 	}
 	var table string
-	deadline := time.Now().Add(10 * time.Second)
-	for !strings.Contains(table, "ghcr.io,index.docker.io") && time.Now().Before(deadline) {
+	testutil.Eventually(t, "get secret listing both registries", func() (bool, string) {
 		table = w.must("", "get", "secret")
-		time.Sleep(10 * time.Millisecond)
-	}
+		return strings.Contains(table, "ghcr.io,index.docker.io"), "\n" + table
+	})
 	if !strings.Contains(table, "REGISTRIES") || !strings.Contains(table, "ghcr.io,index.docker.io") {
 		t.Errorf("get secret printed:\n%s", table)
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func createToken(project, name, role string) *connect.Request[iamv1alpha1.CreateServiceTokenRequest] {
@@ -215,7 +216,7 @@ func TestServiceTokenDelete(t *testing.T) {
 	_, err := e.whoAmI(secret)
 	wantCode(t, err, connect.CodeUnauthenticated, "a deleted token's secret, right after the delete")
 
-	eventually(t, "the token and its bindings are gone", func() bool {
+	testutil.Eventually(t, "the token and its bindings are gone", func() bool {
 		_, err := a.tokens.GetServiceToken(ctx, getToken("web", "deployer"))
 		if connect.CodeOf(err) != connect.CodeNotFound {
 			return false
@@ -309,7 +310,7 @@ func TestServiceTokenSecretsAreNeverLogged(t *testing.T) {
 	must[iamv1alpha1.DeleteServiceTokenResponse](t)(a.tokens.DeleteServiceToken(ctx, connect.NewRequest(&iamv1alpha1.DeleteServiceTokenRequest{Project: "web", Name: "deployer"})))
 	_, err = e.whoAmI(second)
 	wantCode(t, err, connect.CodeUnauthenticated, "a deleted token's secret")
-	eventually(t, "the token is gone", func() bool {
+	testutil.Eventually(t, "the token is gone", func() bool {
 		_, err := a.tokens.GetServiceToken(ctx, getToken("web", "deployer"))
 		return connect.CodeOf(err) == connect.CodeNotFound
 	})
@@ -359,13 +360,13 @@ func TestAFailedRevokeLeavesNoSecret(t *testing.T) {
 	creds.fails.Store(1)
 	// The delete is stored; the revoke after it fails, and so may the call.
 	_, _ = a.tokens.DeleteServiceToken(ctx, connect.NewRequest(&iamv1alpha1.DeleteServiceTokenRequest{Project: "web", Name: "deployer"}))
-	eventually(t, "the deleted token's secret is refused", func() bool {
+	testutil.Eventually(t, "the deleted token's secret is refused", func() bool {
 		_, err := e.whoAmI(secret)
 		return connect.CodeOf(err) == connect.CodeUnauthenticated
 	})
 
 	// The same name again, applied, with a binding naming it.
-	eventually(t, "the name is free again", func() bool {
+	testutil.Eventually(t, "the name is free again", func() bool {
 		_, err := a.tokens.ApplyServiceToken(ctx, connect.NewRequest(&iamv1alpha1.ApplyServiceTokenRequest{
 			ServiceToken: &iamv1alpha1.ServiceToken{Metadata: &metav1.ObjectMeta{Project: "web", Name: "deployer"}},
 		}))
@@ -397,11 +398,17 @@ func TestFailingRevokesKeepTheToken(t *testing.T) {
 	_, _ = a.tokens.DeleteServiceToken(ctx, connect.NewRequest(&iamv1alpha1.DeleteServiceTokenRequest{Project: "web", Name: "deployer"}))
 	// The cascade gets as far as the token's binding, then cannot let the
 	// token go.
-	eventually(t, "the token's binding is gone", func() bool {
+	testutil.Eventually(t, "the token's binding is gone", func() bool {
 		_, err := e.as(root).bindings.GetRoleBinding(ctx, connect.NewRequest(&iamv1alpha1.GetRoleBindingRequest{Name: binding}))
 		return connect.CodeOf(err) == connect.CodeNotFound
 	})
-	time.Sleep(500 * time.Millisecond)
+	testutil.Unchanged(t, "the token whose secret cannot be revoked", 500*time.Millisecond, func() (string, error) {
+		got, err := a.tokens.GetServiceToken(ctx, getToken("web", "deployer"))
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprint(got.Msg.GetServiceToken().GetMetadata().GetResourceVersion()), nil
+	})
 	got, err := a.tokens.GetServiceToken(ctx, getToken("web", "deployer"))
 	if err != nil {
 		t.Fatalf("the token went while its secret could not be revoked: %v", err)
@@ -414,7 +421,7 @@ func TestFailingRevokesKeepTheToken(t *testing.T) {
 
 	creds.fails.Store(0)
 	e.clock.Advance(5 * time.Minute) // the sweep interval
-	eventually(t, "the token goes once its secret is revoked", func() bool {
+	testutil.Eventually(t, "the token goes once its secret is revoked", func() bool {
 		_, err := a.tokens.GetServiceToken(ctx, getToken("web", "deployer"))
 		return connect.CodeOf(err) == connect.CodeNotFound
 	})
@@ -467,12 +474,12 @@ func TestServiceTokenGoesWithItsProject(t *testing.T) {
 	a := e.as(alice)
 	secret := must[iamv1alpha1.CreateServiceTokenResponse](t)(a.issuer.CreateServiceToken(ctx, createToken("web", "deployer", "project.viewer"))).GetSecret()
 	must[tenancyv1alpha1.DeleteProjectResponse](t)(a.projects.DeleteProject(ctx, connect.NewRequest(&tenancyv1alpha1.DeleteProjectRequest{Name: "web"})))
-	eventually(t, "the token's secret is refused", func() bool {
+	testutil.Eventually(t, "the token's secret is refused", func() bool {
 		_, err := e.whoAmI(secret)
 		return connect.CodeOf(err) == connect.CodeUnauthenticated
 	})
 	// The project waits for its tokens, and each token for its bindings.
-	eventually(t, "the project is gone", func() bool {
+	testutil.Eventually(t, "the project is gone", func() bool {
 		_, err := e.as(root).projects.GetProject(ctx, connect.NewRequest(&tenancyv1alpha1.GetProjectRequest{Name: "web"}))
 		return connect.CodeOf(err) == connect.CodeNotFound
 	})
@@ -547,7 +554,7 @@ func TestEditorsCannotMintTokens(t *testing.T) {
 	// checked as theirs, and a refused binding leaves no token behind.
 	_, err = e.as(bob).issuer.CreateServiceToken(ctx, createToken("web", "too-much", "tenant.owner"))
 	wantCode(t, err, connect.CodeInvalidArgument, "a project owner binding a token a tenant role")
-	eventually(t, "the refused token is gone", func() bool {
+	testutil.Eventually(t, "the refused token is gone", func() bool {
 		_, err := a.tokens.GetServiceToken(ctx, getToken("web", "too-much"))
 		return connect.CodeOf(err) == connect.CodeNotFound
 	})
@@ -577,7 +584,7 @@ func TestServiceTokenLastUse(t *testing.T) {
 	if _, err := e.whoAmI(secret); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "status.last_use_time is set", func() bool {
+	testutil.Eventually(t, "status.last_use_time is set", func() bool {
 		tok := must[iamv1alpha1.GetServiceTokenResponse](t)(a.tokens.GetServiceToken(ctx, getToken("web", "deployer")))
 		return tok.GetServiceToken().GetStatus().GetLastUseTime().AsTime().Equal(e.clock.Now())
 	})

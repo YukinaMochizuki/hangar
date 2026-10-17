@@ -23,6 +23,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // sshKey is an authorized_keys line of type typ, its key made up but
@@ -65,17 +66,7 @@ func getVM(t *testing.T, s *Server, system context.Context, name string) *comput
 
 func waitVM(t *testing.T, s *Server, system context.Context, name, what string, ok func(*computev1alpha1.VirtualMachine) bool) *computev1alpha1.VirtualMachine {
 	t.Helper()
-	var last *computev1alpha1.VirtualMachine
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if last = getVM(t, s, system, name); last != nil && ok(last) {
-			return last
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("virtual machine %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	return waitObject(t, s, system, registry.VirtualMachine, resource.Key{Project: "web", Name: name}, "virtual machine "+name+" "+what, ok)
 }
 
 func vmReady(vm *computev1alpha1.VirtualMachine) *metav1.Condition {
@@ -313,10 +304,8 @@ func TestARootDiskFollowsItsDeletePolicy(t *testing.T) {
 	}
 	waitGone(t, s, system, registry.VirtualMachine, "web")
 	waitGone(t, s, system, registry.Machine, "vm-web")
-	time.Sleep(100 * time.Millisecond)
-	if getDisk(t, s, system, "web-root") == nil {
-		t.Fatal("a retained root disk went with its VM")
-	}
+	testutil.Unchanged(t, "the retained root disk, after its VM went", 100*time.Millisecond,
+		versionOf(s, system, registry.Disk, resource.Key{Project: "web", Name: "web-root"}))
 
 	// A new VM of the name does not take it unasked; named, it boots it.
 	if _, err := vms.Apply(user, vmFromImage("web", "noble")); err != nil {

@@ -79,11 +79,11 @@ func TestSolicitationsAreAnsweredAtMostEveryMinInterval(t *testing.T) {
 	for range 100 {
 		p.in <- solicitation(255)
 	}
-	time.Sleep(MinInterval / 2)
+	time.Sleep(MinInterval / 2) //nolint:forbidigo // real time
 	if n := len(p.out); n != 0 {
 		t.Errorf("%d advertisements within %v of the last", n, MinInterval/2)
 	}
-	time.Sleep(MinInterval/2 + maxResponseDelay + 200*time.Millisecond)
+	time.Sleep(MinInterval/2 + maxResponseDelay + 200*time.Millisecond) //nolint:forbidigo // real time
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)

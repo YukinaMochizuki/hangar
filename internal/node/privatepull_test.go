@@ -12,6 +12,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // The cross-tenant cache rule (docs/decisions/secrets.md): what one machine
@@ -42,29 +43,18 @@ func privateHost() *fake.Host {
 func pullerOn(t *testing.T, host *fake.Host) (*puller, func(uid, ref, digest string, creds driver.Credentials, own bool) (string, error)) {
 	t.Helper()
 	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 2)
-	done := make(chan struct{}, 16)
-	p.start(t.Context(), func() {
-		select {
-		case done <- struct{}{}:
-		default:
-		}
-	})
+	p.start(t.Context(), func() {})
 	t.Cleanup(p.wait)
 	settle := func(uid, ref, digest string, creds driver.Credentials, own bool) (string, error) {
 		t.Helper()
-		deadline := time.After(10 * time.Second)
-		for {
-			got, _, ok, err := p.get(uid, ref, digest, creds, own)
-			if ok || err != nil {
-				return got, err
-			}
-			select {
-			case <-done:
-			case <-time.After(10 * time.Millisecond):
-			case <-deadline:
-				t.Fatalf("machine %s's image %s neither ready nor failed", uid, ref)
-			}
-		}
+		var got string
+		var err error
+		testutil.Eventually(t, fmt.Sprintf("machine %s's image %s ready or failed", uid, ref), func() bool {
+			var ok bool
+			got, _, ok, err = p.get(uid, ref, digest, creds, own)
+			return ok || err != nil
+		})
+		return got, err
 	}
 	return p, settle
 }

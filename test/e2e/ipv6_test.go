@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/node/ipv6pkt"
 	"github.com/YukinaMochizuki/hangar/internal/node/ra"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 var hostPrefix = netip.MustParsePrefix("2001:db8:0:1::/64")
@@ -40,7 +41,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
-	w.eventually("the node reporting its prefix", func() (bool, string) {
+	testutil.Eventually(w.t, "the node reporting its prefix", func() (bool, string) {
 		n, ok := get[*computev1alpha1.Node](w, registry.Node, apiservertest.Node)
 		return ok && n.GetStatus().GetIpv6Prefix() == hostPrefix.String(), fmt.Sprint(n.GetStatus())
 	})
@@ -59,7 +60,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 	mac, _ := net.ParseMAC(nic.MAC)
 	uid := w.networkUID("default")
 
-	w.eventually("a router advertisement", func() (bool, string) {
+	testutil.Eventually(w.t, "a router advertisement", func() (bool, string) {
 		sent, ok := w.host.SentPackets(uid, driver.RouterSolicitations)
 		return ok && slices.ContainsFunc(sent, func(p fake.Packet) bool { return slices.Equal(p.Data, ra.Packet()) }), fmt.Sprint(ok, len(sent))
 	})
@@ -76,7 +77,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 		if !w.host.SendPacket(uid, driver.DHCPv6, from, pkt) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 		sent, _ := w.host.SentPackets(uid, driver.DHCPv6)
 		for _, p := range sent {
 			got, err := ipv6pkt.Parse(p.Data)
@@ -89,7 +90,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 		}
 		return nil
 	}
-	w.eventually("api leased "+addr.String(), func() (bool, string) {
+	testutil.Eventually(w.t, "api leased "+addr.String(), func() (bool, string) {
 		adv := solicit(mac)
 		if adv == nil {
 			return false, "no answer"
@@ -105,7 +106,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 		t.Errorf("an unknown MAC was answered: %v", adv)
 	}
 
-	w.eventually("api resolving to its /128", func() (bool, string) {
+	testutil.Eventually(w.t, "api resolving to its /128", func() (bool, string) {
 		at, ok := w.host.ServiceAddr(uid, "udp", netip.AddrPortFrom(netip.MustParseAddr("10.0.0.1"), 53))
 		if !ok {
 			return false, "nothing listens"
@@ -118,7 +119,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 		return ok && a.AAAA.Equal(addr.AsSlice()), fmt.Sprint(resp)
 	})
 
-	w.eventually("default's ingress holding api's /128", func() (bool, string) {
+	testutil.Eventually(w.t, "default's ingress holding api's /128", func() (bool, string) {
 		p := w.host.Firewall(uid)[m.GetMetadata().GetUid()+"/eth0"]
 		return len(p.Ingress) == 1 && slices.Contains(p.Ingress[0].Peers, netip.PrefixFrom(addr, 128)), fmt.Sprint(p)
 	})
@@ -142,7 +143,7 @@ func (w *world) leasedTo(networkUID string, mac net.HardwareAddr) netip.Addr {
 	if !w.host.SendPacket(networkUID, driver.DHCPv6, mac, pkt) {
 		return netip.Addr{}
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
 	sent, _ := w.host.SentPackets(networkUID, driver.DHCPv6)
 	for _, p := range sent {
 		got, err := ipv6pkt.Parse(p.Data)
@@ -178,7 +179,7 @@ func TestAHostGainingAPrefix(t *testing.T) {
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
 	var vm *computev1alpha1.VirtualMachine
-	w.eventually("the VM's status showing a /128 of the prefix", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM's status showing a /128 of the prefix", func() (bool, string) {
 		vm, _ = get[*computev1alpha1.VirtualMachine](w, registry.VirtualMachine, "web")
 		ifs := vm.GetStatus().GetInterfaces()
 		if len(ifs) != 1 {
@@ -192,15 +193,15 @@ func TestAHostGainingAPrefix(t *testing.T) {
 	snap := w.host.Snapshot()
 	vmNIC := snap.VMs[vmUID].Spec.Interfaces[0]
 	mac, _ := net.ParseMAC(vmNIC.MAC)
-	w.eventually("the VM leased "+addr.String()+" by DHCPv6", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM leased "+addr.String()+" by DHCPv6", func() (bool, string) {
 		got := w.leasedTo(uid, mac)
 		return got == addr, got.String()
 	})
-	w.eventually("the VM's interface on the host holding its /128", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM's interface on the host holding its /128", func() (bool, string) {
 		ifs := w.host.Snapshot().Interfaces[vmUID]
 		return len(ifs) == 1 && ifs[0].IPv6 == addr, fmt.Sprint(ifs)
 	})
-	w.eventually("the container's guest told its /128", func() (bool, string) {
+	testutil.Eventually(w.t, "the container's guest told its /128", func() (bool, string) {
 		ctAddr := ipv6Of(w.machine("api"))
 		g := w.host.GuestIPv6(ctUID)
 		return ctAddr.IsValid() && len(g) == 1 && g[0].Address == ctAddr && g[0].Gateway == driver.GatewayIPv6, fmt.Sprint(ctAddr, g)

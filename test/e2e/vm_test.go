@@ -20,6 +20,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func (w *world) applyVM(name string, runState computev1alpha1.VirtualMachineRunState) {
@@ -40,7 +41,7 @@ func (w *world) applyVM(name string, runState computev1alpha1.VirtualMachineRunS
 func (w *world) waitVMReason(name, reason string) *computev1alpha1.VirtualMachine {
 	w.t.Helper()
 	var vm *computev1alpha1.VirtualMachine
-	w.eventually(fmt.Sprintf("virtual machine %s %s", name, reason), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("virtual machine %s %s", name, reason), func() (bool, string) {
 		var ok bool
 		vm, ok = get[*computev1alpha1.VirtualMachine](w, registry.VirtualMachine, name)
 		r := conditions.Find(vm.GetStatus().GetConditions(), "Ready")
@@ -66,7 +67,7 @@ func (w *world) vmLogs(name string) []string {
 func (w *world) vmLogsOnceConnected(name string) []string {
 	w.t.Helper()
 	var out []string
-	w.eventually("the logs of "+name, func() (bool, string) {
+	testutil.Eventually(w.t, "the logs of "+name, func() (bool, string) {
 		var err error
 		out, err = w.readVMLogs(name)
 		if connect.CodeOf(err) == connect.CodeUnavailable {
@@ -165,7 +166,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 	if _, err := w.root.Delete(context.Background(), registry.VirtualMachine, client.Key{Project: project, Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the VM, its machine and its disk gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM, its machine and its disk gone", func() (bool, string) {
 		_, v := get[*computev1alpha1.VirtualMachine](w, registry.VirtualMachine, "web")
 		_, m := get[*computev1alpha1.Machine](w, registry.Machine, vmMachineOf("web"))
 		_, d := get[*storagev1alpha1.Disk](w, registry.Disk, "web-root")
@@ -190,7 +191,7 @@ func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
 	// bootedAgain waits for the VM's boot, as its log numbers it.
 	bootedAgain := func(boot int) {
 		t.Helper()
-		w.eventually(fmt.Sprintf("boot %d", boot), func() (bool, string) {
+		testutil.Eventually(w.t, fmt.Sprintf("boot %d", boot), func() (bool, string) {
 			lines := w.vmLogsOnceConnected("web")
 			vm := w.host.Snapshot().VMs[uid]
 			return vm.State == driver.VMRunning && len(lines) > 0 && lines[len(lines)-1] == fmt.Sprintf("%d:Booting from the root disk", boot),
@@ -229,7 +230,7 @@ func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
 	// The status says PoweredOff from before the reboot, so wait for the
 	// agent to be back before giving it time to wrongly boot the VM.
 	lines := w.vmLogsOnceConnected("web")
-	time.Sleep(200 * time.Millisecond)
+	testutil.Unchanged(w.t, "a VM whose guest powered off, after a reboot", 200*time.Millisecond, w.vmVersion(uid))
 	if vm := w.host.Snapshot().VMs[uid]; vm.State != driver.VMExited {
 		t.Errorf("a VM whose guest powered off, after a reboot: %+v", vm)
 	}

@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // scripted is a guest agent whose Exec echoes stdin back, ends on stdin's
@@ -245,15 +246,14 @@ func TestExecsLeaveNothingOpen(t *testing.T) {
 	for i := range 30 {
 		once(i%2 == 0)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for openFDs(t) > fds+2 || runtime.NumGoroutine() > goroutines+5 {
-		if time.Now().After(deadline) {
-			buf := make([]byte, 1<<20)
-			t.Fatalf("after 30 execs: %d fds (from %d), %d goroutines (from %d)\n%s",
-				openFDs(t), fds, runtime.NumGoroutine(), goroutines, buf[:runtime.Stack(buf, true)])
+	testutil.EventuallyWithin(t, 5*time.Second, "the fds and goroutines of 30 execs gone", func() (bool, string) {
+		nfds, ngo := openFDs(t), runtime.NumGoroutine()
+		if nfds <= fds+2 && ngo <= goroutines+5 {
+			return true, ""
 		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		buf := make([]byte, 1<<20)
+		return false, fmt.Sprintf("%d fds (from %d), %d goroutines (from %d)\n%s", nfds, fds, ngo, goroutines, buf[:runtime.Stack(buf, true)])
+	})
 }
 
 // TestEndingAnExecKillsTheProcessGroup: through hangar-init's agent, a
@@ -277,17 +277,10 @@ func TestEndingAnExecKillsTheProcessGroup(t *testing.T) {
 		t.Fatalf("pid %q: %v", o.Data, err)
 	}
 	cancel()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, fmt.Sprintf("the child %d ended with its exec", pid), func() (bool, string) {
 		// Killed, it may be left a zombie until whoever it was handed to
 		// reaps it.
 		stat, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-		if errors.Is(err, os.ErrNotExist) || strings.Contains(string(stat), ") Z ") {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the child %d still runs after its exec ended: %s", pid, stat)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return errors.Is(err, os.ErrNotExist) || strings.Contains(string(stat), ") Z "), string(stat)
+	})
 }

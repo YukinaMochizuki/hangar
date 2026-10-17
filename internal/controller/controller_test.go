@@ -14,6 +14,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func openStore(t *testing.T) store.Store {
@@ -71,17 +72,6 @@ func (r *recorder) count(k Key) int {
 	return r.calls[k]
 }
 
-func eventually(t *testing.T, what string, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatalf("never happened: %s", what)
-		}
-		time.Sleep(2 * time.Millisecond)
-	}
-}
-
 func run(t *testing.T, c *Controller) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
@@ -110,23 +100,23 @@ func TestReconcilesExistingObjectsThenChanges(t *testing.T) {
 			{Kind: "B", Map: func(_ context.Context, o store.Object) []Key { return []Key{{Project: "p", Name: o.Name}} }},
 		},
 	})
-	eventually(t, "the existing object is reconciled", func() bool { return r.count(Key{"p", "old"}) == 1 })
+	testutil.Eventually(t, "the existing object is reconciled", func() bool { return r.count(Key{"p", "old"}) == 1 })
 
 	if _, err := st.Create(ctx, store.Key{Kind: "A", Project: "p", Name: "new"}, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "a new object is reconciled", func() bool { return r.count(Key{"p", "new"}) == 1 })
+	testutil.Eventually(t, "a new object is reconciled", func() bool { return r.count(Key{"p", "new"}) == 1 })
 	if _, err := st.Create(ctx, store.Key{Kind: "B", Name: "old"}, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "a change to a watched kind maps to its key", func() bool { return r.count(Key{"p", "old"}) == 2 })
+	testutil.Eventually(t, "a change to a watched kind maps to its key", func() bool { return r.count(Key{"p", "old"}) == 2 })
 	if _, err := st.Create(ctx, store.Key{Kind: "C", Name: "other"}, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := st.Delete(ctx, store.Key{Kind: "A", Project: "p", Name: "new"}, 0); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "a delete is reconciled", func() bool { return r.count(Key{"p", "new"}) == 2 })
+	testutil.Eventually(t, "a delete is reconciled", func() bool { return r.count(Key{"p", "new"}) == 2 })
 	if n := r.count(Key{Name: "other"}); n != 0 {
 		t.Errorf("an unwatched kind was reconciled %d times", n)
 	}
@@ -143,9 +133,9 @@ func TestFailuresAreRetriedWithBackoff(t *testing.T) {
 	r.fail[k] = 2
 	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
 
-	eventually(t, "the first attempt", func() bool { return r.count(k) == 1 })
+	testutil.Eventually(t, "the first attempt", func() bool { return r.count(k) == 1 })
 	// The retry waits for its backoff: nothing happens until the clock moves.
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if n := r.count(k); n != 1 {
 		t.Fatalf("retried before the backoff: %d calls", n)
 	}
@@ -153,18 +143,18 @@ func TestFailuresAreRetriedWithBackoff(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock.Advance(100 * time.Millisecond)
-	eventually(t, "the first retry", func() bool { return r.count(k) == 2 })
+	testutil.Eventually(t, "the first retry", func() bool { return r.count(k) == 2 })
 	// The second failure doubles the delay.
 	if err := clock.BlockUntilContext(t.Context(), 2); err != nil {
 		t.Fatal(err)
 	}
 	clock.Advance(100 * time.Millisecond)
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if n := r.count(k); n != 2 {
 		t.Fatalf("the second retry came before its doubled delay: %d calls", n)
 	}
 	clock.Advance(100 * time.Millisecond)
-	eventually(t, "the second retry", func() bool { return r.count(k) == 3 })
+	testutil.Eventually(t, "the second retry", func() bool { return r.count(k) == 3 })
 }
 
 func TestAKeyIsNeverReconciledTwiceAtOnce(t *testing.T) {
@@ -178,7 +168,7 @@ func TestAKeyIsNeverReconciledTwiceAtOnce(t *testing.T) {
 	r.block = make(chan struct{})
 	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
 	k := Key{Name: "busy"}
-	eventually(t, "the first reconcile starts", func() bool { return r.count(k) == 1 })
+	testutil.Eventually(t, "the first reconcile starts", func() bool { return r.count(k) == 1 })
 
 	// Changes while it runs collapse into one more reconcile afterwards.
 	for i := range 5 {
@@ -186,14 +176,14 @@ func TestAKeyIsNeverReconciledTwiceAtOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 	r.mu.Lock()
 	block := r.block
 	r.block = nil
 	r.mu.Unlock()
 	close(block)
-	eventually(t, "the changes are reconciled", func() bool { return r.count(k) == 2 })
-	time.Sleep(50 * time.Millisecond)
+	testutil.Eventually(t, "the changes are reconciled", func() bool { return r.count(k) == 2 })
+	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if n := r.count(k); n != 2 {
 		t.Errorf("five changes during one reconcile caused %d more", n-1)
 	}
@@ -224,11 +214,11 @@ func TestRelistsAfterCompaction(t *testing.T) {
 	}
 	r := newRecorder()
 	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
-	eventually(t, "the object is listed again", func() bool { return r.count(Key{Name: "a"}) >= 1 })
+	testutil.Eventually(t, "the object is listed again", func() bool { return r.count(Key{Name: "a"}) >= 1 })
 	if _, err := st.Create(ctx, store.Key{Kind: "A", Name: "b"}, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the new watch follows changes", func() bool { return r.count(Key{Name: "b"}) == 1 })
+	testutil.Eventually(t, "the new watch follows changes", func() bool { return r.count(Key{Name: "b"}) == 1 })
 }
 
 // TestRunWaitsForTheReconcileInFlight: Run must not return while a reconcile
@@ -245,7 +235,7 @@ func TestRunWaitsForTheReconcileInFlight(t *testing.T) {
 	go func() {
 		done <- (&Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}}).Run(ctx)
 	}()
-	eventually(t, "the reconcile starts", func() bool { return r.count(Key{Name: "slow"}) == 1 })
+	testutil.Eventually(t, "the reconcile starts", func() bool { return r.count(Key{Name: "slow"}) == 1 })
 	cancel()
 	select {
 	case <-done:
@@ -283,7 +273,7 @@ func TestAFailingStoreIsRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	clock.Advance(time.Second)
-	eventually(t, "the controller recovers", func() bool { return r.count(Key{Name: "a"}) == 1 })
+	testutil.Eventually(t, "the controller recovers", func() bool { return r.count(Key{Name: "a"}) == 1 })
 }
 
 func TestResyncReconcilesEverythingAgain(t *testing.T) {
@@ -294,12 +284,12 @@ func TestResyncReconcilesEverythingAgain(t *testing.T) {
 	}
 	r := newRecorder()
 	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Resync: time.Minute, Watches: []Watch{{Kind: "A", Map: Self}}})
-	eventually(t, "the first reconcile", func() bool { return r.count(Key{Name: "a"}) == 1 })
+	testutil.Eventually(t, "the first reconcile", func() bool { return r.count(Key{Name: "a"}) == 1 })
 	if err := clock.BlockUntilContext(t.Context(), 1); err != nil {
 		t.Fatal(err)
 	}
 	clock.Advance(time.Minute)
-	eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
+	testutil.Eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
 }
 
 // writeBetweenLists writes an A while the controller lists Bs, after it
@@ -331,7 +321,7 @@ func TestAChangeBetweenListsIsNotMissed(t *testing.T) {
 		Name: "t", Source: &writeBetweenLists{StoreSource: StoreSource{Store: st}}, Reconciler: r, Clock: clockwork.NewFakeClock(),
 		Watches: []Watch{{Kind: "A", Map: Self}, {Kind: "B", Map: Self}},
 	})
-	eventually(t, "the A written between the lists", func() bool { return r.count(Key{Name: "between"}) == 1 })
+	testutil.Eventually(t, "the A written between the lists", func() bool { return r.count(Key{Name: "between"}) == 1 })
 }
 
 // TestWaitingIsCheckedSoon: a key waiting on something outside the
@@ -350,7 +340,7 @@ func TestWaitingIsCheckedSoon(t *testing.T) {
 	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: waiting, Clock: clock, MaxWait: 200 * time.Millisecond,
 		Watches: []Watch{{Kind: "A", Map: Self}}})
 	for i := int32(1); i <= 6; i++ {
-		eventually(t, fmt.Sprintf("check %d", i), func() bool { return calls.Load() == i })
+		testutil.Eventually(t, fmt.Sprintf("check %d", i), func() bool { return calls.Load() == i })
 		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
 			t.Fatal(err)
 		}
@@ -385,7 +375,7 @@ func TestAFailureAfterWaitsIsRetriedSoon(t *testing.T) {
 		Watches: []Watch{{Kind: "A", Map: Self}}})
 	step := func(n int32, by time.Duration) {
 		t.Helper()
-		eventually(t, fmt.Sprintf("call %d", n), func() bool { return calls.Load() == n })
+		testutil.Eventually(t, fmt.Sprintf("call %d", n), func() bool { return calls.Load() == n })
 		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
 			t.Fatal(err)
 		}
@@ -401,7 +391,7 @@ func TestAFailureAfterWaitsIsRetriedSoon(t *testing.T) {
 	// Three failures in a row would next wait 800ms; a wait after them is
 	// checked again as soon as a first wait is.
 	step(waits+4, 100*time.Millisecond)
-	eventually(t, "the reconcile after the last wait", func() bool { return calls.Load() == waits+5 })
+	testutil.Eventually(t, "the reconcile after the last wait", func() bool { return calls.Load() == waits+5 })
 }
 
 // TestASkipResyncKindIsMappedOnlyAsItChanges: a kind marked SkipResync is
@@ -427,19 +417,19 @@ func TestASkipResyncKindIsMappedOnlyAsItChanges(t *testing.T) {
 			}},
 		},
 	})
-	eventually(t, "the start", func() bool { return r.count(Key{Name: "a"}) == 1 })
+	testutil.Eventually(t, "the start", func() bool { return r.count(Key{Name: "a"}) == 1 })
 	if err := clock.BlockUntilContext(ctx, 1); err != nil { // the resync ticker
 		t.Fatal(err)
 	}
 	clock.Advance(time.Minute)
-	eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
+	testutil.Eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
 	if n := mappedB.Load(); n != 0 {
 		t.Errorf("a SkipResync kind was mapped %d times on start and resync", n)
 	}
 	if _, err := st.Create(ctx, store.Key{Kind: "B", Name: "after"}, []byte("x")); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "the change mapped", func() bool { return r.count(Key{Name: "after"}) == 1 })
+	testutil.Eventually(t, "the change mapped", func() bool { return r.count(Key{Name: "after"}) == 1 })
 }
 
 // TestAControllerMustListSomething: a controller whose every watch skips

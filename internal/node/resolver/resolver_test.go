@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 var upstream = netip.MustParseAddrPort("192.0.2.53:53")
@@ -229,10 +231,9 @@ func TestQuestionsInFlightAreAskedOnce(t *testing.T) {
 			}
 		})
 	}
-	for u.asked.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
-	time.Sleep(20 * time.Millisecond) // the others join the question asked
+	testutil.Eventually(t, "a question asked upstream", func() bool { return u.asked.Load() > 0 })
+	// The others join the question asked.
+	time.Sleep(20 * time.Millisecond) //nolint:forbidigo // lets background work run
 	close(u.gate)
 	wg.Wait()
 	if n := u.asked.Load(); n != 1 {
@@ -250,9 +251,7 @@ func TestANetworkTakesOnlyItsShare(t *testing.T) {
 	udp2 := serveUDP(t, r, "n2")
 	slow := make(chan *dns.Msg, 1)
 	go func() { slow <- askUDP(t, udp1, "slow.example.") }()
-	for u.asked.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	testutil.Eventually(t, "a question asked upstream", func() bool { return u.asked.Load() > 0 })
 	if got := askUDP(t, udp1, "other.example."); got.Rcode != dns.RcodeServerFailure {
 		t.Errorf("a question past the network's bound: %s, want SERVFAIL", dns.RcodeToString[got.Rcode])
 	}
@@ -337,9 +336,7 @@ func TestTooManyForwards(t *testing.T) {
 		defer close(done)
 		ask(t, r, "n1", "one.example.", dns.TypeA)
 	}()
-	for u.asked.Load() == 0 {
-		time.Sleep(time.Millisecond)
-	}
+	testutil.Eventually(t, "a question asked upstream", func() bool { return u.asked.Load() > 0 })
 	if got := ask(t, r, "n1", "two.example.", dns.TypeA); got.Rcode != dns.RcodeServerFailure {
 		t.Errorf("a question past the bound: %s, want SERVFAIL", dns.RcodeToString[got.Rcode])
 	}

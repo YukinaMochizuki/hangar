@@ -43,11 +43,11 @@ func TestTheNodeReportsItsDisk(t *testing.T) {
 		// fake.Capacity is 1 TiB.
 		return n.GetStatus().GetCapacity().GetDisk() == "1024Gi" && n.GetStatus().GetAllocatable().GetDisk() == "1000Gi"
 	}
-	n := waitFor(t, "the node reporting its disk", get, reports)
+	n := waitValue(t, "the node reporting its disk", get, reports)
 
 	host.FailCapacity(errors.New("zfs is busy"))
 	seen := n.GetStatus().GetLastHeartbeatTime().AsTime()
-	n = waitFor(t, "two more heartbeats", get, func(n *computev1alpha1.Node) bool {
+	n = waitValue(t, "two more heartbeats", get, func(n *computev1alpha1.Node) bool {
 		return n.GetStatus().GetLastHeartbeatTime().AsTime().After(seen.Add(30 * time.Millisecond))
 	})
 	if !reports(n) {
@@ -83,7 +83,7 @@ func TestStorageNeverReadIsNoDisk(t *testing.T) {
 		}
 	})
 	root := env.As(apiservertest.Root)
-	waitFor(t, "the node reporting no disk", func() (*computev1alpha1.Node, error) {
+	waitValue(t, "the node reporting no disk", func() (*computev1alpha1.Node, error) {
 		obj, err := root.Get(t.Context(), registry.Node, client.Key{Name: apiservertest.Node})
 		if err != nil {
 			return nil, err
@@ -103,7 +103,7 @@ func TestStorageNeverReadIsNoDisk(t *testing.T) {
 		}
 		return obj.(*computev1alpha1.Machine), nil
 	}
-	m := waitFor(t, "the machine found no node", machine, func(m *computev1alpha1.Machine) bool {
+	m := waitValue(t, "the machine found no node", machine, func(m *computev1alpha1.Machine) bool {
 		c := conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineScheduled)
 		return c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE
 	})
@@ -111,7 +111,7 @@ func TestStorageNeverReadIsNoDisk(t *testing.T) {
 		t.Fatalf("placed on %s, which has no disk", m.GetSpec().GetNode())
 	}
 	host.FailCapacity(nil)
-	waitFor(t, "the machine placed once the storage is read", machine, func(m *computev1alpha1.Machine) bool {
+	waitValue(t, "the machine placed once the storage is read", machine, func(m *computev1alpha1.Machine) bool {
 		return m.GetSpec().GetNode() == apiservertest.Node
 	})
 }

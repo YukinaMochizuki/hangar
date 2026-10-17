@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func asNode(ctx context.Context, name string) context.Context {
@@ -160,17 +162,13 @@ func TestMachineAdmission(t *testing.T) {
 // waitNode waits for the apiserver to register a node.
 func waitNode(t *testing.T, s *Server, name string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, "node "+name+" registered", func() (bool, string) {
 		_, err := s.store.Get(context.Background(), store.Key{Kind: registry.Node.Kind, Name: name})
-		if err == nil {
-			return
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("node %s: %v", name, err)
 		}
-		if !errors.Is(err, store.ErrNotFound) || time.Now().After(deadline) {
-			t.Fatalf("node %s never registered: %v", name, err)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return err == nil, fmt.Sprint(err)
+	})
 }
 
 func TestNodesAreRegisteredAndKeepTheirSpec(t *testing.T) {
@@ -225,13 +223,10 @@ func monitored(t *testing.T, nodes ...string) (*Server, context.Context, *clockw
 	for _, n := range nodes {
 		waitNode(t, s, n)
 	}
-	deadline := time.Now().Add(10 * time.Second)
-	for start, _ := s.heartbeats.since(""); start.IsZero(); start, _ = s.heartbeats.since("") {
-		if time.Now().After(deadline) {
-			t.Fatal("the node monitor never started")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the node monitor started", func() bool {
+		start, _ := s.heartbeats.since("")
+		return !start.IsZero()
+	})
 	return s, system, clock
 }
 

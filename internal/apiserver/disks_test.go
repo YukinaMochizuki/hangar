@@ -18,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func disk(name, size string) *storagev1alpha1.Disk {
@@ -41,17 +42,7 @@ func getDisk(t *testing.T, s *Server, system context.Context, name string) *stor
 
 func waitDisk(t *testing.T, s *Server, system context.Context, name, what string, ok func(*storagev1alpha1.Disk) bool) *storagev1alpha1.Disk {
 	t.Helper()
-	var last *storagev1alpha1.Disk
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if last = getDisk(t, s, system, name); last != nil && ok(last) {
-			return last
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("disk %s never %s; last seen: %v", name, what, last)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+	return waitObject(t, s, system, registry.Disk, resource.Key{Project: "web", Name: name}, "disk "+name+" "+what, ok)
 }
 
 // bindDisk binds a disk to node at size, as the scheduler does.
@@ -299,10 +290,8 @@ func TestADiskFollowsItsMachines(t *testing.T) {
 	waitDisk(t, s, system, "data", "no longer held in use", func(d *storagev1alpha1.Disk) bool {
 		return len(d.GetMetadata().GetFinalizers()) == 1 && d.GetMetadata().GetFinalizers()[0] == NodeCleanupFinalizer
 	})
-	time.Sleep(100 * time.Millisecond)
-	if getDisk(t, s, system, "data") == nil {
-		t.Fatal("the disk went before its node released it")
-	}
+	testutil.Unchanged(t, "disk data, before its node released it", 100*time.Millisecond,
+		versionOf(s, system, registry.Disk, resource.Key{Project: "web", Name: "data"}))
 	reportDiskCond(t, s, system, "data", &metav1.Condition{Type: DiskReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
 	waitGone(t, s, system, registry.Disk, "data")
 

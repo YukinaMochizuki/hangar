@@ -17,7 +17,7 @@ func TestShieldedSignalsEndNothing(t *testing.T) {
 	if os.Getenv("SHIELD_CHILD") == "1" {
 		supervise.Shield()
 		_, _ = os.Stdout.WriteString("ready\n")
-		time.Sleep(time.Minute)
+		time.Sleep(time.Minute) //nolint:forbidigo // stands for a PID 1 that outlives the signals sent to it
 		os.Exit(0)
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=^TestShieldedSignalsEndNothing$")

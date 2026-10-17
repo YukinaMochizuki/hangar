@@ -9,6 +9,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // logReader gathers what a read of a log sends.
@@ -76,15 +77,15 @@ func logs(t *testing.T, h Host) {
 
 	spec := vmSpec(t, h, "m1", driver.RestartAlways)
 	must(t, h.Hypervisor.Start(ctx, spec))
-	eventually(t, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
+	testutil.EventuallyWithin(t, vmWait, "the guest agent answering", func() bool { return h.Guest.Ready(ctx, "m1") == nil })
 	first, _ := vmOf(t, h, "m1")
 	h.Exit(t, "m1", 3)
-	eventually(t, "the VM started again", func() bool {
+	testutil.EventuallyWithin(t, vmWait, "the VM started again", func() bool {
 		vm, ok := vmOf(t, h, "m1")
 		return ok && vm.State == driver.VMRunning && vm.Started.After(first.Started)
 	})
 	var boot int64
-	eventually(t, "the exit and the next boot in the log", func() bool {
+	testutil.EventuallyWithin(t, vmWait, "the exit and the next boot in the log", func() bool {
 		recs := readLog(t, h.Hypervisor, "m1", all)
 		b, ok := exitIn(recs, 3)
 		boot = b
@@ -106,7 +107,7 @@ func logs(t *testing.T, h Host) {
 		t.Errorf("a tail of no lines is %d records", len(none))
 	}
 
-	eventually(t, "the follower seeing the exit and the next boot", func() bool {
+	testutil.EventuallyWithin(t, vmWait, "the follower seeing the exit and the next boot", func() bool {
 		recs := followed.records()
 		b, ok := exitIn(recs, 3)
 		return ok && b == boot && bootAfter(recs, b)

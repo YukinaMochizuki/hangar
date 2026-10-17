@@ -14,6 +14,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 const gib = int64(1) << 30
@@ -61,7 +62,7 @@ func (w *world) applyDisk(name, size string) {
 func (w *world) waitDisk(name, what string, ok func(*storagev1alpha1.Disk) bool) *storagev1alpha1.Disk {
 	w.t.Helper()
 	var d *storagev1alpha1.Disk
-	w.eventually("disk "+name+" "+what, func() (bool, string) {
+	testutil.Eventually(w.t, "disk "+name+" "+what, func() (bool, string) {
 		var found bool
 		d, found = get[*storagev1alpha1.Disk](w, registry.Disk, name)
 		return found && ok(d), fmt.Sprintf("%v", d)
@@ -94,7 +95,7 @@ func TestADiskOnTheHost(t *testing.T) {
 		t.Errorf("disk status %v", d.GetStatus())
 	}
 	uid := d.GetMetadata().GetUid()
-	w.eventually("the VM running with the disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running with the disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 1 && spec.Disks[0].DiskUID == uid && spec.Disks[0].Size >= 2*gib,
 			fmt.Sprintf("%+v", spec.Disks)
@@ -105,14 +106,14 @@ func TestADiskOnTheHost(t *testing.T) {
 
 	// Grown, the volume grows, and the VM boots again to see it.
 	w.applyDisk("data", "3Gi")
-	w.eventually("the VM running with the grown disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running with the grown disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 1 && spec.Disks[0].Size >= 3*gib, fmt.Sprintf("%+v", spec.Disks)
 	})
 
 	// Detached, the VM runs without it, and the disk stays on the host.
 	w.putMachine(diskMachine("vm-a"))
-	w.eventually("the VM running without the disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running without the disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 0, fmt.Sprintf("%+v", spec.Disks)
 	})
@@ -127,7 +128,7 @@ func TestADiskOnTheHost(t *testing.T) {
 	if _, err := w.root.Delete(context.Background(), registry.Disk, client.Key{Project: project, Name: "data"}); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the disk and its volume gone", func() (bool, string) {
+	testutil.Eventually(w.t, "the disk and its volume gone", func() (bool, string) {
 		_, found := get[*storagev1alpha1.Disk](w, registry.Disk, "data")
 		_, vol := w.host.Snapshot().Volumes[uid]
 		return !found && !vol, fmt.Sprintf("disk left: %t, volume left: %t", found, vol)
@@ -135,7 +136,7 @@ func TestADiskOnTheHost(t *testing.T) {
 
 	// A volume no disk accounts for is swept.
 	w.host.LeaveVolume("orphan")
-	w.eventually("the orphan volume swept", func() (bool, string) {
+	testutil.Eventually(w.t, "the orphan volume swept", func() (bool, string) {
 		_, left := w.host.Snapshot().Volumes["orphan"]
 		return !left, ""
 	})
@@ -157,7 +158,7 @@ func TestADiskWaitsForItsNode(t *testing.T) {
 		return conditions.Find(d.GetStatus().GetConditions(), computeapi.DiskReady).GetReason() == "NoSpace"
 	})
 	w.host.SetFull(false)
-	w.eventually("the VM running with the disk", func() (bool, string) {
+	testutil.Eventually(w.t, "the VM running with the disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
 		return running && len(spec.Disks) == 1, fmt.Sprintf("%+v", spec.Disks)
 	})

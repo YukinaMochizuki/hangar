@@ -3,6 +3,7 @@ package supervise_test
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/internal/guest/supervise"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 func sh(t *testing.T, r *supervise.Reaper, script string) *supervise.Process {
@@ -90,13 +92,10 @@ func TestOrphansAreReaped(t *testing.T) {
 	if zombies(t)+children(t) == 0 {
 		t.Fatal("the orphan was never this process's child")
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for children(t) > 0 || zombies(t) > 0 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d zombies left", zombies(t))
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "no child or zombie left", func() (bool, string) {
+		c, z := children(t), zombies(t)
+		return c == 0 && z == 0, fmt.Sprintf("%d children, %d zombies", c, z)
+	})
 }
 
 // children counts this process's live children.

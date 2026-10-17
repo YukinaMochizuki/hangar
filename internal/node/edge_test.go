@@ -112,7 +112,7 @@ func (w *dialWorld) container(name, memory string, stopped bool) *networkv1alpha
 	}); err != nil {
 		w.t.Fatal(err)
 	}
-	return waitFor(w.t, "endpoint "+name+" naming its machine", func() (*networkv1alpha1.PublicEndpoint, error) {
+	return waitValue(w.t, "endpoint "+name+" naming its machine", func() (*networkv1alpha1.PublicEndpoint, error) {
 		obj, err := w.root.Get(w.t.Context(), registry.PublicEndpoint, client.Key{Project: apiservertest.Project, Name: name})
 		if err != nil {
 			return nil, err
@@ -150,7 +150,7 @@ func TestTheAgentDialsOnlyALiveEndpointsRunningMachine(t *testing.T) {
 	if ep.GetStatus().GetNode() != apiservertest.Node {
 		t.Fatalf("api is on %q", ep.GetStatus().GetNode())
 	}
-	waitFor(t, "api running", func() (*networkv1alpha1.PublicEndpoint, error) {
+	waitValue(t, "api running", func() (*networkv1alpha1.PublicEndpoint, error) {
 		obj, err := w.root.Get(t.Context(), registry.PublicEndpoint, client.Key{Project: apiservertest.Project, Name: "api"})
 		if err != nil {
 			return nil, err
@@ -178,7 +178,7 @@ func TestTheAgentDialsOnlyALiveEndpointsRunningMachine(t *testing.T) {
 
 	// Reached, once the firewall lets the edge to its port.
 	var c net.Conn
-	waitFor(t, "a dial to api", func() (*networkv1alpha1.PublicEndpoint, error) {
+	waitValue(t, "a dial to api", func() (*networkv1alpha1.PublicEndpoint, error) {
 		c, err = w.dial(ep, uid)
 		return ep, err
 	}, func(*networkv1alpha1.PublicEndpoint) bool { return true })
@@ -197,7 +197,7 @@ func TestTheAgentDialsOnlyALiveEndpointsRunningMachine(t *testing.T) {
 		if idle.GetStatus().GetNode() != apiservertest.Node {
 			t.Fatalf("idle is on %q", idle.GetStatus().GetNode())
 		}
-		waitFor(t, "idle's machine stopped", func() (*computev1alpha1.Machine, error) {
+		waitValue(t, "idle's machine stopped", func() (*computev1alpha1.Machine, error) {
 			obj, err := w.root.Get(t.Context(), registry.Machine, client.Key{Project: apiservertest.Project, Name: idle.GetStatus().GetMachine()})
 			if err != nil {
 				return nil, err

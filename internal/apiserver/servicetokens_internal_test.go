@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // TestNoBindingOutlivesItsToken races bindings naming a token against the
@@ -66,20 +66,13 @@ func TestNoBindingOutlivesItsToken(t *testing.T) {
 		wg.Wait()
 	}
 	// Every token goes in the end.
-	deadline := time.Now().Add(30 * time.Second)
-	for {
+	testutil.Eventually(t, "every token gone", func() (bool, string) {
 		objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.ServiceToken.Kind})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(objs) == 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("%d tokens never went", len(objs))
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return len(objs) == 0, fmt.Sprintf("%d tokens", len(objs))
+	})
 	stop()
 	<-watched
 

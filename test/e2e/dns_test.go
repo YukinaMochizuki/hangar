@@ -17,6 +17,7 @@ import (
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // upstreamDNS serves the world's upstream resolver on the loopback: every A
@@ -74,7 +75,7 @@ func (w *world) resolve(network, gateway, name string) (rcode int, addrs []strin
 // answers waits until the network's resolver says what is wanted of name.
 func (w *world) answers(network, gateway, name string, rcode int, want ...string) {
 	w.t.Helper()
-	w.eventually(fmt.Sprintf("%s on %s resolving to %s %v", name, network, dns.RcodeToString[rcode], want), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("%s on %s resolving to %s %v", name, network, dns.RcodeToString[rcode], want), func() (bool, string) {
 		got, addrs, ok := w.resolve(network, gateway, name)
 		return ok && got == rcode && slices.Equal(addrs, want), fmt.Sprintf("answered %v: %s %v", ok, dns.RcodeToString[got], addrs)
 	})
@@ -121,7 +122,7 @@ func TestEachNetworkHasItsResolver(t *testing.T) {
 	}
 	lone := bare("lone", "10.1.0.5/24")
 	lone.Spec.Interfaces[0].Network = "other"
-	w.eventually("network other given its transit link", func() (bool, string) {
+	testutil.Eventually(w.t, "network other given its transit link", func() (bool, string) {
 		n, _ := get[*networkv1alpha1.Network](w, registry.Network, "other")
 		return n.GetStatus().GetTransitIpv4() != "", fmt.Sprintf("%v", n.GetStatus())
 	})
@@ -156,7 +157,7 @@ func TestEachNetworkHasItsResolver(t *testing.T) {
 	// A namespace made again behind the agent's back is served again.
 	w.host.RemakeNamespace(w.networkUID("default"))
 	w.answers("default", "10.0.0.1", "api."+zone, dns.RcodeSuccess, api)
-	w.eventually("the old namespace's sockets closed", func() (bool, string) {
+	testutil.Eventually(w.t, "the old namespace's sockets closed", func() (bool, string) {
 		l := w.host.Snapshot().Listening[w.networkUID("default")]
 		return len(l) == 4, fmt.Sprintf("%v", l) // the resolver's two, DHCP's and the metadata service's
 	})

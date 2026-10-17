@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // firmwareDir is launcherDir with the launch made a firmware VM's: two
@@ -164,9 +165,7 @@ func TestAFirmwareVMStoppedBySystemdPowersOff(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan int, 1)
 	go func() { done <- l.Run(ctx, "m1") }()
-	for !exists(filepath.Join(dir, chDir, "args.json")) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "Cloud Hypervisor started", func() bool { return exists(filepath.Join(dir, chDir, "args.json")) })
 	cancel()
 	select {
 	case code := <-done:
@@ -199,13 +198,7 @@ func TestAFirmwareVMPoweredOffByTheDriversStop(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan int, 1)
 	go func() { done <- l.Run(ctx, "m1") }()
-	deadline := time.Now().Add(30 * time.Second)
-	for !exists(filepath.Join(dir, exitFile)) {
-		if time.Now().After(deadline) {
-			t.Fatal("the guest never powered off")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(t, "the guest powered off", func() bool { return exists(filepath.Join(dir, exitFile)) })
 	select {
 	case code := <-done:
 		t.Fatalf("the launcher exited %d before it was stopped", code)
@@ -430,7 +423,7 @@ func TestTheSerialConsoleIsFramedByLine(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	time.Sleep(4 * serialFlush)
+	time.Sleep(4 * serialFlush) //nolint:forbidigo // real time
 	_, _ = w.Write([]byte(strings.Repeat("x", maxSerialRecord+1)))
 	_ = w.Close()
 	<-done

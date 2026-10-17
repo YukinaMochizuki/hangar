@@ -21,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
 	"github.com/YukinaMochizuki/hangar/internal/guest/supervise"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // fakeCH plays Cloud Hypervisor's side of a hybrid vsock socket, bridging
@@ -261,7 +262,7 @@ func TestExecOnATerminal(t *testing.T) {
 func TestASignalReachesTheProcess(t *testing.T) {
 	_, _, exit, err := run(t, t.Context(), &guestv1.ExecStart{Process: process("sleep", "30")},
 		func(s *connect.BidiStreamForClient[guestv1.ExecRequest, guestv1.ExecResponse]) {
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond) //nolint:forbidigo // the process runs a while before it is signalled
 			_ = s.Send(&guestv1.ExecRequest{Message: &guestv1.ExecRequest_Signal{Signal: 15}})
 		})
 	if err != nil || exit.GetCode() != 143 || exit.GetSignal() != 15 {
@@ -304,14 +305,8 @@ func TestACallerGoingAwayKillsTheProcess(t *testing.T) {
 		t.Fatalf("pid %q: %v", res.GetStdout(), err)
 	}
 	cancel() // and nothing else: the client closes what HTTP/2 needs closed
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, err := os.Stat(fmt.Sprintf("/proc/%d", pid)); errors.Is(err, os.ErrNotExist) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("process %d still there after its caller went away", pid)
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testutil.Eventually(t, fmt.Sprintf("process %d gone with its caller", pid), func() bool {
+		_, err := os.Stat(fmt.Sprintf("/proc/%d", pid))
+		return errors.Is(err, os.ErrNotExist)
+	})
 }

@@ -258,15 +258,27 @@ func TestOnlyItsNodeReadsAGuestsData(t *testing.T) {
 		// A watch sees a change as a get does.
 		ctx, cancel := context.WithTimeout(tc.ctx, 5*time.Second)
 		events := make(chan proto.Message, 4)
+		// The opening bookmark says from where the watch sees changes.
+		started := make(chan struct{})
 		go func() {
+			begun := false
 			_ = s.backend(registry.Machine).Watch(ctx, resource.WatchOptions{Project: "web"}, func(ev resource.Event) error {
-				if ev.Object != nil {
-					events <- ev.Object
+				if ev.Object == nil {
+					if !begun {
+						begun = true
+						close(started)
+					}
+					return nil
 				}
+				events <- ev.Object
 				return nil
 			})
 		}()
-		time.Sleep(50 * time.Millisecond)
+		select {
+		case <-started:
+		case <-ctx.Done():
+			t.Fatalf("%s: the watch never began", tc.who)
+		}
 		m.Spec.GetFirmware().CloudInit.UserData = "secret, " + tc.who
 		if _, err := s.backend(registry.Machine).Apply(system, m); err != nil {
 			t.Fatal(err)

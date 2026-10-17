@@ -17,6 +17,7 @@ import (
 	"golang.org/x/net/http2/hpack"
 
 	"github.com/YukinaMochizuki/hangar/internal/edge/front"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // closedSoon says whether the front door closes c within d, having sent
@@ -142,16 +143,12 @@ func TestConnectionsPerClient(t *testing.T) {
 	// keep opens a connection the front door keeps, once those startDoor
 	// and the test closed have left its count.
 	keep := func() net.Conn {
-		deadline := time.Now().Add(5 * time.Second)
-		for {
-			c := dialTCP(t, d.https)
-			if !closedSoon(c, 200*time.Millisecond) {
-				return c
-			}
-			if time.Now().After(deadline) {
-				t.Fatal("a connection within the limit was closed")
-			}
-		}
+		var c net.Conn
+		testutil.EventuallyWithin(t, 5*time.Second, "a connection within the limit kept", func() bool {
+			c = dialTCP(t, d.https)
+			return !closedSoon(c, 200*time.Millisecond)
+		})
+		return c
 	}
 	first := keep()
 	keep()
@@ -177,13 +174,11 @@ func TestRefusalsAreSummedUpInTheLog(t *testing.T) {
 	o.prepare = func(f *front.Front) { front.SetRefusalSummaryEvery(f, 300*time.Millisecond) }
 	d := startDoor(t, newCA(t), o)
 	// One connection kept, once startDoor's own have left the count.
-	deadline := time.Now().Add(5 * time.Second)
-	for closedSoon(dialTCP(t, d.https), 200*time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("no connection kept")
-		}
-	}
-	time.Sleep(time.Second) // past any summary of startDoor's refusals
+	testutil.EventuallyWithin(t, 5*time.Second, "a connection kept", func() bool {
+		return !closedSoon(dialTCP(t, d.https), 200*time.Millisecond)
+	})
+	// Past any summary of startDoor's refusals.
+	time.Sleep(time.Second) //nolint:forbidigo // real time
 	from := len(d.log.String())
 	for range 3 {
 		if !closedSoon(dialTCP(t, d.https), 2*time.Second) {
@@ -192,13 +187,10 @@ func TestRefusalsAreSummedUpInTheLog(t *testing.T) {
 	}
 	// Nothing more is refused; the summary comes on its own.
 	const summary = `msg="refused connections past the limits" by_reason="map[too many connections from the client:`
-	deadline = time.Now().Add(5 * time.Second)
-	for !strings.Contains(d.log.String()[from:], summary) {
-		if time.Now().After(deadline) {
-			t.Fatalf("no summary of the refusals in the log:\n%s", d.log.String()[from:])
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	testutil.EventuallyWithin(t, 5*time.Second, "a summary of the refusals in the log", func() (bool, string) {
+		log := d.log.String()[from:]
+		return strings.Contains(log, summary), "\n" + log
+	})
 }
 
 func TestConnectionRate(t *testing.T) {
@@ -266,17 +258,10 @@ func TestRequestsInFlight(t *testing.T) {
 	close(release)
 	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	testutil.EventuallyWithin(t, 5*time.Second, "a request answered after the stream ended", func() (bool, string) {
 		code, _, _ := do(t, d.client, http.MethodGet, "https://"+apiHost+"/", nil, nil)
-		if code == http.StatusOK {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("after the stream ended: %d", code)
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+		return code == http.StatusOK, fmt.Sprint(code)
+	})
 }
 
 func TestRequestLimits(t *testing.T) {

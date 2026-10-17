@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/store"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // bare is a Machine of no container, written as the system writes
@@ -70,7 +71,7 @@ func (w *world) editMachine(name string, edit func(*computev1alpha1.Machine)) {
 func (w *world) waitMachine(name string, phase computev1alpha1.MachinePhase, reason string) *computev1alpha1.Machine {
 	w.t.Helper()
 	var m *computev1alpha1.Machine
-	w.eventually(fmt.Sprintf("machine %s %v %s", name, phase, reason), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("machine %s %v %s", name, phase, reason), func() (bool, string) {
 		var ok bool
 		m, ok = get[*computev1alpha1.Machine](w, registry.Machine, name)
 		r := conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReady)
@@ -94,7 +95,7 @@ func TestARegistryOutageLeavesARunningMachineAlone(t *testing.T) {
 	if err := w.host.Exit(uid, 0); err != nil {
 		t.Fatal(err)
 	}
-	w.eventually("the restart reported", func() (bool, string) {
+	testutil.Eventually(w.t, "the restart reported", func() (bool, string) {
 		boot := w.machine("api").GetStatus().GetBootTime().AsTime()
 		return boot.After(before), fmt.Sprintf("boot time %v", boot)
 	})
@@ -183,7 +184,7 @@ func TestAnInterfaceChangeReplacesIt(t *testing.T) {
 		m.Spec.Interfaces = m.Spec.Interfaces[:1]
 		m.Spec.Interfaces[0].Ipv4 = "10.0.0.51/24"
 	})
-	w.eventually("the interface replaced and the VM on it", func() (bool, string) {
+	testutil.Eventually(w.t, "the interface replaced and the VM on it", func() (bool, string) {
 		s := w.host.Snapshot()
 		ifs, vm := s.Interfaces[uid], s.VMs[uid]
 		return len(ifs) == 1 && ifs[0].Address.String() == "10.0.0.51/24" && len(vm.Spec.Interfaces) == 1 &&
@@ -199,7 +200,7 @@ func TestAMachineOnAnotherNodeIsLeftAlone(t *testing.T) {
 	m := bare("elsewhere", "10.0.0.50/24")
 	m.Spec.Node = "n2"
 	w.applyMachine(m)
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
 	if s := w.host.Snapshot(); !s.Empty() {
 		t.Errorf("the host holds something for another node's machine: %+v", s)
 	}
@@ -231,7 +232,13 @@ func TestReleasedOnlyOnceTheHostIsClean(t *testing.T) {
 
 	w.host.FailRemoval(errors.New("device busy"))
 	w.delete("api")
-	time.Sleep(400 * time.Millisecond)
+	testutil.Unchanged(w.t, "whether the machine is released, while the host holds it", 400*time.Millisecond, func() (string, error) {
+		m, ok := get[*computev1alpha1.Machine](w, registry.Machine, "ct-api")
+		if !ok {
+			return "", errors.New("gone")
+		}
+		return conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReleased).GetStatus().String(), nil
+	})
 	m, ok := get[*computev1alpha1.Machine](w, registry.Machine, "ct-api")
 	if !ok || conditions.IsTrue(m.GetStatus().GetConditions(), computeapi.MachineReleased) {
 		t.Fatalf("released while the host still holds it: %v", m.GetStatus())
@@ -258,7 +265,7 @@ func TestStatusWritesAreConditional(t *testing.T) {
 	w.startAgent()
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
-	w.eventually("the condition written meanwhile still there", func() (bool, string) {
+	testutil.Eventually(w.t, "the condition written meanwhile still there", func() (bool, string) {
 		st := w.machine("api").GetStatus()
 		return done.Load() && conditions.IsTrue(st.GetConditions(), "Probe"), fmt.Sprintf("%v", st)
 	})
@@ -351,7 +358,8 @@ func TestTheSweepTrustsNoFailedList(t *testing.T) {
 	}
 
 	apiDown.Store(true)
-	time.Sleep(400 * time.Millisecond) // several sweeps
+	// Several sweeps.
+	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
 	intact("the API failing to list machines")
 	apiDown.Store(false)
 
@@ -362,7 +370,7 @@ func TestTheSweepTrustsNoFailedList(t *testing.T) {
 			lists = nil // all of them
 		}
 		w.host.FailListing(errors.New("netlink: no buffer space"), lists...)
-		time.Sleep(400 * time.Millisecond)
+		time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
 		intact(fmt.Sprintf("the host failing to list %q", list))
 		w.host.FailListing(nil)
 	}
@@ -382,7 +390,10 @@ func TestAHostHiccupLeavesARunningMachineAlone(t *testing.T) {
 	if err := w.host.Exit(uid, 0); err != nil { // the restart makes the agent look again
 		t.Fatal(err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	testutil.Unchanged(w.t, "what a running machine reports, while networking cannot be checked", 400*time.Millisecond, func() (string, error) {
+		m := w.machine("api")
+		return fmt.Sprint(m.GetStatus().GetPhase(), conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReady).GetReason()), nil
+	})
 	m := w.machine("api")
 	if r := conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReady); m.GetStatus().GetPhase() != computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING || r.GetReason() != computeapi.ReasonRunning {
 		t.Errorf("a running machine reported %v, %v while networking could not be checked", m.GetStatus().GetPhase(), r)
@@ -398,7 +409,8 @@ func TestABaseBeingBuiltOnIsKept(t *testing.T) {
 	w.host.FailClone(driver.ErrNoSpace)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", computeapi.ReasonDiskFailed)
-	time.Sleep(400 * time.Millisecond) // several sweeps
+	// Several sweeps.
+	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
 	w.host.FailClone(nil)
 	w.waitReason("api", "Running")
 	if n := w.host.Unpacked("sha256:nginx-1"); n != 1 {
@@ -430,7 +442,10 @@ func TestLostNetworkingIsNotHidden(t *testing.T) {
 	if err := w.host.Exit(w.machine("api").GetMetadata().GetUid(), 0); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(400 * time.Millisecond)
+	testutil.Unchanged(w.t, "what the container reports, after a hiccup with nothing changed", 400*time.Millisecond, func() (string, error) {
+		c, _ := get[*computev1alpha1.Container](w, registry.Container, "api")
+		return ready(c).GetReason(), nil
+	})
 	if c, _ := get[*computev1alpha1.Container](w, registry.Container, "api"); ready(c).GetReason() != "Running" {
 		t.Errorf("after a hiccup with nothing changed: %v", ready(c))
 	}
@@ -542,7 +557,7 @@ func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 	}
 	c.Spec.Resources.Disk = "30Gi"
 	w.apply(c)
-	w.eventually("the root grown and the VM started again on it", func() (bool, string) {
+	testutil.Eventually(w.t, "the root grown and the VM started again on it", func() (bool, string) {
 		s := w.host.Snapshot()
 		vm := s.VMs[uid]
 		return s.Roots[uid].Size == 30<<30 && vm.Spec.Root.Size == 30<<30 && vm.State == driver.VMRunning,
@@ -582,10 +597,10 @@ func TestNetworkChangesWhilePullingAreNotHidden(t *testing.T) {
 	letGo := w.host.HoldUnpack("nginx")
 	defer letGo()
 	w.startAgent()
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 	w.host.FailNetworking(errors.New("netlink: no buffer space"))
 	w.host.LoseNetwork(net)
-	time.Sleep(200 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 	letGo()
 	w.waitReason("api", computeapi.ReasonNetworkFailed)
 	w.host.FailNetworking(nil)
@@ -625,7 +640,7 @@ func TestAHungGuestHoldsUpNoOtherMachine(t *testing.T) {
 	letGo()
 	w.waitReason("stuck", computeapi.ReasonBooting)
 	// Asked a few times: past the call that found it not answering.
-	w.eventually("the hung guest asked again", func() (bool, string) {
+	testutil.Eventually(w.t, "the hung guest asked again", func() (bool, string) {
 		n := w.host.GuestReadies(stuck)
 		return n >= 3, fmt.Sprintf("%d asks", n)
 	})
@@ -656,7 +671,7 @@ func TestAHungGuestThatAnswersAgainRuns(t *testing.T) {
 	w.waitReason("api", computeapi.ReasonPulling)
 	answer := w.host.HangGuest(w.machine("api").GetMetadata().GetUid())
 	letGo()
-	w.eventually("the guest found not answering", func() (bool, string) {
+	testutil.Eventually(w.t, "the guest found not answering", func() (bool, string) {
 		c, _ := get[*computev1alpha1.Container](w, registry.Container, "api")
 		r := ready(c)
 		return r.GetReason() == computeapi.ReasonBooting && strings.Contains(r.GetMessage(), "deadline"), fmt.Sprintf("%v", r)
@@ -675,10 +690,11 @@ func TestAMachineDeletedWhilePulling(t *testing.T) {
 	w.waitReason("api", computeapi.ReasonPulling)
 	w.delete("api")
 	w.waitGone("api")
-	time.Sleep(300 * time.Millisecond) // sweeps while the pull runs
+	// Sweeps while the pull runs.
+	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
 	letGo()
 	w.waitHostEmpty()
-	w.eventually("the image forgotten", func() (bool, string) { return !w.host.Cached("sha256:nginx-1"), "" })
+	testutil.Eventually(w.t, "the image forgotten", func() (bool, string) { return !w.host.Cached("sha256:nginx-1"), "" })
 }
 
 // TestUnpackFailuresAreBlamedRight: a layer that cannot be fetched is the

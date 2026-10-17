@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -19,6 +18,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // vmWithRootDisk has the user apply a VM that makes its root disk of size
@@ -371,16 +371,10 @@ func TestTheUsageControllerCatchesUpOnStart(t *testing.T) {
 		done <- New(Config{Store: s.store, DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}).Run(ctx)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if u := getTenant(t, s, "acme").GetStatus().GetUsage(); u.GetMachines() == 1 && u.GetCpu() == "1" {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("usage is still %v", getTenant(t, s, "acme").GetStatus().GetUsage())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	testutil.Eventually(t, "usage of one machine of one CPU", func() (bool, string) {
+		u := getTenant(t, s, "acme").GetStatus().GetUsage()
+		return u.GetMachines() == 1 && u.GetCpu() == "1", fmt.Sprint(u)
+	})
 }
 
 // withProjectAdminRole adds test.project-admin, which may get and apply a

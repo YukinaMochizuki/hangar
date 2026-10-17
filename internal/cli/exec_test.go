@@ -25,6 +25,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // execServer plays the apiserver's side of an exec, running scripted
@@ -165,43 +166,32 @@ func (s *signals) notify(c chan<- os.Signal, sigs ...os.Signal) func() {
 // subscribed waits until something subscribes to sig.
 func (s *signals) subscribed(t *testing.T, sig os.Signal) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, fmt.Sprintf("something subscribed to %v", sig), func() bool {
 		s.mu.Lock()
-		found := false
+		defer s.mu.Unlock()
 		for _, sigs := range s.subs {
-			found = found || slices.Contains(sigs, sig)
+			if slices.Contains(sigs, sig) {
+				return true
+			}
 		}
-		s.mu.Unlock()
-		if found {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("nothing subscribed to %v", sig)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return false
+	})
 }
 
 // raise delivers sig once something subscribes to it.
 func (s *signals) raise(t *testing.T, sig os.Signal) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for {
+	testutil.Eventually(t, fmt.Sprintf("something taking %v", sig), func() bool {
 		s.mu.Lock()
+		defer s.mu.Unlock()
 		for c, sigs := range s.subs {
 			if slices.Contains(sigs, sig) {
 				c <- sig
-				s.mu.Unlock()
-				return
+				return true
 			}
 		}
-		s.mu.Unlock()
-		if time.Now().After(deadline) {
-			t.Fatalf("nothing took %v", sig)
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return false
+	})
 }
 
 // fakeTerminal records what is done to it.
@@ -356,31 +346,23 @@ func TestATerminalIsRawResizedAndRestored(t *testing.T) {
 		code, out, errOut = r.run(t, "exec", "-it", "ct", "api", "--", "size")
 		done <- code
 	}()
-	deadline := time.Now().Add(10 * time.Second)
-	for raw, _ := r.term.state(); !raw; raw, _ = r.term.state() {
+	deadline := time.Now().Add(testutil.Wait)
+	testutil.EventuallyWithin(t, time.Until(deadline), "the terminal made raw", func() bool {
 		select {
 		case code := <-done:
 			t.Fatalf("the exec ended with %d before its terminal was made raw: %s", code, errOut)
 		default:
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("the terminal was never made raw")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		raw, _ := r.term.state()
+		return raw
+	})
 	r.term.resize(30, 100)
 	r.sigs.raise(t, syscall.SIGWINCH)
 	// Ctrl-C ends hangar with -t: the remote process goes with the exec.
-	for {
+	testutil.EventuallyWithin(t, time.Until(deadline), "the resize", func() bool {
 		_, inputs := r.server.got()
-		if len(inputs) > 0 {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the resize never came")
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
+		return len(inputs) > 0
+	})
 	r.sigs.raise(t, syscall.SIGTERM)
 	select {
 	case code := <-done:
