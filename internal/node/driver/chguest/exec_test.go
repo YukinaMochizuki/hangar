@@ -35,6 +35,11 @@ type scripted struct {
 
 func (g *scripted) Exec(ctx context.Context, s *connect.BidiStream[guestv1.ExecRequest, guestv1.ExecResponse]) (err error) {
 	defer func() {
+		if err != nil && !errors.Is(err, io.EOF) {
+			// As hangar-init, the end of the call is ctx's: on a dropped
+			// connection the server fails the body before it cancels ctx.
+			<-ctx.Done()
+		}
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}

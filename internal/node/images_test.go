@@ -41,6 +41,34 @@ func TestThePullerSaysWhenAnImageIsReady(t *testing.T) {
 	}
 }
 
+// TestPinningAReadyImagePullsNothingAgain: once a machine's image is ready
+// and its status pins the digest, as when its VM runs, the image is ready at
+// the next look, with no job to wait for.
+func TestPinningAReadyImagePullsNothingAgain(t *testing.T) {
+	host := fake.New()
+	host.AddImage("app", "sha256:1", driver.ImageConfig{Cmd: []string{"true"}})
+	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 2)
+	ready := make(chan struct{}, 1)
+	p.start(t.Context(), func() { ready <- struct{}{} })
+
+	if _, _, ok, err := p.get("m1", "app", "", driver.Anonymous, false); ok || err != nil {
+		t.Fatalf("ready before it was pulled: %t %v", ok, err)
+	}
+	select {
+	case <-ready:
+	case <-time.After(10 * time.Second):
+		t.Fatal("never told the image was ready")
+	}
+	digest, _, ok, err := p.get("m1", "app", "", driver.Anonymous, false)
+	if !ok || err != nil || digest != "sha256:1" {
+		t.Fatalf("get after ready: %s %t %v", digest, ok, err)
+	}
+	pinned, config, ok, err := p.get("m1", "app", digest, driver.Anonymous, false)
+	if !ok || err != nil || pinned != digest || len(config.Cmd) != 1 {
+		t.Errorf("pinned to the digest it made ready: %s %+v %t %v, want ready at once", pinned, config, ok, err)
+	}
+}
+
 // TestAnImageAtFaultIsNotTriedAgain: an image too large, or invalid, fails
 // for good: however long after, the next look does not unpack it again (a
 // tag is resolved again, a pinned digest not even that), while a failure

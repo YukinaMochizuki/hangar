@@ -95,9 +95,13 @@ func (p *puller) start(ctx context.Context, notify func()) {
 // proves) unless empty, with its base made, pulling with creds; own gives a
 // machine with credentials a job of its own (docs/decisions/secrets.md).
 func (p *puller) get(uid, ref, digest string, creds driver.Credentials, own bool) (string, driver.ImageConfig, bool, error) {
-	key := ref + "@" + digest
-	if own && digest == "" {
-		key += "#" + uid
+	unpinned := ref + "@"
+	if own {
+		unpinned += "#" + uid
+	}
+	key := unpinned
+	if digest != "" {
+		key = ref + "@" + digest
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -105,6 +109,12 @@ func (p *puller) get(uid, ref, digest string, creds driver.Credentials, own bool
 	j := p.jobs[key]
 	if j == nil {
 		j = &pull{digest: digest, pinned: digest != ""}
+		// A digest the machine's own unpinned job made ready is that very
+		// image: pinning it, as its status does once its VM runs, pulls
+		// nothing again.
+		if u := p.jobs[unpinned]; digest != "" && u != nil && u.ready && u.digest == digest {
+			j.ready, j.config, j.creds = true, u.config, u.creds
+		}
 		p.jobs[key] = j
 	}
 	switch {
