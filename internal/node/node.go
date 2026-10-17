@@ -62,6 +62,14 @@ type Config struct {
 	// Reserved is kept back from machines for the host itself, in
 	// quantities.
 	Reserved *computev1alpha1.NodeResources
+	// Placement is how the host is described beyond what Hardware reads:
+	// its region, site and chassis come from here alone, and a CPU model,
+	// CPU generation or storage set here wins over what is read. The
+	// chassis, if set, is a DNS-1123 label.
+	Placement *computev1alpha1.Placement
+	// Hardware reads the host's CPU and disks into a Placement. Defaults to
+	// reading this host.
+	Hardware func() (*computev1alpha1.Placement, error)
 	// HeartbeatInterval is how often the agent reports. The default of ten
 	// seconds fits the apiserver's NodeGracePeriod with three reports to
 	// spare.
@@ -159,6 +167,12 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Host == nil {
 		cfg.Host = hostResources
+	}
+	if cfg.Hardware == nil {
+		cfg.Hardware = hostHardware
+	}
+	if err := checkPlacement(cfg.Placement); err != nil {
+		return nil, fmt.Errorf("the host's placement: %w", err)
 	}
 	if cfg.Reserved == nil {
 		cfg.Reserved = &computev1alpha1.NodeResources{}
@@ -400,7 +414,7 @@ func (a *Agent) machinesOnNetwork(ctx context.Context, o store.Object) []control
 }
 
 // report writes the node's status: what the host has, what is left for
-// machines, and that the agent is alive.
+// machines, what it is, and that the agent is alive.
 func (a *Agent) report(ctx context.Context) error {
 	capacity, err := a.cfg.Host()
 	if err != nil {
@@ -438,6 +452,14 @@ func (a *Agent) report(ctx context.Context) error {
 	if a.cfg.IPv6Prefix.IsValid() {
 		status.Ipv6Prefix = a.cfg.IPv6Prefix.String()
 	}
+	hw, err := a.cfg.Hardware()
+	if err != nil {
+		// As with the storage's capacity: what was last reported stays
+		// rather than fail the heartbeat.
+		hw = n.GetStatus().GetPlacement()
+		a.cfg.Log.Warn("reading the host's hardware", "error", err)
+	}
+	status.Placement = placement(hw, a.cfg.Placement)
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
 		Type: computeapi.NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		ObservedGeneration: n.GetMetadata().GetGeneration(),

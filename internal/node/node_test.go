@@ -2,9 +2,11 @@ package node_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -98,6 +100,47 @@ func TestTheNodeReportsItsHost(t *testing.T) {
 	ready := conditions.Find(st.GetConditions(), computeapi.NodeReady)
 	if ready.GetReason() != "AgentReporting" || ready.GetObservedGeneration() != n.GetMetadata().GetGeneration() {
 		t.Errorf("Ready %v", ready)
+	}
+}
+
+// TestTheNodeReportsItsPlacement: the node describes its host by what the
+// agent reads of its hardware and what its configuration says, and keeps
+// what it last read when a read fails.
+func TestTheNodeReportsItsPlacement(t *testing.T) {
+	env := apiservertest.Start(t, nil)
+	root := env.As(apiservertest.Root)
+	var failing atomic.Bool
+	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, nil, func(c *node.Config) {
+		c.Placement = &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2"}
+		c.Hardware = func() (*computev1alpha1.Placement, error) {
+			if failing.Load() {
+				return nil, errors.New("no /proc/cpuinfo")
+			}
+			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)", Storage: "2 × NVMe SSD"}, nil
+		}
+	})
+	want := &computev1alpha1.Placement{
+		Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
+		Storage: "2 × NVMe SSD", Chassis: "generic-1u-2x-u2",
+	}
+	n := waitValue(t, "the node describing its host", getNode(t, root), func(n *computev1alpha1.Node) bool {
+		return proto.Equal(n.GetStatus().GetPlacement(), want)
+	})
+
+	failing.Store(true)
+	beat := n.GetStatus().GetLastHeartbeatTime().AsTime()
+	n = waitValue(t, "a report after the read fails", getNode(t, root), func(n *computev1alpha1.Node) bool {
+		return n.GetStatus().GetLastHeartbeatTime().AsTime().After(beat)
+	})
+	if got := n.GetStatus().GetPlacement(); !proto.Equal(got, want) {
+		t.Errorf("after a failed read the node reports placement %v, want %v", got, want)
+	}
+}
+
+func TestTheAgentRefusesAChassisThatIsNoIdentifier(t *testing.T) {
+	_, err := node.New(node.Config{Name: "n1", Placement: &computev1alpha1.Placement{Chassis: "Generic 1U"}})
+	if err == nil || !strings.Contains(err.Error(), "chassis") {
+		t.Errorf("an agent with chassis %q: %v", "Generic 1U", err)
 	}
 }
 

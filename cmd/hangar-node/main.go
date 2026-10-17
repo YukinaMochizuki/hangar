@@ -73,6 +73,11 @@ func main() {
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
 		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
 		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
+		region         = flag.String("region", "", "the region the host is in, such as ap-southeast, which the machines on it report")
+		site           = flag.String("site", "", "the site within the region the host is in, such as SGP02, which the machines on it report")
+		chassis        = flag.String("chassis", "", "names the host's chassis, a DNS-1123 label such as generic-1u-2x-u2, which a client draws the machines on it with; empty is a generic server")
+		cpuGeneration  = flag.String("cpu-generation", "", "the CPU's microarchitecture and code name, such as \"Zen 3 (Milan)\"; empty for what the agent knows of the CPU")
+		storage        = flag.String("storage", "", "the host's disks as the machines on it report them, such as \"2 × NVMe SSD\"; empty for the physical disks the agent finds")
 	)
 	hf.bind(flag.CommandLine)
 	flag.Parse()
@@ -109,6 +114,7 @@ func main() {
 			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
 		},
 		Reserved:      &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
+		Placement:     &computev1alpha1.Placement{Region: *region, Site: *site, Chassis: *chassis, CpuGeneration: *cpuGeneration, Storage: *storage},
 		MaxPulls:      *maxPulls,
 		MaxUnpackWork: hf.maxUnpackWork,
 		Drivers:       d,
