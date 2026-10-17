@@ -107,6 +107,28 @@ no search until search works.
   API, and the form shows that refusal.
 - **Logs** are `MachineCapabilityService.Logs`, the server stream `hangar
   logs -f` reads, followed while the page is open.
+- **The Runs on panel says where the machine stands** on its way to a
+  host, in its header where the host's name goes once it is placed
+  (`web/src/components/runs-on-panel.tsx`, the state from
+  `web/src/lib/runs-on.ts`; settled with the owner):
+
+  | State | Read from | Header | Body |
+  |---|---|---|---|
+  | Scheduling | asked to run, no placement, not refused | "Scheduling…" | empty, a faint light sweeping across it |
+  | Not schedulable | the Machine's `Scheduled` condition False; the Machine not known, the container's or VM's `Ready` reason `Unschedulable` | "Not schedulable", in the warning colour | the scheduler's message, as a sentence |
+  | Stopped, never placed | stopped, no placement | nothing | empty |
+  | Placed | `status.placement` | the host's name | the host's drawing and rows |
+
+  A placement wins over every other state. Before placement nothing of the
+  hardware is known, so nothing of it is drawn: the empty body is as tall
+  as a placed one, so the page does not move when the host comes, and the
+  sweep covers it to the card's rounded edges.
+- **A host arrives only when watched.** When the placement comes while the
+  page is open, the host's lines trace themselves, its LEDs light one after
+  another and its rows fade in in order, about a second in all. A machine
+  placed when the page opens shows its host with nothing played. Under
+  `prefers-reduced-motion` nothing sweeps and the host replaces the empty
+  body at once.
 
 ### How the session reaches the API, and CSRF
 
@@ -172,10 +194,11 @@ no search until search works.
 - A Container or VirtualMachine is shown with the Machine it runs as, found
   by the Machine's owner reference: its phase, node, addresses and boot
   time are there (`machine-model.md`).
-- Where a machine runs is read through one adapter,
-  `web/src/lib/placement.ts`, in the shape of the API's `Placement`. The
-  node name is real; the placement behind it is a fixed table until the API
-  serves it.
+- Where a machine runs is the container's or VM's `status.placement`
+  (`machine-placement.md`), read through one adapter,
+  `web/src/lib/placement.ts`. A machine without one shows one of the Runs
+  on panel's other states (above); an empty field shows nothing; a chassis
+  the console has no drawing of, or none, is drawn as a generic server.
 
 ## Consequences
 

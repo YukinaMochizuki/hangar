@@ -136,7 +136,37 @@
 @media (prefers-reduced-motion: reduce) {
   .led-activity, .led-blink, .led-blink-slow { animation: none; }
 }
+/*
+ * A machine's Runs on panel (components/runs-on-panel.tsx). The host's
+ * arrival plays only when the placement comes while the page is open, about
+ * a second in all.
+ */
+@keyframes art-draw { to { stroke-dashoffset: 0; } }
+@keyframes art-fill-in { from { fill-opacity: 0; } }
+/* Each line traces itself; the faces fill once the lines are drawn. */
+.art-draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: art-draw 0.32s ease-out both, art-fill-in 0.3s ease-out both;
+}
+@keyframes art-led-in { from { opacity: 0; } }
+.art-led-in { animation: art-led-in 0.12s steps(1, end) both; }
+@keyframes arrive-row { from { opacity: 0; transform: translateY(4px); } }
+.arrive-row { animation: arrive-row 0.28s ease-out both; }
+/* A faint light sweeping across the empty panel while the machine is scheduled. */
+@keyframes runs-on-sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+.runs-on-sweep {
+  background: linear-gradient(100deg, transparent 35%, color-mix(in oklch, var(--foreground) 5%, transparent) 50%, transparent 65%);
+  animation: runs-on-sweep 2.8s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .runs-on-sweep { animation: none; display: none; }
+  .art-draw, .art-led-in, .arrive-row { animation: none; stroke-dasharray: none; }
+}
+
 /* Screenshots ask for a still frame. */
 [data-still] .led-activity, [data-still] .led-blink, [data-still] .led-blink-slow { animation: none; }
 [data-still] .animate-ping { animation: none; opacity: 0; }
 [data-still] .animate-pulse, [data-still] .animate-spin { animation: none; }
+/* The sweep held mid-way across. */
+[data-still] .runs-on-sweep { animation: none; transform: none; }

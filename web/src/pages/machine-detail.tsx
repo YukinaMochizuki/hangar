@@ -10,9 +10,10 @@ import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { ArrowUpRight, ChevronDown, ChevronRight, ChevronUp, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
-import { artStatus, ChassisArt } from "@/components/chassis-art";
+import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
 import { PageBanner } from "@/components/notice";
+import { RunsOnPanel } from "@/components/runs-on-panel";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
@@ -21,8 +22,8 @@ import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { ago, date, isLive, refetchInterval, sizeOf, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
 import { useReducedMotion } from "@/lib/motion";
-import { hostFor } from "@/lib/placement";
 import { formatNumber } from "@/lib/quantity";
+import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
 
 const restartPolicies: Record<number, string> = {
@@ -496,57 +497,28 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
 
 function RunsOn({ m }: { m: MachineView }) {
   const all = useMachines(m.project);
-  const host = hostFor(m.node);
-  if (!host) {
-    return (
-      <Card>
-        <CardHeader title="Runs on" />
-        <div className="px-4 py-3 text-[13px] text-muted">Not placed on a host yet.</div>
-      </Card>
-    );
-  }
+  const state = runsOnState(m);
   const mine = all.items.filter((x) => x.node === m.node);
   const live = mine.filter((x) => isLive(x) && !x.deleting);
   const sum = (xs: MachineView[], f: (x: MachineView) => number) => xs.reduce((s, x) => s + (Number.isFinite(f(x)) ? f(x) : 0), 0);
   return (
-    <Card className="overflow-hidden">
-      <CardHeader title="Runs on" action={<span className="font-mono text-[12px] text-muted">{host.node}</span>} />
-      <div className="relative border-b bg-[radial-gradient(ellipse_at_50%_0%,var(--accent-soft),transparent_70%)] px-6 pb-3 pt-6">
-        <ChassisArt chassis={host.art} status={artStatus(m.phase)} />
-      </div>
-      {/* Only what the host's placement says: its hardware, never its load. */}
-      <div className="px-4 pt-3">
-        <div className="text-[15px] font-medium">{host.cpuModel || host.node}</div>
-        {host.cpuGeneration && <div className="text-[12.5px] text-muted">{host.cpuGeneration}</div>}
-      </div>
-      <dl className="px-4 pb-1 pt-2">
-        {(host.region || host.site) && (
-          <Field label="Region">
-            {host.region}
-            {host.site && <span className="text-muted"> · {host.site}</span>}
-          </Field>
-        )}
-        {host.memory && <Field label="Memory">{host.memory}</Field>}
-        {host.storage && <Field label="Storage">{host.storage}</Field>}
-        {host.network && <Field label="Network">{host.network}</Field>}
-      </dl>
-      <div className="mx-4 mb-4 mt-2 rounded-md border bg-surface-2 px-3 py-2.5">
-        <div className="text-[11.5px] font-medium text-subtle">This project on {host.node}</div>
-        <div className="mt-1.5 grid grid-cols-4 gap-2 text-center">
-          {[
-            [`${live.length}/${mine.length}`, "running"],
-            [formatNumber(sum(live, (x) => x.cpu)), "vCPU"],
-            [formatNumber(sum(live, (x) => x.memoryGi)), "GiB mem"],
-            [formatNumber(sum(mine, (x) => x.diskGi)), "GiB disk"],
-          ].map(([v, l]) => (
-            <div key={l}>
-              <div className="font-mono text-[15px] font-medium tabular">{v}</div>
-              <div className="text-[11px] text-muted">{l}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Card>
+    <RunsOnPanel
+      state={state}
+      status={artStatus(m.phase)}
+      share={
+        state.kind === "placed"
+          ? {
+              node: state.host.node,
+            values: [
+              [`${live.length}/${mine.length}`, "running"],
+              [formatNumber(sum(live, (x) => x.cpu)), "vCPU"],
+              [formatNumber(sum(live, (x) => x.memoryGi)), "GiB mem"],
+              [formatNumber(sum(mine, (x) => x.diskGi)), "GiB disk"],
+            ],
+          }
+          : undefined
+      }
+    />
   );
 }
 
