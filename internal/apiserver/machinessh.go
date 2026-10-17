@@ -123,11 +123,12 @@ func (s *Server) serveSSH(chain auth.Chain, w http.ResponseWriter, r *http.Reque
 		s.auditRefused("ssh refused", p, clientIP(r.Context()), route, err)
 		execws.WriteError(w, r, err)
 	}
-	ctx, err := chain.Authenticate(r.Context(), r.Header)
+	ctx, release, err := chain.Hold(r.Context(), r.Header, s.clock)
 	if err != nil {
 		refuse(auth.Principal{}, connect.NewError(connect.CodeUnauthenticated, err))
 		return
 	}
+	defer release()
 	p, _ := auth.FromContext(ctx)
 	kind, err := kindOfPlural(route.Plural)
 	if err != nil {
@@ -182,6 +183,13 @@ func (s *Server) runSSH(ctx context.Context, c *websocket.Conn, x *machineTarget
 			}
 		})
 	}
+	// A recheck that refuses the caller ends the tunnel at once, as an
+	// exec's.
+	defer context.AfterFunc(ctx, func() {
+		if err := auth.Ended(ctx); err != nil {
+			end(err)
+		}
+	})()
 	ws := context.WithoutCancel(ctx)
 	stream := x.call.nodes.SSH(ctx)
 	context.AfterFunc(ctx, func() { _ = stream.CloseResponse() })

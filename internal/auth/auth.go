@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"connectrpc.com/connect"
+	"github.com/jonboulle/clockwork"
 )
 
 // Type is the kind of identity behind a principal.
@@ -119,10 +122,24 @@ func (c Chain) Authenticate(ctx context.Context, header http.Header) (context.Co
 }
 
 // Interceptor authenticates every incoming Connect call with the chain and
-// rejects calls it cannot authenticate.
-func (c Chain) Interceptor() connect.Interceptor { return interceptor{c} }
+// rejects calls it cannot authenticate. It holds every streaming call as
+// Hold does, on the real clock, and logs to the default logger.
+func (c Chain) Interceptor() connect.Interceptor {
+	return c.InterceptorOn(clockwork.NewRealClock(), slog.Default())
+}
 
-type interceptor struct{ chain Chain }
+// InterceptorOn is Interceptor with streaming calls rechecked on clock, and
+// log told of a stream that sent something without registering a decision
+// to recheck (Recheck): one that only its credential ends.
+func (c Chain) InterceptorOn(clock clockwork.Clock, log *slog.Logger) connect.Interceptor {
+	return interceptor{chain: c, clock: clock, log: log}
+}
+
+type interceptor struct {
+	chain Chain
+	clock clockwork.Clock
+	log   *slog.Logger
+}
 
 func (i interceptor) authenticate(ctx context.Context, header http.Header) (context.Context, error) {
 	ctx, err := i.chain.Authenticate(ctx, header)
@@ -151,10 +168,34 @@ func (i interceptor) WrapStreamingClient(next connect.StreamingClientFunc) conne
 
 func (i interceptor) WrapStreamingHandler(next connect.StreamingHandlerFunc) connect.StreamingHandlerFunc {
 	return func(ctx context.Context, conn connect.StreamingHandlerConn) error {
-		ctx, err := i.authenticate(ctx, conn.RequestHeader())
+		ctx, release, err := i.chain.Hold(ctx, conn.RequestHeader(), i.clock)
 		if err != nil {
-			return err
+			return connect.NewError(connect.CodeUnauthenticated, err)
 		}
-		return next(ctx, conn)
+		defer release()
+		sent := &sendTracker{StreamingHandlerConn: conn}
+		err = next(ctx, sent)
+		if sent.sent.Load() && !registered(ctx) {
+			p, _ := FromContext(ctx)
+			i.log.Warn("a stream answered without registering the decisions it was let in under, so no recheck could end it but its credential's",
+				"procedure", conn.Spec().Procedure, "principal", p.String())
+		}
+		// Whatever the handler made of its context ending, the caller is told
+		// why it did.
+		if refused := Ended(ctx); refused != nil {
+			return refused
+		}
+		return err
 	}
+}
+
+// sendTracker records whether a stream sent anything.
+type sendTracker struct {
+	connect.StreamingHandlerConn
+	sent atomic.Bool
+}
+
+func (s *sendTracker) Send(msg any) error {
+	s.sent.Store(true)
+	return s.StreamingHandlerConn.Send(msg)
 }

@@ -34,6 +34,7 @@ func RunCredentials(t *testing.T, open func(t *testing.T) CredentialStore) {
 		{"AuthRequests", testAuthRequests},
 		{"AuthRequestTakenOnce", testAuthRequestTakenOnce},
 		{"DeleteExpired", testDeleteExpired},
+		{"FamilyHolds", testFamilyHolds},
 		{"CountAuthRequests", testCountAuthRequests},
 		{"AuthRequestsWithinLimits", testAuthRequestsWithinLimits},
 	}
@@ -455,5 +456,42 @@ func testAuthRequestsWithinLimits(t *testing.T, s store.Credentials) {
 	wg.Wait()
 	if in != max || limited != callers-max {
 		t.Errorf("%d concurrent calls under a limit of %d: %d in, %d refused", callers, max, in, limited)
+	}
+}
+
+func testFamilyHolds(t *testing.T, s store.Credentials) {
+	ctx := t.Context()
+	holds := func(family, typ string, now time.Time) bool {
+		t.Helper()
+		ok, err := s.FamilyHolds(ctx, family, typ, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+	spent := credential("spent", "f", "p")
+	if err := s.CreateCredentials(ctx, spent, credential("other", "g", "p")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ConsumeCredential(ctx, "spent", at); err != nil {
+		t.Fatal(err)
+	}
+	if !holds("f", "refresh", at) {
+		t.Error("a family holding a consumed credential holds none")
+	}
+	if holds("f", "access", at) || holds("nope", "refresh", at) {
+		t.Error("a family holds a type it has none of, or an unknown family holds one")
+	}
+	if holds("f", "refresh", at.Add(time.Minute)) {
+		t.Error("a family whose only credential went idle still holds it")
+	}
+	if holds("g", "refresh", at.Add(time.Hour)) {
+		t.Error("a family whose only credential expired still holds it")
+	}
+	if _, err := s.RevokeCredentialFamily(ctx, "g", at); err != nil {
+		t.Fatal(err)
+	}
+	if holds("g", "refresh", at) {
+		t.Error("a revoked family still holds a credential")
 	}
 }

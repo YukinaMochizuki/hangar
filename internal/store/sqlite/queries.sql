@@ -73,6 +73,13 @@ WHERE hash = sqlc.arg(hash) AND used_at = 0;
 DELETE FROM credentials
 WHERE family = ?;
 
+-- name: FamilyHolds :one
+SELECT COUNT(*)
+FROM credentials
+WHERE family = sqlc.arg(family) AND type = sqlc.arg(type)
+  AND expires_at > sqlc.arg(now)
+  AND (idle_until = 0 OR idle_until > sqlc.arg(now));
+
 -- name: FamilyExpiry :one
 SELECT CAST(COALESCE(MAX(expires_at), 0) AS INTEGER) AS expires_at
 FROM credentials
