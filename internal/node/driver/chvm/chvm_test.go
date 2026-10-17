@@ -14,13 +14,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	sd "github.com/coreos/go-systemd/v22/dbus"
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
-	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // fakeSystemd keeps units as systemd would, without running them.
@@ -509,47 +509,50 @@ func startWithLog(t *testing.T, h *Hypervisor, uid string) {
 }
 
 func TestStopAsksTheGuestFirst(t *testing.T) {
-	testutil.Quarantine(t, "#80")
-	s := newFakeSystemd()
-	g := &fakeGuest{}
-	h := newDriver(t, shortDir(t), s, g)
-	startWithLog(t, h, "m1")
-	// The guest powers off a little after it is asked.
-	g.stop = func(_ context.Context, uid string) error {
-		time.AfterFunc(50*time.Millisecond, func() { writeExit(t, h, uid, 143) })
-		return nil
-	}
-	start := time.Now()
-	if err := h.Stop(t.Context(), "m1"); err != nil {
-		t.Fatal(err)
-	}
-	if d := time.Since(start); d >= testGrace {
-		t.Errorf("took %v, though the guest was off in 50ms", d)
-	}
-	if !slices.Equal(g.asked, []string{"m1"}) || !g.stopping[0] {
-		t.Errorf("the guest was asked %v, marked as stopping %v", g.asked, g.stopping)
-	}
-	stopped(t, h, s, "m1")
-	if err := h.Stop(t.Context(), "m1"); err != nil {
-		t.Errorf("stopping again: %v", err)
-	}
-	if len(g.asked) != 1 {
-		t.Error("a stopped VM's guest was asked again")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSystemd()
+		g := &fakeGuest{}
+		h := newDriver(t, shortDir(t), s, g)
+		startWithLog(t, h, "m1")
+		// The guest powers off a little after it is asked.
+		g.stop = func(_ context.Context, uid string) error {
+			time.AfterFunc(50*time.Millisecond, func() { writeExit(t, h, uid, 143) })
+			return nil
+		}
+		start := time.Now()
+		if err := h.Stop(t.Context(), "m1"); err != nil {
+			t.Fatal(err)
+		}
+		if d := time.Since(start); d >= testGrace {
+			t.Errorf("took %v, though the guest was off in 50ms", d)
+		}
+		if !slices.Equal(g.asked, []string{"m1"}) || !g.stopping[0] {
+			t.Errorf("the guest was asked %v, marked as stopping %v", g.asked, g.stopping)
+		}
+		stopped(t, h, s, "m1")
+		if err := h.Stop(t.Context(), "m1"); err != nil {
+			t.Errorf("stopping again: %v", err)
+		}
+		if len(g.asked) != 1 {
+			t.Error("a stopped VM's guest was asked again")
+		}
+	})
 }
 
 func TestStopKillsAGuestThatStaysUp(t *testing.T) {
-	s := newFakeSystemd()
-	h := newDriver(t, shortDir(t), s, &fakeGuest{})
-	startWithLog(t, h, "m1")
-	start := time.Now()
-	if err := h.Stop(t.Context(), "m1"); err != nil {
-		t.Fatal(err)
-	}
-	if d := time.Since(start); d < testGrace+testSlack || d > testGrace+testSlack+time.Second {
-		t.Errorf("killed after %v, want after the grace and the slack, %v", d, testGrace+testSlack)
-	}
-	stopped(t, h, s, "m1")
+	synctest.Test(t, func(t *testing.T) {
+		s := newFakeSystemd()
+		h := newDriver(t, shortDir(t), s, &fakeGuest{})
+		startWithLog(t, h, "m1")
+		start := time.Now()
+		if err := h.Stop(t.Context(), "m1"); err != nil {
+			t.Fatal(err)
+		}
+		if d := time.Since(start); d < testGrace+testSlack || d > testGrace+testSlack+time.Second {
+			t.Errorf("killed after %v, want after the grace and the slack, %v", d, testGrace+testSlack)
+		}
+		stopped(t, h, s, "m1")
+	})
 }
 
 // TestStopKillsAGuestThatDoesNotAnswer: a guest refusing the stop is
@@ -566,17 +569,19 @@ func TestStopKillsAGuestThatDoesNotAnswer(t *testing.T) {
 		}, 3 * time.Second, 4 * time.Second},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := newFakeSystemd()
-			h := newDriver(t, shortDir(t), s, &fakeGuest{stop: tt.stop})
-			startWithLog(t, h, "m1")
-			start := time.Now()
-			if err := h.Stop(t.Context(), "m1"); err != nil {
-				t.Fatal(err)
-			}
-			if d := time.Since(start); d < tt.min || d > tt.max {
-				t.Errorf("took %v, want between %v and %v", d, tt.min, tt.max)
-			}
-			stopped(t, h, s, "m1")
+			synctest.Test(t, func(t *testing.T) {
+				s := newFakeSystemd()
+				h := newDriver(t, shortDir(t), s, &fakeGuest{stop: tt.stop})
+				startWithLog(t, h, "m1")
+				start := time.Now()
+				if err := h.Stop(t.Context(), "m1"); err != nil {
+					t.Fatal(err)
+				}
+				if d := time.Since(start); d < tt.min || d > tt.max {
+					t.Errorf("took %v, want between %v and %v", d, tt.min, tt.max)
+				}
+				stopped(t, h, s, "m1")
+			})
 		})
 	}
 }

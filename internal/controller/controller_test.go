@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -122,74 +124,143 @@ func TestReconcilesExistingObjectsThenChanges(t *testing.T) {
 	}
 }
 
-func TestFailuresAreRetriedWithBackoff(t *testing.T) {
-	st := openStore(t)
-	clock := clockwork.NewFakeClock()
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "flaky"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	r := newRecorder()
-	k := Key{Name: "flaky"}
-	r.fail[k] = 2
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
+// memSource is a Source in memory, for the timing tests: they run in a
+// synctest bubble, which cannot hold the SQLite store. The tests on
+// StoreSource and internal/store/storetest cover the store's watch.
+type memSource struct {
+	mu      sync.Mutex
+	rev     int64
+	objects map[store.Key]store.Object
+	events  []store.Event
+	// changed is closed, and replaced, on every write.
+	changed chan struct{}
+	// listFailures is how many Lists fail before one succeeds.
+	listFailures int
+}
 
-	testutil.Eventually(t, "the first attempt", func() bool { return r.count(k) == 1 })
-	// The retry waits for its backoff: nothing happens until the clock moves.
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
-	if n := r.count(k); n != 1 {
-		t.Fatalf("retried before the backoff: %d calls", n)
+func newMemSource(keys ...store.Key) *memSource {
+	s := &memSource{objects: map[store.Key]store.Object{}, changed: make(chan struct{})}
+	for _, k := range keys {
+		s.put(k)
 	}
-	if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
-		t.Fatal(err)
+	return s
+}
+
+// put creates or updates the object at k.
+func (s *memSource) put(k store.Key) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	typ := store.EventUpdated
+	if _, ok := s.objects[k]; !ok {
+		typ = store.EventCreated
 	}
-	clock.Advance(100 * time.Millisecond)
-	testutil.Eventually(t, "the first retry", func() bool { return r.count(k) == 2 })
-	// The second failure doubles the delay.
-	if err := clock.BlockUntilContext(t.Context(), 2); err != nil {
-		t.Fatal(err)
+	s.rev++
+	o := store.Object{Key: k, Data: []byte("x"), Revision: s.rev}
+	s.objects[k] = o
+	s.events = append(s.events, store.Event{Type: typ, Object: o, Revision: s.rev})
+	close(s.changed)
+	s.changed = make(chan struct{})
+}
+
+func (s *memSource) List(_ context.Context, kind string) ([]store.Object, int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.listFailures > 0 {
+		s.listFailures--
+		return nil, 0, errors.New("database is locked")
 	}
-	clock.Advance(100 * time.Millisecond)
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
-	if n := r.count(k); n != 2 {
-		t.Fatalf("the second retry came before its doubled delay: %d calls", n)
+	var out []store.Object
+	for k, o := range s.objects {
+		if k.Kind == kind {
+			out = append(out, o)
+		}
 	}
-	clock.Advance(100 * time.Millisecond)
-	testutil.Eventually(t, "the second retry", func() bool { return r.count(k) == 3 })
+	return out, s.rev, nil
+}
+
+func (s *memSource) Watch(ctx context.Context, kinds []string, since int64, fn func(store.Event) error) error {
+	for {
+		s.mu.Lock()
+		var todo []store.Event
+		for _, ev := range s.events {
+			if ev.Revision > since && slices.Contains(kinds, ev.Object.Kind) {
+				todo = append(todo, ev)
+			}
+		}
+		since = s.rev
+		changed := s.changed
+		s.mu.Unlock()
+		for _, ev := range todo {
+			if err := fn(ev); err != nil {
+				return err
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
+func TestFailuresAreRetriedWithBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "flaky"})
+		r := newRecorder()
+		k := Key{Name: "flaky"}
+		r.fail[k] = 2
+		run(t, &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}})
+		want := func(n int, what string) {
+			t.Helper()
+			synctest.Wait()
+			if got := r.count(k); got != n {
+				t.Fatalf("%s: %d calls, want %d", what, got, n)
+			}
+		}
+		want(1, "the first attempt")
+		time.Sleep(100*time.Millisecond - time.Nanosecond) //nolint:forbidigo // virtual time
+		want(1, "just before the first backoff")
+		time.Sleep(time.Nanosecond) //nolint:forbidigo // virtual time
+		want(2, "the first retry")
+		// The second failure doubles the delay.
+		time.Sleep(200*time.Millisecond - time.Nanosecond) //nolint:forbidigo // virtual time
+		want(2, "just before the doubled delay")
+		time.Sleep(time.Nanosecond) //nolint:forbidigo // virtual time
+		want(3, "the second retry")
+	})
 }
 
 func TestAKeyIsNeverReconciledTwiceAtOnce(t *testing.T) {
-	st := openStore(t)
-	ctx := t.Context()
-	key := store.Key{Kind: "A", Name: "busy"}
-	if _, err := st.Create(ctx, key, []byte("0")); err != nil {
-		t.Fatal(err)
-	}
-	r := newRecorder()
-	r.block = make(chan struct{})
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}})
-	k := Key{Name: "busy"}
-	testutil.Eventually(t, "the first reconcile starts", func() bool { return r.count(k) == 1 })
-
-	// Changes while it runs collapse into one more reconcile afterwards.
-	for i := range 5 {
-		if _, err := st.Update(ctx, key, []byte{byte(i)}, 0); err != nil {
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		key := store.Key{Kind: "A", Name: "busy"}
+		src := newMemSource(key)
+		r := newRecorder()
+		r.block = make(chan struct{})
+		run(t, &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}})
+		k := Key{Name: "busy"}
+		synctest.Wait()
+		if n := r.count(k); n != 1 {
+			t.Fatalf("%d reconciles started, want 1", n)
 		}
-	}
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
-	r.mu.Lock()
-	block := r.block
-	r.block = nil
-	r.mu.Unlock()
-	close(block)
-	testutil.Eventually(t, "the changes are reconciled", func() bool { return r.count(k) == 2 })
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
-	if n := r.count(k); n != 2 {
-		t.Errorf("five changes during one reconcile caused %d more", n-1)
-	}
-	if r.overlap.Load() {
-		t.Error("one key was reconciled twice at once")
-	}
+
+		// Changes while it runs collapse into one more reconcile afterwards.
+		for range 5 {
+			src.put(key)
+		}
+		synctest.Wait()
+		r.mu.Lock()
+		block := r.block
+		r.block = nil
+		r.mu.Unlock()
+		close(block)
+		synctest.Wait()
+		if n := r.count(k); n != 2 {
+			t.Errorf("five changes during one reconcile caused %d more", n-1)
+		}
+		if r.overlap.Load() {
+			t.Error("one key was reconciled twice at once")
+		}
+	})
 }
 
 // compactingStore makes the first watch fail as if it fell behind
@@ -224,72 +295,70 @@ func TestRelistsAfterCompaction(t *testing.T) {
 // TestRunWaitsForTheReconcileInFlight: Run must not return while a reconcile
 // may still be writing, or the caller closes the store under it.
 func TestRunWaitsForTheReconcileInFlight(t *testing.T) {
-	st := openStore(t)
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "slow"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	r := newRecorder()
-	r.block = make(chan struct{})
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() {
-		done <- (&Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}}).Run(ctx)
-	}()
-	testutil.Eventually(t, "the reconcile starts", func() bool { return r.count(Key{Name: "slow"}) == 1 })
-	cancel()
-	select {
-	case <-done:
-		t.Fatal("Run returned with a reconcile still running")
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(r.block)
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "slow"})
+		r := newRecorder()
+		r.block = make(chan struct{})
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() {
+			done <- (&Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}}).Run(ctx)
+		}()
+		synctest.Wait()
+		if n := r.count(Key{Name: "slow"}); n != 1 {
+			t.Fatalf("%d reconciles started, want 1", n)
+		}
+		cancel()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("Run returned with a reconcile still running")
+		default:
+		}
+		close(r.block)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
 
-// flakyStore fails its first List the way a busy database might.
-type flakyStore struct {
-	store.Store
-	failed atomic.Bool
-}
-
-func (s *flakyStore) List(ctx context.Context, opts store.ListOptions) ([]store.Object, int64, error) {
-	if s.failed.CompareAndSwap(false, true) {
-		return nil, 0, errors.New("database is locked")
-	}
-	return s.Store.List(ctx, opts)
-}
-
-func TestAFailingStoreIsRetried(t *testing.T) {
-	st := &flakyStore{Store: openStore(t)}
-	clock := clockwork.NewFakeClock()
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "a"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	r := newRecorder()
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}})
-	if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // resync ticker and the retry wait
-		t.Fatal(err)
-	}
-	clock.Advance(time.Second)
-	testutil.Eventually(t, "the controller recovers", func() bool { return r.count(Key{Name: "a"}) == 1 })
+// TestAFailingSourceIsRetried: a List that fails, as a busy database's
+// may, is tried again a second later.
+func TestAFailingSourceIsRetried(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "a"})
+		src.listFailures = 1
+		r := newRecorder()
+		run(t, &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}})
+		time.Sleep(time.Second - time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 0 {
+			t.Fatalf("%d reconciles before the List was tried again", n)
+		}
+		time.Sleep(time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 1 {
+			t.Errorf("%d reconciles once the List was tried again, want 1", n)
+		}
+	})
 }
 
 func TestResyncReconcilesEverythingAgain(t *testing.T) {
-	st := openStore(t)
-	clock := clockwork.NewFakeClock()
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "a"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	r := newRecorder()
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Resync: time.Minute, Watches: []Watch{{Kind: "A", Map: Self}}})
-	testutil.Eventually(t, "the first reconcile", func() bool { return r.count(Key{Name: "a"}) == 1 })
-	if err := clock.BlockUntilContext(t.Context(), 1); err != nil {
-		t.Fatal(err)
-	}
-	clock.Advance(time.Minute)
-	testutil.Eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "a"})
+		r := newRecorder()
+		run(t, &Controller{Name: "t", Source: src, Reconciler: r, Resync: time.Minute, Watches: []Watch{{Kind: "A", Map: Self}}})
+		time.Sleep(time.Minute - time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 1 {
+			t.Fatalf("%d reconciles before the resync, want 1", n)
+		}
+		time.Sleep(time.Nanosecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 2 {
+			t.Errorf("%d reconciles after the resync, want 2", n)
+		}
+	})
 }
 
 // writeBetweenLists writes an A while the controller lists Bs, after it
@@ -327,25 +396,23 @@ func TestAChangeBetweenListsIsNotMissed(t *testing.T) {
 // TestWaitingIsCheckedSoon: a key waiting on something outside the
 // controller is checked again within MaxWait, however long it has waited.
 func TestWaitingIsCheckedSoon(t *testing.T) {
-	st := openStore(t)
-	clock := clockwork.NewFakeClock()
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "booting"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	var calls atomic.Int32
-	waiting := ReconcilerFunc(func(context.Context, Key) error {
-		calls.Add(1)
-		return fmt.Errorf("%w: still booting", ErrWaiting)
-	})
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: waiting, Clock: clock, MaxWait: 200 * time.Millisecond,
-		Watches: []Watch{{Kind: "A", Map: Self}}})
-	for i := int32(1); i <= 6; i++ {
-		testutil.Eventually(t, fmt.Sprintf("check %d", i), func() bool { return calls.Load() == i })
-		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "booting"})
+		var calls atomic.Int32
+		waiting := ReconcilerFunc(func(context.Context, Key) error {
+			calls.Add(1)
+			return fmt.Errorf("%w: still booting", ErrWaiting)
+		})
+		run(t, &Controller{Name: "t", Source: src, Reconciler: waiting, MaxWait: 200 * time.Millisecond,
+			Watches: []Watch{{Kind: "A", Map: Self}}})
+		for i := int32(1); i <= 6; i++ {
+			synctest.Wait()
+			if n := calls.Load(); n != i {
+				t.Fatalf("%d checks, want %d", n, i)
+			}
+			time.Sleep(200 * time.Millisecond) //nolint:forbidigo // virtual time
 		}
-		clock.Advance(200 * time.Millisecond)
-	}
+	})
 }
 
 // TestAFailureAfterWaitsIsRetriedSoon: waiting is not failing, so a key
@@ -353,83 +420,79 @@ func TestWaitingIsCheckedSoon(t *testing.T) {
 // backoff, not the longest; and a wait after failures is checked again
 // within MaxWait.
 func TestAFailureAfterWaitsIsRetriedSoon(t *testing.T) {
-	st := openStore(t)
-	clock := clockwork.NewFakeClock()
-	if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: "disk"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	const waits = 12 // enough to reach a one-minute backoff had they counted
-	var calls atomic.Int32
-	r := ReconcilerFunc(func(context.Context, Key) error {
-		switch n := calls.Add(1); {
-		case n <= waits:
-			return fmt.Errorf("%w: the image's base is being made", ErrWaiting)
-		case n <= waits+3:
-			return errors.New("injected")
-		case n == waits+4:
-			return fmt.Errorf("%w: once more", ErrWaiting)
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "disk"})
+		const waits = 12 // enough to reach a one-minute backoff had they counted
+		var calls atomic.Int32
+		r := ReconcilerFunc(func(context.Context, Key) error {
+			switch n := calls.Add(1); {
+			case n <= waits:
+				return fmt.Errorf("%w: the image's base is being made", ErrWaiting)
+			case n <= waits+3:
+				return errors.New("injected")
+			case n == waits+4:
+				return fmt.Errorf("%w: once more", ErrWaiting)
+			}
+			return nil
+		})
+		run(t, &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}})
+		step := func(n int32, by time.Duration) {
+			t.Helper()
+			synctest.Wait()
+			if got := calls.Load(); got != n {
+				t.Fatalf("%d calls, want %d", got, n)
+			}
+			time.Sleep(by) //nolint:forbidigo // virtual time
 		}
-		return nil
+		// Each wait in a row doubles the delay, up to MaxWait's default.
+		for i := int32(1); i <= waits; i++ {
+			step(i, min(100*time.Millisecond<<(i-1), 2*time.Second))
+		}
+		// The failures back off from the first delay: 100, 200, 400ms.
+		step(waits+1, 100*time.Millisecond)
+		step(waits+2, 200*time.Millisecond)
+		step(waits+3, 400*time.Millisecond)
+		// Three failures in a row would next wait 800ms; a wait after them is
+		// checked again as soon as a first wait is.
+		step(waits+4, 100*time.Millisecond)
+		synctest.Wait()
+		if n := calls.Load(); n != waits+5 {
+			t.Errorf("%d calls, want %d: the reconcile after the last wait", n, waits+5)
+		}
 	})
-	run(t, &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock,
-		Watches: []Watch{{Kind: "A", Map: Self}}})
-	step := func(n int32, by time.Duration) {
-		t.Helper()
-		testutil.Eventually(t, fmt.Sprintf("call %d", n), func() bool { return calls.Load() == n })
-		if err := clock.BlockUntilContext(t.Context(), 2); err != nil { // the resync ticker and the retry
-			t.Fatal(err)
-		}
-		clock.Advance(by)
-	}
-	for i := int32(1); i <= waits; i++ {
-		step(i, 2*time.Second) // MaxWait's default
-	}
-	// The failures back off from the first delay: 100, 200, 400ms.
-	step(waits+1, 100*time.Millisecond)
-	step(waits+2, 200*time.Millisecond)
-	step(waits+3, 400*time.Millisecond)
-	// Three failures in a row would next wait 800ms; a wait after them is
-	// checked again as soon as a first wait is.
-	step(waits+4, 100*time.Millisecond)
-	testutil.Eventually(t, "the reconcile after the last wait", func() bool { return calls.Load() == waits+5 })
 }
 
 // TestASkipResyncKindIsMappedOnlyAsItChanges: a kind marked SkipResync is
 // not mapped on start or resync, and is as it changes.
 func TestASkipResyncKindIsMappedOnlyAsItChanges(t *testing.T) {
-	st := openStore(t)
-	ctx := t.Context()
-	clock := clockwork.NewFakeClock()
-	for _, k := range []store.Key{{Kind: "A", Name: "a"}, {Kind: "B", Name: "before"}} {
-		if _, err := st.Create(ctx, k, []byte("x")); err != nil {
-			t.Fatal(err)
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "a"}, store.Key{Kind: "B", Name: "before"})
+		var mappedB atomic.Int32
+		r := newRecorder()
+		run(t, &Controller{
+			Name: "t", Source: src, Reconciler: r, Resync: time.Minute,
+			Watches: []Watch{
+				{Kind: "A", Map: Self},
+				{Kind: "B", SkipResync: true, Map: func(_ context.Context, o store.Object) []Key {
+					mappedB.Add(1)
+					return []Key{{Name: o.Name}}
+				}},
+			},
+		})
+		time.Sleep(time.Minute) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 2 {
+			t.Fatalf("%d reconciles on start and resync, want 2", n)
 		}
-	}
-	var mappedB atomic.Int32
-	r := newRecorder()
-	run(t, &Controller{
-		Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Resync: time.Minute,
-		Watches: []Watch{
-			{Kind: "A", Map: Self},
-			{Kind: "B", SkipResync: true, Map: func(_ context.Context, o store.Object) []Key {
-				mappedB.Add(1)
-				return []Key{{Name: o.Name}}
-			}},
-		},
+		if n := mappedB.Load(); n != 0 {
+			t.Errorf("a SkipResync kind was mapped %d times on start and resync", n)
+		}
+		src.put(store.Key{Kind: "B", Name: "after"})
+		synctest.Wait()
+		if n := r.count(Key{Name: "after"}); n != 1 {
+			t.Errorf("the change was reconciled %d times, want 1", n)
+		}
 	})
-	testutil.Eventually(t, "the start", func() bool { return r.count(Key{Name: "a"}) == 1 })
-	if err := clock.BlockUntilContext(ctx, 1); err != nil { // the resync ticker
-		t.Fatal(err)
-	}
-	clock.Advance(time.Minute)
-	testutil.Eventually(t, "the resync", func() bool { return r.count(Key{Name: "a"}) == 2 })
-	if n := mappedB.Load(); n != 0 {
-		t.Errorf("a SkipResync kind was mapped %d times on start and resync", n)
-	}
-	if _, err := st.Create(ctx, store.Key{Kind: "B", Name: "after"}, []byte("x")); err != nil {
-		t.Fatal(err)
-	}
-	testutil.Eventually(t, "the change mapped", func() bool { return r.count(Key{Name: "after"}) == 1 })
 }
 
 // TestAControllerMustListSomething: a controller whose every watch skips

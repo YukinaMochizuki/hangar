@@ -95,13 +95,13 @@ type Host struct {
 	logs       map[string]*consoleLog // console logs kept, by machine uid
 	logChanged chan struct{}          // closed when any log is written
 	logReaders int
-	stops      map[string]int        // guest Stops asked for, by machine uid
-	bootErr    map[string]error      // by machine uid; "" for every machine
-	silent     map[string]bool       // guests that never answer
-	hung       map[string]bool       // guests that take a call and never return it
-	stopDelay  map[string]*stopDelay // by machine uid; "" for every machine
-	stopCalls  map[string]int        // Hypervisor.Stop calls, failed ones too, by machine uid
-	readyCalls map[string]int        // Guest.Ready calls, by machine uid
+	stops      map[string]int         // guest Stops asked for, by machine uid
+	bootErr    map[string]error       // by machine uid; "" for every machine
+	silent     map[string]bool        // guests that never answer
+	hung       map[string]bool        // guests that take a call and never return it
+	stopDelay  map[string]*stopDelay  // by machine uid; "" for every machine
+	stopCalls  map[string][]time.Time // when Hypervisor.Stop was called, failed calls too, by machine uid
+	readyCalls map[string]int         // Guest.Ready calls, by machine uid
 	// guestIPv6 is what each container's guest holds of its public IPv6,
 	// by machine uid; oldGuests cannot be told.
 	guestIPv6 map[string][]driver.GuestIPv6
@@ -142,7 +142,7 @@ func New() *Host {
 		firewalls: map[string]map[string]secgroup.Policy{},
 		edgePorts: map[string]map[string][]uint16{},
 		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
-		stopDelay: map[string]*stopDelay{}, stopCalls: map[string]int{}, readyCalls: map[string]int{},
+		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
@@ -608,7 +608,15 @@ func (h *Host) LeaveLog(machineUID string) {
 func (h *Host) HypervisorStops(machineUID string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.stopCalls[machineUID]
+	return len(h.stopCalls[machineUID])
+}
+
+// HypervisorStopTimes returns when the machine's VM was asked to stop,
+// failed calls included.
+func (h *Host) HypervisorStopTimes(machineUID string) []time.Time {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.stopCalls[machineUID])
 }
 
 // GuestReadies returns how often the machine's guest agent was asked whether
@@ -1278,7 +1286,7 @@ func (h *Host) bootGuestIPv6(v *vm) {
 // DelayStop says.
 func (d hypervisor) Stop(ctx context.Context, machineUID string) error {
 	d.h.mu.Lock()
-	d.h.stopCalls[machineUID]++
+	d.h.stopCalls[machineUID] = append(d.h.stopCalls[machineUID], time.Now())
 	if err := d.h.removalErr; err != nil {
 		d.h.mu.Unlock()
 		return err

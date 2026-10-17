@@ -20,6 +20,8 @@ those rules.
 - [ ] Tests do not synchronise on sleep: they wait for what they need, and
       every sleep left carries its reason (see "Waiting in tests" in
       `docs/decisions/testing-strategy.md`).
+- [ ] An in-process test that times something runs in `synctest.Test`, on
+      virtual time, not on the real clock (same section).
 - [ ] A "did not happen" check looks at the object itself, such as its
       resourceVersion, never at the store-wide revision (same section).
 - [ ] Docs follow the change: if it alters how something is done, the matching
