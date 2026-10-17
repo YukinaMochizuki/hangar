@@ -470,10 +470,7 @@ func rootChains6(uplink string, prefix netip.Prefix, host netip.Addr) []chainSpe
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
-			rules: []ruleSpec{{
-				says:  "no mail from a network",
-				exprs: slices.Concat(fromNet, matchL4(unix.IPPROTO_TCP), matchDport(25, 25), drop),
-			}, {
+			rules: append(noMailRules(), []ruleSpec{{
 				says:  fmt.Sprintf("a network reaches only %s and other networks", uplink),
 				exprs: slices.Concat(fromNet, matchIfnameNot(expr.MetaKeyOIFNAME, uplink), ifnameNotPrefix(expr.MetaKeyOIFNAME, vethPrefix), drop),
 			}, {
@@ -486,7 +483,7 @@ func rootChains6(uplink string, prefix netip.Prefix, host netip.Addr) []chainSpe
 				says: fmt.Sprintf("only replies into a network but from %s and other networks", uplink),
 				exprs: slices.Concat(toNet, matchIfnameNot(expr.MetaKeyIIFNAME, uplink), ifnameNotPrefix(expr.MetaKeyIIFNAME, vethPrefix),
 					dropUnlessReply()),
-			}},
+			}}...),
 		},
 		{
 			name: "input", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookInput, prio: *nftables.ChainPriorityFilter,

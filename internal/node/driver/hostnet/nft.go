@@ -70,6 +70,26 @@ func frontDoorRules(addr netip.Addr, daddr func(netip.Prefix) []expr.Any) []rule
 	return out
 }
 
+// mailPorts are the TCP ports no network may connect to: SMTP and SMTP over
+// TLS, the ports spam is sent from. 587, submission, needs an account at the
+// server, so it stays open (docs/decisions/networking.md, "Abuse
+// protection").
+var mailPorts = []uint16{25, 465}
+
+// noMailRules drop TCP from a network to the mail ports, in a forward chain
+// of either family.
+func noMailRules() []ruleSpec {
+	var out []ruleSpec
+	for _, p := range mailPorts {
+		out = append(out, ruleSpec{
+			says: fmt.Sprintf("no TCP %d from a network", p),
+			exprs: slices.Concat(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix), matchL4(unix.IPPROTO_TCP), matchDport(p, p),
+				[]expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}),
+		})
+	}
+	return out
+}
+
 // rootChains is the root namespace's table, whose size does not depend on
 // how many networks there are; docs/decisions/networking.md lists its rules.
 func rootChains(uplink string, public netip.Addr) []chainSpec {
@@ -98,16 +118,16 @@ func rootChains(uplink string, public netip.Addr) []chainSpec {
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
-			rules: []ruleSpec{{
+			rules: append(noMailRules(), ruleSpec{
 				says:  "only replies into a network",
 				exprs: append(matchIfnamePrefix(expr.MetaKeyOIFNAME, vethPrefix), dropUnlessReply()...),
-			}, {
+			}, ruleSpec{
 				// The rule above lets no connection into a network that a reply
 				// from it could leave by another link.
 				says: fmt.Sprintf("a network reaches only %s", uplink),
 				exprs: append(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix),
 					append(matchIfnameNot(expr.MetaKeyOIFNAME, uplink), &expr.Verdict{Kind: expr.VerdictDrop})...),
-			}},
+			}),
 		},
 		{
 			name: "input", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookInput, prio: *nftables.ChainPriorityFilter,

@@ -169,8 +169,8 @@ func comments(t *testing.T, chains []chainSpec) []string {
 
 func TestChains(t *testing.T) {
 	masq := comments(t, rootChains("eth0", netip.Addr{}))
-	if len(masq) != 5 {
-		t.Fatalf("%d root rules, want 5: %q", len(masq), masq)
+	if len(masq) != 7 {
+		t.Fatalf("%d root rules, want 7: %q", len(masq), masq)
 	}
 	// A change of parameters must change a comment, or tableIs would take
 	// the old rules for the new.

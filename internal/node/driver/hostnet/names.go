@@ -34,6 +34,9 @@ const (
 	// FirewallTable is the bridge-family table in each network's namespace
 	// holding its interfaces' security groups.
 	FirewallTable = "hangar_sg"
+	// LimitTable is the inet-family table in each network's namespace
+	// limiting the new connections its machines open, of both families.
+	LimitTable = "hangar_limit"
 	// hashLen hex digits of the hash follow the three-character prefix.
 	hashLen = 12
 	// nameAttempts bounds the names tried for one object when the first are

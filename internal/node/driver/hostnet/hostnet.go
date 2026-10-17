@@ -205,6 +205,9 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 	if err := ensureTable(conn, nftables.TableFamilyIPv4, nsChains(n.CIDR, nsTransit)); err != nil {
 		return fmt.Errorf("network %s: %w", n.UID, err)
 	}
+	if err := ensureNamedTable(conn, nftables.TableFamilyINet, LimitTable, limitChains()); err != nil {
+		return fmt.Errorf("network %s: %w", n.UID, err)
+	}
 	if err := sweepTaps(h); err != nil {
 		return err
 	}
@@ -539,6 +542,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 				return err
 			}
 			if err := deleteNamedTable(conn, nftables.TableFamilyBridge, FirewallTable); err != nil {
+				return err
+			}
+			if err := deleteNamedTable(conn, nftables.TableFamilyINet, LimitTable); err != nil {
 				return err
 			}
 			if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
