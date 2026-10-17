@@ -997,9 +997,9 @@ test_verify_catches_service_drift() {
 	if "$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log"; then
 		fail "verify passed on a drifted host"
 	fi
-	# images, vms, release checksums, upgrade files, timers, units running,
-	# socket, loopback listener, node Ready.
-	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 9 ] || fail "expected 9 FAIL lines: $(cat "$work/drift2.log")"
+	# images, vms, natlog, release checksums, upgrade files, timers, units
+	# running, socket, loopback listener, node Ready.
+	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 10 ] || fail "expected 10 FAIL lines: $(cat "$work/drift2.log")"
 	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null
 	"$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
 	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the repair"
