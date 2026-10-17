@@ -32,3 +32,4 @@ the change.
 | `vm-ssh.md` | `hangar ssh`: minutes-long certificates of one platform CA for the VM's uid, over a WebSocket to port 22 from the network's gateway |
 | `front-door.md` | `hangar-edge` is the only listener on :443 and :80, bound by systemd, with certificates over ACME DNS-01; routes by Host to the API, the console and the endpoints; per-client limits; a host firewall that opens 22, 80 and 443 alone |
 | `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` signs private ones' callers in itself and reaches machines through the node's dial socket |
+| `console-design.md` | The web console: its look, gating by `WhoAmI`, the session cookie and the Origin check as its only credential and CSRF defence, a strict CSP, and its files shipped in the release and served by `hangar-edge` |

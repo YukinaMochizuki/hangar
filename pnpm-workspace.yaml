@@ -1,2 +1,5 @@
 packages:
   - gen/ts
+  - web
+allowBuilds:
+  esbuild: true

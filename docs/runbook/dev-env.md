@@ -122,6 +122,49 @@ The node turns Ready and machines get placed on it. Anything else on that
 socket acts as the node too: it may report the status of the node and of the
 machines placed on it, which is how tests play the node by hand.
 
+## Running the console locally
+
+The console (`web/`, `docs/decisions/console-design.md`) talks to the
+apiserver `make dev` runs, through a proxy that sends the dev user's header,
+so it is the console as that person sees it:
+
+```sh
+pnpm install
+HANGAR_DEV_USER=you@example.com pnpm --dir web dev       # hot reload on :5173
+pnpm --dir web build &&
+  HANGAR_DEV_USER=you@example.com pnpm --dir web preview  # the built files on :4173
+```
+
+Without `HANGAR_DEV_USER` every call is unauthenticated, which is the
+signed-out page; an email that holds no invitation shows the waiting page,
+and an invited one without a User the signup page. `HANGAR_DEV_API` points
+the proxy at another apiserver. Dev auth has no sign-in pages, so "Sign in
+with Google" leads nowhere locally.
+
+Both servers listen on `127.0.0.1` alone. Their proxy signs every call in
+as `HANGAR_DEV_USER`, so anyone who can reach the port acts as that person,
+platform administrator included. `HANGAR_DEV_HOST=0.0.0.0` widens it, for a
+container whose port is forwarded to you alone; never on a shared network.
+
+`vite preview` serves the console with the Content-Security-Policy the edge
+sends; the dev server goes without it, as hot reload needs inline scripts.
+`make check` runs the console's typecheck, lint and unit tests
+(`make test-web`; vitest, `web/src/**/*.test.{ts,tsx}`, components' tests
+in jsdom against an in-memory API, `web/src/test/harness.tsx`); CI also
+builds it.
+`pnpm --dir web exec vitest` reruns the tests as files change.
+
+To screenshot pages for review, with the Chromium of a box's `browser`
+add-on, against `vite preview`:
+
+```sh
+cd web && node scripts/shot.mjs /tmp/shots \
+  'overview=/projects/my-demo?theme=dark@1440x900' 'phone=/projects/my-demo@390x844'
+```
+
+The script's header says what else a spec can ask for (a clip, a wait, a
+click first).
+
 ## When something goes wrong
 
 - **`gen-check` fails**: generated code differs from what the sources produce.
