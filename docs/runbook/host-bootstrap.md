@@ -168,7 +168,11 @@ with `--release DIR`. `--only <step>` runs a single step
     plus the host's own overhead), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
     that socket, root's and group `hangar-edge`'s, 0660, and takes
-    `hangar-edge`'s dials alone), every path its default,
+    `hangar-edge`'s dials alone), `--region HANGAR_REGION`, `--site
+    HANGAR_SITE` and `--chassis HANGAR_CHASSIS` each only when the host env
+    file sets it (one word each, such as `ap-southeast`, `SGP02` and
+    `generic-1u-2x-u2`; what tenants see of the host,
+    `docs/decisions/machine-placement.md`), every path its default,
     `Restart=always`. Its `KillMode=control-group` kills only what the
     agent runs itself: each VM is a transient unit of its own and outlives
     a stop or restart of it.

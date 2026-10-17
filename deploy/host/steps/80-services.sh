@@ -129,6 +129,16 @@ services_reserved_disk() {
 	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA")))
 }
 
+# services_placement_flags prints the agent's flags for what the host env
+# file says of where the host is and its chassis, each only when it is set:
+# nothing, and the unit is as it was without them
+# (docs/decisions/machine-placement.md).
+services_placement_flags() {
+	[ -z "${HANGAR_REGION:-}" ] || printf -- ' --region %s' "$HANGAR_REGION"
+	[ -z "${HANGAR_SITE:-}" ] || printf -- ' --site %s' "$HANGAR_SITE"
+	[ -z "${HANGAR_CHASSIS:-}" ] || printf -- ' --chassis %s' "$HANGAR_CHASSIS"
+}
+
 # services_auth_flags prints the apiserver's flags for the auth mode
 # local.env asks for. The values land in the unit, so a changed mode is a
 # changed unit and restarts the apiserver.
@@ -350,7 +360,7 @@ ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/images
 ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
-ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER
+ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER$(services_placement_flags)
 Restart=always
 RestartSec=2
 # Each VM is a transient unit of its own (hangar-vm-*.service), outside this

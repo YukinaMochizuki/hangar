@@ -203,6 +203,11 @@ load_env() {
 	for v in HANGAR_IMAGES_QUOTA HANGAR_VMS_QUOTA; do
 		[[ ${!v} =~ ^[1-9][0-9]*G$ ]] || die "$v must be a whole number of GiB, such as 100G, not ${!v}"
 	done
+	# Optional; each lands in the agent's unit as one word.
+	for v in HANGAR_REGION HANGAR_SITE HANGAR_CHASSIS; do
+		[ -z "${!v:-}" ] || [[ ${!v} =~ ^[A-Za-z0-9._-]+$ ]] ||
+			die "$v must be one word of letters, digits, '.', '_' and '-', not ${!v}"
+	done
 	[[ $HANGAR_DEFAULT_MAX_OWNED_TENANTS =~ ^[1-9][0-9]*$ ]] ||
 		die "HANGAR_DEFAULT_MAX_OWNED_TENANTS must be a whole number of at least 1, not $HANGAR_DEFAULT_MAX_OWNED_TENANTS"
 	# ip prints addresses in canonical form; compare against the same form.
