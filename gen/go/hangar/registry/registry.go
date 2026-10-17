@@ -81,6 +81,16 @@ var (
 		Message:    (*v1alpha1.VirtualMachine)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.VirtualMachineService",
 	}
+	Invitation = Resource{
+		Group:      "iam",
+		Version:    "v1alpha1",
+		Kind:       "Invitation",
+		Plural:     "invitations",
+		ShortNames: []string{},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha11.Invitation)(nil).ProtoReflect().Type(),
+		Service:    "hangar.iam.v1alpha1.InvitationService",
+	}
 	RoleBinding = Resource{
 		Group:      "iam",
 		Version:    "v1alpha1",
@@ -219,6 +229,7 @@ var All = []Resource{
 	Machine,
 	Node,
 	VirtualMachine,
+	Invitation,
 	RoleBinding,
 	ServiceToken,
 	User,

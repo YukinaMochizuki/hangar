@@ -123,12 +123,15 @@ type Store interface {
 	// a watch that falls so far behind that compaction removes what it still
 	// needs ends with ErrCompacted, at the start or at any later point.
 	Watch(ctx context.Context, opts WatchOptions, send func(Event) error) error
-	// Revision returns the current store revision.
+	// Revision returns the current store revision, once any open
+	// transaction has ended.
 	Revision(ctx context.Context) (int64, error)
 	// Txn runs fn in one transaction: fn's writes through tx all commit if
 	// it returns nil, and none otherwise. A write refused with ErrExists,
 	// ErrNotFound or ErrConflict changes nothing and the transaction goes
-	// on. Every other write waits for it, so fn uses tx, never the Store.
+	// on. Every other write, and Revision, waits for it, so fn uses tx,
+	// never the Store; reads through the Store do not wait, and do not see
+	// the transaction's writes until it commits.
 	Txn(ctx context.Context, fn func(tx Tx) error) error
 	// Compact discards events at and below the revision, so a watch can no
 	// longer start below it.

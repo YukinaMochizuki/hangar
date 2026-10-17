@@ -120,11 +120,15 @@ func TestAuthorization(t *testing.T) {
 		}
 		return out
 	}
-	if got := names(bob); !slices.Equal(got, []string{"bobco"}) {
-		t.Errorf("bob lists tenants %v", got)
+	sorted := func(names ...string) []string {
+		slices.Sort(names)
+		return names
 	}
-	if got := names(root); !slices.Equal(got, []string{"acme", "bobco"}) {
-		t.Errorf("root lists tenants %v", got)
+	if got, want := names(bob), sorted(e.onboarded[bob], "bobco"); !slices.Equal(got, want) {
+		t.Errorf("bob lists tenants %v, want %v", got, want)
+	}
+	if got, want := names(root), sorted("acme", "bobco", e.onboarded[root], e.onboarded[alice], e.onboarded[bob]); !slices.Equal(got, want) {
+		t.Errorf("root lists tenants %v, want %v", got, want)
 	}
 	all := must[computev1alpha1.ListContainersResponse](t)(b.containers.ListContainers(ctx, connect.NewRequest(&computev1alpha1.ListContainersRequest{})))
 	if len(all.GetItems()) != 0 {
@@ -331,7 +335,7 @@ func TestTenantDeletionCollectsItsBindings(t *testing.T) {
 		res := must[iamv1alpha1.ListRoleBindingsResponse](t)(e.as(root).bindings.ListRoleBindings(ctx, connect.NewRequest(&iamv1alpha1.ListRoleBindingsRequest{})))
 		n := 0
 		for _, rb := range res.GetItems() {
-			if rb.GetSpec().GetRole() == "tenant.owner" {
+			if rb.GetSpec().GetRole() == "tenant.owner" && rb.GetSpec().GetScope().GetTenant() == "acme" {
 				n++
 			}
 		}

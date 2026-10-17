@@ -139,7 +139,7 @@ func (EventType) EnumDescriptor() ([]byte, []int) {
 type ObjectMeta struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// DNS-1123 label, unique within the project (or the platform, for global
-	// kinds).
+	// kinds). An Invitation's is an email instead.
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// Empty for global kinds.
 	Project string `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`

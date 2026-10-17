@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
-	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -25,16 +23,15 @@ var reservedUsernames = map[string]bool{
 	"abuse": true, "security": true, "postmaster": true, "noreply": true,
 }
 
-func userLock(s *Server) *sync.Mutex { return &s.users }
-
 // validateUser keeps a User what signing up made it. Only the system creates
 // one, for the person signing up and with their email, never a reserved
-// name, and at most one per email; validateUser runs under userLock, so two
-// sign-ups for one email cannot both pass. spec.email is immutable, and
+// name, and at most one per email; validateUser runs under the users lock, so
+// two sign-ups for one email cannot both pass. spec.email is immutable, and
 // spec.display_name is the person's own: only the system, for
 // AccountService.UpdateProfile, changes it. An update by anyone else keeps
 // the stored one when it leaves the field empty, so an administrator's apply
-// never wipes it, and is refused when it sets another. Who may change the
+// never wipes it, and is refused when it sets another. The plan it names
+// must exist; validateUser runs under the plans lock too. Who may change the
 // rest is RBAC's: only platform.root holds iam.users.apply.
 func validateUser(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
 	u := obj.(*iamv1alpha1.User)
@@ -68,7 +65,11 @@ func validateUser(ctx context.Context, s *Server, p auth.Principal, old, obj pro
 	if spec.MaxOwnedTenants != nil && spec.GetMaxOwnedTenants() < 0 {
 		return invalid("spec.max_owned_tenants %d is negative", spec.GetMaxOwnedTenants())
 	}
-	return nil
+	var was string
+	if old != nil {
+		was = old.(*iamv1alpha1.User).GetSpec().GetPlan()
+	}
+	return s.requirePlan(ctx, was, spec.GetPlan())
 }
 
 // userWithEmail returns the name of the User with the email, or "" if there
@@ -149,18 +150,13 @@ func (a account) SignUp(ctx context.Context, req *connect.Request[iamv1alpha1.Si
 	if err := ValidName(name); err != nil {
 		return nil, invalid("username: %v", err)
 	}
-	res, err := a.s.backend(registry.User).Create(a.s.system(ctx), &iamv1alpha1.User{
-		Metadata: &metav1.ObjectMeta{Name: name},
-		Spec:     &iamv1alpha1.UserSpec{Email: p.ID, DisplayName: req.Msg.GetDisplayName()},
-	})
-	if connect.CodeOf(err) == connect.CodeAlreadyExists {
-		return nil, failedPrecondition("username %q is taken; choose another", name)
-	}
+	res, err := a.s.onboard(ctx, p, name, req.Msg.GetDisplayName())
 	if err != nil {
 		return nil, err
 	}
-	a.s.log.Info("signed up", "principal", p.String(), "client_ip", clientIP(ctx), "user", name)
-	return connect.NewResponse(&iamv1alpha1.SignUpResponse{User: res.Object.(*iamv1alpha1.User)}), nil
+	a.s.log.Info("signed up", "principal", p.String(), "client_ip", clientIP(ctx), "user", name,
+		"tenant", res.GetTenant(), "project", res.GetProject())
+	return connect.NewResponse(res), nil
 }
 
 // UpdateProfile changes the caller's display name, and nothing else of

@@ -28,7 +28,10 @@ cloud, and some people fund the hardware and should see more of it.
   the create, or, when the caller may change the object that took it, turns
   it into an update, which `hangar create` reports as an error. The slug is cut to 20
   characters, so an ID leaves room in a hostname label for what is put
-  before it, as a PublicEndpoint's hostname does.
+  before it, as a PublicEndpoint's hostname does. The one name the server
+  makes is that of the tenant and project signing up opens (below): signing
+  up is no apply, and happens once. Tenant and project names are claimed
+  apart, by kind, so one name serves both.
 - **Deleting a tenant or project deletes everything in it.** It is marked as
   being deleted, its contents (projects, resources, role bindings scoped to it)
   are deleted in the background, and only then does it go. A grace period
@@ -93,12 +96,34 @@ cloud, and some people fund the hardware and should see more of it.
   or `platform.root`, and need no User.
 - **Invitation, then onboarding.** An administrator invites a person by
   binding them a platform role on their email, before they ever sign in.
-  The person then signs up once (`hangar signup --username NAME`, later the
-  console's onboarding page), which creates their `User` (group `iam`). Until
+  With it goes an `Invitation` (group `iam`, global, named by the email in
+  lower case), which holds what their User starts with: the `plan` their
+  tenants get and `max_owned_tenants`, both optional, the plan one that
+  exists and the cap at least 1. `hangar admin invite EMAIL [--plan P]
+  [--max-tenants N] [--role R]` makes both, `hangar admin invitations`
+  lists them and `hangar admin revoke EMAIL` deletes both. Only
+  `platform.root` reads and writes Invitations; there is none for an email
+  that has a User. The person then signs up once (`hangar signup --username
+  NAME`, later the console's onboarding page), which creates their `User`
+  (group `iam`), with their Invitation's values, and deletes the
+  Invitation, so every Invitation is one not taken up yet. Until
   then every call refuses them and names `hangar signup`, except
   `AccountService` (`WhoAmI`, `SignUp`, `UpdateProfile`) and checking a
   username with `CheckName`. `WhoAmI` answers anyone signed in, so the
   console can choose between a waiting page, onboarding and the app.
+- **Signing up leaves a person ready to work.** In the store transaction
+  that creates the User, signing up opens a tenant the person owns (their
+  `tenant.owner` binding, and `opened-by` naming them, so it counts toward
+  their cap) with their plan, a project in it, and the project's `default`
+  network; all of them commit, or none does. Tenant and project are both
+  named `<username>-<5 characters>`, the characters from lowercase letters
+  and digits but `0 o 1 l i`, drawn again while either name has ever been
+  used; the username is cut to 20 characters, as `hangar create`'s slugs
+  are. Their display names are the username and `Default`. `hangar signup`
+  then makes the project the context's. Every write but the apiserver's
+  own waits for the transaction, and the transaction holds the locks its
+  writes take from before it starts, so no check outside it reads the store
+  as it was without them.
 - **A User is a person's account.** Its name is the username they choose:
   a DNS label, global, never reused (like a tenant name), immutable, and not
   a reserved word such as `admin` or `root`. `spec.email` is the email
@@ -107,11 +132,19 @@ cloud, and some people fund the hardware and should see more of it.
   through `UpdateProfile`: an administrator's apply that leaves it out
   keeps it, and one that sets another is refused. Only `platform.root` sets
   `max_owned_tenants`, the cap on tenants they may own (unset is the
-  platform default). Only signing up creates a User, as the apiserver
-  itself. Otherwise Users go through ordinary RBAC: their target is the
-  platform, so only `platform.root` reads, lists or changes them, and a
-  person reads their own through `WhoAmI`. Bindings stay keyed by email,
-  so an invitation can come before the User.
+  platform default), and `plan`, the Plan every tenant they open gets as
+  its `spec.plan` when it is created (unset is the default plan); changing
+  it changes no tenant already open. A person may name their own plan on a
+  tenant they open, and no other. An apply of a tenant that leaves
+  `spec.plan` empty keeps the stored plan, whoever applies it, so a
+  manifest applies again unchanged; one that names another is refused but
+  to `platform.root`, who moves a tenant back to the default plan by
+  naming it, `plan: default` (`apply-semantics.md`). Only signing up
+  creates a User, as the apiserver itself. Otherwise Users go through
+  ordinary RBAC: their target is the platform, so only `platform.root`
+  reads, lists or changes them, and a person reads their own through
+  `WhoAmI`. Bindings stay keyed by email, so an invitation can come before
+  the User.
 - **A User is never deleted.** No one deletes one through the API, not
   `platform.root` and not root on the host: as with the system-managed
   kinds, no role grants it. One email has one User, for good, and its
@@ -125,7 +158,9 @@ cloud, and some people fund the hardware and should see more of it.
 - Roles carry the scope level they can be bound at, so a tenant owner cannot
   bind a platform role at all, and can grant roles only inside their tenant.
   A binding's scope is immutable: it belongs to that tenant or project.
-- A tenant's `plan` is set by platform administrators only.
+- A tenant's `plan` is set by platform administrators only, but for the
+  plan a new tenant takes from its opener's User; leaving it out of an
+  apply changes nothing.
 - `Update<Kind>Status` is granted by no role, not even `platform.root`: only
   the node and the apiserver itself write status. A node agent writes the
   status of its own `Node` and of the machines placed on it, nothing else;
@@ -137,7 +172,8 @@ cloud, and some people fund the hardware and should see more of it.
   by its kind's `forNode` hook (`internal/apiserver/admission.go`). Node
   agents read no `Secret` at all, not even its metadata; a node gets a
   registry login only through the node-only RPC, for a machine placed on
-  it (`secrets.md`).
+  it (`secrets.md`). Nor do they read any `User` or `Invitation`, which
+  hold people's emails and which no node needs.
 - A `Secret`'s permissions are the generic ones, so the owner and editor
   roles (and `platform.root`) read its metadata and write it, and the viewer
   roles read its metadata; nobody, of any role, reads its values back.
@@ -164,10 +200,14 @@ tenant's: what all its projects together hold, against its Plan.
 - `Plan` is a global kind only platform administrators read and write. Its
   `spec.limits` caps cpu, memory, disk, machines, projects, networks,
   addresses, public endpoints and service tokens; a field left unset has no
-  limit. A tenant with an empty `spec.plan` has the plan `default`, which the
-  apiserver makes, with placeholder limits, the first time it starts on a
-  store. The default limits are data: the administrator changes them with
-  apply. The default plan, and a plan a tenant names, cannot be deleted.
+  limit. A tenant with an empty `spec.plan` has the plan `default`, a
+  trial's, which the apiserver makes the first time it starts on a store,
+  with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5 projects, 5
+  networks, 5 addresses, 10 public endpoints and 10 service tokens. The
+  default limits are data from then on: the administrator changes them
+  with apply. Paying users get a larger plan, through their Invitation or
+  their User. The default plan, and a plan a tenant, a User or an
+  Invitation names, cannot be deleted.
 - A tenant owner may give a project `spec.limits`, a budget inside the
   tenant's, such as one to cap an agent's project. It may not be above the
   tenant's limits, and the limits that hold for a project are the smaller of
@@ -206,7 +246,8 @@ tenant's: what all its projects together hold, against its Plan.
   the tenant's bindings stay free to change. The live tenants someone opened
   are capped by their User's `spec.maxOwnedTenants`, which only
   `platform.root` sets, or else by the apiserver flag
-  `--default-max-owned-tenants` (3), which also caps service tokens.
+  `--default-max-owned-tenants` (1, the tenant signing up opens), which
+  also caps service tokens.
   Platform root is not capped. The cap is not a Plan field: a Plan is one
   tenant's budget.
 - **Concurrent writes cannot together overshoot a limit** because every write

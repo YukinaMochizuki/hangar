@@ -25,7 +25,8 @@ message Tenant {
 message TenantSpec {
   string display_name = 1;
   // Name of the Plan that sets this tenant's quota limits; empty means the
-  // platform default.
+  // platform default. An apply that leaves it empty keeps the stored plan;
+  // naming "default" moves the tenant back to the default, stored as empty.
   string plan = 2;
 }
 

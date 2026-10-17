@@ -12,8 +12,10 @@ import "hangar/iam/v1alpha1/user.proto";
 service AccountService {
   // WhoAmI answers any authenticated caller, about themselves only.
   rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse);
-  // SignUp creates the caller's User. Only an invited person who has no User
-  // yet may call it.
+  // SignUp creates the caller's User, and with it, in the same store
+  // transaction, a tenant they own, a project in it and the project's
+  // default network: all of them or none. Only an invited person who has no
+  // User yet may call it.
   rpc SignUp(SignUpRequest) returns (SignUpResponse);
   // UpdateProfile changes the caller's own display name, and nothing else.
   rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
@@ -44,6 +46,10 @@ message SignUpRequest {
 
 message SignUpResponse {
   User user = 1;
+  // The name of the tenant signing up opened, which the user owns.
+  string tenant = 2;
+  // The name of the project made in it, which has a default network.
+  string project = 3;
 }
 
 message UpdateProfileRequest {

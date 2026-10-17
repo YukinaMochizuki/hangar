@@ -105,7 +105,8 @@ type TenantSpec struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// Name of the Plan that sets this tenant's quota limits; empty means the
-	// platform default.
+	// platform default. An apply that leaves it empty keeps the stored plan;
+	// naming "default" moves the tenant back to the default, stored as empty.
 	Plan          string `protobuf:"bytes,2,opt,name=plan,proto3" json:"plan,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package hangar.iam.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// Invitation is what platform.root decides about a person before they sign
+// up: the Plan their tenants get and how many tenants they may own. Its name
+// is the person's email, in lower case. It lets no one in by itself: the
+// platform RoleBinding on the same email does (hangar admin invite makes
+// both). Signing up copies it into the new User and deletes it, so every
+// Invitation is one not taken up yet, and there is none for an email that
+// already has a User. Only platform.root reads and writes it. See
+// docs/decisions/tenancy-and-iam.md.
+message Invitation {
+  option (hangar.meta.v1.resource) = {
+    kind: "Invitation"
+    plural: "invitations"
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  InvitationSpec spec = 4;
+  InvitationStatus status = 5;
+}
+
+// InvitationSpec is what the person's User starts with.
+message InvitationSpec {
+  // Name of the Plan the User gets, which must exist; empty is the default
+  // plan.
+  string plan = 1;
+  // How many tenants the User may own; unset is the platform default. At
+  // least 1, as signing up opens one.
+  optional int32 max_owned_tenants = 2;
+}
+
+// InvitationStatus is the observed state of an invitation.
+message InvitationStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// InvitationService manages invitations. Only platform.root holds its
+// permissions.
+service InvitationService {
+  rpc GetInvitation(GetInvitationRequest) returns (GetInvitationResponse);
+  rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse);
+  rpc WatchInvitations(WatchInvitationsRequest) returns (stream WatchInvitationsResponse);
+  rpc ApplyInvitation(ApplyInvitationRequest) returns (ApplyInvitationResponse);
+  rpc DeleteInvitation(DeleteInvitationRequest) returns (DeleteInvitationResponse);
+  rpc UpdateInvitationStatus(UpdateInvitationStatusRequest) returns (UpdateInvitationStatusResponse);
+}
+
+message GetInvitationRequest {
+  string name = 1;
+}
+
+message GetInvitationResponse {
+  Invitation invitation = 1;
+}
+
+message ListInvitationsRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListInvitationsResponse {
+  repeated Invitation items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchInvitationsRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchInvitationsResponse {
+  hangar.meta.v1.EventType type = 1;
+  Invitation invitation = 2;
+  int64 revision = 3;
+}
+
+message ApplyInvitationRequest {
+  Invitation invitation = 1;
+}
+
+message ApplyInvitationResponse {
+  Invitation invitation = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteInvitationRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteInvitationResponse {
+  Invitation invitation = 1;
+}
+
+message UpdateInvitationStatusRequest {
+  string name = 1;
+  InvitationStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateInvitationStatusResponse {
+  Invitation invitation = 1;
+}

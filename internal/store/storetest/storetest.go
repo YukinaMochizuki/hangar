@@ -496,8 +496,8 @@ func testTxnCommitsTogether(t *testing.T, s store.Store) {
 		if rev := must[int64](t)(tx.Revision(ctx)); rev != base+3 {
 			t.Errorf("the transaction's revision is %d, want %d", rev, base+3)
 		}
-		// Outside the transaction nothing has happened yet. Reads do not wait
-		// for it, unlike writes.
+		// Outside the transaction nothing has happened yet. Get and List do
+		// not wait for it, unlike writes and Revision.
 		if _, err := s.Get(ctx, key("Tenant", "", "a")); !errors.Is(err, store.ErrNotFound) {
 			t.Errorf("Get outside the transaction before it commits: %v, want ErrNotFound", err)
 		}
