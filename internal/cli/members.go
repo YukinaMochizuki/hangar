@@ -298,9 +298,12 @@ func (a *app) projectUseCmd() *cobra.Command {
 			if name == "" {
 				name = cfg.CurrentContext
 			}
-			c, ok := cfg.Contexts[name]
-			if !ok || name == "" {
+			if name == "" {
 				return usageErr("no context; create one with `hangar config set-context`")
+			}
+			c, ok := cfg.Contexts[name]
+			if !ok {
+				return usageErr("no context named %q", name)
 			}
 			ps, err := a.projects(c)
 			if err != nil {
@@ -310,6 +313,9 @@ func (a *app) projectUseCmd() *cobra.Command {
 				return err
 			}
 			c.Project = args[0]
+			if err := a.prepareConfigDir(); err != nil {
+				return err
+			}
 			if err := cfg.save(a.configPath()); err != nil {
 				return err
 			}

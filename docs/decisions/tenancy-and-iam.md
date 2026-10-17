@@ -97,11 +97,18 @@ cloud, and some people fund the hardware and should see more of it.
   refused, since platform membership is an administrator's invitation.
   What it adds is what the caller could not read: each member's
   username, and whether the email is a platform member yet.
+  - Everyone who may list RoleBindings at a scope sees, in its member
+    list, the username of each person bound there and whether they are a
+    platform member: viewers too, not only owners.
+  - So any platform member can learn whether an email is a platform
+    member, and its username, by binding it in a tenant of their own.
+    This is accepted.
   - A binding below the platform naming a person who is not a platform
     member is made all the same, and the answer warns that it takes
     effect once an administrator invites them and they sign up. The
-    warning comes from RoleBinding admission, so an applied binding
-    carries it too.
+    warning is the same whether or not they were invited, so it does not
+    tell who has been. It comes from RoleBinding admission, so an applied
+    binding carries it too.
   - Changing a member's role updates the role of their binding in
     place, so the binding keeps its name, subject and scope, and there is
     no moment with no role or two. If they held several bindings at the
@@ -112,11 +119,29 @@ cloud, and some people fund the hardware and should see more of it.
     next call on.
   - A project's member list holds only the bindings at the project; its
     tenant's members reach it too, and are listed with the tenant.
+- **A tenant always has an owner, and the owner is a person, unless
+  `platform.root` made it otherwise.** A write
+  that would leave a tenant with no `tenant.owner` binding naming a
+  person (an email) is refused, whether it deletes the binding or changes
+  its role, through `MemberService` or RoleBindings, so the tenant's
+  owners cannot lock everyone out of managing it. A service token bound
+  `tenant.owner` does not count: its binding goes when the token or its
+  project is deleted, as the apiserver's own delete, which no check could
+  stop, so a person must stay owner beside it. Only `platform.root`, who
+  may write bindings at the platform, can leave a tenant without an
+  owner: a person bound it, root on the host, which holds it and is bound
+  by nobody, or a service token bound it at the platform, which binds only
+  itself. Deleting the tenant takes its bindings with it. Every
+  RoleBinding write but the apiserver's own holds one lock (`Server.owners`), so two
+  owners cannot remove each other at once. A `MemberService` call that
+  writes several bindings holds it from its read to its last write and
+  checks them as a whole first, so it is not refused half-way.
 - **People list only what they reach.** Listing tenants or projects
   answers those the caller holds a role in, and a project role lists its
-  project, not its tenant; platform roles reach every one.
-  `hangar project list` lists them and `hangar project use NAME` makes one
-  the context's project.
+  project, not its tenant. Of the platform roles only `platform.root`
+  reaches every one; `platform.member` and `platform.sponsor` reach none
+  by themselves. `hangar project list` lists them and
+  `hangar project use NAME` makes one the context's project.
 - **Platform membership gates everything.** Signing in (through Google,
   `authentication.md`) only proves who someone is, and only someone invited
   may sign in at all. A platform member holds a platform role

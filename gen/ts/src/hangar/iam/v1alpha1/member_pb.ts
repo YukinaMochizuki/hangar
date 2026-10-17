@@ -250,14 +250,9 @@ export const RemoveMemberResponseSchema: GenMessage<RemoveMemberResponse> = /*@_
   messageDesc(file_hangar_iam_v1alpha1_member, 8);
 
 /**
- * MemberService manages the people who hold roles in a tenant or a project.
- * A member is a RoleBinding naming a person's email at that scope, so this
- * service reads and writes RoleBindings, and each call is authorized and
- * admitted exactly as the RoleBinding call it makes: no one grants through it
- * what they could not grant by applying the binding. Service tokens' bindings
- * are not members. The platform scope is refused: platform membership is an
- * administrator's invitation. It is not a resource's service, so it is
- * written by hand rather than generated. See
+ * MemberService manages the people who hold roles in a tenant or a project:
+ * RoleBindings naming an email there, each call authorized and admitted as
+ * the RoleBinding call it makes. Written by hand, not generated. See
  * docs/decisions/tenancy-and-iam.md.
  *
  * @generated from service hangar.iam.v1alpha1.MemberService

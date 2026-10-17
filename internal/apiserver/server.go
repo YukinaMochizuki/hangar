@@ -156,6 +156,10 @@ type Server struct {
 	// nameSuffix makes the random part of the name signing up gives a
 	// person's first tenant and project.
 	nameSuffix func() string
+	// owners serializes every apply and delete of a RoleBinding but the
+	// apiserver's own, so no two writes each leave the other's tenant owner
+	// as the last one and together leave none (checkOwnerLeft).
+	owners sync.Mutex
 	// sessions issues and checks credentials, over Config.Credentials; nil
 	// without them. login is set by EnableOIDC: sign-in through the
 	// provider; nil without it.

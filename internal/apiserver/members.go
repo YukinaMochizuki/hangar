@@ -21,19 +21,17 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
-// members serves MemberService. It holds no rules of its own about who may
-// hold what: every write is a RoleBinding apply or delete through the
-// RoleBinding backend, as the caller, so authorization, admission and the
-// not-a-member warning are the ones applying the binding by hand gets. What
-// it adds is finding a person's bindings at a scope, and answering with what
-// the caller could not read for themselves: the username and whether the
-// email is a platform member.
+// members serves MemberService. Every write is a RoleBinding apply or delete
+// as the caller, so the rules are RoleBinding's; it adds the username and
+// platform membership the caller could not read.
 type members struct{ s *Server }
 
 // memberScope is a tenant or project a member call names.
 type memberScope struct {
 	scope  *iamv1alpha1.BindingScope
 	target authz.Target
+	// key names it for good, such as "project/web".
+	key string
 	// what names it in the words of an answer, such as `project "web"`.
 	what string
 }
@@ -44,12 +42,12 @@ func parseMemberScope(scope *iamv1alpha1.BindingScope) (memberScope, error) {
 		if err := ValidName(t.Tenant); err != nil {
 			return memberScope{}, invalid("scope.tenant: %v", err)
 		}
-		return memberScope{scope: scope, target: authz.Target{Tenant: t.Tenant}, what: fmt.Sprintf("tenant %q", t.Tenant)}, nil
+		return memberScope{scope: scope, target: authz.Target{Tenant: t.Tenant}, key: "tenant/" + t.Tenant, what: fmt.Sprintf("tenant %q", t.Tenant)}, nil
 	case *iamv1alpha1.BindingScope_Project:
 		if err := ValidName(t.Project); err != nil {
 			return memberScope{}, invalid("scope.project: %v", err)
 		}
-		return memberScope{scope: scope, target: authz.Target{Project: t.Project}, what: fmt.Sprintf("project %q", t.Project)}, nil
+		return memberScope{scope: scope, target: authz.Target{Project: t.Project}, key: "project/" + t.Project, what: fmt.Sprintf("project %q", t.Project)}, nil
 	case *iamv1alpha1.BindingScope_Platform:
 		return memberScope{}, invalid("members are a tenant's or a project's; platform roles are granted by an administrator")
 	}
@@ -128,7 +126,7 @@ func (m members) member(rb *iamv1alpha1.RoleBinding) *iamv1alpha1.Member {
 // scope. It is the same for the same person and scope, so two adds of one
 // person made at once cannot both create a binding.
 func memberBindingName(sc memberScope, email string) string {
-	sum := sha256.Sum256([]byte(sc.what + "\x00" + email))
+	sum := sha256.Sum256([]byte(sc.key + "\x00" + email))
 	return "member-" + hex.EncodeToString(sum[:12])
 }
 
@@ -209,12 +207,25 @@ func (m members) SetMemberRole(ctx context.Context, req *connect.Request[iamv1al
 	if err := m.begin(ctx, authz.Apply, sc); err != nil {
 		return nil, err
 	}
+	// From the read to the last write, so the whole-call check holds.
+	ctx, unlock := m.s.holdOwners(ctx)
+	defer unlock()
 	held, err := m.bindingsAt(ctx, sc, email)
 	if err != nil {
 		return nil, err
 	}
 	if len(held) == 0 {
 		return nil, notMember(email, sc)
+	}
+	if len(held) > 1 {
+		// The others are deleted: check what that needs up front, so the
+		// call is not refused half-way.
+		if err := m.begin(ctx, authz.Delete, sc); err != nil {
+			return nil, err
+		}
+		if err := m.ownerLeft(ctx, authz.Apply, sc, held, req.Msg.GetRole()); err != nil {
+			return nil, err
+		}
 	}
 	// Keep a binding that already has the role, or else the first, and
 	// change only its role: its scope and subject stay as they are.
@@ -257,12 +268,19 @@ func (m members) RemoveMember(ctx context.Context, req *connect.Request[iamv1alp
 	if err := m.begin(ctx, authz.Delete, sc); err != nil {
 		return nil, err
 	}
+	ctx, unlock := m.s.holdOwners(ctx)
+	defer unlock()
 	held, err := m.bindingsAt(ctx, sc, email)
 	if err != nil {
 		return nil, err
 	}
 	if len(held) == 0 {
 		return nil, notMember(email, sc)
+	}
+	if len(held) > 1 {
+		if err := m.ownerLeft(ctx, authz.Delete, sc, held, ""); err != nil {
+			return nil, err
+		}
 	}
 	b := m.s.backend(registry.RoleBinding)
 	res := &iamv1alpha1.RemoveMemberResponse{}
@@ -278,4 +296,22 @@ func (m members) RemoveMember(ctx context.Context, req *connect.Request[iamv1alp
 
 func notMember(email string, sc memberScope) error {
 	return connect.NewError(connect.CodeNotFound, fmt.Errorf("%s holds no role in %s", email, sc.what))
+}
+
+// ownerLeft checks a call that writes several bindings as a whole, as each
+// write is checked on its own: that a tenant scope keeps a tenant.owner
+// binding once every binding in held has role, or is gone when role is "".
+func (m members) ownerLeft(ctx context.Context, verb authz.Verb, sc memberScope, held []*iamv1alpha1.RoleBinding, role string) error {
+	tenant := sc.scope.GetTenant()
+	if tenant == "" || role == tenantOwnerRole {
+		return nil
+	}
+	removing := map[string]bool{}
+	for _, rb := range held {
+		if _, ok := ownerTenant(rb); ok {
+			removing[rb.GetMetadata().GetName()] = true
+		}
+	}
+	p, _ := auth.FromContext(ctx)
+	return m.s.checkOwnerLeft(ctx, p, verb, tenant, removing)
 }

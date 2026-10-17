@@ -482,6 +482,7 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 	}
 	expected := meta.GetResourceVersion()
 	defer b.lockWrites(ctx)()
+	defer b.lockOthers(ctx, p)()
 	if p.Type != auth.System && countsTowardQuota(b.r.Kind) {
 		b.s.quota.Lock()
 		defer b.s.quota.Unlock()
@@ -785,6 +786,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		return nil, err
 	}
 	defer b.lockWrites(ctx)()
+	defer b.lockOthers(ctx, p)()
 	for range maxRetries {
 		cur, old, err := b.read(ctx, p, authz.Delete, key)
 		if err != nil {
@@ -841,6 +843,16 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 		return old, nil
 	}
 	return nil, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))
+}
+
+// lockOthers takes the kind's othersWriteLock for a write by p, unless p is
+// the apiserver itself or ctx says its caller holds it already (holding),
+// and returns what releases what it took.
+func (b *backend) lockOthers(ctx context.Context, p auth.Principal) (unlock func()) {
+	if b.hooks.othersWriteLock == nil || p.Type == auth.System {
+		return func() {}
+	}
+	return lockUnlessHeld(ctx, b.hooks.othersWriteLock(b.s))
 }
 
 // afterDelete runs the kind's afterDelete hook, if it has one, once a delete
