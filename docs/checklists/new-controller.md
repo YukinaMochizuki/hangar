@@ -53,7 +53,12 @@ apply to it.
 - [ ] Tests run the real apiserver with controllers on (`runningWith`, with
       `DisableControllers` false; outside the apiserver package, such as for
       the node agent's, `apiservertest`) and wait for the outcome; they do
-      not call `Reconcile` directly unless they test a race.
+      not call `Reconcile` directly unless they test a race. "Nothing more
+      happens" is checked after `WaitSettled`, not over a window of time
+      (see `docs/decisions/testing-strategy.md`).
+- [ ] Its process's `ControllerStatus` reports it, as it does every
+      controller of `newControllers` in the apiserver; in the node agent,
+      add it there by hand. Otherwise `WaitSettled` cannot see it.
 - [ ] The paths that matter are covered: creation, a spec change, a change to
       a watched kind, deletion, and a start over a store written while no
       controller ran.

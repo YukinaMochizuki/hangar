@@ -20,6 +20,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/controller/controllertest"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
@@ -80,6 +81,15 @@ func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, sys
 		}
 	}
 	return s, system, user
+}
+
+// waitSettled waits until s's controllers and garbage collector have
+// finished reacting to every write so far, and returns the keys still
+// waiting on something outside them (see controllertest.WaitSettled). The
+// clock is fake: a retry after a failure comes only once a test advances it.
+func waitSettled(t *testing.T, s *Server) []controllertest.Waiting {
+	t.Helper()
+	return controllertest.WaitSettled(t, s.store.Revision, s.ControllerStatus)
 }
 
 // addMember makes a person a platform member, as an administrator inviting

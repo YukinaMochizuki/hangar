@@ -26,6 +26,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/controller/controllertest"
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
@@ -62,6 +64,60 @@ type world struct {
 	// hangar-edge's dials, from this process.
 	edgeDial net.Listener
 	stop     func()
+	// agent is the running node agent; nil while it is stopped.
+	agent *node.Agent
+}
+
+// sweeps waits until the running agent has finished n sweeps of the host
+// that began after the call: one more than n, as one may be under way.
+func (w *world) sweeps(n int) {
+	w.t.Helper()
+	from := w.agent.Activity().Sweeps
+	testutil.Eventually(w.t, fmt.Sprint(n, " sweeps"), func() (bool, string) {
+		done := w.agent.Activity().Sweeps - from
+		return done > int64(n), fmt.Sprint(done, " finished")
+	})
+}
+
+// reconciled waits until the running agent's controller has finished n
+// reconciles of key that began after the call, for a key whose every
+// reconcile fails or waits, which WaitSettled would wait on for good. Its
+// retry counts them; one more than n is waited for, as one may be under
+// way.
+func (w *world) reconciled(ctrl string, key controller.Key, n int) {
+	w.t.Helper()
+	attempts := func() int {
+		for _, s := range w.agent.ControllerStatus() {
+			if s.Name != ctrl {
+				continue
+			}
+			for _, r := range s.Retries {
+				if r.Key == key {
+					return r.Attempts
+				}
+			}
+		}
+		return 0
+	}
+	want := attempts() + n + 1
+	testutil.Eventually(w.t, fmt.Sprintf("%s reconciling %s %d more times", ctrl, key, n), func() (bool, string) {
+		got := attempts()
+		return got >= want, fmt.Sprintf("%d attempts in a row, want %d", got, want)
+	})
+}
+
+// networkChangeTaken waits until the running agent has taken in a network
+// change signalled after from, its count of them at the time.
+func (w *world) networkChangeTaken(from int64) {
+	w.t.Helper()
+	testutil.Eventually(w.t, "the network change taken in", func() bool { return w.agent.Activity().NetworkChanges > from })
+}
+
+// packetsTaken waits until the network's service of the kind has answered,
+// or dropped, every packet sent to it.
+func (w *world) packetsTaken(networkUID string, kind driver.PacketKind) {
+	w.t.Helper()
+	testutil.Eventually(w.t, "the packets sent taken", func() bool { return w.host.PacketsTaken(networkUID, kind) })
 }
 
 func newWorld(t *testing.T) *world {
@@ -130,6 +186,7 @@ func (w *world) startAgent() {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- agent.Run(ctx) }()
+	w.agent = agent
 	w.stop = func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -141,8 +198,21 @@ func (w *world) startAgent() {
 func (w *world) stopAgent() {
 	if w.stop != nil {
 		w.stop()
-		w.stop = nil
+		w.stop, w.agent = nil, nil
 	}
+}
+
+// waitSettled waits until the apiserver's controllers and the running
+// agent's have finished reacting to every write so far, and returns the keys
+// still waiting on something outside them (see controllertest.WaitSettled).
+// What the host does reaches the agent outside the API: wait for its effect
+// first.
+func (w *world) waitSettled() []controllertest.Waiting {
+	w.t.Helper()
+	if w.agent == nil {
+		return w.env.WaitSettled()
+	}
+	return w.env.WaitSettled(w.agent.ControllerStatus)
 }
 
 func (w *world) apply(c *computev1alpha1.Container) {

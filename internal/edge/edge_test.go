@@ -515,9 +515,11 @@ func TestAGrantTakenAwayWhileARequestRegistersEndsIt(t *testing.T) {
 		return status == http.StatusOK, body
 	})
 	bobP := auth.Principal{Type: auth.User, ID: "bob@example.com"}
-	// In the window: the grant goes, the edge's view takes it in, and the
-	// recheck that change wakes has had its chance, all before the request
-	// is registered.
+	// In the window: the grant goes and the edge's view takes it in, before
+	// the request is registered. Whether the recheck that change wakes runs
+	// before the registration or after, only authorizing again answers 403:
+	// a recheck that misses the request lets it through, one that sees it
+	// ends it with 503.
 	edge.SetRegistering(w.edge, func() {
 		edge.SetRegistering(w.edge, nil)
 		if _, err := w.root.Delete(context.Background(), registry.RoleBinding, client.Key{Name: "bob-owner"}); err != nil {
@@ -528,7 +530,6 @@ func TestAGrantTakenAwayWhileARequestRegistersEndsIt(t *testing.T) {
 		for edge.MayUse(w.edge, bobP, apiservertest.Project) && time.Now().Before(deadline) {
 			time.Sleep(5 * time.Millisecond) //nolint:forbidigo // polls off the test's goroutine, where Eventually cannot fail the test
 		}
-		time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
 	})
 	if status, body := w.get(bob); status != http.StatusForbidden {
 		t.Errorf("a request whose grant went while it registered: %d %s", status, body)

@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/store"
@@ -200,7 +201,7 @@ func TestAMachineOnAnotherNodeIsLeftAlone(t *testing.T) {
 	m := bare("elsewhere", "10.0.0.50/24")
 	m.Spec.Node = "n2"
 	w.applyMachine(m)
-	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
+	w.waitSettled()
 	if s := w.host.Snapshot(); !s.Empty() {
 		t.Errorf("the host holds something for another node's machine: %+v", s)
 	}
@@ -358,8 +359,7 @@ func TestTheSweepTrustsNoFailedList(t *testing.T) {
 	}
 
 	apiDown.Store(true)
-	// Several sweeps.
-	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
+	w.sweeps(3)
 	intact("the API failing to list machines")
 	apiDown.Store(false)
 
@@ -370,7 +370,7 @@ func TestTheSweepTrustsNoFailedList(t *testing.T) {
 			lists = nil // all of them
 		}
 		w.host.FailListing(errors.New("netlink: no buffer space"), lists...)
-		time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
+		w.sweeps(3)
 		intact(fmt.Sprintf("the host failing to list %q", list))
 		w.host.FailListing(nil)
 	}
@@ -409,8 +409,7 @@ func TestABaseBeingBuiltOnIsKept(t *testing.T) {
 	w.host.FailClone(driver.ErrNoSpace)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", computeapi.ReasonDiskFailed)
-	// Several sweeps.
-	time.Sleep(400 * time.Millisecond) //nolint:forbidigo // lets background work run
+	w.sweeps(3)
 	w.host.FailClone(nil)
 	w.waitReason("api", "Running")
 	if n := w.host.Unpacked("sha256:nginx-1"); n != 1 {
@@ -597,10 +596,14 @@ func TestNetworkChangesWhilePullingAreNotHidden(t *testing.T) {
 	letGo := w.host.HoldUnpack("nginx")
 	defer letGo()
 	w.startAgent()
-	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
+	testutil.Eventually(w.t, "the image being prepared again", func() bool { _, n, _ := w.host.Unpacks(""); return n == 1 })
 	w.host.FailNetworking(errors.New("netlink: no buffer space"))
+	changes := w.agent.Activity().NetworkChanges
 	w.host.LoseNetwork(net)
-	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// The change taken in, and the machine looked at since, before the image
+	// is ready.
+	w.networkChangeTaken(changes)
+	w.reconciled("machines", controller.Key{Project: project, Name: "ct-api"}, 1)
 	letGo()
 	w.waitReason("api", computeapi.ReasonNetworkFailed)
 	w.host.FailNetworking(nil)
@@ -691,7 +694,7 @@ func TestAMachineDeletedWhilePulling(t *testing.T) {
 	w.delete("api")
 	w.waitGone("api")
 	// Sweeps while the pull runs.
-	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
+	w.sweeps(3)
 	letGo()
 	w.waitHostEmpty()
 	testutil.Eventually(w.t, "the image forgotten", func() (bool, string) { return !w.host.Cached("sha256:nginx-1"), "" })

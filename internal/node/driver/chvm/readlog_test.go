@@ -219,7 +219,8 @@ func TestFollowingThroughRotations(t *testing.T) {
 		}
 	}
 	testutil.Eventually(t, fmt.Sprint(n, " records"), has(c, n))
-	time.Sleep(20 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// Ten of the follower's polls, which would read a record again.
+	testutil.Unchanged(t, "the records followed", 20*time.Millisecond, func() (string, error) { return fmt.Sprint(c.len()), nil })
 	got := c.text()
 	if len(got) != n {
 		t.Fatalf("%d records, want %d", len(got), n)

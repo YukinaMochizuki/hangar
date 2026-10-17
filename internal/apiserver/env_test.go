@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,6 +24,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/controller/controllertest"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
@@ -104,6 +106,30 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 	e.addMember(bob)
 	return e
 }
+
+// waitSettled waits until the server's background work that follows writes
+// (the garbage collector, and controllers when an option enables them) has
+// finished reacting to every write so far, and returns the keys still
+// waiting on something outside it (see controllertest.WaitSettled).
+func (e *env) waitSettled() []controllertest.Waiting {
+	e.t.Helper()
+	return controllertest.WaitSettled(e.t, e.store.Revision, e.srv.ControllerStatus)
+}
+
+// storedVersion reads the revision of the stored object at key, or "absent",
+// for testutil.Unchanged.
+func (e *env) storedVersion(key store.Key) func() (string, error) {
+	return func() (string, error) {
+		o, err := e.store.Get(context.Background(), key)
+		if errors.Is(err, store.ErrNotFound) {
+			return "absent", nil
+		}
+		return fmt.Sprint(o.Revision), err
+	}
+}
+
+// bootstrapBinding is the binding a bootstrap admin is granted root by.
+var bootstrapBinding = store.Key{Kind: "RoleBinding", Name: "bootstrap-root"}
 
 // addMember makes a person a platform member, as an administrator inviting
 // them and they signing up do.

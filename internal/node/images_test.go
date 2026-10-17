@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -184,38 +185,44 @@ func TestTimeoutsBackOff(t *testing.T) {
 // TestPullsAreBounded: no more images are prepared at once than the bound;
 // the rest wait their turn.
 func TestPullsAreBounded(t *testing.T) {
-	host := fake.New()
-	var letGo []func()
-	for _, ref := range []string{"a", "b", "c", "d"} {
-		host.AddImage(ref, "sha256:"+ref, driver.ImageConfig{Cmd: []string{"true"}})
-		letGo = append(letGo, host.HoldUnpack(ref))
-	}
-	p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 2)
-	done := make(chan struct{}, 4)
-	p.start(t.Context(), func() { done <- struct{}{} })
-	for i, ref := range []string{"a", "b", "c", "d"} {
-		_, _, _, _ = p.get(fmt.Sprint("m", i), ref, "", driver.Anonymous, false)
-	}
-	underWay := func() int { _, n, _ := host.Unpacks(""); return n }
-	testutil.Eventually(t, "two unpacks under way", func() bool { return underWay() == 2 })
-	// Time for more to start, were they not bounded; a bound never fails
-	// on it.
-	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
-	for _, f := range letGo {
-		f()
-	}
-	for range 4 {
-		<-done
-	}
-	if _, _, most := host.Unpacks(""); most != 2 {
-		t.Errorf("%d unpacks under way at once, with a bound of 2", most)
-	}
-	p.wait()
-	for _, ref := range []string{"a", "b", "c", "d"} {
-		if begun, _, _ := host.Unpacks(ref); begun != 1 {
-			t.Errorf("%s unpacked %d times", ref, begun)
+	synctest.Test(t, func(t *testing.T) {
+		host := fake.New()
+		var letGo []func()
+		for _, ref := range []string{"a", "b", "c", "d"} {
+			host.AddImage(ref, "sha256:"+ref, driver.ImageConfig{Cmd: []string{"true"}})
+			letGo = append(letGo, host.HoldUnpack(ref))
 		}
-	}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		p := newPuller(host.Images(), host.Storage(), clockwork.NewRealClock(), time.Minute, 2)
+		done := make(chan struct{}, 4)
+		p.start(ctx, func() { done <- struct{}{} })
+		for i, ref := range []string{"a", "b", "c", "d"} {
+			_, _, _, _ = p.get(fmt.Sprint("m", i), ref, "", driver.Anonymous, false)
+		}
+		// Every pull has gone as far as it can: two unpack, held, and the
+		// rest wait their turn.
+		synctest.Wait()
+		if _, n, _ := host.Unpacks(""); n != 2 {
+			t.Errorf("%d unpacks under way, with a bound of 2", n)
+		}
+		for _, f := range letGo {
+			f()
+		}
+		for range 4 {
+			<-done
+		}
+		if _, _, most := host.Unpacks(""); most != 2 {
+			t.Errorf("%d unpacks under way at once, with a bound of 2", most)
+		}
+		cancel()
+		p.wait()
+		for _, ref := range []string{"a", "b", "c", "d"} {
+			if begun, _, _ := host.Unpacks(ref); begun != 1 {
+				t.Errorf("%s unpacked %d times", ref, begun)
+			}
+		}
+	})
 }
 
 // TestUnpacksTakeTurns: images waiting to be unpacked are unpacked in the

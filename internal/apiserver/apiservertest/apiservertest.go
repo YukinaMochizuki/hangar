@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -27,6 +28,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/controller/controllertest"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
@@ -62,6 +64,18 @@ type Env struct {
 	// Public is the public listener's handler with sign-in, for StartOIDC;
 	// nil for Start.
 	Public http.Handler
+	srv    *apiserver.Server
+}
+
+// WaitSettled waits until the apiserver's controllers, and those others
+// reports (a node agent's), have finished reacting to every write so far,
+// and returns the keys still waiting on something outside them (see
+// controllertest.WaitSettled). Controllers following the API see how far
+// they have come by its bookmarks, which Start sends often unless
+// configure says otherwise.
+func (e *Env) WaitSettled(others ...controllertest.Statuses) []controllertest.Waiting {
+	e.t.Helper()
+	return controllertest.WaitSettled(e.t, e.Store.Revision, append([]controllertest.Statuses{e.srv.ControllerStatus}, others...)...)
 }
 
 // Start runs an apiserver until the test ends, with Root signed up.
@@ -90,7 +104,8 @@ func start(t *testing.T, configure func(*apiserver.Config), oidc *apiserver.OIDC
 	// Tests size machines and open tenants freely, unless configure sets
 	// limits.
 	cfg := apiserver.Config{Store: st, BootstrapAdmin: Root, Nodes: []string{Node},
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st}
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st,
+		BookmarkInterval: 10 * time.Millisecond}
 	if configure != nil {
 		configure(&cfg)
 	}
@@ -145,7 +160,7 @@ func start(t *testing.T, configure func(*apiserver.Config), oidc *apiserver.OIDC
 		_ = st.Close()
 		_ = os.RemoveAll(dir)
 	})
-	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, EdgeSocket: edgeSock, Store: st, Credentials: st, Public: publicHandler}
+	e := &Env{t: t, URL: public.URL, SystemURL: system.URL, Socket: sock, EdgeSocket: edgeSock, Store: st, Credentials: st, Public: publicHandler, srv: srv}
 	e.waitInvited(Root)
 	e.SignUp(Root)
 	return e

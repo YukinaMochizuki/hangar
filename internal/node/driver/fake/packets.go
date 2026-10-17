@@ -29,13 +29,16 @@ type packetConn struct {
 	kind     driver.PacketKind
 	instance string
 
-	in       chan Packet
-	mu       sync.Mutex
-	sent     []Packet
-	closed   chan struct{}
-	once     sync.Once
-	deadline chan struct{}
-	dlOnce   sync.Once
+	in   chan Packet
+	mu   sync.Mutex
+	sent []Packet
+	// reads counts the reads begun, and sends the packets sent to be read;
+	// guarded by mu.
+	reads, sends int
+	closed       chan struct{}
+	once         sync.Once
+	deadline     chan struct{}
+	dlOnce       sync.Once
 }
 
 // Packet is an IPv6 packet a packet socket read or wrote, with the MAC it
@@ -46,6 +49,9 @@ type Packet struct {
 }
 
 func (c *packetConn) ReadPacket(b []byte) (int, net.HardwareAddr, error) {
+	c.mu.Lock()
+	c.reads++
+	c.mu.Unlock()
 	select {
 	case p := <-c.in:
 		return copy(b, p.Data), p.MAC, nil
@@ -140,10 +146,31 @@ func (h *Host) SendPacket(networkUID string, kind driver.PacketKind, from net.Ha
 	}
 	select {
 	case c.in <- Packet{MAC: slices.Clone(from), Data: slices.Clone(b)}:
+		// Only a packet delivered is counted, before the caller can ask
+		// PacketsTaken.
+		c.mu.Lock()
+		c.sends++
+		c.mu.Unlock()
 		return true
 	case <-c.closed:
 		return false
 	}
+}
+
+// PacketsTaken reports whether what reads packets of the kind in the
+// network's current namespace has begun a read past every packet sent: for
+// one reader that answers a packet before it reads the next, every packet
+// sent has been answered or dropped.
+func (h *Host) PacketsTaken(networkUID string, kind driver.PacketKind) bool {
+	h.mu.Lock()
+	c := h.packetConnOf(networkUID, kind)
+	h.mu.Unlock()
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.reads > c.sends
 }
 
 // SentPackets returns, and forgets, what the packet socket of the kind in

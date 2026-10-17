@@ -24,26 +24,31 @@ func TestRecordsCrossATerminalWhole(t *testing.T) {
 	if err := console.Raw(tty); err != nil {
 		t.Fatal(err)
 	}
+	write := func(w *console.Writer) {
+		_ = w.Write(console.Stdout, []byte("hello\nworld\r\n\x03\x04"))
+		_ = w.WriteExit(console.ExitStatus{Code: 10})
+	}
+	// What the records are, written to no terminal: as many bytes cross it.
+	var sent bytes.Buffer
+	write(console.NewWriter(&sent, at))
 	read := make(chan []byte)
 	go func() {
 		var all []byte
 		buf := make([]byte, 4096)
-		for {
+		for len(all) < sent.Len() {
 			n, err := ptmx.Read(buf)
 			all = append(all, buf[:n]...)
 			if err != nil {
-				read <- all
-				return
+				break
 			}
 		}
+		read <- all
 	}()
-	w := console.NewWriter(tty, at)
-	_ = w.Write(console.Stdout, []byte("hello\nworld\r\n\x03\x04"))
-	_ = w.WriteExit(console.ExitStatus{Code: 10})
-	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
+	write(console.NewWriter(tty, at))
+	got := <-read
 	_ = tty.Close()
 
-	r := console.NewReader(bytes.NewReader(<-read))
+	r := console.NewReader(bytes.NewReader(got))
 	out, err := r.Next()
 	if err != nil || string(out.Payload) != "hello\nworld\r\n\x03\x04" {
 		t.Errorf("output %q %v", out.Payload, err)

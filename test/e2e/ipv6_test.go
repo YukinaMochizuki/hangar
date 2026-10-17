@@ -77,7 +77,7 @@ func TestMachinesGetPublicIPv6(t *testing.T) {
 		if !w.host.SendPacket(uid, driver.DHCPv6, from, pkt) {
 			return nil
 		}
-		time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
+		w.packetsTaken(uid, driver.DHCPv6)
 		sent, _ := w.host.SentPackets(uid, driver.DHCPv6)
 		for _, p := range sent {
 			got, err := ipv6pkt.Parse(p.Data)
@@ -143,7 +143,7 @@ func (w *world) leasedTo(networkUID string, mac net.HardwareAddr) netip.Addr {
 	if !w.host.SendPacket(networkUID, driver.DHCPv6, mac, pkt) {
 		return netip.Addr{}
 	}
-	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
+	w.packetsTaken(networkUID, driver.DHCPv6)
 	sent, _ := w.host.SentPackets(networkUID, driver.DHCPv6)
 	for _, p := range sent {
 		got, err := ipv6pkt.Parse(p.Data)

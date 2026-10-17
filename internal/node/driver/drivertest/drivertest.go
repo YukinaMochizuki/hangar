@@ -299,8 +299,9 @@ func storage(t *testing.T, h Host) {
 			defer wg.Done()
 			if err := h.Storage.EnsureBase(ctx, digest, 0, func(dir string) error {
 				fills.Add(1)
-				// Both callers are in by now.
-				time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
+				// Both callers are in by now. A real driver blocks the second
+				// in its own lock, which nothing outside it can see.
+				time.Sleep(50 * time.Millisecond) //nolint:forbidigo // real elapsed time: the other caller reaching a real driver's lock
 				return h.Images.Unpack(ctx, ref, digest, dir, anon)
 			}); err != nil {
 				t.Error(err)

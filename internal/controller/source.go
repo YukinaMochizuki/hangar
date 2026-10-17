@@ -16,7 +16,9 @@ type Source interface {
 	// misses no change made after the list.
 	List(ctx context.Context, kind string) ([]store.Object, int64, error)
 	// Watch calls fn for each change to an object of one of kinds after
-	// since, until ctx is done or fn or the watch fails. It returns an error
+	// since, until ctx is done or fn or the watch fails. Between changes it
+	// may call fn with a store.EventProgress: every change to kinds through
+	// its Revision has been passed to fn already. It returns an error
 	// wrapping store.ErrCompacted when changes after since are no longer
 	// kept, and may return nil when the source ends the watch; either way
 	// the controller lists again.
@@ -34,9 +36,12 @@ func (s StoreSource) List(ctx context.Context, kind string) ([]store.Object, int
 
 func (s StoreSource) Watch(ctx context.Context, kinds []string, since int64, fn func(store.Event) error) error {
 	return s.Store.Watch(ctx, store.WatchOptions{SinceRevision: since}, func(ev store.Event) error {
-		if !slices.Contains(kinds, ev.Object.Kind) {
-			return nil
+		if slices.Contains(kinds, ev.Object.Kind) {
+			if err := fn(ev); err != nil {
+				return err
+			}
 		}
-		return fn(ev)
+		// The watch sees every write, of any kind, in revision order.
+		return fn(store.Event{Type: store.EventProgress, Revision: ev.Revision})
 	})
 }
