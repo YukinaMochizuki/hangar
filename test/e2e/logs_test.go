@@ -276,19 +276,18 @@ func TestLogsOfANodeDown(t *testing.T) {
 	testutil.Eventually(w.t, "the follow reading the log", func() (bool, string) { return f.has("1:init:hangar-init: starting the container") })
 
 	w.stopAgent()
-	if err := f.ended(t, 5*time.Second); connect.CodeOf(err) != connect.CodeUnavailable {
+	if err := f.ended(t, testutil.Wait); connect.CodeOf(err) != connect.CodeUnavailable {
 		t.Errorf("the follow ended with %v, want unavailable", err)
 	}
-	testutil.Eventually(w.t, "a read failing as unavailable", func() (bool, string) {
+	// Until the apiserver drops the node's tunnel, a read fails on it as
+	// "dropped its connection", also unavailable.
+	testutil.Eventually(w.t, "a read failing as unavailable, the node not connected", func() (bool, string) {
 		start := time.Now()
 		_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
-		return connect.CodeOf(err) == connect.CodeUnavailable && time.Since(start) < time.Second, fmt.Sprint(err)
+		var ce *connect.Error
+		return errors.As(err, &ce) && ce.Code() == connect.CodeUnavailable && strings.Contains(ce.Message(), "not connected") &&
+			time.Since(start) < time.Second, fmt.Sprint(err)
 	})
-	var ce *connect.Error
-	_, err := readLogs(context.Background(), w.logsAs(apiservertest.Root), &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: "api"})
-	if !errors.As(err, &ce) || !strings.Contains(ce.Message(), "not connected") {
-		t.Errorf("the error says %v", err)
-	}
 
 	// The node back, so are its logs.
 	w.startAgent()
