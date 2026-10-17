@@ -62,64 +62,39 @@ exposed, so a flake is always fixed at its root:
 
 ## Waiting in tests
 
-A test waits for what it needs, not for time to pass. Which tool it waits
-with depends on its layer:
+A test waits for what it needs, never for time to pass: a sleep long enough
+on a fast machine is too short on a loaded CI runner, and too long
+everywhere else. Which tool it waits with depends on its layer:
 
-- **In-process tests (L0) that time something** (a grace period, a
-  backoff, a rate, a ticker, a liveness ping) run inside
-  `testing/synctest`'s `synctest.Test`. Time there is virtual: it moves
-  only when every goroutine of the bubble is blocked, so a slow runner
-  cannot stretch what the test measures. `synctest.Wait` replaces "let
-  the background work run", and `time.Sleep` moves the clock.
-  A bubble cannot hold a goroutine blocked on a socket or on SQLite, so a
-  test that needs real TCP or the store stays out, or moves to `net.Pipe`
-  or an in-memory fake where that keeps what it checks.
+- **In-process tests (L0) that time something** run inside
+  `testing/synctest`, on virtual time, so a slow runner cannot stretch
+  what the test measures. A bubble cannot hold a goroutine blocked on a
+  socket or on SQLite, so tests that need those stay out.
 - **L1 and L2 tests**, which run the apiserver, SQLite and the node agent,
   wait for the controllers with `WaitSettled`
-  (`internal/controller/controllertest`; the apiserver harnesses and
-  `test/e2e` wrap it). It returns once two polls in a row, each reading
-  the same store revision before and after the statuses, find every
-  controller (and the apiserver's garbage collector) with an empty queue,
-  nothing in flight, no retry of a failure pending, and every change
-  through that revision followed. A listing counts as in flight from the
-  moment the watch or list before it ended. Keys waiting on something
-  outside the platform (`controller.ErrWaiting`) are returned rather than
-  waited for.
-  - **Followed** is proven by progress events from the controller's
-    `controller.Source`: inside the apiserver its store watch sees every
-    write, of any kind; a node agent's comes from the API's bookmarks, the
-    lowest across the kinds it watches, so `apiservertest` sends them every
-    10ms.
-  - **The same revision around and across polls** closes the gap between
-    reading the revision and reading the statuses: a reconcile that wrote
-    meanwhile moves it.
-  - **It sees writes only.** What reaches a controller from outside the
-    store (a `Trigger`, a host event) is invisible until it queues a key: a
-    test waits for its visible effect first. A key whose reconciles keep
-    failing never settles; its retry counts the reconciles in a row that
-    failed or waited (`controller.Retry.Attempts`), so a test waits for
-    the ones begun after it asks. The node agent counts what it does
-    outside its controllers (`node.Agent.Activity`): the sweeps of the host
-    its loop has finished, and the network changes it has taken in. The
-    garbage collector retries what failed only in its periodic sweep, which
-    WaitSettled does not see. With a fake clock, a retry after a failure
-    comes only once the test advances the clock.
-- **The shared `Eventually`** is for what neither covers: a condition in
-  a test outside a bubble that nothing can be asked about.
+  (`internal/controller/controllertest`): it returns once two polls in a
+  row, each reading the same store revision before and after the statuses,
+  find every controller with an empty queue, nothing in flight, no retry of
+  a failure pending, and every change through that revision followed. Keys
+  waiting on something outside the platform are returned, not waited for.
+  Real HTTP and SQLite are what these layers exist to exercise, so they are
+  not replaced with fakes to fit a bubble.
+- **The shared `testutil.Eventually`** is for what neither covers.
 
-`internal/testutil` holds the shared helpers: `Eventually` polls a condition
-up to one default bound and reports what it last saw (`EventuallyWithin`
-takes a bound of its own, such as a real VM's), and `Unchanged` checks that
-"nothing happened" by watching one object's state, such as its
-resourceVersion, over a window; never the store-wide revision, which
-unrelated writes move. golangci-lint's forbidigo flags `time.Sleep` in
-tests and test-support packages, outside `test/testbed`. A sleep that stays
-says why with `//nolint:forbidigo // <reason>`: real work or real elapsed
-time the test needs; or `virtual time`, for a sleep in a synctest bubble,
-which moves the bubble's clock and waits for nothing real, marked exactly
-so, so it can be found. A sleep that only lets background work run is
-never the answer: wait for it with one of the above, or check the one
-object's state with `Unchanged`.
+Two more rules hold everywhere:
+
+- **"Nothing happened" is checked on the object itself**, such as its
+  resourceVersion, never on the store-wide revision, which unrelated writes
+  move.
+- **golangci-lint's forbidigo flags `time.Sleep`** in tests and
+  test-support packages, outside `test/testbed`. A sleep that stays says
+  why with `//nolint:forbidigo // <reason>`: real work or real elapsed time
+  the test needs, or `virtual time` inside a synctest bubble. A sleep that
+  only lets background work run is never a reason.
+
+`docs/conventions/testing.md` shows how to apply these, with examples: what
+WaitSettled cannot see and how to wait for it, how to make a fake signal
+what happened, and how to show that a test can fail.
 
 ## Consequences
 
