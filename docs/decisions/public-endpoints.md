@@ -128,7 +128,9 @@ callers of private endpoints in itself (`authentication.md`).
   cookie whose name starts with `__Host-hangar` (in any case), Hangar's
   bearer tokens, every `Hangar-` header a client sent, and what Access used
   (`Cf-Access-*`, `CF_Authorization`). An endpoint answering with a
-  `Set-Cookie` for one of Hangar's names has it dropped, so its answers cannot
+  `Set-Cookie` for one of Hangar's names, in any header block it sends (a
+  1xx such as a 103 or a 101 included), has it dropped, and a `Set-Cookie`
+  trailer is dropped whatever its name, so its answers cannot
   plant or clear one; its own scripts can still write one where none is
   set, on its own host alone, which the edge takes only if it issued that
   value for that host. No header tells an endpoint who calls; a signed one is
@@ -137,9 +139,20 @@ callers of private endpoints in itself (`authentication.md`).
   tenant's can set a cookie with `Domain=` the endpoint domain. The edge
   reads only `__Host-` names, which a browser takes only from the host
   itself, with no `Domain`, so no other endpoint can plant or overwrite
-  them; a lookalike without the prefix is ignored. The endpoint domain
-  should still go on the Public Suffix List, so browsers keep every
-  endpoint's cookies to itself.
+  them; a lookalike without the prefix is ignored. The endpoint domain is
+  not on the Public Suffix List (decided by the project owner: at this
+  scale the request would likely be refused). Instead the edge makes every
+  cookie an endpoint sets host-only: it removes the `Domain` attribute,
+  in any case and wherever it stands, from each `Set-Cookie` in every
+  header block of an endpoint's answer, 1xx ones included, and keeps the
+  rest as written. Browsers ignore `Set-Cookie` in trailers, so the edge
+  drops it there rather than filtering it. Endpoints are one level
+  under the domain, so a `Domain` equal to the endpoint's own host loses
+  nothing. The known limits: a cookie a page's script sets
+  (`document.cookie`) never passes the edge and can still carry the parent
+  `Domain`, reaching every other endpoint; and browsers treat all endpoints
+  as one site, so `SameSite` does not separate one tenant's endpoint from
+  another's.
 - **The edge reaches a machine through the node agent's dial socket**
   (`internal/edgedial`), a unix socket the agent makes, root's and the edge
   group's, 0660, which takes the edge's uid alone (`SO_PEERCRED`). A dial
