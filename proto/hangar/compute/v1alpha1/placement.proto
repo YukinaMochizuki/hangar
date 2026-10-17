@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+// Placement describes the hardware a machine runs on: where its host is and
+// what it is built of, never how loaded it is. A Node reports its own; a
+// Container's or VirtualMachine's status copies its node's, which is how a
+// tenant, who cannot read Nodes, sees where it runs. Only what is here
+// reaches tenants, so a field added here is one every tenant reads. Each
+// field is empty when the node does not know it. See
+// docs/decisions/machine-placement.md.
+message Placement {
+  // The region the host is in, such as "ap-southeast", from the node's
+  // configuration.
+  string region = 1;
+  // The site within the region, such as a datacenter's name "SGP02", from
+  // the node's configuration.
+  string site = 2;
+  // The CPU as the host names it, without its core count, such as
+  // "AMD EPYC 7313".
+  string cpu_model = 3;
+  // The CPU's microarchitecture and code name, such as "Zen 3 (Milan)":
+  // known to the node agent for the CPUs it has a name for, or from the
+  // node's configuration.
+  string cpu_generation = 4;
+  // The host's disks by kind, such as "2 × NVMe SSD".
+  string storage = 5;
+  // Names the host's chassis, such as "generic-1u-2x-u2", from the node's
+  // configuration. A client draws a chassis it does not know, and an empty
+  // one, as a generic server.
+  string chassis = 6;
+}

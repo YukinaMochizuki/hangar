@@ -168,7 +168,10 @@ type NodeStatus struct {
 	// The host's public IPv6 prefix, such as "2001:db8:0:1::/64", from which
 	// each machine interface on the node gets a /128; empty when the host has
 	// none, and its machines then have no IPv6.
-	Ipv6Prefix    string `protobuf:"bytes,7,opt,name=ipv6_prefix,json=ipv6Prefix,proto3" json:"ipv6_prefix,omitempty"`
+	Ipv6Prefix string `protobuf:"bytes,7,opt,name=ipv6_prefix,json=ipv6Prefix,proto3" json:"ipv6_prefix,omitempty"`
+	// The host's hardware, which the status of each Container and
+	// VirtualMachine on the node carries.
+	Placement     *Placement `protobuf:"bytes,8,opt,name=placement,proto3" json:"placement,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -250,6 +253,13 @@ func (x *NodeStatus) GetIpv6Prefix() string {
 		return x.Ipv6Prefix
 	}
 	return ""
+}
+
+func (x *NodeStatus) GetPlacement() *Placement {
+	if x != nil {
+		return x.Placement
+	}
+	return nil
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in
@@ -942,7 +952,7 @@ var File_hangar_compute_v1alpha1_node_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\n" +
-	"\"hangar/compute/v1alpha1/node.proto\x12\x17hangar.compute.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\xfc\x01\n" +
+	"\"hangar/compute/v1alpha1/node.proto\x12\x17hangar.compute.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a'hangar/compute/v1alpha1/placement.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\xfc\x01\n" +
 	"\x04Node\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -952,7 +962,7 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\v2#.hangar.compute.v1alpha1.NodeStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
 	"\x04Node\x12\x05nodes \x02\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\x98\x03\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xda\x03\n" +
 	"\n" +
 	"NodeStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -964,7 +974,8 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x13last_heartbeat_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x11lastHeartbeatTime\x12#\n" +
 	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\x12\x1f\n" +
 	"\vipv6_prefix\x18\a \x01(\tR\n" +
-	"ipv6Prefix\"l\n" +
+	"ipv6Prefix\x12@\n" +
+	"\tplacement\x18\b \x01(\v2\".hangar.compute.v1alpha1.PlacementR\tplacement\"l\n" +
 	"\rNodeResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
@@ -1053,7 +1064,8 @@ var file_hangar_compute_v1alpha1_node_proto_goTypes = []any{
 	(*v1.ObjectMeta)(nil),            // 16: hangar.meta.v1.ObjectMeta
 	(*v1.Condition)(nil),             // 17: hangar.meta.v1.Condition
 	(*timestamppb.Timestamp)(nil),    // 18: google.protobuf.Timestamp
-	(v1.EventType)(0),                // 19: hangar.meta.v1.EventType
+	(*Placement)(nil),                // 19: hangar.compute.v1alpha1.Placement
+	(v1.EventType)(0),                // 20: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_node_proto_depIdxs = []int32{
 	16, // 0: hangar.compute.v1alpha1.Node.metadata:type_name -> hangar.meta.v1.ObjectMeta
@@ -1063,32 +1075,33 @@ var file_hangar_compute_v1alpha1_node_proto_depIdxs = []int32{
 	3,  // 4: hangar.compute.v1alpha1.NodeStatus.capacity:type_name -> hangar.compute.v1alpha1.NodeResources
 	3,  // 5: hangar.compute.v1alpha1.NodeStatus.allocatable:type_name -> hangar.compute.v1alpha1.NodeResources
 	18, // 6: hangar.compute.v1alpha1.NodeStatus.last_heartbeat_time:type_name -> google.protobuf.Timestamp
-	0,  // 7: hangar.compute.v1alpha1.GetNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
-	0,  // 8: hangar.compute.v1alpha1.ListNodesResponse.items:type_name -> hangar.compute.v1alpha1.Node
-	19, // 9: hangar.compute.v1alpha1.WatchNodesResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 10: hangar.compute.v1alpha1.WatchNodesResponse.node:type_name -> hangar.compute.v1alpha1.Node
-	0,  // 11: hangar.compute.v1alpha1.ApplyNodeRequest.node:type_name -> hangar.compute.v1alpha1.Node
-	0,  // 12: hangar.compute.v1alpha1.ApplyNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
-	0,  // 13: hangar.compute.v1alpha1.DeleteNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
-	2,  // 14: hangar.compute.v1alpha1.UpdateNodeStatusRequest.status:type_name -> hangar.compute.v1alpha1.NodeStatus
-	0,  // 15: hangar.compute.v1alpha1.UpdateNodeStatusResponse.node:type_name -> hangar.compute.v1alpha1.Node
-	4,  // 16: hangar.compute.v1alpha1.NodeService.GetNode:input_type -> hangar.compute.v1alpha1.GetNodeRequest
-	6,  // 17: hangar.compute.v1alpha1.NodeService.ListNodes:input_type -> hangar.compute.v1alpha1.ListNodesRequest
-	8,  // 18: hangar.compute.v1alpha1.NodeService.WatchNodes:input_type -> hangar.compute.v1alpha1.WatchNodesRequest
-	10, // 19: hangar.compute.v1alpha1.NodeService.ApplyNode:input_type -> hangar.compute.v1alpha1.ApplyNodeRequest
-	12, // 20: hangar.compute.v1alpha1.NodeService.DeleteNode:input_type -> hangar.compute.v1alpha1.DeleteNodeRequest
-	14, // 21: hangar.compute.v1alpha1.NodeService.UpdateNodeStatus:input_type -> hangar.compute.v1alpha1.UpdateNodeStatusRequest
-	5,  // 22: hangar.compute.v1alpha1.NodeService.GetNode:output_type -> hangar.compute.v1alpha1.GetNodeResponse
-	7,  // 23: hangar.compute.v1alpha1.NodeService.ListNodes:output_type -> hangar.compute.v1alpha1.ListNodesResponse
-	9,  // 24: hangar.compute.v1alpha1.NodeService.WatchNodes:output_type -> hangar.compute.v1alpha1.WatchNodesResponse
-	11, // 25: hangar.compute.v1alpha1.NodeService.ApplyNode:output_type -> hangar.compute.v1alpha1.ApplyNodeResponse
-	13, // 26: hangar.compute.v1alpha1.NodeService.DeleteNode:output_type -> hangar.compute.v1alpha1.DeleteNodeResponse
-	15, // 27: hangar.compute.v1alpha1.NodeService.UpdateNodeStatus:output_type -> hangar.compute.v1alpha1.UpdateNodeStatusResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	19, // 7: hangar.compute.v1alpha1.NodeStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
+	0,  // 8: hangar.compute.v1alpha1.GetNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
+	0,  // 9: hangar.compute.v1alpha1.ListNodesResponse.items:type_name -> hangar.compute.v1alpha1.Node
+	20, // 10: hangar.compute.v1alpha1.WatchNodesResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 11: hangar.compute.v1alpha1.WatchNodesResponse.node:type_name -> hangar.compute.v1alpha1.Node
+	0,  // 12: hangar.compute.v1alpha1.ApplyNodeRequest.node:type_name -> hangar.compute.v1alpha1.Node
+	0,  // 13: hangar.compute.v1alpha1.ApplyNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
+	0,  // 14: hangar.compute.v1alpha1.DeleteNodeResponse.node:type_name -> hangar.compute.v1alpha1.Node
+	2,  // 15: hangar.compute.v1alpha1.UpdateNodeStatusRequest.status:type_name -> hangar.compute.v1alpha1.NodeStatus
+	0,  // 16: hangar.compute.v1alpha1.UpdateNodeStatusResponse.node:type_name -> hangar.compute.v1alpha1.Node
+	4,  // 17: hangar.compute.v1alpha1.NodeService.GetNode:input_type -> hangar.compute.v1alpha1.GetNodeRequest
+	6,  // 18: hangar.compute.v1alpha1.NodeService.ListNodes:input_type -> hangar.compute.v1alpha1.ListNodesRequest
+	8,  // 19: hangar.compute.v1alpha1.NodeService.WatchNodes:input_type -> hangar.compute.v1alpha1.WatchNodesRequest
+	10, // 20: hangar.compute.v1alpha1.NodeService.ApplyNode:input_type -> hangar.compute.v1alpha1.ApplyNodeRequest
+	12, // 21: hangar.compute.v1alpha1.NodeService.DeleteNode:input_type -> hangar.compute.v1alpha1.DeleteNodeRequest
+	14, // 22: hangar.compute.v1alpha1.NodeService.UpdateNodeStatus:input_type -> hangar.compute.v1alpha1.UpdateNodeStatusRequest
+	5,  // 23: hangar.compute.v1alpha1.NodeService.GetNode:output_type -> hangar.compute.v1alpha1.GetNodeResponse
+	7,  // 24: hangar.compute.v1alpha1.NodeService.ListNodes:output_type -> hangar.compute.v1alpha1.ListNodesResponse
+	9,  // 25: hangar.compute.v1alpha1.NodeService.WatchNodes:output_type -> hangar.compute.v1alpha1.WatchNodesResponse
+	11, // 26: hangar.compute.v1alpha1.NodeService.ApplyNode:output_type -> hangar.compute.v1alpha1.ApplyNodeResponse
+	13, // 27: hangar.compute.v1alpha1.NodeService.DeleteNode:output_type -> hangar.compute.v1alpha1.DeleteNodeResponse
+	15, // 28: hangar.compute.v1alpha1.NodeService.UpdateNodeStatus:output_type -> hangar.compute.v1alpha1.UpdateNodeStatusResponse
+	23, // [23:29] is the sub-list for method output_type
+	17, // [17:23] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_node_proto_init() }
@@ -1096,6 +1109,7 @@ func file_hangar_compute_v1alpha1_node_proto_init() {
 	if File_hangar_compute_v1alpha1_node_proto != nil {
 		return
 	}
+	file_hangar_compute_v1alpha1_placement_proto_init()
 	file_hangar_compute_v1alpha1_node_proto_msgTypes[12].OneofWrappers = []any{}
 	file_hangar_compute_v1alpha1_node_proto_msgTypes[14].OneofWrappers = []any{}
 	type x struct{}
