@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -33,6 +34,10 @@ type overlaps struct {
 	mu       sync.Mutex
 	stopping map[string]int
 	found    []string
+	// keys are the machines' keys by UID, as their VMs were started.
+	keys map[string]controller.Key
+	// comeBy runs while each stop runs, before the VM is stopped.
+	comeBy func(ctx context.Context, key controller.Key)
 }
 
 func (o *overlaps) touch(op, uid string) {
@@ -67,6 +72,10 @@ type checkedHypervisor struct {
 
 func (h checkedHypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	h.o.touch("Start", spec.MachineUID)
+	project, name, _ := strings.Cut(spec.Machine, "/")
+	h.o.mu.Lock()
+	h.o.keys[spec.MachineUID] = controller.Key{Project: project, Name: name}
+	h.o.mu.Unlock()
 	return h.o.check(ctx, "Start", spec.MachineUID, h.Hypervisor.Start(ctx, spec))
 }
 
@@ -74,12 +83,14 @@ func (h checkedHypervisor) Stop(ctx context.Context, uid string) error {
 	h.o.touch("Stop", uid)
 	h.o.mu.Lock()
 	h.o.stopping[uid]++
+	key := h.o.keys[uid]
 	h.o.mu.Unlock()
 	defer func() {
 		h.o.mu.Lock()
 		h.o.stopping[uid]--
 		h.o.mu.Unlock()
 	}()
+	h.o.comeBy(ctx, key)
 	return h.o.check(ctx, "Stop", uid, h.Hypervisor.Stop(ctx, uid))
 }
 
@@ -110,24 +121,21 @@ func (n checkedNetwork) DeleteInterfaces(ctx context.Context, uid string) error 
 
 // TestAStopRacesNothing: while machines are stopped, started again, changed
 // in ways that stop their VMs, deleted, and lost from the API in the middle
-// of their release, the agent's own worker and sweep and more reconciles and
-// sweeps besides all run at once. No machine's VM is ever started, stopped
-// again, or stripped of its disk, interfaces or logs while its stop runs,
-// and once every machine is gone the host holds nothing.
+// of their release, the agent's own worker and sweep, and a reconcile and a
+// sweep while each stop runs, all run at once. No machine's VM is ever
+// started, stopped again, or stripped of its disk, interfaces or logs while
+// its stop runs, and once every machine is gone the host holds nothing.
 func TestAStopRacesNothing(t *testing.T) {
 	env := apiservertest.Start(t, nil)
 	env.Setup()
 	host := fake.New()
 	host.AddImage("nginx", "sha256:1", driver.ImageConfig{Entrypoint: []string{"nginx"}})
 	host.AddImage("nginx:2", "sha256:2", driver.ImageConfig{Entrypoint: []string{"nginx"}})
-	// Long enough for the others to come by while it runs, even under the
-	// race detector.
-	host.DelayStop("", 20*time.Millisecond)
-	o := &overlaps{stopping: map[string]int{}}
+	o := &overlaps{stopping: map[string]int{}, keys: map[string]controller.Key{}}
 	a, err := New(Config{
 		Name: apiservertest.Node, HTTP: client.UnixSocket(env.Socket), BaseURL: client.UnixSocketURL,
 		HeartbeatInterval: 50 * time.Millisecond,
-		SweepInterval:     5 * time.Millisecond,
+		SweepInterval:     100 * time.Millisecond,
 		Drivers: &Drivers{
 			Images: host.Images(), Storage: checkedStorage{host.Storage(), o}, Network: checkedNetwork{host.Network(), o},
 			Hypervisor: checkedHypervisor{host.Hypervisor(), o}, Guest: host.Guest(),
@@ -136,40 +144,24 @@ func TestAStopRacesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// While each stop runs, a reconcile of its machine and a sweep come by,
+	// besides the agent's own.
+	o.comeBy = func(ctx context.Context, key controller.Key) {
+		var both sync.WaitGroup
+		both.Go(func() { _ = a.reconcileMachine(ctx, key) })
+		both.Go(func() { _ = a.sweep(ctx) })
+		both.Wait()
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		_ = a.Run(ctx)
-	}()
-	// More reconciles of every machine, and more sweeps, than the agent
-	// runs by itself.
-	const machines = 4
-	for i := range machines {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for ctx.Err() == nil {
-				_ = a.reconcileMachine(ctx, controller.Key{Project: apiservertest.Project, Name: fmt.Sprintf("m%d", i)})
-				time.Sleep(5 * time.Millisecond) //nolint:forbidigo // paces the extra reconciles
-			}
-		}()
-	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for ctx.Err() == nil {
-			_ = a.sweep(ctx)
-			time.Sleep(5 * time.Millisecond) //nolint:forbidigo // paces the extra sweeps
-		}
-	}()
+	wg.Go(func() { _ = a.Run(ctx) })
 	t.Cleanup(func() {
 		cancel()
 		wg.Wait()
 	})
 
 	sys := env.AsSystem()
+	const machines = 4
 	var mwg sync.WaitGroup
 	for i := range machines {
 		mwg.Add(1)
@@ -249,7 +241,7 @@ func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, h
 			m.Spec.Interfaces[0].Ipv4 = ipv4[:len(ipv4)-3] + "1" + ipv4[len(ipv4)-3:]
 		},
 	}
-	waitMachine(t, sys, name, "running", running)
+	waitMachine(t, sys, a, name, "running", running)
 	for i, step := range steps {
 		if !edit(t, sys, name, step) {
 			return
@@ -257,10 +249,10 @@ func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, h
 		// Every other step lands while the last is still being carried
 		// out.
 		if i%2 == 1 {
-			waitMachine(t, sys, name, "running", running)
+			waitMachine(t, sys, a, name, "running", running)
 		}
 	}
-	waitMachine(t, sys, name, "running", running)
+	waitMachine(t, sys, a, name, "running", running)
 	var uid string
 	if lost {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
@@ -300,7 +292,7 @@ func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, h
 			t.Error(err)
 		}
 	}
-	waitMachine(t, sys, name, "gone", nil)
+	waitMachine(t, sys, a, name, "gone", nil)
 }
 
 // edit changes the machine as it is now, again if another write came in
@@ -328,19 +320,62 @@ func edit(t testing.TB, sys *client.Client, name string, change func(*computev1a
 	return false
 }
 
+// stuckCap bounds a wait for a machine that keeps moving without arriving.
+const stuckCap = 2 * time.Minute
+
 // waitMachine waits until the machine satisfies ok, or is gone if ok is
-// nil.
-func waitMachine(t testing.TB, sys *client.Client, name, what string, ok func(*computev1alpha1.Machine) bool) {
+// nil. The agent's one worker shares its turns among the test's four
+// machines and each change takes about five reconciles, so under load a
+// machine may move for longer than testutil.Wait: the bound is for a stuck
+// machine, not a slow one, and starts again whenever the machine's
+// resourceVersion or its reconcile attempts move.
+func waitMachine(t testing.TB, sys *client.Client, a *Agent, name, what string, ok func(*computev1alpha1.Machine) bool) {
 	t.Helper()
-	testutil.Eventually(t, "machine "+name+" "+what, func() (bool, string) {
+	key := controller.Key{Project: apiservertest.Project, Name: name}
+	check := func() (done bool, progress, last string) {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
 		switch {
 		case connect.CodeOf(err) == connect.CodeNotFound:
-			return ok == nil, "gone"
+			return ok == nil, "gone", "gone"
 		case err != nil:
 			t.Fatal(err)
 		}
 		m := obj.(*computev1alpha1.Machine)
-		return ok != nil && ok(m), fmt.Sprint(m.GetStatus())
-	})
+		return ok != nil && ok(m), fmt.Sprintf("%d/%d", m.GetMetadata().GetResourceVersion(), attempts(a, key)), fmt.Sprint(m.GetStatus())
+	}
+	start := time.Now()
+	moved, seen := start, ""
+	for pause := time.Millisecond; ; pause = min(2*pause, 50*time.Millisecond) {
+		done, progress, last := check()
+		if done {
+			return
+		}
+		now := time.Now()
+		if progress != seen {
+			moved, seen = now, progress
+		}
+		switch {
+		case now.Sub(moved) > testutil.Wait:
+			t.Fatalf("machine %s %s: stuck for %v; last seen: %s", name, what, testutil.Wait, last)
+		case now.Sub(start) > stuckCap:
+			t.Fatalf("machine %s %s: still moving after %v; last seen: %s", name, what, stuckCap, last)
+		}
+		<-time.After(pause)
+	}
+}
+
+// attempts counts the machines controller's reconciles of key in a row
+// that failed or waited.
+func attempts(a *Agent, key controller.Key) int {
+	for _, s := range a.ControllerStatus() {
+		if s.Name != "machines" {
+			continue
+		}
+		for _, r := range s.Retries {
+			if r.Key == key {
+				return r.Attempts
+			}
+		}
+	}
+	return 0
 }
