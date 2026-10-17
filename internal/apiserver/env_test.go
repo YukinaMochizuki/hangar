@@ -48,6 +48,9 @@ type env struct {
 	socket string
 	// dbDir holds the store's database files.
 	dbDir string
+	// onboarded is the tenant, and project, signing up opened for each
+	// person, by email.
+	onboarded map[string]string
 }
 
 type envOption func(*apiserver.Config)
@@ -100,7 +103,7 @@ func newEnv(t *testing.T, opts ...envOption) *env {
 		}
 		_ = st.Close()
 	})
-	e := &env{t: t, srv: srv, store: st, clock: clock, url: public.URL, socket: sock, dbDir: dbDir}
+	e := &env{t: t, srv: srv, store: st, clock: clock, url: public.URL, socket: sock, dbDir: dbDir, onboarded: map[string]string{}}
 	e.waitBootstrapped()
 	e.addMember(alice)
 	e.addMember(bob)
@@ -150,8 +153,9 @@ func (e *env) invite(email, role string) {
 // their email.
 func (e *env) signUp(email string) {
 	e.t.Helper()
-	must[iamv1alpha1.SignUpResponse](e.t)(e.as(email).accounts.SignUp(context.Background(),
+	res := must[iamv1alpha1.SignUpResponse](e.t)(e.as(email).accounts.SignUp(context.Background(),
 		connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: usernameOf(email)})))
+	e.onboarded[email] = res.GetTenant()
 }
 
 // usernameOf is the username test helpers sign a person up with: their

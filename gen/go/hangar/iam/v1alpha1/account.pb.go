@@ -194,8 +194,12 @@ func (x *SignUpRequest) GetDisplayName() string {
 }
 
 type SignUpResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	User          *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	User  *User                  `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
+	// The name of the tenant signing up opened, which the user owns.
+	Tenant string `protobuf:"bytes,2,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// The name of the project made in it, which has a default network.
+	Project       string `protobuf:"bytes,3,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -235,6 +239,20 @@ func (x *SignUpResponse) GetUser() *User {
 		return x.User
 	}
 	return nil
+}
+
+func (x *SignUpResponse) GetTenant() string {
+	if x != nil {
+		return x.Tenant
+	}
+	return ""
+}
+
+func (x *SignUpResponse) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type UpdateProfileRequest struct {
@@ -339,9 +357,11 @@ const file_hangar_iam_v1alpha1_account_proto_rawDesc = "" +
 	"\x04user\x18\x05 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\"N\n" +
 	"\rSignUpRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"?\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"q\n" +
 	"\x0eSignUpResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\"9\n" +
+	"\x04user\x18\x01 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\x12\x16\n" +
+	"\x06tenant\x18\x02 \x01(\tR\x06tenant\x12\x18\n" +
+	"\aproject\x18\x03 \x01(\tR\aproject\"9\n" +
 	"\x14UpdateProfileRequest\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"F\n" +
 	"\x15UpdateProfileResponse\x12-\n" +

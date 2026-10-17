@@ -399,7 +399,7 @@ func TestConcurrentCreatesCannotOvershootAQuota(t *testing.T) {
 // TestConcurrentTenantsCannotOvershootTheCap races tenant creates by one
 // person against their cap.
 func TestConcurrentTenantsCannotOvershootTheCap(t *testing.T) {
-	s, _, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 3 })
+	s, _, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 4 })
 	var wg sync.WaitGroup
 	errs := make([]error, 8)
 	for i := range errs {
@@ -418,24 +418,25 @@ func TestConcurrentTenantsCannotOvershootTheCap(t *testing.T) {
 			t.Errorf("unexpected error: %v", err)
 		}
 	}
-	// alice already owns acme.
+	// alice already owns acme and the tenant signing up opened.
 	if won != 2 {
-		t.Errorf("%d of 8 concurrent tenants won against a cap of 3 with one owned", won)
+		t.Errorf("%d of 8 concurrent tenants won against a cap of 4 with two owned", won)
 	}
 }
 
 func TestOwnedTenantsAreCapped(t *testing.T) {
-	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 2 })
+	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 3 })
 	tb := s.backend(registry.Tenant)
 	newTenant := func(ctx context.Context, name string) error {
 		_, err := tb.Apply(ctx, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: name}})
 		return err
 	}
-	// alice already owns acme.
+	// alice already owns acme and the tenant signing up opened, which
+	// counts as one she opened.
 	if err := newTenant(user, "acme2"); err != nil {
 		t.Fatal(err)
 	}
-	wantExhausted(t, newTenant(user, "acme3"), "user:alice@example.com owns 2 tenants and may own 2 (the platform default)", "a third tenant")
+	wantExhausted(t, newTenant(user, "acme3"), "user:alice@example.com owns 3 tenants and may own 3 (the platform default)", "a fourth tenant")
 
 	// Her User can raise her own cap.
 	ub := s.backend(registry.User)
@@ -444,14 +445,14 @@ func TestOwnedTenantsAreCapped(t *testing.T) {
 		t.Fatal(err)
 	}
 	u := obj.(*iamv1alpha1.User)
-	u.Spec.MaxOwnedTenants = proto.Int32(3)
+	u.Spec.MaxOwnedTenants = proto.Int32(4)
 	if _, err := ub.Apply(system, u); err != nil {
 		t.Fatal(err)
 	}
 	if err := newTenant(user, "acme3"); err != nil {
-		t.Fatalf("a third tenant under a raised cap: %v", err)
+		t.Fatalf("a fourth tenant under a raised cap: %v", err)
 	}
-	wantExhausted(t, newTenant(user, "acme4"), "owns 3 tenants and may own 3 (set on their User)", "a fourth tenant")
+	wantExhausted(t, newTenant(user, "acme4"), "owns 4 tenants and may own 4 (set on their User)", "a fifth tenant")
 	// A tenant being deleted no longer counts.
 	if _, err := tb.Delete(user, resource.Key{Name: "acme3"}, nil); err != nil {
 		t.Fatal(err)
@@ -477,7 +478,8 @@ func TestOwnedTenantsAreCapped(t *testing.T) {
 			t.Fatalf("bob's tenant %s: %v", name, err)
 		}
 	}
-	wantExhausted(t, newTenant(bob, "bob3"), "owns 2 tenants", "bob's third tenant")
+	// The third is the one signing up opened.
+	wantExhausted(t, newTenant(bob, "bob3"), "owns 3 tenants", "bob's fourth tenant")
 
 	// A service token is capped by the platform default.
 	token := serviceToken(t, s, system, "web", "tok")
@@ -491,12 +493,12 @@ func TestOwnedTenantsAreCapped(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"tok1", "tok2"} {
+	for _, name := range []string{"tok1", "tok2", "tok3"} {
 		if err := newTenant(token, name); err != nil {
 			t.Fatalf("the token's tenant %s: %v", name, err)
 		}
 	}
-	wantExhausted(t, newTenant(token, "tok3"), "owns 2 tenants and may own 2 (the platform default)", "the token's third tenant")
+	wantExhausted(t, newTenant(token, "tok4"), "owns 3 tenants and may own 3 (the platform default)", "the token's fourth tenant")
 
 	// Platform root is not capped.
 	invite(t, s, "root@example.com", "platform.root")

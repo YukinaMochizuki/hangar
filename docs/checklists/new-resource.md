@@ -34,9 +34,11 @@ what it cannot.
 
 - [ ] Admission rules that are specific to the kind are implemented and tested,
       including the rejection paths. A rule that reads other objects, such
-      as "no other machine has this disk", holds the kind's `writeLock`
-      (and the other kind's, the same lock) from the check to the write, and
-      a test races writers to show only one wins.
+      as "no other machine has this disk", holds the kind's `writeLocks`
+      (among them the other kind's, the same lock) from the check to the
+      write, and a test races writers to show only one wins. A store
+      transaction that writes the kind (`Server.atomically`) holds them
+      from before it starts to its end.
 - [ ] If only the apiserver's controllers write the kind, `hooksFor` marks it
       `systemManaged` and its comment says so; if a node agent reports its
       status, `nodeOf` names the node allowed to (`anyNodeReports` lets every

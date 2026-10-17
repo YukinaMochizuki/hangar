@@ -143,9 +143,11 @@ type kindHooks struct {
 	// nodeOf names the Node responsible for obj, the only node agent allowed
 	// to write its status. Kinds without it take no status from node agents.
 	nodeOf func(obj proto.Message) string
-	// writeLock, if set, is held by every apply and delete of the kind from
-	// its admission checks to its write, for rules that span objects.
-	writeLock func(s *Server) *sync.Mutex
+	// writeLocks, if set, are held by every apply and delete of the kind
+	// from its admission checks to its write, for rules that span objects.
+	// They are taken in order; whoever takes users and plans takes users
+	// first.
+	writeLocks func(s *Server) []*sync.Mutex
 	// readableByAll lets everyone allowed to use Hangar at all get, list and
 	// watch every object of the kind, whatever their grants.
 	readableByAll bool
@@ -167,6 +169,9 @@ type kindHooks struct {
 	// hiddenFromNodes refuses node agents every read of the kind, which
 	// they otherwise have on every kind.
 	hiddenFromNodes bool
+	// nameIsEmail makes an object's name an email in lower case rather than
+	// a DNS label, as an Invitation's.
+	nameIsEmail bool
 	// seal, if set, turns what a caller wrote into what is stored, once
 	// admission has passed it and the object has its uid; old is nil on
 	// create. A stored object equal to old is not written.
@@ -203,7 +208,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			afterCreate:       grantTenantOwner,
 			// Shared with Plan: that a tenant's plan exists is checked against
 			// the plans, and deleting a plan against the tenants.
-			writeLock: planLock,
+			writeLocks: only(planLock),
 		}
 	case registry.Project.Kind:
 		return kindHooks{
@@ -271,13 +276,28 @@ func hooksFor(r registry.Resource) kindHooks {
 		// as the system; otherwise only platform.root reads and changes Users,
 		// as no tenant grant covers the platform. No one deletes one: one
 		// email has one User for good. Its applies hold its lock: that no two
-		// Users share an email is checked against the others (validateUser).
+		// Users share an email is checked against the others (validateUser);
+		// and Plan's, as the plan it names must exist. No node agent needs
+		// one, which holds an email.
 		return kindHooks{
 			target:          platformTarget,
 			neverReuseNames: true,
 			validate:        validateUser,
-			writeLock:       userLock,
+			writeLocks:      usersAndPlans,
+			hiddenFromNodes: true,
 			neverDeleted:    "users are never deleted; to remove a member, delete their platform role binding",
+		}
+	case registry.Invitation.Kind:
+		// Keyed by the email it invites; only platform.root, through RBAC,
+		// reads and writes it. Its writes hold User's lock, as there is none
+		// for an email with a User, and Plan's, as the plan it names must
+		// exist. No node agent needs one. See invitations.go.
+		return kindHooks{
+			target:          platformTarget,
+			nameIsEmail:     true,
+			validate:        validateInvitation,
+			writeLocks:      usersAndPlans,
+			hiddenFromNodes: true,
 		}
 	case registry.Container.Kind:
 		// Deleting a container waits for its machine to be gone from the
@@ -291,7 +311,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:      validateMachine,
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return obj.(*computev1alpha1.Machine).GetSpec().GetNode() },
-			writeLock:     attachLock,
+			writeLocks:    only(attachLock),
 			forNode:       machineForNode,
 		}
 	case registry.Disk.Kind:
@@ -303,7 +323,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			beforeDelete: refuseDeletingAttachedDisk,
 			finalizers:   []string{DiskInUseFinalizer, NodeCleanupFinalizer},
 			nodeOf:       func(obj proto.Message) string { return obj.(*storagev1alpha1.Disk).GetStatus().GetNode() },
-			writeLock:    attachLock,
+			writeLocks:   only(attachLock),
 		}
 	case registry.Image.Kind:
 		// Platform administrators keep the catalogue that every tenant
@@ -325,7 +345,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:     validateVirtualMachine,
 			beforeDelete: refuseDeletingUnsettledVM,
 			cascades:     true,
-			writeLock:    attachLock,
+			writeLocks:   only(attachLock),
 			// Its machine carries what its guest is given, to its node.
 			forNode: func(_ string, obj proto.Message) {
 				spec := obj.(*computev1alpha1.VirtualMachine).GetSpec()
@@ -339,7 +359,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			target:     projectTarget,
 			owner:      ownedByProject,
 			validate:   validateAddress,
-			writeLock:  addressLock,
+			writeLocks: only(addressLock),
 			finalizers: []string{AddressUnbindFinalizer},
 		}
 	case registry.PublicEndpoint.Kind:
@@ -383,7 +403,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			target:       platformTarget,
 			validate:     validatePlan,
 			beforeDelete: refuseDeletingPlanInUse,
-			writeLock:    planLock,
+			writeLocks:   only(planLock),
 		}
 	case registry.Node.Kind:
 		return kindHooks{
@@ -403,6 +423,15 @@ func platformTarget(*Server, resource.Key, proto.Message, bool) authz.Target { r
 func attachLock(s *Server) *sync.Mutex { return &s.attach }
 
 func planLock(s *Server) *sync.Mutex { return &s.plans }
+
+// usersAndPlans are the writeLocks of a kind checked against Users and
+// naming a Plan.
+func usersAndPlans(s *Server) []*sync.Mutex { return []*sync.Mutex{&s.users, &s.plans} }
+
+// only makes one lock a kind's writeLocks.
+func only(lock func(s *Server) *sync.Mutex) func(s *Server) []*sync.Mutex {
+	return func(s *Server) []*sync.Mutex { return []*sync.Mutex{lock(s)} }
+}
 
 // machineForNode keeps a machine's cloud-init data, its guest's user-data
 // and keys, from every node but the one it is on, which serves it.
@@ -460,24 +489,49 @@ func (s *Server) ownerRef(ctx context.Context, b *backend, obj proto.Message) (*
 }
 
 // validateTenant keeps quota a platform decision: only someone who may manage
-// the whole platform can choose a tenant's plan, which must exist.
+// the whole platform can choose a tenant's plan, which must exist; but a new
+// tenant a person opens gets, and may name, the plan their User names. An
+// update that leaves spec.plan empty keeps the stored one, and one naming
+// the default plan stores none.
 func validateTenant(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
-	plan := obj.(*tenancyv1alpha1.Tenant).GetSpec().GetPlan()
+	t := obj.(*tenancyv1alpha1.Tenant)
 	var oldPlan string
 	if old != nil {
 		oldPlan = old.(*tenancyv1alpha1.Tenant).GetSpec().GetPlan()
 	}
-	if plan != oldPlan && !s.authz.Allowed(p, authz.Permission(registry.Tenant, authz.Apply), authz.Target{}) {
-		return denied("only platform administrators set spec.plan")
-	}
-	if plan != oldPlan && plan != "" {
-		if o, err := s.get(ctx, registry.Plan, resource.Key{Name: plan}); err != nil {
+	if old == nil && p.Type == auth.User {
+		u, err := s.userOf(ctx, p)
+		if err != nil {
 			return err
-		} else if o == nil {
-			return failedPrecondition("spec.plan: plan %q does not exist", plan)
+		}
+		if own := u.GetSpec().GetPlan(); own != "" && (t.GetSpec().GetPlan() == "" || t.GetSpec().GetPlan() == own) {
+			// Written into the incoming object, which the create stores.
+			if t.Spec == nil {
+				t.Spec = &tenancyv1alpha1.TenantSpec{}
+			}
+			t.Spec.Plan = own
+			return s.requirePlan(ctx, "", own)
 		}
 	}
-	return nil
+	if t.GetSpec().GetPlan() == "" && oldPlan != "" {
+		// Written into the incoming object, which the update stores, so a
+		// manifest that names no plan applies again unchanged, whoever
+		// applies it.
+		if t.Spec == nil {
+			t.Spec = &tenancyv1alpha1.TenantSpec{}
+		}
+		t.Spec.Plan = oldPlan
+	} else if t.GetSpec().GetPlan() == DefaultPlan {
+		// Naming the default plan is how a tenant goes back to it; it is
+		// stored as no plan, which is what the default is.
+		t.Spec.Plan = ""
+	}
+	plan := t.GetSpec().GetPlan()
+	admin := s.authz.Allowed(p, authz.Permission(registry.Tenant, authz.Apply), authz.Target{})
+	if plan != oldPlan && !admin {
+		return denied("only platform administrators set spec.plan")
+	}
+	return s.requirePlan(ctx, oldPlan, plan)
 }
 
 // requireLive checks that an object an incoming one depends on exists and is

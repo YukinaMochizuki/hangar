@@ -171,10 +171,33 @@ func (b *backend) checkKey(k resource.Key) error {
 	} else if k.Project != "" {
 		return invalid("%s are global; project must be empty", b.r.Plural)
 	}
+	if b.hooks.nameIsEmail {
+		if err := validEmail(k.Name); err != nil {
+			return invalid("name: %v", err)
+		}
+		return nil
+	}
 	if err := ValidName(k.Name); err != nil {
 		return invalid("name: %v", err)
 	}
 	return nil
+}
+
+// lockWrites takes the kind's writeLocks, in order, but those ctx says its
+// caller holds already, and returns what releases what it took.
+func (b *backend) lockWrites(ctx context.Context) (unlock func()) {
+	if b.hooks.writeLocks == nil {
+		return func() {}
+	}
+	var unlocks []func()
+	for _, mu := range b.hooks.writeLocks(b.s) {
+		unlocks = append(unlocks, lockUnlessHeld(ctx, mu))
+	}
+	return func() {
+		for _, u := range slices.Backward(unlocks) {
+			u()
+		}
+	}
 }
 
 func (b *backend) Get(ctx context.Context, key resource.Key) (proto.Message, error) {
@@ -439,11 +462,7 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 		}
 	}
 	expected := meta.GetResourceVersion()
-	if b.hooks.writeLock != nil {
-		mu := b.hooks.writeLock(b.s)
-		mu.Lock()
-		defer mu.Unlock()
-	}
+	defer b.lockWrites(ctx)()
 	if p.Type != auth.System && countsTowardQuota(b.r.Kind) {
 		b.s.quota.Lock()
 		defer b.s.quota.Unlock()
@@ -746,11 +765,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 	if err := b.checkKey(key); err != nil {
 		return nil, err
 	}
-	if b.hooks.writeLock != nil {
-		mu := b.hooks.writeLock(b.s)
-		mu.Lock()
-		defer mu.Unlock()
-	}
+	defer b.lockWrites(ctx)()
 	for range maxRetries {
 		cur, old, err := b.read(ctx, p, authz.Delete, key)
 		if err != nil {

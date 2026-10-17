@@ -31,7 +31,17 @@ controllers, and the node, which runs as a separate process.
 - **Immutable fields** are declared in proto with
   `(hangar.meta.v1.field).immutable = true` and enforced by generic admission.
 - **Names** are DNS-1123 labels (lowercase alphanumerics and `-`, at most 63
-  characters), because they end up in hostnames and internal DNS.
+  characters), because they end up in hostnames and internal DNS. An
+  `Invitation`'s is an email instead, as it never reaches a hostname.
+- **Two spec fields survive an apply that leaves them empty**, because
+  someone other than the applier owns them: a `User`'s `display_name`,
+  which is the person's own, keeps its value when an administrator's apply
+  leaves it out; and a `Tenant`'s `plan`, which is the platform's, keeps
+  its value when anyone, platform root included, applies the tenant
+  without one. Setting either to another value is still refused to all but
+  their owner, and a tenant goes back to the default plan only by naming
+  it, `plan: default`, which is stored as no plan
+  (`docs/decisions/tenancy-and-iam.md`).
 - **Delete** with finalizers present only sets `delete_time`; the object goes
   away when controllers have removed every finalizer. Children found through
   owner references (matched by uid, not name) are deleted by a background
@@ -45,4 +55,6 @@ controllers, and the node, which runs as a separate process.
 ## Consequences
 
 Things the system creates on a user's behalf are separate objects with an owner
-reference, never fields injected into the user's spec.
+reference, never fields injected into the user's spec. The one exception is a
+new tenant's `plan`, which comes from its opener's `User`; it survives the
+opener's later applies as above, so their manifest applies again unchanged.

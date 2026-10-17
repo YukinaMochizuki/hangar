@@ -68,7 +68,9 @@ only for a pull of a machine placed on it (`decisions/secrets.md`).
 Resources live under `projects/{project}/<plural>/{name}`. A `Project` belongs
 to a `Tenant`; tenants hold people, projects hold resources. A person is a
 global `User`, which they create by signing up once a platform-role
-`RoleBinding` on their email has invited them (`decisions/tenancy-and-iam.md`).
+`RoleBinding` on their email has invited them, starting with what their
+`Invitation` says, and which comes with a tenant and project of their own
+(`decisions/tenancy-and-iam.md`).
 An agent is a project's `ServiceToken`, whose secret it sends as a bearer
 token; bindings name it as `<project>/<name>`, and it holds only what they
 grant (`decisions/authentication.md`).

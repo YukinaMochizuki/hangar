@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"slices"
 	"strconv"
+	"strings"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -33,23 +34,24 @@ import (
 const DefaultPlan = "default"
 
 // DefaultMaxOwnedTenants is how many tenants a person or service token may
-// own when nothing says otherwise.
-const DefaultMaxOwnedTenants = 3
+// own when nothing says otherwise: the one signing up opens.
+const DefaultMaxOwnedTenants = 1
 
-// PlaceholderDefaultLimits are the limits the default Plan is made with,
-// when the apiserver first starts. They are placeholders: the administrator
-// sets real ones with apply (docs/runbook/host-bootstrap.md).
-func PlaceholderDefaultLimits() *tenancyv1alpha1.Limits {
+// DefaultLimits are the limits the default Plan is made with, when the
+// apiserver first starts on a store: a trial's. The plan is data from then
+// on, which the administrator changes with apply
+// (docs/runbook/host-bootstrap.md).
+func DefaultLimits() *tenancyv1alpha1.Limits {
 	return &tenancyv1alpha1.Limits{
 		Cpu:             proto.String("8"),
 		Memory:          proto.String("16Gi"),
-		Disk:            proto.String("200Gi"),
+		Disk:            proto.String("100Gi"),
 		Machines:        proto.Int32(10),
 		Projects:        proto.Int32(5),
-		Networks:        proto.Int32(10),
+		Networks:        proto.Int32(5),
 		Addresses:       proto.Int32(5),
-		PublicEndpoints: proto.Int32(5),
-		ServiceTokens:   proto.Int32(5),
+		PublicEndpoints: proto.Int32(10),
+		ServiceTokens:   proto.Int32(10),
 	}
 }
 
@@ -688,20 +690,31 @@ func validatePlan(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.M
 	return nil
 }
 
-// refuseDeletingPlanInUse keeps the default plan, and a plan a tenant
-// names.
+// refuseDeletingPlanInUse keeps the default plan, and a plan a tenant, a
+// User or an Invitation names: a User's is the plan of the tenants they
+// open, an Invitation's their User's to be.
 func refuseDeletingPlanInUse(ctx context.Context, s *Server, obj proto.Message) error {
 	name := object.Meta(obj).GetName()
 	if name == DefaultPlan {
 		return failedPrecondition("plan %q is every tenant's that names none; change it rather than delete it", DefaultPlan)
 	}
-	tenants, err := s.listWith(ctx, registry.Tenant, "", nil)
-	if err != nil {
-		return err
-	}
-	for _, t := range tenants {
-		if t.(*tenancyv1alpha1.Tenant).GetSpec().GetPlan() == name {
-			return failedPrecondition("plan %q is tenant %q's; give the tenant another plan first", name, object.Meta(t).GetName())
+	for _, use := range []struct {
+		r    registry.Resource
+		plan func(proto.Message) string
+		fix  string
+	}{
+		{registry.Tenant, func(m proto.Message) string { return m.(*tenancyv1alpha1.Tenant).GetSpec().GetPlan() }, "give the tenant another plan first"},
+		{registry.User, func(m proto.Message) string { return m.(*iamv1alpha1.User).GetSpec().GetPlan() }, "give the user another plan first"},
+		{registry.Invitation, func(m proto.Message) string { return m.(*iamv1alpha1.Invitation).GetSpec().GetPlan() }, "change or delete the invitation first"},
+	} {
+		objs, err := s.listWith(ctx, use.r, "", nil)
+		if err != nil {
+			return err
+		}
+		for _, o := range objs {
+			if use.plan(o) == name {
+				return failedPrecondition("plan %q is %s %q's; %s", name, strings.ToLower(use.r.Kind), object.Meta(o).GetName(), use.fix)
+			}
 		}
 	}
 	return nil
@@ -755,7 +768,7 @@ func (s *Server) validateProjectLimits(ctx context.Context, p auth.Principal, ol
 func (s *Server) ensureDefaultPlan(ctx context.Context) error {
 	limits := s.cfg.DefaultPlanLimits
 	if limits == nil {
-		limits = PlaceholderDefaultLimits()
+		limits = DefaultLimits()
 	}
 	_, err := s.backend(registry.Plan).Create(s.system(ctx), &tenancyv1alpha1.Plan{
 		Metadata: &metav1.ObjectMeta{Name: DefaultPlan},

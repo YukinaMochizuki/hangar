@@ -84,6 +84,21 @@ type WatchOptions struct {
 	Progress <-chan struct{}
 }
 
+// Tx is what a transaction (Store.Txn) reads and writes through. Its reads
+// see what the store holds together with the transaction's own writes; its
+// writes take consecutive revisions and are seen by no one else until the
+// transaction commits.
+type Tx interface {
+	Get(ctx context.Context, key Key) (Object, error)
+	List(ctx context.Context, opts ListOptions) ([]Object, int64, error)
+	Create(ctx context.Context, key Key, data []byte) (int64, error)
+	Update(ctx context.Context, key Key, data []byte, expected int64) (int64, error)
+	Delete(ctx context.Context, key Key, expected int64) (Object, int64, error)
+	// Revision is the revision of the transaction's last write, or the
+	// store's when it has written nothing yet.
+	Revision(ctx context.Context) (int64, error)
+}
+
 // Store is implemented by each storage backend; storetest holds the contract
 // every implementation must pass.
 //
@@ -108,8 +123,16 @@ type Store interface {
 	// a watch that falls so far behind that compaction removes what it still
 	// needs ends with ErrCompacted, at the start or at any later point.
 	Watch(ctx context.Context, opts WatchOptions, send func(Event) error) error
-	// Revision returns the current store revision.
+	// Revision returns the current store revision, once any open
+	// transaction has ended.
 	Revision(ctx context.Context) (int64, error)
+	// Txn runs fn in one transaction: fn's writes through tx all commit if
+	// it returns nil, and none otherwise. A write refused with ErrExists,
+	// ErrNotFound or ErrConflict changes nothing and the transaction goes
+	// on. Every other write, and Revision, waits for it, so fn uses tx,
+	// never the Store; reads through the Store do not wait, and do not see
+	// the transaction's writes until it commits.
+	Txn(ctx context.Context, fn func(tx Tx) error) error
 	// Compact discards events at and below the revision, so a watch can no
 	// longer start below it.
 	Compact(ctx context.Context, revision int64) error

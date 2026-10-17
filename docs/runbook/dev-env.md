@@ -105,9 +105,10 @@ They change only `spec.runState`, so a later `apply` of a manifest without
 `runState` starts the container again. Without a node, `--wait` waits until
 `--timeout`.
 
-To act as someone else, invite them first (a platform RoleBinding with role
-`platform.member` for their email, applied as the admin), make a second
-context with `--user`, and sign up in it.
+To act as someone else, invite them first (`go run ./cmd/hangar admin invite
+EMAIL` as the admin), make a second context with `--user`, and sign up in
+it. Signing up opens a tenant and a project for them and makes the project
+the context's.
 
 To have a node, pass `--socket /tmp/hangar-node.sock --node-uid $(id -u)
 --node-name dev` to the apiserver, which then registers a `Node` named `dev`,
