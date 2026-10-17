@@ -73,6 +73,7 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 	})
 	mux.HandleFunc("/set-cookie", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Add("Set-Cookie", "theme=dark")
+		w.Header().Add("Set-Cookie", "lang=en; Domain="+domain+"; Path=/")
 		w.Header().Add("Set-Cookie", edge.EndpointCookie+"=planted; Secure; Path=/")
 		w.Header().Add("Set-Cookie", "__HOST-Hangar_session=planted; Secure; Path=/")
 		_, _ = fmt.Fprintf(w, "port %d set cookies", port)

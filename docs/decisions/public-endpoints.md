@@ -137,9 +137,18 @@ callers of private endpoints in itself (`authentication.md`).
   tenant's can set a cookie with `Domain=` the endpoint domain. The edge
   reads only `__Host-` names, which a browser takes only from the host
   itself, with no `Domain`, so no other endpoint can plant or overwrite
-  them; a lookalike without the prefix is ignored. The endpoint domain
-  should still go on the Public Suffix List, so browsers keep every
-  endpoint's cookies to itself.
+  them; a lookalike without the prefix is ignored. The endpoint domain is
+  not on the Public Suffix List (decided by the project owner: at this
+  scale the request would likely be refused). Instead the edge makes every
+  cookie an endpoint sets host-only: it removes the `Domain` attribute,
+  in any case and wherever it stands, from each `Set-Cookie` of an
+  endpoint's answer and keeps the rest as written. Endpoints are one level
+  under the domain, so a `Domain` equal to the endpoint's own host loses
+  nothing. The known limits: a cookie a page's script sets
+  (`document.cookie`) never passes the edge and can still carry the parent
+  `Domain`, reaching every other endpoint; and browsers treat all endpoints
+  as one site, so `SameSite` does not separate one tenant's endpoint from
+  another's.
 - **The edge reaches a machine through the node agent's dial socket**
   (`internal/edgedial`), a unix socket the agent makes, root's and the edge
   group's, 0660, which takes the edge's uid alone (`SO_PEERCRED`). A dial

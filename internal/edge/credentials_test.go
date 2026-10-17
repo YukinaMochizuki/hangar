@@ -321,8 +321,8 @@ func TestNothingOfHangarsReachesAnEndpoint(t *testing.T) {
 	}
 
 	resp, _ := w.do(http.MethodGet, openHost, "/set-cookie", nil)
-	if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, []string{"theme=dark"}) {
-		t.Errorf("an endpoint set %q; want only its own cookie", got)
+	if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, []string{"theme=dark", "lang=en; Path=/"}) {
+		t.Errorf("an endpoint set %q; want only its own cookies, host-only", got)
 	}
 }
 
@@ -481,6 +481,48 @@ func TestStripCredentialsTakesAnySpacing(t *testing.T) {
 	edge.StripCredentials(h)
 	if got := h.Values("Authorization"); !slices.Equal(got, []string{"Basic YTpi"}) {
 		t.Errorf("two values: %q", got)
+	}
+}
+
+// TestEndpointCookiesAreHostOnly: every Set-Cookie of an endpoint's answer
+// loses its Domain attribute, however written and wherever it stands, and
+// keeps the rest byte for byte; one of Hangar's names still goes.
+func TestEndpointCookiesAreHostOnly(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"a=1; Domain=" + domain, "a=1"},
+		{"a=1; Domain=." + domain + "; Path=/", "a=1; Path=/"},
+		{"a=1;domain=" + domain, "a=1"},
+		{"a=1; DOMAIN = " + domain + "; Secure", "a=1; Secure"},
+		{"a=1; dOmAiN", "a=1"},
+		{"a=1; Domain=e-abc." + domain, "a=1"},
+		{"a=1; Path=/x;  Domain=" + domain + " ;HttpOnly; SameSite=Lax", "a=1; Path=/x;HttpOnly; SameSite=Lax"},
+		{"a=1; Domain=x; Secure; Domain=y", "a=1; Secure"},
+		{"a=b=c;  Path=/ ; Max-Age=60;Secure", "a=b=c;  Path=/ ; Max-Age=60;Secure"},
+		{"domain=1; Path=/", "domain=1; Path=/"},
+		{"a=1; Domains=x; X-Domain=y", "a=1; Domains=x; X-Domain=y"},
+		{"a=1", "a=1"},
+	} {
+		resp := &http.Response{Header: http.Header{"Set-Cookie": {tc.in}}}
+		if err := edge.ConfineEndpointCookies(resp); err != nil {
+			t.Fatal(err)
+		}
+		if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("%q became %q; want %q", tc.in, got, tc.want)
+		}
+	}
+
+	resp := &http.Response{Header: http.Header{"Set-Cookie": {
+		"a=1; Domain=" + domain + "; Path=/",
+		edge.EndpointCookie + "=planted; Secure; Path=/",
+		"b=2; Secure",
+		"c=3; HttpOnly; domain=." + domain,
+	}}}
+	if err := edge.ConfineEndpointCookies(resp); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"a=1; Path=/", "b=2; Secure", "c=3; HttpOnly"}
+	if got := resp.Header.Values("Set-Cookie"); !slices.Equal(got, want) {
+		t.Errorf("several: %q; want %q", got, want)
 	}
 }
 

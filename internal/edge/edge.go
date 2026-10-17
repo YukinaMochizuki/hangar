@@ -152,7 +152,7 @@ func New(cfg Config) *Edge {
 		// Streams and server-sent events reach the client as they come.
 		FlushInterval:  -1,
 		ErrorHandler:   e.proxyError,
-		ModifyResponse: dropPlatformCookies,
+		ModifyResponse: confineEndpointCookies,
 	}
 	return e
 }
@@ -549,9 +549,12 @@ func hangarBearer(v string) (token.Secret, bool) {
 	return s, s.Prefix() != ""
 }
 
-// dropPlatformCookies keeps an endpoint from setting, or clearing, a cookie
-// of Hangar's on its own host: its answer's Set-Cookie of such a name goes.
-func dropPlatformCookies(resp *http.Response) error {
+// confineEndpointCookies keeps an endpoint's cookies to its own host: its
+// answer's Set-Cookie of one of Hangar's names goes, so it cannot set or
+// clear one, and every other loses its Domain attribute, so the browser keeps
+// it host-only rather than sending it to every endpoint under the domain
+// (docs/decisions/public-endpoints.md).
+func confineEndpointCookies(resp *http.Response) error {
 	vs := resp.Header.Values("Set-Cookie")
 	if len(vs) == 0 {
 		return nil
@@ -563,9 +566,24 @@ func dropPlatformCookies(resp *http.Response) error {
 		if strings.HasPrefix(strings.ToLower(name), platformCookiePrefix) {
 			continue
 		}
-		resp.Header.Add("Set-Cookie", v)
+		resp.Header.Add("Set-Cookie", withoutDomain(v))
 	}
 	return nil
+}
+
+// withoutDomain is the Set-Cookie value v without its Domain attributes, the
+// rest kept as written. Attributes split on ";" as browsers split them; a
+// cookie value cannot hold one.
+func withoutDomain(v string) string {
+	parts := strings.Split(v, ";")
+	kept := []string{parts[0]}
+	for _, p := range parts[1:] {
+		attr, _, _ := strings.Cut(p, "=")
+		if !strings.EqualFold(strings.TrimSpace(attr), "Domain") {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, ";")
 }
 
 // dialEndpoint opens a connection to the endpoint addr names, through the
