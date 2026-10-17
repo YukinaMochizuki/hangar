@@ -232,14 +232,26 @@ const ledColour: Record<ArtStatus, string> = {
   stopped: "transparent",
 };
 
+/**
+ * How the drawing enters: "draw" traces each line in turn, then lights the
+ * LEDs one after another. Without one it is simply there. The animations
+ * are in styles.css.
+ */
+export type ArtEntrance = "draw";
+
+// How long the lines of a "draw" entrance take, all of them, in seconds.
+const drawSpan = 0.55;
+
 export function ChassisArt({
   chassis,
   status,
   className,
+  entrance,
 }: {
   chassis: Chassis;
   status: ArtStatus;
   className?: string;
+  entrance?: ArtEntrance;
 }) {
   const id = useId().replace(/:/g, "");
   const b = build(chassis, camera);
@@ -282,6 +294,10 @@ export function ChassisArt({
         <path
           key={i}
           d={d(s)}
+          // pathLength 1 lets a dash of 1 cover any line, whatever its length.
+          pathLength={entrance ? 1 : undefined}
+          className={cn(entrance && "art-draw")}
+          style={entrance ? { animationDelay: `${(i / b.shapes.length) * drawSpan}s, ${drawSpan}s` } : undefined}
           fill={s.fill ? fills[s.fill] : "none"}
           stroke={s.stroke === "faint" ? "var(--art-faint)" : "var(--art-line)"}
           strokeOpacity={s.stroke === "detail" ? 0.7 : 1}
@@ -307,11 +323,18 @@ export function ChassisArt({
             vectorEffect="non-scaling-stroke"
             filter={lit ? `url(#glow-${id})` : undefined}
             className={cn(
-              lit && l.role === "activity" && "led-activity",
-              lit && l.role === "status" && status === "pending" && "led-blink",
-              lit && l.role === "status" && status === "failed" && "led-blink-slow",
+              entrance && "art-led-in",
+              !entrance && lit && l.role === "activity" && "led-activity",
+              !entrance && lit && l.role === "status" && status === "pending" && "led-blink",
+              !entrance && lit && l.role === "status" && status === "failed" && "led-blink-slow",
             )}
-            style={l.role === "activity" ? { animationDelay: `${(i * 0.37) % 1.9}s` } : undefined}
+            style={
+              entrance
+                ? { animationDelay: `${drawSpan + 0.05 + i * 0.07}s` }
+                : l.role === "activity"
+                  ? { animationDelay: `${(i * 0.37) % 1.9}s` }
+                  : undefined
+            }
           />
         );
       })}
