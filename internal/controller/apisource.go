@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 
 	"connectrpc.com/connect"
@@ -45,7 +46,9 @@ func (s APISource) List(ctx context.Context, kind string) ([]store.Object, int64
 
 // Watch runs one API watch per kind. Events of one kind arrive in order;
 // events of different kinds may interleave in any order, which a level-
-// triggered controller does not mind.
+// triggered controller does not mind. Progress is the lowest revision any
+// kind's watch has reached, by an event or a bookmark, so it comes as often
+// as the server's bookmarks do.
 func (s APISource) Watch(ctx context.Context, kinds []string, since int64, fn func(store.Event) error) error {
 	resources := make([]registry.Resource, 0, len(kinds))
 	for _, kind := range kinds {
@@ -57,19 +60,36 @@ func (s APISource) Watch(ctx context.Context, kinds []string, since int64, fn fu
 	}
 	g, ctx := errgroup.WithContext(ctx)
 	var mu sync.Mutex
-	for _, r := range resources {
+	// reached is how far each kind's watch has come; guarded by mu, as is
+	// progress, the last progress passed to fn.
+	reached := make([]int64, len(resources))
+	for i := range reached {
+		reached[i] = since
+	}
+	progress := since
+	for i, r := range resources {
 		g.Go(func() error {
 			err := s.Client.Watch(ctx, r, client.ListOptions{}, since, func(ev client.Event) error {
-				if ev.Object == nil { // a bookmark
-					return nil
-				}
-				o, err := toObject(r, ev.Object, ev.Revision)
-				if err != nil {
-					return err
+				var o store.Object
+				if ev.Object != nil { // not a bookmark
+					var err error
+					if o, err = toObject(r, ev.Object, ev.Revision); err != nil {
+						return err
+					}
 				}
 				mu.Lock()
 				defer mu.Unlock()
-				return fn(store.Event{Type: eventType(ev), Object: o, Revision: ev.Revision})
+				if ev.Object != nil {
+					if err := fn(store.Event{Type: eventType(ev), Object: o, Revision: ev.Revision}); err != nil {
+						return err
+					}
+				}
+				reached[i] = max(reached[i], ev.Revision)
+				if low := slices.Min(reached); low > progress {
+					progress = low
+					return fn(store.Event{Type: store.EventProgress, Revision: low})
+				}
+				return nil
 			})
 			if err == nil {
 				// The server ended the watch; the others end with it, and the

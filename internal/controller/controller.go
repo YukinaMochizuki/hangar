@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jonboulle/clockwork"
@@ -93,6 +94,44 @@ type Controller struct {
 	Trigger <-chan struct{}
 	Clock   clockwork.Clock
 	Log     *slog.Logger
+
+	q atomic.Pointer[queue]
+}
+
+// Status is what a controller was doing at one moment, read under one lock.
+type Status struct {
+	Name string
+	// Queued counts the keys waiting for their turn.
+	Queued int
+	// InFlight counts the reconciles and the listings running, a listing
+	// from the moment the watch or list before it ended.
+	InFlight int
+	// Followed is the store revision through which every change to a watched
+	// kind has been turned into queued keys; zero until the first list.
+	Followed int64
+	// Retries are the keys whose last reconcile failed or waited, until one
+	// succeeds, earliest due first.
+	Retries []Retry
+}
+
+// Retry is a key a controller queues again at Due, or queued at Due and is
+// to reconcile.
+type Retry struct {
+	Key Key
+	Due time.Time
+	// Waiting says Reconcile returned ErrWaiting rather than failing.
+	Waiting bool
+	// Attempts counts the reconciles in a row that failed or waited.
+	Attempts int
+}
+
+// Status reports what c is doing. Before Run starts, it has followed
+// nothing.
+func (c *Controller) Status() Status {
+	if q := c.q.Load(); q != nil {
+		return q.status(c.Name)
+	}
+	return Status{Name: c.Name}
 }
 
 // Run reconciles until ctx is done, and returns once every reconcile it
@@ -120,6 +159,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	}
 	log := c.Log.With("controller", c.Name)
 	q := newQueue(c.Clock, 100*time.Millisecond, c.MaxBackoff)
+	c.q.Store(q)
 	var wg sync.WaitGroup
 	defer func() {
 		q.shutdown()
@@ -148,13 +188,30 @@ func (c *Controller) Run(ctx context.Context) error {
 		}
 	}()
 
+	// relisting is set from a watch or list ending until the next list is
+	// done, and counts as a listing: what it missed is not queued yet.
+	relisting := false
+	defer func() {
+		if relisting {
+			q.finish()
+		}
+	}()
 	for {
 		rev, err := c.mapAll(ctx, q)
 		if err == nil {
+			q.follow(rev)
+			if relisting {
+				q.finish()
+				relisting = false
+			}
 			err = c.follow(ctx, q, rev)
 		}
 		if ctx.Err() != nil {
 			return nil
+		}
+		if !relisting {
+			q.start()
+			relisting = true
 		}
 		switch {
 		case errors.Is(err, store.ErrCompacted):
@@ -177,6 +234,8 @@ func (c *Controller) Run(ctx context.Context) error {
 // mapAll queues the keys of every object of every watched kind, and returns
 // the earliest of the lists' revisions, so a watch from it misses nothing.
 func (c *Controller) mapAll(ctx context.Context, q *queue) (int64, error) {
+	q.start()
+	defer q.finish()
 	var since int64
 	first := true
 	for _, w := range c.Watches {
@@ -205,6 +264,10 @@ func (c *Controller) follow(ctx context.Context, q *queue, since int64) error {
 		kinds = append(kinds, w.Kind)
 	}
 	return c.Source.Watch(ctx, kinds, since, func(ev store.Event) error {
+		if ev.Type == store.EventProgress {
+			q.follow(ev.Revision)
+			return nil
+		}
 		if w, ok := byKind[ev.Object.Kind]; ok {
 			q.addAll(w.Map(ctx, ev.Object))
 		}

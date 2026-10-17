@@ -506,3 +506,156 @@ func TestAControllerMustListSomething(t *testing.T) {
 		t.Error("a controller that lists nothing ran")
 	}
 }
+
+// TestStatusFollowsWritesOfEveryKind: writes to a kind the controller does
+// not watch still bring Followed up to them, or it would never reach the
+// store's revision.
+func TestStatusFollowsWritesOfEveryKind(t *testing.T) {
+	st := openStore(t)
+	c := &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: newRecorder(), Clock: clockwork.NewFakeClock(), Watches: []Watch{{Kind: "A", Map: Self}}}
+	if got := c.Status(); got.Followed != 0 || got.Name != "t" {
+		t.Errorf("before Run: %+v", got)
+	}
+	run(t, c)
+	rev, err := st.Create(t.Context(), store.Key{Kind: "B", Name: "b"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, "followed to the B", func() (bool, string) {
+		got := c.Status()
+		return got.Followed == rev, fmt.Sprintf("%+v, want followed %d", got, rev)
+	})
+}
+
+// heldList is a memSource whose lists after the first wait for release.
+type heldList struct {
+	*memSource
+	lists   atomic.Int32
+	release chan struct{}
+}
+
+func (h *heldList) List(ctx context.Context, kind string) ([]store.Object, int64, error) {
+	if h.lists.Add(1) > 1 {
+		<-h.release
+	}
+	return h.memSource.List(ctx, kind)
+}
+
+// TestAListingCountsAsInFlight: a resync's listing, whose keys are not
+// queued yet, is in flight.
+func TestAListingCountsAsInFlight(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := &heldList{memSource: newMemSource(store.Key{Kind: "A", Name: "a"}), release: make(chan struct{})}
+		trigger := make(chan struct{})
+		c := &Controller{Name: "t", Source: src, Reconciler: newRecorder(), Trigger: trigger, Watches: []Watch{{Kind: "A", Map: Self}}}
+		run(t, c)
+		synctest.Wait()
+		if got := c.Status(); got.InFlight != 0 || got.Queued != 0 {
+			t.Fatalf("after the first list and reconcile: %+v", got)
+		}
+		trigger <- struct{}{}
+		synctest.Wait()
+		if got := c.Status(); got.InFlight != 1 {
+			t.Errorf("a resync listing: %+v, want one in flight", got)
+		}
+		close(src.release)
+		synctest.Wait()
+		if got := c.Status(); got.InFlight != 0 || got.Queued != 0 {
+			t.Errorf("after the resync: %+v", got)
+		}
+	})
+}
+
+// TestASuccessCancelsItsRetry: a key that failed, then reconciled
+// successfully on a change before its retry was due, has no retry left.
+func TestASuccessCancelsItsRetry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		k := store.Key{Kind: "A", Name: "a"}
+		src := newMemSource(k)
+		r := newRecorder()
+		r.fail[Key{Name: "a"}] = 1
+		c := &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}}
+		run(t, c)
+		synctest.Wait()
+		if got := c.Status(); len(got.Retries) != 1 {
+			t.Fatalf("after a failure: %+v, want its retry", got)
+		}
+		src.put(k)
+		synctest.Wait()
+		if got := c.Status(); r.count(Key{Name: "a"}) != 2 || len(got.Retries) != 0 {
+			t.Errorf("after a success on a change: %+v, %d reconciles; want no retry", got, r.count(Key{Name: "a"}))
+		}
+	})
+}
+
+// TestAttemptsCountFailuresAndWaitsInARow: a key's retry counts the
+// reconciles in a row that failed or waited, both alike, is listed while
+// the one it brings runs, and goes with the first success.
+func TestAttemptsCountFailuresAndWaitsInARow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		results := []error{errors.New("injected"), ErrWaiting, errors.New("injected"), nil}
+		var calls atomic.Int32
+		hold := make(chan struct{})
+		rec := ReconcilerFunc(func(context.Context, Key) error {
+			n := calls.Add(1)
+			if n == 3 {
+				<-hold
+			}
+			return results[n-1]
+		})
+		c := &Controller{Name: "t", Source: newMemSource(store.Key{Kind: "A", Name: "a"}), Reconciler: rec, Watches: []Watch{{Kind: "A", Map: Self}}}
+		run(t, c)
+		attempts := func(what string, want int) {
+			t.Helper()
+			synctest.Wait()
+			got := c.Status()
+			if len(got.Retries) != 1 || got.Retries[0].Attempts != want {
+				t.Fatalf("%s: %+v, want %d attempts", what, got, want)
+			}
+		}
+		attempts("after a failure", 1)
+		time.Sleep(100 * time.Millisecond) //nolint:forbidigo // virtual time
+		attempts("after a wait", 2)
+		time.Sleep(100 * time.Millisecond) //nolint:forbidigo // virtual time
+		attempts("while the retry runs", 2)
+		close(hold)
+		attempts("after another failure", 3)
+		time.Sleep(100 * time.Millisecond) //nolint:forbidigo // virtual time
+		synctest.Wait()
+		if got := c.Status(); calls.Load() != 4 || len(got.Retries) != 0 {
+			t.Errorf("after a success: %+v, %d reconciles; want no retry", got, calls.Load())
+		}
+	})
+}
+
+// TestStatusReportsTheQueue: a running reconcile, a key waiting its turn,
+// and a failed key's retry, with its due time, are each reported.
+func TestStatusReportsTheQueue(t *testing.T) {
+	st := openStore(t)
+	clock := clockwork.NewFakeClock()
+	r := newRecorder()
+	r.block = make(chan struct{})
+	r.fail[Key{Name: "a"}] = 1
+	c := &Controller{Name: "t", Source: StoreSource{Store: st}, Reconciler: r, Clock: clock, Watches: []Watch{{Kind: "A", Map: Self}}}
+	run(t, c)
+	for _, name := range []string{"a", "b"} {
+		if _, err := st.Create(t.Context(), store.Key{Kind: "A", Name: name}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	testutil.Eventually(t, "a running, b queued", func() (bool, string) {
+		got := c.Status()
+		return got.InFlight == 1 && got.Queued == 1 && r.count(Key{Name: "a"}) == 1, fmt.Sprintf("%+v", got)
+	})
+	close(r.block)
+	want := []Retry{{Key: Key{Name: "a"}, Due: clock.Now().Add(100 * time.Millisecond), Attempts: 1}}
+	testutil.Eventually(t, "a's retry pending, nothing else", func() (bool, string) {
+		got := c.Status()
+		return got.InFlight == 0 && got.Queued == 0 && slices.Equal(got.Retries, want), fmt.Sprintf("%+v", got)
+	})
+	clock.Advance(100 * time.Millisecond)
+	testutil.Eventually(t, "a retried", func() (bool, string) {
+		got := c.Status()
+		return r.count(Key{Name: "a"}) == 2 && len(got.Retries) == 0 && got.InFlight == 0, fmt.Sprintf("%+v", got)
+	})
+}

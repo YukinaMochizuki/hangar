@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -12,8 +13,37 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
+
+// gcProgress is how far garbage collection has come, which
+// ControllerStatus reports as a controller's.
+type gcProgress struct {
+	mu sync.Mutex
+	// sweeps counts the sweeps running.
+	sweeps int
+	// followed is the revision through which every write has been handled.
+	followed int64
+}
+
+func (g *gcProgress) follow(rev int64) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.followed = max(g.followed, rev)
+}
+
+func (g *gcProgress) sweeping(n int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.sweeps += n
+}
+
+func (g *gcProgress) status() controller.Status {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return controller.Status{Name: "garbage collector", InFlight: g.sweeps, Followed: g.followed}
+}
 
 // runGC deletes what owner references say should go. It follows writes:
 //   - an object marked for deletion that cascades has everything it owns
@@ -43,7 +73,9 @@ func (s *Server) runGC(ctx context.Context) error {
 			return err
 		}
 		s.sweep(ctx)
+		s.gc.follow(rev)
 		err = s.store.Watch(ctx, store.WatchOptions{SinceRevision: rev}, func(ev store.Event) error {
+			defer s.gc.follow(ev.Revision)
 			b, ok := s.backends[ev.Object.Kind]
 			if !ok {
 				return nil
@@ -86,6 +118,8 @@ func (s *Server) isCascading(b *backend, obj proto.Message) bool {
 // sweep rechecks every object: orphans are deleted, and cascades that stalled
 // are pushed on.
 func (s *Server) sweep(ctx context.Context) {
+	s.gc.sweeping(1)
+	defer s.gc.sweeping(-1)
 	err := s.eachObject(ctx, func(b *backend, key resource.Key, obj proto.Message) error {
 		if s.isCascading(b, obj) {
 			s.cascade(ctx, b, key, obj)

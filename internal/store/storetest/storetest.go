@@ -403,9 +403,13 @@ func testWatchStartsDuringWrites(t *testing.T, s store.Store) {
 	for round := range 10 {
 		stop := make(chan struct{})
 		written := make(chan int64, 1)
+		// writing is closed once the writer has written, or given up.
+		writing := make(chan struct{})
+		var once sync.Once
 		go func() {
 			var last int64
 			defer func() { written <- last }()
+			defer once.Do(func() { close(writing) })
 			for i := 0; ; i++ {
 				select {
 				case <-stop:
@@ -417,10 +421,11 @@ func testWatchStartsDuringWrites(t *testing.T, s store.Store) {
 					t.Error(err)
 					return
 				}
+				once.Do(func() { close(writing) })
 				last = rev
 			}
 		}()
-		time.Sleep(time.Millisecond) //nolint:forbidigo // lets background work run
+		<-writing
 		since := must[int64](t)(s.Revision(ctx))
 		c := watch(t, s, store.WatchOptions{SinceRevision: since})
 		// Writing on until the watch has delivered well past its replay

@@ -105,7 +105,8 @@ type Source interface {
 	// misses no change made after the list.
 	List(ctx context.Context, kind string) ([]store.Object, int64, error)
 	// Watch calls fn for each change to an object of one of kinds after
-	// since; it returns when the watch ends, nil if the source ended it.
+	// since, and with a store.EventProgress when it chooses to; it returns
+	// when the watch ends, nil if the source ended it.
 	Watch(ctx context.Context, kinds []string, since int64, fn func(store.Event) error) error
 }
 
@@ -255,6 +256,9 @@ func (a *Authorizer) syncSource(ctx context.Context) error {
 	a.changed()
 	kinds := []string{registry.RoleBinding.Kind, registry.Project.Kind, registry.User.Kind}
 	return a.source.Watch(ctx, kinds, min(brev, prev, urev), func(ev store.Event) error {
+		if ev.Type == store.EventProgress {
+			return nil
+		}
 		a.mu.Lock()
 		a.apply(ev)
 		a.mu.Unlock()

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/miekg/dns"
@@ -221,24 +222,25 @@ func TestUpstreamFailures(t *testing.T) {
 }
 
 func TestQuestionsInFlightAreAskedOnce(t *testing.T) {
-	u := &fakeUpstream{gate: make(chan struct{})}
-	r := New(Config{Upstreams: []netip.AddrPort{upstream}, Exchange: u.exchange})
-	var wg sync.WaitGroup
-	for range 10 {
-		wg.Go(func() {
-			if got := ask(t, r, "n1", "example.com.", dns.TypeA); len(got.Answer) != 1 {
-				t.Errorf("answer %v", got)
-			}
-		})
-	}
-	testutil.Eventually(t, "a question asked upstream", func() bool { return u.asked.Load() > 0 })
-	// The others join the question asked.
-	time.Sleep(20 * time.Millisecond) //nolint:forbidigo // lets background work run
-	close(u.gate)
-	wg.Wait()
-	if n := u.asked.Load(); n != 1 {
-		t.Errorf("asked upstream %d times for one question asked ten times at once", n)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		u := &fakeUpstream{gate: make(chan struct{})}
+		r := New(Config{Upstreams: []netip.AddrPort{upstream}, Exchange: u.exchange})
+		var wg sync.WaitGroup
+		for range 10 {
+			wg.Go(func() {
+				if got := ask(t, r, "n1", "example.com.", dns.TypeA); len(got.Answer) != 1 {
+					t.Errorf("answer %v", got)
+				}
+			})
+		}
+		// Every question is asked: one upstream, held, the others joining it.
+		synctest.Wait()
+		close(u.gate)
+		wg.Wait()
+		if n := u.asked.Load(); n != 1 {
+			t.Errorf("asked upstream %d times for one question asked ten times at once", n)
+		}
+	})
 }
 
 // TestANetworkTakesOnlyItsShare: a network's questions past its bound fail

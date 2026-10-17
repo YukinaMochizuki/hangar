@@ -17,7 +17,6 @@ import (
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
-	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -433,20 +432,8 @@ func TestASettledDiskStaysQuiet(t *testing.T) {
 	settled := waitDisk(t, s, system, "data", "in use", func(d *storagev1alpha1.Disk) bool {
 		return d.GetStatus().GetPhase() == storagev1alpha1.DiskPhase_DISK_PHASE_IN_USE
 	})
-	ctx, cancel := context.WithTimeout(system, 300*time.Millisecond)
-	defer cancel()
-	var writes int
-	watch := store.WatchOptions{Kind: registry.Disk.Kind, Project: "web", SinceRevision: settled.GetMetadata().GetResourceVersion()}
-	err := s.store.Watch(ctx, watch, func(e store.Event) error {
-		if e.Object.Name == "data" {
-			writes++
-		}
-		return nil
-	})
-	if err != nil && ctx.Err() == nil {
-		t.Fatal(err)
-	}
-	if writes > 0 {
-		t.Errorf("a settled disk was written %d more times", writes)
+	waitSettled(t, s)
+	if now := getDisk(t, s, system, "data").GetMetadata().GetResourceVersion(); now != settled.GetMetadata().GetResourceVersion() {
+		t.Errorf("a settled disk was written again: at %d, then at %d", settled.GetMetadata().GetResourceVersion(), now)
 	}
 }

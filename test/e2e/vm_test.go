@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect"
 
@@ -227,13 +226,15 @@ func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
 	w.host.Reboot()
 	w.startAgent()
 	w.waitVMReason("web", computeapi.ReasonPoweredOff)
-	// The status says PoweredOff from before the reboot, so wait for the
-	// agent to be back before giving it time to wrongly boot the VM.
-	lines := w.vmLogsOnceConnected("web")
-	testutil.Unchanged(w.t, "a VM whose guest powered off, after a reboot", 200*time.Millisecond, w.vmVersion(uid))
+	// The status says PoweredOff from before the reboot; once the agent back
+	// has looked at everything, nothing may have booted the VM.
+	if waiting := w.waitSettled(); len(waiting) > 0 {
+		t.Errorf("after the reboot, still waiting on %v", waiting)
+	}
 	if vm := w.host.Snapshot().VMs[uid]; vm.State != driver.VMExited {
 		t.Errorf("a VM whose guest powered off, after a reboot: %+v", vm)
 	}
+	lines := w.vmLogsOnceConnected("web")
 	if lines[len(lines)-1] != "3:end:0" {
 		t.Errorf("logs after the power-off and the reboot %q", lines)
 	}

@@ -295,7 +295,10 @@ func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, h
 				break
 			}
 		}
-		time.Sleep(30 * time.Millisecond) //nolint:forbidigo // lets background work run
+		// A sweep comes by while the stop runs, besides the others.
+		if err := a.sweep(context.Background()); err != nil {
+			t.Error(err)
+		}
 	}
 	waitMachine(t, sys, name, "gone", nil)
 }

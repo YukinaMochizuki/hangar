@@ -262,20 +262,20 @@ func TestASettledSystemStaysQuiet(t *testing.T) {
 	applyCtr(t, s, user, sized("huge", 1<<20))
 	m := waitMachine(t, s, system, "ct-api", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
 	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, m.GetMetadata().GetGeneration())
-	waitContainer(t, s, system, "api", "ready", func(c *computev1alpha1.Container) bool {
+	api := waitContainer(t, s, system, "api", "ready", func(c *computev1alpha1.Container) bool {
 		return conditions.IsTrue(c.GetStatus().GetConditions(), ContainerReady)
 	})
-	waitContainer(t, s, system, "huge", "reported unschedulable", func(c *computev1alpha1.Container) bool {
+	huge := waitContainer(t, s, system, "huge", "reported unschedulable", func(c *computev1alpha1.Container) bool {
 		return containerReady(c).GetReason() == "Unschedulable"
 	})
 
-	before, err := s.store.Revision(system)
-	if err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(300 * time.Millisecond) //nolint:forbidigo // lets background work run
-	if after, _ := s.store.Revision(system); after != before {
-		t.Errorf("a settled system wrote %d more times", after-before)
+	// A write loop never settles; a write after the match shows below.
+	waitSettled(t, s)
+	for _, c := range []*computev1alpha1.Container{api, huge} {
+		key := resource.Key{Project: "web", Name: c.GetMetadata().GetName()}
+		if now, _ := versionOf(s, system, registry.Container, key)(); now != fmt.Sprint(c.GetMetadata().GetResourceVersion()) {
+			t.Errorf("container %s was written again once it matched: at %d, then at %s", key.Name, c.GetMetadata().GetResourceVersion(), now)
+		}
 	}
 }
 

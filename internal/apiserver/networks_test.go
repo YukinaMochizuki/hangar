@@ -433,8 +433,9 @@ func TestANetworkIsNotReleasedUnderAMachineJoiningIt(t *testing.T) {
 	}
 	released := make(chan error, 1)
 	go func() { released <- s.reconcileNetwork(system, controller.Key{Project: "web", Name: DefaultNetwork}) }()
-	// Long enough for an unlocked release to finish.
-	time.Sleep(50 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// The release waits on ipam; one that did not would finish meanwhile.
+	testutil.Unchanged(t, "the network being deleted, ipam held", 50*time.Millisecond,
+		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: DefaultNetwork}))
 	m := machine("m", "")
 	m.Spec.Interfaces[0].Ipv4 = addr
 	_, err = s.backend(registry.Machine).Apply(system, m)

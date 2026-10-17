@@ -7,6 +7,7 @@ import (
 	"net/netip"
 	"os"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv6"
@@ -187,33 +188,36 @@ func packet(m *dhcpv6.Message) []byte {
 }
 
 func TestServeAnswersBoundedByMAC(t *testing.T) {
-	s := server()
-	at := time.Unix(1000, 0)
-	s.now = func() time.Time { return at }
-	p := newPipe()
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- s.Serve(ctx, "net", p) }()
-	sol := solicit(t)
-	for range 3 * PerMAC {
-		p.in <- frame{packet(sol), clientMAC}
-	}
-	p.in <- frame{packet(sol), strangerM}
-	first := <-p.out
-	got, err := ipv6pkt.Parse(first.b)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.Src != driver.GatewayIPv6 || got.Dst != clientLL || port(got.Payload[0:2]) != 547 || port(got.Payload[2:4]) != 546 || first.mac.String() != clientMAC.String() {
-		t.Errorf("answer from %s:%d to %s:%d at %s, want fe80::1:547 to the client's %s:546 at its MAC",
-			got.Src, port(got.Payload[0:2]), got.Dst, port(got.Payload[2:4]), first.mac, clientLL)
-	}
-	time.Sleep(100 * time.Millisecond) //nolint:forbidigo // lets background work run
-	cancel()
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
-	if n := 1 + len(p.out); n != PerMAC {
-		t.Errorf("%d answers to %d solicitations of one MAC in a second, want %d", n, 3*PerMAC, PerMAC)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		s := server()
+		at := time.Unix(1000, 0)
+		s.now = func() time.Time { return at }
+		p := newPipe()
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- s.Serve(ctx, "net", p) }()
+		sol := solicit(t)
+		for range 3 * PerMAC {
+			p.in <- frame{packet(sol), clientMAC}
+		}
+		p.in <- frame{packet(sol), strangerM}
+		first := <-p.out
+		got, err := ipv6pkt.Parse(first.b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Src != driver.GatewayIPv6 || got.Dst != clientLL || port(got.Payload[0:2]) != 547 || port(got.Payload[2:4]) != 546 || first.mac.String() != clientMAC.String() {
+			t.Errorf("answer from %s:%d to %s:%d at %s, want fe80::1:547 to the client's %s:546 at its MAC",
+				got.Src, port(got.Payload[0:2]), got.Dst, port(got.Payload[2:4]), first.mac, clientLL)
+		}
+		// Every solicitation is read and answered or dropped.
+		synctest.Wait()
+		cancel()
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+		if n := 1 + len(p.out); n != PerMAC {
+			t.Errorf("%d answers to %d solicitations of one MAC in a second, want %d", n, 3*PerMAC, PerMAC)
+		}
+	})
 }

@@ -446,7 +446,8 @@ func TestBootstrapOnlyOnAnEmptyStore(t *testing.T) {
 	runCtx, cancel := context.WithCancel(ctx)
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(runCtx) }()
-	time.Sleep(200 * time.Millisecond) //nolint:forbidigo // lets background work run
+	// Bootstrap runs once at start and reports nothing when it does nothing.
+	testutil.Unchanged(t, "the revoked bootstrap binding, the server restarting", 200*time.Millisecond, e.storedVersion(bootstrapBinding))
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
