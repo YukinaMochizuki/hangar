@@ -3,6 +3,7 @@ syntax = "proto3";
 package hangar.compute.v1alpha1;
 
 import "hangar/compute/v1alpha1/interface.proto";
+import "hangar/compute/v1alpha1/placement.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
 
@@ -113,6 +114,9 @@ message Resources {
 message ContainerStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
+  // The hardware of the node the container is placed on, as that node
+  // describes it now; unset until it is placed.
+  Placement placement = 3;
 }
 
 // ContainerService manages containers.

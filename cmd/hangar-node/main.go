@@ -5,7 +5,9 @@
 // hangar-node vmm MACHINE_UID is the launcher of one VM, the main process
 // of the VM's systemd unit (internal/node/driver/chvm); the agent starts
 // those units, never this command itself. hangar-node vmm-exec is what the
-// launcher runs Cloud Hypervisor through, as the VM's user.
+// launcher runs Cloud Hypervisor through, as the VM's user. hangar-node
+// check-placement takes the placement flags alone and fails, saying why,
+// unless the node would report each as given.
 package main
 
 import (
@@ -61,6 +63,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "vmm-exec" {
 		os.Exit(chvm.ExecMain(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "check-placement" {
+		os.Exit(checkPlacementMain(os.Args[2:], os.Stderr))
+	}
 	var hf hostFlags
 	var (
 		name           = flag.String("name", "", "the Node this agent reports as; the apiserver's --node-name")
@@ -74,7 +79,9 @@ func main() {
 		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
 		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
 	)
+	placement := bindPlacement(flag.CommandLine)
 	hf.bind(flag.CommandLine)
+	flag.Usage = func() { usage(flag.CommandLine) }
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -109,6 +116,7 @@ func main() {
 			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
 		},
 		Reserved:      &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
+		Placement:     placement,
 		MaxPulls:      *maxPulls,
 		MaxUnpackWork: hf.maxUnpackWork,
 		Drivers:       d,

@@ -3,6 +3,7 @@ syntax = "proto3";
 package hangar.compute.v1alpha1;
 
 import "hangar/compute/v1alpha1/interface.proto";
+import "hangar/compute/v1alpha1/placement.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
 import "hangar/storage/v1alpha1/disk.proto";
@@ -115,6 +116,9 @@ message VirtualMachineStatus {
   string root_disk = 3;
   // The VM's interfaces, with their addresses once assigned.
   repeated VirtualMachineInterfaceStatus interfaces = 4;
+  // The hardware of the node the VM is placed on, as that node describes
+  // it now; unset until it is placed.
+  Placement placement = 5;
 }
 
 // VirtualMachineInterfaceStatus is one of a VM's interfaces as it is.
