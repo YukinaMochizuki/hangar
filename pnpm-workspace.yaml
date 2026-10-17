@@ -1,5 +1,6 @@
 packages:
   - gen/ts
   - web
+  - web-mock
 allowBuilds:
   esbuild: true
