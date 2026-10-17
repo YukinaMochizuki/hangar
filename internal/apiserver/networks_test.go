@@ -97,7 +97,10 @@ func TestEveryProjectGetsADefaultNetwork(t *testing.T) {
 		first = getNetwork(t, s, system, DefaultNetwork)
 		return first != nil && conditions.IsTrue(first.GetStatus().GetConditions(), NetworkReady)
 	})
-	if first.GetSpec().GetIpv4Cidr() != DefaultNetworkCIDR || first.GetStatus().GetTransitIpv4() != "100.64.0.0/31" {
+	// Signing up made other projects' networks, which may have been given
+	// their links first.
+	if transit, err := netip.ParsePrefix(first.GetStatus().GetTransitIpv4()); first.GetSpec().GetIpv4Cidr() != DefaultNetworkCIDR ||
+		err != nil || transit.Bits() != 31 || !transitRange.Contains(transit.Addr()) {
 		t.Errorf("default network: %v / %v", first.GetSpec(), first.GetStatus())
 	}
 	// A network with its transit link is left alone.
@@ -294,11 +297,14 @@ func TestTransitLinksAreDistinctAndReused(t *testing.T) {
 		return n
 	}
 	first := ready(DefaultNetwork, "the default network's transit link")
+	// Signing up made networks too; once they have their links, none takes
+	// the one freed below.
+	waitSettled(t, s)
 	if _, err := s.backend(registry.Network).Apply(user, network("second", "10.9.0.0/24")); err != nil {
 		t.Fatal(err)
 	}
-	if got := ready("second", "the second network's transit link").GetStatus().GetTransitIpv4(); got != "100.64.0.2/31" {
-		t.Errorf("second transit %s", got)
+	if got := ready("second", "the second network's transit link").GetStatus().GetTransitIpv4(); got == "" || got == first.GetStatus().GetTransitIpv4() {
+		t.Errorf("second transit %s, first %s", got, first.GetStatus().GetTransitIpv4())
 	}
 
 	// The default network goes and comes back; the new one gets the freed link.
@@ -311,8 +317,8 @@ func TestTransitLinksAreDistinctAndReused(t *testing.T) {
 		return again != nil && again.GetMetadata().GetUid() != first.GetMetadata().GetUid() &&
 			conditions.IsTrue(again.GetStatus().GetConditions(), NetworkReady)
 	})
-	if got := again.GetStatus().GetTransitIpv4(); got != "100.64.0.0/31" {
-		t.Errorf("the freed transit was not reused; got %s", got)
+	if got, want := again.GetStatus().GetTransitIpv4(), first.GetStatus().GetTransitIpv4(); got != want {
+		t.Errorf("the freed transit %s was not reused; got %s", want, got)
 	}
 }
 

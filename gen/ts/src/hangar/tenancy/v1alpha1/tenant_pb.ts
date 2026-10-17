@@ -70,7 +70,8 @@ export type TenantSpec = Message<"hangar.tenancy.v1alpha1.TenantSpec"> & {
 
   /**
    * Name of the Plan that sets this tenant's quota limits; empty means the
-   * platform default.
+   * platform default. An apply that leaves it empty keeps the stored plan;
+   * naming "default" moves the tenant back to the default, stored as empty.
    *
    * @generated from field: string plan = 2;
    */

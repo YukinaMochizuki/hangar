@@ -99,8 +99,7 @@ type Config struct {
 	// sets no limit of its own; zero means DefaultMaxOwnedTenants.
 	DefaultMaxOwnedTenants int
 	// DefaultPlanLimits are what the default Plan is made with, the first
-	// time the apiserver starts on a store; nil means
-	// PlaceholderDefaultLimits.
+	// time the apiserver starts on a store; nil means DefaultLimits.
 	DefaultPlanLimits *tenancyv1alpha1.Limits
 	// Credentials keeps the credentials the apiserver issues: service
 	// tokens' secrets in any auth mode, and with EnableOIDC the sessions of
@@ -140,8 +139,9 @@ type Server struct {
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex
-	// users serializes every apply and delete of a User, so no two have one
-	// email.
+	// users serializes every apply and delete of a User or an Invitation,
+	// so no two Users have one email and no Invitation is for an email with
+	// a User. Whoever holds it and plans takes users first.
 	users sync.Mutex
 	// quota serializes every write that can raise what a tenant holds, but
 	// the apiserver's own, from counting what the tenant holds to the write,
@@ -149,10 +149,13 @@ type Server struct {
 	// takes it after the kind's writeLock. It holds only while one apiserver
 	// process writes the store; see docs/decisions/tenancy-and-iam.md.
 	quota sync.Mutex
-	// plans serializes every apply and delete of a Plan or a Tenant, so no
-	// tenant comes to name a plan being deleted. Whoever holds it and quota
-	// takes plans first.
+	// plans serializes every apply and delete of a Plan, a Tenant, a User
+	// or an Invitation, so none comes to name a plan being deleted. Whoever
+	// holds it and quota takes plans first.
 	plans sync.Mutex
+	// nameSuffix makes the random part of the name signing up gives a
+	// person's first tenant and project.
+	nameSuffix func() string
 	// sessions issues and checks credentials, over Config.Credentials; nil
 	// without them. login is set by EnableOIDC: sign-in through the
 	// provider; nil without it.
@@ -206,15 +209,16 @@ func New(cfg Config) *Server {
 		cfg.DefaultMaxOwnedTenants = DefaultMaxOwnedTenants
 	}
 	s := &Server{
-		cfg:       cfg,
-		store:     cfg.Store,
-		clock:     cfg.Clock,
-		log:       cfg.Logger,
-		authz:     authz.New(cfg.Store, cfg.ExtraRoles),
-		backends:  map[string]*backend{},
-		tunnels:   &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
-		nodeCalls: newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
-		tokenUses: make(chan tokenUse, 256),
+		cfg:        cfg,
+		store:      txStore{cfg.Store},
+		nameSuffix: randomNameSuffix,
+		clock:      cfg.Clock,
+		log:        cfg.Logger,
+		authz:      authz.New(cfg.Store, cfg.ExtraRoles),
+		backends:   map[string]*backend{},
+		tunnels:    &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
+		nodeCalls:  newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
+		tokenUses:  make(chan tokenUse, 256),
 	}
 	if cfg.Credentials != nil {
 		s.sessions = s.newSessions(cfg.Credentials)

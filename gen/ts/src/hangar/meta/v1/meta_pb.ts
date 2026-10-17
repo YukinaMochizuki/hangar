@@ -24,7 +24,7 @@ export const file_hangar_meta_v1_meta: GenFile = /*@__PURE__*/
 export type ObjectMeta = Message<"hangar.meta.v1.ObjectMeta"> & {
   /**
    * DNS-1123 label, unique within the project (or the platform, for global
-   * kinds).
+   * kinds). An Invitation's is an email instead.
    *
    * @generated from field: string name = 1;
    */

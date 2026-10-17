@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/iam/v1alpha1/account.proto.
  */
 export const file_hangar_iam_v1alpha1_account: GenFile = /*@__PURE__*/
-  fileDesc("CiFoYW5nYXIvaWFtL3YxYWxwaGExL2FjY291bnQucHJvdG8SE2hhbmdhci5pYW0udjFhbHBoYTEiDwoNV2hvQW1JUmVxdWVzdCJ0Cg5XaG9BbUlSZXNwb25zZRIMCgR0eXBlGAEgASgJEgoKAmlkGAIgASgJEg8KB2ludml0ZWQYAyABKAgSDgoGbWVtYmVyGAQgASgIEicKBHVzZXIYBSABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIiNwoNU2lnblVwUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkiOQoOU2lnblVwUmVzcG9uc2USJwoEdXNlchgBIAEoCzIZLmhhbmdhci5pYW0udjFhbHBoYTEuVXNlciIsChRVcGRhdGVQcm9maWxlUmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkiQAoVVXBkYXRlUHJvZmlsZVJlc3BvbnNlEicKBHVzZXIYASABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIyngIKDkFjY291bnRTZXJ2aWNlElEKBldob0FtSRIiLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVxdWVzdBojLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVzcG9uc2USUQoGU2lnblVwEiIuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXF1ZXN0GiMuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXNwb25zZRJmCg1VcGRhdGVQcm9maWxlEikuaGFuZ2FyLmlhbS52MWFscGhhMS5VcGRhdGVQcm9maWxlUmVxdWVzdBoqLmhhbmdhci5pYW0udjFhbHBoYTEuVXBkYXRlUHJvZmlsZVJlc3BvbnNlQt8BChdjb20uaGFuZ2FyLmlhbS52MWFscGhhMUIMQWNjb3VudFByb3RvUAFaSGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2lhbS92MWFscGhhMTtpYW12MWFscGhhMaICA0hJWKoCE0hhbmdhci5JYW0uVjFhbHBoYTHKAhNIYW5nYXJcSWFtXFYxYWxwaGEx4gIfSGFuZ2FyXElhbVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCFUhhbmdhcjo6SWFtOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_iam_v1alpha1_user]);
+  fileDesc("CiFoYW5nYXIvaWFtL3YxYWxwaGExL2FjY291bnQucHJvdG8SE2hhbmdhci5pYW0udjFhbHBoYTEiDwoNV2hvQW1JUmVxdWVzdCJ0Cg5XaG9BbUlSZXNwb25zZRIMCgR0eXBlGAEgASgJEgoKAmlkGAIgASgJEg8KB2ludml0ZWQYAyABKAgSDgoGbWVtYmVyGAQgASgIEicKBHVzZXIYBSABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIiNwoNU2lnblVwUmVxdWVzdBIQCgh1c2VybmFtZRgBIAEoCRIUCgxkaXNwbGF5X25hbWUYAiABKAkiWgoOU2lnblVwUmVzcG9uc2USJwoEdXNlchgBIAEoCzIZLmhhbmdhci5pYW0udjFhbHBoYTEuVXNlchIOCgZ0ZW5hbnQYAiABKAkSDwoHcHJvamVjdBgDIAEoCSIsChRVcGRhdGVQcm9maWxlUmVxdWVzdBIUCgxkaXNwbGF5X25hbWUYASABKAkiQAoVVXBkYXRlUHJvZmlsZVJlc3BvbnNlEicKBHVzZXIYASABKAsyGS5oYW5nYXIuaWFtLnYxYWxwaGExLlVzZXIyngIKDkFjY291bnRTZXJ2aWNlElEKBldob0FtSRIiLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVxdWVzdBojLmhhbmdhci5pYW0udjFhbHBoYTEuV2hvQW1JUmVzcG9uc2USUQoGU2lnblVwEiIuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXF1ZXN0GiMuaGFuZ2FyLmlhbS52MWFscGhhMS5TaWduVXBSZXNwb25zZRJmCg1VcGRhdGVQcm9maWxlEikuaGFuZ2FyLmlhbS52MWFscGhhMS5VcGRhdGVQcm9maWxlUmVxdWVzdBoqLmhhbmdhci5pYW0udjFhbHBoYTEuVXBkYXRlUHJvZmlsZVJlc3BvbnNlQt8BChdjb20uaGFuZ2FyLmlhbS52MWFscGhhMUIMQWNjb3VudFByb3RvUAFaSGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2lhbS92MWFscGhhMTtpYW12MWFscGhhMaICA0hJWKoCE0hhbmdhci5JYW0uVjFhbHBoYTHKAhNIYW5nYXJcSWFtXFYxYWxwaGEx4gIfSGFuZ2FyXElhbVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCFUhhbmdhcjo6SWFtOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_iam_v1alpha1_user]);
 
 /**
  * @generated from message hangar.iam.v1alpha1.WhoAmIRequest
@@ -108,6 +108,20 @@ export type SignUpResponse = Message<"hangar.iam.v1alpha1.SignUpResponse"> & {
    * @generated from field: hangar.iam.v1alpha1.User user = 1;
    */
   user?: User | undefined;
+
+  /**
+   * The name of the tenant signing up opened, which the user owns.
+   *
+   * @generated from field: string tenant = 2;
+   */
+  tenant: string;
+
+  /**
+   * The name of the project made in it, which has a default network.
+   *
+   * @generated from field: string project = 3;
+   */
+  project: string;
 };
 
 /**
@@ -172,8 +186,10 @@ export const AccountService: GenService<{
     output: typeof WhoAmIResponseSchema;
   },
   /**
-   * SignUp creates the caller's User. Only an invited person who has no User
-   * yet may call it.
+   * SignUp creates the caller's User, and with it, in the same store
+   * transaction, a tenant they own, a project in it and the project's
+   * default network: all of them or none. Only an invited person who has no
+   * User yet may call it.
    *
    * @generated from rpc hangar.iam.v1alpha1.AccountService.SignUp
    */

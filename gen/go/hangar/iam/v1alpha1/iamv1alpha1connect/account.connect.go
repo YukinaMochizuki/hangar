@@ -46,8 +46,10 @@ const (
 type AccountServiceClient interface {
 	// WhoAmI answers any authenticated caller, about themselves only.
 	WhoAmI(context.Context, *connect.Request[v1alpha1.WhoAmIRequest]) (*connect.Response[v1alpha1.WhoAmIResponse], error)
-	// SignUp creates the caller's User. Only an invited person who has no User
-	// yet may call it.
+	// SignUp creates the caller's User, and with it, in the same store
+	// transaction, a tenant they own, a project in it and the project's
+	// default network: all of them or none. Only an invited person who has no
+	// User yet may call it.
 	SignUp(context.Context, *connect.Request[v1alpha1.SignUpRequest]) (*connect.Response[v1alpha1.SignUpResponse], error)
 	// UpdateProfile changes the caller's own display name, and nothing else.
 	UpdateProfile(context.Context, *connect.Request[v1alpha1.UpdateProfileRequest]) (*connect.Response[v1alpha1.UpdateProfileResponse], error)
@@ -111,8 +113,10 @@ func (c *accountServiceClient) UpdateProfile(ctx context.Context, req *connect.R
 type AccountServiceHandler interface {
 	// WhoAmI answers any authenticated caller, about themselves only.
 	WhoAmI(context.Context, *connect.Request[v1alpha1.WhoAmIRequest]) (*connect.Response[v1alpha1.WhoAmIResponse], error)
-	// SignUp creates the caller's User. Only an invited person who has no User
-	// yet may call it.
+	// SignUp creates the caller's User, and with it, in the same store
+	// transaction, a tenant they own, a project in it and the project's
+	// default network: all of them or none. Only an invited person who has no
+	// User yet may call it.
 	SignUp(context.Context, *connect.Request[v1alpha1.SignUpRequest]) (*connect.Response[v1alpha1.SignUpResponse], error)
 	// UpdateProfile changes the caller's own display name, and nothing else.
 	UpdateProfile(context.Context, *connect.Request[v1alpha1.UpdateProfileRequest]) (*connect.Response[v1alpha1.UpdateProfileResponse], error)

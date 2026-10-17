@@ -8,8 +8,8 @@ import "hangar/meta/v1/options.proto";
 // User is a person who has signed up: the onboarding they complete once a
 // platform-role RoleBinding on their email has invited them. Its name is the
 // username they chose, global and never reused. Only AccountService.SignUp
-// creates one; RoleBindings stay keyed by email. See
-// docs/decisions/tenancy-and-iam.md.
+// creates one, from the person's Invitation if there is one; RoleBindings
+// stay keyed by email. See docs/decisions/tenancy-and-iam.md.
 message User {
   option (hangar.meta.v1.resource) = {
     kind: "User"
@@ -36,6 +36,11 @@ message UserSpec {
   // How many tenants the user may own. Unset means the platform default.
   // Only platform.root sets it.
   optional int32 max_owned_tenants = 3;
+  // Name of the Plan each tenant the user opens gets as its spec.plan when
+  // it is created; empty is the default plan. It must exist. Changing it
+  // changes no tenant already open. Only platform.root sets it; signing up
+  // takes it from the person's Invitation.
+  string plan = 4;
 }
 
 // UserStatus is the observed state of a user.

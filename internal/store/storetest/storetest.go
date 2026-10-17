@@ -37,6 +37,8 @@ func Run(t *testing.T, open func(t *testing.T) store.Store) {
 		{"WatchSlowConsumer", testWatchSlowConsumer},
 		{"WatchStartsDuringWrites", testWatchStartsDuringWrites},
 		{"ConcurrentWriters", testConcurrentWriters},
+		{"TxnCommitsTogether", testTxnCommitsTogether},
+		{"TxnRollsBack", testTxnRollsBack},
 		{"Compaction", testCompaction},
 		{"CompactionOvertakesSlowWatch", testCompactionOvertakesSlowWatch},
 		{"WatchEndsOnClose", testWatchEndsOnClose},
@@ -464,6 +466,90 @@ func testConcurrentWriters(t *testing.T, s store.Store) {
 	got := c.waitEvents(t, writers*each)
 	if !slices.Equal(revisions(got), span(base+1, base+writers*each)) {
 		t.Errorf("concurrent writes were not seen once each, in order")
+	}
+}
+
+// testTxnCommitsTogether: a transaction reads its own writes, which no one
+// else sees until it commits; then they all are, at consecutive revisions,
+// and a watch sees each once, in order. A write it refuses changes nothing
+// and the transaction goes on.
+func testTxnCommitsTogether(t *testing.T, s store.Store) {
+	ctx := t.Context()
+	must[int64](t)(s.Create(ctx, key("Tenant", "", "before"), []byte("b")))
+	c, base := watchFromHere(t, s, store.WatchOptions{})
+	err := s.Txn(ctx, func(tx store.Tx) error {
+		if rev := must[int64](t)(tx.Create(ctx, key("Tenant", "", "a"), []byte("a1"))); rev != base+1 {
+			t.Errorf("first write in the transaction at %d, want %d", rev, base+1)
+		}
+		if _, err := tx.Create(ctx, key("Tenant", "", "before"), nil); !errors.Is(err, store.ErrExists) {
+			t.Errorf("Create of a taken key in a transaction: %v, want ErrExists", err)
+		}
+		must[int64](t)(tx.Update(ctx, key("Tenant", "", "a"), []byte("a2"), base+1))
+		must[int64](t)(tx.Create(ctx, key("Container", "p", "b"), []byte("b1")))
+		if got := must[store.Object](t)(tx.Get(ctx, key("Tenant", "", "a"))); string(got.Data) != "a2" {
+			t.Errorf("the transaction read %q of its own write, want a2", got.Data)
+		}
+		objs, rev, err := tx.List(ctx, store.ListOptions{Kind: "Tenant"})
+		if err != nil || len(objs) != 2 || rev != base+3 {
+			t.Errorf("List in the transaction: %d objects at %d, %v; want 2 at %d", len(objs), rev, err, base+3)
+		}
+		if rev := must[int64](t)(tx.Revision(ctx)); rev != base+3 {
+			t.Errorf("the transaction's revision is %d, want %d", rev, base+3)
+		}
+		// Outside the transaction nothing has happened yet. Get and List do
+		// not wait for it, unlike writes and Revision.
+		if _, err := s.Get(ctx, key("Tenant", "", "a")); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("Get outside the transaction before it commits: %v, want ErrNotFound", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev := must[int64](t)(s.Revision(ctx)); rev != base+3 {
+		t.Errorf("revision %d after the transaction, want %d", rev, base+3)
+	}
+	if got := must[store.Object](t)(s.Get(ctx, key("Tenant", "", "a"))); string(got.Data) != "a2" || got.Revision != base+2 {
+		t.Errorf("after the commit: %+v", got)
+	}
+	got := c.waitEvents(t, 3)
+	if !slices.Equal(revisions(got), span(base+1, base+3)) {
+		t.Errorf("a watch saw %v, want the transaction's three writes once each", describe(got))
+	}
+	if rev := must[int64](t)(s.Create(ctx, key("Tenant", "", "after"), nil)); rev != base+4 {
+		t.Errorf("the write after the transaction is at %d, want %d", rev, base+4)
+	}
+}
+
+// testTxnRollsBack: a transaction that fails leaves nothing, not even a
+// revision, and the store goes on as before.
+func testTxnRollsBack(t *testing.T, s store.Store) {
+	ctx := t.Context()
+	must[int64](t)(s.Create(ctx, key("Tenant", "", "kept"), []byte("v1")))
+	c, base := watchFromHere(t, s, store.WatchOptions{})
+	failed := errors.New("step failed")
+	err := s.Txn(ctx, func(tx store.Tx) error {
+		must[int64](t)(tx.Create(ctx, key("Tenant", "", "gone"), nil))
+		must[int64](t)(tx.Update(ctx, key("Tenant", "", "kept"), []byte("v2"), 0))
+		return failed
+	})
+	if !errors.Is(err, failed) {
+		t.Fatalf("Txn returned %v, want the failure of fn", err)
+	}
+	if _, err := s.Get(ctx, key("Tenant", "", "gone")); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("an object created in a failed transaction: %v, want ErrNotFound", err)
+	}
+	if got := must[store.Object](t)(s.Get(ctx, key("Tenant", "", "kept"))); string(got.Data) != "v1" {
+		t.Errorf("an object updated in a failed transaction reads %q, want v1", got.Data)
+	}
+	if rev := must[int64](t)(s.Revision(ctx)); rev != base {
+		t.Errorf("a failed transaction moved the revision to %d from %d", rev, base)
+	}
+	if rev := must[int64](t)(s.Create(ctx, key("Tenant", "", "next"), nil)); rev != base+1 {
+		t.Errorf("the write after a failed transaction is at %d, want %d", rev, base+1)
+	}
+	if got := c.waitEvents(t, 1); !slices.Equal(revisions(got), []int64{base + 1}) || got[0].Object.Name != "next" {
+		t.Errorf("a watch saw %v, want only the write after the transaction", describe(got))
 	}
 }
 

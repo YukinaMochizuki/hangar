@@ -207,7 +207,8 @@ func TestVMsAndDisksAreCheckedThroughApply(t *testing.T) {
 // binding made with it frees nothing; and no one but the apiserver can
 // write that record.
 func TestTheTenantCapIgnoresBindings(t *testing.T) {
-	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 1 })
+	// alice opens two: the tenant signing up opened, and acme.
+	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 2 })
 	tb, rbb := s.backend(registry.Tenant), s.backend(registry.RoleBinding)
 	newTenant := func(name string) error {
 		_, err := tb.Apply(user, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: name}})
@@ -238,7 +239,7 @@ func TestTheTenantCapIgnoresBindings(t *testing.T) {
 		}
 		return o.(*iamv1alpha1.RoleBinding)
 	}
-	wantExhausted(t, newTenant("acme2"), "owns 1 tenants and may own 1", "a second tenant")
+	wantExhausted(t, newTenant("acme2"), "owns 2 tenants and may own 2", "a third tenant")
 
 	// Re-subjecting the owner binding made with acme.
 	ownerAgain("alice-again", "acme")
@@ -247,14 +248,14 @@ func TestTheTenantCapIgnoresBindings(t *testing.T) {
 	if _, err := rbb.Apply(user, rb); err != nil {
 		t.Fatal(err)
 	}
-	wantExhausted(t, newTenant("acme2"), "owns 1 tenants and may own 1", "a second tenant after re-subjecting the owner binding")
+	wantExhausted(t, newTenant("acme2"), "owns 2 tenants and may own 2", "a third tenant after re-subjecting the owner binding")
 
 	// Deleting it.
 	ownerAgain("alice-again", "acme")
 	if _, err := rbb.Delete(user, resource.Key{Name: rb.GetMetadata().GetName()}, nil); err != nil {
 		t.Fatal(err)
 	}
-	wantExhausted(t, newTenant("acme2"), "owns 1 tenants and may own 1", "a second tenant after deleting the owner binding")
+	wantExhausted(t, newTenant("acme2"), "owns 2 tenants and may own 2", "a third tenant after deleting the owner binding")
 
 	// The record is the apiserver's alone.
 	obj, err := tb.Get(user, resource.Key{Name: "acme"})

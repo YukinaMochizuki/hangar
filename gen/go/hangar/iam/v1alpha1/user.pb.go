@@ -25,8 +25,8 @@ const (
 // User is a person who has signed up: the onboarding they complete once a
 // platform-role RoleBinding on their email has invited them. Its name is the
 // username they chose, global and never reused. Only AccountService.SignUp
-// creates one; RoleBindings stay keyed by email. See
-// docs/decisions/tenancy-and-iam.md.
+// creates one, from the person's Invitation if there is one; RoleBindings
+// stay keyed by email. See docs/decisions/tenancy-and-iam.md.
 type User struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
@@ -117,8 +117,13 @@ type UserSpec struct {
 	// How many tenants the user may own. Unset means the platform default.
 	// Only platform.root sets it.
 	MaxOwnedTenants *int32 `protobuf:"varint,3,opt,name=max_owned_tenants,json=maxOwnedTenants,proto3,oneof" json:"max_owned_tenants,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Name of the Plan each tenant the user opens gets as its spec.plan when
+	// it is created; empty is the default plan. It must exist. Changing it
+	// changes no tenant already open. Only platform.root sets it; signing up
+	// takes it from the person's Invitation.
+	Plan          string `protobuf:"bytes,4,opt,name=plan,proto3" json:"plan,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UserSpec) Reset() {
@@ -170,6 +175,13 @@ func (x *UserSpec) GetMaxOwnedTenants() int32 {
 		return *x.MaxOwnedTenants
 	}
 	return 0
+}
+
+func (x *UserSpec) GetPlan() string {
+	if x != nil {
+		return x.Plan
+	}
+	return ""
 }
 
 // UserStatus is the observed state of a user.
@@ -861,11 +873,12 @@ const file_hangar_iam_v1alpha1_user_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x121\n" +
 	"\x04spec\x18\x04 \x01(\v2\x1d.hangar.iam.v1alpha1.UserSpecR\x04spec\x127\n" +
 	"\x06status\x18\x05 \x01(\v2\x1f.hangar.iam.v1alpha1.UserStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
-	"\x04User\x12\x05users \x02\"\x92\x01\n" +
+	"\x04User\x12\x05users \x02\"\xa6\x01\n" +
 	"\bUserSpec\x12\x1c\n" +
 	"\x05email\x18\x01 \x01(\tB\x06\x8a\xb5\x18\x02\b\x01R\x05email\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12/\n" +
-	"\x11max_owned_tenants\x18\x03 \x01(\x05H\x00R\x0fmaxOwnedTenants\x88\x01\x01B\x14\n" +
+	"\x11max_owned_tenants\x18\x03 \x01(\x05H\x00R\x0fmaxOwnedTenants\x88\x01\x01\x12\x12\n" +
+	"\x04plan\x18\x04 \x01(\tR\x04planB\x14\n" +
 	"\x12_max_owned_tenants\"x\n" +
 	"\n" +
 	"UserStatus\x12/\n" +

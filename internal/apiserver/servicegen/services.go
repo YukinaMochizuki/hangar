@@ -34,6 +34,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(computev1alpha1connect.NewMachineServiceHandler(&machineService{b: backends(registry.Machine)}, opts...))
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
+	mux.Handle(iamv1alpha1connect.NewInvitationServiceHandler(&invitationService{b: backends(registry.Invitation)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewRoleBindingServiceHandler(&roleBindingService{b: backends(registry.RoleBinding)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewServiceTokenServiceHandler(&serviceTokenService{b: backends(registry.ServiceToken)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewUserServiceHandler(&userService{b: backends(registry.User)}, opts...))
@@ -299,6 +300,69 @@ func (s *virtualMachineService) UpdateVirtualMachineStatus(ctx context.Context, 
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha1.UpdateVirtualMachineStatusResponse{VirtualMachine: obj.(*v1alpha1.VirtualMachine)}), nil
+}
+
+type invitationService struct {
+	b resource.Backend
+}
+
+func (s *invitationService) GetInvitation(ctx context.Context, req *connect.Request[v1alpha11.GetInvitationRequest]) (*connect.Response[v1alpha11.GetInvitationResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.GetInvitationResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
+}
+
+func (s *invitationService) ListInvitations(ctx context.Context, req *connect.Request[v1alpha11.ListInvitationsRequest]) (*connect.Response[v1alpha11.ListInvitationsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha11.ListInvitationsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha11.Invitation))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *invitationService) WatchInvitations(ctx context.Context, req *connect.Request[v1alpha11.WatchInvitationsRequest], stream *connect.ServerStream[v1alpha11.WatchInvitationsResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha11.WatchInvitationsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.Invitation = ev.Object.(*v1alpha11.Invitation)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *invitationService) ApplyInvitation(ctx context.Context, req *connect.Request[v1alpha11.ApplyInvitationRequest]) (*connect.Response[v1alpha11.ApplyInvitationResponse], error) {
+	in := req.Msg.GetInvitation()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invitation is required"))
+	}
+	res, err := s.b.Apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.ApplyInvitationResponse{Invitation: res.Object.(*v1alpha11.Invitation), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *invitationService) DeleteInvitation(ctx context.Context, req *connect.Request[v1alpha11.DeleteInvitationRequest]) (*connect.Response[v1alpha11.DeleteInvitationResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.DeleteInvitationResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
+}
+
+func (s *invitationService) UpdateInvitationStatus(ctx context.Context, req *connect.Request[v1alpha11.UpdateInvitationStatusRequest]) (*connect.Response[v1alpha11.UpdateInvitationStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha11.UpdateInvitationStatusResponse{Invitation: obj.(*v1alpha11.Invitation)}), nil
 }
 
 type roleBindingService struct {

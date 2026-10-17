@@ -9,7 +9,7 @@ import "google/protobuf/timestamp.proto";
 // docs/decisions/apply-semantics.md.
 message ObjectMeta {
   // DNS-1123 label, unique within the project (or the platform, for global
-  // kinds).
+  // kinds). An Invitation's is an email instead.
   string name = 1;
   // Empty for global kinds.
   string project = 2;
