@@ -21,13 +21,9 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// Placement describes the hardware a machine runs on: where its host is and
-// what it is built of, never how loaded it is. A Node reports its own; a
-// Container's or VirtualMachine's status copies its node's, which is how a
-// tenant, who cannot read Nodes, sees where it runs. Only what is here
-// reaches tenants, so a field added here is one every tenant reads. Each
-// field is empty when the node does not know it. See
-// docs/decisions/machine-placement.md.
+// Placement describes the hardware of a machine's host, never its load;
+// every tenant with a machine on the node reads it. Fields are at most 64
+// printable characters. See docs/decisions/machine-placement.md.
 type Placement struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The region the host is in, such as "ap-southeast", from the node's
@@ -45,9 +41,8 @@ type Placement struct {
 	CpuGeneration string `protobuf:"bytes,4,opt,name=cpu_generation,json=cpuGeneration,proto3" json:"cpu_generation,omitempty"`
 	// The host's disks by kind, such as "2 × NVMe SSD".
 	Storage string `protobuf:"bytes,5,opt,name=storage,proto3" json:"storage,omitempty"`
-	// Names the host's chassis, such as "generic-1u-2x-u2", from the node's
-	// configuration. A client draws a chassis it does not know, and an empty
-	// one, as a generic server.
+	// Names the host's chassis, a DNS-1123 label such as "generic-1u-2x-u2";
+	// a client draws one it does not know, or none, as a generic server.
 	Chassis       string `protobuf:"bytes,6,opt,name=chassis,proto3" json:"chassis,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -2,13 +2,19 @@ package apiserver
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 )
 
@@ -28,9 +34,10 @@ func nodeDescribed(t *testing.T, s *Server, node string, p *computev1alpha1.Plac
 		Conditions: []*metav1.Condition{{
 			Type: NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 		}},
-		AgentVersion: "v1.2.3",
-		Ipv6Prefix:   testPrefix,
-		Placement:    p,
+		AgentVersion:      "v1.2.3",
+		Ipv6Prefix:        testPrefix,
+		LastHeartbeatTime: timestamppb.Now(),
+		Placement:         p,
 	}
 	if _, err := s.backend(registry.Node).UpdateStatus(asNode(t.Context(), node), resource.Key{Name: node}, status, nil); err != nil {
 		t.Fatal(err)
@@ -140,12 +147,120 @@ func TestPlacementOf(t *testing.T) {
 	}{
 		{"no machine", nil, node},
 		{"another owner's machine", m("u2", "n1"), node},
-		{"an unplaced machine", m("u1", ""), nil},
+		{"an unplaced machine", m("u1", ""), node},
 		{"a machine on another node", m("u1", "n2"), node},
 		{"a machine whose node is gone", m("u1", "n1"), nil},
 	} {
 		if p := placementOf("u1", tt.m, tt.node); p != nil {
 			t.Errorf("%s: placement %v", tt.what, p)
+		}
+	}
+}
+
+// TestAStuckReportKeepsWhereItRuns: a container or VM whose change cannot be
+// applied still runs on its node, and still says so.
+func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
+	s, system, user := controlled(t, "n1")
+	nodeDescribed(t, s, "n1", milan)
+	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
+		t.Fatal(err)
+	}
+	applyCtr(t, s, user, ctr("a"))
+	vm := vmFromImage("web", "noble")
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, vm); err != nil {
+		t.Fatal(err)
+	}
+	waitContainer(t, s, system, "a", "reporting its node's placement", func(c *computev1alpha1.Container) bool {
+		return proto.Equal(c.GetStatus().GetPlacement(), milan)
+	})
+	waitVM(t, s, system, "web", "reporting its node's placement", func(vm *computev1alpha1.VirtualMachine) bool {
+		return proto.Equal(vm.GetStatus().GetPlacement(), milan)
+	})
+
+	// More memory than the node has: the change waits, the machine stays.
+	applyCtr(t, s, user, sized("a", 64*1024))
+	big := proto.Clone(vm).(*computev1alpha1.VirtualMachine)
+	big.Spec.Resources = &computev1alpha1.VirtualMachineResources{Memory: "64Gi"}
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, big); err != nil {
+		t.Fatal(err)
+	}
+	c := waitContainer(t, s, system, "a", "stuck on its resize", func(c *computev1alpha1.Container) bool {
+		return conditions.Find(c.GetStatus().GetConditions(), ContainerReady).GetReason() == "ResizeDoesNotFit"
+	})
+	if got := c.GetStatus().GetPlacement(); !proto.Equal(got, milan) {
+		t.Errorf("a stuck container reports placement %v, want %v", got, milan)
+	}
+	got := waitVM(t, s, system, "web", "stuck on its resize", func(vm *computev1alpha1.VirtualMachine) bool {
+		return vmReady(vm).GetReason() == "ResizeDoesNotFit"
+	})
+	if p := got.GetStatus().GetPlacement(); !proto.Equal(p, milan) {
+		t.Errorf("a stuck VM reports placement %v, want %v", p, milan)
+	}
+}
+
+// TestAHeartbeatWritesNoMachineOwner: a node reporting again with the same
+// placement leaves its containers and VMs as they are.
+func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
+	s, system, user := controlled(t, "n1")
+	nodeDescribed(t, s, "n1", milan)
+	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
+		t.Fatal(err)
+	}
+	applyCtr(t, s, user, ctr("a"))
+	if _, err := s.backend(registry.VirtualMachine).Apply(user, vmFromImage("web", "noble")); err != nil {
+		t.Fatal(err)
+	}
+	waitContainer(t, s, system, "a", "reporting its node's placement", func(c *computev1alpha1.Container) bool {
+		return proto.Equal(c.GetStatus().GetPlacement(), milan)
+	})
+	waitVM(t, s, system, "web", "reporting its node's placement", func(vm *computev1alpha1.VirtualMachine) bool {
+		return proto.Equal(vm.GetStatus().GetPlacement(), milan)
+	})
+	waitSettled(t, s)
+	ctrKey, vmKey := resource.Key{Project: "web", Name: "a"}, resource.Key{Project: "web", Name: "web"}
+	ctrRV, err := versionOf(s, system, registry.Container, ctrKey)()
+	if err != nil {
+		t.Fatal(err)
+	}
+	vmRV, err := versionOf(s, system, registry.VirtualMachine, vmKey)()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for range 3 {
+		nodeDescribed(t, s, "n1", proto.Clone(milan).(*computev1alpha1.Placement))
+		waitSettled(t, s)
+	}
+	if now, _ := versionOf(s, system, registry.Container, ctrKey)(); now != ctrRV {
+		t.Errorf("heartbeats wrote the container: at %s, then at %s", ctrRV, now)
+	}
+	if now, _ := versionOf(s, system, registry.VirtualMachine, vmKey)(); now != vmRV {
+		t.Errorf("heartbeats wrote the VM: at %s, then at %s", vmRV, now)
+	}
+}
+
+// TestANodesPlacementIsBounded: what a node may say of its host is short,
+// printable text, and a chassis is a label, since every tenant on the node
+// reads it.
+func TestANodesPlacementIsBounded(t *testing.T) {
+	s, _, _ := controlled(t, "n1")
+	ok := func(p *computev1alpha1.Placement) error {
+		_, err := s.backend(registry.Node).UpdateStatus(asNode(t.Context(), "n1"), resource.Key{Name: "n1"},
+			&computev1alpha1.NodeStatus{LastHeartbeatTime: timestamppb.New(time.Now()), Placement: p}, nil)
+		return err
+	}
+	if err := ok(milan); err != nil {
+		t.Fatalf("a valid placement: %v", err)
+	}
+	for _, p := range []*computev1alpha1.Placement{
+		{Region: strings.Repeat("r", 65)},
+		{Site: "SGP\n02"},
+		{CpuModel: "EPYC\x1b[31m"},
+		{Storage: fmt.Sprint("2 ", "\u0000", " NVMe")},
+		{Chassis: "Generic 1U"},
+	} {
+		if err := ok(p); connect.CodeOf(err) != connect.CodeInvalidArgument {
+			t.Errorf("placement %v: %v, want InvalidArgument", p, err)
 		}
 	}
 }

@@ -13,13 +13,9 @@ export const file_hangar_compute_v1alpha1_placement: GenFile = /*@__PURE__*/
   fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9wbGFjZW1lbnQucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExInYKCVBsYWNlbWVudBIOCgZyZWdpb24YASABKAkSDAoEc2l0ZRgCIAEoCRIRCgljcHVfbW9kZWwYAyABKAkSFgoOY3B1X2dlbmVyYXRpb24YBCABKAkSDwoHc3RvcmFnZRgFIAEoCRIPCgdjaGFzc2lzGAYgASgJQv0BChtjb20uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTFCDlBsYWNlbWVudFByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2NvbXB1dGUvdjFhbHBoYTE7Y29tcHV0ZXYxYWxwaGExogIDSENYqgIXSGFuZ2FyLkNvbXB1dGUuVjFhbHBoYTHKAhdIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMeICI0hhbmdhclxDb21wdXRlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpDb21wdXRlOjpWMWFscGhhMWIGcHJvdG8z");
 
 /**
- * Placement describes the hardware a machine runs on: where its host is and
- * what it is built of, never how loaded it is. A Node reports its own; a
- * Container's or VirtualMachine's status copies its node's, which is how a
- * tenant, who cannot read Nodes, sees where it runs. Only what is here
- * reaches tenants, so a field added here is one every tenant reads. Each
- * field is empty when the node does not know it. See
- * docs/decisions/machine-placement.md.
+ * Placement describes the hardware of a machine's host, never its load;
+ * every tenant with a machine on the node reads it. Fields are at most 64
+ * printable characters. See docs/decisions/machine-placement.md.
  *
  * @generated from message hangar.compute.v1alpha1.Placement
  */
@@ -65,9 +61,8 @@ export type Placement = Message<"hangar.compute.v1alpha1.Placement"> & {
   storage: string;
 
   /**
-   * Names the host's chassis, such as "generic-1u-2x-u2", from the node's
-   * configuration. A client draws a chassis it does not know, and an empty
-   * one, as a generic server.
+   * Names the host's chassis, a DNS-1123 label such as "generic-1u-2x-u2";
+   * a client draws one it does not know, or none, as a generic server.
    *
    * @generated from field: string chassis = 6;
    */

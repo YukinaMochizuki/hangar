@@ -24,6 +24,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -176,6 +177,9 @@ type kindHooks struct {
 	// admission has passed it and the object has its uid; old is nil on
 	// create. A stored object equal to old is not written.
 	seal func(s *Server, old, obj proto.Message) error
+	// validateStatus, if set, checks every status written, whoever writes
+	// it.
+	validateStatus func(status proto.Message) error
 	// redact, if set, clears in place what no answer may hold, whoever
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
@@ -410,6 +414,10 @@ func hooksFor(r registry.Resource) kindHooks {
 			target:        platformTarget,
 			systemManaged: true,
 			nodeOf:        func(obj proto.Message) string { return object.Meta(obj).GetName() },
+			// Its placement is copied to every tenant's machine on it.
+			validateStatus: func(status proto.Message) error {
+				return computeapi.CheckPlacement(status.(*computev1alpha1.NodeStatus).GetPlacement())
+			},
 		}
 	}
 	if r.ProjectScoped() {
