@@ -63,6 +63,7 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/architecture.md` | You need the map: components, data flow, who calls whom |
 | `docs/decisions/` | You are about to question why something is the way it is |
 | `docs/conventions/comments.md` | You write or review a code comment |
+| `docs/conventions/testing.md` | You write or change a test |
 | `docs/checklists/review.md` | You review a change, or before you ask for one |
 | `docs/runbook/dev-env.md` | You set up a workspace or a tool misbehaves |
 | `docs/runbook/codegen.md` | You change `proto/` or the code generator |

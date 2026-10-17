@@ -24,6 +24,14 @@ those rules.
       virtual time, not on the real clock (same section).
 - [ ] A "did not happen" check looks at the object itself, such as its
       resourceVersion, never at the store-wide revision (same section).
+- [ ] A test that would wait for a fake's consumer to act waits on a signal
+      the fake gives, not on time (see "Make the fake say what happened" in
+      `docs/conventions/testing.md`).
+- [ ] Every new or changed wait or assertion was shown to fail with the
+      behaviour broken, and the PR says how ("Show that the test can fail",
+      same file).
+- [ ] A test of file modes or permissions was run as a regular user, not
+      only as root ("Permission and file-mode tests", same file).
 - [ ] Docs follow the change: if it alters how something is done, the matching
       checklist or runbook is updated in the same PR, and new docs are listed in
       `AGENTS.md`.
