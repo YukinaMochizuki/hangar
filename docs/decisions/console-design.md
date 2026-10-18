@@ -311,6 +311,71 @@ Settled with the owner on screenshots before the pages read the API.
   bind, move, unbind and make public or private,
   `network.<plural>.delete` for delete.
 
+### Secrets and service tokens
+
+Settled with the owner on screenshots before the pages read the API.
+
+- **They sit in the sidebar's Access group**, with Members: Secrets,
+  Members, Service tokens. Each kind has a list and an object's page
+  (`web/src/pages/secrets.tsx`, `service-tokens.tsx`,
+  `web/src/lib/credentials.ts`).
+- **A secret's values are never shown and never read back**
+  (`secrets.md`). Pages show its name, type, keys, registries, state and
+  times, and of its spec only the type; a value field an answer held
+  anyway is dropped in the list's query function, before the query cache
+  keeps the answer. Its content HMAC is not shown. A secret's page shows
+  which containers name it, from the project's containers'
+  `spec.imagePullSecrets`.
+- **New secret takes a registry login or a pasted Docker config**: a
+  registry, username and password, which the console writes as the
+  Docker config `docker login` writes, or the config as given. The
+  password field is masked, with `autocomplete="off"`: it is not a
+  password for this site, so the browser is not invited to generate or
+  save one. The values live in the form's state, and in a ref from its
+  submit until the one create-only apply reads it; the call and closing
+  the form both empty the ref. The mutation holds the name alone and
+  leaves the query client once the form is gone (`gcTime` 0), and a
+  replay of it sends nothing. Creating never replaces, as for disks
+  (`web/src/lib/create.ts`). Its command is
+  `hangar create secret registry NAME --create-only --from-docker-config FILE`,
+  which names a file and never a value. Replacing a secret's values is
+  not offered in the console.
+- **A service token's secret is shown once**, in the dialog of the create
+  or the rotate that returned it, with a copy button, and the dialog says
+  it is not shown again. The issuer's answer goes straight to that
+  dialog's state: the mutation's result holds none, the mutation leaves
+  the query client with its dialog, and nothing is kept in storage. The
+  dialog is locked: only its Close button closes it, and closing it drops
+  the secret. Escape and a click outside do not; when the browser closes
+  the element anyway (Chromium does after a few Escapes, with a cancel
+  that cannot be prevented), the dialog opens it again with its state.
+  The dialog keeps its place in the page whatever the lists do: a list
+  that fails to load again, or no longer holds the token, never unmounts
+  a shown secret. A list that fails to load again leaves its page showing
+  the last answer under a banner that says so. Pages show a token's state
+  (Active, Expiring within 14 days, Expired, No secret), its secret's
+  first characters as the status gives them, when it expires and was
+  last used, and its roles in the project, from the RoleBindings whose
+  subject it is.
+- **New token** sends one `CreateServiceToken`, with a role to bind in the
+  project (none, owner, editor or viewer) and how long the secret works
+  (30 days, 90 days, a year, three years); the issuer refuses a name that
+  exists. **Rotate** says which secret, by its first characters, stops
+  working. **Delete** asks for the name typed and says the bindings
+  naming the token go with it, as do secrets' deletes, which say which
+  containers name the secret. Each dialog shows its `hangar token` or
+  `hangar create secret` command, holding names and options alone; a
+  form's command reads NAME until the name is one the form would send.
+  A copy button shows its check only once the clipboard took the text,
+  and says "Not copied: the clipboard is unavailable." when it did not.
+- **Controls show only when the caller may use them**, as "What a control
+  is shown for" above says: `secrets.secrets.apply` for New secret,
+  `secrets.secrets.delete` for its Delete, `iam.servicetokens.apply` for
+  New token and Rotate, `iam.servicetokens.delete` for its Delete. Editors
+  read tokens and write none (`tenancy-and-iam.md`), so for them the
+  token pages have no controls, and an object page's CLI lists only the
+  commands the caller may run.
+
 ### How the session reaches the API, and CSRF
 
 - **One origin.** hangar-edge serves the console's files and the API's paths
