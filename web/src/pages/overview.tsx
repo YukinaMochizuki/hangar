@@ -15,12 +15,14 @@ import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/st
 import { buttonVariants, Card, CardHeader, CopyButton, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
 import { isNotFound, isPermissionDenied } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { ago, date, isLive, machinePath, sizeOf, useMachines, type MachineView } from "@/lib/machines";
+import { ago, date, isLive, machinePath, useMachines, type MachineView } from "@/lib/machines";
+import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { hostFor } from "@/lib/placement";
 import { formatNumber } from "@/lib/quantity";
 
 function MachineRow({ m, project }: { m: MachineView; project: string }) {
-  const size = sizeOf(m);
+  const { sizes } = useMachineSizes();
+  const size = sizeOf(m, sizes);
   return (
     <li>
       <Link

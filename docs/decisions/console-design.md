@@ -59,8 +59,8 @@ the front door (`front-door.md`) from the same release as the binaries.
   (above a form's submit button, and on the option that causes it), or as a
   page banner under the top bar for the state of a whole project or host
   (`web/src/components/notice.tsx`).
-- **Copy states facts.** No "next step", no imperative sentences: "XL needs
-  16 GiB; 8 GiB of 24 GiB is left." Buttons are named for what they do.
+- **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
+  3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
 - **Quota is not shown when creating a machine.** The form warns only when
   this creation would go past a limit, never when a limit is near: creating
   is not to be discouraged. The Overview shows usage against limits.
@@ -159,6 +159,15 @@ for a platform administrator; at today's size that is a handful of calls.
   button the form says that refusal as it says a name in the list, that a
   machine of the name exists in the project; any other error shows as the
   API gave it.
+- **The sizes are the platform's**, read from the API
+  (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
+  `machine-sizes.md`); the console holds none of its own and offers no
+  size outside them. The create form shows them by their `order` and fills
+  the machine's cpu, memory and disk from the chosen one; `?size=` takes a
+  size's name, and a name the platform does not list chooses the first.
+  With no size defined the form says "No machine sizes are defined on this
+  platform." and sends nothing. A list's size badge is the listed size
+  whose cpu and memory the machine has, and none when no size matches.
 - **The quota warning reads the project's status**: its limits, the smaller
   of its own and its tenant's, against its own usage. A creation that goes
   past the tenant's limit through other projects' usage is refused by the

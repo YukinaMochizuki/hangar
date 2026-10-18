@@ -4,7 +4,6 @@
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet } from "@tanstack/react-router";
 import { Shell } from "@/components/shell";
 import { ErrorNotice, StandalonePage } from "@/components/states";
-import { sizes, type SizeId } from "@/lib/machines";
 import { pickProject, useProjects } from "@/lib/projects";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { DiskDetail } from "@/pages/disk-detail";
@@ -100,16 +99,18 @@ const vmRoute = createRoute({
     return <MachineDetail key={name} kind="VirtualMachine" name={name} />;
   },
 });
-const newRoute = createRoute({
+export const newRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/new",
-  validateSearch: (s: Record<string, unknown>): { kind?: CreateKind; size?: SizeId } => ({
+  // size names a MachineSize; the form chooses the first size when it names
+  // none the platform lists.
+  validateSearch: (s: Record<string, unknown>): { kind?: CreateKind; size?: string } => ({
     ...(s.kind === "vm" || s.kind === "container" ? { kind: s.kind } : {}),
-    ...(typeof s.size === "string" && s.size in sizes ? { size: s.size as SizeId } : {}),
+    ...(typeof s.size === "string" && s.size !== "" ? { size: s.size } : {}),
   }),
   component: function New() {
     const { kind, size } = newRoute.useSearch();
-    return <CreateMachine key={kind} kind={kind ?? "container"} size={size ?? "m"} />;
+    return <CreateMachine key={kind} kind={kind ?? "container"} size={size} />;
   },
 });
 

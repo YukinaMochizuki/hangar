@@ -10,7 +10,8 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { buttonVariants, Card, Kbd, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { machinePath, sizeOf, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { machinePath, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { formatNumber } from "@/lib/quantity";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
@@ -70,6 +71,7 @@ function LoadingTable() {
 export function MachineList({ kind }: { kind: MachineKind }) {
   const project = useProjectName();
   const { items, loading, error, refetch } = useMachines(project, kind);
+  const { sizes } = useMachineSizes();
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
@@ -196,7 +198,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                 </thead>
                 <tbody>
                   {rows.map((m) => {
-                    const size = sizeOf(m);
+                    const size = sizeOf(m, sizes);
                     const nic = m.interfaces[0];
                     return (
                       <tr key={m.name} className="group border-b last:border-0 hover:bg-surface-2/60">

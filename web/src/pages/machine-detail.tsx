@@ -20,7 +20,8 @@ import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
 import { Badge, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
-import { ago, date, isLive, refetchInterval, sizeOf, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { ago, date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { useReducedMotion } from "@/lib/motion";
 import { formatNumber } from "@/lib/quantity";
 import { runsOnState } from "@/lib/runs-on";
@@ -43,7 +44,8 @@ function sizeText(m: MachineView) {
 }
 
 function Header({ m }: { m: MachineView }) {
-  const size = sizeOf(m);
+  const { sizes } = useMachineSizes();
+  const size = sizeOf(m, sizes);
   const nic = m.interfaces[0];
   return (
     <div className="border-b px-4 pb-5 pt-6 md:px-8">
@@ -194,7 +196,8 @@ function Labels({ labels }: { labels: Record<string, string> }) {
 }
 
 function Summary({ m }: { m: MachineView }) {
-  const size = sizeOf(m);
+  const { sizes } = useMachineSizes();
+  const size = sizeOf(m, sizes);
   const root = m.vm?.spec?.rootDisk?.source;
   return (
     <Card>

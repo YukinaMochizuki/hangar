@@ -4,6 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, type ConnectRouter } from "@connectrpc/connect";
 import { ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { MachineSizeSchema, MachineSizeService, type MachineSize } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
 import {
   VirtualMachineSchema,
   VirtualMachineService,
@@ -31,6 +32,18 @@ vi.mock("@tanstack/react-router", async (orig) => ({
 const container = (name: string) => create(ContainerSchema, { metadata: { name, project: "demo" }, spec: { image: "nginx:1" } });
 const vm = (name: string) => create(VirtualMachineSchema, { metadata: { name, project: "demo" }, spec: {} });
 
+/** A made-up size; a platform's real sizes are its administrator's. */
+const size = (name: string, displayName: string, cpu: string, memory: string, disk: string, order: number) =>
+  create(MachineSizeSchema, { metadata: { name }, spec: { displayName, cpu, memory, disk, order } });
+
+/** Listed out of order, as the API lists them by name. */
+const madeUpSizes = [
+  size("l", "L", "4", "8Gi", "40Gi", 30),
+  size("s", "S", "1", "2Gi", "10Gi", 10),
+  size("m", "M", "2", "4Gi", "20Gi", 20),
+  size("xs", "XS", "1", "512Mi", "5Gi", 0),
+];
+
 type Fake = {
   /** Answers ListContainers; the test may change it between calls. */
   containers: () => Promise<{ items: Container[] }>;
@@ -39,6 +52,14 @@ type Fake = {
   existing?: string[];
   /** What every apply fails with, when set. */
   fail?: ConnectError;
+  /** The platform's sizes; four made-up ones unless set. The test may change it between calls. */
+  sizes?: MachineSize[];
+  /** Makes ListMachineSizes fail; the test may clear it between calls. */
+  sizesFail?: boolean;
+  /** Answers ListMachineSizes instead, when set. */
+  sizesAnswer?: () => Promise<{ items: MachineSize[] }>;
+  /** The project's limits and usage; none unless set. */
+  quota?: { limits: { cpu?: string; memory?: string }; usage: { cpu?: string; memory?: string } };
 };
 
 /** Applies as the API does: create-only refuses an existing name. */
@@ -68,8 +89,15 @@ function api(f: Fake) {
       },
     });
     r.service(MachineService, { listMachines: () => ({ items: [] }) });
+    r.service(MachineSizeService, {
+      listMachineSizes: () => {
+        if (f.sizesAnswer) return f.sizesAnswer();
+        if (f.sizesFail) throw new ConnectError("the apiserver is unavailable", Code.Unavailable);
+        return { items: f.sizes ?? madeUpSizes };
+      },
+    });
     r.service(ProjectService, {
-      getProject: () => ({ project: { metadata: { name: "demo" }, status: { limits: {}, usage: {} } } }),
+      getProject: () => ({ project: { metadata: { name: "demo" }, status: f.quota ?? { limits: {}, usage: {} } } }),
       listProjects: () => ({ items: [] }),
     });
     r.service(TenantService, { listTenants: () => ({ items: [] }) });
@@ -107,6 +135,15 @@ function writes(a: ReturnType<typeof api>) {
       const meta = r.container?.metadata ?? r.virtualMachine?.metadata;
       return { method: c.method, project: r.project ?? meta?.project, name: r.name ?? meta?.name, createOnly: r.createOnly };
     });
+}
+
+/** The resources the create's Apply sent. */
+function sentResources(a: ReturnType<typeof api>) {
+  const apply = a.requests.find((c) => c.method === "ApplyContainer" || c.method === "ApplyVirtualMachine");
+  const r = apply?.request as { container?: Container; virtualMachine?: VirtualMachine } | undefined;
+  if (r?.container) return { ...r.container.spec?.resources };
+  const root = r?.virtualMachine?.spec?.rootDisk?.source;
+  return { ...r?.virtualMachine?.spec?.resources, disk: root?.case === "fromImage" ? root.value.size : undefined };
 }
 
 /**
@@ -225,5 +262,99 @@ describe("CreateMachine", () => {
     await screen.findByText("Creating the virtual machine failed");
     expect(screen.getByText("A virtual machine named box exists in this project.")).toBeTruthy();
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("offers the platform's sizes, by their order, and sends the one chosen", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" />, { wrapper: withApi(a) });
+    const cards = await screen.findAllByRole("radio", { name: /^Size / });
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Size XS", "Size S", "Size M", "Size L"]);
+    // None asked for: the first is chosen.
+    expect(cards[0].getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
+  });
+
+  it("takes the size ?size= names, as a VM's resources and root disk", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="l" />, { wrapper: withApi(a) });
+    await screen.findByText("debian");
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Size L" }).getAttribute("aria-checked")).toBe("true"));
+    fill("box", false);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(sentResources(a)).toMatchObject({ cpu: "4", memory: "8Gi", disk: "40Gi" });
+  });
+
+  it("chooses the first size when ?size= names one the platform does not list", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="xl" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Size XS" }).getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("says no size is defined, and sends nothing", async () => {
+    const f: Fake = { containers: async () => ({ items: [] }), sizes: [] };
+    const a = api(f);
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await screen.findByText("No machine sizes are defined on this platform.");
+    expect(screen.queryAllByRole("radio", { name: /^Size / })).toEqual([]);
+    fill("api");
+    await screen.findByText(/No machine size is chosen\./);
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    // The platform defines sizes, and they are asked for again.
+    f.sizes = madeUpSizes;
+    await a.client.refetchQueries();
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
+  });
+
+  it("says the sizes did not load, and sends nothing", async () => {
+    const f: Fake = { containers: async () => ({ items: [] }), sizesFail: true };
+    const a = api(f);
+    render(<CreateMachine kind="container" />, { wrapper: withApi(a) });
+    await screen.findByText("The machine sizes did not load");
+    expect(screen.getByText("the apiserver is unavailable")).toBeTruthy();
+    fill("api");
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    // The sizes load when asked again.
+    f.sizesFail = false;
+    await a.client.refetchQueries();
+    await createAllowed(a, "api");
+  });
+
+  it("says the sizes are loading, and sends nothing until they are", async () => {
+    const sizes = deferred<{ items: MachineSize[] }>();
+    const a = api({ containers: async () => ({ items: [] }), sizesAnswer: () => sizes.promise });
+    render(<CreateMachine kind="container" />, { wrapper: withApi(a) });
+    fill("api");
+    await screen.findByText(/The machine sizes are loading\./);
+    expect(screen.queryAllByRole("radio", { name: /^Size / })).toEqual([]);
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    sizes.resolve({ items: madeUpSizes });
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "512Mi", disk: "5Gi" });
+  });
+
+  it("marks a size past the project's limits, and creates nothing of it", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: { limits: { cpu: "2" }, usage: { cpu: "0" } } });
+    render(<CreateMachine kind="container" size="l" />, { wrapper: withApi(a) });
+    const large = await screen.findByRole("radio", { name: "Size L" });
+    await waitFor(() => expect(large.textContent).toContain("Over quota"));
+    expect(screen.getByRole("radio", { name: "Size M" }).textContent).not.toContain("Over quota");
+    expect(large.getAttribute("aria-checked")).toBe("true");
+    fill("api");
+    await screen.findByText("Over the project's vCPU limit");
+    expect(screen.getAllByText((_, el) => el?.textContent === "L needs 4 vCPU; 2 vCPU of 2 vCPU is left.").length).toBeGreaterThan(0);
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    // A size within the limits creates, and nothing went before it.
+    fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
   });
 });

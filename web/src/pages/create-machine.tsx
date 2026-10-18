@@ -28,18 +28,11 @@ import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName, createError } from "@/lib/create";
 import { manifestOf, toYaml } from "@/lib/manifest";
-import { sizes, useMachines, type SizeId } from "@/lib/machines";
+import { useMachines } from "@/lib/machines";
+import { useMachineSizes, type Size } from "@/lib/machine-sizes";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
 
 export type CreateKind = "container" | "vm";
-
-const sizeHints: Record<SizeId, string> = {
-  s: "Scripts, small services, one agent task",
-  m: "Agent runners, web apps, test shards",
-  l: "Builds, CI, databases",
-  xl: "Heavy builds, parallel test suites",
-};
-
 
 function Section({ n, title, hint, children }: { n: number; title: string; hint?: ReactNode; children: ReactNode }) {
   return (
@@ -84,9 +77,8 @@ type Over = { key: string; label: string; need: number; left: number; limit: num
 function useOverQuota(project: string) {
   const q = useQuery(ProjectService.method.getProject, { name: project });
   const st = q.data?.project?.status;
-  return (id: SizeId): Over[] => {
+  return (z: Size): Over[] => {
     if (!st) return [];
-    const z = sizes[id];
     const checks = [
       { key: "machines", label: "machines", used: st.usage?.machines ?? 0, limit: st.limits?.machines, need: 1, unit: "" },
       { key: "cpu", label: "vCPU", used: quantityCPU(st.usage?.cpu || "0"), limit: quantityCPU(st.limits?.cpu), need: z.cpu, unit: " vCPU" },
@@ -99,7 +91,7 @@ function useOverQuota(project: string) {
   };
 }
 
-export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: CreateKind; size: SizeId }) {
+export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: CreateKind; size?: string }) {
   const project = useProjectName();
   const navigate = useNavigate();
   const transport = useTransport();
@@ -107,7 +99,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const [kind, setKind] = useState<CreateKind>(initialKind);
   const [image, setImage] = useState("");
   const [vmImage, setVmImage] = useState("");
-  const [size, setSize] = useState<SizeId>(initialSize);
+  const [size, setSize] = useState(initialSize);
   const [network, setNetwork] = useState("default");
   const [groups, setGroups] = useState<string[]>(["default"]);
   const [name, setName] = useState("");
@@ -117,10 +109,12 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const securityGroups = useQuery(SecurityGroupService.method.listSecurityGroups, { project, pageSize: 1000 });
   const existing = useMachines(project, kind === "container" ? "Container" : "VirtualMachine");
   const overQuota = useOverQuota(project);
+  const machineSizes = useMachineSizes();
 
   const chosenImage = vmImage || images.data?.items[0]?.metadata?.name || "";
-  const s = sizes[size];
-  const over = overQuota(size);
+  // The size asked for, if the platform lists it, or else its first.
+  const s: Size | undefined = machineSizes.sizes.find((z) => z.name === size) ?? machineSizes.sizes[0];
+  const over = s ? overQuota(s) : [];
   const groupsHere = (securityGroups.data?.items ?? []).filter((g) => g.spec?.network === network).map((g) => g.metadata?.name ?? "");
   const noun = kind === "container" ? "container" : "virtual machine";
 
@@ -133,14 +127,14 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     kind === "container"
       ? create(ContainerSchema, {
           metadata: { name, project },
-          spec: { image, interfaces, resources: { cpu: String(s.cpu), memory: `${s.memoryGi}Gi`, disk: `${s.diskGi}Gi` } },
+          spec: { image, interfaces, resources: s?.resources },
         })
       : create(VirtualMachineSchema, {
           metadata: { name, project },
           spec: {
             interfaces,
-            resources: { cpu: String(s.cpu), memory: `${s.memoryGi}Gi` },
-            rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: `${s.diskGi}Gi` } } },
+            resources: s && { cpu: s.resources.cpu, memory: s.resources.memory },
+            rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s?.resources.disk ?? "" } } },
           },
         });
   const yaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
@@ -156,10 +150,13 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   if (!nameCheck.ok) problems.push(nameCheck.reason);
   if (kind === "container" && !image.trim()) problems.push("The image is empty.");
   if (kind === "vm" && !chosenImage) problems.push("No image is chosen.");
+  if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
   const nameProblem = !nameCheck.ok && name !== "" && !existing.loading && !existing.error ? nameCheck.reason : undefined;
 
   const submit = useMutation({
     mutationFn: async () => {
+      // A machine is never sent without one of the platform's sizes.
+      if (!s) throw new Error("No machine size is chosen.");
       try {
         if (kind === "container") {
           await createClient(ContainerService, transport).applyContainer({ container: obj as Container, createOnly: true });
@@ -255,37 +252,55 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             )}
           </Section>
 
-          <Section n={3} title="Size">
-            <div role="radiogroup" aria-label="Size" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              {(Object.keys(sizes) as SizeId[]).map((id) => {
-                const z = sizes[id];
-                const tooBig = overQuota(id).length > 0;
-                return (
-                  <Choice
-                    key={id}
-                    label={`Size ${z.label}`}
-                    selected={size === id}
-                    onClick={() => setSize(id)}
-                    className={cn("p-4", tooBig && (size === id ? "border-fail ring-fail [&>span:first-child]:bg-fail" : "opacity-60"))}
-                  >
-                    <div className="font-mono text-[26px] font-semibold leading-none tracking-tight">{z.label}</div>
-                    <div className="mt-4 space-y-1 font-mono text-[12.5px] tabular">
-                      <div>
-                        {z.cpu} <span className="text-muted">vCPU</span>
+          <Section n={3} title="Size" hint="Defined by the platform">
+            {machineSizes.loading ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-[118px] rounded-lg" />
+                ))}
+              </div>
+            ) : machineSizes.error ? (
+              <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
+            ) : machineSizes.sizes.length === 0 ? (
+              <p className="text-[13px] text-muted">No machine sizes are defined on this platform.</p>
+            ) : (
+              <div role="radiogroup" aria-label="Size" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {machineSizes.sizes.map((z) => {
+                  const tooBig = overQuota(z).length > 0;
+                  const selected = s?.name === z.name;
+                  return (
+                    <Choice
+                      key={z.name}
+                      label={`Size ${z.label}`}
+                      selected={selected}
+                      onClick={() => setSize(z.name)}
+                      className={cn("p-4", tooBig && (selected ? "border-fail ring-fail [&>span:first-child]:bg-fail" : "opacity-60"))}
+                    >
+                      <div
+                        className={cn(
+                          "break-words pr-5 font-mono font-semibold tracking-tight",
+                          z.label.length > 4 ? "text-[17px] leading-tight" : "text-[26px] leading-none",
+                        )}
+                      >
+                        {z.label}
                       </div>
-                      <div>
-                        {z.memoryGi} <span className="text-muted">GiB memory</span>
+                      <div className="mt-4 space-y-1 font-mono text-[12.5px] tabular">
+                        <div>
+                          {formatNumber(z.cpu)} <span className="text-muted">vCPU</span>
+                        </div>
+                        <div>
+                          {formatNumber(z.memoryGi)} <span className="text-muted">GiB memory</span>
+                        </div>
+                        <div>
+                          {formatNumber(z.diskGi)} <span className="text-muted">GiB disk</span>
+                        </div>
                       </div>
-                      <div>
-                        {z.diskGi} <span className="text-muted">GiB disk</span>
-                      </div>
-                    </div>
-                    <div className="mt-3 border-t pt-2.5 text-[12px] leading-snug text-muted">{sizeHints[id]}</div>
-                    {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
-                  </Choice>
-                );
-              })}
-            </div>
+                      {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
+                    </Choice>
+                  );
+                })}
+              </div>
+            )}
           </Section>
 
           <Section n={4} title="Network">
@@ -362,12 +377,16 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             <Card>
               <div className="border-b px-4 py-3">
                 <div className="text-[11.5px] text-subtle">Summary</div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="font-mono text-[20px] font-semibold">{s.label}</span>
-                  <span className="text-[13px] text-muted tabular">
-                    {s.cpu} vCPU · {s.memoryGi} GiB · {s.diskGi} GiB
-                  </span>
-                </div>
+                {s ? (
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="font-mono text-[20px] font-semibold">{s.label}</span>
+                    <span className="text-[13px] text-muted tabular">
+                      {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB · {formatNumber(s.diskGi)} GiB
+                    </span>
+                  </div>
+                ) : (
+                  <div className="mt-1 text-[13px] text-muted">No size</div>
+                )}
                 <div className="mt-0.5 truncate font-mono text-[12px] text-muted">{(kind === "container" ? image : chosenImage) || "no image"}</div>
               </div>
               <div className="flex items-start gap-2.5 px-4 py-3 text-[12.5px]">
@@ -379,7 +398,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   <Notice tone="error" title={`Over the project's ${over.map((o) => o.label).join(" and ")} limit`}>
                     {over.map((o) => (
                       <div key={o.key}>
-                        {s.label} needs {formatNumber(o.need)}
+                        {s?.label} needs {formatNumber(o.need)}
                         {o.unit}; {formatNumber(o.left)}
                         {o.unit} of {formatNumber(o.limit)}
                         {o.unit} is left.
