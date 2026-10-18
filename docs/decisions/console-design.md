@@ -473,8 +473,12 @@ Settled with the owner on screenshots before the pages read the API.
 - `make release` builds the console from the lockfile (`pnpm install
   --frozen-lockfile`, `pnpm --dir web build`) and packs `web/dist` into
   `console.tar` with no time, owner or umask in it, so the same commit gives
-  the same checksum; it is in the release's `SHA256SUMS` with everything
-  else.
+  the same checksum; it is in the host tar's `SHA256SUMS` with everything
+  else. The build is told the release's tag (`VITE_HANGAR_RELEASE`), and
+  the overview's "From the CLI" card shows that release's install line
+  with this deployment's API, `api.` for the console's `console.`
+  (`web/src/lib/cli-install.ts`, `docs/runbook/release.md`). A build of no
+  tag, or a console on another host, points at the releases instead.
 - The host's `release` step installs `console.tar` with the other files,
   unpacks it into `/usr/local/share/hangar/console.d/<checksum>` with the
   previous release's own assets copied in beside its own, and makes

@@ -70,18 +70,19 @@ binding naming the email and its Invitation, and prints what it deleted.
 
 A host installs only releases published on GitHub: a `v*` tag makes
 `.github/workflows/release.yml` build one and attest every file of it
-(`docs/runbook/release.md`). A release is `hangar-apiserver`,
+(`docs/runbook/release.md`). What a host runs of a release is one file of
+it, `hangar-host_TAG_linux_amd64.tar.gz`, which holds `hangar-apiserver`,
 `hangar-node`, `hangar-edge` and `hangar` (static), `vmlinux`,
 `initramfs.cpio`, `console.tar` (the console's built files), `deploy.tar`
 (`deploy/` itself), `VERSION` (the full revision, as the binaries report
-it) and `SHA256SUMS` over all of them, with `attestation.jsonl` beside
-them. The workflow builds it with `deploy/release.sh`, which `make release`
-runs by hand too
+it) and `SHA256SUMS` over all of them; `hangar-fetch-release` unpacks it
+into the directory `bootstrap.sh --release` takes. The workflow builds it
+with `deploy/release.sh`, which `make release` runs by hand too
 on a machine with the guest kernel's toolchain
 (`docs/runbook/guest-kernel.md`; the committed kernel config is Ubuntu
 24.04's GCC's) and with Node and pnpm (`docs/runbook/dev-env.md`) for the
-console, writing `bin/release/hangar-<revision>/`: that is what a testbed
-installs. It refuses a tree with uncommitted changes (`ALLOW_DIRTY=1` for a
+console, writing `bin/release/hangar-<revision>/`, whose `host/` is what a
+testbed installs. It refuses a tree with uncommitted changes (`ALLOW_DIRTY=1` for a
 test build). Built twice from one commit with one toolchain, it gives the
 same `SHA256SUMS`. Nothing it builds is committed.
 
@@ -465,14 +466,19 @@ tag vX.Y.Z ──▶ release workflow ──▶ GitHub Release (files, attestati
    sudo hangar-fetch-release TAG DIGEST
    ```
 
-   It downloads the release over HTTPS and refuses it unless
-   `sha256sum SHA256SUMS` is `DIGEST`, every file matches `SHA256SUMS`, and
-   every file's build-provenance attestation verifies against this
-   repository, its release workflow, the tag and the release's commit
-   (`gh attestation verify` on the bundle that comes with the release, so
-   the host needs no GitHub login; it reaches GitHub and the Sigstore and
-   GitHub TUF repositories for their trust roots). Only then does it put the
-   release in `/var/tmp/hangar/release/TAG/` and `deploy/` in
+   It downloads `SHA256SUMS`, `VERSION` and the host tar over HTTPS, and
+   none of the CLI's files, and refuses the release unless
+   `sha256sum SHA256SUMS` is `DIGEST`, the other two match `SHA256SUMS`,
+   and the build-provenance attestation of each of the three verifies
+   against this repository, its release workflow, the tag and the release's
+   commit (`gh attestation verify` on the bundle that comes with the
+   release, so the host needs no GitHub login; it reaches GitHub and the
+   Sigstore and GitHub TUF repositories for their trust roots). Only then
+   does it unpack the tar, which must hold plain files alone, each listed
+   in and matching its own `SHA256SUMS`, with the release's `VERSION`. It
+   puts the host's files in `/var/tmp/hangar/release/TAG/`, with the
+   release's `SHA256SUMS` as `release.SHA256SUMS` and `attestation.jsonl`
+   beside them, and `deploy/` in
    `/var/tmp/hangar/deploy-TAG/`, each under a temporary name first and
    renamed into place, so neither name ever holds half a release. A refused
    release leaves nothing under them, nor changes a fetch of the same tag
@@ -506,8 +512,8 @@ and again by the release step, before anything is installed.
 `hangar-fetch-release` comes with a release, and the packages step installs
 the `gh` it verifies with, so a host that has neither (a new host, or one
 last deployed by copying a release to it) fetches its first release by
-hand, once: the pinned `gh`, then `deploy.tar` alone, checked the way the
-script checks every file, then the script from it. With `TAG` and `DIGEST`
+hand, once: the pinned `gh`, then the host tar, checked the way the script
+checks it, then the script from its `deploy.tar`. With `TAG` and `DIGEST`
 as above, and the `HANGAR_GH_*` values read from
 `deploy/host/versions.env` at that tag on GitHub:
 
@@ -522,17 +528,30 @@ tar -xzf gh.tar.gz --strip-components=2 "gh_${GH_VERSION}_linux_amd64/bin/gh"
 echo "$GH_BIN_SHA256  gh" | sha256sum -c
 install -m 0755 gh /usr/local/bin/gh
 base=https://github.com/YukinaMochizuki/hangar/releases/download/$TAG
-for f in SHA256SUMS deploy.tar attestation.jsonl; do curl -fsSLO "$base/$f"; done
+host_tar=hangar-host_${TAG}_linux_amd64.tar.gz
+for f in SHA256SUMS VERSION "$host_tar" attestation.jsonl; do curl -fsSLO "$base/$f"; done
 sha256sum SHA256SUMS                       # must print DIGEST
-sha256sum -c --ignore-missing SHA256SUMS   # deploy.tar: OK
-for f in SHA256SUMS deploy.tar; do
+sha256sum -c --ignore-missing SHA256SUMS   # VERSION: OK, and the host tar: OK
+for f in SHA256SUMS VERSION "$host_tar"; do
   gh attestation verify "$f" --bundle attestation.jsonl --repo YukinaMochizuki/hangar \
     --signer-workflow YukinaMochizuki/hangar/.github/workflows/release.yml \
-    --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+    --source-ref "refs/tags/$TAG" --source-digest "$(cat VERSION)" --deny-self-hosted-runners
 done
+tar -xzf "$host_tar" deploy.tar
 tar -xf deploy.tar host/fetch-release.sh
 host/fetch-release.sh "$TAG" "$DIGEST"
 ```
+
+A release from before the host tar (`v0.1.0-rc.4` and earlier) has its
+files loose, `VERSION` and `deploy.tar` among them, and only its own
+`hangar-fetch-release` reads that layout; an installed
+`hangar-fetch-release` reads only the layout of the release that installed
+it. So crossing that change, going back to such a tag or forward from it,
+fetches by hand like this, with the target tag's own script. For an older
+tag, download `SHA256SUMS`, `VERSION`, `deploy.tar` and
+`attestation.jsonl`, check `SHA256SUMS` against `DIGEST` and the other
+files against it, verify the attestations of `SHA256SUMS`, `VERSION` and
+`deploy.tar` as above, and take `host/fetch-release.sh` from `deploy.tar`.
 
 Stop at the first command that fails or prints something else. The last
 line is the whole fetch of step 2; carry on from step 3. The release step
@@ -997,7 +1016,7 @@ at mode 644, a run refuses without it, `--env FILE` reads another, a file
 another user can write or own is refused before it is read, an unknown
 `HANGAR_UPGRADES_TZ` is refused, the upgrade timers are in the one it sets,
 and `--host` is refused. It needs a release
-(`HANGAR_TESTBED_RELEASE=DIR`, from `make release`), installs the services
+(`HANGAR_TESTBED_RELEASE=DIR`, the `host/` of what `make release` writes), installs the services
 from it, and checks: the node is Ready; the release step installs
 `hangar-fetch-release` and verify catches a changed one; that release,
 fetched with it from a stand-in for GitHub (a stand-in `gh` for the fetch

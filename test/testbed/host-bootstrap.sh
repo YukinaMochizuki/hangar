@@ -3,7 +3,8 @@
 # installed OVH host: two plain swap partitions (loop devices), an installer-made
 # pool named hangar (file-backed), and an uplink whose IPv6 is the prefix's ::
 # address behind an on-link gateway outside the /64 (a veth into a netns).
-# HANGAR_TESTBED_RELEASE names a release directory (make release) for the
+# HANGAR_TESTBED_RELEASE names a release directory (the host/ of what make
+# release writes) for the
 # release and services steps; HANGAR_TESTBED_FRONT_DOOR the directory
 # test/testbed/front-door-kit.sh made, for the front door's test CA.
 #
@@ -1123,9 +1124,14 @@ test_host_env_and_fetch() {
 test_fetched_release_checks_placement() {
 	step "a fetched release has the placement checked with its own hangar-node"
 	local tag=v0.0.1-rc.1 www=$work/www top=/var/tmp/hangar server f d log=$work/fetched.log
+	local host_tar=hangar-host_${tag}_linux_amd64.tar.gz
 	rm -rf "$www" "$top/release/$tag" "$top/deploy-$tag"
 	mkdir -p "$www/$tag"
-	cp "$release"/* "$www/$tag/"
+	# The release under test as it is published: its files in the host tar,
+	# its VERSION beside it, and SHA256SUMS over the two.
+	(cd "$release" && tar --owner=0 --group=0 --numeric-owner -czf "$www/$tag/$host_tar" -- *)
+	cp "$release/VERSION" "$www/$tag/VERSION"
+	(cd "$www/$tag" && sha256sum -- "$host_tar" VERSION >SHA256SUMS)
 	for f in "$www/$tag"/*; do echo "stand-in $(sha256sum "$f" | cut -d' ' -f1)"; done >"$work/attestation.jsonl"
 	mv "$work/attestation.jsonl" "$www/$tag/attestation.jsonl"
 	(cd "$www" && exec python3 -m http.server --bind 127.0.0.1 18090) >"$work/www.log" 2>&1 &
@@ -1138,7 +1144,7 @@ if [ "\$1" = --version ]; then exec $work/gh.real --version; fi
 grep -qx "stand-in \$(sha256sum "\$3" | cut -d' ' -f1)" "\$(dirname "\$3")/attestation.jsonl"
 EOF
 	chmod 755 /usr/local/bin/gh
-	d=$(sha256sum "$release/SHA256SUMS" | cut -d' ' -f1)
+	d=$(sha256sum "$www/$tag/SHA256SUMS" | cut -d' ' -f1)
 	HANGAR_FETCH_RELEASE_BASE_URL=http://127.0.0.1:18090 /usr/local/sbin/hangar-fetch-release "$tag" "$d" >"$log" 2>&1 ||
 		{ mv -f "$work/gh.real" /usr/local/bin/gh; kill "$server"; fail "the fetch: $(cat "$log")"; }
 	mv -f "$work/gh.real" /usr/local/bin/gh

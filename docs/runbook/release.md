@@ -1,14 +1,59 @@
 # Releases
 
-A hangar release is what a host runs: the binaries, the guest kernel and
-initramfs, the console as `console.tar`, `deploy/` as `deploy.tar`,
-`VERSION` (the commit) and `SHA256SUMS` over all of them, as
+A hangar release is what a host runs and the CLI people run against it, as
 `deploy/release.sh` builds them. Releases are cut by pushing a tag. The
 workflow `.github/workflows/release.yml` builds the tag, attests every file
 and publishes the files as the tag's GitHub Release. A host downloads and
 checks a release itself with `hangar-fetch-release`
 (`docs/runbook/host-bootstrap.md`). Nothing is built on a workstation and
 copied to a host.
+
+## What a release holds
+
+| File | For |
+|---|---|
+| `hangar-host_TAG_linux_amd64.tar.gz` | A host: the binaries, the guest kernel and initramfs, the console as `console.tar`, `deploy/` as `deploy.tar`, `VERSION` and their own `SHA256SUMS`, flat, the directory `bootstrap.sh --release` takes once unpacked |
+| `hangar_TAG_OS_ARCH.tar.gz` | The CLI, `hangar` alone, for `linux` and `darwin` on `amd64` and `arm64`. Not Windows: `internal/cli` locks files and drives the terminal through Unix calls |
+| `install.sh` | Installs the CLI (`deploy/cli/install.sh.in`, the tag baked in) |
+| `VERSION` | The commit, the same as the host tar's |
+| `SHA256SUMS` | Over every file above; its digest is in the release notes |
+| `attestation.jsonl` | The build-provenance attestation of every other file |
+
+A host takes `SHA256SUMS`, `VERSION` and the host tar, and nothing else.
+Releases up to `v0.1.0-rc.4` have the host's files loose instead, and no
+CLI but linux/amd64's `hangar`; going back to one, or forward from one,
+fetches by hand (`docs/runbook/host-bootstrap.md`).
+
+## The CLI
+
+The console's overview shows the line that installs the CLI and makes a
+context for its API, for the release it came with
+(`web/src/lib/cli-install.ts`):
+
+```sh
+curl -fsSL https://github.com/YukinaMochizuki/hangar/releases/download/TAG/install.sh | sh -s -- --endpoint https://api.<cp-domain>
+hangar login
+```
+
+`install.sh` installs the newest published release of its own tag's
+`vMAJOR.MINOR` that is not older than that tag, asking GitHub's API, so a
+CLI fix reaches people without the host being upgraded; when the API does
+not answer, or that release has no archive, it installs its own tag. A
+pre-release is a candidate only when its own tag is one. `--version TAG`
+installs exactly TAG. It checks the archive against that release's
+`SHA256SUMS` before installing it into `~/.local/bin` (`/usr/local/bin` for
+root, `--dir` for elsewhere). It does not check the attestation, which
+needs `gh`; it prints the command that does. `--endpoint` makes a context
+named after the endpoint's host without `api.` (`--context` names it) and
+makes it current; a context of that name and endpoint is kept as it is, and
+one with another endpoint is left alone.
+
+So **releases of one minor keep the CLI and the API compatible**: a CLI of
+`v0.4.y` works against an apiserver of any `v0.4.x`. A change that breaks
+that takes the next minor.
+
+`test/install` runs `install.sh` against a stand-in for GitHub (`make
+test`).
 
 ## Tags
 
@@ -80,11 +125,14 @@ the release unless:
 
 - `sha256sum SHA256SUMS` is `DIGEST`, the digest the notes state;
 - every line of `SHA256SUMS` is a checksum and a plain file name, it lists
-  `VERSION` and `deploy.tar`, and every file it lists matches it;
-- every file, `SHA256SUMS` included, has an attestation in
+  `VERSION` and the host tar, and those two match it;
+- `SHA256SUMS`, `VERSION` and the host tar each have an attestation in
   `attestation.jsonl` that `gh attestation verify` accepts for this
   repository, signed by `.github/workflows/release.yml` on a GitHub-hosted
-  runner, for `refs/tags/TAG`, at the commit `VERSION` names.
+  runner, for `refs/tags/TAG`, at the commit `VERSION` names;
+- and, only then unpacked, the host tar holds plain files with plain names
+  alone, its own `SHA256SUMS` lists exactly those files and they match it,
+  and its `VERSION` is the release's.
 
 `gh attestation verify --bundle` needs no GitHub login: the bundle carries
 the signature, the certificate and the transparency log entry. It still
@@ -127,8 +175,11 @@ verify`, as the host does, and download the files with `curl` from
 
 ## Building a release by hand
 
-`make release` runs `deploy/release.sh` on the checkout: a testbed installs
-what it writes (`docs/runbook/testbed.md`), and two builds of one commit
-with one toolchain give the same `SHA256SUMS`. A release built by hand is
+`make release` runs `deploy/release.sh` on the checkout. It writes `host/`,
+the host's files unpacked, which a testbed installs
+(`docs/runbook/testbed.md`), and `dist/`, the files a release publishes.
+`HANGAR_RELEASE_TAG=TAG` names them for TAG; without it they are named
+`dev-<revision>` and the console shows no install line. Two builds of one
+commit and tag with one toolchain give the same `SHA256SUMS`. A release built by hand is
 for tests only: it has no attestation, so `hangar-fetch-release` would
 refuse it, and a host never installs one.

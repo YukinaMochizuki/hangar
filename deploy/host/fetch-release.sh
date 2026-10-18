@@ -6,19 +6,28 @@
 #   hangar-fetch-release TAG DIGEST
 #
 # DIGEST is `sha256sum SHA256SUMS` of the release, as its release notes state
-# it. The release is refused unless SHA256SUMS has that digest, every file it
-# lists matches it, and every file, SHA256SUMS included, carries a
-# build-provenance attestation made by .github/workflows/release.yml in this
-# repository, for the tag TAG, from the commit the release's VERSION names.
-# The attestations come with the release as attestation.jsonl and are checked
-# with `gh attestation verify --bundle`, which needs no GitHub login; it
-# reaches only Sigstore's and GitHub's TUF repositories, for their current
-# trust roots (docs/runbook/release.md).
+# it. Of the release's files a host takes SHA256SUMS, VERSION and
+# hangar-host_TAG_linux_amd64.tar.gz, the host's files packed
+# (deploy/release.sh), and attestation.jsonl to check them; the CLI's
+# archives and install.sh it leaves alone. The
+# release is refused unless SHA256SUMS has that digest, the other two match
+# it, and all three carry a build-provenance attestation made by
+# .github/workflows/release.yml in this repository, for the tag TAG, from the
+# commit VERSION names. The attestations come with the release as
+# attestation.jsonl and are checked with `gh attestation verify --bundle`,
+# which needs no GitHub login; it reaches only Sigstore's and GitHub's TUF
+# repositories, for their current trust roots (docs/runbook/release.md).
 #
-# On success the files are in /var/tmp/hangar/release/TAG/ and deploy.tar is
-# unpacked in /var/tmp/hangar/deploy-TAG/. Both are staged under a temporary
-# name and renamed into place, replacing what a fetch of the same tag left
-# there, so neither name ever holds half a release.
+# Only then is the tar unpacked, and only when it holds plain files with
+# plain names, and its own SHA256SUMS lists every one of them, they match it,
+# and its VERSION is the release's.
+#
+# On success the host's files are in /var/tmp/hangar/release/TAG/, with the
+# release's SHA256SUMS as release.SHA256SUMS and attestation.jsonl beside
+# them, and deploy.tar is unpacked in /var/tmp/hangar/deploy-TAG/. Both are
+# staged under a temporary name and renamed into place, replacing what a
+# fetch of the same tag left there, so neither name ever holds half a
+# release.
 #
 # HANGAR_FETCH_RELEASE_BASE_URL replaces the download URL up to the tag, for
 # tests against a stand-in for GitHub. Nothing skips the checks.
@@ -69,42 +78,55 @@ deploy=$TOP/deploy-$tag
 stage=$(mktemp -d "$TOP/.fetch-$tag.XXXXXX")
 gh_home=$(mktemp -d)
 trap 'rm -rf "$stage" "$gh_home"' EXIT
-mkdir "$stage/release" "$stage/deploy"
+mkdir "$stage/dl" "$stage/release" "$stage/deploy"
 
 curl_proto=(--proto '=https' --proto-redir '=https')
 [ "$BASE_URL" = "$DEFAULT_BASE_URL" ] || curl_proto=()
 fetch() {
 	log "fetch $1"
 	curl -fsSL --retry 3 --connect-timeout 30 "${curl_proto[@]}" \
-		-o "$stage/release/$1" "$BASE_URL/$tag/$1" ||
+		-o "$stage/dl/$1" "$BASE_URL/$tag/$1" ||
 		die "could not download $1 of $tag from $BASE_URL/$tag/"
 }
 
+host_tar=hangar-host_${tag}_linux_amd64.tar.gz
+
 fetch SHA256SUMS
-got=$(sha256sum "$stage/release/SHA256SUMS" | cut -d' ' -f1)
+got=$(sha256sum "$stage/dl/SHA256SUMS" | cut -d' ' -f1)
 [ "$got" = "$digest" ] ||
 	die "SHA256SUMS of $tag has digest $got, not $digest; refusing the release"
 
-# Each line is DIGEST, two spaces, a plain file name: nothing else may
-# name a path to download or write.
-names=()
-while IFS= read -r line; do
-	[[ $line =~ ^[0-9a-f]{64}\ \ ([A-Za-z0-9][A-Za-z0-9._-]*)$ ]] ||
-		die "SHA256SUMS of $tag has a line that is not a checksum and a file name: $line"
-	name=${BASH_REMATCH[1]}
-	case " ${names[*]} " in *" $name "*) die "SHA256SUMS of $tag lists $name twice" ;; esac
-	case $name in SHA256SUMS | "$BUNDLE") die "SHA256SUMS of $tag lists $name" ;; esac
-	names+=("$name")
-done <"$stage/release/SHA256SUMS"
-for name in VERSION deploy.tar; do
-	case " ${names[*]} " in *" $name "*) ;; *) die "SHA256SUMS of $tag does not list $name; refusing the release" ;; esac
+# check_sums FILE NAME... refuses FILE unless each line is DIGEST, two
+# spaces, a plain file name, no name comes twice, and it lists every NAME.
+check_sums() {
+	local file=$1 line name
+	shift
+	local -a seen=()
+	while IFS= read -r line; do
+		[[ $line =~ ^[0-9a-f]{64}\ \ ([A-Za-z0-9][A-Za-z0-9._-]*)$ ]] ||
+			die "$file of $tag has a line that is not a checksum and a file name: $line"
+		name=${BASH_REMATCH[1]}
+		case " ${seen[*]} " in *" $name "*) die "$file of $tag lists $name twice" ;; esac
+		case $name in SHA256SUMS | "$BUNDLE") die "$file of $tag lists $name" ;; esac
+		seen+=("$name")
+	done
+	for name in "$@"; do
+		case " ${seen[*]} " in *" $name "*) ;; *) die "$file of $tag does not list $name; refusing the release" ;; esac
+	done
+}
+
+# The release's files a host takes, and nothing else: no other name in
+# SHA256SUMS is downloaded.
+check_sums SHA256SUMS VERSION "$host_tar" <"$stage/dl/SHA256SUMS"
+names=(VERSION "$host_tar")
+for name in "${names[@]}"; do
+	fetch "$name"
+	want=$(awk -v n="$name" '$2 == n { print $1 }' "$stage/dl/SHA256SUMS")
+	[ "$(sha256sum "$stage/dl/$name" | cut -d' ' -f1)" = "$want" ] ||
+		die "$name of $tag does not match its SHA256SUMS; refusing the release"
 done
 
-for name in "${names[@]}"; do fetch "$name"; done
-(cd "$stage/release" && sha256sum -c --quiet --strict SHA256SUMS) >&2 ||
-	die "a file of $tag does not match its SHA256SUMS; refusing the release"
-
-version=$(cat "$stage/release/VERSION")
+version=$(cat "$stage/dl/VERSION")
 [[ $version =~ ^[0-9a-f]{40}$ ]] || die "VERSION of $tag is $version, not a commit; refusing the release"
 
 fetch "$BUNDLE"
@@ -114,7 +136,7 @@ verify() {
 	env -i PATH=/usr/bin:/bin HOME="$gh_home" GH_NO_UPDATE_NOTIFIER=1 GH_PROMPT_DISABLED=1 \
 		${HTTPS_PROXY:+HTTPS_PROXY="$HTTPS_PROXY"} ${https_proxy:+https_proxy="$https_proxy"} \
 		${NO_PROXY:+NO_PROXY="$NO_PROXY"} ${no_proxy:+no_proxy="$no_proxy"} \
-		"$GH" attestation verify "$stage/release/$1" --bundle "$stage/release/$BUNDLE" \
+		"$GH" attestation verify "$stage/dl/$1" --bundle "$stage/dl/$BUNDLE" \
 		--hostname github.com --repo "$REPO" --signer-workflow "$WORKFLOW" \
 		--source-ref "refs/tags/$tag" --source-digest "$version" --deny-self-hosted-runners \
 		--format json >/dev/null
@@ -125,8 +147,38 @@ for name in SHA256SUMS "${names[@]}"; do
 		die "$name of $tag has no attestation from $WORKFLOW for refs/tags/$tag at $version; refusing the release"
 done
 
+# The host's files, unpacked only now, and only when the tar holds plain
+# files with plain names and nothing else: no directory, link or path.
+listing=$(tar -tvzf "$stage/dl/$host_tar") || die "$host_tar of $tag is not a gzipped tar; refusing the release"
+while IFS= read -r line; do
+	[[ $line =~ ^- ]] || die "$host_tar of $tag holds something that is not a plain file: $line"
+done <<<"$listing"
+members=$(tar -tzf "$stage/dl/$host_tar")
+while IFS= read -r name; do
+	[[ $name =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || die "$host_tar of $tag holds $name, not a plain file name; refusing the release"
+done <<<"$members"
+[ "$(wc -l <<<"$listing")" = "$(wc -l <<<"$members")" ] ||
+	die "$host_tar of $tag has a name that is not one line; refusing the release"
+tar -xzf "$stage/dl/$host_tar" -C "$stage/release" --no-same-owner --no-same-permissions
+[ -f "$stage/release/SHA256SUMS" ] || die "$host_tar of $tag has no SHA256SUMS; refusing the release"
+check_sums "$host_tar's SHA256SUMS" VERSION deploy.tar <"$stage/release/SHA256SUMS"
+listed=$( (cut -d' ' -f3 "$stage/release/SHA256SUMS"; echo SHA256SUMS) | LC_ALL=C sort)
+[ "$listed" = "$(LC_ALL=C sort <<<"$members")" ] ||
+	die "$host_tar of $tag holds other files than its SHA256SUMS lists; refusing the release"
+(cd "$stage/release" && sha256sum -c --quiet --strict SHA256SUMS) >&2 ||
+	die "a file of $host_tar of $tag does not match its SHA256SUMS; refusing the release"
+[ "$(cat "$stage/release/VERSION")" = "$version" ] ||
+	die "$host_tar of $tag is of $(cat "$stage/release/VERSION"), not $version; refusing the release"
+# The evidence, kept with the host's files.
+cp "$stage/dl/SHA256SUMS" "$stage/release/release.SHA256SUMS"
+cp "$stage/dl/$BUNDLE" "$stage/release/$BUNDLE"
+
 tar -xf "$stage/release/deploy.tar" -C "$stage/deploy" --no-same-owner --no-same-permissions
 [ -x "$stage/deploy/host/bootstrap.sh" ] || die "deploy.tar of $tag has no host/bootstrap.sh; refusing the release"
+# The host's files 0644 whatever mode the tar gave them: the release step
+# installs each with its own mode, and nothing runs them from here
+# (test/testbed/host-bootstrap.sh checks the fetched release is 0644).
+chmod 0644 "$stage/release"/*
 chmod -R u=rwX,go=rX "$stage/release" "$stage/deploy"
 
 # place FROM TO renames FROM to TO, moving what TO was aside first.
