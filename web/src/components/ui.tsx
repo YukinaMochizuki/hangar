@@ -65,27 +65,38 @@ export function SizeBadge({ size }: { size: string }) {
   );
 }
 
-const phases: Record<number, { label: string; tone: string; pulse?: boolean }> = {
-  [MachinePhase.RUNNING]: { label: "Running", tone: "bg-ok" },
-  [MachinePhase.PENDING]: { label: "Pending", tone: "bg-pending", pulse: true },
-  [MachinePhase.CREATING]: { label: "Starting", tone: "bg-pending", pulse: true },
-  [MachinePhase.STOPPED]: { label: "Stopped", tone: "bg-off" },
-  [MachinePhase.FAILED]: { label: "Failed", tone: "bg-fail" },
-  [MachinePhase.SUSPENDED]: { label: "Suspended", tone: "bg-off" },
+/** What a state LED says: fine, on its way, failed, or nothing going on. */
+export type Tone = "ok" | "pending" | "fail" | "off";
+
+const tones: Record<Tone, string> = { ok: "bg-ok", pending: "bg-pending", fail: "bg-fail", off: "bg-off" };
+
+/** Led is a state's light; a pulse marks a state on its way, and stays still when reduced motion is asked for. */
+export function Led({ tone, pulse, className }: { tone: Tone; pulse?: boolean; className?: string }) {
+  return (
+    <span className={cn("relative inline-flex size-2 shrink-0", className)}>
+      {pulse && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden", tones[tone])} />}
+      <span className={cn("relative size-full rounded-full", tones[tone])} />
+    </span>
+  );
+}
+
+const phases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
+  [MachinePhase.RUNNING]: { label: "Running", tone: "ok" },
+  [MachinePhase.PENDING]: { label: "Pending", tone: "pending", pulse: true },
+  [MachinePhase.CREATING]: { label: "Starting", tone: "pending", pulse: true },
+  [MachinePhase.STOPPED]: { label: "Stopped", tone: "off" },
+  [MachinePhase.FAILED]: { label: "Failed", tone: "fail" },
+  [MachinePhase.SUSPENDED]: { label: "Suspended", tone: "off" },
 };
 
 export function phaseLabel(phase: MachinePhase) {
   return phases[phase]?.label ?? "Unknown";
 }
 
+/** StatusDot is a machine phase's LED. */
 export function StatusDot({ phase, className }: { phase: MachinePhase; className?: string }) {
-  const p = phases[phase] ?? { tone: "bg-off" };
-  return (
-    <span className={cn("relative inline-flex size-2 shrink-0", className)}>
-      {p.pulse && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden", p.tone)} />}
-      <span className={cn("relative size-2 rounded-full", p.tone)} />
-    </span>
-  );
+  const p: { tone: Tone; pulse?: boolean } = phases[phase] ?? { tone: "off" };
+  return <Led tone={p.tone} pulse={p.pulse} className={className} />;
 }
 
 export function Status({ phase }: { phase: MachinePhase }) {

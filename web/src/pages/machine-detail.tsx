@@ -18,7 +18,7 @@ import { createdKey, useJustCreated } from "@/lib/just-created";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
-import { Badge, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
+import { Badge, Card, CardHeader, CopyButton, Field, Led, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { ago, date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
@@ -384,12 +384,7 @@ function Conditions({ m }: { m: MachineView }) {
         <ul className="divide-y border-t">
           {rows.map(({ c, of }) => (
             <li key={`${of}/${c.type}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  c.status === ConditionStatus.TRUE ? "bg-ok" : c.status === ConditionStatus.UNKNOWN ? "bg-pending" : "bg-subtle",
-                )}
-              />
+              <Led tone={c.status === ConditionStatus.TRUE ? "ok" : c.status === ConditionStatus.UNKNOWN ? "pending" : "off"} className="size-1.5" />
               <span className="w-20 shrink-0 text-[12px] text-subtle">{of}</span>
               <span className="w-20 shrink-0 font-medium">{c.type}</span>
               <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>

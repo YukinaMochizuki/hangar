@@ -26,7 +26,6 @@ import {
   FormFooter,
   inputClass,
   Labels,
-  Led,
   ListFrame,
   NameFilter,
   NoMatch,
@@ -36,7 +35,7 @@ import {
   theadRow,
 } from "@/components/resource";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { checkName, type KnownNames } from "@/lib/create";
 import { date, machinePath, useMachines, type MachineKind } from "@/lib/machines";
@@ -61,7 +60,7 @@ function ReadyCell({ e }: { e: PublicEndpoint }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Led light={lightOf(c)} />
+        <Led tone={lightOf(c)} />
         {c?.status === 1 ? "Ready" : "Not ready"}
       </span>
       {c?.status !== 1 && c?.reason && <span className="block font-mono text-[11.5px] text-subtle">{c.reason}</span>}
@@ -220,7 +219,7 @@ export function PublicEndpointDetail({ name }: { name: string }) {
             facts={
               <>
                 <span className="inline-flex items-center gap-2">
-                  <Led light={lightOf(ready)} />
+                  <Led tone={lightOf(ready)} />
                   {ready?.status === 1 ? "Ready" : "Not ready"}
                 </span>
                 <AccessBadge access={e.spec?.access ?? 0} />

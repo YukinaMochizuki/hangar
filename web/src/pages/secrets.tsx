@@ -12,8 +12,8 @@ import { Dialog } from "@/components/dialog";
 import { Notice, PageBanner } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
-import { ConditionsCard, Dot, EquivalentCard } from "@/components/storage";
-import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
+import { ConditionsCard, EquivalentCard } from "@/components/storage";
+import { Badge, Button, Card, CardHeader, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
@@ -47,7 +47,7 @@ function SecretState({ s }: { s: Secret }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={tone} />
+        <Led tone={tone} />
         {label}
       </span>
       {fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}

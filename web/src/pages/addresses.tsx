@@ -25,7 +25,6 @@ import {
   inputClass,
   StaleNotice,
   Labels,
-  Led,
   ListFrame,
   NameFilter,
   NoMatch,
@@ -35,7 +34,7 @@ import {
   theadRow,
 } from "@/components/resource";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { checkName, type KnownNames } from "@/lib/create";
 import { date, machinePath, type MachineKind } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useCreate, useReload } from "@/lib/network-actions";
@@ -57,7 +56,7 @@ function StateCell({ a }: { a: Address }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Led light={s.light} />
+        <Led tone={s.light} />
         {s.label}
       </span>
       {s.reason && <span className="block font-mono text-[11.5px] text-subtle">{s.reason}</span>}
@@ -200,7 +199,7 @@ export function AddressDetail({ name }: { name: string }) {
             facts={
               <>
                 <span className="inline-flex items-center gap-2">
-                  <Led light={s.light} />
+                  <Led tone={s.light} />
                   {s.label}
                 </span>
                 {a.status?.ipv6 && <span className="font-mono text-[12px]">{bare(a.status.ipv6)}</span>}
@@ -249,7 +248,7 @@ export function AddressDetail({ name }: { name: string }) {
                     </Field>
                     <Field label="State">
                       <span className="inline-flex items-center gap-2">
-                        <Led light={s.light} />
+                        <Led tone={s.light} />
                         {s.label}
                         {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
                       </span>

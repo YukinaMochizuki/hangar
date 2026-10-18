@@ -19,7 +19,6 @@ import {
   FormFooter,
   inputClass,
   Labels,
-  Led,
   ListFrame,
   MachinesNotice,
   MemberCount,
@@ -34,7 +33,7 @@ import {
 } from "@/components/resource";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { checkName, type KnownNames } from "@/lib/create";
 import { permission, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
@@ -57,7 +56,7 @@ function ReadyCell({ n }: { n: Network }) {
   const ready = conditionOf(n.status?.conditions, "Ready");
   return (
     <span className="inline-flex items-center gap-2">
-      <Led light={lightOf(ready)} />
+      <Led tone={lightOf(ready)} />
       {ready?.status === 1 ? "Ready" : "Pending"}
     </span>
   );
@@ -306,7 +305,7 @@ export function NetworkDetail({ name }: { name: string }) {
             facts={
               <>
                 <span className="inline-flex items-center gap-2">
-                  <Led light={lightOf(ready)} />
+                  <Led tone={lightOf(ready)} />
                   {ready?.status === 1 ? "Ready" : "Pending"}
                 </span>
                 <span className="font-mono text-[12px]">{cidr}</span>

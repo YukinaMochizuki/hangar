@@ -17,8 +17,8 @@ import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { Dot, EquivalentCard } from "@/components/storage";
-import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { EquivalentCard } from "@/components/storage";
+import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
@@ -44,7 +44,7 @@ function TokenState({ t }: { t: ServiceToken }) {
   const s = tokenState(t);
   return (
     <span className="inline-flex items-center gap-2">
-      <Dot tone={s.tone} />
+      <Led tone={s.tone} />
       {s.label}
     </span>
   );

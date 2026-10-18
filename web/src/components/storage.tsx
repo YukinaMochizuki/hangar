@@ -11,7 +11,7 @@ import { ChevronRight, HardDrive, Plus, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
-import { Button, Card, CopyButton } from "@/components/ui";
+import { Button, Card, CopyButton, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
@@ -35,19 +35,6 @@ import {
   type Listing,
 } from "@/lib/storage";
 
-const tones = { ok: "bg-ok", pending: "bg-pending", fail: "bg-fail", off: "bg-off" } as const;
-type Tone = keyof typeof tones;
-
-/** Dot is a state LED: ok, pending, failed or off. */
-export function Dot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
-  return (
-    <span className="relative inline-flex size-2 shrink-0">
-      {pulse && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden", tones[tone])} />}
-      <span className={cn("relative size-2 rounded-full", tones[tone])} />
-    </span>
-  );
-}
-
 const diskPhases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
   [DiskPhase.PENDING]: { label: "Pending", tone: "pending", pulse: true },
   [DiskPhase.AVAILABLE]: { label: "Available", tone: "off" },
@@ -67,7 +54,7 @@ export function DiskState({ d, reason = true }: { d: Disk; reason?: boolean }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={p.tone} pulse={"pulse" in p && p.pulse} />
+        <Led tone={p.tone} pulse={"pulse" in p && p.pulse} />
         {diskPhaseLabel(d)}
       </span>
       {reason && fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
@@ -80,7 +67,7 @@ export function ImageStateCell({ s }: { s: ImageState }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={s.tone} />
+        <Led tone={s.tone} />
         {s.label}
       </span>
       {s.reason && <span className="block text-[11.5px] text-fail">{s.reason}</span>}
@@ -145,12 +132,7 @@ export function ConditionsCard({ conditions }: { conditions: Condition[] }) {
           {conditions.length === 0 && <li className="px-4 py-2.5 text-[13px] text-muted">None reported.</li>}
           {conditions.map((c) => (
             <li key={c.type} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  c.status === ConditionStatus.TRUE ? "bg-ok" : c.status === ConditionStatus.UNKNOWN ? "bg-pending" : "bg-subtle",
-                )}
-              />
+              <Led tone={c.status === ConditionStatus.TRUE ? "ok" : c.status === ConditionStatus.UNKNOWN ? "pending" : "off"} className="size-1.5" />
               <span className="w-20 shrink-0 font-medium">{c.type}</span>
               <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
               <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>

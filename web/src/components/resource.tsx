@@ -11,22 +11,15 @@ import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { Button, Card, CopyButton, Kbd } from "@/components/ui";
+import { Button, Card, CopyButton, Kbd, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago, date } from "@/lib/machines";
-import { count, type Light } from "@/lib/network";
+import { count } from "@/lib/network";
 import { nouns, useDelete, type NetworkKind } from "@/lib/network-actions";
 
 export const inputClass =
   "h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-accent placeholder:text-subtle";
-
-const lights: Record<Light, string> = { ok: "bg-ok", pending: "bg-pending", fail: "bg-fail", off: "bg-off" };
-
-/** A state's LED. */
-export function Led({ light, className }: { light: Light; className?: string }) {
-  return <span className={cn("inline-block size-2 shrink-0 rounded-full", lights[light], className)} />;
-}
 
 /** What the project's machines say about interfaces: loading, failed, or loaded. */
 export type MachinesState = { loading: boolean; error: unknown; refetch: () => void };
@@ -285,7 +278,7 @@ export function ConditionsCard({ conditions }: { conditions: Condition[] }) {
           {conditions.length === 0 && <li className="px-4 py-2.5 text-[13px] text-muted">None reported yet.</li>}
           {conditions.map((c) => (
             <li key={c.type} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <Led light={c.status === ConditionStatus.TRUE ? "ok" : c.status === ConditionStatus.UNKNOWN ? "pending" : "off"} className="size-1.5" />
+              <Led tone={c.status === ConditionStatus.TRUE ? "ok" : c.status === ConditionStatus.UNKNOWN ? "pending" : "off"} className="size-1.5" />
               <span className="w-20 shrink-0 font-medium">{c.type}</span>
               <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
               <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>
