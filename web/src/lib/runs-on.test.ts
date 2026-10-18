@@ -53,6 +53,14 @@ describe("runsOnState", () => {
     expect(runsOnState(view({ scheduled: "false", machine: false }))).toEqual({ kind: "unschedulable", message: noRoom });
   });
 
+  it("trusts a known Machine over the container's Ready condition", () => {
+    // The container still repeats an earlier refusal, but its Machine, now
+    // read, has no Scheduled condition: the scheduler has not refused it.
+    const v = view({ scheduled: "false" });
+    v.machine!.status!.conditions = [];
+    expect(runsOnState(v)).toEqual({ kind: "scheduling" });
+  });
+
   it("is stopped when asked to stay stopped and never placed", () => {
     expect(runsOnState(view({ stopped: true }))).toEqual({ kind: "stopped" });
     expect(runsOnState(view({ stopped: true, scheduled: "false" }))).toEqual({ kind: "stopped" });
