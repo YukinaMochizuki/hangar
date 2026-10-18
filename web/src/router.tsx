@@ -11,6 +11,7 @@ import { CreateAddress } from "@/pages/create-address";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
+import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
 import { Gate } from "@/pages/gate";
@@ -156,6 +157,7 @@ const newDiskRoute = createRoute({
 
 const newNetworkRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/network", component: CreateNetwork });
 const newAddressRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/address", component: CreateAddress });
+const newEndpointRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/public-endpoint", component: CreatePublicEndpoint });
 
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -231,7 +233,8 @@ const endpointsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/public-endpoints",
   validateSearch: newSearch,
-  component: () => <ListPage page={PublicEndpointList} />,
+  beforeLoad: toCreatePage("public-endpoint"),
+  component: PublicEndpointList,
 });
 const endpointRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -318,6 +321,7 @@ export const routeTree = rootRoute.addChildren([
     newDiskRoute,
     newNetworkRoute,
     newAddressRoute,
+    newEndpointRoute,
     disksRoute,
     diskRoute,
     imagesRoute,

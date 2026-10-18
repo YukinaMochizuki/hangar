@@ -183,7 +183,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     [actionPerms.network, "New network", newPage("network")],
     [actionPerms.securityGroup, "New security group", newIn(`/projects/${project}/security-groups`)],
     [actionPerms.address, "Reserve address", newPage("address")],
-    [actionPerms.publicEndpoint, "New public endpoint", newIn(`/projects/${project}/public-endpoints`)],
+    [actionPerms.publicEndpoint, "New public endpoint", newPage("public-endpoint")],
     [actionPerms.secret, "New secret", newIn(`/projects/${project}/secrets`)],
     [actionPerms.token, "New service token", newIn(`/projects/${project}/service-tokens`)],
     [actionPerms.member, "Add member", newIn(`/projects/${project}/members`)],

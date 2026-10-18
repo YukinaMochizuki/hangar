@@ -30,8 +30,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AddressDetail } from "@/pages/addresses";
 import { CreateAddress } from "@/pages/create-address";
 import { CreateNetwork } from "@/pages/create-network";
+import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { NetworkDetail } from "@/pages/networks";
-import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
+import { PublicEndpointDetail } from "@/pages/public-endpoints";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { addresses, endpoints, groups, networkApi, type NetworkApi, type Overrides } from "@/test/network-api";
@@ -89,8 +90,8 @@ const creates: CreateCase[] = [
   { noun: "address", page: () => <CreateAddress />, name: "Address name", submit: "Reserve address", taken: "spare", hide: "listAddresses" },
   {
     noun: "public endpoint",
-    page: () => <PublicEndpointList />,
-    open: "New public endpoint",
+    page: () => <CreatePublicEndpoint />,
+    name: "Endpoint name",
     submit: "Create public endpoint",
     taken: "docs",
     hide: "listPublicEndpoints",
@@ -480,11 +481,10 @@ describe("addresses", () => {
 
 describe("public endpoints", () => {
   it("creates a public endpoint", async () => {
-    const api = show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
+    const api = show(<CreatePublicEndpoint />);
     await screen.findByRole("option", { name: "api (container)" });
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type(/^Name/, "blog");
+    type("Endpoint name", "blog");
     expect(screen.getByText(/hangar apply --create-only -p demo -f blog\.yaml/)).toBeTruthy();
     type("Port", "3000");
     fireEvent.click(screen.getByRole("radio", { name: /Public/ }));
@@ -499,10 +499,9 @@ describe("public endpoints", () => {
   });
 
   it("refuses a port outside 1 to 65535", async () => {
-    const api = show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
+    const api = show(<CreatePublicEndpoint />);
     await screen.findByRole("option", { name: "api (container)" });
-    type(/^Name/, "blog");
+    type("Endpoint name", "blog");
     type("Port", "70000");
     expect(screen.getByText(/The port is not between 1 and 65535/)).toBeTruthy();
     expect(button("Create public endpoint").disabled).toBe(true);
@@ -510,9 +509,9 @@ describe("public endpoints", () => {
   });
 
   it("shows no hostname it cannot know", async () => {
-    show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
-    type(/^Name/, "blog");
+    show(<CreatePublicEndpoint />);
+    await screen.findByLabelText("Endpoint name");
+    type("Endpoint name", "blog");
     expect(screen.queryByText(/blog-demo/)).toBeNull();
   });
 

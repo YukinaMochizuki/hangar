@@ -1,7 +1,8 @@
-// A project's public endpoints, one endpoint, and making one or changing
-// who may use it (docs/decisions/public-endpoints.md). An endpoint a
-// container's public port made is the container's: the API sets its spec
-// back and makes it again, so it offers no edit and no delete here.
+// A project's public endpoints, one endpoint, and changing who may use it
+// (docs/decisions/public-endpoints.md); pages/create-public-endpoint.tsx
+// makes one. An endpoint a container's public port made is the
+// container's: the API sets its spec back and makes it again, so it offers
+// no edit and no delete here.
 
 import { create } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -15,19 +16,17 @@ import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { DeleteDialog, FormFooter } from "@/components/resource";
-import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { FormEquivalent } from "@/components/form";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
-import { checkName, type KnownNames } from "@/lib/create";
-import { date, machinePath, useMachines, type MachineKind } from "@/lib/machines";
-import { accessLabel, conditionOf, endpointYaml, kindNoun, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints } from "@/lib/network";
-import { permission, useChange, useCreate } from "@/lib/network-actions";
+import { date, machinePath } from "@/lib/machines";
+import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints } from "@/lib/network";
+import { permission, useChange } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
-import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 
 function AccessBadge({ access }: { access: PublicEndpointAccess }) {
   const pub = access === PublicEndpointAccess.PUBLIC;
@@ -78,17 +77,16 @@ function TargetText({ e }: { e: PublicEndpoint }) {
   );
 }
 
-export function PublicEndpointList(props: NewProps) {
+export function PublicEndpointList() {
   const project = useProjectName();
   const eps = usePublicEndpoints(project);
   const [query, setQuery] = useState("");
   const rows = eps.items.filter((e) => !query || nameOf(e).includes(query));
-  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply")]);
-  const [creating, setCreating, created] = useCreating(props, may(permission("publicEndpoint", "apply")), settled);
+  const { can: may } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply")]);
   const newButton = may(permission("publicEndpoint", "apply")) ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/public-endpoint" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New public endpoint
-    </Button>
+    </Link>
   ) : undefined;
   return (
     <>
@@ -171,13 +169,6 @@ export function PublicEndpointList(props: NewProps) {
           </p>
         </ListFrame>
       </div>
-      <EndpointDialog
-        key={String(creating)}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={created}
-        known={{ loading: eps.loading, error: eps.error, names: eps.items.map(nameOf) }}
-      />
     </>
   );
 }
@@ -320,115 +311,6 @@ export function PublicEndpointDetail({ name }: { name: string }) {
         </>
       )}
     </DetailFrame>
-  );
-}
-
-function EndpointDialog({ open, onClose, onCreated, known }: { open: boolean; onClose: () => void; onCreated: OnCreated; known: KnownNames }) {
-  const project = useProjectName();
-  const navigate = useNavigate();
-  const submit = useCreate("publicEndpoint", project);
-  const all = useMachines(project);
-  const [name, setName] = useState("");
-  const [choice, setChoice] = useState("");
-  const [port, setPort] = useState("8080");
-  const [access, setAccess] = useState(PublicEndpointAccess.PRIVATE);
-  const first = all.items[0];
-  const target = choice || (first ? `${first.kind}/${first.name}` : "");
-  const [kind, machine] = target.split("/") as [MachineKind, string];
-  const obj = create(PublicEndpointSchema, {
-    metadata: { name },
-    spec: {
-      target: machine ? { object: { case: kind === "Container" ? "container" : "virtualMachine", value: machine } } : undefined,
-      port: Number(port) || 0,
-      access,
-    },
-  });
-  const check = checkName(name, "public endpoint", known);
-  const problems = [
-    ...(check.ok ? [] : [check.reason]),
-    ...(machine ? [] : ["No machine is chosen."]),
-    ...(Number(port) >= 1 && Number(port) <= 65535 ? [] : ["The port is not between 1 and 65535."]),
-  ];
-  const close = () => {
-    submit.reset();
-    onClose();
-  };
-  return (
-    <Dialog open={open} onClose={close} title="New public endpoint">
-      <FormField label="Name" hint="The endpoint's hostname is made from its name and the project's, and is claimed for good.">
-        <Input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} spellCheck={false} />
-      </FormField>
-      <div className="mt-4 grid grid-cols-[1fr_96px] gap-2">
-        <FormField label="Machine" className="mt-0">
-          <Select value={target} onChange={(ev) => setChoice(ev.target.value)}>
-            {all.items.map((m) => (
-              <option key={`${m.kind}/${m.name}`} value={`${m.kind}/${m.name}`}>
-                {m.name} ({kindNoun(m.kind)})
-              </option>
-            ))}
-          </Select>
-        </FormField>
-        <FormField label="Port" className="mt-0">
-          <Input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" />
-        </FormField>
-      </div>
-      <span className="mt-1 block text-[11.5px] text-subtle">The TCP port the machine serves plain HTTP on, on eth0.</span>
-      <AccessChoice value={access} onChange={setAccess} />
-      <FormEquivalent yaml={endpointYaml(obj)} cli={[`hangar apply --create-only -p ${project} -f ${name || "endpoint"}.yaml`]} />
-      <FormFooter
-        problems={problems}
-        error={submit.error}
-        failed="Creating the public endpoint failed"
-        pending={submit.isPending}
-        pendingLabel="Creating…"
-        label={
-          <>
-            <Plus /> Create public endpoint
-          </>
-        }
-        onCancel={close}
-        onSubmit={() =>
-          submit.mutate(obj, {
-            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/public-endpoints/$name", params: { project, name } })),
-          })
-        }
-      />
-    </Dialog>
-  );
-}
-
-function AccessChoice({ value, onChange }: { value: PublicEndpointAccess; onChange: (a: PublicEndpointAccess) => void }) {
-  const options = [
-    { id: PublicEndpointAccess.PRIVATE, icon: Lock, label: "Private", text: "Those who may use this project's endpoints, signed in." },
-    { id: PublicEndpointAccess.PUBLIC, icon: Globe, label: "Public", text: "Anyone on the internet, with no sign-in." },
-  ];
-  return (
-    <div role="radiogroup" aria-label="Access" className="mt-3">
-      <span className="text-[12.5px] font-medium text-foreground">Access</span>
-      <div className="mt-1.5 grid grid-cols-2 gap-2">
-        {options.map((o) => {
-          const Icon = o.icon;
-          const on = value === o.id;
-          return (
-            <button
-              key={o.id}
-              role="radio"
-              aria-checked={on}
-              onClick={() => onChange(o.id)}
-              className={cn(
-                "rounded-md border px-3 py-2 text-left",
-                on ? "border-accent bg-accent-soft" : "border-border-strong hover:bg-surface-2",
-              )}
-            >
-              <span className="flex items-center gap-1.5 text-[12.5px] font-medium text-foreground">
-                <Icon className={cn("size-3.5", on ? "text-accent" : "text-subtle")} /> {o.label}
-              </span>
-              <span className="mt-0.5 block text-[11.5px] leading-snug text-muted">{o.text}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

@@ -248,7 +248,7 @@ describe("CommandPalette", () => {
       ["New network", { to: "/projects/demo/new/network" }],
       ["New security group", dialog("/projects/demo/security-groups")],
       ["Reserve address", { to: "/projects/demo/new/address" }],
-      ["New public endpoint", dialog("/projects/demo/public-endpoints")],
+      ["New public endpoint", { to: "/projects/demo/new/public-endpoint" }],
       ["New secret", dialog("/projects/demo/secrets")],
       ["New service token", dialog("/projects/demo/service-tokens")],
       ["Add member", dialog("/projects/demo/members")],

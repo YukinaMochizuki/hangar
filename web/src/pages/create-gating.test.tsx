@@ -14,6 +14,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CreateAddress } from "@/pages/create-address";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateNetwork } from "@/pages/create-network";
+import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { paletteApi, type PaletteFake } from "@/test/palette-api";
 
@@ -32,6 +33,14 @@ const cases: Case[] = [
   { kind: "disk", page: () => <CreateDisk />, perm: "storage.disks.apply", field: "Disk name", refusal: "creating disks", list: "disks" },
   { kind: "network", page: () => <CreateNetwork />, perm: "network.networks.apply", field: "Network name", refusal: "creating networks", list: "networks" },
   { kind: "address", page: () => <CreateAddress />, perm: "network.addresses.apply", field: "Address name", refusal: "reserving addresses", list: "addresses" },
+  {
+    kind: "public endpoint",
+    page: () => <CreatePublicEndpoint />,
+    perm: "network.publicendpoints.apply",
+    field: "Endpoint name",
+    refusal: "creating public endpoints",
+    list: "public-endpoints",
+  },
 ];
 
 function show(c: Case, f: PaletteFake = {}) {
