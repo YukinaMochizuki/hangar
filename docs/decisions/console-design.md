@@ -65,6 +65,27 @@ the front door (`front-door.md`) from the same release as the binaries.
   names, addresses and other systems' logins. Only the signup form's
   fields, the person's own account, are left to them. A select is drawn as
   a text field with a chevron, not as the browser's own control.
+- **Creating an object is a page, not a dialog**: a dialog shows too
+  little, and a field labelled "Name" in one makes password managers offer
+  a person's name. A create page (`web/src/components/form-page.tsx`)
+  has numbered sections on the left and, on the right, staying in view, a
+  Summary card with what stops it being sent, the API's error, the submit
+  button and Cancel, then the manifest it amounts to and its command. Its
+  name field is named for the kind ("Disk name", "Network name"). Each
+  kind's page is at `/projects/<project>/new/<kind>` (`disk`, `network`,
+  `address`, `public-endpoint`, `secret`, `service-token`; machines at
+  `/new`), not `/<plural>/new`, where an object named `new` has its own
+  page. Creating opens the new object in the create page's place in
+  history; Cancel goes back to the list. The list's "New …" button and
+  its empty state link to the page, and the list's old `?new=1` redirects
+  to it, replacing the entry. A create page whose permission the answer
+  says the caller lacks states it ("This account's roles do not include
+  creating disks in this project."); it shows nothing while the answer is
+  unknown, and the error when asking failed; once its form is shown, a
+  later answer does not take it away. Confirmations and one-field changes
+  (delete, grow, rotate, bind, move, unbind, public or private, remove
+  member) stay dialogs, as do Add member and, until they move, a security
+  group's create and rules.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
 - **Copy describes what people can see and do, not how Hangar is built.**
@@ -106,15 +127,17 @@ joining it when its page does.
   a prefix, a prefix above a match inside; the section holding the best
   match comes first. Choosing a result opens it.
 - **With nothing typed it offers actions and pages.** The actions are the
-  "New …" flows (New container and New virtual machine open the new-machine
-  page; the others open their list page with `?new=1`, which opens the
-  page's create dialog), Add member, New project, and Switch project, which
-  opens the picker. Each "New …" and Add member shows only when
-  TestPermissions holds its permission at the project, and New project
-  where the caller may create one in some tenant, as on the pages: hidden
-  while unknown or failed, with nothing said. Closing a dialog opened by
+  "New …" flows (each opens its create page; New security group opens its
+  list page with `?new=1`, which opens the page's create dialog), Add
+  member (Members with `?new=1`, which opens the Add member dialog), New
+  project, and Switch project, which opens the picker. Each "New …" and
+  Add member shows only when TestPermissions holds its permission at the
+  project, and New project where the caller may create one in some
+  tenant, as on the pages: hidden while unknown or failed, with nothing
+  said. Closing a dialog opened by
   `?new=1` takes the parameter away, so going back or reloading does not
-  open it again. No action in the palette destroys anything.
+  open it again; a list whose create is a page redirects `?new=1` to that
+  page. No action in the palette destroys anything.
 - **It reads the lists the pages read**, through the same hooks and query
   keys, without fetching again on opening what the cache holds; a list not
   yet fetched is fetched then. A list still loading or failed is stated
@@ -179,8 +202,8 @@ project `tenancy.projects.apply` in its tenant. While the answer loads, or
 when it failed, nothing is held, so a control appears once it is known to
 work; a refusal is stated only when the answer came and said so. On a
 page, a failed answer hides the controls and states nothing; a form that
-cannot go on without the answer (New project) shows the failure as the
-error it is. The answer only decides what is drawn: the API still checks
+cannot go on without the answer (New project, a create page) shows the
+failure as the error it is. The answer only decides what is drawn: the API still checks
 every call, and a refusal is shown like any error. Pages whose controls
 do not ask yet show them to everyone and show the API's refusal in place.
 New project asks once per tenant the member sees, which is every tenant
@@ -268,10 +291,11 @@ Settled with the owner on the screens, before they read the API.
 - **Disks have a list and a page; so do images.** They sit in the sidebar's
   Storage group. A disk shows its phase (Pending, Available, In use), its
   size on its node with the size it is growing to when its spec asks for
-  more, what it holds (blank, or a copy of an image), its node ("Not placed
-  yet" until a machine using it is placed), and the machine it is attached
-  to. When the disk's `Ready` condition, which its node writes, is False,
-  its reason shows under the phase, and on the disk's page as a banner.
+  more, its source ("Source": blank, or a copy of an image), its node
+  ("Not placed yet" until a machine using it is placed), and the machine
+  it is attached to. When the disk's `Ready` condition, which its node
+  writes, is False, its reason shows under the phase, and on the disk's
+  page as a banner.
   When a placed disk's `Allocated` condition, which the apiserver writes, is
   False (a growth not granted, such as `ResizeDoesNotFit`), its reason shows
   next to the size it is growing to, and on the disk's page as a banner
@@ -284,12 +308,23 @@ Settled with the owner on the screens, before they read the API.
   name is shown, unlinked. A VM's root disk made from an image says so,
   from its `virtual-machine` annotation and owner reference.
 - **Three actions on disks: new, grow and delete.** Each is the API's own
-  call, and its error is shown in the dialog that asked for it.
+  call, and its error is shown on the page or in the dialog that asked
+  for it.
+  - New disk is a page (`web/src/pages/create-disk.tsx`) whose first
+    section is the disk's type: a **Boot disk**, a copy of an image chosen
+    among the usable ones, each with its smallest disk, the size held to
+    that image's floor; or a **Data disk**, blank, the default, its size's
+    hint saying it has no filesystem and is formatted in the VM. The type
+    sets how the disk is made, and is written as the label
+    `hangar/intended-use: boot` or `data`, settled with the storage
+    workstream: a user-space label recording intent alone, which
+    restricts nothing, so any disk is attached either way later. The
+    manifest shows it.
   - New disk never replaces a disk, as machine creation does not
     (`web/src/lib/create.ts`): nothing is sent until the project's disks are
     known and the name is not among them, and the one apply it sends is
     create-only, so a name taken since is refused with `AlreadyExists`,
-    shown as "A disk named X exists in this project." The dialog's CLI is
+    shown as "A disk named X exists in this project." The page's CLI is
     `hangar apply --create-only`.
   - Grow sets `spec.size`: it reads the disk and applies it back with only
     `spec.size` changed at the version read, as start and stop do. The
@@ -310,8 +345,9 @@ Settled with the owner on the screens, before they read the API.
 - **Images are read-only in the console.** Only platform administrators
   write them (`vm-images.md`). An image's smallest disk is the larger of
   its `min_disk_size` and its own size, as admission holds disks to. An
-  image's page offers "New disk from it", the same dialog with the image
-  chosen; it is disabled for an image at fault (`Verified` False), which
+  image's page offers "New disk from it", the New disk page
+  (`/new/disk?image=<name>`) on a boot disk of that image; it is disabled
+  for an image at fault (`Verified` False), which
   the page names in a banner.
 - **Controls are shown as "What a control is shown for" says**, asked at
   the project in one call a page: New disk and "New disk from it" need
@@ -320,7 +356,7 @@ Settled with the owner on the screens, before they read the API.
   control is hidden and these pages say nothing about it, neither a
   refusal nor the failed answer.
 - Sizes are whole GiB, read and written with `web/src/lib/quantity.ts`.
-  The detail pages show their CLI and YAML, and each dialog the manifest
+  The detail pages show their CLI and YAML, and each form the manifest
   it amounts to, copyable; the list pages are data alone.
 
 ### Networks, security groups, addresses and public endpoints
@@ -337,8 +373,11 @@ Settled with the owner on screenshots before the pages read the API.
   are created, their rules edited, and deleted; addresses are reserved,
   bound, moved, unbound and deleted; public endpoints are created, made
   public or private, and deleted. Each is the API's call
-  (`web/src/lib/network-actions.ts`), and its error is shown in the dialog
-  it was asked from. Creating never replaces, as for machines
+  (`web/src/lib/network-actions.ts`), and its error is shown on the page or
+  in the dialog it was asked from. Networks, addresses and public
+  endpoints are created on pages (`web/src/pages/create-network.tsx`,
+  `create-address.tsx`, `create-public-endpoint.tsx`); a security group
+  still in a dialog. Creating never replaces, as for machines
   (`web/src/lib/create.ts`): the form refuses a name in the loaded list,
   and sends one create-only apply, whose AlreadyExists for a name taken
   since is shown as "A network named X exists in this project." Its
@@ -397,19 +436,23 @@ Settled with the owner on screenshots before the pages read the API.
   Docker config `docker login` writes, or the config as given. The
   password field is masked, with `autocomplete="off"`: it is not a
   password for this site, so the browser is not invited to generate or
-  save one. The values live in the form's state, and in a ref from its
-  submit until the one create-only apply reads it; the call and closing
-  the form both empty the ref. The mutation holds the name alone and
-  leaves the query client once the form is gone (`gcTime` 0), and a
-  replay of it sends nothing. Creating never replaces, as for disks
+  save one. New secret is a page (`web/src/pages/create-secret.tsx`). The
+  values live in its form's state, and in a ref from its submit until the
+  one create-only apply reads it; the call and leaving the page both
+  empty the ref. The mutation holds the name alone and leaves the query
+  client once the page is gone (`gcTime` 0), and a replay of it sends
+  nothing. The page shows the command and no manifest, which would hold
+  the values. Creating never replaces, as for disks
   (`web/src/lib/create.ts`). Its command is
   `hangar create secret registry NAME --create-only --from-docker-config FILE`,
   which names a file and never a value. Replacing a secret's values is
   not offered in the console.
-- **A service token's secret is shown once**, in the dialog of the create
-  or the rotate that returned it, with a copy button, and the dialog says
-  it is not shown again. The issuer's answer goes straight to that
-  dialog's state: the mutation's result holds none, the mutation leaves
+- **A service token's secret is shown once**, in a dialog over the New
+  service token page (`web/src/pages/create-service-token.tsx`) or the
+  Rotate dialog that returned it, with a copy button, and the dialog says
+  it is not shown again; closing it after a create opens the token's
+  page. The issuer's answer goes straight to that page's or dialog's
+  state: the mutation's result holds none, the mutation leaves
   the query client with its dialog, and nothing is kept in storage. The
   dialog is locked: only its Close button closes it, and closing it drops
   the secret. Escape and a click outside do not; when the browser closes
@@ -429,7 +472,7 @@ Settled with the owner on screenshots before the pages read the API.
   exists. **Rotate** says which secret, by its first characters, stops
   working. **Delete** asks for the name typed and says the bindings
   naming the token go with it, as do secrets' deletes, which say which
-  containers name the secret. Each dialog shows its `hangar token` or
+  containers name the secret. Each form shows its `hangar token` or
   `hangar create secret` command, holding names and options alone; a
   form's command reads NAME until the name is one the form would send.
   A copy button shows its check only once the clipboard took the text,
