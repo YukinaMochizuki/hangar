@@ -40,7 +40,8 @@ func (a *app) createCmd() *cobra.Command {
 			"display name is what people read, and can change; the name cannot.\n" +
 			"A NAME that is taken, or was ever used, is refused before anything is sent.\n" +
 			"\n" +
-			"\"create secret\" creates or replaces a secret from a file instead.",
+			"\"create secret\" creates or replaces a secret from a file instead\n" +
+			"(only creates it with --create-only).",
 		Example: "  hangar create tenant --display-name \"Alice's lab\"\n" +
 			"  hangar create project --tenant alices-lab-204816 --display-name \"My demo\"\n" +
 			"  hangar create project my-demo --tenant alices-lab-204816 --display-name \"My demo\"",

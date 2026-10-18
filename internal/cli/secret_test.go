@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/YukinaMochizuki/hangar/internal/cli"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -47,6 +48,23 @@ func TestCreateRegistrySecret(t *testing.T) {
 	}
 	if strings.Contains(all.String(), cliCanary) || strings.Contains(all.String(), "sealed") {
 		t.Errorf("the CLI showed the value or its sealed form:\n%s", all.String())
+	}
+
+	// --create-only creates a new secret, but refuses one that exists and
+	// leaves it as it is: still holding both registries, not the one sent.
+	one := `{"auths":{"ghcr.io":{"username":"bot","password":"` + cliCanary + `"}}}`
+	if out := w.must(one, "create", "secret", "registry", "fresh", "--create-only", "--from-docker-config", "-"); out != "secret/fresh created, for 1 registries\n" {
+		t.Errorf("create --create-only of a new secret printed %q", out)
+	}
+	r := w.run(one, "create", "secret", "registry", "pull", "--create-only", "--from-docker-config", "-")
+	if r.code != cli.ExitConflict || !strings.Contains(r.err, "secret/pull already exists") || strings.Contains(r.out+r.err, cliCanary) {
+		t.Errorf("create --create-only of an existing secret: exit %d, %q %q; want %d naming secret/pull", r.code, r.out, r.err, cli.ExitConflict)
+	}
+	if table := w.must("", "get", "secret"); !strings.Contains(table, "ghcr.io,index.docker.io") {
+		t.Errorf("a refused create --create-only changed the secret:\n%s", table)
+	}
+	if help := w.must("", "create", "secret", "registry", "--help"); !strings.Contains(help, "--create-only") {
+		t.Errorf("create secret registry --help does not show --create-only:\n%s", help)
 	}
 
 	for _, c := range []struct {
