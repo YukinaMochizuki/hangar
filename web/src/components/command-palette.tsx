@@ -175,10 +175,11 @@ function useProjectModel(project: string, hands: Hands): Model {
 
   const p = { project };
   const newIn = (to: string) => () => hands.done(() => void navigate({ to, search: { new: 1 } }));
+  const newPage = (kind: string) => () => hands.done(() => void navigate({ to: `/projects/${project}/new/${kind}` }));
   const gated: [string, string, () => void][] = [
     [actionPerms.container, "New container", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "container" } }))],
     [actionPerms.vm, "New virtual machine", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "vm" } }))],
-    [actionPerms.disk, "New disk", newIn(`/projects/${project}/disks`)],
+    [actionPerms.disk, "New disk", newPage("disk")],
     [actionPerms.network, "New network", newIn(`/projects/${project}/networks`)],
     [actionPerms.securityGroup, "New security group", newIn(`/projects/${project}/security-groups`)],
     [actionPerms.address, "Reserve address", newIn(`/projects/${project}/addresses`)],

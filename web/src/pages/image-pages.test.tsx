@@ -2,8 +2,7 @@
 
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import type { ApplyDiskRequest } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
@@ -95,27 +94,13 @@ describe("ImageDetail", () => {
     render(<ImageDetail name="alpine-3" />, { wrapper: withApi(all()) });
     await screen.findByText("alpine-3 is at fault: HashMismatch");
     expect(((await screen.findByRole("button", { name: "New disk from it" })) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByRole("link", { name: "New disk from it" })).toBeNull();
   });
 
-  it("creates a disk of the image with one create-only apply, the image as its source", async () => {
-    const applied: ApplyDiskRequest[] = [];
-    const a = storageApi({
-      images: async () => ({ items: [verified] }),
-      apply: (req) => (applied.push(req), { disk: req.disk, created: true }),
-    });
-    render(<ImageDetail name="debian-13" />, { wrapper: withApi(a) });
-    fireEvent.click(await screen.findByRole("button", { name: "New disk from it" }));
-    const d = screen.getByRole("dialog", { name: "New disk" });
-    expect((within(d).getByLabelText("Holds") as HTMLSelectElement).value).toBe("debian-13");
-    fireEvent.change(within(d).getByLabelText("Name"), { target: { value: "data" } });
-    const submit = within(d).getByRole("button", { name: /Create disk|Loading names/ }) as HTMLButtonElement;
-    await waitFor(() => expect(submit.disabled).toBe(false));
-    fireEvent.click(submit);
-    await waitFor(() => expect(applied).toHaveLength(1));
-    expect(a.calls.filter((c) => c === "GetDisk" || c === "ApplyDisk")).toEqual(["ApplyDisk"]);
-    expect(applied[0].createOnly).toBe(true);
-    expect(applied[0].disk?.spec?.source?.source).toEqual(expect.objectContaining({ case: "image", value: expect.objectContaining({ name: "debian-13" }) }));
-    expect(applied[0].disk?.spec?.size).toBe("20Gi");
+  it("links New disk from it to the New disk page with the image chosen", async () => {
+    render(<ImageDetail name="debian-13" />, { wrapper: withApi(storageApi({ images: async () => ({ items: [verified] }) })) });
+    const link = await screen.findByRole("link", { name: "New disk from it" });
+    expect(link.getAttribute("href")).toBe("/projects/demo/new/disk?image=debian-13");
   });
 
   it("hides New disk from it from a caller who does not hold storage.disks.apply", async () => {
@@ -123,13 +108,13 @@ describe("ImageDetail", () => {
     render(<ImageDetail name="debian-13" />, { wrapper: withApi(a) });
     await screen.findByRole("heading", { name: "debian-13" });
     await waitFor(() => expect(a.calls).toContain("TestPermissions"));
-    expect(screen.queryByRole("button", { name: "New disk from it" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "New disk from it" })).toBeNull();
   });
 
   it("hides New disk from it and says nothing while the answer is unknown", async () => {
     render(<ImageDetail name="debian-13" />, { wrapper: withApi(storageApi({ images: async () => ({ items: [verified] }), perms: never })) });
     await screen.findByRole("heading", { name: "debian-13" });
-    expect(screen.queryByRole("button", { name: "New disk from it" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "New disk from it" })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

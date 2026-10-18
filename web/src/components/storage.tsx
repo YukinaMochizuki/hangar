@@ -1,38 +1,32 @@
 // Pieces the Disks and Images pages share: their states, a disk as YAML,
-// and the disk dialogs (new, grow, delete), each the API's own call with
+// and the disk dialogs (grow, delete), each the API's own call with
 // its error shown where it was asked for.
 
 import { toJson, type JsonValue } from "@bufbuild/protobuf";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
-import { HardDrive, Plus } from "lucide-react";
+import { HardDrive } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
-import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { FormEquivalent, FormField, Input } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Button, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { checkName } from "@/lib/create";
 import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
-import type { OnCreated } from "@/lib/new-param";
 import {
   diskFault,
   diskImage,
   growFloorGiB,
   imageFloorGiB,
-  imageState,
-  newDisk,
+  type ImageState,
   rootDiskOwner,
-  useCreateDisk,
   useDeleteDisk,
   useGrowDisk,
   useMachineOwners,
-  type ImageState,
-  type Listing,
 } from "@/lib/storage";
 
 const diskPhases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
@@ -94,7 +88,7 @@ function useMachineName(project: string, machine: string): string {
   return useMachineOwners(project)(machine)?.name ?? machine;
 }
 
-/** DiskSource says what a disk holds: blank, or a copy of an image, linked. */
+/** DiskSource is a disk's source: blank, or a copy of an image, linked. */
 export function DiskSource({ d, project, link = true }: { d: Disk; project: string; link?: boolean }) {
   const img = diskImage(d);
   if (!img) return <span className="text-muted">Blank</span>;
@@ -124,99 +118,6 @@ export function diskYaml(d: Disk): string {
     Object.entries((json.spec ?? {}) as { [k: string]: JsonValue }).filter(([, v]) => !(v && typeof v === "object" && Object.keys(v).length === 0)),
   );
   return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
-}
-
-/**
- * NewDiskDialog asks for a name, a size and what the disk holds. Nothing is
- * sent until the project's disks are known and the name is not among them;
- * the apply is create-only, so a name taken since is refused (lib/create.ts).
- */
-export function NewDiskDialog({
-  open,
-  onClose,
-  onCreated,
-  project,
-  images,
-  disks,
-  initialImage = "",
-}: {
-  open: boolean;
-  onClose: () => void;
-  /** Called once the disk is made, with the step that opens it. */
-  onCreated: OnCreated;
-  project: string;
-  images: Image[];
-  disks: Listing<Disk>;
-  initialImage?: string;
-}) {
-  const [name, setName] = useState("");
-  const [size, setSize] = useState(20);
-  const [image, setImage] = useState(initialImage);
-  const create = useCreateDisk();
-  const navigate = useNavigate();
-  const usable = images.filter((i) => imageState(i).tone !== "fail");
-  const img = images.find((i) => i.metadata?.name === image);
-  const floor = imageFloorGiB(img);
-  const nameCheck = checkName(name, "disk", {
-    loading: disks.loading,
-    error: disks.error,
-    names: disks.items.map((d) => d.metadata?.name ?? ""),
-  });
-  const sizeProblem = !Number.isInteger(size) || size < 1 ? "The size is not a whole number of GiB." : image && size < floor ? `${image} needs ${floor} GiB; ${size} GiB is less.` : undefined;
-  const problem = (name !== "" || disks.loading || !!disks.error) && !nameCheck.ok ? nameCheck.reason : sizeProblem;
-  const disk = newDisk(project, name, size, image);
-  const yaml = diskYaml(newDisk(project, name || "NAME", size, image));
-  const close = () => {
-    create.reset();
-    onClose();
-  };
-  return (
-    <Dialog open={open} onClose={close} title="New disk">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!nameCheck.ok || sizeProblem) return;
-          create.mutate(disk, {
-            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/disks/$name", params: { project, name } })),
-          });
-        }}
-      >
-        <div className="text-foreground">
-          <FormField label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" />
-          </FormField>
-          <FormField label="Size, GiB" hint="A disk can grow later but never shrink.">
-            <Input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32" />
-          </FormField>
-          <FormField label="Holds">
-            <Select value={image} onChange={(e) => setImage(e.target.value)} className="font-sans">
-              <option value="">Blank, all zeros</option>
-              {usable.map((i) => (
-                <option key={i.metadata?.name} value={i.metadata?.name}>
-                  A copy of {i.metadata?.name}, {imageFloorGiB(i)} GiB or more
-                </option>
-              ))}
-            </Select>
-          </FormField>
-        </div>
-        <FormEquivalent yaml={yaml} cli={[`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`]} />
-        {problem && <Notice tone="warning" title={problem} className="mt-3" />}
-        {create.error && (
-          <Notice tone="error" title="Creating the disk failed" className="mt-3">
-            {errorMessage(create.error)}
-          </Notice>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" onClick={close}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={!nameCheck.ok || !!sizeProblem || create.isPending}>
-            <Plus /> {create.isPending ? "Creating…" : disks.loading ? "Loading names…" : "Create disk"}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
-  );
 }
 
 /** growFacts says what growing a disk does: it restarts the machine the disk is attached to, if any. */

@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 
-// ?new=1 on a list route opens its create dialog, and closing the dialog
-// takes the parameter away, so neither going back nor reloading opens it
-// again. These run the console's real routes over memory history.
+// Creating from a list's address and from the palette. A kind created on a
+// page has it at /new/<kind>, and its list's ?new=1 opens that page in place
+// of the list's entry. A kind still created in a dialog opens it on ?new=1,
+// and closing the dialog takes the parameter away, so neither going back
+// nor reloading opens it again. These run the console's real routes over
+// memory history.
 
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -66,7 +69,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 
 describe("a list route's ?new=1", () => {
   it.each([
-    ["disks", "New disk"],
     ["networks", "New network"],
     ["security-groups", "New security group"],
     ["addresses", "Reserve address"],
@@ -94,7 +96,6 @@ describe("a list route's ?new=1", () => {
   });
 
   const refusedCases: [string, string][] = [
-    ["disks", "New disk"],
     ["networks", "New network"],
     ["security-groups", "New security group"],
     ["addresses", "Reserve address"],
@@ -124,11 +125,11 @@ describe("a list route's ?new=1", () => {
   });
 
   it("keeps ?new=1, and opens nothing, while the permission answer has not come", async () => {
-    const watch = watchOpened("New disk");
-    const { api, router } = app(["/projects/demo/disks?new=1"], { perms: () => never() });
+    const watch = watchOpened("New network");
+    const { api, router } = app(["/projects/demo/networks?new=1"], { perms: () => never() });
     await waitFor(() => expect(api.calls).toContain("TestPermissions"));
-    await screen.findAllByText("pg-data");
-    expect(router.state.location.href).toBe("/projects/demo/disks?new=1");
+    await screen.findAllByText("backend");
+    expect(router.state.location.href).toBe("/projects/demo/networks?new=1");
     expect(watch.opened()).toBe(false);
     watch.stop();
   });
@@ -146,7 +147,6 @@ describe("a list route's ?new=1", () => {
 
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
-    ["disks", "New disk", (d) => type(nameField(d), "fresh"), "/projects/demo/disks/fresh"],
     ["networks", "New network", (d) => type(nameField(d), "fresh"), "/projects/demo/networks/fresh"],
     ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
     ["addresses", "Reserve address", (d) => type(nameField(d), "fresh"), "/projects/demo/addresses/fresh"],
@@ -191,6 +191,59 @@ describe("a list route's ?new=1", () => {
     await screen.findByRole("heading", { level: 1 });
     expect(dialog(title)).toBeNull();
   });
+});
+
+const field = (name: string) => screen.getByRole("textbox", { name });
+const submitOf = () => screen.getAllByRole("button").find((b) => /^(Create|Reserve)/.test(b.textContent?.trim() ?? "")) as HTMLButtonElement;
+
+// Each kind created on a page: its list, its page's path and title, what the
+// page needs filled to send, and where a create lands.
+const pages: [string, string, string, () => void, string][] = [
+  ["disks", "disk", "New disk", () => type(field("Disk name"), "fresh"), "/projects/demo/disks/fresh"],
+];
+
+describe("a create page", () => {
+  it.each(pages)("is what %s?new=1 opens, in place of the list's entry", async (list, kind, title) => {
+    const path = `/projects/demo/${list}`;
+    const { router, history } = app([path, `${path}?new=1`]);
+    await screen.findByRole("heading", { level: 1, name: title });
+    expect(router.state.location.href).toBe(`/projects/demo/new/${kind}`);
+    expect(history.length).toBe(2);
+    history.back();
+    await waitFor(() => expect(router.state.location.href).toBe(path));
+  });
+
+  it.each(pages)("of %s opens the object made in its place, so Back returns to the list", async (list, kind, title, fill, lands) => {
+    const path = `/projects/demo/${list}`;
+    const { router, history } = app([path, `/projects/demo/new/${kind}`]);
+    await screen.findByRole("heading", { level: 1, name: title });
+    fill();
+    await waitFor(() => expect(submitOf().disabled).toBe(false));
+    fireEvent.click(submitOf());
+    if (kind === "service-token") {
+      // The secret is shown once; closing it opens the token.
+      const once = await screen.findByRole("dialog", { name: "Token fresh created" });
+      fireEvent.click(within(once).getByRole("button", { name: "Close" }));
+    }
+    await waitFor(() => expect(router.state.location.href).toBe(lands));
+    expect(history.length).toBe(2);
+    history.back();
+    await waitFor(() => expect(router.state.location.href).toBe(path));
+  });
+
+  it.each(pages)("of %s goes back to the list on Cancel", async (list, kind, title) => {
+    const { router } = app([`/projects/demo/new/${kind}`]);
+    await screen.findByRole("heading", { level: 1, name: title });
+    fireEvent.click(screen.getByRole("link", { name: "Cancel" }));
+    await waitFor(() => expect(router.state.location.href).toBe(`/projects/demo/${list}`));
+  });
+
+  it.each(pages)("of %s, for a caller whose roles do not include creating there, states it and shows no form", async (_list, kind, title) => {
+    app([`/projects/demo/new/${kind}`], { perms: () => [] });
+    await screen.findByText(/^This account's roles do not include .* in this project\.$/);
+    expect(screen.getByRole("heading", { level: 1, name: title })).toBeTruthy();
+    expect(screen.queryByRole("textbox")).toBeNull();
+  });
 
   it("is what the palette's New disk opens, from another page", async () => {
     const { router } = app(["/projects/demo/networks"]);
@@ -200,7 +253,13 @@ describe("a list route's ?new=1", () => {
     fireEvent.change(box, { target: { value: "new disk" } });
     await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toContain("New disk"));
     fireEvent.keyDown(box, { key: "Enter" });
-    expect(await screen.findByRole("dialog", { name: "New disk" })).toBeTruthy();
-    expect(router.state.location.href).toBe("/projects/demo/disks?new=1");
+    await screen.findByRole("heading", { level: 1, name: "New disk" });
+    expect(router.state.location.href).toBe("/projects/demo/new/disk");
+  });
+
+  it("leaves an object named new its own page", async () => {
+    const { router } = app(["/projects/demo/disks/new"], { listDisks: () => ({ items: [{ metadata: { name: "new", project: "demo" }, spec: { size: "10Gi" }, status: { size: "10Gi" } }] }) });
+    await screen.findByRole("heading", { level: 1, name: "new" });
+    expect(router.state.location.href).toBe("/projects/demo/disks/new");
   });
 });

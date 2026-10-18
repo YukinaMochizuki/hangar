@@ -1,12 +1,13 @@
 // The console's pages. Every page is behind the gate (pages/gate.tsx); the
 // project is in the path, so a link to a page names its project.
 
-import { createRootRoute, createRoute, createRouter, Navigate, Outlet, useNavigate, useSearch } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate, useSearch } from "@tanstack/react-router";
 import type { ComponentType } from "react";
 import { Shell } from "@/components/shell";
 import { ErrorNotice, StandalonePage } from "@/components/states";
 import { newSearch, type NewProps } from "@/lib/new-param";
 import { pickProject, useProjects } from "@/lib/projects";
+import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
@@ -129,11 +130,34 @@ function ListPage({ page: Page }: { page: ComponentType<NewProps> }) {
   return <Page startNew={search.new === 1} onNewClosed={() => navigate({ to: ".", search: (s: { new?: 1 }) => ({ ...s, new: undefined }), replace: true })} />;
 }
 
+/**
+ * A list's ?new=1, which once opened its create dialog, opens its create
+ * page in place of the list's entry, so going back does not return to it.
+ */
+function toCreatePage(kind: string) {
+  return ({ search, params }: { search: { new?: 1 }; params: { project: string } }) => {
+    if (search.new === 1) throw redirect({ href: `/projects/${params.project}/new/${kind}`, replace: true });
+  };
+}
+
+// Each kind's create page is at /new/<kind>, not /<plural>/new, where an
+// object named "new" has its own page.
+const newDiskRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/new/disk",
+  validateSearch: (s: Record<string, unknown>): { image?: string } => (typeof s.image === "string" && s.image !== "" ? { image: s.image } : {}),
+  component: function NewDisk() {
+    const { image } = newDiskRoute.useSearch();
+    return <CreateDisk key={image} image={image} />;
+  },
+});
+
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/disks",
   validateSearch: newSearch,
-  component: () => <ListPage page={DiskList} />,
+  beforeLoad: toCreatePage("disk"),
+  component: DiskList,
 });
 const diskRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -284,6 +308,7 @@ export const routeTree = rootRoute.addChildren([
     vmsRoute,
     vmRoute,
     newRoute,
+    newDiskRoute,
     disksRoute,
     diskRoute,
     imagesRoute,

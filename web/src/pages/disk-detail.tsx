@@ -79,7 +79,7 @@ function Summary({ d }: { d: Disk }) {
     <Card>
       <CardHeader title="Summary" />
       <dl className="divide-y px-4">
-        <Field label="Holds">
+        <Field label="Source">
           <DiskSource d={d} project={project} />
         </Field>
         <Field label="Size">

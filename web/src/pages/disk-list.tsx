@@ -7,14 +7,13 @@ import { Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { DiskSource, DiskState, MachineLink, NewDiskDialog } from "@/components/storage";
+import { DiskSource, DiskState, MachineLink } from "@/components/storage";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
-import { Button, Card } from "@/components/ui";
+import { buttonVariants, Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
-import { gib, growingTo, growthBlocked, rootDiskOwner, useDisks, useImages, useMachineOwners } from "@/lib/storage";
-import { useCreating, type NewProps } from "@/lib/new-param";
+import { gib, growingTo, growthBlocked, rootDiskOwner, useDisks, useMachineOwners } from "@/lib/storage";
 
 type Filter = "all" | "in-use" | "available" | "pending";
 
@@ -59,10 +58,9 @@ export function Attached({ d, project }: { d: Disk; project: string }) {
 }
 
 /** DiskList is the project's disks, with New disk. */
-export function DiskList(props: NewProps) {
+export function DiskList() {
   const project = useProjectName();
   const { items, loading, error, refetch } = useDisks(project);
-  const images = useImages();
   const owners = useMachineOwners(project);
   const disks = { items, loading, error, refetch };
   const [filter, setFilter] = useState<Filter>("all");
@@ -70,13 +68,12 @@ export function DiskList(props: NewProps) {
   // New disk shows only once the caller is known to hold storage.disks.apply.
   const createPerm = useCan({ level: "project", name: project }, ["storage.disks.apply"]);
   const canCreate = createPerm.can("storage.disks.apply");
-  const [creating, setCreating, created] = useCreating(props, canCreate, createPerm.settled);
   const rows = items.filter((d) => filters.find((f) => f.id === filter)!.match(d) && (!query || d.metadata?.name.includes(query)));
 
   const newButton = (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/disk" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New disk
-    </Button>
+    </Link>
   );
 
   return (
@@ -193,7 +190,6 @@ export function DiskList(props: NewProps) {
           </p>
         </ListFrame>
       </div>
-      <NewDiskDialog key={String(creating)} open={creating} onClose={() => setCreating(false)} onCreated={created} project={project} images={images.items} disks={disks} />
     </>
   );
 }

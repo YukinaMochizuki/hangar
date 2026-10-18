@@ -4,12 +4,14 @@
 // button and the manifest it amounts to. The new-machine page is laid out
 // the same way (web/src/pages/create-machine.tsx).
 
+import { Link } from "@tanstack/react-router";
 import { Check } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { CodeBlock } from "@/components/object";
 import { Notice } from "@/components/notice";
 import { Topbar } from "@/components/shell";
-import { Button, Card, CopyButton } from "@/components/ui";
+import { ErrorNotice } from "@/components/states";
+import { Button, buttonVariants, Card, CopyButton } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
@@ -47,6 +49,45 @@ export function FormPage({
           <div className="space-y-4 xl:sticky xl:top-20">{side}</div>
         </aside>
       </form>
+    </>
+  );
+}
+
+/**
+ * CreateGate stands in for a create page until the caller is known to hold
+ * the permission it needs: nothing while the answer is unknown, the refusal
+ * once the answer says the caller lacks it, and the error when the answer
+ * failed.
+ */
+export function CreateGate({
+  crumbs,
+  title,
+  perm,
+  may,
+  refusal,
+  children,
+}: {
+  crumbs: ReactNode[];
+  title: string;
+  /** What useCan said. */
+  perm: { known: boolean; error: unknown };
+  may: boolean;
+  /** What the caller's roles do not include, such as "creating disks". */
+  refusal: string;
+  children: ReactNode;
+}) {
+  if (may) return children;
+  return (
+    <>
+      <Topbar crumbs={crumbs} />
+      {perm.known ? (
+        <div className="px-4 pb-10 pt-6 md:px-8">
+          <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted">This account's roles do not include {refusal} in this project.</p>
+        </div>
+      ) : perm.error ? (
+        <ErrorNotice error={perm.error} title="Whether this account may do this did not load" className="px-4 py-6 md:px-8" />
+      ) : null}
     </>
   );
 }
@@ -120,6 +161,7 @@ export function FormSummary({
   pendingLabel,
   label,
   blocked,
+  cancelTo,
 }: {
   summary: ReactNode;
   /** Why it cannot be sent yet, each a fact; the button is off while there is one. */
@@ -134,6 +176,8 @@ export function FormSummary({
   label: ReactNode;
   /** Off for a reason a notice states. */
   blocked?: boolean;
+  /** Where Cancel goes, such as the list's path; no Cancel when unset. */
+  cancelTo?: string;
 }) {
   return (
     <Card>
@@ -149,9 +193,16 @@ export function FormSummary({
           </Notice>
         )}
         {problems.length > 0 && <div className="text-[12px] text-subtle">{problems.join(" ")}</div>}
-        <Button type="submit" variant="primary" className="w-full" disabled={problems.length > 0 || !!blocked || pending}>
-          {pending ? pendingLabel : label}
-        </Button>
+        <div className="flex gap-2">
+          {cancelTo && (
+            <Link to={cancelTo} className={buttonVariants()}>
+              Cancel
+            </Link>
+          )}
+          <Button type="submit" variant="primary" className="min-w-0 flex-1" disabled={problems.length > 0 || !!blocked || pending}>
+            {pending ? pendingLabel : label}
+          </Button>
+        </div>
       </div>
     </Card>
   );
