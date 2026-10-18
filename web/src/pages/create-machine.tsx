@@ -20,8 +20,9 @@ import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { imageFloorGiB } from "@/lib/storage";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { Box, Check, Globe, MapPin, Server } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Input, Select } from "@/components/form";
+import { Choice, FormSection as Section } from "@/components/form-page";
 import { Notice } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
@@ -36,43 +37,6 @@ import { useMachineSizes, type Size } from "@/lib/machine-sizes";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
 
 export type CreateKind = "container" | "vm";
-
-function Section({ n, title, hint, children }: { n: number; title: string; hint?: ReactNode; children: ReactNode }) {
-  return (
-    <section className="border-b py-6 last:border-0">
-      <div className="mb-3 flex items-baseline gap-3">
-        <span className="font-mono text-[12px] text-subtle">{String(n).padStart(2, "0")}</span>
-        <h2 className="text-[15px] font-medium">{title}</h2>
-        {hint && <span className="text-[12.5px] text-muted">{hint}</span>}
-      </div>
-      <div className="md:pl-8">{children}</div>
-    </section>
-  );
-}
-
-function Choice({ selected, onClick, className, children, label }: { selected: boolean; onClick: () => void; className?: string; children: ReactNode; label?: string }) {
-  return (
-    <button
-      type="button"
-      role="radio"
-      aria-checked={selected}
-      aria-label={label}
-      onClick={onClick}
-      className={cn(
-        "relative flex flex-col items-stretch justify-start rounded-lg border bg-surface text-left transition-colors",
-        selected ? "border-accent bg-accent-soft ring-1 ring-accent" : "hover:border-border-strong",
-        className,
-      )}
-    >
-      {selected && (
-        <span className="absolute right-2.5 top-2.5 flex size-4 items-center justify-center rounded-full bg-accent text-accent-fg">
-          <Check className="size-2.5" strokeWidth={3} />
-        </span>
-      )}
-      {children}
-    </button>
-  );
-}
 
 type Over = { key: string; label: string; need: number; left: number; limit: number; unit: string };
 
