@@ -6,15 +6,19 @@ import {
   Box,
   ChevronsUpDown,
   Disc3,
+  Globe,
   HardDrive,
   LayoutGrid,
   LogOut,
   Menu,
   Monitor,
   Moon,
+  Network,
   Server,
+  ShieldCheck,
   Sun,
   Users,
+  Waypoints,
   type LucideIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
@@ -186,6 +190,15 @@ function ProjectSidebar({ project }: { project: string }) {
       items: [
         { label: "Disks", icon: HardDrive, to: `${base}/disks`, count: disks.loading || disks.error ? undefined : disks.items.length },
         { label: "Images", icon: Disc3, to: `${base}/images` },
+      ],
+    },
+    {
+      group: "Network",
+      items: [
+        { label: "Networks", icon: Network, to: `${base}/networks` },
+        { label: "Security groups", icon: ShieldCheck, to: `${base}/security-groups` },
+        { label: "Addresses", icon: Globe, to: `${base}/addresses` },
+        { label: "Public endpoints", icon: Waypoints, to: `${base}/public-endpoints` },
       ],
     },
     { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },

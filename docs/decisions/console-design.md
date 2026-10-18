@@ -133,13 +133,14 @@ holds its permission: adding a member and changing a role need
 `iam.rolebindings.apply`, removing one `iam.rolebindings.delete`, and a new
 project `tenancy.projects.apply` in its tenant. While the answer loads, or
 when it failed, nothing is held, so a control appears once it is known to
-work; a refusal is stated only when the answer came and said so, and a
-failed answer is shown as the error it is. The answer only decides what
-is drawn: the API still checks every call, and a refusal is shown like any
-error. Pages whose controls do not ask yet show them to everyone and show
-the API's refusal in place. New project asks once per tenant the member
-sees, which is every tenant for a platform administrator; at today's size
-that is a handful of calls.
+work; a refusal is stated only when the answer came and said so. On a
+page, a failed answer hides the controls and states nothing; a form that
+cannot go on without the answer (New project) shows the failure as the
+error it is. The answer only decides what is drawn: the API still checks
+every call, and a refusal is shown like any error. Pages whose controls
+do not ask yet show them to everyone and show the API's refusal in place.
+New project asks once per tenant the member sees, which is every tenant
+for a platform administrator; at today's size that is a handful of calls.
 
 ### Machines
 
@@ -248,6 +249,60 @@ Settled with the owner on the screens, before they read the API.
 - Sizes are whole GiB, read and written with `web/src/lib/quantity.ts`.
   The detail pages show their CLI and YAML, and each dialog the manifest
   it amounts to, copyable; the list pages are data alone.
+
+### Networks, security groups, addresses and public endpoints
+
+Settled with the owner on screenshots before the pages read the API.
+
+- **The "Network" group** in the sidebar lists the four kinds, each with a
+  list page and an object's page (`web/src/pages/networks.tsx`,
+  `security-groups.tsx`, `addresses.tsx`, `public-endpoints.tsx`). The
+  pages read the lists the API serves; which interfaces a network or group
+  holds is read from the project's Machines, whose interfaces name the
+  groups they are in (`web/src/lib/network.ts`).
+- **The actions** are: networks are created and deleted; security groups
+  are created, their rules edited, and deleted; addresses are reserved,
+  bound, moved, unbound and deleted; public endpoints are created, made
+  public or private, and deleted. Each is the API's call
+  (`web/src/lib/network-actions.ts`), and its error is shown in the dialog
+  it was asked from. Creating never replaces, as for machines
+  (`web/src/lib/create.ts`): the form refuses a name in the loaded list,
+  and sends one create-only apply, whose AlreadyExists for a name taken
+  since is shown as "A network named X exists in this project." Its
+  command is `hangar apply --create-only`. Editing a group's rules, and
+  binding or moving an address, apply at the resource version of the
+  object the dialog opened from, with only that field changed: what the
+  person chose depends on what they saw, so a newer object is never
+  overwritten. The API then answers Aborted, and the dialog says the
+  object changed after it opened and offers to load it again. Making an
+  endpoint public or private, and unbinding an address, set one value
+  whatever the rest is, so they read the object and apply it back at the
+  version read, as start and stop do. Each form shows the manifest it
+  applies and the `hangar apply` command; delete shows `hangar delete`.
+- **What comes from machines shows their state.** Machine counts, members
+  and interfaces show a skeleton while the project's machines load and the
+  failure when they did not; Delete stays off until they have loaded, and
+  says when they failed.
+- **A group naming a network the project lacks** is listed under that
+  network, stated as "network NAME does not exist".
+- **Delete asks for the name to be typed.** When the console already
+  knows the API will refuse (machines on a network, interfaces in a
+  group), the fact stands above the Delete button, such as "3 machines
+  are on this network.", and the button is off.
+- **A public endpoint a container's public port made** offers no action:
+  the API sets its spec back and makes it again. Its page says which
+  container made it.
+- **Every network's built-in group `default`** is a row of the security
+  groups list, marked "built in", with what it does: it lets in its own
+  members and lets everything out. It is no object and has no page.
+- **No hostname is guessed.** The endpoint domain is the apiserver's, so
+  the create form shows no hostname; an endpoint's page shows the URL its
+  status gives.
+- **Controls show only when the caller may use them**, as "What a control
+  is shown for" above says. Each page asks once, at its project, for what
+  its controls need: `network.<plural>.apply` for create, edit rules,
+  bind, move, unbind and make public or private,
+  `network.<plural>.delete` for delete.
 
 ### How the session reaches the API, and CSRF
 
