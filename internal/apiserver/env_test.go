@@ -196,6 +196,7 @@ type clients struct {
 	nodes      computev1alpha1connect.NodeServiceClient
 	tokens     iamv1alpha1connect.ServiceTokenServiceClient
 	issuer     iamv1alpha1connect.ServiceTokenIssuerServiceClient
+	capability computev1alpha1connect.MachineCapabilityServiceClient
 }
 
 func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption) clients {
@@ -213,6 +214,7 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		nodes:      computev1alpha1connect.NewNodeServiceClient(hc, url, opts...),
 		tokens:     iamv1alpha1connect.NewServiceTokenServiceClient(hc, url, opts...),
 		issuer:     iamv1alpha1connect.NewServiceTokenIssuerServiceClient(hc, url, opts...),
+		capability: computev1alpha1connect.NewMachineCapabilityServiceClient(hc, url, opts...),
 	}
 }
 

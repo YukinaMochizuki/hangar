@@ -343,11 +343,112 @@ func (x *UpdateProfileResponse) GetUser() *User {
 	return nil
 }
 
+type TestPermissionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where to test: the platform, a tenant or a project.
+	Scope *BindingScope `protobuf:"bytes,1,opt,name=scope,proto3" json:"scope,omitempty"`
+	// Permission names, such as "compute.containers.apply": between 1 and
+	// 100, each one Hangar knows.
+	Permissions   []string `protobuf:"bytes,2,rep,name=permissions,proto3" json:"permissions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestPermissionsRequest) Reset() {
+	*x = TestPermissionsRequest{}
+	mi := &file_hangar_iam_v1alpha1_account_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestPermissionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestPermissionsRequest) ProtoMessage() {}
+
+func (x *TestPermissionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_iam_v1alpha1_account_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestPermissionsRequest.ProtoReflect.Descriptor instead.
+func (*TestPermissionsRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_iam_v1alpha1_account_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *TestPermissionsRequest) GetScope() *BindingScope {
+	if x != nil {
+		return x.Scope
+	}
+	return nil
+}
+
+func (x *TestPermissionsRequest) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
+type TestPermissionsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The permissions asked for that the caller holds at the scope, in the
+	// order asked, each once.
+	Permissions   []string `protobuf:"bytes,1,rep,name=permissions,proto3" json:"permissions,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestPermissionsResponse) Reset() {
+	*x = TestPermissionsResponse{}
+	mi := &file_hangar_iam_v1alpha1_account_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestPermissionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestPermissionsResponse) ProtoMessage() {}
+
+func (x *TestPermissionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_iam_v1alpha1_account_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestPermissionsResponse.ProtoReflect.Descriptor instead.
+func (*TestPermissionsResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_iam_v1alpha1_account_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *TestPermissionsResponse) GetPermissions() []string {
+	if x != nil {
+		return x.Permissions
+	}
+	return nil
+}
+
 var File_hangar_iam_v1alpha1_account_proto protoreflect.FileDescriptor
 
 const file_hangar_iam_v1alpha1_account_proto_rawDesc = "" +
 	"\n" +
-	"!hangar/iam/v1alpha1/account.proto\x12\x13hangar.iam.v1alpha1\x1a\x1ehangar/iam/v1alpha1/user.proto\"\x0f\n" +
+	"!hangar/iam/v1alpha1/account.proto\x12\x13hangar.iam.v1alpha1\x1a&hangar/iam/v1alpha1/role_binding.proto\x1a\x1ehangar/iam/v1alpha1/user.proto\"\x0f\n" +
 	"\rWhoAmIRequest\"\x95\x01\n" +
 	"\x0eWhoAmIResponse\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x0e\n" +
@@ -365,11 +466,17 @@ const file_hangar_iam_v1alpha1_account_proto_rawDesc = "" +
 	"\x14UpdateProfileRequest\x12!\n" +
 	"\fdisplay_name\x18\x01 \x01(\tR\vdisplayName\"F\n" +
 	"\x15UpdateProfileResponse\x12-\n" +
-	"\x04user\x18\x01 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user2\x9e\x02\n" +
+	"\x04user\x18\x01 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\"s\n" +
+	"\x16TestPermissionsRequest\x127\n" +
+	"\x05scope\x18\x01 \x01(\v2!.hangar.iam.v1alpha1.BindingScopeR\x05scope\x12 \n" +
+	"\vpermissions\x18\x02 \x03(\tR\vpermissions\";\n" +
+	"\x17TestPermissionsResponse\x12 \n" +
+	"\vpermissions\x18\x01 \x03(\tR\vpermissions2\x8c\x03\n" +
 	"\x0eAccountService\x12Q\n" +
 	"\x06WhoAmI\x12\".hangar.iam.v1alpha1.WhoAmIRequest\x1a#.hangar.iam.v1alpha1.WhoAmIResponse\x12Q\n" +
 	"\x06SignUp\x12\".hangar.iam.v1alpha1.SignUpRequest\x1a#.hangar.iam.v1alpha1.SignUpResponse\x12f\n" +
-	"\rUpdateProfile\x12).hangar.iam.v1alpha1.UpdateProfileRequest\x1a*.hangar.iam.v1alpha1.UpdateProfileResponseB\xdf\x01\n" +
+	"\rUpdateProfile\x12).hangar.iam.v1alpha1.UpdateProfileRequest\x1a*.hangar.iam.v1alpha1.UpdateProfileResponse\x12l\n" +
+	"\x0fTestPermissions\x12+.hangar.iam.v1alpha1.TestPermissionsRequest\x1a,.hangar.iam.v1alpha1.TestPermissionsResponseB\xdf\x01\n" +
 	"\x17com.hangar.iam.v1alpha1B\fAccountProtoP\x01ZHgithub.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1;iamv1alpha1\xa2\x02\x03HIX\xaa\x02\x13Hangar.Iam.V1alpha1\xca\x02\x13Hangar\\Iam\\V1alpha1\xe2\x02\x1fHangar\\Iam\\V1alpha1\\GPBMetadata\xea\x02\x15Hangar::Iam::V1alpha1b\x06proto3"
 
 var (
@@ -384,31 +491,37 @@ func file_hangar_iam_v1alpha1_account_proto_rawDescGZIP() []byte {
 	return file_hangar_iam_v1alpha1_account_proto_rawDescData
 }
 
-var file_hangar_iam_v1alpha1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_hangar_iam_v1alpha1_account_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_hangar_iam_v1alpha1_account_proto_goTypes = []any{
-	(*WhoAmIRequest)(nil),         // 0: hangar.iam.v1alpha1.WhoAmIRequest
-	(*WhoAmIResponse)(nil),        // 1: hangar.iam.v1alpha1.WhoAmIResponse
-	(*SignUpRequest)(nil),         // 2: hangar.iam.v1alpha1.SignUpRequest
-	(*SignUpResponse)(nil),        // 3: hangar.iam.v1alpha1.SignUpResponse
-	(*UpdateProfileRequest)(nil),  // 4: hangar.iam.v1alpha1.UpdateProfileRequest
-	(*UpdateProfileResponse)(nil), // 5: hangar.iam.v1alpha1.UpdateProfileResponse
-	(*User)(nil),                  // 6: hangar.iam.v1alpha1.User
+	(*WhoAmIRequest)(nil),           // 0: hangar.iam.v1alpha1.WhoAmIRequest
+	(*WhoAmIResponse)(nil),          // 1: hangar.iam.v1alpha1.WhoAmIResponse
+	(*SignUpRequest)(nil),           // 2: hangar.iam.v1alpha1.SignUpRequest
+	(*SignUpResponse)(nil),          // 3: hangar.iam.v1alpha1.SignUpResponse
+	(*UpdateProfileRequest)(nil),    // 4: hangar.iam.v1alpha1.UpdateProfileRequest
+	(*UpdateProfileResponse)(nil),   // 5: hangar.iam.v1alpha1.UpdateProfileResponse
+	(*TestPermissionsRequest)(nil),  // 6: hangar.iam.v1alpha1.TestPermissionsRequest
+	(*TestPermissionsResponse)(nil), // 7: hangar.iam.v1alpha1.TestPermissionsResponse
+	(*User)(nil),                    // 8: hangar.iam.v1alpha1.User
+	(*BindingScope)(nil),            // 9: hangar.iam.v1alpha1.BindingScope
 }
 var file_hangar_iam_v1alpha1_account_proto_depIdxs = []int32{
-	6, // 0: hangar.iam.v1alpha1.WhoAmIResponse.user:type_name -> hangar.iam.v1alpha1.User
-	6, // 1: hangar.iam.v1alpha1.SignUpResponse.user:type_name -> hangar.iam.v1alpha1.User
-	6, // 2: hangar.iam.v1alpha1.UpdateProfileResponse.user:type_name -> hangar.iam.v1alpha1.User
-	0, // 3: hangar.iam.v1alpha1.AccountService.WhoAmI:input_type -> hangar.iam.v1alpha1.WhoAmIRequest
-	2, // 4: hangar.iam.v1alpha1.AccountService.SignUp:input_type -> hangar.iam.v1alpha1.SignUpRequest
-	4, // 5: hangar.iam.v1alpha1.AccountService.UpdateProfile:input_type -> hangar.iam.v1alpha1.UpdateProfileRequest
-	1, // 6: hangar.iam.v1alpha1.AccountService.WhoAmI:output_type -> hangar.iam.v1alpha1.WhoAmIResponse
-	3, // 7: hangar.iam.v1alpha1.AccountService.SignUp:output_type -> hangar.iam.v1alpha1.SignUpResponse
-	5, // 8: hangar.iam.v1alpha1.AccountService.UpdateProfile:output_type -> hangar.iam.v1alpha1.UpdateProfileResponse
-	6, // [6:9] is the sub-list for method output_type
-	3, // [3:6] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	8, // 0: hangar.iam.v1alpha1.WhoAmIResponse.user:type_name -> hangar.iam.v1alpha1.User
+	8, // 1: hangar.iam.v1alpha1.SignUpResponse.user:type_name -> hangar.iam.v1alpha1.User
+	8, // 2: hangar.iam.v1alpha1.UpdateProfileResponse.user:type_name -> hangar.iam.v1alpha1.User
+	9, // 3: hangar.iam.v1alpha1.TestPermissionsRequest.scope:type_name -> hangar.iam.v1alpha1.BindingScope
+	0, // 4: hangar.iam.v1alpha1.AccountService.WhoAmI:input_type -> hangar.iam.v1alpha1.WhoAmIRequest
+	2, // 5: hangar.iam.v1alpha1.AccountService.SignUp:input_type -> hangar.iam.v1alpha1.SignUpRequest
+	4, // 6: hangar.iam.v1alpha1.AccountService.UpdateProfile:input_type -> hangar.iam.v1alpha1.UpdateProfileRequest
+	6, // 7: hangar.iam.v1alpha1.AccountService.TestPermissions:input_type -> hangar.iam.v1alpha1.TestPermissionsRequest
+	1, // 8: hangar.iam.v1alpha1.AccountService.WhoAmI:output_type -> hangar.iam.v1alpha1.WhoAmIResponse
+	3, // 9: hangar.iam.v1alpha1.AccountService.SignUp:output_type -> hangar.iam.v1alpha1.SignUpResponse
+	5, // 10: hangar.iam.v1alpha1.AccountService.UpdateProfile:output_type -> hangar.iam.v1alpha1.UpdateProfileResponse
+	7, // 11: hangar.iam.v1alpha1.AccountService.TestPermissions:output_type -> hangar.iam.v1alpha1.TestPermissionsResponse
+	8, // [8:12] is the sub-list for method output_type
+	4, // [4:8] is the sub-list for method input_type
+	4, // [4:4] is the sub-list for extension type_name
+	4, // [4:4] is the sub-list for extension extendee
+	0, // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_hangar_iam_v1alpha1_account_proto_init() }
@@ -416,6 +529,7 @@ func file_hangar_iam_v1alpha1_account_proto_init() {
 	if File_hangar_iam_v1alpha1_account_proto != nil {
 		return
 	}
+	file_hangar_iam_v1alpha1_role_binding_proto_init()
 	file_hangar_iam_v1alpha1_user_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -423,7 +537,7 @@ func file_hangar_iam_v1alpha1_account_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_iam_v1alpha1_account_proto_rawDesc), len(file_hangar_iam_v1alpha1_account_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

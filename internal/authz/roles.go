@@ -158,6 +158,52 @@ var Roles = map[string]Role{
 	"project.viewer": {Level: ProjectLevel, verbs: readVerbs},
 }
 
+// kindVerbs are the verbs every kind has a permission for: those roles may
+// grant, and UpdateStatus, which none does.
+var kindVerbs = append(slices.Clone(userVerbs), UpdateStatus)
+
+// knownPermissions maps every permission there is to its kind and verb: each
+// kind's kindVerbs, and the special actions roles name one by one.
+var knownPermissions = func() map[string]knownPermission {
+	out := map[string]knownPermission{}
+	for _, r := range registry.All {
+		for _, v := range kindVerbs {
+			out[Permission(r, v)] = knownPermission{r, v}
+		}
+	}
+	for _, perm := range append([]string{CreateTenant}, reachPermissions...) {
+		for _, r := range registry.All {
+			if kindOfResource(r) == permissionKind(perm) {
+				out[perm] = knownPermission{r, verbOf(perm)}
+			}
+		}
+	}
+	return out
+}()
+
+type knownPermission struct {
+	resource registry.Resource
+	verb     Verb
+}
+
+// LookupPermission returns the kind and verb of a permission, and false for
+// a name that is no permission.
+func LookupPermission(permission string) (registry.Resource, Verb, bool) {
+	k, ok := knownPermissions[permission]
+	return k.resource, k.verb, ok
+}
+
+// KnownPermission reports whether a name is a permission.
+func KnownPermission(permission string) bool {
+	_, ok := knownPermissions[permission]
+	return ok
+}
+
+// IsReach reports whether a permission reaches into what a machine or an
+// endpoint holds (logs, exec, ssh, endpoint access), rather than acting on
+// an object of its kind.
+func IsReach(permission string) bool { return slices.Contains(reachPermissions, permission) }
+
 // readPermissions are the read verbs on the kinds given.
 func readPermissions(rs ...registry.Resource) []string {
 	var out []string

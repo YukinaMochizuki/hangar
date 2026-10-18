@@ -114,8 +114,9 @@ func (s *Server) userOf(ctx context.Context, p auth.Principal) (*iamv1alpha1.Use
 	return u.(*iamv1alpha1.User), nil
 }
 
-// account serves AccountService: a person's own account. Its calls accept
-// someone invited who has not signed up yet, whom every other call refuses.
+// account serves AccountService: a caller's own account. WhoAmI, SignUp and
+// UpdateProfile accept someone invited who has not signed up yet, whom every
+// other call, TestPermissions included, refuses.
 type account struct{ s *Server }
 
 // WhoAmI tells any authenticated caller who they are, whether they were

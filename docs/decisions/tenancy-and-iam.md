@@ -142,6 +142,31 @@ cloud, and some people fund the hardware and should see more of it.
   reaches every one; `platform.member` and `platform.sponsor` reach none
   by themselves. `hangar project list` lists them and
   `hangar project use NAME` makes one the context's project.
+- **A caller asks what it may do with `AccountService.TestPermissions`**,
+  so the console shows only the controls the API will take, without
+  guessing from member lists, which miss `platform.root` and what a
+  tenant's bindings reach in its projects. It names a scope and the
+  permissions it cares about, at most 100, and gets back the subset it
+  holds there, in the order asked, each once. This is GCP's
+  `testIamPermissions` and Kubernetes' `SelfSubjectAccessReview`, chosen
+  by the owner over answering with every permission held, which would
+  make the permission list itself an API contract. A name that is no
+  permission is refused as invalid, which catches typos; the names are
+  those the roles are built from (`internal/authz/roles.go`).
+  - Each permission is answered by the check its call makes, with the
+    same inheritance, so no role table or system-managed kind is kept
+    twice: writes to `Machine` and `Node`, and deleting a `User`, are
+    held by nobody, and kinds that live at the platform (`Image`,
+    `Plan`, `User`, `Invitation`, `Node`, opening a tenant) are answered
+    at the platform whatever the scope.
+  - A tenant or project answers only when the caller may get it and it
+    exists; any other gets the empty subset, so the call tells nothing
+    of which tenants and projects there are. A `platform.member` may
+    open a tenant from anywhere, and is told so at every scope it can
+    see, and at no other.
+  - It answers about the caller only, to any platform member or service
+    token (not to someone invited who has not signed up), as any other
+    call is limited, and writes nothing.
 - **Platform membership gates everything.** Signing in (through Google,
   `authentication.md`) only proves who someone is, and only someone invited
   may sign in at all. A platform member holds a platform role
@@ -167,7 +192,7 @@ cloud, and some people fund the hardware and should see more of it.
   (group `iam`), with their Invitation's values, and deletes the
   Invitation, so every Invitation is one not taken up yet. Until
   then every call refuses them and names `hangar signup`, except
-  `AccountService` (`WhoAmI`, `SignUp`, `UpdateProfile`) and checking a
+  `AccountService`'s `WhoAmI`, `SignUp` and `UpdateProfile` and checking a
   username with `CheckName`. `WhoAmI` answers anyone signed in, so the
   console can choose between a waiting page, onboarding and the app.
 - **Signing up leaves a person ready to work.** In the store transaction
