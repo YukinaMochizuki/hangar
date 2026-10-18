@@ -1065,6 +1065,18 @@ func hypervisor(t *testing.T, h Host) {
 	vol, err := h.Storage.EnsureVolume(ctx, "d1", rootSize, "")
 	must(t, err)
 	spec.Disks = []driver.Volume{vol}
+	// A mount is of one of the VM's volumes, at a target.
+	for name, m := range map[string]driver.Mount{
+		"of no volume of its": {Disk: 1, Name: "d1", Target: "/data"},
+		"at no target":        {Disk: 0, Name: "d1"},
+	} {
+		bad := spec
+		bad.Mounts = []driver.Mount{m}
+		if err := h.Hypervisor.Start(ctx, bad); err == nil {
+			t.Errorf("started a VM with a mount %s", name)
+			must(t, h.Hypervisor.Stop(ctx, "m1"))
+		}
+	}
 	must(t, h.Hypervisor.Start(ctx, spec))
 	vm, ok := vmOf(t, h, "m1")
 	if !ok || vm.State != driver.VMRunning || vm.SpecHash != spec.Hash() {

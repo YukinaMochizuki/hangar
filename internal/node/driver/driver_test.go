@@ -46,6 +46,13 @@ func TestAVMWithoutDisksKeepsItsHash(t *testing.T) {
 	if spec.Hash() == withDisk {
 		t.Error("a grown volume leaves the hash as it was: the VM would not boot to see it")
 	}
+	grown := spec.Hash()
+	spec.Mounts = []driver.Mount{{Disk: 0, Name: "data", Target: "/data"}}
+	mounted := spec.Hash()
+	spec.Mounts[0].Target = "/srv"
+	if mounted == grown || spec.Hash() == mounted {
+		t.Error("mounting a volume, or moving it, leaves the hash as it was: the guest would not mount it")
+	}
 }
 
 // TestAVMStartedBeforeIPv6ChangedLiveKeepsItsHash: Hash leaves out the

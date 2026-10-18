@@ -35,6 +35,7 @@ func firmware(t *testing.T, h Host) {
 	for name, change := range map[string]func(*driver.VMSpec){
 		"with a root disk": func(s *driver.VMSpec) { s.Root = driver.Disk{MachineUID: "fw", Path: vol.Path} },
 		"with no volume":   func(s *driver.VMSpec) { s.Disks = nil },
+		"with a mount":     func(s *driver.VMSpec) { s.Mounts = []driver.Mount{{Disk: 0, Name: "fw1", Target: "/data"}} },
 	} {
 		bad := spec
 		change(&bad)

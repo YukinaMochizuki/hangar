@@ -89,17 +89,33 @@ make guest-initramfs                      # or guest/initramfs/build.sh
 make guest-initramfs INIT_MAIN=path/to/dir  # pack another main package as /init
 ```
 
-Needs only Go. It builds `./cmd/hangar-init` (or the main package in
-`INIT_MAIN` / `--main DIR`, which may belong to another module) as a static
-binary (`CGO_ENABLED=0`, `-trimpath`, linux/amd64) and packs it with
-`tools/newc` into `bin/guest/initramfs.cpio`, an uncompressed newc archive
-holding `/init` and the empty directories `dev`, `proc`, `sys` and
+Needs Go, and a C toolchain the first time, for mke2fs. It builds
+`./cmd/hangar-init` (or the main package in `INIT_MAIN` / `--main DIR`,
+which may belong to another module) as a static binary (`CGO_ENABLED=0`,
+`-trimpath`, linux/amd64), and a static `mke2fs` with
+`guest/e2fsprogs/build.sh`, and packs them with `tools/newc` into
+`bin/guest/initramfs.cpio`, an uncompressed newc archive holding `/init`,
+`/sbin/mke2fs` and the empty directories `dev`, `proc`, `sys` and
 `newroot`. There are no device nodes: hangar-init mounts devtmpfs itself,
-then mounts the root disk on `/newroot` and switches to it.
+then mounts the root disk on `/newroot`, formats and mounts the
+container's volumes (`docs/decisions/container-volumes.md`), and switches
+to it.
+
+`guest/e2fsprogs/build.sh` downloads the e2fsprogs release
+`guest/e2fsprogs/e2fsprogs.env` pins into `.cache/e2fsprogs/`, checks its
+sha256 on every run, and builds `mke2fs` alone, statically linked, into
+`bin/guest/mke2fs` (half a minute on 8 cores). It keeps a build whose
+`e2fsprogs.env`, `build.sh`, gcc and libc have not changed
+(`bin/guest/mke2fs.key`).
+To bump it, take the version and the `.tar.xz` sha256 from the release's
+signed `sha256sums.asc` on kernel.org. `HANGAR_E2FSPROGS_WORKDIR` and
+`HANGAR_E2FSPROGS_OUT` override the defaults.
 
 The archive is reproducible: entries are sorted, owned by 0:0 and stamped
 with `SOURCE_DATE_EPOCH` (default: the time of the last commit), so two
-builds of the same tree give the same bytes. It is left uncompressed on
+builds of the same tree with the same C toolchain give the same bytes;
+`mke2fs` is linked statically against the toolchain's libc. It is left
+uncompressed on
 purpose; the kernel has no `CONFIG_RD_*` decompressor built in, so a
 compressed archive will not boot. `HANGAR_INITRAMFS_OUT` overrides the output
 directory.

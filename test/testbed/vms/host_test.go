@@ -347,6 +347,11 @@ func image(t *testing.T, label string) v1.Image {
 	w := tar.NewWriter(&buf)
 	_ = w.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "etc/hangar-image", Mode: 0o644, Size: int64(len(label))})
 	_, _ = w.Write([]byte(label))
+	// A data directory of a user of its own, as postgres's, for a volume to
+	// be filled from (TestAGuestMountsItsVolumes).
+	_ = w.WriteHeader(&tar.Header{Typeflag: tar.TypeDir, Name: "var/lib/app/", Mode: 0o700, Uid: 70, Gid: 70})
+	_ = w.WriteHeader(&tar.Header{Typeflag: tar.TypeReg, Name: "var/lib/app/seed", Mode: 0o600, Uid: 70, Gid: 70, Size: int64(len(imageSeed))})
+	_, _ = w.Write([]byte(imageSeed))
 	_ = w.Close()
 	mine, err := tarball.LayerFromOpener(func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(buf.Bytes())), nil })
 	if err != nil {
@@ -436,11 +441,16 @@ func ready(t *testing.T, uid string) {
 // execIn runs a process in the machine's guest and returns its stdout and
 // exit code.
 func execIn(ctx context.Context, uid string, args ...string) (string, int32, error) {
+	return execAs(ctx, uid, "", args...)
+}
+
+// execAs is execIn as user, "uid:gid" or a name; empty is root.
+func execAs(ctx context.Context, uid, user string, args ...string) (string, int32, error) {
 	c, done := guest().Client(uid)
 	defer done()
 	stream := c.Exec(ctx)
 	defer func() { _ = stream.CloseResponse() }()
-	start := &guestv1.ExecStart{Process: &guestv1.Process{Args: args}}
+	start := &guestv1.ExecStart{Process: &guestv1.Process{Args: args, User: user}}
 	if err := stream.Send(&guestv1.ExecRequest{Message: &guestv1.ExecRequest_Start{Start: start}}); err != nil {
 		return "", 0, err
 	}

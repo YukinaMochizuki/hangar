@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Builds the platform initramfs every machine boots with: hangar-init as /init
-# plus the empty mount points it needs, as an uncompressed, reproducible newc
-# cpio in bin/guest/initramfs.cpio.
+# Builds the platform initramfs every machine boots with: hangar-init as /init,
+# the static mke2fs that formats a container's blank volumes as /sbin/mke2fs
+# (guest/e2fsprogs/build.sh, built first), and the empty mount points it
+# needs, as an uncompressed, reproducible newc cpio in
+# bin/guest/initramfs.cpio.
 #
 #   build.sh                  build ./cmd/hangar-init
 #   build.sh --main DIR       build the main package in DIR instead (any module)
@@ -44,6 +46,9 @@ mkdir -m 0755 "$ROOT"
 (cd "$MAIN" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
 	-ldflags=-buildid= -o "$STAGE/init" .)
 install -m 0755 "$STAGE/init" "$ROOT/init"
+"$REPO/guest/e2fsprogs/build.sh"
+mkdir -m 0755 "$ROOT/sbin"
+install -m 0755 "${HANGAR_E2FSPROGS_OUT:-$REPO/bin/guest}/mke2fs" "$ROOT/sbin/mke2fs"
 # Mount points only: hangar-init mounts devtmpfs on /dev, so no device nodes.
 mkdir -m 0755 "$ROOT/dev" "$ROOT/proc" "$ROOT/sys" "$ROOT/newroot"
 

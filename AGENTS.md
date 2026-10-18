@@ -40,7 +40,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make dev` | Run the apiserver locally in dev auth mode |
 | `make lint-sh` | shellcheck every shell script (part of `make check`) |
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
-| `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` (`INIT_MAIN=DIR` packs another main package) |
+| `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
 | `make tools` | Print the pinned tool versions |
 
 The only toolchains needed are Go and Node (versions in `go.mod` and `.nvmrc`).
