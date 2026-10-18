@@ -43,6 +43,32 @@ change them.
   still states its own cpu, memory and disk; the console fills them from the
   chosen size, and the API records no size on the machine. Changing or
   deleting a size changes no machine.
+- **A machine must have the shape of a size.** Admission refuses, with
+  InvalidArgument, a Container or VirtualMachine whose cpu and memory are
+  those of no size, or whose disk is below the size's whose cpu and memory
+  it has; the refusal lists the sizes as `name: cpu / memory / disk`.
+  Without it, the sizes would bind only the console: as vCPUs are shared, a
+  machine of 8 vCPUs and 1Gi takes a large share of the CPUs for little
+  memory, which defeats the ratio the sizes set. Quantities compare by
+  value, with the defaults for what a spec leaves empty: `2000m` is `2`,
+  `2048Mi` is `2Gi`. The disk is a container's `resources.disk` and a VM's
+  `root_disk.from_image.size`, each 10Gi when empty, so a size of a larger
+  disk needs it stated; admission writes nothing into the spec. A VM booting
+  a Disk it names is checked for cpu and memory only, as that Disk's size is
+  its own.
+- **Only a new shape is checked**: a create, or an update that changes cpu,
+  memory or disk by value. A machine that matches no size, made before the
+  sizes changed or by someone exempt, can still be started, stopped and
+  relabelled. With no size defined, nothing is refused.
+- **The exemption follows the permission to define sizes.** A caller the
+  authorizer allows `compute.machinesizes.apply` at the platform is not
+  checked: `platform.root`, whether a person, root on the host or a service
+  token bound it at the platform; nor is the apiserver's own write. Such a
+  caller could define a size of any shape, so checking it would protect
+  nothing. A tenant owner, and a service token of a tenant or project role,
+  are checked.
+- **Admission reads the sizes from the store**, one list of a few objects,
+  and only for a new shape by a caller who is checked; nothing caches them.
 
 ## Consequences
 
@@ -51,7 +77,7 @@ change them.
   and sends nothing (`console-design.md`).
 - Which size a machine is, as the console's lists show it, is a match of the
   machine's cpu and memory against the listed sizes. A machine made before
-  a size changed, or by hand, may match none, and shows no size.
+  a size changed, or by someone exempt, may match none, and shows no size.
 - `hangar get machinesizes` (short name `ms`) lists them, as for any kind;
   `hangar apply` writes them from a manifest, as root.
 - The numbers themselves are the administrator's to choose; the repo holds

@@ -664,8 +664,9 @@ func warnRoleBinding(s *Server, obj proto.Message) []string {
 	return []string{fmt.Sprintf("%s is not a platform member yet; the binding takes effect once an administrator invites them and they sign up", email)}
 }
 
-func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
-	spec := obj.(*computev1alpha1.Container).GetSpec()
+func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
+	c := obj.(*computev1alpha1.Container)
+	spec := c.GetSpec()
 	if spec.GetImage() == "" {
 		return invalid("spec.image is required")
 	}
@@ -698,7 +699,18 @@ func validateContainer(ctx context.Context, s *Server, _ auth.Principal, old, ob
 	if err := validateImagePullSecrets(spec.GetImagePullSecrets()); err != nil {
 		return err
 	}
-	return s.validateContainerResources(ctx, old, spec.GetResources())
+	if err := s.validateContainerResources(ctx, old, spec.GetResources()); err != nil {
+		return err
+	}
+	// Its resources parse: validateContainerResources read them.
+	cur, _ := containerShape(c)
+	var was *machineShape
+	if o, ok := old.(*computev1alpha1.Container); ok {
+		if shape, ok := containerShape(o); ok {
+			was = &shape
+		}
+	}
+	return s.checkMachineSize(ctx, p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
 }
 
 // MaxInterfaces bounds the interfaces of a machine.
