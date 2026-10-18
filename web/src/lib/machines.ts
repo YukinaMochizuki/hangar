@@ -56,6 +56,13 @@ export type MachineView = {
 // How often lists are asked again (docs/decisions/console-design.md).
 export const refetchInterval = 5000;
 
+/**
+ * How a list is read by what is not its page, such as the command palette:
+ * refetchOnMount false takes what the cache holds as it stands, and a list
+ * not yet cached is still fetched.
+ */
+export type ListOpts = { refetchOnMount?: boolean };
+
 // The API's largest page: a project holds far fewer machines than this.
 const pageSize = 1000;
 
@@ -126,8 +133,8 @@ export function vmView(v: VirtualMachine, m: Machine | undefined): MachineView {
 }
 
 /** The project's machines of one kind, or of both, with their state. */
-export function useMachines(project: string, kind?: MachineKind) {
-  const opts = { refetchInterval };
+export function useMachines(project: string, kind?: MachineKind, listOpts: ListOpts = {}) {
+  const opts = { refetchInterval, ...listOpts };
   const containers = useQuery(ContainerService.method.listContainers, { project, pageSize }, { ...opts, enabled: kind !== "VirtualMachine" });
   const vms = useQuery(VirtualMachineService.method.listVirtualMachines, { project, pageSize }, { ...opts, enabled: kind !== "Container" });
   const machines = useQuery(MachineService.method.listMachines, { project, pageSize }, opts);

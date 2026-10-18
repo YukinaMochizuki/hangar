@@ -2,29 +2,10 @@
 // and the theme), the top bar with its breadcrumbs, and the page between.
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  Box,
-  ChevronsUpDown,
-  Disc3,
-  Globe,
-  HardDrive,
-  KeyRound,
-  LayoutGrid,
-  LogOut,
-  Menu,
-  Monitor,
-  Moon,
-  Network,
-  Server,
-  ShieldCheck,
-  Sun,
-  Terminal,
-  Users,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronsUpDown, LogOut, Menu, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { HangarMark } from "@/components/marks";
+import { projectPages, tenantPages } from "@/components/pages-nav";
 import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
@@ -177,51 +158,17 @@ function ProjectSidebar({ project }: { project: string }) {
   const vms = useMachines(project, "VirtualMachine");
   const disks = useDisks(project);
   const base = `/projects/${project}`;
+  const count = (l: { loading: boolean; error: unknown; items: unknown[] }) => (l.loading || l.error ? undefined : l.items.length);
+  const counts: Record<string, number | undefined> = { Containers: count(containers), "Virtual machines": count(vms), Disks: count(disks) };
   // Only pages that exist are listed; a kind joins when its page does.
-  const nav: NavSection[] = [
-    { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
-    {
-      group: "Compute",
-      items: [
-        { label: "Containers", icon: Box, to: `${base}/containers`, count: containers.loading || containers.error ? undefined : containers.items.length },
-        { label: "Virtual machines", icon: Server, to: `${base}/vms`, count: vms.loading || vms.error ? undefined : vms.items.length },
-      ],
-    },
-    {
-      group: "Storage",
-      items: [
-        { label: "Disks", icon: HardDrive, to: `${base}/disks`, count: disks.loading || disks.error ? undefined : disks.items.length },
-        { label: "Images", icon: Disc3, to: `${base}/images` },
-      ],
-    },
-    {
-      group: "Network",
-      items: [
-        { label: "Networks", icon: Network, to: `${base}/networks` },
-        { label: "Security groups", icon: ShieldCheck, to: `${base}/security-groups` },
-        { label: "Addresses", icon: Globe, to: `${base}/addresses` },
-        { label: "Public endpoints", icon: Waypoints, to: `${base}/public-endpoints` },
-      ],
-    },
-    {
-      group: "Access",
-      items: [
-        { label: "Secrets", icon: KeyRound, to: `${base}/secrets` },
-        { label: "Members", icon: Users, to: `${base}/members` },
-        { label: "Service tokens", icon: Terminal, to: `${base}/service-tokens` },
-      ],
-    },
-  ];
+  const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] })) }));
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }
 
 /** A tenant's own pages: what it holds and who is in it. */
 function TenantSidebar({ tenant }: { tenant: string }) {
   const base = `/tenants/${tenant}`;
-  const nav: NavSection[] = [
-    { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
-    { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
-  ];
+  const nav: NavSection[] = tenantPages(tenant);
   return <SidebarFrame place={{ kind: "tenant", name: tenant }} base={base} nav={nav} />;
 }
 

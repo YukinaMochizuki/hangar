@@ -9,6 +9,7 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { skipToken, useMutation, useQueryClient } from "@tanstack/react-query";
 import { MemberService, type Member } from "@hangar/api/hangar/iam/v1alpha1/member_pb";
 import { BindingScopeSchema, type BindingScope } from "@hangar/api/hangar/iam/v1alpha1/role_binding_pb";
+import type { ListOpts } from "@/lib/machines";
 
 export type ScopeLevel = "project" | "tenant";
 
@@ -65,11 +66,11 @@ export function byPerson(members: Member[]): MemberRow[] {
   return [...rows.values()];
 }
 
-export function useMembers(s: Scope | undefined) {
+export function useMembers(s: Scope | undefined, opts: ListOpts = {}) {
   const q = useQuery(
     MemberService.method.listMembers,
     s?.name ? { scope: toBindingScope(s) } : skipToken,
-    { refetchInterval: 15_000, retry: false },
+    { refetchInterval: 15_000, retry: false, ...opts },
   );
   return { rows: byPerson(q.data?.members ?? []), loading: q.isPending && !!s?.name, error: q.error, refetch: q.refetch };
 }

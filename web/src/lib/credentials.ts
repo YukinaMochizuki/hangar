@@ -36,7 +36,7 @@ import {
   type Secret,
 } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { createError } from "@/lib/create";
-import { date, refetchInterval } from "@/lib/machines";
+import { date, refetchInterval, type ListOpts } from "@/lib/machines";
 import type { Listing } from "@/lib/storage";
 
 /** The permissions the pages' controls need, as the authz tables name them. */
@@ -188,13 +188,14 @@ export function withoutValuesAll(res: ListSecretsResponse): ListSecretsResponse 
  * alone: value fields are dropped in the query function, so the query
  * cache never holds one.
  */
-export function useSecrets(project: string): Loaded<Secret> {
+export function useSecrets(project: string, opts: ListOpts = {}): Loaded<Secret> {
   const transport = useTransport();
   const base = createQueryOptions(SecretService.method.listSecrets, { project, pageSize }, { transport });
   const q = useTanstackQuery({
     ...base,
     queryFn: async (ctx: QueryFunctionContext<typeof base.queryKey>) => withoutValuesAll(await base.queryFn(ctx)),
     refetchInterval,
+    ...opts,
   });
   return {
     items: [...(q.data?.items ?? [])].sort(byName),
@@ -225,8 +226,8 @@ export function secretUse(containers: Container[]): SecretUse {
 }
 
 /** useServiceTokens lists the project's service tokens. */
-export function useServiceTokens(project: string): Loaded<ServiceToken> {
-  const q = useQuery(ServiceTokenService.method.listServiceTokens, { project, pageSize }, { refetchInterval });
+export function useServiceTokens(project: string, opts: ListOpts = {}): Loaded<ServiceToken> {
+  const q = useQuery(ServiceTokenService.method.listServiceTokens, { project, pageSize }, { refetchInterval, ...opts });
   return {
     items: [...(q.data?.items ?? [])].sort(byName),
     loading: q.isPending,
@@ -240,8 +241,8 @@ export function useServiceTokens(project: string): Loaded<ServiceToken> {
  * useTokenRoles is the roles each of the project's tokens holds in it, by
  * token name: the RoleBindings in the project whose subject is the token.
  */
-export function useTokenRoles(project: string): { roles: Record<string, string[]>; loading: boolean; error: unknown } {
-  const q = useQuery(RoleBindingService.method.listRoleBindings, { pageSize }, { refetchInterval });
+export function useTokenRoles(project: string, opts: ListOpts = {}): { roles: Record<string, string[]>; loading: boolean; error: unknown } {
+  const q = useQuery(RoleBindingService.method.listRoleBindings, { pageSize }, { refetchInterval, ...opts });
   return { roles: tokenRoles(q.data?.items ?? [], project), loading: q.isPending, error: q.error };
 }
 
