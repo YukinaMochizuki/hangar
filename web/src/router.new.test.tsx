@@ -69,7 +69,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 
 describe("a list route's ?new=1", () => {
   it.each([
-    ["networks", "New network"],
     ["security-groups", "New security group"],
     ["addresses", "Reserve address"],
     ["public-endpoints", "New public endpoint"],
@@ -96,7 +95,6 @@ describe("a list route's ?new=1", () => {
   });
 
   const refusedCases: [string, string][] = [
-    ["networks", "New network"],
     ["security-groups", "New security group"],
     ["addresses", "Reserve address"],
     ["public-endpoints", "New public endpoint"],
@@ -125,11 +123,11 @@ describe("a list route's ?new=1", () => {
   });
 
   it("keeps ?new=1, and opens nothing, while the permission answer has not come", async () => {
-    const watch = watchOpened("New network");
-    const { api, router } = app(["/projects/demo/networks?new=1"], { perms: () => never() });
+    const watch = watchOpened("New security group");
+    const { api, router } = app(["/projects/demo/security-groups?new=1"], { perms: () => never() });
     await waitFor(() => expect(api.calls).toContain("TestPermissions"));
-    await screen.findAllByText("backend");
-    expect(router.state.location.href).toBe("/projects/demo/networks?new=1");
+    await screen.findAllByText("ssh-admin");
+    expect(router.state.location.href).toBe("/projects/demo/security-groups?new=1");
     expect(watch.opened()).toBe(false);
     watch.stop();
   });
@@ -147,7 +145,6 @@ describe("a list route's ?new=1", () => {
 
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
-    ["networks", "New network", (d) => type(nameField(d), "fresh"), "/projects/demo/networks/fresh"],
     ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
     ["addresses", "Reserve address", (d) => type(nameField(d), "fresh"), "/projects/demo/addresses/fresh"],
     ["public-endpoints", "New public endpoint", (d) => type(nameField(d), "fresh"), "/projects/demo/public-endpoints/fresh"],
@@ -200,6 +197,7 @@ const submitOf = () => screen.getAllByRole("button").find((b) => /^(Create|Reser
 // page needs filled to send, and where a create lands.
 const pages: [string, string, string, () => void, string][] = [
   ["disks", "disk", "New disk", () => type(field("Disk name"), "fresh"), "/projects/demo/disks/fresh"],
+  ["networks", "network", "New network", () => type(field("Network name"), "fresh"), "/projects/demo/networks/fresh"],
 ];
 
 describe("a create page", () => {

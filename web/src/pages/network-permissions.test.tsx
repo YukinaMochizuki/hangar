@@ -21,7 +21,7 @@ import { networkApi, type Overrides } from "@/test/network-api";
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<typeof import("@tanstack/react-router")>()),
   useNavigate: () => vi.fn(),
-  Link: ({ children, className }: { children: ReactNode; className?: string }) => <a className={className}>{children}</a>,
+  Link: (await import("@/test/fake-link")).FakeLink,
 }));
 
 beforeAll(polyfillDialog);
@@ -85,7 +85,9 @@ const cases: Case[] = [
 ];
 
 const buttons = (c: Case) => Object.values(c.controls).flat();
-const shown = (name: string) => screen.queryAllByRole("button", { name: new RegExp(`^${name}$`) }).length > 0;
+// A control is a button, or a link to a create page.
+const shown = (name: string) =>
+  screen.queryAllByRole("button", { name: new RegExp(`^${name}$`) }).length + screen.queryAllByRole("link", { name: new RegExp(`^${name}$`) }).length > 0;
 const asked = (api: ReturnType<typeof show>) => api.requests.filter((r) => r.method === "TestPermissions").map((r) => r.request as TestPermissionsRequest);
 
 /** Whether the TestPermissions query has its answer or its failure, so what it decides is drawn. */
@@ -170,6 +172,6 @@ describe("an empty list", () => {
   it("offers it with the permission", async () => {
     show(<NetworkList />, { listNetworks: () => ({ items: [] }) });
     await screen.findByText("No networks");
-    await waitFor(() => expect(screen.getAllByRole("button", { name: "New network" })).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByRole("link", { name: "New network" })).toHaveLength(2));
   });
 });

@@ -9,6 +9,7 @@ import { newSearch, type NewProps } from "@/lib/new-param";
 import { pickProject, useProjects } from "@/lib/projects";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
+import { CreateNetwork } from "@/pages/create-network";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
 import { Gate } from "@/pages/gate";
@@ -152,6 +153,8 @@ const newDiskRoute = createRoute({
   },
 });
 
+const newNetworkRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/network", component: CreateNetwork });
+
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/disks",
@@ -182,7 +185,8 @@ const networksRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/networks",
   validateSearch: newSearch,
-  component: () => <ListPage page={NetworkList} />,
+  beforeLoad: toCreatePage("network"),
+  component: NetworkList,
 });
 const networkRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -309,6 +313,7 @@ export const routeTree = rootRoute.addChildren([
     vmRoute,
     newRoute,
     newDiskRoute,
+    newNetworkRoute,
     disksRoute,
     diskRoute,
     imagesRoute,

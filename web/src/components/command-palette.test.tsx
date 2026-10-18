@@ -245,7 +245,7 @@ describe("CommandPalette", () => {
     for (const [title, call] of [
       ["New virtual machine", { to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "vm" } }],
       ["New disk", { to: "/projects/demo/new/disk" }],
-      ["New network", dialog("/projects/demo/networks")],
+      ["New network", { to: "/projects/demo/new/network" }],
       ["New security group", dialog("/projects/demo/security-groups")],
       ["Reserve address", dialog("/projects/demo/addresses")],
       ["New public endpoint", dialog("/projects/demo/public-endpoints")],

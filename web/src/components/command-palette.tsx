@@ -180,7 +180,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     [actionPerms.container, "New container", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "container" } }))],
     [actionPerms.vm, "New virtual machine", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "vm" } }))],
     [actionPerms.disk, "New disk", newPage("disk")],
-    [actionPerms.network, "New network", newIn(`/projects/${project}/networks`)],
+    [actionPerms.network, "New network", newPage("network")],
     [actionPerms.securityGroup, "New security group", newIn(`/projects/${project}/security-groups`)],
     [actionPerms.address, "Reserve address", newIn(`/projects/${project}/addresses`)],
     [actionPerms.publicEndpoint, "New public endpoint", newIn(`/projects/${project}/public-endpoints`)],

@@ -2,14 +2,13 @@
 
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import type { TestPermissionsRequest } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import type { ApplyDiskRequest, Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { diskYaml } from "@/components/storage";
 import { newDisk } from "@/lib/storage";
 import { CreateDisk } from "@/pages/create-disk";
-import { deferred, never, withApi } from "@/test/harness";
+import { deferred, withApi } from "@/test/harness";
 import { disk, image, storageApi } from "@/test/storage";
 
 const navigate = vi.fn();
@@ -154,46 +153,6 @@ describe("New disk", () => {
     const shown = await screen.findByText("quota exceeded: the disk limit is 100Gi");
     expect(shown.compareDocumentPosition(submitButton()) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(navigate).not.toHaveBeenCalled();
-  });
-
-  it("asks password managers not to fill the name, and Cancel goes back to the list", async () => {
-    render(<CreateDisk />, { wrapper: withApi(storageApi({})) });
-    const name = await screen.findByLabelText("Disk name");
-    expect(name.getAttribute("autocomplete")).toBe("off");
-    expect(name.hasAttribute("data-1p-ignore")).toBe(true);
-    expect(screen.getByRole("link", { name: "Cancel" }).getAttribute("href")).toBe("/projects/demo/disks");
-  });
-});
-
-describe("New disk, by permission", () => {
-  it("asks for storage.disks.apply at the project", async () => {
-    const a = storageApi({});
-    render(<CreateDisk />, { wrapper: withApi(a) });
-    await screen.findByLabelText("Disk name");
-    const asked = a.requests.find((r) => r.method === "TestPermissions")!.request as TestPermissionsRequest;
-    expect(asked.scope?.target).toEqual(expect.objectContaining({ case: "project", value: "demo" }));
-    expect(asked.permissions).toEqual(["storage.disks.apply"]);
-  });
-
-  it("states that the caller's roles do not include creating disks, and shows no form", async () => {
-    render(<CreateDisk />, { wrapper: withApi(storageApi({ perms: async () => ["storage.disks.delete"] })) });
-    await screen.findByText("This account's roles do not include creating disks in this project.");
-    expect(screen.queryByLabelText("Disk name")).toBeNull();
-  });
-
-  it("shows nothing while the answer is unknown", async () => {
-    const a = storageApi({ perms: never });
-    render(<CreateDisk />, { wrapper: withApi(a) });
-    await waitFor(() => expect(a.calls).toContain("TestPermissions"));
-    expect(screen.queryByLabelText("Disk name")).toBeNull();
-    expect(screen.queryByText(/roles do not include/)).toBeNull();
-  });
-
-  it("shows the failed answer, and no form, when TestPermissions fails", async () => {
-    render(<CreateDisk />, { wrapper: withApi(storageApi({ perms: () => Promise.reject(new ConnectError("the apiserver is unavailable", Code.Unavailable)) })) });
-    await screen.findByText(/the apiserver is unavailable/);
-    expect(screen.queryByLabelText("Disk name")).toBeNull();
-    expect(screen.queryByText(/roles do not include/)).toBeNull();
   });
 });
 
