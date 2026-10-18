@@ -2,29 +2,12 @@
 // and the theme), the top bar with its breadcrumbs, and the page between.
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  Box,
-  ChevronsUpDown,
-  Disc3,
-  Globe,
-  HardDrive,
-  KeyRound,
-  LayoutGrid,
-  LogOut,
-  Menu,
-  Monitor,
-  Moon,
-  Network,
-  Server,
-  ShieldCheck,
-  Sun,
-  Terminal,
-  Users,
-  Waypoints,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronsUpDown, LogOut, Menu, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { CommandPalette } from "@/components/command-palette";
 import { HangarMark } from "@/components/marks";
+import { projectPages, tenantPages } from "@/components/pages-nav";
+import { SearchButton } from "@/components/palette-view";
 import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
@@ -177,51 +160,17 @@ function ProjectSidebar({ project }: { project: string }) {
   const vms = useMachines(project, "VirtualMachine");
   const disks = useDisks(project);
   const base = `/projects/${project}`;
+  const count = (l: { loading: boolean; error: unknown; items: unknown[] }) => (l.loading || l.error ? undefined : l.items.length);
+  const counts: Record<string, number | undefined> = { Containers: count(containers), "Virtual machines": count(vms), Disks: count(disks) };
   // Only pages that exist are listed; a kind joins when its page does.
-  const nav: NavSection[] = [
-    { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
-    {
-      group: "Compute",
-      items: [
-        { label: "Containers", icon: Box, to: `${base}/containers`, count: containers.loading || containers.error ? undefined : containers.items.length },
-        { label: "Virtual machines", icon: Server, to: `${base}/vms`, count: vms.loading || vms.error ? undefined : vms.items.length },
-      ],
-    },
-    {
-      group: "Storage",
-      items: [
-        { label: "Disks", icon: HardDrive, to: `${base}/disks`, count: disks.loading || disks.error ? undefined : disks.items.length },
-        { label: "Images", icon: Disc3, to: `${base}/images` },
-      ],
-    },
-    {
-      group: "Network",
-      items: [
-        { label: "Networks", icon: Network, to: `${base}/networks` },
-        { label: "Security groups", icon: ShieldCheck, to: `${base}/security-groups` },
-        { label: "Addresses", icon: Globe, to: `${base}/addresses` },
-        { label: "Public endpoints", icon: Waypoints, to: `${base}/public-endpoints` },
-      ],
-    },
-    {
-      group: "Access",
-      items: [
-        { label: "Secrets", icon: KeyRound, to: `${base}/secrets` },
-        { label: "Members", icon: Users, to: `${base}/members` },
-        { label: "Service tokens", icon: Terminal, to: `${base}/service-tokens` },
-      ],
-    },
-  ];
+  const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] })) }));
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }
 
 /** A tenant's own pages: what it holds and who is in it. */
 function TenantSidebar({ tenant }: { tenant: string }) {
   const base = `/tenants/${tenant}`;
-  const nav: NavSection[] = [
-    { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
-    { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
-  ];
+  const nav: NavSection[] = tenantPages(tenant);
   return <SidebarFrame place={{ kind: "tenant", name: tenant }} base={base} nav={nav} />;
 }
 
@@ -288,6 +237,19 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
   const { projects, tenantName } = useProjects();
   const p = projects.find((x) => x.metadata?.name === project);
   const tenant = tenantPage || p?.spec?.tenant || "";
+  const place: Place = tenantPage ? { kind: "tenant", name: tenantPage } : { kind: "project", name: project };
+  // ⌘K or Ctrl+K opens the palette from anywhere on the page.
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const all: ReactNode[] = [
     ...(tenant
       ? [
@@ -318,6 +280,8 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
           </span>
         ))}
       </div>
+      <SearchButton onOpen={() => setSearching(true)} />
+      {searching && <CommandPalette place={place} onClose={() => setSearching(false)} />}
     </header>
   );
 }

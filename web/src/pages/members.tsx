@@ -28,6 +28,7 @@ import {
 import { projectLabel, useProjects } from "@/lib/projects";
 import { useCan } from "@/lib/permissions";
 import { useMember } from "@/lib/session";
+import { useCreating, type NewProps } from "@/lib/new-param";
 
 /** A command line with its copy button, beside the action it does the same as. */
 function CommandLine({ command }: { command: string }) {
@@ -173,7 +174,7 @@ function RowMenu({ onRemove }: { onRemove: () => void }) {
 }
 
 /** What the caller may do to the members of a scope: change and add (apply), remove (delete). */
-type May = { apply: boolean; remove: boolean };
+type May = { apply: boolean; remove: boolean; settled: boolean };
 
 function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: string; row: MemberRow; you: boolean; may: May }) {
   const setRole = useSetMemberRole(scope);
@@ -238,11 +239,12 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
 }
 
 /** The people bound at one scope, with their roles changed, added and removed where the caller may. */
-function MemberList({ scope, where, may }: { scope: Scope; where: string; may: May }) {
+function MemberList({ scope, where, may, newProps = {} }: { scope: Scope; where: string; may: May; newProps?: NewProps }) {
   const { rows, loading, error, refetch } = useMembers(scope);
   const who = useMember();
-  const [adding, setAdding] = useState(false);
   const denied = error instanceof ConnectError && error.code === Code.PermissionDenied;
+  // ?new=1 opens Add member only once the list says the caller may read the members.
+  const [adding, setAdding] = useCreating(newProps, may.apply && !loading && !denied, may.settled && !loading);
   return (
     <Card>
       <CardHeader
@@ -317,11 +319,11 @@ const remove = "iam.rolebindings.delete";
 
 /** What the caller may do to the members at the scope, asked in one call. */
 function useMay(scope: Scope): May {
-  const { can } = useCan(scope, [apply, remove]);
-  return { apply: can(apply), remove: can(remove) };
+  const { can, settled } = useCan(scope, [apply, remove]);
+  return { apply: can(apply), remove: can(remove), settled };
 }
 
-export function ProjectMembers() {
+export function ProjectMembers(props: NewProps) {
   const project = useProjectName();
   const { projects, tenantName } = useProjects();
   const p = projects.find((x) => x.metadata?.name === project);
@@ -333,7 +335,7 @@ export function ProjectMembers() {
       <Topbar crumbs={["Members"]} />
       <PageHead text="The people who hold a role in this project." />
       <div className="max-w-4xl px-4 pb-10 md:px-8">
-        <MemberList scope={scope} where={projectLabel(p, project)} may={may} />
+        <MemberList scope={scope} where={projectLabel(p, project)} may={may} newProps={props} />
         {tenant && <ThroughTheTenant tenant={tenant} label={tenantName(tenant)} />}
       </div>
     </>

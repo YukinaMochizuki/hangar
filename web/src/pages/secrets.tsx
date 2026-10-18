@@ -31,6 +31,7 @@ import {
   type SecretValues,
 } from "@/lib/credentials";
 import { useCan } from "@/lib/permissions";
+import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import { LoadingTable } from "@/pages/disk-list";
 
 function SecretState({ s }: { s: Secret }) {
@@ -87,7 +88,7 @@ function UsedBy({ use: { names, loading, error }, project }: { use: Use; project
  * submit until the call reads it; closing the form empties the ref and
  * drops the state.
  */
-function NewSecretDialog({ open, onClose, project, names }: { open: boolean; onClose: () => void; project: string; names: { loading: boolean; error: unknown; names: string[] } }) {
+function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: boolean; onClose: () => void; onCreated: OnCreated; project: string; names: { loading: boolean; error: unknown; names: string[] } }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"login" | "config">("login");
   const [registry, setRegistry] = useState("");
@@ -117,8 +118,8 @@ function NewSecretDialog({ open, onClose, project, names }: { open: boolean; onC
             name,
             {
               onSuccess: () => {
-                close();
-                void navigate({ to: "/projects/$project/secrets/$name", params: { project, name } });
+                valuesRef.current = null;
+                onCreated(() => void navigate({ to: "/projects/$project/secrets/$name", params: { project, name } }));
               },
             },
           );
@@ -262,12 +263,13 @@ function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: 
 }
 
 /** SecretList is the project's secrets, with New secret. */
-export function SecretList() {
+export function SecretList(props: NewProps) {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useSecrets(project);
   const use = useSecretUse(project);
-  const [creating, setCreating] = useState(false);
-  const canCreate = useCan({ level: "project", name: project }, [perms.secretApply]).can(perms.secretApply);
+  const createPerm = useCan({ level: "project", name: project }, [perms.secretApply]);
+  const canCreate = createPerm.can(perms.secretApply);
+  const [creating, setCreating, created] = useCreating(props, canCreate, createPerm.settled);
   const newButton = (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> New secret
@@ -359,6 +361,7 @@ export function SecretList() {
           key={String(creating)}
           open={creating}
           onClose={() => setCreating(false)}
+          onCreated={created}
           project={project}
           names={{ loading, error, names: items.map((s) => s.metadata?.name ?? "") }}
         />

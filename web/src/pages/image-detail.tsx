@@ -202,6 +202,10 @@ export function ImageDetail({ name }: { name: string }) {
         key={String(creating)}
         open={creating}
         onClose={() => setCreating(false)}
+        onCreated={(go) => {
+          setCreating(false);
+          go?.();
+        }}
         project={project}
         images={items}
         disks={disks}

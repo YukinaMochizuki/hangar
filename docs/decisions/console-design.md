@@ -77,8 +77,40 @@ Every page is behind `AccountService.WhoAmI`:
 The project is in the path, `/projects/<project>/…`, so a link names its
 project; `/` opens the project used last, or the first one. The console
 shows only what works. The sidebar lists only pages that exist, a kind
-joining it when its page does, and the top bar has
-no search until search works.
+joining it when its page does.
+
+### The command palette
+
+- **⌘K or Ctrl+K, or the search control in the top bar, opens one field
+  that finds things and starts things** (`web/src/components/command-palette.tsx`).
+  On a phone the control is an icon and the palette fills the screen.
+- **It finds, by name or ID**: the current project's objects of every kind
+  the console has a page for (images included, each opening this project's
+  page of it), the people bound at the current project or tenant (by
+  username or email, opening Members), the projects and tenants the picker
+  lists, and the console's pages. On a tenant's pages it finds the
+  tenant's members, the projects, tenants and pages. It searches nothing
+  on the server and no other project's objects. An exact name ranks above
+  a prefix, a prefix above a match inside; the section holding the best
+  match comes first. Choosing a result opens it.
+- **With nothing typed it offers actions and pages.** The actions are the
+  "New …" flows (New container and New virtual machine open the new-machine
+  page; the others open their list page with `?new=1`, which opens the
+  page's create dialog), Add member, New project, and Switch project, which
+  opens the picker. Each "New …" and Add member shows only when
+  TestPermissions holds its permission at the project, and New project
+  where the caller may create one in some tenant, as on the pages: hidden
+  while unknown or failed, with nothing said. Closing a dialog opened by
+  `?new=1` takes the parameter away, so going back or reloading does not
+  open it again. No action in the palette destroys anything.
+- **It reads the lists the pages read**, through the same hooks and query
+  keys, without fetching again on opening what the cache holds; a list not
+  yet fetched is fetched then. A list still loading or failed is stated
+  under the results, one line each, with the API's error; nothing is said
+  to match nothing until every list has answered.
+- Arrows move through the results, Enter opens, Escape closes, and Tab
+  stays inside; focus returns to where it was. The field is a combobox over
+  a listbox, the active result its active descendant.
 
 ### Tenants and projects
 

@@ -23,7 +23,7 @@ import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { toYaml } from "@/lib/manifest";
-import { refetchInterval, useMachines, type MachineKind } from "@/lib/machines";
+import { refetchInterval, useMachines, type ListOpts, type MachineKind } from "@/lib/machines";
 
 /** One machine interface: its network, addresses and the groups it is in. */
 export type Attachment = {
@@ -50,17 +50,17 @@ const byName = <T extends { metadata?: ObjectMeta }>(s: ListState<T>): ListState
   items: [...s.items].sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
 });
 
-export function useNetworks(project: string): ListState<Network> {
-  return byName(listState(useQuery(NetworkService.method.listNetworks, { project, pageSize }, { refetchInterval })));
+export function useNetworks(project: string, opts: ListOpts = {}): ListState<Network> {
+  return byName(listState(useQuery(NetworkService.method.listNetworks, { project, pageSize }, { refetchInterval, ...opts })));
 }
-export function useSecurityGroups(project: string): ListState<SecurityGroup> {
-  return byName(listState(useQuery(SecurityGroupService.method.listSecurityGroups, { project, pageSize }, { refetchInterval })));
+export function useSecurityGroups(project: string, opts: ListOpts = {}): ListState<SecurityGroup> {
+  return byName(listState(useQuery(SecurityGroupService.method.listSecurityGroups, { project, pageSize }, { refetchInterval, ...opts })));
 }
-export function useAddresses(project: string): ListState<Address> {
-  return byName(listState(useQuery(AddressService.method.listAddresses, { project, pageSize }, { refetchInterval })));
+export function useAddresses(project: string, opts: ListOpts = {}): ListState<Address> {
+  return byName(listState(useQuery(AddressService.method.listAddresses, { project, pageSize }, { refetchInterval, ...opts })));
 }
-export function usePublicEndpoints(project: string): ListState<PublicEndpoint> {
-  return byName(listState(useQuery(PublicEndpointService.method.listPublicEndpoints, { project, pageSize }, { refetchInterval })));
+export function usePublicEndpoints(project: string, opts: ListOpts = {}): ListState<PublicEndpoint> {
+  return byName(listState(useQuery(PublicEndpointService.method.listPublicEndpoints, { project, pageSize }, { refetchInterval, ...opts })));
 }
 
 /**

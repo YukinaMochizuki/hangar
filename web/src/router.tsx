@@ -1,9 +1,11 @@
 // The console's pages. Every page is behind the gate (pages/gate.tsx); the
 // project is in the path, so a link to a page names its project.
 
-import { createRootRoute, createRoute, createRouter, Navigate, Outlet } from "@tanstack/react-router";
+import { createRootRoute, createRoute, createRouter, Navigate, Outlet, useNavigate, useSearch } from "@tanstack/react-router";
+import type { ComponentType } from "react";
 import { Shell } from "@/components/shell";
 import { ErrorNotice, StandalonePage } from "@/components/states";
+import { newSearch, type NewProps } from "@/lib/new-param";
 import { pickProject, useProjects } from "@/lib/projects";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { DiskDetail } from "@/pages/disk-detail";
@@ -116,7 +118,23 @@ export const newRoute = createRoute({
   },
 });
 
-const disksRoute = createRoute({ getParentRoute: () => projectRoute, path: "/disks", component: DiskList });
+/**
+ * A list page whose create dialog ?new=1 opens. Closing it replaces the
+ * address with one without the parameter, so neither reloading nor going
+ * back opens it again.
+ */
+function ListPage({ page: Page }: { page: ComponentType<NewProps> }) {
+  const search: { new?: 1 } = useSearch({ strict: false });
+  const navigate = useNavigate();
+  return <Page startNew={search.new === 1} onNewClosed={() => navigate({ to: ".", search: (s: { new?: 1 }) => ({ ...s, new: undefined }), replace: true })} />;
+}
+
+const disksRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/disks",
+  validateSearch: newSearch,
+  component: () => <ListPage page={DiskList} />,
+});
 const diskRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/disks/$name",
@@ -136,7 +154,12 @@ const imageRoute = createRoute({
 });
 
 // The network group: a list and an object's page for each kind.
-const networksRoute = createRoute({ getParentRoute: () => projectRoute, path: "/networks", component: NetworkList });
+const networksRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/networks",
+  validateSearch: newSearch,
+  component: () => <ListPage page={NetworkList} />,
+});
 const networkRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/networks/$name",
@@ -145,7 +168,12 @@ const networkRoute = createRoute({
     return <NetworkDetail key={name} name={name} />;
   },
 });
-const securityGroupsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/security-groups", component: SecurityGroupList });
+const securityGroupsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/security-groups",
+  validateSearch: newSearch,
+  component: () => <ListPage page={SecurityGroupList} />,
+});
 const securityGroupRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/security-groups/$name",
@@ -154,7 +182,12 @@ const securityGroupRoute = createRoute({
     return <SecurityGroupDetail key={name} name={name} />;
   },
 });
-const addressesRoute = createRoute({ getParentRoute: () => projectRoute, path: "/addresses", component: AddressList });
+const addressesRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/addresses",
+  validateSearch: newSearch,
+  component: () => <ListPage page={AddressList} />,
+});
 const addressRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/addresses/$name",
@@ -163,7 +196,12 @@ const addressRoute = createRoute({
     return <AddressDetail key={name} name={name} />;
   },
 });
-const endpointsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/public-endpoints", component: PublicEndpointList });
+const endpointsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/public-endpoints",
+  validateSearch: newSearch,
+  component: () => <ListPage page={PublicEndpointList} />,
+});
 const endpointRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/public-endpoints/$name",
@@ -183,10 +221,20 @@ const networkRoutes = [
   endpointRoute,
 ];
 
-const membersRoute = createRoute({ getParentRoute: () => projectRoute, path: "/members", component: ProjectMembers });
+const membersRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/members",
+  validateSearch: newSearch,
+  component: () => <ListPage page={ProjectMembers} />,
+});
 
 // Credentials, in the Access group: secrets and service tokens.
-const secretsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/secrets", component: SecretList });
+const secretsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/secrets",
+  validateSearch: newSearch,
+  component: () => <ListPage page={SecretList} />,
+});
 const secretRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/secrets/$name",
@@ -195,7 +243,12 @@ const secretRoute = createRoute({
     return <SecretDetail key={name} name={name} />;
   },
 });
-const tokensRoute = createRoute({ getParentRoute: () => projectRoute, path: "/service-tokens", component: ServiceTokenList });
+const tokensRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/service-tokens",
+  validateSearch: newSearch,
+  component: () => <ListPage page={ServiceTokenList} />,
+});
 const tokenRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/service-tokens/$name",
@@ -221,7 +274,8 @@ const tenantRoute = createRoute({
 const tenantOverviewRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/", component: TenantOverview });
 const tenantMembersRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/members", component: TenantMembers });
 
-const routeTree = rootRoute.addChildren([
+/** Every page, for the router and for tests that route over memory history. */
+export const routeTree = rootRoute.addChildren([
   homeRoute,
   projectRoute.addChildren([
     overviewRoute,

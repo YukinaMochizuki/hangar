@@ -6,6 +6,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { ProjectService, type Project } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
+import type { ListOpts } from "@/lib/machines";
 
 const lastProjectKey = "hangar.project";
 
@@ -19,11 +20,11 @@ export function pickProject(projects: Project[]): Project | undefined {
   return projects.find((p) => p.metadata?.name === last) ?? projects[0];
 }
 
-export function useProjects() {
-  const projects = useQuery(ProjectService.method.listProjects, { pageSize: 1000 }, { refetchInterval: 30_000 });
+export function useProjects(opts: ListOpts = {}) {
+  const projects = useQuery(ProjectService.method.listProjects, { pageSize: 1000 }, { refetchInterval: 30_000, ...opts });
   // Tenant names are only shown; a member who may not list tenants still
   // sees every project, under its tenant's name.
-  const tenants = useQuery(TenantService.method.listTenants, { pageSize: 1000 }, { retry: false });
+  const tenants = useQuery(TenantService.method.listTenants, { pageSize: 1000 }, { retry: false, ...opts });
   const items = [...(projects.data?.items ?? [])].sort((a, b) =>
     (a.spec?.displayName || a.metadata?.name || "").localeCompare(b.spec?.displayName || b.metadata?.name || ""),
   );

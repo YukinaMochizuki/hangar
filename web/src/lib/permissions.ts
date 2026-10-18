@@ -12,7 +12,8 @@ import { toBindingScope, type Scope } from "@/lib/members";
  * Which of the permissions the caller holds at the scope, asked in one call.
  * Until the answer has come, or when it failed, nothing is held: a control
  * appears once it is known to work. `known` says whether the answer came, so
- * a page states a refusal only when there was one.
+ * a page states a refusal only when there was one. `settled` says the answer
+ * came or failed.
  */
 export function useCan(scope: Scope | undefined, permissions: string[]) {
   const q = useQuery(
@@ -21,7 +22,16 @@ export function useCan(scope: Scope | undefined, permissions: string[]) {
     { staleTime: 30_000, retry: false },
   );
   const held = new Set(q.data?.permissions ?? []);
-  return { can: (p: string) => held.has(p), known: q.isSuccess, error: q.error };
+  return { can: (p: string) => held.has(p), known: q.isSuccess, settled: q.isSuccess || q.isError, error: q.error };
+}
+
+/** What creating a container or a virtual machine needs at the project. */
+export const machinePerms = { container: "compute.containers.apply", vm: "compute.virtualmachines.apply" } as const;
+
+/** Which kinds of machine the caller may create in the project; neither while the answer is unknown or failed. */
+export function useMayCreateMachines(project: string): { container: boolean; vm: boolean } {
+  const { can } = useCan({ level: "project", name: project }, [machinePerms.container, machinePerms.vm]);
+  return { container: can(machinePerms.container), vm: can(machinePerms.vm) };
 }
 
 /**

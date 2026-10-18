@@ -14,7 +14,7 @@ import { DiskSchema, DiskService, DiskSpecSchema, type Disk } from "@hangar/api/
 import { ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { readModifyWrite } from "@/lib/actions";
 import { createError } from "@/lib/create";
-import { refetchInterval, useMachines, type MachineKind } from "@/lib/machines";
+import { refetchInterval, useMachines, type ListOpts, type MachineKind } from "@/lib/machines";
 import { quantityGiB } from "@/lib/quantity";
 
 /** rootDiskOf is the annotation a root disk made for a VM carries: the VM's UID. */
@@ -30,8 +30,8 @@ const byName = (a: { metadata?: { name: string } }, b: { metadata?: { name: stri
   (a.metadata?.name ?? "").localeCompare(b.metadata?.name ?? "");
 
 /** useDisks lists the project's disks, asked again every few seconds. */
-export function useDisks(project: string): Listing<Disk> {
-  const q = useQuery(DiskService.method.listDisks, { project, pageSize }, { refetchInterval });
+export function useDisks(project: string, opts: ListOpts = {}): Listing<Disk> {
+  const q = useQuery(DiskService.method.listDisks, { project, pageSize }, { refetchInterval, ...opts });
   return {
     items: [...(q.data?.items ?? [])].sort(byName),
     loading: q.isPending,
@@ -41,8 +41,8 @@ export function useDisks(project: string): Listing<Disk> {
 }
 
 /** useImages lists the platform's images, which every member reads. */
-export function useImages(): Listing<Image> {
-  const q = useQuery(ImageService.method.listImages, { pageSize }, { refetchInterval });
+export function useImages(opts: ListOpts = {}): Listing<Image> {
+  const q = useQuery(ImageService.method.listImages, { pageSize }, { refetchInterval, ...opts });
   return {
     items: [...(q.data?.items ?? [])].sort(byName),
     loading: q.isPending,
