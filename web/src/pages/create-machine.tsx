@@ -27,6 +27,7 @@ import { Button, Card, CopyButton } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName, createError } from "@/lib/create";
+import { createdKey, markJustCreated } from "@/lib/just-created";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { useMachines } from "@/lib/machines";
 import { useMachineSizes, type Size } from "@/lib/machine-sizes";
@@ -172,6 +173,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     },
     onSuccess: () => {
       void queryClient.invalidateQueries();
+      markJustCreated(createdKey(project, kind === "container" ? "Container" : "VirtualMachine", name));
       void navigate({
         to: kind === "container" ? "/projects/$project/containers/$name" : "/projects/$project/vms/$name",
         params: { project, name },
@@ -194,15 +196,15 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
         <div className="min-w-0">
           <h1 className="text-[22px] font-semibold tracking-tight">New machine</h1>
           <p className="mt-1 text-[13px] text-muted">
-            Runs as a microVM in <span className="font-mono text-foreground">{project}</span>.
+            Created in <span className="font-mono text-foreground">{project}</span>.
           </p>
 
           <Section n={1} title="Kind">
             <div role="radiogroup" aria-label="Kind" className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
               {(
                 [
-                  ["container", Box, "Container", "An OCI image booted as its own VM. Starts in seconds; exec and logs."],
-                  ["vm", Server, "Virtual machine", "A full OS from a disk image, booted by firmware. SSH and cloud-init."],
+                  ["container", Box, "Container", "Runs a container image. Starts in seconds; exec and logs."],
+                  ["vm", Server, "Virtual machine", "A full operating system from a disk image. SSH and cloud-init."],
                 ] as const
               ).map(([id, Icon, label, text]) => (
                 <Choice key={id} selected={kind === id} onClick={() => setKind(id)} className="p-4">

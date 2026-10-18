@@ -59,6 +59,10 @@ the front door (`front-door.md`) from the same release as the binaries.
   (`web/src/components/notice.tsx`).
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
+- **Copy describes what people can see and do, not how Hangar is built.**
+  It says what a container or a virtual machine is to its user (an image
+  from a registry, a full operating system, exec and logs, SSH) and never
+  names the mechanism underneath: microVMs, firmware, the hypervisor.
 - **Quota is not shown when creating a machine.** The form warns only when
   this creation would go past a limit, never when a limit is near: creating
   is not to be discouraged. The Overview shows usage against limits.
@@ -222,8 +226,12 @@ for a platform administrator; at today's size that is a handful of calls.
   sweep covers it to the card's rounded edges.
 - **A host arrives only when watched.** When the placement comes while the
   page is open, the host's lines trace themselves, its LEDs light one after
-  another and its rows fade in in order, about a second in all. A machine
-  placed when the page opens shows its host with nothing played. Under
+  another and its rows fade in in order, about a second in all. Scheduling
+  is usually done before the page the create form opens has loaded, so that
+  page plays the arrival once for the machine just created, on a host
+  already there (`web/src/lib/just-created.ts`, in memory only). Any other
+  page that opens on a placed machine, a reload included, shows its host
+  with nothing played. Under
   `prefers-reduced-motion` nothing sweeps and the host replaces the empty
   body at once.
 

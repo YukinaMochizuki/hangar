@@ -14,6 +14,7 @@ import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
 import { PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
+import { createdKey, useJustCreated } from "@/lib/just-created";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
@@ -500,6 +501,9 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
 
 function RunsOn({ m }: { m: MachineView }) {
   const all = useMachines(m.project);
+  // A machine this console just created plays its arrival once, on the page
+  // the create form opened; the mark is taken so a later visit plays nothing.
+  const fresh = useJustCreated(createdKey(m.project, m.kind, m.name));
   const state = runsOnState(m);
   const mine = all.items.filter((x) => x.node === m.node);
   const live = mine.filter((x) => isLive(x) && !x.deleting);
@@ -508,6 +512,7 @@ function RunsOn({ m }: { m: MachineView }) {
     <RunsOnPanel
       state={state}
       status={artStatus(m.phase)}
+      fresh={fresh}
       share={
         state.kind === "placed"
           ? {

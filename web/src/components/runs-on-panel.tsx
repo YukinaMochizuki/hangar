@@ -18,10 +18,12 @@ const arrivalMs = 1100;
 
 /**
  * Where the panel is: waiting for a host, playing its arrival, or showing
- * it. An arrival plays only when the host comes while the panel is shown.
+ * it. An arrival plays when the host comes while the panel is shown, or,
+ * for a machine the console has just created (fresh), once when the panel
+ * opens on a host already there.
  */
-export function useArrival(placed: boolean, animate: boolean): Phase {
-  const [phase, setPhase] = useState<Phase>(placed ? "settled" : "waiting");
+export function useArrival(placed: boolean, animate: boolean, fresh = false): Phase {
+  const [phase, setPhase] = useState<Phase>(placed ? (fresh && animate ? "arriving" : "settled") : "waiting");
   const [was, setWas] = useState(placed);
   if (was !== placed) {
     setWas(placed);
@@ -131,13 +133,14 @@ function sentence(s: string): string {
  * the host. Until it is placed the body is empty, as tall as it will be: a
  * light sweeps across it while the machine is being scheduled, and the
  * scheduler's words stand in it when it cannot be. When the placement comes
- * while the panel is shown, the host draws itself in and its rows fade in;
- * with reduced motion asked for, nothing sweeps and the host simply appears.
- * share is the project's use of the host, shown last.
+ * while the panel is shown, or the panel opens on a machine just created
+ * (fresh), the host draws itself in and its rows fade in; with reduced
+ * motion asked for, nothing sweeps and the host simply appears. share is the
+ * project's use of the host, shown last.
  */
-export function RunsOnPanel({ state, status, share }: { state: RunsOnState; status: ArtStatus; share?: HostShare }) {
+export function RunsOnPanel({ state, status, share, fresh }: { state: RunsOnState; status: ArtStatus; share?: HostShare; fresh?: boolean }) {
   const still = useReducedMotion();
-  const phase = useArrival(state.kind === "placed", !still);
+  const phase = useArrival(state.kind === "placed", !still, fresh);
   const header =
     state.kind === "placed" ? (
       <span className="font-mono text-[12px] text-muted">{state.host.node}</span>

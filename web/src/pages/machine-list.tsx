@@ -113,7 +113,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
         <div>
           <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
           <p className="mt-1 text-[13px] text-muted">
-            {kind === "Container" ? "OCI images, each booted as its own microVM." : "Full operating systems booted from a disk image."}
+            {kind === "Container" ? "Each runs one container image." : "Full operating systems booted from a disk image."}
           </p>
         </div>
         {newLink}
@@ -130,7 +130,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
           <Card>
             <EmptyState title={`No ${noun}s`} action={newLink}>
               {kind === "Container"
-                ? "A container boots an OCI image as its own microVM."
+                ? "A container runs an image from a registry."
                 : "A virtual machine boots a full operating system from one of the platform's images."}
             </EmptyState>
           </Card>

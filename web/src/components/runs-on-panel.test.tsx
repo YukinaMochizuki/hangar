@@ -80,6 +80,20 @@ describe("RunsOnPanel", () => {
     expect(screen.getByText("Example CPU 1000")).toBeTruthy();
   });
 
+  it("just created and already placed when the page opens: the arrival plays once", () => {
+    render(<RunsOnPanel state={placed} status="running" fresh />);
+    expect(drawing()).not.toBeNull();
+    act(() => void vi.advanceTimersByTime(1100));
+    expect(drawing()).toBeNull();
+    expect(screen.getByText("Example CPU 1000")).toBeTruthy();
+  });
+
+  it("just created, with reduced motion asked for: the host appears at once", () => {
+    reduced = true;
+    render(<RunsOnPanel state={placed} status="running" fresh />);
+    expect(drawing()).toBeNull();
+  });
+
   it("with reduced motion asked for: no sweep, and the host appears at once", () => {
     reduced = true;
     const { rerender } = render(<RunsOnPanel state={scheduling} status="pending" />);
