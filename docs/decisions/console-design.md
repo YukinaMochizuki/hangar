@@ -108,6 +108,22 @@ no search until search works.
   already holds as many projects as its plan allows, that is stated above
   the button, which is disabled.
 
+### Members
+
+- A project's or a tenant's Members page lists the people bound at exactly
+  that scope, through `MemberService`, one row a person. A person who is
+  not a platform member yet is shown with that alone ("the role takes
+  effect once they are"), never with whether they were invited
+  (`tenancy-and-iam.md`).
+- Roles are changed in the row, added in a dialog with what each role
+  holds, and removed after the dialog says what ends and what stays (a
+  project role ends; a tenant role stays). The API's refusal, such as a
+  tenant left without an owner, is shown where it was asked for.
+- A project's page states, under its list, how many people hold a role
+  there through the tenant, linking to the tenant's Members; when the
+  caller may not list the tenant's members, it states only that the
+  tenant's roles hold there too.
+
 ### What a control is shown for
 
 A page asks `AccountService.TestPermissions` which of the permissions its
