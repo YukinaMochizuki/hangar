@@ -6,10 +6,11 @@ import { toJson, type JsonValue } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
-import { HardDrive, Plus, Trash2 } from "lucide-react";
+import { HardDrive, Plus } from "lucide-react";
 import { useState } from "react";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
-import { CommandLine, FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Button, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
@@ -314,55 +315,21 @@ export function diskDeleteFacts(d: Disk, machine: { name: string; deleting: bool
 
 /** DeleteDiskDialog asks for the name typed to confirm, then sends DeleteDisk and shows its error. */
 export function DeleteDiskDialog({ d, open, onClose, after }: { d: Disk; open: boolean; onClose: () => void; after?: () => void }) {
-  const [typed, setTyped] = useState("");
   const name = d.metadata?.name ?? "";
   const project = d.metadata?.project ?? "";
   const del = useDeleteDisk(project, name);
   const owner = useMachineOwners(project)(d.status?.machine ?? "");
   const machine = d.status?.machine ? { name: owner?.name ?? d.status.machine, deleting: owner?.deleting ?? false } : undefined;
-  const close = () => {
-    del.reset();
-    setTyped("");
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete disk ${name}`}>
-      <p>{diskDeleteFacts(d, machine)}</p>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <CommandLine command={`hangar delete disk ${name} -p ${project}`} />
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete disk ${name}`}
+      name={name}
+      consequence={diskDeleteFacts(d, machine)}
+      cli={`hangar delete disk ${name} -p ${project}`}
+      del={del}
+      after={after}
+    />
   );
 }

@@ -8,6 +8,7 @@ import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
 import { StaleBanner } from "@/components/credentials";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Textarea } from "@/components/form";
 import { Notice, PageBanner } from "@/components/notice";
@@ -201,66 +202,34 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
 }
 
 function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: Use; open: boolean; onClose: () => void; after?: () => void }) {
-  const [typed, setTyped] = useState("");
   const name = s.metadata?.name ?? "";
   const project = s.metadata?.project ?? "";
   const del = useDeleteSecret(project, name);
   const usedBy = use.names ?? [];
-  const close = () => {
-    del.reset();
-    setTyped("");
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete secret ${name}`}>
-      {use.loading ? (
-        <p>The project's containers are still loading, so which of them name it is not known yet.</p>
-      ) : use.error ? (
-        <p>The project's containers did not load, so which of them name it is not known.</p>
-      ) : usedBy.length > 0 ? (
-        <p>
-          {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Running ones keep running; one that
-          pulls its image again without it is Ready=False ImagePullSecretNotFound.
-        </p>
-      ) : (
-        <p>No container names it.</p>
-      )}
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <CommandLine command={commands.deleteSecret(project, name)} />
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete secret ${name}`}
+      name={name}
+      consequence={
+        use.loading ? (
+          "The project's containers are still loading, so which of them name it is not known yet."
+        ) : use.error ? (
+          "The project's containers did not load, so which of them name it is not known."
+        ) : usedBy.length > 0 ? (
+          <>
+            {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Running ones keep running; one
+            that pulls its image again without it is Ready=False ImagePullSecretNotFound.
+          </>
+        ) : (
+          "No container names it."
+        )
+      }
+      cli={commands.deleteSecret(project, name)}
+      del={del}
+      after={after}
+    />
   );
 }
 

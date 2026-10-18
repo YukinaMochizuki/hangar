@@ -1,13 +1,12 @@
 // Pieces the network pages share: what the project's machines say about
-// interfaces, a form's equivalent and footer, and delete by typed name.
+// interfaces, delete by typed name, and a form dialog's stale notice and
+// footer.
 
-import { Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
-import { Dialog } from "@/components/dialog";
+import type { ReactNode } from "react";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Notice } from "@/components/notice";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
-import { FormEquivalent } from "@/components/form";
 import { Button } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -50,11 +49,7 @@ export function usageBlock(state: MachinesState, inUse: string | undefined): str
 /** The CLI's name for each kind. */
 export const cliKinds: Record<NetworkKind, string> = { network: "network", securityGroup: "sg", address: "addr", publicEndpoint: "ep" };
 
-/**
- * Delete, confirmed by typing the name, as DeleteX; its error is shown here.
- * When the console already knows the API will refuse, the fact stands above
- * the button and the button is off.
- */
+/** Delete a network object, as DeleteX, confirmed by its name typed. */
 export function DeleteDialog({
   kind,
   name,
@@ -75,53 +70,18 @@ export function DeleteDialog({
 }) {
   const project = useProjectName();
   const del = useDelete(kind, project, name);
-  const [typed, setTyped] = useState("");
-  const close = () => {
-    setTyped("");
-    del.reset();
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete ${nouns[kind]} ${name}`}>
-      <p>{consequence}</p>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          aria-label="Name, to confirm"
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <FormEquivalent cli={[`hangar delete ${cliKinds[kind]} ${name} -p ${project}`]} />
-      {blocked && <Notice tone="warning" title={blocked} className="mt-3" />}
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending || !!blocked}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete ${nouns[kind]} ${name}`}
+      name={name}
+      consequence={consequence}
+      cli={`hangar delete ${cliKinds[kind]} ${name} -p ${project}`}
+      blocked={blocked}
+      del={del}
+      after={after}
+    />
   );
 }
 

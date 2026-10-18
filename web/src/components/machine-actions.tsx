@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { VirtualMachineDeletePolicy } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { MoreHorizontal, Play, Square, Trash2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Dialog } from "@/components/dialog";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui";
 import { useDeleteMachine, useSetRunState, type RunState } from "@/lib/actions";
@@ -31,55 +31,17 @@ function deleteConsequence(m: MachineView): string {
 
 function DeleteDialog({ m, open, onClose, after }: { m: MachineView; open: boolean; onClose: () => void; after?: () => void }) {
   const del = useDeleteMachine(m.kind, m.project, m.name);
-  const [typed, setTyped] = useState("");
   const noun = m.kind === "Container" ? "container" : "virtual machine";
   return (
-    <Dialog
+    <ConfirmDeleteDialog
       open={open}
-      onClose={() => {
-        del.reset();
-        setTyped("");
-        onClose();
-      }}
+      onClose={onClose}
       title={`Delete ${noun} ${m.name}`}
-    >
-      <p>{deleteConsequence(m)}</p>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{m.name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={onClose}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== m.name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                setTyped("");
-                onClose();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+      name={m.name}
+      consequence={deleteConsequence(m)}
+      del={del}
+      after={after}
+    />
   );
 }
 

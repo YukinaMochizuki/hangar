@@ -13,6 +13,7 @@ import type { ServiceToken } from "@hangar/api/hangar/iam/v1alpha1/service_token
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { StaleBanner } from "@/components/credentials";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
@@ -251,61 +252,26 @@ function RotateDialog({ t, open, onClose }: { t: ServiceToken; open: boolean; on
 }
 
 function DeleteTokenDialog({ t, held, open, onClose, after }: { t: ServiceToken; held: string[] | undefined; open: boolean; onClose: () => void; after?: () => void }) {
-  const [typed, setTyped] = useState("");
   const name = t.metadata?.name ?? "";
   const project = t.metadata?.project ?? "";
   const del = useDeleteToken(project, name);
-  const close = () => {
-    del.reset();
-    setTyped("");
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete token ${name}`}>
-      <p>
-        Its secret stops working at once
-        {held === undefined
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete token ${name}`}
+      name={name}
+      consequence={`Its secret stops working at once${
+        held === undefined
           ? ", and every binding naming it is deleted with it."
           : held.length
             ? `, and the bindings that grant it ${held.map(roleLabel).join(" and ")} are deleted with it.`
-            : "."}
-      </p>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <CommandLine command={commands.deleteToken(project, name)} />
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+            : "."
+      }`}
+      cli={commands.deleteToken(project, name)}
+      del={del}
+      after={after}
+    />
   );
 }
 
