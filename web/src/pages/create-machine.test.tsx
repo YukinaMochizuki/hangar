@@ -18,6 +18,7 @@ import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createdKey, isJustCreated } from "@/lib/just-created";
 import { CreateMachine } from "@/pages/create-machine";
 import { deferred, fakeApi, withApi } from "@/test/harness";
 
@@ -207,6 +208,8 @@ describe("CreateMachine", () => {
     render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
     await createAllowed(a, "api");
     expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/containers/$name", params: { project: "demo", name: "api" } });
+    // The page it opens plays the machine's arrival once.
+    expect(isJustCreated(createdKey("demo", "Container", "api"))).toBe(true);
   });
 
   it("creates a VM with one create-only Apply", async () => {
@@ -219,6 +222,7 @@ describe("CreateMachine", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(writes(a)).toEqual([{ method: "ApplyVirtualMachine", project: "demo", name: "box", createOnly: true }]);
     expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/vms/$name", params: { project: "demo", name: "box" } });
+    expect(isJustCreated(createdKey("demo", "VirtualMachine", "box"))).toBe(true);
   });
 
   it("says a container made since the list loaded holds the name, when the API refuses it", async () => {
