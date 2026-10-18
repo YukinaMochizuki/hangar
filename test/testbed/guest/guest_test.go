@@ -185,7 +185,7 @@ func TestMainProcessCannotStart(t *testing.T) {
 func TestGuestServices(t *testing.T) {
 	cfg := process("sleep", "3600")
 	cfg.Hostname = "tb-guest"
-	cfg.Nameservers = []string{"1.1.1.1", "9.9.9.9"}
+	cfg.Nameservers = []string{"192.0.2.53", "198.51.100.53"}
 	cfg.Search = []string{"example.test"}
 	v := vmtest.New(t, cfg)
 	mac, addr, gw := v.Net()
@@ -282,7 +282,7 @@ func TestGuestServices(t *testing.T) {
 		if got := v.MustExec(t, "cat", "/etc/hosts"); !strings.Contains(got, "127.0.0.1\tlocalhost\n") || !strings.Contains(got, ip+"\ttb-guest\n") {
 			t.Errorf("/etc/hosts = %q", got)
 		}
-		want := "nameserver 1.1.1.1\nnameserver 9.9.9.9\nsearch example.test\n"
+		want := "nameserver 192.0.2.53\nnameserver 198.51.100.53\nsearch example.test\n"
 		if got := v.MustExec(t, "cat", "/etc/resolv.conf"); got != want {
 			t.Errorf("/etc/resolv.conf = %q, want %q", got, want)
 		}

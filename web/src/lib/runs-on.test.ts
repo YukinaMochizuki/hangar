@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { containerView } from "@/lib/machines";
 import { runsOnState } from "@/lib/runs-on";
 
-const placement = { region: "ap-southeast", site: "SGP02", cpuModel: "AMD EPYC 7313", chassis: "generic-1u-2x-u2" };
+const placement = { region: "region-1", site: "site-a", cpuModel: "Example CPU 1000", chassis: "generic-1u-2x-u2" };
 const noRoom = "no ready node has 8192Mi of memory free";
 
 /** A container as the console reads it, with the Machine it runs as. */
@@ -31,7 +31,7 @@ function view(o: { stopped?: boolean; placed?: boolean; node?: string; scheduled
               o.scheduled === "false"
                 ? [{ type: "Scheduled", status: ConditionStatus.FALSE, reason: "NoNodeAvailable", message: noRoom }]
                 : o.scheduled === "true"
-                  ? [{ type: "Scheduled", status: ConditionStatus.TRUE, reason: "Placed", message: "running on node sgp02-01" }]
+                  ? [{ type: "Scheduled", status: ConditionStatus.TRUE, reason: "Placed", message: "running on node node-01" }]
                   : [],
           },
         });
@@ -42,7 +42,7 @@ describe("runsOnState", () => {
   it("is scheduling while a running machine has no placement and the scheduler has not refused it", () => {
     expect(runsOnState(view({}))).toEqual({ kind: "scheduling" });
     // Placed on a node whose placement has not been copied yet: still on its way.
-    expect(runsOnState(view({ node: "sgp02-01", scheduled: "true" }))).toEqual({ kind: "scheduling" });
+    expect(runsOnState(view({ node: "node-01", scheduled: "true" }))).toEqual({ kind: "scheduling" });
   });
 
   it("is not schedulable, with the scheduler's words, when its Machine is not Scheduled", () => {
@@ -67,16 +67,16 @@ describe("runsOnState", () => {
   });
 
   it("is placed, with its host, once it has a placement, stopped or not", () => {
-    const s = runsOnState(view({ placed: true, node: "sgp02-01", scheduled: "true" }));
+    const s = runsOnState(view({ placed: true, node: "node-01", scheduled: "true" }));
     expect(s.kind).toBe("placed");
-    expect(s.kind === "placed" && s.host).toMatchObject({ node: "sgp02-01", cpuModel: "AMD EPYC 7313", art: "1u-2u2" });
-    expect(runsOnState(view({ placed: true, node: "sgp02-01", stopped: true })).kind).toBe("placed");
+    expect(s.kind === "placed" && s.host).toMatchObject({ node: "node-01", cpuModel: "Example CPU 1000", art: "1u-2u2" });
+    expect(runsOnState(view({ placed: true, node: "node-01", stopped: true })).kind).toBe("placed");
   });
 
   it("goes from not schedulable to placed when a node is found later", () => {
     expect(runsOnState(view({ scheduled: "false" })).kind).toBe("unschedulable");
     // Room was made; the scheduler places it, then the node's placement is copied.
-    expect(runsOnState(view({ node: "sgp02-01", scheduled: "true" })).kind).toBe("scheduling");
-    expect(runsOnState(view({ placed: true, node: "sgp02-01", scheduled: "true" })).kind).toBe("placed");
+    expect(runsOnState(view({ node: "node-01", scheduled: "true" })).kind).toBe("scheduling");
+    expect(runsOnState(view({ placed: true, node: "node-01", scheduled: "true" })).kind).toBe("placed");
   });
 });

@@ -15,7 +15,7 @@ address.
   one user-chosen IPv4 range that may overlap other networks', multiple
   NICs per machine, security groups, NAT egress, internal DNS
   (`<name>.<project>.hangar.internal`), and a metadata service at
-  169.254.169.254. There is no `Subnet` (decided by the project owner):
+  169.254.169.254. There is no `Subnet`:
   on one host without zones a subnet buys nothing another network does
   not, as DigitalOcean's VPCs have none; one can come later as a network's
   default subnet. Peering, route tables and shared VPCs come later.
@@ -95,19 +95,17 @@ address.
     its name is unique on the host. A name another link holds is skipped for
     the hash of the key and a counter. The link alias holds the uid, and for
     a tap the interface as ensured; listing reads it back from there.
-  - **Default deny around the networks** (decided by the project owner): a
+  - **Default deny around the networks**: a
     network's traffic leaves only as an address of its range, NATed, and only
     to the internet; nothing reaches a network or the host from one but
-    replies. The one exception is public IPv6 (decided by the project
-    owner): a new connection to a live /128 of one network from the
+    replies. The one exception is public IPv6: a new connection to a live /128 of one network from the
     internet or from another network on the host passes the host, and the
     receiving interface's security groups decide, as they would for the
     same packet from anywhere; a public address is no more trusted from a
     neighbouring network than from anywhere else, and the host is not the
     one place it cannot be reached from. Private IPv4 between networks
     stays blocked, the host stays unreachable but for the front door's
-    ports at its public addresses, which anyone reaches (decided by the
-    project owner), and a network sends only from its own /128s. Table
+    ports at its public addresses, which anyone reaches, and a network sends only from its own /128s. Table
     `ip hangar` in the root namespace has nine rules, eleven with a public
     address set, however many networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
@@ -277,8 +275,7 @@ address.
     then SERVFAIL; answers are cached for their TTLs (negative ones for
     their SOA's minimum, at most an hour) and a question asked many times
     at once goes upstream once. UDP answers are cut at 1232 bytes, with TC
-    set, as DNS Flag Day 2020 settled. AAAA questions are forwarded too
-    (decided by the project owner), which a guest without IPv6 falls back
+    set, as DNS Flag Day 2020 settled. AAAA questions are forwarded too, which a guest without IPv6 falls back
     from as on any IPv4-only network.
   - No network takes what the others need: one network's questions in
     flight are bounded (128), past which they fail with SERVFAIL at once,
@@ -303,8 +300,7 @@ address.
   without an address is answered by broadcast, one renewing at its
   address.
 - **Each network with IPv6 advertises its gateway and leases each machine
-  its /128 by DHCPv6**, as AWS, GCP and Azure do (decided by the project
-  owner), for images that configure themselves by router advertisement and
+  its /128 by DHCPv6**, as AWS, GCP and Azure do, for images that configure themselves by router advertisement and
   DHCPv6; container guests take theirs, and the default route through
   `fe80::1`, from the boot disk, and hangar-init sets them. Both are the
   agent's (`internal/node/ra`, `internal/node/dhcp6`), on packet sockets of
@@ -329,8 +325,7 @@ address.
     as it drops any message not of its own transaction, and RFC 8415 asks a
     reconfigure key besides. A MAC it does not know is not answered; it answers at most 10 requests a
     second from one MAC and 100 from one network. DHCPv6 hands out the
-    address only; DNS stays the network's IPv4 resolver (decided by the
-    project owner): networks are always dual-stack, the resolver answers
+    address only; DNS stays the network's IPv4 resolver: networks are always dual-stack, the resolver answers
     AAAA too, and DHCPv6 cannot carry a link-local resolver's scope.
 - **Each network has a metadata service** (`internal/node/metadata`) on
   169.254.169.254, port 80, an address its bridge holds beside the
@@ -356,14 +351,14 @@ address.
   protocol, ports and a peer that is a CIDR or a group of the network.
   Ingress is denied unless a rule of one of the interface's groups lets it
   in; egress is open unless one of its groups has egress rules, and then
-  only what some rule of its groups lets out leaves (decided by the project
-  owner, for agents' sandboxes: one restricting group locks an interface
-  even beside `default`). Here groups differ from AWS's, where egress is
+  only what some rule of its groups lets out leaves (for agents'
+  sandboxes: one restricting group locks an interface even beside
+  `default`). Here groups differ from AWS's, where egress is
   the union of the groups' rules and every group allows all out until
   edited; restricting is closer to Hetzner, whose firewalls without
   outbound rules allow all out, and to a GCP deny rule by tag.
   - Every network has an implicit group `default`, which is no object and
-    cannot be changed (decided by the project owner): it lets in its own
+    cannot be changed: it lets in its own
     members, and lets everything out. An interface naming no group is in
     it alone; naming groups without `default` takes it out; `[default,
     web]` keeps it in both. So machines naming nothing behave as before
@@ -399,8 +394,7 @@ address.
     the platform's own SSH path from the gateway, TCP from its address to a
     tap's port 22, gated by RBAC and minutes-long certificates instead, as
     AWS SSM is (`vm-ssh.md`): only the namespace's own sockets send from the
-    gateway's address. So does the edge's path to a public endpoint (decided
-    by the project owner): while an endpoint exists, TCP from the gateway's
+    gateway's address. So does the edge's path to a public endpoint: while an endpoint exists, TCP from the gateway's
     address to its port passes on the first interface of the machine it
     reaches, that tap alone, gated by Access and the endpoint's permission
     in the edge (`public-endpoints.md`); the rule goes with the endpoint. The bridge and the IP
@@ -420,8 +414,8 @@ address.
   NDP on the host (no bridging, because of the MAC filtering).
 - **An `Address` reserves a public /128** and binds it to one interface of
   a VirtualMachine or Container of its project, as an AWS Elastic IP is
-  associated: it names its target (`spec.target`, decided by the project
-  owner), and moving it changes only the Address. Its address is drawn
+  associated: it names its target (`spec.target`), and moving it changes
+  only the Address. Its address is drawn
   when it is made, from a node's prefix, at random as an automatic one,
   and kept until it is deleted; no interface draws a reserved address as
   its own. Bound, it replaces the interface's automatic address, which is
@@ -469,14 +463,13 @@ address.
 - **Abuse protection**: abuse from the single IPv4 address could get the
   host shut down, so mail ports are closed, new connections are
   rate-limited, and IPv4 NAT is logged, for every network alike, with no
-  exception by plan for now (decided by the project owner).
+  exception by plan for now.
   - TCP from a network to ports 25 (SMTP) and 465 (SMTP over TLS) is
     dropped on the host, in the root tables' forward chains, over IPv4 and
     IPv6. 587 (submission) stays open: it needs an account at the server,
     so it sends no more spam than the account's owner lets it.
   - A network opens at most 100 new connections a second, after a burst of
-    300, IPv4 and IPv6 together from one bucket (decided by the project
-    owner): `inet hangar_limit` in its namespace drops a packet starting a
+    300, IPv4 and IPv6 together from one bucket: `inet hangar_limit` in its namespace drops a packet starting a
     connection out of `hn-up` past it. Only new connections count, so flows
     already admitted carry on, and so does what stays in the network: its
     own services and its machines talking to each other. A dropped
@@ -522,18 +515,17 @@ address.
     a bounded queue (4096), another joins and writes them.
   - The log lives on its own dataset, `hangar/natlog` at
     `/var/log/hangar/nat`, root's alone, compressed, with a refquota of 20
-    GiB (decided by the project owner), which deploy/host makes; a refquota,
+    GiB, which deploy/host makes; a refquota,
     so a snapshot cannot keep removed days counted. The agent writes it
     itself (`internal/node/natlog`), a JSON line a connection, a file a UTC
-    hour, `nat-YYYY-MM-DD-HH.jsonl`, compressed once the hour is over
-    (decided by the project owner), so only the current hour is plain; a
+    hour, `nat-YYYY-MM-DD-HH.jsonl`, compressed once the hour is over, so only the current hour is plain; a
     record that comes late for an hour the log has moved on from goes to the
     hour being written, as that one may be compressed. A compression is
     written aside, synced, renamed into place and only then is the plain
     file removed; an hour a crash left with both is settled when the log
     opens, keeping the gzip if it holds the whole hour, else the plain file,
     to be compressed again. It removes a day, all its hours, 30 days after
-    the day ended (decided by the project owner). Past 90% of the refquota
+    the day ended. Past 90% of the refquota
     it removes the oldest days first, never today's, as many as their sizes
     cover the excess, and writes a `retention` line saying how many days the
     log now holds; when the removal was for a write the quota refused, that

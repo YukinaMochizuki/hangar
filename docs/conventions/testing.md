@@ -147,9 +147,9 @@ test does not check what its name says.
 
 ## Permission and file-mode tests: run them as a regular user
 
-CI runs `make test` as a regular user. Agent boxes run as root, and root
-ignores file modes, so a permission test can pass in a box for the wrong
-reason. `TestSecretFileModes` (`cmd/hangar-edge`) passed as root and failed
+CI runs `make test` as a regular user. A development container often runs as
+root, and root ignores file modes, so a permission test can pass there for
+the wrong reason. `TestSecretFileModes` (`cmd/hangar-edge`) passed as root and failed
 on every run as a user: each case rewrote one file that an earlier case had
 left read-only. Before calling such a test done, run it as a user:
 

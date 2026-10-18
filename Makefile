@@ -8,7 +8,7 @@ GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 .PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
-SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/hosts/*.env' 'guest/kernel/*.env')
+SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
 
 all: check
 
@@ -123,8 +123,10 @@ dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
 
 # What a host runs, in bin/release/hangar-<revision>/ with SHA256SUMS: the
-# binaries, the guest kernel and the initramfs, and the console's files as
-# console.tar (docs/runbook/host-bootstrap.md). Builds the kernel, so it takes
+# binaries, the guest kernel and the initramfs, the console's files as
+# console.tar and deploy/ as deploy.tar (docs/runbook/release.md). A host
+# installs only releases the release workflow published; this one is for a
+# testbed. Builds the kernel, so it takes
 # minutes and needs a C toolchain, and the console, so it needs Node and pnpm.
 # OUT=DIR writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted
 # changes.

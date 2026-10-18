@@ -17,11 +17,23 @@ rest as a ZFS partition with `raidLevel: 1` and pool name `hangar`, which the
 installer turns into a mirrored pool. The installer does not mirror swap and
 gives the host its prefix's `::` address; the bootstrap fixes both.
 
-Add `deploy/host/hosts/<hostname>.env` for the host. Every value in it is
-explicit (uplink name, public IPv4, IPv6 address and gateway, the two swap
-partitions, the dataset quotas, the memory kept from VMs, the Node's name,
-how many tenants one person may own unless their User says otherwise);
-the scripts never guess a disk or an interface.
+Write the host env file, `/etc/hangar/host.env`, root's, mode 0600.
+`deploy/host/host.env.example` lists every variable it takes, with example
+values only. Every value in it is explicit (uplink name, public IPv4, IPv6
+address and gateway, the two swap partitions, the dataset quotas, the
+memory kept from VMs, the Node's name, how many tenants one person may own
+unless their User says otherwise); the scripts never guess a disk or an
+interface. The real file is the operator's and is kept with them, never in
+this repository:
+
+```sh
+sudo install -D -m 0600 -o root -g root host.env /etc/hangar/host.env
+```
+
+`bootstrap.sh` and `verify.sh` read it unless `--env FILE` names another
+file (a testbed does that). They source it as root, so they refuse a file
+that is not root's or that anyone else can write, before reading it;
+`verify.sh` also checks it is mode 0600.
 
 One value stays on the host and out of the repo: the bootstrap admin, the
 email of the Google account the person signs in with, who is granted
@@ -56,27 +68,34 @@ including people bound by hand, who start with the defaults, and `hangar
 admin revoke EMAIL` withdraws an invitation: it deletes every platform
 binding naming the email and its Invitation, and prints what it deleted.
 
-Build a release, `make release`, on a machine with the guest kernel's
-toolchain (`docs/runbook/guest-kernel.md`; the committed kernel config is
-Ubuntu 24.04's GCC's, so a testbed VM, not a workspace), and with Node and
-pnpm (`docs/runbook/dev-env.md`) for the console. It writes
-`bin/release/hangar-<revision>/`: `hangar-apiserver`, `hangar-node` and
-`hangar` (static), `vmlinux`, `initramfs.cpio`, `console.tar` (the
-console's built files), `VERSION` (the full revision, as the binaries
-report it) and `SHA256SUMS` over all of them. It
-refuses a tree with uncommitted changes (`ALLOW_DIRTY=1` for a test build).
-Built twice from one commit with one toolchain, it gives the same
-`SHA256SUMS`. Nothing it builds is committed.
+A host installs only releases published on GitHub: a `v*` tag makes
+`.github/workflows/release.yml` build one and attest every file of it
+(`docs/runbook/release.md`). A release is `hangar-apiserver`,
+`hangar-node`, `hangar-edge` and `hangar` (static), `vmlinux`,
+`initramfs.cpio`, `console.tar` (the console's built files), `deploy.tar`
+(`deploy/` itself), `VERSION` (the full revision, as the binaries report
+it) and `SHA256SUMS` over all of them, with `attestation.jsonl` beside
+them. The workflow builds it with `deploy/release.sh`, which `make release`
+runs by hand too
+on a machine with the guest kernel's toolchain
+(`docs/runbook/guest-kernel.md`; the committed kernel config is Ubuntu
+24.04's GCC's) and with Node and pnpm (`docs/runbook/dev-env.md`) for the
+console, writing `bin/release/hangar-<revision>/`: that is what a testbed
+installs. It refuses a tree with uncommitted changes (`ALLOW_DIRTY=1` for a
+test build). Built twice from one commit with one toolchain, it gives the
+same `SHA256SUMS`. Nothing it builds is committed.
 
 ## Run
 
-Copy `deploy/` and the release directory to the host, then as root:
+Fetch the release ("The first fetch on a new host" below, then
+`hangar-fetch-release TAG DIGEST`), then as root, with `DEPLOY` its
+`/var/tmp/hangar/deploy-TAG` and `DIR` its `/var/tmp/hangar/release/TAG`:
 
 ```sh
-deploy/host/bootstrap.sh --release DIR --dry-run   # diffs and "would:" lines, changes nothing
-systemd-run --unit=hangar-bootstrap --wait --collect deploy/host/bootstrap.sh --release DIR
+DEPLOY/host/bootstrap.sh --release DIR --dry-run   # diffs and "would:" lines, changes nothing
+systemd-run --unit=hangar-bootstrap --wait --collect DEPLOY/host/bootstrap.sh --release DIR
 journalctl -u hangar-bootstrap       # its output; ends with "changes: N"
-deploy/host/verify.sh                # one PASS/FAIL per check, exit 1 on any FAIL
+DEPLOY/host/verify.sh                # one PASS/FAIL per check, exit 1 on any FAIL
 ```
 
 Run the real thing detached from the SSH session, as above. `netplan apply` and
@@ -123,7 +142,9 @@ with `--release DIR`. `--only <step>` runs a single step
   `FIREWALL_TCP_PORTS` in the step and re-run it.
 - `upgrades` keeps Ubuntu's unattended upgrades to their default origins
   (security only), never reboots, and moves `apt-daily.timer` to 03:30 and
-  `apt-daily-upgrade.timer` to 04:00 Asia/Singapore, with no random delay
+  `apt-daily-upgrade.timer` to 04:00 in `HANGAR_UPGRADES_TZ` (UTC unless
+  the host env file sets it; a zone the host does not know is refused before
+  any step), with no random delay
   and nothing made up at boot: an upgrade can re-exec systemd and trigger
   udev on every device. It also tells needrestart to leave every `hangar-*`
   unit alone: after a hangar release every VM's launcher looks stale to it.
@@ -141,7 +162,15 @@ with `--release DIR`. `--only <step>` runs a single step
   copies the newer release's assets into it the same way. `verify.sh` checks the
   link is the installed tar's. A release from before the console carried
   none, and its record is whole without it. A run without `--release`
-  repairs a console link that does not match the installed tar.
+  repairs a console link that does not match the installed tar. With or
+  without `--release`, it installs `deploy/host/fetch-release.sh` from the
+  `deploy/` it runs from as `/usr/local/sbin/hangar-fetch-release` (root's,
+  0755), which `verify.sh` compares with that file.
+- `packages` also installs the GitHub CLI `hangar-fetch-release` verifies
+  attestations with, as `/usr/local/bin/gh`: the version and checksums
+  pinned in `deploy/host/versions.env`, from the GitHub release's tarball,
+  as Cloud Hypervisor is pinned (the file says why not apt). `verify.sh`
+  checks the binary's sha256.
 - `services` makes the system users `hangar` and `hangar-edge`, gives
   `hangar` `/var/lib/hangar/state` (mode 700), and writes, enables and
   starts `hangar-apiserver.service` and `hangar-node.service`:
@@ -187,7 +216,7 @@ with `--release DIR`. `--only <step>` runs a single step
     `--memory` and `--network` from `HANGAR_REGION`, `HANGAR_SITE`,
     `HANGAR_CHASSIS`, `HANGAR_MEMORY` and `HANGAR_NETWORK`, each only when
     the host env file sets it and each quoted, with `\`, `"`, `%` and `$`
-    escaped as systemd reads them (such as `ap-southeast`, `SGP02`,
+    escaped as systemd reads them (such as `region-1`, `site-a`,
     `generic-1u-2x-u2`, `DDR4-3200 ECC` and `2 × 10 GbE`; the step refuses
     the run unless `hangar-node check-placement` accepts them, the agent's
     own rule: at most 64 printable characters each, the chassis a DNS-1123
@@ -274,7 +303,7 @@ tunnel, the cutover there says in which order. It needs oidc auth
    ```sh
    HANGAR_EDGE_DOMAIN=hangarlab.dev      # public endpoints are under it
    HANGAR_CP_DOMAIN=hangarlab.cloud      # api. and console. are under it
-   HANGAR_ACME_EMAIL=ops@example.com     # the owner's address: the ACME account's contact
+   HANGAR_ACME_EMAIL=ops@example.com     # the operator's address: the ACME account's contact
    ```
 
    `HANGAR_ACME_EMAIL` is required; the `edge` step and `hangar-edge`
@@ -328,9 +357,35 @@ them, as the edge serves them nowhere else.
 
 ## Deploying a new hangar version
 
+Upgrading past the change that moved the host env file out of this
+repository: install the host's file as `/etc/hangar/host.env`, root's, mode
+0600, from the operator's copy, before the first run of that version; it
+refuses to start without it, and `--host` is gone. A file anyone but root
+can write is refused too. The upgrade window's time zone, fixed in the
+step before, is now `HANGAR_UPGRADES_TZ` in that file, UTC when unset: set
+it to the zone the host's window was in, or the timers move (a dry run
+shows them as `would:` lines). `deploy/host/host.env.example` lists every
+variable, the placement ones (`HANGAR_REGION` and the rest) included.
+
+The host has no `hangar-fetch-release` yet: fetch that release as "The
+first fetch on a new host" below says. Before that, check
+`/var/tmp/hangar` and `/var/tmp/hangar/release`: deployed the old way,
+they were copied by hand and are likely the copying user's, and the fetch
+refuses a directory that is not root's or that anyone else can write.
+`stat -c '%U %a %n' /var/tmp/hangar /var/tmp/hangar/release` must say
+`root` and no group or other write bit. If not, move the old copies out of
+the way rather than trusting them, and let the fetch make both again:
+
+```sh
+sudo mv /var/tmp/hangar /var/tmp/hangar.old-$(date +%Y%m%d)
+```
+
+Keep the moved directory until the new release is verified: going back to
+the release installed before runs from the copy in it. Then remove it.
+
 Upgrading past the change that added quotas: add
-`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (1, one tenant per person, as the
-owner decided) to the host env file first; the run refuses to start
+`HANGAR_DEFAULT_MAX_OWNED_TENANTS` (1, one tenant per person) to the host
+env file first; the run refuses to start
 without it. The first start of that version makes the `default` Plan
 with placeholder limits, and every tenant without a plan of its own,
 existing ones included, gets them at once. Set the real limits right
@@ -344,7 +399,7 @@ opened before it count toward no one's cap.
 Upgrading past the change that added Invitations and the tenant signing
 up opens: existing Users keep what they have, and only people who sign up
 from then on get a tenant and a project made for them, which counts toward
-their cap. The owner decided on one tenant per person: the apiserver's
+their cap. It is one tenant per person: the apiserver's
 default cap is 1, that tenant, and the host env file sets
 `HANGAR_DEFAULT_MAX_OWNED_TENANTS=1` to match. People who already own more
 tenants keep them all; only opening another is refused. Platform root
@@ -353,7 +408,7 @@ below). The `default` Plan already in the store keeps its limits; set the
 new ones by hand ("Quotas" below).
 
 Upgrading past the change that added `User` (`hangar signup`): from the
-first start of that version, every existing member, the owner included, is
+first start of that version, every existing member, the operator included, is
 refused on every call until they run `hangar signup --username NAME` once;
 their bindings stay and count again as soon as they have. Plan the deploy
 with them. Service tokens, such as the smoke token, and root on the host
@@ -385,32 +440,48 @@ fetch: a registry that is down blocks the start, the machine saying
 do not reboot the host or restart machines during the upgrade while a
 registry they need is unreachable.
 
-1. Build it from the commit to deploy, on a testbed VM:
-   `HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release`.
-   The variable lets it reuse the kernel the testbed image prebuilt when the
-   kernel's inputs are unchanged (`kernel: cache hit <key>`) instead of
-   spending minutes building it; it builds and files the kernel otherwise
-   (`kernel: built, cached under <key>`). The release is the same either way
-   (`docs/runbook/guest-kernel.md`). Note its directory name,
-   `hangar-<revision>`, and the last line it prints,
-   `sha256sum SHA256SUMS: <digest>  SHA256SUMS`.
-2. Copy `deploy/` from that commit to `/var/tmp/hangar/deploy` on the host,
-   and the release directory to `/var/tmp/hangar/release/hangar-<revision>`.
-   Keep the previous release's directory there: going back is the same
-   sequence with it.
-3. On the host, `sha256sum /var/tmp/hangar/release/hangar-<revision>/SHA256SUMS`
-   must print the digest `make release` printed on the build machine. The
-   release step checks every file against the `SHA256SUMS` in the
-   directory, which only catches a copy corrupted on the way; this
-   comparison is what ties the directory to the build.
-4. On the host, one command per line:
+A version reaches a host as a tag, never as a copy from a build machine:
+
+```
+tag vX.Y.Z ──▶ release workflow ──▶ GitHub Release (files, attestation.jsonl,
+                                     the SHA256SUMS digest in its notes)
+                                          │
+   host: hangar-fetch-release TAG DIGEST ◀┘
+         ──▶ dry run ──▶ run ──▶ verify ──▶ changes: 0
+```
+
+1. Tag the commit and let the workflow publish the release
+   (`docs/runbook/release.md`). Note `TAG` and the digest the release's
+   notes state, `DIGEST`. A pre-release (`-rc.N`) goes to a testbed first.
+2. On the host, fetch it:
 
    ```sh
-   sudo /var/tmp/hangar/deploy/host/bootstrap.sh --release /var/tmp/hangar/release/hangar-<revision> --dry-run
-   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy/host/bootstrap.sh --release /var/tmp/hangar/release/hangar-<revision>
+   sudo hangar-fetch-release TAG DIGEST
+   ```
+
+   It downloads the release over HTTPS and refuses it unless
+   `sha256sum SHA256SUMS` is `DIGEST`, every file matches `SHA256SUMS`, and
+   every file's build-provenance attestation verifies against this
+   repository, its release workflow, the tag and the release's commit
+   (`gh attestation verify` on the bundle that comes with the release, so
+   the host needs no GitHub login; it reaches GitHub and the Sigstore and
+   GitHub TUF repositories for their trust roots). Only then does it put the
+   release in `/var/tmp/hangar/release/TAG/` and `deploy/` in
+   `/var/tmp/hangar/deploy-TAG/`, each under a temporary name first and
+   renamed into place, so neither name ever holds half a release. A refused
+   release leaves nothing under them, nor changes a fetch of the same tag
+   made before. No flag skips a check. The attestations say this
+   repository's workflow built the files for that tag; the digest says they
+   are the very release you read the notes of. To check a release from a
+   workstation as well, see `docs/runbook/release.md`.
+3. On the host, one command per line:
+
+   ```sh
+   sudo /var/tmp/hangar/deploy-TAG/host/bootstrap.sh --release /var/tmp/hangar/release/TAG --dry-run
+   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy-TAG/host/bootstrap.sh --release /var/tmp/hangar/release/TAG
    sudo journalctl -u hangar-bootstrap --no-pager
-   sudo /var/tmp/hangar/deploy/host/verify.sh
-   sudo /var/tmp/hangar/deploy/host/bootstrap.sh
+   sudo /var/tmp/hangar/deploy-TAG/host/verify.sh
+   sudo /var/tmp/hangar/deploy-TAG/host/bootstrap.sh
    cat /usr/local/lib/hangar/VERSION
    systemctl list-units --no-pager 'hangar-*'
    ```
@@ -418,11 +489,59 @@ registry they need is unreachable.
    The dry run lists `would: install` for each changed file and `would:
    restart` for each service to restart, and nothing else for an upgrade
    alone. The real run ends with `changes: N`. `verify.sh` must pass, the
-   run after it must print `changes: 0`, `VERSION` must be the new
-   revision, and the VMs' units must still be there.
+   run after it must print `changes: 0`, `VERSION` must be the release's
+   commit (the notes name it), and the VMs' units must still be there.
 
-A release with a file that does not match its `SHA256SUMS` stops the run
-before anything is installed; copy it again.
+A release whose files do not match its `SHA256SUMS` is refused by the fetch,
+and again by the release step, before anything is installed.
+
+### The first fetch on a new host
+
+`hangar-fetch-release` comes with a release, and the packages step installs
+the `gh` it verifies with, so a host that has neither (a new host, or one
+last deployed by copying a release to it) fetches its first release by
+hand, once: the pinned `gh`, then `deploy.tar` alone, checked the way the
+script checks every file, then the script from it. With `TAG` and `DIGEST`
+as above, and the `HANGAR_GH_*` values read from
+`deploy/host/versions.env` at that tag on GitHub:
+
+```sh
+sudo -i
+TAG=vX.Y.Z DIGEST=<digest>
+GH_VERSION=<HANGAR_GH_VERSION> GH_SHA256=<HANGAR_GH_SHA256> GH_BIN_SHA256=<HANGAR_GH_BIN_SHA256>
+cd "$(mktemp -d)"
+curl -fsSL -o gh.tar.gz "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz"
+echo "$GH_SHA256  gh.tar.gz" | sha256sum -c
+tar -xzf gh.tar.gz --strip-components=2 "gh_${GH_VERSION}_linux_amd64/bin/gh"
+echo "$GH_BIN_SHA256  gh" | sha256sum -c
+install -m 0755 gh /usr/local/bin/gh
+base=https://github.com/YukinaMochizuki/hangar/releases/download/$TAG
+for f in SHA256SUMS deploy.tar attestation.jsonl; do curl -fsSLO "$base/$f"; done
+sha256sum SHA256SUMS                       # must print DIGEST
+sha256sum -c --ignore-missing SHA256SUMS   # deploy.tar: OK
+for f in SHA256SUMS deploy.tar; do
+  gh attestation verify "$f" --bundle attestation.jsonl --repo YukinaMochizuki/hangar \
+    --signer-workflow YukinaMochizuki/hangar/.github/workflows/release.yml \
+    --source-ref "refs/tags/$TAG" --deny-self-hosted-runners
+done
+tar -xf deploy.tar host/fetch-release.sh
+host/fetch-release.sh "$TAG" "$DIGEST"
+```
+
+Stop at the first command that fails or prints something else. The last
+line is the whole fetch of step 2; carry on from step 3. The release step
+then installs the script as `/usr/local/sbin/hangar-fetch-release`, and the
+packages step finds the `gh` it pins already there.
+
+### Going back to an earlier tag
+
+Going back is the same sequence with the earlier tag and the digest its
+release notes state: `sudo hangar-fetch-release OLD_TAG OLD_DIGEST`, which
+checks it again (and replaces what an earlier fetch of it left), then step 3
+with `deploy-OLD_TAG` and `release/OLD_TAG`. The run is the earlier
+`deploy/`'s, so it also puts back that release's `hangar-fetch-release`.
+The dry run lists the files and services that go back. Read the notes below
+for releases that cannot be gone back past while VMs run.
 
 The first deploy with the admin socket rewrites the apiserver's unit (the
 sockets move to socket units, `/run/hangar` becomes root's), so it
@@ -457,7 +576,7 @@ once, on a new store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
 projects, 5 networks, 5 addresses, 10 public endpoints and 10 service
 tokens. From then on the plan is data: the apiserver never changes it
 again, so a store made before these limits keeps the ones it was made
-with, and the owner sets them, as platform root, with apply; a field left
+with, and the operator sets them, as platform root, with apply; a field left
 out has no limit:
 
 ```yaml
@@ -856,15 +975,26 @@ when writing the log fails and once when it works again.
 
 ## Testing a change
 
+`test/testbed/fetch-release.sh` runs `hangar-fetch-release` against a
+stand-in for GitHub on loopback (`docs/runbook/testbed.md` says what it
+checks); run it as root on a throwaway VM.
+
 `test/testbed/host-bootstrap.sh` runs the whole flow on a throwaway Ubuntu VM
 made to look like a fresh OVH install (loop-device swap, file-backed pool, an
 upstream router in a network namespace): dry run changes nothing, first run
 converges and counts its changes correctly, second run changes nothing, verify
 passes, verify catches drift and a re-run repairs it, a pending rollback blocks
 a run, unknown installer netplan keys are refused, a failing generator writes
-nothing, and a dead IPv6 config is rolled back. It needs a release
+nothing, and a dead IPv6 config is rolled back. Its settings are in
+`/etc/hangar/host.env`, which the scripts read by default: verify fails it
+at mode 644, a run refuses without it, `--env FILE` reads another, a file
+another user can write or own is refused before it is read, an unknown
+`HANGAR_UPGRADES_TZ` is refused, the upgrade timers are in the one it sets,
+and `--host` is refused. It needs a release
 (`HANGAR_TESTBED_RELEASE=DIR`, from `make release`), installs the services
-from it, and checks: the node is Ready; a tampered release, or one whose
+from it, and checks: the node is Ready; the release step installs
+`hangar-fetch-release` and verify catches a changed one, and the packages
+step the pinned `gh`; a tampered release, or one whose
 `SHA256SUMS` lacks a file, is refused with nothing installed; the services
 step refuses without `/etc/hangar/local.env` or with it readable by others;
 a subordinate range among the VMs' ids (`old:165536:65536` in

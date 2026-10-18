@@ -65,8 +65,8 @@ func TestTheFilesSay(t *testing.T) {
 	if got, want := hosts(cfg), "127.0.0.1\tlocalhost\n::1\tlocalhost ip6-localhost ip6-loopback\n10.0.0.5\tapi\n2001:db8::5\tapi\n"; got != want {
 		t.Errorf("hosts %q, want %q", got, want)
 	}
-	if got, want := resolvConf([]string{"1.1.1.1", "8.8.8.8"}, []string{"web.hangar.internal"}),
-		"nameserver 1.1.1.1\nnameserver 8.8.8.8\nsearch web.hangar.internal\n"; got != want {
+	if got, want := resolvConf([]string{"192.0.2.53", "198.51.100.53"}, []string{"web.hangar.internal"}),
+		"nameserver 192.0.2.53\nnameserver 198.51.100.53\nsearch web.hangar.internal\n"; got != want {
 		t.Errorf("resolv.conf %q, want %q", got, want)
 	}
 	if got := subtreeControl("cpuset cpu io memory pids\n"); got != "+cpuset +cpu +io +memory +pids" {

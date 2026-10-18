@@ -70,6 +70,7 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/checklists/new-resource.md` | You add a resource kind |
 | `docs/checklists/new-controller.md` | You add or change a controller |
 | `docs/runbook/host-bootstrap.md` | You set up a host or change `deploy/host/` |
+| `docs/runbook/release.md` | You cut a release, change `.github/workflows/release.yml`, `deploy/release.sh` or `hangar-fetch-release`, or check a release from a workstation |
 | `docs/runbook/cloudflare.md` | You set up or change DNS (`hangar-cloudflare`), create a Cloudflare token, or cut a host over from the tunnel (or back) |
 | `docs/runbook/testbed.md` | You run or add a real-host test (L4), or change the guest boot path |
 | `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |

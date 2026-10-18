@@ -1,6 +1,7 @@
 # Hangar itself: the binaries, the guest kernel and initramfs, and the
-# console's files, installed from a release directory `make release` made and
-# someone copied to the host (bootstrap.sh --release DIR). Every file is
+# console's files, installed from a release directory: one
+# hangar-fetch-release downloaded and verified (bootstrap.sh --release DIR),
+# or, on a testbed, one `make release` made. Every file is
 # checked against the release's SHA256SUMS before anything is installed. What
 # is installed, and its checksums by installed path, are recorded under
 # /usr/local/lib/hangar. Without --release the step keeps what is installed.
@@ -15,6 +16,9 @@
 # and a page loaded just before the switch still gets its assets: they are
 # named by their content, so the two releases' never collide. The previous
 # release's directory is kept; older ones are removed.
+#
+# The step also installs deploy/host/fetch-release.sh, from the deploy/ it
+# runs from, as RELEASE_FETCH, with or without --release.
 
 RELEASE_LIB=/usr/local/lib/hangar
 RELEASE_VERSION=$RELEASE_LIB/VERSION
@@ -22,6 +26,8 @@ RELEASE_SUMS=$RELEASE_LIB/SHA256SUMS
 RELEASE_CONSOLE_TAR=$RELEASE_LIB/console.tar
 RELEASE_CONSOLE=/usr/local/share/hangar/console
 RELEASE_CONSOLE_VERSIONS=/usr/local/share/hangar/console.d
+RELEASE_FETCH=/usr/local/sbin/hangar-fetch-release
+RELEASE_FETCH_SRC=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/fetch-release.sh
 
 # Each entry is NAME:PATH:MODE, NAME being the file in the release.
 release_files() {
@@ -47,7 +53,7 @@ sha_of() { sha256sum "$1" | cut -d' ' -f1; }
 # SHA256SUMS, or that lacks a file.
 release_check_dir() {
 	local dir=$1 entry name
-	[ -f "$dir/SHA256SUMS" ] || die "$dir has no SHA256SUMS; is it a directory make release wrote?"
+	[ -f "$dir/SHA256SUMS" ] || die "$dir has no SHA256SUMS; is it a release directory (hangar-fetch-release, make release)?"
 	for entry in $(release_files) VERSION; do
 		name=${entry%%:*}
 		grep -qE "^[0-9a-f]{64}  $name\$" "$dir/SHA256SUMS" ||
@@ -82,6 +88,7 @@ install_release_file() {
 
 release_apply() {
 	local dir=${HANGAR_RELEASE_DIR:-} entry name path mode sha
+	put_file "$RELEASE_FETCH" 755 "$(cat "$RELEASE_FETCH_SRC")"
 	if [ -z "$dir" ]; then
 		if [ ! -f "$RELEASE_VERSION" ]; then
 			[ "$DRY_RUN" = 1 ] || die "no hangar release is installed; pass --release DIR (docs/runbook/host-bootstrap.md)"
@@ -222,7 +229,12 @@ release_modes_ok() {
 	done
 }
 
+release_fetch_ok() {
+	[ "$(stat -c '%a %U' "$RELEASE_FETCH")" = "755 root" ] && cmp -s "$RELEASE_FETCH_SRC" "$RELEASE_FETCH"
+}
+
 release_verify() {
+	check "$RELEASE_FETCH is this deploy/'s, root's, mode 755" release_fetch_ok
 	check "hangar release $(cat "$RELEASE_VERSION" 2>/dev/null || echo '(none)') installed, checksums match" release_installed_ok
 	check "hangar release files root's, modes as installed" release_modes_ok
 	if [ -f "$RELEASE_CONSOLE_TAR" ]; then

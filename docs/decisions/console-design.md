@@ -1,8 +1,7 @@
 # The console: how it looks, how it reaches the API, how it is served
 
-Status: accepted, 2026-10. The visual direction was settled with the owner on
-a proof of concept with mock data; the rest with the first version on real
-data.
+Status: accepted, 2026-10. The visual direction was settled on a proof of
+concept with mock data; the rest with the first version on real data.
 
 ## Context
 
@@ -45,8 +44,7 @@ the front door (`front-door.md`) from the same release as the binaries.
   are coloured. A host is described by its placement alone (region, site,
   CPU model and generation, memory, storage, network, chassis) and by what
   the project itself runs on it, summed in the console; never by core
-  counts, clocks, memory size or how loaded the whole host is (decided by
-  the owner). A chassis the console has no drawing of is drawn as a
+  counts, clocks, memory size or how loaded the whole host is. A chassis the console has no drawing of is drawn as a
   generic server.
 - **The mark** is a fighter shelter, a low wide arch, with a swept tail fin
   in the accent standing in it (`web/src/components/marks.tsx`).
@@ -79,7 +77,7 @@ Every page is behind `AccountService.WhoAmI`:
 The project is in the path, `/projects/<project>/…`, so a link names its
 project; `/` opens the project used last, or the first one. The console
 shows only what works. The sidebar lists only pages that exist, a kind
-joining it when its page does (decided by the owner), and the top bar has
+joining it when its page does, and the top bar has
 no search until search works.
 
 ### Tenants and projects
@@ -168,7 +166,7 @@ for a platform administrator; at today's size that is a handful of calls.
 - **The Runs on panel says where the machine stands** on its way to a
   host, in its header where the host's name goes once it is placed
   (`web/src/components/runs-on-panel.tsx`, the state from
-  `web/src/lib/runs-on.ts`; settled with the owner):
+  `web/src/lib/runs-on.ts`):
 
   | State | Read from | Header | Body |
   |---|---|---|---|

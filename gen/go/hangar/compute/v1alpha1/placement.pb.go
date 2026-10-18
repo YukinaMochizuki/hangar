@@ -26,16 +26,16 @@ const (
 // printable characters. See docs/decisions/machine-placement.md.
 type Placement struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The region the host is in, such as "ap-southeast", from the node's
+	// The region the host is in, such as "region-1", from the node's
 	// configuration.
 	Region string `protobuf:"bytes,1,opt,name=region,proto3" json:"region,omitempty"`
-	// The site within the region, such as a datacenter's name "SGP02", from
+	// The site within the region, such as a datacenter's name "site-a", from
 	// the node's configuration.
 	Site string `protobuf:"bytes,2,opt,name=site,proto3" json:"site,omitempty"`
 	// The CPU as the host names it, without its core count, such as
-	// "AMD EPYC 7313".
+	// "Example CPU 1000".
 	CpuModel string `protobuf:"bytes,3,opt,name=cpu_model,json=cpuModel,proto3" json:"cpu_model,omitempty"`
-	// The CPU's microarchitecture and code name, such as "Zen 3 (Milan)":
+	// The CPU's microarchitecture and code name, such as "Example Gen 3":
 	// known to the node agent for the CPUs it has a name for, or from the
 	// node's configuration.
 	CpuGeneration string `protobuf:"bytes,4,opt,name=cpu_generation,json=cpuGeneration,proto3" json:"cpu_generation,omitempty"`

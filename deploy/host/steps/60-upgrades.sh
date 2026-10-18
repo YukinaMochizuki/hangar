@@ -1,5 +1,6 @@
 # Unattended upgrades: security updates only, installed in a fixed window
-# (04:00 Asia/Singapore), never a reboot, and never a restart of hangar's own
+# (04:00 in HANGAR_UPGRADES_TZ, UTC unless the host env file sets it), never
+# a reboot, and never a restart of hangar's own
 # services or VMs. An upgrade can re-exec systemd and trigger udev on every
 # device, which the node rides out (docs/runbook/host-bootstrap.md), so it
 # happens at a known time rather than at a random one after boot.
@@ -7,7 +8,7 @@
 UPGRADES_CONF=/etc/apt/apt.conf.d/52hangar-unattended-upgrades
 UPGRADES_PERIODIC=/etc/apt/apt.conf.d/21hangar-auto-upgrades
 UPGRADES_NEEDRESTART=/etc/needrestart/conf.d/hangar.conf
-UPGRADES_TZ=Asia/Singapore
+UPGRADES_TZ=${HANGAR_UPGRADES_TZ:-UTC}
 # Each entry is TIMER:TIME: the lists are fetched first, then upgrades run.
 UPGRADES_TIMERS="apt-daily:03:30 apt-daily-upgrade:04:00"
 

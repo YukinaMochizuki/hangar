@@ -21,7 +21,7 @@ export const file_hangar_compute_v1alpha1_placement: GenFile = /*@__PURE__*/
  */
 export type Placement = Message<"hangar.compute.v1alpha1.Placement"> & {
   /**
-   * The region the host is in, such as "ap-southeast", from the node's
+   * The region the host is in, such as "region-1", from the node's
    * configuration.
    *
    * @generated from field: string region = 1;
@@ -29,7 +29,7 @@ export type Placement = Message<"hangar.compute.v1alpha1.Placement"> & {
   region: string;
 
   /**
-   * The site within the region, such as a datacenter's name "SGP02", from
+   * The site within the region, such as a datacenter's name "site-a", from
    * the node's configuration.
    *
    * @generated from field: string site = 2;
@@ -38,14 +38,14 @@ export type Placement = Message<"hangar.compute.v1alpha1.Placement"> & {
 
   /**
    * The CPU as the host names it, without its core count, such as
-   * "AMD EPYC 7313".
+   * "Example CPU 1000".
    *
    * @generated from field: string cpu_model = 3;
    */
   cpuModel: string;
 
   /**
-   * The CPU's microarchitecture and code name, such as "Zen 3 (Milan)":
+   * The CPU's microarchitecture and code name, such as "Example Gen 3":
    * known to the node agent for the CPUs it has a name for, or from the
    * node's configuration.
    *

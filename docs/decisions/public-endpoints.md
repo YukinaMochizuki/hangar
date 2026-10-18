@@ -10,8 +10,9 @@ IPv4-only client cannot reach one, and ordinary HTTPS goes through
 hangar-edge, the front door (`front-door.md`). User content must not share a
 registrable domain with the console and the API, so it lives under its own
 domain, `hangarlab.dev`. The wildcard certificate covers one level only.
-Cloudflare has left the traffic path, and Access with it (HiNet routes
-traffic to Cloudflare through the US west coast), so Hangar signs the
+Cloudflare has left the traffic path, and Access with it (from the region
+the platform is used from, traffic through Cloudflare's proxy took a long
+detour that added latency to every request), so Hangar signs the
 callers of private endpoints in itself (`authentication.md`).
 
 ## Decision
@@ -23,7 +24,7 @@ callers of private endpoints in itself (`authentication.md`).
   whether it is `Ready`: its machine runs. The domain is the apiserver's
   `--endpoint-domain`, `hangarlab.dev` by default. The backend speaks
   plain HTTP; the front door holds the TLS.
-- **The hostname is claimed for good** (decided by the project owner). `-`
+- **The hostname is claimed for good**. `-`
   joins two names that may hold it themselves (`web-my` of `demo-1`, `web`
   of `my-demo-1`), so the hostname label is claimed when the endpoint is
   made, like a project name, and never given to another endpoint: the claim
@@ -43,13 +44,12 @@ callers of private endpoints in itself (`authentication.md`).
   public. A VirtualMachine names no ports; its endpoints are made by hand.
 - **Who may use a `PRIVATE` endpoint** is a permission of its own,
   `network.publicendpoints.access` on the endpoint's project, apart from
-  reading or editing the endpoint (decided by the project owner).
+  reading or editing the endpoint.
   It is one of the reach permissions (`tenancy-and-iam.md`): the owner and
   editor roles and `platform.root` hold it, viewers do not, and it can be
   bound to service tokens. People are held to platform membership as
   everywhere.
-- **The edge is a separate, unprivileged `hangar-edge`** (decided by the
-  project owner): the front door sends it every request for a hostname
+- **The edge is a separate, unprivileged `hangar-edge`**: the front door sends it every request for a hostname
   under the domain, and it routes each by `Host`. User traffic never passes
   the apiserver, and the edge can scale apart from it.
   - It reads the API as the `Edge` principal (`authentication.md`): get,
@@ -66,8 +66,7 @@ callers of private endpoints in itself (`authentication.md`).
     or anything it stands on changes (its port, target, machine or
     access), and the transport keeps its connections under a key of all of
     those, so a request after a change never takes one opened before.
-- **Who calls a private endpoint** (decided by the project owner, as Access
-  and oauth2-proxy do it). The edge takes one of:
+- **Who calls a private endpoint** (as Access and oauth2-proxy do it). The edge takes one of:
   - its own session cookie for that host, `__Host-hangar-endpoint`, which a
     sign-in handoff from the console sets;
   - `Authorization: Bearer` with a CLI access token (`hga_`) or a service
@@ -89,7 +88,7 @@ callers of private endpoints in itself (`authentication.md`).
      several tabs hand off at once. The return path never leaves the edge.
   2. Endpoint-login, the apiserver's, signs the person in to the console
      first if they are not (`authentication.md`), and with a console session
-     goes on without asking (decided by the owner). It is a GET from another
+     goes on without asking. It is a GET from another
      site by design: what it makes goes nowhere but to the endpoint's own
      callback. It checks that the host is exactly one PRIVATE endpoint's,
      `<label>.<domain>`, and that the person may use it; otherwise it shows
@@ -112,8 +111,7 @@ callers of private endpoints in itself (`authentication.md`).
 - **An endpoint session** (`hge_`) counts on its host alone (the
   credential's audience). It lasts a day and never past the console
   session it came from, whatever its use, and is in that session's login:
-  signing out of the console, or revoking the person's logins, ends it
-  (decided by the owner).
+  signing out of the console, or revoking the person's logins, ends it.
 - **What ends a request in flight** to a PRIVATE endpoint, a stream or an
   upgrade included: its credential's expiry; any change to the bindings,
   projects or users the edge follows after which its caller may not use
@@ -121,7 +119,7 @@ callers of private endpoints in itself (`authentication.md`).
   flight again that often), the credential's revoke: a sign-out, a revoke of
   the person's logins, a service token rotated or deleted. A PUBLIC
   endpoint's requests have no credential to end with.
-- **What never reaches an endpoint** (decided by the owner). The edge keeps
+- **What never reaches an endpoint**. The edge keeps
   `/.hangar/` for itself on every endpoint, public ones too, however the path
   is spelled (case, dot segments, encoded dots, a backslash, a
   `;parameter`): the callback, and 404. Before forwarding, it removes every
@@ -140,8 +138,8 @@ callers of private endpoints in itself (`authentication.md`).
   reads only `__Host-` names, which a browser takes only from the host
   itself, with no `Domain`, so no other endpoint can plant or overwrite
   them; a lookalike without the prefix is ignored. The endpoint domain is
-  not on the Public Suffix List (decided by the project owner: at this
-  scale the request would likely be refused). Instead the edge makes every
+  not on the Public Suffix List (at this scale the request would likely be
+  refused). Instead the edge makes every
   cookie an endpoint sets host-only: it removes the `Domain` attribute,
   in any case and wherever it stands, from each `Set-Cookie` in every
   header block of an endpoint's answer, 1xx ones included, and keeps the
@@ -167,7 +165,7 @@ callers of private endpoints in itself (`authentication.md`).
   edge decides who may, and the socket reaches nothing an endpoint does not
   name. Not the apiserver's node tunnel: that would put user traffic on the
   control plane.
-- **Security groups do not apply** (decided by the project owner), as for
+- **Security groups do not apply**, as for
   `hangar ssh`: while an endpoint exists, its machine's interface has a rule
   passing TCP from the gateway's address to the endpoint's port
   (`networking.md`). The endpoint is the explicit opening.

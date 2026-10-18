@@ -8,7 +8,7 @@ import { RunsOnPanel } from "@/components/runs-on-panel";
 import { placementOf } from "@/lib/placement";
 import type { RunsOnState } from "@/lib/runs-on";
 
-const host = placementOf(create(PlacementSchema, { cpuModel: "AMD EPYC 7313", region: "ap-southeast", chassis: "generic-1u-2x-u2" }), "sgp02-01")!;
+const host = placementOf(create(PlacementSchema, { cpuModel: "Example CPU 1000", region: "region-1", chassis: "generic-1u-2x-u2" }), "node-01")!;
 const placed: RunsOnState = { kind: "placed", host };
 const scheduling: RunsOnState = { kind: "scheduling" };
 const unschedulable: RunsOnState = { kind: "unschedulable", message: "no ready node has 8192Mi of memory free" };
@@ -62,8 +62,8 @@ describe("RunsOnPanel", () => {
 
   it("placed when the page opens: the host's name and its rows, with nothing played", () => {
     render(<RunsOnPanel state={placed} status="running" />);
-    expect(screen.getByText("sgp02-01")).toBeTruthy();
-    expect(screen.getByText("AMD EPYC 7313")).toBeTruthy();
+    expect(screen.getByText("node-01")).toBeTruthy();
+    expect(screen.getByText("Example CPU 1000")).toBeTruthy();
     expect(drawing()).toBeNull();
   });
 
@@ -74,10 +74,10 @@ describe("RunsOnPanel", () => {
     rerender(<RunsOnPanel state={placed} status="running" />);
     expect(sweep()).toBeNull();
     expect(drawing()).not.toBeNull();
-    expect(screen.getByText("sgp02-01")).toBeTruthy();
+    expect(screen.getByText("node-01")).toBeTruthy();
     act(() => void vi.advanceTimersByTime(1100));
     expect(drawing()).toBeNull();
-    expect(screen.getByText("AMD EPYC 7313")).toBeTruthy();
+    expect(screen.getByText("Example CPU 1000")).toBeTruthy();
   });
 
   it("with reduced motion asked for: no sweep, and the host appears at once", () => {
@@ -86,7 +86,7 @@ describe("RunsOnPanel", () => {
     expect(sweep()).toBeNull();
     rerender(<RunsOnPanel state={placed} status="running" />);
     expect(drawing()).toBeNull();
-    expect(screen.getByText("AMD EPYC 7313")).toBeTruthy();
+    expect(screen.getByText("Example CPU 1000")).toBeTruthy();
   });
 
   it("never says the machine is not placed yet", () => {

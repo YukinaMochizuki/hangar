@@ -4,8 +4,9 @@ Status: accepted, 2026-10.
 
 ## Context
 
-HiNet routes traffic to Cloudflare through the US west coast, so the
-project owner took Cloudflare out of the traffic path. Everything now
+From the region the platform is used from, traffic through Cloudflare's
+proxy took a long detour that added latency to every request, so
+Cloudflare is out of the traffic path. Everything now
 connects straight to the host: the API, the console and the public
 endpoints. Cloudflare stays only as DNS-only (grey-cloud) DNS, and its DNS
 API answers ACME's DNS-01 challenges. The host has one IPv4 address and an
@@ -14,8 +15,7 @@ stand in front of the internet with nothing else in front of it.
 
 ## Decision
 
-- **hangar-edge is the only listener on :443 and :80** (decided by the
-  owner). It is never root and holds no capability. systemd binds both ports
+- **hangar-edge is the only listener on :443 and :80**. It is never root and holds no capability. systemd binds both ports
   in two socket units, `hangar-edge-https.socket` and
   `hangar-edge-http.socket`, each one `[::]` socket with
   `BindIPv6Only=both`, so IPv4 and IPv6 come in on it. systemd passes the
@@ -131,8 +131,8 @@ stand in front of the internet with nothing else in front of it.
   There is no overall read or write timeout: Watch, server streams and
   WebSockets stay open for as long as they are used. A slow request body is
   bounded only by the connection limits.
-- **The host's firewall opens 22, 80 and 443 alone** (decided by the
-  owner; `deploy/host/steps/45-firewall.sh`).
+- **The host's firewall opens 22, 80 and 443 alone**
+  (`deploy/host/steps/45-firewall.sh`).
   - It is one nft table of its own, `inet hangar-host`. Its input chain
     drops everything, IPv4 and IPv6, but loopback, replies, ICMP and ICMPv6
     (neighbour discovery, the proxy NDP guests' IPv6 needs, path MTU), the
@@ -148,7 +148,7 @@ stand in front of the internet with nothing else in front of it.
     loaded by `nftables.service`, whose stock config flushes every table.
 - **The pages the front door answers with itself are plain-text
   placeholders**, all in `internal/edge/front/pages.go`. What a person sees
-  in a browser is designed with the owner separately.
+  in a browser is a design of its own, still to come.
 
 ## Consequences
 

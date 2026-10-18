@@ -75,7 +75,7 @@ var (
 	natLogDir = workDir + "/nat"
 	// nodeName is the Node the apiserver registers and the agent reports.
 	nodeName = "testbed"
-	admin    = "root@testbed.invalid"
+	admin    = "root@example.com"
 	apiAddr  string
 )
 

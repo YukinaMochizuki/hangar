@@ -5,8 +5,9 @@ traffic path.
 
 ## Context
 
-HiNet routes traffic to Cloudflare through the US west coast, so the
-project owner took Cloudflare out of the traffic path: the front door,
+From the region the platform is used from, traffic through Cloudflare's
+proxy took a long detour that added latency to every request, so
+Cloudflare is out of the traffic path: the front door,
 hangar-edge on the host, takes every connection itself
 (`front-door.md`), and the apiserver signs people in itself
 (`authentication.md`). What is left of Cloudflare is DNS: the records that
@@ -20,8 +21,9 @@ other things.
 ## Decision
 
 - **`hangar-cloudflare plan | apply | verify`** (`cmd/hangar-cloudflare`),
-  idempotent like `deploy/host`, run by hand from a privileged box with a
-  token that may read the zones and edit their DNS, nothing else.
+  idempotent like `deploy/host`, run by hand by the operator, from a
+  machine that holds a token that may read the zones and edit their DNS,
+  nothing else.
   `internal/cloudflare` is a small `net/http` client for exactly the zone
   and DNS endpoints used; the official SDK would pull in every Cloudflare
   product for a handful of endpoints.

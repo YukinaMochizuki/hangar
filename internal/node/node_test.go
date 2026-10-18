@@ -141,12 +141,12 @@ func TestTheNodeReportsItsPlacement(t *testing.T) {
 	logs := &syncBuffer{}
 	startAgent(t, env, &computev1alpha1.NodeResources{Cpu: "8", Memory: "8Gi"}, nil, func(c *node.Config) {
 		c.Log = slog.New(slog.NewTextHandler(logs, nil))
-		c.Placement = &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "Generic 1U"}
+		c.Placement = &computev1alpha1.Placement{Region: "region-1", Site: "site-a", Chassis: "Generic 1U"}
 		c.CPU = func() (*computev1alpha1.Placement, error) {
 			if cpuFails.Load() {
 				return nil, errors.New("no /proc/cpuinfo")
 			}
-			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)"}, nil
+			return &computev1alpha1.Placement{CpuModel: "Example CPU 1000", CpuGeneration: "Example Gen 3"}, nil
 		}
 		c.Disks = func() (string, error) {
 			diskReads.Add(1)
@@ -162,7 +162,7 @@ func TestTheNodeReportsItsPlacement(t *testing.T) {
 		}
 	})
 	want := &computev1alpha1.Placement{
-		Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
+		Region: "region-1", Site: "site-a", CpuModel: "Example CPU 1000", CpuGeneration: "Example Gen 3",
 		Storage: "2 × NVMe SSD", Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE",
 	}
 	n := waitValue(t, "the node describing its host, without the chassis that is no label", getNode(t, root), func(n *computev1alpha1.Node) bool {
@@ -207,7 +207,7 @@ func TestAnUnreadableHostIsDescribedAsConfigured(t *testing.T) {
 		c.Log = slog.New(slog.NewTextHandler(logs, nil))
 		c.Placement = &computev1alpha1.Placement{Memory: "DDR4-3200 ECC"}
 		c.CPU = func() (*computev1alpha1.Placement, error) {
-			return &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313"}, nil
+			return &computev1alpha1.Placement{CpuModel: "Example CPU 1000"}, nil
 		}
 		c.Disks = func() (string, error) { return "", errors.New("no /sys/block") }
 		c.Memory = func() (string, error) { return "", errors.New("no SMBIOS table") }
@@ -219,7 +219,7 @@ func TestAnUnreadableHostIsDescribedAsConfigured(t *testing.T) {
 		return n.GetStatus().GetPlacement().GetCpuModel() != ""
 	})
 	n = waitBeats(t, root, n, 3)
-	want := &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", Memory: "DDR4-3200 ECC", Network: "1 × 10 GbE"}
+	want := &computev1alpha1.Placement{CpuModel: "Example CPU 1000", Memory: "DDR4-3200 ECC", Network: "1 × 10 GbE"}
 	if got := n.GetStatus().GetPlacement(); !proto.Equal(got, want) {
 		t.Errorf("placement %v, want %v", got, want)
 	}

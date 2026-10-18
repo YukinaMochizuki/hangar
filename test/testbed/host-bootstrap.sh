@@ -16,7 +16,9 @@ host_dir=$repo/deploy/host
 # shellcheck source=deploy/host/versions.env
 . "$host_dir/versions.env"
 work=/var/tmp/hangar-testbed
-env_file=$work/testbed.env
+# Where the operator puts the host's settings; bootstrap.sh and verify.sh
+# read it without --env.
+env_file=/etc/hangar/host.env
 release=${HANGAR_TESTBED_RELEASE:-}
 front_door_kit=${HANGAR_TESTBED_FRONT_DOOR:-}
 
@@ -116,6 +118,8 @@ EOF
 	done
 	ip -4 -o addr show dev tb-uplink scope global | grep -q . || fail "no DHCPv4 lease on tb-uplink"
 
+	mkdir -p /etc/hangar
+	install -m 0600 /dev/null "$env_file"
 	cat >"$env_file" <<EOF
 HANGAR_UPLINK=tb-uplink
 HANGAR_UPLINK_MAC=02:00:00:00:00:01
@@ -132,11 +136,11 @@ HANGAR_VMS_QUOTA=1G
 HANGAR_RESERVED_MEMORY=256Mi
 HANGAR_DEFAULT_MAX_OWNED_TENANTS=3
 HANGAR_NODE_NAME=testbed
+HANGAR_UPGRADES_TZ=Europe/Paris
 EOF
 	# What the operator writes by hand on a real host.
-	mkdir -p /etc/hangar
 	install -m 0600 /dev/null /etc/hangar/local.env
-	echo 'HANGAR_BOOTSTRAP_ADMIN=admin@testbed.invalid' >/etc/hangar/local.env
+	echo 'HANGAR_BOOTSTRAP_ADMIN=admin@example.com' >/etc/hangar/local.env
 }
 
 # main_pid UNIT prints the main pid of a service, 0 when it is not running.
@@ -168,7 +172,7 @@ test_refuses_unknown_installer_keys() {
 	step "the network step refuses installer settings it would drop"
 	cp /etc/netplan/49-ovh-installer.yaml "$work/49-ovh-installer.yaml.orig"
 	sed -i 's|^      dhcp4: true|      dhcp4: true\n      nameservers: {addresses: [192.0.2.53]}|' /etc/netplan/49-ovh-installer.yaml
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only network --dry-run 2>"$work/keys.log"; then
+	if "$host_dir/bootstrap.sh" --only network --dry-run 2>"$work/keys.log"; then
 		fail "network step accepted an installer stanza with nameservers"
 	fi
 	grep -q 'sets nameservers' "$work/keys.log" || fail "unexpected refusal: $(cat "$work/keys.log")"
@@ -195,7 +199,7 @@ test_dry_run_changes_nothing() {
 	step "dry run reports changes and makes none"
 	local before out
 	before=$(state_digest)
-	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$release" --dry-run)
+	out=$("$host_dir/bootstrap.sh" --release "$release" --dry-run)
 	[ "$out" != "changes: 0" ] || fail "dry run on a fresh host reported no changes"
 	[ "$(state_digest)" = "$before" ] || fail "dry run changed the host"
 }
@@ -204,18 +208,18 @@ test_converges_and_is_idempotent() {
 	step "first run converges"
 	local log applied
 	log=$work/first-run.log
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" 2>&1 | tee "$log"
+	"$host_dir/bootstrap.sh" --release "$release" 2>&1 | tee "$log"
 	# The summary must count every change made, or "changes: 0" proves nothing.
 	applied=$(grep -c '^apply: ' "$log")
 	grep -qx "changes: $applied" "$log" || fail "summary does not match the $applied changes applied"
 	step "second run changes nothing, with the same release or none"
 	local out
-	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$release")
+	out=$("$host_dir/bootstrap.sh" --release "$release")
 	[ "$out" = "changes: 0" ] || fail "second run reported $out"
-	out=$("$host_dir/bootstrap.sh" --env "$env_file")
+	out=$("$host_dir/bootstrap.sh")
 	[ "$out" = "changes: 0" ] || fail "a run without --release reported $out"
 	step "verify passes"
-	"$host_dir/verify.sh" --env "$env_file" | tee "$work/first-verify.log"
+	"$host_dir/verify.sh" | tee "$work/first-verify.log"
 	[ "$(cat /usr/local/lib/hangar/VERSION)" = "$(cat "$release/VERSION")" ] || fail "installed VERSION is not the release's"
 	grep -q "^PASS the console served is the installed release's$" "$work/first-verify.log" ||
 		fail "verify does not check the console"
@@ -244,7 +248,7 @@ test_converges_and_is_idempotent() {
 	local since
 	ssh-keygen -q -t ed25519 -N '' -C hangar-ssh-ca -f "$work/ssh-ca"
 	install -m 0644 "$work/ssh-ca" /var/lib/hangar/state/ssh-ca
-	"$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/ca.log" >/dev/null
+	"$host_dir/bootstrap.sh" 2>"$work/ca.log" >/dev/null
 	grep -q 'warning: /var/lib/hangar/state/ssh-ca was root:root mode 644' "$work/ca.log" ||
 		fail "bootstrap tightened the SSH CA's key without saying it had been open: $(cat "$work/ca.log")"
 	[ "$(stat -c '%U %a' /var/lib/hangar/state/ssh-ca)" = "hangar 600" ] || fail "bootstrap left the SSH CA's key $(stat -c '%U %a' /var/lib/hangar/state/ssh-ca)"
@@ -255,7 +259,7 @@ test_converges_and_is_idempotent() {
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'PRIVATE' && fail "the apiserver logged the SSH CA's key"
 	# Read from a file: grep -q ending the pipe early would kill verify.sh
 	# with SIGPIPE, and pipefail fail the check.
-	"$host_dir/verify.sh" --env "$env_file" >"$work/ca-verify.log" || true
+	"$host_dir/verify.sh" >"$work/ca-verify.log" || true
 	grep -q '^PASS SSH CA key /var/lib/hangar/state/ssh-ca, hangar.s, mode 600 (hangar ssh)$' "$work/ca-verify.log" ||
 		fail "verify does not check the SSH CA"
 
@@ -266,11 +270,11 @@ test_converges_and_is_idempotent() {
 	grep -q "note: copy $kek to the vault now" "$log" || fail "the first run did not say to keep the KEK in the vault"
 	grep -qF "$(cut -d' ' -f2 "$kek")" "$log" && fail "the run logged the KEK"
 	before=$(sha256sum "$kek")
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>&1
+	"$host_dir/bootstrap.sh" >/dev/null 2>&1
 	[ "$(sha256sum "$kek")" = "$before" ] || fail "a later run replaced the KEK"
 	journalctl -u hangar-apiserver --since "$since" | grep -q 'loaded the key-encryption key' || fail "the apiserver did not load the KEK"
 	journalctl -u hangar-apiserver --since "$since" | grep -qF "$(cut -d' ' -f2 "$kek")" && fail "the apiserver logged the KEK"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/kek-verify.log" || true
+	"$host_dir/verify.sh" >"$work/kek-verify.log" || true
 	grep -q "^PASS secrets key-encryption key $kek, hangar.s, mode 600$" "$work/kek-verify.log" ||
 		fail "verify does not check the KEK"
 }
@@ -284,7 +288,7 @@ admin_cli() { HANGAR_CONFIG=$work/admin.yaml /usr/local/bin/hangar "$@"; }
 list_nodes_status() {
 	local h args=()
 	for h in "$@"; do args+=(-H "$h"); done
-	curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@testbed.invalid' \
+	curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@example.com' \
 		-H 'Content-Type: application/json' "${args[@]}" -d '{}' \
 		http://127.0.0.1:8080/hangar.compute.v1alpha1.NodeService/ListNodes
 }
@@ -310,7 +314,7 @@ EOF
 apiVersion: iam.hangarlab.cloud/v1alpha1
 kind: RoleBinding
 metadata: {name: tb-root-again}
-spec: {subject: {user: again@testbed.invalid}, role: platform.root, scope: {platform: {}}}
+spec: {subject: {user: again@example.com}, role: platform.root, scope: {platform: {}}}
 EOF
 	admin_cli delete rolebinding tb-root-again >/dev/null
 	journalctl -u hangar-apiserver --since "$since" --no-pager |
@@ -335,7 +339,7 @@ EOF
 
 	step "the bootstrap admin signs up, as after a host's first start"
 	local signup
-	signup=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@testbed.invalid' \
+	signup=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Hangar-Dev-User: admin@example.com' \
 		-H 'Content-Type: application/json' -d '{"username": "tb-admin"}' \
 		http://127.0.0.1:8080/hangar.iam.v1alpha1.AccountService/SignUp)
 	# 409: signed up on an earlier run against the same store.
@@ -379,19 +383,19 @@ test_node_reconnects() {
 	[ "$(stat -c %i /run/hangar/node.sock)" != "$ino" ] || fail "the node socket was not made again"
 	wait_node_connected || fail "the agent did not reconnect"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the agent restarted instead of reconnecting"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/reconnect.log" || fail "verify after the restart: $(grep FAIL "$work/reconnect.log")"
+	"$host_dir/verify.sh" >"$work/reconnect.log" || fail "verify after the restart: $(grep FAIL "$work/reconnect.log")"
 
 	step "a socket restarted alone stays down; verify says so and bootstrap restarts the apiserver"
 	api_pid=$(main_pid hangar-apiserver)
 	systemctl restart hangar-apiserver-node.socket 2>/dev/null && fail "systemd restarted a socket whose service runs"
 	wait_node_connected || fail "the agent lost the apiserver over a socket unit"
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/reconnect.log"; then fail "verify passed with a socket down"; fi
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/reconnect.log"
+	if "$host_dir/verify.sh" >"$work/reconnect.log"; then fail "verify passed with a socket down"; fi
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/reconnect.log"
 	grep -q '^apply: restart hangar-apiserver$' "$work/reconnect.log" || fail "bootstrap did not restart the apiserver: $(cat "$work/reconnect.log")"
 	systemctl is-active --quiet hangar-apiserver-node.socket || fail "the node socket is still down"
 	wait_node_connected || fail "the agent did not reconnect"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the socket"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the socket"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the socket"
+	"$host_dir/verify.sh" >/dev/null || fail "verify after the socket"
 }
 
 TB_CLIENT_ID=testbed-client.apps.googleusercontent.com
@@ -438,17 +442,17 @@ test_oidc_cutover() {
 	step "the retired cloudflare mode is refused before any step"
 	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
 	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log"; then fail "bootstrap ran in the retired cloudflare mode"; fi
+	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran in the retired cloudflare mode"; fi
 	grep -q 'must be dev or oidc, not cloudflare' "$work/cut.log" || fail "unexpected refusal: $(cat "$work/cut.log")"
 	auth_env dev
 
 	step "an oidc mode without its client ID and public URL is refused before any step"
 	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log"; then fail "bootstrap ran with half an oidc mode"; fi
+	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran with half an oidc mode"; fi
 	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cut.log" &&
 		grep -q 'HANGAR_PUBLIC_URL=https://' "$work/cut.log"; } || fail "unexpected refusal: $(cat "$work/cut.log")"
 	grep -q '^== ' "$work/cut.log" && fail "steps ran before the refusal"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then fail "the services step ran with half an oidc mode"; fi
+	if "$host_dir/bootstrap.sh" --only services 2>/dev/null; then fail "the services step ran with half an oidc mode"; fi
 	auth_env dev
 
 	step "oidc auth in local.env restarts the apiserver in it, still on loopback"
@@ -456,7 +460,7 @@ test_oidc_cutover() {
 	api_pid=$(main_pid hangar-apiserver)
 	node_pid=$(main_pid hangar-node)
 	auth_env oidc
-	"$host_dir/bootstrap.sh" --env "$env_file" --only services >/dev/null 2>"$work/cut.log"
+	"$host_dir/bootstrap.sh" --only services >/dev/null 2>"$work/cut.log"
 	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
 	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver runs its old auth"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the node was restarted for the apiserver's auth"
@@ -465,7 +469,7 @@ test_oidc_cutover() {
 		fail "the apiserver's unit does not have oidc auth"
 	[ "$(list_nodes_status)" = 401 ] || fail "oidc auth took a dev header"
 	admin_cli get node testbed | grep -qE '^testbed +True ' || fail "the admin socket does not work in oidc auth"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify in oidc auth: $(grep FAIL "$work/cut-verify.log")"
+	"$host_dir/verify.sh" >"$work/cut-verify.log" || fail "verify in oidc auth: $(grep FAIL "$work/cut-verify.log")"
 	grep -q "^PASS OAuth client secret $TB_OIDC_SECRET, hangar's, mode 600$" "$work/cut-verify.log" || fail "verify does not check the client secret"
 	grep -q "^PASS apiserver runs oidc auth as /etc/hangar/local.env asks: --auth-mode oidc --oidc-client-id $TB_CLIENT_ID --oidc-client-secret-file $TB_OIDC_SECRET --public-url $TB_PUBLIC_URL$" "$work/cut-verify.log" ||
 		fail "verify does not check the auth flags"
@@ -473,17 +477,17 @@ test_oidc_cutover() {
 	step "a tunnel an earlier release left runs on while its cloudflared.env is there"
 	old_tunnel
 	systemctl is-active --quiet hangar-cloudflared || fail "the earlier release's tunnel does not run"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/cut.log")" = "changes: 0" ] || fail "a run changed something with the tunnel there: $(cat "$work/cut.log")"
+	[ "$("$host_dir/bootstrap.sh" 2>"$work/cut.log")" = "changes: 0" ] || fail "a run changed something with the tunnel there: $(cat "$work/cut.log")"
 	grep -q 'warning: the Cloudflare tunnel (hangar-cloudflared) is no longer installed by any step; it is left as it is until you delete /etc/hangar/cloudflared.env' "$work/cut.log" ||
 		fail "the run does not say the tunnel is left: $(cat "$work/cut.log")"
 	systemctl is-active --quiet hangar-cloudflared || fail "the run stopped the tunnel before its env file went"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify with the tunnel left: $(grep FAIL "$work/cut-verify.log")"
+	"$host_dir/verify.sh" >"$work/cut-verify.log" || fail "verify with the tunnel left: $(grep FAIL "$work/cut-verify.log")"
 	grep -q '^SKIP Cloudflare tunnel retired (/etc/hangar/cloudflared.env is still there' "$work/cut-verify.log" ||
 		fail "verify does not skip the tunnel while its env file is there"
 
 	step "dev auth asked for with the tunnel up stops the tunnel before the apiserver restarts"
 	auth_env dev
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "the switch to dev auth: $(cat "$work/cut.log")"
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/cut.log" || fail "the switch to dev auth: $(cat "$work/cut.log")"
 	local stop restart
 	stop=$(grep -n '^apply: stop and disable hangar-cloudflared: the auth mode is dev$' "$work/cut.log" | cut -d: -f1)
 	restart=$(grep -n '^apply: restart hangar-apiserver$' "$work/cut.log" | cut -d: -f1)
@@ -491,12 +495,12 @@ test_oidc_cutover() {
 		fail "the tunnel was not stopped before the apiserver went to dev: $(cat "$work/cut.log")"
 	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel runs in front of dev auth"
 	auth_env oidc
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "back to oidc auth: $(cat "$work/cut.log")"
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/cut.log" || fail "back to oidc auth: $(cat "$work/cut.log")"
 	systemctl start hangar-cloudflared
 
 	step "with cloudflared.env deleted, the run retires the tunnel: nothing of it is left"
 	rm /etc/hangar/cloudflared.env
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log" || fail "retiring the tunnel: $(cat "$work/cut.log")"
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/cut.log" || fail "retiring the tunnel: $(cat "$work/cut.log")"
 	grep -q '^apply: retire the Cloudflare tunnel: stop and disable hangar-cloudflared, remove /etc/systemd/system/hangar-cloudflared.service /usr/local/libexec/hangar-cloudflared-guard /usr/local/bin/cloudflared$' "$work/cut.log" ||
 		fail "the run did not retire the tunnel: $(cat "$work/cut.log")"
 	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel still runs"
@@ -505,26 +509,26 @@ test_oidc_cutover() {
 		[ ! -e "$f" ] || fail "$f is left"
 	done
 	[ "$(systemctl show -p LoadState --value hangar-cloudflared)" = not-found ] || fail "systemd still knows the tunnel's unit"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the tunnel went"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log" || fail "verify after the tunnel went: $(grep FAIL "$work/cut-verify.log")"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the tunnel went"
+	"$host_dir/verify.sh" >"$work/cut-verify.log" || fail "verify after the tunnel went: $(grep FAIL "$work/cut-verify.log")"
 	grep -q '^PASS Cloudflare tunnel retired: nothing of it left$' "$work/cut-verify.log" || fail "verify does not check the tunnel is gone"
 
 	step "a tunnel put back by hand, with no env file, fails verify, and the run removes it"
 	old_tunnel
 	rm /etc/hangar/cloudflared.env
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/cut-verify.log"; then fail "verify passed with the tunnel back"; fi
+	if "$host_dir/verify.sh" >"$work/cut-verify.log"; then fail "verify passed with the tunnel back"; fi
 	grep -q '^FAIL Cloudflare tunnel retired: nothing of it left$' "$work/cut-verify.log" || fail "verify does not say why: $(grep FAIL "$work/cut-verify.log")"
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/cut.log"
 	systemctl is-active --quiet hangar-cloudflared && fail "the tunnel still runs"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once the tunnel is gone again"
+	"$host_dir/verify.sh" >/dev/null || fail "verify once the tunnel is gone again"
 
 	step "rolling back to dev auth"
 	auth_env dev
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/cut.log"
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/cut.log"
 	grep -q '^apply: restart hangar-apiserver$' "$work/cut.log" || fail "the apiserver was not restarted: $(cat "$work/cut.log")"
 	[ "$(list_nodes_status)" = 200 ] || fail "dev auth is not back"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the rollback"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the rollback"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the rollback"
+	"$host_dir/verify.sh" >/dev/null || fail "verify after the rollback"
 }
 
 # The console's origin with the front door: sign-in's public URL.
@@ -597,7 +601,7 @@ EOF
 	# console's site the front door serves; and the ACME account needs an
 	# email.
 	sed -i '/^HANGAR_ACME_EMAIL=/d' /etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" --only edge 2>"$log"; then
+	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge 2>"$log"; then
 		fail "the front door ran with sign-in's public URL elsewhere and no ACME email"
 	fi
 	grep -q "HANGAR_PUBLIC_URL in /etc/hangar/local.env must be $TB_FRONT_DOOR_URL" "$log" || fail "unexpected refusal: $(cat "$log")"
@@ -605,10 +609,10 @@ EOF
 	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
 	echo 'HANGAR_ACME_EMAIL=edge@example.com' >>/etc/hangar/local.env
 
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" 2>&1 | tee "$log"
+	"$host_dir/bootstrap.sh" --release "$edge_release" 2>&1 | tee "$log"
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$log" || fail "summary does not match its changes"
 	grep -qx 'apply: start hangar-edge' "$log" || fail "the edge was not started"
-	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release")
+	out=$("$host_dir/bootstrap.sh" --release "$edge_release")
 	[ "$out" = "changes: 0" ] || fail "the run after the front door reported $out"
 	pid=$(main_pid hangar-edge)
 	[ "$(stat -c %U "/proc/$pid")" = hangar-edge ] || fail "the edge runs as $(stat -c %U "/proc/$pid")"
@@ -632,7 +636,7 @@ EOF
 	# real CA's chain to; pebble's, here, joins them for the test.
 	install -m 0644 "$tls/root.pem" /usr/local/share/ca-certificates/tb-pebble.crt
 	update-ca-certificates >/dev/null 2>&1
-	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the front door: $(grep FAIL "$work/door-verify.log")"
+	"$host_dir/verify.sh" >"$work/door-verify.log" || fail "verify with the front door: $(grep FAIL "$work/door-verify.log")"
 	for out in 'certificate for api.cp.test in /var/lib/hangar-edge, more than 14 days left' \
 		'certificate for console.cp.test in /var/lib/hangar-edge, more than 14 days left' \
 		'certificate for \*.user.test in /var/lib/hangar-edge, more than 14 days left' 'edge runs as hangar-edge with no capability' \
@@ -647,13 +651,13 @@ EOF
 	# What :443 serves, untrusted, fails verify.
 	rm /usr/local/share/ca-certificates/tb-pebble.crt
 	update-ca-certificates --fresh >/dev/null 2>&1
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log"; then fail "verify passed with :443 serving certificates no root trusts"; fi
+	if "$host_dir/verify.sh" >"$work/door-verify.log"; then fail "verify passed with :443 serving certificates no root trusts"; fi
 	[ "$(grep -c '^FAIL edge on :443 serves ' "$work/door-verify.log")" = 3 ] || fail "verify does not fail each name :443 serves: $(grep FAIL "$work/door-verify.log")"
 	install -m 0644 "$tls/root.pem" /usr/local/share/ca-certificates/tb-pebble.crt
 	update-ca-certificates >/dev/null 2>&1
 	# A certificate verify cannot find fails it.
 	mv /var/lib/hangar-edge/certificates /var/lib/hangar-edge/certificates.tb
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log"; then fail "verify passed with no certificates in storage"; fi
+	if "$host_dir/verify.sh" >"$work/door-verify.log"; then fail "verify passed with no certificates in storage"; fi
 	[ "$(grep -c '^FAIL certificate for ' "$work/door-verify.log")" = 3 ] || fail "verify does not fail each certificate: $(grep FAIL "$work/door-verify.log")"
 	mv /var/lib/hangar-edge/certificates.tb /var/lib/hangar-edge/certificates
 	[ "$(door_curl '[::1]' api.cp.test /healthz)" = "ok
@@ -741,7 +745,7 @@ EOF
 
 	step "public endpoints without the front door are refused: the edge serves nowhere else"
 	front_door_env endpoints
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$edge_release" --only edge >/dev/null 2>"$log"; then
+	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >/dev/null 2>"$log"; then
 		fail "the edge step ran with public endpoints and no front door"
 	fi
 	grep -q 'public endpoints (HANGAR_EDGE_DOMAIN) are served by the front door alone: set HANGAR_CP_DOMAIN' "$log" || fail "unexpected refusal: $(cat "$log")"
@@ -751,12 +755,12 @@ EOF
 	step "the front door off: the edge, its sockets and the public socket go, and :443 and :80 with them"
 	front_door_env off
 	auth_env dev
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$log" || fail "turning the edge off: $(cat "$log")"
+	"$host_dir/bootstrap.sh" --release "$release" >/dev/null 2>"$log" || fail "turning the edge off: $(cat "$log")"
 	systemctl is-active --quiet hangar-edge && fail "the edge still runs"
 	ss -Hltn | awk '{print $4}' | grep -qE ':(443|80)$' && fail "something still listens on :443 or :80: $(ss -Hltnp)"
 	[ ! -e /run/hangar/public.sock ] || fail "the public socket is still there"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged with the edge off"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/door-verify.log" || fail "verify with the edge off: $(grep FAIL "$work/door-verify.log")"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged with the edge off"
+	"$host_dir/verify.sh" >"$work/door-verify.log" || fail "verify with the edge off: $(grep FAIL "$work/door-verify.log")"
 	grep -q '^PASS edge off: /etc/hangar/local.env names no public endpoint domain$' "$work/door-verify.log" || fail "verify does not check the edge is off"
 	systemctl stop tb-pebble
 	rm -f /etc/hangar/pebble-ca.pem /usr/local/share/ca-certificates/tb-pebble.crt
@@ -773,14 +777,14 @@ test_refuses_tampered_release() {
 	printf x >>"$bad/hangar-node"
 	before=$(sha256sum /usr/local/bin/hangar-* /usr/local/lib/hangar/*)
 	node_pid=$(main_pid hangar-node)
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
+	if "$host_dir/bootstrap.sh" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
 		fail "bootstrap installed a tampered release"
 	fi
 	grep -q 'checksum mismatch' "$work/tampered.log" || fail "unexpected refusal: $(cat "$work/tampered.log")"
 	[ "$(sha256sum /usr/local/bin/hangar-* /usr/local/lib/hangar/*)" = "$before" ] || fail "a refused release changed what is installed"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "a refused release restarted the node"
 	sed -i '/  hangar$/d' "$bad/SHA256SUMS"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
+	if "$host_dir/bootstrap.sh" --release "$bad" >/dev/null 2>"$work/tampered.log"; then
 		fail "bootstrap installed a release whose SHA256SUMS lacks a file"
 	fi
 	grep -q 'does not list hangar;' "$work/tampered.log" || fail "unexpected refusal: $(cat "$work/tampered.log")"
@@ -796,16 +800,16 @@ test_refuses_half_applied_release() {
 	printf x >>"$work/hangar-node.mixed"
 	install -m 755 "$work/hangar-node.mixed" /usr/local/bin/hangar-node.tb-new
 	mv -f /usr/local/bin/hangar-node.tb-new /usr/local/bin/hangar-node
-	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/mixed.log"; then
+	if "$host_dir/bootstrap.sh" >/dev/null 2>"$work/mixed.log"; then
 		fail "bootstrap ran on a half-applied release without --release"
 	fi
 	grep -q 'rerun with --release DIR' "$work/mixed.log" || fail "unexpected refusal: $(cat "$work/mixed.log")"
 	grep -q '^apply: ' "$work/mixed.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/mixed.log")"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
 	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the refused run restarted the apiserver"
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$work/mixed.log"
+	"$host_dir/bootstrap.sh" --release "$release" >/dev/null 2>"$work/mixed.log"
 	grep -q '^apply: install hangar-node as' "$work/mixed.log" || fail "--release did not reinstall hangar-node: $(cat "$work/mixed.log")"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after reinstalling the release"
+	"$host_dir/verify.sh" >/dev/null || fail "verify after reinstalling the release"
 	rm -f "$work/hangar-node.mixed"
 }
 
@@ -824,14 +828,14 @@ with_subuid_clash() {
 ids_refused_fresh() {
 	local before
 	before=$(state_digest)
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>"$work/ids.log"; then
+	if "$host_dir/bootstrap.sh" --release "$release" >/dev/null 2>"$work/ids.log"; then
 		fail "bootstrap ran with old's subordinate range among the VMs' ids"
 	fi
 	grep -q "the VMs' ids 200000 to 265535 are taken: /etc/subuid range of old; move each to other ids" "$work/ids.log" ||
 		fail "unexpected refusal: $(cat "$work/ids.log")"
 	grep -q '^== ' "$work/ids.log" && fail "steps ran before the refusal: $(grep '^== ' "$work/ids.log")"
 	[ "$(state_digest)" = "$before" ] || fail "the refusal changed the host"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --release "$release" --only release >/dev/null 2>"$work/ids.log"; then
+	if "$host_dir/bootstrap.sh" --release "$release" --only release >/dev/null 2>"$work/ids.log"; then
 		fail "the release step ran with old's range among the VMs' ids"
 	fi
 	[ ! -e /usr/local/bin/hangar-node ] || fail "a refused run installed hangar-node"
@@ -845,10 +849,10 @@ test_refuses_vm_id_clash() {
 ids_refused_installed() {
 	local node_pid
 	node_pid=$(main_pid hangar-node)
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/ids-verify.log"; then fail "verify passed with old's range among the VMs' ids"; fi
+	if "$host_dir/verify.sh" >"$work/ids-verify.log"; then fail "verify passed with old's range among the VMs' ids"; fi
 	grep -q "^FAIL no user, group or other subordinate range has one of the VMs' ids$" "$work/ids-verify.log" ||
 		fail "verify did not say why: $(grep '^FAIL' "$work/ids-verify.log")"
-	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/ids.log"; then fail "bootstrap ran with old's range among the VMs' ids"; fi
+	if "$host_dir/bootstrap.sh" >/dev/null 2>"$work/ids.log"; then fail "bootstrap ran with old's range among the VMs' ids"; fi
 	grep -q '^apply: ' "$work/ids.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/ids.log")"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
 }
@@ -858,18 +862,18 @@ test_refuses_vm_id_clash_installed() {
 	with_subuid_clash ids_refused_installed
 	grep -qx 'hangar-vms:200000:65536' /etc/subuid || fail "the VMs' ids are not kept in /etc/subuid"
 	grep -qx 'hangar-vms:200000:65536' /etc/subgid || fail "the VMs' ids are not kept in /etc/subgid"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once old's range is gone"
+	"$host_dir/verify.sh" >/dev/null || fail "verify once old's range is gone"
 }
 
 test_refuses_without_local_env() {
 	step "the services step refuses without the bootstrap admin in /etc/hangar/local.env"
 	mv /etc/hangar/local.env "$work/local.env"
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>"$work/localenv.log"; then
+	if "$host_dir/bootstrap.sh" --only services 2>"$work/localenv.log"; then
 		fail "the services step ran without /etc/hangar/local.env"
 	fi
 	grep -q 'HANGAR_BOOTSTRAP_ADMIN=<email>' "$work/localenv.log" || fail "unexpected refusal: $(cat "$work/localenv.log")"
 	# A whole run refuses before its first step.
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/localenv.log"; then
+	if "$host_dir/bootstrap.sh" 2>"$work/localenv.log"; then
 		fail "bootstrap ran without /etc/hangar/local.env"
 	fi
 	grep -q 'HANGAR_BOOTSTRAP_ADMIN=<email>' "$work/localenv.log" || fail "unexpected refusal: $(cat "$work/localenv.log")"
@@ -877,8 +881,8 @@ test_refuses_without_local_env() {
 	mv "$work/local.env" /etc/hangar/local.env
 	# Readable by anyone is wrong too.
 	chmod 644 /etc/hangar/local.env
-	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with local.env mode 644"; fi
-	if "$host_dir/bootstrap.sh" --env "$env_file" --only services 2>/dev/null; then
+	if "$host_dir/verify.sh" >/dev/null; then fail "verify passed with local.env mode 644"; fi
+	if "$host_dir/bootstrap.sh" --only services 2>/dev/null; then
 		fail "the services step ran with local.env mode 644"
 	fi
 	chmod 600 /etc/hangar/local.env
@@ -892,28 +896,28 @@ test_upgrade_restarts_services() {
 	api_pid=$(main_pid hangar-apiserver)
 	node_pid=$(main_pid hangar-node)
 	before=$(state_digest)
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$next" --dry-run 2>"$work/upgrade-dry.log" >/dev/null
+	"$host_dir/bootstrap.sh" --release "$next" --dry-run 2>"$work/upgrade-dry.log" >/dev/null
 	[ "$(main_pid hangar-apiserver)" = "$api_pid" ] || fail "the upgrade's dry run restarted the apiserver"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the upgrade's dry run restarted the node"
 	[ "$(state_digest)" = "$before" ] || fail "the upgrade's dry run changed the host"
 	grep -q '^would: restart hangar-node$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the node"
 	grep -q '^would: restart hangar-apiserver$' "$work/upgrade-dry.log" || fail "the dry run does not say it restarts the apiserver"
 
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$next" >"$work/upgrade.out" 2>"$log"
+	"$host_dir/bootstrap.sh" --release "$next" >"$work/upgrade.out" 2>"$log"
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$work/upgrade.out" || fail "upgrade summary does not match its changes"
 	[ "$(main_pid hangar-apiserver)" != "$api_pid" ] || fail "the apiserver was not restarted on its new binary"
 	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted on its new binary"
 	grep -q '^apply: install vmlinux' "$log" && fail "the upgrade reinstalled an unchanged kernel"
-	out=$("$host_dir/bootstrap.sh" --env "$env_file" --release "$next")
+	out=$("$host_dir/bootstrap.sh" --release "$next")
 	[ "$out" = "changes: 0" ] || fail "the run after the upgrade reported $out"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/upgrade-verify.log" || fail "verify after the upgrade: $(grep FAIL "$work/upgrade-verify.log")"
+	"$host_dir/verify.sh" >"$work/upgrade-verify.log" || fail "verify after the upgrade: $(grep FAIL "$work/upgrade-verify.log")"
 	grep -q "^PASS hangar release $(cat "$next/VERSION") installed" "$work/upgrade-verify.log" || fail "verify does not report the new version"
 
 	step "going back to the first release restarts them again"
 	node_pid=$(main_pid hangar-node)
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null 2>&1
+	"$host_dir/bootstrap.sh" --release "$release" >/dev/null 2>&1
 	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted going back"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after going back"
+	"$host_dir/verify.sh" >/dev/null || fail "verify after going back"
 	rm -rf "$next"
 }
 
@@ -934,12 +938,12 @@ test_unit_change_restarts_its_service() {
 	sed -i 's/--public-ipv4 192.0.2.11/--public-ipv4 192.0.2.10/' /etc/systemd/system/hangar-node.service
 	mkdir -p /var/lib/hangar-bootstrap
 	touch /var/lib/hangar-bootstrap/restart-hangar-node
-	if "$host_dir/verify.sh" --env "$env_file" >/dev/null; then fail "verify passed with a restart pending"; fi
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/unit.log"
+	if "$host_dir/verify.sh" >/dev/null; then fail "verify passed with a restart pending"; fi
+	"$host_dir/bootstrap.sh" >/dev/null 2>"$work/unit.log"
 	grep -q '^apply: restart hangar-node$' "$work/unit.log" || fail "a pending restart was not done: $(cat "$work/unit.log")"
 	[ "$(main_pid hangar-node)" != "$node_pid" ] || fail "the node was not restarted"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the pending restart"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify after the pending restart"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the pending restart"
+	"$host_dir/verify.sh" >/dev/null || fail "verify after the pending restart"
 }
 
 test_refuses_dropins() {
@@ -949,19 +953,19 @@ test_refuses_dropins() {
 	mkdir -p /etc/systemd/system/hangar-node.service.d
 	printf '[Service]\nEnvironment=TB_DROPIN=1\n' >/etc/systemd/system/hangar-node.service.d/tb.conf
 	systemctl daemon-reload
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/dropin-verify.log"; then
+	if "$host_dir/verify.sh" >"$work/dropin-verify.log"; then
 		fail "verify passed with a drop-in for hangar-node"
 	fi
 	grep -q '^FAIL no drop-ins for' "$work/dropin-verify.log" || fail "verify does not name the drop-in: $(grep FAIL "$work/dropin-verify.log")"
-	if "$host_dir/bootstrap.sh" --env "$env_file" >/dev/null 2>"$work/dropin.log"; then
+	if "$host_dir/bootstrap.sh" >/dev/null 2>"$work/dropin.log"; then
 		fail "bootstrap reported converged with a drop-in for hangar-node"
 	fi
 	grep -q 'drop-ins change the hangar units: .*hangar-node.service.d' "$work/dropin.log" || fail "unexpected refusal: $(cat "$work/dropin.log")"
 	[ "$(main_pid hangar-node)" = "$node_pid" ] || fail "the refused run restarted the node"
 	rm -r /etc/systemd/system/hangar-node.service.d
 	systemctl daemon-reload
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged once the drop-in is gone"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "verify once the drop-in is gone"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged once the drop-in is gone"
+	"$host_dir/verify.sh" >/dev/null || fail "verify once the drop-in is gone"
 }
 
 test_node_needs_its_datasets() {
@@ -981,7 +985,7 @@ test_node_needs_its_datasets() {
 	zfs mount hangar/images
 	systemctl start hangar-node
 	systemctl is-active --quiet hangar-node || fail "the node is not active once hangar/images is mounted"
-	"$host_dir/verify.sh" --env "$env_file" >"$work/mounts-verify.log" || fail "verify after remounting: $(grep FAIL "$work/mounts-verify.log")"
+	"$host_dir/verify.sh" >"$work/mounts-verify.log" || fail "verify after remounting: $(grep FAIL "$work/mounts-verify.log")"
 }
 
 test_verify_catches_service_drift() {
@@ -994,15 +998,15 @@ test_verify_catches_service_drift() {
 	systemctl daemon-reload
 	systemctl restart apt-daily-upgrade.timer
 	systemctl stop hangar-apiserver
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log"; then
+	if "$host_dir/verify.sh" >"$work/drift2.log"; then
 		fail "verify passed on a drifted host"
 	fi
-	# images, vms, release checksums, upgrade files, timers, units running,
-	# socket, loopback listener, node Ready.
-	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 9 ] || fail "expected 9 FAIL lines: $(cat "$work/drift2.log")"
-	"$host_dir/bootstrap.sh" --env "$env_file" --release "$release" >/dev/null
-	"$host_dir/verify.sh" --env "$env_file" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
-	[ "$("$host_dir/bootstrap.sh" --env "$env_file")" = "changes: 0" ] || fail "not converged after the repair"
+	# images, vms, natlog, release checksums, upgrade files, timers, units
+	# running, socket, loopback listener, node Ready.
+	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 10 ] || fail "expected 10 FAIL lines: $(cat "$work/drift2.log")"
+	"$host_dir/bootstrap.sh" --release "$release" >/dev/null
+	"$host_dir/verify.sh" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the repair"
 }
 
 test_bad_ipv6_rolls_back() {
@@ -1016,13 +1020,13 @@ test_bad_ipv6_rolls_back() {
 	fi
 	sleep 3
 	[ "$(sha256sum /etc/netplan/*.yaml)" = "$before" ] || fail "netplan files not restored"
-	"$host_dir/verify.sh" --env "$env_file" || fail "host does not verify after rollback"
+	"$host_dir/verify.sh" || fail "host does not verify after rollback"
 }
 
 test_refuses_while_rollback_pending() {
 	step "bootstrap refuses to run while a netplan rollback is pending"
 	systemd-run --quiet --unit=hangar-netplan-rollback --on-active=600 /bin/true
-	if "$host_dir/bootstrap.sh" --env "$env_file" 2>"$work/pending.log"; then
+	if "$host_dir/bootstrap.sh" 2>"$work/pending.log"; then
 		fail "bootstrap ran with a rollback pending"
 	fi
 	grep -q 'pending' "$work/pending.log" || fail "unexpected refusal: $(cat "$work/pending.log")"
@@ -1041,22 +1045,70 @@ test_verify_catches_drift() {
 	udevadm settle
 	mkfs.ext4 -q "$(readlink -f /dev/zvol/hangar/poc/tb-probe)"
 	udevadm trigger --action=change --sysname-match="$(basename "$(readlink -f /dev/zvol/hangar/poc/tb-probe)")" --settle
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/drift.log"; then
+	if "$host_dir/verify.sh" >"$work/drift.log"; then
 		fail "verify passed on a drifted host"
 	fi
 	[ "$(grep -c '^FAIL' "$work/drift.log")" = 5 ] || fail "expected 5 FAIL lines: $(cat "$work/drift.log")"
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "bootstrap did not repair the drift"
+	"$host_dir/bootstrap.sh" >/dev/null
+	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair the drift"
 	zfs destroy hangar/poc/tb-probe
 
 	# A rule of the right content but the wrong mode is drift too.
 	chmod 600 /etc/udev/rules.d/99-hangar-zvol.rules
-	if "$host_dir/verify.sh" --env "$env_file" >"$work/mode.log"; then
+	if "$host_dir/verify.sh" >"$work/mode.log"; then
 		fail "verify passed with a udev rule of mode 600"
 	fi
-	"$host_dir/bootstrap.sh" --env "$env_file" >/dev/null
+	"$host_dir/bootstrap.sh" >/dev/null
 	[ "$(stat -c %a /etc/udev/rules.d/99-hangar-zvol.rules)" = 644 ] || fail "bootstrap left the rule's mode"
-	"$host_dir/verify.sh" --env "$env_file" >/dev/null || fail "bootstrap did not repair the rule's mode"
+	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair the rule's mode"
+}
+
+test_host_env_and_fetch() {
+	step "verify checks the host env file is root's, mode 0600"
+	"$host_dir/verify.sh" >"$work/env-verify.log" || fail "verify: $(grep FAIL "$work/env-verify.log")"
+	grep -q "^PASS host env file $env_file root's, mode 0600$" "$work/env-verify.log" ||
+		fail "verify does not check the host env file"
+	chmod 644 "$env_file"
+	if "$host_dir/verify.sh" >"$work/env-verify.log"; then fail "verify passed with the host env file mode 644"; fi
+	grep -q "^FAIL host env file $env_file root's, mode 0600$" "$work/env-verify.log" ||
+		fail "verify does not say why: $(grep FAIL "$work/env-verify.log")"
+	chmod 600 "$env_file"
+
+	step "--env still names another file; --host is gone"
+	install -m 0600 "$env_file" "$work/elsewhere.env"
+	mv "$env_file" "$work/host.env.away"
+	if "$host_dir/bootstrap.sh" 2>"$work/env.log"; then fail "bootstrap ran without $env_file"; fi
+	grep -q "host env file $env_file not found" "$work/env.log" || fail "unexpected refusal: $(cat "$work/env.log")"
+	[ "$("$host_dir/bootstrap.sh" --env "$work/elsewhere.env")" = "changes: 0" ] || fail "--env FILE did not converge"
+	"$host_dir/verify.sh" --env "$work/elsewhere.env" >/dev/null || fail "verify --env FILE"
+	mv "$work/host.env.away" "$env_file"
+	step "a host env file anyone but root can write is refused before it is read"
+	install -m 0620 "$env_file" "$work/writable.env"
+	if "$host_dir/bootstrap.sh" --env "$work/writable.env" --dry-run 2>"$work/env.log"; then fail "bootstrap read a group-writable env file"; fi
+	grep -q "must be root's and writable by no one else" "$work/env.log" || fail "unexpected refusal: $(cat "$work/env.log")"
+	install -m 0600 -o nobody "$env_file" "$work/notroots.env"
+	if "$host_dir/verify.sh" --env "$work/notroots.env" >/dev/null 2>"$work/env.log"; then fail "verify read an env file not root's"; fi
+	grep -q "must be root's and writable by no one else" "$work/env.log" || fail "unexpected refusal: $(cat "$work/env.log")"
+
+	step "the upgrade window is in HANGAR_UPGRADES_TZ; a zone the host does not know is refused"
+	systemctl show -p TimersCalendar apt-daily-upgrade.timer | grep -q '04:00:00 Europe/Paris' ||
+		fail "the upgrade timer is not at 04:00 Europe/Paris: $(systemctl show -p TimersCalendar apt-daily-upgrade.timer)"
+	sed 's|^HANGAR_UPGRADES_TZ=.*|HANGAR_UPGRADES_TZ=Nowhere/Atlantis|' "$env_file" >"$work/tz.env"
+	if "$host_dir/bootstrap.sh" --env "$work/tz.env" --dry-run 2>"$work/env.log"; then fail "bootstrap took an unknown time zone"; fi
+	grep -q 'HANGAR_UPGRADES_TZ must be a time zone' "$work/env.log" || fail "unexpected refusal: $(cat "$work/env.log")"
+
+	if "$host_dir/bootstrap.sh" --host testbed >/dev/null 2>&1; then fail "bootstrap took --host"; fi
+	if "$host_dir/verify.sh" --host testbed >/dev/null 2>&1; then fail "verify took --host"; fi
+
+	step "the release step installs hangar-fetch-release; verify catches a changed one"
+	cmp -s "$host_dir/fetch-release.sh" /usr/local/sbin/hangar-fetch-release || fail "hangar-fetch-release is not deploy/host/fetch-release.sh"
+	[ "$(stat -c '%U %a' /usr/local/sbin/hangar-fetch-release)" = "root 755" ] || fail "hangar-fetch-release is not root's, mode 755"
+	echo '# changed' >>/usr/local/sbin/hangar-fetch-release
+	if "$host_dir/verify.sh" >"$work/env-verify.log"; then fail "verify passed with a changed hangar-fetch-release"; fi
+	"$host_dir/bootstrap.sh" >/dev/null 2>&1
+	cmp -s "$host_dir/fetch-release.sh" /usr/local/sbin/hangar-fetch-release || fail "bootstrap did not put hangar-fetch-release back"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after hangar-fetch-release"
+	/usr/local/bin/gh --version | grep -q "^gh version $HANGAR_GH_VERSION " || fail "the packages step did not install gh $HANGAR_GH_VERSION"
 }
 
 prepare
@@ -1066,6 +1118,7 @@ test_refuses_unknown_installer_keys
 test_refuses_vm_id_clash
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
+test_host_env_and_fetch
 test_admin_socket
 test_node_reconnects
 test_oidc_cutover

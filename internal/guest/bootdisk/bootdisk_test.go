@@ -16,7 +16,7 @@ func TestARoundTripOnAPaddedDisk(t *testing.T) {
 		Process:     &guestv1.Process{Args: []string{"nginx", "-g", "daemon off;"}, Env: []string{"PATH=/usr/bin"}, User: "101:101"},
 		Interfaces:  []*guestv1.Interface{{Mac: "02:00:00:00:00:01", Address: "10.0.0.5/24", Gateway: "10.0.0.1"}},
 		Hostname:    "api",
-		Nameservers: []string{"1.1.1.1"},
+		Nameservers: []string{"192.0.2.53"},
 	}
 	var disk bytes.Buffer
 	if err := bootdisk.Write(&disk, cfg); err != nil {

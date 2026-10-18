@@ -7,17 +7,19 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=deploy/host/lib.sh
 . "$here/lib.sh"
 
-host=$(hostname)
-env_file=
+env_file=$HOST_ENV
 while [ $# -gt 0 ]; do
 	case $1 in
-	--host) host=$2; shift 2 ;;
 	--env) env_file=$2; shift 2 ;;
-	*) echo "usage: verify.sh [--host NAME | --env FILE]" >&2; exit 2 ;;
+	*) echo "usage: verify.sh [--env FILE]  (default: $HOST_ENV)" >&2; exit 2 ;;
 	esac
 done
 [ "$(id -u)" = 0 ] || die "must run as root"
-load_env "${env_file:-$here/hosts/$host.env}"
+load_env "$env_file"
+
+# The file the settings came from, which load_env found: /etc/hangar/host.env
+# unless --env named another.
+check "host env file $env_file root's, mode 0600" host_env_private "$env_file"
 
 for f in "$here"/steps/[0-9][0-9]-*.sh; do
 	step=$(basename "$f" .sh)
