@@ -69,7 +69,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 
 describe("a list route's ?new=1", () => {
   it.each([
-    ["security-groups", "New security group"],
     ["members", "Add a member to Demo"],
   ])("on %s opens %s, and closing it clears the parameter so back and reload do not reopen it", async (page, title) => {
     const path = `/projects/demo/${page}`;
@@ -91,7 +90,6 @@ describe("a list route's ?new=1", () => {
   });
 
   const refusedCases: [string, string][] = [
-    ["security-groups", "New security group"],
     ["members", "Add a member to Demo"],
   ];
 
@@ -114,12 +112,19 @@ describe("a list route's ?new=1", () => {
     watch.stop();
   });
 
+  it("on security-groups, where New security group is a page of its own, goes to that page in place of the list", async () => {
+    const { router, history } = app(["/projects/demo/security-groups", "/projects/demo/security-groups?new=1"]);
+    await waitFor(() => expect(router.state.location.href).toBe("/projects/demo/new/security-group"));
+    expect(history.length).toBe(2);
+    expect(await screen.findByRole("heading", { level: 1, name: "New security group" })).toBeTruthy();
+  });
+
   it("keeps ?new=1, and opens nothing, while the permission answer has not come", async () => {
-    const watch = watchOpened("New security group");
-    const { api, router } = app(["/projects/demo/security-groups?new=1"], { perms: () => never() });
+    const watch = watchOpened("Add a member to Demo");
+    const { api, router } = app(["/projects/demo/members?new=1"], { perms: () => never() });
     await waitFor(() => expect(api.calls).toContain("TestPermissions"));
-    await screen.findAllByText("ssh-admin");
-    expect(router.state.location.href).toBe("/projects/demo/security-groups?new=1");
+    await screen.findByRole("heading", { level: 1, name: "Members" });
+    expect(router.state.location.href).toBe("/projects/demo/members?new=1");
     expect(watch.opened()).toBe(false);
     watch.stop();
   });
@@ -137,7 +142,6 @@ describe("a list route's ?new=1", () => {
 
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
-    ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
     ["members", "Add a member to Demo", (d) => type(nameField(d), "new@example.com"), "/projects/demo/members"],
   ];
 

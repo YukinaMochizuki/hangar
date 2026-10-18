@@ -73,7 +73,8 @@ the front door (`front-door.md`) from the same release as the binaries.
   button and Cancel, then the manifest it amounts to and its command. Its
   name field is named for the kind ("Disk name", "Network name"). Each
   kind's page is at `/projects/<project>/new/<kind>` (`disk`, `network`,
-  `address`, `public-endpoint`, `secret`, `service-token`; machines at
+  `address`, `public-endpoint`, `secret`, `service-token`,
+  `security-group`; machines at
   `/new`), not `/<plural>/new`, where an object named `new` has its own
   page. Creating opens the new object in the create page's place in
   history; Cancel goes back to the list. The list's "New …" button and
@@ -127,8 +128,7 @@ joining it when its page does.
   a prefix, a prefix above a match inside; the section holding the best
   match comes first. Choosing a result opens it.
 - **With nothing typed it offers actions and pages.** The actions are the
-  "New …" flows (each opens its create page; New security group opens its
-  list page with `?new=1`, which opens the page's create dialog), Add
+  "New …" flows (each opens its create page), Add
   member (Members with `?new=1`, which opens the Add member dialog), New
   project, and Switch project, which opens the picker. Each "New …" and
   Add member shows only when TestPermissions holds its permission at the
@@ -376,17 +376,17 @@ Settled with the owner on screenshots before the pages read the API.
   (`web/src/lib/network-actions.ts`), and its error is shown on the page or
   in the dialog it was asked from. Networks, addresses and public
   endpoints are created on pages (`web/src/pages/create-network.tsx`,
-  `create-address.tsx`, `create-public-endpoint.tsx`); a security group
-  still in a dialog. Creating never replaces, as for machines
+  `create-address.tsx`, `create-public-endpoint.tsx`), security groups on
+  theirs (below). Creating never replaces, as for machines
   (`web/src/lib/create.ts`): the form refuses a name in the loaded list,
   and sends one create-only apply, whose AlreadyExists for a name taken
   since is shown as "A network named X exists in this project." Its
   command is `hangar apply --create-only`. Editing a group's rules, and
   binding or moving an address, apply at the resource version of the
-  object the dialog opened from, with only that field changed: what the
-  person chose depends on what they saw, so a newer object is never
-  overwritten. The API then answers Aborted, and the dialog says the
-  object changed after it opened and offers to load it again. Making an
+  object the dialog or page opened from, with only that field changed: what
+  the person chose depends on what they saw, so a newer object is never
+  overwritten. The API then answers Aborted, and the form says the object
+  changed after it opened and offers to load it again. Making an
   endpoint public or private, and unbinding an address, set one value
   whatever the rest is, so they read the object and apply it back at the
   version read, as start and stop do. Each form shows the manifest it
@@ -407,6 +407,23 @@ Settled with the owner on screenshots before the pages read the API.
 - **Every network's built-in group `default`** is a row of the security
   groups list, marked "built in", with what it does: it lets in its own
   members and lets everything out. It is no object and has no page.
+- **A security group is made and its rules edited on pages of their own**,
+  `/projects/<project>/new/security-group` and
+  `/projects/<project>/security-groups/<name>/edit`; the list's `?new=1`
+  goes to the first. A rule is a row of protocol, ports and its peer,
+  chosen by kind (any IPv4, any IPv6, a range, a group of the network),
+  and says what it lets through as a sentence, "Lets in TCP port 443 from
+  any IPv6 address"; the group's page states its rules the same way,
+  inbound and outbound. Inbound offers presets (SSH, HTTP/HTTPS, ICMP,
+  this group). Beside the rules the page states how groups work:
+  inbound is denied unless a rule of one of the interface's groups lets it
+  in, replies always come back, and outbound is open until one of the
+  interface's groups has outbound rules. Adding a group's first outbound
+  rule names, above the button, the interfaces it then restricts: those
+  in the group none of whose other groups has outbound rules, read from
+  the project's machines (`web/src/lib/security-group-rules.ts`). Ports
+  and ranges are checked as written before anything is sent; the API's
+  refusal of anything else is shown as it comes.
 - **No hostname is guessed.** The endpoint domain is the apiserver's, so
   the create form shows no hostname; an endpoint's page shows the URL its
   status gives.

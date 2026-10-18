@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
-// Every change the network pages make, as the RPCs it sends and the whole
+// Every change the network pages make (security groups have their own:
+// security-group-pages.test.tsx), as the RPCs it sends and the whole
 // object each Apply carries: creating asks for the name first and applies
 // only when it is not found; editing rules and binding or moving an address
 // apply at the version the dialog opened from and never over a newer
@@ -17,13 +18,6 @@ import {
   PublicEndpointSchema,
   type ApplyPublicEndpointRequest,
 } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import {
-  EgressRuleSchema,
-  IngressRuleSchema,
-  SecurityGroupProtocol,
-  SecurityGroupSchema,
-  type ApplySecurityGroupRequest,
-} from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,9 +27,8 @@ import { CreateNetwork } from "@/pages/create-network";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { NetworkDetail } from "@/pages/networks";
 import { PublicEndpointDetail } from "@/pages/public-endpoints";
-import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 import { never, polyfillDialog, withApi } from "@/test/harness";
-import { addresses, endpoints, groups, networkApi, type NetworkApi, type Overrides } from "@/test/network-api";
+import { addresses, endpoints, networkApi, type NetworkApi, type Overrides } from "@/test/network-api";
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
@@ -86,7 +79,6 @@ type CreateCase = {
 
 const creates: CreateCase[] = [
   { noun: "network", page: () => <CreateNetwork />, name: "Network name", submit: "Create network", taken: "sandbox", hide: "listNetworks" },
-  { noun: "security group", page: () => <SecurityGroupList />, open: "New security group", submit: "Create security group", taken: "web", hide: "listSecurityGroups" },
   { noun: "address", page: () => <CreateAddress />, name: "Address name", submit: "Reserve address", taken: "spare", hide: "listAddresses" },
   {
     noun: "public endpoint",
@@ -214,147 +206,6 @@ describe("networks", () => {
     expect(await screen.findByText("Deleting failed")).toBeTruthy();
     expect(screen.getByText(/network is in use/)).toBeTruthy();
     expect(navigate).not.toHaveBeenCalled();
-  });
-});
-
-describe("security groups", () => {
-  it("creates a group with its rules, peers trimmed", async () => {
-    const api = show(<SecurityGroupList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New security group" }));
-    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "ssh");
-    expect(screen.getByText(/hangar apply --create-only -p demo -f ssh\.yaml/)).toBeTruthy();
-    type("Ports", "22");
-    type("From", "  2001:db8::/32 ");
-    fireEvent.click(screen.getAllByRole("button", { name: "Rule" })[0]);
-    fireEvent.change(screen.getAllByLabelText("Protocol")[1], { target: { value: String(SecurityGroupProtocol.ICMP) } });
-    fireEvent.change(screen.getAllByLabelText("From")[1], { target: { value: " web " } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Rule" })[1]);
-    fireEvent.change(screen.getAllByLabelText("Protocol")[2], { target: { value: String(SecurityGroupProtocol.ALL) } });
-    type("To", "::/0");
-    click("Create security group");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplySecurityGroup"]));
-    expect(lastApply<ApplySecurityGroupRequest>(api).createOnly).toBe(true);
-    const want = create(SecurityGroupSchema, {
-      metadata: { name: "ssh", project: "demo" },
-      spec: {
-        network: "default",
-        ingress: [
-          { protocol: SecurityGroupProtocol.TCP, ports: "22", from: { peer: { case: "cidr", value: "2001:db8::/32" } } },
-          { protocol: SecurityGroupProtocol.ICMP, ports: "", from: { peer: { case: "group", value: "web" } } },
-        ],
-        egress: [{ protocol: SecurityGroupProtocol.ALL, ports: "", to: { peer: { case: "cidr", value: "::/0" } } }],
-      },
-    });
-    expect(equals(SecurityGroupSchema, lastApply<ApplySecurityGroupRequest>(api).securityGroup!, want)).toBe(true);
-  });
-
-  it("sends no ports for a rule switched to ICMP", async () => {
-    const api = show(<SecurityGroupList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New security group" }));
-    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "ping");
-    type("Ports", "22");
-    type("Protocol", String(SecurityGroupProtocol.ICMP));
-    click("Create security group");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplySecurityGroup"]));
-    const rule = lastApply<ApplySecurityGroupRequest>(api).securityGroup!.spec!.ingress[0];
-    expect(rule.protocol).toBe(SecurityGroupProtocol.ICMP);
-    expect(rule.ports).toBe("");
-  });
-
-  it("applies edited rules at the version the dialog opened from, the rest untouched", async () => {
-    const api = show(<SecurityGroupDetail name="web" />);
-    await screen.findByText("Ingress");
-    click("Edit rules");
-    fireEvent.click(screen.getAllByRole("button", { name: "Rule" })[1]);
-    fireEvent.change(screen.getAllByLabelText("To")[1], { target: { value: "0.0.0.0/0" } });
-    // Four ingress rules, the egress rule, then the new one.
-    fireEvent.change(screen.getAllByLabelText("Ports")[5], { target: { value: "443" } });
-    click("Apply rules");
-    await waitFor(() => expect(screen.queryByRole("button", { name: "Apply rules" })).toBeNull());
-    expect(methods(api)).toEqual(["ApplySecurityGroup"]);
-    const want = clone(SecurityGroupSchema, groups()[0]);
-    want.spec!.egress.push(create(EgressRuleSchema, { protocol: SecurityGroupProtocol.TCP, ports: "443", to: { peer: { case: "cidr", value: "0.0.0.0/0" } } }));
-    expect(equals(SecurityGroupSchema, lastApply<ApplySecurityGroupRequest>(api).securityGroup!, want)).toBe(true);
-  });
-
-  it("applies unchanged rules as they were, ICMP, ALL and group peers included", async () => {
-    const api = show(<SecurityGroupDetail name="web" />);
-    await screen.findByText("Ingress");
-    click("Edit rules");
-    // The dialog's own command; the page's CLI card shows a like one.
-    expect(within(screen.getByRole("dialog")).getByText(/^hangar apply -p demo -f web\.yaml$/)).toBeTruthy();
-    click("Apply rules");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplySecurityGroup"]));
-    expect(equals(SecurityGroupSchema, lastApply<ApplySecurityGroupRequest>(api).securityGroup!, groups()[0])).toBe(true);
-  });
-
-  it("removes a rule and only that rule", async () => {
-    const api = show(<SecurityGroupDetail name="web" />);
-    await screen.findByText("Ingress");
-    click("Edit rules");
-    fireEvent.click(screen.getAllByRole("button", { name: "Remove rule" })[1]);
-    click("Apply rules");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplySecurityGroup"]));
-    const want = clone(SecurityGroupSchema, groups()[0]);
-    want.spec!.ingress.splice(1, 1);
-    expect(equals(SecurityGroupSchema, lastApply<ApplySecurityGroupRequest>(api).securityGroup!, want)).toBe(true);
-  });
-
-  it("does not overwrite a newer group: says the rules changed, and reloads from it", async () => {
-    const newer = clone(SecurityGroupSchema, groups()[0]);
-    newer.metadata!.resourceVersion = 12n;
-    newer.spec!.ingress = [create(IngressRuleSchema, { protocol: SecurityGroupProtocol.UDP, ports: "51820", from: { peer: { case: "cidr", value: "::/0" } } })];
-    const api = show(<SecurityGroupDetail name="web" />, { server: { groups: [newer] } });
-    await screen.findByText("Ingress");
-    click("Edit rules");
-    click("Apply rules");
-    expect(await screen.findByText("The rules changed after this dialog opened.")).toBeTruthy();
-    expect(button("Apply rules").disabled).toBe(true);
-    expect(screen.queryByText("Applying the rules failed")).toBeNull();
-    expect(equals(SecurityGroupSchema, api.server.groups[0], newer)).toBe(true);
-
-    click("Reload");
-    await waitFor(() => expect(screen.queryByText("The rules changed after this dialog opened.")).toBeNull());
-    expect((screen.getAllByLabelText("Ports")[0] as HTMLInputElement).value).toBe("51820");
-    click("Apply rules");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplySecurityGroup", "GetSecurityGroup", "ApplySecurityGroup"]));
-    expect(equals(SecurityGroupSchema, lastApply<ApplySecurityGroupRequest>(api).securityGroup!, newer)).toBe(true);
-  });
-
-  it("shows another refusal of the rules in the dialog", async () => {
-    show(<SecurityGroupDetail name="web" />, { apply: refuse(Code.InvalidArgument, "bad ports") });
-    await screen.findByText("Ingress");
-    click("Edit rules");
-    click("Apply rules");
-    expect(await screen.findByText("Applying the rules failed")).toBeTruthy();
-    expect(screen.getByText(/bad ports/)).toBeTruthy();
-    expect(screen.queryByText("The rules changed after this dialog opened.")).toBeNull();
-  });
-
-  it("says a group interfaces are in is not deleted", async () => {
-    const api = show(<SecurityGroupDetail name="web" />);
-    await screen.findByText("Members");
-    await waitFor(() => expect(screen.getAllByText("api").length).toBeGreaterThan(0));
-    click("Delete");
-    type("Name, to confirm", "web");
-    expect(screen.getByText("1 interface is in this group.")).toBeTruthy();
-    expect(button("Delete").disabled).toBe(true);
-    expect(writes(api)).toEqual([]);
-  });
-
-  it("deletes a group no interface is in", async () => {
-    const idle = groups()[0];
-    idle.metadata!.name = "idle";
-    const api = show(<SecurityGroupDetail name="idle" />, { listSecurityGroups: () => ({ items: [idle] }) });
-    await screen.findByText("Ingress");
-    await waitFor(() => expect(screen.queryAllByLabelText("Loading")).toHaveLength(0));
-    await confirmDelete("idle");
-    await waitFor(() =>
-      expect(writes(api)).toEqual([{ method: "DeleteSecurityGroup", request: expect.objectContaining({ project: "demo", name: "idle" }) }]),
-    );
-    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/security-groups", params: { project: "demo" } });
   });
 });
 

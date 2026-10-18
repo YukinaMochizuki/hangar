@@ -54,7 +54,7 @@ const cases: Case[] = [
   {
     name: "security group page",
     page: () => <SecurityGroupDetail name="web" />,
-    ready: "Ingress",
+    ready: "Inbound",
     controls: { "network.securitygroups.apply": ["Edit rules"], "network.securitygroups.delete": ["Delete"] },
   },
   { name: "addresses list", page: () => <AddressList />, ready: "spare", controls: { "network.addresses.apply": ["Reserve address"] } },

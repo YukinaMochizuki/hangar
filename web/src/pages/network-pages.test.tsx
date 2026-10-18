@@ -129,7 +129,12 @@ const details: DetailCase[] = [
     present: "web",
     failed: "The security group did not load",
     missing: "No such security group",
-    full: ["::/0", "192.0.2.53/32", "A member sends only what some egress rule of its groups allows.", "Members"],
+    full: [
+      "Lets in TCP ports 80 and 443 from any IPv6 address.",
+      "Lets out UDP port 53 to 192.0.2.53/32.",
+      "A member sends only what some outbound rule of its groups lets out.",
+      "Members",
+    ],
   },
   {
     name: "address",
@@ -202,7 +207,7 @@ describe("what comes from the project's machines", () => {
 
   it("shows a group's members as loading, then as loaded", async () => {
     show(<SecurityGroupDetail name="web" />);
-    await screen.findByText("Ingress");
+    await screen.findByText("Inbound");
     expect(await screen.findAllByText("1 member")).toHaveLength(1);
   });
 });
