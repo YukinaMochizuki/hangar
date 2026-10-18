@@ -14,7 +14,7 @@ import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { ConditionsCard, EquivalentCard } from "@/components/storage";
+import { ConditionsCard, EquivalentCard } from "@/components/object";
 import { Badge, Button, Card, CardHeader, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";

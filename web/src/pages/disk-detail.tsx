@@ -9,35 +9,13 @@ import { PageBanner } from "@/components/notice";
 import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice } from "@/components/states";
-import {
-  ConditionsCard,
-  DeleteDiskDialog,
-  DiskSource,
-  DiskState,
-  diskYaml,
-  EquivalentCard,
-  GrowDiskDialog,
-  MachineLink,
-} from "@/components/storage";
+import { DeleteDiskDialog, DiskSource, DiskState, diskYaml, GrowDiskDialog, MachineLink } from "@/components/storage";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
 import { diskFault, diskImage, gib, growthBlocked, rootDiskOwner, useDisks, useImages } from "@/lib/storage";
 import { DiskSize } from "@/pages/disk-list";
-
-function Labels({ labels }: { labels: Record<string, string> }) {
-  const entries = Object.entries(labels);
-  return (
-    <span className="flex flex-wrap gap-1.5">
-      {entries.length === 0 && <span className="text-subtle">None</span>}
-      {entries.map(([k, v]) => (
-        <span key={k} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11.5px]">
-          {k}=<span className="text-muted">{v}</span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 function Header({ d }: { d: Disk }) {
   const [growing, setGrowing] = useState(false);

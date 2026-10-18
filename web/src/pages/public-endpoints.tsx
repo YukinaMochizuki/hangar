@@ -14,7 +14,8 @@ import {
 import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import { ConditionsCard, DeleteDialog, Equivalent, FormEquivalent, FormField, FormFooter, inputClass, Labels } from "@/components/resource";
+import { DeleteDialog, FormEquivalent, FormField, FormFooter, inputClass } from "@/components/resource";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -293,7 +294,7 @@ export function PublicEndpointDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[
                   `hangar get ep ${name} -p ${project}`,
                   ...(owner ? [] : [`hangar apply -p ${project} -f ${name}.yaml`, `hangar delete ep ${name} -p ${project}`]),

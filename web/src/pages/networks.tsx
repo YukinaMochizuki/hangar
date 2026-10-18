@@ -8,19 +8,17 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import {
-  ConditionsCard,
   DeleteDialog,
-  Equivalent,
   FormEquivalent,
   FormField,
   FormFooter,
   inputClass,
-  Labels,
   MachinesNotice,
   type MachinesState,
   MemberCount,
   usageBlock,
 } from "@/components/resource";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -372,7 +370,7 @@ export function NetworkDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[`hangar get network ${name} -p ${project}`, `hangar delete network ${name} -p ${project}`]}
                 yaml={networkYaml(n)}
               />

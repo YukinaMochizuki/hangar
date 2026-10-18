@@ -1,21 +1,20 @@
-// Pieces the Disks and Images pages share: their states, their conditions,
-// their equivalent CLI or YAML, and the disk dialogs (new, grow, delete),
-// each the API's own call with its error shown where it was asked for.
+// Pieces the Disks and Images pages share: their states, a disk as YAML,
+// and the disk dialogs (new, grow, delete), each the API's own call with
+// its error shown where it was asked for.
 
 import { toJson, type JsonValue } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
-import { ChevronRight, HardDrive, Plus, Trash2 } from "lucide-react";
+import { HardDrive, Plus, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
-import { Button, Card, CopyButton, Led, type Tone } from "@/components/ui";
+import { Button, CopyButton, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
-import { ago, date, machinePath } from "@/lib/machines";
+import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
 import type { OnCreated } from "@/lib/new-param";
@@ -109,77 +108,6 @@ export function DiskSource({ d, project, link = true }: { d: Disk; project: stri
         <span className="font-mono">{img}</span>
       )}
     </span>
-  );
-}
-
-const statusWord: Record<number, string> = {
-  [ConditionStatus.TRUE]: "True",
-  [ConditionStatus.FALSE]: "False",
-  [ConditionStatus.UNKNOWN]: "Unknown",
-};
-
-/** ConditionsCard shows the raw conditions, folded away. */
-export function ConditionsCard({ conditions }: { conditions: Condition[] }) {
-  return (
-    <Card className="overflow-hidden">
-      <details className="group">
-        <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-3.5 text-subtle transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-          Conditions
-          <span className="font-mono text-[11.5px] font-normal text-subtle">{conditions.length}</span>
-        </summary>
-        <ul className="divide-y border-t">
-          {conditions.length === 0 && <li className="px-4 py-2.5 text-[13px] text-muted">None reported.</li>}
-          {conditions.map((c) => (
-            <li key={c.type} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <Led tone={c.status === ConditionStatus.TRUE ? "ok" : c.status === ConditionStatus.UNKNOWN ? "pending" : "off"} className="size-1.5" />
-              <span className="w-20 shrink-0 font-medium">{c.type}</span>
-              <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
-              <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>
-              <span className="hidden min-w-0 flex-1 truncate text-muted md:block">{c.message}</span>
-              <span className="flex-1 md:hidden" />
-              <span className="shrink-0 text-[12px] text-subtle">{ago(date(c.lastTransitionTime))} ago</span>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </Card>
-  );
-}
-
-/** EquivalentCard shows CLI lines and a YAML manifest, each copyable. */
-export function EquivalentCard({ cli, yaml }: { cli: string[]; yaml?: string }) {
-  const [tab, setTab] = useState<"cli" | "yaml">("cli");
-  const text = tab === "cli" || !yaml ? cli.join("\n") : yaml;
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex h-11 items-center justify-between border-b px-4">
-        <div role="tablist" className="flex gap-1 text-[12px]">
-          {(yaml ? (["cli", "yaml"] as const) : (["cli"] as const)).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={cn("rounded px-2 py-1 font-medium", tab === t ? "bg-surface-2 text-foreground" : "text-muted hover:text-foreground")}
-            >
-              {t === "cli" ? "CLI" : "YAML"}
-            </button>
-          ))}
-        </div>
-        <CopyButton text={text} />
-      </div>
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-5">
-        {tab === "cli" || !yaml
-          ? cli.map((c) => (
-              <div key={c} className="-indent-3.5 py-0.5 pl-3.5">
-                <span className="select-none text-accent">$ </span>
-                {c}
-              </div>
-            ))
-          : yaml}
-      </pre>
-    </Card>
   );
 }
 

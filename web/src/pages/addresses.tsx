@@ -12,17 +12,8 @@ import {
 import { Link2, Link2Off, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import {
-  ConditionsCard,
-  DeleteDialog,
-  Equivalent,
-  FormEquivalent,
-  FormField,
-  FormFooter,
-  inputClass,
-  Labels,
-  StaleNotice,
-} from "@/components/resource";
+import { DeleteDialog, FormEquivalent, FormField, FormFooter, inputClass, StaleNotice } from "@/components/resource";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -262,7 +253,7 @@ export function AddressDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[`hangar get addr ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete addr ${name} -p ${project}`]}
                 yaml={addressYaml(a)}
               />

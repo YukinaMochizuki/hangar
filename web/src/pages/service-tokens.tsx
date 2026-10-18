@@ -19,7 +19,7 @@ import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { EquivalentCard } from "@/components/storage";
+import { EquivalentCard } from "@/components/object";
 import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
