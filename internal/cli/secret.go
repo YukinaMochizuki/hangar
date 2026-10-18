@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 
+	"connectrpc.com/connect"
 	"github.com/spf13/cobra"
 
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -22,6 +23,7 @@ func (a *app) createSecretCmd() *cobra.Command {
 
 func (a *app) createRegistrySecretCmd() *cobra.Command {
 	var from string
+	var createOnly bool
 	cmd := &cobra.Command{
 		Use:   "registry NAME --from-docker-config FILE|-",
 		Short: "Create or replace a registry-auth secret from a Docker config",
@@ -29,7 +31,9 @@ func (a *app) createRegistrySecretCmd() *cobra.Command {
 Docker config format, as docker login writes it (~/.docker/config.json, or
 "-" for stdin). Its values are write-only: nothing shows them again.
 A config whose logins live in a credential helper ("credsStore") holds none;
-write one with them instead.`,
+write one with them instead.
+
+With --create-only, a secret whose name exists is refused and left as it is.`,
 		Args: args(1, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if from == "" {
@@ -57,7 +61,14 @@ write one with them instead.`,
 			if sec.Metadata.Project, err = a.projectFor(registry.Secret, c); err != nil {
 				return err
 			}
-			res, err := cl.Apply(cmd.Context(), registry.Secret, sec)
+			apply := cl.Apply
+			if createOnly {
+				apply = cl.Create
+			}
+			res, err := apply(cmd.Context(), registry.Secret, sec)
+			if createOnly && connect.CodeOf(err) == connect.CodeAlreadyExists {
+				return &exitError{code: ExitConflict, err: fmt.Errorf("secret/%s already exists, and --create-only leaves it as it is", args[0])}
+			}
 			if err != nil {
 				return err
 			}
@@ -70,6 +81,7 @@ write one with them instead.`,
 		},
 	}
 	cmd.Flags().StringVar(&from, "from-docker-config", "", "Docker config file, or - for stdin")
+	cmd.Flags().BoolVar(&createOnly, "create-only", false, "refuse a secret that exists instead of replacing it")
 	return cmd
 }
 
