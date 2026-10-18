@@ -88,16 +88,30 @@ const buttons = (c: Case) => Object.values(c.controls).flat();
 const shown = (name: string) => screen.queryAllByRole("button", { name: new RegExp(`^${name}$`) }).length > 0;
 const asked = (api: ReturnType<typeof show>) => api.requests.filter((r) => r.method === "TestPermissions").map((r) => r.request as TestPermissionsRequest);
 
-async function settle(c: Case) {
+/** Whether the TestPermissions query has its answer or its failure, so what it decides is drawn. */
+const answered = (api: ReturnType<typeof show>) => {
+  const queries = api.client
+    .getQueryCache()
+    .findAll()
+    .filter((q) => JSON.stringify(q.queryKey).toLowerCase().includes("testpermissions"));
+  return queries.length > 0 && queries.every((q) => q.state.status !== "pending");
+};
+
+/**
+ * Waits until the page is drawn and TestPermissions was asked; unless the
+ * answer is held back, also until it has landed, so the assertions after it
+ * see what the answer decides rather than the state before it.
+ */
+async function settle(c: Case, api: ReturnType<typeof show>, opts: { pending?: boolean } = {}) {
   await screen.findAllByText(c.ready);
-  // Lets the TestPermissions answer, or its failure, land.
-  await new Promise((r) => setTimeout(r, 30));
+  await waitFor(() => expect(asked(api).length).toBeGreaterThan(0));
+  if (!opts.pending) await waitFor(() => expect(answered(api)).toBe(true));
 }
 
 describe.each(cases)("the $name", (c) => {
   it("asks once, at its project, for the permissions its controls need", async () => {
     const api = show(c.page());
-    await settle(c);
+    await settle(c, api);
     await waitFor(() => expect(asked(api)).toHaveLength(1));
     const req = asked(api)[0];
     expect(req.scope?.target).toEqual({ case: "project", value: "demo" });
@@ -105,39 +119,39 @@ describe.each(cases)("the $name", (c) => {
   });
 
   it("shows every control when every permission is held", async () => {
-    show(c.page());
-    await settle(c);
+    const api = show(c.page());
+    await settle(c, api);
     for (const b of buttons(c)) await waitFor(() => expect(shown(b)).toBe(true));
   });
 
   it("hides every control when none is held, and says nothing of it", async () => {
-    show(c.page(), { permissions: () => ({ permissions: [] }) });
-    await settle(c);
+    const api = show(c.page(), { permissions: () => ({ permissions: [] }) });
+    await settle(c, api);
     for (const b of buttons(c)) expect(shown(b)).toBe(false);
     expect(screen.queryByText(/permission/i)).toBeNull();
   });
 
   it("hides every control while the answer is pending", async () => {
-    show(c.page(), { permissions: () => never() });
-    await settle(c);
+    const api = show(c.page(), { permissions: () => never() });
+    await settle(c, api, { pending: true });
     for (const b of buttons(c)) expect(shown(b)).toBe(false);
   });
 
   it("hides every control when asking failed, and says nothing of it", async () => {
-    show(c.page(), {
+    const api = show(c.page(), {
       permissions: () => {
         throw new ConnectError("down", Code.Unavailable);
       },
     });
-    await settle(c);
+    await settle(c, api);
     for (const b of buttons(c)) expect(shown(b)).toBe(false);
     expect(screen.queryByText(/down|permission/i)).toBeNull();
   });
 
   if (Object.keys(c.controls).length > 1) {
     it.each(Object.keys(c.controls))("shows only what %s allows when that alone is held", async (perm) => {
-      show(c.page(), { permissions: () => ({ permissions: [perm] }) });
-      await settle(c);
+      const api = show(c.page(), { permissions: () => ({ permissions: [perm] }) });
+      await settle(c, api);
       for (const b of c.controls[perm]) await waitFor(() => expect(shown(b)).toBe(true));
       for (const [other, bs] of Object.entries(c.controls)) if (other !== perm) for (const b of bs) expect(shown(b)).toBe(false);
     });
@@ -146,9 +160,10 @@ describe.each(cases)("the $name", (c) => {
 
 describe("an empty list", () => {
   it("offers no create button without the permission", async () => {
-    show(<NetworkList />, { listNetworks: () => ({ items: [] }), permissions: () => ({ permissions: [] }) });
+    const api = show(<NetworkList />, { listNetworks: () => ({ items: [] }), permissions: () => ({ permissions: [] }) });
     await screen.findByText("No networks");
-    await new Promise((r) => setTimeout(r, 30));
+    await waitFor(() => expect(asked(api).length).toBeGreaterThan(0));
+    await waitFor(() => expect(answered(api)).toBe(true));
     expect(shown("New network")).toBe(false);
   });
 
