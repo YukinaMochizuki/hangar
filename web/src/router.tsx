@@ -7,7 +7,11 @@ import { ErrorNotice, StandalonePage } from "@/components/states";
 import { sizes, type SizeId } from "@/lib/machines";
 import { pickProject, useProjects } from "@/lib/projects";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
+import { DiskDetail } from "@/pages/disk-detail";
+import { DiskList } from "@/pages/disk-list";
 import { Gate } from "@/pages/gate";
+import { ImageDetail } from "@/pages/image-detail";
+import { ImageList } from "@/pages/image-list";
 import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
@@ -105,6 +109,25 @@ const newRoute = createRoute({
   },
 });
 
+const disksRoute = createRoute({ getParentRoute: () => projectRoute, path: "/disks", component: DiskList });
+const diskRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/disks/$name",
+  component: function DiskPage() {
+    const { name } = diskRoute.useParams();
+    return <DiskDetail key={name} name={name} />;
+  },
+});
+const imagesRoute = createRoute({ getParentRoute: () => projectRoute, path: "/images", component: ImageList });
+const imageRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/images/$name",
+  component: function ImagePage() {
+    const { name } = imageRoute.useParams();
+    return <ImageDetail key={name} name={name} />;
+  },
+});
+
 const membersRoute = createRoute({ getParentRoute: () => projectRoute, path: "/members", component: ProjectMembers });
 
 // A tenant's own pages, apart from any project's.
@@ -125,7 +148,19 @@ const tenantMembersRoute = createRoute({ getParentRoute: () => tenantRoute, path
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
-  projectRoute.addChildren([overviewRoute, containersRoute, containerRoute, vmsRoute, vmRoute, newRoute, membersRoute]),
+  projectRoute.addChildren([
+    overviewRoute,
+    containersRoute,
+    containerRoute,
+    vmsRoute,
+    vmRoute,
+    newRoute,
+    disksRoute,
+    diskRoute,
+    imagesRoute,
+    imageRoute,
+    membersRoute,
+  ]),
   tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
 ]);
 

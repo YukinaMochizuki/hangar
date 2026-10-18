@@ -187,6 +187,68 @@ that is a handful of calls.
   `prefers-reduced-motion` nothing sweeps and the host replaces the empty
   body at once.
 
+### Disks and images
+
+Settled with the owner on the screens, before they read the API.
+
+- **Disks have a list and a page; so do images.** They sit in the sidebar's
+  Storage group. A disk shows its phase (Pending, Available, In use), its
+  size on its node with the size it is growing to when its spec asks for
+  more, what it holds (blank, or a copy of an image), its node ("Not placed
+  yet" until a machine using it is placed), and the machine it is attached
+  to. When the disk's `Ready` condition, which its node writes, is False,
+  its reason shows under the phase, and on the disk's page as a banner.
+  When a placed disk's `Allocated` condition, which the apiserver writes, is
+  False (a growth not granted, such as `ResizeDoesNotFit`), its reason shows
+  next to the size it is growing to, and on the disk's page as a banner
+  with the API's message. A disk not yet placed is `Allocated` False too
+  (`WaitingForFirstMachine`); that blocks nothing and is not shown.
+- **The attached machine is shown as its Container or VM**, linked to that
+  page. A disk's `status.machine` names the Machine, which is found by name
+  and then followed to its owner, as everywhere else
+  (`web/src/lib/storage.ts`); while the machines load, the Machine's own
+  name is shown, unlinked. A VM's root disk made from an image says so,
+  from its `virtual-machine` annotation and owner reference.
+- **Three actions on disks: new, grow and delete.** Each is the API's own
+  call, and its error is shown in the dialog that asked for it.
+  - New disk never replaces a disk, as machine creation does not
+    (`web/src/lib/create.ts`): nothing is sent until the project's disks are
+    known and the name is not among them, and the one apply it sends is
+    create-only, so a name taken since is refused with `AlreadyExists`,
+    shown as "A disk named X exists in this project." The dialog's CLI is
+    `hangar apply --create-only`.
+  - Grow sets `spec.size`: it reads the disk and applies it back with only
+    `spec.size` changed at the version read, as start and stop do. The
+    dialog states the current `spec.size` and what the node holds. Its
+    smallest size is what the node holds (and, for a disk of an image, the
+    image's smallest disk), so a growth not yet granted can be withdrawn,
+    as the API allows. When the disk read already has the size asked for,
+    or has changed so that the request no longer goes the way it did when
+    asked, nothing is applied and the dialog says so. When the disk is
+    attached, the dialog says that growing restarts that machine, which is
+    what happens (`machine-model.md`, `storage-zfs.md`); for a disk
+    attached to none it says nothing of restarts.
+  - Delete asks for the name to be typed and says what goes with the disk.
+    On a disk attached to a live machine it says the API refuses, and
+    shows the refusal when it comes; when that machine is being deleted,
+    the API does not refuse, and the dialog says the data goes once the
+    machine is gone.
+- **Images are read-only in the console.** Only platform administrators
+  write them (`vm-images.md`). An image's smallest disk is the larger of
+  its `min_disk_size` and its own size, as admission holds disks to. An
+  image's page offers "New disk from it", the same dialog with the image
+  chosen; it is disabled for an image at fault (`Verified` False), which
+  the page names in a banner.
+- **Controls are shown as "What a control is shown for" says**, asked at
+  the project in one call a page: New disk and "New disk from it" need
+  `storage.disks.apply`, Grow `storage.disks.apply`, Delete
+  `storage.disks.delete`. While the answer loads, or when it failed, the
+  control is hidden and these pages say nothing about it, neither a
+  refusal nor the failed answer.
+- Sizes are whole GiB, read and written with `web/src/lib/quantity.ts`.
+  The detail pages show their CLI and YAML, and each dialog the manifest
+  it amounts to, copyable; the list pages are data alone.
+
 ### How the session reaches the API, and CSRF
 
 - **One origin.** hangar-edge serves the console's files and the API's paths
