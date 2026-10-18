@@ -90,17 +90,15 @@ no search until search works.
   it back with only the run state changed at the version read, and read
   again on a conflict. Delete asks for the name to be typed and says what
   goes with the object.
-- **Creating never replaces a machine.** The API's apply creates or
-  replaces, and offers callers no create-only form, so the console guards
-  twice (`web/src/lib/create.ts`). The form sends nothing until the
+- **Creating never replaces a machine.** The form sends nothing until the
   project's machines of the kind have loaded and the name is not among
   them; while they load, or when they failed to, it is disabled and says
-  so. The write then asks for the object by name and applies only when it
-  is not found. Between that Get and the apply a window remains, in which
-  an object of the name made by someone else is replaced; only a
-  create-only apply in the API closes it, which is tracked on its own. The
-  apply's answer says whether it created the object, and when it says
-  `created: false` the form shows that the apply replaced one.
+  so (`web/src/lib/create.ts`). The write is a create-only apply, so an
+  object of the name made by someone else since the list loaded is
+  refused by the API (`docs/decisions/apply-semantics.md`). By the submit
+  button the form says that refusal as it says a name in the list, that a
+  machine of the name exists in the project; any other error shows as the
+  API gave it.
 - **The quota warning reads the project's status**: its limits, the smaller
   of its own and its tenant's, against its own usage. A creation that goes
   past the tenant's limit through other projects' usage is refused by the

@@ -1,6 +1,6 @@
 import { Code, ConnectError } from "@connectrpc/connect";
-import { describe, expect, it, vi } from "vitest";
-import { checkName, createIfAbsent, type KnownNames } from "@/lib/create";
+import { describe, expect, it } from "vitest";
+import { checkName, createError, type KnownNames } from "@/lib/create";
 
 const known = (over: Partial<KnownNames> = {}): KnownNames => ({ loading: false, error: null, names: ["web"], ...over });
 
@@ -35,32 +35,14 @@ describe("checkName", () => {
   });
 });
 
-const notFound = () => Promise.reject(new ConnectError("not found", Code.NotFound));
-
-describe("createIfAbsent", () => {
-  it("applies when the Get finds nothing", async () => {
-    const apply = vi.fn(async () => ({ created: true }));
-    await createIfAbsent({ get: notFound, apply }, "container", "api");
-    expect(apply).toHaveBeenCalledOnce();
+describe("createError", () => {
+  it("says a taken name in the form's words", () => {
+    const err = createError(new ConnectError("VirtualMachine box already exists", Code.AlreadyExists), "virtual machine", "box");
+    expect(err).toMatchObject({ code: Code.AlreadyExists, rawMessage: "A virtual machine named box exists in this project." });
   });
 
-  it("does not apply when the object exists", async () => {
-    const apply = vi.fn(async () => ({ created: true }));
-    const err = await createIfAbsent({ get: async () => ({}), apply }, "container", "web").catch((e) => e);
-    expect(apply).not.toHaveBeenCalled();
-    expect(err).toBeInstanceOf(ConnectError);
-    expect((err as ConnectError).code).toBe(Code.AlreadyExists);
-  });
-
-  it("does not apply when the Get fails otherwise", async () => {
-    const apply = vi.fn(async () => ({ created: true }));
-    const get = () => Promise.reject(new ConnectError("down", Code.Unavailable));
-    await expect(createIfAbsent({ get, apply }, "container", "api")).rejects.toMatchObject({ code: Code.Unavailable });
-    expect(apply).not.toHaveBeenCalled();
-  });
-
-  it("says so when the apply replaced an object made in between", async () => {
-    const apply = vi.fn(async () => ({ created: false }));
-    await expect(createIfAbsent({ get: notFound, apply }, "container", "api")).rejects.toMatchObject({ code: Code.AlreadyExists });
+  it("keeps any other error as it is", () => {
+    const api = new ConnectError("down", Code.Unavailable);
+    expect(createError(api, "container", "api")).toBe(api);
   });
 });

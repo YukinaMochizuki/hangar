@@ -26,7 +26,7 @@ import { ErrorNotice, Skeleton } from "@/components/states";
 import { Button, Card, CopyButton } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { checkName, createIfAbsent } from "@/lib/create";
+import { checkName, createError } from "@/lib/create";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { sizes, useMachines, type SizeId } from "@/lib/machines";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
@@ -160,23 +160,17 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
 
   const submit = useMutation({
     mutationFn: async () => {
-      if (kind === "container") {
-        const c = createClient(ContainerService, transport);
-        await createIfAbsent(
-          { get: () => c.getContainer({ project, name }), apply: () => c.applyContainer({ container: obj as Container }) },
-          noun,
-          name,
-        );
-      } else {
-        const c = createClient(VirtualMachineService, transport);
-        await createIfAbsent(
-          {
-            get: () => c.getVirtualMachine({ project, name }),
-            apply: () => c.applyVirtualMachine({ virtualMachine: obj as VirtualMachine }),
-          },
-          noun,
-          name,
-        );
+      try {
+        if (kind === "container") {
+          await createClient(ContainerService, transport).applyContainer({ container: obj as Container, createOnly: true });
+        } else {
+          await createClient(VirtualMachineService, transport).applyVirtualMachine({
+            virtualMachine: obj as VirtualMachine,
+            createOnly: true,
+          });
+        }
+      } catch (err) {
+        throw createError(err, noun, name);
       }
     },
     onSuccess: () => {
@@ -422,7 +416,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
               </div>
               <pre className="overflow-x-auto px-4 py-3 font-mono text-[11.5px] leading-5 text-muted">{yaml}</pre>
               <div className="border-t px-4 py-2.5 font-mono text-[11.5px]">
-                <span className="select-none text-accent">$ </span>hangar apply -p {project} -f {name || "machine"}.yaml
+                <span className="select-none text-accent">$ </span>hangar apply --create-only -p {project} -f {name || "machine"}.yaml
               </div>
             </Card>
           </div>
