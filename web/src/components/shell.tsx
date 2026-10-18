@@ -5,6 +5,8 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Box,
   ChevronsUpDown,
+  Disc3,
+  HardDrive,
   LayoutGrid,
   LogOut,
   Menu,
@@ -26,6 +28,7 @@ import { useMachines } from "@/lib/machines";
 import { usePrefs, type ThemePref } from "@/lib/prefs";
 import { projectLabel, rememberProject, useProjects } from "@/lib/projects";
 import { useMember } from "@/lib/session";
+import { useDisks } from "@/lib/storage";
 
 type NavItem = { label: string; icon: LucideIcon; to: string; count?: number };
 
@@ -166,6 +169,7 @@ function MemberFooter() {
 function ProjectSidebar({ project }: { project: string }) {
   const containers = useMachines(project, "Container");
   const vms = useMachines(project, "VirtualMachine");
+  const disks = useDisks(project);
   const base = `/projects/${project}`;
   // Only pages that exist are listed; a kind joins when its page does.
   const nav: NavSection[] = [
@@ -175,6 +179,13 @@ function ProjectSidebar({ project }: { project: string }) {
       items: [
         { label: "Containers", icon: Box, to: `${base}/containers`, count: containers.loading || containers.error ? undefined : containers.items.length },
         { label: "Virtual machines", icon: Server, to: `${base}/vms`, count: vms.loading || vms.error ? undefined : vms.items.length },
+      ],
+    },
+    {
+      group: "Storage",
+      items: [
+        { label: "Disks", icon: HardDrive, to: `${base}/disks`, count: disks.loading || disks.error ? undefined : disks.items.length },
+        { label: "Images", icon: Disc3, to: `${base}/images` },
       ],
     },
     { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },

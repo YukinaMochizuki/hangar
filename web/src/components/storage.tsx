@@ -1,0 +1,490 @@
+// Pieces the Disks and Images pages share: their states, their conditions,
+// their equivalent CLI or YAML, and the disk dialogs (new, grow, delete),
+// each the API's own call with its error shown where it was asked for.
+
+import { toJson, type JsonValue } from "@bufbuild/protobuf";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { ChevronRight, HardDrive, Plus, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { Dialog } from "@/components/dialog";
+import { Notice } from "@/components/notice";
+import { Button, Card, CopyButton } from "@/components/ui";
+import { errorMessage } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import { checkName } from "@/lib/create";
+import { ago, date, machinePath } from "@/lib/machines";
+import { toYaml } from "@/lib/manifest";
+import { formatNumber, quantityGiB } from "@/lib/quantity";
+import {
+  diskFault,
+  diskImage,
+  growFloorGiB,
+  imageFloorGiB,
+  imageState,
+  newDisk,
+  rootDiskOwner,
+  useCreateDisk,
+  useDeleteDisk,
+  useGrowDisk,
+  useMachineOwners,
+  type ImageState,
+  type Listing,
+} from "@/lib/storage";
+
+const tones = { ok: "bg-ok", pending: "bg-pending", fail: "bg-fail", off: "bg-off" } as const;
+type Tone = keyof typeof tones;
+
+/** Dot is a state LED: ok, pending, failed or off. */
+export function Dot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
+  return (
+    <span className="relative inline-flex size-2 shrink-0">
+      {pulse && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden", tones[tone])} />}
+      <span className={cn("relative size-2 rounded-full", tones[tone])} />
+    </span>
+  );
+}
+
+const diskPhases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
+  [DiskPhase.PENDING]: { label: "Pending", tone: "pending", pulse: true },
+  [DiskPhase.AVAILABLE]: { label: "Available", tone: "off" },
+  [DiskPhase.IN_USE]: { label: "In use", tone: "ok" },
+};
+
+/** diskPhaseLabel names a disk's phase, or Deleting. */
+export function diskPhaseLabel(d: Disk): string {
+  if (d.metadata?.deleteTime) return "Deleting";
+  return diskPhases[d.status?.phase ?? 0]?.label ?? "Unknown";
+}
+
+/** DiskState shows a disk's phase, and the reason of its Ready condition when False. */
+export function DiskState({ d, reason = true }: { d: Disk; reason?: boolean }) {
+  const fault = diskFault(d);
+  const p = fault ? { tone: "fail" as Tone } : (diskPhases[d.status?.phase ?? 0] ?? { tone: "off" as Tone });
+  return (
+    <>
+      <span className="inline-flex items-center gap-2">
+        <Dot tone={p.tone} pulse={"pulse" in p && p.pulse} />
+        {diskPhaseLabel(d)}
+      </span>
+      {reason && fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
+    </>
+  );
+}
+
+/** ImageStateCell shows an image's state, and the reason when it is at fault. */
+export function ImageStateCell({ s }: { s: ImageState }) {
+  return (
+    <>
+      <span className="inline-flex items-center gap-2">
+        <Dot tone={s.tone} />
+        {s.label}
+      </span>
+      {s.reason && <span className="block text-[11.5px] text-fail">{s.reason}</span>}
+    </>
+  );
+}
+
+/**
+ * MachineLink shows the machine a disk is attached to as its Container or VM,
+ * linked to that page; the Machine's own name while the owner is not known.
+ */
+export function MachineLink({ project, machine }: { project: string; machine: string }) {
+  const owner = useMachineOwners(project)(machine);
+  if (!owner) return <span className="font-mono text-[12.5px]">{machine}</span>;
+  return (
+    <Link to={machinePath(owner.kind)} params={{ project, name: owner.name }} className="font-mono text-[12.5px] text-accent hover:underline">
+      {owner.name}
+    </Link>
+  );
+}
+
+// The name a disk's machine goes by: its Container's or VM's, else its own.
+function useMachineName(project: string, machine: string): string {
+  return useMachineOwners(project)(machine)?.name ?? machine;
+}
+
+/** DiskSource says what a disk holds: blank, or a copy of an image, linked. */
+export function DiskSource({ d, project, link = true }: { d: Disk; project: string; link?: boolean }) {
+  const img = diskImage(d);
+  if (!img) return <span className="text-muted">Blank</span>;
+  return (
+    <span>
+      <span className="text-muted">Image </span>
+      {link ? (
+        <Link to="/projects/$project/images/$name" params={{ project, name: img }} className="font-mono text-[12.5px] text-accent hover:underline">
+          {img}
+        </Link>
+      ) : (
+        <span className="font-mono">{img}</span>
+      )}
+    </span>
+  );
+}
+
+const statusWord: Record<number, string> = {
+  [ConditionStatus.TRUE]: "True",
+  [ConditionStatus.FALSE]: "False",
+  [ConditionStatus.UNKNOWN]: "Unknown",
+};
+
+/** ConditionsCard shows the raw conditions, folded away. */
+export function ConditionsCard({ conditions }: { conditions: Condition[] }) {
+  return (
+    <Card className="overflow-hidden">
+      <details className="group">
+        <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-3.5 text-subtle transition-transform group-open:rotate-90 motion-reduce:transition-none" />
+          Conditions
+          <span className="font-mono text-[11.5px] font-normal text-subtle">{conditions.length}</span>
+        </summary>
+        <ul className="divide-y border-t">
+          {conditions.length === 0 && <li className="px-4 py-2.5 text-[13px] text-muted">None reported.</li>}
+          {conditions.map((c) => (
+            <li key={c.type} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+              <span
+                className={cn(
+                  "size-1.5 shrink-0 rounded-full",
+                  c.status === ConditionStatus.TRUE ? "bg-ok" : c.status === ConditionStatus.UNKNOWN ? "bg-pending" : "bg-subtle",
+                )}
+              />
+              <span className="w-20 shrink-0 font-medium">{c.type}</span>
+              <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
+              <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>
+              <span className="hidden min-w-0 flex-1 truncate text-muted md:block">{c.message}</span>
+              <span className="flex-1 md:hidden" />
+              <span className="shrink-0 text-[12px] text-subtle">{ago(date(c.lastTransitionTime))} ago</span>
+            </li>
+          ))}
+        </ul>
+      </details>
+    </Card>
+  );
+}
+
+/** EquivalentCard shows CLI lines and a YAML manifest, each copyable. */
+export function EquivalentCard({ cli, yaml }: { cli: string[]; yaml?: string }) {
+  const [tab, setTab] = useState<"cli" | "yaml">("cli");
+  const text = tab === "cli" || !yaml ? cli.join("\n") : yaml;
+  return (
+    <Card className="overflow-hidden">
+      <div className="flex h-11 items-center justify-between border-b px-4">
+        <div role="tablist" className="flex gap-1 text-[12px]">
+          {(yaml ? (["cli", "yaml"] as const) : (["cli"] as const)).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={cn("rounded px-2 py-1 font-medium", tab === t ? "bg-surface-2 text-foreground" : "text-muted hover:text-foreground")}
+            >
+              {t === "cli" ? "CLI" : "YAML"}
+            </button>
+          ))}
+        </div>
+        <CopyButton text={text} />
+      </div>
+      <pre className="max-h-96 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-5">
+        {tab === "cli" || !yaml
+          ? cli.map((c) => (
+              <div key={c} className="-indent-3.5 py-0.5 pl-3.5">
+                <span className="select-none text-accent">$ </span>
+                {c}
+              </div>
+            ))
+          : yaml}
+      </pre>
+    </Card>
+  );
+}
+
+/** diskYaml is a disk as `hangar apply -f` takes it. */
+export function diskYaml(d: Disk): string {
+  const json = toJson(DiskSchema, d) as { [k: string]: JsonValue };
+  const meta = (json.metadata ?? {}) as { [k: string]: JsonValue };
+  const metadata: { [k: string]: JsonValue } = { name: meta.name ?? "" };
+  const labels = Object.entries((meta.labels ?? {}) as { [k: string]: JsonValue }).filter(([k]) => !/\.hangarlab\.cloud\//.test(k));
+  if (labels.length) metadata.labels = Object.fromEntries(labels);
+  // A blank disk's empty source is left out, as a person writes it.
+  const spec = Object.fromEntries(
+    Object.entries((json.spec ?? {}) as { [k: string]: JsonValue }).filter(([, v]) => !(v && typeof v === "object" && Object.keys(v).length === 0)),
+  );
+  return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
+}
+
+function YamlBlock({ text, cli }: { text: string; cli?: string }) {
+  return (
+    <div className="relative mt-4 rounded-md border bg-surface-2">
+      <CopyButton text={text} className="absolute right-1.5 top-1.5" />
+      <pre className="overflow-auto py-2.5 pl-3 pr-9 font-mono text-[11.5px] leading-5 text-foreground">{text}</pre>
+      {cli && (
+        <div className="flex items-center justify-between gap-2 border-t py-1.5 pl-3 pr-1.5 font-mono text-[11.5px]">
+          <span className="min-w-0 break-all">
+            <span className="select-none text-accent">$ </span>
+            {cli}
+          </span>
+          <CopyButton text={cli} className="shrink-0" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const input =
+  "mt-1.5 block h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-accent";
+
+function Label({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
+  return (
+    <div className="mt-4 first:mt-0">
+      <label className="block">
+        <span className="text-[12.5px] text-foreground">{title}</span>
+        {children}
+      </label>
+      {hint && <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * NewDiskDialog asks for a name, a size and what the disk holds. Nothing is
+ * sent until the project's disks are known and the name is not among them;
+ * the apply is create-only, so a name taken since is refused (lib/create.ts).
+ */
+export function NewDiskDialog({
+  open,
+  onClose,
+  project,
+  images,
+  disks,
+  initialImage = "",
+}: {
+  open: boolean;
+  onClose: () => void;
+  project: string;
+  images: Image[];
+  disks: Listing<Disk>;
+  initialImage?: string;
+}) {
+  const [name, setName] = useState("");
+  const [size, setSize] = useState(20);
+  const [image, setImage] = useState(initialImage);
+  const create = useCreateDisk();
+  const navigate = useNavigate();
+  const usable = images.filter((i) => imageState(i).tone !== "fail");
+  const img = images.find((i) => i.metadata?.name === image);
+  const floor = imageFloorGiB(img);
+  const nameCheck = checkName(name, "disk", {
+    loading: disks.loading,
+    error: disks.error,
+    names: disks.items.map((d) => d.metadata?.name ?? ""),
+  });
+  const sizeProblem = !Number.isInteger(size) || size < 1 ? "The size is not a whole number of GiB." : image && size < floor ? `${image} needs ${floor} GiB; ${size} GiB is less.` : undefined;
+  const problem = (name !== "" || disks.loading || !!disks.error) && !nameCheck.ok ? nameCheck.reason : sizeProblem;
+  const disk = newDisk(project, name, size, image);
+  const yaml = diskYaml(newDisk(project, name || "NAME", size, image));
+  const close = () => {
+    create.reset();
+    onClose();
+  };
+  return (
+    <Dialog open={open} onClose={close} title="New disk">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!nameCheck.ok || sizeProblem) return;
+          create.mutate(disk, {
+            onSuccess: () => {
+              close();
+              void navigate({ to: "/projects/$project/disks/$name", params: { project, name } });
+            },
+          });
+        }}
+      >
+        <div className="text-foreground">
+          <Label title="Name">
+            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" className={input} />
+          </Label>
+          <Label title="Size, GiB" hint="A disk can grow later but never shrink.">
+            <input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
+          </Label>
+          <Label title="Holds">
+            <select value={image} onChange={(e) => setImage(e.target.value)} className={cn(input, "font-sans")}>
+              <option value="">Blank, all zeros</option>
+              {usable.map((i) => (
+                <option key={i.metadata?.name} value={i.metadata?.name}>
+                  A copy of {i.metadata?.name}, {imageFloorGiB(i)} GiB or more
+                </option>
+              ))}
+            </select>
+          </Label>
+        </div>
+        <YamlBlock text={yaml} cli={`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`} />
+        {problem && <Notice tone="warning" title={problem} className="mt-3" />}
+        {create.error && (
+          <Notice tone="error" title="Creating the disk failed" className="mt-3">
+            {errorMessage(create.error)}
+          </Notice>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" onClick={close}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!nameCheck.ok || !!sizeProblem || create.isPending}>
+            <Plus /> {create.isPending ? "Creating…" : disks.loading ? "Loading names…" : "Create disk"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/** growFacts says what growing a disk does: it restarts the machine the disk is attached to, if any. */
+export function growFacts(machine: string | undefined): string | undefined {
+  return machine ? `Growing it restarts ${machine}, which it is attached to.` : undefined;
+}
+
+/** sizeFacts states a disk's spec.size and what its node holds. */
+export function sizeFacts(d: Disk): string {
+  const spec = quantityGiB(d.spec?.size);
+  const held = quantityGiB(d.status?.size);
+  if (!Number.isFinite(held)) return `It is not placed yet; spec.size is ${formatNumber(spec)} GiB.`;
+  if (held !== spec) return `spec.size is ${formatNumber(spec)} GiB; its node holds ${formatNumber(held)} GiB.`;
+  return `Its node holds ${formatNumber(held)} GiB.`;
+}
+
+/**
+ * GrowDiskDialog sets a disk's size: larger to grow it, or back down to what
+ * its node holds to withdraw a growth not yet granted. Applied at the
+ * version read; a stale read applies nothing (lib/storage.ts).
+ */
+export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: Image; open: boolean; onClose: () => void }) {
+  const name = d.metadata?.name ?? "";
+  const project = d.metadata?.project ?? "";
+  const spec = quantityGiB(d.spec?.size);
+  const held = quantityGiB(d.status?.size);
+  const floor = growFloorGiB(d, image);
+  const [size, setSize] = useState(spec * 2);
+  const grow = useGrowDisk(project, name);
+  const machine = useMachineName(project, d.status?.machine ?? "");
+  const imageFloor = diskImage(d) ? imageFloorGiB(image) : 1;
+  const problem = !Number.isInteger(size)
+    ? "The size is not a whole number of GiB."
+    : size === spec
+      ? `${name} is already set to ${formatNumber(spec)} GiB.`
+      : size >= floor
+        ? undefined
+        : Number.isFinite(held) && held >= imageFloor
+          ? `Its node holds ${formatNumber(held)} GiB; a disk never shrinks below that.`
+          : imageFloor > 1
+            ? `${diskImage(d)} needs ${imageFloor} GiB; ${size} GiB is less.`
+            : "The size is below 1 GiB.";
+  const close = () => {
+    grow.reset();
+    onClose();
+  };
+  return (
+    <Dialog open={open} onClose={close} title={`Grow disk ${name}`}>
+      {d.status?.machine && <p className="mb-1">{growFacts(machine)}</p>}
+      <p>{sizeFacts(d)}</p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (!problem) grow.mutate({ sizeGi: size, shownGi: spec }, { onSuccess: close });
+        }}
+      >
+        <div className="mt-4 text-foreground">
+          <Label title="Size, GiB" hint={`At least ${floor} GiB.`}>
+            <input type="number" min={floor} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
+          </Label>
+        </div>
+        <YamlBlock text={diskYaml({ ...d, spec: { ...d.spec!, size: `${size}Gi` } })} />
+        {problem && <Notice tone="warning" title={problem} className="mt-3" />}
+        {grow.error && (
+          <Notice tone="error" title="Changing the size failed" className="mt-3">
+            {errorMessage(grow.error)}
+          </Notice>
+        )}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" onClick={close}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={!!problem || grow.isPending}>
+            <HardDrive /> {grow.isPending ? "Applying…" : size > spec ? `Grow to ${formatNumber(size)} GiB` : `Set to ${formatNumber(size)} GiB`}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * diskDeleteFacts says what deleting a disk takes with it, and what the API
+ * refuses: deleting a disk a live machine has. A disk whose machine is
+ * being deleted goes once that machine is gone.
+ */
+export function diskDeleteFacts(d: Disk, machine: { name: string; deleting: boolean } | undefined): string {
+  const name = d.metadata?.name ?? "";
+  if (machine && !machine.deleting) return `${name} is attached to ${machine.name}; the API refuses to delete a disk a live machine has.`;
+  const owner = rootDiskOwner(d);
+  const root = owner ? ` It is the root disk made for ${owner}.` : "";
+  if (machine) return `Its data is deleted with it, once ${machine.name}, which is being deleted, is gone.${root}`;
+  if (owner) return `Its data is deleted with it.${root}`;
+  return "Its data is deleted with it, on its node, and cannot be read again.";
+}
+
+/** DeleteDiskDialog asks for the name typed to confirm, then sends DeleteDisk and shows its error. */
+export function DeleteDiskDialog({ d, open, onClose, after }: { d: Disk; open: boolean; onClose: () => void; after?: () => void }) {
+  const [typed, setTyped] = useState("");
+  const name = d.metadata?.name ?? "";
+  const project = d.metadata?.project ?? "";
+  const del = useDeleteDisk(project, name);
+  const owner = useMachineOwners(project)(d.status?.machine ?? "");
+  const machine = d.status?.machine ? { name: owner?.name ?? d.status.machine, deleting: owner?.deleting ?? false } : undefined;
+  const close = () => {
+    del.reset();
+    setTyped("");
+    onClose();
+  };
+  return (
+    <Dialog open={open} onClose={close} title={`Delete disk ${name}`}>
+      <p>{diskDeleteFacts(d, machine)}</p>
+      <label className="mt-4 block">
+        <span className="text-[12.5px] text-foreground">
+          Name, to confirm: <span className="font-mono">{name}</span>
+        </span>
+        <input
+          value={typed}
+          onChange={(e) => setTyped(e.target.value)}
+          autoFocus
+          spellCheck={false}
+          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
+        />
+      </label>
+      <YamlBlock text={`hangar delete disk ${name} -p ${project}`} />
+      {del.error && (
+        <Notice tone="error" title="Deleting failed" className="mt-3">
+          {errorMessage(del.error)}
+        </Notice>
+      )}
+      <div className="mt-5 flex justify-end gap-2">
+        <Button onClick={close}>Cancel</Button>
+        <Button
+          variant="danger"
+          disabled={typed !== name || del.isPending}
+          onClick={() =>
+            del.mutate(undefined, {
+              onSuccess: () => {
+                close();
+                after?.();
+              },
+            })
+          }
+        >
+          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
