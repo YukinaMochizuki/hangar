@@ -61,6 +61,8 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.Network.Kind, Map: s.containersInProject, SkipResync: true},
 				// A disk going may make room for a resize.
 				{Kind: registry.Disk.Kind, Map: s.containersOnDiskNode, SkipResync: true},
+				// A disk made or let go unblocks the containers mounting it.
+				{Kind: registry.Disk.Kind, Map: s.containersMountingDisk, SkipResync: true},
 				// An Address binding, moving or going changes the interfaces
 				// of the containers it binds or leaves.
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.Container), SkipResync: true},
@@ -304,6 +306,24 @@ type blocked struct{ reason, message string }
 
 func (b *blocked) Error() string { return b.message }
 
+// heldBack is a blocked reconcile whose cause may pass by itself, such as a
+// disk not made yet or still attached elsewhere: reported, and checked
+// again.
+type heldBack struct{ *blocked }
+
+func (h heldBack) Unwrap() error { return h.blocked }
+
+// stillWaiting is what a reconcile that reported err returns once it has:
+// controller.ErrWaiting for a heldBack, so the key is checked again; nil
+// otherwise.
+func stillWaiting(err error) error {
+	var h heldBack
+	if errors.As(err, &h) {
+		return fmt.Errorf("%w: %s", controller.ErrWaiting, h.message)
+	}
+	return nil
+}
+
 // reconcileContainer keeps a container's machine in line with its spec, and
 // reports the machine's state back on the container.
 func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error {
@@ -329,11 +349,12 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	m, err = s.ensureMachine(ctx, c, m)
 	var stuck *blocked
 	if errors.As(err, &stuck) {
+		waiting := stillWaiting(err)
 		node, err := s.nodeOf(ctx, m)
 		if err != nil {
 			return err
 		}
-		return s.reportContainer(ctx, c, m, node, stuck, "")
+		return cmp.Or(s.reportContainer(ctx, c, m, node, stuck, ""), waiting)
 	}
 	// An Address moving to it is waited on, and the container reported
 	// meanwhile.
@@ -484,11 +505,15 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 }
 
 // refusedMachine makes admission refusing a machine as asked for what its
-// owner reports; other errors, such as a disk still attached elsewhere,
-// are retried.
+// owner reports. A precondition, such as a disk that does not exist yet or
+// is still attached elsewhere, is reported and waited on; other errors are
+// retried.
 func refusedMachine(err error) error {
-	if connect.CodeOf(err) == connect.CodeInvalidArgument {
+	switch connect.CodeOf(err) {
+	case connect.CodeInvalidArgument:
 		return &blocked{"MachineRefused", err.Error()}
+	case connect.CodeFailedPrecondition:
+		return heldBack{&blocked{"MachineHeldBack", err.Error()}}
 	}
 	return err
 }
@@ -514,15 +539,18 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 	if cs.GetRunState() == computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
 		runState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	}
+	disks, mounts := machineVolumes(cs.GetVolumes())
 	return &computev1alpha1.MachineSpec{
 		Resources: sz.canonical(),
 		RunState:  runState,
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
 			ImagePullSecrets: slices.Clone(cs.GetImagePullSecrets()),
+			Volumes:          mounts,
 		}},
 		Interfaces:    machineInterfaces(cs.GetInterfaces()),
 		RestartPolicy: restart,
+		Disks:         disks,
 	}, nil
 }
 

@@ -53,6 +53,40 @@ message ContainerSpec {
   // the image's registry. Changing them restarts nothing; they count at the
   // next pull. See docs/decisions/secrets.md.
   repeated string image_pull_secrets = 10;
+  // The Disks the container mounts, at most 8, as a Compose service's
+  // volumes in their long syntax. A disk is mounted by one machine at a
+  // time, and pins the container to the disk's node. Changing them restarts
+  // the container. See docs/decisions/container-volumes.md.
+  repeated ContainerVolume volumes = 11;
+}
+
+// ContainerVolume is a volume a container mounts, as Compose writes one.
+message ContainerVolume {
+  // "volume", the only type for now; empty means it. "bind" and "tmpfs"
+  // are refused.
+  string type = 1;
+  // Names what is mounted, in the container's project: a Disk, unless
+  // source_kind says otherwise.
+  string source = 2;
+  // The kind source names. Hangar's, not Compose's: empty is "Disk", the
+  // only kind for now.
+  string source_kind = 3;
+  // Where the volume is mounted: an absolute path, neither / nor under
+  // /proc, /sys, /dev or /run, resolved as the image's processes resolve
+  // it, and made if it is missing.
+  string target = 4;
+  bool read_only = 5;
+  ContainerVolumeOptions volume = 6;
+}
+
+// ContainerVolumeOptions are a Compose volume's own options.
+message ContainerVolumeOptions {
+  // Leaves a new volume empty, rather than filled with what the image has
+  // at the target.
+  bool nocopy = 1;
+  // Mounts this directory of the volume, a relative path, which must exist,
+  // instead of the whole volume.
+  string subpath = 2;
 }
 
 // ContainerRunState is what a container's user asks of its process. More

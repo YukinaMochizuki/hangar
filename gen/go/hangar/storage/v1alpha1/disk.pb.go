@@ -22,6 +22,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// DiskAttachmentRole is what a machine uses a disk as.
+type DiskAttachmentRole int32
+
+const (
+	DiskAttachmentRole_DISK_ATTACHMENT_ROLE_UNSPECIFIED DiskAttachmentRole = 0
+	// The disk a VM boots from.
+	DiskAttachmentRole_DISK_ATTACHMENT_ROLE_BOOT DiskAttachmentRole = 1
+	// A block device given to the guest as it is.
+	DiskAttachmentRole_DISK_ATTACHMENT_ROLE_DATA DiskAttachmentRole = 2
+	// A filesystem a container mounts.
+	DiskAttachmentRole_DISK_ATTACHMENT_ROLE_VOLUME DiskAttachmentRole = 3
+)
+
+// Enum value maps for DiskAttachmentRole.
+var (
+	DiskAttachmentRole_name = map[int32]string{
+		0: "DISK_ATTACHMENT_ROLE_UNSPECIFIED",
+		1: "DISK_ATTACHMENT_ROLE_BOOT",
+		2: "DISK_ATTACHMENT_ROLE_DATA",
+		3: "DISK_ATTACHMENT_ROLE_VOLUME",
+	}
+	DiskAttachmentRole_value = map[string]int32{
+		"DISK_ATTACHMENT_ROLE_UNSPECIFIED": 0,
+		"DISK_ATTACHMENT_ROLE_BOOT":        1,
+		"DISK_ATTACHMENT_ROLE_DATA":        2,
+		"DISK_ATTACHMENT_ROLE_VOLUME":      3,
+	}
+)
+
+func (x DiskAttachmentRole) Enum() *DiskAttachmentRole {
+	p := new(DiskAttachmentRole)
+	*p = x
+	return p
+}
+
+func (x DiskAttachmentRole) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (DiskAttachmentRole) Descriptor() protoreflect.EnumDescriptor {
+	return file_hangar_storage_v1alpha1_disk_proto_enumTypes[0].Descriptor()
+}
+
+func (DiskAttachmentRole) Type() protoreflect.EnumType {
+	return &file_hangar_storage_v1alpha1_disk_proto_enumTypes[0]
+}
+
+func (x DiskAttachmentRole) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use DiskAttachmentRole.Descriptor instead.
+func (DiskAttachmentRole) EnumDescriptor() ([]byte, []int) {
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{0}
+}
+
 // DiskPhase is where a disk is in its lifecycle.
 type DiskPhase int32
 
@@ -63,11 +119,11 @@ func (x DiskPhase) String() string {
 }
 
 func (DiskPhase) Descriptor() protoreflect.EnumDescriptor {
-	return file_hangar_storage_v1alpha1_disk_proto_enumTypes[0].Descriptor()
+	return file_hangar_storage_v1alpha1_disk_proto_enumTypes[1].Descriptor()
 }
 
 func (DiskPhase) Type() protoreflect.EnumType {
-	return &file_hangar_storage_v1alpha1_disk_proto_enumTypes[0]
+	return &file_hangar_storage_v1alpha1_disk_proto_enumTypes[1]
 }
 
 func (x DiskPhase) Number() protoreflect.EnumNumber {
@@ -76,7 +132,7 @@ func (x DiskPhase) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiskPhase.Descriptor instead.
 func (DiskPhase) EnumDescriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{0}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{1}
 }
 
 // Disk is a durable block device in a project. It lives on one node, the one
@@ -334,8 +390,8 @@ func (x *ImageSource) GetName() string {
 }
 
 // DiskStatus is the observed state of a disk. The apiserver writes its node,
-// size, machine, phase and the Allocated condition; the disk's node writes
-// the Ready and Released conditions.
+// size, machine, attachment, phase and the Allocated condition; the disk's
+// node writes the Ready and Released conditions.
 type DiskStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ObservedGeneration int64                  `protobuf:"varint,1,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
@@ -348,8 +404,11 @@ type DiskStatus struct {
 	// has room for it, and never less than before.
 	Size string `protobuf:"bytes,5,opt,name=size,proto3" json:"size,omitempty"`
 	// Names the Machine, in the disk's project, the disk is attached to; empty
-	// when it is attached to none.
-	Machine       string `protobuf:"bytes,6,opt,name=machine,proto3" json:"machine,omitempty"`
+	// when it is attached to none. As attachment.machine.
+	Machine string `protobuf:"bytes,6,opt,name=machine,proto3" json:"machine,omitempty"`
+	// What the disk is attached to and used as; unset when it is attached to
+	// none. See docs/decisions/container-volumes.md.
+	Attachment    *DiskAttachment `protobuf:"bytes,7,opt,name=attachment,proto3" json:"attachment,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -426,6 +485,114 @@ func (x *DiskStatus) GetMachine() string {
 	return ""
 }
 
+func (x *DiskStatus) GetAttachment() *DiskAttachment {
+	if x != nil {
+		return x.Attachment
+	}
+	return nil
+}
+
+// DiskAttachment is how a disk is attached, as the spec of the machine
+// listing it says.
+type DiskAttachment struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The kind and name of what the machine was made from, in the disk's
+	// project, such as Container "web".
+	Kind string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// Names the Machine.
+	Machine string             `protobuf:"bytes,3,opt,name=machine,proto3" json:"machine,omitempty"`
+	As      DiskAttachmentRole `protobuf:"varint,4,opt,name=as,proto3,enum=hangar.storage.v1alpha1.DiskAttachmentRole" json:"as,omitempty"`
+	// The disk's place in the order the hypervisor attaches disks, as a Linux
+	// guest names virtio disks, such as "vdc".
+	Device string `protobuf:"bytes,5,opt,name=device,proto3" json:"device,omitempty"`
+	// Where a VOLUME is mounted in the guest, as the container's spec has it.
+	Path string `protobuf:"bytes,6,opt,name=path,proto3" json:"path,omitempty"`
+	// Whether a VOLUME is mounted read-only.
+	ReadOnly      bool `protobuf:"varint,7,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DiskAttachment) Reset() {
+	*x = DiskAttachment{}
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DiskAttachment) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DiskAttachment) ProtoMessage() {}
+
+func (x *DiskAttachment) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DiskAttachment.ProtoReflect.Descriptor instead.
+func (*DiskAttachment) Descriptor() ([]byte, []int) {
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DiskAttachment) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *DiskAttachment) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *DiskAttachment) GetMachine() string {
+	if x != nil {
+		return x.Machine
+	}
+	return ""
+}
+
+func (x *DiskAttachment) GetAs() DiskAttachmentRole {
+	if x != nil {
+		return x.As
+	}
+	return DiskAttachmentRole_DISK_ATTACHMENT_ROLE_UNSPECIFIED
+}
+
+func (x *DiskAttachment) GetDevice() string {
+	if x != nil {
+		return x.Device
+	}
+	return ""
+}
+
+func (x *DiskAttachment) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *DiskAttachment) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
 type GetDiskRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
@@ -436,7 +603,7 @@ type GetDiskRequest struct {
 
 func (x *GetDiskRequest) Reset() {
 	*x = GetDiskRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[5]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -448,7 +615,7 @@ func (x *GetDiskRequest) String() string {
 func (*GetDiskRequest) ProtoMessage() {}
 
 func (x *GetDiskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[5]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -461,7 +628,7 @@ func (x *GetDiskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDiskRequest.ProtoReflect.Descriptor instead.
 func (*GetDiskRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{5}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetDiskRequest) GetProject() string {
@@ -487,7 +654,7 @@ type GetDiskResponse struct {
 
 func (x *GetDiskResponse) Reset() {
 	*x = GetDiskResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[6]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -499,7 +666,7 @@ func (x *GetDiskResponse) String() string {
 func (*GetDiskResponse) ProtoMessage() {}
 
 func (x *GetDiskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[6]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -512,7 +679,7 @@ func (x *GetDiskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetDiskResponse.ProtoReflect.Descriptor instead.
 func (*GetDiskResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{6}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetDiskResponse) GetDisk() *Disk {
@@ -535,7 +702,7 @@ type ListDisksRequest struct {
 
 func (x *ListDisksRequest) Reset() {
 	*x = ListDisksRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[7]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -547,7 +714,7 @@ func (x *ListDisksRequest) String() string {
 func (*ListDisksRequest) ProtoMessage() {}
 
 func (x *ListDisksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[7]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -560,7 +727,7 @@ func (x *ListDisksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDisksRequest.ProtoReflect.Descriptor instead.
 func (*ListDisksRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{7}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListDisksRequest) GetProject() string {
@@ -602,7 +769,7 @@ type ListDisksResponse struct {
 
 func (x *ListDisksResponse) Reset() {
 	*x = ListDisksResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[8]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +781,7 @@ func (x *ListDisksResponse) String() string {
 func (*ListDisksResponse) ProtoMessage() {}
 
 func (x *ListDisksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[8]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +794,7 @@ func (x *ListDisksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListDisksResponse.ProtoReflect.Descriptor instead.
 func (*ListDisksResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{8}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListDisksResponse) GetItems() []*Disk {
@@ -663,7 +830,7 @@ type WatchDisksRequest struct {
 
 func (x *WatchDisksRequest) Reset() {
 	*x = WatchDisksRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[9]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +842,7 @@ func (x *WatchDisksRequest) String() string {
 func (*WatchDisksRequest) ProtoMessage() {}
 
 func (x *WatchDisksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[9]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +855,7 @@ func (x *WatchDisksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDisksRequest.ProtoReflect.Descriptor instead.
 func (*WatchDisksRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{9}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WatchDisksRequest) GetProject() string {
@@ -723,7 +890,7 @@ type WatchDisksResponse struct {
 
 func (x *WatchDisksResponse) Reset() {
 	*x = WatchDisksResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[10]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -735,7 +902,7 @@ func (x *WatchDisksResponse) String() string {
 func (*WatchDisksResponse) ProtoMessage() {}
 
 func (x *WatchDisksResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[10]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -748,7 +915,7 @@ func (x *WatchDisksResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchDisksResponse.ProtoReflect.Descriptor instead.
 func (*WatchDisksResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{10}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WatchDisksResponse) GetType() v1.EventType {
@@ -783,7 +950,7 @@ type ApplyDiskRequest struct {
 
 func (x *ApplyDiskRequest) Reset() {
 	*x = ApplyDiskRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[11]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -795,7 +962,7 @@ func (x *ApplyDiskRequest) String() string {
 func (*ApplyDiskRequest) ProtoMessage() {}
 
 func (x *ApplyDiskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[11]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -808,7 +975,7 @@ func (x *ApplyDiskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyDiskRequest.ProtoReflect.Descriptor instead.
 func (*ApplyDiskRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{11}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ApplyDiskRequest) GetDisk() *Disk {
@@ -836,7 +1003,7 @@ type ApplyDiskResponse struct {
 
 func (x *ApplyDiskResponse) Reset() {
 	*x = ApplyDiskResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[12]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -848,7 +1015,7 @@ func (x *ApplyDiskResponse) String() string {
 func (*ApplyDiskResponse) ProtoMessage() {}
 
 func (x *ApplyDiskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[12]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -861,7 +1028,7 @@ func (x *ApplyDiskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyDiskResponse.ProtoReflect.Descriptor instead.
 func (*ApplyDiskResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{12}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ApplyDiskResponse) GetDisk() *Disk {
@@ -896,7 +1063,7 @@ type DeleteDiskRequest struct {
 
 func (x *DeleteDiskRequest) Reset() {
 	*x = DeleteDiskRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[13]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -908,7 +1075,7 @@ func (x *DeleteDiskRequest) String() string {
 func (*DeleteDiskRequest) ProtoMessage() {}
 
 func (x *DeleteDiskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[13]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -921,7 +1088,7 @@ func (x *DeleteDiskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDiskRequest.ProtoReflect.Descriptor instead.
 func (*DeleteDiskRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{13}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeleteDiskRequest) GetProject() string {
@@ -954,7 +1121,7 @@ type DeleteDiskResponse struct {
 
 func (x *DeleteDiskResponse) Reset() {
 	*x = DeleteDiskResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[14]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -966,7 +1133,7 @@ func (x *DeleteDiskResponse) String() string {
 func (*DeleteDiskResponse) ProtoMessage() {}
 
 func (x *DeleteDiskResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[14]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -979,7 +1146,7 @@ func (x *DeleteDiskResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteDiskResponse.ProtoReflect.Descriptor instead.
 func (*DeleteDiskResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{14}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeleteDiskResponse) GetDisk() *Disk {
@@ -1001,7 +1168,7 @@ type UpdateDiskStatusRequest struct {
 
 func (x *UpdateDiskStatusRequest) Reset() {
 	*x = UpdateDiskStatusRequest{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[15]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1013,7 +1180,7 @@ func (x *UpdateDiskStatusRequest) String() string {
 func (*UpdateDiskStatusRequest) ProtoMessage() {}
 
 func (x *UpdateDiskStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[15]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1026,7 +1193,7 @@ func (x *UpdateDiskStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDiskStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateDiskStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{15}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateDiskStatusRequest) GetProject() string {
@@ -1066,7 +1233,7 @@ type UpdateDiskStatusResponse struct {
 
 func (x *UpdateDiskStatusResponse) Reset() {
 	*x = UpdateDiskStatusResponse{}
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[16]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1078,7 +1245,7 @@ func (x *UpdateDiskStatusResponse) String() string {
 func (*UpdateDiskStatusResponse) ProtoMessage() {}
 
 func (x *UpdateDiskStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[16]
+	mi := &file_hangar_storage_v1alpha1_disk_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1091,7 +1258,7 @@ func (x *UpdateDiskStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateDiskStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateDiskStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{16}
+	return file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateDiskStatusResponse) GetDisk() *Disk {
@@ -1122,7 +1289,7 @@ const file_hangar_storage_v1alpha1_disk_proto_rawDesc = "" +
 	"\x05image\x18\x01 \x01(\v2$.hangar.storage.v1alpha1.ImageSourceH\x00R\x05imageB\b\n" +
 	"\x06source\"!\n" +
 	"\vImageSource\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\xf4\x01\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"\xbd\x02\n" +
 	"\n" +
 	"DiskStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -1132,7 +1299,18 @@ const file_hangar_storage_v1alpha1_disk_proto_rawDesc = "" +
 	"\x05phase\x18\x03 \x01(\x0e2\".hangar.storage.v1alpha1.DiskPhaseR\x05phase\x12\x12\n" +
 	"\x04node\x18\x04 \x01(\tR\x04node\x12\x12\n" +
 	"\x04size\x18\x05 \x01(\tR\x04size\x12\x18\n" +
-	"\amachine\x18\x06 \x01(\tR\amachine\">\n" +
+	"\amachine\x18\x06 \x01(\tR\amachine\x12G\n" +
+	"\n" +
+	"attachment\x18\a \x01(\v2'.hangar.storage.v1alpha1.DiskAttachmentR\n" +
+	"attachment\"\xd8\x01\n" +
+	"\x0eDiskAttachment\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\amachine\x18\x03 \x01(\tR\amachine\x12;\n" +
+	"\x02as\x18\x04 \x01(\x0e2+.hangar.storage.v1alpha1.DiskAttachmentRoleR\x02as\x12\x16\n" +
+	"\x06device\x18\x05 \x01(\tR\x06device\x12\x12\n" +
+	"\x04path\x18\x06 \x01(\tR\x04path\x12\x1b\n" +
+	"\tread_only\x18\a \x01(\bR\breadOnly\">\n" +
 	"\x0eGetDiskRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"D\n" +
@@ -1178,7 +1356,12 @@ const file_hangar_storage_v1alpha1_disk_proto_rawDesc = "" +
 	"\x19expected_resource_version\x18\x04 \x01(\x03H\x00R\x17expectedResourceVersion\x88\x01\x01B\x1c\n" +
 	"\x1a_expected_resource_version\"M\n" +
 	"\x18UpdateDiskStatusResponse\x121\n" +
-	"\x04disk\x18\x01 \x01(\v2\x1d.hangar.storage.v1alpha1.DiskR\x04disk*p\n" +
+	"\x04disk\x18\x01 \x01(\v2\x1d.hangar.storage.v1alpha1.DiskR\x04disk*\x99\x01\n" +
+	"\x12DiskAttachmentRole\x12$\n" +
+	" DISK_ATTACHMENT_ROLE_UNSPECIFIED\x10\x00\x12\x1d\n" +
+	"\x19DISK_ATTACHMENT_ROLE_BOOT\x10\x01\x12\x1d\n" +
+	"\x19DISK_ATTACHMENT_ROLE_DATA\x10\x02\x12\x1f\n" +
+	"\x1bDISK_ATTACHMENT_ROLE_VOLUME\x10\x03*p\n" +
 	"\tDiskPhase\x12\x1a\n" +
 	"\x16DISK_PHASE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12DISK_PHASE_PENDING\x10\x01\x12\x18\n" +
@@ -1207,65 +1390,69 @@ func file_hangar_storage_v1alpha1_disk_proto_rawDescGZIP() []byte {
 	return file_hangar_storage_v1alpha1_disk_proto_rawDescData
 }
 
-var file_hangar_storage_v1alpha1_disk_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_storage_v1alpha1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_hangar_storage_v1alpha1_disk_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_hangar_storage_v1alpha1_disk_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_hangar_storage_v1alpha1_disk_proto_goTypes = []any{
-	(DiskPhase)(0),                   // 0: hangar.storage.v1alpha1.DiskPhase
-	(*Disk)(nil),                     // 1: hangar.storage.v1alpha1.Disk
-	(*DiskSpec)(nil),                 // 2: hangar.storage.v1alpha1.DiskSpec
-	(*DiskSource)(nil),               // 3: hangar.storage.v1alpha1.DiskSource
-	(*ImageSource)(nil),              // 4: hangar.storage.v1alpha1.ImageSource
-	(*DiskStatus)(nil),               // 5: hangar.storage.v1alpha1.DiskStatus
-	(*GetDiskRequest)(nil),           // 6: hangar.storage.v1alpha1.GetDiskRequest
-	(*GetDiskResponse)(nil),          // 7: hangar.storage.v1alpha1.GetDiskResponse
-	(*ListDisksRequest)(nil),         // 8: hangar.storage.v1alpha1.ListDisksRequest
-	(*ListDisksResponse)(nil),        // 9: hangar.storage.v1alpha1.ListDisksResponse
-	(*WatchDisksRequest)(nil),        // 10: hangar.storage.v1alpha1.WatchDisksRequest
-	(*WatchDisksResponse)(nil),       // 11: hangar.storage.v1alpha1.WatchDisksResponse
-	(*ApplyDiskRequest)(nil),         // 12: hangar.storage.v1alpha1.ApplyDiskRequest
-	(*ApplyDiskResponse)(nil),        // 13: hangar.storage.v1alpha1.ApplyDiskResponse
-	(*DeleteDiskRequest)(nil),        // 14: hangar.storage.v1alpha1.DeleteDiskRequest
-	(*DeleteDiskResponse)(nil),       // 15: hangar.storage.v1alpha1.DeleteDiskResponse
-	(*UpdateDiskStatusRequest)(nil),  // 16: hangar.storage.v1alpha1.UpdateDiskStatusRequest
-	(*UpdateDiskStatusResponse)(nil), // 17: hangar.storage.v1alpha1.UpdateDiskStatusResponse
-	(*v1.ObjectMeta)(nil),            // 18: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),             // 19: hangar.meta.v1.Condition
-	(v1.EventType)(0),                // 20: hangar.meta.v1.EventType
+	(DiskAttachmentRole)(0),          // 0: hangar.storage.v1alpha1.DiskAttachmentRole
+	(DiskPhase)(0),                   // 1: hangar.storage.v1alpha1.DiskPhase
+	(*Disk)(nil),                     // 2: hangar.storage.v1alpha1.Disk
+	(*DiskSpec)(nil),                 // 3: hangar.storage.v1alpha1.DiskSpec
+	(*DiskSource)(nil),               // 4: hangar.storage.v1alpha1.DiskSource
+	(*ImageSource)(nil),              // 5: hangar.storage.v1alpha1.ImageSource
+	(*DiskStatus)(nil),               // 6: hangar.storage.v1alpha1.DiskStatus
+	(*DiskAttachment)(nil),           // 7: hangar.storage.v1alpha1.DiskAttachment
+	(*GetDiskRequest)(nil),           // 8: hangar.storage.v1alpha1.GetDiskRequest
+	(*GetDiskResponse)(nil),          // 9: hangar.storage.v1alpha1.GetDiskResponse
+	(*ListDisksRequest)(nil),         // 10: hangar.storage.v1alpha1.ListDisksRequest
+	(*ListDisksResponse)(nil),        // 11: hangar.storage.v1alpha1.ListDisksResponse
+	(*WatchDisksRequest)(nil),        // 12: hangar.storage.v1alpha1.WatchDisksRequest
+	(*WatchDisksResponse)(nil),       // 13: hangar.storage.v1alpha1.WatchDisksResponse
+	(*ApplyDiskRequest)(nil),         // 14: hangar.storage.v1alpha1.ApplyDiskRequest
+	(*ApplyDiskResponse)(nil),        // 15: hangar.storage.v1alpha1.ApplyDiskResponse
+	(*DeleteDiskRequest)(nil),        // 16: hangar.storage.v1alpha1.DeleteDiskRequest
+	(*DeleteDiskResponse)(nil),       // 17: hangar.storage.v1alpha1.DeleteDiskResponse
+	(*UpdateDiskStatusRequest)(nil),  // 18: hangar.storage.v1alpha1.UpdateDiskStatusRequest
+	(*UpdateDiskStatusResponse)(nil), // 19: hangar.storage.v1alpha1.UpdateDiskStatusResponse
+	(*v1.ObjectMeta)(nil),            // 20: hangar.meta.v1.ObjectMeta
+	(*v1.Condition)(nil),             // 21: hangar.meta.v1.Condition
+	(v1.EventType)(0),                // 22: hangar.meta.v1.EventType
 }
 var file_hangar_storage_v1alpha1_disk_proto_depIdxs = []int32{
-	18, // 0: hangar.storage.v1alpha1.Disk.metadata:type_name -> hangar.meta.v1.ObjectMeta
-	2,  // 1: hangar.storage.v1alpha1.Disk.spec:type_name -> hangar.storage.v1alpha1.DiskSpec
-	5,  // 2: hangar.storage.v1alpha1.Disk.status:type_name -> hangar.storage.v1alpha1.DiskStatus
-	3,  // 3: hangar.storage.v1alpha1.DiskSpec.source:type_name -> hangar.storage.v1alpha1.DiskSource
-	4,  // 4: hangar.storage.v1alpha1.DiskSource.image:type_name -> hangar.storage.v1alpha1.ImageSource
-	19, // 5: hangar.storage.v1alpha1.DiskStatus.conditions:type_name -> hangar.meta.v1.Condition
-	0,  // 6: hangar.storage.v1alpha1.DiskStatus.phase:type_name -> hangar.storage.v1alpha1.DiskPhase
-	1,  // 7: hangar.storage.v1alpha1.GetDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
-	1,  // 8: hangar.storage.v1alpha1.ListDisksResponse.items:type_name -> hangar.storage.v1alpha1.Disk
-	20, // 9: hangar.storage.v1alpha1.WatchDisksResponse.type:type_name -> hangar.meta.v1.EventType
-	1,  // 10: hangar.storage.v1alpha1.WatchDisksResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
-	1,  // 11: hangar.storage.v1alpha1.ApplyDiskRequest.disk:type_name -> hangar.storage.v1alpha1.Disk
-	1,  // 12: hangar.storage.v1alpha1.ApplyDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
-	1,  // 13: hangar.storage.v1alpha1.DeleteDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
-	5,  // 14: hangar.storage.v1alpha1.UpdateDiskStatusRequest.status:type_name -> hangar.storage.v1alpha1.DiskStatus
-	1,  // 15: hangar.storage.v1alpha1.UpdateDiskStatusResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
-	6,  // 16: hangar.storage.v1alpha1.DiskService.GetDisk:input_type -> hangar.storage.v1alpha1.GetDiskRequest
-	8,  // 17: hangar.storage.v1alpha1.DiskService.ListDisks:input_type -> hangar.storage.v1alpha1.ListDisksRequest
-	10, // 18: hangar.storage.v1alpha1.DiskService.WatchDisks:input_type -> hangar.storage.v1alpha1.WatchDisksRequest
-	12, // 19: hangar.storage.v1alpha1.DiskService.ApplyDisk:input_type -> hangar.storage.v1alpha1.ApplyDiskRequest
-	14, // 20: hangar.storage.v1alpha1.DiskService.DeleteDisk:input_type -> hangar.storage.v1alpha1.DeleteDiskRequest
-	16, // 21: hangar.storage.v1alpha1.DiskService.UpdateDiskStatus:input_type -> hangar.storage.v1alpha1.UpdateDiskStatusRequest
-	7,  // 22: hangar.storage.v1alpha1.DiskService.GetDisk:output_type -> hangar.storage.v1alpha1.GetDiskResponse
-	9,  // 23: hangar.storage.v1alpha1.DiskService.ListDisks:output_type -> hangar.storage.v1alpha1.ListDisksResponse
-	11, // 24: hangar.storage.v1alpha1.DiskService.WatchDisks:output_type -> hangar.storage.v1alpha1.WatchDisksResponse
-	13, // 25: hangar.storage.v1alpha1.DiskService.ApplyDisk:output_type -> hangar.storage.v1alpha1.ApplyDiskResponse
-	15, // 26: hangar.storage.v1alpha1.DiskService.DeleteDisk:output_type -> hangar.storage.v1alpha1.DeleteDiskResponse
-	17, // 27: hangar.storage.v1alpha1.DiskService.UpdateDiskStatus:output_type -> hangar.storage.v1alpha1.UpdateDiskStatusResponse
-	22, // [22:28] is the sub-list for method output_type
-	16, // [16:22] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	20, // 0: hangar.storage.v1alpha1.Disk.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	3,  // 1: hangar.storage.v1alpha1.Disk.spec:type_name -> hangar.storage.v1alpha1.DiskSpec
+	6,  // 2: hangar.storage.v1alpha1.Disk.status:type_name -> hangar.storage.v1alpha1.DiskStatus
+	4,  // 3: hangar.storage.v1alpha1.DiskSpec.source:type_name -> hangar.storage.v1alpha1.DiskSource
+	5,  // 4: hangar.storage.v1alpha1.DiskSource.image:type_name -> hangar.storage.v1alpha1.ImageSource
+	21, // 5: hangar.storage.v1alpha1.DiskStatus.conditions:type_name -> hangar.meta.v1.Condition
+	1,  // 6: hangar.storage.v1alpha1.DiskStatus.phase:type_name -> hangar.storage.v1alpha1.DiskPhase
+	7,  // 7: hangar.storage.v1alpha1.DiskStatus.attachment:type_name -> hangar.storage.v1alpha1.DiskAttachment
+	0,  // 8: hangar.storage.v1alpha1.DiskAttachment.as:type_name -> hangar.storage.v1alpha1.DiskAttachmentRole
+	2,  // 9: hangar.storage.v1alpha1.GetDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
+	2,  // 10: hangar.storage.v1alpha1.ListDisksResponse.items:type_name -> hangar.storage.v1alpha1.Disk
+	22, // 11: hangar.storage.v1alpha1.WatchDisksResponse.type:type_name -> hangar.meta.v1.EventType
+	2,  // 12: hangar.storage.v1alpha1.WatchDisksResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
+	2,  // 13: hangar.storage.v1alpha1.ApplyDiskRequest.disk:type_name -> hangar.storage.v1alpha1.Disk
+	2,  // 14: hangar.storage.v1alpha1.ApplyDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
+	2,  // 15: hangar.storage.v1alpha1.DeleteDiskResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
+	6,  // 16: hangar.storage.v1alpha1.UpdateDiskStatusRequest.status:type_name -> hangar.storage.v1alpha1.DiskStatus
+	2,  // 17: hangar.storage.v1alpha1.UpdateDiskStatusResponse.disk:type_name -> hangar.storage.v1alpha1.Disk
+	8,  // 18: hangar.storage.v1alpha1.DiskService.GetDisk:input_type -> hangar.storage.v1alpha1.GetDiskRequest
+	10, // 19: hangar.storage.v1alpha1.DiskService.ListDisks:input_type -> hangar.storage.v1alpha1.ListDisksRequest
+	12, // 20: hangar.storage.v1alpha1.DiskService.WatchDisks:input_type -> hangar.storage.v1alpha1.WatchDisksRequest
+	14, // 21: hangar.storage.v1alpha1.DiskService.ApplyDisk:input_type -> hangar.storage.v1alpha1.ApplyDiskRequest
+	16, // 22: hangar.storage.v1alpha1.DiskService.DeleteDisk:input_type -> hangar.storage.v1alpha1.DeleteDiskRequest
+	18, // 23: hangar.storage.v1alpha1.DiskService.UpdateDiskStatus:input_type -> hangar.storage.v1alpha1.UpdateDiskStatusRequest
+	9,  // 24: hangar.storage.v1alpha1.DiskService.GetDisk:output_type -> hangar.storage.v1alpha1.GetDiskResponse
+	11, // 25: hangar.storage.v1alpha1.DiskService.ListDisks:output_type -> hangar.storage.v1alpha1.ListDisksResponse
+	13, // 26: hangar.storage.v1alpha1.DiskService.WatchDisks:output_type -> hangar.storage.v1alpha1.WatchDisksResponse
+	15, // 27: hangar.storage.v1alpha1.DiskService.ApplyDisk:output_type -> hangar.storage.v1alpha1.ApplyDiskResponse
+	17, // 28: hangar.storage.v1alpha1.DiskService.DeleteDisk:output_type -> hangar.storage.v1alpha1.DeleteDiskResponse
+	19, // 29: hangar.storage.v1alpha1.DiskService.UpdateDiskStatus:output_type -> hangar.storage.v1alpha1.UpdateDiskStatusResponse
+	24, // [24:30] is the sub-list for method output_type
+	18, // [18:24] is the sub-list for method input_type
+	18, // [18:18] is the sub-list for extension type_name
+	18, // [18:18] is the sub-list for extension extendee
+	0,  // [0:18] is the sub-list for field type_name
 }
 
 func init() { file_hangar_storage_v1alpha1_disk_proto_init() }
@@ -1276,15 +1463,15 @@ func file_hangar_storage_v1alpha1_disk_proto_init() {
 	file_hangar_storage_v1alpha1_disk_proto_msgTypes[2].OneofWrappers = []any{
 		(*DiskSource_Image)(nil),
 	}
-	file_hangar_storage_v1alpha1_disk_proto_msgTypes[13].OneofWrappers = []any{}
-	file_hangar_storage_v1alpha1_disk_proto_msgTypes[15].OneofWrappers = []any{}
+	file_hangar_storage_v1alpha1_disk_proto_msgTypes[14].OneofWrappers = []any{}
+	file_hangar_storage_v1alpha1_disk_proto_msgTypes[16].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_storage_v1alpha1_disk_proto_rawDesc), len(file_hangar_storage_v1alpha1_disk_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   17,
+			NumEnums:      2,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

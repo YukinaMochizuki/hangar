@@ -51,8 +51,8 @@ message ImageSource {
 }
 
 // DiskStatus is the observed state of a disk. The apiserver writes its node,
-// size, machine, phase and the Allocated condition; the disk's node writes
-// the Ready and Released conditions.
+// size, machine, attachment, phase and the Allocated condition; the disk's
+// node writes the Ready and Released conditions.
 message DiskStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
@@ -64,8 +64,41 @@ message DiskStatus {
   // has room for it, and never less than before.
   string size = 5;
   // Names the Machine, in the disk's project, the disk is attached to; empty
-  // when it is attached to none.
+  // when it is attached to none. As attachment.machine.
   string machine = 6;
+  // What the disk is attached to and used as; unset when it is attached to
+  // none. See docs/decisions/container-volumes.md.
+  DiskAttachment attachment = 7;
+}
+
+// DiskAttachment is how a disk is attached, as the spec of the machine
+// listing it says.
+message DiskAttachment {
+  // The kind and name of what the machine was made from, in the disk's
+  // project, such as Container "web".
+  string kind = 1;
+  string name = 2;
+  // Names the Machine.
+  string machine = 3;
+  DiskAttachmentRole as = 4;
+  // The disk's place in the order the hypervisor attaches disks, as a Linux
+  // guest names virtio disks, such as "vdc".
+  string device = 5;
+  // Where a VOLUME is mounted in the guest, as the container's spec has it.
+  string path = 6;
+  // Whether a VOLUME is mounted read-only.
+  bool read_only = 7;
+}
+
+// DiskAttachmentRole is what a machine uses a disk as.
+enum DiskAttachmentRole {
+  DISK_ATTACHMENT_ROLE_UNSPECIFIED = 0;
+  // The disk a VM boots from.
+  DISK_ATTACHMENT_ROLE_BOOT = 1;
+  // A block device given to the guest as it is.
+  DISK_ATTACHMENT_ROLE_DATA = 2;
+  // A filesystem a container mounts.
+  DISK_ATTACHMENT_ROLE_VOLUME = 3;
 }
 
 // DiskPhase is where a disk is in its lifecycle.

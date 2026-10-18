@@ -699,6 +699,9 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	if err := validateImagePullSecrets(spec.GetImagePullSecrets()); err != nil {
 		return err
 	}
+	if err := validateContainerVolumes(spec.GetVolumes()); err != nil {
+		return err
+	}
 	if err := s.validateContainerResources(ctx, old, spec.GetResources()); err != nil {
 		return err
 	}
@@ -853,6 +856,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if c := spec.GetContainer(); c != nil && c.GetImage() == "" {
 		return invalid("spec.container.image is required")
+	}
+	if err := validateBootVolumes(spec); err != nil {
+		return err
 	}
 	if f := spec.GetFirmware(); f != nil && f.GetRootDisk() == "" {
 		return invalid("spec.firmware.root_disk is required")

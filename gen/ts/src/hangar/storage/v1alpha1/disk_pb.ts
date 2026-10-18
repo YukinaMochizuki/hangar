@@ -13,7 +13,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/storage/v1alpha1/disk.proto.
  */
 export const file_hangar_storage_v1alpha1_disk: GenFile = /*@__PURE__*/
-  fileDesc("CiJoYW5nYXIvc3RvcmFnZS92MWFscGhhMS9kaXNrLnByb3RvEhdoYW5nYXIuc3RvcmFnZS52MWFscGhhMSLWAQoERGlzaxITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIvCgRzcGVjGAQgASgLMiEuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1NwZWMSMwoGc3RhdHVzGAUgASgLMiMuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1N0YXR1czoXirUYEwoERGlzaxIFZGlza3MaAmRrIAEiVQoIRGlza1NwZWMSDAoEc2l6ZRgBIAEoCRI7CgZzb3VyY2UYAiABKAsyIy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrU291cmNlQgaKtRgCCAEiTQoKRGlza1NvdXJjZRI1CgVpbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkltYWdlU291cmNlSABCCAoGc291cmNlIhsKC0ltYWdlU291cmNlEgwKBG5hbWUYASABKAkiuAEKCkRpc2tTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEjEKBXBoYXNlGAMgASgOMiIuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1BoYXNlEgwKBG5vZGUYBCABKAkSDAoEc2l6ZRgFIAEoCRIPCgdtYWNoaW5lGAYgASgJIi8KDkdldERpc2tSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCSI+Cg9HZXREaXNrUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2siYgoQTGlzdERpc2tzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJImwKEUxpc3REaXNrc1Jlc3BvbnNlEiwKBWl0ZW1zGAEgAygLMh0uaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlzaxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiVAoRV2F0Y2hEaXNrc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgDIAEoAyJ8ChJXYXRjaERpc2tzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIrCgRkaXNrGAIgASgLMh0uaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlzaxIQCghyZXZpc2lvbhgDIAEoAyJUChBBcHBseURpc2tSZXF1ZXN0EisKBGRpc2sYASABKAsyHS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrEhMKC2NyZWF0ZV9vbmx5GAIgASgIImMKEUFwcGx5RGlza1Jlc3BvbnNlEisKBGRpc2sYASABKAsyHS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgieAoRRGVsZXRlRGlza1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJBChJEZWxldGVEaXNrUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2siswEKF1VwZGF0ZURpc2tTdGF0dXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRIzCgZzdGF0dXMYAyABKAsyIy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJHChhVcGRhdGVEaXNrU3RhdHVzUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2sqcAoJRGlza1BoYXNlEhoKFkRJU0tfUEhBU0VfVU5TUEVDSUZJRUQQABIWChJESVNLX1BIQVNFX1BFTkRJTkcQARIYChRESVNLX1BIQVNFX0FWQUlMQUJMRRACEhUKEURJU0tfUEhBU0VfSU5fVVNFEAMy/AQKC0Rpc2tTZXJ2aWNlElwKB0dldERpc2sSJy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXREaXNrUmVxdWVzdBooLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkdldERpc2tSZXNwb25zZRJiCglMaXN0RGlza3MSKS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5MaXN0RGlza3NSZXF1ZXN0GiouaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuTGlzdERpc2tzUmVzcG9uc2USZwoKV2F0Y2hEaXNrcxIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoRGlza3NSZXF1ZXN0GisuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuV2F0Y2hEaXNrc1Jlc3BvbnNlMAESYgoJQXBwbHlEaXNrEikuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQXBwbHlEaXNrUmVxdWVzdBoqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkFwcGx5RGlza1Jlc3BvbnNlEmUKCkRlbGV0ZURpc2sSKi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVEaXNrUmVxdWVzdBorLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRlbGV0ZURpc2tSZXNwb25zZRJ3ChBVcGRhdGVEaXNrU3RhdHVzEjAuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuVXBkYXRlRGlza1N0YXR1c1JlcXVlc3QaMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5VcGRhdGVEaXNrU3RhdHVzUmVzcG9uc2VC+AEKG2NvbS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMUIJRGlza1Byb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3N0b3JhZ2UvdjFhbHBoYTE7c3RvcmFnZXYxYWxwaGExogIDSFNYqgIXSGFuZ2FyLlN0b3JhZ2UuVjFhbHBoYTHKAhdIYW5nYXJcU3RvcmFnZVxWMWFscGhhMeICI0hhbmdhclxTdG9yYWdlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpTdG9yYWdlOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("CiJoYW5nYXIvc3RvcmFnZS92MWFscGhhMS9kaXNrLnByb3RvEhdoYW5nYXIuc3RvcmFnZS52MWFscGhhMSLWAQoERGlzaxITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIvCgRzcGVjGAQgASgLMiEuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1NwZWMSMwoGc3RhdHVzGAUgASgLMiMuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1N0YXR1czoXirUYEwoERGlzaxIFZGlza3MaAmRrIAEiVQoIRGlza1NwZWMSDAoEc2l6ZRgBIAEoCRI7CgZzb3VyY2UYAiABKAsyIy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrU291cmNlQgaKtRgCCAEiTQoKRGlza1NvdXJjZRI1CgVpbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkltYWdlU291cmNlSABCCAoGc291cmNlIhsKC0ltYWdlU291cmNlEgwKBG5hbWUYASABKAki9QEKCkRpc2tTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEjEKBXBoYXNlGAMgASgOMiIuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlza1BoYXNlEgwKBG5vZGUYBCABKAkSDAoEc2l6ZRgFIAEoCRIPCgdtYWNoaW5lGAYgASgJEjsKCmF0dGFjaG1lbnQYByABKAsyJy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrQXR0YWNobWVudCKnAQoORGlza0F0dGFjaG1lbnQSDAoEa2luZBgBIAEoCRIMCgRuYW1lGAIgASgJEg8KB21hY2hpbmUYAyABKAkSNwoCYXMYBCABKA4yKy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrQXR0YWNobWVudFJvbGUSDgoGZGV2aWNlGAUgASgJEgwKBHBhdGgYBiABKAkSEQoJcmVhZF9vbmx5GAcgASgIIi8KDkdldERpc2tSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCSI+Cg9HZXREaXNrUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2siYgoQTGlzdERpc2tzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJImwKEUxpc3REaXNrc1Jlc3BvbnNlEiwKBWl0ZW1zGAEgAygLMh0uaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlzaxIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiVAoRV2F0Y2hEaXNrc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgDIAEoAyJ8ChJXYXRjaERpc2tzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIrCgRkaXNrGAIgASgLMh0uaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuRGlzaxIQCghyZXZpc2lvbhgDIAEoAyJUChBBcHBseURpc2tSZXF1ZXN0EisKBGRpc2sYASABKAsyHS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrEhMKC2NyZWF0ZV9vbmx5GAIgASgIImMKEUFwcGx5RGlza1Jlc3BvbnNlEisKBGRpc2sYASABKAsyHS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgieAoRRGVsZXRlRGlza1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJBChJEZWxldGVEaXNrUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2siswEKF1VwZGF0ZURpc2tTdGF0dXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRIzCgZzdGF0dXMYAyABKAsyIy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EaXNrU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJHChhVcGRhdGVEaXNrU3RhdHVzUmVzcG9uc2USKwoEZGlzaxgBIAEoCzIdLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRpc2sqmQEKEkRpc2tBdHRhY2htZW50Um9sZRIkCiBESVNLX0FUVEFDSE1FTlRfUk9MRV9VTlNQRUNJRklFRBAAEh0KGURJU0tfQVRUQUNITUVOVF9ST0xFX0JPT1QQARIdChlESVNLX0FUVEFDSE1FTlRfUk9MRV9EQVRBEAISHwobRElTS19BVFRBQ0hNRU5UX1JPTEVfVk9MVU1FEAMqcAoJRGlza1BoYXNlEhoKFkRJU0tfUEhBU0VfVU5TUEVDSUZJRUQQABIWChJESVNLX1BIQVNFX1BFTkRJTkcQARIYChRESVNLX1BIQVNFX0FWQUlMQUJMRRACEhUKEURJU0tfUEhBU0VfSU5fVVNFEAMy/AQKC0Rpc2tTZXJ2aWNlElwKB0dldERpc2sSJy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXREaXNrUmVxdWVzdBooLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkdldERpc2tSZXNwb25zZRJiCglMaXN0RGlza3MSKS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5MaXN0RGlza3NSZXF1ZXN0GiouaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuTGlzdERpc2tzUmVzcG9uc2USZwoKV2F0Y2hEaXNrcxIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoRGlza3NSZXF1ZXN0GisuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuV2F0Y2hEaXNrc1Jlc3BvbnNlMAESYgoJQXBwbHlEaXNrEikuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQXBwbHlEaXNrUmVxdWVzdBoqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkFwcGx5RGlza1Jlc3BvbnNlEmUKCkRlbGV0ZURpc2sSKi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVEaXNrUmVxdWVzdBorLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkRlbGV0ZURpc2tSZXNwb25zZRJ3ChBVcGRhdGVEaXNrU3RhdHVzEjAuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuVXBkYXRlRGlza1N0YXR1c1JlcXVlc3QaMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5VcGRhdGVEaXNrU3RhdHVzUmVzcG9uc2VC+AEKG2NvbS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMUIJRGlza1Byb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL3N0b3JhZ2UvdjFhbHBoYTE7c3RvcmFnZXYxYWxwaGExogIDSFNYqgIXSGFuZ2FyLlN0b3JhZ2UuVjFhbHBoYTHKAhdIYW5nYXJcU3RvcmFnZVxWMWFscGhhMeICI0hhbmdhclxTdG9yYWdlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpTdG9yYWdlOjpWMWFscGhhMWIGcHJvdG8z", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * Disk is a durable block device in a project. It lives on one node, the one
@@ -140,8 +140,8 @@ export const ImageSourceSchema: GenMessage<ImageSource> = /*@__PURE__*/
 
 /**
  * DiskStatus is the observed state of a disk. The apiserver writes its node,
- * size, machine, phase and the Allocated condition; the disk's node writes
- * the Ready and Released conditions.
+ * size, machine, attachment, phase and the Allocated condition; the disk's
+ * node writes the Ready and Released conditions.
  *
  * @generated from message hangar.storage.v1alpha1.DiskStatus
  */
@@ -179,11 +179,19 @@ export type DiskStatus = Message<"hangar.storage.v1alpha1.DiskStatus"> & {
 
   /**
    * Names the Machine, in the disk's project, the disk is attached to; empty
-   * when it is attached to none.
+   * when it is attached to none. As attachment.machine.
    *
    * @generated from field: string machine = 6;
    */
   machine: string;
+
+  /**
+   * What the disk is attached to and used as; unset when it is attached to
+   * none. See docs/decisions/container-volumes.md.
+   *
+   * @generated from field: hangar.storage.v1alpha1.DiskAttachment attachment = 7;
+   */
+  attachment?: DiskAttachment | undefined;
 };
 
 /**
@@ -192,6 +200,68 @@ export type DiskStatus = Message<"hangar.storage.v1alpha1.DiskStatus"> & {
  */
 export const DiskStatusSchema: GenMessage<DiskStatus> = /*@__PURE__*/
   messageDesc(file_hangar_storage_v1alpha1_disk, 4);
+
+/**
+ * DiskAttachment is how a disk is attached, as the spec of the machine
+ * listing it says.
+ *
+ * @generated from message hangar.storage.v1alpha1.DiskAttachment
+ */
+export type DiskAttachment = Message<"hangar.storage.v1alpha1.DiskAttachment"> & {
+  /**
+   * The kind and name of what the machine was made from, in the disk's
+   * project, such as Container "web".
+   *
+   * @generated from field: string kind = 1;
+   */
+  kind: string;
+
+  /**
+   * @generated from field: string name = 2;
+   */
+  name: string;
+
+  /**
+   * Names the Machine.
+   *
+   * @generated from field: string machine = 3;
+   */
+  machine: string;
+
+  /**
+   * @generated from field: hangar.storage.v1alpha1.DiskAttachmentRole as = 4;
+   */
+  as: DiskAttachmentRole;
+
+  /**
+   * The disk's place in the order the hypervisor attaches disks, as a Linux
+   * guest names virtio disks, such as "vdc".
+   *
+   * @generated from field: string device = 5;
+   */
+  device: string;
+
+  /**
+   * Where a VOLUME is mounted in the guest, as the container's spec has it.
+   *
+   * @generated from field: string path = 6;
+   */
+  path: string;
+
+  /**
+   * Whether a VOLUME is mounted read-only.
+   *
+   * @generated from field: bool read_only = 7;
+   */
+  readOnly: boolean;
+};
+
+/**
+ * Describes the message hangar.storage.v1alpha1.DiskAttachment.
+ * Use `create(DiskAttachmentSchema)` to create a new message.
+ */
+export const DiskAttachmentSchema: GenMessage<DiskAttachment> = /*@__PURE__*/
+  messageDesc(file_hangar_storage_v1alpha1_disk, 5);
 
 /**
  * @generated from message hangar.storage.v1alpha1.GetDiskRequest
@@ -213,7 +283,7 @@ export type GetDiskRequest = Message<"hangar.storage.v1alpha1.GetDiskRequest"> &
  * Use `create(GetDiskRequestSchema)` to create a new message.
  */
 export const GetDiskRequestSchema: GenMessage<GetDiskRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 5);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 6);
 
 /**
  * @generated from message hangar.storage.v1alpha1.GetDiskResponse
@@ -230,7 +300,7 @@ export type GetDiskResponse = Message<"hangar.storage.v1alpha1.GetDiskResponse">
  * Use `create(GetDiskResponseSchema)` to create a new message.
  */
 export const GetDiskResponseSchema: GenMessage<GetDiskResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 6);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 7);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ListDisksRequest
@@ -264,7 +334,7 @@ export type ListDisksRequest = Message<"hangar.storage.v1alpha1.ListDisksRequest
  * Use `create(ListDisksRequestSchema)` to create a new message.
  */
 export const ListDisksRequestSchema: GenMessage<ListDisksRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 7);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 8);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ListDisksResponse
@@ -291,7 +361,7 @@ export type ListDisksResponse = Message<"hangar.storage.v1alpha1.ListDisksRespon
  * Use `create(ListDisksResponseSchema)` to create a new message.
  */
 export const ListDisksResponseSchema: GenMessage<ListDisksResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 8);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 9);
 
 /**
  * @generated from message hangar.storage.v1alpha1.WatchDisksRequest
@@ -320,7 +390,7 @@ export type WatchDisksRequest = Message<"hangar.storage.v1alpha1.WatchDisksReque
  * Use `create(WatchDisksRequestSchema)` to create a new message.
  */
 export const WatchDisksRequestSchema: GenMessage<WatchDisksRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 9);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 10);
 
 /**
  * @generated from message hangar.storage.v1alpha1.WatchDisksResponse
@@ -347,7 +417,7 @@ export type WatchDisksResponse = Message<"hangar.storage.v1alpha1.WatchDisksResp
  * Use `create(WatchDisksResponseSchema)` to create a new message.
  */
 export const WatchDisksResponseSchema: GenMessage<WatchDisksResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 10);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 11);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ApplyDiskRequest
@@ -371,7 +441,7 @@ export type ApplyDiskRequest = Message<"hangar.storage.v1alpha1.ApplyDiskRequest
  * Use `create(ApplyDiskRequestSchema)` to create a new message.
  */
 export const ApplyDiskRequestSchema: GenMessage<ApplyDiskRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 11);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 12);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ApplyDiskResponse
@@ -398,7 +468,7 @@ export type ApplyDiskResponse = Message<"hangar.storage.v1alpha1.ApplyDiskRespon
  * Use `create(ApplyDiskResponseSchema)` to create a new message.
  */
 export const ApplyDiskResponseSchema: GenMessage<ApplyDiskResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 12);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 13);
 
 /**
  * @generated from message hangar.storage.v1alpha1.DeleteDiskRequest
@@ -425,7 +495,7 @@ export type DeleteDiskRequest = Message<"hangar.storage.v1alpha1.DeleteDiskReque
  * Use `create(DeleteDiskRequestSchema)` to create a new message.
  */
 export const DeleteDiskRequestSchema: GenMessage<DeleteDiskRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 13);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 14);
 
 /**
  * @generated from message hangar.storage.v1alpha1.DeleteDiskResponse
@@ -442,7 +512,7 @@ export type DeleteDiskResponse = Message<"hangar.storage.v1alpha1.DeleteDiskResp
  * Use `create(DeleteDiskResponseSchema)` to create a new message.
  */
 export const DeleteDiskResponseSchema: GenMessage<DeleteDiskResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 14);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 15);
 
 /**
  * @generated from message hangar.storage.v1alpha1.UpdateDiskStatusRequest
@@ -474,7 +544,7 @@ export type UpdateDiskStatusRequest = Message<"hangar.storage.v1alpha1.UpdateDis
  * Use `create(UpdateDiskStatusRequestSchema)` to create a new message.
  */
 export const UpdateDiskStatusRequestSchema: GenMessage<UpdateDiskStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 15);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 16);
 
 /**
  * @generated from message hangar.storage.v1alpha1.UpdateDiskStatusResponse
@@ -491,7 +561,46 @@ export type UpdateDiskStatusResponse = Message<"hangar.storage.v1alpha1.UpdateDi
  * Use `create(UpdateDiskStatusResponseSchema)` to create a new message.
  */
 export const UpdateDiskStatusResponseSchema: GenMessage<UpdateDiskStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_disk, 16);
+  messageDesc(file_hangar_storage_v1alpha1_disk, 17);
+
+/**
+ * DiskAttachmentRole is what a machine uses a disk as.
+ *
+ * @generated from enum hangar.storage.v1alpha1.DiskAttachmentRole
+ */
+export enum DiskAttachmentRole {
+  /**
+   * @generated from enum value: DISK_ATTACHMENT_ROLE_UNSPECIFIED = 0;
+   */
+  UNSPECIFIED = 0,
+
+  /**
+   * The disk a VM boots from.
+   *
+   * @generated from enum value: DISK_ATTACHMENT_ROLE_BOOT = 1;
+   */
+  BOOT = 1,
+
+  /**
+   * A block device given to the guest as it is.
+   *
+   * @generated from enum value: DISK_ATTACHMENT_ROLE_DATA = 2;
+   */
+  DATA = 2,
+
+  /**
+   * A filesystem a container mounts.
+   *
+   * @generated from enum value: DISK_ATTACHMENT_ROLE_VOLUME = 3;
+   */
+  VOLUME = 3,
+}
+
+/**
+ * Describes the enum hangar.storage.v1alpha1.DiskAttachmentRole.
+ */
+export const DiskAttachmentRoleSchema: GenEnum<DiskAttachmentRole> = /*@__PURE__*/
+  enumDesc(file_hangar_storage_v1alpha1_disk, 0);
 
 /**
  * DiskPhase is where a disk is in its lifecycle.
@@ -531,7 +640,7 @@ export enum DiskPhase {
  * Describes the enum hangar.storage.v1alpha1.DiskPhase.
  */
 export const DiskPhaseSchema: GenEnum<DiskPhase> = /*@__PURE__*/
-  enumDesc(file_hangar_storage_v1alpha1_disk, 0);
+  enumDesc(file_hangar_storage_v1alpha1_disk, 1);
 
 /**
  * DiskService manages disks.

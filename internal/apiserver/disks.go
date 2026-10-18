@@ -183,6 +183,9 @@ func (s *Server) checkAttaching(ctx context.Context, meta *metav1.ObjectMeta, ol
 		if err := s.requireLive(ctx, registry.Disk, meta.GetProject(), name); err != nil {
 			return err
 		}
+		if err := s.checkSameNode(ctx, meta, spec.GetNode(), name); err != nil {
+			return err
+		}
 		users, err := s.machinesUsing(ctx, meta.GetProject(), name)
 		if err != nil {
 			return err
@@ -192,6 +195,28 @@ func (s *Server) checkAttaching(ctx context.Context, meta *metav1.ObjectMeta, ol
 			return failedPrecondition("disk %q is attached to machine %s; a disk is attached to one machine at a time",
 				name, strings.Join(users, ", "))
 		}
+	}
+	return nil
+}
+
+// reasonDoesNotFitMachineNode is a disk's Allocated reason while the node of
+// the placed machine that lists it has no room to make it.
+const reasonDoesNotFitMachineNode = "DoesNotFitMachineNode"
+
+// checkSameNode refuses a disk bound to a node other than node, the one a
+// placed machine runs on: a machine never moves. A disk bound to no node
+// goes to the machine's (reportDisk).
+func (s *Server) checkSameNode(ctx context.Context, meta *metav1.ObjectMeta, node, disk string) error {
+	if node == "" {
+		return nil
+	}
+	obj, err := s.get(ctx, registry.Disk, resource.Key{Project: meta.GetProject(), Name: disk})
+	if err != nil || obj == nil {
+		return err
+	}
+	if on := obj.(*storagev1alpha1.Disk).GetStatus().GetNode(); on != "" && on != node {
+		return invalid("disk %q lives on node %s, and machine %s runs on node %s; a machine never moves: "+
+			"it takes a disk of its node or one not made yet, and is made again to take another", disk, on, meta.GetName(), node)
 	}
 	return nil
 }
@@ -246,7 +271,7 @@ func (s *Server) disksWaitingForRoom(ctx context.Context, _ store.Object) []cont
 			continue
 		}
 		if c := conditions.Find(d.GetStatus().GetConditions(), DiskAllocated); c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE &&
-			d.GetStatus().GetNode() != "" {
+			(d.GetStatus().GetNode() != "" || c.GetReason() == reasonDoesNotFitMachineNode) {
 			keys = append(keys, controller.Key{Project: o.Project, Name: o.Name})
 		}
 	}
@@ -297,8 +322,35 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 	if len(users) > 0 {
 		status.Machine = users[0]
 	}
+	attachment, placedOn, err := s.attachmentOf(ctx, key.Project, status.GetMachine(), key.Name)
+	if err != nil {
+		return err
+	}
+	status.Attachment = attachment
 	allocated := &metav1.Condition{Type: DiskAllocated, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Allocated"}
-	if node := status.GetNode(); node == "" {
+	if node := status.GetNode(); node == "" && placedOn != "" {
+		// A disk added to a machine already placed goes to the machine's
+		// node, a growth from nothing there: a machine never moves.
+		want, err := diskBytes(d.GetSpec())
+		if err != nil {
+			return err
+		}
+		s.capacity.Lock()
+		defer s.capacity.Unlock()
+		err = s.diskGrowthFits(ctx, placedOn, 0, want)
+		var stuck *blocked
+		switch {
+		case errors.As(err, &stuck):
+			allocated = &metav1.Condition{
+				Type: DiskAllocated, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reasonDoesNotFitMachineNode,
+				Message: fmt.Sprintf("machine %s runs on node %s, which has no room for the disk: %s", status.GetMachine(), placedOn, stuck.message),
+			}
+		case err != nil:
+			return err
+		default:
+			status.Node, status.Size = placedOn, quantity.FormatDisk(want)
+		}
+	} else if node == "" {
 		allocated = &metav1.Condition{
 			Type: DiskAllocated, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: "WaitingForFirstMachine",
 			Message: "the disk is made on the node of the first machine it is attached to",
@@ -344,7 +396,7 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 		return nil
 	}
 	rv := d.GetMetadata().GetResourceVersion()
-	_, err := s.backend(registry.Disk).UpdateStatus(s.system(ctx), key, status, &rv)
+	_, err = s.backend(registry.Disk).UpdateStatus(s.system(ctx), key, status, &rv)
 	return err
 }
 
