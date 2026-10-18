@@ -191,4 +191,16 @@ describe("a list route's ?new=1", () => {
     await screen.findByRole("heading", { level: 1 });
     expect(dialog(title)).toBeNull();
   });
+
+  it("is what the palette's New disk opens, from another page", async () => {
+    const { router } = app(["/projects/demo/networks"]);
+    await screen.findByRole("heading", { level: 1, name: "Networks" });
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    const box = await screen.findByRole("combobox", { name: "Search or jump to" });
+    fireEvent.change(box, { target: { value: "new disk" } });
+    await waitFor(() => expect(screen.getAllByRole("option").map((o) => o.textContent)).toContain("New disk"));
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(await screen.findByRole("dialog", { name: "New disk" })).toBeTruthy();
+    expect(router.state.location.href).toBe("/projects/demo/disks?new=1");
+  });
 });

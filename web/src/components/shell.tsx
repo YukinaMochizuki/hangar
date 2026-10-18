@@ -4,8 +4,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { ChevronsUpDown, LogOut, Menu, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { CommandPalette } from "@/components/command-palette";
 import { HangarMark } from "@/components/marks";
 import { projectPages, tenantPages } from "@/components/pages-nav";
+import { SearchButton } from "@/components/palette-view";
 import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
@@ -235,6 +237,19 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
   const { projects, tenantName } = useProjects();
   const p = projects.find((x) => x.metadata?.name === project);
   const tenant = tenantPage || p?.spec?.tenant || "";
+  const place: Place = tenantPage ? { kind: "tenant", name: tenantPage } : { kind: "project", name: project };
+  // ⌘K or Ctrl+K opens the palette from anywhere on the page.
+  const [searching, setSearching] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        setSearching(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const all: ReactNode[] = [
     ...(tenant
       ? [
@@ -265,6 +280,8 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
           </span>
         ))}
       </div>
+      <SearchButton onOpen={() => setSearching(true)} />
+      {searching && <CommandPalette place={place} onClose={() => setSearching(false)} />}
     </header>
   );
 }
