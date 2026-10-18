@@ -82,6 +82,65 @@ shows only what works. The sidebar lists only pages that exist, a kind
 joining it when its page does (decided by the owner), and the top bar has
 no search until search works.
 
+### Tenants and projects
+
+- **A tenant has pages of its own, apart from any project's**, at
+  `/tenants/<tenant>/…`, with a sidebar of their own: an Overview (its plan,
+  what all its projects hold against the plan's limits, and each project
+  with what it holds) and its Members. Tenant settings stay out of a
+  project's pages, so a project's Members lists the project's people
+  alone. Someone whose roles do not include reading the tenant sees that
+  stated, and the tenant's projects they hold a role in.
+- **Where the console is, is chosen in a picker**: a dialog listing every
+  tenant the member sees (those it may list and those of its projects, so
+  a tenant with no project too) with its projects under it, filtered by name or
+  ID, opened from the switcher at the top of the sidebar. A tenant's row
+  opens its pages, a project's row the project. The top bar's tenant crumb
+  opens the tenant's pages too.
+- **A new project** is made from the picker or a tenant's Overview. Its
+  name is global and never reused, so it is suggested from the display
+  name as `hangar create` suggests it (the same slug and six random
+  digits), checked with `NameService.CheckName`, and can be changed before
+  creating. The project is made with a create-only apply, so a name taken
+  after the check is refused and the other project left as it was. Only
+  the tenants the caller may create a project in are offered, and New
+  project is drawn only when there is one. When the tenant
+  already holds as many projects as its plan allows, that is stated above
+  the button, which is disabled.
+
+### Members
+
+- A project's or a tenant's Members page lists the people bound at exactly
+  that scope, through `MemberService`, one row a person. A person who is
+  not a platform member yet is shown with that alone ("the role takes
+  effect once they are"), never with whether they were invited
+  (`tenancy-and-iam.md`).
+- Roles are changed in the row, added in a dialog with what each role
+  holds, and removed after the dialog says what ends and what stays (a
+  project role ends; a tenant role stays). The API's refusal, such as a
+  tenant left without an owner, is shown where it was asked for.
+- A project's page states, under its list, how many people hold a role
+  there through the tenant, linking to the tenant's Members; when the
+  caller may not list the tenant's members, it states only that the
+  tenant's roles hold there too.
+
+### What a control is shown for
+
+A page asks `AccountService.TestPermissions` which of the permissions its
+controls need the caller holds at the scope, in one call
+(`web/src/lib/permissions.ts`), and shows a control only when the answer
+holds its permission: adding a member and changing a role need
+`iam.rolebindings.apply`, removing one `iam.rolebindings.delete`, and a new
+project `tenancy.projects.apply` in its tenant. While the answer loads, or
+when it failed, nothing is held, so a control appears once it is known to
+work; a refusal is stated only when the answer came and said so, and a
+failed answer is shown as the error it is. The answer only decides what
+is drawn: the API still checks every call, and a refusal is shown like any
+error. Pages whose controls do not ask yet show them to everyone and show
+the API's refusal in place. New project asks once per tenant the member
+sees, which is every tenant for a platform administrator; at today's size
+that is a handful of calls.
+
 ### Machines
 
 - **Start, stop and delete are the API's calls**, so the API's rules

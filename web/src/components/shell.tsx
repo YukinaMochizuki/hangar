@@ -1,10 +1,9 @@
 // The console's frame: the sidebar (project switcher, navigation, the member
 // and the theme), the top bar with its breadcrumbs, and the page between.
 
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Box,
-  Check,
   ChevronsUpDown,
   LayoutGrid,
   LogOut,
@@ -13,10 +12,12 @@ import {
   Moon,
   Server,
   Sun,
+  Users,
   type LucideIcon,
 } from "lucide-react";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { HangarMark } from "@/components/marks";
+import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
 import { errorMessage, signOut } from "@/lib/api";
@@ -34,102 +35,58 @@ const MenuContext = createContext<{ open: boolean; setOpen: (o: boolean) => void
   setOpen: () => {},
 });
 
-const ProjectContext = createContext<string>("");
+/** Where the console is: in a project, or in a tenant's own pages. */
+export type Place = { kind: "project"; name: string } | { kind: "tenant"; name: string };
 
-/** Sets the project the console is in; Shell does it for every page. */
-export const ProjectProvider = ProjectContext.Provider;
+const PlaceContext = createContext<Place>({ kind: "project", name: "" });
 
-/** The project the console is in. */
+/** Sets where the console is; Shell does it for every page. */
+export const PlaceProvider = PlaceContext.Provider;
+
+/** The project the console is in, or "" on a tenant's pages. */
 export function useProjectName(): string {
-  return useContext(ProjectContext);
+  const place = useContext(PlaceContext);
+  return place.kind === "project" ? place.name : "";
 }
 
-/** Closes a popover on a click outside it or on Escape. */
-function useDismiss(open: boolean, close: () => void) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) close();
-    };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open, close]);
-  return ref;
+/** The tenant whose pages the console is on, or "" in a project. */
+export function useTenantName(): string {
+  const place = useContext(PlaceContext);
+  return place.kind === "tenant" ? place.name : "";
 }
 
-function ProjectSwitcher({ project }: { project: string }) {
-  const { projects, loading, error, tenantName } = useProjects();
+// The switcher names where the console is; it opens the picker, which lists
+// every tenant and project the member sees.
+function ProjectSwitcher({ place }: { place: Place }) {
+  const { projects, loading, tenantName } = useProjects();
   const [open, setOpen] = useState(false);
-  const ref = useDismiss(open, () => setOpen(false));
-  const navigate = useNavigate();
+  const project = place.kind === "project" ? place.name : "";
   const current = projects.find((p) => p.metadata?.name === project);
-  const tenants = [...new Set(projects.map((p) => p.spec?.tenant ?? ""))];
+  const label = place.kind === "tenant" ? tenantName(place.name) : projectLabel(current, project);
 
   return (
-    <div ref={ref} className="relative mx-3 mb-2">
+    <div className="mx-3 mb-2">
       <button
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        onClick={() => setOpen(!open)}
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
         className="flex w-full items-center gap-2.5 rounded-md border bg-background px-2.5 py-2 text-left hover:border-border-strong"
       >
         <span className="flex size-6 shrink-0 items-center justify-center rounded bg-accent-soft font-mono text-[11px] font-semibold uppercase text-accent">
-          {projectLabel(current, project)[0]}
+          {label[0]}
         </span>
         <span className="min-w-0 flex-1">
           {loading ? (
             <Skeleton className="h-3 w-24" />
           ) : (
-            <span className="block truncate text-[13px] font-medium leading-tight">{projectLabel(current, project)}</span>
+            <span className="block truncate text-[13px] font-medium leading-tight">{label}</span>
           )}
-          <span className="block truncate font-mono text-[11px] leading-tight text-subtle">{project}</span>
+          <span className="block truncate font-mono text-[11px] leading-tight text-subtle">
+            {place.kind === "tenant" ? `Tenant · ${place.name}` : project}
+          </span>
         </span>
         <ChevronsUpDown className="size-3.5 shrink-0 text-subtle" />
       </button>
-      {open && (
-        <div
-          role="listbox"
-          aria-label="Projects"
-          className="absolute inset-x-0 top-full z-50 mt-1 max-h-80 overflow-y-auto rounded-md border bg-surface py-1 shadow-lg"
-        >
-          {error && <div className="px-3 py-2 text-[12px] text-fail">{errorMessage(error)}</div>}
-          {tenants.map((t) => (
-            <div key={t}>
-              <div className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-subtle">{tenantName(t)}</div>
-              {projects
-                .filter((p) => (p.spec?.tenant ?? "") === t)
-                .map((p) => {
-                  const name = p.metadata?.name ?? "";
-                  const selected = name === project;
-                  return (
-                    <button
-                      key={name}
-                      role="option"
-                      aria-selected={selected}
-                      onClick={() => {
-                        setOpen(false);
-                        void navigate({ to: "/projects/$project", params: { project: name } });
-                      }}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-surface-2"
-                    >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px]">{projectLabel(p)}</span>
-                        <span className="block truncate font-mono text-[11px] text-subtle">{name}</span>
-                      </span>
-                      {selected && <Check className="size-3.5 text-accent" />}
-                    </button>
-                  );
-                })}
-            </div>
-          ))}
-        </div>
-      )}
+      <ProjectPicker place={place} open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
@@ -206,16 +163,12 @@ function MemberFooter() {
   );
 }
 
-function Sidebar({ project }: { project: string }) {
-  const path = useRouterState({ select: (s) => s.location.pathname });
-  const { open, setOpen } = useContext(MenuContext);
+function ProjectSidebar({ project }: { project: string }) {
   const containers = useMachines(project, "Container");
   const vms = useMachines(project, "VirtualMachine");
-  useEffect(() => setOpen(false), [path, setOpen]);
-
   const base = `/projects/${project}`;
   // Only pages that exist are listed; a kind joins when its page does.
-  const nav: { group?: string; items: NavItem[] }[] = [
+  const nav: NavSection[] = [
     { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
     {
       group: "Compute",
@@ -224,7 +177,27 @@ function Sidebar({ project }: { project: string }) {
         { label: "Virtual machines", icon: Server, to: `${base}/vms`, count: vms.loading || vms.error ? undefined : vms.items.length },
       ],
     },
+    { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
   ];
+  return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
+}
+
+/** A tenant's own pages: what it holds and who is in it. */
+function TenantSidebar({ tenant }: { tenant: string }) {
+  const base = `/tenants/${tenant}`;
+  const nav: NavSection[] = [
+    { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
+    { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
+  ];
+  return <SidebarFrame place={{ kind: "tenant", name: tenant }} base={base} nav={nav} />;
+}
+
+type NavSection = { group?: string; items: NavItem[] };
+
+function SidebarFrame({ place, base, nav }: { place: Place; base: string; nav: NavSection[] }) {
+  const path = useRouterState({ select: (s) => s.location.pathname });
+  const { open, setOpen } = useContext(MenuContext);
+  useEffect(() => setOpen(false), [path, setOpen]);
   const active = (to: string) => (to === base ? path === base || path === `${base}/` : path.startsWith(to));
 
   return (
@@ -239,7 +212,7 @@ function Sidebar({ project }: { project: string }) {
         <HangarMark className="size-5 text-foreground" />
         <span className="text-[15px] font-semibold tracking-[-0.02em]">Hangar</span>
       </Link>
-      <ProjectSwitcher project={project} />
+      <ProjectSwitcher place={place} />
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {nav.map((section, i) => (
           <div key={i} className="mb-3">
@@ -269,13 +242,36 @@ function Sidebar({ project }: { project: string }) {
   );
 }
 
-/** The top bar: the menu button on small screens and the breadcrumbs. */
+const crumbLink = "truncate text-muted hover:text-foreground";
+
+/**
+ * The top bar: the menu button on small screens and the breadcrumbs. The
+ * tenant's crumb opens the tenant's pages, the project's its overview.
+ */
 export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
   const { setOpen } = useContext(MenuContext);
   const project = useProjectName();
+  const tenantPage = useTenantName();
   const { projects, tenantName } = useProjects();
   const p = projects.find((x) => x.metadata?.name === project);
-  const all = [...(p ? [tenantName(p.spec?.tenant ?? "")] : []), projectLabel(p, project), ...crumbs];
+  const tenant = tenantPage || p?.spec?.tenant || "";
+  const all: ReactNode[] = [
+    ...(tenant
+      ? [
+          <Link key="t" to="/tenants/$tenant" params={{ tenant }} className={crumbLink}>
+            {tenantName(tenant)}
+          </Link>,
+        ]
+      : []),
+    ...(project
+      ? [
+          <Link key="p" to="/projects/$project" params={{ project }} className={crumbLink}>
+            {projectLabel(p, project)}
+          </Link>,
+        ]
+      : []),
+    ...crumbs,
+  ];
   return (
     <header className="sticky top-0 z-10 flex h-14 items-center gap-3 border-b bg-background/80 px-4 backdrop-blur md:gap-4 md:px-6">
       <button aria-label="Menu" onClick={() => setOpen(true)} className="-ml-1 rounded-md p-1.5 text-muted hover:bg-surface-2 lg:hidden">
@@ -293,18 +289,20 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
   );
 }
 
-export function Shell({ project, children }: { project: string; children: ReactNode }) {
+export function Shell({ place, children }: { place: Place; children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  useEffect(() => rememberProject(project), [project]);
+  useEffect(() => {
+    if (place.kind === "project") rememberProject(place.name);
+  }, [place]);
   return (
-    <ProjectContext.Provider value={project}>
+    <PlaceContext.Provider value={place}>
       <MenuContext.Provider value={{ open, setOpen }}>
         <div className="flex min-h-screen">
-          <Sidebar project={project} />
+          {place.kind === "project" ? <ProjectSidebar project={place.name} /> : <TenantSidebar tenant={place.name} />}
           {open && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setOpen(false)} />}
           <div className="min-w-0 flex-1">{children}</div>
         </div>
       </MenuContext.Provider>
-    </ProjectContext.Provider>
+    </PlaceContext.Provider>
   );
 }

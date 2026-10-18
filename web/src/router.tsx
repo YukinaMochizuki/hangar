@@ -10,7 +10,9 @@ import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { Gate } from "@/pages/gate";
 import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
+import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
+import { TenantOverview } from "@/pages/tenant-overview";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -55,7 +57,7 @@ const projectRoute = createRoute({
   component: function Project() {
     const { project } = projectRoute.useParams();
     return (
-      <Shell key={project} project={project}>
+      <Shell key={project} place={{ kind: "project", name: project }}>
         <Outlet />
       </Shell>
     );
@@ -103,9 +105,28 @@ const newRoute = createRoute({
   },
 });
 
+const membersRoute = createRoute({ getParentRoute: () => projectRoute, path: "/members", component: ProjectMembers });
+
+// A tenant's own pages, apart from any project's.
+const tenantRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenant",
+  component: function Tenant() {
+    const { tenant } = tenantRoute.useParams();
+    return (
+      <Shell key={tenant} place={{ kind: "tenant", name: tenant }}>
+        <Outlet />
+      </Shell>
+    );
+  },
+});
+const tenantOverviewRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/", component: TenantOverview });
+const tenantMembersRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/members", component: TenantMembers });
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
-  projectRoute.addChildren([overviewRoute, containersRoute, containerRoute, vmsRoute, vmRoute, newRoute]),
+  projectRoute.addChildren([overviewRoute, containersRoute, containerRoute, vmsRoute, vmRoute, newRoute, membersRoute]),
+  tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

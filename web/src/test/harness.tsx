@@ -7,7 +7,7 @@ import { createRouterTransport, type ConnectRouter } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { ProjectProvider } from "@/components/shell";
+import { PlaceProvider, type Place } from "@/components/shell";
 
 export type Call = { method: string; request: unknown };
 
@@ -45,16 +45,32 @@ export function fakeApi(routes: (router: ConnectRouter) => void): Api {
   return { transport, calls, requests, client };
 }
 
-/** The providers the console's pages need, over api, in the project named. */
-export function withApi(api: Api, project = "demo") {
+/** The providers the console's pages need, over api, in the project named or the place given. */
+export function withApi(api: Api, at: string | Place = "demo") {
+  const place: Place = typeof at === "string" ? { kind: "project", name: at } : at;
   return function Providers({ children }: { children: ReactNode }) {
     return (
       <TransportProvider transport={api.transport}>
         <QueryClientProvider client={api.client}>
-          <ProjectProvider value={project}>{children}</ProjectProvider>
+          <PlaceProvider value={place}>{children}</PlaceProvider>
         </QueryClientProvider>
       </TransportProvider>
     );
+  };
+}
+
+/**
+ * Gives jsdom's <dialog> the modal calls it lacks, so a page's dialogs open
+ * and close in tests as they do in a browser.
+ */
+export function polyfillDialog() {
+  const proto = HTMLDialogElement.prototype;
+  proto.showModal ??= function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  proto.close ??= function (this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
   };
 }
 
