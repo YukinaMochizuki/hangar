@@ -61,6 +61,16 @@ var (
 		Message:    (*v1alpha1.Machine)(nil).ProtoReflect().Type(),
 		Service:    "hangar.compute.v1alpha1.MachineService",
 	}
+	MachineSize = Resource{
+		Group:      "compute",
+		Version:    "v1alpha1",
+		Kind:       "MachineSize",
+		Plural:     "machinesizes",
+		ShortNames: []string{"ms"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha1.MachineSize)(nil).ProtoReflect().Type(),
+		Service:    "hangar.compute.v1alpha1.MachineSizeService",
+	}
 	Node = Resource{
 		Group:      "compute",
 		Version:    "v1alpha1",
@@ -227,6 +237,7 @@ var (
 var All = []Resource{
 	Container,
 	Machine,
+	MachineSize,
 	Node,
 	VirtualMachine,
 	Invitation,

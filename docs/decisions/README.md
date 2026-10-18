@@ -12,6 +12,7 @@ the change.
 | `machine-placement.md` | A container's or VM's status carries its node's `Placement`, the host's hardware and nothing of its load |
 | `storage-zfs.md` | ZFS zvols for machine disks, NFS for shared files, no virtio-fs |
 | `vm-images.md` | A platform catalogue of disk images, fetched by URL and sha256 and written raw onto a base |
+| `machine-sizes.md` | `MachineSize`: the sizes machines are offered in are the platform's, set by its administrator, read by all; a template, never recorded on a machine |
 | `api-versioning.md` | Proto packages and `apiVersion` are per group, mapped 1:1 |
 | `api-rpc-shape.md` | One typed service per kind, buf STANDARD request/response wrappers |
 | `apply-semantics.md` | Apply replaces the spec; field ownership; status subresource |

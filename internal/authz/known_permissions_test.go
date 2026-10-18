@@ -38,6 +38,7 @@ func TestKnownPermissions(t *testing.T) {
 		"compute.containers.apply", "iam.rolebindings.apply", "compute.machines.updateStatus",
 		"tenancy.tenants.create", "compute.machines.logs", "compute.machines.exec",
 		"compute.machines.ssh", "network.publicendpoints.access",
+		"compute.machinesizes.get", "compute.machinesizes.apply", "compute.machinesizes.updateStatus",
 	} {
 		if !KnownPermission(perm) {
 			t.Errorf("%q is not known", perm)

@@ -348,6 +348,14 @@ func hooksFor(r registry.Resource) kindHooks {
 			readableByAll:  true,
 			anyNodeReports: true,
 		}
+	case registry.MachineSize.Kind:
+		// Platform administrators define the sizes machines are offered in;
+		// every tenant chooses among them. See docs/decisions/machine-sizes.md.
+		return kindHooks{
+			target:        platformTarget,
+			validate:      validateMachineSize,
+			readableByAll: true,
+		}
 	case registry.VirtualMachine.Kind:
 		// Deleting a VM waits for its machine to be gone from the node, and
 		// for a root disk it owns. Its applies and deletes hold Disk's lock:
@@ -737,7 +745,7 @@ func (s *Server) validateContainerResources(ctx context.Context, old proto.Messa
 	if sz.disk < minDisk {
 		return invalid("spec.resources.disk %s is below the minimum of 1Gi", cmp.Or(r.GetDisk(), defaultDisk))
 	}
-	if err := checkMaximums(sz, cmp.Or(r.GetCpu(), defaultCPU), cmp.Or(r.GetMemory(), defaultMemory), cmp.Or(r.GetDisk(), defaultDisk)); err != nil {
+	if err := checkMaximums(sz, "spec.resources", cmp.Or(r.GetCpu(), defaultCPU), cmp.Or(r.GetMemory(), defaultMemory), cmp.Or(r.GetDisk(), defaultDisk)); err != nil {
 		return err
 	}
 	if old == nil {
@@ -785,17 +793,18 @@ func (s *Server) diskFloor(ctx context.Context, c *computev1alpha1.Container) (u
 	return wholeGi(stored.disk), nil
 }
 
-// checkMaximums refuses sizes past what a machine can have; cpu, memory and
-// disk are the quantities as written, for the message.
-func checkMaximums(sz sizes, cpu, memory, disk string) error {
+// checkMaximums refuses sizes past what a machine can have; at is the field
+// holding cpu, memory and disk, such as spec.resources, and they are the
+// quantities as written, for the message.
+func checkMaximums(sz sizes, at, cpu, memory, disk string) error {
 	if sz.cpu > maxCPU {
-		return invalid("spec.resources.cpu %s is above the maximum of %d vCPUs", cpu, maxCPU)
+		return invalid("%s.cpu %s is above the maximum of %d vCPUs", at, cpu, maxCPU)
 	}
 	if sz.memory > maxMemory {
-		return invalid("spec.resources.memory %s is above the maximum of 4Ti", memory)
+		return invalid("%s.memory %s is above the maximum of 4Ti", at, memory)
 	}
 	if sz.disk > maxDisk {
-		return invalid("spec.resources.disk %s is above the maximum of 64Ti", disk)
+		return invalid("%s.disk %s is above the maximum of 64Ti", at, disk)
 	}
 	return nil
 }
@@ -853,7 +862,7 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 		return invalid("spec.resources.%v", err)
 	}
 	sz.memory, sz.disk = h.memory, h.disk
-	if err := checkMaximums(sz, res.GetCpu(), res.GetMemory(), res.GetDisk()); err != nil {
+	if err := checkMaximums(sz, "spec.resources", res.GetCpu(), res.GetMemory(), res.GetDisk()); err != nil {
 		return err
 	}
 	seen := map[string]bool{}

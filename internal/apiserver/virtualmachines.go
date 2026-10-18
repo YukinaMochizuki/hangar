@@ -121,7 +121,7 @@ func validateVirtualMachine(ctx context.Context, s *Server, _ auth.Principal, ol
 	if sz.memory < minVMMemory {
 		return invalid("spec.resources.memory %s is below the minimum of 256Mi", cmp.Or(spec.GetResources().GetMemory(), defaultVMMemory))
 	}
-	if err := checkMaximums(sz, cmp.Or(spec.GetResources().GetCpu(), defaultCPU), cmp.Or(spec.GetResources().GetMemory(), defaultVMMemory), ""); err != nil {
+	if err := checkMaximums(sz, "spec.resources", cmp.Or(spec.GetResources().GetCpu(), defaultCPU), cmp.Or(spec.GetResources().GetMemory(), defaultVMMemory), ""); err != nil {
 		return err
 	}
 	switch spec.GetRunState() {

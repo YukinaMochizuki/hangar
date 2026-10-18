@@ -32,6 +32,7 @@ type Backends func(registry.Resource) resource.Backend
 func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption) {
 	mux.Handle(computev1alpha1connect.NewContainerServiceHandler(&containerService{b: backends(registry.Container)}, opts...))
 	mux.Handle(computev1alpha1connect.NewMachineServiceHandler(&machineService{b: backends(registry.Machine)}, opts...))
+	mux.Handle(computev1alpha1connect.NewMachineSizeServiceHandler(&machineSizeService{b: backends(registry.MachineSize)}, opts...))
 	mux.Handle(computev1alpha1connect.NewNodeServiceHandler(&nodeService{b: backends(registry.Node)}, opts...))
 	mux.Handle(computev1alpha1connect.NewVirtualMachineServiceHandler(&virtualMachineService{b: backends(registry.VirtualMachine)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewInvitationServiceHandler(&invitationService{b: backends(registry.Invitation)}, opts...))
@@ -182,6 +183,73 @@ func (s *machineService) UpdateMachineStatus(ctx context.Context, req *connect.R
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha1.UpdateMachineStatusResponse{Machine: obj.(*v1alpha1.Machine)}), nil
+}
+
+type machineSizeService struct {
+	b resource.Backend
+}
+
+func (s *machineSizeService) GetMachineSize(ctx context.Context, req *connect.Request[v1alpha1.GetMachineSizeRequest]) (*connect.Response[v1alpha1.GetMachineSizeResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.GetMachineSizeResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
+}
+
+func (s *machineSizeService) ListMachineSizes(ctx context.Context, req *connect.Request[v1alpha1.ListMachineSizesRequest]) (*connect.Response[v1alpha1.ListMachineSizesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha1.ListMachineSizesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha1.MachineSize))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *machineSizeService) WatchMachineSizes(ctx context.Context, req *connect.Request[v1alpha1.WatchMachineSizesRequest], stream *connect.ServerStream[v1alpha1.WatchMachineSizesResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha1.WatchMachineSizesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.MachineSize = ev.Object.(*v1alpha1.MachineSize)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *machineSizeService) ApplyMachineSize(ctx context.Context, req *connect.Request[v1alpha1.ApplyMachineSizeRequest]) (*connect.Response[v1alpha1.ApplyMachineSizeResponse], error) {
+	in := req.Msg.GetMachineSize()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("machine_size is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.ApplyMachineSizeResponse{MachineSize: res.Object.(*v1alpha1.MachineSize), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *machineSizeService) DeleteMachineSize(ctx context.Context, req *connect.Request[v1alpha1.DeleteMachineSizeRequest]) (*connect.Response[v1alpha1.DeleteMachineSizeResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.DeleteMachineSizeResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
+}
+
+func (s *machineSizeService) UpdateMachineSizeStatus(ctx context.Context, req *connect.Request[v1alpha1.UpdateMachineSizeStatusRequest]) (*connect.Response[v1alpha1.UpdateMachineSizeStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha1.UpdateMachineSizeStatusResponse{MachineSize: obj.(*v1alpha1.MachineSize)}), nil
 }
 
 type nodeService struct {

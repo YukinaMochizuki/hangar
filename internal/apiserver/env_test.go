@@ -194,6 +194,7 @@ type clients struct {
 	containers computev1alpha1connect.ContainerServiceClient
 	machines   computev1alpha1connect.MachineServiceClient
 	nodes      computev1alpha1connect.NodeServiceClient
+	sizes      computev1alpha1connect.MachineSizeServiceClient
 	tokens     iamv1alpha1connect.ServiceTokenServiceClient
 	issuer     iamv1alpha1connect.ServiceTokenIssuerServiceClient
 	capability computev1alpha1connect.MachineCapabilityServiceClient
@@ -212,6 +213,7 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		containers: computev1alpha1connect.NewContainerServiceClient(hc, url, opts...),
 		machines:   computev1alpha1connect.NewMachineServiceClient(hc, url, opts...),
 		nodes:      computev1alpha1connect.NewNodeServiceClient(hc, url, opts...),
+		sizes:      computev1alpha1connect.NewMachineSizeServiceClient(hc, url, opts...),
 		tokens:     iamv1alpha1connect.NewServiceTokenServiceClient(hc, url, opts...),
 		issuer:     iamv1alpha1connect.NewServiceTokenIssuerServiceClient(hc, url, opts...),
 		capability: computev1alpha1connect.NewMachineCapabilityServiceClient(hc, url, opts...),
