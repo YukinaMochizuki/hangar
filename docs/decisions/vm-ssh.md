@@ -74,6 +74,58 @@ was for, and names no one.
   VM made again has a new uid, and so a new entry. A key that changes under
   the same uid, its guest's host keys made again in it or something else
   answering, is refused, naming `hangar ssh --forget-host-key vm NAME`.
+- **Exec on a VM is an SSH login by the apiserver** (decided 2026-10-19,
+  for the console's terminal). `GET
+  /v1/projects/{project}/virtualmachines/{name}:exec` speaks the exec
+  protocol a container's does (`hangar.exec.v1alpha1`,
+  `streaming-transport.md`), so a client of a container's exec, the
+  console's terminal among them, works for a VM unchanged. The apiserver
+  is the SSH client: it makes a key for this login alone, certifies it
+  with the platform CA for the VM's uid, as `SignSSHKey` does, for five
+  minutes, and logs in over the node's `SSH` call, the path `:ssh` relays,
+  as the image's default user, or the start's `user`, never root. It
+  needs `compute.machines.ssh`, not `compute.machines.exec`: it logs in as
+  one of the VM's users. Only a VM whose machine boots firmware is
+  reached. No command opens the user's login shell; a command runs as
+  `hangar ssh` runs one, joined into one line for the user's shell, each
+  argument quoted so that it runs as given. A start's `env` or
+  `working_dir` is refused: sshd drops most of the environment, and SSH
+  has no working directory. A signal is SSH's `signal` request, by name.
+- **The apiserver sees the session.** Its bytes pass through the
+  apiserver in plaintext, as a container exec's do. The apiserver gains no
+  power it lacked, as it holds the CA and could already sign itself in,
+  only sight of the sessions. Nothing of a session is logged: the audit
+  lines say who, which VM, which user, the certificate's key fingerprint,
+  when it started and ended, and how it exited. A browser-side SSH client,
+  end to end, was rejected: no maintained browser SSH library does
+  OpenSSH certificates with Ed25519, and Go compiled to WebAssembly needs
+  `'wasm-unsafe-eval'` in the console's script policy.
+- **The apiserver's host keys are pinned in the VM's status.** On a VM's
+  first exec the apiserver asks for an Ed25519 host key first, as OpenSSH
+  does, so the key recorded is the one in `ssh_host_ed25519_key.pub` where
+  the guest has one; it trusts the host key its sshd presents and
+  records it in `VirtualMachine.status.ssh_host_keys`, with when, written
+  at the version of the VM it read, so two first logins at once cannot
+  both record a key. Every later login asks for a key of the kind
+  recorded and must be shown a recorded key; another key, or a guest that
+  no longer offers a key of that kind, is refused with
+  FailedPrecondition, pointing at the VM's page in the console. Its
+  Forget host key control calls
+  `MachineCapabilityService.ForgetSSHHostKeys`, which clears the record so
+  that the next login records again. Forgetting needs
+  `compute.virtualmachines.apply`, so one who may only log in cannot reset
+  the trust the logins rest on. A VM made again has a new uid, a new
+  object, and so no record. The CLI has no command for the record yet:
+  `hangar ssh --forget-host-key` clears only the CLI's own `known_hosts`,
+  never the apiserver's record, and `hangar ssh` keeps using that file for
+  now.
+- **An exec never logs in as root**, whether the start or the image's
+  `defaultUser` names it: it is refused before the login.
+- **A guest that stops answering ends the exec.** The apiserver sends the
+  guest's sshd `keepalive@openssh.com` as often as it pings an exec's
+  client, and ends the exec with Unavailable, the VM stopped answering,
+  when one fails or goes unanswered as long as a client may stay silent
+  (`streaming-transport.md`).
 
 ## Consequences
 
@@ -83,4 +135,10 @@ was for, and names no one.
 - A VM made again is a new entry in `known_hosts`; the old one's stays
   there, unused.
 - Rotating the CA leaves existing VMs on the old one.
+- A VM's exec fails after the upgrade, with a reason the console shows,
+  when the VM does not trust the CA (made before it, or its sshd changed),
+  when its sshd does not answer yet (Unavailable), or when its host key is
+  not the one recorded.
+- The record in status and `hangar ssh`'s `known_hosts` are kept apart:
+  forgetting one leaves the other, and the CLI cannot forget the record yet.
 - No Windows guests, nor host certificates, yet.

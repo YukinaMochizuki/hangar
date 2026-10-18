@@ -60,14 +60,15 @@ Hypervisor directly, without Kata or Kubernetes.
 - Logs, exec and ssh are capabilities of the `Machine`, each one permission,
   `compute.machines.logs`, `compute.machines.exec` and
   `compute.machines.ssh`, held in the machine's project, and one API,
-  `MachineCapabilityService` (`Logs`, `SignSSHKey`) and the WebSockets
+  `MachineCapabilityService` (`Logs`, `SignSSHKey`, `ForgetSSHHostKeys`) and the WebSockets
   `/v1/projects/{project}/{plural}/{name}:exec` and `:ssh`. A caller names
   what it made, by kind and name, such as Container `web`, never the machine;
   the apiserver maps the kind to its machine in one table
   (`internal/apiserver/machinecapability.go`), and takes the machine only if
   the named object owns it, so an object made again under a deleted one's
-  name never reaches the old machine. A kind lacking a capability, exec on a
-  VM or ssh to a container for now, fails with `Unimplemented`, from the kind
+  name never reaches the old machine. A VM's exec is an SSH login by the
+  apiserver, and so needs `compute.machines.ssh` (`vm-ssh.md`). A kind
+  lacking a capability, ssh to a container for now, fails with `Unimplemented`, from the kind
   alone, before the permission is checked or anything read; adding one
   changes neither the API nor the permissions. They are no write to the
   Machine: holding them leaves it system-managed. A log's records are the machine's, not the
