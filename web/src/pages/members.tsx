@@ -5,7 +5,7 @@
 // yet is listed with that alone, never with whether they were invited.
 
 import { Code, ConnectError } from "@connectrpc/connect";
-import { ChevronDown, MoreHorizontal, Plus, UserMinus } from "lucide-react";
+import { MoreHorizontal, Plus, UserMinus } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Select } from "@/components/form";
@@ -160,7 +160,7 @@ function RowMenu({ onRemove }: { onRemove: () => void }) {
 /** What the caller may do to the members of a scope: change and add (apply), remove (delete). */
 type May = { apply: boolean; remove: boolean; settled: boolean };
 
-/** A person's row: who they are, their username, their role, and their menu; a refused role change shows in a row under it. */
+/** A person's row: who they are with their username under it, their role, and their menu; a refused role change shows in a row under it. */
 function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: string; row: MemberRow; you: boolean; may: May }) {
   const setRole = useSetMemberRole(scope);
   const [removing, setRemoving] = useState(false);
@@ -174,36 +174,35 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
             <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[12px] font-medium uppercase text-muted">
               {row.email[0]}
             </span>
-            <span className="truncate font-medium">{row.email}</span>
-            {you && <Badge className="shrink-0">You</Badge>}
+            <span className="min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="truncate font-medium">{row.email}</span>
+                {you && <Badge className="shrink-0">You</Badge>}
+              </span>
+              {row.platformMember ? (
+                <span className="block truncate font-mono text-[11.5px] text-subtle">{row.username}</span>
+              ) : (
+                <span className="block text-[11.5px] text-subtle">Not a platform member yet; the role takes effect once they are.</span>
+              )}
+            </span>
           </span>
-        </td>
-        <td className="px-4 py-2.5">
-          {row.platformMember ? (
-            <span className="font-mono text-[12px]">{row.username}</span>
-          ) : (
-            <span className="text-[12px] text-subtle">Not a platform member yet; the role takes effect once they are.</span>
-          )}
         </td>
         <td className="whitespace-nowrap px-4 py-2.5">
           {may.apply ? (
-            <span className="relative inline-block">
-              <Select
-                aria-label={`Role of ${row.email}`}
-                value={current}
-                disabled={setRole.isPending}
-                onChange={(e) => setRole.mutate({ email: row.email, role: e.target.value })}
-                className="h-8 w-auto appearance-none bg-surface pl-2.5 pr-7 font-sans hover:bg-surface-2 disabled:opacity-50"
-              >
-                {current === "" && <option value="">{row.roles.map(roleLabel).join(" + ")}</option>}
-                {options.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
-                  </option>
-                ))}
-              </Select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-subtle" />
-            </span>
+            <Select
+              aria-label={`Role of ${row.email}`}
+              value={current}
+              disabled={setRole.isPending}
+              onChange={(e) => setRole.mutate({ email: row.email, role: e.target.value })}
+              className="h-8 w-auto bg-surface font-sans"
+            >
+              {current === "" && <option value="">{row.roles.map(roleLabel).join(" + ")}</option>}
+              {options.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.label}
+                </option>
+              ))}
+            </Select>
           ) : (
             <span className="text-muted">{row.roles.map(roleLabel).join(" + ")}</span>
           )}
@@ -215,7 +214,7 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
       </tr>
       {setRole.error && (
         <tr className="border-b last:border-0">
-          <td colSpan={4} className="px-4 pb-2.5">
+          <td colSpan={3} className="px-4 pb-2.5">
             <Notice tone="error" title="Changing the role failed" className="ml-10">
               <span className="flex items-center justify-between gap-2">
                 {errorMessage(setRole.error)}
@@ -313,12 +312,11 @@ function MembersPage({
           <ListFrame state={{ loading, error, refetch: () => void refetch(), count: rows.length }} noun="members" empty={{ title: "No one holds a role here." }}>
             <NameFilter value={query} onChange={setQuery} placeholder="Email or username" label="Filter by email or username" />
             <Card className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-[13px]">
+              <table className="w-full text-[13px]">
                 <thead>
                   <tr className={theadRow}>
-                    <Th className="w-[36%]">Person</Th>
-                    <Th>Username</Th>
-                    <Th>Role</Th>
+                    <Th>Person</Th>
+                    <Th className="w-px">Role</Th>
                     <Th className="w-10 px-0" />
                   </tr>
                 </thead>
@@ -326,7 +324,7 @@ function MembersPage({
                   {shown.map((r) => (
                     <MemberLine key={r.email} scope={scope} where={where} row={r} you={r.email === who.id.toLowerCase()} may={may} />
                   ))}
-                  {shown.length === 0 && <NoMatch noun="member" colSpan={4} />}
+                  {shown.length === 0 && <NoMatch noun="member" colSpan={3} />}
                 </tbody>
               </table>
             </Card>

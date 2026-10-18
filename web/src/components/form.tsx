@@ -38,9 +38,18 @@ export function Textarea({ className, tone, ...props }: ComponentProps<"textarea
   return <textarea autoComplete="off" data-1p-ignore {...props} className={cn(fieldVariants({ tone }), "h-auto py-2", className)} />;
 }
 
-/** Select is a choice among options, drawn as a text field. */
+/**
+ * Select is a choice among options, drawn as a text field with a chevron
+ * rather than the browser's own control (the chevron is .field-select in
+ * styles.css).
+ */
 export function Select({ className, tone, ...props }: ComponentProps<"select"> & FieldProps) {
-  return <select {...props} className={cn(fieldVariants({ tone }), className)} />;
+  return (
+    <select
+      {...props}
+      className={cn(fieldVariants({ tone }), "field-select cursor-pointer appearance-none pr-8 hover:border-subtle disabled:cursor-default disabled:opacity-50", className)}
+    />
+  );
 }
 
 /** A labelled form field, with a hint under it. */

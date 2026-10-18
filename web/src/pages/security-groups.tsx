@@ -405,7 +405,7 @@ function RulesEditor({ title, peer, rules, onChange }: { title: string; peer: st
         const ports = takesPorts(r.protocol);
         return (
           <div key={i} className="mt-1.5 grid grid-cols-[72px_80px_1fr_28px] items-center gap-1.5">
-            <Select aria-label="Protocol" value={r.protocol} onChange={(e) => set(i, { protocol: Number(e.target.value) })} className="px-1.5 font-sans text-[12.5px]">
+            <Select aria-label="Protocol" value={r.protocol} onChange={(e) => set(i, { protocol: Number(e.target.value) })} className="pl-2 font-sans text-[12.5px]">
               {protocols.map((p) => (
                 <option key={p} value={p}>
                   {protocolLabel[p]}

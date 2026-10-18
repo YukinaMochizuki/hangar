@@ -63,7 +63,8 @@ the front door (`front-door.md`) from the same release as the binaries.
   (`delete-dialog.tsx`). Text fields ask browsers and password managers
   not to fill them (`autocomplete="off"`, `data-1p-ignore`): they hold
   names, addresses and other systems' logins. Only the signup form's
-  fields, the person's own account, are left to them.
+  fields, the person's own account, are left to them. A select is drawn as
+  a text field with a chevron, not as the browser's own control.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
 - **Copy describes what people can see and do, not how Hangar is built.**
@@ -153,8 +154,9 @@ joining it when its page does.
 
 - A project's or a tenant's Members page lists the people bound at exactly
   that scope, through `MemberService`, one row a person, in a table like
-  the other lists: the person, their username, their role and their menu,
-  filtered by email or username. A person who is not a platform member
+  the other lists: the person with their username under their email, their
+  role and their menu, three columns that fit a phone, filtered by email or
+  username. A person who is not a platform member
   yet is shown with that alone ("the role takes effect once they are"),
   never with whether they were invited (`tenancy-and-iam.md`).
 - Roles are changed in the row, added in a dialog with what each role
