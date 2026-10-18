@@ -222,7 +222,10 @@ with `--release DIR`. `--only <step>` runs a single step
     own rule: at most 64 printable characters each, the chassis a DNS-1123
     label. It runs the hangar-node the run installs: with `--release`, the
     release's, as a private executable copy that matches the release's
-    `SHA256SUMS` (a fetched release's files are 0644); without, the
+    `SHA256SUMS` (a fetched release's files are 0644), made in a directory
+    of its own, 0700, under `/usr/local/lib` (where the release's binaries
+    run from, so never on a noexec `/tmp`) and removed when the check ends,
+    on SIGINT or SIGTERM too; without, the
     installed one. Only a hangar-node whose own answer to `-h` is a usage
     without `check-placement`, one from before it, makes it warn that the
     values were not checked instead; one that cannot run is a problem, and

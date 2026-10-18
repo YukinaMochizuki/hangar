@@ -3,12 +3,17 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
+
+	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // The services step of deploy/host runs this command's check-placement on
@@ -135,14 +140,32 @@ func release(t *testing.T, bin string) string {
 	return dir
 }
 
+// checkScript runs the services step's placement check with the copy made
+// under the directory CHECK_PARENT names instead of /usr/local/lib, which a
+// test cannot write.
+const checkScript = `SERVICES_CHECK_PARENT=$CHECK_PARENT; services_placement_problem`
+
+// fetchedCheck runs the placement check for the release in dir with env,
+// TMPDIR pointing at nothing, so a check that made its copy under TMPDIR
+// fails, and fails the test if it leaves anything in its parent.
+func fetchedCheck(t *testing.T, dir string, env ...string) (stdout, stderr string, ok bool) {
+	t.Helper()
+	parent := t.TempDir()
+	env = append([]string{"HANGAR_RELEASE_DIR=" + dir, "CHECK_PARENT=" + parent, "TMPDIR=" + filepath.Join(parent, "no-such-dir")}, env...)
+	stdout, stderr, ok = services(t, env, checkScript)
+	if left, _ := os.ReadDir(parent); len(left) > 0 {
+		t.Errorf("the check left %v in %s", left, parent)
+	}
+	return stdout, stderr, ok
+}
+
 // TestAFetchedReleaseChecksThePlacement: with --release a release whose
 // hangar-node is not executable, as a fetched one is, still has the
-// placement checked by that hangar-node: a valid one passes with no warning,
-// an invalid chassis is a problem, and a hangar-node that does not match
-// SHA256SUMS is run not at all.
+// placement checked by that hangar-node, whatever TMPDIR is: a valid one
+// passes with no warning, an invalid chassis is a problem, and a hangar-node
+// that does not match SHA256SUMS is run not at all.
 func TestAFetchedReleaseChecksThePlacement(t *testing.T) {
 	dir := release(t, buildNode(t))
-	check := `services_placement_problem`
 	for _, tt := range []struct {
 		what    string
 		env     []string
@@ -151,7 +174,7 @@ func TestAFetchedReleaseChecksThePlacement(t *testing.T) {
 		{"a valid placement", []string{"HANGAR_REGION=region-1", "HANGAR_CHASSIS=generic-1u-2x-u2"}, ""},
 		{"an invalid chassis", []string{"HANGAR_CHASSIS=Generic 1U"}, "the host env file's placement: --chassis:"},
 	} {
-		out, errOut, ok := services(t, append([]string{"HANGAR_RELEASE_DIR=" + dir}, tt.env...), check)
+		out, errOut, ok := fetchedCheck(t, dir, tt.env...)
 		if !ok {
 			t.Fatalf("%s: the check failed: %s", tt.what, errOut)
 		}
@@ -170,7 +193,7 @@ func TestAFetchedReleaseChecksThePlacement(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(tampered, "hangar-node"), []byte("#!/bin/sh\ntouch \"$0.ran\"\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	out, _, ok := services(t, []string{"HANGAR_RELEASE_DIR=" + tampered, "HANGAR_CHASSIS=generic-1u-2x-u2"}, check)
+	out, _, ok := fetchedCheck(t, tampered, "HANGAR_CHASSIS=generic-1u-2x-u2")
 	if !ok || !strings.Contains(out, "does not match") {
 		t.Errorf("a hangar-node that does not match SHA256SUMS: ok %t, problem %q", ok, out)
 	}
@@ -185,8 +208,68 @@ func TestAFetchedReleaseChecksThePlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	broken := release(t, notAProgram)
-	out, errOut, ok := services(t, []string{"HANGAR_RELEASE_DIR=" + broken, "HANGAR_CHASSIS=generic-1u-2x-u2"}, check)
+	out, errOut, ok := fetchedCheck(t, broken, "HANGAR_CHASSIS=generic-1u-2x-u2")
 	if !ok || !strings.Contains(out, "placement cannot be checked with "+broken+"/hangar-node") || strings.Contains(errOut, "has no check-placement") {
 		t.Errorf("a hangar-node that cannot run: ok %t, problem %q, stderr %q", ok, out, errOut)
 	}
+
+	// With no directory to copy it to, the check is a problem.
+	out, _, ok = services(t, []string{"HANGAR_RELEASE_DIR=" + dir, "HANGAR_CHASSIS=generic-1u-2x-u2",
+		"CHECK_PARENT=" + filepath.Join(t.TempDir(), "no-such-dir")}, checkScript)
+	if !ok || !strings.Contains(out, "no directory for a copy of "+dir+"/hangar-node") {
+		t.Errorf("no directory for the copy: ok %t, problem %q", ok, out)
+	}
+}
+
+// TestACheckStoppedLeavesNoCopy: the copy is made where the services step
+// puts it, not under TMPDIR, and is removed when the run is stopped as
+// systemd stops it, its whole process group sent SIGTERM while the copy
+// runs.
+func TestACheckStoppedLeavesNoCopy(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("no bash")
+	}
+	mark := filepath.Join(t.TempDir(), "running")
+	dir := release(t, stub(t, `echo "$0" >"$MARK"; exec sleep 60`))
+	host, err := filepath.Abs("../../deploy/host")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parent := t.TempDir()
+	cmd := exec.Command("bash", "-c", `set -euo pipefail
+. "$1/lib.sh"
+. "$1/steps/80-services.sh"
+problem=$(`+checkScript+`)
+`, "bash", host)
+	cmd.Env = append(os.Environ(), "HANGAR_RELEASE_DIR="+dir, "HANGAR_CHASSIS=generic-1u-2x-u2", "MARK="+mark,
+		"CHECK_PARENT="+parent, "TMPDIR="+t.TempDir())
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	var ran []byte
+	testutil.Eventually(t, "the copy running", func() bool {
+		ran, _ = os.ReadFile(mark)
+		return len(ran) > 0
+	})
+	if !strings.HasPrefix(string(ran), parent+"/.hangar-placement-check.") {
+		t.Errorf("the copy ran as %q, not in %s", ran, parent)
+	}
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		t.Fatal("the check did not stop on SIGTERM")
+	}
+	// The outer shell goes first; the subshell running the check removes
+	// its copy as it ends, which is what is waited for.
+	testutil.Eventually(t, "the stopped check's copy removed", func() (bool, string) {
+		left, _ := os.ReadDir(parent)
+		return len(left) == 0, fmt.Sprintf("%v in %s", left, parent)
+	})
 }

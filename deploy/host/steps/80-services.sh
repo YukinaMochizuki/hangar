@@ -57,6 +57,11 @@ SERVICES_VM_IDS_NAME=hangar-vms
 SERVICES_VM_IDS_FIRST=200000
 SERVICES_VM_IDS_COUNT=65536
 SERVICES_UNITS="hangar-apiserver hangar-node"
+# Where the placement check copies a release's hangar-node to run it: on
+# /usr/local, which the release's binaries are installed to and run from,
+# so it is exec-capable on any host they run on; a directory of its own in
+# it, 0700, made and removed by each check.
+SERVICES_CHECK_PARENT=/usr/local/lib
 # The apiserver's public socket, there only with the front door on.
 SERVICES_PUBLIC_SOCKET_UNIT=hangar-apiserver-public
 
@@ -189,29 +194,39 @@ node_check_placement() {
 # (hangar-node check-placement) in the hangar-node this run installs: the
 # release's with --release, else the installed one. Nothing when it would,
 # or when that hangar-node is one from before check-placement, which it
-# warns of; a hangar-node that cannot run is a problem.
-services_placement_problem() {
+# warns of; a hangar-node that cannot run is a problem. A subshell, so its
+# traps are its own.
+services_placement_problem() (
 	services_placement_args
-	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || return 0
-	local bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} tmp='' has out name
-	name=$bin
+	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || exit 0
+	bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} tmp='' name=$bin
 	if [ -n "$dir" ]; then
 		name=$dir/hangar-node
 		# The release's file need not be executable (a fetched release keeps
 		# no modes), and is run only once it matches its checksum: so a copy
-		# of its own, made executable, is checked and run, the very bytes.
-		tmp=$(mktemp -d)
+		# of its own, made executable, is checked and run, the very bytes. It
+		# goes on the filesystem the release's binaries run from, not under
+		# TMPDIR, which may be noexec, and is gone however the check ends:
+		# bash runs the EXIT trap on SIGINT and SIGTERM too, and the traps for
+		# those make the subshell end with their usual statuses.
+		trap '[ -z "$tmp" ] || rm -rf "$tmp"' EXIT
+		trap 'exit 130' INT
+		trap 'exit 143' TERM
+		if ! tmp=$(mktemp -d "$SERVICES_CHECK_PARENT/.hangar-placement-check.XXXXXX" 2>&1); then
+			printf 'the host env file'\''s placement cannot be checked: no directory for a copy of %s: %s\n' "$name" "$tmp"
+			tmp=''
+			exit 0
+		fi
 		install -m 0700 "$dir/hangar-node" "$tmp/hangar-node" 2>/dev/null || true
 		if ! grep -E '^[0-9a-f]{64}  hangar-node$' "$dir/SHA256SUMS" 2>/dev/null | sed "s|  hangar-node\$|  $tmp/hangar-node|" |
 			sha256sum -c --quiet --status 2>/dev/null; then
-			rm -rf "$tmp"
 			printf '%s\n' "$dir/hangar-node does not match $dir/SHA256SUMS; the host env file's placement cannot be checked with it"
-			return 0
+			exit 0
 		fi
 		bin=$tmp/hangar-node
 	elif [ ! -x "$bin" ]; then
 		printf '%s\n' "no $bin to check the host env file's placement with; install a release first"
-		return 0
+		exit 0
 	fi
 	if ! has=$(node_check_placement "$bin"); then
 		printf 'the host env file'\''s placement cannot be checked with %s: %s\n' "$name" "$has"
@@ -220,9 +235,8 @@ services_placement_problem() {
 	elif ! out=$("$bin" check-placement "${SERVICES_PLACEMENT[@]}" 2>&1); then
 		printf 'the host env file'\''s placement: %s\n' "$(printf '%s' "$out" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
 	fi
-	[ -z "$tmp" ] || rm -rf "$tmp"
-	return 0
-}
+	exit 0
+)
 
 # services_auth_flags prints the apiserver's flags for the auth mode
 # local.env asks for. The values land in the unit, so a changed mode is a
