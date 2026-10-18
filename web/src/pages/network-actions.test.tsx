@@ -27,7 +27,8 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddressDetail, AddressList } from "@/pages/addresses";
+import { AddressDetail } from "@/pages/addresses";
+import { CreateAddress } from "@/pages/create-address";
 import { CreateNetwork } from "@/pages/create-network";
 import { NetworkDetail } from "@/pages/networks";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
@@ -85,7 +86,7 @@ type CreateCase = {
 const creates: CreateCase[] = [
   { noun: "network", page: () => <CreateNetwork />, name: "Network name", submit: "Create network", taken: "sandbox", hide: "listNetworks" },
   { noun: "security group", page: () => <SecurityGroupList />, open: "New security group", submit: "Create security group", taken: "web", hide: "listSecurityGroups" },
-  { noun: "address", page: () => <AddressList />, open: "Reserve address", submit: "Reserve", taken: "spare", hide: "listAddresses" },
+  { noun: "address", page: () => <CreateAddress />, name: "Address name", submit: "Reserve address", taken: "spare", hide: "listAddresses" },
   {
     noun: "public endpoint",
     page: () => <PublicEndpointList />,
@@ -358,17 +359,32 @@ describe("security groups", () => {
 
 describe("addresses", () => {
   it("reserves an unbound address", async () => {
-    const api = show(<AddressList />);
-    fireEvent.click(await screen.findByRole("button", { name: "Reserve address" }));
+    const api = show(<CreateAddress />);
+    await screen.findByLabelText("Address name");
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "edge");
+    type("Address name", "edge");
     expect(screen.getByText(/hangar apply --create-only -p demo -f edge\.yaml/)).toBeTruthy();
-    click("Reserve");
+    click("Reserve address");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
     expect(lastApply<ApplyAddressRequest>(api).createOnly).toBe(true);
     const want = create(AddressSchema, { metadata: { name: "edge", project: "demo" }, spec: {} });
     expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
-    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/addresses/$name", params: { project: "demo", name: "edge" } });
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/addresses/$name", params: { project: "demo", name: "edge" }, replace: true });
+  });
+
+  it("reserves an address bound to the interface chosen", async () => {
+    const api = show(<CreateAddress />);
+    await screen.findByRole("option", { name: /api · eth0/ });
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    type("Address name", "edge");
+    click("Reserve address");
+    await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
+    const want = create(AddressSchema, {
+      metadata: { name: "edge", project: "demo" },
+      spec: { target: { object: { case: "container", value: "api" }, interface: "eth0" } },
+    });
+    expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
   });
 
   it("binds an address at the version the dialog opened from, the rest untouched", async () => {

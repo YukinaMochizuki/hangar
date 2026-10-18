@@ -7,6 +7,7 @@ import { Shell } from "@/components/shell";
 import { ErrorNotice, StandalonePage } from "@/components/states";
 import { newSearch, type NewProps } from "@/lib/new-param";
 import { pickProject, useProjects } from "@/lib/projects";
+import { CreateAddress } from "@/pages/create-address";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
@@ -154,6 +155,7 @@ const newDiskRoute = createRoute({
 });
 
 const newNetworkRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/network", component: CreateNetwork });
+const newAddressRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/address", component: CreateAddress });
 
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -214,7 +216,8 @@ const addressesRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/addresses",
   validateSearch: newSearch,
-  component: () => <ListPage page={AddressList} />,
+  beforeLoad: toCreatePage("address"),
+  component: AddressList,
 });
 const addressRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -314,6 +317,7 @@ export const routeTree = rootRoute.addChildren([
     newRoute,
     newDiskRoute,
     newNetworkRoute,
+    newAddressRoute,
     disksRoute,
     diskRoute,
     imagesRoute,

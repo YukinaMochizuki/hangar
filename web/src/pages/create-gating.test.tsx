@@ -11,6 +11,7 @@ import type { TestPermissionsRequest } from "@hangar/api/hangar/iam/v1alpha1/acc
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { CreateAddress } from "@/pages/create-address";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateNetwork } from "@/pages/create-network";
 import { never, polyfillDialog, withApi } from "@/test/harness";
@@ -30,6 +31,7 @@ type Case = { kind: string; page: () => ReactNode; perm: string; field: string; 
 const cases: Case[] = [
   { kind: "disk", page: () => <CreateDisk />, perm: "storage.disks.apply", field: "Disk name", refusal: "creating disks", list: "disks" },
   { kind: "network", page: () => <CreateNetwork />, perm: "network.networks.apply", field: "Network name", refusal: "creating networks", list: "networks" },
+  { kind: "address", page: () => <CreateAddress />, perm: "network.addresses.apply", field: "Address name", refusal: "reserving addresses", list: "addresses" },
 ];
 
 function show(c: Case, f: PaletteFake = {}) {
@@ -52,7 +54,7 @@ describe.each(cases)("the New $kind page", (c) => {
     show(c, { perms: () => [] });
     await screen.findByText(`This account's roles do not include ${c.refusal} in this project.`);
     expect(screen.queryByLabelText(c.field)).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Create/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^(Create|Reserve)/ })).toBeNull();
   });
 
   it("shows nothing while the answer is unknown", async () => {

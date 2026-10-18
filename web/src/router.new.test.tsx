@@ -70,7 +70,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 describe("a list route's ?new=1", () => {
   it.each([
     ["security-groups", "New security group"],
-    ["addresses", "Reserve address"],
     ["public-endpoints", "New public endpoint"],
     ["secrets", "New secret"],
     ["service-tokens", "New service token"],
@@ -96,7 +95,6 @@ describe("a list route's ?new=1", () => {
 
   const refusedCases: [string, string][] = [
     ["security-groups", "New security group"],
-    ["addresses", "Reserve address"],
     ["public-endpoints", "New public endpoint"],
     ["secrets", "New secret"],
     ["service-tokens", "New service token"],
@@ -146,7 +144,6 @@ describe("a list route's ?new=1", () => {
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
     ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
-    ["addresses", "Reserve address", (d) => type(nameField(d), "fresh"), "/projects/demo/addresses/fresh"],
     ["public-endpoints", "New public endpoint", (d) => type(nameField(d), "fresh"), "/projects/demo/public-endpoints/fresh"],
     [
       "secrets",
@@ -198,6 +195,7 @@ const submitOf = () => screen.getAllByRole("button").find((b) => /^(Create|Reser
 const pages: [string, string, string, () => void, string][] = [
   ["disks", "disk", "New disk", () => type(field("Disk name"), "fresh"), "/projects/demo/disks/fresh"],
   ["networks", "network", "New network", () => type(field("Network name"), "fresh"), "/projects/demo/networks/fresh"],
+  ["addresses", "address", "Reserve address", () => type(field("Address name"), "fresh"), "/projects/demo/addresses/fresh"],
 ];
 
 describe("a create page", () => {
