@@ -31,6 +31,10 @@ type machineKind struct {
 	// capabilities are what its machines can be asked; any other capability
 	// fails with Unimplemented.
 	capabilities []authz.Verb
+	// execOverSSH makes its exec an SSH login by the apiserver to the
+	// machine's guest, which needs the ssh permission, not exec's; see
+	// docs/decisions/vm-ssh.md.
+	execOverSSH bool
 }
 
 // machineKinds maps every kind whose objects run as machines to them: a
@@ -39,7 +43,7 @@ type machineKind struct {
 // with Unimplemented. See docs/decisions/machine-model.md.
 var machineKinds = map[string]machineKind{
 	registry.Container.Kind:      {what: "container", machine: machineName, capabilities: []authz.Verb{authz.Logs, authz.Exec}},
-	registry.VirtualMachine.Kind: {what: "virtual machine", machine: vmMachineName, capabilities: []authz.Verb{authz.Logs, authz.SSH}},
+	registry.VirtualMachine.Kind: {what: "virtual machine", machine: vmMachineName, capabilities: []authz.Verb{authz.Logs, authz.Exec, authz.SSH}, execOverSSH: true},
 }
 
 // kindNamed is the kind a capability's request names, by kind, as
@@ -188,9 +192,11 @@ type machineTarget struct {
 	principal auth.Principal
 	// client is the caller's address, as the listener established it
 	// (auth.ClientIP); empty on a unix socket.
-	client  string
-	kind    registry.Resource
-	key     resource.Key
+	client string
+	kind   registry.Resource
+	key    resource.Key
+	// obj is the object as it was reached.
+	obj     proto.Message
 	machine string // uid
 	call    *nodeCall
 }
@@ -220,7 +226,7 @@ func (s *Server) machineTarget(ctx context.Context, kind registry.Resource, key 
 	if err != nil {
 		return nil, err
 	}
-	return &machineTarget{principal: r.principal, client: clientIP(ctx), kind: kind, key: key, machine: machine.GetMetadata().GetUid(), call: call}, nil
+	return &machineTarget{principal: r.principal, client: clientIP(ctx), kind: kind, key: key, obj: r.obj, machine: machine.GetMetadata().GetUid(), call: call}, nil
 }
 
 // auditAttrs are what every audit line of a capability on x says of it.

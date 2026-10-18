@@ -29,7 +29,10 @@ import "hangar/compute/v1alpha1/container.proto";
 // its reason.
 //
 // An exec has the subprotocol hangar.exec.v1alpha1 and needs
-// compute.machines.exec. Each binary message is one MachineExecRequest
+// compute.machines.exec; a virtual machine's needs compute.machines.ssh
+// instead, as the apiserver serves it by logging in to the VM over SSH,
+// trusting its host key as ForgetSSHHostKeys says (docs/decisions/vm-ssh.md).
+// Each binary message is one MachineExecRequest
 // from the client, the first of them a start, or one MachineExecResponse
 // from the server. After the exit the server closes it with 1000. Either
 // end may send a message with no field set, which the other ignores: a
@@ -52,6 +55,14 @@ service MachineCapabilityService {
   // compute.machines.ssh. Without the platform's SSH CA it fails with
   // FailedPrecondition. See docs/decisions/vm-ssh.md.
   rpc SignSSHKey(SignSSHKeyRequest) returns (SignSSHKeyResponse);
+  // ForgetSSHHostKeys clears the host keys the apiserver recorded on a
+  // virtual machine's first exec (VirtualMachineStatus.ssh_host_keys), as
+  // when its host keys were made again in it, so that the next exec
+  // records the key it is then shown. It needs
+  // compute.virtualmachines.apply in the VM's project, not
+  // compute.machines.ssh: one who may only log in cannot reset the trust
+  // their logins rest on. It leaves hangar ssh's known_hosts as it is.
+  rpc ForgetSSHHostKeys(ForgetSSHHostKeysRequest) returns (ForgetSSHHostKeysResponse);
 }
 
 message LogsRequest {
@@ -143,6 +154,19 @@ message SignSSHKeyResponse {
   google.protobuf.Timestamp valid_before = 4;
 }
 
+message ForgetSSHHostKeysRequest {
+  string project = 1;
+  // The object's kind, VirtualMachine.
+  string kind = 2;
+  string name = 3;
+}
+
+message ForgetSSHHostKeysResponse {
+  // The keys forgotten, in authorized_keys form; empty if none was
+  // recorded.
+  repeated string forgotten = 1;
+}
+
 // MachineExecRequest is a message from an exec's client.
 message MachineExecRequest {
   oneof message {
@@ -161,10 +185,12 @@ message MachineExecRequest {
 
 // MachineExecStart runs a process in the machine, as docker exec does in a
 // container: with the container's environment, user and working directory,
-// unless overridden.
+// unless overridden. In a virtual machine it is an SSH session: no command
+// opens the user's login shell, and env and working_dir are refused.
 message MachineExecStart {
   // The program, looked up on the PATH of the process's environment, and
-  // its arguments.
+  // its arguments. Required but in a virtual machine, where they are
+  // quoted and joined into one line for the user's shell.
   repeated string command = 1;
   // Gives the process a stdin to read; without it, its stdin is closed
   // from the start, or, on a terminal, nothing is ever typed.
@@ -175,7 +201,8 @@ message MachineExecStart {
   // The terminal's first size, with tty.
   MachineExecWindowSize size = 4;
   // As an OCI image gives it, such as "1000" or "nobody:nogroup"; empty
-  // keeps the container's.
+  // keeps the container's. In a virtual machine, the login name, never
+  // root; empty is its image's default user.
   string user = 5;
   // Set over the container's environment.
   repeated EnvVar env = 6;
