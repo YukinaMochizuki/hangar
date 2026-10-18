@@ -129,7 +129,9 @@ unreliable on virtio-fs.
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk
   image's `@base` (below whose size it fails with `DiskTooSmall`), and the
-  host made no filesystem on it: the host never reads it. It outlives the
+  host made no filesystem on it: the host never reads it. A container's
+  guest makes one on a blank volume it mounts (`container-volumes.md`).
+  It outlives the
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
   volume restarts the machine it is attached to, as a grown root disk does.

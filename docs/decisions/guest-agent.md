@@ -15,7 +15,8 @@ to boot again.
 ## Decision
 
 - **hangar-init comes in the platform's initramfs**, built and shipped with
-  the guest kernel, holding nothing else. It mounts the root disk
+  the guest kernel, holding nothing else but a static `mke2fs` for the
+  container's volumes (`container-volumes.md`). It mounts the root disk
   (`/dev/vda`), switches to it, and stays PID 1. Images are never modified;
   upgrading the agent means a new initramfs.
 - **What to run comes on a boot disk** (`/dev/vdb`, `internal/guest/bootdisk`):
@@ -24,6 +25,9 @@ to boot again.
   The guest needs nothing else, so it boots again, after a crash or a
   restore, without the node. Not the kernel command line, which is short and
   readable by any process in the guest; not files written into the image.
+- **A container's volumes are mounted before the switch to the root
+  disk**, from the list the boot disk holds: a blank one formatted, a new
+  one copied into from the image, as `container-volumes.md` says.
 - **The agent speaks Connect over vsock**, port 1024, with the service in
   `proto/hangar/guest/v1`. It is internal but versioned with buf breaking,
   since a guest keeps the hangar-init it booted with while the node is

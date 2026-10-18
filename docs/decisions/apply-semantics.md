@@ -15,6 +15,9 @@ controllers, and the node, which runs as a separate process.
 - **Labels and annotations** belong to the user and are replaced too, except keys
   under any `*.hangarlab.cloud/` prefix. Those are reserved for the system: a user
   setting one is rejected, and system-set ones survive a user's apply.
+  Hangar's own clients write their keys under `hangar/`, such as
+  `hangar/intended-use` (`container-volumes.md`): the user's, as any
+  other key, and set on the user's behalf.
 - **Finalizers and owner references** belong to the system; their values in an
   apply are ignored. The system sets them on create: everything in a project
   is owned by the project, a project by its tenant, and a role binding by the
