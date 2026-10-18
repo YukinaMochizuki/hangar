@@ -176,7 +176,10 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 			authorized connect.Code
 		}{
 			{projectScope("web"), capply, func() error {
-				_, err := c.containers.ApplyContainer(ctx, applyContainer(container("web", fmt.Sprintf("probe-%d", i), "nginx")))
+				// Of the probe size, which admission holds a tenant's machine to.
+				ct := container("web", fmt.Sprintf("probe-%d", i), "nginx")
+				ct.Spec.Resources = &computev1alpha1.Resources{Cpu: "1", Memory: "1Gi", Disk: "5Gi"}
+				_, err := c.containers.ApplyContainer(ctx, applyContainer(ct))
 				return err
 			}, 0},
 			{projectScope("web"), rbapply, func() error {

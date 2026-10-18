@@ -58,8 +58,9 @@ attached to, and every later machine with it goes there. A disk is blank or
 a copy of a global `Image`, a distribution's disk image that platform
 administrators add to the catalogue by URL and sha256. A global
 `MachineSize`, also the administrators' and read by all, is a template of
-cpu, memory and disk that clients fill a new machine's from; a machine does
-not record its size (`decisions/machine-sizes.md`). A `PublicEndpoint`
+cpu, memory and disk that clients fill a new machine's from, and that
+admission holds tenants' machines to; a machine does not record its size
+(`decisions/machine-sizes.md`). A `PublicEndpoint`
 exposes one port of a container or VM over HTTPS at
 `<endpoint>-<project>.hangarlab.dev`, private to those its tenant allows
 unless made public; a container's port marked `public` gets one. A

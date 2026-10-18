@@ -111,7 +111,7 @@ func vmSizes(r *computev1alpha1.VirtualMachineResources) (sizes, error) {
 	return s, nil
 }
 
-func validateVirtualMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
+func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, old, obj proto.Message) error {
 	vm := obj.(*computev1alpha1.VirtualMachine)
 	spec := vm.GetSpec()
 	sz, err := vmSizes(spec.GetResources())
@@ -168,7 +168,16 @@ func validateVirtualMachine(ctx context.Context, s *Server, _ auth.Principal, ol
 	if n := vendorDataSize(vm, s.cfg.SSHCA.PublicKey()); n > maxVendorData {
 		return invalid("spec.ssh_authorized_keys: %d bytes once quoted as the guest's vendor-data, at most %d", n, maxVendorData)
 	}
-	return nil
+	// Its resources and root disk parse: they were checked above.
+	cur, _ := vmShape(vm)
+	var was *machineShape
+	if o, ok := old.(*computev1alpha1.VirtualMachine); ok {
+		if shape, ok := vmShape(o); ok {
+			was = &shape
+		}
+	}
+	return s.checkMachineSize(ctx, p, was, cur,
+		"spec.root_disk.from_image.size "+cmp.Or(spec.GetRootDisk().GetFromImage().GetSize(), defaultVMRootSize))
 }
 
 // validateRootDisk checks a VM's root disk: one it names, or one made from
