@@ -11,7 +11,7 @@ import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/publi
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
-import { TerminalCard, useMayExec } from "@/pages/machine-terminal";
+import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
 import { useEffect, useState } from "react";
 import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
@@ -73,7 +73,11 @@ function Header({ m, terminal }: { m: MachineView; terminal: boolean }) {
         </div>
         <span className="flex items-center gap-2">
           {terminal && (
-            <Link to="/projects/$project/containers/$name/terminal" params={{ project: m.project, name: m.name }} className={buttonVariants({ size: "sm" })}>
+            <Link
+              to={m.kind === "Container" ? "/projects/$project/containers/$name/terminal" : "/projects/$project/vms/$name/terminal"}
+              params={{ project: m.project, name: m.name }}
+              className={buttonVariants({ size: "sm" })}
+            >
               <TerminalSquare /> Terminal
             </Link>
           )}
@@ -515,7 +519,7 @@ function Equivalent({ m }: { m: MachineView }) {
 export function MachineDetail({ kind, name }: { kind: MachineKind; name: string }) {
   const project = useProjectName();
   const { held, loading, error, refetch } = useMachines(project, kind);
-  const mayExec = useMayExec(project);
+  const mayTerminal = useMayTerminal(project);
   // Asking again failing keeps the page on its last answer, so a terminal open on it is not ended.
   const m = held.find((x) => x.name === name);
   const list = kind === "Container" ? "Containers" : "Virtual machines";
@@ -559,7 +563,7 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
     );
   }
   const ready = readyOf(m);
-  const terminal = m.kind === "Container" && mayExec;
+  const terminal = mayTerminal[m.kind];
   return (
     <>
       <Topbar crumbs={crumbs} />

@@ -102,7 +102,15 @@ const containerTerminalRoute = createRoute({
   path: "/containers/$name/terminal",
   component: function ContainerTerminal() {
     const { name } = containerTerminalRoute.useParams();
-    return <TerminalPage name={name} />;
+    return <TerminalPage key={name} kind="Container" name={name} />;
+  },
+});
+const vmTerminalRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/vms/$name/terminal",
+  component: function VMTerminal() {
+    const { name } = vmTerminalRoute.useParams();
+    return <TerminalPage key={name} kind="VirtualMachine" name={name} />;
   },
 });
 const vmsRoute = createRoute({
@@ -343,6 +351,7 @@ export const routeTree = rootRoute.addChildren([
     containersRoute,
     containerRoute,
     containerTerminalRoute,
+    vmTerminalRoute,
     vmsRoute,
     vmRoute,
     newRoute,

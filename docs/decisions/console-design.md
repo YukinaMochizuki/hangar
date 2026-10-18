@@ -280,7 +280,14 @@ for a platform administrator; at today's size that is a handful of calls.
   the page ends the process, also when the browser keeps the page in its
   back/forward cache. A failed poll of the machine lists keeps the page,
   and a terminal open on it, on the last answer under a banner.
-  Virtual machines have none yet.
+  A virtual machine has the same card and page
+  (`/projects/<project>/vms/<name>/terminal`), on the same exec WebSocket
+  with no command: the apiserver logs in over SSH as the image's default
+  user and opens its login shell (`vm-ssh.md`). It is shown when
+  TestPermissions holds `compute.machines.ssh`, not exec's, as logging in
+  to a VM is, and the page says that it logs in as the image's default
+  user and that SSH answers a few seconds after the VM's first boot ends.
+  Its CLI line is `hangar ssh`.
 - **The Runs on panel says where the machine stands** on its way to a
   host, in its header where the host's name goes once it is placed
   (`web/src/components/runs-on-panel.tsx`, the state from
