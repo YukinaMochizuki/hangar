@@ -7,11 +7,13 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { CommandLine, DetailSkeleton, FormLabel, inputClass, ListHead, StaleBanner } from "@/components/credentials";
+import { CommandLine, FormLabel, inputClass, StaleBanner } from "@/components/credentials";
 import { Dialog } from "@/components/dialog";
 import { Notice, PageBanner } from "@/components/notice";
+import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
+import { tbodyRow, Th, theadRow } from "@/components/table";
 import { ConditionsCard, EquivalentCard } from "@/components/storage";
 import { Badge, Button, Card, CardHeader, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
@@ -32,7 +34,6 @@ import {
 } from "@/lib/credentials";
 import { useCan } from "@/lib/permissions";
 import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
-import { LoadingTable } from "@/pages/disk-list";
 
 function SecretState({ s }: { s: Secret }) {
   const fault = secretFault(s);
@@ -279,82 +280,76 @@ export function SecretList(props: NewProps) {
     <>
       <Topbar crumbs={["Secrets"]} />
       {loaded && error ? <StaleBanner what="secrets" error={error} onRetry={refetch} /> : null}
-      <ListHead title="Secrets" text="Registry logins the platform pulls this project's images with. Their values are write-only." action={canCreate && newButton} />
+      <PageHead
+        title="Secrets"
+        description="Registry logins the platform pulls this project's images with. Their values are write-only."
+        action={canCreate && newButton}
+      />
       <div className="px-4 pb-10 md:px-8">
-        {loading ? (
-          <LoadingTable />
-        ) : error && !loaded ? (
-          <Card>
-            <ErrorNotice error={error} title="The secrets did not load" onRetry={refetch} />
+        <ListFrame
+          state={{ loading, error: loaded ? undefined : error, refetch, count: items.length }}
+          noun="secrets"
+          empty={{ title: "No secrets", text: "A container names a secret to pull a private image with it.", action: canCreate ? newButton : undefined }}
+        >
+          <Card className="md:hidden">
+            <ul className="divide-y">
+              {items.map((s) => {
+                const name = s.metadata?.name ?? "";
+                return (
+                  <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                    <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{name}</span>
+                      <span className="block truncate font-mono text-[11.5px] text-subtle">{(s.status?.registries ?? []).join(", ")}</span>
+                    </Link>
+                    <span className="shrink-0 text-right">
+                      <SecretState s={s} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </Card>
-        ) : items.length === 0 ? (
-          <Card>
-            <EmptyState title="No secrets" action={canCreate ? newButton : undefined}>
-              A container names a secret to pull a private image with it.
-            </EmptyState>
-          </Card>
-        ) : (
-          <>
-            <Card className="md:hidden">
-              <ul className="divide-y">
+          <Card className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[820px] text-[13px]">
+              <thead>
+                <tr className={theadRow}>
+                  <Th className="w-[24%]">Name</Th>
+                  <Th>State</Th>
+                  <Th>Registries</Th>
+                  <Th>Keys</Th>
+                  <Th>Used by</Th>
+                  <Th>Created</Th>
+                </tr>
+              </thead>
+              <tbody>
                 {items.map((s) => {
                   const name = s.metadata?.name ?? "";
                   return (
-                    <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-                      <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{name}</span>
-                        <span className="block truncate font-mono text-[11.5px] text-subtle">{(s.status?.registries ?? []).join(", ")}</span>
-                      </Link>
-                      <span className="shrink-0 text-right">
+                    <tr key={name} className={tbodyRow}>
+                      <td className="max-w-0 px-4 py-2.5">
+                        <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="block">
+                          <span className="block truncate font-medium group-hover:text-accent">{name}</span>
+                        </Link>
+                        <span className="block truncate text-[11.5px] text-subtle">{secretTypeLabel(s)}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
                         <SecretState s={s} />
-                      </span>
-                    </li>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Registries s={s} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{(s.status?.keys ?? []).join(", ")}</td>
+                      <td className="px-4 py-2.5">
+                        <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
+                    </tr>
                   );
                 })}
-              </ul>
-            </Card>
-            <Card className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[820px] text-[13px]">
-                <thead>
-                  <tr className="border-b bg-surface-2/60 text-left text-[11.5px] text-subtle">
-                    <th className="w-[24%] px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">State</th>
-                    <th className="px-4 py-2 font-medium">Registries</th>
-                    <th className="px-4 py-2 font-medium">Keys</th>
-                    <th className="px-4 py-2 font-medium">Used by</th>
-                    <th className="px-4 py-2 font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((s) => {
-                    const name = s.metadata?.name ?? "";
-                    return (
-                      <tr key={name} className="group border-b last:border-0 hover:bg-surface-2/60">
-                        <td className="max-w-0 px-4 py-2.5">
-                          <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="block">
-                            <span className="block truncate font-medium group-hover:text-accent">{name}</span>
-                          </Link>
-                          <span className="block truncate text-[11.5px] text-subtle">{secretTypeLabel(s)}</span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <SecretState s={s} />
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <Registries s={s} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{(s.status?.keys ?? []).join(", ")}</td>
-                        <td className="px-4 py-2.5">
-                          <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Card>
-          </>
-        )}
+              </tbody>
+            </table>
+          </Card>
+        </ListFrame>
       </div>
       {(canCreate || creating) && (
         <NewSecretDialog

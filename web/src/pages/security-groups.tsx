@@ -20,27 +20,19 @@ import { Dialog } from "@/components/dialog";
 import {
   ConditionsCard,
   DeleteDialog,
-  DetailBody,
-  DetailFrame,
-  DetailHead,
   Equivalent,
   FormEquivalent,
   FormField,
   FormFooter,
   inputClass,
-  StaleNotice,
   Labels,
-  ListFrame,
   MachinesNotice,
   MemberCount,
-  NameFilter,
-  NoMatch,
-  PageHead,
-  tbodyRow,
-  Th,
-  theadRow,
+  StaleNotice,
   usageBlock,
 } from "@/components/resource";
+import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
 import { cn } from "@/lib/cn";

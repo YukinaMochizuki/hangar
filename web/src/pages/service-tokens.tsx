@@ -12,11 +12,13 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { ServiceToken } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { CommandLine, DetailSkeleton, FormLabel, inputClass, ListHead, StaleBanner } from "@/components/credentials";
+import { CommandLine, FormLabel, inputClass, StaleBanner } from "@/components/credentials";
 import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
+import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
+import { tbodyRow, Th, theadRow } from "@/components/table";
 import { EquivalentCard } from "@/components/storage";
 import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
@@ -38,7 +40,6 @@ import {
 import { roleLabel, roles } from "@/lib/members";
 import { useCan } from "@/lib/permissions";
 import { useCreating, type NewProps } from "@/lib/new-param";
-import { LoadingTable } from "@/pages/disk-list";
 
 function TokenState({ t }: { t: ServiceToken }) {
   const s = tokenState(t);
@@ -324,93 +325,87 @@ export function ServiceTokenList(props: NewProps) {
     <>
       <Topbar crumbs={["Service tokens"]} />
       {loaded && error ? <StaleBanner what="service tokens" error={error} onRetry={refetch} /> : null}
-      <ListHead
+      <PageHead
         title="Service tokens"
-        text="Credentials agents use. A token holds the roles bound to it here; its secret is shown once, when issued."
+        description="Credentials agents use. A token holds the roles bound to it here; its secret is shown once, when issued."
         action={canCreate && newButton}
       />
       <div className="px-4 pb-10 md:px-8">
-        {loading ? (
-          <LoadingTable />
-        ) : error && !loaded ? (
-          <Card>
-            <ErrorNotice error={error} title="The service tokens did not load" onRetry={refetch} />
+        <ListFrame
+          state={{ loading, error: loaded ? undefined : error, refetch, count: items.length }}
+          noun="service tokens"
+          empty={{
+            title: "No service tokens",
+            text: "An agent authenticates with a token's secret, and holds what its roles grant.",
+            action: canCreate ? newButton : undefined,
+          }}
+        >
+          <Card className="md:hidden">
+            <ul className="divide-y">
+              {items.map((t) => {
+                const name = t.metadata?.name ?? "";
+                return (
+                  <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                    <Link to="/projects/$project/service-tokens/$name" params={{ project, name }} className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{name}</span>
+                      <span className="block truncate text-[11.5px] text-subtle">
+                        {held.loading || held.error ? "" : (held.roles[name] ?? []).map(roleLabel).join(", ") || "No role"}
+                        {t.status?.expireTime ? `${held.loading || held.error ? "" : " · "}expires ${day(t.status.expireTime)}` : ""}
+                      </span>
+                    </Link>
+                    <span className="shrink-0 text-right">
+                      <TokenState t={t} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </Card>
-        ) : items.length === 0 ? (
-          <Card>
-            <EmptyState title="No service tokens" action={canCreate ? newButton : undefined}>
-              An agent authenticates with a token's secret, and holds what its roles grant.
-            </EmptyState>
-          </Card>
-        ) : (
-          <>
-            <Card className="md:hidden">
-              <ul className="divide-y">
+          <Card className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[860px] text-[13px]">
+              <thead>
+                <tr className={theadRow}>
+                  <Th className="w-[26%]">Name</Th>
+                  <Th>State</Th>
+                  <Th>Role</Th>
+                  <Th>Secret</Th>
+                  <Th>Expires</Th>
+                  <Th>Last used</Th>
+                </tr>
+              </thead>
+              <tbody>
                 {items.map((t) => {
                   const name = t.metadata?.name ?? "";
                   return (
-                    <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-                      <Link to="/projects/$project/service-tokens/$name" params={{ project, name }} className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{name}</span>
-                        <span className="block truncate text-[11.5px] text-subtle">
-                          {held.loading || held.error ? "" : (held.roles[name] ?? []).map(roleLabel).join(", ") || "No role"}
-                          {t.status?.expireTime ? `${held.loading || held.error ? "" : " · "}expires ${day(t.status.expireTime)}` : ""}
-                        </span>
-                      </Link>
-                      <span className="shrink-0 text-right">
+                    <tr key={name} className={tbodyRow}>
+                      <td className="max-w-0 px-4 py-2.5">
+                        <Link to="/projects/$project/service-tokens/$name" params={{ project, name }} className="block">
+                          <span className="block truncate font-medium group-hover:text-accent">{name}</span>
+                        </Link>
+                        <span className="block truncate text-[11.5px] text-subtle">{t.spec?.description || "No description"}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
                         <TokenState t={t} />
-                      </span>
-                    </li>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Roles held={held} name={name} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
+                        <Prefix t={t} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
+                        <Expires t={t} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
+                        <LastUsed t={t} />
+                      </td>
+                    </tr>
                   );
                 })}
-              </ul>
-            </Card>
-            <Card className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[860px] text-[13px]">
-                <thead>
-                  <tr className="border-b bg-surface-2/60 text-left text-[11.5px] text-subtle">
-                    <th className="w-[26%] px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">State</th>
-                    <th className="px-4 py-2 font-medium">Role</th>
-                    <th className="px-4 py-2 font-medium">Secret</th>
-                    <th className="px-4 py-2 font-medium">Expires</th>
-                    <th className="px-4 py-2 font-medium">Last used</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((t) => {
-                    const name = t.metadata?.name ?? "";
-                    return (
-                      <tr key={name} className="group border-b last:border-0 hover:bg-surface-2/60">
-                        <td className="max-w-0 px-4 py-2.5">
-                          <Link to="/projects/$project/service-tokens/$name" params={{ project, name }} className="block">
-                            <span className="block truncate font-medium group-hover:text-accent">{name}</span>
-                          </Link>
-                          <span className="block truncate text-[11.5px] text-subtle">{t.spec?.description || "No description"}</span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <TokenState t={t} />
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <Roles held={held} name={name} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <Prefix t={t} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <Expires t={t} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <LastUsed t={t} />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Card>
-          </>
-        )}
+              </tbody>
+            </table>
+          </Card>
+        </ListFrame>
       </div>
       {/* Kept while open, so an answer that changes in between never drops a secret it shows. */}
       {(canCreate || creating) && (

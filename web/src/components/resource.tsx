@@ -1,17 +1,16 @@
-// Pieces the network pages share: a list page's head and name filter, the
-// frames that hold a list's or an object's loading, failed and empty
-// states, an object's conditions, its equivalent CLI and YAML, and delete
-// by typed name.
+// Pieces the network pages share: what the project's machines say about
+// interfaces, an object's conditions, its equivalent CLI and YAML, and
+// delete by typed name.
 
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import { ChevronRight, Search, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronRight, Trash2 } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
-import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { Button, Card, CopyButton, Kbd, Led } from "@/components/ui";
+import { useProjectName } from "@/components/shell";
+import { ErrorNotice, Skeleton } from "@/components/states";
+import { Button, Card, CopyButton, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago, date } from "@/lib/machines";
@@ -52,196 +51,6 @@ export function usageBlock(state: MachinesState, inUse: string | undefined): str
   if (state.loading) return "The project's machines are still loading.";
   if (state.error) return "The project's machines did not load, so whether any uses it is not known.";
   return inUse;
-}
-
-/** A list page's title, what the kind is, and its create button. */
-export function PageHead({ title, description, action }: { title: string; description: ReactNode; action?: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-4 px-4 pb-4 pt-6 md:px-8">
-      <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-/** The name filter; "/" puts the cursor in it. */
-export function NameFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const ref = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const t = e.target as HTMLElement;
-      if (e.key === "/" && !["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName)) {
-        e.preventDefault();
-        ref.current?.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
-  return (
-    <label className="mb-3 flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-[13px] focus-within:border-border-strong sm:w-64">
-      <Search className="size-3.5 text-subtle" />
-      <input
-        ref={ref}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="Name"
-        aria-label="Filter by name"
-        className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-subtle"
-      />
-      <Kbd>/</Kbd>
-    </label>
-  );
-}
-
-/** A list's body: loading, failed, empty, or the list itself. */
-export function ListFrame({
-  state,
-  noun,
-  empty,
-  children,
-}: {
-  state: { loading: boolean; error: unknown; refetch: () => void; count: number };
-  noun: string;
-  empty: { title: string; text: ReactNode; action?: ReactNode };
-  children: ReactNode;
-}) {
-  if (state.loading) {
-    return (
-      <Card aria-busy="true" aria-label="Loading" className="divide-y">
-        {Array.from({ length: 3 }, (_, i) => (
-          <div key={i} className="flex items-center gap-6 px-4 py-3.5">
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-3 w-24" />
-            <Skeleton className="hidden h-3 w-32 md:block" />
-            <Skeleton className="hidden h-3 w-16 md:block" />
-          </div>
-        ))}
-      </Card>
-    );
-  }
-  if (state.error) {
-    return (
-      <Card>
-        <ErrorNotice error={state.error} title={`The ${noun} did not load`} onRetry={state.refetch} />
-      </Card>
-    );
-  }
-  if (state.count === 0) {
-    return (
-      <Card>
-        <EmptyState title={empty.title} action={empty.action}>
-          {empty.text}
-        </EmptyState>
-      </Card>
-    );
-  }
-  return <>{children}</>;
-}
-
-/** A table header cell. */
-export function Th({ children, className }: { children?: ReactNode; className?: string }) {
-  return <th className={cn("px-4 py-2 font-medium", className)}>{children}</th>;
-}
-
-export const theadRow = "border-b bg-surface-2/60 text-left text-[11.5px] text-subtle";
-export const tbodyRow = "group border-b last:border-0 hover:bg-surface-2/60";
-
-/** The row a filter leaves when nothing matches. */
-export function NoMatch({ noun, colSpan }: { noun: string; colSpan?: number }) {
-  return colSpan ? (
-    <tr>
-      <td colSpan={colSpan} className="px-4 py-10 text-center text-muted">
-        No {noun} matches.
-      </td>
-    </tr>
-  ) : (
-    <li className="px-4 py-8 text-center text-[13px] text-muted">No {noun} matches.</li>
-  );
-}
-
-/** An object's page: loading, failed, not found, or the page. */
-export function DetailFrame({
-  crumbs,
-  state,
-  found,
-  noun,
-  name,
-  children,
-}: {
-  crumbs: ReactNode[];
-  state: { loading: boolean; error: unknown; refetch: () => void };
-  found: boolean;
-  noun: string;
-  name: string;
-  children: ReactNode;
-}) {
-  return (
-    <>
-      <Topbar crumbs={crumbs} />
-      {state.loading ? (
-        <div aria-busy="true" aria-label="Loading">
-          <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-            <Skeleton className="h-7 w-48" />
-            <Skeleton className="h-3 w-72" />
-          </div>
-          <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <Card>
-              <SkeletonRows rows={5} />
-            </Card>
-            <Card>
-              <SkeletonRows rows={3} />
-            </Card>
-          </div>
-        </div>
-      ) : state.error ? (
-        <div className="px-4 py-6 md:px-8">
-          <Card>
-            <ErrorNotice error={state.error} title={`The ${noun} did not load`} onRetry={state.refetch} />
-          </Card>
-        </div>
-      ) : !found ? (
-        <EmptyState title={`No such ${noun}`}>
-          This project has no {noun} named <span className="font-mono">{name}</span>.
-        </EmptyState>
-      ) : (
-        children
-      )}
-    </>
-  );
-}
-
-/** An object page's head: its name, kind, a line of facts, and its actions. */
-export function DetailHead({ name, kind, facts, actions }: { name: string; kind: string; facts: ReactNode; actions?: ReactNode }) {
-  return (
-    <div className="border-b px-4 pb-5 pt-6 md:px-8">
-      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2.5">
-            <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
-            <span className="inline-flex h-5 shrink-0 items-center rounded border border-border-strong px-1.5 text-[11px] font-medium text-muted">
-              {kind}
-            </span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">{facts}</div>
-        </div>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
-    </div>
-  );
-}
-
-/** The two columns of an object's page. */
-export function DetailBody({ main, side }: { main: ReactNode; side: ReactNode }) {
-  return (
-    <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-      <div className="min-w-0 space-y-5">{main}</div>
-      <div className="min-w-0 space-y-5">{side}</div>
-    </div>
-  );
 }
 
 export function Labels({ labels }: { labels: Record<string, string> }) {

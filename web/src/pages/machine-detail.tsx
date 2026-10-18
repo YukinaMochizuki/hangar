@@ -15,8 +15,9 @@ import { MachineActions } from "@/components/machine-actions";
 import { PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
 import { createdKey, useJustCreated } from "@/lib/just-created";
+import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
+import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
 import { Badge, Card, CardHeader, CopyButton, Field, Led, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
@@ -566,30 +567,6 @@ function Equivalent({ m }: { m: MachineView }) {
           : yaml}
       </pre>
     </Card>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-80" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-5">
-          <Card>
-            <SkeletonRows rows={2} />
-          </Card>
-          <Card>
-            <SkeletonRows rows={5} />
-          </Card>
-        </div>
-        <Card>
-          <SkeletonRows rows={4} />
-        </Card>
-      </div>
-    </div>
   );
 }
 

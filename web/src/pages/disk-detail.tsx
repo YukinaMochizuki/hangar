@@ -6,8 +6,9 @@ import type { Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { HardDrive, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { PageBanner } from "@/components/notice";
+import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
+import { EmptyState, ErrorNotice } from "@/components/states";
 import {
   ConditionsCard,
   DeleteDiskDialog,
@@ -131,25 +132,6 @@ function Summary({ d }: { d: Disk }) {
         </Field>
       </dl>
     </Card>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-64" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card>
-          <SkeletonRows rows={5} />
-        </Card>
-        <Card>
-          <SkeletonRows rows={3} />
-        </Card>
-      </div>
-    </div>
   );
 }
 

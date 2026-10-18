@@ -14,26 +14,9 @@ import {
 import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import {
-  ConditionsCard,
-  DeleteDialog,
-  DetailBody,
-  DetailFrame,
-  DetailHead,
-  Equivalent,
-  FormEquivalent,
-  FormField,
-  FormFooter,
-  inputClass,
-  Labels,
-  ListFrame,
-  NameFilter,
-  NoMatch,
-  PageHead,
-  tbodyRow,
-  Th,
-  theadRow,
-} from "@/components/resource";
+import { ConditionsCard, DeleteDialog, Equivalent, FormEquivalent, FormField, FormFooter, inputClass, Labels } from "@/components/resource";
+import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";

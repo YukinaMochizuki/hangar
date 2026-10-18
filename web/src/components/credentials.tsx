@@ -1,10 +1,10 @@
-// Pieces the Secrets and Service tokens pages share: the command line beside
-// an action, form labels, the page head and the detail page's skeleton.
+// Pieces the Secrets and Service tokens pages share: the banner over a list
+// that did not load again, the command line beside an action, and form
+// labels.
 
 import type { ReactNode } from "react";
 import { PageBanner } from "@/components/notice";
-import { Skeleton, SkeletonRows } from "@/components/states";
-import { Button, Card, CopyButton } from "@/components/ui";
+import { Button, CopyButton } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 
 /**
@@ -49,37 +49,6 @@ export function FormLabel({ title, children, hint }: { title: ReactNode; childre
         {children}
       </label>
       {hint && <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>}
-    </div>
-  );
-}
-
-export function ListHead({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-end justify-between gap-4 px-4 pb-4 pt-6 md:px-8">
-      <div>
-        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 text-[13px] text-muted">{text}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-export function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-64" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card>
-          <SkeletonRows rows={5} />
-        </Card>
-        <Card>
-          <SkeletonRows rows={3} />
-        </Card>
-      </div>
     </div>
   );
 }
