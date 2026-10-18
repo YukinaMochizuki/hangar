@@ -6,11 +6,10 @@ import { Link } from "@tanstack/react-router";
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
-import type { Limits, Usage } from "@hangar/api/hangar/tenancy/v1alpha1/plan_pb";
 import { ArrowRight, Plus } from "lucide-react";
 import { ChassisArt } from "@/components/chassis-art";
-import { Meter } from "@/components/meter";
 import { PageBanner } from "@/components/notice";
+import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { buttonVariants, Card, CardHeader, CopyButton, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
@@ -18,52 +17,7 @@ import { isNotFound, isPermissionDenied } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago, date, isLive, machinePath, sizeOf, useMachines, type MachineView } from "@/lib/machines";
 import { hostFor } from "@/lib/placement";
-import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
-
-type Tile = { key: string; label: string; used: number; limit?: number; unit?: string };
-
-function computeTiles(limits: Limits | undefined, usage: Usage | undefined): Tile[] {
-  const opt = (n: number) => (Number.isFinite(n) ? n : undefined);
-  return [
-    { key: "machines", label: "Machines", used: usage?.machines ?? 0, limit: limits?.machines },
-    { key: "cpu", label: "vCPU", used: quantityCPU(usage?.cpu || "0"), limit: opt(quantityCPU(limits?.cpu)) },
-    { key: "memory", label: "Memory", used: quantityGiB(usage?.memory || "0"), limit: opt(quantityGiB(limits?.memory)), unit: "GiB" },
-    { key: "disk", label: "Disk", used: quantityGiB(usage?.disk || "0"), limit: opt(quantityGiB(limits?.disk)), unit: "GiB" },
-  ];
-}
-
-function otherTiles(limits: Limits | undefined, usage: Usage | undefined): Tile[] {
-  return [
-    { key: "networks", label: "Networks", used: usage?.networks ?? 0, limit: limits?.networks },
-    { key: "addresses", label: "Addresses", used: usage?.addresses ?? 0, limit: limits?.addresses },
-    { key: "publicEndpoints", label: "Public endpoints", used: usage?.publicEndpoints ?? 0, limit: limits?.publicEndpoints },
-    { key: "serviceTokens", label: "Service tokens", used: usage?.serviceTokens ?? 0, limit: limits?.serviceTokens },
-  ];
-}
-
-function QuotaTiles({ tiles, loading }: { tiles: Tile[]; loading: boolean }) {
-  return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      {tiles.map((q) => (
-        <Card key={q.key} className="px-4 py-3.5">
-          <div className="text-[12px] text-muted">{q.label}</div>
-          {loading ? (
-            <Skeleton className="mt-2 h-6 w-20" />
-          ) : (
-            <div className="mt-1 flex items-baseline gap-1.5">
-              <span className="font-mono text-[22px] font-medium tabular tracking-tight">{formatNumber(q.used)}</span>
-              <span className="font-mono text-[13px] text-subtle tabular">
-                {q.limit === undefined ? "no limit" : `/ ${formatNumber(q.limit)}`}
-                {q.limit !== undefined && q.unit && ` ${q.unit}`}
-              </span>
-            </div>
-          )}
-          <Meter used={q.used} limit={q.limit ?? 0} className="mt-3" />
-        </Card>
-      ))}
-    </div>
-  );
-}
+import { formatNumber } from "@/lib/quantity";
 
 function MachineRow({ m, project }: { m: MachineView; project: string }) {
   const size = sizeOf(m);
@@ -239,30 +193,6 @@ function RecentChanges({ project }: { project: string }) {
   );
 }
 
-function OtherLimits({ tiles, loading }: { tiles: Tile[]; loading: boolean }) {
-  return (
-    <Card>
-      <CardHeader title="Other limits" />
-      <ul className="space-y-3 px-4 py-3.5">
-        {tiles.map((q) => (
-          <li key={q.key} className="text-[13px]">
-            <div className="flex justify-between">
-              <span className="text-muted">{q.label}</span>
-              {loading ? (
-                <Skeleton className="h-3 w-10" />
-              ) : (
-                <span className="font-mono text-[12px] tabular">
-                  {q.used} / {q.limit ?? "no limit"}
-                </span>
-              )}
-            </div>
-            <Meter used={q.used} limit={q.limit ?? 0} className="mt-1.5" />
-          </li>
-        ))}
-      </ul>
-    </Card>
-  );
-}
 
 function FromTheCli({ project }: { project: string }) {
   const lines = [`hangar login`, `hangar get containers -p ${project}`];

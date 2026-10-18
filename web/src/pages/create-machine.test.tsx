@@ -15,6 +15,7 @@ import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateMachine } from "@/pages/create-machine";
 import { deferred, fakeApi, withApi } from "@/test/harness";
@@ -23,6 +24,8 @@ const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,
+  // The top bar's crumbs are links; the page is rendered without a router.
+  Link: ({ children, className }: { children: ReactNode; className?: string }) => <a className={className}>{children}</a>,
 }));
 
 const container = (name: string) => create(ContainerSchema, { metadata: { name, project: "demo" }, spec: { image: "nginx:1" } });
