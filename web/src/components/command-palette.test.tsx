@@ -237,26 +237,25 @@ describe("CommandPalette", () => {
     expect(option("ci-deploy").textContent).toContain("Editor");
   });
 
-  it("starts the create flows: a machine's page, or the list page with ?new=1", async () => {
+  it("starts the create flows: a create page, or the list page with ?new=1 for a dialog", async () => {
     setup();
     fireEvent.click(await findOption("New container"));
     expect(navigate).toHaveBeenLastCalledWith({ to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "container" } });
-    for (const [title, to] of [
-      ["New virtual machine", null],
-      ["New disk", "/projects/demo/disks"],
-      ["New network", "/projects/demo/networks"],
-      ["New security group", "/projects/demo/security-groups"],
-      ["Reserve address", "/projects/demo/addresses"],
-      ["New public endpoint", "/projects/demo/public-endpoints"],
-      ["New secret", "/projects/demo/secrets"],
-      ["New service token", "/projects/demo/service-tokens"],
-      ["Add member", "/projects/demo/members"],
+    const dialog = (to: string) => ({ to, search: { new: 1 } });
+    for (const [title, call] of [
+      ["New virtual machine", { to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "vm" } }],
+      ["New disk", { to: "/projects/demo/new/disk" }],
+      ["New network", { to: "/projects/demo/new/network" }],
+      ["New security group", dialog("/projects/demo/security-groups")],
+      ["Reserve address", { to: "/projects/demo/new/address" }],
+      ["New public endpoint", { to: "/projects/demo/new/public-endpoint" }],
+      ["New secret", { to: "/projects/demo/new/secret" }],
+      ["New service token", { to: "/projects/demo/new/service-token" }],
+      ["Add member", dialog("/projects/demo/members")],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name: "Open palette" }));
       fireEvent.click(await findOption(title));
-      expect(navigate).toHaveBeenLastCalledWith(
-        to ? { to, search: { new: 1 } } : { to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "vm" } },
-      );
+      expect(navigate).toHaveBeenLastCalledWith(call);
     }
   });
 

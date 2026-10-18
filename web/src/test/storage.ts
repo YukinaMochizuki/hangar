@@ -100,7 +100,7 @@ export type Fake = {
   get?: (name: string) => Disk | undefined;
   /** What TestPermissions answers the caller holds; unset, every permission asked. */
   perms?: () => Promise<string[]>;
-  apply?: (req: ApplyDiskRequest) => { disk?: Disk; created: boolean };
+  apply?: (req: ApplyDiskRequest) => { disk?: Disk; created: boolean } | Promise<{ disk?: Disk; created: boolean }>;
   del?: (req: DeleteDiskRequest) => void;
 };
 

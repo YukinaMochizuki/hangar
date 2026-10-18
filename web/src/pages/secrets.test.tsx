@@ -7,6 +7,7 @@ import { SecretSpecSchema, SecretType, type ApplySecretRequest, type DeleteSecre
 import { cleanup, fireEvent, render, renderHook, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { errNoValues, useSecrets } from "@/lib/credentials";
+import { CreateSecret } from "@/pages/create-secret";
 import { SecretDetail, SecretList } from "@/pages/secrets";
 import { cacheText, container, credentialsApi, secret } from "@/test/credentials";
 import { never, polyfillDialog, withApi } from "@/test/harness";
@@ -27,10 +28,11 @@ const password = "EXAMPLE-password-0f9e";
 const configValue = "EXAMPLE-config-auth-7c1d";
 
 const dialog = () => screen.getByRole("dialog");
-const form = () => within(dialog()).getByLabelText("Name").closest("form")!;
-/** The open dialog's command line, as shown. */
-const cli = () => within(dialog()).getByText(/^hangar /).closest("code")!.textContent;
-const type = (label: string | RegExp, value: string) => fireEvent.change(within(dialog()).getByLabelText(label), { target: { value } });
+const form = () => screen.getByLabelText("Secret name").closest("form")!;
+const submit = () => screen.getByRole("button", { name: /Create secret|Loading names/ }) as HTMLButtonElement;
+/** The page's command line, as shown. */
+const cli = () => screen.getByText(/^hangar /).closest("div")!.textContent;
+const type = (label: string | RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
 /** A secret answered with values, as no API should answer: the page must still show none of them. */
 function leakySecret(name: string): Secret {
@@ -61,10 +63,10 @@ describe("SecretList", () => {
     expect(a.calls.filter((c) => c === "ListSecrets").length).toBe(2);
   });
 
-  it("says the project has no secrets, offering New secret to whoever may create one", async () => {
+  it("says the project has no secrets, linking New secret to its page for whoever may create one", async () => {
     render(<SecretList />, { wrapper: withApi(credentialsApi({})) });
     await screen.findByText("No secrets");
-    await waitFor(() => expect(screen.getAllByRole("button", { name: /New secret/ }).length).toBe(2));
+    await waitFor(() => expect(screen.getAllByRole("link", { name: /New secret/ }).map((l) => l.getAttribute("href"))).toEqual(["/projects/demo/new/secret", "/projects/demo/new/secret"]));
   });
 
   it("shows registries, keys and the containers naming each secret", async () => {
@@ -119,43 +121,44 @@ describe("SecretList", () => {
     const a = credentialsApi({ perms: () => answer() });
     render(<SecretList />, { wrapper: withApi(a) });
     await screen.findByText("No secrets");
-    expect(screen.queryByRole("button", { name: /New secret/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /New secret/ })).toBeNull();
     cleanup();
 
     answer = () => Promise.reject(new ConnectError("no", Code.Unavailable));
     render(<SecretList />, { wrapper: withApi(credentialsApi({ perms: () => answer() })) });
     await screen.findByText("No secrets");
-    await waitFor(() => expect(screen.queryByRole("button", { name: /New secret/ })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("link", { name: /New secret/ })).toBeNull());
     cleanup();
 
     const b = credentialsApi({ perms: async () => ["secrets.secrets.delete"] });
     render(<SecretList />, { wrapper: withApi(b) });
     await screen.findByText("No secrets");
     await waitFor(() => expect(b.calls).toContain("TestPermissions"));
-    expect(screen.queryByRole("button", { name: /New secret/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /New secret/ })).toBeNull();
     expect(b.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["secrets.secrets.apply"] });
   });
 });
 
 describe("New secret", () => {
+  /** Renders the New secret page over a list holding "taken", once the form is drawn. */
   async function open(f: Parameters<typeof credentialsApi>[0] = {}) {
     const a = credentialsApi({ secrets: async () => ({ items: [secret("taken")] }), ...f });
-    render(<SecretList />, { wrapper: withApi(a) });
-    await screen.findByRole("table");
-    fireEvent.click(await screen.findByRole("button", { name: /New secret/ }));
-    return a;
+    const view = render(<CreateSecret />, { wrapper: withApi(a) });
+    await screen.findByLabelText("Secret name");
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    return Object.assign(a, { unmount: view.unmount });
   }
 
-  it("creates a registry login with one create-only ApplySecret, then drops the values", async () => {
+  it("creates a registry login with one create-only ApplySecret, then drops the values as it opens the secret", async () => {
     let sent: ApplySecretRequest | undefined;
     const a = await open({ applySecret: (r) => (sent = r) });
-    type("Name", "app-registry");
+    type("Secret name", "app-registry");
     type("Registry", "registry.example.com");
     type("Username", "robot");
     type("Password or access token", password);
     // The command beside it names a file, never a value, and is create-only as the form is.
     expect(cli()).toBe("$ hangar create secret registry app-registry --create-only --from-docker-config FILE -p demo");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create secret/ }));
+    fireEvent.click(submit());
     // The mutation as the query client holds it, to replay once the form is gone.
     const [kept] = a.client.getMutationCache().getAll();
     expect(kept).toBeTruthy();
@@ -164,7 +167,9 @@ describe("New secret", () => {
     // The cache is read in full: it holds the mutation's name while it runs, never its values.
     expect(cacheText(a.client)).toContain("app-registry");
     expect(cacheText(a.client)).not.toContain(password);
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/secrets/$name", params: { project: "demo", name: "app-registry" } }));
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/secrets/$name", params: { project: "demo", name: "app-registry" }, replace: true }),
+    );
 
     expect(a.calls.filter((c) => c === "ApplySecret")).toHaveLength(1);
     expect(sent?.createOnly).toBe(true);
@@ -174,8 +179,8 @@ describe("New secret", () => {
     const data = new TextDecoder().decode(sent?.secret?.spec?.data[".dockerconfigjson"]);
     expect(JSON.parse(data)).toEqual({ auths: { "registry.example.com": { username: "robot", password } } });
 
-    // Closed: the form is gone, and nothing the query client keeps holds the value.
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    // The page is left: the form is gone, and nothing the query client keeps holds the value.
+    a.unmount();
     expect(document.body.innerHTML).not.toContain(password);
     expect(cacheText(a.client)).not.toContain(password);
     // The mutation leaves the cache with its form, and a replay of it sends nothing.
@@ -187,27 +192,26 @@ describe("New secret", () => {
   it("creates from a pasted Docker config, sent as given", async () => {
     let sent: ApplySecretRequest | undefined;
     const a = await open({ applySecret: (r) => (sent = r) });
-    type("Name", "mirror");
-    fireEvent.click(within(dialog()).getByRole("radio", { name: "Docker config" }));
+    type("Secret name", "mirror");
+    fireEvent.click(screen.getByRole("radio", { name: "Docker config" }));
     const config = `{"auths":{"mirror.example.com":{"auth":"${configValue}"}}}`;
     type("Docker config", config);
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create secret/ }));
+    fireEvent.click(submit());
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(new TextDecoder().decode(sent?.secret?.spec?.data[".dockerconfigjson"])).toBe(config);
+    a.unmount();
     expect(document.body.innerHTML).not.toContain(configValue);
     expect(cacheText(a.client)).not.toContain(configValue);
   });
 
-  it("drops what was typed when cancelled", async () => {
+  it("drops what was typed when left, and Cancel goes back to the list", async () => {
     const a = await open();
-    type("Name", "app-registry");
+    expect(screen.getByRole("link", { name: "Cancel" }).getAttribute("href")).toBe("/projects/demo/secrets");
+    type("Secret name", "app-registry");
     type("Registry", "registry.example.com");
     type("Username", "robot");
     type("Password or access token", password);
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    fireEvent.click(screen.getByRole("button", { name: /New secret/ }));
-    expect((within(dialog()).getByLabelText("Password or access token") as HTMLInputElement).value).toBe("");
+    a.unmount();
     expect(document.body.innerHTML).not.toContain(password);
     expect(cacheText(a.client)).not.toContain(password);
     expect(a.calls).not.toContain("ApplySecret");
@@ -215,18 +219,17 @@ describe("New secret", () => {
 
   it("sends nothing for a name the list holds, or before every value is given", async () => {
     const a = await open();
-    type("Name", "taken");
-    expect(within(dialog()).getByText("A secret named taken exists in this project.")).toBeTruthy();
+    type("Secret name", "taken");
+    expect(screen.getByText(/A secret named taken exists in this project\./)).toBeTruthy();
     type("Registry", "registry.example.com");
     type("Username", "robot");
     type("Password or access token", password);
-    expect((within(dialog()).getByRole("button", { name: /Create secret/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     // Submitting the form some other way, such as Enter in a field, sends nothing either.
-    type("Name", "taken");
     fireEvent.submit(form());
-    type("Name", "fresh");
+    type("Secret name", "fresh");
     type("Password or access token", "");
-    expect((within(dialog()).getByRole("button", { name: /Create secret/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(submit().disabled).toBe(true);
     fireEvent.submit(form());
     // A submit the form takes sends at once; the first ApplySecret is that one, so neither before it sent anything.
     type("Password or access token", password);
@@ -239,81 +242,58 @@ describe("New secret", () => {
     let items = [secret("taken")];
     const a = await open({ secrets: async () => ({ items }) });
     items = [secret("taken"), secret("late")];
-    type("Name", "late");
+    type("Secret name", "late");
     type("Registry", "registry.example.com");
     type("Username", "robot");
     type("Password or access token", password);
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create secret/ }));
+    fireEvent.click(submit());
     const [kept] = a.client.getMutationCache().getAll();
     // The refusal itself, in the form's words: not the API's, and not the name check's after the list reloads.
-    const refusal = await within(dialog()).findByRole("alert");
+    const refusal = await screen.findByRole("alert");
     expect(within(refusal).getByText("Creating the secret failed")).toBeTruthy();
     expect(within(refusal).getByText("A secret named late exists in this project.")).toBeTruthy();
     expect(refusal.textContent).not.toContain("already exists");
     expect(a.requests.find((r) => r.method === "ApplySecret")?.request).toMatchObject({ createOnly: true });
     expect(navigate).not.toHaveBeenCalled();
-    // The form is still open with the values typed, yet the call took them: a replay of it sends nothing.
+    // The form still holds the values typed, yet the call took them: a replay of it sends nothing.
     await expect(kept.execute("late")).rejects.toThrow(errNoValues);
     expect(a.calls.filter((c) => c === "ApplySecret")).toHaveLength(1);
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    a.unmount();
     expect(cacheText(a.client)).not.toContain(password);
   });
-});
 
-describe("New secret while the permission answer changes", () => {
-  it("stays open with what was typed until it is closed", async () => {
+  it("stays with what was typed when the permission answer changes", async () => {
     let held = ["secrets.secrets.apply"];
-    const a = credentialsApi({ secrets: async () => ({ items: [secret("taken")] }), perms: async () => held });
-    render(<SecretList />, { wrapper: withApi(a) });
-    await screen.findByRole("table");
-    fireEvent.click(await screen.findByRole("button", { name: /New secret/ }));
-    type("Name", "app-registry");
+    const a = await open({ perms: async () => held });
+    type("Secret name", "app-registry");
     type("Registry", "registry.example.com");
     held = [];
     await a.client.refetchQueries();
-    // The page's own New secret goes; the form open on it does not.
-    await waitFor(() => expect(screen.queryByRole("button", { name: /New secret/ })).toBeNull());
-    expect((within(dialog()).getByLabelText("Name") as HTMLInputElement).value).toBe("app-registry");
-    expect((within(dialog()).getByLabelText("Registry") as HTMLInputElement).value).toBe("registry.example.com");
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(a.calls.filter((c) => c === "TestPermissions").length).toBeGreaterThan(1));
+    expect((screen.getByLabelText("Secret name") as HTMLInputElement).value).toBe("app-registry");
+    expect((screen.getByLabelText("Registry") as HTMLInputElement).value).toBe("registry.example.com");
+    expect(screen.queryByText(/roles do not include/)).toBeNull();
   });
-});
 
-describe("New secret closed before its call starts", () => {
-  it("sends nothing: closing the form took the values", async () => {
-    const a = credentialsApi({ secrets: async () => ({ items: [secret("taken")] }) });
-    render(<SecretList />, { wrapper: withApi(a) });
-    await screen.findByRole("table");
-    fireEvent.click(await screen.findByRole("button", { name: /New secret/ }));
-    type("Name", "app-registry");
+  it("sends nothing when left before its call starts: leaving took the values", async () => {
+    const a = await open();
+    type("Secret name", "app-registry");
     type("Registry", "registry.example.com");
     type("Username", "robot");
     type("Password or access token", password);
     fireEvent.submit(form());
     const [kept] = a.client.getMutationCache().getAll();
-    // Cancel in the same moment, before the call has read the values.
-    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    // Leave in the same moment, before the call has read the values.
+    a.unmount();
     await waitFor(() => expect(kept.state.status).toBe("error"));
     expect(kept.state.error?.message).toBe(errNoValues);
     expect(a.calls).not.toContain("ApplySecret");
     expect(cacheText(a.client)).not.toContain(password);
   });
-});
-
-describe("New secret's fields and command line", () => {
-  async function open() {
-    const a = credentialsApi({ secrets: async () => ({ items: [secret("taken")] }) });
-    render(<SecretList />, { wrapper: withApi(a) });
-    await screen.findByRole("table");
-    fireEvent.click(await screen.findByRole("button", { name: /New secret/ }));
-    return a;
-  }
 
   it("masks the password, and asks the browser neither to generate nor to save it", async () => {
     await open();
-    const field = within(dialog()).getByLabelText("Password or access token") as HTMLInputElement;
+    const field = screen.getByLabelText("Password or access token") as HTMLInputElement;
     expect(field.type).toBe("password");
     expect(field.getAttribute("autocomplete")).toBe("off");
     expect(form().getAttribute("autocomplete")).toBe("off");
@@ -323,10 +303,10 @@ describe("New secret's fields and command line", () => {
     await open();
     expect(cli()).toBe("$ hangar create secret registry NAME --create-only --from-docker-config FILE -p demo");
     for (const bad of ["$(whoami)", "Bad_Name", "a;rm -rf x", "taken"]) {
-      type("Name", bad);
+      type("Secret name", bad);
       expect(cli()).toBe("$ hangar create secret registry NAME --create-only --from-docker-config FILE -p demo");
     }
-    type("Name", "good-name");
+    type("Secret name", "good-name");
     expect(cli()).toBe("$ hangar create secret registry good-name --create-only --from-docker-config FILE -p demo");
   });
 });

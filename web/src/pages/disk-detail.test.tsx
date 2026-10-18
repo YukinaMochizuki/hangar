@@ -47,11 +47,12 @@ describe("DiskDetail", () => {
     await screen.findByText("No such disk");
   });
 
-  it("shows what the disk holds, its size, node and the VM it is attached to", async () => {
+  it("shows the disk's source, its size, node and the VM it is attached to", async () => {
     render(<DiskDetail name="pg-data" />, { wrapper: withApi(api([attached])) });
     await screen.findByRole("heading", { name: "pg-data" });
     await waitFor(() => expect(screen.getAllByRole("link", { name: "postgres" }).length).toBeGreaterThan(0));
     for (const l of screen.getAllByRole("link", { name: "postgres" })) expect(l.getAttribute("href")).toBe("/projects/demo/vms/postgres");
+    expect(screen.getByText("Source")).toBeTruthy();
     expect(screen.getByText("Blank")).toBeTruthy();
     expect(screen.getByText("node-a")).toBeTruthy();
     expect(screen.getAllByText(/hangar get disk pg-data -p demo/).length).toBeGreaterThan(0);

@@ -4,14 +4,13 @@
 import { Link } from "@tanstack/react-router";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { Plus } from "lucide-react";
-import { useState } from "react";
 import { PageBanner } from "@/components/notice";
 import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
-import { DiskState, ImageStateCell, NewDiskDialog } from "@/components/storage";
+import { DiskState, ImageStateCell } from "@/components/storage";
 import { ConditionsCard, EquivalentCard } from "@/components/object";
-import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
 import { gib, diskImage, imageFloorGiB, imageState, useDisks, useImages } from "@/lib/storage";
@@ -91,8 +90,6 @@ function ProjectDisks({ img }: { img: Image }) {
 export function ImageDetail({ name }: { name: string }) {
   const project = useProjectName();
   const { items, loading, error, refetch } = useImages();
-  const disks = useDisks(project);
-  const [creating, setCreating] = useState(false);
   // New disk from it shows only once the caller is known to hold storage.disks.apply.
   const canCreate = useCan({ level: "project", name: project }, ["storage.disks.apply"]).can("storage.disks.apply");
   const img = items.find((x) => x.metadata?.name === name);
@@ -164,11 +161,16 @@ export function ImageDetail({ name }: { name: string }) {
               {img.status?.diskSize && <span className="tabular">{gib(img.status.diskSize)}</span>}
             </div>
           </div>
-          {canCreate && (
-            <Button variant="primary" disabled={s.tone === "fail"} onClick={() => setCreating(true)}>
-              <Plus /> New disk from it
-            </Button>
-          )}
+          {canCreate &&
+            (s.tone === "fail" ? (
+              <Button variant="primary" disabled>
+                <Plus /> New disk from it
+              </Button>
+            ) : (
+              <Link to="/projects/$project/new/disk" params={{ project }} search={{ image: name }} className={buttonVariants({ variant: "primary" })}>
+                <Plus /> New disk from it
+              </Link>
+            ))}
         </div>
       </div>
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -181,19 +183,6 @@ export function ImageDetail({ name }: { name: string }) {
           <EquivalentCard cli={cli} yaml={diskYaml} />
         </div>
       </div>
-      <NewDiskDialog
-        key={String(creating)}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={(go) => {
-          setCreating(false);
-          go?.();
-        }}
-        project={project}
-        images={items}
-        disks={disks}
-        initialImage={name}
-      />
     </>
   );
 }

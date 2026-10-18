@@ -1,25 +1,20 @@
-// A project's networks, one network, and making one
-// (docs/decisions/networking.md).
+// A project's networks and one network (docs/decisions/networking.md);
+// pages/create-network.tsx makes one.
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { create } from "@bufbuild/protobuf";
-import { NetworkSchema, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import type { Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Dialog } from "@/components/dialog";
-import { DeleteDialog, FormFooter, MachinesNotice, type MachinesState, MemberCount, usageBlock } from "@/components/resource";
-import { FormEquivalent, FormField, Input } from "@/components/form";
+import { DeleteDialog, MachinesNotice, type MachinesState, MemberCount, usageBlock } from "@/components/resource";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
-import { checkName, type KnownNames } from "@/lib/create";
-import { permission, useCreate } from "@/lib/network-actions";
+import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { permission } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { date, machinePath } from "@/lib/machines";
-import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import {
   conditionOf,
   gatewayOf,
@@ -43,63 +38,18 @@ function ReadyCell({ n }: { n: Network }) {
   );
 }
 
-function CreateNetworkDialog({ open, onClose, onCreated, known }: { open: boolean; onClose: () => void; onCreated: OnCreated; known: KnownNames }) {
-  const project = useProjectName();
-  const navigate = useNavigate();
-  const submit = useCreate("network", project);
-  const [name, setName] = useState("");
-  const [cidr, setCidr] = useState("10.1.0.0/24");
-  const obj = create(NetworkSchema, { metadata: { name }, spec: { ipv4Cidr: cidr } });
-  const check = checkName(name, "network", known);
-  const problems = [...(check.ok ? [] : [check.reason]), ...(cidr ? [] : ["The IPv4 range is empty."])];
-  const close = () => {
-    submit.reset();
-    onClose();
-  };
-  return (
-    <Dialog open={open} onClose={close} title="New network">
-      <FormField label="Name">
-        <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
-      </FormField>
-      <FormField label="IPv4 range" hint="A private (RFC 1918) range from /16 to /28. It may overlap other networks' ranges and cannot be changed later.">
-        <Input value={cidr} onChange={(e) => setCidr(e.target.value)} spellCheck={false} />
-      </FormField>
-      <FormEquivalent yaml={networkYaml(obj)} cli={[`hangar apply --create-only -p ${project} -f ${name || "network"}.yaml`]} />
-      <FormFooter
-        problems={problems}
-        error={submit.error}
-        failed="Creating the network failed"
-        pending={submit.isPending}
-        pendingLabel="Creating…"
-        label={
-          <>
-            <Plus /> Create network
-          </>
-        }
-        onCancel={close}
-        onSubmit={() =>
-          submit.mutate(obj, {
-            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/networks/$name", params: { project, name } })),
-          })
-        }
-      />
-    </Dialog>
-  );
-}
-
-export function NetworkList(props: NewProps) {
+export function NetworkList() {
   const project = useProjectName();
   const nets = useNetworks(project);
   const att = useAttachments(project);
   const [query, setQuery] = useState("");
   const rows = nets.items.filter((n) => !query || nameOf(n).includes(query));
   const machinesOn = (n: string) => new Set(att.items.filter((a) => a.network === n).map((a) => `${a.kind}/${a.name}`)).size;
-  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("network", "apply")]);
-  const [creating, setCreating, created] = useCreating(props, may(permission("network", "apply")), settled);
+  const { can: may } = useCan({ level: "project", name: project }, [permission("network", "apply")]);
   const newButton = may(permission("network", "apply")) ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/network" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New network
-    </Button>
+    </Link>
   ) : undefined;
   return (
     <>
@@ -176,13 +126,6 @@ export function NetworkList(props: NewProps) {
           </p>
         </ListFrame>
       </div>
-      <CreateNetworkDialog
-        key={String(creating)}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={created}
-        known={{ loading: nets.loading, error: nets.error, names: nets.items.map(nameOf) }}
-      />
     </>
   );
 }

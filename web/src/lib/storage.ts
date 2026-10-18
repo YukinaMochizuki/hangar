@@ -141,13 +141,23 @@ export function imageFloorGiB(img: Image | undefined): number {
   return Math.max(1, Number.isFinite(own) ? Math.ceil(own) : 1, Number.isFinite(min) ? Math.ceil(min) : 1);
 }
 
-/** newDisk is a disk as the New disk form describes it. */
-export function newDisk(project: string, name: string, sizeGi: number, image: string): Disk {
+/** DiskUse is what a disk is made for: a copy of an image to boot from, or blank for data. */
+export type DiskUse = "boot" | "data";
+
+/**
+ * intendedUse is the label the New disk page writes, recording what the disk
+ * was made for. It is the user's own label and restricts nothing: any disk
+ * attaches either way.
+ */
+export const intendedUse = "hangar/intended-use";
+
+/** newDisk is a disk as the New disk page describes it; size is whole GiB as typed, image is for a boot disk alone. */
+export function newDisk(project: string, name: string, use: DiskUse, size: string, image: string): Disk {
   return create(DiskSchema, {
-    metadata: { name, project },
+    metadata: { name, project, labels: { [intendedUse]: use } },
     spec: {
-      size: `${sizeGi}Gi`,
-      source: image ? { source: { case: "image", value: { name: image } } } : {},
+      size: size === "" ? "" : `${size}Gi`,
+      source: use === "boot" && image ? { source: { case: "image", value: { name: image } } } : {},
     },
   });
 }

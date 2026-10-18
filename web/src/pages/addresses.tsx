@@ -1,5 +1,6 @@
-// A project's reserved public IPv6 addresses, one address, and reserving,
-// binding, moving and unbinding one (docs/decisions/networking.md).
+// A project's reserved public IPv6 addresses, one address, and binding,
+// moving and unbinding one (docs/decisions/networking.md); reserving one is
+// pages/create-address.tsx.
 
 import { clone, create } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -18,13 +19,11 @@ import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
-import { checkName, type KnownNames } from "@/lib/create";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { date, machinePath, type MachineKind } from "@/lib/machines";
-import { isStale, permission, useApplyAt, useChange, useCreate, useReload } from "@/lib/network-actions";
+import { isStale, permission, useApplyAt, useChange, useReload } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments } from "@/lib/network";
-import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import { bare } from "@/pages/machine-list";
 
 /** Where an address stands, in the words of its Bound condition. */
@@ -64,17 +63,16 @@ function TargetText({ a }: { a: Address }) {
   );
 }
 
-export function AddressList(props: NewProps) {
+export function AddressList() {
   const project = useProjectName();
   const addrs = useAddresses(project);
   const [query, setQuery] = useState("");
   const rows = addrs.items.filter((a) => !query || nameOf(a).includes(query));
-  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("address", "apply")]);
-  const [creating, setCreating, created] = useCreating(props, may(permission("address", "apply")), settled);
+  const { can: may } = useCan({ level: "project", name: project }, [permission("address", "apply")]);
   const newButton = may(permission("address", "apply")) ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/address" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> Reserve address
-    </Button>
+    </Link>
   ) : undefined;
   return (
     <>
@@ -149,13 +147,6 @@ export function AddressList(props: NewProps) {
           </p>
         </ListFrame>
       </div>
-      <BindDialog
-        key={String(creating)}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={created}
-        known={{ loading: addrs.loading, error: addrs.error, names: addrs.items.map(nameOf) }}
-      />
     </>
   );
 }
@@ -280,10 +271,23 @@ export function AddressDetail({ name }: { name: string }) {
   );
 }
 
-/** The target an interface choice stands for, as the API takes it. */
-function targetFrom(choice: string) {
-  if (!choice) return undefined;
-  const [kind, machine, iface] = choice.split("/") as [MachineKind, string, string];
+// The interface list's entry for a target typed by hand.
+const typed = "typed";
+
+/**
+ * InterfacePick is an interface chosen for an address: a listed one as
+ * kind/machine/interface, the typed one, or none (""); own is what is typed.
+ */
+export type InterfacePick = { choice: string; own: { kind: MachineKind; machine: string; iface: string } };
+
+/** pickOf is a pick of the choice given, with nothing typed. */
+export const pickOf = (choice: string): InterfacePick => ({ choice, own: { kind: "Container", machine: "", iface: "eth0" } });
+
+/** pickTarget is the target a pick stands for, as the API takes it; undefined for none. */
+export function pickTarget({ choice, own }: InterfacePick) {
+  const c = choice === typed ? `${own.kind}/${own.machine.trim()}/${own.iface.trim()}` : choice;
+  if (!c) return undefined;
+  const [kind, machine, iface] = c.split("/") as [MachineKind, string, string];
   if (!machine) return undefined;
   return create(AddressTargetSchema, {
     object: { case: kind === "Container" ? "container" : "virtualMachine", value: machine },
@@ -291,142 +295,143 @@ function targetFrom(choice: string) {
   });
 }
 
-// The interface list's entry for a target typed by hand.
-const typed = "typed";
+/** pickProblem says why a pick cannot be sent, if it cannot. */
+export const pickProblem = (p: InterfacePick) => (p.choice === typed && !p.own.machine.trim() ? "The machine's name is empty." : undefined);
 
 /**
- * Reserve a new address, or bind or move one. Binding and moving apply at
- * the version the dialog opened from: the interface chosen depends on where
- * the address was then, so a newer address is not overwritten. The API then
- * refuses it, and the dialog says so and can start again from the address
- * as it is.
+ * InterfaceField chooses an address's interface among the project's
+ * machines' interfaces, or a machine typed by name. current is the
+ * interface the address is bound to, listed even when no machine has it.
  */
-function BindDialog({
-  open,
-  onClose,
-  onCreated,
-  address,
-  known,
-}: { open: boolean; onClose: () => void; known?: KnownNames } & ({ address: Address; onCreated?: never } | { address?: undefined; onCreated: OnCreated })) {
+export function InterfaceField({
+  pick,
+  onChange,
+  none,
+  hint,
+  current,
+}: {
+  pick: InterfacePick;
+  onChange: (p: InterfacePick) => void;
+  /** The label of no interface. */
+  none: string;
+  hint: string;
+  current?: { value: string; label: string };
+}) {
   const project = useProjectName();
-  const navigate = useNavigate();
   const att = useAttachments(project);
-  // The address as the dialog opened on it; the list refreshing does not move it.
-  const [base, setBase] = useState(address);
-  const t = targetOf(base?.spec?.target);
-  const [name, setName] = useState(address ? nameOf(address) : "");
-  const current = t ? `${t.kind}/${t.name}/${base?.spec?.target?.interface || "eth0"}` : "";
-  const [choice, setChoice] = useState(current);
-  const [own, setOwn] = useState({ kind: "Container" as MachineKind, machine: "", iface: "eth0" });
-  const reserve = useCreate("address", project);
-  const applyAt = useApplyAt("address");
-  const reload = useReload("address", project, name);
-  const submit = address ? applyAt : reserve;
-  const stale = !!address && isStale(applyAt.error);
-  const target = targetFrom(choice === typed ? `${own.kind}/${own.machine.trim()}/${own.iface.trim()}` : choice);
-
-  let obj: Address;
-  if (base) {
-    // Only the target changes; the rest is the address as the dialog opened on it.
-    obj = clone(AddressSchema, base);
-    obj.spec ??= create(AddressSpecSchema);
-    obj.spec.target = target;
-  } else {
-    obj = create(AddressSchema, { metadata: { name }, spec: { target } });
-  }
-  const problems: string[] = [];
-  if (!address) {
-    const check = checkName(name, "address", known ?? { loading: false, error: null, names: [] });
-    if (!check.ok) problems.push(check.reason);
-  } else if (!target) problems.push("No interface is chosen.");
-  if (choice === typed && !own.machine.trim()) problems.push("The machine's name is empty.");
-  const close = () => {
-    reserve.reset();
-    applyAt.reset();
-    onClose();
-  };
-  const send = () => {
-    if (address) applyAt.mutate(obj, { onSuccess: close });
-    else reserve.mutate(obj, { onSuccess: () => onCreated?.(() => void navigate({ to: "/projects/$project/addresses/$name", params: { project, name } })) });
-  };
-  const startAgain = () =>
-    reload.mutate(undefined, {
-      onSuccess: (fresh) => {
-        setBase(fresh);
-        const ft = targetOf(fresh.spec?.target);
-        setChoice(ft ? `${ft.kind}/${ft.name}/${fresh.spec?.target?.interface || "eth0"}` : "");
-        applyAt.reset();
-      },
-    });
-  const listedChoices = att.items.map((x) => `${x.kind}/${x.name}/${x.iface}`);
-  const verb = !address ? "Reserve" : t ? "Move" : "Bind";
+  const listed = att.items.map((x) => `${x.kind}/${x.name}/${x.iface}`);
+  const { own } = pick;
   return (
-    <Dialog open={open} onClose={close} title={address ? `${verb} ${nameOf(address)}` : "Reserve address"}>
-      {!address && (
-        <FormField label="Name">
-          <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
-        </FormField>
-      )}
-      <FormField
-        label="Interface"
-        hint={
-          address && t
-            ? "The interface it leaves draws a new automatic address. Neither machine restarts; the move waits until the old interface lets go."
-            : "Bound, the address replaces the interface's automatic one. No machine restarts."
-        }
-      >
-        <Select aria-label="Interface" value={choice} onChange={(e) => setChoice(e.target.value)}>
-          <option value="">{address ? "No interface" : "No interface: reserved, unbound"}</option>
-          {current && !listedChoices.includes(current) && (
-            <option value={current}>
-              {t?.name} · {base?.spec?.target?.interface || "eth0"} ({t && kindNoun(t.kind)})
-            </option>
-          )}
-          {att.items.map((x) => (
-            <option key={`${x.kind}/${x.name}/${x.iface}`} value={`${x.kind}/${x.name}/${x.iface}`}>
-              {x.name} · {x.iface} ({kindNoun(x.kind)})
-            </option>
-          ))}
-          <option value={typed}>A machine by name</option>
-        </Select>
-      </FormField>
-      {choice === typed && (
+    <>
+      <Select aria-label="Interface" value={pick.choice} onChange={(e) => onChange({ ...pick, choice: e.target.value })}>
+        <option value="">{none}</option>
+        {current && !listed.includes(current.value) && <option value={current.value}>{current.label}</option>}
+        {att.items.map((x) => (
+          <option key={`${x.kind}/${x.name}/${x.iface}`} value={`${x.kind}/${x.name}/${x.iface}`}>
+            {x.name} · {x.iface} ({kindNoun(x.kind)})
+          </option>
+        ))}
+        <option value={typed}>A machine by name</option>
+      </Select>
+      <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>
+      {pick.choice === typed && (
         <div className="mt-4 grid grid-cols-[1fr_1.4fr_72px] gap-2">
           <FormField label="Kind" className="mt-0">
-            <Select value={own.kind} onChange={(e) => setOwn({ ...own, kind: e.target.value as MachineKind })}>
+            <Select value={own.kind} onChange={(e) => onChange({ ...pick, own: { ...own, kind: e.target.value as MachineKind } })}>
               <option value="Container">Container</option>
               <option value="VirtualMachine">Virtual machine</option>
             </Select>
           </FormField>
           <FormField label="Machine" className="mt-0">
-            <Input value={own.machine} onChange={(e) => setOwn({ ...own, machine: e.target.value.toLowerCase() })} spellCheck={false} />
+            <Input value={own.machine} onChange={(e) => onChange({ ...pick, own: { ...own, machine: e.target.value.toLowerCase() } })} spellCheck={false} />
           </FormField>
           <FormField label="On" className="mt-0">
-            <Input value={own.iface} onChange={(e) => setOwn({ ...own, iface: e.target.value })} spellCheck={false} />
+            <Input value={own.iface} onChange={(e) => onChange({ ...pick, own: { ...own, iface: e.target.value } })} spellCheck={false} />
           </FormField>
           <span className="col-span-3 -mt-1 text-[11.5px] text-subtle">
             A machine that does not exist yet is waited for: the address binds once it is made.
           </span>
         </div>
       )}
-      <FormEquivalent yaml={addressYaml(obj)} cli={[`hangar apply ${address ? "" : "--create-only "}-p ${project} -f ${name || "address"}.yaml`]} />
+    </>
+  );
+}
+
+/**
+ * Bind or move an address. Both apply at the version the dialog opened
+ * from: the interface chosen depends on where the address was then, so a
+ * newer address is not overwritten. The API then refuses it, and the dialog
+ * says so and can start again from the address as it is.
+ */
+function BindDialog({ open, onClose, address }: { open: boolean; onClose: () => void; address: Address }) {
+  const project = useProjectName();
+  const name = nameOf(address);
+  // The address as the dialog opened on it; the list refreshing does not move it.
+  const [base, setBase] = useState(address);
+  const t = targetOf(base.spec?.target);
+  const current = t ? `${t.kind}/${t.name}/${base.spec?.target?.interface || "eth0"}` : "";
+  const [pick, setPick] = useState(pickOf(current));
+  const applyAt = useApplyAt("address");
+  const reload = useReload("address", project, name);
+  const stale = isStale(applyAt.error);
+  const target = pickTarget(pick);
+
+  // Only the target changes; the rest is the address as the dialog opened on it.
+  const obj = clone(AddressSchema, base);
+  obj.spec ??= create(AddressSpecSchema);
+  obj.spec.target = target;
+  const problems: string[] = [];
+  if (!target) problems.push("No interface is chosen.");
+  const typedProblem = pickProblem(pick);
+  if (typedProblem) problems.push(typedProblem);
+  const close = () => {
+    applyAt.reset();
+    onClose();
+  };
+  const startAgain = () =>
+    reload.mutate(undefined, {
+      onSuccess: (fresh) => {
+        setBase(fresh);
+        const ft = targetOf(fresh.spec?.target);
+        setPick(pickOf(ft ? `${ft.kind}/${ft.name}/${fresh.spec?.target?.interface || "eth0"}` : ""));
+        applyAt.reset();
+      },
+    });
+  const verb = t ? "Move" : "Bind";
+  return (
+    <Dialog open={open} onClose={close} title={`${verb} ${name}`}>
+      <div className="text-[12.5px] text-foreground">Interface</div>
+      <div className="mt-1.5">
+        <InterfaceField
+          pick={pick}
+          onChange={setPick}
+          none="No interface"
+          current={t ? { value: current, label: `${t.name} · ${base.spec?.target?.interface || "eth0"} (${kindNoun(t.kind)})` } : undefined}
+          hint={
+            t
+              ? "The interface it leaves draws a new automatic address. Neither machine restarts; the move waits until the old interface lets go."
+              : "Bound, the address replaces the interface's automatic one. No machine restarts."
+          }
+        />
+      </div>
+      <FormEquivalent yaml={addressYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />
       {stale && (
         <StaleNotice title="The address changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
       )}
       <FormFooter
         problems={problems}
         blocked={stale}
-        error={stale ? null : submit.error}
-        failed={`${address ? (t ? "Moving" : "Binding") : "Reserving"} the address failed`}
-        pending={submit.isPending}
-        pendingLabel={`${address ? (t ? "Moving" : "Binding") : "Reserving"}…`}
+        error={stale ? null : applyAt.error}
+        failed={`${t ? "Moving" : "Binding"} the address failed`}
+        pending={applyAt.isPending}
+        pendingLabel={`${t ? "Moving" : "Binding"}…`}
         label={
           <>
-            {address ? <Link2 /> : <Plus />} {verb}
+            <Link2 /> {verb}
           </>
         }
         onCancel={close}
-        onSubmit={send}
+        onSubmit={() => applyAt.mutate(obj, { onSuccess: close })}
       />
     </Dialog>
   );

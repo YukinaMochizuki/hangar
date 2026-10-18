@@ -27,9 +27,12 @@ import {
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { AddressDetail, AddressList } from "@/pages/addresses";
-import { NetworkDetail, NetworkList } from "@/pages/networks";
-import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
+import { AddressDetail } from "@/pages/addresses";
+import { CreateAddress } from "@/pages/create-address";
+import { CreateNetwork } from "@/pages/create-network";
+import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
+import { NetworkDetail } from "@/pages/networks";
+import { PublicEndpointDetail } from "@/pages/public-endpoints";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { addresses, endpoints, groups, networkApi, type NetworkApi, type Overrides } from "@/test/network-api";
@@ -71,7 +74,10 @@ async function confirmDelete(name: string) {
 type CreateCase = {
   noun: string;
   page: () => ReactNode;
-  open: string;
+  /** The list's button that opens a create dialog; unset for a create page. */
+  open?: string;
+  /** The name field's label. */
+  name?: string;
   submit: string;
   taken: string;
   hide: keyof Overrides;
@@ -79,13 +85,13 @@ type CreateCase = {
 };
 
 const creates: CreateCase[] = [
-  { noun: "network", page: () => <NetworkList />, open: "New network", submit: "Create network", taken: "sandbox", hide: "listNetworks" },
+  { noun: "network", page: () => <CreateNetwork />, name: "Network name", submit: "Create network", taken: "sandbox", hide: "listNetworks" },
   { noun: "security group", page: () => <SecurityGroupList />, open: "New security group", submit: "Create security group", taken: "web", hide: "listSecurityGroups" },
-  { noun: "address", page: () => <AddressList />, open: "Reserve address", submit: "Reserve", taken: "spare", hide: "listAddresses" },
+  { noun: "address", page: () => <CreateAddress />, name: "Address name", submit: "Reserve address", taken: "spare", hide: "listAddresses" },
   {
     noun: "public endpoint",
-    page: () => <PublicEndpointList />,
-    open: "New public endpoint",
+    page: () => <CreatePublicEndpoint />,
+    name: "Endpoint name",
     submit: "Create public endpoint",
     taken: "docs",
     hide: "listPublicEndpoints",
@@ -99,10 +105,11 @@ describe.each(creates)("creating a $noun whose name was taken after the list loa
     const api = show(c.page(), { [c.hide]: () => ({ items: [] }) });
     const before = structuredClone(api.server);
     // An empty list offers the button twice: in the header and in the empty state.
-    fireEvent.click((await screen.findAllByRole("button", { name: c.open }))[0]);
+    if (c.open) fireEvent.click((await screen.findAllByRole("button", { name: c.open }))[0]);
+    else await screen.findByLabelText(c.name!);
     await c.fill?.();
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type(/^Name/, c.taken);
+    type(c.name ?? /^Name/, c.taken);
     click(c.submit);
     expect(await screen.findByText(`A ${c.noun} named ${c.taken} exists in this project.`)).toBeTruthy();
     expect(writes(api)).toHaveLength(1);
@@ -113,37 +120,45 @@ describe.each(creates)("creating a $noun whose name was taken after the list loa
 });
 
 describe("networks", () => {
-  it("creates a network with one create-only Apply of exactly the form's object", async () => {
-    const api = show(<NetworkList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New network" }));
+  it("creates a network with one create-only Apply of exactly the form's object, then opens it in the page's place", async () => {
+    const api = show(<CreateNetwork />);
+    await screen.findByLabelText("Network name");
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "db");
-    type(/^IPv4 range/, "10.30.0.0/28");
+    type("Network name", "db");
+    type("IPv4 range", "10.30.0.0/28");
     expect(screen.getByText(/hangar apply --create-only -p demo -f db\.yaml/)).toBeTruthy();
     click("Create network");
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/networks/$name", params: { project: "demo", name: "db" } }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/networks/$name", params: { project: "demo", name: "db" }, replace: true }));
     expect(methods(api)).toEqual(["ApplyNetwork"]);
     expect(lastApply<ApplyNetworkRequest>(api).createOnly).toBe(true);
     const want = create(NetworkSchema, { metadata: { name: "db", project: "demo" }, spec: { ipv4Cidr: "10.30.0.0/28" } });
     expect(equals(NetworkSchema, lastApply<ApplyNetworkRequest>(api).network!, want)).toBe(true);
-    // Created, the form is gone before the network's page opens.
-    expect(screen.queryByRole("dialog", { name: "New network" })).toBeNull();
+  });
+
+  it("sends nothing while the networks load", async () => {
+    const api = show(<CreateNetwork />, { listNetworks: () => never() });
+    await screen.findByLabelText("Network name");
+    type("Network name", "db");
+    expect(await screen.findByText("The project's networks are still loading.")).toBeTruthy();
+    expect(button("Loading names…").disabled).toBe(true);
+    expect(writes(api)).toEqual([]);
   });
 
   it("sends nothing for a name the project has", async () => {
-    const api = show(<NetworkList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New network" }));
-    type("Name", "default");
+    const api = show(<CreateNetwork />);
+    await screen.findByLabelText("Network name");
+    type("Network name", "default");
     expect(await screen.findByText("A network named default exists in this project.")).toBeTruthy();
     expect(button("Create network").disabled).toBe(true);
+    fireEvent.submit(button("Create network").closest("form")!);
     expect(writes(api)).toEqual([]);
   });
 
   it("shows the API's refusal in the form", async () => {
-    show(<NetworkList />, { apply: refuse(Code.PermissionDenied, "may not apply networks") });
-    fireEvent.click(await screen.findByRole("button", { name: "New network" }));
+    show(<CreateNetwork />, { apply: refuse(Code.PermissionDenied, "may not apply networks") });
+    await screen.findByLabelText("Network name");
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "db");
+    type("Network name", "db");
     click("Create network");
     expect(await screen.findByText("Creating the network failed")).toBeTruthy();
     expect(screen.getByText(/may not apply networks/)).toBeTruthy();
@@ -345,17 +360,32 @@ describe("security groups", () => {
 
 describe("addresses", () => {
   it("reserves an unbound address", async () => {
-    const api = show(<AddressList />);
-    fireEvent.click(await screen.findByRole("button", { name: "Reserve address" }));
+    const api = show(<CreateAddress />);
+    await screen.findByLabelText("Address name");
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type("Name", "edge");
+    type("Address name", "edge");
     expect(screen.getByText(/hangar apply --create-only -p demo -f edge\.yaml/)).toBeTruthy();
-    click("Reserve");
+    click("Reserve address");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
     expect(lastApply<ApplyAddressRequest>(api).createOnly).toBe(true);
     const want = create(AddressSchema, { metadata: { name: "edge", project: "demo" }, spec: {} });
     expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
-    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/addresses/$name", params: { project: "demo", name: "edge" } });
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/addresses/$name", params: { project: "demo", name: "edge" }, replace: true });
+  });
+
+  it("reserves an address bound to the interface chosen", async () => {
+    const api = show(<CreateAddress />);
+    await screen.findByRole("option", { name: /api · eth0/ });
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    type("Address name", "edge");
+    click("Reserve address");
+    await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
+    const want = create(AddressSchema, {
+      metadata: { name: "edge", project: "demo" },
+      spec: { target: { object: { case: "container", value: "api" }, interface: "eth0" } },
+    });
+    expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
   });
 
   it("binds an address at the version the dialog opened from, the rest untouched", async () => {
@@ -451,11 +481,10 @@ describe("addresses", () => {
 
 describe("public endpoints", () => {
   it("creates a public endpoint", async () => {
-    const api = show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
+    const api = show(<CreatePublicEndpoint />);
     await screen.findByRole("option", { name: "api (container)" });
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    type(/^Name/, "blog");
+    type("Endpoint name", "blog");
     expect(screen.getByText(/hangar apply --create-only -p demo -f blog\.yaml/)).toBeTruthy();
     type("Port", "3000");
     fireEvent.click(screen.getByRole("radio", { name: /Public/ }));
@@ -470,10 +499,9 @@ describe("public endpoints", () => {
   });
 
   it("refuses a port outside 1 to 65535", async () => {
-    const api = show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
+    const api = show(<CreatePublicEndpoint />);
     await screen.findByRole("option", { name: "api (container)" });
-    type(/^Name/, "blog");
+    type("Endpoint name", "blog");
     type("Port", "70000");
     expect(screen.getByText(/The port is not between 1 and 65535/)).toBeTruthy();
     expect(button("Create public endpoint").disabled).toBe(true);
@@ -481,9 +509,9 @@ describe("public endpoints", () => {
   });
 
   it("shows no hostname it cannot know", async () => {
-    show(<PublicEndpointList />);
-    fireEvent.click(await screen.findByRole("button", { name: "New public endpoint" }));
-    type(/^Name/, "blog");
+    show(<CreatePublicEndpoint />);
+    await screen.findByLabelText("Endpoint name");
+    type("Endpoint name", "blog");
     expect(screen.queryByText(/blog-demo/)).toBeNull();
   });
 

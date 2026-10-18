@@ -175,16 +175,17 @@ function useProjectModel(project: string, hands: Hands): Model {
 
   const p = { project };
   const newIn = (to: string) => () => hands.done(() => void navigate({ to, search: { new: 1 } }));
+  const newPage = (kind: string) => () => hands.done(() => void navigate({ to: `/projects/${project}/new/${kind}` }));
   const gated: [string, string, () => void][] = [
     [actionPerms.container, "New container", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "container" } }))],
     [actionPerms.vm, "New virtual machine", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "vm" } }))],
-    [actionPerms.disk, "New disk", newIn(`/projects/${project}/disks`)],
-    [actionPerms.network, "New network", newIn(`/projects/${project}/networks`)],
+    [actionPerms.disk, "New disk", newPage("disk")],
+    [actionPerms.network, "New network", newPage("network")],
     [actionPerms.securityGroup, "New security group", newIn(`/projects/${project}/security-groups`)],
-    [actionPerms.address, "Reserve address", newIn(`/projects/${project}/addresses`)],
-    [actionPerms.publicEndpoint, "New public endpoint", newIn(`/projects/${project}/public-endpoints`)],
-    [actionPerms.secret, "New secret", newIn(`/projects/${project}/secrets`)],
-    [actionPerms.token, "New service token", newIn(`/projects/${project}/service-tokens`)],
+    [actionPerms.address, "Reserve address", newPage("address")],
+    [actionPerms.publicEndpoint, "New public endpoint", newPage("public-endpoint")],
+    [actionPerms.secret, "New secret", newPage("secret")],
+    [actionPerms.token, "New service token", newPage("service-token")],
     [actionPerms.member, "Add member", newIn(`/projects/${project}/members`)],
   ];
   const actions: Section = {
