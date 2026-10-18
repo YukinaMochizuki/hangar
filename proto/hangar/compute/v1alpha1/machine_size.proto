@@ -1,0 +1,122 @@
+syntax = "proto3";
+
+package hangar.compute.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// MachineSize is a size the platform offers machines in: a template the
+// console fills a new machine's cpu, memory and disk from. Platform
+// administrators define the sizes; everyone can read them. A machine still
+// states its own resources, and nothing records which size it came from. No
+// size exists until an administrator applies one. See
+// docs/decisions/machine-sizes.md.
+message MachineSize {
+  option (hangar.meta.v1.resource) = {
+    kind: "MachineSize"
+    plural: "machinesizes"
+    short_names: ["ms"]
+    scope: SCOPE_GLOBAL
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  MachineSizeSpec spec = 4;
+  MachineSizeStatus status = 5;
+}
+
+// MachineSizeSpec is what a machine of the size asks for, checked as a
+// container's Resources are.
+message MachineSizeSpec {
+  // What people choosing a size see, such as "M".
+  string display_name = 1;
+  // Whole vCPUs: "2" or "2000m", never a fraction.
+  string cpu = 2;
+  // Guest memory, at least 128Mi.
+  string memory = 3;
+  // Root disk size, at least 1Gi, in whole Gi.
+  string disk = 4;
+  // Where the console shows the size among the others: zero or more,
+  // smallest first, and by name where orders tie. The API lists sizes by
+  // name, as every kind; only the console sorts by order.
+  int32 order = 5;
+}
+
+// MachineSizeStatus is the observed state of a machine size. Nothing reports
+// on a size yet.
+message MachineSizeStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+}
+
+// MachineSizeService manages machine sizes.
+service MachineSizeService {
+  rpc GetMachineSize(GetMachineSizeRequest) returns (GetMachineSizeResponse);
+  rpc ListMachineSizes(ListMachineSizesRequest) returns (ListMachineSizesResponse);
+  rpc WatchMachineSizes(WatchMachineSizesRequest) returns (stream WatchMachineSizesResponse);
+  rpc ApplyMachineSize(ApplyMachineSizeRequest) returns (ApplyMachineSizeResponse);
+  rpc DeleteMachineSize(DeleteMachineSizeRequest) returns (DeleteMachineSizeResponse);
+  rpc UpdateMachineSizeStatus(UpdateMachineSizeStatusRequest) returns (UpdateMachineSizeStatusResponse);
+}
+
+message GetMachineSizeRequest {
+  string name = 1;
+}
+
+message GetMachineSizeResponse {
+  MachineSize machine_size = 1;
+}
+
+message ListMachineSizesRequest {
+  string label_selector = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListMachineSizesResponse {
+  repeated MachineSize items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchMachineSizesRequest {
+  string label_selector = 1;
+  int64 since_revision = 2;
+}
+
+message WatchMachineSizesResponse {
+  hangar.meta.v1.EventType type = 1;
+  MachineSize machine_size = 2;
+  int64 revision = 3;
+}
+
+message ApplyMachineSizeRequest {
+  MachineSize machine_size = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyMachineSizeResponse {
+  MachineSize machine_size = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteMachineSizeRequest {
+  string name = 1;
+  optional int64 expected_resource_version = 2;
+}
+
+message DeleteMachineSizeResponse {
+  MachineSize machine_size = 1;
+}
+
+message UpdateMachineSizeStatusRequest {
+  string name = 1;
+  MachineSizeStatus status = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message UpdateMachineSizeStatusResponse {
+  MachineSize machine_size = 1;
+}

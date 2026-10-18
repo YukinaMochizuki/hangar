@@ -32,12 +32,16 @@ const (
 	mapply  = "compute.machines.apply"
 	iget    = "storage.images.get"
 	iapply  = "storage.images.apply"
+	msget   = "compute.machinesizes.get"
+	msapply = "compute.machinesizes.apply"
+	msdel   = "compute.machinesizes.delete"
+	msstat  = "compute.machinesizes.updateStatus"
 	udelete = "iam.users.delete"
 	cstatus = "compute.containers.updateStatus"
 	stapply = "iam.servicetokens.apply"
 )
 
-var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, udelete, cstatus, stapply}
+var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, msget, msapply, msdel, msstat, udelete, cstatus, stapply}
 
 func testPermissions(c clients, scope *iamv1alpha1.BindingScope, perms ...string) ([]string, error) {
 	res, err := c.accounts.TestPermissions(context.Background(), connect.NewRequest(&iamv1alpha1.TestPermissionsRequest{Scope: scope, Permissions: perms}))
@@ -101,13 +105,13 @@ func newPermEnv(t *testing.T) permEnv {
 func TestTestPermissionsByRole(t *testing.T) {
 	e := newPermEnv(t)
 	var (
-		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, stapply}
-		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, stapply}
-		member    = []string{tcreate, iget}
-		viewer    = []string{cget, tcreate, iget}
-		projOwner = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tcreate, iget, stapply}
-		editor    = []string{cget, capply, exec, logs, ssh, access, tcreate, iget}
-		token     = []string{cget, capply, exec, logs, ssh, access, iget}
+		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply}
+		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, msget, stapply}
+		member    = []string{tcreate, iget, msget}
+		viewer    = []string{cget, tcreate, iget, msget}
+		projOwner = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tcreate, iget, msget, stapply}
+		editor    = []string{cget, capply, exec, logs, ssh, access, tcreate, iget, msget}
+		token     = []string{cget, capply, exec, logs, ssh, access, iget, msget}
 		none      []string
 	)
 	scopes := []struct {
@@ -133,7 +137,7 @@ func TestTestPermissionsByRole(t *testing.T) {
 		"project.owner":    {member, none, projOwner, none, none, none, none, none},
 		"project.editor":   {member, none, editor, none, none, none, none, none},
 		"project.viewer":   {member, none, viewer, none, none, none, none, none},
-		"serviceToken":     {{iget}, none, token, none, none, none, none, none},
+		"serviceToken":     {{iget, msget}, none, token, none, none, none, none, none},
 	}
 	if len(want) != len(e.callers) {
 		t.Fatalf("%d callers, %d pinned", len(e.callers), len(want))
@@ -159,6 +163,7 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 	e := newPermEnv(t)
 	ctx := t.Context()
 	e.addMember("probe@example.com")
+	must[computev1alpha1.ApplyMachineSizeResponse](t)(e.as(root).sizes.ApplyMachineSize(ctx, applySize(machineSize("probe", "Probe", "1", "1Gi", "5Gi", 0))))
 	i := 0
 	for role, c := range e.callers {
 		i++
@@ -190,6 +195,21 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 				_, err := c.machines.ApplyMachine(ctx, connect.NewRequest(&computev1alpha1.ApplyMachineRequest{Machine: &computev1alpha1.Machine{
 					Metadata: container("web", fmt.Sprintf("probe-%d", i), "").GetMetadata(),
 				}}))
+				return err
+			}, 0},
+			{platformScope(), msapply, func() error {
+				_, err := c.sizes.ApplyMachineSize(ctx, applySize(machineSize(fmt.Sprintf("probe-%d", i), "P", "1", "1Gi", "5Gi", 0)))
+				return err
+			}, 0},
+			{platformScope(), msget, func() error {
+				_, err := c.sizes.GetMachineSize(ctx, connect.NewRequest(&computev1alpha1.GetMachineSizeRequest{Name: "probe"}))
+				return err
+			}, 0},
+			// No role grants a size's status, root's included.
+			{platformScope(), msstat, func() error {
+				_, err := c.sizes.UpdateMachineSizeStatus(ctx, connect.NewRequest(&computev1alpha1.UpdateMachineSizeStatusRequest{
+					Name: "probe", Status: &computev1alpha1.MachineSizeStatus{ObservedGeneration: 1},
+				}))
 				return err
 			}, 0},
 			// The container has no machine, as the controllers do not run here,

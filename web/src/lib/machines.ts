@@ -166,21 +166,6 @@ export function machinePath(kind: MachineKind): "/projects/$project/containers/$
   return kind === "Container" ? "/projects/$project/containers/$name" : "/projects/$project/vms/$name";
 }
 
-/** The size presets the create form offers. */
-export const sizes = {
-  s: { label: "S", cpu: 1, memoryGi: 2, diskGi: 10 },
-  m: { label: "M", cpu: 2, memoryGi: 4, diskGi: 20 },
-  l: { label: "L", cpu: 4, memoryGi: 8, diskGi: 40 },
-  xl: { label: "XL", cpu: 8, memoryGi: 16, diskGi: 80 },
-} as const;
-
-export type SizeId = keyof typeof sizes;
-
-/** The size whose cpu and memory a machine has, if any. */
-export function sizeOf(m: Pick<MachineView, "cpu" | "memoryGi">): (typeof sizes)[SizeId] | undefined {
-  return Object.values(sizes).find((s) => s.cpu === m.cpu && s.memoryGi === m.memoryGi);
-}
-
 /** How long ago d was, shortly: "12s", "3m", "5h", "2d". */
 export function ago(d: Date | undefined, now = Date.now()): string {
   if (!d) return "";
