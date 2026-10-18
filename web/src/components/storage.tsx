@@ -1,21 +1,21 @@
-// Pieces the Disks and Images pages share: their states, their conditions,
-// their equivalent CLI or YAML, and the disk dialogs (new, grow, delete),
-// each the API's own call with its error shown where it was asked for.
+// Pieces the Disks and Images pages share: their states, a disk as YAML,
+// and the disk dialogs (new, grow, delete), each the API's own call with
+// its error shown where it was asked for.
 
 import { toJson, type JsonValue } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
-import { ChevronRight, HardDrive, Plus, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { HardDrive, Plus } from "lucide-react";
+import { useState } from "react";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
-import { Button, Card, CopyButton } from "@/components/ui";
+import { Button, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
-import { ago, date, machinePath } from "@/lib/machines";
+import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
 import type { OnCreated } from "@/lib/new-param";
@@ -34,19 +34,6 @@ import {
   type ImageState,
   type Listing,
 } from "@/lib/storage";
-
-const tones = { ok: "bg-ok", pending: "bg-pending", fail: "bg-fail", off: "bg-off" } as const;
-type Tone = keyof typeof tones;
-
-/** Dot is a state LED: ok, pending, failed or off. */
-export function Dot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
-  return (
-    <span className="relative inline-flex size-2 shrink-0">
-      {pulse && <span className={cn("absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden", tones[tone])} />}
-      <span className={cn("relative size-2 rounded-full", tones[tone])} />
-    </span>
-  );
-}
 
 const diskPhases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
   [DiskPhase.PENDING]: { label: "Pending", tone: "pending", pulse: true },
@@ -67,7 +54,7 @@ export function DiskState({ d, reason = true }: { d: Disk; reason?: boolean }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={p.tone} pulse={"pulse" in p && p.pulse} />
+        <Led tone={p.tone} pulse={"pulse" in p && p.pulse} />
         {diskPhaseLabel(d)}
       </span>
       {reason && fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
@@ -80,7 +67,7 @@ export function ImageStateCell({ s }: { s: ImageState }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={s.tone} />
+        <Led tone={s.tone} />
         {s.label}
       </span>
       {s.reason && <span className="block text-[11.5px] text-fail">{s.reason}</span>}
@@ -125,82 +112,6 @@ export function DiskSource({ d, project, link = true }: { d: Disk; project: stri
   );
 }
 
-const statusWord: Record<number, string> = {
-  [ConditionStatus.TRUE]: "True",
-  [ConditionStatus.FALSE]: "False",
-  [ConditionStatus.UNKNOWN]: "Unknown",
-};
-
-/** ConditionsCard shows the raw conditions, folded away. */
-export function ConditionsCard({ conditions }: { conditions: Condition[] }) {
-  return (
-    <Card className="overflow-hidden">
-      <details className="group">
-        <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-3.5 text-subtle transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-          Conditions
-          <span className="font-mono text-[11.5px] font-normal text-subtle">{conditions.length}</span>
-        </summary>
-        <ul className="divide-y border-t">
-          {conditions.length === 0 && <li className="px-4 py-2.5 text-[13px] text-muted">None reported.</li>}
-          {conditions.map((c) => (
-            <li key={c.type} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  c.status === ConditionStatus.TRUE ? "bg-ok" : c.status === ConditionStatus.UNKNOWN ? "bg-pending" : "bg-subtle",
-                )}
-              />
-              <span className="w-20 shrink-0 font-medium">{c.type}</span>
-              <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
-              <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>
-              <span className="hidden min-w-0 flex-1 truncate text-muted md:block">{c.message}</span>
-              <span className="flex-1 md:hidden" />
-              <span className="shrink-0 text-[12px] text-subtle">{ago(date(c.lastTransitionTime))} ago</span>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </Card>
-  );
-}
-
-/** EquivalentCard shows CLI lines and a YAML manifest, each copyable. */
-export function EquivalentCard({ cli, yaml }: { cli: string[]; yaml?: string }) {
-  const [tab, setTab] = useState<"cli" | "yaml">("cli");
-  const text = tab === "cli" || !yaml ? cli.join("\n") : yaml;
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex h-11 items-center justify-between border-b px-4">
-        <div role="tablist" className="flex gap-1 text-[12px]">
-          {(yaml ? (["cli", "yaml"] as const) : (["cli"] as const)).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={cn("rounded px-2 py-1 font-medium", tab === t ? "bg-surface-2 text-foreground" : "text-muted hover:text-foreground")}
-            >
-              {t === "cli" ? "CLI" : "YAML"}
-            </button>
-          ))}
-        </div>
-        <CopyButton text={text} />
-      </div>
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-5">
-        {tab === "cli" || !yaml
-          ? cli.map((c) => (
-              <div key={c} className="-indent-3.5 py-0.5 pl-3.5">
-                <span className="select-none text-accent">$ </span>
-                {c}
-              </div>
-            ))
-          : yaml}
-      </pre>
-    </Card>
-  );
-}
-
 /** diskYaml is a disk as `hangar apply -f` takes it. */
 export function diskYaml(d: Disk): string {
   const json = toJson(DiskSchema, d) as { [k: string]: JsonValue };
@@ -213,39 +124,6 @@ export function diskYaml(d: Disk): string {
     Object.entries((json.spec ?? {}) as { [k: string]: JsonValue }).filter(([, v]) => !(v && typeof v === "object" && Object.keys(v).length === 0)),
   );
   return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
-}
-
-function YamlBlock({ text, cli }: { text: string; cli?: string }) {
-  return (
-    <div className="relative mt-4 rounded-md border bg-surface-2">
-      <CopyButton text={text} className="absolute right-1.5 top-1.5" />
-      <pre className="overflow-auto py-2.5 pl-3 pr-9 font-mono text-[11.5px] leading-5 text-foreground">{text}</pre>
-      {cli && (
-        <div className="flex items-center justify-between gap-2 border-t py-1.5 pl-3 pr-1.5 font-mono text-[11.5px]">
-          <span className="min-w-0 break-all">
-            <span className="select-none text-accent">$ </span>
-            {cli}
-          </span>
-          <CopyButton text={cli} className="shrink-0" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-const input =
-  "mt-1.5 block h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-accent";
-
-function Label({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
-  return (
-    <div className="mt-4 first:mt-0">
-      <label className="block">
-        <span className="text-[12.5px] text-foreground">{title}</span>
-        {children}
-      </label>
-      {hint && <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>}
-    </div>
-  );
 }
 
 /**
@@ -304,24 +182,24 @@ export function NewDiskDialog({
         }}
       >
         <div className="text-foreground">
-          <Label title="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" className={input} />
-          </Label>
-          <Label title="Size, GiB" hint="A disk can grow later but never shrink.">
-            <input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
-          </Label>
-          <Label title="Holds">
-            <select value={image} onChange={(e) => setImage(e.target.value)} className={cn(input, "font-sans")}>
+          <FormField label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" />
+          </FormField>
+          <FormField label="Size, GiB" hint="A disk can grow later but never shrink.">
+            <Input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32" />
+          </FormField>
+          <FormField label="Holds">
+            <Select value={image} onChange={(e) => setImage(e.target.value)} className="font-sans">
               <option value="">Blank, all zeros</option>
               {usable.map((i) => (
                 <option key={i.metadata?.name} value={i.metadata?.name}>
                   A copy of {i.metadata?.name}, {imageFloorGiB(i)} GiB or more
                 </option>
               ))}
-            </select>
-          </Label>
+            </Select>
+          </FormField>
         </div>
-        <YamlBlock text={yaml} cli={`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`} />
+        <FormEquivalent yaml={yaml} cli={[`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`]} />
         {problem && <Notice tone="warning" title={problem} className="mt-3" />}
         {create.error && (
           <Notice tone="error" title="Creating the disk failed" className="mt-3">
@@ -396,11 +274,11 @@ export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: I
         }}
       >
         <div className="mt-4 text-foreground">
-          <Label title="Size, GiB" hint={`At least ${floor} GiB.`}>
-            <input type="number" min={floor} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
-          </Label>
+          <FormField label="Size, GiB" hint={`At least ${floor} GiB.`}>
+            <Input type="number" min={floor} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32" />
+          </FormField>
         </div>
-        <YamlBlock text={diskYaml({ ...d, spec: { ...d.spec!, size: `${size}Gi` } })} />
+        <FormEquivalent yaml={diskYaml({ ...d, spec: { ...d.spec!, size: `${size}Gi` } })} />
         {problem && <Notice tone="warning" title={problem} className="mt-3" />}
         {grow.error && (
           <Notice tone="error" title="Changing the size failed" className="mt-3">
@@ -437,55 +315,21 @@ export function diskDeleteFacts(d: Disk, machine: { name: string; deleting: bool
 
 /** DeleteDiskDialog asks for the name typed to confirm, then sends DeleteDisk and shows its error. */
 export function DeleteDiskDialog({ d, open, onClose, after }: { d: Disk; open: boolean; onClose: () => void; after?: () => void }) {
-  const [typed, setTyped] = useState("");
   const name = d.metadata?.name ?? "";
   const project = d.metadata?.project ?? "";
   const del = useDeleteDisk(project, name);
   const owner = useMachineOwners(project)(d.status?.machine ?? "");
   const machine = d.status?.machine ? { name: owner?.name ?? d.status.machine, deleting: owner?.deleting ?? false } : undefined;
-  const close = () => {
-    del.reset();
-    setTyped("");
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete disk ${name}`}>
-      <p>{diskDeleteFacts(d, machine)}</p>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <YamlBlock text={`hangar delete disk ${name} -p ${project}`} />
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete disk ${name}`}
+      name={name}
+      consequence={diskDeleteFacts(d, machine)}
+      cli={`hangar delete disk ${name} -p ${project}`}
+      del={del}
+      after={after}
+    />
   );
 }

@@ -7,10 +7,11 @@ import { useNavigate } from "@tanstack/react-router";
 import { Check, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
 import type { Place } from "@/components/shell";
-import { Button, CopyButton } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { useTenantsWhere } from "@/lib/permissions";
 import { cn } from "@/lib/cn";
@@ -197,7 +198,6 @@ function NewProjectForm({ tenant, onClose, onCreated }: { tenant: string; onClos
   const full = limit !== undefined && used >= limit;
   const none = allowed.known && allowed.tenants.length === 0;
   const command = `hangar create project ${name || "NAME"} --tenant ${chosen || "TENANT"} --display-name ${shellQuote(displayName)}`;
-  const field = "mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 text-[13px] text-foreground outline-none focus:border-accent";
   const hint = !name
     ? "Made from the display name. An ID is global and never reused."
     : !check.valid
@@ -226,29 +226,22 @@ function NewProjectForm({ tenant, onClose, onCreated }: { tenant: string; onClos
         );
       }}
     >
-      <label className="block">
-        <span className="text-[12.5px] text-foreground">Tenant</span>
-        <select value={chosen} onChange={(e) => setPicked(e.target.value)} disabled={!allowed.known} className={field}>
+      <FormField label="Tenant">
+        <Select value={chosen} onChange={(e) => setPicked(e.target.value)} disabled={!allowed.known} className="font-sans">
           {allowed.tenants.map((x) => (
             <option key={x} value={x}>
               {tenantName(x)} ({x})
             </option>
           ))}
-        </select>
-      </label>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">Display name</span>
-        <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoFocus placeholder="My demo" className={field} />
-      </label>
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">ID</span>
-        <input value={name} onChange={(e) => setTyped(e.target.value.toLowerCase())} spellCheck={false} className={cn(field, "font-mono")} />
-        <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>
-      </label>
-      <div className="mt-4 flex items-center gap-2 rounded-md border bg-surface-2 px-2.5 py-1.5">
-        <code className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{command}</code>
-        <CopyButton text={command} />
-      </div>
+        </Select>
+      </FormField>
+      <FormField label="Display name">
+        <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} autoFocus placeholder="My demo" className="font-sans" />
+      </FormField>
+      <FormField label="ID" hint={hint}>
+        <Input value={name} onChange={(e) => setTyped(e.target.value.toLowerCase())} spellCheck={false} />
+      </FormField>
+      <CommandLine command={command} />
       {none && <Notice tone="warning" title="This account's roles do not include creating projects in any tenant." className="mt-3" />}
       {allowed.error && (
         <Notice tone="error" title="The permission check did not answer" className="mt-3">

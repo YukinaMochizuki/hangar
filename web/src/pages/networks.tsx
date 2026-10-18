@@ -7,34 +7,14 @@ import { NetworkSchema, type Network } from "@hangar/api/hangar/network/v1alpha1
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import {
-  ConditionsCard,
-  DeleteDialog,
-  DetailBody,
-  DetailFrame,
-  DetailHead,
-  Equivalent,
-  FormEquivalent,
-  FormField,
-  FormFooter,
-  inputClass,
-  Labels,
-  Led,
-  ListFrame,
-  MachinesNotice,
-  MemberCount,
-  type MachinesState,
-  NameFilter,
-  NoMatch,
-  PageHead,
-  tbodyRow,
-  Th,
-  theadRow,
-  usageBlock,
-} from "@/components/resource";
+import { DeleteDialog, FormFooter, MachinesNotice, type MachinesState, MemberCount, usageBlock } from "@/components/resource";
+import { FormEquivalent, FormField, Input } from "@/components/form";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { checkName, type KnownNames } from "@/lib/create";
 import { permission, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
@@ -57,7 +37,7 @@ function ReadyCell({ n }: { n: Network }) {
   const ready = conditionOf(n.status?.conditions, "Ready");
   return (
     <span className="inline-flex items-center gap-2">
-      <Led light={lightOf(ready)} />
+      <Led tone={lightOf(ready)} />
       {ready?.status === 1 ? "Ready" : "Pending"}
     </span>
   );
@@ -79,10 +59,10 @@ function CreateNetworkDialog({ open, onClose, onCreated, known }: { open: boolea
   return (
     <Dialog open={open} onClose={close} title="New network">
       <FormField label="Name">
-        <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} className={inputClass} />
+        <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
       </FormField>
       <FormField label="IPv4 range" hint="A private (RFC 1918) range from /16 to /28. It may overlap other networks' ranges and cannot be changed later.">
-        <input value={cidr} onChange={(e) => setCidr(e.target.value)} spellCheck={false} className={inputClass} />
+        <Input value={cidr} onChange={(e) => setCidr(e.target.value)} spellCheck={false} />
       </FormField>
       <FormEquivalent yaml={networkYaml(obj)} cli={[`hangar apply --create-only -p ${project} -f ${name || "network"}.yaml`]} />
       <FormFooter
@@ -306,7 +286,7 @@ export function NetworkDetail({ name }: { name: string }) {
             facts={
               <>
                 <span className="inline-flex items-center gap-2">
-                  <Led light={lightOf(ready)} />
+                  <Led tone={lightOf(ready)} />
                   {ready?.status === 1 ? "Ready" : "Pending"}
                 </span>
                 <span className="font-mono text-[12px]">{cidr}</span>
@@ -381,7 +361,7 @@ export function NetworkDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[`hangar get network ${name} -p ${project}`, `hangar delete network ${name} -p ${project}`]}
                 yaml={networkYaml(n)}
               />

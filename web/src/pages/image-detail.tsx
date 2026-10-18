@@ -6,9 +6,11 @@ import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { PageBanner } from "@/components/notice";
+import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import { ConditionsCard, DiskState, EquivalentCard, ImageStateCell, NewDiskDialog } from "@/components/storage";
+import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
+import { DiskState, ImageStateCell, NewDiskDialog } from "@/components/storage";
+import { ConditionsCard, EquivalentCard } from "@/components/object";
 import { Badge, Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
@@ -82,25 +84,6 @@ function ProjectDisks({ img }: { img: Image }) {
         </ul>
       )}
     </Card>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-64" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card>
-          <SkeletonRows rows={6} />
-        </Card>
-        <Card>
-          <SkeletonRows rows={2} />
-        </Card>
-      </div>
-    </div>
   );
 }
 

@@ -98,9 +98,9 @@ describe("ProjectMembers", () => {
       ],
     });
     await screen.findByText("carol@example.com");
-    const ada = screen.getByText("ada@example.com").closest("li")!;
+    const ada = screen.getByText("ada@example.com").closest("tr")!;
     expect(within(ada).getByText("You")).toBeTruthy();
-    const carol = screen.getByText("carol@example.com").closest("li")!;
+    const carol = screen.getByText("carol@example.com").closest("tr")!;
     expect(within(carol).getByText("Not a platform member yet; the role takes effect once they are.")).toBeTruthy();
     // The hint never says whether the person was invited.
     expect(document.body.textContent).not.toMatch(/invit/i);
@@ -158,9 +158,26 @@ describe("ProjectMembers", () => {
     await waitFor(() => expect(a.calls).toContain("SetMemberRole"));
     const req = a.requests.find((c) => c.method === "SetMemberRole")!.request as { email: string; role: string };
     expect(req).toMatchObject({ email: "bob@example.com", role: "project.owner" });
-    const row = screen.getByText("bob@example.com").closest("li")!;
-    expect(await within(row).findByText("Changing the role failed")).toBeTruthy();
-    expect(within(row).getByText(/the tenant would have no owner/)).toBeTruthy();
+    const failed = await screen.findByText("Changing the role failed");
+    // The refusal is the row under the person's.
+    const under = screen.getByText("bob@example.com").closest("tr")!.nextElementSibling as HTMLElement;
+    expect(under.contains(failed)).toBe(true);
+    expect(within(under).getByText(/the tenant would have no owner/)).toBeTruthy();
+  });
+
+  it("filters the people by email or username", async () => {
+    show("project", {
+      project: [member("bob@example.com", "project.editor", "project", { username: "builder" }), member("carol@example.com", "project.viewer", "project")],
+    });
+    const filter = await screen.findByRole("textbox", { name: "Filter by email or username" });
+    fireEvent.change(filter, { target: { value: "build" } });
+    expect(screen.getByText("bob@example.com")).toBeTruthy();
+    expect(screen.queryByText("carol@example.com")).toBeNull();
+    fireEvent.change(filter, { target: { value: "CAROL@" } });
+    expect(screen.getByText("carol@example.com")).toBeTruthy();
+    expect(screen.queryByText("bob@example.com")).toBeNull();
+    fireEvent.change(filter, { target: { value: "dan" } });
+    expect(screen.getByText("No member matches.")).toBeTruthy();
   });
 
   it("removes a member after saying what ends and what stays", async () => {

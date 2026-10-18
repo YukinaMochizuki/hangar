@@ -6,37 +6,16 @@ import type { Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { HardDrive, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { PageBanner } from "@/components/notice";
+import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
-import {
-  ConditionsCard,
-  DeleteDiskDialog,
-  DiskSource,
-  DiskState,
-  diskYaml,
-  EquivalentCard,
-  GrowDiskDialog,
-  MachineLink,
-} from "@/components/storage";
+import { EmptyState, ErrorNotice } from "@/components/states";
+import { DeleteDiskDialog, DiskSource, DiskState, diskYaml, GrowDiskDialog, MachineLink } from "@/components/storage";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
 import { diskFault, diskImage, gib, growthBlocked, rootDiskOwner, useDisks, useImages } from "@/lib/storage";
 import { DiskSize } from "@/pages/disk-list";
-
-function Labels({ labels }: { labels: Record<string, string> }) {
-  const entries = Object.entries(labels);
-  return (
-    <span className="flex flex-wrap gap-1.5">
-      {entries.length === 0 && <span className="text-subtle">None</span>}
-      {entries.map(([k, v]) => (
-        <span key={k} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11.5px]">
-          {k}=<span className="text-muted">{v}</span>
-        </span>
-      ))}
-    </span>
-  );
-}
 
 function Header({ d }: { d: Disk }) {
   const [growing, setGrowing] = useState(false);
@@ -131,25 +110,6 @@ function Summary({ d }: { d: Disk }) {
         </Field>
       </dl>
     </Card>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-64" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <Card>
-          <SkeletonRows rows={5} />
-        </Card>
-        <Card>
-          <SkeletonRows rows={3} />
-        </Card>
-      </div>
-    </div>
   );
 }
 

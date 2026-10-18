@@ -14,29 +14,13 @@ import {
 import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import {
-  ConditionsCard,
-  DeleteDialog,
-  DetailBody,
-  DetailFrame,
-  DetailHead,
-  Equivalent,
-  FormEquivalent,
-  FormField,
-  FormFooter,
-  inputClass,
-  Labels,
-  Led,
-  ListFrame,
-  NameFilter,
-  NoMatch,
-  PageHead,
-  tbodyRow,
-  Th,
-  theadRow,
-} from "@/components/resource";
+import { DeleteDialog, FormFooter } from "@/components/resource";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { checkName, type KnownNames } from "@/lib/create";
 import { date, machinePath, useMachines, type MachineKind } from "@/lib/machines";
@@ -61,7 +45,7 @@ function ReadyCell({ e }: { e: PublicEndpoint }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Led light={lightOf(c)} />
+        <Led tone={lightOf(c)} />
         {c?.status === 1 ? "Ready" : "Not ready"}
       </span>
       {c?.status !== 1 && c?.reason && <span className="block font-mono text-[11.5px] text-subtle">{c.reason}</span>}
@@ -220,7 +204,7 @@ export function PublicEndpointDetail({ name }: { name: string }) {
             facts={
               <>
                 <span className="inline-flex items-center gap-2">
-                  <Led light={lightOf(ready)} />
+                  <Led tone={lightOf(ready)} />
                   {ready?.status === 1 ? "Ready" : "Not ready"}
                 </span>
                 <AccessBadge access={e.spec?.access ?? 0} />
@@ -311,7 +295,7 @@ export function PublicEndpointDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[
                   `hangar get ep ${name} -p ${project}`,
                   ...(owner ? [] : [`hangar apply -p ${project} -f ${name}.yaml`, `hangar delete ep ${name} -p ${project}`]),
@@ -372,20 +356,20 @@ function EndpointDialog({ open, onClose, onCreated, known }: { open: boolean; on
   return (
     <Dialog open={open} onClose={close} title="New public endpoint">
       <FormField label="Name" hint="The endpoint's hostname is made from its name and the project's, and is claimed for good.">
-        <input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} spellCheck={false} className={inputClass} />
+        <Input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} spellCheck={false} />
       </FormField>
-      <div className="grid grid-cols-[1fr_96px] gap-2">
-        <FormField label="Machine">
-          <select value={target} onChange={(ev) => setChoice(ev.target.value)} className={inputClass}>
+      <div className="mt-4 grid grid-cols-[1fr_96px] gap-2">
+        <FormField label="Machine" className="mt-0">
+          <Select value={target} onChange={(ev) => setChoice(ev.target.value)}>
             {all.items.map((m) => (
               <option key={`${m.kind}/${m.name}`} value={`${m.kind}/${m.name}`}>
                 {m.name} ({kindNoun(m.kind)})
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
-        <FormField label="Port">
-          <input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" className={inputClass} />
+        <FormField label="Port" className="mt-0">
+          <Input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </FormField>
       </div>
       <span className="mt-1 block text-[11.5px] text-subtle">The TCP port the machine serves plain HTTP on, on eth0.</span>

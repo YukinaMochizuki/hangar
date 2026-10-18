@@ -7,13 +7,17 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { CommandLine, DetailSkeleton, FormLabel, inputClass, ListHead, StaleBanner } from "@/components/credentials";
+import { StaleBanner } from "@/components/credentials";
+import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormField, Input, Textarea } from "@/components/form";
 import { Notice, PageBanner } from "@/components/notice";
+import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
-import { ConditionsCard, Dot, EquivalentCard } from "@/components/storage";
-import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
+import { tbodyRow, Th, theadRow } from "@/components/table";
+import { ConditionsCard, EquivalentCard } from "@/components/object";
+import { Badge, Button, Card, CardHeader, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
@@ -32,7 +36,6 @@ import {
 } from "@/lib/credentials";
 import { useCan } from "@/lib/permissions";
 import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
-import { LoadingTable } from "@/pages/disk-list";
 
 function SecretState({ s }: { s: Secret }) {
   const fault = secretFault(s);
@@ -47,7 +50,7 @@ function SecretState({ s }: { s: Secret }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <Dot tone={tone} />
+        <Led tone={tone} />
         {label}
       </span>
       {fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
@@ -126,12 +129,12 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
         }}
       >
         <div className="text-foreground">
-          <FormLabel title="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="registry-login" className={inputClass} />
-          </FormLabel>
-          <FormLabel title="Type">
-            <span className="mt-1.5 flex h-9 items-center rounded-md border bg-surface-2 px-2.5 text-[13px] text-muted">Registry login</span>
-          </FormLabel>
+          <FormField label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="registry-login" />
+          </FormField>
+          <FormField label="Type">
+            <span className="flex h-9 items-center rounded-md border bg-surface-2 px-2.5 text-[13px] text-muted">Registry login</span>
+          </FormField>
           <div role="radiogroup" aria-label="Values from" className="mt-4 flex h-8 w-fit items-center rounded-md border bg-surface p-0.5">
             {(
               [
@@ -153,28 +156,28 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
           </div>
           {mode === "login" ? (
             <>
-              <FormLabel title="Registry" hint="Its host. Docker Hub is index.docker.io.">
-                <input value={registry} onChange={(e) => setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" className={inputClass} />
-              </FormLabel>
-              <FormLabel title="Username">
-                <input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} autoComplete="off" className={inputClass} />
-              </FormLabel>
-              <FormLabel title="Password or access token">
+              <FormField label="Registry" hint="Its host. Docker Hub is index.docker.io.">
+                <Input value={registry} onChange={(e) => setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" />
+              </FormField>
+              <FormField label="Username">
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} autoComplete="off" />
+              </FormField>
+              <FormField label="Password or access token">
                 {/* Not a password for this site: "off" asks the browser neither to suggest a generated one nor to offer saving it. */}
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" className={inputClass} />
-              </FormLabel>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+              </FormField>
             </>
           ) : (
-            <FormLabel title="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`}>
-              <textarea
+            <FormField label="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`}>
+              <Textarea
                 value={config}
                 onChange={(e) => setConfig(e.target.value)}
                 spellCheck={false}
                 rows={5}
                 placeholder={'{"auths": {"registry.example.com": {"auth": "…"}}}'}
-                className={cn(inputClass, "h-auto py-2 text-[12px]")}
+                className="text-[12px]"
               />
-            </FormLabel>
+            </FormField>
           )}
         </div>
         <p className="mt-4 text-[12px]">The values are write-only: once created, no page and no answer of the API holds them.</p>
@@ -199,66 +202,34 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
 }
 
 function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: Use; open: boolean; onClose: () => void; after?: () => void }) {
-  const [typed, setTyped] = useState("");
   const name = s.metadata?.name ?? "";
   const project = s.metadata?.project ?? "";
   const del = useDeleteSecret(project, name);
   const usedBy = use.names ?? [];
-  const close = () => {
-    del.reset();
-    setTyped("");
-    onClose();
-  };
   return (
-    <Dialog open={open} onClose={close} title={`Delete secret ${name}`}>
-      {use.loading ? (
-        <p>The project's containers are still loading, so which of them name it is not known yet.</p>
-      ) : use.error ? (
-        <p>The project's containers did not load, so which of them name it is not known.</p>
-      ) : usedBy.length > 0 ? (
-        <p>
-          {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Running ones keep running; one that
-          pulls its image again without it is Ready=False ImagePullSecretNotFound.
-        </p>
-      ) : (
-        <p>No container names it.</p>
-      )}
-      <label className="mt-4 block">
-        <span className="text-[12.5px] text-foreground">
-          Name, to confirm: <span className="font-mono">{name}</span>
-        </span>
-        <input
-          value={typed}
-          onChange={(e) => setTyped(e.target.value)}
-          autoFocus
-          spellCheck={false}
-          className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
-        />
-      </label>
-      <CommandLine command={commands.deleteSecret(project, name)} />
-      {del.error && (
-        <Notice tone="error" title="Deleting failed" className="mt-3">
-          {errorMessage(del.error)}
-        </Notice>
-      )}
-      <div className="mt-5 flex justify-end gap-2">
-        <Button onClick={close}>Cancel</Button>
-        <Button
-          variant="danger"
-          disabled={typed !== name || del.isPending}
-          onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
-                close();
-                after?.();
-              },
-            })
-          }
-        >
-          <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}
-        </Button>
-      </div>
-    </Dialog>
+    <ConfirmDeleteDialog
+      open={open}
+      onClose={onClose}
+      title={`Delete secret ${name}`}
+      name={name}
+      consequence={
+        use.loading ? (
+          "The project's containers are still loading, so which of them name it is not known yet."
+        ) : use.error ? (
+          "The project's containers did not load, so which of them name it is not known."
+        ) : usedBy.length > 0 ? (
+          <>
+            {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Running ones keep running; one
+            that pulls its image again without it is Ready=False ImagePullSecretNotFound.
+          </>
+        ) : (
+          "No container names it."
+        )
+      }
+      cli={commands.deleteSecret(project, name)}
+      del={del}
+      after={after}
+    />
   );
 }
 
@@ -279,82 +250,76 @@ export function SecretList(props: NewProps) {
     <>
       <Topbar crumbs={["Secrets"]} />
       {loaded && error ? <StaleBanner what="secrets" error={error} onRetry={refetch} /> : null}
-      <ListHead title="Secrets" text="Registry logins the platform pulls this project's images with. Their values are write-only." action={canCreate && newButton} />
+      <PageHead
+        title="Secrets"
+        description="Registry logins the platform pulls this project's images with. Their values are write-only."
+        action={canCreate && newButton}
+      />
       <div className="px-4 pb-10 md:px-8">
-        {loading ? (
-          <LoadingTable />
-        ) : error && !loaded ? (
-          <Card>
-            <ErrorNotice error={error} title="The secrets did not load" onRetry={refetch} />
+        <ListFrame
+          state={{ loading, error: loaded ? undefined : error, refetch, count: items.length }}
+          noun="secrets"
+          empty={{ title: "No secrets", text: "A container names a secret to pull a private image with it.", action: canCreate ? newButton : undefined }}
+        >
+          <Card className="md:hidden">
+            <ul className="divide-y">
+              {items.map((s) => {
+                const name = s.metadata?.name ?? "";
+                return (
+                  <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                    <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">{name}</span>
+                      <span className="block truncate font-mono text-[11.5px] text-subtle">{(s.status?.registries ?? []).join(", ")}</span>
+                    </Link>
+                    <span className="shrink-0 text-right">
+                      <SecretState s={s} />
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </Card>
-        ) : items.length === 0 ? (
-          <Card>
-            <EmptyState title="No secrets" action={canCreate ? newButton : undefined}>
-              A container names a secret to pull a private image with it.
-            </EmptyState>
-          </Card>
-        ) : (
-          <>
-            <Card className="md:hidden">
-              <ul className="divide-y">
+          <Card className="hidden overflow-x-auto md:block">
+            <table className="w-full min-w-[820px] text-[13px]">
+              <thead>
+                <tr className={theadRow}>
+                  <Th className="w-[24%]">Name</Th>
+                  <Th>State</Th>
+                  <Th>Registries</Th>
+                  <Th>Keys</Th>
+                  <Th>Used by</Th>
+                  <Th>Created</Th>
+                </tr>
+              </thead>
+              <tbody>
                 {items.map((s) => {
                   const name = s.metadata?.name ?? "";
                   return (
-                    <li key={name} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-                      <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="min-w-0 flex-1">
-                        <span className="block truncate font-medium">{name}</span>
-                        <span className="block truncate font-mono text-[11.5px] text-subtle">{(s.status?.registries ?? []).join(", ")}</span>
-                      </Link>
-                      <span className="shrink-0 text-right">
+                    <tr key={name} className={tbodyRow}>
+                      <td className="max-w-0 px-4 py-2.5">
+                        <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="block">
+                          <span className="block truncate font-medium group-hover:text-accent">{name}</span>
+                        </Link>
+                        <span className="block truncate text-[11.5px] text-subtle">{secretTypeLabel(s)}</span>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5">
                         <SecretState s={s} />
-                      </span>
-                    </li>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Registries s={s} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{(s.status?.keys ?? []).join(", ")}</td>
+                      <td className="px-4 py-2.5">
+                        <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
+                    </tr>
                   );
                 })}
-              </ul>
-            </Card>
-            <Card className="hidden overflow-x-auto md:block">
-              <table className="w-full min-w-[820px] text-[13px]">
-                <thead>
-                  <tr className="border-b bg-surface-2/60 text-left text-[11.5px] text-subtle">
-                    <th className="w-[24%] px-4 py-2 font-medium">Name</th>
-                    <th className="px-4 py-2 font-medium">State</th>
-                    <th className="px-4 py-2 font-medium">Registries</th>
-                    <th className="px-4 py-2 font-medium">Keys</th>
-                    <th className="px-4 py-2 font-medium">Used by</th>
-                    <th className="px-4 py-2 font-medium">Created</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((s) => {
-                    const name = s.metadata?.name ?? "";
-                    return (
-                      <tr key={name} className="group border-b last:border-0 hover:bg-surface-2/60">
-                        <td className="max-w-0 px-4 py-2.5">
-                          <Link to="/projects/$project/secrets/$name" params={{ project, name }} className="block">
-                            <span className="block truncate font-medium group-hover:text-accent">{name}</span>
-                          </Link>
-                          <span className="block truncate text-[11.5px] text-subtle">{secretTypeLabel(s)}</span>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5">
-                          <SecretState s={s} />
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <Registries s={s} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{(s.status?.keys ?? []).join(", ")}</td>
-                        <td className="px-4 py-2.5">
-                          <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Card>
-          </>
-        )}
+              </tbody>
+            </table>
+          </Card>
+        </ListFrame>
       </div>
       {(canCreate || creating) && (
         <NewSecretDialog

@@ -17,33 +17,13 @@ import {
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Dialog } from "@/components/dialog";
-import {
-  ConditionsCard,
-  DeleteDialog,
-  DetailBody,
-  DetailFrame,
-  DetailHead,
-  Equivalent,
-  FormEquivalent,
-  FormField,
-  FormFooter,
-  inputClass,
-  StaleNotice,
-  Labels,
-  ListFrame,
-  MachinesNotice,
-  MemberCount,
-  NameFilter,
-  NoMatch,
-  PageHead,
-  tbodyRow,
-  Th,
-  theadRow,
-  usageBlock,
-} from "@/components/resource";
+import { DeleteDialog, FormFooter, MachinesNotice, MemberCount, StaleNotice, usageBlock } from "@/components/resource";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
-import { cn } from "@/lib/cn";
 import { checkName, type KnownNames } from "@/lib/create";
 import { isStale, permission, useApplyAt, useCreate, useReload } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
@@ -351,7 +331,7 @@ export function SecurityGroupDetail({ name }: { name: string }) {
               </>
             }
             side={
-              <Equivalent
+              <EquivalentCard
                 cli={[`hangar get sg ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete sg ${name} -p ${project}`]}
                 yaml={securityGroupYaml(g)}
               />
@@ -406,7 +386,6 @@ const egressOf = (rules: Draft[]) => rules.map((r) => create(EgressRuleSchema, {
 
 function RulesEditor({ title, peer, rules, onChange }: { title: string; peer: string; rules: Draft[]; onChange: (r: Draft[]) => void }) {
   const set = (i: number, d: Partial<Draft>) => onChange(rules.map((r, j) => (j === i ? { ...r, ...d } : r)));
-  const select = "h-9 rounded-md border border-border-strong bg-background px-1.5 text-[12.5px] text-foreground";
   return (
     <div className="mt-4">
       <div className="flex items-center justify-between">
@@ -426,27 +405,27 @@ function RulesEditor({ title, peer, rules, onChange }: { title: string; peer: st
         const ports = takesPorts(r.protocol);
         return (
           <div key={i} className="mt-1.5 grid grid-cols-[72px_80px_1fr_28px] items-center gap-1.5">
-            <select aria-label="Protocol" value={r.protocol} onChange={(e) => set(i, { protocol: Number(e.target.value) })} className={select}>
+            <Select aria-label="Protocol" value={r.protocol} onChange={(e) => set(i, { protocol: Number(e.target.value) })} className="pl-2 font-sans text-[12.5px]">
               {protocols.map((p) => (
                 <option key={p} value={p}>
                   {protocolLabel[p]}
                 </option>
               ))}
-            </select>
-            <input
+            </Select>
+            <Input
               aria-label="Ports"
               value={ports ? r.ports : ""}
               disabled={!ports}
               placeholder={ports ? "all" : "–"}
               onChange={(e) => set(i, { ports: e.target.value })}
-              className={cn(inputClass, "px-2 disabled:opacity-50")}
+              className="px-2 disabled:opacity-50"
             />
-            <input
+            <Input
               aria-label={peer}
               value={r.peer}
               placeholder="::/0 or a group"
               onChange={(e) => set(i, { peer: e.target.value })}
-              className={cn(inputClass, "px-2")}
+              className="px-2"
             />
             <button
               aria-label="Remove rule"
@@ -536,16 +515,16 @@ function GroupDialog({
       {!group && (
         <>
           <FormField label="Name">
-            <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} className={inputClass} />
+            <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
           </FormField>
           <FormField label="Network" hint="Only interfaces on this network can join the group. It cannot be changed later.">
-            <select value={network} onChange={(e) => setNetwork(e.target.value)} className={inputClass}>
+            <Select value={network} onChange={(e) => setNetwork(e.target.value)}>
               {networks.map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
               ))}
-            </select>
+            </Select>
           </FormField>
         </>
       )}

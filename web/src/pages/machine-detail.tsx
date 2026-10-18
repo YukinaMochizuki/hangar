@@ -6,22 +6,24 @@ import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { MachineCapabilityService, MachineLogStream, type MachineLogRecord } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
-import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
+import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import { ArrowUpRight, ChevronDown, ChevronRight, ChevronUp, Lock } from "lucide-react";
+import { ArrowUpRight, ChevronDown, ChevronUp, Lock } from "lucide-react";
 import { useEffect, useState } from "react";
 import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
+import { ConditionRow, ConditionsFold, EquivalentCard, Labels } from "@/components/object";
 import { PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
 import { createdKey, useJustCreated } from "@/lib/just-created";
+import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
+import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
 import { Badge, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
-import { ago, date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
+import { date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { useReducedMotion } from "@/lib/motion";
 import { formatNumber } from "@/lib/quantity";
@@ -179,20 +181,6 @@ function Lifecycle({ m }: { m: MachineView }) {
         </div>
       </div>
     </Card>
-  );
-}
-
-function Labels({ labels }: { labels: Record<string, string> }) {
-  const entries = Object.entries(labels);
-  return (
-    <span className="flex flex-wrap gap-1.5">
-      {entries.length === 0 && <span className="text-subtle">None</span>}
-      {entries.map(([k, v]) => (
-        <span key={k} className="rounded bg-surface-2 px-1.5 py-0.5 font-mono text-[11.5px]">
-          {k}=<span className="text-muted">{v}</span>
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -361,12 +349,6 @@ function Networking({ m }: { m: MachineView }) {
   );
 }
 
-const statusWord: Record<number, string> = {
-  [ConditionStatus.TRUE]: "True",
-  [ConditionStatus.FALSE]: "False",
-  [ConditionStatus.UNKNOWN]: "Unknown",
-};
-
 /** The raw conditions, folded away: the lifecycle says the same in plain words. */
 function Conditions({ m }: { m: MachineView }) {
   const rows = [
@@ -374,34 +356,11 @@ function Conditions({ m }: { m: MachineView }) {
     ...(m.machine?.status?.conditions ?? []).map((c) => ({ c, of: "Machine" })),
   ];
   return (
-    <Card className="overflow-hidden">
-      <details className="group">
-        <summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-4 text-[13px] font-medium [&::-webkit-details-marker]:hidden">
-          <ChevronRight className="size-3.5 text-subtle transition-transform group-open:rotate-90 motion-reduce:transition-none" />
-          Conditions
-          <span className="font-mono text-[11.5px] font-normal text-subtle">{rows.length}</span>
-        </summary>
-        <ul className="divide-y border-t">
-          {rows.map(({ c, of }) => (
-            <li key={`${of}/${c.type}`} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-              <span
-                className={cn(
-                  "size-1.5 shrink-0 rounded-full",
-                  c.status === ConditionStatus.TRUE ? "bg-ok" : c.status === ConditionStatus.UNKNOWN ? "bg-pending" : "bg-subtle",
-                )}
-              />
-              <span className="w-20 shrink-0 text-[12px] text-subtle">{of}</span>
-              <span className="w-20 shrink-0 font-medium">{c.type}</span>
-              <span className="w-16 shrink-0 font-mono text-[12px] text-muted">{statusWord[c.status] ?? "?"}</span>
-              <span className="shrink-0 font-mono text-[12px] text-muted">{c.reason}</span>
-              <span className="hidden min-w-0 flex-1 truncate text-muted md:block">{c.message}</span>
-              <span className="flex-1 md:hidden" />
-              <span className="shrink-0 text-[12px] text-subtle">{ago(date(c.lastTransitionTime))} ago</span>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </Card>
+    <ConditionsFold count={rows.length}>
+      {rows.map(({ c, of }) => (
+        <ConditionRow key={`${of}/${c.type}`} c={c} of={of} />
+      ))}
+    </ConditionsFold>
   );
 }
 
@@ -531,7 +490,6 @@ function RunsOn({ m }: { m: MachineView }) {
 }
 
 function Equivalent({ m }: { m: MachineView }) {
-  const [tab, setTab] = useState<"cli" | "yaml">("cli");
   const kind = m.kind === "Container" ? "container" : "vm";
   const cli = [
     `hangar get ${kind} ${m.name} -p ${m.project}`,
@@ -541,61 +499,7 @@ function Equivalent({ m }: { m: MachineView }) {
   ];
   const obj = m.container ?? m.vm;
   const yaml = obj ? toYaml(manifestOf(obj, m.kind)) : "";
-  const text = tab === "cli" ? cli.join("\n") : yaml;
-  return (
-    <Card className="overflow-hidden">
-      <div className="flex h-11 items-center justify-between border-b px-4">
-        <div role="tablist" className="flex gap-1 text-[12px]">
-          {(["cli", "yaml"] as const).map((t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={cn("rounded px-2 py-1 font-medium", tab === t ? "bg-surface-2 text-foreground" : "text-muted hover:text-foreground")}
-            >
-              {t === "cli" ? "CLI" : "YAML"}
-            </button>
-          ))}
-        </div>
-        <CopyButton text={text} />
-      </div>
-      <pre className="max-h-96 overflow-auto whitespace-pre-wrap px-4 py-3 font-mono text-[12px] leading-5">
-        {tab === "cli"
-          ? cli.map((c) => (
-              <div key={c} className="-indent-3.5 py-0.5 pl-3.5">
-                <span className="select-none text-accent">$ </span>
-                {c}
-              </div>
-            ))
-          : yaml}
-      </pre>
-    </Card>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div aria-busy="true" aria-label="Loading">
-      <div className="space-y-3 border-b px-4 pb-5 pt-6 md:px-8">
-        <Skeleton className="h-7 w-48" />
-        <Skeleton className="h-3 w-80" />
-      </div>
-      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="space-y-5">
-          <Card>
-            <SkeletonRows rows={2} />
-          </Card>
-          <Card>
-            <SkeletonRows rows={5} />
-          </Card>
-        </div>
-        <Card>
-          <SkeletonRows rows={4} />
-        </Card>
-      </div>
-    </div>
-  );
+  return <EquivalentCard cli={cli} yaml={yaml} />;
 }
 
 export function MachineDetail({ kind, name }: { kind: MachineKind; name: string }) {
