@@ -198,11 +198,17 @@ export function FormSummary({
         )}
         {problems.length > 0 && <div className="text-[12px] text-subtle">{problems.join(" ")}</div>}
         <div className="flex gap-2">
-          {cancelTo && (
-            <Link to={cancelTo} className={buttonVariants()}>
-              Cancel
-            </Link>
-          )}
+          {/* Off while the call is in flight: leaving then would drop what it answers, such as a token's only secret. */}
+          {cancelTo &&
+            (pending ? (
+              <Button type="button" disabled>
+                Cancel
+              </Button>
+            ) : (
+              <Link to={cancelTo} className={buttonVariants()}>
+                Cancel
+              </Link>
+            ))}
           <Button type="submit" variant="primary" className="min-w-0 flex-1" disabled={problems.length > 0 || !!blocked || pending}>
             {pending ? pendingLabel : label}
           </Button>

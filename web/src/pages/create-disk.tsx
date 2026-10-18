@@ -82,8 +82,10 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
   }
   if (sizeProblem) problems.push(sizeProblem);
 
-  const disk = newDisk(project, name, use, sizeTyped, chosen);
-  const yaml = diskYaml(newDisk(project, name || "NAME", use, sizeTyped, chosen));
+  // A whole number as the browser reads it ("1e1" is 10) goes out as its digits: the API takes no exponent.
+  const sizeSent = Number.isInteger(size) ? String(size) : sizeTyped;
+  const disk = newDisk(project, name, use, sizeSent, chosen);
+  const yaml = diskYaml(newDisk(project, name || "NAME", use, sizeSent, chosen));
   const submit = () => {
     if (problems.length > 0) return;
     create.mutate(disk, {

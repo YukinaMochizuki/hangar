@@ -56,6 +56,33 @@ describe("New disk", () => {
     expect(sent.spec?.source?.source.case).toBeUndefined();
   });
 
+  it("sends a size the browser reads as a whole number, such as 1e1, as its digits", async () => {
+    const applied: ApplyDiskRequest[] = [];
+    const a = storageApi({ images, apply: (req) => (applied.push(req), { disk: req.disk, created: true }) });
+    render(<CreateDisk />, { wrapper: withApi(a) });
+    await screen.findByLabelText("Disk name");
+    type("Disk name", "data");
+    type("Size, GiB", "1e1");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(manifest()).toContain("size: 10Gi");
+    fireEvent.click(submitButton());
+    await waitFor(() => expect(applied).toHaveLength(1));
+    expect(applied[0].disk!.spec?.size).toBe("10Gi");
+  });
+
+  it("turns Cancel off while the create is in flight", async () => {
+    const answer = deferred<never>();
+    const a = storageApi({ images, apply: () => answer.promise });
+    render(<CreateDisk />, { wrapper: withApi(a) });
+    await screen.findByLabelText("Disk name");
+    type("Disk name", "data");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(screen.getByRole("link", { name: "Cancel" }).getAttribute("href")).toBe("/projects/demo/disks");
+    fireEvent.click(submitButton());
+    await waitFor(() => expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true));
+    expect(screen.queryByRole("link", { name: "Cancel" })).toBeNull();
+  });
+
   it("makes a boot disk of the image chosen, labelled boot, and offers only usable images, each with its smallest disk", async () => {
     const applied: ApplyDiskRequest[] = [];
     const a = storageApi({ images, apply: (req) => (applied.push(req), { disk: req.disk, created: true }) });

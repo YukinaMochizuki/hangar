@@ -203,8 +203,8 @@ when it failed, nothing is held, so a control appears once it is known to
 work; a refusal is stated only when the answer came and said so. On a
 page, a failed answer hides the controls and states nothing; a form that
 cannot go on without the answer (New project, a create page) shows the
-failure as the error it is. The answer only decides what is drawn: the API still checks
-every call, and a refusal is shown like any error. Pages whose controls
+failure as the error it is. The answer only decides what is drawn: the
+API still checks every call, and a refusal is shown like any error. Pages whose controls
 do not ask yet show them to everyone and show the API's refusal in place.
 New project asks once per tenant the member sees, which is every tenant
 for a platform administrator; at today's size that is a handful of calls.

@@ -136,8 +136,8 @@ function ListPage({ page: Page }: { page: ComponentType<NewProps> }) {
 }
 
 /**
- * A list's ?new=1, which once opened its create dialog, opens its create
- * page in place of the list's entry, so going back does not return to it.
+ * A list's ?new=1 opens its create page in place of the list's entry, so
+ * going back does not return to it.
  */
 function toCreatePage(kind: string) {
   return ({ search, params }: { search: { new?: 1 }; params: { project: string } }) => {
