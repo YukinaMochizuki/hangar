@@ -185,7 +185,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     [actionPerms.address, "Reserve address", newPage("address")],
     [actionPerms.publicEndpoint, "New public endpoint", newPage("public-endpoint")],
     [actionPerms.secret, "New secret", newPage("secret")],
-    [actionPerms.token, "New service token", newIn(`/projects/${project}/service-tokens`)],
+    [actionPerms.token, "New service token", newPage("service-token")],
     [actionPerms.member, "Add member", newIn(`/projects/${project}/members`)],
   ];
   const actions: Section = {

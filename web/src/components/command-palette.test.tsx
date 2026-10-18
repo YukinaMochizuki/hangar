@@ -250,7 +250,7 @@ describe("CommandPalette", () => {
       ["Reserve address", { to: "/projects/demo/new/address" }],
       ["New public endpoint", { to: "/projects/demo/new/public-endpoint" }],
       ["New secret", { to: "/projects/demo/new/secret" }],
-      ["New service token", dialog("/projects/demo/service-tokens")],
+      ["New service token", { to: "/projects/demo/new/service-token" }],
       ["Add member", dialog("/projects/demo/members")],
     ] as const) {
       fireEvent.click(screen.getByRole("button", { name: "Open palette" }));

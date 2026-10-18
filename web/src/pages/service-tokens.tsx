@@ -1,9 +1,10 @@
 // A project's service tokens: agents' credentials. A token's secret is
 // returned once, by ServiceTokenIssuerService, when it creates or rotates the
-// token (docs/decisions/authentication.md). The console shows it in the one
-// dialog that asked for it, held in that dialog's state alone; closing the
-// dialog drops it. Pages show the secret's first characters, which the
-// status gives, to tell which secret someone holds.
+// token (docs/decisions/authentication.md). The console shows it once, in
+// SecretOnce over the page or dialog that asked for it, held in that one's
+// state alone; closing SecretOnce drops it. New tokens are made on
+// pages/create-service-token.tsx. Pages show the secret's first characters,
+// which the status gives, to tell which secret someone holds.
 //
 // Only owners write tokens: editors read them (tenancy-and-iam.md), so for
 // them these pages have no controls.
@@ -15,17 +16,16 @@ import { useState } from "react";
 import { StaleBanner } from "@/components/credentials";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
-import { CommandLine, FormField, Input, Select } from "@/components/form";
+import { CommandLine, FormField, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
 import { EquivalentCard } from "@/components/object";
-import { Badge, Button, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { checkName } from "@/lib/create";
 import {
   commands,
   day,
@@ -39,9 +39,8 @@ import {
   useServiceTokens,
   useTokenRoles,
 } from "@/lib/credentials";
-import { roleLabel, roles } from "@/lib/members";
+import { roleLabel } from "@/lib/members";
 import { useCan } from "@/lib/permissions";
-import { useCreating, type NewProps } from "@/lib/new-param";
 
 function TokenState({ t }: { t: ServiceToken }) {
   const s = tokenState(t);
@@ -94,7 +93,8 @@ function Roles({ held, name }: { held: Held; name: string }) {
   );
 }
 
-function DurationSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** DurationSelect chooses how long a token's secret works. */
+export function DurationSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <FormField label="Secret works for">
       <Select value={value} onChange={(e) => onChange(e.target.value)} className="w-40 font-sans">
@@ -114,7 +114,7 @@ function DurationSelect({ value, onChange }: { value: string; onChange: (v: stri
  * Dialog is locked: only its Close button drops the secret, and a close
  * the browser makes on its own opens the element again (components/dialog.tsx).
  */
-function SecretOnce({ title, secret, onClose }: { title: string; secret: string; onClose: () => void }) {
+export function SecretOnce({ title, secret, onClose }: { title: string; secret: string; onClose: () => void }) {
   return (
     <Dialog open onClose={onClose} title={title} locked>
       <p>This secret is shown once. Hangar keeps only its hash, so no page, command or answer of the API shows it again.</p>
@@ -130,81 +130,6 @@ function SecretOnce({ title, secret, onClose }: { title: string; secret: string;
           Close
         </Button>
       </div>
-    </Dialog>
-  );
-}
-
-/**
- * NewTokenDialog creates a token with its first secret, and a binding for a
- * role when one is chosen, in one CreateServiceToken, which refuses a name
- * that exists. The secret it returns is shown once, in SecretOnce.
- */
-function NewTokenDialog({ open, onClose, project, names }: { open: boolean; onClose: () => void; project: string; names: { loading: boolean; error: unknown; names: string[] } }) {
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [role, setRole] = useState("");
-  const [duration, setDuration] = useState("");
-  const [secret, setSecret] = useState<string | null>(null);
-  const issue = useIssueToken(project, setSecret);
-  const nameCheck = checkName(name, "service token", names);
-  const problem = (name !== "" || names.loading || !!names.error) && !nameCheck.ok ? nameCheck.reason : undefined;
-  const close = () => {
-    issue.reset();
-    setSecret(null);
-    onClose();
-  };
-  if (!open) return null;
-  if (secret !== null) return <SecretOnce title={`Token ${name} created`} secret={secret} onClose={close} />;
-  return (
-    <Dialog open onClose={close} title="New service token">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (nameCheck.ok) issue.mutate({ name, description, role, duration });
-        }}
-      >
-        <div className="text-foreground">
-          <FormField label="Name" hint={`It authenticates as serviceToken:${project}/${nameCheck.ok ? name : "NAME"}.`}>
-            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="ci" />
-          </FormField>
-          <FormField label="Description">
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Deploys from the main branch" className="font-sans" />
-          </FormField>
-          <fieldset className="mt-4">
-            <legend className="text-[12.5px] text-foreground">Role in this project</legend>
-            <div className="mt-1.5 divide-y rounded-md border">
-              {[{ id: "", label: "None", holds: "The token holds only what bindings made later grant." }, ...roles.project].map((r) => (
-                <label key={r.id} className="flex cursor-pointer gap-2.5 px-3 py-2 hover:bg-surface-2/60">
-                  <input type="radio" name="role" value={r.id} checked={role === r.id} onChange={() => setRole(r.id)} className="mt-0.5 accent-[var(--accent)]" />
-                  <span className="min-w-0">
-                    <span className="flex items-baseline gap-2 text-[13px] text-foreground">
-                      {r.label}
-                      {r.id && <span className="font-mono text-[11px] text-subtle">{r.id}</span>}
-                    </span>
-                    <span className="block text-[12px] text-muted">{r.holds}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <DurationSelect value={duration} onChange={setDuration} />
-        </div>
-        <CommandLine command={commands.createToken(project, nameCheck.ok ? name : "", { role, duration, description })} />
-        {problem && <Notice tone="warning" title={problem} className="mt-3" />}
-        {issue.error && (
-          <Notice tone="error" title="Creating the token failed" className="mt-3">
-            {errorMessage(issue.error)}
-          </Notice>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" onClick={close}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={!nameCheck.ok || issue.isPending}>
-            <Plus /> {issue.isPending ? "Creating…" : "Create token"}
-          </Button>
-        </div>
-      </form>
     </Dialog>
   );
 }
@@ -276,17 +201,16 @@ function DeleteTokenDialog({ t, held, open, onClose, after }: { t: ServiceToken;
 }
 
 /** ServiceTokenList is the project's tokens, with New token for owners. */
-export function ServiceTokenList(props: NewProps) {
+export function ServiceTokenList() {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useServiceTokens(project);
   const held = useTokenRoles(project);
   const createPerm = useCan({ level: "project", name: project }, [perms.tokenApply]);
   const canCreate = createPerm.can(perms.tokenApply);
-  const [creating, setCreating] = useCreating(props, canCreate, createPerm.settled);
   const newButton = (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/service-token" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New token
-    </Button>
+    </Link>
   );
   return (
     <>
@@ -374,16 +298,6 @@ export function ServiceTokenList(props: NewProps) {
           </Card>
         </ListFrame>
       </div>
-      {/* Kept while open, so an answer that changes in between never drops a secret it shows. */}
-      {(canCreate || creating) && (
-        <NewTokenDialog
-          key={String(creating)}
-          open={creating}
-          onClose={() => setCreating(false)}
-          project={project}
-          names={{ loading, error, names: items.map((t) => t.metadata?.name ?? "") }}
-        />
-      )}
     </>
   );
 }

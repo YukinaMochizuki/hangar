@@ -16,6 +16,7 @@ import { CreateDisk } from "@/pages/create-disk";
 import { CreateNetwork } from "@/pages/create-network";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { CreateSecret } from "@/pages/create-secret";
+import { CreateServiceToken } from "@/pages/create-service-token";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { paletteApi, type PaletteFake } from "@/test/palette-api";
 
@@ -43,6 +44,14 @@ const cases: Case[] = [
     list: "public-endpoints",
   },
   { kind: "secret", page: () => <CreateSecret />, perm: "secrets.secrets.apply", field: "Secret name", refusal: "creating secrets", list: "secrets" },
+  {
+    kind: "service token",
+    page: () => <CreateServiceToken />,
+    perm: "iam.servicetokens.apply",
+    field: "Token name",
+    refusal: "creating service tokens",
+    list: "service-tokens",
+  },
 ];
 
 function show(c: Case, f: PaletteFake = {}) {

@@ -5,6 +5,7 @@ import type { CreateServiceTokenRequest, RotateServiceTokenRequest } from "@hang
 import type { DeleteServiceTokenRequest, ServiceToken } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { CreateServiceToken } from "@/pages/create-service-token";
 import { ServiceTokenDetail, ServiceTokenList } from "@/pages/service-tokens";
 import { binding, cacheText, credentialsApi, issued, token } from "@/test/credentials";
 import { never, polyfillDialog, withApi } from "@/test/harness";
@@ -21,7 +22,6 @@ beforeEach(() => navigate.mockReset());
 afterEach(cleanup);
 
 const dialog = () => screen.getByRole("dialog");
-const type = (label: string | RegExp, value: string) => fireEvent.change(within(dialog()).getByLabelText(label), { target: { value } });
 
 /** Everything a person could read: the page, every command line in it included. */
 const page = () => document.body.innerHTML;
@@ -92,42 +92,46 @@ describe("ServiceTokenList", () => {
     render(<ServiceTokenList />, { wrapper: withApi(a) });
     await screen.findByRole("table");
     await waitFor(() => expect(a.calls).toContain("TestPermissions"));
-    expect(screen.queryByRole("button", { name: /New token/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /New token/ })).toBeNull();
     expect(a.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["iam.servicetokens.apply"] });
     cleanup();
 
     const b = credentialsApi({ tokens: async () => ({ items: [token("ci")] }), perms: () => never() });
     render(<ServiceTokenList />, { wrapper: withApi(b) });
     await screen.findByRole("table");
-    expect(screen.queryByRole("button", { name: /New token/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /New token/ })).toBeNull();
     cleanup();
 
     const c = credentialsApi({ tokens: async () => ({ items: [token("ci")] }), perms: () => Promise.reject(new ConnectError("no", Code.Unavailable)) });
     render(<ServiceTokenList />, { wrapper: withApi(c) });
     await screen.findByRole("table");
     await waitFor(() => expect(c.calls).toContain("TestPermissions"));
-    expect(screen.queryByRole("button", { name: /New token/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /New token/ })).toBeNull();
   });
 });
 
 describe("New token", () => {
+  /** Renders the New service token page over a list holding "taken", once the form is drawn. */
   async function open(f: Parameters<typeof credentialsApi>[0] = {}) {
     const a = credentialsApi({ tokens: async () => ({ items: [token("taken")] }), perms: async () => owner, ...f });
-    render(<ServiceTokenList />, { wrapper: withApi(a) });
-    await screen.findByRole("table");
-    fireEvent.click(await screen.findByRole("button", { name: /New token/ }));
-    return a;
+    const view = render(<CreateServiceToken />, { wrapper: withApi(a) });
+    await screen.findByLabelText("Token name");
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    return Object.assign(a, { unmount: view.unmount });
   }
+  const typeIn = (label: string | RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
+  const submit = () => screen.getByRole("button", { name: /Create token|Loading names/ }) as HTMLButtonElement;
+  const form = () => screen.getByLabelText("Token name").closest("form")!;
 
-  it("creates a token with one CreateServiceToken, shows its secret once, and drops it when closed", async () => {
+  it("creates a token with one CreateServiceToken, shows its secret once, and opens the token when closed", async () => {
     let sent: CreateServiceTokenRequest | undefined;
     const a = await open({ createToken: (r) => (sent = r) });
-    type("Name", "release");
-    type("Description", "Publishes builds");
-    fireEvent.click(within(dialog()).getByRole("radio", { name: /Editor/ }));
-    fireEvent.change(within(dialog()).getByLabelText("Secret works for"), { target: { value: "2160h" } });
+    typeIn("Token name", "release");
+    typeIn("Description", "Publishes builds");
+    fireEvent.click(screen.getByRole("radio", { name: /Editor/ }));
+    typeIn("Secret works for", "2160h");
     expect(commandLines()).toContain("$ hangar token create release --role project.editor --duration 2160h --description 'Publishes builds' -p demo");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    fireEvent.click(submit());
 
     const once = await screen.findByRole("dialog", { name: "Token release created" });
     expect(within(once).getByLabelText("Secret").textContent).toBe(issued[0]);
@@ -146,20 +150,19 @@ describe("New token", () => {
 
     fireEvent.click(within(once).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/service-tokens/$name", params: { project: "demo", name: "release" }, replace: true });
     expect(page()).not.toContain(issued[0]);
     expect(cacheText(a.client)).not.toContain(issued[0]);
-    // The issue leaves the query client with its dialog, so nothing is left to replay it.
+    // The issue leaves the query client with its page, so nothing is left to replay it.
+    a.unmount();
     await waitFor(() => expect(a.client.getMutationCache().getAll()).toHaveLength(0));
-    // Opening New token again starts empty.
-    fireEvent.click(screen.getByRole("button", { name: /New token/ }));
-    expect((within(dialog()).getByLabelText("Name") as HTMLInputElement).value).toBe("");
     expect(page()).not.toContain(issued[0]);
   });
 
   it("closes the secret's dialog only with its own button, not with Escape", async () => {
     await open();
-    type("Name", "release");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    typeIn("Token name", "release");
+    fireEvent.click(submit());
     const once = (await screen.findByRole("dialog", { name: "Token release created" })) as HTMLDialogElement;
     const cancel = new Event("cancel", { cancelable: true });
     once.dispatchEvent(cancel);
@@ -167,6 +170,7 @@ describe("New token", () => {
     fireEvent.click(once);
     expect(screen.getByRole("dialog", { name: "Token release created" })).toBeTruthy();
     expect(screen.getByLabelText("Secret").textContent).toBe(issued[0]);
+    expect(navigate).not.toHaveBeenCalled();
 
     // Chromium, after a few Escapes, sends a cancel that cannot be prevented and closes the element itself.
     let closed = 0;
@@ -192,16 +196,13 @@ describe("New token", () => {
         return { items: [token("taken")] };
       },
     });
-    type("Name", "release");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    typeIn("Token name", "release");
+    fireEvent.click(submit());
     await screen.findByRole("dialog", { name: "Token release created" });
     fail = true;
     await a.client.refetchQueries();
-    await screen.findByText("The service tokens did not load again; this page shows the last answer.");
+    await waitFor(() => expect(a.calls.filter((c) => c === "ListServiceTokens").length).toBeGreaterThan(1));
     expect(screen.getByLabelText("Secret").textContent).toBe(issued[0]);
-    // The list stays as last answered, not replaced by the error.
-    expect(within(screen.getByRole("table")).getByText("taken")).toBeTruthy();
-    expect(screen.queryByText("The service tokens did not load")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(page()).not.toContain(issued[0]);
@@ -210,13 +211,14 @@ describe("New token", () => {
   it("keeps a shown secret when the permission answer changes while it is open, until Close", async () => {
     let held = owner;
     const a = await open({ perms: async () => held });
-    type("Name", "release");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    typeIn("Token name", "release");
+    fireEvent.click(submit());
     await screen.findByRole("dialog", { name: "Token release created" });
     held = [];
     await a.client.refetchQueries();
-    await waitFor(() => expect(screen.queryByRole("button", { name: /New token/ })).toBeNull());
+    await waitFor(() => expect(a.calls.filter((c) => c === "TestPermissions").length).toBeGreaterThan(1));
     expect(screen.getByLabelText("Secret").textContent).toBe(issued[0]);
+    expect(screen.queryByText(/roles do not include/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(page()).not.toContain(issued[0]);
@@ -225,20 +227,20 @@ describe("New token", () => {
   it("offers NAME, never a name the form would not send", async () => {
     await open();
     for (const bad of ["$(whoami)", "Bad_Name", "taken"]) {
-      type("Name", bad);
+      typeIn("Token name", bad);
       expect(commandLines()).toContain("$ hangar token create NAME -p demo");
-      expect(within(dialog()).getByText("It authenticates as serviceToken:demo/NAME.")).toBeTruthy();
+      expect(screen.getByText("It authenticates as serviceToken:demo/NAME.")).toBeTruthy();
     }
-    type("Name", "ci-bot");
+    typeIn("Token name", "ci-bot");
     expect(commandLines()).toContain("$ hangar token create ci-bot -p demo");
   });
 
   it("sends no role and no duration when none is chosen, and binds nothing", async () => {
     let sent: CreateServiceTokenRequest | undefined;
     await open({ createToken: (r) => (sent = r) });
-    type("Name", "plain");
+    typeIn("Token name", "plain");
     expect(commandLines()).toContain("$ hangar token create plain -p demo");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    fireEvent.click(submit());
     await screen.findByRole("dialog", { name: "Token plain created" });
     expect(sent?.role).toBe("");
     expect(sent?.duration).toBeUndefined();
@@ -247,24 +249,24 @@ describe("New token", () => {
   it("sends nothing for a name the list holds, and says a name taken since exists", async () => {
     let items = [token("taken")];
     const a = await open({ tokens: async () => ({ items }) });
-    type("Name", "taken");
-    expect(within(dialog()).getByText("A service token named taken exists in this project.")).toBeTruthy();
-    expect((within(dialog()).getByRole("button", { name: /Create token/ }) as HTMLButtonElement).disabled).toBe(true);
+    typeIn("Token name", "taken");
+    expect(screen.getByText(/A service token named taken exists in this project\./)).toBeTruthy();
+    expect(submit().disabled).toBe(true);
     expect(a.calls).not.toContain("CreateServiceToken");
 
     items = [token("taken"), token("late")];
-    type("Name", "late");
-    fireEvent.click(within(dialog()).getByRole("button", { name: /Create token/ }));
+    typeIn("Token name", "late");
+    fireEvent.click(submit());
     // The refusal itself, in the form's words: not the API's, and not the name check's after the list reloads.
-    const refusal = await within(dialog()).findByRole("alert");
+    const refusal = await screen.findByRole("alert");
     expect(within(refusal).getByText("Creating the token failed")).toBeTruthy();
     expect(within(refusal).getByText("A service token named late exists in this project.")).toBeTruthy();
     expect(refusal.textContent).not.toContain("already exists");
     expect(screen.queryByLabelText("Secret")).toBeNull();
     // Submitting the form some other way, with the taken name, sends nothing more: the next create is the next one sent.
-    fireEvent.submit(within(dialog()).getByLabelText("Name").closest("form")!);
-    type("Name", "fresh");
-    fireEvent.submit(within(dialog()).getByLabelText("Name").closest("form")!);
+    fireEvent.submit(form());
+    typeIn("Token name", "fresh");
+    fireEvent.submit(form());
     await screen.findByRole("dialog", { name: "Token fresh created" });
     expect(a.requests.filter((r) => r.method === "CreateServiceToken").map((r) => (r.request as CreateServiceTokenRequest).name)).toEqual(["late", "fresh"]);
   });

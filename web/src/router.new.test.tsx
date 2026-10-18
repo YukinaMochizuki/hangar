@@ -70,7 +70,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 describe("a list route's ?new=1", () => {
   it.each([
     ["security-groups", "New security group"],
-    ["service-tokens", "New service token"],
     ["members", "Add a member to Demo"],
   ])("on %s opens %s, and closing it clears the parameter so back and reload do not reopen it", async (page, title) => {
     const path = `/projects/demo/${page}`;
@@ -93,7 +92,6 @@ describe("a list route's ?new=1", () => {
 
   const refusedCases: [string, string][] = [
     ["security-groups", "New security group"],
-    ["service-tokens", "New service token"],
     ["members", "Add a member to Demo"],
   ];
 
@@ -140,7 +138,6 @@ describe("a list route's ?new=1", () => {
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
     ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
-    ["service-tokens", "New service token", (d) => type(nameField(d), "fresh"), "/projects/demo/service-tokens"],
     ["members", "Add a member to Demo", (d) => type(nameField(d), "new@example.com"), "/projects/demo/members"],
   ];
 
@@ -149,14 +146,9 @@ describe("a list route's ?new=1", () => {
     const { router, history } = app([path, `${path}?new=1`]);
     const d = await screen.findByRole("dialog", { name: title });
     fill(d);
-    const submit = () => within(d).getAllByRole("button").find((b) => /^(Create|Reserve|Add member)/.test(b.textContent?.trim() ?? "")) as HTMLButtonElement;
+    const submit = () => within(d).getAllByRole("button").find((b) => /^(Create|Add member)/.test(b.textContent?.trim() ?? "")) as HTMLButtonElement;
     await waitFor(() => expect(submit().disabled).toBe(false));
     fireEvent.click(submit());
-    if (page === "service-tokens") {
-      // The secret is shown once; closing it is the end of creating.
-      const once = await screen.findByRole("dialog", { name: "Token fresh created" });
-      fireEvent.click(within(once).getByRole("button", { name: "Close" }));
-    }
     await waitFor(() => expect(router.state.location.href).toBe(lands));
     expect(dialog(title)).toBeNull();
     // The entries are the list, the list again (?new=1 replaced), and the object when it lands there.
@@ -192,6 +184,7 @@ const pages: [string, string, string, () => void, string][] = [
     },
     "/projects/demo/secrets/fresh",
   ],
+  ["service-tokens", "service-token", "New service token", () => type(field("Token name"), "fresh"), "/projects/demo/service-tokens/fresh"],
 ];
 
 describe("a create page", () => {

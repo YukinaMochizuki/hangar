@@ -13,6 +13,7 @@ import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { CreateSecret } from "@/pages/create-secret";
+import { CreateServiceToken } from "@/pages/create-service-token";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
 import { Gate } from "@/pages/gate";
@@ -160,6 +161,7 @@ const newNetworkRoute = createRoute({ getParentRoute: () => projectRoute, path: 
 const newAddressRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/address", component: CreateAddress });
 const newEndpointRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/public-endpoint", component: CreatePublicEndpoint });
 const newSecretRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/secret", component: CreateSecret });
+const newTokenRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/service-token", component: CreateServiceToken });
 
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -284,7 +286,8 @@ const tokensRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/service-tokens",
   validateSearch: newSearch,
-  component: () => <ListPage page={ServiceTokenList} />,
+  beforeLoad: toCreatePage("service-token"),
+  component: ServiceTokenList,
 });
 const tokenRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -326,6 +329,7 @@ export const routeTree = rootRoute.addChildren([
     newAddressRoute,
     newEndpointRoute,
     newSecretRoute,
+    newTokenRoute,
     disksRoute,
     diskRoute,
     imagesRoute,
