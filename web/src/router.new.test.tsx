@@ -70,7 +70,6 @@ const nameField = (d: HTMLElement) => within(d).getAllByRole("textbox")[0]!;
 describe("a list route's ?new=1", () => {
   it.each([
     ["security-groups", "New security group"],
-    ["secrets", "New secret"],
     ["service-tokens", "New service token"],
     ["members", "Add a member to Demo"],
   ])("on %s opens %s, and closing it clears the parameter so back and reload do not reopen it", async (page, title) => {
@@ -94,7 +93,6 @@ describe("a list route's ?new=1", () => {
 
   const refusedCases: [string, string][] = [
     ["security-groups", "New security group"],
-    ["secrets", "New secret"],
     ["service-tokens", "New service token"],
     ["members", "Add a member to Demo"],
   ];
@@ -142,18 +140,6 @@ describe("a list route's ?new=1", () => {
   // What each create form needs filled to send, and where a create lands: the object, or the list.
   const creates: [string, string, (d: HTMLElement) => void, string][] = [
     ["security-groups", "New security group", (d) => type(nameField(d), "fresh"), "/projects/demo/security-groups/fresh"],
-    [
-      "secrets",
-      "New secret",
-      (d) => {
-        const [name, registry, user] = within(d).getAllByRole("textbox");
-        type(name!, "fresh");
-        type(registry!, "registry.example.com");
-        type(user!, "ci");
-        type(d.querySelector("input[type=password]")!, "pw");
-      },
-      "/projects/demo/secrets/fresh",
-    ],
     ["service-tokens", "New service token", (d) => type(nameField(d), "fresh"), "/projects/demo/service-tokens"],
     ["members", "Add a member to Demo", (d) => type(nameField(d), "new@example.com"), "/projects/demo/members"],
   ];
@@ -194,6 +180,18 @@ const pages: [string, string, string, () => void, string][] = [
   ["networks", "network", "New network", () => type(field("Network name"), "fresh"), "/projects/demo/networks/fresh"],
   ["addresses", "address", "Reserve address", () => type(field("Address name"), "fresh"), "/projects/demo/addresses/fresh"],
   ["public-endpoints", "public-endpoint", "New public endpoint", () => type(field("Endpoint name"), "fresh"), "/projects/demo/public-endpoints/fresh"],
+  [
+    "secrets",
+    "secret",
+    "New secret",
+    () => {
+      type(field("Secret name"), "fresh");
+      type(field("Registry"), "registry.example.com");
+      type(field("Username"), "ci");
+      type(document.querySelector("input[type=password]")!, "pw");
+    },
+    "/projects/demo/secrets/fresh",
+  ],
 ];
 
 describe("a create page", () => {

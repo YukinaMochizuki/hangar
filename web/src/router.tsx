@@ -12,6 +12,7 @@ import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
+import { CreateSecret } from "@/pages/create-secret";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
 import { Gate } from "@/pages/gate";
@@ -158,6 +159,7 @@ const newDiskRoute = createRoute({
 const newNetworkRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/network", component: CreateNetwork });
 const newAddressRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/address", component: CreateAddress });
 const newEndpointRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/public-endpoint", component: CreatePublicEndpoint });
+const newSecretRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/secret", component: CreateSecret });
 
 const disksRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -267,7 +269,8 @@ const secretsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/secrets",
   validateSearch: newSearch,
-  component: () => <ListPage page={SecretList} />,
+  beforeLoad: toCreatePage("secret"),
+  component: SecretList,
 });
 const secretRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -322,6 +325,7 @@ export const routeTree = rootRoute.addChildren([
     newNetworkRoute,
     newAddressRoute,
     newEndpointRoute,
+    newSecretRoute,
     disksRoute,
     diskRoute,
     imagesRoute,

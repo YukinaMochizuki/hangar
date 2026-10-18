@@ -249,7 +249,7 @@ describe("CommandPalette", () => {
       ["New security group", dialog("/projects/demo/security-groups")],
       ["Reserve address", { to: "/projects/demo/new/address" }],
       ["New public endpoint", { to: "/projects/demo/new/public-endpoint" }],
-      ["New secret", dialog("/projects/demo/secrets")],
+      ["New secret", { to: "/projects/demo/new/secret" }],
       ["New service token", dialog("/projects/demo/service-tokens")],
       ["Add member", dialog("/projects/demo/members")],
     ] as const) {

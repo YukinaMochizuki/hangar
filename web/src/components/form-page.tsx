@@ -6,7 +6,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { Check } from "lucide-react";
-import type { FormEvent, ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { CodeBlock } from "@/components/object";
 import { Notice } from "@/components/notice";
 import { Topbar } from "@/components/shell";
@@ -43,7 +43,8 @@ export function FormPage({
         <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}
       </div>
-      <form onSubmit={submit} className="grid grid-cols-1 gap-x-8 px-4 pb-10 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {/* Its fields are never this site's own login. */}
+      <form onSubmit={submit} autoComplete="off" className="grid grid-cols-1 gap-x-8 px-4 pb-10 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">{children}</div>
         <aside className="xl:pt-6">
           <div className="space-y-4 xl:sticky xl:top-20">{side}</div>
@@ -57,7 +58,8 @@ export function FormPage({
  * CreateGate stands in for a create page until the caller is known to hold
  * the permission it needs: nothing while the answer is unknown, the refusal
  * once the answer says the caller lacks it, and the error when the answer
- * failed.
+ * failed. A form once shown stays, whatever a later answer says, so what
+ * was typed, or a secret shown once, is never dropped under the person.
  */
 export function CreateGate({
   crumbs,
@@ -76,7 +78,9 @@ export function CreateGate({
   refusal: string;
   children: ReactNode;
 }) {
-  if (may) return children;
+  const [shown, setShown] = useState(may);
+  if (may && !shown) setShown(true);
+  if (may || shown) return children;
   return (
     <>
       <Topbar crumbs={crumbs} />

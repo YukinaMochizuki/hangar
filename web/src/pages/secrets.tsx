@@ -1,41 +1,24 @@
 // A project's secrets: what each holds a login for, never the login. Values
-// are write-only (docs/decisions/secrets.md): the create sends them, and
-// nothing reads them back, so these pages show names, keys, registries,
-// types and times alone, whatever the API answers.
+// are write-only (docs/decisions/secrets.md): the create sends them
+// (pages/create-secret.tsx), and nothing reads them back, so these pages
+// show names, keys, registries, types and times alone, whatever the API
+// answers.
 
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { StaleBanner } from "@/components/credentials";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
-import { Dialog } from "@/components/dialog";
-import { CommandLine, FormField, Input, Textarea } from "@/components/form";
-import { Notice, PageBanner } from "@/components/notice";
+import { PageBanner } from "@/components/notice";
 import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
 import { ConditionsCard, EquivalentCard } from "@/components/object";
-import { Badge, Button, Card, CardHeader, Field, Led } from "@/components/ui";
-import { errorMessage } from "@/lib/api";
-import { cn } from "@/lib/cn";
-import { checkName } from "@/lib/create";
-import {
-  commands,
-  day,
-  dockerConfigKey,
-  perms,
-  secretFault,
-  secretTypeLabel,
-  useCreateSecret,
-  useDeleteSecret,
-  useSecretUse,
-  useSecrets,
-  type SecretValues,
-} from "@/lib/credentials";
+import { Badge, Button, buttonVariants, Card, CardHeader, Field, Led } from "@/components/ui";
+import { commands, day, perms, secretFault, secretTypeLabel, useDeleteSecret, useSecretUse, useSecrets } from "@/lib/credentials";
 import { useCan } from "@/lib/permissions";
-import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 
 function SecretState({ s }: { s: Secret }) {
   const fault = secretFault(s);
@@ -85,122 +68,6 @@ function UsedBy({ use: { names, loading, error }, project }: { use: Use; project
   );
 }
 
-/**
- * NewSecretDialog takes a registry login and sends it in one create-only
- * ApplySecret. The values live in this form's state, and in a ref from its
- * submit until the call reads it; closing the form empties the ref and
- * drops the state.
- */
-function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: boolean; onClose: () => void; onCreated: OnCreated; project: string; names: { loading: boolean; error: unknown; names: string[] } }) {
-  const [name, setName] = useState("");
-  const [mode, setMode] = useState<"login" | "config">("login");
-  const [registry, setRegistry] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [config, setConfig] = useState("");
-  const valuesRef = useRef<SecretValues | null>(null);
-  const create = useCreateSecret(project, valuesRef);
-  const navigate = useNavigate();
-  const nameCheck = checkName(name, "secret", names);
-  const filled = mode === "login" ? !!registry && !!username && !!password : !!config.trim();
-  const problem = (name !== "" || names.loading || !!names.error) && !nameCheck.ok ? nameCheck.reason : undefined;
-  const close = () => {
-    valuesRef.current = null;
-    create.reset();
-    onClose();
-  };
-  return (
-    <Dialog open={open} onClose={close} title="New secret">
-      <form
-        autoComplete="off"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!nameCheck.ok || !filled) return;
-          valuesRef.current = mode === "login" ? { mode, registry, username, password } : { mode, config };
-          create.mutate(
-            name,
-            {
-              onSuccess: () => {
-                valuesRef.current = null;
-                onCreated(() => void navigate({ to: "/projects/$project/secrets/$name", params: { project, name } }));
-              },
-            },
-          );
-        }}
-      >
-        <div className="text-foreground">
-          <FormField label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="registry-login" />
-          </FormField>
-          <FormField label="Type">
-            <span className="flex h-9 items-center rounded-md border bg-surface-2 px-2.5 text-[13px] text-muted">Registry login</span>
-          </FormField>
-          <div role="radiogroup" aria-label="Values from" className="mt-4 flex h-8 w-fit items-center rounded-md border bg-surface p-0.5">
-            {(
-              [
-                ["login", "Registry and password"],
-                ["config", "Docker config"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="radio"
-                aria-checked={mode === id}
-                onClick={() => setMode(id)}
-                className={cn("flex h-full items-center rounded px-2.5 text-[12.5px]", mode === id ? "bg-surface-2 font-medium text-foreground" : "text-muted hover:text-foreground")}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          {mode === "login" ? (
-            <>
-              <FormField label="Registry" hint="Its host. Docker Hub is index.docker.io.">
-                <Input value={registry} onChange={(e) => setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" />
-              </FormField>
-              <FormField label="Username">
-                <Input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} autoComplete="off" />
-              </FormField>
-              <FormField label="Password or access token">
-                {/* Not a password for this site: "off" asks the browser neither to suggest a generated one nor to offer saving it. */}
-                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
-              </FormField>
-            </>
-          ) : (
-            <FormField label="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`}>
-              <Textarea
-                value={config}
-                onChange={(e) => setConfig(e.target.value)}
-                spellCheck={false}
-                rows={5}
-                placeholder={'{"auths": {"registry.example.com": {"auth": "…"}}}'}
-                className="text-[12px]"
-              />
-            </FormField>
-          )}
-        </div>
-        <p className="mt-4 text-[12px]">The values are write-only: once created, no page and no answer of the API holds them.</p>
-        <CommandLine command={commands.createSecret(project, nameCheck.ok ? name : "")} />
-        {problem && <Notice tone="warning" title={problem} className="mt-3" />}
-        {create.error && (
-          <Notice tone="error" title="Creating the secret failed" className="mt-3">
-            {errorMessage(create.error)}
-          </Notice>
-        )}
-        <div className="mt-5 flex justify-end gap-2">
-          <Button type="button" onClick={close}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={!nameCheck.ok || !filled || create.isPending}>
-            <Plus /> {create.isPending ? "Creating…" : "Create secret"}
-          </Button>
-        </div>
-      </form>
-    </Dialog>
-  );
-}
-
 function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: Use; open: boolean; onClose: () => void; after?: () => void }) {
   const name = s.metadata?.name ?? "";
   const project = s.metadata?.project ?? "";
@@ -234,17 +101,16 @@ function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: 
 }
 
 /** SecretList is the project's secrets, with New secret. */
-export function SecretList(props: NewProps) {
+export function SecretList() {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useSecrets(project);
   const use = useSecretUse(project);
   const createPerm = useCan({ level: "project", name: project }, [perms.secretApply]);
   const canCreate = createPerm.can(perms.secretApply);
-  const [creating, setCreating, created] = useCreating(props, canCreate, createPerm.settled);
   const newButton = (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/secret" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New secret
-    </Button>
+    </Link>
   );
   return (
     <>
@@ -321,16 +187,6 @@ export function SecretList(props: NewProps) {
           </Card>
         </ListFrame>
       </div>
-      {(canCreate || creating) && (
-        <NewSecretDialog
-          key={String(creating)}
-          open={creating}
-          onClose={() => setCreating(false)}
-          onCreated={created}
-          project={project}
-          names={{ loading, error, names: items.map((s) => s.metadata?.name ?? "") }}
-        />
-      )}
     </>
   );
 }
