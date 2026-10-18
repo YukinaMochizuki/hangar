@@ -4,7 +4,7 @@ import { create } from "@bufbuild/protobuf";
 import { PlacementSchema } from "@hangar/api/hangar/compute/v1alpha1/placement_pb";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RunsOnPanel } from "@/components/runs-on-panel";
+import { arrivalMs, RunsOnPanel } from "@/components/runs-on-panel";
 import { placementOf } from "@/lib/placement";
 import type { RunsOnState } from "@/lib/runs-on";
 
@@ -75,7 +75,7 @@ describe("RunsOnPanel", () => {
     expect(sweep()).toBeNull();
     expect(drawing()).not.toBeNull();
     expect(screen.getByText("node-01")).toBeTruthy();
-    act(() => void vi.advanceTimersByTime(1100));
+    act(() => void vi.advanceTimersByTime(arrivalMs));
     expect(drawing()).toBeNull();
     expect(screen.getByText("Example CPU 1000")).toBeTruthy();
   });
@@ -83,9 +83,18 @@ describe("RunsOnPanel", () => {
   it("just created and already placed when the page opens: the arrival plays once", () => {
     render(<RunsOnPanel state={placed} status="running" fresh />);
     expect(drawing()).not.toBeNull();
-    act(() => void vi.advanceTimersByTime(1100));
+    act(() => void vi.advanceTimersByTime(arrivalMs));
     expect(drawing()).toBeNull();
     expect(screen.getByText("Example CPU 1000")).toBeTruthy();
+  });
+
+  it("waits a moment before the host draws itself, its lines and rows held back", () => {
+    render(<RunsOnPanel state={placed} status="running" fresh />);
+    const delays = [...document.querySelectorAll<HTMLElement | SVGElement>(".art-draw, .arrive-row")].map((e) =>
+      parseFloat(getComputedStyle(e).animationDelay || (e as HTMLElement).style.animationDelay),
+    );
+    expect(delays.length).toBeGreaterThan(0);
+    expect(Math.min(...delays)).toBeGreaterThanOrEqual(0.3);
   });
 
   it("just created, with reduced motion asked for: the host appears at once", () => {

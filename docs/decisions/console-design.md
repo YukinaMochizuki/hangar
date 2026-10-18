@@ -241,7 +241,8 @@ for a platform administrator; at today's size that is a handful of calls.
   sweep covers it to the card's rounded edges.
 - **A host arrives only when watched.** When the placement comes while the
   page is open, the host's lines trace themselves, its LEDs light one after
-  another and its rows fade in in order, about a second in all. Scheduling
+  another and its rows fade in in order, about a second in all, after a
+  moment's pause (0.3 s) that lets the eye land on the page first. Scheduling
   is usually done before the page the create form opens has loaded, so that
   page plays the arrival once for the machine just created, on a host
   already there (`web/src/lib/just-created.ts`, in memory only). Any other

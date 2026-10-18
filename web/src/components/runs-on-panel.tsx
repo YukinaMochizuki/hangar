@@ -4,7 +4,7 @@
 import { create } from "@bufbuild/protobuf";
 import { PlacementSchema } from "@hangar/api/hangar/compute/v1alpha1/placement_pb";
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
-import { ChassisArt, type ArtStatus } from "@/components/chassis-art";
+import { ChassisArt, drawEntrance, type ArtStatus } from "@/components/chassis-art";
 import { Card, CardHeader, Field } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { useReducedMotion } from "@/lib/motion";
@@ -13,8 +13,9 @@ import type { RunsOnState } from "@/lib/runs-on";
 
 type Phase = "waiting" | "arriving" | "settled";
 
-// How long an arrival plays, its rows included, in milliseconds.
-const arrivalMs = 1100;
+// How long an arrival plays, its rows included, in milliseconds: the
+// moment it waits before the host draws itself, then the drawing and rows.
+export const arrivalMs = drawEntrance.start * 1000 + 1100;
 
 /**
  * Where the panel is: waiting for a host, playing its arrival, or showing
@@ -42,7 +43,7 @@ export type HostShare = { node: string; values: [value: string, label: string][]
 
 // When the first row starts to fade in, after the host's lines, and the
 // step between rows, in seconds.
-const rowStart = 0.5;
+const rowStart = drawEntrance.start + 0.5;
 const rowStep = 0.07;
 
 function ShareBlock({ share }: { share: HostShare }) {

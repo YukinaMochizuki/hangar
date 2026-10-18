@@ -239,8 +239,12 @@ const ledColour: Record<ArtStatus, string> = {
  */
 export type ArtEntrance = "draw";
 
-// How long the lines of a "draw" entrance take, all of them, in seconds.
-const drawSpan = 0.55;
+// A "draw" entrance, in seconds: it starts a moment after the page, so the
+// eye has landed on the page before the host draws itself; then its lines
+// take span, all of them, and its LEDs light one after another.
+export const drawEntrance = { start: 0.3, span: 0.55, ledStep: 0.07 };
+const drawStart = drawEntrance.start;
+const drawSpan = drawEntrance.span;
 
 export function ChassisArt({
   chassis,
@@ -297,7 +301,7 @@ export function ChassisArt({
           // pathLength 1 lets a dash of 1 cover any line, whatever its length.
           pathLength={entrance ? 1 : undefined}
           className={cn(entrance && "art-draw")}
-          style={entrance ? { animationDelay: `${(i / b.shapes.length) * drawSpan}s, ${drawSpan}s` } : undefined}
+          style={entrance ? { animationDelay: `${drawStart + (i / b.shapes.length) * drawSpan}s, ${drawStart + drawSpan}s` } : undefined}
           fill={s.fill ? fills[s.fill] : "none"}
           stroke={s.stroke === "faint" ? "var(--art-faint)" : "var(--art-line)"}
           strokeOpacity={s.stroke === "detail" ? 0.7 : 1}
@@ -330,7 +334,7 @@ export function ChassisArt({
             )}
             style={
               entrance
-                ? { animationDelay: `${drawSpan + 0.05 + i * 0.07}s` }
+                ? { animationDelay: `${drawStart + drawSpan + 0.05 + i * drawEntrance.ledStep}s` }
                 : l.role === "activity"
                   ? { animationDelay: `${(i * 0.37) % 1.9}s` }
                   : undefined
