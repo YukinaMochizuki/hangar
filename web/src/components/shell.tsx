@@ -8,6 +8,7 @@ import {
   Disc3,
   Globe,
   HardDrive,
+  KeyRound,
   LayoutGrid,
   LogOut,
   Menu,
@@ -17,6 +18,7 @@ import {
   Server,
   ShieldCheck,
   Sun,
+  Terminal,
   Users,
   Waypoints,
   type LucideIcon,
@@ -201,7 +203,14 @@ function ProjectSidebar({ project }: { project: string }) {
         { label: "Public endpoints", icon: Waypoints, to: `${base}/public-endpoints` },
       ],
     },
-    { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
+    {
+      group: "Access",
+      items: [
+        { label: "Secrets", icon: KeyRound, to: `${base}/secrets` },
+        { label: "Members", icon: Users, to: `${base}/members` },
+        { label: "Service tokens", icon: Terminal, to: `${base}/service-tokens` },
+      ],
+    },
   ];
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }

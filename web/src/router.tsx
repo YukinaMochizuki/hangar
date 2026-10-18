@@ -19,7 +19,9 @@ import { TenantOverview } from "@/pages/tenant-overview";
 import { AddressDetail, AddressList } from "@/pages/addresses";
 import { NetworkDetail, NetworkList } from "@/pages/networks";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
+import { SecretDetail, SecretList } from "@/pages/secrets";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
+import { ServiceTokenDetail, ServiceTokenList } from "@/pages/service-tokens";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -183,6 +185,26 @@ const networkRoutes = [
 
 const membersRoute = createRoute({ getParentRoute: () => projectRoute, path: "/members", component: ProjectMembers });
 
+// Credentials, in the Access group: secrets and service tokens.
+const secretsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/secrets", component: SecretList });
+const secretRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/secrets/$name",
+  component: function SecretPage() {
+    const { name } = secretRoute.useParams();
+    return <SecretDetail key={name} name={name} />;
+  },
+});
+const tokensRoute = createRoute({ getParentRoute: () => projectRoute, path: "/service-tokens", component: ServiceTokenList });
+const tokenRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/service-tokens/$name",
+  component: function ServiceTokenPage() {
+    const { name } = tokenRoute.useParams();
+    return <ServiceTokenDetail key={name} name={name} />;
+  },
+});
+
 // A tenant's own pages, apart from any project's.
 const tenantRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -213,6 +235,10 @@ const routeTree = rootRoute.addChildren([
     imagesRoute,
     imageRoute,
     membersRoute,
+    secretsRoute,
+    secretRoute,
+    tokensRoute,
+    tokenRoute,
     ...networkRoutes,
   ]),
   tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
