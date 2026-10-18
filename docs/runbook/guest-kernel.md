@@ -44,6 +44,13 @@ compiler can change toolchain capability symbols (`CONFIG_CC_HAS_*` and the
 options that depend on them); that shows up as a diff, and it is a real
 difference in what gets built.
 
+The toolchain's Rust is ignored. Kconfig would otherwise ask a `rustc` on
+`PATH` what it supports and add `CONFIG_RUSTC_HAS_*` symbols (GitHub's
+runners have one), so `build.sh` runs every kernel `make` with
+`RUSTC=false BINDGEN=false`: the config resolves the same with or without a
+Rust toolchain installed, and the committed `config` has no `RUSTC_HAS`
+entry. The guest kernel has no Rust code.
+
 ## Reuse a prebuilt kernel in a release
 
 `make release` builds the kernel every time unless `HANGAR_KERNEL_CACHE`

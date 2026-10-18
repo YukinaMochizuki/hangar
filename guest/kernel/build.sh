@@ -72,7 +72,13 @@ mkdir -p "$BUILD"
 # may to n, 64-bit hardening included, so the fragment names everything the
 # guest relies on. guest/kernel/config records the outcome.
 KARCH=x86_64
-kmake() { make -s -C "$SRC" O="$BUILD" ARCH=$KARCH "$@"; }
+# Kconfig asks the Rust compiler what it supports (CONFIG_RUSTC_HAS_*) when
+# one is on PATH, so a host with rustc would resolve another config. The
+# guest has no Rust, so every make here is given commands that fail
+# instead: Kconfig then sees no Rust toolchain, whatever the host has. The
+# vmlinux make gets them too, or it would run Kconfig again with rustc.
+KMAKE_NO_RUST=(RUSTC=false BINDGEN=false)
+kmake() { make -s -C "$SRC" O="$BUILD" ARCH=$KARCH "${KMAKE_NO_RUST[@]}" "$@"; }
 
 kmake allnoconfig
 "$SRC/scripts/kconfig/merge_config.sh" -m -O "$BUILD" "$BUILD/.config" "$FRAGMENT" >/dev/null
@@ -123,7 +129,7 @@ export KBUILD_BUILD_TIMESTAMP
 
 log "build: linux $HANGAR_KERNEL_VERSION, -j$JOBS"
 start=$(date +%s)
-make -C "$SRC" O="$BUILD" ARCH=$KARCH -j"$JOBS" vmlinux >"$BUILD/build.log" 2>&1 ||
+make -C "$SRC" O="$BUILD" ARCH=$KARCH "${KMAKE_NO_RUST[@]}" -j"$JOBS" vmlinux >"$BUILD/build.log" 2>&1 ||
 	{ tail -n 40 "$BUILD/build.log" >&2; die "kernel build failed (full log: $BUILD/build.log)"; }
 
 mkdir -p "$OUT"
