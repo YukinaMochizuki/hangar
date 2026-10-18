@@ -537,8 +537,10 @@ func (x *WatchInvitationsResponse) GetRevision() int64 {
 }
 
 type ApplyInvitationRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Invitation    *Invitation            `protobuf:"bytes,1,opt,name=invitation,proto3" json:"invitation,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Invitation *Invitation            `protobuf:"bytes,1,opt,name=invitation,proto3" json:"invitation,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -578,6 +580,13 @@ func (x *ApplyInvitationRequest) GetInvitation() *Invitation {
 		return x.Invitation
 	}
 	return nil
+}
+
+func (x *ApplyInvitationRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyInvitationResponse struct {
@@ -887,11 +896,13 @@ const file_hangar_iam_v1alpha1_invitation_proto_rawDesc = "" +
 	"\n" +
 	"invitation\x18\x02 \x01(\v2\x1f.hangar.iam.v1alpha1.InvitationR\n" +
 	"invitation\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"Y\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"z\n" +
 	"\x16ApplyInvitationRequest\x12?\n" +
 	"\n" +
 	"invitation\x18\x01 \x01(\v2\x1f.hangar.iam.v1alpha1.InvitationR\n" +
-	"invitation\"\x90\x01\n" +
+	"invitation\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x90\x01\n" +
 	"\x17ApplyInvitationResponse\x12?\n" +
 	"\n" +
 	"invitation\x18\x01 \x01(\v2\x1f.hangar.iam.v1alpha1.InvitationR\n" +

@@ -1134,8 +1134,10 @@ func (x *WatchMachinesResponse) GetRevision() int64 {
 }
 
 type ApplyMachineRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Machine       *Machine               `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Machine *Machine               `protobuf:"bytes,1,opt,name=machine,proto3" json:"machine,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1175,6 +1177,13 @@ func (x *ApplyMachineRequest) GetMachine() *Machine {
 		return x.Machine
 	}
 	return nil
+}
+
+func (x *ApplyMachineRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyMachineResponse struct {
@@ -1534,9 +1543,11 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x15WatchMachinesResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12:\n" +
 	"\amachine\x18\x02 \x01(\v2 .hangar.compute.v1alpha1.MachineR\amachine\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"Q\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"r\n" +
 	"\x13ApplyMachineRequest\x12:\n" +
-	"\amachine\x18\x01 \x01(\v2 .hangar.compute.v1alpha1.MachineR\amachine\"\x88\x01\n" +
+	"\amachine\x18\x01 \x01(\v2 .hangar.compute.v1alpha1.MachineR\amachine\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x88\x01\n" +
 	"\x14ApplyMachineResponse\x12:\n" +
 	"\amachine\x18\x01 \x01(\v2 .hangar.compute.v1alpha1.MachineR\amachine\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

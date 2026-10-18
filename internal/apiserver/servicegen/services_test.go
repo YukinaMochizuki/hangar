@@ -33,6 +33,7 @@ type recorder struct {
 	list     resource.ListOptions
 	watch    resource.WatchOptions
 	applied  proto.Message
+	created  proto.Message
 	status   proto.Message
 }
 
@@ -82,6 +83,11 @@ func (r *recorder) Watch(_ context.Context, opts resource.WatchOptions, send fun
 func (r *recorder) Apply(_ context.Context, obj proto.Message) (resource.ApplyResult, error) {
 	r.locked(func() { r.applied = obj })
 	return resource.ApplyResult{Object: obj, Warnings: []string{"w"}, Created: true}, nil
+}
+
+func (r *recorder) Create(_ context.Context, obj proto.Message) (resource.ApplyResult, error) {
+	r.locked(func() { r.created = obj })
+	return resource.ApplyResult{Object: obj, Created: true}, nil
 }
 
 func (r *recorder) Delete(_ context.Context, key resource.Key, expected *int64) (proto.Message, error) {
@@ -213,6 +219,17 @@ func TestGlobalKindAndApply(t *testing.T) {
 	}
 	if !proto.Equal(rec.applied, in) || !res.Msg.GetCreated() || len(res.Msg.GetWarnings()) != 1 {
 		t.Errorf("Apply passed %v, returned %v", rec.applied, res.Msg)
+	}
+	if rec.created != nil {
+		t.Errorf("Apply without create_only called Create with %v", rec.created)
+	}
+
+	rec.applied = nil
+	if _, err := client.ApplyTenant(ctx, connect.NewRequest(&tenancyv1alpha1.ApplyTenantRequest{Tenant: in, CreateOnly: true})); err != nil {
+		t.Fatal(err)
+	}
+	if !proto.Equal(rec.created, in) || rec.applied != nil {
+		t.Errorf("create_only Apply called Create with %v and Apply with %v", rec.created, rec.applied)
 	}
 
 	_, err = client.ApplyTenant(ctx, connect.NewRequest(&tenancyv1alpha1.ApplyTenantRequest{}))

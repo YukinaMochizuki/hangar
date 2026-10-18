@@ -87,14 +87,12 @@ func (a *app) createCmd() *cobra.Command {
 			} else if name, err = suggestName(cmd.Context(), names, r, displayName); err != nil {
 				return err
 			}
-			res, err := cl.Apply(cmd.Context(), r, newTenancyObject(r, name, displayName, tenant))
+			res, err := cl.Create(cmd.Context(), r, newTenancyObject(r, name, displayName, tenant))
+			if connect.CodeOf(err) == connect.CodeAlreadyExists {
+				return &exitError{code: ExitConflict, err: fmt.Errorf("%s %s was taken after its name was checked", strings.ToLower(r.Kind), name)}
+			}
 			if err != nil {
 				return err
-			}
-			if !res.Created {
-				// The name was taken between the check and the apply, by an
-				// object the caller may change: the apply changed it.
-				return fmt.Errorf("%s was made by another call after its name was checked, and this one changed it instead of creating it", objectName(r, res.Object))
 			}
 			if output == "name" {
 				_, _ = fmt.Fprintln(cmd.OutOrStdout(), objectName(r, res.Object))

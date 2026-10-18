@@ -32,7 +32,8 @@ exceptions:
   anything about it beyond what the request named. The exception is creating
   an object with a global name (a tenant, project or role binding): a taken
   name has to be refused.
-- `Apply` returns `warnings` and whether it `created` the object. `Delete`
+- `Apply` accepts `create_only` (`docs/decisions/apply-semantics.md`), and
+  returns `warnings` and whether it `created` the object. `Delete`
   accepts an optional `expected_resource_version`.
 
 Not AIP: returning the bare resource leaves no room for response metadata, and

@@ -727,8 +727,10 @@ func (x *WatchRoleBindingsResponse) GetRevision() int64 {
 }
 
 type ApplyRoleBindingRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	RoleBinding   *RoleBinding           `protobuf:"bytes,1,opt,name=role_binding,json=roleBinding,proto3" json:"role_binding,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	RoleBinding *RoleBinding           `protobuf:"bytes,1,opt,name=role_binding,json=roleBinding,proto3" json:"role_binding,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -768,6 +770,13 @@ func (x *ApplyRoleBindingRequest) GetRoleBinding() *RoleBinding {
 		return x.RoleBinding
 	}
 	return nil
+}
+
+func (x *ApplyRoleBindingRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyRoleBindingResponse struct {
@@ -1080,9 +1089,11 @@ const file_hangar_iam_v1alpha1_role_binding_proto_rawDesc = "" +
 	"\x19WatchRoleBindingsResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12C\n" +
 	"\frole_binding\x18\x02 \x01(\v2 .hangar.iam.v1alpha1.RoleBindingR\vroleBinding\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"^\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\x7f\n" +
 	"\x17ApplyRoleBindingRequest\x12C\n" +
-	"\frole_binding\x18\x01 \x01(\v2 .hangar.iam.v1alpha1.RoleBindingR\vroleBinding\"\x95\x01\n" +
+	"\frole_binding\x18\x01 \x01(\v2 .hangar.iam.v1alpha1.RoleBindingR\vroleBinding\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x95\x01\n" +
 	"\x18ApplyRoleBindingResponse\x12C\n" +
 	"\frole_binding\x18\x01 \x01(\v2 .hangar.iam.v1alpha1.RoleBindingR\vroleBinding\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

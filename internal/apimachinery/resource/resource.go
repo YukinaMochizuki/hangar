@@ -63,6 +63,8 @@ type Backend interface {
 	// Watch calls send for every event until ctx is done or send fails.
 	Watch(ctx context.Context, opts WatchOptions, send func(Event) error) error
 	Apply(ctx context.Context, obj proto.Message) (ApplyResult, error)
+	// Create is Apply that refuses an existing object with AlreadyExists.
+	Create(ctx context.Context, obj proto.Message) (ApplyResult, error)
 	// Delete returns the object as it was when deletion was accepted.
 	Delete(ctx context.Context, key Key, expectedResourceVersion *int64) (proto.Message, error)
 	UpdateStatus(ctx context.Context, key Key, status proto.Message, expectedResourceVersion *int64) (proto.Message, error)

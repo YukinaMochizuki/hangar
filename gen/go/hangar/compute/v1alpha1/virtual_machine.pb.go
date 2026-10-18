@@ -1072,8 +1072,10 @@ func (x *WatchVirtualMachinesResponse) GetRevision() int64 {
 type ApplyVirtualMachineRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	VirtualMachine *VirtualMachine        `protobuf:"bytes,1,opt,name=virtual_machine,json=virtualMachine,proto3" json:"virtual_machine,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApplyVirtualMachineRequest) Reset() {
@@ -1111,6 +1113,13 @@ func (x *ApplyVirtualMachineRequest) GetVirtualMachine() *VirtualMachine {
 		return x.VirtualMachine
 	}
 	return nil
+}
+
+func (x *ApplyVirtualMachineRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyVirtualMachineResponse struct {
@@ -1463,9 +1472,11 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\x1cWatchVirtualMachinesResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12P\n" +
 	"\x0fvirtual_machine\x18\x02 \x01(\v2'.hangar.compute.v1alpha1.VirtualMachineR\x0evirtualMachine\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"n\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\x8f\x01\n" +
 	"\x1aApplyVirtualMachineRequest\x12P\n" +
-	"\x0fvirtual_machine\x18\x01 \x01(\v2'.hangar.compute.v1alpha1.VirtualMachineR\x0evirtualMachine\"\xa5\x01\n" +
+	"\x0fvirtual_machine\x18\x01 \x01(\v2'.hangar.compute.v1alpha1.VirtualMachineR\x0evirtualMachine\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\xa5\x01\n" +
 	"\x1bApplyVirtualMachineResponse\x12P\n" +
 	"\x0fvirtual_machine\x18\x01 \x01(\v2'.hangar.compute.v1alpha1.VirtualMachineR\x0evirtualMachine\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

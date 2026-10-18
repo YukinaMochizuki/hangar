@@ -89,6 +89,8 @@ message WatchProjectsResponse {
 
 message ApplyProjectRequest {
   Project project = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyProjectResponse {

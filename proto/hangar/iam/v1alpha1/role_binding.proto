@@ -104,6 +104,8 @@ message WatchRoleBindingsResponse {
 
 message ApplyRoleBindingRequest {
   RoleBinding role_binding = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyRoleBindingResponse {
