@@ -14,7 +14,8 @@ import {
 import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import { DeleteDialog, FormEquivalent, FormField, FormFooter, inputClass } from "@/components/resource";
+import { DeleteDialog, FormFooter } from "@/components/resource";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
@@ -355,20 +356,20 @@ function EndpointDialog({ open, onClose, onCreated, known }: { open: boolean; on
   return (
     <Dialog open={open} onClose={close} title="New public endpoint">
       <FormField label="Name" hint="The endpoint's hostname is made from its name and the project's, and is claimed for good.">
-        <input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} spellCheck={false} className={inputClass} />
+        <Input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} spellCheck={false} />
       </FormField>
-      <div className="grid grid-cols-[1fr_96px] gap-2">
-        <FormField label="Machine">
-          <select value={target} onChange={(ev) => setChoice(ev.target.value)} className={inputClass}>
+      <div className="mt-4 grid grid-cols-[1fr_96px] gap-2">
+        <FormField label="Machine" className="mt-0">
+          <Select value={target} onChange={(ev) => setChoice(ev.target.value)}>
             {all.items.map((m) => (
               <option key={`${m.kind}/${m.name}`} value={`${m.kind}/${m.name}`}>
                 {m.name} ({kindNoun(m.kind)})
               </option>
             ))}
-          </select>
+          </Select>
         </FormField>
-        <FormField label="Port">
-          <input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" className={inputClass} />
+        <FormField label="Port" className="mt-0">
+          <Input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" />
         </FormField>
       </div>
       <span className="mt-1 block text-[11.5px] text-subtle">The TCP port the machine serves plain HTTP on, on eth0.</span>

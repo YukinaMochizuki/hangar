@@ -12,8 +12,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { ServiceToken } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import { Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { CommandLine, FormLabel, inputClass, StaleBanner } from "@/components/credentials";
+import { StaleBanner } from "@/components/credentials";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -94,15 +95,15 @@ function Roles({ held, name }: { held: Held; name: string }) {
 
 function DurationSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
-    <FormLabel title="Secret works for">
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={cn(inputClass, "w-40 font-sans")}>
+    <FormField label="Secret works for">
+      <Select value={value} onChange={(e) => onChange(e.target.value)} className="w-40 font-sans">
         {durations.map((d) => (
           <option key={d.id} value={d.id}>
             {d.label}
           </option>
         ))}
-      </select>
-    </FormLabel>
+      </Select>
+    </FormField>
   );
 }
 
@@ -162,12 +163,12 @@ function NewTokenDialog({ open, onClose, project, names }: { open: boolean; onCl
         }}
       >
         <div className="text-foreground">
-          <FormLabel title="Name" hint={`It authenticates as serviceToken:${project}/${nameCheck.ok ? name : "NAME"}.`}>
-            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="ci" className={inputClass} />
-          </FormLabel>
-          <FormLabel title="Description">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Deploys from the main branch" className={cn(inputClass, "font-sans")} />
-          </FormLabel>
+          <FormField label="Name" hint={`It authenticates as serviceToken:${project}/${nameCheck.ok ? name : "NAME"}.`}>
+            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="ci" />
+          </FormField>
+          <FormField label="Description">
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Deploys from the main branch" className="font-sans" />
+          </FormField>
           <fieldset className="mt-4">
             <legend className="text-[12.5px] text-foreground">Role in this project</legend>
             <div className="mt-1.5 divide-y rounded-md border">

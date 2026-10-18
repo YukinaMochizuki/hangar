@@ -8,11 +8,12 @@ import { Code, ConnectError } from "@connectrpc/connect";
 import { ChevronDown, MoreHorizontal, Plus, UserMinus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Link } from "@tanstack/react-router";
 import { Topbar, useProjectName, useTenantName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, Button, Card, CardHeader, CopyButton } from "@/components/ui";
+import { Badge, Button, Card, CardHeader } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import {
   memberCommand,
@@ -29,16 +30,6 @@ import { projectLabel, useProjects } from "@/lib/projects";
 import { useCan } from "@/lib/permissions";
 import { useMember } from "@/lib/session";
 import { useCreating, type NewProps } from "@/lib/new-param";
-
-/** A command line with its copy button, beside the action it does the same as. */
-function CommandLine({ command }: { command: string }) {
-  return (
-    <div className="mt-4 flex items-center gap-2 rounded-md border bg-surface-2 px-2.5 py-1.5">
-      <code className="min-w-0 flex-1 truncate font-mono text-[11.5px] text-muted">{command}</code>
-      <CopyButton text={command} />
-    </div>
-  );
-}
 
 function AddMemberDialog({ scope, where, open, onClose }: { scope: Scope; where: string; open: boolean; onClose: () => void }) {
   const add = useAddMember(scope);
@@ -62,18 +53,9 @@ function AddMemberDialog({ scope, where, open, onClose }: { scope: Scope; where:
           add.mutate({ email: address, role }, { onSuccess: close });
         }}
       >
-        <label className="block">
-          <span className="text-[12.5px] text-foreground">Email</span>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoFocus
-            spellCheck={false}
-            placeholder="name@example.com"
-            className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 text-[13px] text-foreground outline-none placeholder:text-subtle focus:border-accent"
-          />
-        </label>
+        <FormField label="Email">
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus spellCheck={false} placeholder="name@example.com" className="font-sans" />
+        </FormField>
         <fieldset className="mt-4">
           <legend className="text-[12.5px] text-foreground">Role</legend>
           <div className="mt-1.5 divide-y rounded-md border">
@@ -201,12 +183,12 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
         {may.apply ? (
           <>
             <span className="relative shrink-0">
-              <select
+              <Select
                 aria-label={`Role of ${row.email}`}
                 value={current}
                 disabled={setRole.isPending}
                 onChange={(e) => setRole.mutate({ email: row.email, role: e.target.value })}
-                className="h-8 appearance-none rounded-md border border-border-strong bg-surface pl-2.5 pr-7 text-[13px] outline-none hover:bg-surface-2 focus:border-accent disabled:opacity-50"
+                className="h-8 w-auto appearance-none bg-surface pl-2.5 pr-7 font-sans hover:bg-surface-2 disabled:opacity-50"
               >
                 {current === "" && <option value="">{row.roles.map(roleLabel).join(" + ")}</option>}
                 {options.map((r) => (
@@ -214,7 +196,7 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
                     {r.label}
                   </option>
                 ))}
-              </select>
+              </Select>
               <ChevronDown className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-subtle" />
             </span>
           </>

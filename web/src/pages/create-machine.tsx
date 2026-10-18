@@ -21,6 +21,7 @@ import { imageFloorGiB } from "@/lib/storage";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { Box, Check, Globe, MapPin, Server } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
@@ -204,8 +205,6 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     },
   });
 
-  const input = "h-9 w-full rounded-md border bg-surface px-3 font-mono text-[12.5px] outline-none focus:border-accent";
-
   return (
     <>
       <Topbar crumbs={["New machine"]} />
@@ -242,13 +241,12 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
           <Section n={2} title="Image" hint={kind === "container" ? "Any OCI reference" : "The platform's catalogue"}>
             {kind === "container" ? (
               <div className="max-w-xl">
-                <input
+                <Input
                   value={image}
                   onChange={(e) => setImage(e.target.value)}
                   placeholder="ghcr.io/owner/app:1.0"
                   aria-label="Image"
                   spellCheck={false}
-                  className={cn(input, "placeholder:text-subtle")}
                 />
                 <p className="mt-1.5 text-[12px] text-subtle">Private images are pulled with a registry-auth secret of this project.</p>
               </div>
@@ -328,7 +326,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
           <Section n={4} title="Disk" hint={s ? `${minBy} needs at least ${minDisk} GiB` : undefined}>
             <div className="max-w-xl">
               <div className="flex items-center gap-2">
-                <input
+                <Input
                   type="number"
                   inputMode="numeric"
                   min={minDisk}
@@ -338,7 +336,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   aria-label="Disk, GiB"
                   aria-invalid={!!diskProblem || !!diskOver}
                   disabled={!s}
-                  className={cn(input, "w-32 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
+                  className={cn("w-32 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
                 />
                 <span className="text-[13px] text-muted">GiB</span>
               </div>
@@ -362,21 +360,21 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   <label className="text-[13px] font-medium" htmlFor="network">
                     Network
                   </label>
-                  <select
+                  <Select
                     id="network"
                     value={network}
                     onChange={(e) => {
                       setNetwork(e.target.value);
                       setGroups(["default"]);
                     }}
-                    className="mt-2 h-9 w-full rounded-md border bg-background px-2 font-mono text-[12.5px]"
+                    className="mt-2"
                   >
                     {(networks.data?.items ?? [{ metadata: { name: "default" }, spec: { ipv4Cidr: "" } }]).map((n) => (
                       <option key={n.metadata?.name} value={n.metadata?.name}>
                         {n.metadata?.name} {n.spec?.ipv4Cidr && `· ${n.spec.ipv4Cidr}`}
                       </option>
                     ))}
-                  </select>
+                  </Select>
                   <div className="mt-3 text-[13px] font-medium">Security groups</div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {["default", ...groupsHere.filter((g) => g !== "default")].map((g) => {
@@ -410,13 +408,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
 
           <Section n={6} title="Name" hint="Unique among this project's machines of the kind">
             <div className="max-w-xl">
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value.toLowerCase())}
-                aria-label="Name"
-                spellCheck={false}
-                className={input}
-              />
+              <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Name" spellCheck={false} />
               {nameProblem && <p className="mt-1.5 text-[12px] text-fail">{nameProblem}</p>}
             </div>
           </Section>

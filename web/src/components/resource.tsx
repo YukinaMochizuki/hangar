@@ -7,15 +7,12 @@ import { Dialog } from "@/components/dialog";
 import { Notice } from "@/components/notice";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
-import { CodeBlock } from "@/components/object";
-import { Button, CopyButton } from "@/components/ui";
+import { FormEquivalent } from "@/components/form";
+import { Button } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { count } from "@/lib/network";
 import { nouns, useDelete, type NetworkKind } from "@/lib/network-actions";
-
-export const inputClass =
-  "h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[12.5px] text-foreground outline-none focus:border-accent placeholder:text-subtle";
 
 /** What the project's machines say about interfaces: loading, failed, or loaded. */
 export type MachinesState = { loading: boolean; error: unknown; refetch: () => void };
@@ -48,34 +45,6 @@ export function usageBlock(state: MachinesState, inUse: string | undefined): str
   if (state.loading) return "The project's machines are still loading.";
   if (state.error) return "The project's machines did not load, so whether any uses it is not known.";
   return inUse;
-}
-
-/**
- * A form's equivalent, under its fields, copyable: the manifest it applies
- * and the command that applies it, or the command alone.
- */
-export function FormEquivalent({ cli, yaml }: { cli: string[]; yaml?: string }) {
-  return (
-    <div className="mt-4 overflow-hidden rounded-md border bg-surface-2/60">
-      <div className="flex h-8 items-center justify-between border-b px-3 text-[11.5px] text-subtle">
-        {yaml ? "Equivalent manifest" : "CLI"}
-        <CopyButton text={yaml ?? cli.join("\n")} />
-      </div>
-      {yaml && <pre className="max-h-48 overflow-auto px-3 py-2 font-mono text-[11.5px] leading-5 text-muted">{yaml}</pre>}
-      <CodeBlock cli={cli} className={cn("px-3 py-2 text-[11.5px]", yaml && "border-t")} />
-    </div>
-  );
-}
-
-/** A labelled form field. */
-export function FormField({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
-  return (
-    <label className="mt-3 block">
-      <span className="text-[12.5px] font-medium text-foreground">{label}</span>
-      <div className="mt-1.5">{children}</div>
-      {hint && <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>}
-    </label>
-  );
 }
 
 /** The CLI's name for each kind. */

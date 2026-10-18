@@ -7,8 +7,9 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
 import { useRef, useState } from "react";
-import { CommandLine, FormLabel, inputClass, StaleBanner } from "@/components/credentials";
+import { StaleBanner } from "@/components/credentials";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormField, Input, Textarea } from "@/components/form";
 import { Notice, PageBanner } from "@/components/notice";
 import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -127,12 +128,12 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
         }}
       >
         <div className="text-foreground">
-          <FormLabel title="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="registry-login" className={inputClass} />
-          </FormLabel>
-          <FormLabel title="Type">
-            <span className="mt-1.5 flex h-9 items-center rounded-md border bg-surface-2 px-2.5 text-[13px] text-muted">Registry login</span>
-          </FormLabel>
+          <FormField label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="registry-login" />
+          </FormField>
+          <FormField label="Type">
+            <span className="flex h-9 items-center rounded-md border bg-surface-2 px-2.5 text-[13px] text-muted">Registry login</span>
+          </FormField>
           <div role="radiogroup" aria-label="Values from" className="mt-4 flex h-8 w-fit items-center rounded-md border bg-surface p-0.5">
             {(
               [
@@ -154,28 +155,28 @@ function NewSecretDialog({ open, onClose, onCreated, project, names }: { open: b
           </div>
           {mode === "login" ? (
             <>
-              <FormLabel title="Registry" hint="Its host. Docker Hub is index.docker.io.">
-                <input value={registry} onChange={(e) => setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" className={inputClass} />
-              </FormLabel>
-              <FormLabel title="Username">
-                <input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} autoComplete="off" className={inputClass} />
-              </FormLabel>
-              <FormLabel title="Password or access token">
+              <FormField label="Registry" hint="Its host. Docker Hub is index.docker.io.">
+                <Input value={registry} onChange={(e) => setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" />
+              </FormField>
+              <FormField label="Username">
+                <Input value={username} onChange={(e) => setUsername(e.target.value)} spellCheck={false} autoComplete="off" />
+              </FormField>
+              <FormField label="Password or access token">
                 {/* Not a password for this site: "off" asks the browser neither to suggest a generated one nor to offer saving it. */}
-                <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" className={inputClass} />
-              </FormLabel>
+                <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off" />
+              </FormField>
             </>
           ) : (
-            <FormLabel title="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`}>
-              <textarea
+            <FormField label="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`}>
+              <Textarea
                 value={config}
                 onChange={(e) => setConfig(e.target.value)}
                 spellCheck={false}
                 rows={5}
                 placeholder={'{"auths": {"registry.example.com": {"auth": "…"}}}'}
-                className={cn(inputClass, "h-auto py-2 text-[12px]")}
+                className="text-[12px]"
               />
-            </FormLabel>
+            </FormField>
           )}
         </div>
         <p className="mt-4 text-[12px]">The values are write-only: once created, no page and no answer of the API holds them.</p>

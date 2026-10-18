@@ -7,12 +7,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { HardDrive, Plus, Trash2 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { CommandLine, FormEquivalent, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
-import { Button, CopyButton, Led, type Tone } from "@/components/ui";
+import { Button, Led, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { cn } from "@/lib/cn";
 import { checkName } from "@/lib/create";
 import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
@@ -125,39 +125,6 @@ export function diskYaml(d: Disk): string {
   return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
 }
 
-function YamlBlock({ text, cli }: { text: string; cli?: string }) {
-  return (
-    <div className="relative mt-4 rounded-md border bg-surface-2">
-      <CopyButton text={text} className="absolute right-1.5 top-1.5" />
-      <pre className="overflow-auto py-2.5 pl-3 pr-9 font-mono text-[11.5px] leading-5 text-foreground">{text}</pre>
-      {cli && (
-        <div className="flex items-center justify-between gap-2 border-t py-1.5 pl-3 pr-1.5 font-mono text-[11.5px]">
-          <span className="min-w-0 break-all">
-            <span className="select-none text-accent">$ </span>
-            {cli}
-          </span>
-          <CopyButton text={cli} className="shrink-0" />
-        </div>
-      )}
-    </div>
-  );
-}
-
-const input =
-  "mt-1.5 block h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-accent";
-
-function Label({ title, children, hint }: { title: string; children: ReactNode; hint?: ReactNode }) {
-  return (
-    <div className="mt-4 first:mt-0">
-      <label className="block">
-        <span className="text-[12.5px] text-foreground">{title}</span>
-        {children}
-      </label>
-      {hint && <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>}
-    </div>
-  );
-}
-
 /**
  * NewDiskDialog asks for a name, a size and what the disk holds. Nothing is
  * sent until the project's disks are known and the name is not among them;
@@ -214,24 +181,24 @@ export function NewDiskDialog({
         }}
       >
         <div className="text-foreground">
-          <Label title="Name">
-            <input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" className={input} />
-          </Label>
-          <Label title="Size, GiB" hint="A disk can grow later but never shrink.">
-            <input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
-          </Label>
-          <Label title="Holds">
-            <select value={image} onChange={(e) => setImage(e.target.value)} className={cn(input, "font-sans")}>
+          <FormField label="Name">
+            <Input value={name} onChange={(e) => setName(e.target.value)} spellCheck={false} placeholder="data" />
+          </FormField>
+          <FormField label="Size, GiB" hint="A disk can grow later but never shrink.">
+            <Input type="number" min={1} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32" />
+          </FormField>
+          <FormField label="Holds">
+            <Select value={image} onChange={(e) => setImage(e.target.value)} className="font-sans">
               <option value="">Blank, all zeros</option>
               {usable.map((i) => (
                 <option key={i.metadata?.name} value={i.metadata?.name}>
                   A copy of {i.metadata?.name}, {imageFloorGiB(i)} GiB or more
                 </option>
               ))}
-            </select>
-          </Label>
+            </Select>
+          </FormField>
         </div>
-        <YamlBlock text={yaml} cli={`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`} />
+        <FormEquivalent yaml={yaml} cli={[`hangar apply --create-only -p ${project} -f ${name || "disk"}.yaml`]} />
         {problem && <Notice tone="warning" title={problem} className="mt-3" />}
         {create.error && (
           <Notice tone="error" title="Creating the disk failed" className="mt-3">
@@ -306,11 +273,11 @@ export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: I
         }}
       >
         <div className="mt-4 text-foreground">
-          <Label title="Size, GiB" hint={`At least ${floor} GiB.`}>
-            <input type="number" min={floor} value={size} onChange={(e) => setSize(Number(e.target.value))} className={cn(input, "w-32")} />
-          </Label>
+          <FormField label="Size, GiB" hint={`At least ${floor} GiB.`}>
+            <Input type="number" min={floor} value={size} onChange={(e) => setSize(Number(e.target.value))} className="w-32" />
+          </FormField>
         </div>
-        <YamlBlock text={diskYaml({ ...d, spec: { ...d.spec!, size: `${size}Gi` } })} />
+        <FormEquivalent yaml={diskYaml({ ...d, spec: { ...d.spec!, size: `${size}Gi` } })} />
         {problem && <Notice tone="warning" title={problem} className="mt-3" />}
         {grow.error && (
           <Notice tone="error" title="Changing the size failed" className="mt-3">
@@ -373,7 +340,7 @@ export function DeleteDiskDialog({ d, open, onClose, after }: { d: Disk; open: b
           className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-fail"
         />
       </label>
-      <YamlBlock text={`hangar delete disk ${name} -p ${project}`} />
+      <CommandLine command={`hangar delete disk ${name} -p ${project}`} />
       {del.error && (
         <Notice tone="error" title="Deleting failed" className="mt-3">
           {errorMessage(del.error)}

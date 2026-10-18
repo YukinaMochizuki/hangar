@@ -8,6 +8,7 @@ import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { Check, LoaderCircle, X } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { Input } from "@/components/form";
 import { HangarMark } from "@/components/marks";
 import { Notice } from "@/components/notice";
 import { StandalonePage } from "@/components/states";
@@ -186,23 +187,25 @@ export function SignupPage({ email }: { email: string }) {
       >
         <label className="block">
           <span className="text-[12.5px] font-medium text-foreground">Username</span>
-          <input
+          <Input
             value={username}
             onChange={(e) => setUsername(e.target.value.toLowerCase())}
             autoComplete="username"
+            data-1p-ignore={undefined}
             spellCheck={false}
-            className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 font-mono text-[13px] text-foreground outline-none focus:border-accent"
+            className="mt-1.5"
           />
           <span className="mt-1 block min-h-4 text-[12px]">{hint}</span>
         </label>
         <label className="block">
           <span className="text-[12.5px] font-medium text-foreground">Display name</span>
           <span className="ml-1.5 text-[12px] text-subtle">optional, can change later</span>
-          <input
+          <Input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             autoComplete="name"
-            className="mt-1.5 h-9 w-full rounded-md border border-border-strong bg-background px-2.5 text-[13px] text-foreground outline-none focus:border-accent"
+            data-1p-ignore={undefined}
+            className="mt-1.5 font-sans"
           />
         </label>
         {signUp.error && <Notice tone="error" title="Signing up failed">{errorMessage(signUp.error)}</Notice>}

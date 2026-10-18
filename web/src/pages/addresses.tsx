@@ -12,7 +12,8 @@ import {
 import { Link2, Link2Off, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import { DeleteDialog, FormEquivalent, FormField, FormFooter, inputClass, StaleNotice } from "@/components/resource";
+import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
+import { FormEquivalent, FormField, Input, Select } from "@/components/form";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
@@ -363,7 +364,7 @@ function BindDialog({
     <Dialog open={open} onClose={close} title={address ? `${verb} ${nameOf(address)}` : "Reserve address"}>
       {!address && (
         <FormField label="Name">
-          <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} className={inputClass} />
+          <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
         </FormField>
       )}
       <FormField
@@ -374,7 +375,7 @@ function BindDialog({
             : "Bound, the address replaces the interface's automatic one. No machine restarts."
         }
       >
-        <select aria-label="Interface" value={choice} onChange={(e) => setChoice(e.target.value)} className={inputClass}>
+        <Select aria-label="Interface" value={choice} onChange={(e) => setChoice(e.target.value)}>
           <option value="">{address ? "No interface" : "No interface: reserved, unbound"}</option>
           {current && !listedChoices.includes(current) && (
             <option value={current}>
@@ -387,21 +388,21 @@ function BindDialog({
             </option>
           ))}
           <option value={typed}>A machine by name</option>
-        </select>
+        </Select>
       </FormField>
       {choice === typed && (
-        <div className="grid grid-cols-[1fr_1.4fr_72px] gap-2">
-          <FormField label="Kind">
-            <select value={own.kind} onChange={(e) => setOwn({ ...own, kind: e.target.value as MachineKind })} className={inputClass}>
+        <div className="mt-4 grid grid-cols-[1fr_1.4fr_72px] gap-2">
+          <FormField label="Kind" className="mt-0">
+            <Select value={own.kind} onChange={(e) => setOwn({ ...own, kind: e.target.value as MachineKind })}>
               <option value="Container">Container</option>
               <option value="VirtualMachine">Virtual machine</option>
-            </select>
+            </Select>
           </FormField>
-          <FormField label="Machine">
-            <input value={own.machine} onChange={(e) => setOwn({ ...own, machine: e.target.value.toLowerCase() })} spellCheck={false} className={inputClass} />
+          <FormField label="Machine" className="mt-0">
+            <Input value={own.machine} onChange={(e) => setOwn({ ...own, machine: e.target.value.toLowerCase() })} spellCheck={false} />
           </FormField>
-          <FormField label="On">
-            <input value={own.iface} onChange={(e) => setOwn({ ...own, iface: e.target.value })} spellCheck={false} className={inputClass} />
+          <FormField label="On" className="mt-0">
+            <Input value={own.iface} onChange={(e) => setOwn({ ...own, iface: e.target.value })} spellCheck={false} />
           </FormField>
           <span className="col-span-3 -mt-1 text-[11.5px] text-subtle">
             A machine that does not exist yet is waited for: the address binds once it is made.
