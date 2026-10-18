@@ -17,6 +17,10 @@ import { MachineList } from "@/pages/machine-list";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
 import { TenantOverview } from "@/pages/tenant-overview";
+import { AddressDetail, AddressList } from "@/pages/addresses";
+import { NetworkDetail, NetworkList } from "@/pages/networks";
+import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
+import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -128,6 +132,54 @@ const imageRoute = createRoute({
   },
 });
 
+// The network group: a list and an object's page for each kind.
+const networksRoute = createRoute({ getParentRoute: () => projectRoute, path: "/networks", component: NetworkList });
+const networkRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/networks/$name",
+  component: function NetworkPage() {
+    const { name } = networkRoute.useParams();
+    return <NetworkDetail key={name} name={name} />;
+  },
+});
+const securityGroupsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/security-groups", component: SecurityGroupList });
+const securityGroupRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/security-groups/$name",
+  component: function SecurityGroupPage() {
+    const { name } = securityGroupRoute.useParams();
+    return <SecurityGroupDetail key={name} name={name} />;
+  },
+});
+const addressesRoute = createRoute({ getParentRoute: () => projectRoute, path: "/addresses", component: AddressList });
+const addressRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/addresses/$name",
+  component: function AddressPage() {
+    const { name } = addressRoute.useParams();
+    return <AddressDetail key={name} name={name} />;
+  },
+});
+const endpointsRoute = createRoute({ getParentRoute: () => projectRoute, path: "/public-endpoints", component: PublicEndpointList });
+const endpointRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/public-endpoints/$name",
+  component: function PublicEndpointPage() {
+    const { name } = endpointRoute.useParams();
+    return <PublicEndpointDetail key={name} name={name} />;
+  },
+});
+const networkRoutes = [
+  networksRoute,
+  networkRoute,
+  securityGroupsRoute,
+  securityGroupRoute,
+  addressesRoute,
+  addressRoute,
+  endpointsRoute,
+  endpointRoute,
+];
+
 const membersRoute = createRoute({ getParentRoute: () => projectRoute, path: "/members", component: ProjectMembers });
 
 // A tenant's own pages, apart from any project's.
@@ -160,6 +212,7 @@ const routeTree = rootRoute.addChildren([
     imagesRoute,
     imageRoute,
     membersRoute,
+    ...networkRoutes,
   ]),
   tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
 ]);
