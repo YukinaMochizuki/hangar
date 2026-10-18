@@ -10,6 +10,7 @@ import { VirtualMachineSchema, VirtualMachineService } from "@hangar/api/hangar/
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import {
+  DiskAttachmentRole,
   DiskPhase,
   DiskSchema,
   DiskService,
@@ -35,6 +36,12 @@ export type DiskOpts = Partial<{
   image: string;
   phase: DiskPhase;
   machine: string;
+  /**
+   * What an attached disk is used as, by the Container's or VM's name; unset,
+   * a disk on a machine is VM postgres's boot disk when it is its root disk
+   * and its data disk (vdb) otherwise, as the apiserver writes it.
+   */
+  attachment: { kind: string; name: string; as: DiskAttachmentRole; device?: string; path?: string; readOnly?: boolean };
   rootOf: string;
   version: bigint;
   labels: Record<string, string>;
@@ -61,6 +68,12 @@ export function disk(name: string, o: DiskOpts = {}): Disk {
       node: o.phase === DiskPhase.PENDING ? "" : "node-a",
       size: o.have ?? (o.phase === DiskPhase.PENDING ? "" : (o.size ?? "20Gi")),
       machine: o.machine ?? "",
+      attachment: o.machine
+        ? {
+            machine: o.machine,
+            ...(o.attachment ?? { kind: "VirtualMachine", name: "postgres", as: o.rootOf ? DiskAttachmentRole.BOOT : DiskAttachmentRole.DATA, device: o.rootOf ? "vda" : "vdb" }),
+          }
+        : undefined,
       conditions: [...cond("Allocated", o.allocated), ...cond("Ready", o.ready)],
     },
   });

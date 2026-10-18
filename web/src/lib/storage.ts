@@ -10,7 +10,7 @@ import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import { DiskSchema, DiskService, DiskSpecSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import { DiskAttachmentRole, DiskSchema, DiskService, DiskSpecSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { readModifyWrite } from "@/lib/actions";
 import { createError } from "@/lib/create";
@@ -150,6 +150,43 @@ export type DiskUse = "boot" | "data";
  * attaches either way.
  */
 export const intendedUse = "hangar/intended-use";
+
+/** madeAs is what a disk's intended-use label says it was made as, if it holds one the console knows. */
+export function madeAs(d: Disk): DiskUse | undefined {
+  const v = d.metadata?.labels[intendedUse];
+  return v === "boot" || v === "data" ? v : undefined;
+}
+
+/** What a disk is used as now, as its status.attachment says (docs/decisions/container-volumes.md). */
+export type DiskUsedAs = {
+  role: "boot" | "data" | "volume";
+  kind: MachineKind;
+  /** The Container's or VM's name. */
+  name: string;
+  /** The device the guest sees, such as "vdc". */
+  device: string;
+  /** A volume's mount path. */
+  path: string;
+  readOnly: boolean;
+};
+
+const roles: Partial<Record<DiskAttachmentRole, DiskUsedAs["role"]>> = {
+  [DiskAttachmentRole.BOOT]: "boot",
+  [DiskAttachmentRole.DATA]: "data",
+  [DiskAttachmentRole.VOLUME]: "volume",
+};
+
+/**
+ * usedAs reads a disk's status.attachment, which the apiserver alone writes;
+ * undefined when the disk is attached to nothing, or to something the
+ * console has no page for.
+ */
+export function usedAs(d: Disk): DiskUsedAs | undefined {
+  const a = d.status?.attachment;
+  const role = a ? roles[a.as] : undefined;
+  if (!a || !role || (a.kind !== "Container" && a.kind !== "VirtualMachine")) return undefined;
+  return { role, kind: a.kind, name: a.name, device: a.device, path: a.path, readOnly: a.readOnly };
+}
 
 /** newDisk is a disk as the New disk page describes it; size is whole GiB as typed, image is for a boot disk alone. */
 export function newDisk(project: string, name: string, use: DiskUse, size: string, image: string): Disk {

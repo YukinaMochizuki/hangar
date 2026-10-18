@@ -3,7 +3,7 @@
 import { Code, ConnectError } from "@connectrpc/connect";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import type { TestPermissionsRequest } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
-import { DiskPhase, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import { DiskAttachmentRole, DiskPhase, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DiskList } from "@/pages/disk-list";
@@ -46,21 +46,35 @@ describe("DiskList", () => {
     await screen.findByText("No disks");
   });
 
-  it("links an attached disk to the VM its machine runs for, and marks a root disk", async () => {
+  it("says what each disk is used as, from its status.attachment, linked to what uses it", async () => {
     const disks = [
       disk("pg-data", { phase: DiskPhase.IN_USE, machine: "vm-postgres" }),
       disk("postgres-root", { phase: DiskPhase.IN_USE, machine: "vm-postgres", rootOf: "postgres", image: "debian-13" }),
+      disk("uploads", {
+        phase: DiskPhase.IN_USE,
+        machine: "ct-api",
+        attachment: { kind: "Container", name: "api", as: DiskAttachmentRole.VOLUME, device: "vdb", path: "/data", readOnly: true },
+      }),
       disk("scratch"),
     ];
     render(<DiskList />, { wrapper: withApi(storageApi({ disks: async () => ({ items: disks }) })) });
     const t = await screen.findByRole("table");
-    // The Machine's name is known before its owner: wait for the owner.
-    await waitFor(() => expect(within(t).getAllByRole("link", { name: "postgres" })).toHaveLength(2));
+    expect(within(t).getByRole("columnheader", { name: "Used as" })).toBeTruthy();
+    const row = (name: string) => within(t).getAllByRole("row").find((r) => r.textContent?.includes(name))!;
+    expect(row("postgres-root").textContent).toContain("Boot disk of postgres · vda");
+    expect(row("pg-data").textContent).toContain("Data disk of postgres · vdb");
+    expect(row("uploads").textContent).toContain("Volume at /data of api · read-only");
+    expect(within(row("scratch")).getByText("Not attached")).toBeTruthy();
     for (const l of within(t).getAllByRole("link", { name: "postgres" })) expect(l.getAttribute("href")).toBe("/projects/demo/vms/postgres");
-    const rows = within(t).getAllByRole("row");
-    expect(within(rows.find((r) => r.textContent?.includes("postgres-root"))!).getByText(/root disk/)).toBeTruthy();
-    expect(within(rows.find((r) => r.textContent?.includes("pg-data"))!).queryByText(/root disk/)).toBeNull();
-    expect(within(rows.find((r) => r.textContent?.includes("scratch"))!).getByText("none")).toBeTruthy();
+    expect(within(row("uploads")).getByRole("link", { name: "api" }).getAttribute("href")).toBe("/projects/demo/containers/api");
+  });
+
+  it("does not guess a use from the machine when the attachment is unset", async () => {
+    const d = disk("pg-data", { phase: DiskPhase.IN_USE, machine: "vm-postgres" });
+    d.status!.attachment = undefined;
+    render(<DiskList />, { wrapper: withApi(storageApi({ disks: async () => ({ items: [d] }) })) });
+    const t = await screen.findByRole("table");
+    expect(within(t).getByText("Not attached")).toBeTruthy();
   });
 
   it("shows a growth not yet granted and why, and why a node has not made a disk", async () => {

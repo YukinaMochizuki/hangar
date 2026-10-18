@@ -23,7 +23,9 @@ import {
   growFloorGiB,
   imageFloorGiB,
   type ImageState,
+  madeAs,
   rootDiskOwner,
+  usedAs,
   useDeleteDisk,
   useGrowDisk,
   useMachineOwners,
@@ -81,6 +83,48 @@ export function MachineLink({ project, machine }: { project: string; machine: st
       {owner.name}
     </Link>
   );
+}
+
+const roleWords = { boot: "Boot disk", data: "Data disk", volume: "Volume" } as const;
+
+/** usedAsText is UsedAs as plain text, for a line too narrow for its link, such as a phone's list row. */
+export function usedAsText(d: Disk): string | undefined {
+  const u = usedAs(d);
+  return u && `${roleWords[u.role]} of ${u.name}`;
+}
+
+/**
+ * UsedAs says what a disk is used as now, from its status.attachment: a VM's
+ * boot or data disk, or a container's volume and where it is mounted, linked
+ * to the Container's or VM's page.
+ */
+export function UsedAs({ d, project }: { d: Disk; project: string }) {
+  const u = usedAs(d);
+  if (!u) return <span className="text-subtle">Not attached</span>;
+  return (
+    <span>
+      {roleWords[u.role]}
+      {u.role === "volume" && u.path && (
+        <>
+          {" "}
+          at <span className="font-mono text-[12.5px]">{u.path}</span>
+        </>
+      )}{" "}
+      of{" "}
+      <Link to={machinePath(u.kind)} params={{ project, name: u.name }} className="font-mono text-[12.5px] text-accent hover:underline">
+        {u.name}
+      </Link>
+      {(u.role !== "volume" ? u.device : u.readOnly) && (
+        <span className="text-[11.5px] text-subtle"> · {u.role !== "volume" ? u.device : "read-only"}</span>
+      )}
+    </span>
+  );
+}
+
+/** MadeAs says what a disk was made as, from the label the New disk page writes; the user's own, it restricts nothing. */
+export function MadeAs({ d }: { d: Disk }) {
+  const m = madeAs(d);
+  return m ? <>{m === "boot" ? "Boot disk" : "Data disk"}</> : <span className="text-subtle">Not recorded</span>;
 }
 
 // The name a disk's machine goes by: its Container's or VM's, else its own.

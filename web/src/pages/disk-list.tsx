@@ -7,13 +7,13 @@ import { Plus, Search } from "lucide-react";
 import { useState } from "react";
 import { ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
-import { DiskSource, DiskState, MachineLink } from "@/components/storage";
+import { DiskSource, DiskState, UsedAs, usedAsText } from "@/components/storage";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { buttonVariants, Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
-import { gib, growingTo, growthBlocked, rootDiskOwner, useDisks, useMachineOwners } from "@/lib/storage";
+import { gib, growingTo, growthBlocked, useDisks } from "@/lib/storage";
 
 type Filter = "all" | "in-use" | "available" | "pending";
 
@@ -44,24 +44,10 @@ export function DiskSize({ d }: { d: Disk }) {
   );
 }
 
-/** Attached shows the machine a disk is attached to, and whether it is that VM's root disk. */
-export function Attached({ d, project }: { d: Disk; project: string }) {
-  const owners = useMachineOwners(project);
-  if (!d.status?.machine) return <span className="text-subtle">none</span>;
-  const root = rootDiskOwner(d);
-  return (
-    <span>
-      <MachineLink project={project} machine={d.status.machine} />
-      {root && owners(d.status.machine)?.name === root && <span className="text-[11.5px] text-subtle"> · root disk</span>}
-    </span>
-  );
-}
-
 /** DiskList is the project's disks, with New disk. */
 export function DiskList() {
   const project = useProjectName();
   const { items, loading, error, refetch } = useDisks(project);
-  const owners = useMachineOwners(project);
   const disks = { items, loading, error, refetch };
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -117,7 +103,7 @@ export function DiskList() {
             </div>
           </div>
 
-          {/* On a phone, a row is the name, the size and where it is attached. */}
+          {/* On a phone, a row is the name, the size and what it is attached to. */}
           <Card className="md:hidden">
             <ul className="divide-y">
               {rows.map((d) => {
@@ -128,7 +114,7 @@ export function DiskList() {
                       <span className="block truncate font-medium">{name}</span>
                       <span className="block truncate text-[11.5px] text-subtle">
                         {gib(d.status?.size || d.spec?.size)}
-                        {d.status?.machine ? ` · on ${owners(d.status.machine)?.name ?? d.status.machine}` : ""}
+                        {usedAsText(d) ? ` · ${usedAsText(d)}` : ""}
                       </span>
                     </Link>
                     <span className="shrink-0 text-right">
@@ -147,7 +133,7 @@ export function DiskList() {
                   <Th className="w-[26%]">Name</Th>
                   <Th>State</Th>
                   <Th>Size</Th>
-                  <Th>Attached to</Th>
+                  <Th>Used as</Th>
                   <Th>Node</Th>
                   <Th>Created</Th>
                 </tr>
@@ -172,7 +158,7 @@ export function DiskList() {
                         <DiskSize d={d} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5">
-                        <Attached d={d} project={project} />
+                        <UsedAs d={d} project={project} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">
                         {d.status?.node || <span className="font-sans text-subtle">not placed yet</span>}
