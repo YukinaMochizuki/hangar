@@ -159,35 +159,69 @@ services_placement_flags() {
 	done
 }
 
+# node_check_placement BIN prints what hangar-node BIN's own answer to -h says
+# of check-placement: "has" when its usage names it, "lacks" when it is the
+# usage of a hangar-node from before it, which would take the word for its
+# agent's arguments and start one. A BIN that does not run, or answers with
+# something else, is no old hangar-node: it prints why and fails.
+node_check_placement() {
+	local bin=$1 out status=0
+	out=$("$bin" -h 2>&1) || status=$?
+	# Go's flag package answers -h with the usage and exit 0 (2 before Go
+	# 1.15); anything else, 126 for a file that cannot be executed among
+	# it, did not answer.
+	if [ "$status" != 0 ] && [ "$status" != 2 ]; then
+		printf '%s cannot run (exit %s): %s\n' "$bin" "$status" "$(printf '%s' "$out" | head -n 3 | tr '\n' ' ')"
+		return 1
+	fi
+	case $out in
+	*check-placement*) echo has ;;
+	"Usage of "*hangar-node:* | "usage: hangar-node"*) echo lacks ;;
+	*)
+		printf '%s answered -h with no hangar-node usage: %s\n' "$bin" "$(printf '%s' "$out" | head -n 3 | tr '\n' ' ')"
+		return 1
+		;;
+	esac
+}
+
 # services_placement_problem prints why the agent would not report the
 # placement the host env file gives as given, by the agent's own check
 # (hangar-node check-placement) in the hangar-node this run installs: the
 # release's with --release, else the installed one. Nothing when it would,
-# or when that hangar-node has no check-placement, which it warns of.
+# or when that hangar-node is one from before check-placement, which it
+# warns of; a hangar-node that cannot run is a problem.
 services_placement_problem() {
 	services_placement_args
 	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || return 0
-	local bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} usage out
+	local bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} tmp='' has out name
+	name=$bin
 	if [ -n "$dir" ]; then
-		bin=$dir/hangar-node
-		# Run nothing from the release before it matches its checksums.
-		if ! (cd "$dir" && grep -E '^[0-9a-f]{64}  hangar-node$' SHA256SUMS | sha256sum -c --quiet --status); then
-			printf '%s\n' "$bin does not match $dir/SHA256SUMS; the host env file's placement cannot be checked with it"
+		name=$dir/hangar-node
+		# The release's file need not be executable (a fetched release keeps
+		# no modes), and is run only once it matches its checksum: so a copy
+		# of its own, made executable, is checked and run, the very bytes.
+		tmp=$(mktemp -d)
+		install -m 0700 "$dir/hangar-node" "$tmp/hangar-node" 2>/dev/null || true
+		if ! grep -E '^[0-9a-f]{64}  hangar-node$' "$dir/SHA256SUMS" 2>/dev/null | sed "s|  hangar-node\$|  $tmp/hangar-node|" |
+			sha256sum -c --quiet --status 2>/dev/null; then
+			rm -rf "$tmp"
+			printf '%s\n' "$dir/hangar-node does not match $dir/SHA256SUMS; the host env file's placement cannot be checked with it"
 			return 0
 		fi
+		bin=$tmp/hangar-node
 	elif [ ! -x "$bin" ]; then
 		printf '%s\n' "no $bin to check the host env file's placement with; install a release first"
 		return 0
 	fi
-	# A hangar-node from before check-placement would take the word for its
-	# agent's arguments and start one; what its usage lists says.
-	usage=$("$bin" -h 2>&1) || true
-	if [[ $usage != *check-placement* ]]; then
-		log "warning: $bin has no check-placement; the host env file's placement is not checked this run"
-		return 0
-	fi
-	out=$("$bin" check-placement "${SERVICES_PLACEMENT[@]}" 2>&1) ||
+	if ! has=$(node_check_placement "$bin"); then
+		printf 'the host env file'\''s placement cannot be checked with %s: %s\n' "$name" "$has"
+	elif [ "$has" = lacks ]; then
+		log "warning: $name has no check-placement; the host env file's placement is not checked this run"
+	elif ! out=$("$bin" check-placement "${SERVICES_PLACEMENT[@]}" 2>&1); then
 		printf 'the host env file'\''s placement: %s\n' "$(printf '%s' "$out" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
+	fi
+	[ -z "$tmp" ] || rm -rf "$tmp"
+	return 0
 }
 
 # services_auth_flags prints the apiserver's flags for the auth mode

@@ -221,9 +221,12 @@ with `--release DIR`. `--only <step>` runs a single step
     the run unless `hangar-node check-placement` accepts them, the agent's
     own rule: at most 64 printable characters each, the chassis a DNS-1123
     label. It runs the hangar-node the run installs: with `--release`, the
-    release's, once it matches the release's `SHA256SUMS`; without, the
-    installed one, and if that one has no `check-placement` it warns that
-    the values were not checked instead. Unset, the agent reads memory and
+    release's, as a private executable copy that matches the release's
+    `SHA256SUMS` (a fetched release's files are 0644); without, the
+    installed one. Only a hangar-node whose own answer to `-h` is a usage
+    without `check-placement`, one from before it, makes it warn that the
+    values were not checked instead; one that cannot run is a problem, and
+    the run refuses. Unset, the agent reads memory and
     network from the host as it starts; every tenant on the node reads
     them, so never put load or capacity in them,
     `docs/decisions/machine-placement.md`), every path its default,
@@ -993,7 +996,11 @@ another user can write or own is refused before it is read, an unknown
 and `--host` is refused. It needs a release
 (`HANGAR_TESTBED_RELEASE=DIR`, from `make release`), installs the services
 from it, and checks: the node is Ready; the release step installs
-`hangar-fetch-release` and verify catches a changed one, and the packages
+`hangar-fetch-release` and verify catches a changed one; that release,
+fetched with it from a stand-in for GitHub (a stand-in `gh` for the fetch
+alone), its files 0644, has the placement checked with its own
+`hangar-node` by the fetched `deploy/`, a run changing nothing, and an
+invalid `HANGAR_CHASSIS` refused with nothing changed; and the packages
 step the pinned `gh`; a tampered release, or one whose
 `SHA256SUMS` lacks a file, is refused with nothing installed; the services
 step refuses without `/etc/hangar/local.env` or with it readable by others;
