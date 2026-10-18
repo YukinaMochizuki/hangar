@@ -256,6 +256,31 @@ for a platform administrator; at today's size that is a handful of calls.
   API, and the form shows that refusal.
 - **Logs** are `MachineCapabilityService.Logs`, the server stream `hangar
   logs -f` reads, followed while the page is open.
+- **A container has a terminal**, `hangar exec -it … -- sh` in the browser:
+  the exec WebSocket (`streaming-transport.md`, `web/src/lib/exec.ts`) under
+  xterm.js (`web/src/components/terminal.tsx`). It is in two places, one
+  component: a Terminal card on the container's page, folded to its header
+  until Connect, so opening the page starts no process; and a page of its
+  own, `/projects/<project>/containers/<name>/terminal`, opened from the
+  header's Terminal button or the card's Full page, which connects on
+  opening. Both are shown only when TestPermissions holds
+  `compute.machines.exec` at the project; the page states a refusal once
+  the answer gives one. A container being deleted or not running takes no
+  terminal, and the card and page say which. A refusal before the upgrade
+  reaches a browser with no reason, so a terminal that did not connect says
+  so and names the `hangar exec` command, which shows the API's reason. It
+  draws through WebGL, loaded before the terminal opens: xterm's DOM
+  renderer colours text with injected `<style>` elements, which the policy
+  below blocks, and the policy is not widened for it. xterm 6 still injects
+  one for its scrollbar, which the policy blocks and `web/src/styles.css`
+  replaces (xtermjs/xterm.js#4445). The DOM renderer cannot lay text out
+  under that policy, so where WebGL is missing the terminal draws nothing
+  and names the `hangar exec` command instead; a context the GPU takes back
+  is asked for again. xterm loads only when a terminal connects. Leaving
+  the page ends the process, also when the browser keeps the page in its
+  back/forward cache. A failed poll of the machine lists keeps the page,
+  and a terminal open on it, on the last answer under a banner.
+  Virtual machines have none yet.
 - **The Runs on panel says where the machine stands** on its way to a
   host, in its header where the host's name goes once it is placed
   (`web/src/components/runs-on-panel.tsx`, the state from

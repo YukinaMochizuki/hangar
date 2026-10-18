@@ -148,19 +148,25 @@ export function useMachines(project: string, kind?: MachineKind, listOpts: ListO
     const o = ownerOf(m);
     if (o) byOwner.set(`${o.kind}/${o.name}`, m);
   }
-  const items: MachineView[] = [];
-  if (!loading && !error) {
-    // A query that is off can still hold data the same query fetched for
-    // another component, so the kind is checked here too.
-    if (kind !== "VirtualMachine") {
-      for (const c of containers.data?.items ?? []) items.push(containerView(c, byOwner.get(`Container/${c.metadata?.name}`)));
-    }
-    if (kind !== "Container") {
-      for (const v of vms.data?.items ?? []) items.push(vmView(v, byOwner.get(`VirtualMachine/${v.metadata?.name}`)));
-    }
-    items.sort((a, b) => a.name.localeCompare(b.name));
+  const views: MachineView[] = [];
+  // A query that is off can still hold data the same query fetched for
+  // another component, so the kind is checked here too.
+  if (kind !== "VirtualMachine") {
+    for (const c of containers.data?.items ?? []) views.push(containerView(c, byOwner.get(`Container/${c.metadata?.name}`)));
   }
-  return { items, loading, error, refetch: () => parts.forEach((q) => void q.refetch()) };
+  if (kind !== "Container") {
+    for (const v of vms.data?.items ?? []) views.push(vmView(v, byOwner.get(`VirtualMachine/${v.metadata?.name}`)));
+  }
+  views.sort((a, b) => a.name.localeCompare(b.name));
+  const answered = parts.every((q) => q.data !== undefined);
+  return {
+    items: !loading && !error ? views : [],
+    /** The last answer of every list, kept when asking again failed; empty until each has answered once. */
+    held: answered ? views : [],
+    loading,
+    error,
+    refetch: () => parts.forEach((q) => void q.refetch()),
+  };
 }
 
 /** Whether a machine counts as live: asked to run and not stopped. */

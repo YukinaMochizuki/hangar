@@ -175,6 +175,14 @@
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m7 15 5 5 5-5'/%3E%3Cpath d='m7 9 5-5 5 5'/%3E%3C/svg%3E");
 }
 
+/*
+ * The terminal's scrollbar. xterm.js themes it with an injected <style>, which
+ * the Content-Security-Policy blocks (web/src/components/terminal.tsx).
+ */
+.xterm .xterm-scrollable-element > .scrollbar > .slider { background: #e4e4e733; }
+.xterm .xterm-scrollable-element > .scrollbar > .slider:hover { background: #e4e4e766; }
+.xterm .xterm-scrollable-element > .scrollbar > .slider.active { background: #e4e4e780; }
+
 /* Screenshots ask for a still frame. */
 [data-still] .led-activity, [data-still] .led-blink, [data-still] .led-blink-slow { animation: none; }
 [data-still] .animate-ping { animation: none; opacity: 0; }

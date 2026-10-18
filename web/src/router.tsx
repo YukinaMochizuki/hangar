@@ -21,6 +21,7 @@ import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
 import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
+import { TerminalPage } from "@/pages/machine-terminal";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
 import { TenantOverview } from "@/pages/tenant-overview";
@@ -94,6 +95,14 @@ const containerRoute = createRoute({
   component: function ContainerPage() {
     const { name } = containerRoute.useParams();
     return <MachineDetail key={name} kind="Container" name={name} />;
+  },
+});
+const containerTerminalRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/containers/$name/terminal",
+  component: function ContainerTerminal() {
+    const { name } = containerTerminalRoute.useParams();
+    return <TerminalPage name={name} />;
   },
 });
 const vmsRoute = createRoute({
@@ -333,6 +342,7 @@ export const routeTree = rootRoute.addChildren([
     overviewRoute,
     containersRoute,
     containerRoute,
+    containerTerminalRoute,
     vmsRoute,
     vmRoute,
     newRoute,
