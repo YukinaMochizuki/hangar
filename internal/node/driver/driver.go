@@ -481,8 +481,24 @@ type VMSpec struct {
 	Nameservers []string
 	Search      []string
 	// Run is what the guest runs.
-	Run     RunSpec
+	Run RunSpec
+	// Mounts are the Disks the guest mounts as volumes before Run starts.
+	// Left out of the hash when empty, as Disks are.
+	Mounts  []Mount `json:",omitempty"`
 	Restart RestartPolicy
+}
+
+// Mount is one of a VM's Disks mounted in its guest as a volume. See
+// docs/decisions/container-volumes.md.
+type Mount struct {
+	// Disk is the volume's index in the VM's Disks.
+	Disk int
+	// Name is the Disk's, for the guest's messages.
+	Name     string
+	Target   string
+	ReadOnly bool   `json:",omitempty"`
+	Nocopy   bool   `json:",omitempty"`
+	Subpath  string `json:",omitempty"`
 }
 
 // Hash identifies the spec: a VM started with a spec of another hash runs

@@ -71,9 +71,10 @@ func ReadConfig() (*guestv1.BootConfig, error) {
 }
 
 // SwitchRoot mounts the root disk, grows its filesystem to the disk (or says
-// why not with logf), makes it the root keeping /dev, /proc and /sys, and
-// drops the initramfs; hangar-init runs on from memory.
-func SwitchRoot(logf func(format string, args ...any)) error {
+// why not with logf), mounts the volumes in it, makes it the root keeping
+// /dev, /proc and /sys, and drops the initramfs; hangar-init runs on from
+// memory.
+func SwitchRoot(volumes []*guestv1.Volume, logf func(format string, args ...any)) error {
 	if err := (mount{RootDevice, newRoot, "ext4", "", 0}).do(); err != nil {
 		return err
 	}
@@ -81,6 +82,10 @@ func SwitchRoot(logf func(format string, args ...any)) error {
 		logf("hangar-init: the root filesystem stays as it is: %v", err)
 	} else if to > from {
 		logf("hangar-init: grew the root filesystem from %d to %d blocks", from, to)
+	}
+	// Before the switch: mke2fs is in the initramfs.
+	if err := Volumes(newRoot, volumes, logf); err != nil {
+		return err
 	}
 	for _, dir := range []string{"/dev", "/proc", "/sys"} {
 		target := newRoot + dir
@@ -91,8 +96,9 @@ func SwitchRoot(logf func(format string, args ...any)) error {
 			return fmt.Errorf("moving %s: %w", dir, err)
 		}
 	}
-	// The initramfs holds only hangar-init's binary and empty directories.
+	// The initramfs holds only its two binaries and empty directories.
 	_ = os.Remove("/init")
+	_ = os.Remove(Mke2fs)
 	if err := unix.Chdir(newRoot); err != nil {
 		return err
 	}

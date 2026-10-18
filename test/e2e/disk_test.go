@@ -19,8 +19,7 @@ import (
 
 const gib = int64(1) << 30
 
-// diskMachine is a machine with disks, as a controller writes one: no
-// kind that users write attaches disks to a machine yet.
+// diskMachine is a machine with disks, as a controller writes one.
 func diskMachine(name string, disks ...string) *computev1alpha1.Machine {
 	m := &computev1alpha1.Machine{
 		Metadata: &metav1.ObjectMeta{Project: project, Name: name, Finalizers: []string{apiserver.NodeCleanupFinalizer}},
@@ -145,6 +144,46 @@ func TestADiskOnTheHost(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.waitHostEmpty()
+}
+
+// TestAContainerWithAVolume: a container's volume reaches its VM as a disk
+// mounted at its target, the disk says it is the container's volume, and
+// moving it restarts the VM to mount it there.
+func TestAContainerWithAVolume(t *testing.T) {
+	w := newWorld(t)
+	w.applyDisk("pgdata", "2Gi")
+	c := container("db", "nginx")
+	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{{Type: "volume", Source: "pgdata", Target: "/var/lib/postgresql/data"}}
+	w.apply(c)
+	w.waitReason("db", "Running")
+
+	d := w.waitDisk("pgdata", "a volume of db", func(d *storagev1alpha1.Disk) bool {
+		return d.GetStatus().GetPhase() == storagev1alpha1.DiskPhase_DISK_PHASE_IN_USE &&
+			d.GetStatus().GetAttachment().GetAs() == storagev1alpha1.DiskAttachmentRole_DISK_ATTACHMENT_ROLE_VOLUME
+	})
+	if a := d.GetStatus().GetAttachment(); a.GetKind() != "Container" || a.GetName() != "db" || a.GetDevice() != "vdc" ||
+		a.GetPath() != "/var/lib/postgresql/data" {
+		t.Errorf("attachment %v", a)
+	}
+	uid := d.GetMetadata().GetUid()
+	mounted := func(target string) func() (bool, string) {
+		return func() (bool, string) {
+			_, spec, running := w.vmOf("ct-db")
+			return running && len(spec.Disks) == 1 && spec.Disks[0].DiskUID == uid && len(spec.Mounts) == 1 &&
+				spec.Mounts[0] == driver.Mount{Disk: 0, Name: "pgdata", Target: target}, fmt.Sprintf("%+v %+v", spec.Disks, spec.Mounts)
+		}
+	}
+	testutil.Eventually(w.t, "the VM running with the volume mounted", mounted("/var/lib/postgresql/data"))
+
+	c.Spec.Volumes[0].Target = "/data"
+	w.apply(c)
+	testutil.Eventually(w.t, "the VM running with the volume at /data", mounted("/data"))
+	w.waitDisk("pgdata", "at /data", func(d *storagev1alpha1.Disk) bool { return d.GetStatus().GetAttachment().GetPath() == "/data" })
+
+	w.delete("db")
+	w.waitDisk("pgdata", "attached to nothing", func(d *storagev1alpha1.Disk) bool {
+		return d.GetStatus().GetAttachment() == nil && d.GetStatus().GetPhase() == storagev1alpha1.DiskPhase_DISK_PHASE_AVAILABLE
+	})
 }
 
 // TestADiskWaitsForItsNode: a machine whose disk the host cannot make says

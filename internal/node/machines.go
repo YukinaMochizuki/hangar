@@ -273,6 +273,10 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if err != nil {
 		return nil, blocked(computeapi.ReasonBootFailed, err)
 	}
+	mnts, err := mounts(m.GetSpec())
+	if err != nil {
+		return nil, blocked(computeapi.ReasonBootFailed, err)
+	}
 	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)
 	spec := driver.VMSpec{
 		MachineUID:  uid,
@@ -285,6 +289,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		Nameservers: nameservers,
 		Search:      search,
 		Run:         runSpec(boot, image),
+		Mounts:      mnts,
 		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
 	obs, err := a.ensureVM(ctx, spec, vm)
@@ -659,6 +664,25 @@ func runSpec(boot *computev1alpha1.ContainerBoot, image driver.ImageConfig) driv
 		WorkingDir: image.WorkingDir,
 		User:       image.User,
 	}
+}
+
+// mounts are the volumes a container machine's guest mounts, each by its
+// index in the machine's disks, in the order volumes ensures them. A volume
+// of a disk the machine does not list holds it up: it would run without it.
+func mounts(spec *computev1alpha1.MachineSpec) ([]driver.Mount, error) {
+	disks := computeapi.MachineDisks(spec)
+	var out []driver.Mount
+	for _, v := range spec.GetContainer().GetVolumes() {
+		i := slices.Index(disks, v.GetDisk())
+		if i < 0 {
+			return nil, fmt.Errorf("volume %s at %s is not one of the machine's disks", v.GetDisk(), v.GetTarget())
+		}
+		out = append(out, driver.Mount{
+			Disk: i, Name: v.GetDisk(), Target: v.GetTarget(),
+			ReadOnly: v.GetReadOnly(), Nocopy: v.GetNocopy(), Subpath: v.GetSubpath(),
+		})
+	}
+	return out, nil
 }
 
 // withEnv returns a copy of env, KEY=VALUE pairs, with name set to value.

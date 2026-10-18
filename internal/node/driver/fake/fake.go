@@ -1257,6 +1257,11 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 			return fmt.Errorf("machine %s has no volume %s as specified", spec.MachineUID, v.Path)
 		}
 	}
+	for _, m := range spec.Mounts {
+		if spec.Firmware || m.Disk < 0 || m.Disk >= len(spec.Disks) || m.Target == "" {
+			return fmt.Errorf("machine %s: mount %+v is of no volume of its, or has no target", spec.MachineUID, m)
+		}
+	}
 	for _, i := range spec.Interfaces {
 		if have, ok := d.h.interfaces[spec.MachineUID][i.Name]; !ok || have != i {
 			return fmt.Errorf("machine %s has no interface %s as specified", spec.MachineUID, i.Name)

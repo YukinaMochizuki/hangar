@@ -21,6 +21,25 @@ message BootConfig {
   repeated string nameservers = 4;
   // Search domains for /etc/resolv.conf.
   repeated string search = 5;
+  // The volumes to mount before the process runs, in this order. See
+  // docs/decisions/container-volumes.md.
+  repeated Volume volumes = 6;
+}
+
+// Volume is a disk the guest mounts: formatted when blank, and filled from
+// the image when new.
+message Volume {
+  // The block device, such as /dev/vdc.
+  string device = 1;
+  // An absolute path, resolved in the root disk.
+  string target = 2;
+  bool read_only = 3;
+  // Leaves a new volume empty.
+  bool nocopy = 4;
+  // A directory of the volume, relative, mounted instead of all of it.
+  string subpath = 5;
+  // The Disk's name, for messages.
+  string name = 6;
 }
 
 // Process is a process to run in the guest.

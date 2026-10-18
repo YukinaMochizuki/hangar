@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chguest"
@@ -467,6 +468,11 @@ func checkSpec(s driver.VMSpec) error {
 		}
 		seen[v.Path] = true
 	}
+	for _, m := range s.Mounts {
+		if s.Firmware || m.Disk < 0 || m.Disk >= len(s.Disks) || m.Target == "" {
+			return fmt.Errorf("machine %s: mount %+v is of no volume of its, or has no target", s.MachineUID, m)
+		}
+	}
 	for _, i := range s.Interfaces {
 		if i.MachineUID != s.MachineUID || i.Device == "" {
 			return fmt.Errorf("machine %s: interface %+v is not its, or has no device", s.MachineUID, i)
@@ -501,6 +507,12 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 			}
 		}
 		cfg.Interfaces = append(cfg.Interfaces, nic)
+	}
+	for _, m := range spec.Mounts {
+		cfg.Volumes = append(cfg.Volumes, &guestv1.Volume{
+			Device: "/dev/" + computeapi.VirtioDevice(computeapi.FirstContainerDisk+m.Disk),
+			Target: m.Target, ReadOnly: m.ReadOnly, Nocopy: m.Nocopy, Subpath: m.Subpath, Name: m.Name,
+		})
 	}
 	var buf bytes.Buffer
 	if err := bootdisk.Write(&buf, cfg); err != nil {

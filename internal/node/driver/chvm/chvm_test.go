@@ -18,7 +18,10 @@ import (
 	"time"
 
 	sd "github.com/coreos/go-systemd/v22/dbus"
+	"google.golang.org/protobuf/proto"
 
+	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
@@ -829,6 +832,73 @@ func TestOnlyTheFirstInterfaceRoutesByDefault(t *testing.T) {
 	}
 	if i := cfg.GetInterfaces(); len(i) != 2 || i[0].GetGateway() != "10.0.0.1" || i[1].GetGateway() != "" || i[1].GetAddress() != "10.1.0.2/24" {
 		t.Errorf("interfaces %v", i)
+	}
+}
+
+// TestTheBootDiskCarriesVolumes: each mount goes on the boot disk with the
+// device its volume is attached as, after the root and boot disks; a mount
+// of no volume of the VM's is refused.
+func TestTheBootDiskCarriesVolumes(t *testing.T) {
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/a"}, {DiskUID: "d2", Path: "/dev/zvol/b"}}
+	spec.Mounts = []driver.Mount{
+		{Disk: 1, Name: "pgdata", Target: "/var/lib/postgresql/data"},
+		{Disk: 0, Name: "logs", Target: "/var/log", ReadOnly: true, Nocopy: true, Subpath: "pg"},
+	}
+	b, err := (&Hypervisor{}).bootDisk(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bootdisk.Read(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []*guestv1.Volume{
+		{Device: "/dev/vdd", Name: "pgdata", Target: "/var/lib/postgresql/data"},
+		{Device: "/dev/vdc", Name: "logs", Target: "/var/log", ReadOnly: true, Nocopy: true, Subpath: "pg"},
+	}
+	if v := cfg.GetVolumes(); len(v) != 2 || !proto.Equal(v[0], want[0]) || !proto.Equal(v[1], want[1]) {
+		t.Errorf("volumes %v, want %v", v, want)
+	}
+	for _, m := range []driver.Mount{{Disk: 2, Target: "/x"}, {Disk: -1, Target: "/x"}, {Disk: 0}} {
+		bad := spec
+		bad.Mounts = []driver.Mount{m}
+		if err := checkSpec(bad); err == nil {
+			t.Errorf("mount %+v accepted", m)
+		}
+	}
+}
+
+// TestVolumesAreWhereTheirDevicesSay: Cloud Hypervisor gets a container's
+// volumes after its root and boot disks, and a firmware VM's from the
+// first, as computeapi names their devices in a disk's status and the boot
+// disk names them to the guest.
+func TestVolumesAreWhereTheirDevicesSay(t *testing.T) {
+	disksOf := func(args []string) []string {
+		i := slices.Index(args, "--disk")
+		var out []string
+		for _, a := range args[i+1:] {
+			if strings.HasPrefix(a, "--") {
+				break
+			}
+			out = append(out, a)
+		}
+		return out
+	}
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Disks = []driver.Volume{{DiskUID: "d1"}, {DiskUID: "d2"}}
+	ctr := disksOf(chArgs(launch{Spec: spec}, "/d", 0))
+	fw := spec
+	fw.Firmware = true
+	firm := disksOf(firmwareArgs(launch{Spec: fw}, "/d", 0))
+	for n := range spec.Disks {
+		node := "/d/" + volumeNode(n) + ","
+		if at := computeapi.FirstContainerDisk + n; at >= len(ctr) || !strings.HasPrefix(ctr[at], "path="+node) {
+			t.Errorf("a container's volume %d is not disk %d: %v", n, at, ctr)
+		}
+		if n >= len(firm) || !strings.HasPrefix(firm[n], "path="+node) {
+			t.Errorf("a firmware VM's volume %d is not disk %d: %v", n, n, firm)
+		}
 	}
 }
 
