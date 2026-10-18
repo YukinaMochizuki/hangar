@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Builds what a host runs, from the checked-out commit, into one directory:
-# hangar-apiserver, hangar-node and hangar (static), the guest kernel and the
-# platform initramfs, the console's files as console.tar, VERSION, and
-# SHA256SUMS over all of them. The `release` step of deploy/host installs from
-# that directory (docs/runbook/host-bootstrap.md).
+# hangar-apiserver, hangar-node, hangar-edge and hangar (static), the guest
+# kernel and the platform initramfs, the console's files as console.tar,
+# deploy/ itself as deploy.tar, VERSION, and SHA256SUMS over all of them. The
+# `release` step of deploy/host installs from that directory, and
+# .github/workflows/release.yml publishes it for a tag
+# (docs/runbook/release.md, docs/runbook/host-bootstrap.md).
 #
 #   release.sh [--allow-dirty] [OUT]
 #
@@ -68,6 +70,15 @@ pnpm install --frozen-lockfile
 pnpm --dir web build
 tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
 	-C web/dist -cf "$stage/console.tar" .
+# deploy/ the same way, its files as git knows them (an untracked one too in a
+# dirty test build), so nothing ignored ships, sorted here because tar keeps
+# the order of a file list.
+git -C deploy ls-files -z --cached --others --exclude-standard |
+	while IFS= read -r -d '' f; do [ ! -e "deploy/$f" ] || printf '%s\0' "$f"; done |
+	LC_ALL=C sort -z >"$stage/deploy.list"
+tar --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
+	-C deploy --null --no-recursion -T "$stage/deploy.list" -cf "$stage/deploy.tar"
+rm "$stage/deploy.list"
 HANGAR_INITRAMFS_OUT=$stage/guest guest/initramfs/build.sh
 if [ -z "${HANGAR_KERNEL_CACHE:-}" ]; then
 	HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh

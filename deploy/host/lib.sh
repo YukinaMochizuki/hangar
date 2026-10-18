@@ -14,6 +14,12 @@ STATE_DIR=/var/lib/hangar-bootstrap
 INITRAMFS_MARKER=$STATE_DIR/initramfs-pending
 INITRAMFS_PENDING=0
 ROLLBACK_UNIT=hangar-netplan-rollback
+# The host's settings, which bootstrap.sh and verify.sh read unless --env
+# names another file: its uplink, addresses, disks, quotas and Node name
+# (deploy/host/host.env.example lists them). It is kept by the operator, not
+# in this repository, and is root's, mode 0600.
+# shellcheck disable=SC2034
+HOST_ENV=/etc/hangar/host.env
 # What stays on the host and out of the repo: the bootstrap admin's email
 # (the Google account the person signs in with), the auth mode and the
 # front door's settings. The operator writes it by hand.
@@ -186,11 +192,21 @@ require_vars() {
 	done
 }
 
+# host_env_private FILE holds when FILE is root's and mode 0600.
+host_env_private() { [ "$(stat -c '%a %U' "$1")" = "600 root" ]; }
+
 # load_env FILE sources the repo-wide versions and the per-host values.
 load_env() {
 	local env_file=$1 here
 	here=$(dirname "${BASH_SOURCE[0]}")
 	[ -f "$env_file" ] || die "host env file $env_file not found"
+	# Sourced as root, so whoever may write it runs code as root: refuse it
+	# unless it is root's and no one else can write it. Readable by others is
+	# for verify.sh to report; a test's --env file may be.
+	local owner mode
+	read -r owner mode < <(stat -L -c '%u 0%a' "$env_file")
+	[ "$owner" = 0 ] && [ $((mode & 022)) = 0 ] ||
+		die "host env file $env_file must be root's and writable by no one else (it is uid $owner, mode ${mode#0})"
 	# shellcheck source=deploy/host/versions.env
 	. "$here/versions.env"
 	# shellcheck disable=SC1090
@@ -205,6 +221,12 @@ load_env() {
 	done
 	[[ $HANGAR_DEFAULT_MAX_OWNED_TENANTS =~ ^[1-9][0-9]*$ ]] ||
 		die "HANGAR_DEFAULT_MAX_OWNED_TENANTS must be a whole number of at least 1, not $HANGAR_DEFAULT_MAX_OWNED_TENANTS"
+	# Optional; the upgrades step takes UTC without it. It ends up in a
+	# timer's OnCalendar=, so it must be a zone this host knows.
+	if [ -n "${HANGAR_UPGRADES_TZ:-}" ]; then
+		[[ $HANGAR_UPGRADES_TZ =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$HANGAR_UPGRADES_TZ" ] ||
+			die "HANGAR_UPGRADES_TZ must be a time zone in /usr/share/zoneinfo, such as Europe/Paris or UTC, not $HANGAR_UPGRADES_TZ"
+	fi
 	# ip prints addresses in canonical form; compare against the same form.
 	HANGAR_IPV6_ADDR=$(ipv6_canon "$HANGAR_IPV6_ADDR")
 	HANGAR_UPLINK_MAC=${HANGAR_UPLINK_MAC,,}

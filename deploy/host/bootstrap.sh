@@ -5,13 +5,14 @@ set -euo pipefail
 
 usage() {
 	cat <<'EOF'
-usage: bootstrap.sh [--host NAME | --env FILE] [--only STEP] [--release DIR] [--dry-run]
+usage: bootstrap.sh [--env FILE] [--only STEP] [--release DIR] [--dry-run]
 
-  --host NAME    use hosts/NAME.env (default: the output of `hostname`)
-  --env FILE     use FILE instead of a file under hosts/
+  --env FILE     read the host's settings from FILE instead of
+                 /etc/hangar/host.env
   --only STEP    run one step, e.g. --only swap-raid
-  --release DIR  install the release in DIR (made by `make release`); without
-                 it, the release step keeps what is installed
+  --release DIR  install the release in DIR (hangar-fetch-release puts one in
+                 /var/tmp/hangar/release/TAG); without it, the release step
+                 keeps what is installed
   --dry-run      print what would change and change nothing
 
 Prints "changes: N" at the end; N is 0 when the host was already converged.
@@ -22,14 +23,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=deploy/host/lib.sh
 . "$here/lib.sh"
 
-host=$(hostname)
-env_file=
+env_file=$HOST_ENV
 only=
 # HANGAR_RELEASE_DIR is read by the release step.
 # shellcheck disable=SC2034
 while [ $# -gt 0 ]; do
 	case $1 in
-	--host) host=$2; shift 2 ;;
 	--env) env_file=$2; shift 2 ;;
 	--only) only=$2; shift 2 ;;
 	--release) HANGAR_RELEASE_DIR=$(cd "$2" && pwd) || die "no release directory $2"; shift 2 ;;
@@ -39,7 +38,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 [ "$(id -u)" = 0 ] || die "must run as root"
-load_env "${env_file:-$here/hosts/$host.env}"
+load_env "$env_file"
 # While a netplan change is on probation the timer may still restore the old
 # config, so nothing may build on the new one yet.
 ! rollback_pending ||

@@ -161,11 +161,12 @@ one switch: there is no time with both paths in use.
 | The tool's API token gains Zone Read and DNS Edit on the user-content zone | The privileged box's `CLOUDFLARE_API_TOKEN` | Keep its account permissions until a rollback is off the table: the previous release's tool needs them |
 | `state.json` | `<out>/state.json` in the privileged box, from where it is kept | Commit it back after each apply that changed it |
 
-Not values, but settled before the day: a release built from the commit to
-deploy, with its `SHA256SUMS` digest ("Deploying a new hangar version" in
-`docs/runbook/host-bootstrap.md`); the previous release's directory and its
-`deploy/` kept on the host, as `/var/tmp/hangar/release/hangar-<previous>`
-and `/var/tmp/hangar/deploy-previous`; the new config file in the
+Not values, but settled before the day: the tag of the release to deploy
+and the `SHA256SUMS` digest its notes state ("Deploying a new hangar
+version" in `docs/runbook/host-bootstrap.md`); the previous release fetched
+on the host as well, `PREV` its tag, so `/var/tmp/hangar/release/PREV` and
+`/var/tmp/hangar/deploy-PREV` are there (`sudo hangar-fetch-release PREV
+<its digest>`, "Going back to an earlier tag" there); the new config file in the
 privileged box, beside the old one; a CLI built from the new release on
 the owner's workstation, with the previous one kept.
 
@@ -271,11 +272,14 @@ throughout.
 
    ```sh
    sudo mv /etc/hangar/cloudflared.env /etc/hangar/cloudflared.env.retired
-   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy/host/bootstrap.sh
+   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy-TAG/host/bootstrap.sh
    sudo journalctl -u hangar-bootstrap --no-pager | grep 'retire the Cloudflare tunnel'
-   sudo /var/tmp/hangar/deploy/host/verify.sh
-   sudo /var/tmp/hangar/deploy/host/bootstrap.sh
+   sudo /var/tmp/hangar/deploy-TAG/host/verify.sh
+   sudo /var/tmp/hangar/deploy-TAG/host/bootstrap.sh
    ```
+
+   `TAG` is the release installed on the host
+   (`docs/runbook/host-bootstrap.md`).
 
    Check: `verify.sh` says `PASS Cloudflare tunnel retired: nothing of it
    left`, and the next run `changes: 0`.
@@ -326,7 +330,7 @@ is all.
    sudo systemctl stop hangar-apiserver
    sudo cp -a /etc/hangar/local.env.pre-cutover /etc/hangar/local.env
    sudo zfs rollback hangar/state@pre-cutover
-   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy-previous/host/bootstrap.sh --release /var/tmp/hangar/release/hangar-<previous>
+   sudo systemd-run --unit=hangar-bootstrap --wait --collect /var/tmp/hangar/deploy-PREV/host/bootstrap.sh --release /var/tmp/hangar/release/PREV
    ```
 
    `zfs rollback` goes back to the latest snapshot only: it refuses while
@@ -342,7 +346,7 @@ is all.
 
    Check: `journalctl -u hangar-cloudflared` shows `Registered tunnel
    connection`; `cat /usr/local/lib/hangar/VERSION` is the previous
-   revision; `verify.sh` from `deploy-previous` passes.
+   revision; `verify.sh` from `deploy-PREV` passes.
 2. **DNS.** In the dashboard, delete the records this version created: the
    AAAA of `api.<zone>`, and the A and AAAA of `console.<zone>` and of
    `*.<user zone>`. Then, in the privileged box, check out the previous

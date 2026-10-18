@@ -47,8 +47,8 @@ difference in what gets built.
 ## Reuse a prebuilt kernel in a release
 
 `make release` builds the kernel every time unless `HANGAR_KERNEL_CACHE`
-names a cache directory. On a testbed VM, use the one the `hangar-testbed`
-image prebuilt:
+names a cache directory. That is for test builds: on a testbed VM, use the
+one the `hangar-testbed` image prebuilt:
 
 ```sh
 HANGAR_KERNEL_CACHE=/var/cache/hangar/guest-kernel/prebuilt make release
@@ -66,6 +66,14 @@ Without one, it builds as usual and files the result under the key
 build would produce on the same toolchain, so `SHA256SUMS` does not change.
 The key does not name the compiler: share a cache only between hosts with the
 same toolchain, as the testbed image does with itself.
+
+The release workflow (`.github/workflows/release.yml`,
+`docs/runbook/release.md`) uses no cache: every release builds its kernel
+in the same attested run that builds the rest, on the `ubuntu-24.04`
+runner, whose GCC the committed config was resolved with. A cached kernel
+would be a file no step of that run built (`cache.sh check` compares the
+config, not the `vmlinux`), and a cache entry made on one tag cannot be
+restored on another anyway.
 
 ## Build the initramfs
 
