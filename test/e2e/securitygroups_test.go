@@ -110,7 +110,7 @@ func TestSecurityGroupsReachTheHost(t *testing.T) {
 	// does not exist, and sends nothing.
 	w.applyGroup("lockdown", &networkv1alpha1.SecurityGroupSpec{Network: "other",
 		Egress: []*networkv1alpha1.EgressRule{{Protocol: tcp, Ports: "443",
-			To: &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Cidr{Cidr: "1.1.1.1/32"}}}}})
+			To: &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Cidr{Cidr: "203.0.113.1/32"}}}}})
 	stray := bare("stray", "10.0.0.51/24")
 	stray.Spec.Interfaces[0].SecurityGroups = []string{"lockdown"}
 	w.applyMachine(stray)

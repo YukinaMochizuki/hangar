@@ -6,16 +6,16 @@ package hangar.compute.v1alpha1;
 // every tenant with a machine on the node reads it. Fields are at most 64
 // printable characters. See docs/decisions/machine-placement.md.
 message Placement {
-  // The region the host is in, such as "ap-southeast", from the node's
+  // The region the host is in, such as "region-1", from the node's
   // configuration.
   string region = 1;
-  // The site within the region, such as a datacenter's name "SGP02", from
+  // The site within the region, such as a datacenter's name "site-a", from
   // the node's configuration.
   string site = 2;
   // The CPU as the host names it, without its core count, such as
-  // "AMD EPYC 7313".
+  // "Example CPU 1000".
   string cpu_model = 3;
-  // The CPU's microarchitecture and code name, such as "Zen 3 (Milan)":
+  // The CPU's microarchitecture and code name, such as "Example Gen 3":
   // known to the node agent for the CPUs it has a name for, or from the
   // node's configuration.
   string cpu_generation = 4;

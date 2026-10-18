@@ -6,10 +6,10 @@ import { describe, expect, it } from "vitest";
 import { hostFor, placementOf } from "@/lib/placement";
 
 const full = create(PlacementSchema, {
-  region: "ap-southeast",
-  site: "SGP02",
-  cpuModel: "AMD EPYC 7313",
-  cpuGeneration: "Zen 3 (Milan)",
+  region: "region-1",
+  site: "site-a",
+  cpuModel: "Example CPU 1000",
+  cpuGeneration: "Example Gen 3",
   storage: "2 × NVMe SSD",
   chassis: "generic-1u-2x-u2",
   memory: "DDR4-3200 ECC",
@@ -18,12 +18,12 @@ const full = create(PlacementSchema, {
 
 describe("placementOf", () => {
   it("takes every field from the API's placement, and draws a chassis it knows", () => {
-    expect(placementOf(full, "sgp02-01")).toEqual({
-      node: "sgp02-01",
-      region: "ap-southeast",
-      site: "SGP02",
-      cpuModel: "AMD EPYC 7313",
-      cpuGeneration: "Zen 3 (Milan)",
+    expect(placementOf(full, "node-01")).toEqual({
+      node: "node-01",
+      region: "region-1",
+      site: "site-a",
+      cpuModel: "Example CPU 1000",
+      cpuGeneration: "Example Gen 3",
       storage: "2 × NVMe SSD",
       chassis: "generic-1u-2x-u2",
       memory: "DDR4-3200 ECC",
@@ -35,8 +35,8 @@ describe("placementOf", () => {
   // The node leaves empty what it does not know; the panel shows nothing
   // for it, and draws a generic server.
   it("keeps empty fields empty", () => {
-    const h = placementOf(create(PlacementSchema, { cpuModel: "AMD EPYC 7313" }), "n1");
-    expect(h).toMatchObject({ cpuModel: "AMD EPYC 7313", region: "", site: "", memory: "", network: "", storage: "", cpuGeneration: "" });
+    const h = placementOf(create(PlacementSchema, { cpuModel: "Example CPU 1000" }), "n1");
+    expect(h).toMatchObject({ cpuModel: "Example CPU 1000", region: "", site: "", memory: "", network: "", storage: "", cpuGeneration: "" });
     expect(h?.art).toBe("unknown");
   });
 
@@ -54,17 +54,17 @@ describe("placementOf", () => {
 describe("hostFor", () => {
   it("reads a container's placement", () => {
     const container = create(ContainerSchema, { status: { placement: full } });
-    expect(hostFor({ container, node: "sgp02-01" })?.cpuModel).toBe("AMD EPYC 7313");
+    expect(hostFor({ container, node: "node-01" })?.cpuModel).toBe("Example CPU 1000");
   });
 
   it("reads a VM's placement", () => {
     const vm = create(VirtualMachineSchema, { status: { placement: { ...full, chassis: "mini" } } });
-    expect(hostFor({ vm, node: "sgp02-01" })?.art).toBe("mini");
+    expect(hostFor({ vm, node: "node-01" })?.art).toBe("mini");
   });
 
   it("is nothing for a machine not placed yet, though its node is named", () => {
     const container = create(ContainerSchema, { status: {} });
-    expect(hostFor({ container, node: "sgp02-01" })).toBeUndefined();
+    expect(hostFor({ container, node: "node-01" })).toBeUndefined();
     expect(hostFor({ node: "" })).toBeUndefined();
   });
 });

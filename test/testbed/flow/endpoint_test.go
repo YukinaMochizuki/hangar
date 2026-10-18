@@ -41,7 +41,7 @@ func startEdge(t *testing.T) *edge {
 		"--api-socket", filepath.Join(apiDir, "edge.sock"),
 		"--dial-socket", filepath.Join(apiDir, "edge-dial.sock"),
 		"--domain", edgeDomain,
-		"--console-url", "https://console.testbed.invalid",
+		"--console-url", "https://console.example.com",
 	)
 	cmd.Stdout, cmd.Stderr = log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{

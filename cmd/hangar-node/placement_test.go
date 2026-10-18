@@ -20,7 +20,7 @@ func TestCheckPlacement(t *testing.T) {
 		code int
 		says []string
 	}{
-		{[]string{"--region", "ap-southeast", "--site", "SGP02", "--chassis", "generic-1u-2x-u2",
+		{[]string{"--region", "region-1", "--site", "site-a", "--chassis", "generic-1u-2x-u2",
 			"--memory", "DDR4-3200 ECC", "--network", "2 × 10 GbE"}, 0, nil},
 		{nil, 0, nil},
 		{[]string{"--chassis", "Generic 1U", "--network", strings.Repeat("x", 65)}, 1, []string{"--chassis:", "--network:"}},

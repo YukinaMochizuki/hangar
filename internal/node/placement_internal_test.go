@@ -12,12 +12,12 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 )
 
-// epyc7313 is the start of /proc/cpuinfo on an EPYC 7313 host, cut short.
-const epyc7313 = `processor	: 0
+// epyc7543 is the start of /proc/cpuinfo on an EPYC 7543 host, cut short.
+const epyc7543 = `processor	: 0
 vendor_id	: AuthenticAMD
 cpu family	: 25
 model		: 1
-model name	: AMD EPYC 7313 16-Core Processor
+model name	: AMD EPYC 7543 32-Core Processor
 stepping	: 1
 
 processor	: 1
@@ -32,7 +32,7 @@ func TestReadCPU(t *testing.T) {
 		what, cpuinfo    string
 		name, generation string
 	}{
-		{"an EPYC 7313", epyc7313, "AMD EPYC 7313", "Zen 3 (Milan)"},
+		{"an EPYC 7543", epyc7543, "AMD EPYC 7543", "Zen 3 (Milan)"},
 		{"an EPYC 9124", "vendor_id\t: AuthenticAMD\ncpu family\t: 25\nmodel\t\t: 17\nmodel name\t: AMD EPYC 9124 16-Core Processor\n", "AMD EPYC 9124", "Zen 4 (Genoa)"},
 		{"an EPYC 7302P", "vendor_id\t: AuthenticAMD\ncpu family\t: 23\nmodel\t\t: 49\nmodel name\t: AMD EPYC 7302P 16-Core Processor\n", "AMD EPYC 7302P", "Zen 2 (Rome)"},
 		// A desktop part sharing Milan's family and model range.
@@ -129,14 +129,14 @@ func TestStorageKinds(t *testing.T) {
 }
 
 func TestPlacementMerge(t *testing.T) {
-	hw := &computev1alpha1.Placement{CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)", Storage: "2 × NVMe SSD",
+	hw := &computev1alpha1.Placement{CpuModel: "Example CPU 1000", CpuGeneration: "Example Gen 3", Storage: "2 × NVMe SSD",
 		Memory: "DDR4-3200 ECC", Network: "1 × 10 GbE",
 		// Never from the host: these are the configuration's alone.
 		Region: "stale", Site: "stale", Chassis: "stale"}
-	conf := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2", CpuGeneration: "Zen 3",
+	conf := &computev1alpha1.Placement{Region: "region-1", Site: "site-a", Chassis: "generic-1u-2x-u2", CpuGeneration: "Example Gen 3+",
 		Network: "2 × 10 GbE"}
-	want := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP02", Chassis: "generic-1u-2x-u2",
-		CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3", Storage: "2 × NVMe SSD",
+	want := &computev1alpha1.Placement{Region: "region-1", Site: "site-a", Chassis: "generic-1u-2x-u2",
+		CpuModel: "Example CPU 1000", CpuGeneration: "Example Gen 3+", Storage: "2 × NVMe SSD",
 		Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE"}
 	if got := placement(hw, conf); !proto.Equal(got, want) {
 		t.Errorf("placement %v, want %v", got, want)
@@ -147,9 +147,9 @@ func TestPlacementMerge(t *testing.T) {
 }
 
 func TestConfiguredPlacement(t *testing.T) {
-	conf := &computev1alpha1.Placement{Region: "ap-southeast", Site: "SGP\x0002", Chassis: "Generic 1U", CpuGeneration: strings.Repeat("z", 65)}
+	conf := &computev1alpha1.Placement{Region: "region-1", Site: "site\x00a", Chassis: "Generic 1U", CpuGeneration: strings.Repeat("z", 65)}
 	got := configuredPlacement(conf, slog.New(slog.DiscardHandler))
-	if want := (&computev1alpha1.Placement{Region: "ap-southeast"}); !proto.Equal(got, want) {
+	if want := (&computev1alpha1.Placement{Region: "region-1"}); !proto.Equal(got, want) {
 		t.Errorf("configured placement %v, want %v", got, want)
 	}
 	if conf.GetChassis() != "Generic 1U" {

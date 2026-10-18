@@ -19,10 +19,10 @@ through its machines what other tenants run.
 
   | Field | Example | From |
   |---|---|---|
-  | `region` | `ap-southeast` | the node's configuration, `--region` |
-  | `site` | `SGP02` | the node's configuration, `--site` |
-  | `cpu_model` | `AMD EPYC 7313` | `/proc/cpuinfo`'s model name, without the core count AMD ends it with (`16-Core Processor`, `16-Core`, `64-Cores`) |
-  | `cpu_generation` | `Zen 3 (Milan)` | the agent's table of EPYC generations by CPUID family and model, or `--cpu-generation` |
+  | `region` | `region-1` | the node's configuration, `--region` |
+  | `site` | `site-a` | the node's configuration, `--site` |
+  | `cpu_model` | `Example CPU 1000` | `/proc/cpuinfo`'s model name, without the core count AMD ends it with (`16-Core Processor`, `16-Core`, `64-Cores`) |
+  | `cpu_generation` | `Example Gen 3` | the agent's table of EPYC generations by CPUID family and model, or `--cpu-generation` |
   | `storage` | `2 × NVMe SSD` | the host's physical disks in `/sys/block`, by kind and count, or `--storage`: a block device with a device behind it and not removable, the namespaces of one NVMe controller counted once (loop devices, zvols, RAID arrays and device-mapper targets are not disks) |
   | `chassis` | `generic-1u-2x-u2` | the node's configuration, `--chassis` |
   | `memory` | `DDR4-3200 ECC` | the SMBIOS table (`/sys/firmware/dmi/tables/DMI`): the type of the installed modules (Memory Device), the slowest speed they run at, and ECC if a system memory array (Physical Memory Array) corrects errors; or `--memory` |

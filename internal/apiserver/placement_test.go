@@ -18,9 +18,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 )
 
-// milan is a host as its node describes it.
-var milan = &computev1alpha1.Placement{
-	Region: "ap-southeast", Site: "SGP02", CpuModel: "AMD EPYC 7313", CpuGeneration: "Zen 3 (Milan)",
+// described is a host as its node describes it.
+var described = &computev1alpha1.Placement{
+	Region: "region-1", Site: "site-a", CpuModel: "Example CPU 1000", CpuGeneration: "Example Gen 3",
 	Storage: "2 × NVMe SSD", Chassis: "generic-1u-2x-u2", Memory: "DDR4-3200 ECC", Network: "2 × 10 GbE",
 }
 
@@ -67,18 +67,18 @@ func TestAContainerReportsWhereItRuns(t *testing.T) {
 		t.Errorf("a container on no node reports placement %v", p)
 	}
 
-	nodeDescribed(t, s, "n1", milan)
+	nodeDescribed(t, s, "n1", described)
 	waitMachine(t, s, system, "ct-a", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
 	waitContainer(t, s, system, "a", "reporting its node's placement", func(c *computev1alpha1.Container) bool {
-		return proto.Equal(c.GetStatus().GetPlacement(), milan)
+		return proto.Equal(c.GetStatus().GetPlacement(), described)
 	})
-	if got := userContainer(t, s, user, "a").GetStatus().GetPlacement(); !proto.Equal(got, milan) {
-		t.Errorf("its user reads placement %v, want %v", got, milan)
+	if got := userContainer(t, s, user, "a").GetStatus().GetPlacement(); !proto.Equal(got, described) {
+		t.Errorf("its user reads placement %v, want %v", got, described)
 	}
 
 	// The node describing itself anew is what the container says.
-	moved := proto.Clone(milan).(*computev1alpha1.Placement)
-	moved.Site, moved.Chassis = "SGP03", ""
+	moved := proto.Clone(described).(*computev1alpha1.Placement)
+	moved.Site, moved.Chassis = "site-b", ""
 	nodeDescribed(t, s, "n1", moved)
 	waitContainer(t, s, system, "a", "following its node's description", func(c *computev1alpha1.Container) bool {
 		return proto.Equal(c.GetStatus().GetPlacement(), moved)
@@ -93,7 +93,7 @@ func TestAContainerReportsWhereItRuns(t *testing.T) {
 // placement as a container's does.
 func TestAVirtualMachineReportsWhereItRuns(t *testing.T) {
 	s, system, user := controlled(t, "n1")
-	nodeDescribed(t, s, "n1", milan)
+	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
@@ -102,18 +102,18 @@ func TestAVirtualMachineReportsWhereItRuns(t *testing.T) {
 	}
 	waitMachine(t, s, system, "vm-web", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
 	waitVM(t, s, system, "web", "reporting its node's placement", func(vm *computev1alpha1.VirtualMachine) bool {
-		return proto.Equal(vm.GetStatus().GetPlacement(), milan)
+		return proto.Equal(vm.GetStatus().GetPlacement(), described)
 	})
 	obj, err := s.backend(registry.VirtualMachine).Get(user, resource.Key{Project: "web", Name: "web"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := obj.(*computev1alpha1.VirtualMachine).GetStatus().GetPlacement(); !proto.Equal(got, milan) {
-		t.Errorf("its user reads placement %v, want %v", got, milan)
+	if got := obj.(*computev1alpha1.VirtualMachine).GetStatus().GetPlacement(); !proto.Equal(got, described) {
+		t.Errorf("its user reads placement %v, want %v", got, described)
 	}
 
-	moved := proto.Clone(milan).(*computev1alpha1.Placement)
-	moved.CpuModel = "AMD EPYC 7413"
+	moved := proto.Clone(described).(*computev1alpha1.Placement)
+	moved.CpuModel = "Example CPU 2000"
 	nodeDescribed(t, s, "n1", moved)
 	waitVM(t, s, system, "web", "following its node's description", func(vm *computev1alpha1.VirtualMachine) bool {
 		return proto.Equal(vm.GetStatus().GetPlacement(), moved)
@@ -125,7 +125,7 @@ func TestAVirtualMachineReportsWhereItRuns(t *testing.T) {
 func TestPlacementOf(t *testing.T) {
 	node := &computev1alpha1.Node{
 		Metadata: &metav1.ObjectMeta{Name: "n1"},
-		Status:   &computev1alpha1.NodeStatus{Ipv6Prefix: testPrefix, Placement: milan},
+		Status:   &computev1alpha1.NodeStatus{Ipv6Prefix: testPrefix, Placement: described},
 	}
 	m := func(owner, node string) *computev1alpha1.Machine {
 		return &computev1alpha1.Machine{
@@ -134,10 +134,10 @@ func TestPlacementOf(t *testing.T) {
 		}
 	}
 	got := placementOf("u1", m("u1", "n1"), node)
-	if !proto.Equal(got, milan) {
-		t.Errorf("placement %v, want %v", got, milan)
+	if !proto.Equal(got, described) {
+		t.Errorf("placement %v, want %v", got, described)
 	}
-	if got == milan {
+	if got == described {
 		t.Error("the placement is the node's own message, not a copy")
 	}
 	for _, tt := range []struct {
@@ -161,7 +161,7 @@ func TestPlacementOf(t *testing.T) {
 // applied still runs on its node, and still says so.
 func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 	s, system, user := controlled(t, "n1")
-	nodeDescribed(t, s, "n1", milan)
+	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
@@ -171,10 +171,10 @@ func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitContainer(t, s, system, "a", "reporting its node's placement", func(c *computev1alpha1.Container) bool {
-		return proto.Equal(c.GetStatus().GetPlacement(), milan)
+		return proto.Equal(c.GetStatus().GetPlacement(), described)
 	})
 	waitVM(t, s, system, "web", "reporting its node's placement", func(vm *computev1alpha1.VirtualMachine) bool {
-		return proto.Equal(vm.GetStatus().GetPlacement(), milan)
+		return proto.Equal(vm.GetStatus().GetPlacement(), described)
 	})
 
 	// More memory than the node has: the change waits, the machine stays.
@@ -187,14 +187,14 @@ func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 	c := waitContainer(t, s, system, "a", "stuck on its resize", func(c *computev1alpha1.Container) bool {
 		return conditions.Find(c.GetStatus().GetConditions(), ContainerReady).GetReason() == "ResizeDoesNotFit"
 	})
-	if got := c.GetStatus().GetPlacement(); !proto.Equal(got, milan) {
-		t.Errorf("a stuck container reports placement %v, want %v", got, milan)
+	if got := c.GetStatus().GetPlacement(); !proto.Equal(got, described) {
+		t.Errorf("a stuck container reports placement %v, want %v", got, described)
 	}
 	got := waitVM(t, s, system, "web", "stuck on its resize", func(vm *computev1alpha1.VirtualMachine) bool {
 		return vmReady(vm).GetReason() == "ResizeDoesNotFit"
 	})
-	if p := got.GetStatus().GetPlacement(); !proto.Equal(p, milan) {
-		t.Errorf("a stuck VM reports placement %v, want %v", p, milan)
+	if p := got.GetStatus().GetPlacement(); !proto.Equal(p, described) {
+		t.Errorf("a stuck VM reports placement %v, want %v", p, described)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 // placement leaves its containers and VMs as they are.
 func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
 	s, system, user := controlled(t, "n1")
-	nodeDescribed(t, s, "n1", milan)
+	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
@@ -211,10 +211,10 @@ func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitContainer(t, s, system, "a", "reporting its node's placement", func(c *computev1alpha1.Container) bool {
-		return proto.Equal(c.GetStatus().GetPlacement(), milan)
+		return proto.Equal(c.GetStatus().GetPlacement(), described)
 	})
 	waitVM(t, s, system, "web", "reporting its node's placement", func(vm *computev1alpha1.VirtualMachine) bool {
-		return proto.Equal(vm.GetStatus().GetPlacement(), milan)
+		return proto.Equal(vm.GetStatus().GetPlacement(), described)
 	})
 	waitSettled(t, s)
 	ctrKey, vmKey := resource.Key{Project: "web", Name: "a"}, resource.Key{Project: "web", Name: "web"}
@@ -228,7 +228,7 @@ func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
 	}
 
 	for range 3 {
-		nodeDescribed(t, s, "n1", proto.Clone(milan).(*computev1alpha1.Placement))
+		nodeDescribed(t, s, "n1", proto.Clone(described).(*computev1alpha1.Placement))
 		waitSettled(t, s)
 	}
 	if now, _ := versionOf(s, system, registry.Container, ctrKey)(); now != ctrRV {
@@ -249,12 +249,12 @@ func TestANodesPlacementIsBounded(t *testing.T) {
 			&computev1alpha1.NodeStatus{LastHeartbeatTime: timestamppb.New(time.Now()), Placement: p}, nil)
 		return err
 	}
-	if err := ok(milan); err != nil {
+	if err := ok(described); err != nil {
 		t.Fatalf("a valid placement: %v", err)
 	}
 	for _, p := range []*computev1alpha1.Placement{
 		{Region: strings.Repeat("r", 65)},
-		{Site: "SGP\n02"},
+		{Site: "site\na"},
 		{CpuModel: "EPYC\x1b[31m"},
 		{Storage: fmt.Sprint("2 ", "\u0000", " NVMe")},
 		{Chassis: "Generic 1U"},

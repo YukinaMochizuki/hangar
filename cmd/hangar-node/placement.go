@@ -16,10 +16,10 @@ const placementBound = "at most 64 printable characters, or it is reported empty
 // Placement as fs parses them.
 func bindPlacement(fs *flag.FlagSet) *computev1alpha1.Placement {
 	p := &computev1alpha1.Placement{}
-	fs.StringVar(&p.Region, "region", "", "the region the host is in, such as ap-southeast, which the machines on it report; "+placementBound)
-	fs.StringVar(&p.Site, "site", "", "the site within the region the host is in, such as SGP02, which the machines on it report; "+placementBound)
+	fs.StringVar(&p.Region, "region", "", "the region the host is in, such as region-1, which the machines on it report; "+placementBound)
+	fs.StringVar(&p.Site, "site", "", "the site within the region the host is in, such as site-a, which the machines on it report; "+placementBound)
 	fs.StringVar(&p.Chassis, "chassis", "", "names the host's chassis, a DNS-1123 label (at most 63 lowercase letters, digits and '-', starting and ending with a letter or digit) such as generic-1u-2x-u2, which a client draws the machines on it with; empty, or one that is not a label, is reported empty and drawn as a generic server")
-	fs.StringVar(&p.CpuGeneration, "cpu-generation", "", "the CPU's microarchitecture and code name, such as \"Zen 3 (Milan)\"; empty for what the agent knows of the CPU; "+placementBound)
+	fs.StringVar(&p.CpuGeneration, "cpu-generation", "", "the CPU's microarchitecture and code name, such as \"Example Gen 3\"; empty for what the agent knows of the CPU; "+placementBound)
 	fs.StringVar(&p.Storage, "storage", "", "the host's disks as the machines on it report them, such as \"2 × NVMe SSD\"; empty for the physical disks the agent finds; "+placementBound)
 	fs.StringVar(&p.Memory, "memory", "", "the kind of the host's memory, never its size, such as \"DDR4-3200 ECC\"; empty for what the agent reads of the SMBIOS table as it starts; "+placementBound)
 	fs.StringVar(&p.Network, "network", "", "the host's Ethernet ports by the most speed each supports, such as \"2 × 10 GbE\"; empty for what their drivers say as the agent starts; "+placementBound)
