@@ -8,7 +8,10 @@ import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import { ArrowUpRight, ChevronDown, ChevronUp, Lock } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
+import { StaleBanner } from "@/components/credentials";
+import { TerminalCard, useMayExec } from "@/pages/machine-terminal";
 import { useEffect, useState } from "react";
 import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
@@ -20,7 +23,7 @@ import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { Taxiway, type Stop, type StopState } from "@/components/taxiway";
-import { Badge, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, SizeBadge, Status, StatusDot } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
@@ -46,7 +49,7 @@ function sizeText(m: MachineView) {
   return `${formatNumber(m.cpu)} vCPU · ${formatNumber(m.memoryGi)} GiB${Number.isFinite(m.diskGi) ? ` · ${formatNumber(m.diskGi)} GiB disk` : ""}`;
 }
 
-function Header({ m }: { m: MachineView }) {
+function Header({ m, terminal }: { m: MachineView; terminal: boolean }) {
   const { sizes } = useMachineSizes();
   const size = sizeOf(m, sizes);
   const nic = m.interfaces[0];
@@ -68,7 +71,14 @@ function Header({ m }: { m: MachineView }) {
             {nic?.ipv4 && <span className="font-mono text-[12px]">{bare(nic.ipv4)}</span>}
           </div>
         </div>
-        <MachineActions m={m} />
+        <span className="flex items-center gap-2">
+          {terminal && (
+            <Link to="/projects/$project/containers/$name/terminal" params={{ project: m.project, name: m.name }} className={buttonVariants({ size: "sm" })}>
+              <TerminalSquare /> Terminal
+            </Link>
+          )}
+          <MachineActions m={m} />
+        </span>
       </div>
     </div>
   );
@@ -504,8 +514,10 @@ function Equivalent({ m }: { m: MachineView }) {
 
 export function MachineDetail({ kind, name }: { kind: MachineKind; name: string }) {
   const project = useProjectName();
-  const { items, loading, error, refetch } = useMachines(project, kind);
-  const m = items.find((x) => x.name === name);
+  const { held, loading, error, refetch } = useMachines(project, kind);
+  const mayExec = useMayExec(project);
+  // Asking again failing keeps the page on its last answer, so a terminal open on it is not ended.
+  const m = held.find((x) => x.name === name);
   const list = kind === "Container" ? "Containers" : "Virtual machines";
   const noun = kind === "Container" ? "container" : "virtual machine";
 
@@ -524,7 +536,7 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
       </>
     );
   }
-  if (error) {
+  if (error && !m) {
     return (
       <>
         <Topbar crumbs={crumbs} />
@@ -547,9 +559,11 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
     );
   }
   const ready = readyOf(m);
+  const terminal = m.kind === "Container" && mayExec;
   return (
     <>
       <Topbar crumbs={crumbs} />
+      {error ? <StaleBanner what={`${noun}s`} error={error} onRetry={refetch} /> : null}
       {m.deleting && (
         <PageBanner tone="warning" title={`${m.name} is being deleted`}>
           It goes once its machine and disks are gone.
@@ -560,10 +574,11 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
           {ready.message}
         </PageBanner>
       )}
-      <Header m={m} />
+      <Header m={m} terminal={terminal} />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Lifecycle m={m} />
+          {terminal && <TerminalCard m={m} />}
           <Summary m={m} />
           <Networking m={m} />
           <Conditions m={m} />
