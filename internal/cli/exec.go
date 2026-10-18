@@ -51,9 +51,12 @@ func (a *app) execCmd() *cobra.Command {
 	var env []string
 	cmd := &cobra.Command{
 		Use:   "exec [-i] [-t] [--user U] [--env K=V]... [--workdir D] KIND NAME -- COMMAND [ARG...]",
-		Short: "Run a command in a running container",
+		Short: "Run a command in a running container or virtual machine",
 		Long: "Runs a command in a running container, as docker exec does: with the\n" +
 			"container's environment, user and working directory unless overridden.\n" +
+			"In a virtual machine the platform logs in over SSH, as its image's default\n" +
+			"user or --user, which needs compute.machines.ssh; --env and --workdir are\n" +
+			"refused there, and hangar ssh is the way to log in from a terminal.\n" +
 			"Its stdout goes to stdout and its stderr to stderr; with -t they are one\n" +
 			"stream, on a terminal. Without -t, Ctrl-C and other signals are passed\n" +
 			"on to the command, and a second Ctrl-C within 2 s ends hangar; with -t,\n" +
@@ -75,7 +78,7 @@ func (a *app) execCmd() *cobra.Command {
 	cmd.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return execFailed(err) })
 	cmd.Flags().BoolVarP(&interactive, "interactive", "i", false, "pass stdin on to the command, closing its stdin at end of file")
 	cmd.Flags().BoolVarP(&tty, "tty", "t", false, "run the command on a terminal, this one in raw mode while it runs")
-	cmd.Flags().StringVarP(&user, "user", "u", "", "run as this user, such as 1000 or nobody:nogroup, instead of the container's")
+	cmd.Flags().StringVarP(&user, "user", "u", "", "run as this user, such as 1000 or nobody:nogroup, instead of the container's; in a VM, a login name")
 	cmd.Flags().StringArrayVarP(&env, "env", "e", nil, "set KEY=VALUE in the command's environment, over the container's")
 	cmd.Flags().StringVarP(&workdir, "workdir", "w", "", "run in this directory instead of the container's")
 	return cmd
