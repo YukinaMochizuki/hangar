@@ -287,7 +287,12 @@ for a platform administrator; at today's size that is a handful of calls.
   TestPermissions holds `compute.machines.ssh`, not exec's, as logging in
   to a VM is, and the page says that it logs in as the image's default
   user and that SSH answers a few seconds after the VM's first boot ends.
-  Its CLI line is `hangar ssh`.
+  Its CLI line is `hangar ssh`. The VM's page shows the host key the
+  apiserver recorded on its first login, as `ssh-keygen -l` writes its
+  fingerprint, and when; Forget host key, behind a dialog that says the
+  next login then trusts whatever key the VM shows, is offered where
+  TestPermissions holds `compute.virtualmachines.apply`
+  (`web/src/components/host-key.tsx`).
 - **The Runs on panel says where the machine stands** on its way to a
   host, in its header where the host's name goes once it is placed
   (`web/src/components/runs-on-panel.tsx`, the state from

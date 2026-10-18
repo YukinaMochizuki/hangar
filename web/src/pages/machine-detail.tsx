@@ -11,6 +11,7 @@ import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/publi
 import { Link } from "@tanstack/react-router";
 import { ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
+import { HostKeys } from "@/components/host-key";
 import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
 import { useEffect, useState } from "react";
 import { artStatus } from "@/components/chassis-art";
@@ -223,6 +224,11 @@ function Summary({ m }: { m: MachineView }) {
           </Field>
         )}
         {m.vm && <Field label="SSH keys">{m.vm.spec?.sshAuthorizedKeys.length ?? 0}</Field>}
+        {m.vm && (
+          <Field label="Host key">
+            <HostKeys vm={m.vm} project={m.project} />
+          </Field>
+        )}
         <Field label="Run state">{m.stopped ? "Stopped" : "Running"}</Field>
         <Field label="Labels">
           <Labels labels={m.labels} />
