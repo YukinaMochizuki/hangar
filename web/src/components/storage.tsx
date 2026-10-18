@@ -18,6 +18,7 @@ import { checkName } from "@/lib/create";
 import { ago, date, machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
+import type { OnCreated } from "@/lib/new-param";
 import {
   diskFault,
   diskImage,
@@ -255,6 +256,7 @@ function Label({ title, children, hint }: { title: string; children: ReactNode; 
 export function NewDiskDialog({
   open,
   onClose,
+  onCreated,
   project,
   images,
   disks,
@@ -262,6 +264,8 @@ export function NewDiskDialog({
 }: {
   open: boolean;
   onClose: () => void;
+  /** Called once the disk is made, with the step that opens it. */
+  onCreated: OnCreated;
   project: string;
   images: Image[];
   disks: Listing<Disk>;
@@ -295,10 +299,7 @@ export function NewDiskDialog({
           e.preventDefault();
           if (!nameCheck.ok || sizeProblem) return;
           create.mutate(disk, {
-            onSuccess: () => {
-              close();
-              void navigate({ to: "/projects/$project/disks/$name", params: { project, name } });
-            },
+            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/disks/$name", params: { project, name } })),
           });
         }}
       >

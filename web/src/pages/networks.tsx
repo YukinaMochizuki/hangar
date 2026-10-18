@@ -39,6 +39,7 @@ import { checkName, type KnownNames } from "@/lib/create";
 import { permission, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { date, machinePath } from "@/lib/machines";
+import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import {
   conditionOf,
   gatewayOf,
@@ -62,7 +63,7 @@ function ReadyCell({ n }: { n: Network }) {
   );
 }
 
-function CreateNetworkDialog({ open, onClose, known }: { open: boolean; onClose: () => void; known: KnownNames }) {
+function CreateNetworkDialog({ open, onClose, onCreated, known }: { open: boolean; onClose: () => void; onCreated: OnCreated; known: KnownNames }) {
   const project = useProjectName();
   const navigate = useNavigate();
   const submit = useCreate("network", project);
@@ -98,7 +99,7 @@ function CreateNetworkDialog({ open, onClose, known }: { open: boolean; onClose:
         onCancel={close}
         onSubmit={() =>
           submit.mutate(obj, {
-            onSuccess: () => void navigate({ to: "/projects/$project/networks/$name", params: { project, name } }),
+            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/networks/$name", params: { project, name } })),
           })
         }
       />
@@ -106,15 +107,15 @@ function CreateNetworkDialog({ open, onClose, known }: { open: boolean; onClose:
   );
 }
 
-export function NetworkList() {
+export function NetworkList(props: NewProps) {
   const project = useProjectName();
   const nets = useNetworks(project);
   const att = useAttachments(project);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   const rows = nets.items.filter((n) => !query || nameOf(n).includes(query));
   const machinesOn = (n: string) => new Set(att.items.filter((a) => a.network === n).map((a) => `${a.kind}/${a.name}`)).size;
-  const { can: may } = useCan({ level: "project", name: project }, [permission("network", "apply")]);
+  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("network", "apply")]);
+  const [creating, setCreating, created] = useCreating(props, may(permission("network", "apply")), settled);
   const newButton = may(permission("network", "apply")) ? (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> New network
@@ -199,6 +200,7 @@ export function NetworkList() {
         key={String(creating)}
         open={creating}
         onClose={() => setCreating(false)}
+        onCreated={created}
         known={{ loading: nets.loading, error: nets.error, names: nets.items.map(nameOf) }}
       />
     </>

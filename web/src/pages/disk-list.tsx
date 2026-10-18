@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
 import { gib, growingTo, growthBlocked, rootDiskOwner, useDisks, useImages, useMachineOwners } from "@/lib/storage";
+import { useCreating, type NewProps } from "@/lib/new-param";
 
 type Filter = "all" | "in-use" | "available" | "pending";
 
@@ -76,7 +77,7 @@ export function Attached({ d, project }: { d: Disk; project: string }) {
 }
 
 /** DiskList is the project's disks, with New disk. */
-export function DiskList() {
+export function DiskList(props: NewProps) {
   const project = useProjectName();
   const { items, loading, error, refetch } = useDisks(project);
   const images = useImages();
@@ -84,9 +85,10 @@ export function DiskList() {
   const disks = { items, loading, error, refetch };
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   // New disk shows only once the caller is known to hold storage.disks.apply.
-  const canCreate = useCan({ level: "project", name: project }, ["storage.disks.apply"]).can("storage.disks.apply");
+  const createPerm = useCan({ level: "project", name: project }, ["storage.disks.apply"]);
+  const canCreate = createPerm.can("storage.disks.apply");
+  const [creating, setCreating, created] = useCreating(props, canCreate, createPerm.settled);
   const rows = items.filter((d) => filters.find((f) => f.id === filter)!.match(d) && (!query || d.metadata?.name.includes(query)));
 
   const newButton = (
@@ -231,7 +233,7 @@ export function DiskList() {
           </>
         )}
       </div>
-      <NewDiskDialog key={String(creating)} open={creating} onClose={() => setCreating(false)} project={project} images={images.items} disks={disks} />
+      <NewDiskDialog key={String(creating)} open={creating} onClose={() => setCreating(false)} onCreated={created} project={project} images={images.items} disks={disks} />
     </>
   );
 }

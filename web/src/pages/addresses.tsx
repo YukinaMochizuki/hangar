@@ -41,6 +41,7 @@ import { date, machinePath, type MachineKind } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useCreate, useReload } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments } from "@/lib/network";
+import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import { bare } from "@/pages/machine-list";
 
 /** Where an address stands, in the words of its Bound condition. */
@@ -80,13 +81,13 @@ function TargetText({ a }: { a: Address }) {
   );
 }
 
-export function AddressList() {
+export function AddressList(props: NewProps) {
   const project = useProjectName();
   const addrs = useAddresses(project);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   const rows = addrs.items.filter((a) => !query || nameOf(a).includes(query));
-  const { can: may } = useCan({ level: "project", name: project }, [permission("address", "apply")]);
+  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("address", "apply")]);
+  const [creating, setCreating, created] = useCreating(props, may(permission("address", "apply")), settled);
   const newButton = may(permission("address", "apply")) ? (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> Reserve address
@@ -169,6 +170,7 @@ export function AddressList() {
         key={String(creating)}
         open={creating}
         onClose={() => setCreating(false)}
+        onCreated={created}
         known={{ loading: addrs.loading, error: addrs.error, names: addrs.items.map(nameOf) }}
       />
     </>
@@ -316,7 +318,13 @@ const typed = "typed";
  * refuses it, and the dialog says so and can start again from the address
  * as it is.
  */
-function BindDialog({ open, onClose, address, known }: { open: boolean; onClose: () => void; address?: Address; known?: KnownNames }) {
+function BindDialog({
+  open,
+  onClose,
+  onCreated,
+  address,
+  known,
+}: { open: boolean; onClose: () => void; known?: KnownNames } & ({ address: Address; onCreated?: never } | { address?: undefined; onCreated: OnCreated })) {
   const project = useProjectName();
   const navigate = useNavigate();
   const att = useAttachments(project);
@@ -356,7 +364,7 @@ function BindDialog({ open, onClose, address, known }: { open: boolean; onClose:
   };
   const send = () => {
     if (address) applyAt.mutate(obj, { onSuccess: close });
-    else reserve.mutate(obj, { onSuccess: () => void navigate({ to: "/projects/$project/addresses/$name", params: { project, name } }) });
+    else reserve.mutate(obj, { onSuccess: () => onCreated?.(() => void navigate({ to: "/projects/$project/addresses/$name", params: { project, name } })) });
   };
   const startAgain = () =>
     reload.mutate(undefined, {

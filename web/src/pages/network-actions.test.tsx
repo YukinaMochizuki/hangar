@@ -119,13 +119,15 @@ describe("networks", () => {
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
     type("Name", "db");
     type(/^IPv4 range/, "10.30.0.0/28");
+    expect(screen.getByText(/hangar apply --create-only -p demo -f db\.yaml/)).toBeTruthy();
     click("Create network");
     await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/networks/$name", params: { project: "demo", name: "db" } }));
     expect(methods(api)).toEqual(["ApplyNetwork"]);
     expect(lastApply<ApplyNetworkRequest>(api).createOnly).toBe(true);
     const want = create(NetworkSchema, { metadata: { name: "db", project: "demo" }, spec: { ipv4Cidr: "10.30.0.0/28" } });
     expect(equals(NetworkSchema, lastApply<ApplyNetworkRequest>(api).network!, want)).toBe(true);
-    expect(screen.getByText(/hangar apply --create-only -p demo -f db\.yaml/)).toBeTruthy();
+    // Created, the form is gone before the network's page opens.
+    expect(screen.queryByRole("dialog", { name: "New network" })).toBeNull();
   });
 
   it("sends nothing for a name the project has", async () => {

@@ -12,6 +12,7 @@ import { buttonVariants, Card, Kbd, SizeBadge, StatusDot, phaseLabel } from "@/c
 import { cn } from "@/lib/cn";
 import { machinePath, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
+import { useMayCreateMachines } from "@/lib/permissions";
 import { formatNumber } from "@/lib/quantity";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
@@ -92,7 +93,9 @@ export function MachineList({ kind }: { kind: MachineKind }) {
     return () => document.removeEventListener("keydown", onKey);
   }, []);
 
-  const newLink = (
+  // New shows only once the caller is known to hold the kind's apply permission.
+  const may = useMayCreateMachines(project);
+  const newLink = may[kind === "Container" ? "container" : "vm"] && (
     <Link
       to="/projects/$project/new"
       params={{ project }}

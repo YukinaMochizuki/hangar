@@ -17,6 +17,7 @@ import { isNotFound, isPermissionDenied } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago, date, isLive, machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
+import { useMayCreateMachines } from "@/lib/permissions";
 import { hostFor } from "@/lib/placement";
 import { formatNumber } from "@/lib/quantity";
 
@@ -48,6 +49,22 @@ function MachineRow({ m, project }: { m: MachineView; project: string }) {
   );
 }
 
+/** New machine, once the caller is known to hold a kind's apply permission; the form opens on a kind it may create. */
+function NewMachineLink({ project }: { project: string }) {
+  const may = useMayCreateMachines(project);
+  if (!may.container && !may.vm) return null;
+  return (
+    <Link
+      to="/projects/$project/new"
+      params={{ project }}
+      search={{ kind: may.container ? "container" : "vm" }}
+      className={buttonVariants({ variant: "primary" })}
+    >
+      <Plus /> New machine
+    </Link>
+  );
+}
+
 function MachineTable({ project }: { project: string }) {
   const { items, loading, error, refetch } = useMachines(project);
   return (
@@ -73,11 +90,7 @@ function MachineTable({ project }: { project: string }) {
       ) : items.length === 0 ? (
         <EmptyState
           title="No machines"
-          action={
-            <Link to="/projects/$project/new" params={{ project }} className={buttonVariants({ variant: "primary" })}>
-              <Plus /> New machine
-            </Link>
-          }
+          action={<NewMachineLink project={project} />}
         >
           This project runs no containers and no virtual machines.
         </EmptyState>
@@ -279,9 +292,7 @@ export function Overview() {
             <CopyButton text={project} />
           </div>
         </div>
-        <Link to="/projects/$project/new" params={{ project }} className={buttonVariants({ variant: "primary" })}>
-          <Plus /> New machine
-        </Link>
+        <NewMachineLink project={project} />
       </div>
       <div className="space-y-5 px-4 pb-10 md:px-8">
         <QuotaTiles tiles={computeTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} />

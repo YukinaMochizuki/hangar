@@ -37,6 +37,7 @@ import {
 } from "@/lib/credentials";
 import { roleLabel, roles } from "@/lib/members";
 import { useCan } from "@/lib/permissions";
+import { useCreating, type NewProps } from "@/lib/new-param";
 import { LoadingTable } from "@/pages/disk-list";
 
 function TokenState({ t }: { t: ServiceToken }) {
@@ -307,12 +308,13 @@ function DeleteTokenDialog({ t, held, open, onClose, after }: { t: ServiceToken;
 }
 
 /** ServiceTokenList is the project's tokens, with New token for owners. */
-export function ServiceTokenList() {
+export function ServiceTokenList(props: NewProps) {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useServiceTokens(project);
   const held = useTokenRoles(project);
-  const [creating, setCreating] = useState(false);
-  const canCreate = useCan({ level: "project", name: project }, [perms.tokenApply]).can(perms.tokenApply);
+  const createPerm = useCan({ level: "project", name: project }, [perms.tokenApply]);
+  const canCreate = createPerm.can(perms.tokenApply);
+  const [creating, setCreating] = useCreating(props, canCreate, createPerm.settled);
   const newButton = (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> New token

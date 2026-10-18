@@ -43,6 +43,7 @@ import { date, machinePath, useMachines, type MachineKind } from "@/lib/machines
 import { accessLabel, conditionOf, endpointYaml, kindNoun, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints } from "@/lib/network";
 import { permission, useChange, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
+import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 
 function AccessBadge({ access }: { access: PublicEndpointAccess }) {
   const pub = access === PublicEndpointAccess.PUBLIC;
@@ -93,13 +94,13 @@ function TargetText({ e }: { e: PublicEndpoint }) {
   );
 }
 
-export function PublicEndpointList() {
+export function PublicEndpointList(props: NewProps) {
   const project = useProjectName();
   const eps = usePublicEndpoints(project);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   const rows = eps.items.filter((e) => !query || nameOf(e).includes(query));
-  const { can: may } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply")]);
+  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply")]);
+  const [creating, setCreating, created] = useCreating(props, may(permission("publicEndpoint", "apply")), settled);
   const newButton = may(permission("publicEndpoint", "apply")) ? (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> New public endpoint
@@ -190,6 +191,7 @@ export function PublicEndpointList() {
         key={String(creating)}
         open={creating}
         onClose={() => setCreating(false)}
+        onCreated={created}
         known={{ loading: eps.loading, error: eps.error, names: eps.items.map(nameOf) }}
       />
     </>
@@ -337,7 +339,7 @@ export function PublicEndpointDetail({ name }: { name: string }) {
   );
 }
 
-function EndpointDialog({ open, onClose, known }: { open: boolean; onClose: () => void; known: KnownNames }) {
+function EndpointDialog({ open, onClose, onCreated, known }: { open: boolean; onClose: () => void; onCreated: OnCreated; known: KnownNames }) {
   const project = useProjectName();
   const navigate = useNavigate();
   const submit = useCreate("publicEndpoint", project);
@@ -403,7 +405,7 @@ function EndpointDialog({ open, onClose, known }: { open: boolean; onClose: () =
         onCancel={close}
         onSubmit={() =>
           submit.mutate(obj, {
-            onSuccess: () => void navigate({ to: "/projects/$project/public-endpoints/$name", params: { project, name } }),
+            onSuccess: () => onCreated(() => void navigate({ to: "/projects/$project/public-endpoints/$name", params: { project, name } })),
           })
         }
       />

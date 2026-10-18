@@ -48,6 +48,7 @@ import { checkName, type KnownNames } from "@/lib/create";
 import { isStale, permission, useApplyAt, useCreate, useReload } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { date } from "@/lib/machines";
+import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
 import {
   nameOf,
   peerLabel,
@@ -73,13 +74,12 @@ function NetworkName({ net, exists }: { net: string; exists: boolean }) {
   return exists ? <>{net}</> : <span className="text-pending">network {net} does not exist</span>;
 }
 
-export function SecurityGroupList() {
+export function SecurityGroupList(props: NewProps) {
   const project = useProjectName();
   const groups = useSecurityGroups(project);
   const nets = useNetworks(project);
   const att = useAttachments(project);
   const [query, setQuery] = useState("");
-  const [creating, setCreating] = useState(false);
   const membersOf = (network: string, group: string) => att.items.filter((a) => a.network === network && a.securityGroups.includes(group)).length;
   const listed = nets.items.map(nameOf);
   // Rows go under the network each group names, whether the project has it or not.
@@ -87,7 +87,8 @@ export function SecurityGroupList() {
   const rows = groups.items.filter((g) => !query || nameOf(g).includes(query));
   const showDefault = !query || "default".includes(query);
   const members = (net: string, group: string, word?: string) => <MemberCount state={att} n={membersOf(net, group)} word={word} />;
-  const { can: may } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply")]);
+  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply")]);
+  const [creating, setCreating, created] = useCreating(props, may(permission("securityGroup", "apply")), settled);
   const newButton = may(permission("securityGroup", "apply")) ? (
     <Button variant="primary" onClick={() => setCreating(true)}>
       <Plus /> New security group
@@ -213,6 +214,7 @@ export function SecurityGroupList() {
         key={String(creating)}
         open={creating}
         onClose={() => setCreating(false)}
+        onCreated={created}
         networks={networks}
         known={{ loading: groups.loading, error: groups.error, names: groups.items.map(nameOf) }}
       />
@@ -470,6 +472,7 @@ function RulesEditor({ title, peer, rules, onChange }: { title: string; peer: st
 function GroupDialog({
   open,
   onClose,
+  onCreated,
   networks,
   known,
   group,
@@ -478,8 +481,7 @@ function GroupDialog({
   onClose: () => void;
   networks: string[];
   known: KnownNames;
-  group?: SecurityGroup;
-}) {
+} & ({ group: SecurityGroup; onCreated?: never } | { group?: undefined; onCreated: OnCreated })) {
   const project = useProjectName();
   const navigate = useNavigate();
   // The group as the dialog opened on it; the list refreshing does not move it.
@@ -518,7 +520,7 @@ function GroupDialog({
   };
   const send = () => {
     if (group) applyAt.mutate(obj, { onSuccess: close });
-    else createGroup.mutate(obj, { onSuccess: () => void navigate({ to: "/projects/$project/security-groups/$name", params: { project, name } }) });
+    else createGroup.mutate(obj, { onSuccess: () => onCreated?.(() => void navigate({ to: "/projects/$project/security-groups/$name", params: { project, name } })) });
   };
   const startAgain = () =>
     reload.mutate(undefined, {
