@@ -212,7 +212,7 @@ for a platform administrator; at today's size that is a handful of calls.
   states the fact and the form sends nothing. The manifest and the summary
   show the value typed, refused or not. It goes to a container's
   `resources.disk` and a VM's `rootDisk.fromImage.size`. By the field: "A
-  disk can grow later; growing restarts the machine."
+  disk can grow later; growing restarts the machine. It never shrinks."
 - **A size's card is over quota by its own smallest disk**, with its cpu
   and memory: the larger of its disk and the image's floor, never the disk
   typed. A raised disk past the project's disk limit is stated under the
