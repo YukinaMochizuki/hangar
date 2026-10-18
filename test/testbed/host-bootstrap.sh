@@ -137,6 +137,8 @@ HANGAR_RESERVED_MEMORY=256Mi
 HANGAR_DEFAULT_MAX_OWNED_TENANTS=3
 HANGAR_NODE_NAME=testbed
 HANGAR_UPGRADES_TZ=Europe/Paris
+HANGAR_REGION=region-1
+HANGAR_CHASSIS=generic-1u-2x-u2
 EOF
 	# What the operator writes by hand on a real host.
 	install -m 0600 /dev/null /etc/hangar/local.env
@@ -1111,6 +1113,60 @@ test_host_env_and_fetch() {
 	/usr/local/bin/gh --version | grep -q "^gh version $HANGAR_GH_VERSION " || fail "the packages step did not install gh $HANGAR_GH_VERSION"
 }
 
+# test_fetched_release_checks_placement fetches the release under test with
+# the hangar-fetch-release the release step installed, from a stand-in for
+# GitHub on loopback, with gh swapped for one that takes a stand-in bundle
+# for the fetch alone, then runs the fetched deploy/ with the fetched
+# release, whose files the fetch leaves 0644: the services step must check
+# the placement with that release's hangar-node, refusing an invalid
+# HANGAR_CHASSIS, and never take it for one without check-placement.
+test_fetched_release_checks_placement() {
+	step "a fetched release has the placement checked with its own hangar-node"
+	local tag=v0.0.1-rc.1 www=$work/www top=/var/tmp/hangar server f d log=$work/fetched.log
+	rm -rf "$www" "$top/release/$tag" "$top/deploy-$tag"
+	mkdir -p "$www/$tag"
+	cp "$release"/* "$www/$tag/"
+	for f in "$www/$tag"/*; do echo "stand-in $(sha256sum "$f" | cut -d' ' -f1)"; done >"$work/attestation.jsonl"
+	mv "$work/attestation.jsonl" "$www/$tag/attestation.jsonl"
+	(cd "$www" && exec python3 -m http.server --bind 127.0.0.1 18090) >"$work/www.log" 2>&1 &
+	server=$!
+	for _ in $(seq 1 50); do curl -fsS -o /dev/null http://127.0.0.1:18090/ 2>/dev/null && break; sleep 0.1; done
+	mv /usr/local/bin/gh "$work/gh.real"
+	cat >/usr/local/bin/gh <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = --version ]; then exec $work/gh.real --version; fi
+grep -qx "stand-in \$(sha256sum "\$3" | cut -d' ' -f1)" "\$(dirname "\$3")/attestation.jsonl"
+EOF
+	chmod 755 /usr/local/bin/gh
+	d=$(sha256sum "$release/SHA256SUMS" | cut -d' ' -f1)
+	HANGAR_FETCH_RELEASE_BASE_URL=http://127.0.0.1:18090 /usr/local/sbin/hangar-fetch-release "$tag" "$d" >"$log" 2>&1 ||
+		{ mv -f "$work/gh.real" /usr/local/bin/gh; kill "$server"; fail "the fetch: $(cat "$log")"; }
+	mv -f "$work/gh.real" /usr/local/bin/gh
+	kill "$server"
+	[ "$(stat -c %a "$top/release/$tag/hangar-node")" = 644 ] ||
+		fail "the fetched hangar-node is $(stat -c %a "$top/release/$tag/hangar-node"), not 644 as a fetch leaves it; the test proves nothing"
+
+	# The same release as installed, so a run changes nothing, and checks.
+	"$top/deploy-$tag/host/bootstrap.sh" --release "$top/release/$tag" --dry-run >"$work/fetched.out" 2>"$log" ||
+		fail "a dry run from the fetched release: $(cat "$log")"
+	! grep -q 'check-placement' "$log" || fail "the dry run did not check the placement: $(grep check-placement "$log")"
+	[ "$("$top/deploy-$tag/host/bootstrap.sh" --release "$top/release/$tag" 2>"$log")" = "changes: 0" ] ||
+		fail "a run from the fetched release changed something: $(cat "$log")"
+	! grep -q 'check-placement\|placement cannot be checked' "$log" || fail "the run did not check the placement: $(cat "$log")"
+
+	step "an invalid HANGAR_CHASSIS is refused with the fetched release's hangar-node, nothing changed"
+	sed 's|^HANGAR_CHASSIS=.*|HANGAR_CHASSIS="Generic 1U"|' "$env_file" >"$work/chassis.env"
+	local before
+	before=$(state_digest)
+	if "$top/deploy-$tag/host/bootstrap.sh" --env "$work/chassis.env" --release "$top/release/$tag" >/dev/null 2>"$log"; then
+		fail "a run took an invalid HANGAR_CHASSIS"
+	fi
+	grep -q "the host env file's placement: --chassis:" "$log" || fail "refused, but not for the chassis: $(cat "$log")"
+	[ "$(state_digest)" = "$before" ] || fail "the refused run changed the host"
+	[ "$(stat -c %a "$top/release/$tag/hangar-node")" = 644 ] || fail "the check changed the fetched release"
+	rm -rf "$top/release/$tag" "$top/deploy-$tag" "$www"
+}
+
 prepare
 test_failed_generator_writes_nothing
 test_refuses_non_swap_partition
@@ -1119,6 +1175,7 @@ test_refuses_vm_id_clash
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
 test_host_env_and_fetch
+test_fetched_release_checks_placement
 test_admin_socket
 test_node_reconnects
 test_oidc_cutover
