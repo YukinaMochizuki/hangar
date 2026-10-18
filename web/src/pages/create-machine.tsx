@@ -17,6 +17,7 @@ import {
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { imageFloorGiB } from "@/lib/storage";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { Box, Check, Globe, MapPin, Server } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -74,17 +75,17 @@ function Choice({ selected, onClick, className, children, label }: { selected: b
 
 type Over = { key: string; label: string; need: number; left: number; limit: number; unit: string };
 
-/** The project limits a machine of this size would go past, from Project.status. */
+/** The project limits a machine of this size and disk would go past, from Project.status. */
 function useOverQuota(project: string) {
   const q = useQuery(ProjectService.method.getProject, { name: project });
   const st = q.data?.project?.status;
-  return (z: Size): Over[] => {
+  return (z: Size, diskGi: number): Over[] => {
     if (!st) return [];
     const checks = [
       { key: "machines", label: "machines", used: st.usage?.machines ?? 0, limit: st.limits?.machines, need: 1, unit: "" },
       { key: "cpu", label: "vCPU", used: quantityCPU(st.usage?.cpu || "0"), limit: quantityCPU(st.limits?.cpu), need: z.cpu, unit: " vCPU" },
       { key: "memory", label: "memory", used: quantityGiB(st.usage?.memory || "0"), limit: quantityGiB(st.limits?.memory), need: z.memoryGi, unit: " GiB" },
-      { key: "disk", label: "disk", used: quantityGiB(st.usage?.disk || "0"), limit: quantityGiB(st.limits?.disk), need: z.diskGi, unit: " GiB" },
+      { key: "disk", label: "disk", used: quantityGiB(st.usage?.disk || "0"), limit: quantityGiB(st.limits?.disk), need: diskGi, unit: " GiB" },
     ];
     return checks
       .filter((c) => c.limit !== undefined && Number.isFinite(c.limit) && c.used + c.need > c.limit!)
@@ -104,6 +105,9 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const [network, setNetwork] = useState("default");
   const [groups, setGroups] = useState<string[]>(["default"]);
   const [name, setName] = useState("");
+  // The disk as typed; null until the person edits it, while it follows
+  // the minimum.
+  const [diskText, setDiskText] = useState<string | null>(null);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
   const networks = useQuery(NetworkService.method.listNetworks, { project, pageSize: 1000 });
@@ -115,7 +119,25 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const chosenImage = vmImage || images.data?.items[0]?.metadata?.name || "";
   // The size asked for, if the platform lists it, or else its first.
   const s: Size | undefined = machineSizes.sizes.find((z) => z.name === size) ?? machineSizes.sizes[0];
-  const over = s ? overQuota(s) : [];
+  // The smallest disk: the size's, and for a VM its image's if larger.
+  const imageFloor = kind === "vm" ? imageFloorGiB(images.data?.items.find((i) => i.metadata?.name === chosenImage)) : 1;
+  const floorOf = (z: Size) => Math.max(Math.ceil(z.diskGi), imageFloor);
+  const minDisk = s ? floorOf(s) : imageFloor;
+  const minBy = s && imageFloor > Math.ceil(s.diskGi) ? `The image ${chosenImage}` : `Size ${s?.label ?? ""}`;
+  // What the field holds, typed or followed; the manifest shows it as it
+  // is, refused or not.
+  const diskTyped = (diskText ?? String(minDisk)).trim();
+  const diskGi = diskTyped === "" ? NaN : Number(diskTyped);
+  const diskProblem = !Number.isInteger(diskGi) || diskGi < 1
+    ? "The disk is not a whole number of GiB."
+    : diskGi < minDisk
+      ? `${minBy} needs a disk of at least ${minDisk} GiB; ${diskGi} GiB is less.`
+      : undefined;
+  // A size's card is checked with its own smallest disk, never the one
+  // typed: a raised disk's overage is the Disk field's to state.
+  const over = s ? overQuota(s, diskProblem ? minDisk : diskGi) : [];
+  const diskOver = over.find((o) => o.key === "disk");
+  const diskQuantity = diskTyped === "" ? "" : `${diskTyped}Gi`;
   const groupsHere = (securityGroups.data?.items ?? []).filter((g) => g.spec?.network === network).map((g) => g.metadata?.name ?? "");
   const noun = kind === "container" ? "container" : "virtual machine";
 
@@ -128,14 +150,14 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     kind === "container"
       ? create(ContainerSchema, {
           metadata: { name, project },
-          spec: { image, interfaces, resources: s?.resources },
+          spec: { image, interfaces, resources: s && { ...s.resources, disk: diskQuantity } },
         })
       : create(VirtualMachineSchema, {
           metadata: { name, project },
           spec: {
             interfaces,
             resources: s && { cpu: s.resources.cpu, memory: s.resources.memory },
-            rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s?.resources.disk ?? "" } } },
+            rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s ? diskQuantity : "" } } },
           },
         });
   const yaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
@@ -152,6 +174,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   if (kind === "container" && !image.trim()) problems.push("The image is empty.");
   if (kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
+  if (s && diskProblem) problems.push(diskProblem);
   const nameProblem = !nameCheck.ok && name !== "" && !existing.loading && !existing.error ? nameCheck.reason : undefined;
 
   const submit = useMutation({
@@ -268,7 +291,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             ) : (
               <div role="radiogroup" aria-label="Size" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {machineSizes.sizes.map((z) => {
-                  const tooBig = overQuota(z).length > 0;
+                  const tooBig = overQuota(z, floorOf(z)).length > 0;
                   const selected = s?.name === z.name;
                   return (
                     <Choice
@@ -293,9 +316,6 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                         <div>
                           {formatNumber(z.memoryGi)} <span className="text-muted">GiB memory</span>
                         </div>
-                        <div>
-                          {formatNumber(z.diskGi)} <span className="text-muted">GiB disk</span>
-                        </div>
                       </div>
                       {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
                     </Choice>
@@ -305,7 +325,35 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             )}
           </Section>
 
-          <Section n={4} title="Network">
+          <Section n={4} title="Disk" hint={s ? `${minBy} needs at least ${minDisk} GiB` : undefined}>
+            <div className="max-w-xl">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={minDisk}
+                  step={1}
+                  value={diskText ?? String(minDisk)}
+                  onChange={(e) => setDiskText(e.target.value)}
+                  aria-label="Disk, GiB"
+                  aria-invalid={!!diskProblem || !!diskOver}
+                  disabled={!s}
+                  className={cn(input, "w-32 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
+                />
+                <span className="text-[13px] text-muted">GiB</span>
+              </div>
+              {s && diskProblem ? (
+                <p className="mt-1.5 text-[12px] text-fail">{diskProblem}</p>
+              ) : diskOver ? (
+                <p className="mt-1.5 text-[12px] text-fail">
+                  Over quota: {formatNumber(diskOver.left)} GiB of the project's {formatNumber(diskOver.limit)} GiB of disk is left.
+                </p>
+              ) : null}
+              <p className="mt-1.5 text-[12px] text-subtle">A disk can grow later; growing restarts the machine. It never shrinks.</p>
+            </div>
+          </Section>
+
+          <Section n={5} title="Network">
             <div className="max-w-xl space-y-3">
               {networks.error ? (
                 <ErrorNotice error={networks.error} title="The networks did not load" onRetry={() => void networks.refetch()} className="p-0" />
@@ -360,7 +408,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             </div>
           </Section>
 
-          <Section n={5} title="Name" hint="Unique among this project's machines of the kind">
+          <Section n={6} title="Name" hint="Unique among this project's machines of the kind">
             <div className="max-w-xl">
               <input
                 value={name}
@@ -383,7 +431,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   <div className="mt-1 flex items-baseline gap-2">
                     <span className="font-mono text-[20px] font-semibold">{s.label}</span>
                     <span className="text-[13px] text-muted tabular">
-                      {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB · {formatNumber(s.diskGi)} GiB
+                      {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB · {diskTyped || "–"} GiB disk
                     </span>
                   </div>
                 ) : (
@@ -400,7 +448,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   <Notice tone="error" title={`Over the project's ${over.map((o) => o.label).join(" and ")} limit`}>
                     {over.map((o) => (
                       <div key={o.key}>
-                        {s?.label} needs {formatNumber(o.need)}
+                        {o.key === "disk" ? "The disk" : s?.label} needs {formatNumber(o.need)}
                         {o.unit}; {formatNumber(o.left)}
                         {o.unit} of {formatNumber(o.limit)}
                         {o.unit} is left.

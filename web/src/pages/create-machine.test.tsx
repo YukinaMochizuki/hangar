@@ -12,7 +12,7 @@ import {
 } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
-import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -60,8 +60,12 @@ type Fake = {
   /** Answers ListMachineSizes instead, when set. */
   sizesAnswer?: () => Promise<{ items: MachineSize[] }>;
   /** The project's limits and usage; none unless set. */
-  quota?: { limits: { cpu?: string; memory?: string }; usage: { cpu?: string; memory?: string } };
+  quota?: { limits: { cpu?: string; memory?: string; disk?: string }; usage: { cpu?: string; memory?: string; disk?: string } };
+  /** The platform's images; debian-13, of no stated smallest disk, unless set. */
+  images?: Image[];
 };
+
+const catalogImage = (name: string, os: string, minDiskSize = "") => create(ImageSchema, { metadata: { name }, spec: { os, version: "13", minDiskSize } });
 
 /** Applies as the API does: create-only refuses an existing name. */
 function apply<T extends Container | VirtualMachine>(f: Fake, kind: string, obj: T | undefined, createOnly: boolean): { obj?: T; created: boolean } {
@@ -104,7 +108,7 @@ function api(f: Fake) {
     r.service(TenantService, { listTenants: () => ({ items: [] }) });
     r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [] }) });
-    r.service(ImageService, { listImages: () => ({ items: [{ metadata: { name: "debian-13" }, spec: { os: "debian", version: "13" } }] }) });
+    r.service(ImageService, { listImages: () => ({ items: f.images ?? [catalogImage("debian-13", "debian")] }) });
   });
 }
 
@@ -360,5 +364,174 @@ describe("CreateMachine", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
     await createAllowed(a, "api");
     expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
+  });
+});
+
+const diskField = () => screen.getByLabelText("Disk, GiB") as HTMLInputElement;
+/** The project's machines of the kind have loaded, so the button speaks for the form. */
+const existingLoaded = () => screen.queryByText("Loading names…") === null;
+const typeDisk = (v: string) => fireEvent.change(diskField(), { target: { value: v } });
+/** The equivalent manifest, as the page shows it. */
+const manifest = () => screen.getByText(/^apiVersion:/).textContent ?? "";
+/** The VM's image, chosen in the form as a person does. */
+const chooseImage = async (os: string) => fireEvent.click(await screen.findByRole("radio", { name: new RegExp(os) }));
+
+describe("CreateMachine's disk", () => {
+  it("defaults to the chosen size's disk and follows the size until it is edited", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    expect(screen.getByText("Size M needs at least 20 GiB")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Size L" }));
+    expect(diskField().value).toBe("40");
+    expect(screen.getByText("Size L needs at least 40 GiB")).toBeTruthy();
+    typeDisk("50");
+    fireEvent.click(screen.getByRole("radio", { name: "Size S" }));
+    expect(diskField().value).toBe("50");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "2Gi", disk: "50Gi" });
+  });
+
+  it("sends a raised disk as the container's resources.disk, and the manifest and summary show it", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    typeDisk("25");
+    expect(manifest()).toContain("disk: 25Gi");
+    expect(screen.getByText(/25 GiB disk/)).toBeTruthy();
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "25Gi" });
+  });
+
+  it("refuses a disk below the size's in place, shows it as typed, and sends nothing", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    typeDisk("15");
+    fill("api");
+    await screen.findAllByText("Size M needs a disk of at least 20 GiB; 15 GiB is less.");
+    expect(manifest()).toContain("disk: 15Gi");
+    expect(screen.getByText(/15 GiB disk/)).toBeTruthy();
+    expect(diskField().getAttribute("aria-invalid")).toBe("true");
+    await waitFor(() => expect(existingLoaded()).toBe(true));
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    typeDisk("20");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ disk: "20Gi" });
+  });
+
+  it("refuses a disk that is not a whole number of GiB, and sends nothing", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    for (const v of ["20.5", ""]) {
+      typeDisk(v);
+      fill("api");
+      await screen.findAllByText("The disk is not a whole number of GiB.");
+      expect(submitButton().disabled).toBe(true);
+      submit();
+    }
+    typeDisk("21");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ disk: "21Gi" });
+  });
+
+  it("sends a raised disk as the VM's rootDisk.fromImage.size, and the manifest shows it", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="m" />, { wrapper: withApi(a) });
+    await screen.findByText("debian");
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    typeDisk("30");
+    expect(manifest()).toContain("size: 30Gi");
+    fill("box", false);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "30Gi" });
+  });
+
+  it("holds a VM's disk to its image's floor where it is above the size's, and says so", async () => {
+    const a = api({
+      containers: async () => ({ items: [] }),
+      images: [catalogImage("debian-13", "debian"), catalogImage("ubuntu-24", "ubuntu", "30Gi")],
+    });
+    render(<CreateMachine kind="vm" size="m" />, { wrapper: withApi(a) });
+    await chooseImage("ubuntu");
+    await waitFor(() => expect(diskField().value).toBe("30"));
+    expect(screen.getByText("The image ubuntu-24 needs at least 30 GiB")).toBeTruthy();
+    typeDisk("25");
+    fill("box", false);
+    await screen.findAllByText("The image ubuntu-24 needs a disk of at least 30 GiB; 25 GiB is less.");
+    expect(manifest()).toContain("size: 25Gi");
+    await waitFor(() => expect(existingLoaded()).toBe(true));
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    // Of an image with no floor above it, the size's holds.
+    await chooseImage("debian");
+    expect(screen.getByText("Size M needs at least 20 GiB")).toBeTruthy();
+    await chooseImage("ubuntu");
+    typeDisk("30");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(writes(a)).toEqual([{ method: "ApplyVirtualMachine", project: "demo", name: "box", createOnly: true }]);
+    expect(sentResources(a)).toMatchObject({ disk: "30Gi" });
+  });
+
+  it("says by the field that a disk grows later, and that growing restarts the machine", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await screen.findByText(/A disk can grow later; growing restarts the machine\./);
+  });
+
+  it("states no disk on the size cards", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    const cards = await screen.findAllByRole("radio", { name: /^Size / });
+    for (const c of cards) expect(c.textContent).not.toMatch(/disk/i);
+  });
+
+  it("warns of a disk past the project's limit by the field and the button, not on the size cards", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: { limits: { disk: "50Gi" }, usage: { disk: "10Gi" } } });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(diskField().value).toBe("20"));
+    // A disk within the limit warns of nothing.
+    typeDisk("40");
+    fill("api");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    expect(screen.queryByText(/Over/)).toBeNull();
+    typeDisk("41");
+    await screen.findByText("Over the project's disk limit");
+    expect(screen.getAllByText((_, el) => el?.textContent === "The disk needs 41 GiB; 40 GiB of 50 GiB is left.").length).toBeGreaterThan(0);
+    expect(screen.getByText("Over quota: 40 GiB of the project's 50 GiB of disk is left.")).toBeTruthy();
+    for (const c of screen.getAllByRole("radio", { name: /^Size / })) expect(c.textContent).not.toContain("Over quota");
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    typeDisk("40");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ disk: "40Gi" });
+  });
+
+  it("marks a size card by its own smallest disk, whatever disk is typed", async () => {
+    const a = api({ containers: async () => ({ items: [] }), quota: { limits: { disk: "45Gi" }, usage: { disk: "10Gi" } } });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    const large = await screen.findByRole("radio", { name: "Size L" });
+    await waitFor(() => expect(large.textContent).toContain("Over quota"));
+    expect(screen.getByRole("radio", { name: "Size M" }).textContent).not.toContain("Over quota");
+    typeDisk("30");
+    expect(screen.getByRole("radio", { name: "Size M" }).textContent).not.toContain("Over quota");
+    expect(large.textContent).toContain("Over quota");
+  });
+
+  it("marks a VM's size card by its image's floor where it is above the size's", async () => {
+    const a = api({
+      containers: async () => ({ items: [] }),
+      images: [catalogImage("ubuntu-24", "ubuntu", "30Gi")],
+      quota: { limits: { disk: "35Gi" }, usage: { disk: "10Gi" } },
+    });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    const small = await screen.findByRole("radio", { name: "Size S" });
+    await waitFor(() => expect(small.textContent).toContain("Over quota"));
   });
 });
