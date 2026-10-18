@@ -1,48 +1,45 @@
-// A project's security groups, one group, and making or editing one
-// (docs/decisions/networking.md). Every network also has the built-in
-// group "default", which is no object: it is listed, but has no page.
+// A project's security groups, one group, and the pages that make one or
+// edit its rules (docs/decisions/networking.md). Every network also has the
+// built-in group "default", which is no object: it is listed, but has no
+// page.
 
 import { clone, create } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  EgressRuleSchema,
-  IngressRuleSchema,
-  SecurityGroupProtocol,
-  SecurityGroupSchema,
-  SecurityGroupSpecSchema,
-  type EgressRule,
-  type IngressRule,
-  type SecurityGroup,
-} from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
-import { Pencil, Plus, Trash2, X } from "lucide-react";
+import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupSpecSchema, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
 import { Fragment, useState } from "react";
-import { Dialog } from "@/components/dialog";
-import { DeleteDialog, FormFooter, MachinesNotice, MemberCount, StaleNotice, usageBlock } from "@/components/resource";
-import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { DeleteDialog, MachinesNotice, MemberCount, StaleNotice, usageBlock } from "@/components/resource";
+import { Input, Select } from "@/components/form";
+import { CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
+import { Notice } from "@/components/notice";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
-import { checkName, type KnownNames } from "@/lib/create";
+import { EmptyState } from "@/components/states";
+import { Badge, Button, buttonVariants, Card, CardHeader, Field } from "@/components/ui";
+import { checkName } from "@/lib/create";
 import { isStale, permission, useApplyAt, useCreate, useReload } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { date } from "@/lib/machines";
-import { useCreating, type NewProps, type OnCreated } from "@/lib/new-param";
+import { count, nameOf, portsLabel, protocolLabel, securityGroupYaml, useAttachments, useNetworks, useSecurityGroups } from "@/lib/network";
 import {
-  nameOf,
-  peerLabel,
-  portsLabel,
-  protocolLabel,
-  securityGroupYaml,
-  useAttachments,
-  useNetworks,
-  useSecurityGroups,
-} from "@/lib/network";
+  draftOf,
+  draftProblems,
+  egressOf,
+  ingressOf,
+  newlyRestricted,
+  presets,
+  protocols,
+  ruleSentence,
+  sentence,
+  takesPorts,
+  type Direction,
+  type Draft,
+  type PeerKind,
+  type Rule,
+} from "@/lib/security-group-rules";
 import { AttachmentsCard } from "@/pages/networks";
-
-type Rule = IngressRule | EgressRule;
-const peerOf = (r: Rule) => (r.$typeName === "hangar.network.v1alpha1.IngressRule" ? r.from : r.to);
 
 function egressText(g: SecurityGroup): string {
   const n = g.spec?.egress.length ?? 0;
@@ -54,7 +51,7 @@ function NetworkName({ net, exists }: { net: string; exists: boolean }) {
   return exists ? <>{net}</> : <span className="text-pending">network {net} does not exist</span>;
 }
 
-export function SecurityGroupList(props: NewProps) {
+export function SecurityGroupList() {
   const project = useProjectName();
   const groups = useSecurityGroups(project);
   const nets = useNetworks(project);
@@ -67,19 +64,18 @@ export function SecurityGroupList(props: NewProps) {
   const rows = groups.items.filter((g) => !query || nameOf(g).includes(query));
   const showDefault = !query || "default".includes(query);
   const members = (net: string, group: string, word?: string) => <MemberCount state={att} n={membersOf(net, group)} word={word} />;
-  const { can: may, settled } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply")]);
-  const [creating, setCreating, created] = useCreating(props, may(permission("securityGroup", "apply")), settled);
+  const { can: may } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply")]);
   const newButton = may(permission("securityGroup", "apply")) ? (
-    <Button variant="primary" onClick={() => setCreating(true)}>
+    <Link to="/projects/$project/new/security-group" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New security group
-    </Button>
+    </Link>
   ) : undefined;
   return (
     <>
       <Topbar crumbs={["Security groups"]} />
       <PageHead
         title="Security groups"
-        description="Allow rules for the interfaces that name a group. Ingress is denied unless a rule allows it; egress is open unless a group of the interface has egress rules."
+        description="Allow rules for the interfaces that name a group. Inbound is denied unless a rule lets it in; outbound is open unless a group of the interface has outbound rules."
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
@@ -117,7 +113,7 @@ export function SecurityGroupList(props: NewProps) {
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">{nameOf(g)}</span>
                             <span className="block text-[11.5px] text-subtle">
-                              <NetworkName net={net} exists={listed.includes(net)} /> · {g.spec?.ingress.length ?? 0} ingress · egress {egressText(g)}
+                              <NetworkName net={net} exists={listed.includes(net)} /> · {count(g.spec?.ingress.length ?? 0, "inbound rule")} · outbound {egressText(g)}
                             </span>
                           </span>
                           <span className="shrink-0 text-muted">{members(net, nameOf(g), "member")}</span>
@@ -135,8 +131,8 @@ export function SecurityGroupList(props: NewProps) {
                 <tr className={theadRow}>
                   <Th className="w-[24%]">Name</Th>
                   <Th>Network</Th>
-                  <Th>Ingress</Th>
-                  <Th>Egress</Th>
+                  <Th>Inbound</Th>
+                  <Th>Outbound</Th>
                   <Th>Members</Th>
                   <Th>Created</Th>
                 </tr>
@@ -190,51 +186,37 @@ export function SecurityGroupList(props: NewProps) {
           </Card>
         </ListFrame>
       </div>
-      <GroupDialog
-        key={String(creating)}
-        open={creating}
-        onClose={() => setCreating(false)}
-        onCreated={created}
-        networks={networks}
-        known={{ loading: groups.loading, error: groups.error, names: groups.items.map(nameOf) }}
-      />
     </>
   );
 }
 
-function RulesTable({ rules, peer, empty }: { rules: Rule[]; peer: "From" | "To"; empty: string }) {
-  if (rules.length === 0) return <div className="px-4 py-3 text-[13px] text-muted">{empty}</div>;
+/** A group's rules of one direction, each as the sentence of what it lets through. */
+function RulesView({ title, dir, rules, empty, foot }: { title: string; dir: Direction; rules: Rule[]; empty: string; foot?: string }) {
   return (
-    <table className="w-full text-[13px]">
-      <thead>
-        <tr className="border-b text-left text-[11.5px] text-subtle">
-          <Th className="w-24">Protocol</Th>
-          <Th className="w-32">Ports</Th>
-          <Th>{peer}</Th>
-        </tr>
-      </thead>
-      <tbody>
-        {rules.map((r, i) => {
-          const p = peerLabel(peerOf(r));
-          return (
-            <tr key={i} className="border-b last:border-0">
-              <td className="px-4 py-2.5">{protocolLabel[r.protocol]}</td>
-              <td className="px-4 py-2.5 font-mono text-[12.5px]">{portsLabel(r.protocol, r.ports)}</td>
-              <td className="px-4 py-2.5">
-                {p.group ? (
-                  <span className="flex items-center gap-2">
-                    <Badge>group</Badge>
-                    <span className="font-mono text-[12.5px]">{p.text}</span>
-                  </span>
-                ) : (
-                  <span className="font-mono text-[12.5px]">{p.text}</span>
-                )}
-              </td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <Card className="overflow-hidden">
+      <CardHeader
+        title={
+          <span className="flex items-baseline gap-2">
+            {title}
+            <span className="font-mono text-[11.5px] font-normal text-subtle">{rules.length}</span>
+          </span>
+        }
+      />
+      {rules.length === 0 ? (
+        <p className="px-4 py-3 text-[13px] text-muted">{empty}</p>
+      ) : (
+        <ul className="divide-y">
+          {rules.map((r, i) => (
+            <li key={i} className="flex items-baseline gap-4 px-4 py-2.5 text-[13px]">
+              <span className="w-10 shrink-0 font-mono text-[12px] text-muted">{protocolLabel[r.protocol]}</span>
+              <span className="w-24 shrink-0 truncate font-mono text-[12px] text-muted">{portsLabel(r.protocol, r.ports)}</span>
+              <span className="min-w-0">{ruleSentence(r, dir)}.</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {foot && <div className="border-t px-4 py-2.5 text-[12px] text-muted">{foot}</div>}
+    </Card>
   );
 }
 
@@ -244,7 +226,6 @@ export function SecurityGroupDetail({ name }: { name: string }) {
   const nets = useNetworks(project);
   const att = useAttachments(project);
   const [deleting, setDeleting] = useState(false);
-  const [editing, setEditing] = useState(false);
   const navigate = useNavigate();
   const { can } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply"), permission("securityGroup", "delete")]);
   const mayApply = can(permission("securityGroup", "apply"));
@@ -271,8 +252,8 @@ export function SecurityGroupDetail({ name }: { name: string }) {
                     <NetworkName net={net} exists={false} />
                   )}
                 </span>
-                <span className="tabular">{g.spec?.ingress.length ?? 0} ingress</span>
-                <span className="tabular">egress {egressText(g)}</span>
+                <span className="tabular">{count(g.spec?.ingress.length ?? 0, "inbound rule")}</span>
+                <span className="tabular">outbound {egressText(g)}</span>
                 <MemberCount state={att} n={members.length} word="member" />
               </>
             }
@@ -280,9 +261,9 @@ export function SecurityGroupDetail({ name }: { name: string }) {
               mayApply || mayDelete ? (
                 <>
                   {mayApply && (
-                    <Button onClick={() => setEditing(true)}>
+                    <Link to="/projects/$project/security-groups/$name/edit" params={{ project, name }} className={buttonVariants()}>
                       <Pencil /> Edit rules
-                    </Button>
+                    </Link>
                   )}
                   {mayDelete && (
                     <Button variant="danger" onClick={() => setDeleting(true)}>
@@ -296,23 +277,14 @@ export function SecurityGroupDetail({ name }: { name: string }) {
           <DetailBody
             main={
               <>
-                <Card className="overflow-hidden">
-                  <CardHeader title="Ingress" />
-                  <RulesTable rules={g.spec?.ingress ?? []} peer="From" empty="No ingress rules: this group lets nothing in." />
-                </Card>
-                <Card className="overflow-hidden">
-                  <CardHeader title="Egress" />
-                  <RulesTable
-                    rules={g.spec?.egress ?? []}
-                    peer="To"
-                    empty="No egress rules: this group restricts nothing its members send."
-                  />
-                  {(g.spec?.egress.length ?? 0) > 0 && (
-                    <div className="border-t px-4 py-2.5 text-[12px] text-muted">
-                      A member sends only what some egress rule of its groups allows.
-                    </div>
-                  )}
-                </Card>
+                <RulesView title="Inbound" dir="in" rules={g.spec?.ingress ?? []} empty="No inbound rules: this group lets nothing in." />
+                <RulesView
+                  title="Outbound"
+                  dir="out"
+                  rules={g.spec?.egress ?? []}
+                  empty="No outbound rules: this group restricts nothing its members send."
+                  foot={(g.spec?.egress.length ?? 0) > 0 ? "A member sends only what some outbound rule of its groups lets out." : undefined}
+                />
                 <AttachmentsCard title="Members" items={members} state={att} empty="No interface names this group." />
                 <Card>
                   <CardHeader title="Summary" />
@@ -337,14 +309,6 @@ export function SecurityGroupDetail({ name }: { name: string }) {
               />
             }
           />
-          <GroupDialog
-            key={String(editing)}
-            open={editing}
-            onClose={() => setEditing(false)}
-            networks={nets.items.map(nameOf)}
-            known={{ loading: false, error: null, names: [] }}
-            group={g}
-          />
           <DeleteDialog
             kind="securityGroup"
             name={name}
@@ -363,111 +327,202 @@ export function SecurityGroupDetail({ name }: { name: string }) {
   );
 }
 
-type Draft = { protocol: SecurityGroupProtocol; ports: string; peer: string };
+const peerKinds: { kind: PeerKind; label: string }[] = [
+  { kind: "any4", label: "Any IPv4" },
+  { kind: "any6", label: "Any IPv6" },
+  { kind: "cidr", label: "Range" },
+  { kind: "group", label: "Group" },
+];
 
-const protocols = [SecurityGroupProtocol.TCP, SecurityGroupProtocol.UDP, SecurityGroupProtocol.ICMP, SecurityGroupProtocol.ALL];
+const blankRule: Draft = { protocol: SecurityGroupProtocol.TCP, ports: "", peer: "any4", value: "" };
 
-function draftOf(r: Rule): Draft {
-  return { protocol: r.protocol, ports: r.ports, peer: peerLabel(peerOf(r)).text };
-}
-
-/** Only TCP and UDP take ports. */
-const takesPorts = (p: SecurityGroupProtocol) => p === SecurityGroupProtocol.TCP || p === SecurityGroupProtocol.UDP;
-const portsOf = (r: Draft) => (takesPorts(r.protocol) ? r.ports.trim() : "");
-
-/** A peer as written: a range has a "/", anything else names a group. */
-function peerFrom(written: string) {
-  const text = written.trim();
-  return text.includes("/") ? { peer: { case: "cidr" as const, value: text } } : { peer: { case: "group" as const, value: text } };
-}
-
-const ingressOf = (rules: Draft[]) => rules.map((r) => create(IngressRuleSchema, { protocol: r.protocol, ports: portsOf(r), from: peerFrom(r.peer) }));
-const egressOf = (rules: Draft[]) => rules.map((r) => create(EgressRuleSchema, { protocol: r.protocol, ports: portsOf(r), to: peerFrom(r.peer) }));
-
-function RulesEditor({ title, peer, rules, onChange }: { title: string; peer: string; rules: Draft[]; onChange: (r: Draft[]) => void }) {
+/** One direction's rules as a table being edited: protocol, ports, the peer by kind, and the sentence of what each lets through. */
+function RulesEditor({
+  title,
+  dir,
+  rules,
+  onChange,
+  groups,
+  self,
+  empty,
+}: {
+  title: string;
+  dir: Direction;
+  rules: Draft[];
+  onChange: (r: Draft[]) => void;
+  /** The groups of the network a rule can name: "default" and the project's. */
+  groups: string[];
+  /** The group being edited, which a rule may name before it exists. */
+  self: string;
+  empty: string;
+}) {
   const set = (i: number, d: Partial<Draft>) => onChange(rules.map((r, j) => (j === i ? { ...r, ...d } : r)));
+  const choosable = [...new Set([self, ...groups].filter(Boolean))];
   return (
-    <div className="mt-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[12.5px] font-medium text-foreground">{title}</span>
-        <Button size="sm" variant="ghost" onClick={() => onChange([...rules, { protocol: SecurityGroupProtocol.TCP, ports: "", peer: "" }])}>
-          <Plus /> Rule
-        </Button>
+    <Card className="overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b px-4 py-2.5">
+        <span className="text-[13px] font-medium">{title}</span>
+        <span className="flex flex-wrap items-center gap-1.5">
+          {dir === "in" &&
+            presets(self).map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                disabled={p.draft.peer === "group" && !self}
+                onClick={() => onChange([...rules, p.draft])}
+                className="flex h-6 items-center gap-1 rounded border px-2 text-[11.5px] text-muted hover:border-border-strong hover:text-foreground disabled:opacity-50"
+              >
+                <Plus className="size-3" /> {p.label}
+              </button>
+            ))}
+          <Button type="button" size="sm" onClick={() => onChange([...rules, blankRule])}>
+            <Plus /> Rule
+          </Button>
+        </span>
       </div>
-      {rules.length > 0 && (
-        <div className="mt-1 grid grid-cols-[72px_80px_1fr_28px] gap-1.5 text-[11px] text-subtle">
-          <span>Protocol</span>
-          <span>Ports</span>
-          <span>{peer}</span>
+      {rules.length === 0 ? (
+        <p className="px-4 py-3 text-[13px] text-muted">{empty}</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] table-fixed text-[13px]">
+            <thead>
+              <tr className={theadRow}>
+                <Th className="w-[112px]">Protocol</Th>
+                <Th className="w-[120px] px-2">Ports</Th>
+                <Th className="px-2">{dir === "in" ? "From" : "To"}</Th>
+                <Th className="hidden w-[26%] px-2 lg:table-cell">What it does</Th>
+                <Th className="w-10 px-0" />
+              </tr>
+            </thead>
+            <tbody>
+              {rules.map((r, i) => {
+                const ports = takesPorts(r.protocol);
+                return (
+                  <tr key={i} className="border-b align-top last:border-0">
+                    <td className="px-4 py-2">
+                      <Select
+                        aria-label="Protocol"
+                        value={r.protocol}
+                        onChange={(e) => set(i, { protocol: Number(e.target.value) })}
+                        className="h-8 font-sans text-[12.5px]"
+                      >
+                        {protocols.map((p) => (
+                          <option key={p} value={p}>
+                            {protocolLabel[p]}
+                          </option>
+                        ))}
+                      </Select>
+                    </td>
+                    <td className="px-2 py-2">
+                      <Input
+                        aria-label="Ports"
+                        value={ports ? r.ports : ""}
+                        disabled={!ports}
+                        placeholder={ports ? "every port" : "–"}
+                        onChange={(e) => set(i, { ports: e.target.value })}
+                        className="h-8 px-2 text-[12.5px] disabled:opacity-50"
+                      />
+                    </td>
+                    <td className="px-2 py-2">
+                      <div className="flex gap-1.5">
+                        <Select
+                          aria-label={dir === "in" ? "From" : "To"}
+                          value={r.peer}
+                          onChange={(e) => {
+                            const peer = e.target.value as PeerKind;
+                            set(i, { peer, value: peer === "group" ? (choosable[0] ?? "") : "" });
+                          }}
+                          className="h-8 w-auto shrink-0 font-sans text-[12.5px]"
+                        >
+                          {peerKinds.map((k) => (
+                            <option key={k.kind} value={k.kind}>
+                              {k.label}
+                            </option>
+                          ))}
+                        </Select>
+                        {r.peer === "cidr" && (
+                          <Input
+                            aria-label="Range"
+                            value={r.value}
+                            placeholder="10.0.0.0/24"
+                            onChange={(e) => set(i, { value: e.target.value })}
+                            className="h-8 min-w-0 px-2 text-[12.5px]"
+                          />
+                        )}
+                        {r.peer === "group" && (
+                          <Select aria-label="Group" value={r.value} onChange={(e) => set(i, { value: e.target.value })} className="h-8 min-w-0 flex-1 text-[12.5px]">
+                            {!choosable.includes(r.value) && <option value={r.value}>{r.value || "–"}</option>}
+                            {choosable.map((g) => (
+                              <option key={g} value={g}>
+                                {g}
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </div>
+                    </td>
+                    <td className="hidden px-2 py-2.5 text-[12.5px] text-muted lg:table-cell">{sentence(r, dir)}.</td>
+                    <td className="py-2 pr-2">
+                      <button
+                        type="button"
+                        aria-label="Remove rule"
+                        onClick={() => onChange(rules.filter((_, j) => j !== i))}
+                        className="flex size-8 items-center justify-center rounded text-subtle hover:bg-surface-2 hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
-      {rules.map((r, i) => {
-        const ports = takesPorts(r.protocol);
-        return (
-          <div key={i} className="mt-1.5 grid grid-cols-[72px_80px_1fr_28px] items-center gap-1.5">
-            <Select aria-label="Protocol" value={r.protocol} onChange={(e) => set(i, { protocol: Number(e.target.value) })} className="pl-2 font-sans text-[12.5px]">
-              {protocols.map((p) => (
-                <option key={p} value={p}>
-                  {protocolLabel[p]}
-                </option>
-              ))}
-            </Select>
-            <Input
-              aria-label="Ports"
-              value={ports ? r.ports : ""}
-              disabled={!ports}
-              placeholder={ports ? "all" : "–"}
-              onChange={(e) => set(i, { ports: e.target.value })}
-              className="px-2 disabled:opacity-50"
-            />
-            <Input
-              aria-label={peer}
-              value={r.peer}
-              placeholder="::/0 or a group"
-              onChange={(e) => set(i, { peer: e.target.value })}
-              className="px-2"
-            />
-            <button
-              aria-label="Remove rule"
-              onClick={() => onChange(rules.filter((_, j) => j !== i))}
-              className="flex size-7 items-center justify-center rounded text-subtle hover:bg-surface-2 hover:text-foreground"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        );
-      })}
-      {rules.length === 0 && <div className="mt-1 text-[12px] text-subtle">None</div>}
+    </Card>
+  );
+}
+
+/** How a group's rules work, beside its editor (docs/decisions/networking.md). */
+function HowGroupsWork() {
+  return (
+    <div className="border-b px-4 py-3">
+      <div className="flex items-center gap-2 text-[13px] font-medium">
+        <ShieldCheck className="size-4 text-subtle" /> How a group works
+      </div>
+      <ul className="mt-2 space-y-1.5 text-[12.5px] text-muted">
+        <li>
+          <span className="text-foreground">Inbound</span> is denied unless a rule of one of the interface's groups lets it in. Replies to what an
+          interface sent always come back.
+        </li>
+        <li>
+          <span className="text-foreground">Outbound</span> is allowed to everywhere while none of the interface's groups has outbound rules. Once one
+          does, the interface sends only what some rule lets out.
+        </li>
+      </ul>
     </div>
   );
 }
 
 /**
- * A new group, or a group's rules changed. A change is applied at the
- * version the dialog opened from: the rules shown are what it replaces, so a
- * newer group is not overwritten. The API then refuses it, and the dialog
- * says so and can start again from the group as it is.
+ * The page that makes a security group, or edits a group's rules. An edit is
+ * applied at the version the page opened on: the rules shown are what it
+ * replaces, so a newer group is not overwritten. The API then refuses it, and
+ * the page says so and can start again from the group as it is.
  */
-function GroupDialog({
-  open,
-  onClose,
-  onCreated,
-  networks,
-  known,
-  group,
-}: {
-  open: boolean;
-  onClose: () => void;
-  networks: string[];
-  known: KnownNames;
-} & ({ group: SecurityGroup; onCreated?: never } | { group?: undefined; onCreated: OnCreated })) {
+function SecurityGroupForm({ group }: { group?: SecurityGroup }) {
   const project = useProjectName();
   const navigate = useNavigate();
-  // The group as the dialog opened on it; the list refreshing does not move it.
+  const groups = useSecurityGroups(project);
+  const nets = useNetworks(project);
+  const att = useAttachments(project);
+  // The group as the page opened on it; the list refreshing does not move it.
   const [base, setBase] = useState(group);
   const [name, setName] = useState(group ? nameOf(group) : "");
-  const [network, setNetwork] = useState(group?.spec?.network ?? (networks.includes("default") ? "default" : (networks[0] ?? "")));
-  const [ingress, setIngress] = useState<Draft[]>(group?.spec?.ingress.map(draftOf) ?? [{ protocol: SecurityGroupProtocol.TCP, ports: "443", peer: "::/0" }]);
+  const networks = nets.items.map(nameOf);
+  const [chosenNetwork, setNetwork] = useState(group?.spec?.network ?? "");
+  const network = chosenNetwork || (networks.includes("default") ? "default" : (networks[0] ?? ""));
+  const [ingress, setIngress] = useState<Draft[]>(group?.spec?.ingress.map(draftOf) ?? []);
   const [egress, setEgress] = useState<Draft[]>(group?.spec?.egress.map(draftOf) ?? []);
   const createGroup = useCreate("securityGroup", project);
   const applyAt = useApplyAt("securityGroup");
@@ -477,7 +532,7 @@ function GroupDialog({
 
   let obj: SecurityGroup;
   if (base) {
-    // Only the rules change; the rest is the group as the dialog opened on it.
+    // Only the rules change; the rest is the group as the page opened on it.
     obj = clone(SecurityGroupSchema, base);
     obj.spec ??= create(SecurityGroupSpecSchema);
     obj.spec.ingress = ingressOf(ingress);
@@ -487,19 +542,22 @@ function GroupDialog({
   }
   const problems: string[] = [];
   if (!group) {
-    const check = checkName(name, "security group", known);
+    const check = checkName(name, "security group", { loading: groups.loading, error: groups.error, names: groups.items.map(nameOf) });
     if (!check.ok) problems.push(check.reason);
-    if (!network) problems.push("No network is chosen.");
+    if (!nets.loading && !network) problems.push("The project has no network.");
   }
-  if ([...ingress, ...egress].some((r) => !r.peer.trim())) problems.push("A rule has no peer.");
-  const close = () => {
-    createGroup.reset();
-    applyAt.reset();
-    onClose();
-  };
+  problems.push(...draftProblems([...ingress, ...egress]));
+
+  // The interfaces this edit's first outbound rule restricts, when the group lets everything out now.
+  const firstEgress = (group?.spec?.egress.length ?? 0) === 0 && egress.length > 0;
+  const restricted = firstEgress && !att.loading && !att.error ? newlyRestricted(name, network, att.items, groups.items) : [];
+  const peersHere = ["default", ...groups.items.filter((g) => g.spec?.network === network).map(nameOf)];
+
+  const open = (to: string) => void navigate({ to: "/projects/$project/security-groups/$name", params: { project, name: to }, replace: true });
   const send = () => {
-    if (group) applyAt.mutate(obj, { onSuccess: close });
-    else createGroup.mutate(obj, { onSuccess: () => onCreated?.(() => void navigate({ to: "/projects/$project/security-groups/$name", params: { project, name } })) });
+    if (problems.length > 0 || stale) return;
+    if (group) applyAt.mutate(obj, { onSuccess: () => open(name) });
+    else createGroup.mutate(obj, { onSuccess: () => open(name) });
   };
   const startAgain = () =>
     reload.mutate(undefined, {
@@ -510,52 +568,135 @@ function GroupDialog({
         applyAt.reset();
       },
     });
+  const where = group ? <>On network {network}.</> : undefined;
+  const n = group ? 0 : 2;
+  const editors = (
+    <>
+      <FormSection n={n + 1} title="Inbound rules" hint="What may come into a member">
+        <RulesEditor title="Inbound" dir="in" rules={ingress} onChange={setIngress} groups={peersHere} self={name} empty="No rule: this group lets nothing in." />
+      </FormSection>
+      <FormSection n={n + 2} title="Outbound rules" hint="What a member may send">
+        <RulesEditor
+          title="Outbound"
+          dir="out"
+          rules={egress}
+          onChange={setEgress}
+          groups={peersHere}
+          self={name}
+          empty="No rule: everything may go out, unless another group of an interface has outbound rules."
+        />
+      </FormSection>
+    </>
+  );
   return (
-    <Dialog open={open} onClose={close} title={group ? `Edit rules of ${nameOf(group)}` : "New security group"}>
+    <FormPage
+      crumbs={group ? undefined : ["Security groups", "New security group"]}
+      title={group ? `Edit rules of ${nameOf(group)}` : "New security group"}
+      description={where ?? "Allow rules for the interfaces that name the group, on one network."}
+      onSubmit={send}
+      side={
+        <>
+          <Card>
+            <HowGroupsWork />
+            <FormSummary
+              summary={
+                <span className="text-[13px] text-muted">
+                  <span className="font-mono text-foreground">{name || "–"}</span> on {network || "–"}: {count(ingress.length, "inbound rule")},{" "}
+                  {egress.length === 0 ? "outbound open" : count(egress.length, "outbound rule")}
+                </span>
+              }
+              problems={problems}
+              blocked={stale}
+              notices={
+                <>
+                  {restricted.length > 0 && (
+                    <Notice tone="warning" title={`Outbound rules restrict ${count(restricted.length, "interface")}`}>
+                      {restricted.map((a) => a.name).join(", ")} on network {network} then send only what an outbound rule of their groups lets out.
+                    </Notice>
+                  )}
+                  {stale && (
+                    <StaleNotice title="The rules changed after this page opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
+                  )}
+                </>
+              }
+              error={stale ? null : submit.error}
+              failed={group ? "Applying the rules failed" : "Creating the security group failed"}
+              cancelTo={group ? `/projects/${project}/security-groups/${nameOf(group)}` : `/projects/${project}/security-groups`}
+              pending={submit.isPending}
+              pendingLabel={group ? "Applying…" : "Creating…"}
+              label={
+                group ? (
+                  "Apply rules"
+                ) : (
+                  <>
+                    <Plus /> Create security group
+                  </>
+                )
+              }
+            />
+          </Card>
+          <FormManifest yaml={securityGroupYaml(obj)} cli={[`hangar apply ${group ? "" : "--create-only "}-p ${project} -f ${name || "group"}.yaml`]} />
+        </>
+      }
+    >
       {!group && (
         <>
-          <FormField label="Name">
-            <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} spellCheck={false} />
-          </FormField>
-          <FormField label="Network" hint="Only interfaces on this network can join the group. It cannot be changed later.">
-            <Select value={network} onChange={(e) => setNetwork(e.target.value)}>
-              {networks.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </Select>
-          </FormField>
+          <FormSection n={1} title="Network" hint="Only its interfaces can join the group; it cannot be changed later">
+            <div className="max-w-xl">
+              <Select aria-label="Network" value={network} onChange={(e) => setNetwork(e.target.value)} disabled={nets.loading}>
+                {networks.map((x) => (
+                  <option key={x} value={x}>
+                    {x}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </FormSection>
+          <FormSection n={2} title="Group name" hint="Unique among this project's security groups">
+            <div className="max-w-xl">
+              <Input aria-label="Group name" value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="web" spellCheck={false} />
+            </div>
+          </FormSection>
         </>
       )}
-      <RulesEditor title="Ingress" peer="From" rules={ingress} onChange={setIngress} />
-      <RulesEditor title="Egress" peer="To" rules={egress} onChange={setEgress} />
-      <FormEquivalent
-        yaml={securityGroupYaml(obj)}
-        cli={[`hangar apply ${group ? "" : "--create-only "}-p ${project} -f ${name || "group"}.yaml`]}
-      />
-      {stale && (
-        <StaleNotice title="The rules changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
-      )}
-      <FormFooter
-        problems={problems}
-        blocked={stale}
-        error={stale ? null : submit.error}
-        failed={group ? "Applying the rules failed" : "Creating the security group failed"}
-        pending={submit.isPending}
-        pendingLabel={group ? "Applying…" : "Creating…"}
-        label={
-          group ? (
-            "Apply rules"
-          ) : (
-            <>
-              <Plus /> Create security group
-            </>
-          )
-        }
-        onCancel={close}
-        onSubmit={send}
-      />
-    </Dialog>
+      {editors}
+    </FormPage>
+  );
+}
+
+/** The caller's permission to write security groups, stated on a page that needs it once the answer says no. */
+function useMayApply(project: string) {
+  const p = permission("securityGroup", "apply");
+  const { can, known } = useCan({ level: "project", name: project }, [p]);
+  return { may: can(p), refused: known && !can(p) };
+}
+
+/** The page that makes a security group. */
+export function NewSecurityGroup() {
+  const project = useProjectName();
+  const p = permission("securityGroup", "apply");
+  const perm = useCan({ level: "project", name: project }, [p]);
+  return (
+    <CreateGate crumbs={["Security groups", "New security group"]} title="New security group" perm={perm} may={perm.can(p)} refusal="creating security groups">
+      <SecurityGroupForm />
+    </CreateGate>
+  );
+}
+
+/** The page that edits a group's rules. */
+export function EditSecurityGroup({ name }: { name: string }) {
+  const project = useProjectName();
+  const groups = useSecurityGroups(project);
+  const { may, refused } = useMayApply(project);
+  const g = groups.items.find((x) => nameOf(x) === name);
+  return (
+    <DetailFrame crumbs={["Security groups", name, "Edit rules"]} state={groups} found={!!g} noun="security group" name={name}>
+      {g && may ? (
+        // Keyed by the group's identity so a group made again under the name starts a new edit.
+        <SecurityGroupForm key={g.metadata?.uid} group={g} />
+      ) : refused ? (
+        <EmptyState title="No editing">This account's roles do not include changing security groups in this project.</EmptyState>
+      ) : null}
+    </DetailFrame>
   );
 }

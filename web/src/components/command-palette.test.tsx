@@ -246,7 +246,7 @@ describe("CommandPalette", () => {
       ["New virtual machine", { to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "vm" } }],
       ["New disk", { to: "/projects/demo/new/disk" }],
       ["New network", { to: "/projects/demo/new/network" }],
-      ["New security group", dialog("/projects/demo/security-groups")],
+      ["New security group", { to: "/projects/demo/new/security-group" }],
       ["Reserve address", { to: "/projects/demo/new/address" }],
       ["New public endpoint", { to: "/projects/demo/new/public-endpoint" }],
       ["New secret", { to: "/projects/demo/new/secret" }],

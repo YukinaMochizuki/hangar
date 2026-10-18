@@ -24,7 +24,8 @@ export function FormPage({
   onSubmit,
   children,
 }: {
-  crumbs: ReactNode[];
+  /** The top bar's crumbs; none when the page sits in a frame that draws the top bar, such as DetailFrame. */
+  crumbs?: ReactNode[];
   title: string;
   description?: ReactNode;
   /** The right column: a FormSummary, then a FormManifest. */
@@ -38,7 +39,7 @@ export function FormPage({
   };
   return (
     <>
-      <Topbar crumbs={crumbs} />
+      {crumbs && <Topbar crumbs={crumbs} />}
       <div className="px-4 pb-2 pt-6 md:px-8">
         <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}

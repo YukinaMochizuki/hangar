@@ -28,7 +28,7 @@ import { AddressDetail, AddressList } from "@/pages/addresses";
 import { NetworkDetail, NetworkList } from "@/pages/networks";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
 import { SecretDetail, SecretList } from "@/pages/secrets";
-import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
+import { EditSecurityGroup, NewSecurityGroup, SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 import { ServiceTokenDetail, ServiceTokenList } from "@/pages/service-tokens";
 
 const rootRoute = createRootRoute({
@@ -208,7 +208,8 @@ const securityGroupsRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/security-groups",
   validateSearch: newSearch,
-  component: () => <ListPage page={SecurityGroupList} />,
+  beforeLoad: toCreatePage("security-group"),
+  component: SecurityGroupList,
 });
 const securityGroupRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -218,6 +219,15 @@ const securityGroupRoute = createRoute({
     return <SecurityGroupDetail key={name} name={name} />;
   },
 });
+const securityGroupEditRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/security-groups/$name/edit",
+  component: function SecurityGroupEditPage() {
+    const { name } = securityGroupEditRoute.useParams();
+    return <EditSecurityGroup key={name} name={name} />;
+  },
+});
+const newSecurityGroupRoute = createRoute({ getParentRoute: () => projectRoute, path: "/new/security-group", component: NewSecurityGroup });
 const addressesRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/addresses",
@@ -253,6 +263,8 @@ const networkRoutes = [
   networkRoute,
   securityGroupsRoute,
   securityGroupRoute,
+  securityGroupEditRoute,
+  newSecurityGroupRoute,
   addressesRoute,
   addressRoute,
   endpointsRoute,
