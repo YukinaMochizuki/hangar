@@ -114,7 +114,10 @@ Hypervisor directly, without Kata or Kubernetes.
   `size` in whole Gi that can grow but never shrink. A machine lists the
   disks it has by name, `spec.disks`, and its node attaches them as
   virtio-blk devices after the ones its boot makes, in order: a container's
-  root and boot disks are `vda` and `vdb`, so its first disk is `vdc`. A disk
+  root and boot disks are `vda` and `vdb`, so its first disk is `vdc`. A
+  `Container` lists the disks it mounts as `spec.volumes`, which its
+  controller copies to the machine's disks and its boot
+  (`container-volumes.md`). A disk
   is attached to one machine at a time: machine admission refuses a disk
   another machine lists, live or being deleted, or a disk being deleted, and
   every apply and delete of machines and disks holds one lock from admission
@@ -130,8 +133,9 @@ Hypervisor directly, without Kata or Kubernetes.
   root disk does. Deleting an attached disk is refused, unless its project is
   being deleted; `disk-in-use` keeps a deleted disk until no machine lists
   it, then `node-cleanup` until its node reports `Released` (at once for a
-  disk never bound). The apiserver writes a disk's node, size, machine, phase
-  and `Allocated`; its node writes `Ready` and `Released`.
+  disk never bound). The apiserver writes a disk's node, size, machine,
+  attachment (what it is used as, `container-volumes.md`), phase and
+  `Allocated`; its node writes `Ready` and `Released`.
 - Deleting a `Container` waits for its machine, and a placed machine waits for
   its node to report `Released` (VM and disks gone) before its finalizer is
   removed. A client watching the container's deletion sees the host's state,
