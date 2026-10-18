@@ -12,6 +12,20 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 )
 
+// VirtioDevice is how a Linux guest names the virtio disk the hypervisor
+// attaches n-th, from 0: vda to vdz, then vdaa on.
+func VirtioDevice(n int) string {
+	name := ""
+	for n++; n > 0; n = (n - 1) / 26 {
+		name = string(rune('a'+(n-1)%26)) + name
+	}
+	return "vd" + name
+}
+
+// FirstContainerDisk is where a container machine's disks start among its
+// virtio disks: after its root disk, vda, and its boot disk, vdb.
+const FirstContainerDisk = 2
+
 // MachineDisks names the Disks a machine has, in the order its node
 // attaches them: the disk a firmware boot boots from, then spec.disks.
 func MachineDisks(spec *computev1alpha1.MachineSpec) []string {
@@ -48,7 +62,7 @@ const (
 	MachineReleased = "Released"
 	// DiskAllocated is the apiserver's: whether the disk's node holds room
 	// for its spec.size, which status.size then says. The apiserver also
-	// writes a disk's node, size, machine and phase.
+	// writes a disk's node, size, machine, attachment and phase.
 	DiskAllocated = "Allocated"
 	// DiskReady is the node's: the disk exists on the host at status.size.
 	DiskReady = "Ready"

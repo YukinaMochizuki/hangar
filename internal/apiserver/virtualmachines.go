@@ -413,7 +413,7 @@ func (s *Server) reconcileVirtualMachine(ctx context.Context, k controller.Key) 
 	}
 	m, err = s.ensureMachineOf(ctx, registry.VirtualMachine, vm.GetMetadata(), vmMachineName(k.Name), want, m)
 	if errors.As(err, &stuck) {
-		return reportStuck(m, stuck)
+		return cmp.Or(reportStuck(m, stuck), stillWaiting(err))
 	}
 	// An Address moving to it is waited on, and the VM reported meanwhile.
 	waiting, err := splitWaiting(err)

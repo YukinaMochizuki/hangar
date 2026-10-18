@@ -16,6 +16,7 @@ import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	secretsv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 )
 
@@ -82,8 +83,11 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 	}
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	header := "NAME\tREADY\tAGE"
-	if r.Kind == registry.Secret.Kind {
+	switch r.Kind {
+	case registry.Secret.Kind:
 		header += "\tREGISTRIES"
+	case registry.Disk.Kind:
+		header += "\tUSED AS"
 	}
 	if allProjects && r.ProjectScoped() {
 		header = "PROJECT\t" + header
@@ -92,8 +96,11 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 	for _, o := range objs {
 		meta := object.Meta(o)
 		row := fmt.Sprintf("%s\t%s\t%s", meta.GetName(), readyColumn(o), age(a.opts.Now(), meta))
-		if sec, ok := o.(*secretsv1alpha1.Secret); ok {
-			row += "\t" + cmp.Or(strings.Join(sec.GetStatus().GetRegistries(), ","), "-")
+		switch o := o.(type) {
+		case *secretsv1alpha1.Secret:
+			row += "\t" + cmp.Or(strings.Join(o.GetStatus().GetRegistries(), ","), "-")
+		case *storagev1alpha1.Disk:
+			row += "\t" + usedAs(o.GetStatus().GetAttachment())
 		}
 		if allProjects && r.ProjectScoped() {
 			row = meta.GetProject() + "\t" + row
@@ -101,6 +108,16 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 		_, _ = fmt.Fprintln(tw, row)
 	}
 	return tw.Flush()
+}
+
+// usedAs says what a disk is attached to and as what, such as "volume of
+// container/db"; "-" when it is attached to none.
+func usedAs(a *storagev1alpha1.DiskAttachment) string {
+	if a == nil {
+		return "-"
+	}
+	role := strings.ToLower(strings.TrimPrefix(a.GetAs().String(), "DISK_ATTACHMENT_ROLE_"))
+	return role + " of " + strings.ToLower(cmp.Or(a.GetKind(), "machine")) + "/" + cmp.Or(a.GetName(), a.GetMachine())
 }
 
 func objectName(r registry.Resource, o proto.Message) string {

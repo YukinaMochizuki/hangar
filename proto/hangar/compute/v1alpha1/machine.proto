@@ -63,6 +63,19 @@ message ContainerBoot {
   // container's spec.imagePullSecrets does. Only the machine's node gets
   // their logins, one pull at a time (ImagePullCredentialsService).
   repeated string image_pull_secrets = 5;
+  // The machine's disks the guest mounts, as the container's spec.volumes
+  // has them. Each names one of the machine's spec.disks, at most once.
+  repeated ContainerBootVolume volumes = 6;
+}
+
+// ContainerBootVolume is one of the machine's disks, mounted in the guest.
+message ContainerBootVolume {
+  // Names one of the machine's spec.disks.
+  string disk = 1;
+  string target = 2;
+  bool read_only = 3;
+  bool nocopy = 4;
+  string subpath = 5;
 }
 
 // FirmwareBoot boots a disk's own operating system through the platform's
