@@ -131,6 +131,8 @@ func request(md protoreflect.MethodDescriptor, fields map[string]any) (*dynamicp
 			if v != "" {
 				req.Set(fd, protoreflect.ValueOfString(v))
 			}
+		case bool:
+			req.Set(fd, protoreflect.ValueOfBool(v))
 		case int32:
 			req.Set(fd, protoreflect.ValueOfInt32(v))
 		case int64:
@@ -228,12 +230,22 @@ func (c *Client) Delete(ctx context.Context, r registry.Resource, k Key) (proto.
 
 // Apply creates or replaces an object.
 func (c *Client) Apply(ctx context.Context, r registry.Resource, obj proto.Message) (ApplyResult, error) {
+	return c.apply(ctx, r, obj, false)
+}
+
+// Create creates an object, and fails with AlreadyExists, changing nothing,
+// when one of its name exists.
+func (c *Client) Create(ctx context.Context, r registry.Resource, obj proto.Message) (ApplyResult, error) {
+	return c.apply(ctx, r, obj, true)
+}
+
+func (c *Client) apply(ctx context.Context, r registry.Resource, obj proto.Message, createOnly bool) (ApplyResult, error) {
 	md, err := method(r, "Apply")
 	if err != nil {
 		return ApplyResult{}, err
 	}
 	fd := objectField(r, md.Input())
-	res, _, err := c.unary(ctx, r, "Apply", map[string]any{string(fd.Name()): obj})
+	res, _, err := c.unary(ctx, r, "Apply", map[string]any{string(fd.Name()): obj, "create_only": createOnly})
 	if err != nil {
 		return ApplyResult{}, err
 	}

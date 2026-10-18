@@ -123,6 +123,7 @@ func (a *app) configCmd() *cobra.Command {
 func (a *app) applyCmd() *cobra.Command {
 	var files []string
 	var output string
+	var createOnly bool
 	cmd := &cobra.Command{
 		Use:   "apply -f FILE|DIR|-",
 		Short: "Create or replace the objects in YAML or JSON files",
@@ -131,7 +132,10 @@ func (a *app) applyCmd() *cobra.Command {
 A number written where the API has a string is sent as the text written, so
 "cpu: 2" and an env "value: 8080" need no quotes, and 1.10 stays 1.10. A
 number anchored outside a string field and reached through a YAML alias or
-merge key (<<) is not converted, so quote it where it is anchored.`,
+merge key (<<) is not converted, so quote it where it is anchored.
+
+With --create-only, an object whose name exists is refused and left as it
+is, and apply stops there; the objects before it stay created.`,
 		Args: args(0, 0),
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if len(files) == 0 {
@@ -156,7 +160,11 @@ merge key (<<) is not converted, so quote it where it is anchored.`,
 						return fmt.Errorf("%s: %w", m.source, err)
 					}
 				}
-				res, err := cl.Apply(cmd.Context(), m.r, m.obj)
+				apply := cl.Apply
+				if createOnly {
+					apply = cl.Create
+				}
+				res, err := apply(cmd.Context(), m.r, m.obj)
 				if err != nil {
 					return fmt.Errorf("%s: %w", m.source, err)
 				}
@@ -193,6 +201,7 @@ merge key (<<) is not converted, so quote it where it is anchored.`,
 	}
 	cmd.Flags().StringArrayVarP(&files, "filename", "f", nil, "file, directory or - for stdin; repeatable")
 	cmd.Flags().StringVarP(&output, "output", "o", "", "name or json")
+	cmd.Flags().BoolVar(&createOnly, "create-only", false, "refuse objects that exist instead of replacing them")
 	return cmd
 }
 

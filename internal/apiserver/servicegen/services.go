@@ -90,7 +90,11 @@ func (s *containerService) ApplyContainer(ctx context.Context, req *connect.Requ
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("container is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +157,11 @@ func (s *machineService) ApplyMachine(ctx context.Context, req *connect.Request[
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("machine is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +224,11 @@ func (s *nodeService) ApplyNode(ctx context.Context, req *connect.Request[v1alph
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("node is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +291,11 @@ func (s *virtualMachineService) ApplyVirtualMachine(ctx context.Context, req *co
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("virtual_machine is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +358,11 @@ func (s *invitationService) ApplyInvitation(ctx context.Context, req *connect.Re
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("invitation is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +425,11 @@ func (s *roleBindingService) ApplyRoleBinding(ctx context.Context, req *connect.
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("role_binding is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -468,7 +492,11 @@ func (s *serviceTokenService) ApplyServiceToken(ctx context.Context, req *connec
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("service_token is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -531,7 +559,11 @@ func (s *userService) ApplyUser(ctx context.Context, req *connect.Request[v1alph
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("user is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -594,7 +626,11 @@ func (s *addressService) ApplyAddress(ctx context.Context, req *connect.Request[
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("address is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -657,7 +693,11 @@ func (s *networkService) ApplyNetwork(ctx context.Context, req *connect.Request[
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("network is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -720,7 +760,11 @@ func (s *publicEndpointService) ApplyPublicEndpoint(ctx context.Context, req *co
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("public_endpoint is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -783,7 +827,11 @@ func (s *securityGroupService) ApplySecurityGroup(ctx context.Context, req *conn
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("security_group is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -846,7 +894,11 @@ func (s *secretService) ApplySecret(ctx context.Context, req *connect.Request[v1
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("secret is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -909,7 +961,11 @@ func (s *diskService) ApplyDisk(ctx context.Context, req *connect.Request[v1alph
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("disk is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -972,7 +1028,11 @@ func (s *imageService) ApplyImage(ctx context.Context, req *connect.Request[v1al
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("image is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -1035,7 +1095,11 @@ func (s *planService) ApplyPlan(ctx context.Context, req *connect.Request[v1alph
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("plan is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -1098,7 +1162,11 @@ func (s *projectService) ApplyProject(ctx context.Context, req *connect.Request[
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("project is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,7 +1229,11 @@ func (s *tenantService) ApplyTenant(ctx context.Context, req *connect.Request[v1
 	if in == nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("tenant is required"))
 	}
-	res, err := s.b.Apply(ctx, in)
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
 	if err != nil {
 		return nil, err
 	}

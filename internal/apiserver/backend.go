@@ -451,7 +451,9 @@ func (b *backend) answered(ctx context.Context, in proto.Message, createOnly boo
 }
 
 // Create writes in only if no object has its key, and fails with
-// AlreadyExists otherwise. Controllers create with it: one that read
+// AlreadyExists otherwise, once the caller is authorized against the
+// existing object as an update would be. It serves every create_only Apply
+// RPC, AddMember and CreateServiceToken, and controllers: one that read
 // "absent" must not overwrite an object written since.
 func (b *backend) Create(ctx context.Context, in proto.Message) (resource.ApplyResult, error) {
 	return b.answered(ctx, in, true)
@@ -481,6 +483,9 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 		}
 	}
 	expected := meta.GetResourceVersion()
+	if createOnly && expected != 0 {
+		return resource.ApplyResult{}, invalid("a create-only apply takes no resourceVersion")
+	}
 	defer b.lockWrites(ctx)()
 	defer b.lockOthers(ctx, p)()
 	if p.Type != auth.System && countsTowardQuota(b.r.Kind) {
@@ -497,14 +502,25 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 					fmt.Errorf("%s %s does not exist at resource version %d", b.r.Kind, key.Name, expected))
 			}
 			res, err := b.create(ctx, p, key, in)
-			if errors.Is(err, store.ErrExists) && !createOnly {
+			// Made since the read: read again, so a create-only apply too is
+			// authorized against that object before it is told it exists.
+			if errors.Is(err, store.ErrExists) {
 				continue
 			}
 			return res, apiError(err)
 		case err != nil:
 			return resource.ApplyResult{}, apiError(err)
 		case createOnly:
-			return resource.ApplyResult{}, apiError(store.ErrExists)
+			// Authorized as an update would be, so a caller who may not write
+			// the object learns no more than a plain apply would tell them.
+			old, err := b.decode(cur)
+			if err != nil {
+				return resource.ApplyResult{}, err
+			}
+			if err := b.authorize(p, authz.Apply, b.target(key, old), b.asked(key)); err != nil {
+				return resource.ApplyResult{}, err
+			}
+			return resource.ApplyResult{}, b.exists(key)
 		}
 		res, err := b.update(ctx, p, key, cur, in, expected)
 		// Without an expected version Apply is create-or-update, so an object
@@ -516,6 +532,10 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 		return res, apiError(err)
 	}
 	return resource.ApplyResult{}, connect.NewError(connect.CodeAborted, errors.New("too many concurrent writers; retry"))
+}
+
+func (b *backend) exists(key resource.Key) error {
+	return connect.NewError(connect.CodeAlreadyExists, fmt.Errorf("%s %s already exists", b.r.Kind, key.Name))
 }
 
 func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key, in proto.Message) (resource.ApplyResult, error) {

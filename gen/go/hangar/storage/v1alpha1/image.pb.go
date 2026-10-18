@@ -591,8 +591,10 @@ func (x *WatchImagesResponse) GetRevision() int64 {
 }
 
 type ApplyImageRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Image         *Image                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Image *Image                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -632,6 +634,13 @@ func (x *ApplyImageRequest) GetImage() *Image {
 		return x.Image
 	}
 	return nil
+}
+
+func (x *ApplyImageRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyImageResponse struct {
@@ -940,9 +949,11 @@ const file_hangar_storage_v1alpha1_image_proto_rawDesc = "" +
 	"\x13WatchImagesResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x124\n" +
 	"\x05image\x18\x02 \x01(\v2\x1e.hangar.storage.v1alpha1.ImageR\x05image\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"I\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"j\n" +
 	"\x11ApplyImageRequest\x124\n" +
-	"\x05image\x18\x01 \x01(\v2\x1e.hangar.storage.v1alpha1.ImageR\x05image\"\x80\x01\n" +
+	"\x05image\x18\x01 \x01(\v2\x1e.hangar.storage.v1alpha1.ImageR\x05image\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x80\x01\n" +
 	"\x12ApplyImageResponse\x124\n" +
 	"\x05image\x18\x01 \x01(\v2\x1e.hangar.storage.v1alpha1.ImageR\x05image\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

@@ -746,8 +746,10 @@ func (x *WatchPublicEndpointsResponse) GetRevision() int64 {
 type ApplyPublicEndpointRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
 	PublicEndpoint *PublicEndpoint        `protobuf:"bytes,1,opt,name=public_endpoint,json=publicEndpoint,proto3" json:"public_endpoint,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ApplyPublicEndpointRequest) Reset() {
@@ -785,6 +787,13 @@ func (x *ApplyPublicEndpointRequest) GetPublicEndpoint() *PublicEndpoint {
 		return x.PublicEndpoint
 	}
 	return nil
+}
+
+func (x *ApplyPublicEndpointRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyPublicEndpointResponse struct {
@@ -1115,9 +1124,11 @@ const file_hangar_network_v1alpha1_public_endpoint_proto_rawDesc = "" +
 	"\x1cWatchPublicEndpointsResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12P\n" +
 	"\x0fpublic_endpoint\x18\x02 \x01(\v2'.hangar.network.v1alpha1.PublicEndpointR\x0epublicEndpoint\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"n\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\x8f\x01\n" +
 	"\x1aApplyPublicEndpointRequest\x12P\n" +
-	"\x0fpublic_endpoint\x18\x01 \x01(\v2'.hangar.network.v1alpha1.PublicEndpointR\x0epublicEndpoint\"\xa5\x01\n" +
+	"\x0fpublic_endpoint\x18\x01 \x01(\v2'.hangar.network.v1alpha1.PublicEndpointR\x0epublicEndpoint\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\xa5\x01\n" +
 	"\x1bApplyPublicEndpointResponse\x12P\n" +
 	"\x0fpublic_endpoint\x18\x01 \x01(\v2'.hangar.network.v1alpha1.PublicEndpointR\x0epublicEndpoint\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

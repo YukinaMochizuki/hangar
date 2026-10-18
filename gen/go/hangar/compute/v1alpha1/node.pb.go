@@ -645,8 +645,10 @@ func (x *WatchNodesResponse) GetRevision() int64 {
 }
 
 type ApplyNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Node          *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Node  *Node                  `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -686,6 +688,13 @@ func (x *ApplyNodeRequest) GetNode() *Node {
 		return x.Node
 	}
 	return nil
+}
+
+func (x *ApplyNodeRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyNodeResponse struct {
@@ -1000,9 +1009,11 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x12WatchNodesResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x121\n" +
 	"\x04node\x18\x02 \x01(\v2\x1d.hangar.compute.v1alpha1.NodeR\x04node\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"E\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"f\n" +
 	"\x10ApplyNodeRequest\x121\n" +
-	"\x04node\x18\x01 \x01(\v2\x1d.hangar.compute.v1alpha1.NodeR\x04node\"|\n" +
+	"\x04node\x18\x01 \x01(\v2\x1d.hangar.compute.v1alpha1.NodeR\x04node\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"|\n" +
 	"\x11ApplyNodeResponse\x121\n" +
 	"\x04node\x18\x01 \x01(\v2\x1d.hangar.compute.v1alpha1.NodeR\x04node\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

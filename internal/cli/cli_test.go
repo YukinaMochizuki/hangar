@@ -21,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/cli"
@@ -42,6 +43,9 @@ type world struct {
 	rootSignedUp bool
 	// watches counts the watches the public API has been asked for.
 	watches *atomic.Int64
+	// namesFree, while set, has the public API answer every name check
+	// "available", as one made just before another call took the name would.
+	namesFree *atomic.Bool
 }
 
 // countWatches counts in n the watch calls next serves.
@@ -52,6 +56,27 @@ func countWatches(next http.Handler, n *atomic.Int64) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// freeNames answers NameService's checks itself while free is set: every
+// name is available.
+func freeNames(next http.Handler, free *atomic.Bool) http.Handler {
+	_, names := tenancyv1alpha1connect.NewNameServiceHandler(allFree{})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if free.Load() && strings.HasSuffix(r.URL.Path, tenancyv1alpha1connect.NameServiceCheckNameProcedure) {
+			names.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+type allFree struct {
+	tenancyv1alpha1connect.UnimplementedNameServiceHandler
+}
+
+func (allFree) CheckName(context.Context, *connect.Request[tenancyv1alpha1.CheckNameRequest]) (*connect.Response[tenancyv1alpha1.CheckNameResponse], error) {
+	return connect.NewResponse(&tenancyv1alpha1.CheckNameResponse{Available: true}), nil
 }
 
 func newWorld(t *testing.T) *world {
@@ -72,7 +97,8 @@ func newWorld(t *testing.T) *world {
 	go func() { done <- srv.Run(ctx) }()
 	tokens, _ := srv.ServiceTokens()
 	watches := &atomic.Int64{}
-	public := httptest.NewServer(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches))
+	namesFree := &atomic.Bool{}
+	public := httptest.NewServer(freeNames(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches), namesFree))
 	sock := filepath.Join(t.TempDir(), "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -101,7 +127,7 @@ func newWorld(t *testing.T) *world {
 		<-done
 		_ = st.Close()
 	})
-	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml"), watches: watches}
+	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml"), watches: watches, namesFree: namesFree}
 	w.addMembers("alice@example.com", "bob@example.com")
 	return w
 }
@@ -316,6 +342,32 @@ spec:
     memory: 512Mi
     disk: 20Gi
 `
+
+func TestApplyCreateOnly(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	if out := w.must(stack, "apply", "--create-only", "-f", "-"); out != "tenant/acme created\nproject/web created\ncontainer/api created\n" {
+		t.Errorf("apply --create-only printed %q", out)
+	}
+
+	changed := strings.Split(stack, "---\n")[2]
+	changed = strings.Replace(changed, "nginx:1", "nginx:2", 1)
+	r := w.run(changed, "apply", "--create-only", "-f", "-")
+	if r.code != cli.ExitConflict || !strings.Contains(r.err, "already exists") {
+		t.Errorf("apply --create-only of an existing container: exit %d (%s), want %d", r.code, strings.TrimSpace(r.err), cli.ExitConflict)
+	}
+	var got struct {
+		Spec struct {
+			Image string `json:"image"`
+		} `json:"spec"`
+	}
+	if err := json.Unmarshal([]byte(w.must("", "get", "ct", "api", "-o", "json")), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Spec.Image != "nginx:1" {
+		t.Errorf("a refused apply --create-only changed the image to %q", got.Spec.Image)
+	}
+}
 
 func TestApplyGetDelete(t *testing.T) {
 	w := newWorld(t)

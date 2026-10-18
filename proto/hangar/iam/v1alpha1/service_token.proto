@@ -105,6 +105,8 @@ message WatchServiceTokensResponse {
 
 message ApplyServiceTokenRequest {
   ServiceToken service_token = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyServiceTokenResponse {

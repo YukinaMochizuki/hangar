@@ -193,6 +193,8 @@ message WatchMachinesResponse {
 
 message ApplyMachineRequest {
   Machine machine = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyMachineResponse {

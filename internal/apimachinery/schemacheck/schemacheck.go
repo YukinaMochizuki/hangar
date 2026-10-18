@@ -234,7 +234,7 @@ func (c *checker) service(f protoreflect.FileDescriptor, m protoreflect.MessageD
 			},
 		},
 		"Apply" + kind: {
-			req: single,
+			req: append(append([]field{}, single...), field{name: "create_only", kind: protoreflect.BoolKind}),
 			resp: []field{
 				{name: objField, kind: protoreflect.MessageKind, msg: obj},
 				{name: "warnings", kind: protoreflect.StringKind, repeated: true},

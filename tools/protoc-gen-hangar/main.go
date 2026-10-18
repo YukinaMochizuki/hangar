@@ -328,7 +328,11 @@ func genService(g *protogen.GeneratedFile, k *kind, ctx, backend string) {
 	g.P("return nil, ", q(connectPath, "NewError"), "(", q(connectPath, "CodeInvalidArgument"),
 		", ", q(protogen.GoImportPath("errors"), "New"), "(", fmt.Sprintf("%q", snake(k.objectField)+" is required"), "))")
 	g.P("}")
-	g.P("res, err := s.b.Apply(ctx, in)")
+	g.P("apply := s.b.Apply")
+	g.P("if req.Msg.GetCreateOnly() {")
+	g.P("apply = s.b.Create")
+	g.P("}")
+	g.P("res, err := apply(ctx, in)")
 	g.P("if err != nil {")
 	g.P("return nil, err")
 	g.P("}")

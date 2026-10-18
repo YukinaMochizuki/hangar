@@ -728,8 +728,10 @@ func (x *WatchSecretsResponse) GetRevision() int64 {
 }
 
 type ApplySecretRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Secret        *Secret                `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Secret *Secret                `protobuf:"bytes,1,opt,name=secret,proto3" json:"secret,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -769,6 +771,13 @@ func (x *ApplySecretRequest) GetSecret() *Secret {
 		return x.Secret
 	}
 	return nil
+}
+
+func (x *ApplySecretRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplySecretResponse struct {
@@ -1110,9 +1119,11 @@ const file_hangar_secrets_v1alpha1_secret_proto_rawDesc = "" +
 	"\x14WatchSecretsResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x127\n" +
 	"\x06secret\x18\x02 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"M\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"n\n" +
 	"\x12ApplySecretRequest\x127\n" +
-	"\x06secret\x18\x01 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret\"\x84\x01\n" +
+	"\x06secret\x18\x01 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x84\x01\n" +
 	"\x13ApplySecretResponse\x127\n" +
 	"\x06secret\x18\x01 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

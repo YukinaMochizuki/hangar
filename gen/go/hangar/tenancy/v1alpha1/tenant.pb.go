@@ -557,8 +557,10 @@ func (x *WatchTenantsResponse) GetRevision() int64 {
 }
 
 type ApplyTenantRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Tenant        *Tenant                `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Tenant *Tenant                `protobuf:"bytes,1,opt,name=tenant,proto3" json:"tenant,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -598,6 +600,13 @@ func (x *ApplyTenantRequest) GetTenant() *Tenant {
 		return x.Tenant
 	}
 	return nil
+}
+
+func (x *ApplyTenantRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyTenantResponse struct {
@@ -904,9 +913,11 @@ const file_hangar_tenancy_v1alpha1_tenant_proto_rawDesc = "" +
 	"\x14WatchTenantsResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x127\n" +
 	"\x06tenant\x18\x02 \x01(\v2\x1f.hangar.tenancy.v1alpha1.TenantR\x06tenant\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"M\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"n\n" +
 	"\x12ApplyTenantRequest\x127\n" +
-	"\x06tenant\x18\x01 \x01(\v2\x1f.hangar.tenancy.v1alpha1.TenantR\x06tenant\"\x84\x01\n" +
+	"\x06tenant\x18\x01 \x01(\v2\x1f.hangar.tenancy.v1alpha1.TenantR\x06tenant\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x84\x01\n" +
 	"\x13ApplyTenantResponse\x127\n" +
 	"\x06tenant\x18\x01 \x01(\v2\x1f.hangar.tenancy.v1alpha1.TenantR\x06tenant\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

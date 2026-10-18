@@ -28,6 +28,14 @@ controllers, and the node, which runs as a separate process.
 - **Optimistic concurrency**: a write carrying `resource_version` is a
   compare-and-swap (`Aborted` on mismatch); one without it is last-write-wins,
   which keeps `apply -f` as convenient as kubectl.
+- **Create-only**: every `Apply<Kind>Request` has `create_only`
+  (`hangar apply --create-only`). With it, an object that exists is refused
+  with `AlreadyExists` and nothing changes, so a caller that picked a name
+  never replaces what someone else made under it; controllers create the
+  same way. It is still an apply to RBAC, with no permission of its own, and
+  a caller who may not write the existing object is refused for that,
+  exactly as a plain apply would refuse them, before anything says the name
+  is taken. It takes no `resource_version` (`InvalidArgument`).
 - **Immutable fields** are declared in proto with
   `(hangar.meta.v1.field).immutable = true` and enforced by generic admission.
 - **Names** are DNS-1123 labels (lowercase alphanumerics and `-`, at most 63

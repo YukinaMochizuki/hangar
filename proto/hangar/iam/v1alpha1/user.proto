@@ -95,6 +95,8 @@ message WatchUsersResponse {
 
 message ApplyUserRequest {
   User user = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyUserResponse {

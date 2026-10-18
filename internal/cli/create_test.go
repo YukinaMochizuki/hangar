@@ -58,6 +58,42 @@ func TestCreateRefusesATakenOrUsedName(t *testing.T) {
 	}
 }
 
+// TestCreateRefusesANameTakenAfterTheCheck: the name check answers free, as
+// one made just before another call took the name would; the create is then
+// refused and the object left as it was.
+func TestCreateRefusesANameTakenAfterTheCheck(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	w.must("", "create", "tenant", "lab", "--display-name", "Lab")
+	w.must("", "create", "project", "web", "--tenant", "lab", "--display-name", "Web")
+
+	w.namesFree.Store(true)
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"create", "tenant", "lab", "--display-name", "Changed"}, "tenant lab was taken after its name was checked"},
+		{[]string{"create", "project", "web", "--tenant", "lab", "--display-name", "Changed"}, "project web was taken after its name was checked"},
+	} {
+		r := w.run("", c.args...)
+		if r.code != cli.ExitConflict || !strings.Contains(r.err, c.want) {
+			t.Errorf("hangar %s: exit %d (%s), want %d and %q", strings.Join(c.args, " "), r.code, strings.TrimSpace(r.err), cli.ExitConflict, c.want)
+		}
+	}
+	for _, obj := range [][]string{{"tenant", "lab"}, {"project", "web"}} {
+		if out := w.must("", "get", obj[0], obj[1], "-o", "json"); !strings.Contains(out, `"displayName"`) || strings.Contains(out, "Changed") {
+			t.Errorf("after a refused create, %s %s is %s", obj[0], obj[1], out)
+		}
+	}
+
+	// Someone who may not change the object is refused for that, and not
+	// told that the name is taken.
+	w.as("bob@example.com")
+	if r := w.run("", "create", "tenant", "lab", "--display-name", "Mine"); r.code == cli.ExitConflict || r.code == 0 || strings.Contains(r.err, "taken") {
+		t.Errorf("bob creating alice's tenant: exit %d: %s", r.code, r.err)
+	}
+}
+
 func TestCreateUsage(t *testing.T) {
 	w := newWorld(t)
 	w.as("alice@example.com")

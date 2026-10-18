@@ -842,6 +842,8 @@ func (x *WatchSecurityGroupsResponse) GetRevision() int64 {
 type ApplySecurityGroupRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SecurityGroup *SecurityGroup         `protobuf:"bytes,1,opt,name=security_group,json=securityGroup,proto3" json:"security_group,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -881,6 +883,13 @@ func (x *ApplySecurityGroupRequest) GetSecurityGroup() *SecurityGroup {
 		return x.SecurityGroup
 	}
 	return nil
+}
+
+func (x *ApplySecurityGroupRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplySecurityGroupResponse struct {
@@ -1216,9 +1225,11 @@ const file_hangar_network_v1alpha1_security_group_proto_rawDesc = "" +
 	"\x1bWatchSecurityGroupsResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12M\n" +
 	"\x0esecurity_group\x18\x02 \x01(\v2&.hangar.network.v1alpha1.SecurityGroupR\rsecurityGroup\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"j\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"\x8b\x01\n" +
 	"\x19ApplySecurityGroupRequest\x12M\n" +
-	"\x0esecurity_group\x18\x01 \x01(\v2&.hangar.network.v1alpha1.SecurityGroupR\rsecurityGroup\"\xa1\x01\n" +
+	"\x0esecurity_group\x18\x01 \x01(\v2&.hangar.network.v1alpha1.SecurityGroupR\rsecurityGroup\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\xa1\x01\n" +
 	"\x1aApplySecurityGroupResponse\x12M\n" +
 	"\x0esecurity_group\x18\x01 \x01(\v2&.hangar.network.v1alpha1.SecurityGroupR\rsecurityGroup\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

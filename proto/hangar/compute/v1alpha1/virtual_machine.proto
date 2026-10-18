@@ -181,6 +181,8 @@ message WatchVirtualMachinesResponse {
 
 message ApplyVirtualMachineRequest {
   VirtualMachine virtual_machine = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
 }
 
 message ApplyVirtualMachineResponse {

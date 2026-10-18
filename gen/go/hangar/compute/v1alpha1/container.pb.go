@@ -991,8 +991,10 @@ func (x *WatchContainersResponse) GetRevision() int64 {
 }
 
 type ApplyContainerRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Container     *Container             `protobuf:"bytes,1,opt,name=container,proto3" json:"container,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Container *Container             `protobuf:"bytes,1,opt,name=container,proto3" json:"container,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1032,6 +1034,13 @@ func (x *ApplyContainerRequest) GetContainer() *Container {
 		return x.Container
 	}
 	return nil
+}
+
+func (x *ApplyContainerRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyContainerResponse struct {
@@ -1379,9 +1388,11 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x17WatchContainersResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12@\n" +
 	"\tcontainer\x18\x02 \x01(\v2\".hangar.compute.v1alpha1.ContainerR\tcontainer\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"Y\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"z\n" +
 	"\x15ApplyContainerRequest\x12@\n" +
-	"\tcontainer\x18\x01 \x01(\v2\".hangar.compute.v1alpha1.ContainerR\tcontainer\"\x90\x01\n" +
+	"\tcontainer\x18\x01 \x01(\v2\".hangar.compute.v1alpha1.ContainerR\tcontainer\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x90\x01\n" +
 	"\x16ApplyContainerResponse\x12@\n" +
 	"\tcontainer\x18\x01 \x01(\v2\".hangar.compute.v1alpha1.ContainerR\tcontainer\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +

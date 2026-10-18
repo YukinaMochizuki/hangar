@@ -559,8 +559,10 @@ func (x *WatchNetworksResponse) GetRevision() int64 {
 }
 
 type ApplyNetworkRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Network       *Network               `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Network *Network               `protobuf:"bytes,1,opt,name=network,proto3" json:"network,omitempty"`
+	// Refuses an existing object with ALREADY_EXISTS, changing nothing.
+	CreateOnly    bool `protobuf:"varint,2,opt,name=create_only,json=createOnly,proto3" json:"create_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -600,6 +602,13 @@ func (x *ApplyNetworkRequest) GetNetwork() *Network {
 		return x.Network
 	}
 	return nil
+}
+
+func (x *ApplyNetworkRequest) GetCreateOnly() bool {
+	if x != nil {
+		return x.CreateOnly
+	}
+	return false
 }
 
 type ApplyNetworkResponse struct {
@@ -921,9 +930,11 @@ const file_hangar_network_v1alpha1_network_proto_rawDesc = "" +
 	"\x15WatchNetworksResponse\x12-\n" +
 	"\x04type\x18\x01 \x01(\x0e2\x19.hangar.meta.v1.EventTypeR\x04type\x12:\n" +
 	"\anetwork\x18\x02 \x01(\v2 .hangar.network.v1alpha1.NetworkR\anetwork\x12\x1a\n" +
-	"\brevision\x18\x03 \x01(\x03R\brevision\"Q\n" +
+	"\brevision\x18\x03 \x01(\x03R\brevision\"r\n" +
 	"\x13ApplyNetworkRequest\x12:\n" +
-	"\anetwork\x18\x01 \x01(\v2 .hangar.network.v1alpha1.NetworkR\anetwork\"\x88\x01\n" +
+	"\anetwork\x18\x01 \x01(\v2 .hangar.network.v1alpha1.NetworkR\anetwork\x12\x1f\n" +
+	"\vcreate_only\x18\x02 \x01(\bR\n" +
+	"createOnly\"\x88\x01\n" +
 	"\x14ApplyNetworkResponse\x12:\n" +
 	"\anetwork\x18\x01 \x01(\v2 .hangar.network.v1alpha1.NetworkR\anetwork\x12\x1a\n" +
 	"\bwarnings\x18\x02 \x03(\tR\bwarnings\x12\x18\n" +
