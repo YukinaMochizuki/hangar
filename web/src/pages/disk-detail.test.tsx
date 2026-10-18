@@ -58,6 +58,23 @@ describe("DiskDetail", () => {
     expect(screen.getAllByText(/hangar get disk pg-data -p demo/).length).toBeGreaterThan(0);
   });
 
+  it("says what the disk is used as and what it was made as", async () => {
+    const d = disk("pg-data", { phase: DiskPhase.IN_USE, machine: "vm-postgres", labels: { "hangar/intended-use": "data" } });
+    render(<DiskDetail name="pg-data" />, { wrapper: withApi(api([d])) });
+    await screen.findByRole("heading", { name: "pg-data" });
+    expect(screen.getByText("Used as")).toBeTruthy();
+    expect(screen.getAllByText((_, el) => el?.textContent === "Data disk of postgres · vdb").length).toBeGreaterThan(0);
+    // "Data disk" alone is the Made as field; the Used as line holds more.
+    expect(screen.getByText("Data disk")).toBeTruthy();
+  });
+
+  it("says it was not recorded what a disk made outside the console was made as", async () => {
+    render(<DiskDetail name="scratch" />, { wrapper: withApi(api([free])) });
+    await screen.findByRole("heading", { name: "scratch" });
+    expect(screen.getByText("Not recorded")).toBeTruthy();
+    expect(screen.getByText("Not attached")).toBeTruthy();
+  });
+
   it("names the VM a root disk was made for, and links its image", async () => {
     const root = disk("postgres-root", { phase: DiskPhase.IN_USE, machine: "vm-postgres", rootOf: "postgres", image: "debian-13" });
     render(<DiskDetail name="postgres-root" />, { wrapper: withApi(api([root])) });

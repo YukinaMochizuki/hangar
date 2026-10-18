@@ -317,21 +317,26 @@ Settled with the owner on the screens, before they read the API.
   Storage group. A disk shows its phase (Pending, Available, In use), its
   size on its node with the size it is growing to when its spec asks for
   more, its source ("Source": blank, or a copy of an image), its node
-  ("Not placed yet" until a machine using it is placed), and the machine
-  it is attached to. When the disk's `Ready` condition, which its node
-  writes, is False, its reason shows under the phase, and on the disk's
-  page as a banner.
+  ("Not placed yet" until a machine using it is placed), what it is used
+  as, and on its page what it was made as. When the disk's `Ready`
+  condition, which its node writes, is False, its reason shows under the
+  phase, and on the disk's page as a banner.
   When a placed disk's `Allocated` condition, which the apiserver writes, is
   False (a growth not granted, such as `ResizeDoesNotFit`), its reason shows
   next to the size it is growing to, and on the disk's page as a banner
   with the API's message. A disk not yet placed is `Allocated` False too
   (`WaitingForFirstMachine`); that blocks nothing and is not shown.
-- **The attached machine is shown as its Container or VM**, linked to that
-  page. A disk's `status.machine` names the Machine, which is found by name
-  and then followed to its owner, as everywhere else
-  (`web/src/lib/storage.ts`); while the machines load, the Machine's own
-  name is shown, unlinked. A VM's root disk made from an image says so,
-  from its `virtual-machine` annotation and owner reference.
+- **"Used as" is the API's `status.attachment`, read as it is**
+  (`container-volumes.md`, `web/src/lib/storage.ts`): "Boot disk of web
+  · vda", "Data disk of web · vdc", "Volume at /data of api" (with
+  "read-only" when it is), its Container or VM linked to that page; "Not
+  attached" when the attachment is unset. The console infers nothing from
+  where a disk is attached: the apiserver alone says what it is used as.
+  "Made as" is the `hangar/intended-use` label, Boot disk or Data disk, or
+  "Not recorded" for a disk made without it; it is the user's own label
+  and restricts nothing, so a disk made as a boot disk can be used as a
+  data disk. A VM's root disk made from an image says so, from its
+  `virtual-machine` annotation and owner reference.
 - **Three actions on disks: new, grow and delete.** Each is the API's own
   call, and its error is shown on the page or in the dialog that asked
   for it.

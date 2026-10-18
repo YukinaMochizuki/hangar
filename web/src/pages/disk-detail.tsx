@@ -9,12 +9,12 @@ import { PageBanner } from "@/components/notice";
 import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice } from "@/components/states";
-import { DeleteDiskDialog, DiskSource, DiskState, diskYaml, GrowDiskDialog, MachineLink } from "@/components/storage";
+import { DeleteDiskDialog, DiskSource, DiskState, diskYaml, GrowDiskDialog, MadeAs, UsedAs } from "@/components/storage";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
 import { Badge, Button, Card, CardHeader, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { useCan } from "@/lib/permissions";
-import { diskFault, diskImage, gib, growthBlocked, rootDiskOwner, useDisks, useImages } from "@/lib/storage";
+import { diskFault, diskImage, gib, growthBlocked, rootDiskOwner, usedAs, useDisks, useImages } from "@/lib/storage";
 import { DiskSize } from "@/pages/disk-list";
 
 function Header({ d }: { d: Disk }) {
@@ -41,9 +41,9 @@ function Header({ d }: { d: Disk }) {
               <DiskState d={d} reason={false} />
             </span>
             <span className="tabular">{gib(d.status?.size || d.spec?.size)}</span>
-            {d.status?.machine && (
+            {usedAs(d) && (
               <span>
-                on <MachineLink project={project} machine={d.status.machine} />
+                <UsedAs d={d} project={project} />
               </span>
             )}
           </div>
@@ -85,8 +85,11 @@ function Summary({ d }: { d: Disk }) {
         <Field label="Size">
           <DiskSize d={d} />
         </Field>
-        <Field label="Attached to">
-          {d.status?.machine ? <MachineLink project={project} machine={d.status.machine} /> : <span className="text-subtle">No machine</span>}
+        <Field label="Used as">
+          <UsedAs d={d} project={project} />
+        </Field>
+        <Field label="Made as">
+          <MadeAs d={d} />
         </Field>
         {owner && (
           <Field label="Made for">
