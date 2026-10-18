@@ -97,21 +97,37 @@ export function Status({ phase }: { phase: MachinePhase }) {
   );
 }
 
+/**
+ * CopyButton copies text to the clipboard. The check shows only once the
+ * clipboard took it; when it did not, the button says so beside it.
+ */
 export function CopyButton({ text, className }: { text: string; className?: string }) {
-  const [done, setDone] = useState(false);
+  const [state, setState] = useState<"idle" | "done" | "failed">("idle");
   return (
-    <button
-      type="button"
-      aria-label="Copy"
-      className={cn("rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground", className)}
-      onClick={() => {
-        void navigator.clipboard?.writeText(text);
-        setDone(true);
-        setTimeout(() => setDone(false), 1200);
-      }}
-    >
-      {done ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-    </button>
+    <span className={cn("inline-flex items-center gap-1.5", className)}>
+      {state === "failed" && (
+        <span role="status" className="whitespace-nowrap text-[11.5px] text-fail">
+          Not copied: the clipboard is unavailable.
+        </span>
+      )}
+      <button
+        type="button"
+        aria-label="Copy"
+        className="rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
+        onClick={async () => {
+          try {
+            if (!navigator.clipboard) throw new Error("no clipboard");
+            await navigator.clipboard.writeText(text);
+            setState("done");
+            setTimeout(() => setState("idle"), 1200);
+          } catch {
+            setState("failed");
+          }
+        }}
+      >
+        {state === "done" ? <Check className="size-3.5" aria-label="Copied" /> : <Copy className="size-3.5" />}
+      </button>
+    </span>
   );
 }
 
