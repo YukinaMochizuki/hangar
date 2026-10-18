@@ -197,11 +197,26 @@ for a platform administrator; at today's size that is a handful of calls.
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
   `machine-sizes.md`); the console holds none of its own and offers no
   size outside them. The create form shows them by their `order` and fills
-  the machine's cpu, memory and disk from the chosen one; `?size=` takes a
+  the machine's cpu and memory from the chosen one; `?size=` takes a
   size's name, and a name the platform does not list chooses the first.
+  A size's card states its cpu and memory, not its disk.
   With no size defined the form says "No machine sizes are defined on this
   platform." and sends nothing. A list's size badge is the listed size
   whose cpu and memory the machine has, and none when no size matches.
+- **The disk is chosen apart from the size**, as GCP and AWS choose a boot
+  disk apart from the machine type. The create form's Disk field takes
+  whole GiB, at least the minimum its heading states: the chosen size's
+  disk, or for a VM its image's smallest disk (`imageFloorGiB`) where that
+  is larger. It holds that minimum, following the size and the image, until
+  the person edits it. Below the minimum, or not a whole number, the field
+  states the fact and the form sends nothing. The manifest and the summary
+  show the value typed, refused or not. It goes to a container's
+  `resources.disk` and a VM's `rootDisk.fromImage.size`. By the field: "A
+  disk can grow later; growing restarts the machine."
+- **A size's card is over quota by its own smallest disk**, with its cpu
+  and memory: the larger of its disk and the image's floor, never the disk
+  typed. A raised disk past the project's disk limit is stated under the
+  Disk field and above the submit button only.
 - **The quota warning reads the project's status**: its limits, the smaller
   of its own and its tenant's, against its own usage. A creation that goes
   past the tenant's limit through other projects' usage is refused by the
