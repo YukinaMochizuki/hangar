@@ -44,6 +44,8 @@ jobs:
               - 'tools/**'
               - '.golangci.yml'
               - 'Makefile'
+              # test/install runs the CLI's installer.
+              - 'deploy/cli/**'
             sh:
               - '**/*.sh'
               - 'deploy/**'

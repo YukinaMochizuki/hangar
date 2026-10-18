@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # Exercises deploy/host/fetch-release.sh (hangar-fetch-release) against a
 # local stand-in for GitHub's release downloads, an HTTP server on loopback
-# (HANGAR_FETCH_RELEASE_BASE_URL), serving a small release made here with
-# deploy/ packed as deploy.tar the way deploy/release.sh packs it.
+# (HANGAR_FETCH_RELEASE_BASE_URL), serving a small release made here in the
+# layout deploy/release.sh publishes: the host's files, deploy/ packed as
+# deploy.tar among them, in hangar-host_TAG_linux_amd64.tar.gz, beside a CLI
+# archive and install.sh the host must not download.
 #
 # With the pinned gh it checks that the script refuses a wrong digest, a file
 # changed after SHA256SUMS was made, a SHA256SUMS naming a path, a missing
@@ -23,7 +25,11 @@
 # refuse it for another ref or another commit, so dropping --source-ref or
 # --source-digest fails the test; a bundle that leaves out one file is
 # refused; a good release is put in place, and refetching a tag replaces it
-# whole, a refused refetch leaving the earlier one as it was.
+# whole, a refused refetch leaving the earlier one as it was. Past the
+# attestations, a host tar holding a link, a hard link, a directory or a
+# path, a file twice, a file
+# its own SHA256SUMS does not list or that does not match it, or another
+# commit's VERSION is refused, and the CLI's files are never downloaded.
 #
 # Run as root on a throwaway VM only: it writes /var/tmp/hangar and replaces
 # /usr/local/bin/gh for a while. It needs to reach github.com and the TUF
@@ -64,18 +70,40 @@ ensure_gh() {
 	gh_is_pinned || fail "the pinned gh did not install"
 }
 
-# make_release DIR VERSION writes a release into DIR: deploy/ as deploy.tar,
-# VERSION, a stand-in binary, and SHA256SUMS over them.
+host_tar=hangar-host_${tag}_linux_amd64.tar.gz
+
+# make_release DIR VERSION writes a release into DIR as it is published, and
+# the host's files it packs into DIR.host: deploy/ as deploy.tar, VERSION, a
+# stand-in binary and their SHA256SUMS.
 make_release() {
 	local dir=$1 version=$2
-	rm -rf "$dir"
-	mkdir -p "$dir"
+	rm -rf "$dir" "$dir.host"
+	mkdir -p "$dir" "$dir.host"
 	git -C "$repo/deploy" ls-files -z --cached --others --exclude-standard | LC_ALL=C sort -z >"$work/deploy.list"
 	tar --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
-		-C "$repo/deploy" --null --no-recursion -T "$work/deploy.list" -cf "$dir/deploy.tar"
-	echo "$version" >"$dir/VERSION"
-	printf 'hangar %s\n' "$version" >"$dir/hangar"
-	(cd "$dir" && sha256sum -- deploy.tar VERSION hangar >SHA256SUMS)
+		-C "$repo/deploy" --null --no-recursion -T "$work/deploy.list" -cf "$dir.host/deploy.tar"
+	echo "$version" >"$dir.host/VERSION"
+	printf 'hangar %s\n' "$version" >"$dir.host/hangar"
+	(cd "$dir.host" && sha256sum -- deploy.tar VERSION hangar >SHA256SUMS)
+	printf 'cli\n' >"$dir/hangar_${tag}_darwin_arm64.tar.gz"
+	printf '#!/bin/sh\n' >"$dir/install.sh"
+	pack "$dir" deploy.tar VERSION hangar SHA256SUMS
+}
+
+# pack DIR NAME... packs NAME... of DIR.host as the release's host tar, and
+# writes DIR's VERSION and SHA256SUMS for it.
+pack() {
+	local dir=$1
+	shift
+	tar --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$dir.host" -czf "$dir/$host_tar" -- "$@"
+	cp "$dir.host/VERSION" "$dir/VERSION"
+	sums "$dir"
+}
+
+# sums DIR writes DIR's SHA256SUMS over every file of it but the bundle.
+sums() {
+	(cd "$1" && find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' ! -name attestation.jsonl -printf '%P\n' |
+		LC_ALL=C sort | xargs sha256sum -- >SHA256SUMS.part && mv SHA256SUMS.part SHA256SUMS)
 }
 
 # serve DIR makes DIR what the stand-in serves for the tag.
@@ -131,14 +159,14 @@ test_refuses_without_real_attestations() {
 	step "a file changed after SHA256SUMS is refused"
 	bad=$work/changed
 	rm -rf "$bad"; cp -r "$work/good" "$bad"
-	echo tampered >>"$bad/hangar"
+	echo tampered >>"$bad/$host_tar"
 	serve "$bad"
-	fetch_refused "a file changed after SHA256SUMS" "$(digest_of "$bad")" "does not match its SHA256SUMS; refusing the release"
+	fetch_refused "a file changed after SHA256SUMS" "$(digest_of "$bad")" "$host_tar of $tag does not match its SHA256SUMS; refusing the release"
 
 	step "a SHA256SUMS naming a path is refused"
 	bad=$work/path
 	rm -rf "$bad"; cp -r "$work/good" "$bad"
-	echo "$(sha256sum "$bad/hangar" | cut -d' ' -f1)  ../hangar" >>"$bad/SHA256SUMS"
+	echo "$(sha256sum "$bad/VERSION" | cut -d' ' -f1)  ../VERSION" >>"$bad/SHA256SUMS"
 	serve "$bad"
 	fetch_refused "a SHA256SUMS naming a path" "$(digest_of "$bad")" "a line that is not a checksum and a file name"
 
@@ -251,7 +279,7 @@ replay() {
 		i=$((i + 1))
 		# attestation verify FILE: the file is the tarball itself.
 		if [ "$i" -le 2 ]; then args+=("$a"); continue; fi
-		if [ "$i" = 3 ]; then args+=("$work/foreign/gh.tar.gz"); continue; fi
+		if [ "$i" = 3 ]; then args+=("$work/foreign/$host_tar"); continue; fi
 		case $a in
 		*/attestation.jsonl) a=$work/foreign.jsonl ;;
 		YukinaMochizuki/hangar/.github/workflows/release.yml) a=cli/cli/.github/workflows/deployment.yml ;;
@@ -273,6 +301,76 @@ attest() {
 	done >"$dir/attestation.jsonl"
 }
 
+# test_host_tar checks, with the stand-in gh vouching for every file, that
+# what the host tar holds is checked before and after it is unpacked.
+test_host_tar() {
+	local bad=$work/bad
+	fresh() {
+		rm -rf "$bad" "$bad.host"
+		cp -r "$work/good" "$bad"
+		cp -r "$work/good.host" "$bad.host"
+	}
+	refused() {
+		attest "$bad"
+		serve "$bad"
+		fetch_refused "$1" "$(digest_of "$bad")" "$2"
+	}
+
+	step "a host tar holding a link is refused"
+	fresh
+	ln -s /etc/passwd "$bad.host/link"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS link
+	refused "a host tar holding a link" "holds something that is not a plain file"
+
+	step "a host tar holding a directory is refused"
+	fresh
+	mkdir "$bad.host/sub"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS sub
+	refused "a host tar holding a directory" "holds something that is not a plain file"
+
+	step "a host tar holding a path is refused"
+	fresh
+	mkdir "$bad.host/sub"
+	echo x >"$bad.host/sub/x"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS sub/x
+	refused "a host tar holding a path" "holds sub/x, not a plain file name"
+
+	step "a host tar holding a hard link is refused"
+	fresh
+	ln "$bad.host/hangar" "$bad.host/hard"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS hard
+	refused "a host tar holding a hard link" "holds something that is not a plain file"
+
+	step "a host tar holding a file twice is refused"
+	fresh
+	# --hard-dereference, or tar stores the second one as a hard link.
+	tar --mtime=@0 --owner=0 --group=0 --numeric-owner --hard-dereference -C "$bad.host" \
+		-czf "$bad/$host_tar" -- deploy.tar VERSION hangar SHA256SUMS hangar
+	sums "$bad"
+	refused "a host tar holding a file twice" "holds other files than its SHA256SUMS lists"
+
+	step "a host tar holding a file its SHA256SUMS does not list is refused"
+	fresh
+	echo x >"$bad.host/extra"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS extra
+	refused "a host tar with an unlisted file" "holds other files than its SHA256SUMS lists"
+
+	step "a host tar whose file does not match its SHA256SUMS is refused"
+	fresh
+	echo tampered >>"$bad.host/hangar"
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS
+	refused "a host tar with a changed file" "a file of $host_tar of $tag does not match its SHA256SUMS"
+
+	step "a host tar of another commit is refused"
+	fresh
+	printf '%040d\n' 3 >"$bad.host/VERSION"
+	(cd "$bad.host" && sha256sum -- deploy.tar VERSION hangar >SHA256SUMS)
+	pack "$bad" deploy.tar VERSION hangar SHA256SUMS
+	cp "$work/good/VERSION" "$bad/VERSION"
+	sums "$bad"
+	refused "a host tar of another commit" "$host_tar of $tag is of $(printf '%040d' 3), not $(cat "$work/good/VERSION")"
+}
+
 test_with_stand_in_gh() {
 	local d out v2
 
@@ -283,42 +381,44 @@ test_with_stand_in_gh() {
 	# file has a stand-in line, so the tarball's is the check that decides.
 	local bad=$work/foreign ref commit
 	rm -rf "$bad"; cp -r "$work/good" "$bad"
-	curl -fsSL -o "$bad/gh.tar.gz" "$HANGAR_GH_URL"
-	(cd "$bad" && sha256sum -- deploy.tar VERSION hangar gh.tar.gz >SHA256SUMS)
-	attest "$bad" gh.tar.gz
-	foreign_bundle "$bad/gh.tar.gz" >"$work/foreign.jsonl"
+	curl -fsSL -o "$bad/$host_tar" "$HANGAR_GH_URL"
+	sums "$bad"
+	attest "$bad" "$host_tar"
+	foreign_bundle "$bad/$host_tar" >"$work/foreign.jsonl"
 	cat "$work/foreign.jsonl" >>"$bad/attestation.jsonl"
 	# What the bundle is, as cli/cli's: the ref and commit it was made at.
-	read -r ref commit < <("$work/gh.real" attestation verify "$bad/gh.tar.gz" --bundle "$work/foreign.jsonl" \
+	read -r ref commit < <("$work/gh.real" attestation verify "$bad/$host_tar" --bundle "$work/foreign.jsonl" \
 		--repo cli/cli --format json | python3 -c 'import json, sys
 c = json.load(sys.stdin)[0]["verificationResult"]["signature"]["certificate"]
 print(c["sourceRepositoryRef"], c["sourceRepositoryDigest"])') ||
 		fail "the pinned gh does not accept cli/cli's own attestation of its tarball; the test proves nothing"
 	serve "$bad"
-	rm -f "$work/gh-real.log" "$work/args/gh.tar.gz"
-	fetch_refused "a release attested by another repository" "$(digest_of "$bad")" "gh.tar.gz of $tag has no attestation from"
+	rm -f "$work/gh-real.log" "$work/args/$host_tar"
+	fetch_refused "a release attested by another repository" "$(digest_of "$bad")" "$host_tar of $tag has no attestation from"
 	if ! grep -q '^Error: ' "$work/gh-real.log" || grep -q '^stand-in gh: asked' "$work/gh-real.log"; then
 		fail "the real gh did not refuse the tarball: $(cat "$work/gh-real.log" 2>/dev/null)"
 	fi
 
 	step "the flags it passes, with the real gh, refuse another ref and another commit"
-	[ -f "$work/args/gh.tar.gz" ] || fail "the script never asked gh about the tarball"
-	replay "$work/args/gh.tar.gz" "$ref" "$commit" >/dev/null 2>"$work/replay.log" ||
+	[ -f "$work/args/$host_tar" ] || fail "the script never asked gh about the tarball"
+	replay "$work/args/$host_tar" "$ref" "$commit" >/dev/null 2>"$work/replay.log" ||
 		fail "translated to cli/cli, the script's flags refuse cli/cli's own attestation: $(cat "$work/replay.log")"
-	if replay "$work/args/gh.tar.gz" refs/tags/v0.0.0 "$commit" >/dev/null 2>"$work/replay.log"; then
+	if replay "$work/args/$host_tar" refs/tags/v0.0.0 "$commit" >/dev/null 2>"$work/replay.log"; then
 		fail "the script's flags accept an attestation made at another ref"
 	fi
 	grep -q 'expected SourceRepositoryRef' "$work/replay.log" || fail "another ref refused, but not for its ref: $(cat "$work/replay.log")"
-	if replay "$work/args/gh.tar.gz" "$ref" "$(printf '%040d' 0)" >/dev/null 2>"$work/replay.log"; then
+	if replay "$work/args/$host_tar" "$ref" "$(printf '%040d' 0)" >/dev/null 2>"$work/replay.log"; then
 		fail "the script's flags accept an attestation made at another commit"
 	fi
 	grep -q 'expected SourceRepositoryDigest' "$work/replay.log" || fail "another commit refused, but not for its commit: $(cat "$work/replay.log")"
 
 	step "a bundle that leaves out one file is refused"
-	attest "$work/good" hangar
+	attest "$work/good" VERSION
 	serve "$work/good"
 	d=$(digest_of "$work/good")
-	fetch_refused "a release whose bundle leaves out a file" "$d" "hangar of $tag has no attestation from"
+	fetch_refused "a release whose bundle leaves out a file" "$d" "VERSION of $tag has no attestation from"
+
+	test_host_tar
 
 	step "a good release is put in place"
 	attest "$work/good"
@@ -327,7 +427,12 @@ print(c["sourceRepositoryRef"], c["sourceRepositoryDigest"])') ||
 		fail "a good release was refused: $(cat "$work/out.log")"
 	assert_nothing_staged "a good fetch"
 	(cd "$top/release/$tag" && sha256sum -c --quiet SHA256SUMS) || fail "the fetched release does not match its SHA256SUMS"
-	[ "$(digest_of "$top/release/$tag")" = "$d" ] || fail "the fetched SHA256SUMS is not the release's"
+	[ "$(sha256sum "$top/release/$tag/release.SHA256SUMS" | cut -d' ' -f1)" = "$d" ] ||
+		fail "release.SHA256SUMS is not the release's SHA256SUMS"
+	[ "$(cat "$top/release/$tag/VERSION")" = "$(cat "$work/good/VERSION")" ] || fail "the fetched VERSION is not the release's"
+	if grep -qE 'darwin_arm64|install\.sh' "$work/server.log"; then
+		fail "the host downloaded the CLI's files: $(grep -E 'darwin_arm64|install\.sh' "$work/server.log")"
+	fi
 	[ -f "$top/release/$tag/attestation.jsonl" ] || fail "the bundle was not kept with the release"
 	[ -x "$top/deploy-$tag/host/bootstrap.sh" ] || fail "deploy.tar was not unpacked in $top/deploy-$tag"
 	diff -r "$repo/deploy/host" "$top/deploy-$tag/host" >/dev/null || fail "the unpacked deploy/ differs from the one packed"
@@ -337,7 +442,7 @@ print(c["sourceRepositoryRef"], c["sourceRepositoryDigest"])') ||
 		fail "the fetch did not say what to run next"
 
 	step "a refused refetch leaves the earlier release as it was"
-	echo tampered >>"$work/www/$tag/hangar"
+	echo tampered >>"$work/www/$tag/$host_tar"
 	if HANGAR_FETCH_RELEASE_BASE_URL=$base "$fetch" "$tag" "$d" >"$work/out.log" 2>&1; then fail "fetched a tampered release over a good one"; fi
 	(cd "$top/release/$tag" && sha256sum -c --quiet SHA256SUMS) || fail "a refused refetch changed the earlier release"
 	assert_nothing_staged "a refused refetch"

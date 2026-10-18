@@ -30,8 +30,10 @@ lint: lint-proto lint-go lint-sh
 lint-proto:
 	@if [ -n "$$(find proto -name '*.proto' 2>/dev/null)" ]; then $(BUF) lint; fi
 
+# The CLI's installer is POSIX sh, run by macOS's sh and dash alike.
 lint-sh:
 	@if [ -n "$(SHELL_SCRIPTS)" ]; then ./tools/shellcheck.sh --shell=bash -x $(SHELL_SCRIPTS); fi
+	./tools/shellcheck.sh --shell=sh deploy/cli/install.sh.in
 
 lint-go:
 	$(GOLANGCI_LINT) run ./...
@@ -122,11 +124,13 @@ test-web: deps
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
 
-# What a host runs, in bin/release/hangar-<revision>/ with SHA256SUMS: the
-# binaries, the guest kernel and the initramfs, the console's files as
-# console.tar and deploy/ as deploy.tar (docs/runbook/release.md). A host
+# A release, in bin/release/hangar-<revision>/: host/ is what a host runs,
+# with SHA256SUMS (the binaries, the guest kernel and the initramfs, the
+# console's files as console.tar and deploy/ as deploy.tar), and dist/ what
+# the release workflow publishes, the CLI's archives and install.sh among it
+# (docs/runbook/release.md). HANGAR_RELEASE_TAG=TAG names it. A host
 # installs only releases the release workflow published; this one is for a
-# testbed. Builds the kernel, so it takes
+# testbed, which takes host/. Builds the kernel, so it takes
 # minutes and needs a C toolchain, and the console, so it needs Node and pnpm.
 # OUT=DIR writes elsewhere; ALLOW_DIRTY=1 builds from a tree with uncommitted
 # changes.

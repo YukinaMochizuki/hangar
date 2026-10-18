@@ -14,6 +14,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { buttonVariants, Card, CardHeader, CopyButton, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
 import { isNotFound, isPermissionDenied } from "@/lib/api";
+import { cliSetup, consoleRelease } from "@/lib/cli-install";
 import { cn } from "@/lib/cn";
 import { ago, date, isLive, machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
@@ -210,11 +211,20 @@ function RecentChanges({ project }: { project: string }) {
 
 
 function FromTheCli({ project }: { project: string }) {
-  const lines = [`hangar login`, `hangar get containers -p ${project}`];
+  const { lines, releasesUrl } = cliSetup(consoleRelease, window.location.origin, project);
   return (
     <Card className="overflow-hidden">
       <CardHeader title="From the CLI" action={<CopyButton text={lines.join("\n")} />} />
-      <pre className="overflow-x-auto px-4 py-3 font-mono text-[12px] leading-6">
+      {releasesUrl && (
+        <p className="px-4 pt-3 text-[12px] text-muted">
+          Get the CLI for Linux or macOS from the{" "}
+          <a className="text-accent underline" href={releasesUrl} target="_blank" rel="noreferrer">
+            releases
+          </a>
+          , then:
+        </p>
+      )}
+      <pre className="overflow-x-auto px-4 pt-3 font-mono text-[12px] leading-6">
         {lines.map((l) => (
           <div key={l}>
             <span className="select-none text-accent">$ </span>
@@ -222,6 +232,10 @@ function FromTheCli({ project }: { project: string }) {
           </div>
         ))}
       </pre>
+      <p className="px-4 pb-3 text-[12px] text-muted">
+        The installer puts <code className="font-mono">hangar</code> in ~/.local/bin; if your shell does not find it,
+        add that to your PATH.
+      </p>
     </Card>
   );
 }

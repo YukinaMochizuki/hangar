@@ -1,0 +1,227 @@
+#!/bin/sh
+# Installs the hangar CLI from a GitHub Release of hangar. deploy/release.sh
+# makes the release's install.sh from this file, @TAG@ replaced by the tag,
+# and the console shows the line that runs it (docs/runbook/release.md):
+#
+#   curl -fsSL https://github.com/YukinaMochizuki/hangar/releases/download/TAG/install.sh | sh
+#   curl -fsSL .../install.sh | sh -s -- [--dir DIR] [--version TAG] [--endpoint URL [--context NAME]]
+#
+# It installs the newest published release of the same vMAJOR.MINOR that is
+# not older than its own tag, since releases of one minor keep the CLI and the
+# API compatible; its own tag when GitHub cannot be asked, or with --version,
+# exactly that tag. A pre-release is a candidate only when its own tag is one.
+# The archive is checked against that release's SHA256SUMS before anything is
+# installed. The attestations are not checked here, as that needs gh; the
+# line to check them is printed.
+#
+# The binary goes to --dir, or $HANGAR_INSTALL_DIR, or /usr/local/bin for
+# root and ~/.local/bin for anyone else. With --endpoint it then makes a
+# context for that API, NAME or the endpoint's host without "api.", and makes
+# it the current one; a context of that name with another endpoint is left as
+# it is.
+#
+# HANGAR_INSTALL_BASE_URL and HANGAR_INSTALL_API_URL replace GitHub's download
+# and API URLs, for tests against a stand-in. Nothing skips the checksum.
+#
+# POSIX sh: it runs on macOS's /bin/sh and dash alike.
+set -eu
+
+TAG=@TAG@
+REPO=YukinaMochizuki/hangar
+BASE_URL=${HANGAR_INSTALL_BASE_URL:-https://github.com/$REPO/releases/download}
+API_URL=${HANGAR_INSTALL_API_URL:-https://api.github.com/repos/$REPO/releases?per_page=100}
+
+log() { printf '%s\n' "$*" >&2; }
+die() { log "error: $*"; exit 1; }
+usage() {
+	log "usage: install.sh [--dir DIR] [--version TAG] [--endpoint URL [--context NAME]]"
+	exit 2
+}
+
+# is_tag TAG: vMAJOR.MINOR.PATCH, or that with -rc.N, as release.yml accepts.
+is_tag() {
+	printf '%s\n' "$1" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$'
+}
+
+# newest FLOOR reads tag names on stdin and prints the newest that is a
+# release tag of FLOOR's major and minor and not older than FLOOR, FLOOR
+# itself when none is. vX.Y.Z sorts after its own -rc.N.
+newest() {
+	awk -v floor="$1" '
+	function key(t,   a, n, rc) {
+		sub(/^v/, "", t)
+		rc = 1000000
+		if (index(t, "-rc.") > 0) {
+			rc = substr(t, index(t, "-rc.") + 4) + 0
+			t = substr(t, 1, index(t, "-rc.") - 1)
+		}
+		n = split(t, a, ".")
+		return sprintf("%09d.%09d.%09d.%09d", a[1], a[2], a[3], rc)
+	}
+	function line(t,   a) { sub(/^v/, "", t); split(t, a, "."); return a[1] "." a[2] }
+	BEGIN { best = floor; bestkey = key(floor); pre = index(floor, "-rc.") > 0 }
+	$0 ~ /^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$/ {
+		if (line($0) != line(floor)) next
+		if (!pre && index($0, "-rc.") > 0) next
+		k = key($0)
+		if (k > bestkey) { best = $0; bestkey = k }
+	}
+	END { print best }'
+}
+
+# main is the whole run, called on the last line, so a download cut short
+# under curl | sh runs nothing.
+main() {
+dir=${HANGAR_INSTALL_DIR:-}
+version=
+exact=
+endpoint=
+context=
+while [ $# -gt 0 ]; do
+	case $1 in
+	--dir) [ $# -ge 2 ] || usage; dir=$2; shift 2 ;;
+	--version) [ $# -ge 2 ] || usage; version=$2; exact=1; shift 2 ;;
+	--endpoint) [ $# -ge 2 ] || usage; endpoint=$2; shift 2 ;;
+	--context) [ $# -ge 2 ] || usage; context=$2; shift 2 ;;
+	*) usage ;;
+	esac
+done
+[ -z "$context" ] || [ -n "$endpoint" ] || die "--context needs --endpoint"
+if [ -n "$endpoint" ]; then
+	case $endpoint in
+	https://* | http://*) ;;
+	*) die "--endpoint must be an http(s) URL, not $endpoint" ;;
+	esac
+	if [ -z "$context" ]; then
+		context=${endpoint#*://}
+		context=${context%%/*}
+		context=${context%%:*}
+		context=${context#api.}
+	fi
+fi
+
+command -v curl >/dev/null 2>&1 || die "curl is needed"
+if command -v sha256sum >/dev/null 2>&1; then
+	sha256() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+else
+	die "sha256sum or shasum is needed"
+fi
+
+case $(uname -s) in
+Linux) os=linux ;;
+Darwin) os=darwin ;;
+*) die "no hangar CLI is released for $(uname -s); there are linux and darwin builds" ;;
+esac
+case $(uname -m) in
+x86_64 | amd64) arch=amd64 ;;
+aarch64 | arm64) arch=arm64 ;;
+*) die "no hangar CLI is released for $(uname -m); there are amd64 and arm64 builds" ;;
+esac
+# A shell under Rosetta reports x86_64 on an Apple silicon Mac.
+if [ "$os/$arch" = darwin/amd64 ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null || true)" = 1 ]; then
+	arch=arm64
+fi
+
+if [ -z "$dir" ]; then
+	if [ "$(id -u)" = 0 ]; then
+		dir=/usr/local/bin
+	else
+		[ -n "${HOME:-}" ] || die "HOME is not set; pass --dir"
+		dir=$HOME/.local/bin
+	fi
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# get URL FILE downloads URL to FILE, HTTPS only unless a stand-in is named.
+get() {
+	case $BASE_URL in
+	https://github.com/*) curl -fsSL --proto '=https' --proto-redir '=https' --retry 3 -o "$2" "$1" ;;
+	*) curl -fsSL --retry 3 -o "$2" "$1" ;;
+	esac
+}
+
+if [ -z "$version" ]; then
+	version=$TAG
+	if is_tag "$TAG"; then
+		if get "$API_URL" "$tmp/releases.json" 2>/dev/null; then
+			version=$(tr ',' '\n' <"$tmp/releases.json" |
+				sed -n 's/^[[:space:]{]*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+				newest "$TAG")
+		else
+			log "could not ask GitHub for the newest release of ${TAG%.*}; installing $TAG"
+		fi
+	fi
+fi
+case $version in
+*/* | *' '* | '') die "--version must be a release tag, not $version" ;;
+esac
+
+# fetch TAG downloads TAG's archive for this platform and its SHA256SUMS and
+# checks one against the other.
+fetch() {
+	archive=hangar_$1_${os}_${arch}.tar.gz
+	get "$BASE_URL/$1/SHA256SUMS" "$tmp/SHA256SUMS" &&
+		get "$BASE_URL/$1/$archive" "$tmp/$archive" || return 1
+	want=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1 }' "$tmp/SHA256SUMS")
+	[ -n "$want" ] || die "SHA256SUMS of $1 does not list $archive"
+	got=$(sha256 "$tmp/$archive")
+	[ "$got" = "$want" ] || die "$archive of $1 has sha256 $got, not $want as its SHA256SUMS says; refusing it"
+}
+log "hangar $version for $os/$arch"
+if ! fetch "$version"; then
+	[ -z "$exact" ] || die "could not download the hangar CLI $version for $os/$arch from $BASE_URL/$version/"
+	[ "$version" != "$TAG" ] || die "could not download the hangar CLI $version for $os/$arch from $BASE_URL/$version/"
+	log "could not download $version; installing $TAG"
+	version=$TAG
+	fetch "$version" || die "could not download the hangar CLI $version for $os/$arch from $BASE_URL/$version/"
+fi
+
+mkdir "$tmp/x"
+tar -xzf "$tmp/$archive" -C "$tmp/x" hangar
+[ -f "$tmp/x/hangar" ] && [ ! -L "$tmp/x/hangar" ] || die "$archive has no hangar binary"
+mkdir -p "$dir"
+# Into DIR under another name first, then renamed, so a hangar running from
+# DIR is never half overwritten.
+cp "$tmp/x/hangar" "$dir/.hangar.$$"
+chmod 0755 "$dir/.hangar.$$"
+mv -f "$dir/.hangar.$$" "$dir/hangar"
+log "installed $dir/hangar ($version)"
+log "check where it came from, with gh: gh attestation verify $archive -R $REPO --signer-workflow $REPO/.github/workflows/release.yml --source-ref refs/tags/$version"
+
+if [ -n "$endpoint" ]; then
+	if [ "$(id -u)" = 0 ] && [ -n "${SUDO_USER:-}" ]; then
+		log "note: the context is made in root's config, not $SUDO_USER's"
+	fi
+	# config view prints "* NAME<TAB>ENDPOINT<TAB>project=..." for the current
+	# context and "  NAME..." for the others.
+	have=$("$dir/hangar" config view 2>/dev/null | awk -F '\t' -v n="$context" 'substr($1, 3) == n { print $2 }')
+	if [ -z "$have" ]; then
+		"$dir/hangar" config set-context "$context" --endpoint "$endpoint" --auth oidc --use
+		log "context $context: $endpoint, now the current one"
+	elif [ "$have" = "$endpoint" ]; then
+		"$dir/hangar" config use-context "$context"
+		log "context $context: $endpoint, kept, now the current one"
+	else
+		log "context $context is $have already; left as it is. To use $endpoint:"
+		log "  hangar config set-context NAME --endpoint $endpoint --auth oidc --use"
+	fi
+fi
+
+hangar=hangar
+case :${PATH:-}: in
+*:"$dir":*) ;;
+*)
+	hangar=$dir/hangar
+	log "$dir is not on your PATH; add it (export PATH=\"$dir:\$PATH\" in your shell's profile), or run $hangar"
+	;;
+esac
+if [ -n "$endpoint" ]; then
+	log "next: $hangar login"
+fi
+}
+
+main "$@"
