@@ -181,7 +181,7 @@ func New(cfg Config) (*Flow, error) {
 }
 
 // ParseOrigin reads a public URL: an https origin, or http on a loopback
-// host for development, with no path, query or fragment.
+// IP for development, with no path, query or fragment.
 func ParseOrigin(s string) (*url.URL, error) {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
@@ -681,10 +681,9 @@ func checkLoopback(s string) error {
 	return nil
 }
 
+// isLoopback holds for a loopback IP (127.0.0.0/8 or ::1), not for
+// localhost, which a hosts file can point anywhere.
 func isLoopback(host string) bool {
-	if host == "localhost" {
-		return true
-	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }

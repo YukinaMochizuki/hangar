@@ -291,8 +291,11 @@ credentials. The node is a separate root process on the same host.
   is believed nowhere else; sign-in's audit lines carry it. The apiserver
   refuses the socket in dev auth.
 - **Dev mode** takes the user from a header. It must be enabled explicitly
-  (`--auth-mode dev`) and refuses to start on a non-loopback address, or
-  with a public socket. It has no sign-in pages and issues nothing. It also
+  (`--auth-mode dev`) and refuses to start anywhere but a loopback IP
+  (`127.0.0.0/8` or `::1`; not the name `localhost`, which a hosts file can
+  point anywhere), or with a public socket. (Likewise, oidc auth takes a
+  plain-http `--public-url` only on a loopback IP.) It has no sign-in pages
+  and issues nothing. It also
   refuses any request carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`,
   which cloudflared sets on every request it proxies, and
   `Cf-Connecting-Ip`, `Cdn-Loop` and `Cf-Ray` from its edge): no step
