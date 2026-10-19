@@ -133,7 +133,7 @@ stand in front of the internet with nothing else in front of it.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 4096 | the one idle longest is closed for the new one; refused at accept when every one carries a request |
+  | open connections, everyone | 4096 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
   | open connections, one client | 64 | closed at accept |
   | open connections, every client in one IPv6 /56 | 256 | closed at accept |
   | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
@@ -200,12 +200,41 @@ stand in front of the internet with nothing else in front of it.
   - A client that sends no request on a connection is closed by the
     handshake and header timeout, then by the idle timeout; over HTTP/2,
     by the idle timeout and the pings.
-  - With the door full, a new connection closes the one that
-    has carried no request for longest, a keep-alive or one not yet past
-    its handshake, so idle connections cannot keep anyone out. A
-    connection with a request in flight, or a WebSocket, is never closed
-    for a new one: only when every connection has one is the new one
-    refused.
+  - **Fair eviction.** With the door full, a new connection from client C
+    takes a place from whoever holds more than C's side would with it, so
+    no holder can keep a newcomer out by holding many, busy or not
+    (`internal/edge/front/fairness.go`). In order:
+    1. The network holding most, the IPv4 /24 or IPv6 /48 (a host's own
+       source, a transit or own-prefix address, being one by itself), if
+       it holds more than C's network would with C's connection: its
+       client holding most gives one up.
+    2. Else the client holding most, if it holds more than C would: it
+       gives one up.
+    3. Else the connection idle longest, whoever's: idle connections never
+       keep anyone out.
+    4. Else C is refused.
+
+    A holder gives up its connection idle longest, else its newest, busy
+    or a WebSocket, the one that has had least of its time. So a newcomer
+    always gets in unless every network and every client already holds no
+    more than its own would, and every connection is busy; a client with
+    a few connections loses none while another holds more.
+  - Why two levels: weighed by client alone, an attacker holding one
+    connection from each of Conns addresses would keep everyone out,
+    no client of it holding more than a newcomer. Many addresses in one
+    network are cheap, a /48 holds 65536 clients and a provider's /24 256;
+    weighed by network first, the attacker's network gives way to any
+    newcomer from another, and must spread over as many networks as it
+    holds places. A newcomer inside the attacker's own network still gets
+    in by the second step. A large network of real clients, a carrier's
+    NAT, is held to the same share as any other while the door is full.
+  - What remains: an attacker with more networks than there are places,
+    each holding no more than a newcomer's, crowds the door: as many
+    networks as Conns, each holding one busy connection, keep a newcomer
+    from a network of its own out. Volumetric
+    attacks at layers 3 and 4 are for the provider's mitigation (OVH's
+    VAC) before traffic reaches the host; the front door answers for
+    layer 7 alone.
 - **The host's firewall opens 22, 80 and 443 alone**
   (`deploy/host/steps/45-firewall.sh`).
   - It is one nft table of its own, `inet hangar-host`. Its input chain

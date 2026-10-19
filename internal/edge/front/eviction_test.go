@@ -2,6 +2,7 @@ package front_test
 
 import (
 	"bufio"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
@@ -63,6 +64,58 @@ func TestAFullDoorClosesItsIdlestConnection(t *testing.T) {
 		}
 		if !strings.Contains(d.log.String(), `reason="too many connections"`) {
 			t.Error("the refusal is not in the log")
+		}
+	})
+}
+
+// TestANewcomerGetsPastBusyHolders: an attacker from a few addresses keeps
+// every place in the door busy, and takes a place back whenever it may; a
+// client from a fresh address still gets in, every time.
+func TestANewcomerGetsPastBusyHolders(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		defer close(release)
+		l := defaultOptions().limits
+		l.Conns, l.ConnsPerClient = 8, 4
+		d := startPipeDoorWith(t, pipeOptions{limits: l, api: slowAPI(release), tls: true})
+		attackers := []net.IP{net.IPv4(203, 0, 113, 1), net.IPv4(198, 51, 100, 1)}
+		// hold opens a connection from ip with a stream in flight on it, or
+		// says it was refused.
+		hold := func(ip net.IP) bool {
+			pc, err := d.https.dialFrom(ip)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := tls.Client(pc, d.tlsConfig(apiHost))
+			if c.Handshake() != nil {
+				return false
+			}
+			go func() { _, _ = io.WriteString(c, "GET /stream HTTP/1.1\r\nHost: "+apiHost+"\r\n\r\n") }()
+			resp, err := http.ReadResponse(bufio.NewReader(c), nil) //nolint:bodyclose // the stream stays in flight; the connection's close ends it
+			return err == nil && resp.StatusCode == http.StatusOK
+		}
+		for i := range l.Conns {
+			if !hold(attackers[i%len(attackers)]) {
+				t.Fatalf("the attacker's connection %d refused before the door was full", i)
+			}
+		}
+		for round := range 5 {
+			// The attacker takes back what it can before each newcomer.
+			for _, ip := range attackers {
+				hold(ip)
+			}
+			ip := net.IPv4(192, 0, 2, byte(10+round))
+			c := d.handshakeFrom(t, ip, apiHost)
+			go func() { _, _ = io.WriteString(c, "GET / HTTP/1.1\r\nHost: "+apiHost+"\r\n\r\n") }()
+			_ = c.SetReadDeadline(time.Now().Add(time.Second))
+			resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+			if err != nil {
+				t.Fatalf("round %d: the newcomer from %s was kept out: %v", round, ip, err)
+			}
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("round %d: answered %s", round, resp.Status)
+			}
 		}
 	})
 }

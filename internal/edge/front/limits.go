@@ -1,6 +1,7 @@
 package front
 
 import (
+	"container/list"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -31,7 +32,7 @@ type Limits struct {
 	OwnPrefixes []netip.Prefix
 
 	// Conns caps the open connections, from everyone. Past it a new one
-	// takes the place of the one idle longest.
+	// takes another's place by fair eviction (fairness.go).
 	Conns int
 	// ConnsPerClient caps one client's open connections; one more is
 	// closed as soon as it is accepted.
@@ -225,6 +226,13 @@ type counts struct {
 	conns int
 	// open are the connections admitted and not yet released.
 	open map[*conn]struct{}
+	// buckets, inBucket and byClient count the open connections for fair
+	// eviction: by bucket, by client within each bucket, by client.
+	buckets  *tally[netip.Prefix]
+	inBucket map[netip.Prefix]*tally[netip.Prefix]
+	byClient *tally[netip.Prefix]
+	// idle are the connections that carry no request, idle longest first.
+	idle *list.List
 	// networkConns are the open connections of each IPv4 /24, and each
 	// IPv6 /56 and /48, that has any.
 	networkConns map[netip.Prefix]int
@@ -237,24 +245,33 @@ type clientCounts struct {
 	conns, requests int
 	connRate        *rate.Limiter
 	requestRate     *rate.Limiter
+	open            map[*conn]struct{}
 }
 
 // conn is an admitted connection as the counts keep it. Its fields after
 // c are k.mu's.
 type conn struct {
 	// c is what an eviction closes; nil where only the counts are tested.
-	c    net.Conn
-	cc   *clientCounts
-	nets []network
+	c              net.Conn
+	cc             *clientCounts
+	client, bucket netip.Prefix
+	nets           []network
+	opened         time.Time
 	// busy says a request is in flight on it, or it was hijacked; idleSince
-	// is when it last carried none.
+	// is when it last carried none, and inIdle its place in counts.idle.
 	busy      bool
 	idleSince time.Time
+	inIdle    *list.Element
 	released  bool
 }
 
 func newCounts(l Limits) *counts {
-	return &counts{l: l, open: map[*conn]struct{}{}, networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now}
+	return &counts{
+		l: l, open: map[*conn]struct{}{},
+		buckets: newTally[netip.Prefix](), inBucket: map[netip.Prefix]*tally[netip.Prefix]{}, byClient: newTally[netip.Prefix](),
+		idle:         list.New(),
+		networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now,
+	}
 }
 
 // sweepEvery is how often the counts forget clients that hold nothing and
@@ -277,6 +294,7 @@ func (k *counts) get(c netip.Prefix) *clientCounts {
 		cc = &clientCounts{
 			connRate:    rate.NewLimiter(rate.Limit(k.l.ConnRate), k.l.ConnBurst),
 			requestRate: rate.NewLimiter(rate.Limit(k.l.RequestRate), k.l.RequestBurst),
+			open:        map[*conn]struct{}{},
 		}
 		k.clients[c] = cc
 	}
@@ -284,10 +302,10 @@ func (k *counts) get(c netip.Prefix) *clientCounts {
 }
 
 // openConn admits c, a new connection from addr, or says why not. With
-// Conns open it closes the one idle longest to make room, and refuses c
-// only when each carries a request.
+// Conns open it closes another to make room (victim), or refuses c.
 func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 	k.mu.Lock()
+	client, bucket := k.l.client(addr), k.l.bucket(addr)
 	nets := k.l.networks(addr)
 	for _, n := range nets {
 		if k.networkConns[n.prefix] >= n.cap {
@@ -295,14 +313,14 @@ func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 			return nil, n.why
 		}
 	}
-	cc := k.get(k.l.client(addr))
+	cc := k.get(client)
 	if cc.conns >= k.l.ConnsPerClient {
 		k.mu.Unlock()
 		return nil, "too many connections from the client"
 	}
 	var evicted *conn
 	if k.conns >= k.l.Conns {
-		if evicted = k.idlest(); evicted == nil {
+		if evicted = k.victim(bucket, client); evicted == nil {
 			k.mu.Unlock()
 			return nil, "too many connections"
 		}
@@ -314,31 +332,28 @@ func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 	if evicted != nil {
 		k.releaseLocked(evicted)
 	}
-	x := &conn{c: c, cc: cc, nets: nets, idleSince: k.now()}
+	now := k.now()
+	x := &conn{c: c, cc: cc, client: client, bucket: bucket, nets: nets, opened: now, idleSince: now}
+	x.inIdle = k.idle.PushBack(x)
 	k.open[x] = struct{}{}
+	cc.open[x] = struct{}{}
 	cc.conns++
 	k.conns++
 	for _, n := range nets {
 		k.networkConns[n.prefix]++
 	}
+	k.buckets.add(bucket, 1)
+	if k.inBucket[bucket] == nil {
+		k.inBucket[bucket] = newTally[netip.Prefix]()
+	}
+	k.inBucket[bucket].add(client, 1)
+	k.byClient.add(client, 1)
 	k.mu.Unlock()
 	// Its server sees the connection fail, and closes it.
 	if evicted != nil && evicted.c != nil {
 		_ = evicted.c.Close()
 	}
 	return x, ""
-}
-
-// idlest is the open connection that has carried no request for longest,
-// nil when every one carries one. Callers hold k.mu.
-func (k *counts) idlest() *conn {
-	var found *conn
-	for x := range k.open {
-		if !x.busy && (found == nil || x.idleSince.Before(found.idleSince)) {
-			found = x
-		}
-	}
-	return found
 }
 
 // release gives x's place back; once, however often it is called.
@@ -354,6 +369,11 @@ func (k *counts) releaseLocked(x *conn) {
 	}
 	x.released = true
 	delete(k.open, x)
+	delete(x.cc.open, x)
+	if x.inIdle != nil {
+		k.idle.Remove(x.inIdle)
+		x.inIdle = nil
+	}
 	x.cc.conns--
 	k.conns--
 	for _, n := range x.nets {
@@ -361,16 +381,30 @@ func (k *counts) releaseLocked(x *conn) {
 			delete(k.networkConns, n.prefix)
 		}
 	}
+	k.buckets.add(x.bucket, -1)
+	if t := k.inBucket[x.bucket]; t != nil {
+		if t.add(x.client, -1); t.empty() {
+			delete(k.inBucket, x.bucket)
+		}
+	}
+	k.byClient.add(x.client, -1)
 }
 
 // setBusy records whether x carries a request.
 func (k *counts) setBusy(x *conn, busy bool) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if x.busy && !busy {
-		x.idleSince = k.now()
+	if x.released || x.busy == busy {
+		return
 	}
 	x.busy = busy
+	if busy {
+		k.idle.Remove(x.inIdle)
+		x.inIdle = nil
+		return
+	}
+	x.idleSince = k.now()
+	x.inIdle = k.idle.PushBack(x)
 }
 
 // connState is the servers' ConnState: it follows which connections carry

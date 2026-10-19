@@ -120,7 +120,17 @@ func (d *pipeDoor) tlsConfig(serverName string, protos ...string) *tls.Config {
 // protos.
 func (d *pipeDoor) handshake(t *testing.T, serverName string, protos ...string) *tls.Conn {
 	t.Helper()
-	c := tls.Client(d.https.dial(t), d.tlsConfig(serverName, protos...))
+	return d.handshakeFrom(t, client, serverName, protos...)
+}
+
+// handshakeFrom is handshake from ip.
+func (d *pipeDoor) handshakeFrom(t *testing.T, ip net.IP, serverName string, protos ...string) *tls.Conn {
+	t.Helper()
+	pc, err := d.https.dialFrom(ip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := tls.Client(pc, d.tlsConfig(serverName, protos...))
 	if err := c.Handshake(); err != nil {
 		t.Fatal(err)
 	}
@@ -191,12 +201,17 @@ func (l *pipeListener) dial(t *testing.T) net.Conn {
 // dialConn is dial for a goroutine other than the test's; closeClients
 // closes what it opened.
 func (l *pipeListener) dialConn() (net.Conn, error) {
+	return l.dialFrom(client)
+}
+
+// dialFrom is dialConn from ip.
+func (l *pipeListener) dialFrom(ip net.IP) (net.Conn, error) {
 	c, s := net.Pipe()
 	l.mu.Lock()
 	l.clients = append(l.clients, c)
 	l.mu.Unlock()
 	select {
-	case l.conns <- &fromClient{Conn: s, remote: &net.TCPAddr{IP: client, Port: 40000 + int(l.port.Add(1))}}:
+	case l.conns <- &fromClient{Conn: s, remote: &net.TCPAddr{IP: ip, Port: 40000 + int(l.port.Add(1))}}:
 		return c, nil
 	case <-l.closed:
 		_ = c.Close()
