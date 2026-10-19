@@ -169,7 +169,12 @@ func (h sessions) RevokeSessions(ctx context.Context, req *connect.Request[iamv1
 	if err != nil {
 		return nil, err
 	}
-	email := strings.ToLower(strings.TrimSpace(req.Msg.GetEmail()))
+	email := strings.TrimSpace(req.Msg.GetEmail())
+	// Refused, not folded: lower-casing could make another address of it.
+	if !auth.ASCII(email) {
+		return nil, invalid("email %q must be ASCII", email)
+	}
+	email = strings.ToLower(email)
 	if email == "" {
 		if p.Type != auth.User {
 			return nil, invalid("%s has no logins of its own; name the email whose logins to revoke", p)

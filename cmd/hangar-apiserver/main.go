@@ -119,6 +119,9 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	if err := checkAuthFlags(f); err != nil {
 		return err
 	}
+	if err := checkBootstrapAdmin(f.bootstrapAdmin); err != nil {
+		return err
+	}
 	st, err := sqlite.Open(ctx, f.db)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -293,6 +296,17 @@ func checkAuthFlags(f flags) error {
 		return nil
 	}
 	return fmt.Errorf("unknown auth mode %q; want oidc or dev", f.authMode)
+}
+
+// checkBootstrapAdmin refuses a --bootstrap-admin that is not ASCII, before
+// it is lower-cased: lower-casing some other characters makes an ASCII
+// letter (U+212A KELVIN SIGN becomes k), so it could grant platform.root
+// to someone else's address.
+func checkBootstrapAdmin(email string) error {
+	if !auth.ASCII(email) {
+		return fmt.Errorf("--bootstrap-admin %q must be ASCII", email)
+	}
+	return nil
 }
 
 // publicChain is the public listener's authentication: in oidc auth, the

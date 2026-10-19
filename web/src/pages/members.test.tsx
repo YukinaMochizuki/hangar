@@ -138,6 +138,16 @@ describe("ProjectMembers", () => {
     expect(req.scope.target).toEqual({ case: "project", value: "demo" });
   });
 
+  it("refuses a non-ASCII email rather than lower-casing it into another address", async () => {
+    show("project", { holds: manage });
+    fireEvent.click(await screen.findByRole("button", { name: /Add member/ }));
+    // U+212A KELVIN SIGN, which lower-cases to k.
+    fireEvent.change(screen.getByPlaceholderText("name@example.com"), { target: { value: "\u212aate@example.com" } });
+    expect(screen.getByText("Hangar takes only ASCII email addresses.")).toBeTruthy();
+    expect((screen.getAllByRole("button", { name: "Add member" }).at(-1) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText(/kate@example.com/)).toBeNull();
+  });
+
   it("shows the API's refusal of an add in the dialog", async () => {
     show("project", { holds: manage, addMember: () => Promise.reject(new ConnectError("dan@example.com already holds a role here", Code.AlreadyExists)) });
     fireEvent.click(await screen.findByRole("button", { name: /Add member/ }));

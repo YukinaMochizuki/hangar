@@ -599,8 +599,8 @@ func validateRoleBinding(ctx context.Context, s *Server, p auth.Principal, old, 
 	}
 	switch sub := spec.GetSubject().GetSubject().(type) {
 	case *iamv1alpha1.Subject_User:
-		if sub.User == "" || sub.User != strings.ToLower(sub.User) || !strings.Contains(sub.User, "@") {
-			return invalid("spec.subject.user must be a lowercase email address")
+		if sub.User == "" || !auth.ASCII(sub.User) || sub.User != strings.ToLower(sub.User) || !strings.Contains(sub.User, "@") {
+			return invalid("spec.subject.user must be a lowercase ASCII email address")
 		}
 	case *iamv1alpha1.Subject_ServiceToken:
 		if _, err := parseTokenSubject(sub.ServiceToken); err != nil {

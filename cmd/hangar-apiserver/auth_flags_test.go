@@ -21,6 +21,21 @@ func TestDevAuthOnlyOnALoopbackIP(t *testing.T) {
 	}
 }
 
+// TestBootstrapAdminIsASCII: a --bootstrap-admin that is not ASCII is
+// refused before it is lower-cased, which could make it another address.
+func TestBootstrapAdminIsASCII(t *testing.T) {
+	for _, email := range []string{"", "root@example.com", "Root@Example.com"} {
+		if err := checkBootstrapAdmin(email); err != nil {
+			t.Errorf("%q: %v", email, err)
+		}
+	}
+	for _, email := range []string{"\u212aate@example.com", "gil@ex\u00e4mple.com"} {
+		if err := checkBootstrapAdmin(email); err == nil || !strings.Contains(err.Error(), "must be ASCII") {
+			t.Errorf("%q: %v", email, err)
+		}
+	}
+}
+
 // TestOIDCPublicURLOverHTTPOnlyOnALoopbackIP: an http public URL is for a
 // loopback IP; localhost needs https like any other name.
 func TestOIDCPublicURLOverHTTPOnlyOnALoopbackIP(t *testing.T) {

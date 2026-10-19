@@ -627,6 +627,9 @@ func TestRevokeSessions(t *testing.T) {
 	wantCode(t, err, connect.CodePermissionDenied, "bob revoking carol")
 	_, err = w.sessions(headers{}).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{}))
 	wantCode(t, err, connect.CodeUnauthenticated, "revoking without credentials")
+	// Refused, not lower-cased into another address: the Kelvin sign is k.
+	_, err = w.sessions(alice).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{Email: "\u212aate@example.com"}))
+	wantCode(t, err, connect.CodeInvalidArgument, "revoking a non-ASCII email")
 
 	res := must[iamv1alpha1.RevokeSessionsResponse](t)(w.sessions(asBearer(bob.GetAccessToken())).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{})))
 	if res.GetRevoked() != 4 {

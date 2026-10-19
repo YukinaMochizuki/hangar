@@ -455,10 +455,18 @@ func TestInvitationRules(t *testing.T) {
 
 	for name, spec := range map[string]*iamv1alpha1.InvitationSpec{
 		"Gil@example.com": nil, "gil": nil, "gil@": nil, "@example.com": nil, "gil@a@b": nil, "gil/x@example.com": nil,
-		"\u212aate@example.com": nil, "gil@ex\u00e4mple.com": nil,
 		"hal@example.com": {MaxOwnedTenants: proto.Int32(0)},
 	} {
 		wantCodeOf(t, apply(root, name, spec), connect.CodeInvalidArgument, "inviting "+name)
+	}
+	// Not ASCII: the Kelvin sign lower-cases to k, and a lowercase letter
+	// past ASCII passes every other rule.
+	for _, name := range []string{"\u212aate@example.com", "gil@ex\u00e4mple.com"} {
+		err := apply(root, name, nil)
+		wantCodeOf(t, err, connect.CodeInvalidArgument, "inviting "+name)
+		if err == nil || !strings.Contains(err.Error(), "must be ASCII") {
+			t.Errorf("inviting %q: %v, want it refused as not ASCII", name, err)
+		}
 	}
 	wantCodeOf(t, apply(root, "hal@example.com", &iamv1alpha1.InvitationSpec{Plan: "missing"}), connect.CodeFailedPrecondition, "a plan that does not exist")
 	wantCodeOf(t, apply(root, "alice@example.com", nil), connect.CodeFailedPrecondition, "inviting someone who has signed up")

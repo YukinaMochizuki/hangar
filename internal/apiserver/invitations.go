@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
 
@@ -26,7 +25,7 @@ func validEmail(email string) error {
 		return fmt.Errorf("%q is longer than 254 characters", email)
 	case !ok || local == "" || domain == "" || strings.Contains(domain, "@"):
 		return fmt.Errorf("%q is not an email address", email)
-	case !ascii(email):
+	case !auth.ASCII(email):
 		return fmt.Errorf("%q must be ASCII", email)
 	case email != strings.ToLower(email):
 		return fmt.Errorf("%q must be in lower case", email)
@@ -34,15 +33,6 @@ func validEmail(email string) error {
 		return fmt.Errorf("%q may not hold a slash or white space", email)
 	}
 	return nil
-}
-
-func ascii(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= utf8.RuneSelf {
-			return false
-		}
-	}
-	return true
 }
 
 // validateInvitation keeps an Invitation one for a person who has not

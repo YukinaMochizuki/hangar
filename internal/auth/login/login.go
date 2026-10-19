@@ -22,7 +22,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -418,10 +417,8 @@ func (f *Flow) verify(ctx context.Context, q url.Values, p pending) (email, reas
 	if !claims.Verified {
 		return "", "the identity provider has not verified the email address " + claims.Email
 	}
-	for i := 0; i < len(claims.Email); i++ {
-		if claims.Email[i] >= utf8.RuneSelf {
-			return "", "Hangar takes only ASCII email addresses, not " + claims.Email
-		}
+	if !auth.ASCII(claims.Email) {
+		return "", "Hangar takes only ASCII email addresses, not " + claims.Email
 	}
 	return strings.ToLower(claims.Email), ""
 }

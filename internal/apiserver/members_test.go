@@ -189,6 +189,14 @@ func TestMembersGrantNoMoreThanBindings(t *testing.T) {
 		_, err = a.members.AddMember(ctx, addMember(scope, erin, "platform.root"))
 		wantCode(t, err, connect.CodeInvalidArgument, "adding at the platform or no scope")
 	}
+	// An email that is not ASCII is refused, not lower-cased into another.
+	for _, email := range []string{"\u212aate@example.com", "gil@ex\u00e4mple.com"} {
+		_, err = owner.members.AddMember(ctx, addMember(projectScope("web"), email, "project.viewer"))
+		wantCode(t, err, connect.CodeInvalidArgument, "adding "+email)
+		if err == nil || !strings.Contains(err.Error(), "must be ASCII") {
+			t.Errorf("adding %q: %v, want it refused as not ASCII", email, err)
+		}
+	}
 
 	// Owning another tenant reaches none of this one.
 	e.setupTenant(frank, "initech", "app")

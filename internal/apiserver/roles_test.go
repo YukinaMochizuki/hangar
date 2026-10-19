@@ -1,6 +1,8 @@
 package apiserver_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -60,6 +62,14 @@ func TestProjectRoles(t *testing.T) {
 	wantCode(t, err, connect.CodePermissionDenied, "a project owner granting a tenant role")
 	_, err = owner.bindings.ApplyRoleBinding(ctx, binding("web-erin-2", erin, "tenant.owner", projectScope("web")))
 	wantCode(t, err, connect.CodeInvalidArgument, "a project owner binding a tenant role to the project")
+	// A subject that is not ASCII: the Kelvin sign lower-cases to k.
+	for i, email := range []string{"\u212aate@example.com", "gil@ex\u00e4mple.com"} {
+		_, err = owner.bindings.ApplyRoleBinding(ctx, binding(fmt.Sprintf("web-ascii-%d", i), email, "project.viewer", projectScope("web")))
+		wantCode(t, err, connect.CodeInvalidArgument, "binding "+email)
+		if err == nil || !strings.Contains(err.Error(), "lowercase ASCII email address") {
+			t.Errorf("binding %q: %v, want it refused as not ASCII", email, err)
+		}
+	}
 	_, err = owner.bindings.ApplyRoleBinding(ctx, binding("db-erin", erin, "project.owner", projectScope("db")))
 	wantCode(t, err, connect.CodePermissionDenied, "a project owner granting in another project")
 	_, err = owner.bindings.ApplyRoleBinding(ctx, binding("root-erin", erin, "platform.root", platformScope()))
