@@ -80,16 +80,21 @@ type Limits struct {
 
 	// HTTP2 settings: streams at once on a connection, and how a
 	// connection that stops answering is dropped.
-	HTTP2MaxStreams       int
-	HTTP2SendPingTimeout  time.Duration
-	HTTP2PingTimeout      time.Duration
-	HTTP2WriteByteTimeout time.Duration
+	HTTP2MaxStreams int
+	// HTTP2ConnWindow and HTTP2StreamWindow are how much of the bodies a
+	// client may send ahead of their handlers, on a connection and on one
+	// stream: what the door holds for them. HTTP2MaxFrame is the largest
+	// frame it reads, and so holds a buffer for.
+	HTTP2ConnWindow, HTTP2StreamWindow, HTTP2MaxFrame int
+	HTTP2SendPingTimeout                              time.Duration
+	HTTP2PingTimeout                                  time.Duration
+	HTTP2WriteByteTimeout                             time.Duration
 }
 
 // DefaultLimits are the limits unless the flags say otherwise.
 var DefaultLimits = Limits{
-	Conns:             16384,
-	ConnsPerClient:    16,
+	Conns:             4096,
+	ConnsPerClient:    64,
 	ConnsPer56:        256,
 	ConnsPer48:        1024,
 	ConnsPer24:        1024,
@@ -111,6 +116,9 @@ var DefaultLimits = Limits{
 	StalledWriteTimeout: 30 * time.Second,
 
 	HTTP2MaxStreams:       100,
+	HTTP2ConnWindow:       256 << 10,
+	HTTP2StreamWindow:     256 << 10,
+	HTTP2MaxFrame:         16 << 10,
 	HTTP2SendPingTimeout:  30 * time.Second,
 	HTTP2PingTimeout:      15 * time.Second,
 	HTTP2WriteByteTimeout: 30 * time.Second,
@@ -134,6 +142,10 @@ func (l Limits) Validate() error {
 		{"body rate", l.MinBodyRate > 0 && l.BodyReadTimeout > 0},
 		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0 && l.StalledWriteTimeout > 0},
 		{"HTTP/2 settings", l.HTTP2MaxStreams > 0 && l.HTTP2SendPingTimeout > 0 && l.HTTP2PingTimeout > 0 && l.HTTP2WriteByteTimeout > 0},
+		// net/http takes a connection's window of 64 KiB to 4 MiB, a
+		// stream's below 4 MiB, and frames of 16 KiB to 16 MiB.
+		{"HTTP/2 windows and frame", l.HTTP2ConnWindow >= 64<<10 && l.HTTP2ConnWindow < 4<<20 &&
+			l.HTTP2StreamWindow > 0 && l.HTTP2StreamWindow <= l.HTTP2ConnWindow && l.HTTP2MaxFrame >= 16<<10 && l.HTTP2MaxFrame <= 16<<20},
 	} {
 		if !n.ok {
 			return errors.New("every limit must be positive: " + n.name)

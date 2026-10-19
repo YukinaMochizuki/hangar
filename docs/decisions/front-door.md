@@ -131,24 +131,46 @@ stand in front of the internet with nothing else in front of it.
   eviction (below) trims them as any other holder. The IPv4 /24 is capped
   as the IPv6 /48 is.
 
-  The caps are sized so that filling the door takes many clients and many
-  networks: 16384 connections, 16 a client, 64 clients' worth (1024) a
-  /24 or /48 and 16 (256) a /56, so at least 16 networks before fair
-  eviction weighs anyone, room for a carrier's NAT or an office behind one
-  /24, and 1024 clients holding all they may. What a connection costs the
-  edge, measured by `TestMemoryPerConnection` (`HANGAR_MEASURE_CONNS=1`),
-  in heap and stacks: about 38 KiB past its TLS handshake with no request
-  yet, 28 KiB as an idle HTTP/1.1 keep-alive, 38 KiB as an idle HTTP/2
-  connection. A full door so holds about 0.6 GiB, up to about 1.2 GiB with
-  the collector's headroom, and the kernel's socket buffers besides, which
-  a modest host of 8 GiB shared with its machines takes in a flood. The
-  edge's unit allows it 65536 descriptors (`LimitNOFILE`), for its client
-  connections and one to a backend for each request.
+  The caps: 4096 connections, 64 a client, 16 clients' worth (1024) a /24
+  or /48 and 4 (256) a /56, as at first. A client's 64 leaves room for the
+  users behind one carrier's or office's NAT address, as its cap is
+  weighed before fair eviction is; filling the door takes at least four
+  networks and 64 clients. The door's cap is what the edge can hold busy.
+  What a connection costs it, measured by `TestMemoryPerConnection`
+  (`HANGAR_MEASURE_CONNS=1`, 2000 connections of each kind, the clients
+  and the apiserver in a process of their own), in heap and stacks:
+
+  | Connection | KiB |
+  |---|---|
+  | past its TLS handshake, no request yet | 38 |
+  | idle HTTP/1.1 keep-alive | 27 |
+  | idle HTTP/2 | 38 |
+  | HTTP/1.1 sending a header of 60 KiB, unended | 127 |
+  | HTTP/1.1 sending a body its handler does not read | 31 |
+  | HTTP/2 sending bodies their handlers do not read | 358 |
+  | HTTP/1.1 with a request proxied to the apiserver, its connection there included | 58 |
+  | each HTTP/2 stream proxied to the apiserver, its connection there included | 32 |
+
+  The HTTP/2 windows bound what a client sends ahead of its handlers: 256
+  KiB a connection and a stream, where net/http's defaults of 1 MiB held
+  about 1.2 MiB a connection; and no frame over 16 KiB is read, so no
+  frame buffer of 1 MiB is held. The cost is an upload's speed over
+  HTTP/2, one window a round trip: about 8 MiB/s at 30 ms, 2.5 MiB/s at
+  100 ms, 1.3 MiB/s at 200 ms, for a single stream or all of a
+  connection's together. HTTP/1.1 uploads are the kernel's to pace. The
+  busy worst for one request a connection, 358 KiB, is about 1.4 GiB for
+  a full door, under 2 GiB, besides the collector's headroom and the
+  kernel's socket buffers. Each stream more a connection carries to the
+  apiserver costs 32 KiB on top: what bounds them is the per-connection
+  streams (100) and the per-client requests in flight (128), not the
+  door's cap. The edge's unit allows it 65536 descriptors
+  (`LimitNOFILE`), for its client connections and one to a backend for
+  each request.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 16384 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
-  | open connections, one client | 16 | closed at accept |
+  | open connections, everyone | 4096 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
+  | open connections, one client | 64 | closed at accept |
   | open connections, every client in one IPv6 /56 | 256 | closed at accept |
   | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
   | open connections, every address in one IPv4 /24 | 1024 | closed at accept |
@@ -166,6 +188,8 @@ stand in front of the internet with nothing else in front of it.
   | an endpoint's response header | 100 s | 502 |
   | one console file | 1 min | closed |
   | HTTP/2 streams on a connection | 100 | refused |
+  | HTTP/2 bodies sent ahead of their handlers, a connection and a stream | 256 KiB, 256 KiB | the client waits |
+  | an HTTP/2 frame | 16 KiB | connection closed |
   | HTTP/2 ping when idle, answer, a write | 30 s, 15 s, 30 s | closed |
 
   There is no overall read or write timeout: Watch, server streams and
@@ -213,7 +237,9 @@ stand in front of the internet with nothing else in front of it.
     which Linux applies to a zero window from 5.11 on. An upgraded
     connection to an endpoint, PUBLIC or PRIVATE, ends after 10 minutes
     with no byte either way (`--upgrade-idle-timeout`,
-    `public-endpoints.md`). Exec and SSH WebSockets are the API's, which
+    `public-endpoints.md`). That ends only a WebSocket silent both ways:
+    one whose app or client sends a heartbeat is never idle to it, and is
+    bounded by fair eviction alone. Exec and SSH WebSockets are the API's, which
     the door proxies to the apiserver, never through the endpoints' edge:
     their own pings, every 30 s, keep them, and fair eviction may still
     close one of a client holding more than its share.
@@ -255,6 +281,14 @@ stand in front of the internet with nothing else in front of it.
     holds places. A newcomer inside the attacker's own network still gets
     in by the second step. A large network of real clients, a carrier's
     NAT, is held to the same share as any other while the door is full.
+  - What fairness costs: it weighs how much a network and a client hold,
+    not what for. A heavier network gives up a connection even when it is
+    busy, a Watch, a log followed or an exec, while an idle keep-alive of a
+    lighter network is kept; within a holder, its idle connections go
+    before its busy ones. An IPv6 /48 is far cheaper to come by than an
+    IPv4 /24, so an attacker spread over many /48s, each holding little,
+    trims a busy IPv4 network, a carrier's NAT or an office, more cheaply
+    than it could from IPv4.
   - What remains: an attacker with more networks than there are places,
     each holding no more than a newcomer's, crowds the door: as many
     networks as Conns, each holding one busy connection, keep a newcomer

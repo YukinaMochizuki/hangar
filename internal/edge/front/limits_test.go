@@ -278,6 +278,7 @@ func TestRequestLimits(t *testing.T) {
 	o.limits.EndpointBodyBytes = 2048
 	o.limits.MaxHeaderBytes = 4096
 	o.limits.HTTP2MaxStreams = 7
+	o.limits.HTTP2ConnWindow, o.limits.HTTP2StreamWindow, o.limits.HTTP2MaxFrame = 200<<10, 100<<10, 20<<10
 	o.limits.ReadHeaderTimeout = 500 * time.Millisecond
 	d := startDoor(t, newCA(t), o)
 
@@ -389,6 +390,26 @@ func TestRequestLimits(t *testing.T) {
 		}
 		if v, ok := sf.Value(http2.SettingMaxConcurrentStreams); !ok || v != 7 {
 			t.Errorf("max concurrent streams %d, %t; want 7", v, ok)
+		}
+		if v, ok := sf.Value(http2.SettingInitialWindowSize); !ok || v != 100<<10 {
+			t.Errorf("a stream's window %d, %t; want %d", v, ok, 100<<10)
+		}
+		if v, ok := sf.Value(http2.SettingMaxFrameSize); !ok || v != 20<<10 {
+			t.Errorf("largest frame %d, %t; want %d", v, ok, 20<<10)
+		}
+		// The connection's window grows from HTTP/2's 65535 with a
+		// WINDOW_UPDATE on stream 0.
+		for {
+			f, err := fr.ReadFrame()
+			if err != nil {
+				t.Fatalf("no connection window: %v", err)
+			}
+			if wu, ok := f.(*http2.WindowUpdateFrame); ok && wu.StreamID == 0 {
+				if got := 65535 + int(wu.Increment); got != 200<<10 {
+					t.Errorf("the connection's window %d; want %d", got, 200<<10)
+				}
+				break
+			}
 		}
 	})
 }

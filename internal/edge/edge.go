@@ -514,9 +514,15 @@ func (e *Edge) endWhenSilent(ctx context.Context, end func()) (_ context.Context
 	limit := e.cfg.UpgradeIdleTimeout
 	var timer *time.Timer
 	var mu sync.Mutex
+	// stopped keeps a check that fired as the watch ended from setting the
+	// timer again.
+	stopped := false
 	check := func() {
 		mu.Lock()
 		defer mu.Unlock()
+		if stopped {
+			return
+		}
 		wait := limit
 		if tc := got.Load(); tc != nil {
 			silent := time.Since(tc.lastUsed())
@@ -532,7 +538,12 @@ func (e *Edge) endWhenSilent(ctx context.Context, end func()) (_ context.Context
 	mu.Lock()
 	timer = time.AfterFunc(limit, check)
 	mu.Unlock()
-	return ctx, func() { timer.Stop() }
+	return ctx, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		stopped = true
+		timer.Stop()
+	}
 }
 
 // forward proxies r to its endpoint with the endpoint's cookies confined to

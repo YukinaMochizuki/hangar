@@ -290,10 +290,13 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 		IdleTimeout:       l.IdleTimeout,
 		MaxHeaderBytes:    l.MaxHeaderBytes,
 		HTTP2: &http.HTTP2Config{
-			MaxConcurrentStreams: l.HTTP2MaxStreams,
-			SendPingTimeout:      l.HTTP2SendPingTimeout,
-			PingTimeout:          l.HTTP2PingTimeout,
-			WriteByteTimeout:     l.HTTP2WriteByteTimeout,
+			MaxConcurrentStreams:          l.HTTP2MaxStreams,
+			MaxReceiveBufferPerConnection: l.HTTP2ConnWindow,
+			MaxReceiveBufferPerStream:     l.HTTP2StreamWindow,
+			MaxReadFrameSize:              l.HTTP2MaxFrame,
+			SendPingTimeout:               l.HTTP2SendPingTimeout,
+			PingTimeout:                   l.HTTP2PingTimeout,
+			WriteByteTimeout:              l.HTTP2WriteByteTimeout,
 		},
 		ErrorLog: errorLog,
 		BaseContext: func(net.Listener) context.Context {
