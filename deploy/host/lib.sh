@@ -116,11 +116,10 @@ local_env() {
 }
 
 # auth_mode prints how the public API authenticates, as the local env file
-# asks: HANGAR_AUTH_MODE, dev when unset.
+# asks: HANGAR_AUTH_MODE, empty when unset. Nothing defaults it: dev auth
+# trusts a header, so it is never what a host gets for a missing line.
 auth_mode() {
-	local m
-	m=$(local_env HANGAR_AUTH_MODE)
-	printf '%s\n' "${m:-dev}"
+	local_env HANGAR_AUTH_MODE
 }
 
 # auth_problem prints what is wrong with the local env file's auth settings,
@@ -129,6 +128,7 @@ auth_problem() {
 	local mode
 	mode=$(auth_mode)
 	case $mode in
+	'') printf '%s\n' "$LOCAL_ENV sets no HANGAR_AUTH_MODE: add HANGAR_AUTH_MODE=oidc (sign-in through Google) or HANGAR_AUTH_MODE=dev (a header names the caller, loopback only; docs/runbook/host-bootstrap.md)" ;;
 	dev) ;;
 	oidc)
 		[[ $(local_env HANGAR_OIDC_CLIENT_ID) =~ ^[A-Za-z0-9._-]+$ ]] ||

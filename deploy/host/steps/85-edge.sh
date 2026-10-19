@@ -74,6 +74,13 @@ edge_front_flags() {
 	[ "$(edge_acme_dns)" = cloudflare ] || printf -- ' --acme-dns %s' "$(edge_acme_dns)"
 }
 
+# edge_flags prints the edge's flags as its unit runs it: the same words
+# its ExecStart has, which edge_problem has the edge itself check.
+edge_flags() {
+	printf -- '--api-socket %s --dial-socket %s --domain %s --console-url %s%s\n' \
+		"$SERVICES_EDGE_SOCKET" "$SERVICES_EDGE_DIAL" "$(local_env HANGAR_EDGE_DOMAIN)" "$(local_env HANGAR_PUBLIC_URL)" "$(edge_front_flags)"
+}
+
 edge_unit() {
 	cat <<EOF
 # Written by deploy/host/steps/85-edge.sh.
@@ -106,7 +113,7 @@ EOF
 # socket, and reaches machines through the agent's dial socket, all its
 # group's. A browser not yet signed in to a private endpoint goes to the
 # console, HANGAR_PUBLIC_URL, to be.
-ExecStart=/usr/local/bin/hangar-edge --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --console-url $(local_env HANGAR_PUBLIC_URL)$(edge_front_flags)
+ExecStart=/usr/local/bin/hangar-edge $(edge_flags)
 Restart=always
 RestartSec=2
 UMask=0077
@@ -205,8 +212,25 @@ edge_dns_token_how() {
 	printf '%s\n' "install the Cloudflare DNS token at $EDGE_DNS_TOKEN, root's, mode 0600 (docs/runbook/cloudflare.md)"
 }
 
-# edge_problem prints why the edge cannot run as local.env asks, nothing
-# when it can or is off.
+# edge_check_problem prints what the edge would refuse to start with in the
+# flags its unit gets, such as two domains that share a registrable domain
+# (docs/decisions/public-endpoints.md), by its own check (hangar-edge
+# check-flags) on those very words, in the hangar-edge release_check finds:
+# the release's with HANGAR_RELEASE_DIR, else the installed one. Nothing
+# with the front door off.
+edge_check_problem() {
+	services_front_door_on || return 0
+	local -a args
+	read -ra args <<<"$(edge_flags)"
+	release_check hangar-edge check-flags "the edge unit's command line" edge-flags "${args[@]}"
+}
+
+# edge_problem [installed] prints why the edge cannot run as local.env
+# asks, nothing when it can or is off. bootstrap.sh runs it before any step,
+# with HANGAR_RELEASE_DIR naming the hangar-edge the unit will run after the
+# run; the edge step runs it again, "installed", before the unit changes:
+# then the check runs the installed hangar-edge, which the release step has
+# made the run's by then, and none in a dry run, which installed nothing.
 edge_problem() {
 	services_edge_on || return 0
 	if ! services_front_door_on; then
@@ -219,6 +243,11 @@ edge_problem() {
 	# mailto:default on a first start (docs/decisions/front-door.md).
 	[ -n "$(local_env HANGAR_ACME_EMAIL)" ] ||
 		printf '%s\n' "the front door (HANGAR_CP_DOMAIN) needs HANGAR_ACME_EMAIL in $LOCAL_ENV, the ACME account's contact"
+	if [ "${1:-}" != installed ]; then
+		edge_check_problem
+	elif [ "$DRY_RUN" != 1 ]; then
+		HANGAR_RELEASE_DIR='' edge_check_problem
+	fi
 	# Sign-in's provider returns to the public URL's /auth/callback, which
 	# only the console's site hands the apiserver.
 	local want
@@ -352,7 +381,7 @@ edge_apply() {
 			sh -c "systemctl disable --now $EDGE_UNIT.service; for s in $EDGE_SOCKETS; do systemctl stop \$s.socket 2>/dev/null || true; done"
 		return 0
 	fi
-	problem=$(services_endpoints_problem; edge_problem)
+	problem=$(services_endpoints_problem; edge_problem installed)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 	if [ -e "$EDGE_DNS_TOKEN" ] && ! edge_dns_token_ok; then
 		log "warning: $EDGE_DNS_TOKEN was $(stat -c '%U:%G mode %a' "$EDGE_DNS_TOKEN"): whoever could read it may have the token; consider rolling it (docs/runbook/cloudflare.md)"

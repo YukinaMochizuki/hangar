@@ -55,12 +55,17 @@ func parseMemberScope(scope *iamv1alpha1.BindingScope) (memberScope, error) {
 }
 
 // memberEmail is the email a call names, as bindings hold it: in lower case.
+// One that is not ASCII is refused, not folded: lower-casing could make
+// someone else's address of it (U+212A KELVIN SIGN becomes k).
 func memberEmail(email string) (string, error) {
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = strings.TrimSpace(email)
 	if email == "" {
 		return "", invalid("email is required")
 	}
-	return email, nil
+	if !auth.ASCII(email) {
+		return "", invalid("email %q must be ASCII", email)
+	}
+	return strings.ToLower(email), nil
 }
 
 // begin authenticates the call and checks that the caller may do verb on

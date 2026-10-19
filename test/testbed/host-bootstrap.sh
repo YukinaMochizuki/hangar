@@ -143,7 +143,7 @@ HANGAR_CHASSIS=generic-1u-2x-u2
 EOF
 	# What the operator writes by hand on a real host.
 	install -m 0600 /dev/null /etc/hangar/local.env
-	echo 'HANGAR_BOOTSTRAP_ADMIN=admin@example.com' >/etc/hangar/local.env
+	printf 'HANGAR_BOOTSTRAP_ADMIN=admin@example.com\nHANGAR_AUTH_MODE=dev\n' >/etc/hangar/local.env
 }
 
 # main_pid UNIT prints the main pid of a service, 0 when it is not running.
@@ -239,7 +239,7 @@ test_converges_and_is_idempotent() {
 	[ ! -e /usr/local/bin/cloudflared ] && [ ! -e /etc/systemd/system/hangar-cloudflared.service ] ||
 		fail "cloudflared was installed"
 	systemctl show -p ExecStart --value hangar-apiserver | grep -q -- '--listen 127.0.0.1:8080 --auth-mode dev --socket' ||
-		fail "an unset HANGAR_AUTH_MODE is not dev auth"
+		fail "HANGAR_AUTH_MODE=dev is not dev auth"
 
 	# Where machines reach the front door: the agent's rules for it are
 	# test/testbed/network's to test. The address is the env file's in its
@@ -407,7 +407,7 @@ TB_OIDC_SECRET=/var/lib/hangar/state/oidc-client-secret
 
 # auth_env MODE sets the auth settings in local.env: oidc with the
 # testbed's client and public URL, and the client secret the operator
-# installs, or none, which is dev. The apiserver reaches the provider only
+# installs, or dev with neither. The apiserver reaches the provider only
 # when someone signs in, so it runs without one here.
 auth_env() {
 	sed -i '/^HANGAR_AUTH_MODE=/d; /^HANGAR_OIDC_/d; /^HANGAR_PUBLIC_URL=/d' /etc/hangar/local.env
@@ -415,6 +415,8 @@ auth_env() {
 		printf 'HANGAR_AUTH_MODE=oidc\nHANGAR_OIDC_CLIENT_ID=%s\nHANGAR_PUBLIC_URL=%s\n' "$TB_CLIENT_ID" "$TB_PUBLIC_URL" >>/etc/hangar/local.env
 		install -o hangar -g hangar -m 0600 /dev/null "$TB_OIDC_SECRET"
 		echo testbed-client-secret >"$TB_OIDC_SECRET"
+	else
+		echo HANGAR_AUTH_MODE=dev >>/etc/hangar/local.env
 	fi
 }
 
@@ -442,6 +444,17 @@ EOF
 }
 
 test_oidc_cutover() {
+	step "an unset auth mode is refused before any step, not taken as dev"
+	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran with no auth mode"; fi
+	grep -q 'sets no HANGAR_AUTH_MODE' "$work/cut.log" || fail "unexpected refusal: $(cat "$work/cut.log")"
+	grep -q '^== ' "$work/cut.log" && fail "steps ran before the refusal"
+	if "$host_dir/bootstrap.sh" --only services 2>/dev/null; then fail "the services step ran with no auth mode"; fi
+	if "$host_dir/verify.sh" >"$work/cut-verify.log"; then fail "verify passed with no auth mode"; fi
+	grep -q '^FAIL /etc/hangar/local.env names a whole auth mode' "$work/cut-verify.log" ||
+		fail "verify does not check the auth mode is set"
+	auth_env dev
+
 	step "the retired cloudflare mode is refused before any step"
 	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
 	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
@@ -450,6 +463,7 @@ test_oidc_cutover() {
 	auth_env dev
 
 	step "an oidc mode without its client ID and public URL is refused before any step"
+	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
 	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
 	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran with half an oidc mode"; fi
 	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cut.log" &&
@@ -611,6 +625,17 @@ EOF
 	grep -q "needs HANGAR_ACME_EMAIL in /etc/hangar/local.env" "$log" || fail "no refusal for the missing ACME email: $(cat "$log")"
 	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
 	echo 'HANGAR_ACME_EMAIL=edge@example.com' >>/etc/hangar/local.env
+	# User content must not share a registrable domain with the console:
+	# the edge step has the release's hangar-edge check-flags refuse it
+	# before it writes the unit.
+	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.cp.test/' /etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >"$log" 2>&1; then
+		fail "the front door ran with the endpoints' domain under the control plane's"
+	fi
+	grep -q "the edge unit's command line: --cp-domain cp.test and --domain user.cp.test must not share a registrable domain" "$log" ||
+		fail "unexpected refusal: $(cat "$log")"
+	grep -q '^apply: ' "$log" && fail "the edge step changed something before the refusal: $(grep '^apply: ' "$log")"
+	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.test/' /etc/hangar/local.env
 
 	"$host_dir/bootstrap.sh" --release "$edge_release" 2>&1 | tee "$log"
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$log" || fail "summary does not match its changes"
@@ -621,6 +646,24 @@ EOF
 	[ "$(stat -c %U "/proc/$pid")" = hangar-edge ] || fail "the edge runs as $(stat -c %U "/proc/$pid")"
 	[ "$(stat -c '%U %a' /var/lib/hangar-edge)" = "hangar-edge 700" ] || fail "the edge's state is $(stat -c '%U %a' /var/lib/hangar-edge)"
 	ss -Hltn | awk '{print $4}' | grep -qx '\*:443' || fail ":443 is not bound for every address: $(ss -Hltn)"
+
+	step "sibling domains under one registrable domain are refused before any step, the running edge untouched"
+	cp /etc/hangar/local.env "$work/local.env.door"
+	unit_before=$(sha256sum /etc/systemd/system/hangar-edge.service /usr/local/bin/hangar-edge)
+	sed -i 's/^HANGAR_CP_DOMAIN=.*/HANGAR_CP_DOMAIN=cp.example.com/; s/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.example.com/; s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=https://console.cp.example.com|' /etc/hangar/local.env
+	for run_only in "" "--only edge"; do
+		# shellcheck disable=SC2086 # $run_only is no option or two words
+		if "$host_dir/bootstrap.sh" --release "$edge_release" $run_only >"$log" 2>&1; then
+			fail "bootstrap.sh $run_only ran with sibling domains"
+		fi
+		grep -q "the edge unit's command line: --cp-domain cp.example.com and --domain user.example.com must not share a registrable domain" "$log" ||
+			fail "unexpected refusal: $(cat "$log")"
+		grep -qE '^(== |apply: )' "$log" && fail "bootstrap.sh $run_only ran a step before the refusal: $(grep -E '^(== |apply: )' "$log")"
+		[ "$(sha256sum /etc/systemd/system/hangar-edge.service /usr/local/bin/hangar-edge)" = "$unit_before" ] ||
+			fail "the refused run changed the edge's unit or binary"
+		[ "$(main_pid hangar-edge)" = "$pid" ] || fail "the refused run restarted the edge"
+	done
+	install -m 0600 "$work/local.env.door" /etc/hangar/local.env
 
 	step "the certificates come, and each site answers on IPv4 and IPv6, from the host and from outside"
 	# One certificate each, as they come: every name has its own.

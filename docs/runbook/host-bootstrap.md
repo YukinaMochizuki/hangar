@@ -35,20 +35,25 @@ file (a testbed does that). They source it as root, so they refuse a file
 that is not root's or that anyone else can write, before reading it;
 `verify.sh` also checks it is mode 0600.
 
-One value stays on the host and out of the repo: the bootstrap admin, the
+Two values stay on the host and out of the repo: the bootstrap admin, the
 email of the Google account the person signs in with, who is granted
-`platform.root` while no one holds it. Write it once, by hand, as root's,
-mode 0600 (`<email>` is the address itself):
+`platform.root` while no one holds it, and the auth mode. Write them once,
+by hand, as root's, mode 0600 (`<email>` is the address itself):
 
 ```sh
 sudo install -D -m 0600 /dev/null /etc/hangar/local.env
-echo 'HANGAR_BOOTSTRAP_ADMIN=<email>' | sudo tee /etc/hangar/local.env
+printf 'HANGAR_BOOTSTRAP_ADMIN=<email>\nHANGAR_AUTH_MODE=dev\n' | sudo tee /etc/hangar/local.env
 ```
 
-The `services` step refuses to run without it, and `verify.sh` checks it.
-The apiserver reads it through `EnvironmentFile=`. The same file later
-sets the auth mode ("Switching to sign-in through Google" below); without that,
-the public API is in dev auth.
+The `services` step refuses to run without the bootstrap admin, and
+`verify.sh` checks it. The apiserver reads the file through
+`EnvironmentFile=`. `HANGAR_AUTH_MODE` is `dev` (a header names the
+caller, on loopback only) until the host signs people in through Google,
+when it becomes `oidc` ("Switching to sign-in through Google" below).
+Nothing defaults it: `bootstrap.sh` refuses, before any step, a
+`local.env` that sets no `HANGAR_AUTH_MODE`, and `verify.sh` fails it.
+A host set up before it had to be named, still in dev auth, needs
+`HANGAR_AUTH_MODE=dev` added before its next `bootstrap.sh`.
 
 The grant only invites the bootstrap admin: like everyone, they sign up
 once after the first start, before any other call works
@@ -177,8 +182,9 @@ with `--release DIR`. `--only <step>` runs a single step
   starts `hangar-apiserver.service` and `hangar-node.service`:
   - the apiserver as `hangar`, sandboxed (`systemd-analyze security
     hangar-apiserver` shows what is left), its database on `hangar/state`,
-    the public API on `127.0.0.1:8080` in the auth mode `local.env` asks
-    for (dev when unset; in oidc auth with the OAuth client's secret from
+    the public API on `127.0.0.1:8080` in the auth mode `local.env` names
+    (`HANGAR_AUTH_MODE`, never defaulted; in oidc auth with the OAuth
+    client's secret from
     `/var/lib/hangar/state/oidc-client-secret`, "Switching to sign-in
     through Google" below), `--default-max-owned-tenants
     HANGAR_DEFAULT_MAX_OWNED_TENANTS`, and three unix sockets that systemd
@@ -319,6 +325,27 @@ tunnel, the cutover there says in which order. It needs oidc auth
    `mailto:default` on a first start, which the CA refuses
    (`docs/decisions/front-door.md`).
 
+   The two domains must not share a registrable domain
+   (`docs/decisions/public-endpoints.md`), siblings such as
+   `cp.example.com` and `user.example.com` included. Before any step,
+   `bootstrap.sh` (a full run, or `--only edge`) refuses what the `edge`
+   step would refuse, and runs `hangar-edge check-flags` on the very flags
+   the unit's `ExecStart` gets: it refuses the run on any of the edge's
+   checks of its flags, this one among them, so a refused run changes
+   nothing, not the release's binaries, not the unit, not the running
+   edge. The hangar-edge that checks is the one the unit runs after the
+   run, found as the services step finds `hangar-node` for
+   `check-placement` (above): in a full run with `--release`, a private
+   copy of the release's that matches its `SHA256SUMS`; without
+   `--release`, and with `--only edge` whether or not `--release` is
+   given (the release step is skipped, so the unit keeps the installed
+   binary), the installed one. The `edge` step checks again with the
+   installed one before it changes the unit. `--only release`, which
+   installs a hangar-edge the running unit takes up at its next restart,
+   runs the release's `check-flags` before any step too. A hangar-edge
+   from before `check-flags` makes it warn that the flags were not
+   checked; one that cannot run is a problem.
+
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its
    `/auth/callback`, which the front door hands the apiserver with the rest
@@ -363,6 +390,14 @@ public socket go, and :443 and :80 with them; the public endpoints with
 them, as the edge serves them nowhere else.
 
 ## Deploying a new hangar version
+
+Upgrading past the change that stopped defaulting the auth mode to dev:
+`bootstrap.sh` refuses, before any step, a `/etc/hangar/local.env` with
+no `HANGAR_AUTH_MODE`. A host whose `local.env` sets none ran in dev
+auth: add `HANGAR_AUTH_MODE=dev` before the first run of that version
+and its mode stays as it was (`oidc`, with the rest of "Switching to
+sign-in through Google" below, changes it). A host that already names
+its mode, as one switched to Google sign-in does, is untouched.
 
 Upgrading past the change that moved the host env file out of this
 repository: install the host's file as `/etc/hangar/host.env`, root's, mode
@@ -570,7 +605,7 @@ for releases that cannot be gone back past while VMs run.
 
 The first deploy with the admin socket rewrites the apiserver's unit (the
 sockets move to socket units, `/run/hangar` becomes root's), so it
-restarts the apiserver once even with the auth mode unset; the agent
+restarts the apiserver once even in dev auth; the agent
 reconnects on its own and the VMs are not touched. Going back to a release
 from before it leaves the two socket units behind and `admin.sock` owned by
 `hangar`, unused; both are harmless, and the next upgrade puts them right.
@@ -798,8 +833,9 @@ binding also stops them at once, since every call checks membership, and
 their next refresh ends the login.
 
 To roll back to dev auth, turn the front door off first ("The front door"
-above), then remove the `HANGAR_AUTH_MODE`, `HANGAR_OIDC_*` and
-`HANGAR_PUBLIC_URL` lines from `local.env` (or set `HANGAR_AUTH_MODE=dev`),
+above), then in `local.env` set `HANGAR_AUTH_MODE=dev` and remove the
+`HANGAR_OIDC_*` and `HANGAR_PUBLIC_URL` lines (removing the mode's line
+too is refused: nothing defaults it),
 then `sudo deploy/host/bootstrap.sh`: the apiserver restarts in dev auth,
 on loopback alone. The `services` and `edge` steps refuse public endpoints
 in dev auth. Dev auth also refuses any request carrying a header

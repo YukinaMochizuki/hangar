@@ -85,6 +85,11 @@ spec: {displayName: Sponsor, limits: {cpu: "32"}}
 	if r := w.run("", "admin", "invite", "dave@example.com", "--plan", "missing"); r.code == 0 || !strings.Contains(r.err, `plan "missing" does not exist`) {
 		t.Errorf("inviting with a plan that does not exist: exit %d: %s", r.code, r.err)
 	}
+	for _, cmd := range []string{"invite", "revoke"} {
+		if r := w.run("", "admin", cmd, "\u212aate@example.com"); r.code != cli.ExitUsage || !strings.Contains(r.err, "must be ASCII") {
+			t.Errorf("admin %s of a non-ASCII email: %d %s", cmd, r.code, r.err)
+		}
+	}
 	if r := w.run("", "admin", "invite", "dave@example.com", "--max-tenants", "0"); r.code != cli.ExitUsage {
 		t.Errorf("inviting with a cap of 0: exit %d: %s", r.code, r.err)
 	}

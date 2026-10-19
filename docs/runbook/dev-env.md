@@ -41,7 +41,8 @@ change (`.github/workflows/ci.yml`).
 ## Running the apiserver and CLI locally
 
 `make dev` runs the apiserver on `127.0.0.1:8080` with dev auth (the caller's
-email comes from a header, so it refuses to listen anywhere but loopback) and
+email comes from a header, so it refuses to listen anywhere but a loopback
+IP; `--listen localhost:8080` is refused too, use `127.0.0.1` or `[::1]`) and
 a `hangar.db` in the working directory. Only platform members may do
 anything, so start a fresh database with yourself as its first admin:
 

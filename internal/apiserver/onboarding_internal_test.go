@@ -424,9 +424,10 @@ func TestSignUpIsAllOrNothing(t *testing.T) {
 var nameClaimResource = registry.Resource{Kind: nameClaimKind}
 
 // TestInvitationRules: only platform.root reads and writes invitations; an
-// invitation is keyed by a lowercase email, names a plan that exists and a
-// cap of at least 1, and is for someone who has not signed up; a plan an
-// invitation or a User names is not deleted; and a User's plan must exist.
+// invitation is keyed by a lowercase ASCII email, names a plan that exists
+// and a cap of at least 1, and is for someone who has not signed up; a plan
+// an invitation or a User names is not deleted; and a User's plan must
+// exist.
 func TestInvitationRules(t *testing.T) {
 	s, system, user := running(t)
 	invite(t, s, "root@example.com", "platform.root")
@@ -457,6 +458,15 @@ func TestInvitationRules(t *testing.T) {
 		"hal@example.com": {MaxOwnedTenants: proto.Int32(0)},
 	} {
 		wantCodeOf(t, apply(root, name, spec), connect.CodeInvalidArgument, "inviting "+name)
+	}
+	// Not ASCII: the Kelvin sign lower-cases to k, and a lowercase letter
+	// past ASCII passes every other rule.
+	for _, name := range []string{"\u212aate@example.com", "gil@ex\u00e4mple.com"} {
+		err := apply(root, name, nil)
+		wantCodeOf(t, err, connect.CodeInvalidArgument, "inviting "+name)
+		if err == nil || !strings.Contains(err.Error(), "must be ASCII") {
+			t.Errorf("inviting %q: %v, want it refused as not ASCII", name, err)
+		}
 	}
 	wantCodeOf(t, apply(root, "hal@example.com", &iamv1alpha1.InvitationSpec{Plan: "missing"}), connect.CodeFailedPrecondition, "a plan that does not exist")
 	wantCodeOf(t, apply(root, "alice@example.com", nil), connect.CodeFailedPrecondition, "inviting someone who has signed up")

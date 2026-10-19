@@ -190,7 +190,7 @@ func New(cfg Config) (*Flow, error) {
 }
 
 // ParseOrigin reads a public URL: an https origin, or http on a loopback
-// host for development, with no path, query or fragment.
+// IP for development, with no path, query or fragment.
 func ParseOrigin(s string) (*url.URL, error) {
 	u, err := url.Parse(s)
 	if err != nil || u.Host == "" {
@@ -391,7 +391,9 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 
 // verify exchanges the provider's code and checks its ID token: signed by
 // the provider for this client, with this sign-in's nonce, and a verified
-// email. It returns the email in lower case, or why it is refused.
+// email in ASCII. It returns the email in lower case, or why it is refused.
+// Lower-casing a non-ASCII address can make an ASCII one (U+212A KELVIN SIGN
+// becomes k), which may be someone else's invitation.
 func (f *Flow) verify(ctx context.Context, q url.Values, p pending) (email, reason string) {
 	if e := q.Get("error"); e != "" {
 		return "", "the identity provider returned an error (" + e + ")"
@@ -424,6 +426,9 @@ func (f *Flow) verify(ctx context.Context, q url.Values, p pending) (email, reas
 	}
 	if !claims.Verified {
 		return "", "the identity provider has not verified the email address " + claims.Email
+	}
+	if !auth.ASCII(claims.Email) {
+		return "", "Hangar takes only ASCII email addresses, not " + claims.Email
 	}
 	return strings.ToLower(claims.Email), ""
 }
@@ -683,10 +688,9 @@ func checkLoopback(s string) error {
 	return nil
 }
 
+// isLoopback holds for a loopback IP (127.0.0.0/8 or ::1), not for
+// localhost, which a hosts file can point anywhere.
 func isLoopback(host string) bool {
-	if host == "localhost" {
-		return true
-	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }

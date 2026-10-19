@@ -20,6 +20,7 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 )
 
@@ -43,6 +44,17 @@ func inviteBindingName(email string) string {
 		return "invite-" + tail
 	}
 	return "invite-" + slug + "-" + tail
+}
+
+// emailArg reads an EMAIL argument as bindings hold it, in lower case. One
+// that is not ASCII is refused before lower-casing, which could fold it
+// into someone else's address (U+212A KELVIN SIGN becomes k).
+func emailArg(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if !auth.ASCII(s) {
+		return "", usageErr("EMAIL %q must be ASCII", s)
+	}
+	return strings.ToLower(s), nil
 }
 
 // users maps the email of every User to its username.
@@ -98,7 +110,10 @@ func (a *app) inviteCmd() *cobra.Command {
 			"  hangar admin invite bob@example.com --plan sponsor --max-tenants 3",
 		Args: args(1, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			email := strings.ToLower(strings.TrimSpace(args[0]))
+			email, err := emailArg(args[0])
+			if err != nil {
+				return err
+			}
 			if !strings.HasPrefix(role, "platform.") {
 				return usageErr("--role %q: an invitation binds a platform role, such as platform.member", role)
 			}
@@ -288,7 +303,10 @@ func (a *app) revokeCmd() *cobra.Command {
 			"person is a member, whose platform role binding is what to delete.",
 		Args: args(1, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			email := strings.ToLower(strings.TrimSpace(args[0]))
+			email, err := emailArg(args[0])
+			if err != nil {
+				return err
+			}
 			cl, _, err := a.client()
 			if err != nil {
 				return err

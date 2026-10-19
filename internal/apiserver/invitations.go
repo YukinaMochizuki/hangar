@@ -14,8 +14,10 @@ import (
 )
 
 // validEmail checks an email as bindings and invitations name people: in
-// lower case, with one "@" between a local part and a domain, and nothing
-// that cannot be in a store key or a page token.
+// ASCII and lower case, with one "@" between a local part and a domain, and
+// nothing that cannot be in a store key or a page token. Sign-in takes only
+// ASCII addresses too, so a name another character lower-cases to (U+212A
+// KELVIN SIGN is k) never names a person.
 func validEmail(email string) error {
 	local, domain, ok := strings.Cut(email, "@")
 	switch {
@@ -23,6 +25,8 @@ func validEmail(email string) error {
 		return fmt.Errorf("%q is longer than 254 characters", email)
 	case !ok || local == "" || domain == "" || strings.Contains(domain, "@"):
 		return fmt.Errorf("%q is not an email address", email)
+	case !auth.ASCII(email):
+		return fmt.Errorf("%q must be ASCII", email)
 	case email != strings.ToLower(email):
 		return fmt.Errorf("%q must be in lower case", email)
 	case strings.ContainsAny(email, "/ \t\r\n"):

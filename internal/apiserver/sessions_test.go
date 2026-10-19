@@ -327,7 +327,7 @@ func TestBrowserSignIn(t *testing.T) {
 // no session behind.
 func TestSignInRefusals(t *testing.T) {
 	w := newOIDCWorld(t)
-	w.adminInvites("bob@example.com")
+	w.adminInvites("bob@example.com", "kate@example.com")
 
 	t.Run("forged state", func(t *testing.T) {
 		c := w.browser()
@@ -372,6 +372,8 @@ func TestSignInRefusals(t *testing.T) {
 	}{
 		{name: "unverified email", email: "bob@example.com", status: http.StatusBadRequest, want: "has not verified the email address bob@example.com"},
 		{name: "not invited", email: "eve@example.com", verified: true, status: http.StatusForbidden, want: "eve@example.com has not been invited to Hangar"},
+		// U+212A KELVIN SIGN lower-cases to k: kate's invitation.
+		{name: "non-ASCII email", email: "\u212aate@example.com", verified: true, status: http.StatusBadRequest, want: "only ASCII email addresses"},
 		{name: "another nonce", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["nonce"] = "other" }, status: http.StatusBadRequest, want: "for another sign-in"},
 		{name: "another audience", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["aud"] = "other-client" }, status: http.StatusBadRequest, want: "did not verify"},
 		{name: "expired ID token", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, status: http.StatusBadRequest, want: "did not verify"},
@@ -669,6 +671,9 @@ func TestRevokeSessions(t *testing.T) {
 	wantCode(t, err, connect.CodePermissionDenied, "bob revoking carol")
 	_, err = w.sessions(headers{}).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{}))
 	wantCode(t, err, connect.CodeUnauthenticated, "revoking without credentials")
+	// Refused, not lower-cased into another address: the Kelvin sign is k.
+	_, err = w.sessions(alice).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{Email: "\u212aate@example.com"}))
+	wantCode(t, err, connect.CodeInvalidArgument, "revoking a non-ASCII email")
 
 	res := must[iamv1alpha1.RevokeSessionsResponse](t)(w.sessions(asBearer(bob.GetAccessToken())).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{})))
 	if res.GetRevoked() != 4 {

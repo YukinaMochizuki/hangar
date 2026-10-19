@@ -30,8 +30,16 @@ credentials. The node is a separate root process on the same host.
   is made at start and held in memory only; restarting the apiserver makes
   a new one, which cancels the sign-ins in progress (each person starts
   again) and is how it rotates. Only an `email_verified` email counts, in
-  lower case, so bindings by email apply unchanged. Only an invited email,
-  one holding a platform role (`tenancy-and-iam.md`), may sign in: anyone
+  lower case, so bindings by email apply unchanged. It must be ASCII, as
+  every email that names a person must: lower-casing some other characters
+  makes an ASCII letter (U+212A KELVIN SIGN becomes `k`), so a provider's
+  address could otherwise match someone else's invitation. A non-ASCII
+  email is refused, never lower-cased, by sign-in, RoleBinding subjects,
+  Invitations, `AddMember` and the other member calls, `RevokeSessions`,
+  `--bootstrap-admin`, `hangar admin invite` and `revoke`, and the
+  console's Add member dialog. Only an
+  invited email, one holding a platform role (`tenancy-and-iam.md`), may
+  sign in: anyone
   else sees the not-invited page and gets no session, so strangers write
   nothing. The provider is a flag (`--oidc-issuer`), so others can be
   added as config. There is no email OTP.
@@ -310,8 +318,11 @@ credentials. The node is a separate root process on the same host.
   is believed nowhere else; sign-in's audit lines carry it. The apiserver
   refuses the socket in dev auth.
 - **Dev mode** takes the user from a header. It must be enabled explicitly
-  (`--auth-mode dev`) and refuses to start on a non-loopback address, or
-  with a public socket. It has no sign-in pages and issues nothing. It also
+  (`--auth-mode dev`) and refuses to start anywhere but a loopback IP
+  (`127.0.0.0/8` or `::1`; not the name `localhost`, which a hosts file can
+  point anywhere), or with a public socket. (Likewise, oidc auth takes a
+  plain-http `--public-url` only on a loopback IP.) It has no sign-in pages
+  and issues nothing. It also
   refuses any request carrying a header Cloudflare adds (`Cf-Warp-Tag-Id`,
   which cloudflared sets on every request it proxies, and
   `Cf-Connecting-Ip`, `Cdn-Loop` and `Cf-Ray` from its edge): no step

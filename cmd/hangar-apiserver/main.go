@@ -119,6 +119,9 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	if err := checkAuthFlags(f); err != nil {
 		return err
 	}
+	if err := checkBootstrapAdmin(f.bootstrapAdmin); err != nil {
+		return err
+	}
 	st, err := sqlite.Open(ctx, f.db)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
@@ -284,7 +287,7 @@ func checkAuthFlags(f flags) error {
 		return nil
 	case "dev":
 		if !loopback(f.listen) {
-			return fmt.Errorf("dev auth trusts a plain header, so it only runs on a loopback address, not %q", f.listen)
+			return fmt.Errorf("dev auth trusts a plain header, so it only runs on a loopback IP such as 127.0.0.1:8080 or [::1]:8080, not %q", f.listen)
 		}
 		// What reaches the public socket comes from the internet.
 		if f.publicSocket != "" {
@@ -293,6 +296,17 @@ func checkAuthFlags(f flags) error {
 		return nil
 	}
 	return fmt.Errorf("unknown auth mode %q; want oidc or dev", f.authMode)
+}
+
+// checkBootstrapAdmin refuses a --bootstrap-admin that is not ASCII, before
+// it is lower-cased: lower-casing some other characters makes an ASCII
+// letter (U+212A KELVIN SIGN becomes k), so it could grant platform.root
+// to someone else's address.
+func checkBootstrapAdmin(email string) error {
+	if !auth.ASCII(email) {
+		return fmt.Errorf("--bootstrap-admin %q must be ASCII", email)
+	}
+	return nil
 }
 
 // publicChain is the public listener's authentication: in oidc auth, the
@@ -315,13 +329,12 @@ func publicChain(f flags, srv *apiserver.Server, st *sqlite.Store) (auth.Chain, 
 	}, st)
 }
 
+// loopback holds when addr's host is a loopback IP (127.0.0.0/8 or ::1).
+// Not localhost, which a hosts file can point anywhere.
 func loopback(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return false
-	}
-	if host == "localhost" {
-		return true
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
