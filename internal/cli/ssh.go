@@ -63,7 +63,7 @@ func (a *app) sshCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&login, "login", "l", "", "log in as this user instead of the image's default user")
-	cmd.Flags().BoolVar(&forget, "forget-host-key", false, "forget the VM's recorded host key, as when its host keys were made again in it")
+	cmd.Flags().BoolVar(&forget, "forget-host-key", false, "forget the VM's host key recorded in this CLI's known_hosts, as when its host keys were made again in it; the console's terminal keeps its own record")
 	return cmd
 }
 

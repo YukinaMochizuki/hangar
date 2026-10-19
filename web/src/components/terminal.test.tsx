@@ -100,9 +100,9 @@ afterEach(() => {
 
 const target = { project: "demo", plural: "containers", name: "web", command: ["sh"] };
 
-function mounted() {
+function mounted(t = target) {
   const el = document.createElement("div");
-  const hook = renderHook(() => useTerminal(target));
+  const hook = renderHook(() => useTerminal(t));
   hook.result.current.attach(el);
   return hook;
 }
@@ -177,6 +177,16 @@ describe("useTerminal", () => {
     expect(hook.result.current.state).toEqual({ kind: "unsupported" });
     expect(sockets).toHaveLength(0);
     expect(terms).toHaveLength(0);
+  });
+
+  it("starts a VM's login shell with no command at all, not one empty argument", async () => {
+    const hook = mounted({ project: "demo", plural: "virtualmachines", name: "db", command: [] });
+    const s = await connected(hook);
+    expect(s.url).toBe(`ws://${window.location.host}/v1/projects/demo/virtualmachines/db:exec`);
+    act(() => s.accept());
+    const start = fromBinary(MachineExecRequestSchema, s.sent[0]!);
+    expect(start.message.case).toBe("start");
+    if (start.message.case === "start") expect(start.message.value.command).toEqual([]);
   });
 
   it("sends a mouse report's bytes as stdin", async () => {

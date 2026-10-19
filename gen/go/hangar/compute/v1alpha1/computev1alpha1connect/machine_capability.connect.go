@@ -39,6 +39,9 @@ const (
 	// MachineCapabilityServiceSignSSHKeyProcedure is the fully-qualified name of the
 	// MachineCapabilityService's SignSSHKey RPC.
 	MachineCapabilityServiceSignSSHKeyProcedure = "/hangar.compute.v1alpha1.MachineCapabilityService/SignSSHKey"
+	// MachineCapabilityServiceForgetSSHHostKeysProcedure is the fully-qualified name of the
+	// MachineCapabilityService's ForgetSSHHostKeys RPC.
+	MachineCapabilityServiceForgetSSHHostKeysProcedure = "/hangar.compute.v1alpha1.MachineCapabilityService/ForgetSSHHostKeys"
 )
 
 // MachineCapabilityServiceClient is a client for the
@@ -57,6 +60,14 @@ type MachineCapabilityServiceClient interface {
 	// compute.machines.ssh. Without the platform's SSH CA it fails with
 	// FailedPrecondition. See docs/decisions/vm-ssh.md.
 	SignSSHKey(context.Context, *connect.Request[v1alpha1.SignSSHKeyRequest]) (*connect.Response[v1alpha1.SignSSHKeyResponse], error)
+	// ForgetSSHHostKeys clears the host keys the apiserver recorded on a
+	// virtual machine's first exec (VirtualMachineStatus.ssh_host_keys), as
+	// when its host keys were made again in it, so that the next exec
+	// records the key it is then shown. It needs
+	// compute.virtualmachines.apply in the VM's project, not
+	// compute.machines.ssh: one who may only log in cannot reset the trust
+	// their logins rest on. It leaves hangar ssh's known_hosts as it is.
+	ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error)
 }
 
 // NewMachineCapabilityServiceClient constructs a client for the
@@ -83,13 +94,20 @@ func NewMachineCapabilityServiceClient(httpClient connect.HTTPClient, baseURL st
 			connect.WithSchema(machineCapabilityServiceMethods.ByName("SignSSHKey")),
 			connect.WithClientOptions(opts...),
 		),
+		forgetSSHHostKeys: connect.NewClient[v1alpha1.ForgetSSHHostKeysRequest, v1alpha1.ForgetSSHHostKeysResponse](
+			httpClient,
+			baseURL+MachineCapabilityServiceForgetSSHHostKeysProcedure,
+			connect.WithSchema(machineCapabilityServiceMethods.ByName("ForgetSSHHostKeys")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // machineCapabilityServiceClient implements MachineCapabilityServiceClient.
 type machineCapabilityServiceClient struct {
-	logs       *connect.Client[v1alpha1.LogsRequest, v1alpha1.LogsResponse]
-	signSSHKey *connect.Client[v1alpha1.SignSSHKeyRequest, v1alpha1.SignSSHKeyResponse]
+	logs              *connect.Client[v1alpha1.LogsRequest, v1alpha1.LogsResponse]
+	signSSHKey        *connect.Client[v1alpha1.SignSSHKeyRequest, v1alpha1.SignSSHKeyResponse]
+	forgetSSHHostKeys *connect.Client[v1alpha1.ForgetSSHHostKeysRequest, v1alpha1.ForgetSSHHostKeysResponse]
 }
 
 // Logs calls hangar.compute.v1alpha1.MachineCapabilityService.Logs.
@@ -100,6 +118,11 @@ func (c *machineCapabilityServiceClient) Logs(ctx context.Context, req *connect.
 // SignSSHKey calls hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey.
 func (c *machineCapabilityServiceClient) SignSSHKey(ctx context.Context, req *connect.Request[v1alpha1.SignSSHKeyRequest]) (*connect.Response[v1alpha1.SignSSHKeyResponse], error) {
 	return c.signSSHKey.CallUnary(ctx, req)
+}
+
+// ForgetSSHHostKeys calls hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys.
+func (c *machineCapabilityServiceClient) ForgetSSHHostKeys(ctx context.Context, req *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error) {
+	return c.forgetSSHHostKeys.CallUnary(ctx, req)
 }
 
 // MachineCapabilityServiceHandler is an implementation of the
@@ -118,6 +141,14 @@ type MachineCapabilityServiceHandler interface {
 	// compute.machines.ssh. Without the platform's SSH CA it fails with
 	// FailedPrecondition. See docs/decisions/vm-ssh.md.
 	SignSSHKey(context.Context, *connect.Request[v1alpha1.SignSSHKeyRequest]) (*connect.Response[v1alpha1.SignSSHKeyResponse], error)
+	// ForgetSSHHostKeys clears the host keys the apiserver recorded on a
+	// virtual machine's first exec (VirtualMachineStatus.ssh_host_keys), as
+	// when its host keys were made again in it, so that the next exec
+	// records the key it is then shown. It needs
+	// compute.virtualmachines.apply in the VM's project, not
+	// compute.machines.ssh: one who may only log in cannot reset the trust
+	// their logins rest on. It leaves hangar ssh's known_hosts as it is.
+	ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error)
 }
 
 // NewMachineCapabilityServiceHandler builds an HTTP handler from the service implementation. It
@@ -139,12 +170,20 @@ func NewMachineCapabilityServiceHandler(svc MachineCapabilityServiceHandler, opt
 		connect.WithSchema(machineCapabilityServiceMethods.ByName("SignSSHKey")),
 		connect.WithHandlerOptions(opts...),
 	)
+	machineCapabilityServiceForgetSSHHostKeysHandler := connect.NewUnaryHandler(
+		MachineCapabilityServiceForgetSSHHostKeysProcedure,
+		svc.ForgetSSHHostKeys,
+		connect.WithSchema(machineCapabilityServiceMethods.ByName("ForgetSSHHostKeys")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.compute.v1alpha1.MachineCapabilityService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MachineCapabilityServiceLogsProcedure:
 			machineCapabilityServiceLogsHandler.ServeHTTP(w, r)
 		case MachineCapabilityServiceSignSSHKeyProcedure:
 			machineCapabilityServiceSignSSHKeyHandler.ServeHTTP(w, r)
+		case MachineCapabilityServiceForgetSSHHostKeysProcedure:
+			machineCapabilityServiceForgetSSHHostKeysHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -160,4 +199,8 @@ func (UnimplementedMachineCapabilityServiceHandler) Logs(context.Context, *conne
 
 func (UnimplementedMachineCapabilityServiceHandler) SignSSHKey(context.Context, *connect.Request[v1alpha1.SignSSHKeyRequest]) (*connect.Response[v1alpha1.SignSSHKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey is not implemented"))
+}
+
+func (UnimplementedMachineCapabilityServiceHandler) ForgetSSHHostKeys(context.Context, *connect.Request[v1alpha1.ForgetSSHHostKeysRequest]) (*connect.Response[v1alpha1.ForgetSSHHostKeysResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys is not implemented"))
 }

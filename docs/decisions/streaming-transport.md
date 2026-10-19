@@ -18,7 +18,9 @@ streams through Cloudflare are risky.
     `containers/web:exec`, authenticated as
     any call on the listener is, with a subprotocol naming the messages'
     version (`hangar.exec.v1alpha1`); one proto message per binary
-    WebSocket message.
+    WebSocket message. A container's exec runs a process beside the
+    container's; a VM's, `virtualmachines/web:exec`, is the same messages
+    over an SSH login the apiserver makes to the guest (`vm-ssh.md`).
   - Everything that can refuse it does so before the upgrade, as an HTTP
     error whose body is a Connect error's JSON, so clients read it as they
     read any Connect error. After the upgrade, a failure closes the

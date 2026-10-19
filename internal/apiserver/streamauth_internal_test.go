@@ -448,6 +448,37 @@ func TestMachineStreamsEndWithWhatLetThemIn(t *testing.T) {
 	}
 }
 
+// TestAVMExecEndsWithTheSSHPermission: a VM's exec is rechecked under
+// compute.machines.ssh, the permission it was let in by: rex, who holds
+// ssh and exec by two bindings, loses it at the recheck after the ssh
+// binding goes, though he may still exec.
+func TestAVMExecEndsWithTheSSHPermission(t *testing.T) {
+	w := newVMExecWorld(t)
+	clock := w.s.clock.(*clockwork.FakeClock)
+	c, err := w.dialVM(t, "rex@example.com", "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(t, c, startReq(&computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}))
+	receive(t, w.guest.commands, "the session")
+	send(t, c, stdinReq("ping"))
+	ctx, cancel := context.WithTimeout(t.Context(), testutil.Wait)
+	defer cancel()
+	_, b, err := c.Read(ctx)
+	res := &computev1alpha1.MachineExecResponse{}
+	if err == nil {
+		err = proto.Unmarshal(b, res)
+	}
+	if err != nil || string(res.GetStdout()) != "ping" {
+		t.Fatalf("the exec did not relay: %v, %v", res, execws.ErrorOf(err))
+	}
+	if _, err := w.s.backend(registry.RoleBinding).Delete(w.system, resource.Key{Name: "rex-ssh"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(auth.RecheckInterval)
+	wantCodeOf(t, readAll(t, c).err, connect.CodePermissionDenied, "the VM's exec, after the ssh binding went")
+}
+
 func (w *streamWorld) bobHeader(*testing.T) http.Header { return w.asBob() }
 
 func revokeBob(w *streamWorld, t *testing.T) error {

@@ -547,6 +547,113 @@ func (x *SignSSHKeyResponse) GetValidBefore() *timestamppb.Timestamp {
 	return nil
 }
 
+type ForgetSSHHostKeysRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// The object's kind, VirtualMachine.
+	Kind          string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	Name          string `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgetSSHHostKeysRequest) Reset() {
+	*x = ForgetSSHHostKeysRequest{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgetSSHHostKeysRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgetSSHHostKeysRequest) ProtoMessage() {}
+
+func (x *ForgetSSHHostKeysRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgetSSHHostKeysRequest.ProtoReflect.Descriptor instead.
+func (*ForgetSSHHostKeysRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ForgetSSHHostKeysRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ForgetSSHHostKeysRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *ForgetSSHHostKeysRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ForgetSSHHostKeysResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The keys forgotten, in authorized_keys form; empty if none was
+	// recorded.
+	Forgotten     []string `protobuf:"bytes,1,rep,name=forgotten,proto3" json:"forgotten,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ForgetSSHHostKeysResponse) Reset() {
+	*x = ForgetSSHHostKeysResponse{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ForgetSSHHostKeysResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ForgetSSHHostKeysResponse) ProtoMessage() {}
+
+func (x *ForgetSSHHostKeysResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ForgetSSHHostKeysResponse.ProtoReflect.Descriptor instead.
+func (*ForgetSSHHostKeysResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ForgetSSHHostKeysResponse) GetForgotten() []string {
+	if x != nil {
+		return x.Forgotten
+	}
+	return nil
+}
+
 // MachineExecRequest is a message from an exec's client.
 type MachineExecRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -564,7 +671,7 @@ type MachineExecRequest struct {
 
 func (x *MachineExecRequest) Reset() {
 	*x = MachineExecRequest{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -576,7 +683,7 @@ func (x *MachineExecRequest) String() string {
 func (*MachineExecRequest) ProtoMessage() {}
 
 func (x *MachineExecRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -589,7 +696,7 @@ func (x *MachineExecRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecRequest.ProtoReflect.Descriptor instead.
 func (*MachineExecRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{6}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *MachineExecRequest) GetMessage() isMachineExecRequest_Message {
@@ -685,11 +792,13 @@ func (*MachineExecRequest_Signal) isMachineExecRequest_Message() {}
 
 // MachineExecStart runs a process in the machine, as docker exec does in a
 // container: with the container's environment, user and working directory,
-// unless overridden.
+// unless overridden. In a virtual machine it is an SSH session: no command
+// opens the user's login shell, and env and working_dir are refused.
 type MachineExecStart struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The program, looked up on the PATH of the process's environment, and
-	// its arguments.
+	// its arguments. Required but in a virtual machine, where they are
+	// quoted and joined into one line for the user's shell.
 	Command []string `protobuf:"bytes,1,rep,name=command,proto3" json:"command,omitempty"`
 	// Gives the process a stdin to read; without it, its stdin is closed
 	// from the start, or, on a terminal, nothing is ever typed.
@@ -700,7 +809,8 @@ type MachineExecStart struct {
 	// The terminal's first size, with tty.
 	Size *MachineExecWindowSize `protobuf:"bytes,4,opt,name=size,proto3" json:"size,omitempty"`
 	// As an OCI image gives it, such as "1000" or "nobody:nogroup"; empty
-	// keeps the container's.
+	// keeps the container's. In a virtual machine, the login name, never
+	// root; empty is its image's default user.
 	User string `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
 	// Set over the container's environment.
 	Env []*EnvVar `protobuf:"bytes,6,rep,name=env,proto3" json:"env,omitempty"`
@@ -712,7 +822,7 @@ type MachineExecStart struct {
 
 func (x *MachineExecStart) Reset() {
 	*x = MachineExecStart{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -724,7 +834,7 @@ func (x *MachineExecStart) String() string {
 func (*MachineExecStart) ProtoMessage() {}
 
 func (x *MachineExecStart) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -737,7 +847,7 @@ func (x *MachineExecStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecStart.ProtoReflect.Descriptor instead.
 func (*MachineExecStart) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{7}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *MachineExecStart) GetCommand() []string {
@@ -797,7 +907,7 @@ type MachineExecStdinClose struct {
 
 func (x *MachineExecStdinClose) Reset() {
 	*x = MachineExecStdinClose{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +919,7 @@ func (x *MachineExecStdinClose) String() string {
 func (*MachineExecStdinClose) ProtoMessage() {}
 
 func (x *MachineExecStdinClose) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,7 +932,7 @@ func (x *MachineExecStdinClose) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecStdinClose.ProtoReflect.Descriptor instead.
 func (*MachineExecStdinClose) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{8}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{10}
 }
 
 type MachineExecWindowSize struct {
@@ -835,7 +945,7 @@ type MachineExecWindowSize struct {
 
 func (x *MachineExecWindowSize) Reset() {
 	*x = MachineExecWindowSize{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -847,7 +957,7 @@ func (x *MachineExecWindowSize) String() string {
 func (*MachineExecWindowSize) ProtoMessage() {}
 
 func (x *MachineExecWindowSize) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -860,7 +970,7 @@ func (x *MachineExecWindowSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecWindowSize.ProtoReflect.Descriptor instead.
 func (*MachineExecWindowSize) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{9}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *MachineExecWindowSize) GetRows() uint32 {
@@ -892,7 +1002,7 @@ type MachineExecResponse struct {
 
 func (x *MachineExecResponse) Reset() {
 	*x = MachineExecResponse{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -904,7 +1014,7 @@ func (x *MachineExecResponse) String() string {
 func (*MachineExecResponse) ProtoMessage() {}
 
 func (x *MachineExecResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -917,7 +1027,7 @@ func (x *MachineExecResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecResponse.ProtoReflect.Descriptor instead.
 func (*MachineExecResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{10}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *MachineExecResponse) GetMessage() isMachineExecResponse_Message {
@@ -992,7 +1102,7 @@ type MachineExecExit struct {
 
 func (x *MachineExecExit) Reset() {
 	*x = MachineExecExit{}
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1004,7 +1114,7 @@ func (x *MachineExecExit) String() string {
 func (*MachineExecExit) ProtoMessage() {}
 
 func (x *MachineExecExit) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1017,7 +1127,7 @@ func (x *MachineExecExit) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineExecExit.ProtoReflect.Descriptor instead.
 func (*MachineExecExit) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{11}
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *MachineExecExit) GetCode() int32 {
@@ -1071,7 +1181,13 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\vcertificate\x18\x01 \x01(\tR\vcertificate\x12\x1c\n" +
 	"\tprincipal\x18\x02 \x01(\tR\tprincipal\x12!\n" +
 	"\fdefault_user\x18\x03 \x01(\tR\vdefaultUser\x12=\n" +
-	"\fvalid_before\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vvalidBefore\"\xb1\x02\n" +
+	"\fvalid_before\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\vvalidBefore\"\\\n" +
+	"\x18ForgetSSHHostKeysRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"9\n" +
+	"\x19ForgetSSHHostKeysResponse\x12\x1c\n" +
+	"\tforgotten\x18\x01 \x03(\tR\tforgotten\"\xb1\x02\n" +
 	"\x12MachineExecRequest\x12A\n" +
 	"\x05start\x18\x01 \x01(\v2).hangar.compute.v1alpha1.MachineExecStartH\x00R\x05start\x12\x16\n" +
 	"\x05stdin\x18\x02 \x01(\fH\x00R\x05stdin\x12Q\n" +
@@ -1107,11 +1223,12 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\x19MACHINE_LOG_STREAM_STDERR\x10\x02\x12\x1b\n" +
 	"\x17MACHINE_LOG_STREAM_INIT\x10\x03\x12\x1b\n" +
 	"\x17MACHINE_LOG_STREAM_EXIT\x10\x04\x12\x1e\n" +
-	"\x1aMACHINE_LOG_STREAM_CONSOLE\x10\x052\xd8\x01\n" +
+	"\x1aMACHINE_LOG_STREAM_CONSOLE\x10\x052\xd4\x02\n" +
 	"\x18MachineCapabilityService\x12U\n" +
 	"\x04Logs\x12$.hangar.compute.v1alpha1.LogsRequest\x1a%.hangar.compute.v1alpha1.LogsResponse0\x01\x12e\n" +
 	"\n" +
-	"SignSSHKey\x12*.hangar.compute.v1alpha1.SignSSHKeyRequest\x1a+.hangar.compute.v1alpha1.SignSSHKeyResponseB\x85\x02\n" +
+	"SignSSHKey\x12*.hangar.compute.v1alpha1.SignSSHKeyRequest\x1a+.hangar.compute.v1alpha1.SignSSHKeyResponse\x12z\n" +
+	"\x11ForgetSSHHostKeys\x121.hangar.compute.v1alpha1.ForgetSSHHostKeysRequest\x1a2.hangar.compute.v1alpha1.ForgetSSHHostKeysResponseB\x85\x02\n" +
 	"\x1bcom.hangar.compute.v1alpha1B\x16MachineCapabilityProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1;computev1alpha1\xa2\x02\x03HCX\xaa\x02\x17Hangar.Compute.V1alpha1\xca\x02\x17Hangar\\Compute\\V1alpha1\xe2\x02#Hangar\\Compute\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Compute::V1alpha1b\x06proto3"
 
 var (
@@ -1127,43 +1244,47 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP() []byte 
 }
 
 var file_hangar_compute_v1alpha1_machine_capability_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_hangar_compute_v1alpha1_machine_capability_proto_goTypes = []any{
-	(MachineLogStream)(0),         // 0: hangar.compute.v1alpha1.MachineLogStream
-	(*LogsRequest)(nil),           // 1: hangar.compute.v1alpha1.LogsRequest
-	(*LogsResponse)(nil),          // 2: hangar.compute.v1alpha1.LogsResponse
-	(*MachineLogRecord)(nil),      // 3: hangar.compute.v1alpha1.MachineLogRecord
-	(*MachineExitStatus)(nil),     // 4: hangar.compute.v1alpha1.MachineExitStatus
-	(*SignSSHKeyRequest)(nil),     // 5: hangar.compute.v1alpha1.SignSSHKeyRequest
-	(*SignSSHKeyResponse)(nil),    // 6: hangar.compute.v1alpha1.SignSSHKeyResponse
-	(*MachineExecRequest)(nil),    // 7: hangar.compute.v1alpha1.MachineExecRequest
-	(*MachineExecStart)(nil),      // 8: hangar.compute.v1alpha1.MachineExecStart
-	(*MachineExecStdinClose)(nil), // 9: hangar.compute.v1alpha1.MachineExecStdinClose
-	(*MachineExecWindowSize)(nil), // 10: hangar.compute.v1alpha1.MachineExecWindowSize
-	(*MachineExecResponse)(nil),   // 11: hangar.compute.v1alpha1.MachineExecResponse
-	(*MachineExecExit)(nil),       // 12: hangar.compute.v1alpha1.MachineExecExit
-	(*timestamppb.Timestamp)(nil), // 13: google.protobuf.Timestamp
-	(*EnvVar)(nil),                // 14: hangar.compute.v1alpha1.EnvVar
+	(MachineLogStream)(0),             // 0: hangar.compute.v1alpha1.MachineLogStream
+	(*LogsRequest)(nil),               // 1: hangar.compute.v1alpha1.LogsRequest
+	(*LogsResponse)(nil),              // 2: hangar.compute.v1alpha1.LogsResponse
+	(*MachineLogRecord)(nil),          // 3: hangar.compute.v1alpha1.MachineLogRecord
+	(*MachineExitStatus)(nil),         // 4: hangar.compute.v1alpha1.MachineExitStatus
+	(*SignSSHKeyRequest)(nil),         // 5: hangar.compute.v1alpha1.SignSSHKeyRequest
+	(*SignSSHKeyResponse)(nil),        // 6: hangar.compute.v1alpha1.SignSSHKeyResponse
+	(*ForgetSSHHostKeysRequest)(nil),  // 7: hangar.compute.v1alpha1.ForgetSSHHostKeysRequest
+	(*ForgetSSHHostKeysResponse)(nil), // 8: hangar.compute.v1alpha1.ForgetSSHHostKeysResponse
+	(*MachineExecRequest)(nil),        // 9: hangar.compute.v1alpha1.MachineExecRequest
+	(*MachineExecStart)(nil),          // 10: hangar.compute.v1alpha1.MachineExecStart
+	(*MachineExecStdinClose)(nil),     // 11: hangar.compute.v1alpha1.MachineExecStdinClose
+	(*MachineExecWindowSize)(nil),     // 12: hangar.compute.v1alpha1.MachineExecWindowSize
+	(*MachineExecResponse)(nil),       // 13: hangar.compute.v1alpha1.MachineExecResponse
+	(*MachineExecExit)(nil),           // 14: hangar.compute.v1alpha1.MachineExecExit
+	(*timestamppb.Timestamp)(nil),     // 15: google.protobuf.Timestamp
+	(*EnvVar)(nil),                    // 16: hangar.compute.v1alpha1.EnvVar
 }
 var file_hangar_compute_v1alpha1_machine_capability_proto_depIdxs = []int32{
-	13, // 0: hangar.compute.v1alpha1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	15, // 0: hangar.compute.v1alpha1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.compute.v1alpha1.LogsResponse.records:type_name -> hangar.compute.v1alpha1.MachineLogRecord
 	0,  // 2: hangar.compute.v1alpha1.MachineLogRecord.stream:type_name -> hangar.compute.v1alpha1.MachineLogStream
-	13, // 3: hangar.compute.v1alpha1.MachineLogRecord.time:type_name -> google.protobuf.Timestamp
+	15, // 3: hangar.compute.v1alpha1.MachineLogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.compute.v1alpha1.MachineLogRecord.exit:type_name -> hangar.compute.v1alpha1.MachineExitStatus
-	13, // 5: hangar.compute.v1alpha1.SignSSHKeyResponse.valid_before:type_name -> google.protobuf.Timestamp
-	8,  // 6: hangar.compute.v1alpha1.MachineExecRequest.start:type_name -> hangar.compute.v1alpha1.MachineExecStart
-	9,  // 7: hangar.compute.v1alpha1.MachineExecRequest.stdin_close:type_name -> hangar.compute.v1alpha1.MachineExecStdinClose
-	10, // 8: hangar.compute.v1alpha1.MachineExecRequest.resize:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
-	10, // 9: hangar.compute.v1alpha1.MachineExecStart.size:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
-	14, // 10: hangar.compute.v1alpha1.MachineExecStart.env:type_name -> hangar.compute.v1alpha1.EnvVar
-	12, // 11: hangar.compute.v1alpha1.MachineExecResponse.exit:type_name -> hangar.compute.v1alpha1.MachineExecExit
+	15, // 5: hangar.compute.v1alpha1.SignSSHKeyResponse.valid_before:type_name -> google.protobuf.Timestamp
+	10, // 6: hangar.compute.v1alpha1.MachineExecRequest.start:type_name -> hangar.compute.v1alpha1.MachineExecStart
+	11, // 7: hangar.compute.v1alpha1.MachineExecRequest.stdin_close:type_name -> hangar.compute.v1alpha1.MachineExecStdinClose
+	12, // 8: hangar.compute.v1alpha1.MachineExecRequest.resize:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
+	12, // 9: hangar.compute.v1alpha1.MachineExecStart.size:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
+	16, // 10: hangar.compute.v1alpha1.MachineExecStart.env:type_name -> hangar.compute.v1alpha1.EnvVar
+	14, // 11: hangar.compute.v1alpha1.MachineExecResponse.exit:type_name -> hangar.compute.v1alpha1.MachineExecExit
 	1,  // 12: hangar.compute.v1alpha1.MachineCapabilityService.Logs:input_type -> hangar.compute.v1alpha1.LogsRequest
 	5,  // 13: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:input_type -> hangar.compute.v1alpha1.SignSSHKeyRequest
-	2,  // 14: hangar.compute.v1alpha1.MachineCapabilityService.Logs:output_type -> hangar.compute.v1alpha1.LogsResponse
-	6,  // 15: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:output_type -> hangar.compute.v1alpha1.SignSSHKeyResponse
-	14, // [14:16] is the sub-list for method output_type
-	12, // [12:14] is the sub-list for method input_type
+	7,  // 14: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:input_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysRequest
+	2,  // 15: hangar.compute.v1alpha1.MachineCapabilityService.Logs:output_type -> hangar.compute.v1alpha1.LogsResponse
+	6,  // 16: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:output_type -> hangar.compute.v1alpha1.SignSSHKeyResponse
+	8,  // 17: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:output_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysResponse
+	15, // [15:18] is the sub-list for method output_type
+	12, // [12:15] is the sub-list for method input_type
 	12, // [12:12] is the sub-list for extension type_name
 	12, // [12:12] is the sub-list for extension extendee
 	0,  // [0:12] is the sub-list for field type_name
@@ -1180,14 +1301,14 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_init() {
 		(*MachineLogRecord_Data)(nil),
 		(*MachineLogRecord_Exit)(nil),
 	}
-	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[6].OneofWrappers = []any{
+	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[8].OneofWrappers = []any{
 		(*MachineExecRequest_Start)(nil),
 		(*MachineExecRequest_Stdin)(nil),
 		(*MachineExecRequest_StdinClose)(nil),
 		(*MachineExecRequest_Resize)(nil),
 		(*MachineExecRequest_Signal)(nil),
 	}
-	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[10].OneofWrappers = []any{
+	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[12].OneofWrappers = []any{
 		(*MachineExecResponse_Stdout)(nil),
 		(*MachineExecResponse_Stderr)(nil),
 		(*MachineExecResponse_Exit)(nil),
@@ -1198,7 +1319,7 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc), len(file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

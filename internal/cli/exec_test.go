@@ -33,7 +33,7 @@ import (
 // exits 7; cat echoes stdin to stdout until it closes; wait ends with the
 // first signal; size prints the terminal's size at the start and on each
 // resize, until a signal; fail closes the exec with FailedPrecondition;
-// hang says and reads nothing; deaf reads nothing but pings. A container
+// hang says and reads nothing; deaf reads nothing but pings. An object
 // named absent is refused before the upgrade.
 type execServer struct {
 	mu     sync.Mutex
@@ -44,10 +44,6 @@ type execServer struct {
 }
 
 func (f *execServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if strings.Contains(r.URL.Path, "/virtualmachines/") {
-		execws.WriteError(w, r, connect.NewError(connect.CodeUnimplemented, errors.New("exec is not supported on virtual machines yet")))
-		return
-	}
 	if strings.Contains(r.URL.Path, "/absent:") {
 		execws.WriteError(w, r, connect.NewError(connect.CodeNotFound, errors.New(`container "absent" not found`)))
 		return
@@ -294,6 +290,24 @@ func TestExecSplitsTheStreamsAndExitsAsTheCommand(t *testing.T) {
 	}
 }
 
+// TestExecInAVM: a VM's exec is the same messages, at its kind's path.
+func TestExecInAVM(t *testing.T) {
+	r := newExecRun(t)
+	code, out, _ := r.run(t, "exec", "-u", "alice", "vm", "web", "--", "out")
+	if code != 7 || out != "to stdout\n" {
+		t.Errorf("exit %d, stdout %q", code, out)
+	}
+	start, _ := r.server.got()
+	if want := (&computev1alpha1.MachineExecStart{Command: []string{"out"}, User: "alice"}); !proto.Equal(start, want) {
+		t.Errorf("started %v, want %v", start, want)
+	}
+	r.server.mu.Lock()
+	defer r.server.mu.Unlock()
+	if r.server.path != "/v1/projects/web/virtualmachines/web:exec" {
+		t.Errorf("at %q", r.server.path)
+	}
+}
+
 func TestExecPassesStdinOnWithI(t *testing.T) {
 	r := newExecRun(t)
 	r.stdin = strings.NewReader("hello\n")
@@ -411,7 +425,6 @@ func TestExecFailures(t *testing.T) {
 		{[]string{"exec", "ct", "api", "--", "fail"}, cli.ExitExecFailed, "not running"},
 		{[]string{"exec", "ct", "api", "out"}, cli.ExitExecFailed, "usage"},
 		{[]string{"exec", "ct", "api", "--"}, cli.ExitExecFailed, "usage"},
-		{[]string{"exec", "vm", "web", "--", "out"}, cli.ExitExecFailed, "exec is not supported on virtual machines yet"},
 		{[]string{"exec", "--env", "X", "ct", "api", "--", "out"}, cli.ExitExecFailed, "KEY=VALUE"},
 	} {
 		code, _, errOut := r.run(t, tc.args...)

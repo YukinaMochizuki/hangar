@@ -2,6 +2,7 @@ syntax = "proto3";
 
 package hangar.compute.v1alpha1;
 
+import "google/protobuf/timestamp.proto";
 import "hangar/compute/v1alpha1/interface.proto";
 import "hangar/compute/v1alpha1/placement.proto";
 import "hangar/meta/v1/meta.proto";
@@ -119,6 +120,18 @@ message VirtualMachineStatus {
   // The hardware of the node the VM is placed on, as that node describes
   // it now; unset until it is placed.
   Placement placement = 5;
+  // The host keys the apiserver trusts the VM's sshd by, for an exec,
+  // which is an SSH login: recorded on the first, and every later login
+  // must present one of them. MachineCapabilityService.ForgetSSHHostKeys
+  // clears them. See docs/decisions/vm-ssh.md.
+  repeated VirtualMachineSSHHostKey ssh_host_keys = 6;
+}
+
+// VirtualMachineSSHHostKey is a host key of a VM's sshd, as recorded.
+message VirtualMachineSSHHostKey {
+  // In authorized_keys form, such as "ssh-ed25519 AAAA...".
+  string public_key = 1;
+  google.protobuf.Timestamp record_time = 2;
 }
 
 // VirtualMachineInterfaceStatus is one of a VM's interfaces as it is.

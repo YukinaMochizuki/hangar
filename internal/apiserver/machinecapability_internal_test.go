@@ -46,8 +46,8 @@ func dialPath(t *testing.T, url, user, path, subprotocol string) error {
 	return execws.ReadError(resp)
 }
 
-// TestACapabilityAKindLacksIsUnimplemented: exec on a virtual machine and
-// ssh to a container fail with Unimplemented for every platform member,
+// TestACapabilityAKindLacksIsUnimplemented: ssh to a container, and
+// signing a key for one, fail with Unimplemented for every platform member,
 // whatever they may do in the project, from the kind alone, whether the
 // object exists or not; a kind that runs as no machine, or none at all, is
 // InvalidArgument. One signed in who is no member is refused as at every
@@ -68,8 +68,6 @@ func TestACapabilityAKindLacksIsUnimplemented(t *testing.T) {
 			what, path, subprotocol string
 			code                    connect.Code
 		}{
-			{"exec on a VM", execws.Path("web", "virtualmachines", "web"), execws.Subprotocol, lacking},
-			{"exec on a VM that is not there", execws.Path("web", "virtualmachines", "nope"), execws.Subprotocol, lacking},
 			{"ssh to a container", sshws.Path("web", "containers", "api"), sshws.Subprotocol, lacking},
 			{"exec on a network", execws.Path("web", "networks", "default"), execws.Subprotocol, noMachine},
 			{"exec on no kind", execws.Path("web", "gadgets", "api"), execws.Subprotocol, connect.CodeInvalidArgument},
@@ -78,7 +76,6 @@ func TestACapabilityAKindLacksIsUnimplemented(t *testing.T) {
 			err := dialPath(t, w.url, user, tc.path, tc.subprotocol)
 			wantCodeOf(t, err, tc.code, user+": "+tc.what)
 			if connect.CodeOf(err) == connect.CodeUnimplemented &&
-				err.Error() != "unimplemented: exec is not supported on virtual machines yet" &&
 				err.Error() != "unimplemented: ssh is not supported on containers yet" {
 				t.Errorf("%s: %s: told %v", user, tc.what, err)
 			}

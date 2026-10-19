@@ -158,7 +158,8 @@ export function useTerminal(target: TerminalTarget) {
     const l: { term: XTerm; exec?: Exec; observer: ResizeObserver } = { term, observer };
     live.current = l;
     const exec = openExec(
-      { project, plural, name, command: command.split("\u0000"), cols: term.cols, rows: term.rows },
+      // No command is a login shell, so "" stands for none, not for one empty argument.
+      { project, plural, name, command: command === "" ? [] : command.split("\u0000"), cols: term.cols, rows: term.rows },
       {
         onOpen: () => {
           setState({ kind: "open", cols: term.cols, rows: term.rows });

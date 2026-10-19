@@ -54,8 +54,21 @@ describe("a container's terminal on its page", () => {
     expect(card()).toBeNull();
   });
 
-  it("is not offered on a virtual machine's page", async () => {
-    const api = await show("VirtualMachine", "postgres");
+  it("is offered on a virtual machine's page to a caller who holds ssh, linking the VM's terminal page", async () => {
+    await show("VirtualMachine", "postgres", { perms: () => ["compute.machines.ssh"] });
+    await waitFor(() => expect(terminalLink()?.getAttribute("href")).toBe("/projects/demo/vms/postgres/terminal"));
+    expect(card()).toBeTruthy();
+  });
+
+  it("is not offered on a virtual machine's page to a caller who holds exec alone", async () => {
+    const api = await show("VirtualMachine", "postgres", { perms: () => ["compute.machines.exec"] });
+    await waitFor(() => expect(api.client.isFetching()).toBe(0));
+    expect(terminalLink()).toBeNull();
+    expect(card()).toBeNull();
+  });
+
+  it("is not offered on a container's page to a caller who holds ssh alone", async () => {
+    const api = await show("Container", "web", { perms: () => ["compute.machines.ssh"] });
     await waitFor(() => expect(api.client.isFetching()).toBe(0));
     expect(terminalLink()).toBeNull();
     expect(card()).toBeNull();

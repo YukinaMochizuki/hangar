@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/sshca"
 )
 
 // Defaults of an exec's timing.
@@ -58,12 +59,23 @@ func (s *Server) serveExec(chain auth.Chain, w http.ResponseWriter, r *http.Requ
 		refuse(p, err)
 		return
 	}
-	x, err := s.machineTarget(ctx, kind, key, authz.Exec, nil)
+	// A VM's exec is an SSH login (vm-ssh.md): it needs the ssh
+	// permission, and a machine with an sshd.
+	verb, fits := authz.Exec, (func(*reached, *computev1alpha1.Machine) error)(nil)
+	overSSH := machineKinds[kind.Kind].execOverSSH
+	if overSSH {
+		verb, fits = authz.SSH, sshFits
+	}
+	x, err := s.machineTarget(ctx, kind, key, verb, fits)
 	if err != nil {
 		refuse(p, err)
 		return
 	}
 	defer x.call.release()
+	if overSSH && s.cfg.SSHCA == nil {
+		refuse(p, connect.NewError(connect.CodeFailedPrecondition, sshca.ErrNoCA))
+		return
+	}
 	if !slices.Contains(subprotocols(r), execws.Subprotocol) {
 		refuse(p, invalid("an exec is a WebSocket with the subprotocol %s", execws.Subprotocol))
 		return
@@ -100,7 +112,12 @@ func subprotocols(r *http.Request) []string {
 // execAudit is what the audit lines of an exec say.
 type execAudit struct {
 	start *computev1alpha1.MachineExecStart
-	exit  *nodev1.ExitStatus
+	// user is whom the process runs as: as the start says, or, in a VM,
+	// whom the exec logged in as.
+	user string
+	// key is the fingerprint of the key a VM's exec logged in with.
+	key   string
+	exit  *computev1alpha1.MachineExecExit
 	began time.Time
 }
 
@@ -135,7 +152,11 @@ func (s *Server) runExec(ctx context.Context, c *websocket.Conn, x *machineTarge
 		}
 	})()
 	audit := &execAudit{began: time.Now()}
-	err := s.exec(ctx, end, c, x, live, audit)
+	run := s.exec
+	if machineKinds[x.kind.Kind].execOverSSH {
+		run = s.vmExec
+	}
+	err := run(ctx, end, c, x, live, audit)
 	if audit.start == nil {
 		s.auditRefused("exec refused", x.principal, x.client, route, err)
 	} else {
@@ -157,19 +178,28 @@ func (s *Server) auditRefused(msg string, p auth.Principal, client string, route
 		"code", connect.CodeOf(err).String(), "error", err.Error())
 }
 
-// auditStarted logs an exec whose process is asked of the node: never its
-// input or output, nor its environment's values.
-func (s *Server) auditStarted(x *machineTarget, start *computev1alpha1.MachineExecStart) {
+// auditStarted logs an exec whose process is asked of the node, or, in a
+// VM, of its sshd: never its input or output, nor its environment's
+// values.
+func (s *Server) auditStarted(x *machineTarget, a *execAudit) {
+	start := a.start
 	env := make([]string, 0, len(start.GetEnv()))
 	for _, e := range start.GetEnv() {
 		env = append(env, e.GetName())
 	}
-	s.log.Info("exec started", append(x.auditAttrs(), "argv", start.GetCommand(), "tty", start.GetTty(), "stdin", start.GetStdin(),
-		"user", start.GetUser(), "workdir", start.GetWorkingDir(), "env_names", env)...)
+	attrs := append(x.auditAttrs(), "argv", start.GetCommand(), "tty", start.GetTty(), "stdin", start.GetStdin(),
+		"user", a.user, "workdir", start.GetWorkingDir(), "env_names", env)
+	if a.key != "" {
+		attrs = append(attrs, "key", a.key)
+	}
+	s.log.Info("exec started", attrs...)
 }
 
 func (s *Server) auditEnded(x *machineTarget, a *execAudit, err error) {
 	attrs := append(x.auditAttrs(), "duration", time.Since(a.began).Round(time.Millisecond).String())
+	if a.key != "" {
+		attrs = append(attrs, "user", a.user, "key", a.key)
+	}
 	if a.exit != nil {
 		attrs = append(attrs, "exit_code", a.exit.GetCode(), "signal", a.exit.GetSignal())
 	}
@@ -184,22 +214,15 @@ func (s *Server) auditEnded(x *machineTarget, a *execAudit, err error) {
 // ends: coder/websocket closes a connection whose I/O is cancelled.
 func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x *machineTarget, live *execws.Liveness, audit *execAudit) error {
 	ws := context.WithoutCancel(ctx)
-	timing := s.execTiming()
-	noStart := time.AfterFunc(timing.start, func() { end(invalid("no start came in %s", timing.start)) })
-	first, err := readExec(ws, c)
-	if !noStart.Stop() {
-		return context.Cause(ctx)
-	}
+	start, err := s.readStart(ctx, end, c, live)
 	if err != nil {
-		return clientFailed(ctx, err)
+		return err
 	}
-	live.Heard()
-	start := first.GetStart()
 	if err := checkExecStart(start); err != nil {
 		return err
 	}
-	audit.start = start
-	s.auditStarted(x, start)
+	audit.start, audit.user = start, start.GetUser()
+	s.auditStarted(x, audit)
 
 	// The node kills the process once the stream is reset on the tunnel.
 	// ctx ending resets it while the response is being read, and closing
@@ -236,10 +259,8 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 		case *nodev1.ExecResponse_Stderr:
 			out.Message = &computev1alpha1.MachineExecResponse_Stderr{Stderr: m.Stderr}
 		case *nodev1.ExecResponse_Exit:
-			audit.exit = m.Exit
-			out.Message = &computev1alpha1.MachineExecResponse_Exit{Exit: &computev1alpha1.MachineExecExit{
-				Code: m.Exit.GetCode(), Signal: m.Exit.GetSignal(),
-			}}
+			audit.exit = &computev1alpha1.MachineExecExit{Code: m.Exit.GetCode(), Signal: m.Exit.GetSignal()}
+			out.Message = &computev1alpha1.MachineExecResponse_Exit{Exit: audit.exit}
 		default:
 			continue
 		}
@@ -255,6 +276,22 @@ func (s *Server) exec(ctx context.Context, end func(error), c *websocket.Conn, x
 			return nil
 		}
 	}
+}
+
+// readStart reads an exec's first message, which comes within the start
+// timing or ends the exec, as its start, unchecked.
+func (s *Server) readStart(ctx context.Context, end func(error), c *websocket.Conn, live *execws.Liveness) (*computev1alpha1.MachineExecStart, error) {
+	timing := s.execTiming()
+	noStart := time.AfterFunc(timing.start, func() { end(invalid("no start came in %s", timing.start)) })
+	first, err := readExec(context.WithoutCancel(ctx), c)
+	if !noStart.Stop() {
+		return nil, context.Cause(ctx)
+	}
+	if err != nil {
+		return nil, clientFailed(ctx, err)
+	}
+	live.Heard()
+	return first.GetStart(), nil
 }
 
 // nodeFailed is what an exec fails with when the node's call failed: the
