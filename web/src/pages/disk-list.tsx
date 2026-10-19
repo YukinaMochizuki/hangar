@@ -5,7 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { DiskPhase, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { Plus, Search } from "lucide-react";
 import { useState } from "react";
-import { ListFrame, PageHead } from "@/components/page";
+import { ListCount, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { DiskSource, DiskState, UsedAs, usedAsText } from "@/components/storage";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
@@ -171,9 +171,7 @@ export function DiskList() {
               </tbody>
             </table>
           </Card>
-          <p className="mt-3 text-[12px] text-subtle">
-            {rows.length} of {items.length}
-          </p>
+          <ListCount shown={rows.length} total={items.length} />
         </ListFrame>
       </div>
     </>

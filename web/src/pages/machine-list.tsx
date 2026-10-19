@@ -6,7 +6,7 @@ import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { MachineRowMenu } from "@/components/machine-actions";
-import { ListFrame, NameFilter, PageHead } from "@/components/page";
+import { ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { buttonVariants, Card, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
@@ -190,9 +190,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
               </tbody>
             </table>
           </Card>
-          <p className="mt-3 text-[12px] text-subtle">
-            {rows.length} of {items.length}
-          </p>
+          <ListCount shown={rows.length} total={items.length} />
         </ListFrame>
       </div>
     </>

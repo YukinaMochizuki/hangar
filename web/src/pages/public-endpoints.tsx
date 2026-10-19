@@ -18,7 +18,7 @@ import { Dialog } from "@/components/dialog";
 import { DeleteDialog, FormFooter } from "@/components/resource";
 import { FormEquivalent } from "@/components/form";
 import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
-import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
+import { DetailBody, DetailFrame, DetailHead, ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
@@ -164,9 +164,7 @@ export function PublicEndpointList() {
               </tbody>
             </table>
           </Card>
-          <p className="mt-3 text-[12px] text-subtle">
-            {rows.length} of {eps.items.length}
-          </p>
+          <ListCount shown={rows.length} total={eps.items.length} />
         </ListFrame>
       </div>
     </>

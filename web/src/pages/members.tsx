@@ -11,7 +11,7 @@ import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Select } from "@/components/form";
 import { Notice } from "@/components/notice";
 import { Link } from "@tanstack/react-router";
-import { ListFrame, NameFilter, PageHead } from "@/components/page";
+import { ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { Topbar, useProjectName, useTenantName } from "@/components/shell";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Badge, Button, Card } from "@/components/ui";
@@ -328,9 +328,7 @@ function MembersPage({
                 </tbody>
               </table>
             </Card>
-            <p className="mt-3 text-[12px] text-subtle">
-              {shown.length} of {rows.length}
-            </p>
+            <ListCount shown={shown.length} total={rows.length} />
           </ListFrame>
         )}
         {children}
