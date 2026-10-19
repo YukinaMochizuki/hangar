@@ -377,6 +377,14 @@ them, as the edge serves them nowhere else.
 
 ## Deploying a new hangar version
 
+Upgrading past the change that stopped defaulting the auth mode to dev:
+`bootstrap.sh` refuses, before any step, a `/etc/hangar/local.env` with
+no `HANGAR_AUTH_MODE`. A host whose `local.env` sets none ran in dev
+auth: add `HANGAR_AUTH_MODE=dev` before the first run of that version
+and its mode stays as it was (`oidc`, with the rest of "Switching to
+sign-in through Google" below, changes it). A host that already names
+its mode, as one switched to Google sign-in does, is untouched.
+
 Upgrading past the change that moved the host env file out of this
 repository: install the host's file as `/etc/hangar/host.env`, root's, mode
 0600, from the operator's copy, before the first run of that version; it
@@ -580,13 +588,6 @@ with `deploy-OLD_TAG` and `release/OLD_TAG`. The run is the earlier
 `deploy/`'s, so it also puts back that release's `hangar-fetch-release`.
 The dry run lists the files and services that go back. Read the notes below
 for releases that cannot be gone back past while VMs run.
-
-From the release that stopped defaulting the auth mode to dev,
-`bootstrap.sh` refuses, before any step, a `local.env` with no
-`HANGAR_AUTH_MODE`. A host whose `local.env` sets none ran in dev auth:
-add `HANGAR_AUTH_MODE=dev` before step 3 and its mode stays as it was
-(`oidc` with the rest of "Switching to sign-in through Google" below
-changes it). A host that already names its mode is untouched.
 
 The first deploy with the admin socket rewrites the apiserver's unit (the
 sockets move to socket units, `/run/hangar` becomes root's), so it
