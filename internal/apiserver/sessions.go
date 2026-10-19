@@ -201,7 +201,7 @@ func (h sessions) error(err error) error {
 	switch {
 	case errors.Is(err, login.ErrPending):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
-	case errors.Is(err, login.ErrSlowDown):
+	case errors.Is(err, login.ErrSlowDown), errors.Is(err, login.ErrTooManyFromSource):
 		return connect.NewError(connect.CodeResourceExhausted, err)
 	case errors.Is(err, login.ErrBusy):
 		return connect.NewError(connect.CodeUnavailable, err)

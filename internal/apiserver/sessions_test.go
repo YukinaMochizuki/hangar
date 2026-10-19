@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -26,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/oidctest"
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
@@ -84,7 +86,9 @@ func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler = srv.PublicHandler(chain)
+	// As on the TCP listener, the client's address is the connection's:
+	// a test may say what it is with testPeer.
+	handler = asPeer(auth.ClientIPFromConn(srv.PublicHandler(chain)))
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	t.Cleanup(func() {
@@ -94,6 +98,20 @@ func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.
 		_ = st.Close()
 	})
 	return &oidcWorld{t: t, url: ts.URL, provider: p, tls: ts.Client(), srv: srv, dir: dir}
+}
+
+// testPeer names the address a request's connection is to come from, so
+// tests can start device logins from several sources.
+const testPeer = "Test-Peer"
+
+// asPeer gives a request the connection address its testPeer header names.
+func asPeer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := r.Header.Get(testPeer); p != "" {
+			r.RemoteAddr = net.JoinHostPort(p, "40000")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // browser is a fresh browser: a cookie jar that follows redirects.
@@ -527,7 +545,7 @@ func TestDeviceSignIn(t *testing.T) {
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()
-	anon := w.sessions(headers{})
+	anon := w.sessions(headers{testPeer: "198.51.100.7"})
 	start := func() *iamv1alpha1.StartDeviceLoginResponse {
 		return must[iamv1alpha1.StartDeviceLoginResponse](t)(anon.StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{})))
 	}
@@ -554,6 +572,12 @@ func TestDeviceSignIn(t *testing.T) {
 	if status != http.StatusOK || final.Path != "/auth/device" || !strings.Contains(body, "Sign in the hangar CLI as bob@example.com?") ||
 		!strings.Contains(body, d.GetUserCode()) {
 		t.Fatalf("device page: %d %s %s", status, final, body)
+	}
+	// It says where and when the login was started, and to deny one the
+	// person did not start.
+	if !regexp.MustCompile(`started from <strong>198\.51\.100\.7</strong> at <strong>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC</strong>`).MatchString(body) ||
+		!strings.Contains(body, "choose Deny") {
+		t.Errorf("the device page does not say where and when the login was started: %s", body)
 	}
 	decide := func(c *http.Client, code, decision, origin string) (int, string) {
 		req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {code}, "decision": {decision}}.Encode()))
@@ -785,6 +809,67 @@ func TestAnonymousSignInsWriteNothing(t *testing.T) {
 	res := must[iamv1alpha1.RevokeSessionsResponse](t)(w.sessions(alice).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{Email: "bob@example.com"})))
 	if res.GetRevoked() != 4 {
 		t.Errorf("bob held %d credentials; want 4: refused sign-ins kept reservations", res.GetRevoked())
+	}
+}
+
+// TestDeviceLoginsCappedPerSource: one source, an IPv4 address or an IPv6
+// /64, may have only so many device logins waiting, so it cannot fill the
+// shared cap; other sources still start theirs, and a login that ends
+// frees its source's place.
+func TestDeviceLoginsCappedPerSource(t *testing.T) {
+	w := newOIDCWorld(t)
+	ctx := t.Context()
+	start := func(peer string) (*iamv1alpha1.StartDeviceLoginResponse, error) {
+		res, err := w.sessions(headers{testPeer: peer}).StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	fill := func(peers ...string) []*iamv1alpha1.StartDeviceLoginResponse {
+		var ds []*iamv1alpha1.StartDeviceLoginResponse
+		for i := range login.MaxDeviceLoginsPerSource {
+			d, err := start(peers[i%len(peers)])
+			if err != nil {
+				t.Fatalf("device login %d from %v: %v", i, peers, err)
+			}
+			ds = append(ds, d)
+		}
+		return ds
+	}
+	first := fill("192.0.2.1")
+	_, err := start("192.0.2.1")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login past its source's cap")
+	if _, err := start("192.0.2.2"); err != nil {
+		t.Errorf("another IPv4 address: %v", err)
+	}
+
+	// An IPv6 source is its /64.
+	fill("2001:db8:1:2::1", "2001:db8:1:2:aaaa::9")
+	_, err = start("2001:db8:1:2:ffff:ffff:ffff:ffff")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login from a /64 at its cap")
+	if _, err := start("2001:db8:1:3::1"); err != nil {
+		t.Errorf("another /64: %v", err)
+	}
+
+	// A denied login, once its CLI has heard, no longer counts.
+	c := w.browser()
+	w.signInAdmin(c, "alice@example.com")
+	req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {first[0].GetUserCode()}, "decision": {"deny"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", w.url)
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("deny: %d", resp.StatusCode)
+	}
+	_, err = w.sessions(headers{}).PollDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.PollDeviceLoginRequest{DeviceCode: first[0].GetDeviceCode()}))
+	wantCode(t, err, connect.CodePermissionDenied, "the denied device login")
+	if _, err := start("192.0.2.1"); err != nil {
+		t.Errorf("a device login after one from the source ended: %v", err)
 	}
 }
 

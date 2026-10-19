@@ -1,6 +1,9 @@
 {{define "title"}}Sign in the hangar CLI{{end}}
 {{define "body"}}<p>Sign in the hangar CLI as {{.Email}}?</p>
-<p>Only approve if you just ran <code>hangar login --device</code> and it shows {{.UserCode}}.</p>
+<p>This sign-in was started from <strong>{{.ClientIP}}</strong> at <strong>{{.Started}}</strong>.</p>
+<p><strong>If you did not just run <code>hangar login --device</code> yourself, from that address, choose Deny.</strong>
+Someone who sends you a code or a link is asking you to sign them in as you.</p>
+<p>Only approve if your own terminal shows {{.UserCode}}.</p>
 <form method="post" action="/auth/device">
 <input type="hidden" name="user_code" value="{{.UserCode}}">
 <button type="submit" name="decision" value="approve">Approve</button>
