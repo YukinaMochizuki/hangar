@@ -91,7 +91,8 @@ func (f *Flow) StartDevice(ctx context.Context) (Device, error) {
 	devKey := deviceKey + code.Hash()
 	ip, _ := auth.ClientIP(ctx)
 	var own []netip.Prefix
-	if f.cfg.OwnPrefixes != nil {
+	// Only an IPv6 source can be in an own prefix.
+	if f.cfg.OwnPrefixes != nil && ip.Unmap().Is6() {
 		var err error
 		if own, err = f.cfg.OwnPrefixes(ctx); err != nil {
 			return Device{}, err
@@ -119,11 +120,13 @@ func (f *Flow) StartDevice(ctx context.Context) (Device, error) {
 	}
 	dv, err := f.giveUserCode(ctx, code, devKey)
 	if err != nil {
-		// A login the CLI never hears of holds no place.
-		if _, terr := f.cfg.Store.TakeAuthRequest(ctx, devKey); terr != nil && !errors.Is(terr, store.ErrNotFound) {
+		// A login the CLI never hears of holds no place, even if the CLI
+		// has gone.
+		cctx := context.WithoutCancel(ctx)
+		if _, terr := f.cfg.Store.TakeAuthRequest(cctx, devKey); terr != nil && !errors.Is(terr, store.ErrNotFound) {
 			f.cfg.Log.Warn("could not drop a device login that failed to start", "error", terr)
 		}
-		f.releaseSource(ctx, d)
+		f.releaseSource(cctx, d)
 		return Device{}, err
 	}
 	return dv, nil

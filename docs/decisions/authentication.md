@@ -197,13 +197,13 @@ credentials. The node is a separate root process on the same host.
     it (the front door's `Hangar-Client-Ip` on the public socket, the peer
     on the TCP listener), counted as the front door counts a client
     (`docs/decisions/front-door.md`): an IPv4 address, an IPv6 /64, or,
-    in the host's own /64, which every machine on the host has an address
-    of, the address alone. The apiserver learns that /64 from the nodes'
-    reports (`NodeStatus.ipv6_prefix`), which come from the same host
-    setting as the front door's `--own-prefix`; until a node has
-    reported, its machines share one /64's place. More are refused as
-    resource exhausted. A login that ends, its tokens handed
-    out or its denial heard, frees its place; an abandoned one holds it
+    in a /64 a node reports its machines' addresses from
+    (`NodeStatus.ipv6_prefix`), the address alone. A node's /64 is its
+    host's own, which that host's front door is given as `--own-prefix`
+    from the same host setting. Until a node has reported, its machines
+    share one /64's place. More are refused as resource exhausted. A
+    login that ends, its tokens handed out or its denial heard, or that
+    fails to start, frees its place; an abandoned one holds it
     for its 10 minutes. Filling the shared cap still takes only hundreds
     of addresses at once, which this cap does not stop; the front door's
     per-client and per-network limits are the next line.

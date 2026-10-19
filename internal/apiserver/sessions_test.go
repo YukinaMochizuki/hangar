@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -14,6 +15,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -34,6 +36,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -66,6 +69,13 @@ func newOIDCWorldWith(t *testing.T, maxPending int) *oidcWorld {
 // apiserver's config.
 func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.Config)) *oidcWorld {
 	t.Helper()
+	return newOIDCWorldCreds(t, maxPending, configure, nil)
+}
+
+// newOIDCWorldCreds is newOIDCWorldConfig with sign-in keeping its
+// credentials in what creds wraps the store in; nil is the store itself.
+func newOIDCWorldCreds(t *testing.T, maxPending int, configure func(*apiserver.Config), creds func(store.Credentials) store.Credentials) *oidcWorld {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "hangar.db"))
@@ -81,10 +91,14 @@ func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	ts.StartTLS()
 	p := oidctest.New(t)
+	var c store.Credentials = st
+	if creds != nil {
+		c = creds(st)
+	}
 	chain, err := srv.EnableOIDC(apiserver.OIDCConfig{
 		Issuer: p.URL, ClientID: p.ClientID, ClientSecret: token.Secret(p.ClientSecret), PublicURL: ts.URL,
 		DeviceInterval: time.Second, MaxPending: maxPending,
-	}, st)
+	}, c)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -945,6 +959,46 @@ func (w *oidcWorld) nodeReportsPrefix(prefix string) {
 		}))
 		return err == nil
 	})
+}
+
+// failingSwaps is a credentials store whose SwapAuthRequest fails while
+// fail is set.
+type failingSwaps struct {
+	store.Credentials
+	fail atomic.Bool
+}
+
+func (s *failingSwaps) SwapAuthRequest(ctx context.Context, key string, old, data []byte) error {
+	if s.fail.Load() {
+		return errors.New("the store failed")
+	}
+	return s.Credentials.SwapAuthRequest(ctx, key, old, data)
+}
+
+// TestFailedDeviceLoginsHoldNoPlace: a device login that fails to start,
+// after its row was kept, frees its source's place and its place under the
+// shared cap, here no larger than the source's.
+func TestFailedDeviceLoginsHoldNoPlace(t *testing.T) {
+	fs := &failingSwaps{}
+	w := newOIDCWorldCreds(t, login.MaxDeviceLoginsPerSource, nil, func(c store.Credentials) store.Credentials {
+		fs.Credentials = c
+		return fs
+	})
+	anon := w.sessions(headers{testPeer: "192.0.2.1"})
+	start := func() error {
+		_, err := anon.StartDeviceLogin(t.Context(), connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		return err
+	}
+	fs.fail.Store(true)
+	for i := range login.MaxDeviceLoginsPerSource {
+		if start() == nil {
+			t.Fatalf("device login %d started on a failing store", i)
+		}
+	}
+	fs.fail.Store(false)
+	if err := start(); err != nil {
+		t.Errorf("a device login after %d failed ones from the source: %v", login.MaxDeviceLoginsPerSource, err)
+	}
 }
 
 // TestDeviceLoginsCappedPerSourceAtOnce: of many device logins one source
