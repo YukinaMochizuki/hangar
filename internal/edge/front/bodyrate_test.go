@@ -12,113 +12,210 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/YukinaMochizuki/hangar/internal/edge/front"
 )
 
-// TestSlowBodies: through the whole door, a body that stops coming is cut
-// within about the body timeout, over HTTP/2 and HTTP/1.1, while a
-// stream's response and a WebSocket outlast it. The timeout is real time,
-// as the door's sockets and TLS are.
-func TestSlowBodies(t *testing.T) {
-	release := make(chan struct{})
-	o := defaultOptions()
-	api := http.NewServeMux()
-	api.Handle("/", fakeAPI(release))
-	// /early answers before it reads the body, as a refusal does.
-	api.HandleFunc("/early", func(w http.ResponseWriter, _ *http.Request) {
+// slowAPI is fakeAPI, with /early, which answers before it reads the body
+// as a refusal does.
+func slowAPI(release <-chan struct{}) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/", fakeAPI(release))
+	mux.HandleFunc("/early", func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "no", http.StatusUnauthorized)
 	})
-	o.api = api
-	o.limits.BodyReadTimeout = 500 * time.Millisecond
-	d := startDoor(t, newCA(t), o)
-	// outlast is several timeouts.
-	const outlast = 2 * time.Second
-	clients := []struct {
-		name string
-		c    *http.Client
-	}{{"HTTP/2", d.client}, {"HTTP/1.1", d.client1}}
+	return mux
+}
 
-	t.Run("a body that stops coming", func(t *testing.T) {
-		for _, c := range clients {
+// tlsDoor is a pipeDoor with TLS, slowAPI as its apiserver, and endpoints
+// if set, with the default limits.
+func tlsDoor(t *testing.T, release <-chan struct{}, endpoints http.Handler) (*pipeDoor, front.Limits) {
+	t.Helper()
+	l := defaultOptions().limits
+	return startPipeDoorWith(t, pipeOptions{limits: l, api: slowAPI(release), endpoints: endpoints, tls: true}), l
+}
+
+// TestASlowBodyIsCut: a body that stops coming is answered 408 within the
+// body timeout, over HTTP/2 and HTTP/1.1, to the API and to the console's
+// API paths; over HTTP/2 its connection is kept.
+func TestASlowBodyIsCut(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, l := tlsDoor(t, nil, nil)
+		for _, h2 := range []bool{true, false} {
+			c := d.newClient(t, h2)
+			dials := d.https.port.Load()
 			for _, url := range []string{"https://" + apiHost + "/", "https://" + consoleHost + "/hangar.x.v1.S/M"} {
 				pr, pw := io.Pipe()
 				go func() { _, _ = pw.Write([]byte("a")) }()
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, pr)
+				req, _ := http.NewRequest(http.MethodPost, url, pr)
 				start := time.Now()
-				resp, err := c.c.Do(req)
+				resp, err := c.Do(req)
 				took := time.Since(start)
-				status := ""
-				if err == nil {
-					status = resp.Status
-					_ = resp.Body.Close()
-				}
 				_ = pw.Close()
-				cancel()
-				if took > 3*time.Second {
-					t.Errorf("%s %s: a body that stopped was kept %v", c.name, url, took)
+				if err != nil {
+					t.Fatalf("h2 %t, %s: %v", h2, url, err)
 				}
-				if status != "408 Request Timeout" {
-					t.Errorf("%s %s: %q, %v; want 408", c.name, url, status, err)
+				_ = resp.Body.Close()
+				if resp.StatusCode != http.StatusRequestTimeout || took > l.BodyReadTimeout+time.Millisecond {
+					t.Errorf("h2 %t, %s: %s after %v; want 408 within %v", h2, url, resp.Status, took, l.BodyReadTimeout)
 				}
+			}
+			if !h2 {
+				continue
+			}
+			// One connection a site; a request after the cut takes no other.
+			resp, err := c.Get("https://" + apiHost + "/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = resp.Body.Close()
+			if n := d.https.port.Load() - dials; n != 2 {
+				t.Errorf("over HTTP/2 the requests to two sites took %d connections; want two", n)
 			}
 		}
 	})
-	// What is left of a body the apiserver did not read is not read slowly
-	// for long either.
-	t.Run("a body left unread", func(t *testing.T) {
-		c, err := d.handshake(apiHost)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer func() { _ = c.Close() }()
-		if _, err := io.WriteString(c, "POST /early HTTP/1.1\r\nHost: "+apiHost+"\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n"); err != nil {
-			t.Fatal(err)
-		}
-		_ = c.SetReadDeadline(time.Now().Add(10 * time.Second))
+}
+
+// TestABodyLeftUnreadIsBounded: what net/http reads of a body the
+// apiserver left unread is held to the body timeout too.
+func TestABodyLeftUnreadIsBounded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, l := tlsDoor(t, nil, nil)
+		c := d.handshake(t, apiHost)
+		go func() {
+			_, _ = io.WriteString(c, "POST /early HTTP/1.1\r\nHost: "+apiHost+"\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n")
+		}()
 		start := time.Now()
-		b, err := io.ReadAll(c)
-		if took := time.Since(start); took > 3*time.Second || err != nil {
-			t.Errorf("a body left unread kept its connection %v: %v", took, err)
+		b, _ := io.ReadAll(c)
+		// net/http waits 500 ms between closing its side for writing and
+		// closing the connection, so the client reads all of the answer.
+		if took := time.Since(start); took > l.BodyReadTimeout+time.Second {
+			t.Errorf("a body left unread kept its connection %v", took)
 		}
 		// The apiserver's answer, or the cut's, whichever comes first.
 		if s := string(b); !strings.HasPrefix(s, "HTTP/1.1 401 ") && !strings.HasPrefix(s, "HTTP/1.1 408 ") {
 			t.Errorf("answered %q; want 401 or 408", b)
 		}
 	})
-	t.Run("a stream outlasts it", func(t *testing.T) {
+}
+
+// TestAnAnswerGoesOutBeforeTheBody: over HTTP/1 a handler may answer while
+// the body is still coming, and the answer is not held until net/http has
+// read the body.
+func TestAnAnswerGoesOutBeforeTheBody(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		defer close(release)
+		endpoints := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusAccepted)
+			w.(http.Flusher).Flush()
+			<-release
+		})
+		d, _ := tlsDoor(t, nil, endpoints)
+		c := d.handshake(t, webHost)
+		go func() {
+			_, _ = io.WriteString(c, "POST / HTTP/1.1\r\nHost: "+webHost+"\r\nTransfer-Encoding: chunked\r\n\r\n1\r\na\r\n")
+		}()
+		_ = c.SetReadDeadline(time.Now().Add(time.Second))
+		resp, err := http.ReadResponse(bufio.NewReader(c), nil)
+		if err != nil {
+			t.Fatalf("no answer while the body is still coming: %v", err)
+		}
+		// Before the handler is released: its read deadline ends the drain.
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode != http.StatusAccepted {
+			t.Errorf("answered %s", resp.Status)
+		}
+	})
+}
+
+// TestAHandlerSlowToReadCostsTheClientNothing: a body that arrives in time
+// is not cut while its handler, or the backend behind it, takes a while
+// between reads.
+func TestAHandlerSlowToReadCostsTheClientNothing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		endpoints := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			first := make([]byte, 1)
+			if _, err := io.ReadFull(r.Body, first); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			time.Sleep(time.Minute) //nolint:forbidigo // virtual time: a handler busy elsewhere
+			rest, err := io.ReadAll(r.Body)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_, _ = io.WriteString(w, string(first)+string(rest))
+		})
+		d, _ := tlsDoor(t, nil, endpoints)
+		for _, h2 := range []bool{true, false} {
+			// The body stays open past the timeout, all of it sent while the
+			// handler is away.
+			pr, pw := io.Pipe()
+			go func() {
+				_, _ = pw.Write([]byte("a"))
+				time.Sleep(50 * time.Second) //nolint:forbidigo // virtual time
+				_, _ = pw.Write([]byte("b"))
+				time.Sleep(5 * time.Second) //nolint:forbidigo // virtual time
+				_ = pw.Close()
+			}()
+			req, _ := http.NewRequest(http.MethodPost, "https://"+webHost+"/", pr)
+			resp, err := d.newClient(t, h2).Do(req)
+			if err != nil {
+				t.Fatalf("h2 %t: %v", h2, err)
+			}
+			b, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if resp.StatusCode != http.StatusOK || string(b) != "ab" {
+				t.Errorf("h2 %t: %s %q; want the whole body read", h2, resp.Status, b)
+			}
+		}
+	})
+}
+
+// TestAStreamOutlastsTheTimeouts: a server stream asked with a body, and
+// silent for minutes, is cut by no timeout: its body ended, and it has
+// nothing to write.
+func TestAStreamOutlastsTheTimeouts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		release := make(chan struct{})
+		d, _ := tlsDoor(t, release, nil)
 		type stream struct {
-			name string
-			resp *http.Response
-			r    *bufio.Reader
+			h2 bool
+			r  *bufio.Reader
 		}
 		var streams []stream
-		for _, c := range clients {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			req, _ := http.NewRequestWithContext(ctx, http.MethodPost, "https://"+apiHost+"/stream", strings.NewReader("watch"))
-			resp, err := c.c.Do(req)
+		for _, h2 := range []bool{true, false} {
+			req, _ := http.NewRequest(http.MethodPost, "https://"+apiHost+"/stream", strings.NewReader("watch"))
+			resp, err := d.newClient(t, h2).Do(req)
 			if err != nil {
-				t.Fatalf("%s: %v", c.name, err)
+				t.Fatalf("h2 %t: %v", h2, err)
 			}
 			defer func() { _ = resp.Body.Close() }()
 			r := bufio.NewReader(resp.Body)
 			if line, err := r.ReadString('\n'); err != nil || line != "first\n" {
-				t.Fatalf("%s: the stream's first message: %q, %v", c.name, line, err)
+				t.Fatalf("h2 %t: the stream's first message: %q, %v", h2, line, err)
 			}
-			streams = append(streams, stream{c.name, resp, r})
+			streams = append(streams, stream{h2, r})
 		}
-		time.Sleep(outlast) //nolint:forbidigo // the time the body timeout would cut the streams in
+		time.Sleep(10 * time.Minute) //nolint:forbidigo // virtual time
 		close(release)
 		for _, s := range streams {
 			if line, err := s.r.ReadString('\n'); err != nil || line != "second\n" {
-				t.Errorf("%s: the stream's second message after %v: %q, %v", s.name, outlast, line, err)
+				t.Errorf("h2 %t: the stream's second message after 10 min: %q, %v", s.h2, line, err)
 			}
 		}
 	})
-	t.Run("a WebSocket outlasts it", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		c, resp, err := websocket.Dial(ctx, "wss://"+apiHost+"/v1/ws", &websocket.DialOptions{HTTPClient: d.client1})
+}
+
+// TestAWebSocketOutlastsTheTimeouts: an idle WebSocket, as an exec waiting
+// on its user is, is cut by no timeout.
+func TestAWebSocketOutlastsTheTimeouts(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, _ := tlsDoor(t, nil, nil)
+		ctx := context.Background()
+		c, resp, err := websocket.Dial(ctx, "wss://"+apiHost+"/v1/ws", &websocket.DialOptions{HTTPClient: d.newClient(t, false)})
 		if resp != nil && resp.Body != nil {
 			_ = resp.Body.Close()
 		}
@@ -126,18 +223,29 @@ func TestSlowBodies(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer func() { _ = c.CloseNow() }()
-		time.Sleep(outlast) //nolint:forbidigo // the time the body timeout would cut the WebSocket in
+		time.Sleep(10 * time.Minute) //nolint:forbidigo // virtual time
 		if err := c.Write(ctx, websocket.MessageBinary, []byte("ping")); err != nil {
 			t.Fatal(err)
 		}
 		if _, msg, err := c.Read(ctx); err != nil || string(msg) != apiHost+" ping" {
-			t.Errorf("after %v idle: %q, %v", outlast, msg, err)
+			t.Errorf("after 10 min idle: %q, %v", msg, err)
 		}
 	})
-	t.Run("an upgrade with a body", func(t *testing.T) {
-		h := http.Header{"Connection": {"Upgrade"}, "Upgrade": {"websocket"}}
-		if code, _, _ := do(t, d.client1, http.MethodPost, "https://"+apiHost+"/v1/ws", strings.NewReader("body"), h); code != http.StatusBadRequest {
-			t.Errorf("%d; want 400", code)
+}
+
+func TestAnUpgradeWithABodyIsRefused(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		d, _ := tlsDoor(t, nil, nil)
+		req, _ := http.NewRequest(http.MethodPost, "https://"+apiHost+"/v1/ws", strings.NewReader("body"))
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", "websocket")
+		resp, err := d.newClient(t, false).Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s; want 400", resp.Status)
 		}
 	})
 }

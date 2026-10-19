@@ -173,6 +173,7 @@ func limitFlags(fs *flag.FlagSet, l *front.Limits) {
 	fs.DurationVar(&l.ReadHeaderTimeout, "read-header-timeout", d.ReadHeaderTimeout, "time for a TLS handshake, then for each request's header")
 	fs.DurationVar(&l.IdleTimeout, "idle-timeout", d.IdleTimeout, "time a connection may carry no request")
 	fs.DurationVar(&l.ConsoleWriteTimeout, "console-write-timeout", d.ConsoleWriteTimeout, "time to send one of the console's files")
+	fs.DurationVar(&l.StalledWriteTimeout, "stalled-write-timeout", d.StalledWriteTimeout, "time one write of a response may wait on a client that does not take it")
 	fs.IntVar(&l.HTTP2MaxStreams, "http2-max-streams", d.HTTP2MaxStreams, "HTTP/2 streams at once on one connection")
 	fs.DurationVar(&l.HTTP2SendPingTimeout, "http2-send-ping-timeout", d.HTTP2SendPingTimeout, "idle time on an HTTP/2 connection before it is pinged")
 	fs.DurationVar(&l.HTTP2PingTimeout, "http2-ping-timeout", d.HTTP2PingTimeout, "time an HTTP/2 ping has to be answered before the connection is closed")

@@ -123,13 +123,17 @@ stand in front of the internet with nothing else in front of it.
   transit address on the host's side (`networking.md`), so the machines of
   one network are one client over IPv4. The transit addresses, in
   100.64.0.0/10, are packed 128 networks to a /24, so the /24 cap does not
-  count them; that range is shared address space, never a source from the
-  internet. The IPv4 /24 is capped as the IPv6 /48 is: about 64 addresses
-  of one network otherwise filled every connection there is.
+  count them. The exemption is by source address alone, and holds while
+  the uplink never delivers a source in that range, shared address space
+  (RFC 6598) that is never one from the internet. Each transit address is
+  still a client and held to a client's cap, but the host's networks
+  together can fill the door, as they could before the /24 cap. The IPv4
+  /24 is capped as the IPv6 /48 is: about 64 addresses of one network
+  otherwise filled every connection there is.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 4096 | closed at accept |
+  | open connections, everyone | 4096 | the one idle longest is closed for the new one; refused at accept when every one carries a request |
   | open connections, one client | 64 | closed at accept |
   | open connections, every client in one IPv6 /56 | 256 | closed at accept |
   | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
@@ -140,8 +144,9 @@ stand in front of the internet with nothing else in front of it.
   | request header | 64 KiB (net/http reads 4 KiB past it) | 431 |
   | request body to the API | 8 MiB | 413 |
   | request body to an endpoint | 100 MiB | 413 |
-  | request body's rate, over the time spent waiting for it | 1 KiB/s, no wait past 30 s | 408, connection closed |
+  | request body's rate, on average over the time spent waiting for it | 1 KiB/s, no one wait past 30 s | 408; over HTTP/2 on the stream, the connection kept; over HTTP/1 the connection closed |
   | what net/http reads of a body left unread (HTTP/1) | 30 s | closed |
+  | one write of a response to a client that does not take it | 30 s | over HTTP/2 the stream reset; over HTTP/1 the connection closed |
   | TLS handshake, then each request header | 10 s | closed |
   | idle connection | 2 min | closed |
   | an endpoint's response header | 100 s | 502 |
@@ -151,14 +156,20 @@ stand in front of the internet with nothing else in front of it.
 
   There is no overall read or write timeout: Watch, server streams and
   WebSockets stay open for as long as they are used. What holds a slow
-  client instead (`internal/edge/front/bodyrate.go`):
-  - A request's body must keep up with the rate, counted only over the
-    time the front door waits in a read for it, so a backend slow to take
-    it costs the client nothing. Each wait has a read deadline: the first
-    timeout plus what the bytes so far earned at the rate, less the time
-    already waited, and never more than the timeout, so a body sent fast
-    banks no stall for later. Past it the body is cut (`edge.ErrBodyTooSlow`)
-    and the request answered 408, by the API's proxy and by the endpoints'.
+  client instead:
+  - A request's body must keep up with the rate, on average, counted only
+    over the time the front door waits in a read for it, so a backend slow
+    to take it costs the client nothing (`internal/edge/front/bodyrate.go`).
+    Each wait has a read deadline: the first timeout plus what the bytes so
+    far earned at the rate, less the time already waited, and never more
+    than the timeout. A body sent ahead of the rate banks stalls, each up
+    to the timeout, for as long as the average holds. So a client that
+    keeps to the rate holds a connection for as long as its body lasts:
+    8 MiB to the API is about 2 h 17 min, 100 MiB to an endpoint about
+    28 h, each at a cost to it of 1 KiB/s. Past the deadline the body is
+    cut (`edge.ErrBodyTooSlow`) and the request answered 408, by the API's
+    proxy and by the endpoints'. Over HTTP/2 that ends the stream alone;
+    over HTTP/1 the connection is closed.
   - Only the body is held. A server stream's request ends at once, so its
     response flows for as long as it lasts. A WebSocket opens with a GET
     without a body and its frames are read from the hijacked connection,
@@ -173,9 +184,28 @@ stand in front of the internet with nothing else in front of it.
     streams are WebSockets (`streaming-transport.md`), and the endpoints
     are proxied over HTTP/1.1. A request body that pauses longer than the
     timeout, as a streaming upload with gaps would, is cut.
+  - Each write of a response, to the API, the console or an endpoint, has a
+    write deadline of the stalled-write timeout, taken away once it is done
+    (`internal/edge/front/writes.go`); over HTTP/2 the deadline is the
+    stream's. A client that stops taking the answer, by an HTTP/2 window it
+    never opens or a connection it never reads, is cut, while a stream with
+    nothing to send has no deadline. A write is up to 32 KiB, so an answer
+    must flow at about 1 KiB/s at least. What net/http sends after the
+    handler, the answer's buffered end, has one timeout too.
+  - A hijacked connection, a WebSocket's, has no write deadline of the
+    door's. Exec's own liveness counts no silence while a write is pending
+    (`internal/execws`), so a client that stops reading an exec is dropped
+    only by the door socket's TCP user timeout, 60 s without progress,
+    which Linux applies to a zero window from 5.11 on.
   - A client that sends no request on a connection is closed by the
     handshake and header timeout, then by the idle timeout; over HTTP/2,
     by the idle timeout and the pings.
+  - With the door full, a new connection closes the one that
+    has carried no request for longest, a keep-alive or one not yet past
+    its handshake, so idle connections cannot keep anyone out. A
+    connection with a request in flight, or a WebSocket, is never closed
+    for a new one: only when every connection has one is the new one
+    refused.
 - **The host's firewall opens 22, 80 and 443 alone**
   (`deploy/host/steps/45-firewall.sh`).
   - It is one nft table of its own, `inet hangar-host`. Its input chain

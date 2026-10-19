@@ -1,7 +1,9 @@
 // Package front is hangar-edge's front door: the only listener on the
 // host's :443 and :80, with nothing in front of it. It ends TLS with
 // certificates it gets itself over ACME DNS-01 (certs.go), keeps every
-// client within its limits (limits.go), and routes each request by Host:
+// client within its limits (limits.go), holds slow request bodies
+// (bodyrate.go) and responses a client stops taking (writes.go), and
+// routes each request by Host:
 // api.<cp-domain> to the apiserver, console.<cp-domain> to the console's
 // files and its API paths to the apiserver, and <label>.<user-domain> to
 // the public endpoints (internal/edge). :80 only redirects to https. See
@@ -280,7 +282,8 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 	tc.MinVersion = tls.VersionTLS12
 	tc.NextProtos = []string{"h2", "http/1.1"}
 	https := &http.Server{
-		Handler:           l.limitBodyRate(f.counts.limitRequests(f)),
+		Handler:           l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f))),
+		ConnState:         f.counts.connState,
 		TLSConfig:         tc,
 		Protocols:         protocols,
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
@@ -298,7 +301,8 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 		},
 	}
 	plain := &http.Server{
-		Handler:           l.limitBodyRate(f.counts.limitRequests(f.redirectHandler())),
+		Handler:           l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f.redirectHandler()))),
+		ConnState:         f.counts.connState,
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
 		IdleTimeout:       l.IdleTimeout,
 		MaxHeaderBytes:    l.MaxHeaderBytes,

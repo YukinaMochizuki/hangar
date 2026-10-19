@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -416,6 +417,68 @@ func TestABodyPastItsCapIsTooLarge(t *testing.T) {
 	})
 	if code, body := post(100 << 10); code != http.StatusRequestEntityTooLarge {
 		t.Errorf("past the cap: %d %q; want 413", code, body)
+	}
+}
+
+// cutBody is a body the front door cut for coming too slowly: its read
+// says so, or, as over HTTP/1, ends the request's context and says only
+// that.
+type cutBody struct {
+	contextOnly bool
+	cancel      context.CancelFunc
+	cut         *atomic.Bool
+}
+
+func (b *cutBody) Read([]byte) (int, error) {
+	b.cut.Store(true)
+	if b.contextOnly {
+		b.cancel()
+		return 0, context.Canceled
+	}
+	return 0, edge.ErrBodyTooSlow
+}
+
+func (b *cutBody) Close() error { return nil }
+
+// TestABodyCutIsTimedOut: a body the front door cut on its way to the
+// endpoint is answered 408, not as an endpoint that did not answer, nor
+// not at all as a client gone.
+func TestABodyCutIsTimedOut(t *testing.T) {
+	w := newWorld(t)
+	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	door := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if how := r.URL.Query().Get("cut"); how != "" {
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			cut := &atomic.Bool{}
+			r = r.WithContext(edge.WithBodyCut(ctx, cut.Load))
+			r.Body = &cutBody{contextOnly: how == "context", cancel: cancel, cut: cut}
+		}
+		w.edge.ServeHTTP(rw, r)
+	}))
+	defer door.Close()
+	post := func(query string) (int, string) {
+		req, err := http.NewRequest(http.MethodPost, door.URL+"/read"+query, strings.NewReader("body"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	testutil.Eventually(w.t, "the endpoint", func() (bool, string) {
+		code, body := post("")
+		return code == http.StatusOK && body == "port 8080 read 4", fmt.Sprint(code, body)
+	})
+	for _, how := range []string{"error", "context"} {
+		if code, body := post("?cut=" + how); code != http.StatusRequestTimeout {
+			t.Errorf("a body cut, told by the %s: %d %q; want 408", how, code, body)
+		}
 	}
 }
 

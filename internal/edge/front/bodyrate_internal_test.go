@@ -1,9 +1,12 @@
 package front
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"testing/synctest"
@@ -107,8 +110,8 @@ func TestOnlyWaitingForTheClientCounts(t *testing.T) {
 	})
 }
 
-// TestAStallIsCutWhateverCameBefore: a body sent fast earns no stall
-// longer than the timeout, so it cannot bank time to hold the connection.
+// TestAStallIsCutWhateverCameBefore: a body sent ahead of the rate earns
+// no single stall longer than the timeout.
 func TestAStallIsCutWhateverCameBefore(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		b, c := pipeBody(t, 1024, 30*time.Second)
@@ -124,6 +127,39 @@ func TestAStallIsCutWhateverCameBefore(t *testing.T) {
 		}
 		if took := time.Since(start); took != 30*time.Second {
 			t.Errorf("cut after a stall of %v; want the timeout, 30 s", took)
+		}
+	})
+}
+
+// TestAReadPastItsDeadlineIsACut: over HTTP/1 net/http ends the request's
+// context as the read that ran out of time fails, before that read
+// returns, so the proxy may see only the context ended; the body already
+// counts as cut then, and the API's proxy answers 408 for it.
+func TestAReadPastItsDeadlineIsACut(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		b, _ := pipeBody(t, 1024, 30*time.Second)
+		if b.cut() {
+			t.Fatal("a body cut before any read")
+		}
+		b.until = time.Now().Add(time.Second)
+		if b.cut() {
+			t.Error("a read within its deadline counts as a cut")
+		}
+		time.Sleep(time.Second) //nolint:forbidigo // virtual time
+		if !b.cut() {
+			t.Error("a read past its deadline does not count as a cut")
+		}
+
+		f, err := New(Config{CPDomain: "cp.test", UserDomain: "user.test", Limits: DefaultLimits})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r := httptest.NewRequest(http.MethodPost, "https://api.cp.test/", nil)
+		r = r.WithContext(edge.WithBodyCut(r.Context(), b.cut))
+		w := httptest.NewRecorder()
+		f.apiError(w, r, context.Canceled)
+		if w.Code != http.StatusRequestTimeout {
+			t.Errorf("the API's proxy, told only that the context ended: %d; want 408", w.Code)
 		}
 	})
 }

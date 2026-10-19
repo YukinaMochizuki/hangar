@@ -1,6 +1,7 @@
 package front
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -29,7 +30,8 @@ type Limits struct {
 	// by itself.
 	OwnPrefixes []netip.Prefix
 
-	// Conns caps the open connections, from everyone.
+	// Conns caps the open connections, from everyone. Past it a new one
+	// takes the place of the one idle longest.
 	Conns int
 	// ConnsPerClient caps one client's open connections; one more is
 	// closed as soon as it is accepted.
@@ -72,6 +74,9 @@ type Limits struct {
 	// ConsoleWriteTimeout is how long one of the console's files may take
 	// to send.
 	ConsoleWriteTimeout time.Duration
+	// StalledWriteTimeout is how long one write of a response may wait on
+	// its client (writes.go).
+	StalledWriteTimeout time.Duration
 
 	// HTTP2 settings: streams at once on a connection, and how a
 	// connection that stops answering is dropped.
@@ -103,6 +108,7 @@ var DefaultLimits = Limits{
 	ReadHeaderTimeout:   10 * time.Second,
 	IdleTimeout:         2 * time.Minute,
 	ConsoleWriteTimeout: time.Minute,
+	StalledWriteTimeout: 30 * time.Second,
 
 	HTTP2MaxStreams:       100,
 	HTTP2SendPingTimeout:  30 * time.Second,
@@ -126,7 +132,7 @@ func (l Limits) Validate() error {
 		{"header bytes", l.MaxHeaderBytes > 0},
 		{"body bytes", l.APIBodyBytes > 0 && l.EndpointBodyBytes > 0},
 		{"body rate", l.MinBodyRate > 0 && l.BodyReadTimeout > 0},
-		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0},
+		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0 && l.StalledWriteTimeout > 0},
 		{"HTTP/2 settings", l.HTTP2MaxStreams > 0 && l.HTTP2SendPingTimeout > 0 && l.HTTP2PingTimeout > 0 && l.HTTP2WriteByteTimeout > 0},
 	} {
 		if !n.ok {
@@ -217,6 +223,8 @@ type counts struct {
 
 	mu    sync.Mutex
 	conns int
+	// open are the connections admitted and not yet released.
+	open map[*conn]struct{}
 	// networkConns are the open connections of each IPv4 /24, and each
 	// IPv6 /56 and /48, that has any.
 	networkConns map[netip.Prefix]int
@@ -231,8 +239,22 @@ type clientCounts struct {
 	requestRate     *rate.Limiter
 }
 
+// conn is an admitted connection as the counts keep it. Its fields after
+// c are k.mu's.
+type conn struct {
+	// c is what an eviction closes; nil where only the counts are tested.
+	c    net.Conn
+	cc   *clientCounts
+	nets []network
+	// busy says a request is in flight on it, or it was hijacked; idleSince
+	// is when it last carried none.
+	busy      bool
+	idleSince time.Time
+	released  bool
+}
+
 func newCounts(l Limits) *counts {
-	return &counts{l: l, networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now}
+	return &counts{l: l, open: map[*conn]struct{}{}, networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now}
 }
 
 // sweepEvery is how often the counts forget clients that hold nothing and
@@ -261,45 +283,112 @@ func (k *counts) get(c netip.Prefix) *clientCounts {
 	return cc
 }
 
-// openConn admits a new connection from addr, or says why not.
-func (k *counts) openConn(addr netip.Addr) (release func(), why string) {
+// openConn admits c, a new connection from addr, or says why not. With
+// Conns open it closes the one idle longest to make room, and refuses c
+// only when each carries a request.
+func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.conns >= k.l.Conns {
-		return nil, "too many connections"
-	}
 	nets := k.l.networks(addr)
 	for _, n := range nets {
 		if k.networkConns[n.prefix] >= n.cap {
+			k.mu.Unlock()
 			return nil, n.why
 		}
 	}
 	cc := k.get(k.l.client(addr))
 	if cc.conns >= k.l.ConnsPerClient {
+		k.mu.Unlock()
 		return nil, "too many connections from the client"
 	}
+	var evicted *conn
+	if k.conns >= k.l.Conns {
+		if evicted = k.idlest(); evicted == nil {
+			k.mu.Unlock()
+			return nil, "too many connections"
+		}
+	}
 	if !cc.connRate.AllowN(k.now(), 1) {
+		k.mu.Unlock()
 		return nil, "the client opens connections too fast"
 	}
+	if evicted != nil {
+		k.releaseLocked(evicted)
+	}
+	x := &conn{c: c, cc: cc, nets: nets, idleSince: k.now()}
+	k.open[x] = struct{}{}
 	cc.conns++
 	k.conns++
 	for _, n := range nets {
 		k.networkConns[n.prefix]++
 	}
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			k.mu.Lock()
-			defer k.mu.Unlock()
-			cc.conns--
-			k.conns--
-			for _, n := range nets {
-				if k.networkConns[n.prefix]--; k.networkConns[n.prefix] == 0 {
-					delete(k.networkConns, n.prefix)
-				}
-			}
-		})
-	}, ""
+	k.mu.Unlock()
+	// Its server sees the connection fail, and closes it.
+	if evicted != nil && evicted.c != nil {
+		_ = evicted.c.Close()
+	}
+	return x, ""
+}
+
+// idlest is the open connection that has carried no request for longest,
+// nil when every one carries one. Callers hold k.mu.
+func (k *counts) idlest() *conn {
+	var found *conn
+	for x := range k.open {
+		if !x.busy && (found == nil || x.idleSince.Before(found.idleSince)) {
+			found = x
+		}
+	}
+	return found
+}
+
+// release gives x's place back; once, however often it is called.
+func (k *counts) release(x *conn) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.releaseLocked(x)
+}
+
+func (k *counts) releaseLocked(x *conn) {
+	if x.released {
+		return
+	}
+	x.released = true
+	delete(k.open, x)
+	x.cc.conns--
+	k.conns--
+	for _, n := range x.nets {
+		if k.networkConns[n.prefix]--; k.networkConns[n.prefix] == 0 {
+			delete(k.networkConns, n.prefix)
+		}
+	}
+}
+
+// setBusy records whether x carries a request.
+func (k *counts) setBusy(x *conn, busy bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if x.busy && !busy {
+		x.idleSince = k.now()
+	}
+	x.busy = busy
+}
+
+// connState is the servers' ConnState: it follows which connections carry
+// a request. A hijacked one stays busy: it is a WebSocket's.
+func (k *counts) connState(c net.Conn, s http.ConnState) {
+	if tc, ok := c.(*tls.Conn); ok {
+		c = tc.NetConn()
+	}
+	cc, ok := c.(*countedConn)
+	if !ok {
+		return
+	}
+	switch s {
+	case http.StateActive, http.StateHijacked:
+		k.setBusy(cc.x, true)
+	case http.StateIdle:
+		k.setBusy(cc.x, false)
+	}
 }
 
 // startRequest admits a request from c, or says how long until one would
@@ -369,8 +458,8 @@ func (l *listener) Accept() (net.Conn, error) {
 			_ = c.Close()
 			continue
 		}
-		release, why := l.counts.openConn(addr)
-		if release == nil {
+		x, why := l.counts.openConn(addr, c)
+		if x == nil {
 			_ = c.Close()
 			if l.refused != nil {
 				l.refused(addr, why)
@@ -378,7 +467,7 @@ func (l *listener) Accept() (net.Conn, error) {
 			continue
 		}
 		tune(c)
-		return &countedConn{Conn: c, release: release}, nil
+		return &countedConn{Conn: c, k: l.counts, x: x}, nil
 	}
 }
 
@@ -434,10 +523,11 @@ func tune(c net.Conn) {
 // countedConn gives its client's count back when it closes.
 type countedConn struct {
 	net.Conn
-	release func()
+	k *counts
+	x *conn
 }
 
 func (c *countedConn) Close() error {
-	c.release()
+	c.k.release(c.x)
 	return c.Conn.Close()
 }

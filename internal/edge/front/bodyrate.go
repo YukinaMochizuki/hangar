@@ -119,8 +119,8 @@ func (b *rateBody) Read(p []byte) (int, error) {
 		return n, edge.ErrBodyTooSlow
 	}
 	if !b.done && !b.closing {
-		// Left set, the deadline would end what reads the connection next:
-		// net/http's watch for the client leaving, under a stream.
+		// Left set, the deadline would run while nothing reads: over HTTP/2
+		// it would end the stream's body of a client not behind at all.
 		_ = b.deadline(time.Time{})
 	}
 	if err == io.EOF {
