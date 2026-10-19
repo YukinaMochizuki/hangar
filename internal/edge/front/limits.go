@@ -89,8 +89,8 @@ type Limits struct {
 
 // DefaultLimits are the limits unless the flags say otherwise.
 var DefaultLimits = Limits{
-	Conns:             4096,
-	ConnsPerClient:    64,
+	Conns:             16384,
+	ConnsPerClient:    16,
 	ConnsPer56:        256,
 	ConnsPer48:        1024,
 	ConnsPer24:        1024,

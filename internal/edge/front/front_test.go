@@ -112,6 +112,7 @@ func defaultOptions() options {
 	l := front.DefaultLimits
 	// The tests open many connections from one address.
 	l.ConnRate, l.ConnBurst, l.RequestRate, l.RequestBurst = 1000, 1000, 1000, 1000
+	l.ConnsPerClient = 1024
 	return options{limits: l, api: echo("api"), endpoints: echo("endpoints")}
 }
 

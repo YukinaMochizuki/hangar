@@ -117,6 +117,10 @@ ExecStart=/usr/local/bin/hangar-edge $(edge_flags)
 Restart=always
 RestartSec=2
 UMask=0077
+# The front door holds up to 16384 client connections (--max-conns), and a
+# connection to the apiserver or a machine for each request it proxies:
+# twice that, with room for the rest.
+LimitNOFILE=65536
 
 # It needs its sockets, its state directory and the network, nothing else.
 ProtectSystem=strict

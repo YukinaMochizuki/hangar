@@ -127,14 +127,28 @@ stand in front of the internet with nothing else in front of it.
   the uplink never delivers a source in that range, shared address space
   (RFC 6598) that is never one from the internet. Each transit address is
   still a client and held to a client's cap, but the host's networks
-  together can fill the door, as they could before the /24 cap. The IPv4
-  /24 is capped as the IPv6 /48 is: about 64 addresses of one network
-  otherwise filled every connection there is.
+  together can fill the door, as they could before the /24 cap; fair
+  eviction (below) trims them as any other holder. The IPv4 /24 is capped
+  as the IPv6 /48 is.
+
+  The caps are sized so that filling the door takes many clients and many
+  networks: 16384 connections, 16 a client, 64 clients' worth (1024) a
+  /24 or /48 and 16 (256) a /56, so at least 16 networks before fair
+  eviction weighs anyone, room for a carrier's NAT or an office behind one
+  /24, and 1024 clients holding all they may. What a connection costs the
+  edge, measured by `TestMemoryPerConnection` (`HANGAR_MEASURE_CONNS=1`),
+  in heap and stacks: about 38 KiB past its TLS handshake with no request
+  yet, 28 KiB as an idle HTTP/1.1 keep-alive, 38 KiB as an idle HTTP/2
+  connection. A full door so holds about 0.6 GiB, up to about 1.2 GiB with
+  the collector's headroom, and the kernel's socket buffers besides, which
+  a modest host of 8 GiB shared with its machines takes in a flood. The
+  edge's unit allows it 65536 descriptors (`LimitNOFILE`), for its client
+  connections and one to a backend for each request.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 4096 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
-  | open connections, one client | 64 | closed at accept |
+  | open connections, everyone | 16384 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
+  | open connections, one client | 16 | closed at accept |
   | open connections, every client in one IPv6 /56 | 256 | closed at accept |
   | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
   | open connections, every address in one IPv4 /24 | 1024 | closed at accept |
