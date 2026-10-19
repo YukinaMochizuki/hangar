@@ -131,25 +131,41 @@ stand in front of the internet with nothing else in front of it.
   eviction (below) trims them as any other holder. The IPv4 /24 is capped
   as the IPv6 /48 is.
 
-  The caps: 4096 connections, 64 a client, 16 clients' worth (1024) a /24
-  or /48 and 4 (256) a /56, as at first. A client's 64 leaves room for the
-  users behind one carrier's or office's NAT address, as its cap is
-  weighed before fair eviction is; filling the door takes at least four
-  networks and 64 clients. The door's cap is what the edge can hold busy.
-  What a connection costs it, measured by `TestMemoryPerConnection`
-  (`HANGAR_MEASURE_CONNS=1`, 2000 connections of each kind, the clients
-  and the apiserver in a process of their own), in heap and stacks:
+  The caps: 1536 connections, 64 a client, a quarter of the door (384) a
+  /24 or /48 and a sixteenth (96) a /56, the shares they first had. A
+  client's 64 leaves room for the users behind one carrier's or office's
+  NAT address, as its cap is weighed before fair eviction is; filling the
+  door takes at least four networks and 24 clients. The door's cap is what
+  the edge can hold with every connection as busy as it may be. What a
+  connection costs it, measured by `TestMemoryPerConnection`
+  (`HANGAR_MEASURE_CONNS=1`, 2000 connections of each kind, 62 of the
+  HTTP/2 ones with 32 streams each, the clients and the apiserver in a
+  process of their own), in heap and stacks:
 
   | Connection | KiB |
   |---|---|
-  | past its TLS handshake, no request yet | 38 |
+  | past its TLS handshake, no request yet | 37 |
   | idle HTTP/1.1 keep-alive | 27 |
   | idle HTTP/2 | 38 |
-  | HTTP/1.1 sending a header of 60 KiB, unended | 127 |
-  | HTTP/1.1 sending a body its handler does not read | 31 |
-  | HTTP/2 sending bodies their handlers do not read | 358 |
-  | HTTP/1.1 with a request proxied to the apiserver, its connection there included | 58 |
-  | each HTTP/2 stream proxied to the apiserver, its connection there included | 32 |
+  | HTTP/1.1 sending a header of 60 KiB, unended | 128 |
+  | HTTP/1.1 sending a body its handler does not read | 30 |
+  | HTTP/2 sending bodies their handlers do not read | 360 |
+  | HTTP/1.1 with a request proxied to the apiserver, its connection there included | 59 |
+  | HTTP/2 with 32 streams proxied, the apiserver yet to answer | 1036 (32 a stream) |
+  | HTTP/2 with 32 streams proxied, each answer stalled mid-body | 1295 (40 a stream) |
+
+  The last is the worst: 1536 connections of it are about 1.9 GiB, under
+  2 GiB, besides the collector's headroom and the kernel's socket
+  buffers. A stream proxied costs its handler's goroutine and a
+  connection of its own to the apiserver, with two goroutines and two
+  4 KiB buffers; one mid-body holds a copy buffer besides, 8 KiB from a
+  pool (`edge.ProxyBuffers`) where httputil's own is 32 KiB. A large
+  download through the proxies so comes to about 0.5 GB/s a stream on
+  loopback, against 1.2 GB/s with 32 KiB (`BenchmarkProxyDownload`):
+  above any uplink the host has, at about twice the CPU a byte. HTTP/2
+  carries 32 streams a connection: the console's busiest page, a
+  machine's, has about 14 in flight at once, its log stream and its
+  polled queries, so two of its tabs share one connection.
 
   The HTTP/2 windows bound what a client sends ahead of its handlers: 256
   KiB a connection and a stream, where net/http's defaults of 1 MiB held
@@ -158,22 +174,16 @@ stand in front of the internet with nothing else in front of it.
   HTTP/2, one window a round trip: about 8 MiB/s at 30 ms, 2.5 MiB/s at
   100 ms, 1.3 MiB/s at 200 ms, for a single stream or all of a
   connection's together. HTTP/1.1 uploads are the kernel's to pace. The
-  busy worst for one request a connection, 358 KiB, is about 1.4 GiB for
-  a full door, under 2 GiB, besides the collector's headroom and the
-  kernel's socket buffers. Each stream more a connection carries to the
-  apiserver costs 32 KiB on top: what bounds them is the per-connection
-  streams (100) and the per-client requests in flight (128), not the
-  door's cap. The edge's unit allows it 65536 descriptors
-  (`LimitNOFILE`), for its client connections and one to a backend for
-  each request.
+  edge's unit allows it 65536 descriptors (`LimitNOFILE`), for its client
+  connections and one to a backend for each request.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 4096 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
+  | open connections, everyone | 1536 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
   | open connections, one client | 64 | closed at accept |
-  | open connections, every client in one IPv6 /56 | 256 | closed at accept |
-  | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
-  | open connections, every address in one IPv4 /24 | 1024 | closed at accept |
+  | open connections, every client in one IPv6 /56 | 96 | closed at accept |
+  | open connections, every client in one IPv6 /48 | 384 | closed at accept |
+  | open connections, every address in one IPv4 /24 | 384 | closed at accept |
   | new connections, one client | 10/s, burst 50 | closed at accept |
   | requests, one client (each HTTP/2 stream one) | 20/s, burst 100 | 429 with `Retry-After` |
   | requests in flight, one client (streams and WebSockets included) | 128 | 429 |
@@ -187,7 +197,7 @@ stand in front of the internet with nothing else in front of it.
   | idle connection | 2 min | closed |
   | an endpoint's response header | 100 s | 502 |
   | one console file | 1 min | closed |
-  | HTTP/2 streams on a connection | 100 | refused |
+  | HTTP/2 streams on a connection | 32 | refused |
   | HTTP/2 bodies sent ahead of their handlers, a connection and a stream | 256 KiB, 256 KiB | the client waits |
   | an HTTP/2 frame | 16 KiB | connection closed |
   | HTTP/2 ping when idle, answer, a write | 30 s, 15 s, 30 s | closed |

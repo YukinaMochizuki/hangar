@@ -27,14 +27,14 @@ import (
 
 // measureConns is how many connections TestMemoryPerConnection opens of
 // each kind; measureStreams how many proxied streams each HTTP/2 one of
-// "h2-proxied" carries.
+// "h2-proxied" and "h2-proxied-body" carries, the door's limit.
 const (
 	measureConns   = 2000
-	measureStreams = 20
+	measureStreams = 32
 )
 
 // measureKinds are what TestMemoryPerConnection measures: idle, then busy.
-var measureKinds = []string{"tls", "http1", "http2", "h1-header", "h1-unread", "h2-unread", "h1-proxied", "h2-proxied"}
+var measureKinds = []string{"tls", "http1", "http2", "h1-header", "h1-unread", "h2-unread", "h1-proxied", "h2-proxied", "h2-proxied-body"}
 
 // TestMemoryPerConnection measures what the edge holds a connection, its
 // clients and the apiserver in a process of their own; HANGAR_MEASURE_CONNS=1
@@ -105,7 +105,7 @@ func TestMemoryPerConnection(t *testing.T) {
 
 	for _, kind := range measureKinds {
 		conns := measureConns
-		if kind == "h2-proxied" {
+		if strings.HasPrefix(kind, "h2-proxied") {
 			conns = measureConns / measureStreams
 		}
 		released := make(chan struct{})
@@ -128,7 +128,7 @@ func TestMemoryPerConnection(t *testing.T) {
 			return n == conns, strconv.Itoa(n)
 		})
 		held := heldMemory() - before
-		if kind == "h2-proxied" {
+		if strings.HasPrefix(kind, "h2-proxied") {
 			t.Logf("%s: heap and stacks %.1f KiB a connection, %.1f KiB a proxied stream", kind,
 				float64(held)/float64(conns)/1024, float64(held)/float64(conns*measureStreams)/1024)
 		} else {
@@ -175,12 +175,18 @@ func TestMeasureClient(t *testing.T) {
 
 	// The apiserver: it holds every request until the end, counting them.
 	var arrived atomic.Int64
-	if strings.HasSuffix(kind, "-proxied") {
+	if strings.Contains(kind, "-proxied") {
 		ln, err := net.Listen("unix", os.Getenv("HANGAR_MEASURE_API"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		api := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
+		api := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// /body sends its header and some of its body, then stalls:
+			// the door's proxy is mid-copy, holding its buffer.
+			if r.URL.Path == "/body" {
+				_, _ = w.Write(make([]byte, 1<<10))
+				w.(http.Flusher).Flush()
+			}
 			arrived.Add(1)
 			<-quit
 		})}
@@ -189,7 +195,7 @@ func TestMeasureClient(t *testing.T) {
 	}
 
 	host := webHost
-	if strings.HasSuffix(kind, "-proxied") {
+	if strings.Contains(kind, "-proxied") {
 		host = apiHost
 	}
 	tc := &tls.Config{RootCAs: roots, ServerName: host}
@@ -258,16 +264,21 @@ func TestMeasureClient(t *testing.T) {
 						_ = resp.Body.Close()
 					}
 				}()
-			case "h1-proxied", "h2-proxied":
-				streams := 1
-				if kind == "h2-proxied" {
+			case "h1-proxied", "h2-proxied", "h2-proxied-body":
+				streams, path := 1, "/hold"
+				if strings.HasPrefix(kind, "h2-proxied") {
 					streams = measureStreams
+				}
+				if kind == "h2-proxied-body" {
+					path = "/body"
 				}
 				for range streams {
 					go func() {
-						req, _ := http.NewRequest(http.MethodGet, "https://"+host+"/hold", nil)
-						if resp, err := cc.RoundTrip(req); err == nil {
-							_ = resp.Body.Close()
+						req, _ := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+						resp, err := cc.RoundTrip(req) //nolint:bodyclose // held, and closed with the rest at the end
+						if err == nil {
+							// Closed now, the stream would end mid-body.
+							held(resp.Body)
 						}
 					}()
 				}
@@ -286,9 +297,9 @@ func TestMeasureClient(t *testing.T) {
 				last = now
 			}
 		}
-	case "h1-proxied", "h2-proxied":
+	case "h1-proxied", "h2-proxied", "h2-proxied-body":
 		want := int64(n)
-		if kind == "h2-proxied" {
+		if strings.HasPrefix(kind, "h2-proxied") {
 			want *= measureStreams
 		}
 		for arrived.Load() < want {

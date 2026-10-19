@@ -167,6 +167,7 @@ func New(cfg Config) *Edge {
 		},
 		// Streams and server-sent events reach the client as they come.
 		FlushInterval: -1,
+		BufferPool:    ProxyBuffers,
 		ErrorHandler:  e.proxyError,
 		ModifyResponse: func(resp *http.Response) error {
 			confineCookies(resp.Header)

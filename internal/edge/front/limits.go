@@ -93,11 +93,11 @@ type Limits struct {
 
 // DefaultLimits are the limits unless the flags say otherwise.
 var DefaultLimits = Limits{
-	Conns:             4096,
+	Conns:             1536,
 	ConnsPerClient:    64,
-	ConnsPer56:        256,
-	ConnsPer48:        1024,
-	ConnsPer24:        1024,
+	ConnsPer56:        96,
+	ConnsPer48:        384,
+	ConnsPer24:        384,
 	ConnRate:          10,
 	ConnBurst:         50,
 	RequestRate:       20,
@@ -115,7 +115,7 @@ var DefaultLimits = Limits{
 	ConsoleWriteTimeout: time.Minute,
 	StalledWriteTimeout: 30 * time.Second,
 
-	HTTP2MaxStreams:       100,
+	HTTP2MaxStreams:       32,
 	HTTP2ConnWindow:       256 << 10,
 	HTTP2StreamWindow:     256 << 10,
 	HTTP2MaxFrame:         16 << 10,

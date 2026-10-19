@@ -83,6 +83,7 @@ func New(cfg Config) (*Front, error) {
 		// Connect's server streams and Watch reach the client as they
 		// come.
 		FlushInterval: -1,
+		BufferPool:    edge.ProxyBuffers,
 		ErrorHandler:  f.apiError,
 	}
 	return f, nil
