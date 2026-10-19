@@ -1,7 +1,7 @@
 # The apiserver and the node agent as systemd services; the edge is the
 # edge step's (85-edge.sh). The apiserver runs as its own unprivileged user
 # with its database on hangar/state and the public API on loopback, in the
-# auth mode local.env asks for (dev when unset). Its unix sockets, the node
+# auth mode local.env must name. Its unix sockets, the node
 # agent's, the edge's, root's admin socket and, with the front door on, the
 # public socket the edge forwards the API from :443 to, are made by systemd
 # (socket units) in /run/hangar, a directory root owns, so the apiserver can
@@ -239,8 +239,9 @@ services_placement_problem() (
 )
 
 # services_auth_flags prints the apiserver's flags for the auth mode
-# local.env asks for. The values land in the unit, so a changed mode is a
-# changed unit and restarts the apiserver.
+# local.env asks for, nothing when it names none (auth_problem refuses
+# that). The values land in the unit, so a changed mode is a changed unit
+# and restarts the apiserver.
 services_auth_flags() {
 	case $(auth_mode) in
 	oidc)
@@ -249,7 +250,7 @@ services_auth_flags() {
 		[ -z "$(local_env HANGAR_OIDC_ISSUER)" ] || printf -- ' --oidc-issuer %s' "$(local_env HANGAR_OIDC_ISSUER)"
 		printf '\n'
 		;;
-	*) printf -- '--auth-mode dev\n' ;;
+	dev) printf -- '--auth-mode dev\n' ;;
 	esac
 }
 
@@ -646,6 +647,7 @@ services_auth_running_ok() {
 	pid=$(systemctl show -p MainPID --value hangar-apiserver.service)
 	[ "$pid" != 0 ] || return 1
 	want=$(services_auth_flags)
+	[ -n "$want" ] || return 1
 	tr '\0' ' ' <"/proc/$pid/cmdline" | grep -qF -- " $want "
 }
 
@@ -842,6 +844,7 @@ services_verify() {
 	else
 		check "no public socket: the front door is off" test ! -e "$SERVICES_PUBLIC_SOCKET"
 	fi
+	check "$LOCAL_ENV names a whole auth mode (HANGAR_AUTH_MODE dev or oidc)" test -z "$(auth_problem)"
 	if [ "$(auth_mode)" = oidc ]; then
 		check "OAuth client secret $SERVICES_OIDC_SECRET, $SERVICES_USER's, mode 600" services_oidc_secret_ok
 	fi

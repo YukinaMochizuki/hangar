@@ -143,7 +143,7 @@ HANGAR_CHASSIS=generic-1u-2x-u2
 EOF
 	# What the operator writes by hand on a real host.
 	install -m 0600 /dev/null /etc/hangar/local.env
-	echo 'HANGAR_BOOTSTRAP_ADMIN=admin@example.com' >/etc/hangar/local.env
+	printf 'HANGAR_BOOTSTRAP_ADMIN=admin@example.com\nHANGAR_AUTH_MODE=dev\n' >/etc/hangar/local.env
 }
 
 # main_pid UNIT prints the main pid of a service, 0 when it is not running.
@@ -239,7 +239,7 @@ test_converges_and_is_idempotent() {
 	[ ! -e /usr/local/bin/cloudflared ] && [ ! -e /etc/systemd/system/hangar-cloudflared.service ] ||
 		fail "cloudflared was installed"
 	systemctl show -p ExecStart --value hangar-apiserver | grep -q -- '--listen 127.0.0.1:8080 --auth-mode dev --socket' ||
-		fail "an unset HANGAR_AUTH_MODE is not dev auth"
+		fail "HANGAR_AUTH_MODE=dev is not dev auth"
 
 	# Where machines reach the front door: the agent's rules for it are
 	# test/testbed/network's to test. The address is the env file's in its
@@ -407,7 +407,7 @@ TB_OIDC_SECRET=/var/lib/hangar/state/oidc-client-secret
 
 # auth_env MODE sets the auth settings in local.env: oidc with the
 # testbed's client and public URL, and the client secret the operator
-# installs, or none, which is dev. The apiserver reaches the provider only
+# installs, or dev with neither. The apiserver reaches the provider only
 # when someone signs in, so it runs without one here.
 auth_env() {
 	sed -i '/^HANGAR_AUTH_MODE=/d; /^HANGAR_OIDC_/d; /^HANGAR_PUBLIC_URL=/d' /etc/hangar/local.env
@@ -415,6 +415,8 @@ auth_env() {
 		printf 'HANGAR_AUTH_MODE=oidc\nHANGAR_OIDC_CLIENT_ID=%s\nHANGAR_PUBLIC_URL=%s\n' "$TB_CLIENT_ID" "$TB_PUBLIC_URL" >>/etc/hangar/local.env
 		install -o hangar -g hangar -m 0600 /dev/null "$TB_OIDC_SECRET"
 		echo testbed-client-secret >"$TB_OIDC_SECRET"
+	else
+		echo HANGAR_AUTH_MODE=dev >>/etc/hangar/local.env
 	fi
 }
 
@@ -442,6 +444,17 @@ EOF
 }
 
 test_oidc_cutover() {
+	step "an unset auth mode is refused before any step, not taken as dev"
+	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran with no auth mode"; fi
+	grep -q 'sets no HANGAR_AUTH_MODE' "$work/cut.log" || fail "unexpected refusal: $(cat "$work/cut.log")"
+	grep -q '^== ' "$work/cut.log" && fail "steps ran before the refusal"
+	if "$host_dir/bootstrap.sh" --only services 2>/dev/null; then fail "the services step ran with no auth mode"; fi
+	if "$host_dir/verify.sh" >"$work/cut-verify.log"; then fail "verify passed with no auth mode"; fi
+	grep -q '^FAIL /etc/hangar/local.env names a whole auth mode' "$work/cut-verify.log" ||
+		fail "verify does not check the auth mode is set"
+	auth_env dev
+
 	step "the retired cloudflare mode is refused before any step"
 	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
 	echo HANGAR_AUTH_MODE=cloudflare >>/etc/hangar/local.env
@@ -450,6 +463,7 @@ test_oidc_cutover() {
 	auth_env dev
 
 	step "an oidc mode without its client ID and public URL is refused before any step"
+	sed -i '/^HANGAR_AUTH_MODE=/d' /etc/hangar/local.env
 	echo HANGAR_AUTH_MODE=oidc >>/etc/hangar/local.env
 	if "$host_dir/bootstrap.sh" 2>"$work/cut.log"; then fail "bootstrap ran with half an oidc mode"; fi
 	{ grep -q 'HANGAR_OIDC_CLIENT_ID=' "$work/cut.log" &&
