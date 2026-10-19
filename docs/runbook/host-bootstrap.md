@@ -319,6 +319,10 @@ tunnel, the cutover there says in which order. It needs oidc auth
    `mailto:default` on a first start, which the CA refuses
    (`docs/decisions/front-door.md`).
 
+   The two domains must be apart: `hangar-edge` refuses to start when
+   `HANGAR_EDGE_DOMAIN` and `HANGAR_CP_DOMAIN` are the same or one is
+   under the other (`docs/decisions/public-endpoints.md`).
+
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its
    `/auth/callback`, which the front door hands the apiserver with the rest

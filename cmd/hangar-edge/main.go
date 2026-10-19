@@ -241,7 +241,18 @@ func checkFlags(f flags) error {
 	if f.cpDomain != "" && f.acmeMail == "" {
 		return errors.New("the front door (--cp-domain) needs --acme-email: without it certmagic may register the ACME account as mailto:default on a first start, which the CA refuses (docs/decisions/front-door.md)")
 	}
+	if f.cpDomain != "" && f.domain != "" && nested(f.cpDomain, f.domain) {
+		return fmt.Errorf("--cp-domain %s and --domain %s must be apart, neither one under the other: user content must not share a domain with the console and the API (docs/decisions/public-endpoints.md)", f.cpDomain, f.domain)
+	}
 	return nil
+}
+
+// nested reports whether domains a and b are the same, or one is a
+// subdomain of the other, in any case and with or without a final dot.
+func nested(a, b string) bool {
+	a = strings.ToLower(strings.TrimSuffix(a, "."))
+	b = strings.ToLower(strings.TrimSuffix(b, "."))
+	return a == b || strings.HasSuffix(a, "."+b) || strings.HasSuffix(b, "."+a)
 }
 
 // frontDoor sets up the front door on :443 and :80 and returns what serves

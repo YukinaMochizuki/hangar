@@ -52,6 +52,10 @@ stand in front of the internet with nothing else in front of it.
     discover `default`, and register the account as `mailto:default`,
     which the CA refuses. The front door's names are obtained at once, so a
     first start can hit this; an email set is never replaced.
+  - `--cp-domain` and `--domain` must be apart: the edge refuses to start
+    when they are the same or one is under the other, since user content
+    must not share a domain with the console and the API
+    (`public-endpoints.md`).
   - Until a certificate exists, a handshake for its name fails, and nothing
     else does. A server name the front door has no certificate for, or
     none, fails the handshake: there is no default certificate and no
