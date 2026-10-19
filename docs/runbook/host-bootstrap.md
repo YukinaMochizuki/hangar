@@ -340,9 +340,11 @@ tunnel, the cutover there says in which order. It needs oidc auth
    `--release`, and with `--only edge` whether or not `--release` is
    given (the release step is skipped, so the unit keeps the installed
    binary), the installed one. The `edge` step checks again with the
-   installed one before it changes the unit. A hangar-edge from before
-   `check-flags` makes it warn that the flags were not checked; one that
-   cannot run is a problem.
+   installed one before it changes the unit. `--only release`, which
+   installs a hangar-edge the running unit takes up at its next restart,
+   runs the release's `check-flags` before any step too. A hangar-edge
+   from before `check-flags` makes it warn that the flags were not
+   checked; one that cannot run is a problem.
 
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its

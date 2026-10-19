@@ -62,6 +62,9 @@ SERVICES_UNITS="hangar-apiserver hangar-node"
 # so it is exec-capable on any host they run on; a directory of its own in
 # it, 0700, made and removed by each check.
 SERVICES_CHECK_PARENT=/usr/local/lib
+# Where release_check finds an installed binary: where the release step
+# installs them. Tests point it elsewhere.
+SERVICES_INSTALLED_BIN=/usr/local/bin
 # The apiserver's public socket, there only with the front door on.
 SERVICES_PUBLIC_SOCKET_UNIT=hangar-apiserver-public
 
@@ -202,7 +205,7 @@ node_check_placement() { binary_has_check hangar-node check-placement "$1"; }
 release_check() (
 	name=$1 check=$2 what=$3 tag=$4
 	shift 4
-	bin=/usr/local/bin/$name dir=${HANGAR_RELEASE_DIR:-} tmp='' shown=/usr/local/bin/$name
+	bin=$SERVICES_INSTALLED_BIN/$name dir=${HANGAR_RELEASE_DIR:-} tmp='' shown=$SERVICES_INSTALLED_BIN/$name
 	if [ -n "$dir" ]; then
 		shown=$dir/$name
 		# The release's file need not be executable (a fetched release keeps

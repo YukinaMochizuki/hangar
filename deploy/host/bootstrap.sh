@@ -58,12 +58,16 @@ fi
 # the release step's new hangar-edge included, so a refused run changes
 # nothing. The hangar-edge that checks is the one the unit runs after this
 # run: the release's when the release step installs one, else (no
-# --release, or --only edge) the installed one.
-if [ -z "$only" ] || [ "$only" = edge ]; then
+# --release, or --only edge) the installed one. --only release installs a
+# hangar-edge the unit runs at its next restart: its check-flags checks the
+# flags the next edge step will write.
+if [ -z "$only" ] || [ "$only" = edge ] || [ "$only" = release ]; then
 	# shellcheck source=deploy/host/steps/85-edge.sh
 	. "$here/steps/85-edge.sh"
 	if [ -z "$only" ]; then
 		problem=$(services_endpoints_problem; edge_problem)
+	elif [ "$only" = release ]; then
+		problem=$(edge_check_problem)
 	else
 		problem=$(services_endpoints_problem; HANGAR_RELEASE_DIR='' edge_problem)
 	fi

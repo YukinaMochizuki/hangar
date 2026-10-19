@@ -67,9 +67,17 @@ func releaseOf(t *testing.T, bin []byte) string {
 }
 
 // edgeStep runs script in bash with deploy/host's lib.sh and edge step
-// sourced, as bootstrap.sh does, its local env file holding localEnv and
-// the release in dir, and returns its stdout and stderr.
+// sourced, as bootstrap.sh does, its local env file holding localEnv, the
+// release in dir and nothing installed, and returns its stdout and stderr.
 func edgeStep(t *testing.T, dir, localEnv, script string) (stdout, stderr string) {
+	t.Helper()
+	return edgeStepIn(t, t.TempDir(), dir, localEnv, script)
+}
+
+// edgeStepIn is edgeStep with the binaries installed in installed instead
+// of /usr/local/bin, so what the machine running the test has there counts
+// for nothing.
+func edgeStepIn(t *testing.T, installed, dir, localEnv, script string) (stdout, stderr string) {
 	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("no bash")
@@ -86,8 +94,8 @@ func edgeStep(t *testing.T, dir, localEnv, script string) (stdout, stderr string
 	cmd := exec.Command("bash", "-c", `set -euo pipefail
 . "$1/lib.sh"
 . "$1/steps/85-edge.sh"
-LOCAL_ENV=$2 SERVICES_CHECK_PARENT=$3
-`+script, "bash", host, env, parent)
+LOCAL_ENV=$2 SERVICES_CHECK_PARENT=$3 SERVICES_INSTALLED_BIN=$4
+`+script, "bash", host, env, parent, installed)
 	cmd.Env = append(os.Environ(), "HANGAR_RELEASE_DIR="+dir, "HANGAR_IPV6_ADDR=2001:db8:0:1::1/64")
 	var o, e strings.Builder
 	cmd.Stdout, cmd.Stderr = &o, &e
@@ -166,21 +174,35 @@ func TestAnEdgeFromBeforeCheckFlagsIsWarnedOf(t *testing.T) {
 // installed) the check runs the installed hangar-edge, the one the unit
 // runs, never the release's: by then the release step has installed the
 // release's, and with --only edge the unit keeps the installed one. A dry
-// run skips it there.
+// run skips it there. The release here is a stand-in that refuses
+// anything, so a check that ran it would say so.
 func TestTheEdgeStepChecksTheInstalledEdge(t *testing.T) {
 	b, err := os.ReadFile(buildEdge(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := releaseOf(t, b)
-	out, _ := edgeStep(t, dir, frontDoorEnv("cp.example.com", "user.example.com"), "edge_problem installed")
-	if strings.Contains(out, dir) || !strings.Contains(out, "/usr/local/bin/hangar-edge") && !strings.Contains(out, "must not share a registrable domain") {
-		t.Errorf("the edge step's check: %q, want the installed hangar-edge's", out)
+	installed := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installed, "hangar-edge"), b, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := os.Stat("/usr/local/bin/hangar-edge"); os.IsNotExist(err) && !strings.Contains(out, "no /usr/local/bin/hangar-edge to check the edge unit's command line with") {
-		t.Errorf("with no hangar-edge installed: %q", out)
+	standIn := releaseOf(t, []byte("#!/bin/sh\n[ \"$1\" = -h ] && { echo 'usage: hangar-edge check-flags' >&2; exit 0; }\necho 'the release ran' >&2\nexit 1\n"))
+
+	out, _ := edgeStepIn(t, installed, standIn, frontDoorEnv("cp.example.com", "user.example.com"), "edge_problem installed")
+	if want := "the edge unit's command line: --cp-domain cp.example.com and --domain user.example.com must not share a registrable domain"; !strings.HasPrefix(out, want) || strings.Count(out, "\n") != 1 {
+		t.Errorf("the edge step's check: %q, want the installed hangar-edge's %q", out, want)
 	}
-	out, _ = edgeStep(t, dir, frontDoorEnv("cp.example.com", "user.example.com"), "DRY_RUN=1; edge_problem installed")
+	out, _ = edgeStepIn(t, installed, standIn, frontDoorEnv("hangarlab.cloud", "hangarlab.dev"), "edge_problem installed")
+	if out != "" {
+		t.Errorf("the edge step's check of flags the installed hangar-edge takes: %q", out)
+	}
+
+	none := t.TempDir()
+	out, _ = edgeStepIn(t, none, standIn, frontDoorEnv("hangarlab.cloud", "hangarlab.dev"), "edge_problem installed")
+	if want := "no " + none + "/hangar-edge to check the edge unit's command line with"; !strings.Contains(out, want) {
+		t.Errorf("with no hangar-edge installed: %q, want %q", out, want)
+	}
+
+	out, _ = edgeStepIn(t, none, standIn, frontDoorEnv("cp.example.com", "user.example.com"), "DRY_RUN=1; edge_problem installed")
 	if strings.Contains(out, "command line") {
 		t.Errorf("a dry run's edge step checked the flags: %q", out)
 	}
