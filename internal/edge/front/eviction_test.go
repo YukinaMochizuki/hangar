@@ -2,6 +2,7 @@ package front_test
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/tls"
 	"io"
 	"net"
@@ -10,6 +11,9 @@ import (
 	"testing"
 	"testing/synctest"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/hpack"
 )
 
 // TestAFullDoorClosesItsIdlestConnection: with the door full, a new
@@ -116,6 +120,148 @@ func TestANewcomerGetsPastBusyHolders(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("round %d: answered %s", round, resp.Status)
 			}
+		}
+	})
+}
+
+// zeroWindow holds c, an HTTP/2 connection to webHost, busy: it opens a
+// stream the door cannot answer, giving it no window, and another every
+// 20 s, before the stalled-write timeout resets the last; it answers pings,
+// and returns when the connection ends or stop closes.
+func zeroWindow(c net.Conn, stop <-chan struct{}) {
+	fr := http2.NewFramer(c, c)
+	writes := make(chan func(), 16)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case w := <-writes:
+				w()
+			case <-done:
+				return
+			}
+		}
+	}()
+	stream := uint32(1)
+	open := func() {
+		var block bytes.Buffer
+		enc := hpack.NewEncoder(&block)
+		for _, f := range []hpack.HeaderField{
+			{Name: ":method", Value: "GET"}, {Name: ":scheme", Value: "https"},
+			{Name: ":authority", Value: webHost}, {Name: ":path", Value: "/"},
+		} {
+			_ = enc.WriteField(f)
+		}
+		id := stream
+		stream += 2
+		writes <- func() {
+			_ = fr.WriteHeaders(http2.HeadersFrameParam{StreamID: id, BlockFragment: block.Bytes(), EndStream: true, EndHeaders: true})
+		}
+	}
+	writes <- func() {
+		_, _ = io.WriteString(c, http2.ClientPreface)
+		_ = fr.WriteSettings(http2.Setting{ID: http2.SettingInitialWindowSize, Val: 0})
+	}
+	open()
+	go func() {
+		tick := time.NewTicker(20 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-tick.C:
+				open()
+			case <-done:
+				return
+			case <-stop:
+				_ = c.Close()
+				return
+			}
+		}
+	}()
+	for {
+		f, err := fr.ReadFrame()
+		if err != nil {
+			return
+		}
+		switch f := f.(type) {
+		case *http2.SettingsFrame:
+			if !f.IsAck() {
+				writes <- func() { _ = fr.WriteSettingsAck() }
+			}
+		case *http2.PingFrame:
+			if !f.IsAck() {
+				data := f.Data
+				writes <- func() { _ = fr.WritePing(true, data) }
+			}
+		}
+	}
+}
+
+// TestANewcomerOutlastsARedialingAttacker: an attacker holds every place
+// with HTTP/2 connections kept busy by streams given no window, and
+// redials a second after any is closed; a client from a fresh network
+// that waits two seconds before its first request is still answered,
+// every time.
+func TestANewcomerOutlastsARedialingAttacker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		l := defaultOptions().limits
+		l.Conns = 4
+		d := startPipeDoorWith(t, pipeOptions{limits: l, endpoints: answerEndpoint, tls: true})
+		stop := make(chan struct{})
+		attackers := make(chan struct{}, l.Conns)
+		for range l.Conns {
+			go func() {
+				defer func() { attackers <- struct{}{} }()
+				for {
+					pc, err := d.https.dialFrom(net.IPv4(203, 0, 113, 1))
+					if err != nil {
+						return
+					}
+					c := tls.Client(pc, d.tlsConfig(webHost, "h2"))
+					if c.Handshake() == nil {
+						zeroWindow(c, stop)
+					}
+					_ = c.Close()
+					select {
+					case <-stop:
+						return
+					case <-time.After(time.Second):
+					}
+				}
+			}()
+		}
+		defer func() {
+			close(stop)
+			for range l.Conns {
+				<-attackers
+			}
+		}()
+		time.Sleep(5 * time.Second) //nolint:forbidigo // virtual time: the attacker fills the door
+		answered := 0
+		for round := range 9 {
+			pc, err := d.https.dialFrom(net.IPv4(198, 51, byte(100+round), 7))
+			if err != nil {
+				t.Fatal(err)
+			}
+			c := tls.Client(pc, d.tlsConfig(webHost))
+			if c.Handshake() == nil {
+				time.Sleep(2 * time.Second) //nolint:forbidigo // virtual time: a newcomer slow to ask
+				go func() { _, _ = io.WriteString(c, "GET /small HTTP/1.1\r\nHost: "+webHost+"\r\n\r\n") }()
+				_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+				if resp, err := http.ReadResponse(bufio.NewReader(c), nil); err == nil {
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
+					if resp.StatusCode == http.StatusOK {
+						answered++
+					}
+				}
+			}
+			_ = c.Close()
+			time.Sleep(25 * time.Second) //nolint:forbidigo // virtual time: the attacker churns its streams and takes the place back
+		}
+		if answered != 9 {
+			t.Errorf("%d of 9 newcomers answered; want all", answered)
 		}
 	})
 }

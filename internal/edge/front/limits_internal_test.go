@@ -243,9 +243,9 @@ func TestATransitAddressIsStillAClient(t *testing.T) {
 	}
 }
 
-// TestAFullDoorEvictsTheIdlest: past the cap on every connection, the one
-// idle longest is closed for a new one; a busy one never is, and with
-// every one busy the new one is refused.
+// TestAFullDoorEvictsTheIdlest: with the door full and no holder heavier,
+// the keep-alive idle longest is closed for a new one; a busy one, or one
+// that has served no request yet, never is.
 func TestAFullDoorEvictsTheIdlest(t *testing.T) {
 	synctest.Test(t, testAFullDoorEvictsTheIdlest)
 }
@@ -282,11 +282,13 @@ func testAFullDoorEvictsTheIdlest(t *testing.T) {
 	again, againC := openPipe()
 	k.setBusy(again, true)
 	now = now.Add(time.Second)
-	_, idlestC := openPipe()
+	idlest, idlestC := openPipe()
+	k.setBusy(idlest, true)
+	k.setBusy(idlest, false)
 	now = now.Add(time.Second)
 	k.setBusy(again, false)
 
-	openPipe()
+	newcomer, newcomerC := openPipe()
 	if !closed(idlestC) {
 		t.Error("the connection idle longest was kept")
 	}
@@ -297,10 +299,13 @@ func testAFullDoorEvictsTheIdlest(t *testing.T) {
 		t.Errorf("%d connections counted; want 3", k.conns)
 	}
 
-	for x := range k.open {
-		k.setBusy(x, true)
-	}
+	// The other two busy, only the newcomer before its first request is not:
+	// it is kept, and the next one refused.
+	k.setBusy(again, true)
 	if x, why := k.openConn(addr, nil); x != nil || why != "too many connections" {
-		t.Errorf("with every connection busy: admitted %t, %q", x != nil, why)
+		t.Errorf("with the rest busy, beside a connection yet to serve: admitted %t, %q", x != nil, why)
+	}
+	if closed(newcomerC) || newcomer.released {
+		t.Error("a connection yet to serve its first request was closed for a new one")
 	}
 }

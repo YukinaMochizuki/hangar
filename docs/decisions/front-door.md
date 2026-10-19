@@ -230,15 +230,22 @@ stand in front of the internet with nothing else in front of it.
        client holding most gives one up.
     2. Else the client holding most, if it holds more than C would: it
        gives one up.
-    3. Else the connection idle longest, whoever's: idle connections never
-       keep anyone out.
+    3. Else the keep-alive idle longest, whoever's, of those that have
+       served a request and carry none now: idle connections never keep
+       anyone out. Never one still in its handshake or before its first
+       request: a connection counts as idle from accept, and a holder just
+       trimmed would otherwise redial and take the newcomer's place back
+       before it asked anything.
     4. Else C is refused.
 
-    A holder gives up its connection idle longest, else its newest, busy
-    or a WebSocket, the one that has had least of its time. So a newcomer
-    always gets in unless every network and every client already holds no
-    more than its own would, and every connection is busy; a client with
-    a few connections loses none while another holds more.
+    A holder gives up, of its connections older than the header timeout
+    (all of them if it has none older), the one idle longest, else its
+    newest, busy or a WebSocket, the one that has had least of its time.
+    Of networks or clients holding as many, the one that reached that
+    count first gives way. So a newcomer gets in unless every network and
+    every client already holds no more than its own would, and every
+    connection is busy or yet to serve; a client with a few connections
+    loses none while another holds more.
   - Why two levels: weighed by client alone, an attacker holding one
     connection from each of Conns addresses would keep everyone out,
     no client of it holding more than a newcomer. Many addresses in one

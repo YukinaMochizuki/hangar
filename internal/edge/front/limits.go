@@ -229,7 +229,8 @@ type counts struct {
 	buckets  *tally[netip.Prefix]
 	inBucket map[netip.Prefix]*tally[netip.Prefix]
 	byClient *tally[netip.Prefix]
-	// idle are the connections that carry no request, idle longest first.
+	// idle are the connections that served a request and carry none now,
+	// idle longest first.
 	idle *list.List
 	// networkConns are the open connections of each IPv4 /24, and each
 	// IPv6 /56 and /48, that has any.
@@ -256,7 +257,8 @@ type conn struct {
 	nets           []network
 	opened         time.Time
 	// busy says a request is in flight on it, or it was hijacked; idleSince
-	// is when it last carried none, and inIdle its place in counts.idle.
+	// is when it last carried none, and inIdle its place in counts.idle once
+	// a request has ended on it.
 	busy      bool
 	idleSince time.Time
 	inIdle    *list.Element
@@ -332,7 +334,6 @@ func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 	}
 	now := k.now()
 	x := &conn{c: c, cc: cc, client: client, bucket: bucket, nets: nets, opened: now, idleSince: now}
-	x.inIdle = k.idle.PushBack(x)
 	k.open[x] = struct{}{}
 	cc.open[x] = struct{}{}
 	cc.conns++
@@ -397,8 +398,10 @@ func (k *counts) setBusy(x *conn, busy bool) {
 	}
 	x.busy = busy
 	if busy {
-		k.idle.Remove(x.inIdle)
-		x.inIdle = nil
+		if x.inIdle != nil {
+			k.idle.Remove(x.inIdle)
+			x.inIdle = nil
+		}
 		return
 	}
 	x.idleSince = k.now()

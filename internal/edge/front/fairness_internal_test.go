@@ -60,7 +60,9 @@ func TestAHeavyClientIsTrimmedToItsShare(t *testing.T) {
 func TestALightClientIsKeptWhileAHeavierOneHoldsMore(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		k := fairDoor(10, 10)
-		light := []*conn{hold(t, k, "192.0.2.7", false), hold(t, k, "192.0.2.7", true)}
+		// One busy, one a keep-alive that served a request.
+		light := []*conn{hold(t, k, "192.0.2.7", false), hold(t, k, "192.0.2.7", false)}
+		k.setBusy(light[1], false)
 		for range 8 {
 			hold(t, k, "203.0.113.1", false)
 		}
@@ -100,6 +102,52 @@ func TestAHeavyClientGivesUpItsIdlestThenItsNewest(t *testing.T) {
 		hold(t, k, "198.51.102.1", false)
 		if !newBusy.released || oldBusy.released {
 			t.Errorf("with none idle: newest closed %t, oldest %t; want the newest", newBusy.released, oldBusy.released)
+		}
+	})
+}
+
+// TestARedialDoesNotEvictANewcomerInItsHandshake: four clients of one /24
+// fill the door with busy connections; a newcomer from another /24 takes a
+// place, and the trimmed client's redial does not take it back before the
+// newcomer has asked anything.
+func TestARedialDoesNotEvictANewcomerInItsHandshake(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		k := fairDoor(64, 16)
+		for c := 1; c <= 4; c++ {
+			for range 16 {
+				hold(t, k, fmt.Sprintf("203.0.113.%d", c), false)
+			}
+		}
+		newcomer := hold(t, k, "198.51.100.1", true)
+		// The client trimmed is the first to have held 16.
+		if n := holding(k, "203.0.113.1"); n != 15 {
+			t.Fatalf("the first client holds %d; want 15", n)
+		}
+		if x, why := k.openConn(netip.MustParseAddr("203.0.113.1"), nil); x != nil || why != "too many connections" {
+			t.Errorf("the redial: admitted %t, %q; want refused", x != nil, why)
+		}
+		if newcomer.released {
+			t.Error("the redial closed the newcomer before its first request")
+		}
+	})
+}
+
+// TestAHolderGivesUpAnOldConnectionBeforeAYoungOne: a holder giving up a
+// place gives one older than the header timeout, busy as it may be,
+// rather than one just opened.
+func TestAHolderGivesUpAnOldConnectionBeforeAYoungOne(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		k := fairDoor(4, 4)
+		old := []*conn{hold(t, k, "203.0.113.1", false), hold(t, k, "203.0.113.1", false)}
+		time.Sleep(k.l.ReadHeaderTimeout) //nolint:forbidigo // virtual time
+		young := hold(t, k, "203.0.113.1", true)
+		hold(t, k, "198.51.100.1", false)
+		hold(t, k, "198.51.101.1", false)
+		if young.released {
+			t.Error("the holder's connection just opened was closed while it had older ones")
+		}
+		if !old[0].released && !old[1].released {
+			t.Error("no old connection was closed")
 		}
 	})
 }
@@ -182,6 +230,21 @@ func TestATallyFindsTheMost(t *testing.T) {
 		t.Errorf("top %q %d; want a or b, 2", k, n)
 	}
 	for _, k := range []string{"a", "a", "b", "b", "c"} {
+		tl.add(k, -1)
+	}
+	// Of keys tied, the one that reached the count first, whatever the map.
+	for _, k := range []string{"x", "y"} {
+		tl.add(k, 1)
+	}
+	if k, _ := tl.top(); k != "x" {
+		t.Errorf("x and y at one, x first: top %q", k)
+	}
+	tl.add("y", 1)
+	tl.add("x", 1)
+	if k, _ := tl.top(); k != "y" {
+		t.Errorf("x and y at two, y first: top %q", k)
+	}
+	for _, k := range []string{"x", "x", "y", "y"} {
 		tl.add(k, -1)
 	}
 	if !tl.empty() {
