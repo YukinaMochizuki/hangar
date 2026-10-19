@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -85,13 +86,18 @@ var (
 	// ErrBusy means too many logins of one kind are waiting to start
 	// another.
 	ErrBusy = errors.New("too many sign-ins are in progress; try again in a few minutes")
+	// ErrTooManyFromSource means the address a device login comes from has
+	// MaxDeviceLoginsPerSource waiting already.
+	ErrTooManyFromSource = fmt.Errorf("too many device logins are waiting from this address; finish one, or wait up to %d minutes for them to expire", int(DeviceTTL/time.Minute))
 )
 
 // Limits on what the apiserver keeps for logins not yet finished. A
 // browser's sign-in keeps nothing (it is in loginCookie); a device login
 // started, and a CLI's code not yet exchanged, each keep a row, and each kind
-// has its own cap, so a flood of one cannot block the other. Per-address
-// rate limits are the front door's (hangar-edge).
+// has its own cap, so a flood of one cannot block the other. Device logins,
+// which anyone may start, are also capped per source
+// (MaxDeviceLoginsPerSource), so one address cannot fill their shared cap.
+// Per-address rate limits are the front door's (hangar-edge).
 const (
 	// DefaultMaxPending is how many logins of each kind may wait at once,
 	// everyone's together.
@@ -130,7 +136,11 @@ type Config struct {
 	// MaxPending caps the logins of each kind waiting at once; zero is
 	// DefaultMaxPending.
 	MaxPending int
-	Log        *slog.Logger
+	// OwnPrefixes are the host's own IPv6 prefixes, whose addresses, its
+	// machines', are each a device login source by itself, as the front
+	// door counts a client; nil is none.
+	OwnPrefixes func(context.Context) ([]netip.Prefix, error)
+	Log         *slog.Logger
 }
 
 // Flow serves sign-in.

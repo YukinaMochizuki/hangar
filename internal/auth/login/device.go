@@ -7,6 +7,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -29,6 +30,21 @@ const userCodeAlphabet = "BCDFGHJKLMNPQRSTVWXZ"
 
 const userCodeLen = 8
 
+const (
+	// deviceFromKey keys a marker for each device login waiting, under the
+	// source it was started from (deviceSource), so a source's waiting
+	// device logins are counted by prefix.
+	deviceFromKey = "device-from:"
+	// MaxDeviceLoginsPerSource is how many device logins one source may
+	// have waiting at once: anyone may start one without a credential, and
+	// without it one address could fill DefaultMaxPending for everyone
+	// else.
+	MaxDeviceLoginsPerSource = 10
+	// deviceIPv6Bits is how much of an IPv6 address is a source: one host
+	// usually holds a whole /64.
+	deviceIPv6Bits = 64
+)
+
 // device is a device login, under its device code.
 type device struct {
 	UserCode string `json:"userCode"`
@@ -41,6 +57,13 @@ type device struct {
 	Family string `json:"family,omitempty"`
 	// LastPoll is when the CLI last polled, in Unix milliseconds.
 	LastPoll int64 `json:"lastPoll,omitempty"`
+	// ClientIP and Started are the address the login was started from,
+	// empty if the listener had none, and when, in Unix milliseconds, for
+	// the person deciding on it.
+	ClientIP string `json:"clientIp,omitempty"`
+	Started  int64  `json:"started"`
+	// Marker is the key of the login's deviceFromKey marker.
+	Marker string `json:"marker"`
 }
 
 // userCodeRef points from a user code to its device login.
@@ -61,16 +84,56 @@ type Device struct {
 	Interval                                 time.Duration
 }
 
-// StartDevice starts a device login.
+// StartDevice starts a device login, from the client address in ctx
+// (auth.ClientIP).
 func (f *Flow) StartDevice(ctx context.Context) (Device, error) {
 	code := token.Secret(token.Random())
 	devKey := deviceKey + code.Hash()
-	if err := f.putWithin(ctx, []store.AuthLimit{f.shared(deviceKey)}, row{devKey, device{Status: "pending"}, DeviceTTL}); err != nil {
-		if errors.Is(err, store.ErrLimit) {
-			return Device{}, ErrBusy
+	ip, _ := auth.ClientIP(ctx)
+	var own []netip.Prefix
+	// Only an IPv6 source can be in an own prefix.
+	if f.cfg.OwnPrefixes != nil && ip.Unmap().Is6() {
+		var err error
+		if own, err = f.cfg.OwnPrefixes(ctx); err != nil {
+			return Device{}, err
 		}
+	}
+	source := deviceSource(ip, own)
+	marker := source + code.Hash()
+	d := device{Status: "pending", ClientIP: clientIP(ctx), Started: f.cfg.Sessions.Now().UnixMilli(), Marker: marker}
+	// The source's marker and the login, kept together only while both the
+	// shared cap and the source's have room, in one transaction.
+	err := f.putWithin(ctx, []store.AuthLimit{f.shared(deviceKey), {Prefix: source, Max: MaxDeviceLoginsPerSource}},
+		row{marker, struct{}{}, DeviceTTL},
+		row{devKey, d, DeviceTTL})
+	var le *store.LimitError
+	switch {
+	case errors.As(err, &le) && le.Prefix == source:
+		// Its caller hears why; a log line each would let the caller write
+		// the log at its own rate.
+		f.cfg.Log.Debug("refused a device login: too many waiting from one source", "client_ip", clientIP(ctx))
+		return Device{}, ErrTooManyFromSource
+	case errors.Is(err, store.ErrLimit):
+		return Device{}, ErrBusy
+	case err != nil:
 		return Device{}, err
 	}
+	dv, err := f.giveUserCode(ctx, code, devKey)
+	if err != nil {
+		// A login the CLI never hears of holds no place, even if the CLI
+		// has gone.
+		cctx := context.WithoutCancel(ctx)
+		if _, terr := f.cfg.Store.TakeAuthRequest(cctx, devKey); terr != nil && !errors.Is(terr, store.ErrNotFound) {
+			f.cfg.Log.Warn("could not drop a device login that failed to start", "error", terr)
+		}
+		f.releaseSource(cctx, d)
+		return Device{}, err
+	}
+	return dv, nil
+}
+
+// giveUserCode gives the device login under devKey a free user code.
+func (f *Flow) giveUserCode(ctx context.Context, code token.Secret, devKey string) (Device, error) {
 	for range 5 {
 		user, err := newUserCode()
 		if err != nil {
@@ -123,13 +186,16 @@ func (f *Flow) PollDevice(ctx context.Context, code token.Secret) (session.Token
 		} else if err != nil {
 			return session.Tokens{}, err
 		}
+		f.releaseSource(ctx, d)
 		p, err := auth.ParsePrincipal(d.Principal)
 		if err != nil {
 			return session.Tokens{}, err
 		}
 		return f.startCLILogin(ctx, p, d.Family)
 	case "denied":
-		_, _ = f.cfg.Store.TakeAuthRequest(ctx, key)
+		if _, err := f.cfg.Store.TakeAuthRequest(ctx, key); err == nil {
+			f.releaseSource(ctx, d)
+		}
 		return session.Tokens{}, ErrDenied
 	}
 	if d.LastPoll != 0 && now.Sub(time.UnixMilli(d.LastPoll)) < f.cfg.DeviceInterval {
@@ -166,15 +232,29 @@ func (f *Flow) devicePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var ref userCodeRef
-	if _, err := f.get(r.Context(), "user:"+normalizeUserCode(userCode), &ref); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			pages.Render(w, http.StatusNotFound, pages.DeviceUnknown, pages.Data{})
-			return
-		}
+	var d device
+	_, err := f.get(r.Context(), "user:"+normalizeUserCode(userCode), &ref)
+	if err == nil {
+		_, err = f.get(r.Context(), ref.Device, &d)
+	}
+	if errors.Is(err, store.ErrNotFound) || (err == nil && d.Status != "pending") {
+		pages.Render(w, http.StatusNotFound, pages.DeviceUnknown, pages.Data{})
+		return
+	}
+	if err != nil {
 		f.internal(w, err)
 		return
 	}
-	pages.Render(w, http.StatusOK, pages.DeviceConfirm, pages.Data{Email: p.ID, UserCode: formatUserCode(normalizeUserCode(userCode))})
+	// Who started it, so a person sent someone else's code (RFC 8628,
+	// section 5.4) can see it is not theirs.
+	from := d.ClientIP
+	if from == "" {
+		from = "an unknown address"
+	}
+	pages.Render(w, http.StatusOK, pages.DeviceConfirm, pages.Data{
+		Email: p.ID, UserCode: formatUserCode(normalizeUserCode(userCode)),
+		ClientIP: from, Started: startedText(d.Started),
+	})
 }
 
 // deviceDecision records the signed-in person's approval or denial. It is a
@@ -263,6 +343,51 @@ func (f *Flow) deviceDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	f.cfg.Log.Info("approved a device login", "principal", p.String(), "client_ip", clientIP(r.Context()))
 	pages.Render(w, http.StatusOK, pages.DeviceApproved, pages.Data{})
+}
+
+// startedText is when a device login started, from its Unix milliseconds,
+// in UTC whatever the host's zone; a login kept before the time was
+// recorded has none.
+func startedText(ms int64) string {
+	if ms == 0 {
+		return "an unknown time"
+	}
+	return time.UnixMilli(ms).UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+// deviceSource is the prefix of the markers of the device logins started
+// from ip, counted as the front door counts a client: the address itself
+// for IPv4 and for an address in one of the host's own prefixes, which
+// each of its machines has one of, its /64 for any other IPv6, and one
+// source for every login whose listener gave no address.
+func deviceSource(ip netip.Addr, own []netip.Prefix) string {
+	ip = ip.Unmap().WithZone("")
+	switch {
+	case !ip.IsValid():
+		return deviceFromKey + "unknown:"
+	case ip.Is4():
+		return deviceFromKey + ip.String() + ":"
+	}
+	bits := deviceIPv6Bits
+	for _, p := range own {
+		if p.Contains(ip) {
+			bits = 128
+		}
+	}
+	p, _ := ip.Prefix(bits)
+	return deviceFromKey + p.String() + ":"
+}
+
+// releaseSource drops the marker of a device login that has ended, so it
+// no longer counts against its source; one left behind expires with the
+// login's time.
+func (f *Flow) releaseSource(ctx context.Context, d device) {
+	if d.Marker == "" {
+		return
+	}
+	if _, err := f.cfg.Store.TakeAuthRequest(ctx, d.Marker); err != nil && !errors.Is(err, store.ErrNotFound) {
+		f.cfg.Log.Warn("could not release a device login's source", "error", err)
+	}
 }
 
 // browserPrincipal is who the request's session cookie signs in, if anyone,

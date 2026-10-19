@@ -2,6 +2,7 @@ package apiserver_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -11,14 +12,18 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"connectrpc.com/connect"
 	"golang.org/x/oauth2"
 
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -26,10 +31,12 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/oidctest"
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -62,6 +69,13 @@ func newOIDCWorldWith(t *testing.T, maxPending int) *oidcWorld {
 // apiserver's config.
 func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.Config)) *oidcWorld {
 	t.Helper()
+	return newOIDCWorldCreds(t, maxPending, configure, nil)
+}
+
+// newOIDCWorldCreds is newOIDCWorldConfig with sign-in keeping its
+// credentials in what creds wraps the store in; nil is the store itself.
+func newOIDCWorldCreds(t *testing.T, maxPending int, configure func(*apiserver.Config), creds func(store.Credentials) store.Credentials) *oidcWorld {
+	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	dir := t.TempDir()
 	st, err := sqlite.Open(ctx, filepath.Join(dir, "hangar.db"))
@@ -77,14 +91,20 @@ func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) }))
 	ts.StartTLS()
 	p := oidctest.New(t)
+	var c store.Credentials = st
+	if creds != nil {
+		c = creds(st)
+	}
 	chain, err := srv.EnableOIDC(apiserver.OIDCConfig{
 		Issuer: p.URL, ClientID: p.ClientID, ClientSecret: token.Secret(p.ClientSecret), PublicURL: ts.URL,
 		DeviceInterval: time.Second, MaxPending: maxPending,
-	}, st)
+	}, c)
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler = srv.PublicHandler(chain)
+	// As on the TCP listener, the client's address is the connection's:
+	// a test may say what it is with testPeer.
+	handler = asPeer(auth.ClientIPFromConn(srv.PublicHandler(chain)))
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	t.Cleanup(func() {
@@ -94,6 +114,20 @@ func newOIDCWorldConfig(t *testing.T, maxPending int, configure func(*apiserver.
 		_ = st.Close()
 	})
 	return &oidcWorld{t: t, url: ts.URL, provider: p, tls: ts.Client(), srv: srv, dir: dir}
+}
+
+// testPeer names the address a request's connection is to come from, so
+// tests can start device logins from several sources.
+const testPeer = "Test-Peer"
+
+// asPeer gives a request the connection address its testPeer header names.
+func asPeer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := r.Header.Get(testPeer); p != "" {
+			r.RemoteAddr = net.JoinHostPort(p, "40000")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // browser is a fresh browser: a cookie jar that follows redirects.
@@ -527,7 +561,7 @@ func TestDeviceSignIn(t *testing.T) {
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()
-	anon := w.sessions(headers{})
+	anon := w.sessions(headers{testPeer: "198.51.100.7"})
 	start := func() *iamv1alpha1.StartDeviceLoginResponse {
 		return must[iamv1alpha1.StartDeviceLoginResponse](t)(anon.StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{})))
 	}
@@ -538,7 +572,9 @@ func TestDeviceSignIn(t *testing.T) {
 		}
 		return res.Msg.GetTokens(), nil
 	}
+	before := time.Now().Truncate(time.Second)
 	d := start()
+	after := time.Now()
 	if len(d.GetUserCode()) != 9 || d.GetVerificationUri() != w.url+"/auth/device" || !strings.Contains(d.GetVerificationUriComplete(), d.GetUserCode()) {
 		t.Fatalf("start: %v", d)
 	}
@@ -554,6 +590,14 @@ func TestDeviceSignIn(t *testing.T) {
 	if status != http.StatusOK || final.Path != "/auth/device" || !strings.Contains(body, "Sign in the hangar CLI as bob@example.com?") ||
 		!strings.Contains(body, d.GetUserCode()) {
 		t.Fatalf("device page: %d %s %s", status, final, body)
+	}
+	// It says where and when the login was started, and to deny one the
+	// person did not start.
+	m := regexp.MustCompile(`started from <strong>198\.51\.100\.7</strong> at <strong>(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC</strong>`).FindStringSubmatch(body)
+	if m == nil || !strings.Contains(body, "choose Deny") {
+		t.Errorf("the device page does not say where and when the login was started: %s", body)
+	} else if at, err := time.Parse(time.DateTime, m[1]); err != nil || at.Before(before) || at.After(after) {
+		t.Errorf("the device page says it started at %s UTC, not between %s and %s", m[1], before.UTC(), after.UTC())
 	}
 	decide := func(c *http.Client, code, decision, origin string) (int, string) {
 		req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {code}, "decision": {decision}}.Encode()))
@@ -785,6 +829,199 @@ func TestAnonymousSignInsWriteNothing(t *testing.T) {
 	res := must[iamv1alpha1.RevokeSessionsResponse](t)(w.sessions(alice).RevokeSessions(ctx, connect.NewRequest(&iamv1alpha1.RevokeSessionsRequest{Email: "bob@example.com"})))
 	if res.GetRevoked() != 4 {
 		t.Errorf("bob held %d credentials; want 4: refused sign-ins kept reservations", res.GetRevoked())
+	}
+}
+
+// TestDeviceLoginsCappedPerSource: one source, an IPv4 address or an IPv6
+// /64, may have only so many device logins waiting, so it cannot fill the
+// shared cap; other sources still start theirs, and a login that ends
+// frees its source's place.
+func TestDeviceLoginsCappedPerSource(t *testing.T) {
+	w := newOIDCWorld(t)
+	ctx := t.Context()
+	start := func(peer string) (*iamv1alpha1.StartDeviceLoginResponse, error) {
+		res, err := w.sessions(headers{testPeer: peer}).StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		if err != nil {
+			return nil, err
+		}
+		return res.Msg, nil
+	}
+	fill := func(peers ...string) []*iamv1alpha1.StartDeviceLoginResponse {
+		var ds []*iamv1alpha1.StartDeviceLoginResponse
+		for i := range login.MaxDeviceLoginsPerSource {
+			d, err := start(peers[i%len(peers)])
+			if err != nil {
+				t.Fatalf("device login %d from %v: %v", i, peers, err)
+			}
+			ds = append(ds, d)
+		}
+		return ds
+	}
+	first := fill("192.0.2.1")
+	_, err := start("192.0.2.1")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login past its source's cap")
+	if _, err := start("192.0.2.2"); err != nil {
+		t.Errorf("another IPv4 address: %v", err)
+	}
+
+	// An IPv6 source is its /64.
+	fill("2001:db8:1:2::1", "2001:db8:1:2:aaaa::9")
+	_, err = start("2001:db8:1:2:ffff:ffff:ffff:ffff")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login from a /64 at its cap")
+	if _, err := start("2001:db8:1:3::1"); err != nil {
+		t.Errorf("another /64: %v", err)
+	}
+
+	// A login that ends, denied or approved, once its CLI has heard, no
+	// longer counts: each frees one place, and only one.
+	c := w.browser()
+	w.signInAdmin(c, "alice@example.com")
+	decide := func(code, decision string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {code}, "decision": {decision}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", w.url)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d", decision, resp.StatusCode)
+		}
+	}
+	poll := func(d *iamv1alpha1.StartDeviceLoginResponse) error {
+		_, err := w.sessions(headers{}).PollDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.PollDeviceLoginRequest{DeviceCode: d.GetDeviceCode()}))
+		return err
+	}
+	decide(first[0].GetUserCode(), "deny")
+	wantCode(t, poll(first[0]), connect.CodePermissionDenied, "the denied device login")
+	if _, err := start("192.0.2.1"); err != nil {
+		t.Errorf("a device login after a denied one from the source ended: %v", err)
+	}
+	decide(first[1].GetUserCode(), "approve")
+	if err := poll(first[1]); err != nil {
+		t.Fatalf("the approved device login: %v", err)
+	}
+	if _, err := start("192.0.2.1"); err != nil {
+		t.Errorf("a device login after an approved one from the source ended: %v", err)
+	}
+	_, err = start("192.0.2.1")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login past its source's cap again")
+}
+
+// TestDeviceLoginsOnTheHostEachCount: an address in the host's own /64,
+// as a node reports it, is a source by itself, as the front door counts
+// it, so one machine cannot block device login for the others; any other
+// /64 is still one source.
+func TestDeviceLoginsOnTheHostEachCount(t *testing.T) {
+	w := newOIDCWorldConfig(t, 0, func(c *apiserver.Config) { c.Nodes = []string{"n1"} })
+	ctx := t.Context()
+	w.nodeReportsPrefix("2001:db8:0:1::/64")
+	start := func(peer string) error {
+		_, err := w.sessions(headers{testPeer: peer}).StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		return err
+	}
+	for i := range login.MaxDeviceLoginsPerSource {
+		if err := start("2001:db8:0:1::a"); err != nil {
+			t.Fatalf("device login %d from a machine: %v", i, err)
+		}
+	}
+	wantCode(t, start("2001:db8:0:1::a"), connect.CodeResourceExhausted, "a machine past its own cap")
+	if err := start("2001:db8:0:1::b"); err != nil {
+		t.Errorf("another machine on the host: %v", err)
+	}
+	for i := range login.MaxDeviceLoginsPerSource {
+		if err := start(fmt.Sprintf("2001:db8:0:2::%x", i+1)); err != nil {
+			t.Fatalf("device login %d from another /64: %v", i, err)
+		}
+	}
+	wantCode(t, start("2001:db8:0:2::ff"), connect.CodeResourceExhausted, "another /64, one source, past its cap")
+}
+
+// asNodeAuth authenticates every request as the node n1.
+type asNodeAuth struct{}
+
+func (asNodeAuth) Authenticate(context.Context, http.Header) (auth.Principal, bool, error) {
+	return auth.Principal{Type: auth.Node, ID: "n1"}, true, nil
+}
+
+// nodeReportsPrefix reports n1's IPv6 prefix, as its agent does, once the
+// apiserver has made its Node.
+func (w *oidcWorld) nodeReportsPrefix(prefix string) {
+	w.t.Helper()
+	ts := httptest.NewServer(w.srv.Handler(auth.Chain{asNodeAuth{}}))
+	defer ts.Close()
+	nodes := computev1alpha1connect.NewNodeServiceClient(ts.Client(), ts.URL)
+	testutil.Eventually(w.t, "the node reports its prefix", func() bool {
+		_, err := nodes.UpdateNodeStatus(w.t.Context(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
+			Name: "n1", Status: &computev1alpha1.NodeStatus{Ipv6Prefix: prefix},
+		}))
+		return err == nil
+	})
+}
+
+// failingSwaps is a credentials store whose SwapAuthRequest fails while
+// fail is set.
+type failingSwaps struct {
+	store.Credentials
+	fail atomic.Bool
+}
+
+func (s *failingSwaps) SwapAuthRequest(ctx context.Context, key string, old, data []byte) error {
+	if s.fail.Load() {
+		return errors.New("the store failed")
+	}
+	return s.Credentials.SwapAuthRequest(ctx, key, old, data)
+}
+
+// TestFailedDeviceLoginsHoldNoPlace: a device login that fails to start,
+// after its row was kept, frees its source's place and its place under the
+// shared cap, here no larger than the source's.
+func TestFailedDeviceLoginsHoldNoPlace(t *testing.T) {
+	fs := &failingSwaps{}
+	w := newOIDCWorldCreds(t, login.MaxDeviceLoginsPerSource, nil, func(c store.Credentials) store.Credentials {
+		fs.Credentials = c
+		return fs
+	})
+	anon := w.sessions(headers{testPeer: "192.0.2.1"})
+	start := func() error {
+		_, err := anon.StartDeviceLogin(t.Context(), connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		return err
+	}
+	fs.fail.Store(true)
+	for i := range login.MaxDeviceLoginsPerSource {
+		if start() == nil {
+			t.Fatalf("device login %d started on a failing store", i)
+		}
+	}
+	fs.fail.Store(false)
+	if err := start(); err != nil {
+		t.Errorf("a device login after %d failed ones from the source: %v", login.MaxDeviceLoginsPerSource, err)
+	}
+}
+
+// TestDeviceLoginsCappedPerSourceAtOnce: of many device logins one source
+// starts at once, exactly its cap are kept.
+func TestDeviceLoginsCappedPerSourceAtOnce(t *testing.T) {
+	w := newOIDCWorld(t)
+	anon := w.sessions(headers{testPeer: "192.0.2.1"})
+	const n = 40
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[connect.Code]int{}
+	for range n {
+		wg.Go(func() {
+			_, err := anon.StartDeviceLogin(t.Context(), connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+			mu.Lock()
+			codes[connect.CodeOf(err)]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	// connect.CodeOf(nil) is Unknown.
+	if codes[connect.CodeUnknown] != login.MaxDeviceLoginsPerSource || codes[connect.CodeResourceExhausted] != n-login.MaxDeviceLoginsPerSource {
+		t.Errorf("%d device logins at once from one source: %v; want %d started and the rest resource_exhausted", n, codes, login.MaxDeviceLoginsPerSource)
 	}
 }
 

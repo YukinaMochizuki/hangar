@@ -67,6 +67,9 @@ type Data struct {
 	Endpoint string
 	UserCode string
 	Host     string
+	// ClientIP and Started are where and when a device login was started.
+	ClientIP string
+	Started  string
 	// NoReferrer sends no referrer at all, even to the page's own origin:
 	// for a page on a host whose other pages are not Hangar's, such as an
 	// endpoint's callback, whose URL holds a one-time code. Such a page

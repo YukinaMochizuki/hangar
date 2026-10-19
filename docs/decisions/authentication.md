@@ -107,6 +107,10 @@ credentials. The node is a separate root process on the same host.
     8-letter user code. The person opens `/auth/device` in any browser,
     signs in to the console there, checks the code and approves it. The
     CLI polls (`SessionService.PollDeviceLogin`) and gets its tokens once.
+    The approval page shows the address the login was started from and
+    when, and tells the person to deny one they did not just start: anyone
+    can start a device login and send its link to someone (RFC 8628,
+    section 5.4).
   - The tokens live in `credentials.yaml` next to the config file, never
     in it, mode 0600, written atomically. The CLI refuses a file others may
     read. The default config directory, `…/hangar`, is the CLI's own and is
@@ -184,12 +188,31 @@ credentials. The node is a separate root process on the same host.
   The rows that are kept, device logins started, loopback codes and
   endpoint handoff codes not yet exchanged, are capped at a few thousand of
   each kind (more are refused as unavailable), each kind on its own, so a
-  flood of one blocks neither the others nor sign-in. Endpoint codes, which
-  any signed-in person can make, are also capped at 20 waiting per person,
-  so no one fills the shared cap for everyone else. Each cap is counted
-  and the row kept in one store transaction, so requests at once get no
-  more than it. A browser session may
-  try ten device codes a minute. Per-address rate limits are the front door's
+  flood of one kind blocks neither the other kinds nor sign-in. It does
+  block more of its own kind, for everyone, until its rows expire, so the
+  kinds the most people can make also have a cap per maker, well under the
+  shared one:
+  - Device logins, which need no credential, are capped at 10 waiting per
+    source. A source is the client's address as its listener established
+    it (the front door's `Hangar-Client-Ip` on the public socket, the peer
+    on the TCP listener), counted as the front door counts a client
+    (`docs/decisions/front-door.md`): an IPv4 address, an IPv6 /64, or,
+    in a /64 a node reports its machines' addresses from
+    (`NodeStatus.ipv6_prefix`), the address alone. A node's /64 is its
+    host's own, which that host's front door is given as `--own-prefix`
+    from the same host setting. Until a node has reported, its machines
+    share one /64's place. More are refused as resource exhausted. A
+    login that ends, its tokens handed out or its denial heard, or that
+    fails to start, frees its place; an abandoned one holds it
+    for its 10 minutes. Filling the shared cap still takes only hundreds
+    of addresses at once, which this cap does not stop; the front door's
+    per-client and per-network limits are the next line.
+  - Endpoint codes, which any signed-in person can make, are capped at 20
+    waiting per person.
+
+  Each cap is counted and the row kept in one store transaction, so
+  requests at once get no more than it. A browser session may try ten
+  device codes a minute. Per-address rate limits are the front door's
   (hangar-edge).
 - **Agents use service tokens** (`hgr_`), issued by the same machinery.
   - A `ServiceToken` (group `iam`) is a project's, and is collected with
