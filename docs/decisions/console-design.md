@@ -87,6 +87,19 @@ the front door (`front-door.md`) from the same release as the binaries.
   (delete, grow, rotate, bind, move, unbind, public or private, remove
   member) stay dialogs, as do Add member and, until they move, a security
   group's create and rules.
+- **A new container's process is a folded Advanced section**
+  (`web/src/components/container-advanced.tsx`), the image's own
+  defaults counting until it is changed: entrypoint, command, restart and
+  environment, in Compose's words. Compose's `entrypoint` is the API's
+  `spec.command` and its `command` the API's `spec.args`, so each field
+  names the API field beside it. Each is typed as one line and split as a
+  shell splits it (quotes and backslashes only, `web/src/lib/shell-words.ts`),
+  with the words shown under it; an unclosed quote is refused. Restart is
+  `always`, `on-failure` or `no`, `always` being the API's default and
+  left out of the manifest. Folded, it shows what was changed. Ports are
+  not on it: a port that is not public opens nothing (who may reach a
+  container is its security groups'), and a public one is a PRIVATE
+  endpoint, which a form would have to say plainly before it offers them.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
 - **Copy describes what people can see and do, not how Hangar is built.**

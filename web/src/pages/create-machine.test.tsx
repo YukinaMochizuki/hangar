@@ -2,7 +2,7 @@
 
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, type ConnectRouter } from "@connectrpc/connect";
-import { ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
+import { ContainerSchema, ContainerService, RestartPolicy, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { MachineSizeSchema, MachineSizeService, type MachineSize } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
 import {
@@ -533,5 +533,68 @@ describe("CreateMachine's disk", () => {
     render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
     const small = await screen.findByRole("radio", { name: "Size S" });
     await waitFor(() => expect(small.textContent).toContain("Over quota"));
+  });
+});
+
+describe("CreateMachine's advanced section", () => {
+  const sent = (a: ReturnType<typeof api>) =>
+    (a.requests.find((c) => c.method === "ApplyContainer")?.request as { container?: Container } | undefined)?.container?.spec;
+
+  it("is folded, and sends the image's own process unless it is opened and changed", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    const fold = screen.getByRole("button", { name: /Entrypoint, command, restart, environment/ });
+    expect(fold.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByLabelText(/^Entrypoint/)).toBeNull();
+    await createAllowed(a, "api");
+    const spec = sent(a);
+    expect(spec?.command).toEqual([]);
+    expect(spec?.args).toEqual([]);
+    expect(spec?.env).toEqual([]);
+    expect(spec?.restartPolicy).toBe(RestartPolicy.UNSPECIFIED);
+  });
+
+  it("sends a command split as a shell splits it, the restart chosen and the environment", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(screen.getByRole("button", { name: /Entrypoint, command, restart, environment/ }));
+    fireEvent.change(screen.getByLabelText(/^Command/), { target: { value: `sh -c 'echo hi && sleep infinity'` } });
+    fireEvent.click(screen.getByRole("radio", { name: /^on-failure/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.change(screen.getByLabelText("Variable 1 name"), { target: { value: "TZ" } });
+    fireEvent.change(screen.getByLabelText("Variable 1 value"), { target: { value: "Asia/Taipei" } });
+    // The words it splits into are shown under the field.
+    expect(screen.getByText("echo hi && sleep infinity")).toBeTruthy();
+    await createAllowed(a, "api");
+    const spec = sent(a);
+    expect(spec?.command).toEqual([]);
+    expect(spec?.args).toEqual(["sh", "-c", "echo hi && sleep infinity"]);
+    expect(spec?.restartPolicy).toBe(RestartPolicy.ON_FAILURE);
+    expect(spec?.env.map((e) => [e.name, e.value])).toEqual([["TZ", "Asia/Taipei"]]);
+  });
+
+  it("refuses an unclosed quote and a variable named twice, and sends nothing", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(screen.getByRole("button", { name: /Entrypoint, command, restart, environment/ }));
+    fireEvent.change(screen.getByLabelText(/^Entrypoint/), { target: { value: `"/bin/sh` } });
+    fill("api");
+    await screen.findByText("A double quote is not closed.");
+    expect(submitButton().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/^Entrypoint/), { target: { value: "/bin/sh" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    fireEvent.change(screen.getByLabelText("Variable 1 name"), { target: { value: "A" } });
+    fireEvent.change(screen.getByLabelText("Variable 2 name"), { target: { value: "A" } });
+    await screen.findByText(/The variable A is set twice/);
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    expect(writes(a)).toEqual([]);
+  });
+
+  it("is not offered for a virtual machine", () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    expect(screen.queryByRole("button", { name: /Entrypoint, command, restart, environment/ })).toBeNull();
   });
 });
