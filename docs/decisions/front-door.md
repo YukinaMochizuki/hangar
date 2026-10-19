@@ -156,8 +156,11 @@ stand in front of the internet with nothing else in front of it.
 
   The last is the worst: 1536 connections of it are about 1.9 GiB, under
   2 GiB, besides the collector's headroom and the kernel's socket
-  buffers. A stream proxied costs its handler's goroutine and a
-  connection of its own to the apiserver, with two goroutines and two
+  buffers. That is the edge's alone: the apiserver's side of the streams
+  proxied to it is bounded by the requests a client may have in flight
+  (128), and is not measured. A stream proxied costs its handler's
+  goroutine and a connection of its own to the apiserver, with two
+  goroutines and two
   4 KiB buffers; one mid-body holds a copy buffer besides, 8 KiB from a
   pool (`edge.ProxyBuffers`) where httputil's own is 32 KiB. A large
   download through the proxies so comes to about 0.5 GB/s a stream on
@@ -165,7 +168,9 @@ stand in front of the internet with nothing else in front of it.
   above any uplink the host has, at about twice the CPU a byte. HTTP/2
   carries 32 streams a connection: the console's busiest page, a
   machine's, has about 14 in flight at once, its log stream and its
-  polled queries, so two of its tabs share one connection.
+  polled queries, so two of its tabs share one connection. Each tab keeps
+  its log stream open, so about 30 of them open on one connection fill
+  its 32 streams, and further requests wait.
 
   The HTTP/2 windows bound what a client sends ahead of its handlers: 256
   KiB a connection and a stream, where net/http's defaults of 1 MiB held
@@ -302,7 +307,11 @@ stand in front of the internet with nothing else in front of it.
   - What remains: an attacker with more networks than there are places,
     each holding no more than a newcomer's, crowds the door: as many
     networks as Conns, each holding one busy connection, keep a newcomer
-    from a network of its own out. Volumetric
+    from a network of its own out. At the defaults that is about one
+    network a place: some 1536 IPv6 /48s, a /37's worth, or 1536 IPv4
+    /24s. The /48s are the cheap way in: one LIR's /32 holds 65536 of
+    them. If that ever matters, the lever is a coarser IPv6 tier above
+    the /48, a bucket of a /40 or a /32 weighed first. Volumetric
     attacks at layers 3 and 4 are for the provider's mitigation (OVH's
     VAC) before traffic reaches the host; the front door answers for
     layer 7 alone.
