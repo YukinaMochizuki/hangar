@@ -238,8 +238,8 @@ load_env() {
 	fi
 	# Overrides the sshd step's lockout guard for one run; kept in the file
 	# it would override it on every run.
-	! grep -Eq '^[[:space:]]*(export[[:space:]]+)?HANGAR_SSH_FORCE=' "$env_file" ||
-		die "HANGAR_SSH_FORCE belongs in one run's environment, not in $env_file"
+	! grep -Eq '^[[:space:]]*(export[[:space:]]+)?HANGAR_SSH_DROP_USERS=' "$env_file" ||
+		die "HANGAR_SSH_DROP_USERS belongs in one run's environment, not in $env_file"
 	# ip prints addresses in canonical form; compare against the same form.
 	HANGAR_IPV6_ADDR=$(ipv6_canon "$HANGAR_IPV6_ADDR")
 	HANGAR_UPLINK_MAC=${HANGAR_UPLINK_MAC,,}

@@ -127,7 +127,7 @@ EOF
 	ssh_users=$({
 		echo "${SUDO_USER:-ubuntu}"
 		getent passwd | while IFS=: read -r n _ _ _ _ h _; do
-			if [ "$n" != root ] && grep -qhEv '^[[:space:]]*(#|$)' "$h/.ssh/authorized_keys" "$h/.ssh/authorized_keys2" 2>/dev/null; then
+			if [ "$n" != root ] && grep -qEv '^[[:space:]]*(#|$)' "$h/.ssh/authorized_keys" 2>/dev/null; then
 				echo "$n"
 			fi
 		done
@@ -1142,13 +1142,22 @@ EOF
 	grep -q '^apply: reload' "$work/sshd-run.log" && fail "sshd was reloaded with a config sshd -t refuses"
 	cmp -s "$dropin" "$work/sshd-before.conf" || fail "the old $dropin was not put back"
 
-	step "a drop-in changed by hand fails verify; a run writes it back, with no reload, as sshd never read the change"
+	step "a drop-in changed by hand fails verify; a run writes it back and reloads sshd"
 	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with $dropin changed"; fi
 	grep -q "^FAIL sshd drop-in $dropin as generated$" "$work/sshd-verify.log" || fail "verify does not see $dropin changed"
 	sshd_run || fail "the run refused: $(cat "$work/sshd-run.log")"
 	grep -q "^apply: write $dropin$" "$work/sshd-run.log" || fail "the run did not write $dropin back"
-	grep -q '^apply: reload' "$work/sshd-run.log" && fail "the run reloaded sshd with the config it was last reloaded with"
+	grep -q '^apply: reload sshd' "$work/sshd-run.log" || fail "the run wrote $dropin without reloading sshd"
 	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair sshd"
+
+	step "backed out by hand as the runbook says, a run writes the drop-in back and reloads sshd"
+	rm "$dropin"
+	systemctl reload ssh.service 2>/dev/null || true
+	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with $dropin gone"; fi
+	sshd_run || fail "the run refused: $(cat "$work/sshd-run.log")"
+	grep -q "^apply: write $dropin$" "$work/sshd-run.log" || fail "the run did not write $dropin back"
+	grep -q '^apply: reload sshd' "$work/sshd-run.log" || fail "the run wrote $dropin without reloading sshd: $(cat "$work/sshd-run.log")"
+	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not restore sshd"
 
 	step "a broken drop-in of our own is written back"
 	printf 'NoSuchKeyword yes\n' >>"$dropin"
@@ -1179,16 +1188,19 @@ EOF
 	fi
 	grep -q "^error: sshd would stop letting in $u (not in HANGAR_SSH_USERS)" "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
 	cmp -s "$dropin" "$work/sshd-before.conf" || fail "the refused run changed $dropin"
-	env -u SUDO_USER HANGAR_SSH_FORCE=1 "$host_dir/bootstrap.sh" --env "$work/sshd-other.env" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 ||
-		fail "the forced dry run failed: $(cat "$work/sshd-run.log")"
-	grep -q "^warning: HANGAR_SSH_FORCE=1: sshd stops letting in $u (not in HANGAR_SSH_USERS)$" "$work/sshd-run.log" ||
-		fail "a forced run does not name $u: $(cat "$work/sshd-run.log")"
-	grep -q 'a real run refuses' "$work/sshd-run.log" && fail "a forced dry run says a real run refuses: $(cat "$work/sshd-run.log")"
+	env -u SUDO_USER HANGAR_SSH_DROP_USERS="$u" "$host_dir/bootstrap.sh" --env "$work/sshd-other.env" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 ||
+		fail "the dry run with HANGAR_SSH_DROP_USERS failed: $(cat "$work/sshd-run.log")"
+	grep -q "^warning: HANGAR_SSH_DROP_USERS: sshd stops letting in $u (not in HANGAR_SSH_USERS)$" "$work/sshd-run.log" ||
+		fail "HANGAR_SSH_DROP_USERS does not name $u: $(cat "$work/sshd-run.log")"
+	grep -q 'a real run refuses' "$work/sshd-run.log" && fail "with $u in HANGAR_SSH_DROP_USERS a dry run says a real run refuses: $(cat "$work/sshd-run.log")"
+	env -u SUDO_USER HANGAR_SSH_DROP_USERS=tb-someone-else "$host_dir/bootstrap.sh" --env "$work/sshd-other.env" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 ||
+		fail "the dry run failed: $(cat "$work/sshd-run.log")"
+	grep -q 'a real run refuses' "$work/sshd-run.log" || fail "HANGAR_SSH_DROP_USERS naming someone else let $u go"
 	userdel -r tb-other 2>/dev/null
-	cp "$env_file" "$work/sshd-force.env"
-	echo 'HANGAR_SSH_FORCE=1' >>"$work/sshd-force.env"
-	if "$host_dir/bootstrap.sh" --env "$work/sshd-force.env" --only sshd --dry-run 2>"$work/sshd-run.log"; then fail "HANGAR_SSH_FORCE in the host env file was taken"; fi
-	grep -q 'HANGAR_SSH_FORCE belongs in one run.s environment' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
+	cp "$env_file" "$work/sshd-drop.env"
+	echo "HANGAR_SSH_DROP_USERS=$u" >>"$work/sshd-drop.env"
+	if "$host_dir/bootstrap.sh" --env "$work/sshd-drop.env" --only sshd --dry-run 2>"$work/sshd-run.log"; then fail "HANGAR_SSH_DROP_USERS in the host env file was taken"; fi
+	grep -q 'HANGAR_SSH_DROP_USERS belongs in one run.s environment' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
 
 	step "lists that would lock someone out are refused"
 	sed "s|^HANGAR_SSH_USERS=.*|HANGAR_SSH_USERS=\"$u root\"|" "$env_file" >"$work/sshd-root.env"

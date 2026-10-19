@@ -5,6 +5,9 @@
 # the new drop-in, before anything is written; sshd -t again in place, with
 # the old file put back on failure, only covers the host changing between
 # the two. sshd is reloaded, never restarted, so its sessions keep going.
+# The lockout guard counts logins with a key in an AuthorizedKeysFile only,
+# not through AuthorizedKeysCommand, TrustedUserCAKeys or
+# AuthorizedPrincipals*; a run warns when the host sets any of them.
 
 # sshd reads sshd_config.d/*.conf in name order at the top of sshd_config
 # and keeps the first value it reads for most keywords, so this name sorts
@@ -15,13 +18,14 @@ SSHD_USERS=${HANGAR_SSH_USERS:-ubuntu}
 # ssh.socket may hold :22 and start ssh.service at the first connection;
 # a service that is not running reads the file when it starts.
 SSHD_UNIT=ssh
-# The drop-in as sshd was last reloaded with it: a file changed since, by
-# hand or by a run that died before the reload, is reloaded again.
+# The drop-in as sshd was last reloaded with it, for a run that died
+# between writing the file and reloading sshd: the next one reloads. A run
+# that finds no drop-in removes it, as it then tells nothing of what sshd
+# runs.
 SSHD_LOADED=$STATE_DIR/sshd.loaded
-# Set to 1 in the environment of one run, never in the host env file
-# (load_env refuses it there), to apply a list that stops letting in
-# someone who can log in today.
-SSHD_FORCE=${HANGAR_SSH_FORCE:-0}
+# The users a run may stop letting in, in the environment of one run, never
+# in the host env file (load_env refuses it there).
+SSHD_DROP=${HANGAR_SSH_DROP_USERS:-}
 
 # sshd_settings prints the drop-in's settings, one "Keyword value" a line.
 # TCP forwarding stays as sshd has it: the users may sudo, so turning it off
@@ -94,14 +98,17 @@ sshd_candidate_ok() {
 	return "$ok"
 }
 
-# sshd_running_config prints sshd -T for the config sshd runs with: our
-# drop-in as sshd was last reloaded with it, not as it is now, which may
-# have been changed by hand since.
-sshd_running_config() {
-	local tmp ours='' ok=1
-	if [ -f "$SSHD_LOADED" ]; then ours=$SSHD_LOADED; elif [ -f "$SSHD_FILE" ]; then ours=$SSHD_FILE; fi
+# sshd_disk_config prints sshd -T for the config on disk, what a reload or
+# a restart would load. When sshd refuses it, it prints it with our drop-in
+# left out: a broken drop-in of ours is what a run repairs.
+sshd_disk_config() {
+	local tmp out ok=1
+	if out=$(sshd -T 2>/dev/null); then
+		printf '%s\n' "$out"
+		return 0
+	fi
 	tmp=$(mktemp -d)
-	if sshd_copy "$tmp" "$ours" && sshd -T -f "$tmp/sshd_config"; then ok=0; fi
+	if sshd_copy "$tmp" && sshd -T -f "$tmp/sshd_config"; then ok=0; fi
 	rm -rf "$tmp"
 	return "$ok"
 }
@@ -112,18 +119,46 @@ sshd_keys() { [ -f "$1" ] && grep -Ev '^[[:space:]]*(#|$)' "$1" || true; }
 # sshd_lists USER succeeds when USER is one of the users sshd lets in.
 sshd_lists() { [[ " $SSHD_USERS " == *" $1 "* ]]; }
 
-# sshd_current_users prints the users other than root sshd lets in with a
-# key today: a key in a file the running config's AuthorizedKeysFile names,
-# and a name its AllowUsers matches, if it has any.
+# sshd_any NAME PATTERN... succeeds when a PATTERN matches NAME.
+sshd_any() {
+	local name=$1 p
+	shift
+	for p in "$@"; do
+		# shellcheck disable=SC2053 # $p is a pattern, as sshd matches it.
+		if [[ $name == $p ]]; then return 0; fi
+	done
+	return 1
+}
+
+# sshd_current_users prints the users other than root that the config on
+# disk lets in with a key: a login shell, a key in a file its
+# AuthorizedKeysFile names, and not kept out by AllowUsers, DenyUsers,
+# AllowGroups or DenyGroups. A user@host pattern counts as letting the
+# user in and as keeping no one out.
 sshd_current_users() {
-	local conf name home f has p ok
-	local -a files pats
-	conf=$(sshd_running_config) || return 1
+	local conf name home shell f has groups g kept
+	local -a files allow deny agroups dgroups
+	conf=$(sshd_disk_config) || return 1
 	read -ra files <<<"$(sed -n 's/^authorizedkeysfile //p' <<<"$conf")"
-	# A user@host pattern lets the user in from some hosts: count it.
-	read -ra pats <<<"$(sed -n 's/^allowusers //p' <<<"$conf" | sed 's/@.*//' | paste -sd' ' -)"
-	while IFS=: read -r name _ _ _ _ home _; do
+	read -ra allow <<<"$(sed -n 's/^allowusers //p' <<<"$conf" | sed 's/@.*//' | paste -sd' ' -)"
+	read -ra deny <<<"$(sed -n 's/^denyusers //p' <<<"$conf" | sed '/@/d' | paste -sd' ' -)"
+	read -ra agroups <<<"$(sed -n 's/^allowgroups //p' <<<"$conf" | paste -sd' ' -)"
+	read -ra dgroups <<<"$(sed -n 's/^denygroups //p' <<<"$conf" | paste -sd' ' -)"
+	while IFS=: read -r name _ _ _ _ home shell; do
 		[ "$name" != root ] && [ -n "$home" ] || continue
+		case ${shell##*/} in nologin | false) continue ;; esac
+		[ "${#allow[@]}" = 0 ] || sshd_any "$name" "${allow[@]}" || continue
+		! sshd_any "$name" "${deny[@]}" || continue
+		if [ "${#agroups[@]}" != 0 ] || [ "${#dgroups[@]}" != 0 ]; then
+			groups=$(id -nG "$name" 2>/dev/null) || true
+			kept=0
+			[ "${#agroups[@]}" = 0 ] || kept=1
+			for g in $groups; do
+				[ "${#agroups[@]}" = 0 ] || ! sshd_any "$g" "${agroups[@]}" || kept=0
+				! sshd_any "$g" "${dgroups[@]}" || { kept=1; break; }
+			done
+			[ "$kept" = 0 ] || continue
+		fi
 		has=0
 		for f in "${files[@]}"; do
 			[ "$f" != none ] || continue
@@ -134,16 +169,7 @@ sshd_current_users() {
 			[ "${f:0:1}" = / ] || f=$home/$f
 			if [ -n "$(sshd_keys "$f")" ]; then has=1; break; fi
 		done
-		[ "$has" = 1 ] || continue
-		if [ "${#pats[@]}" != 0 ]; then
-			ok=0
-			for p in "${pats[@]}"; do
-				# shellcheck disable=SC2053 # $p is a pattern, as sshd matches it.
-				if [[ $name == $p ]]; then ok=1; break; fi
-			done
-			[ "$ok" = 1 ] || continue
-		fi
-		printf '%s\n' "$name"
+		[ "$has" = 0 ] || printf '%s\n' "$name"
 	done < <(getent passwd)
 }
 
@@ -151,9 +177,9 @@ sshd_current_users() {
 # and warns of what only keeps out who cannot log in today: root in the
 # list (its one key is a stub, and the drop-in refuses root anyway), no
 # user with a key in .ssh/authorized_keys (the one file sshd reads keys
-# from once the drop-in is loaded), and, unless HANGAR_SSH_FORCE=1, a
-# listed user whose keys are all in authorized_keys2 or a user who can log
-# in with a key today and could not after.
+# from once the drop-in is loaded), and, unless HANGAR_SSH_DROP_USERS names
+# them, a listed user whose keys are all in authorized_keys2 or a user who
+# can log in with a key today and could not after.
 sshd_users_problem() {
 	local u home keys keys2 n=0 lost=() why current
 	for u in $SSHD_USERS; do
@@ -185,7 +211,7 @@ sshd_users_problem() {
 	if ! sshd_rundir_ok; then
 		log "note: no /run/sshd, so who can log in today is not known; a real run makes it and refuses to leave any of them out"
 	elif ! current=$(sshd_current_users); then
-		printf 'sshd -T fails on the config sshd runs with, so who can log in today is not known\n'
+		printf 'sshd -T fails on the config on disk, with or without %s, so who can log in today is not known\n' "$SSHD_FILE"
 	else
 		while read -r u; do
 			[ -n "$u" ] || continue
@@ -198,10 +224,10 @@ sshd_users_problem() {
 		done <<<"$current"
 	fi
 	for why in "${lost[@]}"; do
-		if [ "$SSHD_FORCE" = 1 ]; then
-			log "warning: HANGAR_SSH_FORCE=1: sshd stops letting in $why"
+		if [[ " $SSHD_DROP " == *" ${why%% *} "* ]]; then
+			log "warning: HANGAR_SSH_DROP_USERS: sshd stops letting in $why"
 		else
-			printf 'sshd would stop letting in %s: add or fix them, or run with HANGAR_SSH_FORCE=1\n' "$why"
+			printf 'sshd would stop letting in %s: add or fix them, or name them in HANGAR_SSH_DROP_USERS for this run\n' "$why"
 		fi
 	done
 }
@@ -234,13 +260,19 @@ sshd_matches() {
 }
 
 sshd_apply() {
-	local problem before backup had=0 u
-	[ "$SSHD_FORCE" != 1 ] ||
-		log "warning: HANGAR_SSH_FORCE=1: this run applies HANGAR_SSH_USERS even if it locks out someone who can log in today"
+	local problem before backup had=0 u written other
 	# Not counted as a change: ssh.service makes it at every start.
 	[ "$DRY_RUN" = 1 ] || sshd_rundir_ok || install -d -m 0755 /run/sshd
+	[ "$DRY_RUN" = 1 ] || [ -f "$SSHD_FILE" ] || rm -f "$SSHD_LOADED"
 	problem=$(sshd_users_problem)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
+	if sshd_rundir_ok; then
+		other=$(sshd_disk_config 2>/dev/null |
+			grep -E '^(authorizedkeyscommand|trustedusercakeys|authorizedprincipalsfile|authorizedprincipalscommand) ' |
+			grep -v ' none$' | paste -sd, -) || true
+		[ -z "$other" ] ||
+			log "warning: sshd also lets users in by $other, which the lockout check does not count"
+	fi
 	if ! sshd_rundir_ok; then
 		log "note: no /run/sshd, so sshd -t cannot check the new config; a real run makes it and refuses a config sshd -t refuses"
 	elif ! sshd_candidate_ok; then
@@ -251,13 +283,16 @@ sshd_apply() {
 	if [ -f "$SSHD_FILE" ]; then cp -p "$SSHD_FILE" "$backup" && had=1; fi
 	before=$CHANGES
 	put_file "$SSHD_FILE" 644 "$(sshd_conf)"
-	if [ "$CHANGES" != "$before" ] && [ "$DRY_RUN" != 1 ] && ! sshd -t; then
+	written=$((CHANGES - before))
+	if [ "$written" != 0 ] && [ "$DRY_RUN" != 1 ] && ! sshd -t; then
 		if [ "$had" = 1 ]; then mv -f "$backup" "$SSHD_FILE"; else rm -f "$SSHD_FILE" "$backup"; fi
 		die "sshd -t refuses the config with $SSHD_FILE; left it as it was before the run, sshd not reloaded"
 	fi
 	rm -f "$backup"
 
-	sshd_loaded || run "reload sshd with $SSHD_FILE ($SSHD_UNIT.service, when it runs)" sshd_reload
+	if [ "$written" != 0 ] || ! sshd_loaded; then
+		run "reload sshd with $SSHD_FILE ($SSHD_UNIT.service, when it runs)" sshd_reload
+	fi
 	[ "$DRY_RUN" != 1 ] || return 0
 	for u in $SSHD_USERS; do
 		[ "$(sshd_effective "$u")" = "$(sshd_expected | sort)" ] && continue

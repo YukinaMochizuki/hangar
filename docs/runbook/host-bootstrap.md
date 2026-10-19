@@ -158,20 +158,26 @@ with `--release DIR`. `--only <step>` runs a single step
   listed user with a key in `~/.ssh/authorized_keys`, a listed user whose
   keys are all in `authorized_keys2`, or a user who can log in with a key
   today and could not after. Who can log in today is worked out from the
-  config sshd runs with (our drop-in as last reloaded): every user but
-  root with a key in a file its `AuthorizedKeysFile` names whom its
-  `AllowUsers`, if any, matches. On a fresh host that is every user with a
-  key, so list them all, or move or remove their keys first.
-  `HANGAR_SSH_FORCE=1` in the run's environment (`sudo HANGAR_SSH_FORCE=1
-  …`, or `systemd-run --setenv=HANGAR_SSH_FORCE=1 …`) overrides the last
-  two, naming each user it shuts out; the host env file is refused if it
-  sets it. After writing it runs `sshd -t` again and puts the old file
-  back if that fails, which only happens if the host changed between the two checks. It then
-  reloads `ssh.service` if it runs (a reload keeps every open session);
-  when only `ssh.socket` does, sshd reads the file at the next connection.
-  It reloads again whenever the file is not what it last reloaded with
-  (`/var/lib/hangar-bootstrap/sshd.loaded`); a file changed by hand is
-  written back without a reload, since sshd never read the change.
+  config on disk at the start of the run, what a reload would load (with
+  our drop-in left out if sshd refuses it): every user but root with a
+  login shell (not `nologin` or `false`) and a key in a file its
+  `AuthorizedKeysFile` names, whom its `AllowUsers`, `DenyUsers`,
+  `AllowGroups` and `DenyGroups` do not keep out. Logins through
+  `AuthorizedKeysCommand`, `TrustedUserCAKeys` or `AuthorizedPrincipals*`
+  are not counted; a run warns when the host sets any of them. On a fresh
+  host that is every user with a key, so list them all, or move or remove
+  their keys first. To let some go, name them in `HANGAR_SSH_DROP_USERS`
+  in the run's environment (`sudo HANGAR_SSH_DROP_USERS="alice bob" …`,
+  or `systemd-run --setenv=HANGAR_SSH_DROP_USERS="alice bob" …`): the run
+  names each one it shuts out. The host env file is refused if it sets
+  it. After writing it runs `sshd -t` again and puts the old file back if
+  that fails, which only happens if the host changed between the two
+  checks. It then reloads `ssh.service` if it runs (a reload keeps every
+  open session); when only `ssh.socket` does, sshd reads the file at the
+  next connection. Every run that writes the file reloads, and so does a
+  run that finds the file not what it last reloaded with
+  (`/var/lib/hangar-bootstrap/sshd.loaded`, removed by a run that finds no
+  drop-in), as after a run that died before the reload.
   `sshd -t` and `-T` need `/run/sshd`, which `ssh.service` makes only when
   it starts: a real run makes it, while a dry run skips those checks with a
   note and `verify.sh` prints a SKIP line for them. `verify.sh` checks
@@ -1066,14 +1072,16 @@ in `sshd -T`; a drop-in sorting before ours and a `Match User` block each
 fail verify; a config `sshd -t` refuses with the new drop-in is refused
 with nothing written; a failing `sshd -t` once the file is in place puts
 the old file back with no reload; a hand-changed drop-in fails verify and
-is written back with no reload, and a broken one of ours is replaced; a
-file sshd was not reloaded with is reloaded; and the run refuses `root`
-in the list or `HANGAR_SSH_FORCE` in the host env file, a user whose keys
-are all in `authorized_keys2`, and, with no `SUDO_USER` as under
-`systemd-run`, a list leaving out a user who can log in today, which its
-dry run says a real run refuses and `HANGAR_SSH_FORCE=1` overrides,
-naming the user. The env file lists every user with a key on the VM, as
-the step refuses to leave one out. It needs a release
+is written back and sshd reloaded, and so is one backed out as this
+runbook says; a broken one of ours is replaced; a file sshd was not
+reloaded with is reloaded; and the run refuses `root` in the list or
+`HANGAR_SSH_DROP_USERS` in the host env file, a user whose keys are all
+in `authorized_keys2`, and, with no `SUDO_USER` as under `systemd-run`,
+a list leaving out a user who can log in today, which its dry run says a
+real run refuses, `HANGAR_SSH_DROP_USERS` naming that user overrides,
+naming them, and naming someone else does not. The env file lists every
+user with a key in `~/.ssh/authorized_keys` on the VM, as the step
+refuses to leave one out. It needs a release
 (`HANGAR_TESTBED_RELEASE=DIR`, the `host/` of what `make release` writes), installs the services
 from it, and checks: the node is Ready; the release step installs
 `hangar-fetch-release` and verify catches a changed one; that release,
