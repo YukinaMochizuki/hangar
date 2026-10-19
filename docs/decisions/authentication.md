@@ -195,9 +195,14 @@ credentials. The node is a separate root process on the same host.
   - Device logins, which need no credential, are capped at 10 waiting per
     source. A source is the client's address as its listener established
     it (the front door's `Hangar-Client-Ip` on the public socket, the peer
-    on the TCP listener): an IPv4 address or an IPv6 /64, as the front
-    door counts a client (`docs/decisions/front-door.md`). More are
-    refused as resource exhausted. A login that ends, its tokens handed
+    on the TCP listener), counted as the front door counts a client
+    (`docs/decisions/front-door.md`): an IPv4 address, an IPv6 /64, or,
+    in the host's own /64, which every machine on the host has an address
+    of, the address alone. The apiserver learns that /64 from the nodes'
+    reports (`NodeStatus.ipv6_prefix`), which come from the same host
+    setting as the front door's `--own-prefix`; until a node has
+    reported, its machines share one /64's place. More are refused as
+    resource exhausted. A login that ends, its tokens handed
     out or its denial heard, frees its place; an abandoned one holds it
     for its 10 minutes. Filling the shared cap still takes only hundreds
     of addresses at once, which this cap does not stop; the front door's

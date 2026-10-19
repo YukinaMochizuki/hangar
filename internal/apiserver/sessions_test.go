@@ -20,6 +20,8 @@ import (
 	"connectrpc.com/connect"
 	"golang.org/x/oauth2"
 
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -556,7 +558,9 @@ func TestDeviceSignIn(t *testing.T) {
 		}
 		return res.Msg.GetTokens(), nil
 	}
+	before := time.Now().Truncate(time.Second)
 	d := start()
+	after := time.Now()
 	if len(d.GetUserCode()) != 9 || d.GetVerificationUri() != w.url+"/auth/device" || !strings.Contains(d.GetVerificationUriComplete(), d.GetUserCode()) {
 		t.Fatalf("start: %v", d)
 	}
@@ -575,9 +579,11 @@ func TestDeviceSignIn(t *testing.T) {
 	}
 	// It says where and when the login was started, and to deny one the
 	// person did not start.
-	if !regexp.MustCompile(`started from <strong>198\.51\.100\.7</strong> at <strong>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d UTC</strong>`).MatchString(body) ||
-		!strings.Contains(body, "choose Deny") {
+	m := regexp.MustCompile(`started from <strong>198\.51\.100\.7</strong> at <strong>(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d) UTC</strong>`).FindStringSubmatch(body)
+	if m == nil || !strings.Contains(body, "choose Deny") {
 		t.Errorf("the device page does not say where and when the login was started: %s", body)
+	} else if at, err := time.Parse(time.DateTime, m[1]); err != nil || at.Before(before) || at.After(after) {
+		t.Errorf("the device page says it started at %s UTC, not between %s and %s", m[1], before.UTC(), after.UTC())
 	}
 	decide := func(c *http.Client, code, decision, origin string) (int, string) {
 		req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {code}, "decision": {decision}}.Encode()))
@@ -852,24 +858,116 @@ func TestDeviceLoginsCappedPerSource(t *testing.T) {
 		t.Errorf("another /64: %v", err)
 	}
 
-	// A denied login, once its CLI has heard, no longer counts.
+	// A login that ends, denied or approved, once its CLI has heard, no
+	// longer counts: each frees one place, and only one.
 	c := w.browser()
 	w.signInAdmin(c, "alice@example.com")
-	req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {first[0].GetUserCode()}, "decision": {"deny"}}.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("Origin", w.url)
-	resp, err := c.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	decide := func(code, decision string) {
+		t.Helper()
+		req, _ := http.NewRequest(http.MethodPost, w.url+"/auth/device", strings.NewReader(url.Values{"user_code": {code}, "decision": {decision}}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", w.url)
+		resp, err := c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("%s: %d", decision, resp.StatusCode)
+		}
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("deny: %d", resp.StatusCode)
+	poll := func(d *iamv1alpha1.StartDeviceLoginResponse) error {
+		_, err := w.sessions(headers{}).PollDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.PollDeviceLoginRequest{DeviceCode: d.GetDeviceCode()}))
+		return err
 	}
-	_, err = w.sessions(headers{}).PollDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.PollDeviceLoginRequest{DeviceCode: first[0].GetDeviceCode()}))
-	wantCode(t, err, connect.CodePermissionDenied, "the denied device login")
+	decide(first[0].GetUserCode(), "deny")
+	wantCode(t, poll(first[0]), connect.CodePermissionDenied, "the denied device login")
 	if _, err := start("192.0.2.1"); err != nil {
-		t.Errorf("a device login after one from the source ended: %v", err)
+		t.Errorf("a device login after a denied one from the source ended: %v", err)
+	}
+	decide(first[1].GetUserCode(), "approve")
+	if err := poll(first[1]); err != nil {
+		t.Fatalf("the approved device login: %v", err)
+	}
+	if _, err := start("192.0.2.1"); err != nil {
+		t.Errorf("a device login after an approved one from the source ended: %v", err)
+	}
+	_, err = start("192.0.2.1")
+	wantCode(t, err, connect.CodeResourceExhausted, "a device login past its source's cap again")
+}
+
+// TestDeviceLoginsOnTheHostEachCount: an address in the host's own /64,
+// as a node reports it, is a source by itself, as the front door counts
+// it, so one machine cannot block device login for the others; any other
+// /64 is still one source.
+func TestDeviceLoginsOnTheHostEachCount(t *testing.T) {
+	w := newOIDCWorldConfig(t, 0, func(c *apiserver.Config) { c.Nodes = []string{"n1"} })
+	ctx := t.Context()
+	w.nodeReportsPrefix("2001:db8:0:1::/64")
+	start := func(peer string) error {
+		_, err := w.sessions(headers{testPeer: peer}).StartDeviceLogin(ctx, connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+		return err
+	}
+	for i := range login.MaxDeviceLoginsPerSource {
+		if err := start("2001:db8:0:1::a"); err != nil {
+			t.Fatalf("device login %d from a machine: %v", i, err)
+		}
+	}
+	wantCode(t, start("2001:db8:0:1::a"), connect.CodeResourceExhausted, "a machine past its own cap")
+	if err := start("2001:db8:0:1::b"); err != nil {
+		t.Errorf("another machine on the host: %v", err)
+	}
+	for i := range login.MaxDeviceLoginsPerSource {
+		if err := start(fmt.Sprintf("2001:db8:0:2::%x", i+1)); err != nil {
+			t.Fatalf("device login %d from another /64: %v", i, err)
+		}
+	}
+	wantCode(t, start("2001:db8:0:2::ff"), connect.CodeResourceExhausted, "another /64, one source, past its cap")
+}
+
+// asNodeAuth authenticates every request as the node n1.
+type asNodeAuth struct{}
+
+func (asNodeAuth) Authenticate(context.Context, http.Header) (auth.Principal, bool, error) {
+	return auth.Principal{Type: auth.Node, ID: "n1"}, true, nil
+}
+
+// nodeReportsPrefix reports n1's IPv6 prefix, as its agent does, once the
+// apiserver has made its Node.
+func (w *oidcWorld) nodeReportsPrefix(prefix string) {
+	w.t.Helper()
+	ts := httptest.NewServer(w.srv.Handler(auth.Chain{asNodeAuth{}}))
+	defer ts.Close()
+	nodes := computev1alpha1connect.NewNodeServiceClient(ts.Client(), ts.URL)
+	testutil.Eventually(w.t, "the node reports its prefix", func() bool {
+		_, err := nodes.UpdateNodeStatus(w.t.Context(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
+			Name: "n1", Status: &computev1alpha1.NodeStatus{Ipv6Prefix: prefix},
+		}))
+		return err == nil
+	})
+}
+
+// TestDeviceLoginsCappedPerSourceAtOnce: of many device logins one source
+// starts at once, exactly its cap are kept.
+func TestDeviceLoginsCappedPerSourceAtOnce(t *testing.T) {
+	w := newOIDCWorld(t)
+	anon := w.sessions(headers{testPeer: "192.0.2.1"})
+	const n = 40
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	codes := map[connect.Code]int{}
+	for range n {
+		wg.Go(func() {
+			_, err := anon.StartDeviceLogin(t.Context(), connect.NewRequest(&iamv1alpha1.StartDeviceLoginRequest{}))
+			mu.Lock()
+			codes[connect.CodeOf(err)]++
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+	// connect.CodeOf(nil) is Unknown.
+	if codes[connect.CodeUnknown] != login.MaxDeviceLoginsPerSource || codes[connect.CodeResourceExhausted] != n-login.MaxDeviceLoginsPerSource {
+		t.Errorf("%d device logins at once from one source: %v; want %d started and the rest resource_exhausted", n, codes, login.MaxDeviceLoginsPerSource)
 	}
 }
 

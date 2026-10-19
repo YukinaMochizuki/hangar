@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
@@ -18,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -50,7 +54,7 @@ func (s *Server) EnableOIDC(cfg OIDCConfig, creds store.Credentials) (auth.Chain
 	}
 	flow, err := login.New(login.Config{
 		Issuer: cfg.Issuer, ClientID: cfg.ClientID, ClientSecret: cfg.ClientSecret, PublicURL: cfg.PublicURL,
-		Sessions: s.sessions, Store: creds, Admit: s.admitted, Endpoint: s.endpointVerdict, HTTPClient: cfg.HTTPClient, DeviceInterval: cfg.DeviceInterval, MaxPending: cfg.MaxPending, Log: s.log,
+		Sessions: s.sessions, Store: creds, Admit: s.admitted, Endpoint: s.endpointVerdict, HTTPClient: cfg.HTTPClient, DeviceInterval: cfg.DeviceInterval, MaxPending: cfg.MaxPending, OwnPrefixes: s.ownPrefixes, Log: s.log,
 	})
 	if err != nil {
 		return nil, err
@@ -106,6 +110,28 @@ func (s *Server) AdminHandler(chain auth.Chain) http.Handler {
 			connect.NewUnaryHandler(iamv1alpha1connect.SessionServiceRevokeSessionsProcedure, h.RevokeSessions))
 	}
 	return mux
+}
+
+// ownPrefixes are the IPv6 prefixes the nodes report their machines'
+// addresses from (NodeStatus.ipv6_prefix): the host's own /64, which the
+// node agent is given from the same setting as the front door's
+// --own-prefix.
+func (s *Server) ownPrefixes(ctx context.Context) ([]netip.Prefix, error) {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
+	if err != nil {
+		return nil, err
+	}
+	var ps []netip.Prefix
+	for _, o := range objs {
+		var n computev1alpha1.Node
+		if proto.Unmarshal(o.Data, &n) != nil {
+			continue
+		}
+		if p, err := computeapi.ParseIPv6Prefix(n.GetStatus().GetIpv6Prefix()); err == nil {
+			ps = append(ps, p)
+		}
+	}
+	return ps, nil
 }
 
 // sessions serves SessionService.
