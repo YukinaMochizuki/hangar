@@ -1,17 +1,21 @@
 package front
 
 import (
+	"errors"
 	"maps"
+	"net"
 	"net/netip"
 	"testing"
+	"testing/synctest"
+	"time"
 )
 
 // open admits a connection from each address in turn and says which were.
 func open(k *counts, addrs ...string) (admitted []bool, releases []func(), whys []string) {
 	for _, a := range addrs {
-		release, why := k.openConn(netip.MustParseAddr(a))
-		admitted = append(admitted, release != nil)
-		releases = append(releases, release)
+		x, why := k.openConn(netip.MustParseAddr(a), nil)
+		admitted = append(admitted, x != nil)
+		releases = append(releases, func() { k.release(x) })
 		whys = append(whys, why)
 	}
 	return admitted, releases, whys
@@ -179,7 +183,7 @@ func TestAnIPv6NetworkIsCappedAboveItsClients(t *testing.T) {
 			t.Errorf("outside the own /64: %v, want the /56's cap of one", admitted)
 		}
 	})
-	t.Run("IPv4 has no network cap", func(t *testing.T) {
+	t.Run("the IPv6 caps do not count IPv4", func(t *testing.T) {
 		k := newCounts(limitsFor(1, 1))
 		admitted, _, whys := open(k, "192.0.2.1", "192.0.2.2", "::ffff:192.0.2.3")
 		for i, ok := range admitted {
@@ -188,4 +192,120 @@ func TestAnIPv6NetworkIsCappedAboveItsClients(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestAnIPv4Slash24IsCappedAboveItsClients: addresses each within their own
+// cap still meet the cap of the /24 they share, as IPv6 clients do their
+// /48's; the host's machines' IPv4 does not.
+func TestAnIPv4Slash24IsCappedAboveItsClients(t *testing.T) {
+	if DefaultLimits.ConnsPer24 != DefaultLimits.ConnsPer48 {
+		t.Errorf("an IPv4 /24 caps %d, an IPv6 /48 %d; want them alike", DefaultLimits.ConnsPer24, DefaultLimits.ConnsPer48)
+	}
+	l := limitsFor(100, 100)
+	l.ConnsPer24 = 3
+	k := newCounts(l)
+	admitted, releases, _ := open(k, "192.0.2.1", "192.0.2.2", "::ffff:192.0.2.255")
+	for i, ok := range admitted {
+		if !ok {
+			t.Fatalf("connection %d within the /24's cap refused", i)
+		}
+	}
+	admitted, _, whys := open(k, "192.0.2.3")
+	if admitted[0] || whys[0] != "too many connections from the client's /24" {
+		t.Errorf("a fourth address in the /24: admitted %t, %q", admitted[0], whys[0])
+	}
+	if admitted, _, whys := open(k, "192.0.3.1"); !admitted[0] {
+		t.Errorf("another /24 refused: %q", whys[0])
+	}
+	releases[0]()
+	if admitted, _, whys := open(k, "192.0.2.3"); !admitted[0] {
+		t.Errorf("a connection closed did not free the /24's place: %q", whys[0])
+	}
+
+	// The host's networks' transit addresses, packed in one /24.
+	admitted, _, whys = open(k, "100.64.0.0", "100.64.0.2", "100.64.0.4", "100.64.0.6")
+	for i, ok := range admitted {
+		if !ok {
+			t.Errorf("network %d of the host refused: %q", i, whys[i])
+		}
+	}
+}
+
+// TestATransitAddressIsStillAClient: the exemption is from the /24's cap
+// alone; one network of the host is held to a client's.
+func TestATransitAddressIsStillAClient(t *testing.T) {
+	l := limitsFor(100, 100)
+	l.ConnsPerClient = 2
+	k := newCounts(l)
+	admitted, _, whys := open(k, "100.64.0.2", "100.64.0.2", "100.64.0.2")
+	if !admitted[0] || !admitted[1] || admitted[2] || whys[2] != "too many connections from the client" {
+		t.Errorf("three from one transit address: %v, %q; want the third refused as the client's", admitted, whys[2])
+	}
+}
+
+// TestAFullDoorEvictsTheIdlest: with the door full and no holder heavier,
+// the keep-alive idle longest is closed for a new one; a busy one, or one
+// that has served no request yet, never is.
+func TestAFullDoorEvictsTheIdlest(t *testing.T) {
+	synctest.Test(t, testAFullDoorEvictsTheIdlest)
+}
+
+func testAFullDoorEvictsTheIdlest(t *testing.T) {
+	l := limitsFor(100, 100)
+	l.Conns = 3
+	k := newCounts(l)
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	k.now = func() time.Time { return now }
+	addr := netip.MustParseAddr("192.0.2.1")
+	openPipe := func() (*conn, net.Conn) {
+		t.Helper()
+		c, s := net.Pipe()
+		t.Cleanup(func() { _ = c.Close() })
+		x, why := k.openConn(addr, s)
+		if x == nil {
+			t.Fatalf("refused: %q", why)
+		}
+		return x, c
+	}
+	closed := func(c net.Conn) bool {
+		_ = c.SetReadDeadline(time.Now().Add(time.Second))
+		_, err := c.Read(make([]byte, 1))
+		var ne net.Error
+		return err != nil && (!errors.As(err, &ne) || !ne.Timeout())
+	}
+
+	busy, busyC := openPipe()
+	k.setBusy(busy, true)
+	now = now.Add(time.Second)
+	// Opened first, but busy since, and idle again last: its idleness
+	// counts from then.
+	again, againC := openPipe()
+	k.setBusy(again, true)
+	now = now.Add(time.Second)
+	idlest, idlestC := openPipe()
+	k.setBusy(idlest, true)
+	k.setBusy(idlest, false)
+	now = now.Add(time.Second)
+	k.setBusy(again, false)
+
+	newcomer, newcomerC := openPipe()
+	if !closed(idlestC) {
+		t.Error("the connection idle longest was kept")
+	}
+	if closed(busyC) || closed(againC) {
+		t.Error("a busy connection, or one idle less long, was closed")
+	}
+	if k.conns != 3 {
+		t.Errorf("%d connections counted; want 3", k.conns)
+	}
+
+	// The other two busy, only the newcomer before its first request is not:
+	// it is kept, and the next one refused.
+	k.setBusy(again, true)
+	if x, why := k.openConn(addr, nil); x != nil || why != "too many connections" {
+		t.Errorf("with the rest busy, beside a connection yet to serve: admitted %t, %q", x != nil, why)
+	}
+	if closed(newcomerC) || newcomer.released {
+		t.Error("a connection yet to serve its first request was closed for a new one")
+	}
 }

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -121,7 +122,7 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		n, _ := io.Copy(io.Discard, r.Body)
 		_, _ = fmt.Fprintf(w, "port %d read %d", port, n)
 	})
-	mux.HandleFunc("/upgrade", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/upgrade", func(w http.ResponseWriter, r *http.Request) {
 		c, brw, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			return
@@ -130,7 +131,21 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n" +
 			"Set-Cookie: ws=1; Domain=" + domain + "; Path=/\r\nSet-Cookie: " + edge.EndpointCookie + "=planted; Secure\r\n\r\n")
 		_ = brw.Flush()
-		_, _ = io.Copy(c, brw)
+		switch r.Header.Get("X-Upgrade-Mode") {
+		case "sink":
+			// Takes what comes, and sends nothing.
+			_, _ = io.Copy(io.Discard, brw)
+		case "ticker":
+			// Sends a byte every 50ms, and reads nothing.
+			for {
+				if _, err := c.Write([]byte("t")); err != nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond) //nolint:forbidigo // the gap between a talking endpoint's bytes
+			}
+		default:
+			_, _ = io.Copy(c, brw)
+		}
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -419,6 +434,68 @@ func TestABodyPastItsCapIsTooLarge(t *testing.T) {
 	}
 }
 
+// cutBody is a body the front door cut for coming too slowly: its read
+// says so, or, as over HTTP/1, ends the request's context and says only
+// that.
+type cutBody struct {
+	contextOnly bool
+	cancel      context.CancelFunc
+	cut         *atomic.Bool
+}
+
+func (b *cutBody) Read([]byte) (int, error) {
+	b.cut.Store(true)
+	if b.contextOnly {
+		b.cancel()
+		return 0, context.Canceled
+	}
+	return 0, edge.ErrBodyTooSlow
+}
+
+func (b *cutBody) Close() error { return nil }
+
+// TestABodyCutIsTimedOut: a body the front door cut on its way to the
+// endpoint is answered 408, not as an endpoint that did not answer, nor
+// not at all as a client gone.
+func TestABodyCutIsTimedOut(t *testing.T) {
+	w := newWorld(t)
+	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	door := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if how := r.URL.Query().Get("cut"); how != "" {
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			cut := &atomic.Bool{}
+			r = r.WithContext(edge.WithBodyCut(ctx, cut.Load))
+			r.Body = &cutBody{contextOnly: how == "context", cancel: cancel, cut: cut}
+		}
+		w.edge.ServeHTTP(rw, r)
+	}))
+	defer door.Close()
+	post := func(query string) (int, string) {
+		req, err := http.NewRequest(http.MethodPost, door.URL+"/read"+query, strings.NewReader("body"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	testutil.Eventually(w.t, "the endpoint", func() (bool, string) {
+		code, body := post("")
+		return code == http.StatusOK && body == "port 8080 read 4", fmt.Sprint(code, body)
+	})
+	for _, how := range []string{"error", "context"} {
+		if code, body := post("?cut=" + how); code != http.StatusRequestTimeout {
+			t.Errorf("a body cut, told by the %s: %d %q; want 408", how, code, body)
+		}
+	}
+}
+
 // upgrade opens an upgraded connection to host's "/upgrade" with header,
 // checked to echo.
 func (w *world) upgrade(header http.Header) net.Conn {
@@ -457,6 +534,37 @@ func (w *world) upgrade(header http.Header) net.Conn {
 	return c
 }
 
+// upgradeIn opens an upgraded connection to host's "/upgrade" with header,
+// in the backend's mode, sink or ticker; what follows the 101 is read from
+// the reader.
+func (w *world) upgradeIn(header http.Header, mode string) (net.Conn, *bufio.Reader) {
+	w.t.Helper()
+	c, err := net.Dial("tcp", strings.TrimPrefix(w.url, "http://"))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	w.t.Cleanup(func() { _ = c.Close() })
+	req := "GET /upgrade HTTP/1.1\r\nHost: " + host + "\r\nConnection: Upgrade\r\nUpgrade: echo\r\nX-Upgrade-Mode: " + mode + "\r\n"
+	for k, vs := range header {
+		for _, v := range vs {
+			req += k + ": " + v + "\r\n"
+		}
+	}
+	if _, err := io.WriteString(c, req+"\r\n"); err != nil {
+		w.t.Fatal(err)
+	}
+	r := bufio.NewReader(c)
+	resp, err := http.ReadResponse(r, nil)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		w.t.Fatalf("upgrading: %s", resp.Status)
+	}
+	return c, r
+}
+
 // closedWithin says whether c is closed, not merely silent, within d.
 func closedWithin(c net.Conn, d time.Duration) error {
 	_ = c.SetReadDeadline(time.Now().Add(d))
@@ -468,6 +576,55 @@ func closedWithin(c net.Conn, d time.Duration) error {
 		return err
 	}
 	return nil
+}
+
+// TestASilentUpgradeEnds: an upgraded connection silent either way for the
+// idle timeout is closed, PUBLIC or PRIVATE; one carrying bytes either way
+// stays. Real time, as the world's apiserver and sockets are.
+func TestASilentUpgradeEnds(t *testing.T) {
+	const idle = 300 * time.Millisecond
+	for _, access := range []networkv1alpha1.PublicEndpointAccess{
+		networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC,
+		networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE,
+	} {
+		t.Run(access.String(), func(t *testing.T) {
+			w := newWorldConfig(t, apiservertest.Start(t, nil), func(c *edge.Config) { c.UpgradeIdleTimeout = idle })
+			w.endpoint(8080, access)
+			header := w.rootCookie()
+			testutil.Eventually(w.t, "the endpoint served", func() (bool, string) {
+				status, body := w.get(header)
+				return status == http.StatusOK, body
+			})
+			silent := w.upgrade(header)
+			// Bytes one way alone keep a connection, either way.
+			sending, _ := w.upgradeIn(header, "sink")
+			receiving, received := w.upgradeIn(header, "ticker")
+			got := make(chan error, 1)
+			go func() {
+				_, err := io.Copy(io.Discard, received)
+				got <- err
+			}()
+			// Five timeouts, a byte every third of one.
+			for range 15 {
+				if _, err := io.WriteString(sending, "p"); err != nil {
+					t.Fatalf("a connection the client sends on was closed: %v", err)
+				}
+				time.Sleep(idle / 3) //nolint:forbidigo // the gap between a talking client's bytes
+			}
+			if err := closedWithin(silent, 5*time.Second); err != nil {
+				t.Errorf("a silent upgraded connection was kept: %v", err)
+			}
+			if err := closedWithin(sending, idle/3); !errors.Is(err, os.ErrDeadlineExceeded) {
+				t.Errorf("the connection the client sends on: %v", err)
+			}
+			select {
+			case err := <-got:
+				t.Errorf("the connection the endpoint sends on ended: %v", err)
+			default:
+			}
+			_ = receiving.Close()
+		})
+	}
 }
 
 // TestAnUpgradeEndsWithItsGrant: a caller whose grant goes loses what it

@@ -7,13 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -139,99 +136,6 @@ func dialTCP(t *testing.T, addr string) net.Conn {
 	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
-
-// pipeDoor is a front door on net.Pipe connections, each from client:
-// what its tests check is decided as a connection is accepted, before TLS,
-// and a synctest bubble can hold a pipe, as it cannot a socket.
-type pipeDoor struct {
-	https, http *pipeListener
-	log         *syncBuffer
-}
-
-// client is the address every connection to a pipeDoor comes from.
-var client = net.IPv4(192, 0, 2, 1)
-
-// startPipeDoor runs a pipeDoor with limits l until the test ends; prepare,
-// if set, is given the front door before it serves.
-func startPipeDoor(t *testing.T, l front.Limits, prepare func(*front.Front)) *pipeDoor {
-	t.Helper()
-	d := &pipeDoor{https: newPipeListener(), http: newPipeListener(), log: &syncBuffer{}}
-	f, err := front.New(front.Config{
-		CPDomain: cpDomain, UserDomain: userDomain,
-		DialAPI:   func(context.Context) (net.Conn, error) { return nil, errors.New("no apiserver") },
-		Endpoints: http.NotFoundHandler(), Limits: l,
-		Log: slog.New(slog.NewTextHandler(d.log, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if prepare != nil {
-		prepare(f)
-	}
-	noCertificate := &tls.Config{GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
-		return nil, errors.New("no certificate")
-	}}
-	ctx, cancel := context.WithCancel(context.Background())
-	done := make(chan error, 1)
-	go func() { done <- f.Serve(ctx, front.Listeners{HTTPS: d.https, HTTP: d.http}, noCertificate) }()
-	t.Cleanup(func() {
-		cancel()
-		if err := <-done; err != nil {
-			t.Errorf("serve: %v", err)
-		}
-	})
-	return d
-}
-
-// pipeListener accepts the server ends of the net.Pipe connections dial
-// makes.
-type pipeListener struct {
-	conns  chan net.Conn
-	closed chan struct{}
-	once   sync.Once
-	port   atomic.Int32
-}
-
-func newPipeListener() *pipeListener {
-	return &pipeListener{conns: make(chan net.Conn), closed: make(chan struct{})}
-}
-
-func (l *pipeListener) Accept() (net.Conn, error) {
-	select {
-	case c := <-l.conns:
-		return c, nil
-	case <-l.closed:
-		return nil, net.ErrClosed
-	}
-}
-
-func (l *pipeListener) Close() error {
-	l.once.Do(func() { close(l.closed) })
-	return nil
-}
-
-func (l *pipeListener) Addr() net.Addr { return &net.TCPAddr{IP: net.IPv4(192, 0, 2, 100), Port: 443} }
-
-// dial connects to l from client, until the test ends.
-func (l *pipeListener) dial(t *testing.T) net.Conn {
-	t.Helper()
-	c, s := net.Pipe()
-	t.Cleanup(func() { _ = c.Close() })
-	select {
-	case l.conns <- &fromClient{Conn: s, remote: &net.TCPAddr{IP: client, Port: 40000 + int(l.port.Add(1))}}:
-	case <-l.closed:
-		t.Fatal("the front door stopped listening")
-	}
-	return c
-}
-
-// fromClient is a connection's server end, from its remote address.
-type fromClient struct {
-	net.Conn
-	remote net.Addr
-}
-
-func (c *fromClient) RemoteAddr() net.Addr { return c.remote }
 
 func TestConnectionsPerClient(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -374,6 +278,7 @@ func TestRequestLimits(t *testing.T) {
 	o.limits.EndpointBodyBytes = 2048
 	o.limits.MaxHeaderBytes = 4096
 	o.limits.HTTP2MaxStreams = 7
+	o.limits.HTTP2ConnWindow, o.limits.HTTP2StreamWindow, o.limits.HTTP2MaxFrame = 200<<10, 100<<10, 20<<10
 	o.limits.ReadHeaderTimeout = 500 * time.Millisecond
 	d := startDoor(t, newCA(t), o)
 
@@ -485,6 +390,26 @@ func TestRequestLimits(t *testing.T) {
 		}
 		if v, ok := sf.Value(http2.SettingMaxConcurrentStreams); !ok || v != 7 {
 			t.Errorf("max concurrent streams %d, %t; want 7", v, ok)
+		}
+		if v, ok := sf.Value(http2.SettingInitialWindowSize); !ok || v != 100<<10 {
+			t.Errorf("a stream's window %d, %t; want %d", v, ok, 100<<10)
+		}
+		if v, ok := sf.Value(http2.SettingMaxFrameSize); !ok || v != 20<<10 {
+			t.Errorf("largest frame %d, %t; want %d", v, ok, 20<<10)
+		}
+		// The connection's window grows from HTTP/2's 65535 with a
+		// WINDOW_UPDATE on stream 0.
+		for {
+			f, err := fr.ReadFrame()
+			if err != nil {
+				t.Fatalf("no connection window: %v", err)
+			}
+			if wu, ok := f.(*http2.WindowUpdateFrame); ok && wu.StreamID == 0 {
+				if got := 65535 + int(wu.Increment); got != 200<<10 {
+					t.Errorf("the connection's window %d; want %d", got, 200<<10)
+				}
+				break
+			}
 		}
 	})
 }

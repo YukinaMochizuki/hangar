@@ -118,7 +118,12 @@ callers of private endpoints in itself (`authentication.md`).
   the endpoint; and, within 30 seconds (the edge checks every credential in
   flight again that often), the credential's revoke: a sign-out, a revoke of
   the person's logins, a service token rotated or deleted. A PUBLIC
-  endpoint's requests have no credential to end with.
+  endpoint's requests have no credential to end with. An upgraded
+  connection to any endpoint, PUBLIC or PRIVATE, also ends once it has
+  carried no byte either way for 10 minutes (`--upgrade-idle-timeout`),
+  counted on the edge's connection to the endpoint: an anonymous, silent
+  WebSocket would otherwise hold a place in the front door for ever
+  (`front-door.md`).
 - **What never reaches an endpoint**. The edge keeps
   `/.hangar/` for itself on every endpoint, public ones too, however the path
   is spelled (case, dot segments, encoded dots, a backslash, a

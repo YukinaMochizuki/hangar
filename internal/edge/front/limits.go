@@ -1,6 +1,8 @@
 package front
 
 import (
+	"container/list"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"net"
@@ -16,11 +18,12 @@ import (
 
 // Limits are what the front door allows each client and all of them, as
 // the host's only listener on :443 and :80. A client is an IPv4 address or
-// an IPv6 /64, which is what one subscriber usually holds; the /56 and the
-// /48 around it are capped too, so a network that hands out many /64s does
-// not take every connection. The host's own prefixes are the exception:
-// every machine on the host has an address of its /64, so there each
-// address is a client of its own, and the /56 and /48 caps do not apply.
+// an IPv6 /64, which is what one subscriber usually holds; the IPv4 /24,
+// and the IPv6 /56 and /48, around it are capped too, so a network that
+// holds many addresses does not take every connection. The host's own
+// prefixes are the exception: every machine on the host has an address of
+// its /64, so there each address is a client of its own, and the network
+// caps do not apply; nor do they to the machines' IPv4 (hostTransit).
 // The defaults, and why, are in docs/decisions/front-door.md.
 type Limits struct {
 	// OwnPrefixes are the host's own: its machines' addresses, which reach
@@ -28,7 +31,8 @@ type Limits struct {
 	// by itself.
 	OwnPrefixes []netip.Prefix
 
-	// Conns caps the open connections, from everyone.
+	// Conns caps the open connections, from everyone. Past it a new one
+	// takes another's place by fair eviction (fairness.go).
 	Conns int
 	// ConnsPerClient caps one client's open connections; one more is
 	// closed as soon as it is accepted.
@@ -36,6 +40,9 @@ type Limits struct {
 	// ConnsPer56 and ConnsPer48 cap the open connections from every IPv6
 	// client in one /56 and in one /48, as ConnsPerClient does one.
 	ConnsPer56, ConnsPer48 int
+	// ConnsPer24 caps the open connections from every IPv4 address in one
+	// /24.
+	ConnsPer24 int
 	// ConnRate and ConnBurst cap how fast one client opens connections,
 	// each a TLS handshake to pay for.
 	ConnRate  float64
@@ -53,6 +60,11 @@ type Limits struct {
 	// APIBodyBytes and EndpointBodyBytes cap a request's body to the API
 	// and to an endpoint.
 	APIBodyBytes, EndpointBodyBytes int64
+	// MinBodyRate is the bytes a second a request's body must average over
+	// the time spent waiting for it; BodyReadTimeout is the longest one
+	// wait may be (bodyrate.go).
+	MinBodyRate     int64
+	BodyReadTimeout time.Duration
 
 	// ReadHeaderTimeout is how long a client has for its TLS handshake and
 	// then each request's header.
@@ -62,21 +74,30 @@ type Limits struct {
 	// ConsoleWriteTimeout is how long one of the console's files may take
 	// to send.
 	ConsoleWriteTimeout time.Duration
+	// StalledWriteTimeout is how long one write of a response may wait on
+	// its client (writes.go).
+	StalledWriteTimeout time.Duration
 
 	// HTTP2 settings: streams at once on a connection, and how a
 	// connection that stops answering is dropped.
-	HTTP2MaxStreams       int
-	HTTP2SendPingTimeout  time.Duration
-	HTTP2PingTimeout      time.Duration
-	HTTP2WriteByteTimeout time.Duration
+	HTTP2MaxStreams int
+	// HTTP2ConnWindow and HTTP2StreamWindow are how much of the bodies a
+	// client may send ahead of their handlers, on a connection and on one
+	// stream: what the door holds for them. HTTP2MaxFrame is the largest
+	// frame it reads, and so holds a buffer for.
+	HTTP2ConnWindow, HTTP2StreamWindow, HTTP2MaxFrame int
+	HTTP2SendPingTimeout                              time.Duration
+	HTTP2PingTimeout                                  time.Duration
+	HTTP2WriteByteTimeout                             time.Duration
 }
 
 // DefaultLimits are the limits unless the flags say otherwise.
 var DefaultLimits = Limits{
-	Conns:             4096,
+	Conns:             1536,
 	ConnsPerClient:    64,
-	ConnsPer56:        256,
-	ConnsPer48:        1024,
+	ConnsPer56:        96,
+	ConnsPer48:        384,
+	ConnsPer24:        384,
 	ConnRate:          10,
 	ConnBurst:         50,
 	RequestRate:       20,
@@ -86,12 +107,18 @@ var DefaultLimits = Limits{
 	MaxHeaderBytes:    64 << 10,
 	APIBodyBytes:      8 << 20,
 	EndpointBodyBytes: 100 << 20,
+	MinBodyRate:       1 << 10,
+	BodyReadTimeout:   30 * time.Second,
 
 	ReadHeaderTimeout:   10 * time.Second,
 	IdleTimeout:         2 * time.Minute,
 	ConsoleWriteTimeout: time.Minute,
+	StalledWriteTimeout: 30 * time.Second,
 
-	HTTP2MaxStreams:       100,
+	HTTP2MaxStreams:       32,
+	HTTP2ConnWindow:       256 << 10,
+	HTTP2StreamWindow:     256 << 10,
+	HTTP2MaxFrame:         16 << 10,
 	HTTP2SendPingTimeout:  30 * time.Second,
 	HTTP2PingTimeout:      15 * time.Second,
 	HTTP2WriteByteTimeout: 30 * time.Second,
@@ -106,13 +133,19 @@ func (l Limits) Validate() error {
 		{"connections", l.Conns > 0},
 		{"connections per client", l.ConnsPerClient > 0},
 		{"connections per /56 and /48", l.ConnsPer56 > 0 && l.ConnsPer48 > 0},
+		{"connections per IPv4 /24", l.ConnsPer24 > 0},
 		{"connection rate", l.ConnRate > 0 && l.ConnBurst > 0},
 		{"request rate", l.RequestRate > 0 && l.RequestBurst > 0},
 		{"requests per client", l.RequestsPerClient > 0},
 		{"header bytes", l.MaxHeaderBytes > 0},
 		{"body bytes", l.APIBodyBytes > 0 && l.EndpointBodyBytes > 0},
-		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0},
+		{"body rate", l.MinBodyRate > 0 && l.BodyReadTimeout > 0},
+		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0 && l.StalledWriteTimeout > 0},
 		{"HTTP/2 settings", l.HTTP2MaxStreams > 0 && l.HTTP2SendPingTimeout > 0 && l.HTTP2PingTimeout > 0 && l.HTTP2WriteByteTimeout > 0},
+		// net/http takes a connection's window of 64 KiB to 4 MiB, a
+		// stream's below 4 MiB, and frames of 16 KiB to 16 MiB.
+		{"HTTP/2 windows and frame", l.HTTP2ConnWindow >= 64<<10 && l.HTTP2ConnWindow < 4<<20 &&
+			l.HTTP2StreamWindow > 0 && l.HTTP2StreamWindow <= l.HTTP2ConnWindow && l.HTTP2MaxFrame >= 16<<10 && l.HTTP2MaxFrame <= 16<<20},
 	} {
 		if !n.ok {
 			return errors.New("every limit must be positive: " + n.name)
@@ -161,12 +194,24 @@ func addrOf(remote string) (netip.Addr, bool) {
 	return ap.Addr().Unmap(), true
 }
 
-// networks are the IPv6 networks around addr whose connections are capped
-// together, with their caps; none for IPv4, nor for the host's own
-// prefixes, whose neighbours are the host's machines and the host.
+// hostTransit is where the host's machines' IPv4 reaches the front door
+// from, each network's transit /31 (docs/decisions/networking.md); shared
+// address space (RFC 6598), never a source from the internet.
+var hostTransit = netip.MustParsePrefix("100.64.0.0/10")
+
+// networks are the networks around addr capped together, with their caps:
+// the IPv4 /24, or the IPv6 /56 and /48; none for the host's own prefixes
+// and its machines' IPv4.
 func (l Limits) networks(addr netip.Addr) []network {
 	addr = addr.Unmap()
-	if !addr.Is6() || l.own(addr) {
+	if addr.Is4() {
+		if hostTransit.Contains(addr) {
+			return nil
+		}
+		p24, _ := addr.Prefix(24)
+		return []network{{p24, l.ConnsPer24, "too many connections from the client's /24"}}
+	}
+	if l.own(addr) {
 		return nil
 	}
 	p56, _ := addr.Prefix(56)
@@ -189,8 +234,18 @@ type counts struct {
 
 	mu    sync.Mutex
 	conns int
-	// networkConns are the open connections of each IPv6 /56 and /48 that
-	// has any.
+	// open are the connections admitted and not yet released.
+	open map[*conn]struct{}
+	// buckets, inBucket and byClient count the open connections for fair
+	// eviction: by bucket, by client within each bucket, by client.
+	buckets  *tally[netip.Prefix]
+	inBucket map[netip.Prefix]*tally[netip.Prefix]
+	byClient *tally[netip.Prefix]
+	// idle are the connections that served a request and carry none now,
+	// idle longest first.
+	idle *list.List
+	// networkConns are the open connections of each IPv4 /24, and each
+	// IPv6 /56 and /48, that has any.
 	networkConns map[netip.Prefix]int
 	clients      map[netip.Prefix]*clientCounts
 	lastSweep    time.Time
@@ -201,10 +256,34 @@ type clientCounts struct {
 	conns, requests int
 	connRate        *rate.Limiter
 	requestRate     *rate.Limiter
+	open            map[*conn]struct{}
+}
+
+// conn is an admitted connection as the counts keep it. Its fields after
+// c are k.mu's.
+type conn struct {
+	// c is what an eviction closes; nil where only the counts are tested.
+	c              net.Conn
+	cc             *clientCounts
+	client, bucket netip.Prefix
+	nets           []network
+	opened         time.Time
+	// busy says a request is in flight on it, or it was hijacked; idleSince
+	// is when it last carried none, and inIdle its place in counts.idle once
+	// a request has ended on it.
+	busy      bool
+	idleSince time.Time
+	inIdle    *list.Element
+	released  bool
 }
 
 func newCounts(l Limits) *counts {
-	return &counts{l: l, networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now}
+	return &counts{
+		l: l, open: map[*conn]struct{}{},
+		buckets: newTally[netip.Prefix](), inBucket: map[netip.Prefix]*tally[netip.Prefix]{}, byClient: newTally[netip.Prefix](),
+		idle:         list.New(),
+		networkConns: map[netip.Prefix]int{}, clients: map[netip.Prefix]*clientCounts{}, now: time.Now,
+	}
 }
 
 // sweepEvery is how often the counts forget clients that hold nothing and
@@ -227,51 +306,136 @@ func (k *counts) get(c netip.Prefix) *clientCounts {
 		cc = &clientCounts{
 			connRate:    rate.NewLimiter(rate.Limit(k.l.ConnRate), k.l.ConnBurst),
 			requestRate: rate.NewLimiter(rate.Limit(k.l.RequestRate), k.l.RequestBurst),
+			open:        map[*conn]struct{}{},
 		}
 		k.clients[c] = cc
 	}
 	return cc
 }
 
-// openConn admits a new connection from addr, or says why not.
-func (k *counts) openConn(addr netip.Addr) (release func(), why string) {
+// openConn admits c, a new connection from addr, or says why not. With
+// Conns open it closes another to make room (victim), or refuses c.
+func (k *counts) openConn(addr netip.Addr, c net.Conn) (_ *conn, why string) {
 	k.mu.Lock()
-	defer k.mu.Unlock()
-	if k.conns >= k.l.Conns {
-		return nil, "too many connections"
-	}
+	client, bucket := k.l.client(addr), k.l.bucket(addr)
 	nets := k.l.networks(addr)
 	for _, n := range nets {
 		if k.networkConns[n.prefix] >= n.cap {
+			k.mu.Unlock()
 			return nil, n.why
 		}
 	}
-	cc := k.get(k.l.client(addr))
+	cc := k.get(client)
 	if cc.conns >= k.l.ConnsPerClient {
+		k.mu.Unlock()
 		return nil, "too many connections from the client"
 	}
+	var evicted *conn
+	if k.conns >= k.l.Conns {
+		if evicted = k.victim(bucket, client); evicted == nil {
+			k.mu.Unlock()
+			return nil, "too many connections"
+		}
+	}
 	if !cc.connRate.AllowN(k.now(), 1) {
+		k.mu.Unlock()
 		return nil, "the client opens connections too fast"
 	}
+	if evicted != nil {
+		k.releaseLocked(evicted)
+	}
+	now := k.now()
+	x := &conn{c: c, cc: cc, client: client, bucket: bucket, nets: nets, opened: now, idleSince: now}
+	k.open[x] = struct{}{}
+	cc.open[x] = struct{}{}
 	cc.conns++
 	k.conns++
 	for _, n := range nets {
 		k.networkConns[n.prefix]++
 	}
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			k.mu.Lock()
-			defer k.mu.Unlock()
-			cc.conns--
-			k.conns--
-			for _, n := range nets {
-				if k.networkConns[n.prefix]--; k.networkConns[n.prefix] == 0 {
-					delete(k.networkConns, n.prefix)
-				}
-			}
-		})
-	}, ""
+	k.buckets.add(bucket, 1)
+	if k.inBucket[bucket] == nil {
+		k.inBucket[bucket] = newTally[netip.Prefix]()
+	}
+	k.inBucket[bucket].add(client, 1)
+	k.byClient.add(client, 1)
+	k.mu.Unlock()
+	// Its server sees the connection fail, and closes it.
+	if evicted != nil && evicted.c != nil {
+		_ = evicted.c.Close()
+	}
+	return x, ""
+}
+
+// release gives x's place back; once, however often it is called.
+func (k *counts) release(x *conn) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	k.releaseLocked(x)
+}
+
+func (k *counts) releaseLocked(x *conn) {
+	if x.released {
+		return
+	}
+	x.released = true
+	delete(k.open, x)
+	delete(x.cc.open, x)
+	if x.inIdle != nil {
+		k.idle.Remove(x.inIdle)
+		x.inIdle = nil
+	}
+	x.cc.conns--
+	k.conns--
+	for _, n := range x.nets {
+		if k.networkConns[n.prefix]--; k.networkConns[n.prefix] == 0 {
+			delete(k.networkConns, n.prefix)
+		}
+	}
+	k.buckets.add(x.bucket, -1)
+	if t := k.inBucket[x.bucket]; t != nil {
+		if t.add(x.client, -1); t.empty() {
+			delete(k.inBucket, x.bucket)
+		}
+	}
+	k.byClient.add(x.client, -1)
+}
+
+// setBusy records whether x carries a request.
+func (k *counts) setBusy(x *conn, busy bool) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if x.released || x.busy == busy {
+		return
+	}
+	x.busy = busy
+	if busy {
+		if x.inIdle != nil {
+			k.idle.Remove(x.inIdle)
+			x.inIdle = nil
+		}
+		return
+	}
+	x.idleSince = k.now()
+	x.inIdle = k.idle.PushBack(x)
+}
+
+// connState is the servers' ConnState: it follows which connections carry
+// a request. A hijacked one stays busy: it is a WebSocket's.
+func (k *counts) connState(c net.Conn, s http.ConnState) {
+	if tc, ok := c.(*tls.Conn); ok {
+		c = tc.NetConn()
+	}
+	cc, ok := c.(*countedConn)
+	if !ok {
+		return
+	}
+	switch s {
+	case http.StateActive, http.StateHijacked:
+		k.setBusy(cc.x, true)
+	case http.StateIdle:
+		k.setBusy(cc.x, false)
+	}
 }
 
 // startRequest admits a request from c, or says how long until one would
@@ -341,8 +505,8 @@ func (l *listener) Accept() (net.Conn, error) {
 			_ = c.Close()
 			continue
 		}
-		release, why := l.counts.openConn(addr)
-		if release == nil {
+		x, why := l.counts.openConn(addr, c)
+		if x == nil {
 			_ = c.Close()
 			if l.refused != nil {
 				l.refused(addr, why)
@@ -350,7 +514,7 @@ func (l *listener) Accept() (net.Conn, error) {
 			continue
 		}
 		tune(c)
-		return &countedConn{Conn: c, release: release}, nil
+		return &countedConn{Conn: c, k: l.counts, x: x}, nil
 	}
 }
 
@@ -406,10 +570,11 @@ func tune(c net.Conn) {
 // countedConn gives its client's count back when it closes.
 type countedConn struct {
 	net.Conn
-	release func()
+	k *counts
+	x *conn
 }
 
 func (c *countedConn) Close() error {
-	c.release()
+	c.k.release(c.x)
 	return c.Conn.Close()
 }

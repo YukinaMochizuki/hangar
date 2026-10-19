@@ -15,6 +15,8 @@ const (
 	pageMisdirected     = "misdirected request"
 	pageTooManyRequests = "too many requests; try again shortly"
 	pageBodyTooLarge    = "request body too large"
+	pageBodyTooSlow     = "request body too slow"
+	pageUpgradeBody     = "a request to switch protocols has no body"
 	pageAPIDown         = "the API server did not answer"
 	pageNoConsole       = "the console is not installed"
 	pageNotFound        = "not found"

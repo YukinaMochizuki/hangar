@@ -17,11 +17,15 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptrace"
 	"net/http/httputil"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"golang.org/x/net/http/httpguts"
 
 	"google.golang.org/protobuf/proto"
 
@@ -65,8 +69,17 @@ type Config struct {
 	// ResponseHeaderTimeout is how long an endpoint has to start its
 	// answer; zero is forever.
 	ResponseHeaderTimeout time.Duration
-	Log                   *slog.Logger
+	// UpgradeIdleTimeout ends an upgraded connection, a WebSocket, that
+	// carries no byte either way for that long; zero means
+	// DefaultUpgradeIdleTimeout.
+	UpgradeIdleTimeout time.Duration
+	Log                *slog.Logger
 }
+
+// DefaultUpgradeIdleTimeout is how long an upgraded connection to an
+// endpoint may stay silent: an anonymous one to a PUBLIC endpoint would
+// otherwise hold a place in the front door for ever.
+const DefaultUpgradeIdleTimeout = 10 * time.Minute
 
 // DefaultRecheck is how often, at most, a request in flight is let go on
 // with a credential revoked since it started.
@@ -125,6 +138,9 @@ func New(cfg Config) *Edge {
 	if cfg.Recheck == 0 {
 		cfg.Recheck = DefaultRecheck
 	}
+	if cfg.UpgradeIdleTimeout == 0 {
+		cfg.UpgradeIdleTimeout = DefaultUpgradeIdleTimeout
+	}
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
@@ -151,6 +167,7 @@ func New(cfg Config) *Edge {
 		},
 		// Streams and server-sent events reach the client as they come.
 		FlushInterval: -1,
+		BufferPool:    ProxyBuffers,
 		ErrorHandler:  e.proxyError,
 		ModifyResponse: func(resp *http.Response) error {
 			confineCookies(resp.Header)
@@ -343,6 +360,33 @@ type request struct {
 // which a client would take for an empty 200.
 var errEnded = errors.New("the edge ended the request")
 
+// errSilent is the cause of an upgraded connection the edge ended for
+// carrying nothing for UpgradeIdleTimeout.
+var errSilent = errors.New("the upgraded connection carried nothing for too long")
+
+// ErrBodyTooSlow is what reading a request's body fails with once the front
+// door has cut it for arriving too slowly (internal/edge/front).
+var ErrBodyTooSlow = errors.New("the request body arrived too slowly")
+
+type bodyCutKey struct{}
+
+// WithBodyCut returns ctx, a request's, with cut, which says whether the
+// front door has cut the request's body.
+func WithBodyCut(ctx context.Context, cut func() bool) context.Context {
+	return context.WithValue(ctx, bodyCutKey{}, cut)
+}
+
+// BodyCut says whether err, a proxy's, came of the request's body being cut
+// for arriving too slowly. Over HTTP/1 net/http ends the request's context
+// as the read fails, so err may say only that.
+func BodyCut(ctx context.Context, err error) bool {
+	if errors.Is(err, ErrBodyTooSlow) {
+		return true
+	}
+	cut, ok := ctx.Value(bodyCutKey{}).(func() bool)
+	return ok && cut()
+}
+
 // recheck ends, at each change to the authorization data, the requests to
 // PRIVATE endpoints whose callers may no longer use them: an upgraded
 // connection or a stream lasts no longer than the grant that let it in.
@@ -449,7 +493,58 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		e.deny(w, r, host, ep, *req.caller)
 		return
 	}
+	if httpguts.HeaderValuesContainsToken(r.Header["Connection"], "Upgrade") {
+		var ended func()
+		ctx, ended = e.endWhenSilent(ctx, func() { cancelCause(errSilent) })
+		defer ended()
+	}
 	e.forward(w, r.WithContext(context.WithValue(ctx, targetKey{}, ep)))
+}
+
+// endWhenSilent watches the connection to the endpoint that ctx's request
+// gets, and calls end once it has carried no byte either way for
+// UpgradeIdleTimeout; stop ends the watch.
+func (e *Edge) endWhenSilent(ctx context.Context, end func()) (_ context.Context, stop func()) {
+	var got atomic.Pointer[tracked]
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(info httptrace.GotConnInfo) {
+		// The request it writes there marks it used.
+		if tc, ok := info.Conn.(*tracked); ok {
+			got.Store(tc)
+		}
+	}})
+	limit := e.cfg.UpgradeIdleTimeout
+	var timer *time.Timer
+	var mu sync.Mutex
+	// stopped keeps a check that fired as the watch ended from setting the
+	// timer again.
+	stopped := false
+	check := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if stopped {
+			return
+		}
+		wait := limit
+		if tc := got.Load(); tc != nil {
+			silent := time.Since(tc.lastUsed())
+			if silent >= limit {
+				e.cfg.Log.Info("ended an upgraded connection that carried nothing", "for", silent.String())
+				end()
+				return
+			}
+			wait = limit - silent
+		}
+		timer.Reset(wait)
+	}
+	mu.Lock()
+	timer = time.AfterFunc(limit, check)
+	mu.Unlock()
+	return ctx, func() {
+		mu.Lock()
+		defer mu.Unlock()
+		stopped = true
+		timer.Stop()
+	}
 }
 
 // forward proxies r to its endpoint with the endpoint's cookies confined to
@@ -672,11 +767,33 @@ func (e *Edge) dialEndpoint(ctx context.Context, _, addr string) (net.Conn, erro
 }
 
 // tracked is a connection to an endpoint that leaves the edge's records
-// when it closes.
+// when it closes, and knows when it last carried a byte.
 type tracked struct {
 	net.Conn
 	once   sync.Once
 	forget func(net.Conn)
+	// last is when it last carried a byte, in Unix nanoseconds.
+	last atomic.Int64
+}
+
+func (t *tracked) used() { t.last.Store(time.Now().UnixNano()) }
+
+func (t *tracked) lastUsed() time.Time { return time.Unix(0, t.last.Load()) }
+
+func (t *tracked) Read(p []byte) (int, error) {
+	n, err := t.Conn.Read(p)
+	if n > 0 {
+		t.used()
+	}
+	return n, err
+}
+
+func (t *tracked) Write(p []byte) (int, error) {
+	n, err := t.Conn.Write(p)
+	if n > 0 {
+		t.used()
+	}
+	return n, err
 }
 
 func (t *tracked) Close() error {
@@ -709,6 +826,10 @@ func (e *Edge) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 		case http.StatusConflict:
 			status, msg = http.StatusServiceUnavailable, "the endpoint's machine is not running"
 		}
+	}
+	if BodyCut(r.Context(), err) {
+		http.Error(w, "request body too slow", http.StatusRequestTimeout)
+		return
 	}
 	if errors.Is(err, context.Canceled) {
 		return // the client went away

@@ -120,31 +120,201 @@ stand in front of the internet with nothing else in front of it.
   host's own /64 (`--own-prefix`): every machine on the host has an
   address of it, so there each address is a client, and the /56 and /48
   caps do not count it. A machine's IPv4, NATed, arrives as its network's
-  address on the host's side, so the machines of one network are one
-  client over IPv4.
+  transit address on the host's side (`networking.md`), so the machines of
+  one network are one client over IPv4. The transit addresses, in
+  100.64.0.0/10, are packed 128 networks to a /24, so the /24 cap does not
+  count them. The exemption is by source address alone, and holds while
+  the uplink never delivers a source in that range, shared address space
+  (RFC 6598) that is never one from the internet. Each transit address is
+  still a client and held to a client's cap, but the host's networks
+  together can fill the door, as they could before the /24 cap; fair
+  eviction (below) trims them as any other holder. The IPv4 /24 is capped
+  as the IPv6 /48 is.
+
+  The caps: 1536 connections, 64 a client, a quarter of the door (384) a
+  /24 or /48 and a sixteenth (96) a /56, the shares they first had. A
+  client's 64 leaves room for the users behind one carrier's or office's
+  NAT address, as its cap is weighed before fair eviction is; filling the
+  door takes at least four networks and 24 clients. The door's cap is what
+  the edge can hold with every connection as busy as it may be. What a
+  connection costs it, measured by `TestMemoryPerConnection`
+  (`HANGAR_MEASURE_CONNS=1`, 2000 connections of each kind, 62 of the
+  HTTP/2 ones with 32 streams each, the clients and the apiserver in a
+  process of their own), in heap and stacks:
+
+  | Connection | KiB |
+  |---|---|
+  | past its TLS handshake, no request yet | 37 |
+  | idle HTTP/1.1 keep-alive | 27 |
+  | idle HTTP/2 | 38 |
+  | HTTP/1.1 sending a header of 60 KiB, unended | 128 |
+  | HTTP/1.1 sending a body its handler does not read | 30 |
+  | HTTP/2 sending bodies their handlers do not read | 360 |
+  | HTTP/1.1 with a request proxied to the apiserver, its connection there included | 59 |
+  | HTTP/2 with 32 streams proxied, the apiserver yet to answer | 1036 (32 a stream) |
+  | HTTP/2 with 32 streams proxied, each answer stalled mid-body | 1295 (40 a stream) |
+
+  The last is the worst: 1536 connections of it are about 1.9 GiB, under
+  2 GiB, besides the collector's headroom and the kernel's socket
+  buffers. That is the edge's alone: the apiserver's side of the streams
+  proxied to it is bounded by the requests a client may have in flight
+  (128), and is not measured. A stream proxied costs its handler's
+  goroutine and a connection of its own to the apiserver, with two
+  goroutines and two
+  4 KiB buffers; one mid-body holds a copy buffer besides, 8 KiB from a
+  pool (`edge.ProxyBuffers`) where httputil's own is 32 KiB. A large
+  download through the proxies so comes to about 0.5 GB/s a stream on
+  loopback, against 1.2 GB/s with 32 KiB (`BenchmarkProxyDownload`):
+  above any uplink the host has, at about twice the CPU a byte. HTTP/2
+  carries 32 streams a connection: the console's busiest page, a
+  machine's, has about 14 in flight at once, its log stream and its
+  polled queries, so two of its tabs share one connection. Each tab keeps
+  its log stream open, so about 30 of them open on one connection fill
+  its 32 streams, and further requests wait.
+
+  The HTTP/2 windows bound what a client sends ahead of its handlers: 256
+  KiB a connection and a stream, where net/http's defaults of 1 MiB held
+  about 1.2 MiB a connection; and no frame over 16 KiB is read, so no
+  frame buffer of 1 MiB is held. The cost is an upload's speed over
+  HTTP/2, one window a round trip: about 8 MiB/s at 30 ms, 2.5 MiB/s at
+  100 ms, 1.3 MiB/s at 200 ms, for a single stream or all of a
+  connection's together. HTTP/1.1 uploads are the kernel's to pace. The
+  edge's unit allows it 65536 descriptors (`LimitNOFILE`), for its client
+  connections and one to a backend for each request.
 
   | Limit | Default | Past it |
   |---|---|---|
-  | open connections, everyone | 4096 | closed at accept |
+  | open connections, everyone | 1536 | another is closed for the new one by fair eviction (below); refused at accept when none may be |
   | open connections, one client | 64 | closed at accept |
-  | open connections, every client in one IPv6 /56 | 256 | closed at accept |
-  | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
+  | open connections, every client in one IPv6 /56 | 96 | closed at accept |
+  | open connections, every client in one IPv6 /48 | 384 | closed at accept |
+  | open connections, every address in one IPv4 /24 | 384 | closed at accept |
   | new connections, one client | 10/s, burst 50 | closed at accept |
   | requests, one client (each HTTP/2 stream one) | 20/s, burst 100 | 429 with `Retry-After` |
   | requests in flight, one client (streams and WebSockets included) | 128 | 429 |
   | request header | 64 KiB (net/http reads 4 KiB past it) | 431 |
   | request body to the API | 8 MiB | 413 |
   | request body to an endpoint | 100 MiB | 413 |
+  | request body's rate, on average over the time spent waiting for it | 1 KiB/s, no one wait past 30 s | 408; over HTTP/2 on the stream, the connection kept; over HTTP/1 the connection closed |
+  | what net/http reads of a body left unread (HTTP/1) | 30 s | closed |
+  | one write of a response to a client that does not take it | 30 s | over HTTP/2 the stream reset; over HTTP/1 the connection closed |
   | TLS handshake, then each request header | 10 s | closed |
   | idle connection | 2 min | closed |
   | an endpoint's response header | 100 s | 502 |
   | one console file | 1 min | closed |
-  | HTTP/2 streams on a connection | 100 | refused |
+  | HTTP/2 streams on a connection | 32 | refused |
+  | HTTP/2 bodies sent ahead of their handlers, a connection and a stream | 256 KiB, 256 KiB | the client waits |
+  | an HTTP/2 frame | 16 KiB | connection closed |
   | HTTP/2 ping when idle, answer, a write | 30 s, 15 s, 30 s | closed |
 
   There is no overall read or write timeout: Watch, server streams and
-  WebSockets stay open for as long as they are used. A slow request body is
-  bounded only by the connection limits.
+  WebSockets stay open for as long as they are used. What holds a slow
+  client instead:
+  - A request's body must keep up with the rate, on average, counted only
+    over the time the front door waits in a read for it, so a backend slow
+    to take it costs the client nothing (`internal/edge/front/bodyrate.go`).
+    Each wait has a read deadline: the first timeout plus what the bytes so
+    far earned at the rate, less the time already waited, and never more
+    than the timeout. A body sent ahead of the rate banks stalls, each up
+    to the timeout, for as long as the average holds. So a client that
+    keeps to the rate holds a connection for as long as its body lasts:
+    8 MiB to the API is about 2 h 17 min, 100 MiB to an endpoint about
+    28 h, each at a cost to it of 1 KiB/s. Past the deadline the body is
+    cut (`edge.ErrBodyTooSlow`) and the request answered 408, by the API's
+    proxy and by the endpoints'. Over HTTP/2 that ends the stream alone;
+    over HTTP/1 the connection is closed.
+  - Only the body is held. A server stream's request ends at once, so its
+    response flows for as long as it lasts. A WebSocket opens with a GET
+    without a body and its frames are read from the hijacked connection,
+    which the limit never touches: exec and SSH sessions stay open idle.
+    A request that asks to upgrade and has a body is answered 400.
+  - Over HTTP/1 net/http reads up to 256 KiB of a body the handler left
+    unread, to keep the connection, with no deadline of its own. The front
+    door turns that off before the answer (full duplex), and bounds it with
+    the timeout where it happens, as the proxy closes the body and after
+    the handler.
+  - There are no long-lived request bodies to hold back: bidirectional
+    streams are WebSockets (`streaming-transport.md`), and the endpoints
+    are proxied over HTTP/1.1. A request body that pauses longer than the
+    timeout, as a streaming upload with gaps would, is cut.
+  - Each write of a response, to the API, the console or an endpoint, has a
+    write deadline of the stalled-write timeout, taken away once it is done
+    (`internal/edge/front/writes.go`); over HTTP/2 the deadline is the
+    stream's. A client that stops taking the answer, by an HTTP/2 window it
+    never opens or a connection it never reads, is cut, while a stream with
+    nothing to send has no deadline. A write is up to 32 KiB, so an answer
+    must flow at about 1 KiB/s at least. What net/http sends after the
+    handler, the answer's buffered end, has one timeout too.
+  - A hijacked connection, a WebSocket's, has no write deadline of the
+    door's. Exec's own liveness counts no silence while a write is pending
+    (`internal/execws`), so a client that stops reading an exec is dropped
+    only by the door socket's TCP user timeout, 60 s without progress,
+    which Linux applies to a zero window from 5.11 on. An upgraded
+    connection to an endpoint, PUBLIC or PRIVATE, ends after 10 minutes
+    with no byte either way (`--upgrade-idle-timeout`,
+    `public-endpoints.md`). That ends only a WebSocket silent both ways:
+    one whose app or client sends a heartbeat is never idle to it, and is
+    bounded by fair eviction alone. Exec and SSH WebSockets are the API's, which
+    the door proxies to the apiserver, never through the endpoints' edge:
+    their own pings, every 30 s, keep them, and fair eviction may still
+    close one of a client holding more than its share.
+  - A client that sends no request on a connection is closed by the
+    handshake and header timeout, then by the idle timeout; over HTTP/2,
+    by the idle timeout and the pings.
+  - **Fair eviction.** With the door full, a new connection from client C
+    takes a place from whoever holds more than C's side would with it, so
+    no holder can keep a newcomer out by holding many, busy or not
+    (`internal/edge/front/fairness.go`). In order:
+    1. The network holding most, the IPv4 /24 or IPv6 /48 (a host's own
+       source, a transit or own-prefix address, being one by itself), if
+       it holds more than C's network would with C's connection: its
+       client holding most gives one up.
+    2. Else the client holding most, if it holds more than C would: it
+       gives one up.
+    3. Else the keep-alive idle longest, whoever's, of those that have
+       served a request and carry none now: idle connections never keep
+       anyone out. Never one still in its handshake or before its first
+       request: a connection counts as idle from accept, and a holder just
+       trimmed would otherwise redial and take the newcomer's place back
+       before it asked anything.
+    4. Else C is refused.
+
+    A holder gives up, of its connections older than the header timeout
+    (all of them if it has none older), the one idle longest, else its
+    newest, busy or a WebSocket, the one that has had least of its time.
+    Of networks or clients holding as many, the one that reached that
+    count first gives way. So a newcomer gets in unless every network and
+    every client already holds no more than its own would, and every
+    connection is busy or yet to serve; a client with a few connections
+    loses none while another holds more.
+  - Why two levels: weighed by client alone, an attacker holding one
+    connection from each of Conns addresses would keep everyone out,
+    no client of it holding more than a newcomer. Many addresses in one
+    network are cheap, a /48 holds 65536 clients and a provider's /24 256;
+    weighed by network first, the attacker's network gives way to any
+    newcomer from another, and must spread over as many networks as it
+    holds places. A newcomer inside the attacker's own network still gets
+    in by the second step. A large network of real clients, a carrier's
+    NAT, is held to the same share as any other while the door is full.
+  - What fairness costs: it weighs how much a network and a client hold,
+    not what for. A heavier network gives up a connection even when it is
+    busy, a Watch, a log followed or an exec, while an idle keep-alive of a
+    lighter network is kept; within a holder, its idle connections go
+    before its busy ones. An IPv6 /48 is far cheaper to come by than an
+    IPv4 /24, so an attacker spread over many /48s, each holding little,
+    trims a busy IPv4 network, a carrier's NAT or an office, more cheaply
+    than it could from IPv4.
+  - What remains: an attacker with more networks than there are places,
+    each holding no more than a newcomer's, crowds the door: as many
+    networks as Conns, each holding one busy connection, keep a newcomer
+    from a network of its own out. At the defaults that is about one
+    network a place: some 1536 IPv6 /48s, a /37's worth, or 1536 IPv4
+    /24s. The /48s are the cheap way in: one LIR's /32 holds 65536 of
+    them. If that ever matters, the lever is a coarser IPv6 tier above
+    the /48, a bucket of a /40 or a /32 weighed first. Volumetric
+    attacks at layers 3 and 4 are for the provider's mitigation (OVH's
+    VAC) before traffic reaches the host; the front door answers for
+    layer 7 alone.
 - **The host's firewall opens 22, 80 and 443 alone**
   (`deploy/host/steps/45-firewall.sh`).
   - It is one nft table of its own, `inet hangar-host`. Its input chain

@@ -1,7 +1,9 @@
 // Package front is hangar-edge's front door: the only listener on the
 // host's :443 and :80, with nothing in front of it. It ends TLS with
 // certificates it gets itself over ACME DNS-01 (certs.go), keeps every
-// client within its limits (limits.go), and routes each request by Host:
+// client within its limits (limits.go), holds slow request bodies
+// (bodyrate.go) and responses a client stops taking (writes.go), and
+// routes each request by Host:
 // api.<cp-domain> to the apiserver, console.<cp-domain> to the console's
 // files and its API paths to the apiserver, and <label>.<user-domain> to
 // the public endpoints (internal/edge). :80 only redirects to https. See
@@ -81,6 +83,7 @@ func New(cfg Config) (*Front, error) {
 		// Connect's server streams and Watch reach the client as they
 		// come.
 		FlushInterval: -1,
+		BufferPool:    edge.ProxyBuffers,
 		ErrorHandler:  f.apiError,
 	}
 	return f, nil
@@ -212,6 +215,10 @@ func (f *Front) rewriteAPI(pr *httputil.ProxyRequest) {
 }
 
 func (f *Front) apiError(w http.ResponseWriter, r *http.Request, err error) {
+	if edge.BodyCut(r.Context(), err) {
+		page(w, http.StatusRequestTimeout, pageBodyTooSlow)
+		return
+	}
 	if errors.Is(err, context.Canceled) {
 		return // the client went away
 	}
@@ -276,17 +283,21 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 	tc.MinVersion = tls.VersionTLS12
 	tc.NextProtos = []string{"h2", "http/1.1"}
 	https := &http.Server{
-		Handler:           f.counts.limitRequests(f),
+		Handler:           l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f))),
+		ConnState:         f.counts.connState,
 		TLSConfig:         tc,
 		Protocols:         protocols,
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
 		IdleTimeout:       l.IdleTimeout,
 		MaxHeaderBytes:    l.MaxHeaderBytes,
 		HTTP2: &http.HTTP2Config{
-			MaxConcurrentStreams: l.HTTP2MaxStreams,
-			SendPingTimeout:      l.HTTP2SendPingTimeout,
-			PingTimeout:          l.HTTP2PingTimeout,
-			WriteByteTimeout:     l.HTTP2WriteByteTimeout,
+			MaxConcurrentStreams:          l.HTTP2MaxStreams,
+			MaxReceiveBufferPerConnection: l.HTTP2ConnWindow,
+			MaxReceiveBufferPerStream:     l.HTTP2StreamWindow,
+			MaxReadFrameSize:              l.HTTP2MaxFrame,
+			SendPingTimeout:               l.HTTP2SendPingTimeout,
+			PingTimeout:                   l.HTTP2PingTimeout,
+			WriteByteTimeout:              l.HTTP2WriteByteTimeout,
 		},
 		ErrorLog: errorLog,
 		BaseContext: func(net.Listener) context.Context {
@@ -294,7 +305,8 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 		},
 	}
 	plain := &http.Server{
-		Handler:           f.counts.limitRequests(f.redirectHandler()),
+		Handler:           l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f.redirectHandler()))),
+		ConnState:         f.counts.connState,
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
 		IdleTimeout:       l.IdleTimeout,
 		MaxHeaderBytes:    l.MaxHeaderBytes,
