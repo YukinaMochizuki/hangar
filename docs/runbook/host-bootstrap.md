@@ -150,18 +150,30 @@ with `--release DIR`. `--only <step>` runs a single step
   forwarding is left on. sshd reads `sshd_config.d/*.conf` in name order
   and keeps the first value it reads, so the file sorts before the cloud
   image's `50-cloud-init.conf` and `60-cloudimg-settings.conf`, which stay
-  as installed. Before it writes the file the step has `sshd -t` check the
-  config with it, and refuses when sshd refuses or when none of those users
-  has a key in `~/.ssh/authorized_keys`; it warns of keys only in
-  `authorized_keys2`, which stop working. After writing it runs `sshd -t`
-  again and puts the old file back if that fails. It then reloads
-  `ssh.service` if it runs (a reload keeps every open session); when only
-  `ssh.socket` does, sshd reads the file at the next connection. It reloads
-  again whenever the file is not what it last reloaded with
-  (`/var/lib/hangar-bootstrap/sshd.loaded`). `verify.sh` checks the
-  settings in `sshd -T`, so a drop-in sorting before ours that loosens one
-  fails it. With `MaxAuthTries 4`, a client that offers more than three
-  other keys first is cut off: name the key (`IdentitiesOnly yes` and
+  as installed. Before it writes the file the step has `sshd -t` check a
+  copy of the config with the new file in place of the old one (so a
+  broken file of ours is still replaced), and refuses when sshd refuses.
+  It also refuses, before writing, a list that would lock someone out:
+  `root` in `HANGAR_SSH_USERS` (the host env file is refused with it), no
+  listed user with a key in `~/.ssh/authorized_keys`, a listed user whose
+  keys are all in `authorized_keys2`, or the user running it under sudo
+  (`SUDO_USER`) left out of the list. `HANGAR_SSH_FORCE=1` in the run's
+  environment overrides the last two. Under `systemd-run` there is no
+  `SUDO_USER`, so the dry run under sudo is what checks that one. After
+  writing it runs `sshd -t` again and puts the old file back if that fails,
+  which only happens if the host changed between the two checks. It then
+  reloads `ssh.service` if it runs (a reload keeps every open session);
+  when only `ssh.socket` does, sshd reads the file at the next connection.
+  It reloads again whenever the file is not what it last reloaded with
+  (`/var/lib/hangar-bootstrap/sshd.loaded`); a file changed by hand is
+  written back without a reload, since sshd never read the change. It
+  makes `/run/sshd`, which `sshd -t` needs and `ssh.service` makes only
+  when it starts. `verify.sh` checks the settings in `sshd -T -C` for each
+  listed user logging in over loopback, so a drop-in sorting before ours
+  or a `Match User` block that loosens one fails it, and fails on any
+  `Match` block in `sshd_config` or `sshd_config.d`, which a check for
+  loopback cannot see through. With `MaxAuthTries 4`, a client that
+  offers more than three other keys first is cut off: name the key (`IdentitiesOnly yes` and
   `IdentityFile` in `~/.ssh/config`). After a run that changed the file,
   log in again from a second terminal before closing the first. To back
   out by hand: `sudo rm /etc/ssh/sshd_config.d/10-hangar.conf && sudo
@@ -1042,10 +1054,15 @@ another user can write or own is refused before it is read, an unknown
 `HANGAR_UPGRADES_TZ` is refused, the upgrade timers are in the one it sets,
 and `--host` is refused. sshd lets in only the user who ran it with sudo
 (`ubuntu` without sudo), with a key in `~/.ssh/authorized_keys`: log in
-to the VM that way, or keep a console. It checks the sshd settings in
-`sshd -T`, that a drop-in sorting before ours fails verify, that a config
-`sshd -t` refuses is neither written nor loaded, and that a hand-changed
-drop-in fails verify and is written back and reloaded. It needs a release
+to the VM that way, or keep a console. For sshd it checks: the settings
+in `sshd -T`; a drop-in sorting before ours and a `Match User` block each
+fail verify; a config `sshd -t` refuses with the new drop-in is refused
+with nothing written; a failing `sshd -t` once the file is in place puts
+the old file back with no reload; a hand-changed drop-in fails verify and
+is written back with no reload, and a broken one of ours is replaced; a
+file sshd was not reloaded with is reloaded; and the run refuses `root`
+in the list, a list leaving out `SUDO_USER` (unless `HANGAR_SSH_FORCE=1`)
+and a user whose keys are all in `authorized_keys2`. It needs a release
 (`HANGAR_TESTBED_RELEASE=DIR`, the `host/` of what `make release` writes), installs the services
 from it, and checks: the node is Ready; the release step installs
 `hangar-fetch-release` and verify catches a changed one; that release,

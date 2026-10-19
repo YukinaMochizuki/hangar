@@ -1070,37 +1070,92 @@ test_verify_catches_drift() {
 	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair the rule's mode"
 }
 
+# sshd_run [ENV...] runs the sshd step alone with ENV set, its output in
+# $work/sshd-run.log.
+sshd_run() { env "$@" "$host_dir/bootstrap.sh" --only sshd >"$work/sshd-run.log" 2>&1; }
+
 test_sshd() {
-	local dropin=/etc/ssh/sshd_config.d/10-hangar.conf line
+	local dropin=/etc/ssh/sshd_config.d/10-hangar.conf u=${SUDO_USER:-ubuntu} line effective
 	step "sshd takes the drop-in: keys only, no root, the test's user alone"
+	effective=$(sshd -T -C "user=$u,host=localhost,addr=127.0.0.1")
 	for line in 'passwordauthentication no' 'kbdinteractiveauthentication no' 'permitrootlogin no' \
 		'x11forwarding no' 'authorizedkeysfile .ssh/authorized_keys' 'maxauthtries 4' 'logingracetime 30'; do
-		sshd -T | grep -qxF "$line" || fail "sshd -T does not say $line"
-		grep -q "^PASS sshd -T: $line$" "$work/first-verify.log" || fail "verify does not check $line"
+		grep -qxF "$line" <<<"$effective" || fail "sshd -T does not say $line"
+		grep -q "^PASS sshd -T for $u: $line$" "$work/first-verify.log" || fail "verify does not check $line"
 	done
-	[ "$(sshd -T | sed -n 's/^allowusers //p')" = "${SUDO_USER:-ubuntu}" ] || fail "sshd lets in $(sshd -T | sed -n 's/^allowusers //p')"
+	[ "$(sshd -T | sed -n 's/^allowusers //p')" = "$u" ] || fail "sshd lets in $(sshd -T | sed -n 's/^allowusers //p')"
 
 	step "a drop-in that sorts before ours and loosens sshd fails verify"
 	printf 'PasswordAuthentication yes\n' >/etc/ssh/sshd_config.d/05-tb.conf
 	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with password logins on"; fi
-	grep -q '^FAIL sshd -T: passwordauthentication no$' "$work/sshd-verify.log" || fail "verify does not name it: $(grep FAIL "$work/sshd-verify.log")"
+	grep -q "^FAIL sshd -T for $u: passwordauthentication no$" "$work/sshd-verify.log" || fail "verify does not name it: $(grep FAIL "$work/sshd-verify.log")"
 	rm /etc/ssh/sshd_config.d/05-tb.conf
 
-	step "a config sshd -t refuses is never written or loaded"
+	step "a Match block that loosens sshd for the user fails verify"
+	printf 'Match User %s\n\tPasswordAuthentication yes\n' "$u" >/etc/ssh/sshd_config.d/90-tb.conf
+	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with password logins on in a Match block"; fi
+	grep -q "^FAIL sshd -T for $u: passwordauthentication no$" "$work/sshd-verify.log" || fail "verify does not see the Match block's setting"
+	grep -q '^FAIL no Match block in ' "$work/sshd-verify.log" || fail "verify does not report the Match block"
+	rm /etc/ssh/sshd_config.d/90-tb.conf
+
+	step "a config sshd -t refuses with the new drop-in is refused before anything is written"
 	printf 'NoSuchKeyword yes\n' >/etc/ssh/sshd_config.d/05-tb.conf
 	printf '# changed by hand\n' >>"$dropin"
 	cp "$dropin" "$work/sshd-before.conf"
-	if "$host_dir/bootstrap.sh" --only sshd 2>"$work/sshd-refused.log"; then fail "bootstrap ran with a config sshd -t refuses"; fi
-	grep -q 'sshd -t refuses' "$work/sshd-refused.log" || fail "unexpected refusal: $(cat "$work/sshd-refused.log")"
+	if sshd_run; then fail "bootstrap ran with a config sshd -t refuses"; fi
+	grep -q 'sshd -t refuses the config with the drop-in this step would write' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
+	grep -q '^apply: ' "$work/sshd-run.log" && fail "the refused run changed something: $(grep '^apply: ' "$work/sshd-run.log")"
 	cmp -s "$dropin" "$work/sshd-before.conf" || fail "the refused run changed $dropin"
 	rm /etc/ssh/sshd_config.d/05-tb.conf
 
-	step "a drop-in changed by hand fails verify, and a run writes it back and reloads sshd"
+	step "when sshd -t fails once the drop-in is in place, the old one is put back and sshd is not reloaded"
+	# Accepts the step's check of the new config (-f), refuses the one in place.
+	mkdir -p "$work/fake-sshd"
+	printf '#!/bin/sh\n[ "$*" = -t ] && exit 1\nexec /usr/sbin/sshd "$@"\n' >"$work/fake-sshd/sshd"
+	chmod +x "$work/fake-sshd/sshd"
+	if sshd_run PATH="$work/fake-sshd:$PATH"; then fail "bootstrap went on when sshd -t refused the config in place"; fi
+	grep -q 'left it as it was before the run, sshd not reloaded' "$work/sshd-run.log" || fail "unexpected failure: $(cat "$work/sshd-run.log")"
+	grep -q '^apply: reload' "$work/sshd-run.log" && fail "sshd was reloaded with a config sshd -t refuses"
+	cmp -s "$dropin" "$work/sshd-before.conf" || fail "the old $dropin was not put back"
+
+	step "a drop-in changed by hand fails verify; a run writes it back, with no reload, as sshd never read the change"
 	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with $dropin changed"; fi
-	grep -q "^FAIL sshd reloaded since $dropin changed$" "$work/sshd-verify.log" || fail "verify does not see sshd was not reloaded"
-	"$host_dir/bootstrap.sh" --only sshd 2>"$work/sshd-run.log" >/dev/null
-	grep -q '^apply: reload sshd' "$work/sshd-run.log" || fail "the run did not reload sshd: $(cat "$work/sshd-run.log")"
+	grep -q "^FAIL sshd drop-in $dropin as generated$" "$work/sshd-verify.log" || fail "verify does not see $dropin changed"
+	sshd_run || fail "the run refused: $(cat "$work/sshd-run.log")"
+	grep -q "^apply: write $dropin$" "$work/sshd-run.log" || fail "the run did not write $dropin back"
+	grep -q '^apply: reload' "$work/sshd-run.log" && fail "the run reloaded sshd with the config it was last reloaded with"
 	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair sshd"
+
+	step "a broken drop-in of our own is written back"
+	printf 'NoSuchKeyword yes\n' >>"$dropin"
+	sshd_run || fail "the run did not repair a broken $dropin: $(cat "$work/sshd-run.log")"
+	cmp -s "$dropin" /var/lib/hangar-bootstrap/sshd.loaded || fail "the run left the broken $dropin"
+	sshd -t || fail "sshd -t refuses the repaired config"
+
+	step "a drop-in sshd was not reloaded with is reloaded"
+	rm /var/lib/hangar-bootstrap/sshd.loaded
+	sshd_run || fail "the run refused: $(cat "$work/sshd-run.log")"
+	grep -q '^apply: reload sshd' "$work/sshd-run.log" || fail "the run did not reload sshd: $(cat "$work/sshd-run.log")"
+	systemctl is-active --quiet ssh.service || systemctl is-active --quiet ssh.socket || fail "sshd is down after the reload"
+
+	step "lists that would lock someone out are refused"
+	if sshd_run SUDO_USER=tb-not-listed; then fail "the run left out the user running it"; fi
+	grep -q 'sshd would not let in tb-not-listed, who runs this' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
+	sshd_run SUDO_USER=tb-not-listed HANGAR_SSH_FORCE=1 || fail "HANGAR_SSH_FORCE=1 did not override: $(cat "$work/sshd-run.log")"
+	sed "s|^HANGAR_SSH_USERS=.*|HANGAR_SSH_USERS=\"$u root\"|" "$env_file" >"$work/sshd-root.env"
+	if "$host_dir/bootstrap.sh" --env "$work/sshd-root.env" --only sshd 2>"$work/sshd-run.log"; then fail "HANGAR_SSH_USERS listing root was taken"; fi
+	grep -q 'HANGAR_SSH_USERS must not list root' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
+	# A system user: an ordinary one gets a subordinate range, which the
+	# node agent refuses.
+	useradd -r -m -d /var/tmp/tb-keys2 -s /bin/sh tb-keys2
+	install -d -o tb-keys2 -m 0700 /var/tmp/tb-keys2/.ssh
+	printf 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl tb\n' >/var/tmp/tb-keys2/.ssh/authorized_keys2
+	sed "s|^HANGAR_SSH_USERS=.*|HANGAR_SSH_USERS=\"$u tb-keys2\"|" "$env_file" >"$work/sshd-keys2.env"
+	if "$host_dir/bootstrap.sh" --env "$work/sshd-keys2.env" --only sshd >"$work/sshd-run.log" 2>&1; then fail "a user's keys were dropped with authorized_keys2"; fi
+	grep -q 'tb-keys2 has keys in /var/tmp/tb-keys2/.ssh/authorized_keys2 alone' "$work/sshd-run.log" || fail "unexpected refusal: $(cat "$work/sshd-run.log")"
+	userdel -r tb-keys2 2>/dev/null
+
+	"$host_dir/verify.sh" >"$work/sshd-verify.log" || fail "verify: $(grep FAIL "$work/sshd-verify.log")"
 	[ "$("$host_dir/bootstrap.sh" --only sshd)" = "changes: 0" ] || fail "a second sshd run changed something"
 }
 
