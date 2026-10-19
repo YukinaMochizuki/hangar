@@ -119,13 +119,57 @@ sshd_keys() { [ -f "$1" ] && grep -Ev '^[[:space:]]*(#|$)' "$1" || true; }
 # sshd_lists USER succeeds when USER is one of the users sshd lets in.
 sshd_lists() { [[ " $SSHD_USERS " == *" $1 "* ]]; }
 
-# sshd_any NAME PATTERN... succeeds when a PATTERN matches NAME.
+# sshd_match NAME PATTERN succeeds when PATTERN matches NAME as sshd
+# matches one: * and ? are wildcards, every other character is itself.
+sshd_match() {
+	local name=$1 pat=$2 re='' c i
+	for ((i = 0; i < ${#pat}; i++)); do
+		c=${pat:i:1}
+		case $c in
+		'*') re+='.*' ;;
+		'?') re+='.' ;;
+		[[:alnum:]_]) re+=$c ;;
+		']') re+='[]]' ;;
+		'^') re+='\^' ;;
+		*) re+="[$c]" ;;
+		esac
+	done
+	[[ $name =~ ^$re$ ]]
+}
+
+# sshd_any NAME PATTERN... succeeds when a PATTERN matches NAME: the
+# words of AllowUsers and DenyUsers, one pattern each.
 sshd_any() {
 	local name=$1 p
 	shift
 	for p in "$@"; do
-		# shellcheck disable=SC2053 # $p is a pattern, as sshd matches it.
-		if [[ $name == $p ]]; then return 0; fi
+		if sshd_match "$name" "$p"; then return 0; fi
+	done
+	return 1
+}
+
+# sshd_groups_match GROUPS LIST... succeeds when one of the LISTs, the
+# words of AllowGroups or DenyGroups, matches one of the user's GROUPS: a
+# LIST is patterns separated by commas, a pattern after ! negates, and a
+# negated match of any group fails the LIST however the others match.
+sshd_groups_match() {
+	local groups=$1 list g p pos neg
+	local -a pats
+	shift
+	for list in "$@"; do
+		IFS=, read -ra pats <<<"$list"
+		pos=0
+		neg=0
+		for g in $groups; do
+			for p in "${pats[@]}"; do
+				if [ "${p:0:1}" = '!' ]; then
+					! sshd_match "$g" "${p:1}" || neg=1
+				else
+					! sshd_match "$g" "$p" || pos=1
+				fi
+			done
+		done
+		if [ "$pos" = 1 ] && [ "$neg" = 0 ]; then return 0; fi
 	done
 	return 1
 }
@@ -136,7 +180,7 @@ sshd_any() {
 # AllowGroups or DenyGroups. A user@host pattern counts as letting the
 # user in and as keeping no one out.
 sshd_current_users() {
-	local conf name home shell f has groups g kept
+	local conf name home shell f has groups
 	local -a files allow deny agroups dgroups
 	conf=$(sshd_disk_config) || return 1
 	read -ra files <<<"$(sed -n 's/^authorizedkeysfile //p' <<<"$conf")"
@@ -151,13 +195,8 @@ sshd_current_users() {
 		! sshd_any "$name" "${deny[@]}" || continue
 		if [ "${#agroups[@]}" != 0 ] || [ "${#dgroups[@]}" != 0 ]; then
 			groups=$(id -nG "$name" 2>/dev/null) || true
-			kept=0
-			[ "${#agroups[@]}" = 0 ] || kept=1
-			for g in $groups; do
-				[ "${#agroups[@]}" = 0 ] || ! sshd_any "$g" "${agroups[@]}" || kept=0
-				! sshd_any "$g" "${dgroups[@]}" || { kept=1; break; }
-			done
-			[ "$kept" = 0 ] || continue
+			[ "${#agroups[@]}" = 0 ] || sshd_groups_match "$groups" "${agroups[@]}" || continue
+			[ "${#dgroups[@]}" = 0 ] || ! sshd_groups_match "$groups" "${dgroups[@]}" || continue
 		fi
 		has=0
 		for f in "${files[@]}"; do

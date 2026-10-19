@@ -1196,6 +1196,16 @@ EOF
 	env -u SUDO_USER HANGAR_SSH_DROP_USERS=tb-someone-else "$host_dir/bootstrap.sh" --env "$work/sshd-other.env" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 ||
 		fail "the dry run failed: $(cat "$work/sshd-run.log")"
 	grep -q 'a real run refuses' "$work/sshd-run.log" || fail "HANGAR_SSH_DROP_USERS naming someone else let $u go"
+	# sshd matches user patterns with * and ? alone: [t] is the two
+	# characters, so this DenyUsers keeps tb-other out no more than none.
+	printf 'AllowUsers *\nDenyUsers [t]b-other\n' >/etc/ssh/sshd_config.d/05-tb.conf
+	env -u SUDO_USER "$host_dir/bootstrap.sh" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 || fail "the dry run failed: $(cat "$work/sshd-run.log")"
+	grep -q 'sshd would stop letting in tb-other (not in HANGAR_SSH_USERS)' "$work/sshd-run.log" ||
+		fail "DenyUsers [t]b-other was taken to keep tb-other out: $(cat "$work/sshd-run.log")"
+	printf 'AllowUsers *\nDenyUsers tb-oth?r\n' >/etc/ssh/sshd_config.d/05-tb.conf
+	env -u SUDO_USER "$host_dir/bootstrap.sh" --only sshd --dry-run >"$work/sshd-run.log" 2>&1 || fail "the dry run failed: $(cat "$work/sshd-run.log")"
+	grep -q 'letting in tb-other' "$work/sshd-run.log" && fail "DenyUsers tb-oth?r was not taken to keep tb-other out: $(cat "$work/sshd-run.log")"
+	rm /etc/ssh/sshd_config.d/05-tb.conf
 	userdel -r tb-other 2>/dev/null
 	cp "$env_file" "$work/sshd-drop.env"
 	echo "HANGAR_SSH_DROP_USERS=$u" >>"$work/sshd-drop.env"
