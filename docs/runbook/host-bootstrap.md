@@ -326,11 +326,16 @@ tunnel, the cutover there says in which order. It needs oidc auth
    (`docs/decisions/front-door.md`).
 
    The two domains must not share a registrable domain
-   (`docs/decisions/public-endpoints.md`): the `edge` step refuses, before
-   it changes anything, a `HANGAR_EDGE_DOMAIN` and `HANGAR_CP_DOMAIN` that
-   are the same or one under the other, and `hangar-edge` refuses to start
-   on any pair that shares one, siblings such as `cp.example.com` and
-   `user.example.com` too.
+   (`docs/decisions/public-endpoints.md`), siblings such as
+   `cp.example.com` and `user.example.com` included. Before it changes the
+   edge's unit, the `edge` step runs `hangar-edge check-flags` on the very
+   flags the unit's `ExecStart` gets, and refuses the run on whatever the
+   edge would refuse to start with, this among it: the running edge is not
+   touched. It runs the hangar-edge the run installs, as the services step
+   runs `hangar-node check-placement` (above): with `--release`, a private
+   copy of the release's that matches its `SHA256SUMS`; without, the
+   installed one. A hangar-edge from before `check-flags` makes it warn
+   that the flags were not checked; one that cannot run is a problem.
 
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its

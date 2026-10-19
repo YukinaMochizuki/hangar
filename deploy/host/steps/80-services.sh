@@ -164,13 +164,13 @@ services_placement_flags() {
 	done
 }
 
-# node_check_placement BIN prints what hangar-node BIN's own answer to -h says
-# of check-placement: "has" when its usage names it, "lacks" when it is the
-# usage of a hangar-node from before it, which would take the word for its
-# agent's arguments and start one. A BIN that does not run, or answers with
-# something else, is no old hangar-node: it prints why and fails.
-node_check_placement() {
-	local bin=$1 out status=0
+# binary_has_check NAME CHECK BIN prints what NAME BIN's own answer to -h
+# says of its subcommand CHECK: "has" when its usage names it, "lacks" when
+# it is the usage of a NAME from before it, which would take the word for
+# its own arguments and start. A BIN that does not run, or answers with
+# something else, is no old NAME: it prints why and fails.
+binary_has_check() {
+	local name=$1 check=$2 bin=$3 out status=0
 	out=$("$bin" -h 2>&1) || status=$?
 	# Go's flag package answers -h with the usage and exit 0 (2 before Go
 	# 1.15); anything else, 126 for a file that cannot be executed among
@@ -180,28 +180,31 @@ node_check_placement() {
 		return 1
 	fi
 	case $out in
-	*check-placement*) echo has ;;
-	"Usage of "*hangar-node:* | "usage: hangar-node"*) echo lacks ;;
+	*"$check"*) echo has ;;
+	"Usage of "*"$name:"* | "usage: $name"*) echo lacks ;;
 	*)
-		printf '%s answered -h with no hangar-node usage: %s\n' "$bin" "$(printf '%s' "$out" | head -n 3 | tr '\n' ' ')"
+		printf '%s answered -h with no %s usage: %s\n' "$bin" "$name" "$(printf '%s' "$out" | head -n 3 | tr '\n' ' ')"
 		return 1
 		;;
 	esac
 }
 
-# services_placement_problem prints why the agent would not report the
-# placement the host env file gives as given, by the agent's own check
-# (hangar-node check-placement) in the hangar-node this run installs: the
-# release's with --release, else the installed one. Nothing when it would,
-# or when that hangar-node is one from before check-placement, which it
-# warns of; a hangar-node that cannot run is a problem. A subshell, so its
-# traps are its own.
-services_placement_problem() (
-	services_placement_args
-	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || exit 0
-	bin=/usr/local/bin/hangar-node dir=${HANGAR_RELEASE_DIR:-} tmp='' name=$bin
+# node_check_placement BIN is binary_has_check for hangar-node's
+# check-placement.
+node_check_placement() { binary_has_check hangar-node check-placement "$1"; }
+
+# release_check NAME CHECK WHAT TAG ARGS... prints why NAME's own check,
+# NAME CHECK ARGS..., refuses WHAT, in the NAME this run installs: the
+# release's with --release, else the installed one. Nothing when it passes,
+# or when that NAME is one from before CHECK, which it warns of; a NAME
+# that cannot run is a problem. The release's copy is made in a directory
+# named for TAG. A subshell, so its traps are its own.
+release_check() (
+	name=$1 check=$2 what=$3 tag=$4
+	shift 4
+	bin=/usr/local/bin/$name dir=${HANGAR_RELEASE_DIR:-} tmp='' shown=/usr/local/bin/$name
 	if [ -n "$dir" ]; then
-		name=$dir/hangar-node
+		shown=$dir/$name
 		# The release's file need not be executable (a fetched release keeps
 		# no modes), and is run only once it matches its checksum: so a copy
 		# of its own, made executable, is checked and run, the very bytes. It
@@ -212,31 +215,40 @@ services_placement_problem() (
 		trap '[ -z "$tmp" ] || rm -rf "$tmp"' EXIT
 		trap 'exit 130' INT
 		trap 'exit 143' TERM
-		if ! tmp=$(mktemp -d "$SERVICES_CHECK_PARENT/.hangar-placement-check.XXXXXX" 2>&1); then
-			printf 'the host env file'\''s placement cannot be checked: no directory for a copy of %s: %s\n' "$name" "$tmp"
+		if ! tmp=$(mktemp -d "$SERVICES_CHECK_PARENT/.hangar-$tag-check.XXXXXX" 2>&1); then
+			printf '%s cannot be checked: no directory for a copy of %s: %s\n' "$what" "$shown" "$tmp"
 			tmp=''
 			exit 0
 		fi
-		install -m 0700 "$dir/hangar-node" "$tmp/hangar-node" 2>/dev/null || true
-		if ! grep -E '^[0-9a-f]{64}  hangar-node$' "$dir/SHA256SUMS" 2>/dev/null | sed "s|  hangar-node\$|  $tmp/hangar-node|" |
+		install -m 0700 "$dir/$name" "$tmp/$name" 2>/dev/null || true
+		if ! grep -E "^[0-9a-f]{64}  $name\$" "$dir/SHA256SUMS" 2>/dev/null | sed "s|  $name\$|  $tmp/$name|" |
 			sha256sum -c --quiet --status 2>/dev/null; then
-			printf '%s\n' "$dir/hangar-node does not match $dir/SHA256SUMS; the host env file's placement cannot be checked with it"
+			printf '%s\n' "$dir/$name does not match $dir/SHA256SUMS; $what cannot be checked with it"
 			exit 0
 		fi
-		bin=$tmp/hangar-node
+		bin=$tmp/$name
 	elif [ ! -x "$bin" ]; then
-		printf '%s\n' "no $bin to check the host env file's placement with; install a release first"
+		printf '%s\n' "no $bin to check $what with; install a release first"
 		exit 0
 	fi
-	if ! has=$(node_check_placement "$bin"); then
-		printf 'the host env file'\''s placement cannot be checked with %s: %s\n' "$name" "$has"
+	if ! has=$(binary_has_check "$name" "$check" "$bin"); then
+		printf '%s cannot be checked with %s: %s\n' "$what" "$shown" "$has"
 	elif [ "$has" = lacks ]; then
-		log "warning: $name has no check-placement; the host env file's placement is not checked this run"
-	elif ! out=$("$bin" check-placement "${SERVICES_PLACEMENT[@]}" 2>&1); then
-		printf 'the host env file'\''s placement: %s\n' "$(printf '%s' "$out" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
+		log "warning: $shown has no $check; $what is not checked this run"
+	elif ! out=$("$bin" "$check" "$@" 2>&1); then
+		printf '%s: %s\n' "$what" "$(printf '%s' "$out" | tr '\n' ';' | sed 's/;/; /g; s/; $//')"
 	fi
 	exit 0
 )
+
+# services_placement_problem prints why the agent would not report the
+# placement the host env file gives as given, by the agent's own check
+# (hangar-node check-placement; release_check says which hangar-node).
+services_placement_problem() {
+	services_placement_args
+	[ "${#SERVICES_PLACEMENT[@]}" -gt 0 ] || return 0
+	release_check hangar-node check-placement "the host env file's placement" placement "${SERVICES_PLACEMENT[@]}"
+}
 
 # services_auth_flags prints the apiserver's flags for the auth mode
 # local.env asks for, nothing when it names none (auth_problem refuses

@@ -74,6 +74,13 @@ edge_front_flags() {
 	[ "$(edge_acme_dns)" = cloudflare ] || printf -- ' --acme-dns %s' "$(edge_acme_dns)"
 }
 
+# edge_flags prints the edge's flags as its unit runs it: the same words
+# its ExecStart has, which edge_problem has the edge itself check.
+edge_flags() {
+	printf -- '--api-socket %s --dial-socket %s --domain %s --console-url %s%s\n' \
+		"$SERVICES_EDGE_SOCKET" "$SERVICES_EDGE_DIAL" "$(local_env HANGAR_EDGE_DOMAIN)" "$(local_env HANGAR_PUBLIC_URL)" "$(edge_front_flags)"
+}
+
 edge_unit() {
 	cat <<EOF
 # Written by deploy/host/steps/85-edge.sh.
@@ -106,7 +113,7 @@ EOF
 # socket, and reaches machines through the agent's dial socket, all its
 # group's. A browser not yet signed in to a private endpoint goes to the
 # console, HANGAR_PUBLIC_URL, to be.
-ExecStart=/usr/local/bin/hangar-edge --api-socket $SERVICES_EDGE_SOCKET --dial-socket $SERVICES_EDGE_DIAL --domain $(local_env HANGAR_EDGE_DOMAIN) --console-url $(local_env HANGAR_PUBLIC_URL)$(edge_front_flags)
+ExecStart=/usr/local/bin/hangar-edge $(edge_flags)
 Restart=always
 RestartSec=2
 UMask=0077
@@ -219,18 +226,13 @@ edge_problem() {
 	# mailto:default on a first start (docs/decisions/front-door.md).
 	[ -n "$(local_env HANGAR_ACME_EMAIL)" ] ||
 		printf '%s\n' "the front door (HANGAR_CP_DOMAIN) needs HANGAR_ACME_EMAIL in $LOCAL_ENV, the ACME account's contact"
-	# User content must not share a registrable domain with the console and
-	# the API (docs/decisions/public-endpoints.md). hangar-edge checks that
-	# against the Public Suffix List; here only the same or nested domains,
-	# so that it refuses before the unit changes.
-	local cp user
-	cp=$(local_env HANGAR_CP_DOMAIN | tr '[:upper:]' '[:lower:]')
-	cp=${cp%.}
-	user=$(local_env HANGAR_EDGE_DOMAIN | tr '[:upper:]' '[:lower:]')
-	user=${user%.}
-	if [ "$cp" = "$user" ] || [[ $cp == *."$user" ]] || [[ $user == *."$cp" ]]; then
-		printf '%s\n' "HANGAR_CP_DOMAIN ($cp) and HANGAR_EDGE_DOMAIN ($user) in $LOCAL_ENV must not share a registrable domain: user content must not share one with the console and the API"
-	fi
+	# What the edge would refuse to start with, such as two domains that
+	# share a registrable domain (docs/decisions/public-endpoints.md), by
+	# its own check (hangar-edge check-flags) on the flags its unit gets,
+	# so it is refused before the running edge is touched.
+	local -a args
+	read -ra args <<<"$(edge_flags)"
+	release_check hangar-edge check-flags "the edge unit's command line" edge-flags "${args[@]}"
 	# Sign-in's provider returns to the public URL's /auth/callback, which
 	# only the console's site hands the apiserver.
 	local want

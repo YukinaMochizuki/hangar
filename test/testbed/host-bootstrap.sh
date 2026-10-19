@@ -625,12 +625,15 @@ EOF
 	grep -q "needs HANGAR_ACME_EMAIL in /etc/hangar/local.env" "$log" || fail "no refusal for the missing ACME email: $(cat "$log")"
 	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
 	echo 'HANGAR_ACME_EMAIL=edge@example.com' >>/etc/hangar/local.env
-	# User content must not share a registrable domain with the console.
+	# User content must not share a registrable domain with the console:
+	# the edge step has the release's hangar-edge check-flags refuse it
+	# before it writes the unit.
 	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.cp.test/' /etc/hangar/local.env
 	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >"$log" 2>&1; then
 		fail "the front door ran with the endpoints' domain under the control plane's"
 	fi
-	grep -q "must not share a registrable domain" "$log" || fail "unexpected refusal: $(cat "$log")"
+	grep -q "the edge unit's command line: --cp-domain cp.test and --domain user.cp.test must not share a registrable domain" "$log" ||
+		fail "unexpected refusal: $(cat "$log")"
 	grep -q '^apply: ' "$log" && fail "the edge step changed something before the refusal: $(grep '^apply: ' "$log")"
 	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.test/' /etc/hangar/local.env
 
@@ -643,6 +646,20 @@ EOF
 	[ "$(stat -c %U "/proc/$pid")" = hangar-edge ] || fail "the edge runs as $(stat -c %U "/proc/$pid")"
 	[ "$(stat -c '%U %a' /var/lib/hangar-edge)" = "hangar-edge 700" ] || fail "the edge's state is $(stat -c '%U %a' /var/lib/hangar-edge)"
 	ss -Hltn | awk '{print $4}' | grep -qx '\*:443' || fail ":443 is not bound for every address: $(ss -Hltn)"
+
+	step "sibling domains under one registrable domain are refused before the running edge is touched"
+	cp /etc/hangar/local.env "$work/local.env.door"
+	unit_before=$(sha256sum /etc/systemd/system/hangar-edge.service)
+	sed -i 's/^HANGAR_CP_DOMAIN=.*/HANGAR_CP_DOMAIN=cp.example.com/; s/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.example.com/; s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=https://console.cp.example.com|' /etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >"$log" 2>&1; then
+		fail "the edge step ran with sibling domains"
+	fi
+	grep -q "the edge unit's command line: --cp-domain cp.example.com and --domain user.example.com must not share a registrable domain" "$log" ||
+		fail "unexpected refusal: $(cat "$log")"
+	grep -q '^apply: ' "$log" && fail "the edge step changed something before the refusal: $(grep '^apply: ' "$log")"
+	[ "$(sha256sum /etc/systemd/system/hangar-edge.service)" = "$unit_before" ] || fail "the refused run changed the edge's unit"
+	[ "$(main_pid hangar-edge)" = "$pid" ] || fail "the refused run restarted the edge"
+	install -m 0600 "$work/local.env.door" /etc/hangar/local.env
 
 	step "the certificates come, and each site answers on IPv4 and IPv6, from the host and from outside"
 	# One certificate each, as they come: every name has its own.

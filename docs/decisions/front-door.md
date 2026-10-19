@@ -58,8 +58,12 @@ stand in front of the internet with nothing else in front of it.
     when they do, the same, one under the other or siblings such as
     `cp.example.com` and `user.example.com`, or when one is a public
     suffix itself, since user content must not share a registrable domain
-    with the console and the API (`public-endpoints.md`). The `edge` step
-    refuses the same or nested domains before it changes the unit.
+    with the console and the API (`public-endpoints.md`). `hangar-edge
+    check-flags` runs the edge's checks of its flags, this one and the
+    ACME email among them, and nothing else, on the flags it is given;
+    the `edge` step of `deploy/host` runs it on the flags the unit would
+    get, with the release's own binary, and refuses before it changes
+    the unit, so a bad pair never takes the front door down.
   - Until a certificate exists, a handshake for its name fails, and nothing
     else does. A server name the front door has no certificate for, or
     none, fails the handshake: there is no default certificate and no

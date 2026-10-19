@@ -8,6 +8,9 @@
 // forwards the API through its public socket, and reaches machines through
 // the node agent's edge dial socket. See docs/decisions/public-endpoints.md
 // and docs/decisions/front-door.md.
+//
+// hangar-edge check-flags takes the edge's flags and fails, saying why,
+// when the edge would refuse to start with them; it starts nothing.
 package main
 
 import (
@@ -16,6 +19,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -66,34 +70,12 @@ type flags struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "check-flags" {
+		os.Exit(checkFlagsMain(os.Args[2:], os.Stderr))
+	}
 	var f flags
-	flag.StringVar(&f.listen, "listen", "", "loopback address to serve public endpoints on over plain HTTP, for tests; empty, the default, serves none")
-	flag.StringVar(&f.apiSocket, "api-socket", "/run/hangar/edge.sock", "the apiserver's edge socket")
-	flag.StringVar(&f.dialSocket, "dial-socket", "/run/hangar/edge-dial.sock", "the node agent's edge dial socket")
-	flag.StringVar(&f.domain, "domain", "hangarlab.dev", "the domain public endpoints' hostnames are in; the apiserver's --endpoint-domain")
-
-	flag.StringVar(&f.consoleURL, "console-url", "", "the console's origin, whose endpoint-login signs browsers in to private endpoints; empty is https://console.<--cp-domain>")
-	flag.StringVar(&f.cpDomain, "cp-domain", "", "the control plane's domain, which serves api.<it> and console.<it>; empty, the front door is off")
-	flag.StringVar(&f.publicSocket, "public-socket", "/run/hangar/public.sock", "the apiserver's public socket, the API from :443 goes to")
-	flag.StringVar(&f.httpsListen, "https-listen", "", "address for :443 when systemd passes no socket; under systemd its socket unit says")
-	flag.StringVar(&f.httpListen, "http-listen", "", "address for :80 when systemd passes no socket")
-	flag.StringVar(&f.certStorage, "cert-storage", stateDir(), "directory the certificates, their keys and the ACME account are kept in, the edge's alone")
-	flag.StringVar(&f.acmeCA, "acme-ca", front.LetsEncrypt, "ACME directory URL; "+front.LetsEncryptStaging+" for a testbed")
-	flag.StringVar(&f.acmeCARoot, "acme-ca-root", "", "PEM file of the only roots the ACME directory's TLS certificate is checked against, for a test CA")
-	flag.StringVar(&f.acmeMail, "acme-email", "", "contact for the ACME account, told of problems with the certificates; required with --cp-domain")
-	flag.StringVar(&f.acmeDNS, "acme-dns", "cloudflare", "how DNS-01 challenges are answered: cloudflare"+testDNSUsage)
-	flag.StringVar(&f.dnsTokenFile, "cloudflare-dns-token-file", credential(dnsTokenCredential), "file only its owner reads holding a Cloudflare token that may edit DNS in the two domains' zones")
-	flag.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
-	flag.DurationVar(&f.endpointResponseTimeout, "endpoint-response-header-timeout", 100*time.Second, "how long an endpoint has to start its answer")
-	limitFlags(&f.limits)
-	flag.Func("own-prefix", "the host's own IPv6 prefix, such as its /64, whose addresses, its machines', are each a client of the limits by itself; repeatable", func(s string) error {
-		p, err := netip.ParsePrefix(s)
-		if err != nil {
-			return err
-		}
-		f.limits.OwnPrefixes = append(f.limits.OwnPrefixes, p)
-		return nil
-	})
+	bindFlags(flag.CommandLine, &f)
+	flag.Usage = func() { usage(flag.CommandLine) }
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -105,29 +87,93 @@ func main() {
 	}
 }
 
+// bindFlags binds the edge's flags to fs, into f: the same for the edge and
+// for check-flags, so what is checked is what would run.
+func bindFlags(fs *flag.FlagSet, f *flags) {
+	fs.StringVar(&f.listen, "listen", "", "loopback address to serve public endpoints on over plain HTTP, for tests; empty, the default, serves none")
+	fs.StringVar(&f.apiSocket, "api-socket", "/run/hangar/edge.sock", "the apiserver's edge socket")
+	fs.StringVar(&f.dialSocket, "dial-socket", "/run/hangar/edge-dial.sock", "the node agent's edge dial socket")
+	fs.StringVar(&f.domain, "domain", "hangarlab.dev", "the domain public endpoints' hostnames are in; the apiserver's --endpoint-domain")
+
+	fs.StringVar(&f.consoleURL, "console-url", "", "the console's origin, whose endpoint-login signs browsers in to private endpoints; empty is https://console.<--cp-domain>")
+	fs.StringVar(&f.cpDomain, "cp-domain", "", "the control plane's domain, which serves api.<it> and console.<it>; empty, the front door is off")
+	fs.StringVar(&f.publicSocket, "public-socket", "/run/hangar/public.sock", "the apiserver's public socket, the API from :443 goes to")
+	fs.StringVar(&f.httpsListen, "https-listen", "", "address for :443 when systemd passes no socket; under systemd its socket unit says")
+	fs.StringVar(&f.httpListen, "http-listen", "", "address for :80 when systemd passes no socket")
+	fs.StringVar(&f.certStorage, "cert-storage", stateDir(), "directory the certificates, their keys and the ACME account are kept in, the edge's alone")
+	fs.StringVar(&f.acmeCA, "acme-ca", front.LetsEncrypt, "ACME directory URL; "+front.LetsEncryptStaging+" for a testbed")
+	fs.StringVar(&f.acmeCARoot, "acme-ca-root", "", "PEM file of the only roots the ACME directory's TLS certificate is checked against, for a test CA")
+	fs.StringVar(&f.acmeMail, "acme-email", "", "contact for the ACME account, told of problems with the certificates; required with --cp-domain")
+	fs.StringVar(&f.acmeDNS, "acme-dns", "cloudflare", "how DNS-01 challenges are answered: cloudflare"+testDNSUsage)
+	fs.StringVar(&f.dnsTokenFile, "cloudflare-dns-token-file", credential(dnsTokenCredential), "file only its owner reads holding a Cloudflare token that may edit DNS in the two domains' zones")
+	fs.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
+	fs.DurationVar(&f.endpointResponseTimeout, "endpoint-response-header-timeout", 100*time.Second, "how long an endpoint has to start its answer")
+	limitFlags(fs, &f.limits)
+	fs.Func("own-prefix", "the host's own IPv6 prefix, such as its /64, whose addresses, its machines', are each a client of the limits by itself; repeatable", func(s string) error {
+		p, err := netip.ParsePrefix(s)
+		if err != nil {
+			return err
+		}
+		f.limits.OwnPrefixes = append(f.limits.OwnPrefixes, p)
+		return nil
+	})
+}
+
+// usage is the edge's answer to -h. It names check-flags, which is how
+// deploy/host tells an edge that has it from one before it.
+func usage(fs *flag.FlagSet) {
+	_, _ = fmt.Fprintln(fs.Output(), "usage: hangar-edge [flags]\n       hangar-edge check-flags [the same flags]")
+	fs.PrintDefaults()
+}
+
+// checkFlagsMain is hangar-edge check-flags: it parses the edge's flags in
+// args and runs checkFlags on them, and nothing else (no listener, no
+// socket, no ACME, no file read), exiting 1, saying why on stderr, when the
+// edge would refuse to start with them; 2 for flags it cannot parse. The
+// edge step of deploy/host runs it on the flags the unit would get, before
+// it changes the unit.
+func checkFlagsMain(args []string, stderr io.Writer) int {
+	fs := flag.NewFlagSet("check-flags", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	var f flags
+	bindFlags(fs, &f)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() > 0 {
+		_, _ = fmt.Fprintf(stderr, "check-flags takes flags alone, not %q\n", fs.Args())
+		return 2
+	}
+	if err := checkFlags(f); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
+}
+
 // limitFlags binds a flag to each of the front door's limits, defaulting to
 // front.DefaultLimits.
-func limitFlags(l *front.Limits) {
+func limitFlags(fs *flag.FlagSet, l *front.Limits) {
 	d := front.DefaultLimits
-	flag.IntVar(&l.Conns, "max-conns", d.Conns, "open connections to :443 and :80, from everyone")
-	flag.IntVar(&l.ConnsPerClient, "max-conns-per-client", d.ConnsPerClient, "open connections from one client, an IPv4 address or an IPv6 /64")
-	flag.IntVar(&l.ConnsPer56, "max-conns-per-56", d.ConnsPer56, "open connections from every IPv6 client in one /56")
-	flag.IntVar(&l.ConnsPer48, "max-conns-per-48", d.ConnsPer48, "open connections from every IPv6 client in one /48")
-	flag.Float64Var(&l.ConnRate, "conn-rate", d.ConnRate, "new connections a second from one client")
-	flag.IntVar(&l.ConnBurst, "conn-burst", d.ConnBurst, "new connections one client may open at once, past --conn-rate")
-	flag.Float64Var(&l.RequestRate, "request-rate", d.RequestRate, "requests a second from one client, each HTTP/2 stream one")
-	flag.IntVar(&l.RequestBurst, "request-burst", d.RequestBurst, "requests one client may send at once, past --request-rate")
-	flag.IntVar(&l.RequestsPerClient, "max-requests-per-client", d.RequestsPerClient, "requests in flight from one client, streams and WebSockets included")
-	flag.IntVar(&l.MaxHeaderBytes, "max-header-bytes", d.MaxHeaderBytes, "size of a request's header")
-	flag.Int64Var(&l.APIBodyBytes, "max-api-body-bytes", d.APIBodyBytes, "size of a request's body to the API")
-	flag.Int64Var(&l.EndpointBodyBytes, "max-endpoint-body-bytes", d.EndpointBodyBytes, "size of a request's body to a public endpoint")
-	flag.DurationVar(&l.ReadHeaderTimeout, "read-header-timeout", d.ReadHeaderTimeout, "time for a TLS handshake, then for each request's header")
-	flag.DurationVar(&l.IdleTimeout, "idle-timeout", d.IdleTimeout, "time a connection may carry no request")
-	flag.DurationVar(&l.ConsoleWriteTimeout, "console-write-timeout", d.ConsoleWriteTimeout, "time to send one of the console's files")
-	flag.IntVar(&l.HTTP2MaxStreams, "http2-max-streams", d.HTTP2MaxStreams, "HTTP/2 streams at once on one connection")
-	flag.DurationVar(&l.HTTP2SendPingTimeout, "http2-send-ping-timeout", d.HTTP2SendPingTimeout, "idle time on an HTTP/2 connection before it is pinged")
-	flag.DurationVar(&l.HTTP2PingTimeout, "http2-ping-timeout", d.HTTP2PingTimeout, "time an HTTP/2 ping has to be answered before the connection is closed")
-	flag.DurationVar(&l.HTTP2WriteByteTimeout, "http2-write-byte-timeout", d.HTTP2WriteByteTimeout, "time an HTTP/2 connection has to take any of what is written to it")
+	fs.IntVar(&l.Conns, "max-conns", d.Conns, "open connections to :443 and :80, from everyone")
+	fs.IntVar(&l.ConnsPerClient, "max-conns-per-client", d.ConnsPerClient, "open connections from one client, an IPv4 address or an IPv6 /64")
+	fs.IntVar(&l.ConnsPer56, "max-conns-per-56", d.ConnsPer56, "open connections from every IPv6 client in one /56")
+	fs.IntVar(&l.ConnsPer48, "max-conns-per-48", d.ConnsPer48, "open connections from every IPv6 client in one /48")
+	fs.Float64Var(&l.ConnRate, "conn-rate", d.ConnRate, "new connections a second from one client")
+	fs.IntVar(&l.ConnBurst, "conn-burst", d.ConnBurst, "new connections one client may open at once, past --conn-rate")
+	fs.Float64Var(&l.RequestRate, "request-rate", d.RequestRate, "requests a second from one client, each HTTP/2 stream one")
+	fs.IntVar(&l.RequestBurst, "request-burst", d.RequestBurst, "requests one client may send at once, past --request-rate")
+	fs.IntVar(&l.RequestsPerClient, "max-requests-per-client", d.RequestsPerClient, "requests in flight from one client, streams and WebSockets included")
+	fs.IntVar(&l.MaxHeaderBytes, "max-header-bytes", d.MaxHeaderBytes, "size of a request's header")
+	fs.Int64Var(&l.APIBodyBytes, "max-api-body-bytes", d.APIBodyBytes, "size of a request's body to the API")
+	fs.Int64Var(&l.EndpointBodyBytes, "max-endpoint-body-bytes", d.EndpointBodyBytes, "size of a request's body to a public endpoint")
+	fs.DurationVar(&l.ReadHeaderTimeout, "read-header-timeout", d.ReadHeaderTimeout, "time for a TLS handshake, then for each request's header")
+	fs.DurationVar(&l.IdleTimeout, "idle-timeout", d.IdleTimeout, "time a connection may carry no request")
+	fs.DurationVar(&l.ConsoleWriteTimeout, "console-write-timeout", d.ConsoleWriteTimeout, "time to send one of the console's files")
+	fs.IntVar(&l.HTTP2MaxStreams, "http2-max-streams", d.HTTP2MaxStreams, "HTTP/2 streams at once on one connection")
+	fs.DurationVar(&l.HTTP2SendPingTimeout, "http2-send-ping-timeout", d.HTTP2SendPingTimeout, "idle time on an HTTP/2 connection before it is pinged")
+	fs.DurationVar(&l.HTTP2PingTimeout, "http2-ping-timeout", d.HTTP2PingTimeout, "time an HTTP/2 ping has to be answered before the connection is closed")
+	fs.DurationVar(&l.HTTP2WriteByteTimeout, "http2-write-byte-timeout", d.HTTP2WriteByteTimeout, "time an HTTP/2 connection has to take any of what is written to it")
 }
 
 // consoleOrigin is the console's origin the edge sends browsers to, to be
