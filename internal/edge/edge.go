@@ -343,6 +343,29 @@ type request struct {
 // which a client would take for an empty 200.
 var errEnded = errors.New("the edge ended the request")
 
+// ErrBodyTooSlow is what reading a request's body fails with once the front
+// door has cut it for arriving too slowly (internal/edge/front).
+var ErrBodyTooSlow = errors.New("the request body arrived too slowly")
+
+type bodyCutKey struct{}
+
+// WithBodyCut returns ctx, a request's, with cut, which says whether the
+// front door has cut the request's body.
+func WithBodyCut(ctx context.Context, cut func() bool) context.Context {
+	return context.WithValue(ctx, bodyCutKey{}, cut)
+}
+
+// BodyCut says whether err, a proxy's, came of the request's body being cut
+// for arriving too slowly. Over HTTP/1 net/http ends the request's context
+// as the read fails, so err may say only that.
+func BodyCut(ctx context.Context, err error) bool {
+	if errors.Is(err, ErrBodyTooSlow) {
+		return true
+	}
+	cut, ok := ctx.Value(bodyCutKey{}).(func() bool)
+	return ok && cut()
+}
+
 // recheck ends, at each change to the authorization data, the requests to
 // PRIVATE endpoints whose callers may no longer use them: an upgraded
 // connection or a stream lasts no longer than the grant that let it in.
@@ -709,6 +732,10 @@ func (e *Edge) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 		case http.StatusConflict:
 			status, msg = http.StatusServiceUnavailable, "the endpoint's machine is not running"
 		}
+	}
+	if BodyCut(r.Context(), err) {
+		http.Error(w, "request body too slow", http.StatusRequestTimeout)
+		return
 	}
 	if errors.Is(err, context.Canceled) {
 		return // the client went away

@@ -179,7 +179,7 @@ func TestAnIPv6NetworkIsCappedAboveItsClients(t *testing.T) {
 			t.Errorf("outside the own /64: %v, want the /56's cap of one", admitted)
 		}
 	})
-	t.Run("IPv4 has no network cap", func(t *testing.T) {
+	t.Run("the IPv6 caps do not count IPv4", func(t *testing.T) {
 		k := newCounts(limitsFor(1, 1))
 		admitted, _, whys := open(k, "192.0.2.1", "192.0.2.2", "::ffff:192.0.2.3")
 		for i, ok := range admitted {
@@ -188,4 +188,41 @@ func TestAnIPv6NetworkIsCappedAboveItsClients(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestAnIPv4Slash24IsCappedAboveItsClients: addresses each within their own
+// cap still meet the cap of the /24 they share, as IPv6 clients do their
+// /48's; the host's machines' IPv4 does not.
+func TestAnIPv4Slash24IsCappedAboveItsClients(t *testing.T) {
+	if DefaultLimits.ConnsPer24 != DefaultLimits.ConnsPer48 {
+		t.Errorf("an IPv4 /24 caps %d, an IPv6 /48 %d; want them alike", DefaultLimits.ConnsPer24, DefaultLimits.ConnsPer48)
+	}
+	l := limitsFor(100, 100)
+	l.ConnsPer24 = 3
+	k := newCounts(l)
+	admitted, releases, _ := open(k, "192.0.2.1", "192.0.2.2", "::ffff:192.0.2.255")
+	for i, ok := range admitted {
+		if !ok {
+			t.Fatalf("connection %d within the /24's cap refused", i)
+		}
+	}
+	admitted, _, whys := open(k, "192.0.2.3")
+	if admitted[0] || whys[0] != "too many connections from the client's /24" {
+		t.Errorf("a fourth address in the /24: admitted %t, %q", admitted[0], whys[0])
+	}
+	if admitted, _, whys := open(k, "192.0.3.1"); !admitted[0] {
+		t.Errorf("another /24 refused: %q", whys[0])
+	}
+	releases[0]()
+	if admitted, _, whys := open(k, "192.0.2.3"); !admitted[0] {
+		t.Errorf("a connection closed did not free the /24's place: %q", whys[0])
+	}
+
+	// The host's networks' transit addresses, packed in one /24.
+	admitted, _, whys = open(k, "100.64.0.0", "100.64.0.2", "100.64.0.4", "100.64.0.6")
+	for i, ok := range admitted {
+		if !ok {
+			t.Errorf("network %d of the host refused: %q", i, whys[i])
+		}
+	}
 }

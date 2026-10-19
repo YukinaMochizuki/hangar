@@ -212,6 +212,10 @@ func (f *Front) rewriteAPI(pr *httputil.ProxyRequest) {
 }
 
 func (f *Front) apiError(w http.ResponseWriter, r *http.Request, err error) {
+	if edge.BodyCut(r.Context(), err) {
+		page(w, http.StatusRequestTimeout, pageBodyTooSlow)
+		return
+	}
 	if errors.Is(err, context.Canceled) {
 		return // the client went away
 	}
@@ -276,7 +280,7 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 	tc.MinVersion = tls.VersionTLS12
 	tc.NextProtos = []string{"h2", "http/1.1"}
 	https := &http.Server{
-		Handler:           f.counts.limitRequests(f),
+		Handler:           l.limitBodyRate(f.counts.limitRequests(f)),
 		TLSConfig:         tc,
 		Protocols:         protocols,
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
@@ -294,7 +298,7 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 		},
 	}
 	plain := &http.Server{
-		Handler:           f.counts.limitRequests(f.redirectHandler()),
+		Handler:           l.limitBodyRate(f.counts.limitRequests(f.redirectHandler())),
 		ReadHeaderTimeout: l.ReadHeaderTimeout,
 		IdleTimeout:       l.IdleTimeout,
 		MaxHeaderBytes:    l.MaxHeaderBytes,

@@ -120,8 +120,12 @@ stand in front of the internet with nothing else in front of it.
   host's own /64 (`--own-prefix`): every machine on the host has an
   address of it, so there each address is a client, and the /56 and /48
   caps do not count it. A machine's IPv4, NATed, arrives as its network's
-  address on the host's side, so the machines of one network are one
-  client over IPv4.
+  transit address on the host's side (`networking.md`), so the machines of
+  one network are one client over IPv4. The transit addresses, in
+  100.64.0.0/10, are packed 128 networks to a /24, so the /24 cap does not
+  count them; that range is shared address space, never a source from the
+  internet. The IPv4 /24 is capped as the IPv6 /48 is: about 64 addresses
+  of one network otherwise filled every connection there is.
 
   | Limit | Default | Past it |
   |---|---|---|
@@ -129,12 +133,15 @@ stand in front of the internet with nothing else in front of it.
   | open connections, one client | 64 | closed at accept |
   | open connections, every client in one IPv6 /56 | 256 | closed at accept |
   | open connections, every client in one IPv6 /48 | 1024 | closed at accept |
+  | open connections, every address in one IPv4 /24 | 1024 | closed at accept |
   | new connections, one client | 10/s, burst 50 | closed at accept |
   | requests, one client (each HTTP/2 stream one) | 20/s, burst 100 | 429 with `Retry-After` |
   | requests in flight, one client (streams and WebSockets included) | 128 | 429 |
   | request header | 64 KiB (net/http reads 4 KiB past it) | 431 |
   | request body to the API | 8 MiB | 413 |
   | request body to an endpoint | 100 MiB | 413 |
+  | request body's rate, over the time spent waiting for it | 1 KiB/s, no wait past 30 s | 408, connection closed |
+  | what net/http reads of a body left unread (HTTP/1) | 30 s | closed |
   | TLS handshake, then each request header | 10 s | closed |
   | idle connection | 2 min | closed |
   | an endpoint's response header | 100 s | 502 |
@@ -143,8 +150,32 @@ stand in front of the internet with nothing else in front of it.
   | HTTP/2 ping when idle, answer, a write | 30 s, 15 s, 30 s | closed |
 
   There is no overall read or write timeout: Watch, server streams and
-  WebSockets stay open for as long as they are used. A slow request body is
-  bounded only by the connection limits.
+  WebSockets stay open for as long as they are used. What holds a slow
+  client instead (`internal/edge/front/bodyrate.go`):
+  - A request's body must keep up with the rate, counted only over the
+    time the front door waits in a read for it, so a backend slow to take
+    it costs the client nothing. Each wait has a read deadline: the first
+    timeout plus what the bytes so far earned at the rate, less the time
+    already waited, and never more than the timeout, so a body sent fast
+    banks no stall for later. Past it the body is cut (`edge.ErrBodyTooSlow`)
+    and the request answered 408, by the API's proxy and by the endpoints'.
+  - Only the body is held. A server stream's request ends at once, so its
+    response flows for as long as it lasts. A WebSocket opens with a GET
+    without a body and its frames are read from the hijacked connection,
+    which the limit never touches: exec and SSH sessions stay open idle.
+    A request that asks to upgrade and has a body is answered 400.
+  - Over HTTP/1 net/http reads up to 256 KiB of a body the handler left
+    unread, to keep the connection, with no deadline of its own. The front
+    door turns that off before the answer (full duplex), and bounds it with
+    the timeout where it happens, as the proxy closes the body and after
+    the handler.
+  - There are no long-lived request bodies to hold back: bidirectional
+    streams are WebSockets (`streaming-transport.md`), and the endpoints
+    are proxied over HTTP/1.1. A request body that pauses longer than the
+    timeout, as a streaming upload with gaps would, is cut.
+  - A client that sends no request on a connection is closed by the
+    handshake and header timeout, then by the idle timeout; over HTTP/2,
+    by the idle timeout and the pings.
 - **The host's firewall opens 22, 80 and 443 alone**
   (`deploy/host/steps/45-firewall.sh`).
   - It is one nft table of its own, `inet hangar-host`. Its input chain

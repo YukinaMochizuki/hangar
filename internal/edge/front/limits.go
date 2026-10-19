@@ -16,11 +16,12 @@ import (
 
 // Limits are what the front door allows each client and all of them, as
 // the host's only listener on :443 and :80. A client is an IPv4 address or
-// an IPv6 /64, which is what one subscriber usually holds; the /56 and the
-// /48 around it are capped too, so a network that hands out many /64s does
-// not take every connection. The host's own prefixes are the exception:
-// every machine on the host has an address of its /64, so there each
-// address is a client of its own, and the /56 and /48 caps do not apply.
+// an IPv6 /64, which is what one subscriber usually holds; the IPv4 /24,
+// and the IPv6 /56 and /48, around it are capped too, so a network that
+// holds many addresses does not take every connection. The host's own
+// prefixes are the exception: every machine on the host has an address of
+// its /64, so there each address is a client of its own, and the network
+// caps do not apply; nor do they to the machines' IPv4 (hostTransit).
 // The defaults, and why, are in docs/decisions/front-door.md.
 type Limits struct {
 	// OwnPrefixes are the host's own: its machines' addresses, which reach
@@ -36,6 +37,9 @@ type Limits struct {
 	// ConnsPer56 and ConnsPer48 cap the open connections from every IPv6
 	// client in one /56 and in one /48, as ConnsPerClient does one.
 	ConnsPer56, ConnsPer48 int
+	// ConnsPer24 caps the open connections from every IPv4 address in one
+	// /24.
+	ConnsPer24 int
 	// ConnRate and ConnBurst cap how fast one client opens connections,
 	// each a TLS handshake to pay for.
 	ConnRate  float64
@@ -53,6 +57,12 @@ type Limits struct {
 	// APIBodyBytes and EndpointBodyBytes cap a request's body to the API
 	// and to an endpoint.
 	APIBodyBytes, EndpointBodyBytes int64
+	// MinBodyRate is the bytes a second a request's body must arrive at, on
+	// average over the time the front door waits for it; BodyReadTimeout is
+	// the longest one wait may be. Upgraded connections are exempt
+	// (bodyrate.go).
+	MinBodyRate     int64
+	BodyReadTimeout time.Duration
 
 	// ReadHeaderTimeout is how long a client has for its TLS handshake and
 	// then each request's header.
@@ -77,6 +87,7 @@ var DefaultLimits = Limits{
 	ConnsPerClient:    64,
 	ConnsPer56:        256,
 	ConnsPer48:        1024,
+	ConnsPer24:        1024,
 	ConnRate:          10,
 	ConnBurst:         50,
 	RequestRate:       20,
@@ -86,6 +97,8 @@ var DefaultLimits = Limits{
 	MaxHeaderBytes:    64 << 10,
 	APIBodyBytes:      8 << 20,
 	EndpointBodyBytes: 100 << 20,
+	MinBodyRate:       1 << 10,
+	BodyReadTimeout:   30 * time.Second,
 
 	ReadHeaderTimeout:   10 * time.Second,
 	IdleTimeout:         2 * time.Minute,
@@ -106,11 +119,13 @@ func (l Limits) Validate() error {
 		{"connections", l.Conns > 0},
 		{"connections per client", l.ConnsPerClient > 0},
 		{"connections per /56 and /48", l.ConnsPer56 > 0 && l.ConnsPer48 > 0},
+		{"connections per IPv4 /24", l.ConnsPer24 > 0},
 		{"connection rate", l.ConnRate > 0 && l.ConnBurst > 0},
 		{"request rate", l.RequestRate > 0 && l.RequestBurst > 0},
 		{"requests per client", l.RequestsPerClient > 0},
 		{"header bytes", l.MaxHeaderBytes > 0},
 		{"body bytes", l.APIBodyBytes > 0 && l.EndpointBodyBytes > 0},
+		{"body rate", l.MinBodyRate > 0 && l.BodyReadTimeout > 0},
 		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0},
 		{"HTTP/2 settings", l.HTTP2MaxStreams > 0 && l.HTTP2SendPingTimeout > 0 && l.HTTP2PingTimeout > 0 && l.HTTP2WriteByteTimeout > 0},
 	} {
@@ -161,12 +176,25 @@ func addrOf(remote string) (netip.Addr, bool) {
 	return ap.Addr().Unmap(), true
 }
 
-// networks are the IPv6 networks around addr whose connections are capped
-// together, with their caps; none for IPv4, nor for the host's own
-// prefixes, whose neighbours are the host's machines and the host.
+// hostTransit is where the host's machines' IPv4 reaches the front door
+// from, each network's transit /31 (docs/decisions/networking.md); shared
+// address space (RFC 6598), never a source from the internet.
+var hostTransit = netip.MustParsePrefix("100.64.0.0/10")
+
+// networks are the networks around addr whose connections are capped
+// together, with their caps: the IPv4 /24, or the IPv6 /56 and /48. None
+// for the host's own prefixes and its machines' IPv4, whose neighbours are
+// the host's machines and the host.
 func (l Limits) networks(addr netip.Addr) []network {
 	addr = addr.Unmap()
-	if !addr.Is6() || l.own(addr) {
+	if addr.Is4() {
+		if hostTransit.Contains(addr) {
+			return nil
+		}
+		p24, _ := addr.Prefix(24)
+		return []network{{p24, l.ConnsPer24, "too many connections from the client's /24"}}
+	}
+	if l.own(addr) {
 		return nil
 	}
 	p56, _ := addr.Prefix(56)
@@ -189,8 +217,8 @@ type counts struct {
 
 	mu    sync.Mutex
 	conns int
-	// networkConns are the open connections of each IPv6 /56 and /48 that
-	// has any.
+	// networkConns are the open connections of each IPv4 /24, and each
+	// IPv6 /56 and /48, that has any.
 	networkConns map[netip.Prefix]int
 	clients      map[netip.Prefix]*clientCounts
 	lastSweep    time.Time
