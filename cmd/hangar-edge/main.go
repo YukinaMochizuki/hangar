@@ -9,8 +9,8 @@
 // the node agent's edge dial socket. See docs/decisions/public-endpoints.md
 // and docs/decisions/front-door.md.
 //
-// hangar-edge check-flags takes the edge's flags and fails, saying why,
-// when the edge would refuse to start with them; it starts nothing.
+// hangar-edge check-flags takes the edge's flags and fails, saying why, on
+// any of the edge's checks of its flags (checkFlags); it starts nothing.
 package main
 
 import (
@@ -127,11 +127,11 @@ func usage(fs *flag.FlagSet) {
 }
 
 // checkFlagsMain is hangar-edge check-flags: it parses the edge's flags in
-// args and runs checkFlags on them, and nothing else (no listener, no
-// socket, no ACME, no file read), exiting 1, saying why on stderr, when the
-// edge would refuse to start with them; 2 for flags it cannot parse. The
-// edge step of deploy/host runs it on the flags the unit would get, before
-// it changes the unit.
+// args and runs checkFlags on them, the edge's checks of its flags, and
+// nothing else (no listener, no socket, no ACME, no file read), exiting 1,
+// saying why on stderr, when one fails; 2 for flags it cannot parse.
+// deploy/host runs it on the flags the edge's unit would get, before any
+// step changes the host.
 func checkFlagsMain(args []string, stderr io.Writer) int {
 	fs := flag.NewFlagSet("check-flags", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -218,9 +218,6 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	if os.Geteuid() == 0 {
 		return errors.New("hangar-edge runs as its own unprivileged user, never root")
 	}
-	if f.listen != "" && !loopback(f.listen) {
-		return fmt.Errorf("--listen %q is not a loopback address: it serves plain HTTP, for tests on the host alone", f.listen)
-	}
 	socks, err := sdsocket.Inherit()
 	if err != nil {
 		return err
@@ -255,9 +252,6 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	if err := socks.Unused(); err != nil {
 		return err
 	}
-	if f.cpDomain == "" && f.listen == "" {
-		return errors.New("nothing to serve: no --cp-domain and no --listen")
-	}
 	if f.listen != "" {
 		ln, err := net.Listen("tcp", f.listen)
 		if err != nil {
@@ -283,8 +277,18 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 }
 
 // checkFlags refuses flags the edge cannot run with, before it starts
-// anything.
+// anything: every check of the flags alone, so check-flags refuses what the
+// edge would.
 func checkFlags(f flags) error {
+	if f.cpDomain == "" && f.listen == "" {
+		return errors.New("nothing to serve: no --cp-domain and no --listen")
+	}
+	if f.listen != "" && !loopback(f.listen) {
+		return fmt.Errorf("--listen %q is not a loopback address: it serves plain HTTP, for tests on the host alone", f.listen)
+	}
+	if _, err := consoleOrigin(f); err != nil {
+		return err
+	}
 	if f.cpDomain != "" && f.acmeMail == "" {
 		return errors.New("the front door (--cp-domain) needs --acme-email: without it certmagic may register the ACME account as mailto:default on a first start, which the CA refuses (docs/decisions/front-door.md)")
 	}

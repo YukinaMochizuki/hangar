@@ -60,10 +60,12 @@ stand in front of the internet with nothing else in front of it.
     suffix itself, since user content must not share a registrable domain
     with the console and the API (`public-endpoints.md`). `hangar-edge
     check-flags` runs the edge's checks of its flags, this one and the
-    ACME email among them, and nothing else, on the flags it is given;
-    the `edge` step of `deploy/host` runs it on the flags the unit would
-    get, with the release's own binary, and refuses before it changes
-    the unit, so a bad pair never takes the front door down.
+    ACME email among them, and nothing else, on the flags it is given.
+    `deploy/host/bootstrap.sh` runs it, with the edge step's other
+    refusals, before any step, on the flags the unit would get and with
+    the hangar-edge the unit would run after the run (the release's when
+    the release step installs one), so a refused run changes nothing: not
+    the binary, not the unit, not the running edge.
   - Until a certificate exists, a handshake for its name fails, and nothing
     else does. A server name the front door has no certificate for, or
     none, fails the handshake: there is no default certificate and no

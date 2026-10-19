@@ -11,10 +11,11 @@ import (
 	"testing"
 )
 
-// The edge step of deploy/host has hangar-edge check-flags check the flags
-// the unit would get before it changes the unit; these tests run that shell
-// code, with bash, against this very hangar-edge, built here, and against a
-// stand-in for one from before check-flags.
+// deploy/host has hangar-edge check-flags check the flags the edge's unit
+// would get, before any step (bootstrap.sh) and again before the edge step
+// changes the unit; these tests run that shell code, with bash, against
+// this very hangar-edge, built here, and against a stand-in for one from
+// before check-flags.
 
 var built struct {
 	once sync.Once
@@ -107,10 +108,11 @@ func frontDoorEnv(cp, user string) string {
 		"HANGAR_ACME_EMAIL=ops@example.com\nHANGAR_ACME_DNS=testbed:127.0.0.1:8053\n"
 }
 
-// TestTheEdgeStepHasTheEdgeCheckItsFlags: edge_problem refuses what the
-// release's hangar-edge refuses to start with, by check-flags on the very
-// words the unit's ExecStart gets, siblings under one registrable domain
-// included; it lets through what that hangar-edge would start with.
+// TestTheEdgeStepHasTheEdgeCheckItsFlags: edge_problem, as bootstrap.sh
+// runs it before any step, refuses what the release's hangar-edge refuses
+// to start with, by check-flags on the very words the unit's ExecStart
+// gets, siblings under one registrable domain included; it lets through
+// what that hangar-edge would start with.
 func TestTheEdgeStepHasTheEdgeCheckItsFlags(t *testing.T) {
 	b, err := os.ReadFile(buildEdge(t))
 	if err != nil {
@@ -149,13 +151,37 @@ func TestTheEdgeStepHasTheEdgeCheckItsFlags(t *testing.T) {
 // problem, not a skipped check.
 func TestAnEdgeFromBeforeCheckFlagsIsWarnedOf(t *testing.T) {
 	old := releaseOf(t, []byte("#!/bin/sh\necho \"Usage of $0:\" >&2\nexit 2\n"))
-	out, errOut := edgeStep(t, old, frontDoorEnv("cp.example.com", "user.example.com"), "edge_problem")
+	out, errOut := edgeStep(t, old, frontDoorEnv("cp.example.com", "user.example.com"), "edge_check_problem")
 	if out != "" || !strings.Contains(errOut, "has no check-flags; the edge unit's command line is not checked this run") {
 		t.Errorf("an edge from before check-flags: problem %q, stderr %q", out, errOut)
 	}
 	broken := releaseOf(t, []byte("\x7fELF not a program"))
-	out, _ = edgeStep(t, broken, frontDoorEnv("hangarlab.cloud", "hangarlab.dev"), "edge_problem")
+	out, _ = edgeStep(t, broken, frontDoorEnv("hangarlab.cloud", "hangarlab.dev"), "edge_check_problem")
 	if !strings.Contains(out, "the edge unit's command line cannot be checked with "+broken+"/hangar-edge") {
 		t.Errorf("an edge that cannot run: problem %q", out)
+	}
+}
+
+// TestTheEdgeStepChecksTheInstalledEdge: in the edge step (edge_problem
+// installed) the check runs the installed hangar-edge, the one the unit
+// runs, never the release's: by then the release step has installed the
+// release's, and with --only edge the unit keeps the installed one. A dry
+// run skips it there.
+func TestTheEdgeStepChecksTheInstalledEdge(t *testing.T) {
+	b, err := os.ReadFile(buildEdge(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := releaseOf(t, b)
+	out, _ := edgeStep(t, dir, frontDoorEnv("cp.example.com", "user.example.com"), "edge_problem installed")
+	if strings.Contains(out, dir) || !strings.Contains(out, "/usr/local/bin/hangar-edge") && !strings.Contains(out, "must not share a registrable domain") {
+		t.Errorf("the edge step's check: %q, want the installed hangar-edge's", out)
+	}
+	if _, err := os.Stat("/usr/local/bin/hangar-edge"); os.IsNotExist(err) && !strings.Contains(out, "no /usr/local/bin/hangar-edge to check the edge unit's command line with") {
+		t.Errorf("with no hangar-edge installed: %q", out)
+	}
+	out, _ = edgeStep(t, dir, frontDoorEnv("cp.example.com", "user.example.com"), "DRY_RUN=1; edge_problem installed")
+	if strings.Contains(out, "command line") {
+		t.Errorf("a dry run's edge step checked the flags: %q", out)
 	}
 }

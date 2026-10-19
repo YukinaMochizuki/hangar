@@ -18,7 +18,7 @@ func TestTheFrontDoorNeedsAnACMEEmail(t *testing.T) {
 	if err := checkFlags(flags{cpDomain: "cp.example.com", acmeMail: "ops@example.com"}); err != nil {
 		t.Errorf("front door with --acme-email: %v", err)
 	}
-	if err := checkFlags(flags{listen: "127.0.0.1:8090"}); err != nil {
+	if err := checkFlags(flags{listen: "127.0.0.1:8090", consoleURL: "https://console.example.com"}); err != nil {
 		t.Errorf("front door off, no --acme-email: %v", err)
 	}
 }

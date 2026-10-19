@@ -46,7 +46,9 @@ function AddMemberDialog({ scope, where, open, onClose }: { scope: Scope; where:
   };
   // Bindings name an email in lower case and ASCII, as the API stores it.
   // One that is not ASCII is refused, not lower-cased: that could fold it
-  // into someone else's address (U+212A KELVIN SIGN becomes k).
+  // into someone else's address (U+212A KELVIN SIGN becomes k). The field
+  // is type text: a browser converts an email field's domain to ASCII
+  // (IDNA) before onChange, so this check would never see it.
   const ascii = /^[ -~]*$/.test(email.trim());
   const address = ascii ? email.trim().toLowerCase() : email.trim();
   const valid = ascii && /^[^\s@]+@[^\s@]+$/.test(address);
@@ -59,7 +61,7 @@ function AddMemberDialog({ scope, where, open, onClose }: { scope: Scope; where:
         }}
       >
         <FormField label="Email" hint={ascii ? undefined : "Hangar takes only ASCII email addresses."}>
-          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus spellCheck={false} placeholder="name@example.com" className="font-sans" />
+          <Input type="text" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus spellCheck={false} placeholder="name@example.com" className="font-sans" />
         </FormField>
         <fieldset className="mt-4">
           <legend className="text-[12.5px] text-foreground">Role</legend>

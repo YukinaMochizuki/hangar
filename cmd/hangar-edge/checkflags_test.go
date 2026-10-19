@@ -10,9 +10,11 @@ import (
 
 // TestCheckFlagsRunsCheckFlagsAlone: check-flags exits 1 with checkFlags'
 // reason for flags the edge would refuse, 0 for flags it would start with,
-// and 2 for flags it cannot parse or words that are not flags; it starts
-// nothing, so an address already taken and a state directory that is not
-// there are left as they were.
+// and 2 for flags it cannot parse or words that are not flags. It refuses
+// every check of the flags alone the edge makes as it starts (nothing to
+// serve, a --listen off loopback, a console that is no https origin), and
+// starts nothing, so an address already taken and a state directory that
+// is not there are left as they were.
 func TestCheckFlagsRunsCheckFlagsAlone(t *testing.T) {
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -31,7 +33,11 @@ func TestCheckFlagsRunsCheckFlagsAlone(t *testing.T) {
 		{append([]string{"--cp-domain", "cp.example.com", "--domain", "user.example.com"}, door...), 1, "must not share a registrable domain"},
 		{append([]string{"--cp-domain", "example.com", "--domain", "example.com"}, door...), 1, "must not share a registrable domain"},
 		{[]string{"--cp-domain", "hangarlab.cloud", "--domain", "hangarlab.dev"}, 1, "needs --acme-email"},
-		{[]string{"--domain", "hangarlab.dev", "--listen", taken.Addr().String()}, 0, ""},
+		{[]string{"--domain", "hangarlab.dev", "--listen", taken.Addr().String(), "--console-url", "https://console.example.com"}, 0, ""},
+		{[]string{"--domain", "hangarlab.dev", "--console-url", "https://console.example.com"}, 1, "nothing to serve"},
+		{[]string{"--domain", "hangarlab.dev", "--listen", "0.0.0.0:8090", "--console-url", "https://console.example.com"}, 1, "is not a loopback address"},
+		{[]string{"--domain", "hangarlab.dev", "--listen", taken.Addr().String()}, 1, "private endpoints need --console-url"},
+		{append([]string{"--cp-domain", "hangarlab.cloud", "--domain", "hangarlab.dev", "--console-url", "http://console.hangarlab.cloud"}, door...), 1, "is not an https origin"},
 		{[]string{"--no-such-flag"}, 2, "flag provided but not defined"},
 		{[]string{"--domain", "hangarlab.dev", "extra"}, 2, "takes flags alone"},
 	} {

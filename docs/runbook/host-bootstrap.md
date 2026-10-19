@@ -327,15 +327,22 @@ tunnel, the cutover there says in which order. It needs oidc auth
 
    The two domains must not share a registrable domain
    (`docs/decisions/public-endpoints.md`), siblings such as
-   `cp.example.com` and `user.example.com` included. Before it changes the
-   edge's unit, the `edge` step runs `hangar-edge check-flags` on the very
-   flags the unit's `ExecStart` gets, and refuses the run on whatever the
-   edge would refuse to start with, this among it: the running edge is not
-   touched. It runs the hangar-edge the run installs, as the services step
-   runs `hangar-node check-placement` (above): with `--release`, a private
-   copy of the release's that matches its `SHA256SUMS`; without, the
-   installed one. A hangar-edge from before `check-flags` makes it warn
-   that the flags were not checked; one that cannot run is a problem.
+   `cp.example.com` and `user.example.com` included. Before any step,
+   `bootstrap.sh` (a full run, or `--only edge`) refuses what the `edge`
+   step would refuse, and runs `hangar-edge check-flags` on the very flags
+   the unit's `ExecStart` gets: it refuses the run on any of the edge's
+   checks of its flags, this one among them, so a refused run changes
+   nothing, not the release's binaries, not the unit, not the running
+   edge. The hangar-edge that checks is the one the unit runs after the
+   run, found as the services step finds `hangar-node` for
+   `check-placement` (above): in a full run with `--release`, a private
+   copy of the release's that matches its `SHA256SUMS`; without
+   `--release`, and with `--only edge` whether or not `--release` is
+   given (the release step is skipped, so the unit keeps the installed
+   binary), the installed one. The `edge` step checks again with the
+   installed one before it changes the unit. A hangar-edge from before
+   `check-flags` makes it warn that the flags were not checked; one that
+   cannot run is a problem.
 
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its

@@ -141,11 +141,19 @@ describe("ProjectMembers", () => {
   it("refuses a non-ASCII email rather than lower-casing it into another address", async () => {
     show("project", { holds: manage });
     fireEvent.click(await screen.findByRole("button", { name: /Add member/ }));
-    // U+212A KELVIN SIGN, which lower-cases to k.
-    fireEvent.change(screen.getByPlaceholderText("name@example.com"), { target: { value: "\u212aate@example.com" } });
-    expect(screen.getByText("Hangar takes only ASCII email addresses.")).toBeTruthy();
-    expect((screen.getAllByRole("button", { name: "Add member" }).at(-1) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.queryByText(/kate@example.com/)).toBeNull();
+    const field = screen.getByPlaceholderText("name@example.com") as HTMLInputElement;
+    // A text field: an email field's domain is IDNA-converted by the
+    // browser before the check could see it.
+    expect(field.type).toBe("text");
+    expect(field.inputMode).toBe("email");
+    // U+212A KELVIN SIGN, which lower-cases to k, in the local part and in
+    // the domain; and a domain past ASCII.
+    for (const value of ["\u212aate@example.com", "kate@\u212aexample.com", "gil@ex\u00e4mple.com"]) {
+      fireEvent.change(field, { target: { value } });
+      expect(screen.getByText("Hangar takes only ASCII email addresses.")).toBeTruthy();
+      expect((screen.getAllByRole("button", { name: "Add member" }).at(-1) as HTMLButtonElement).disabled).toBe(true);
+      expect(screen.queryByText(/kate@(k?)example.com/)).toBeNull();
+    }
   });
 
   it("shows the API's refusal of an add in the dialog", async () => {

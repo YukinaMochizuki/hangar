@@ -647,18 +647,22 @@ EOF
 	[ "$(stat -c '%U %a' /var/lib/hangar-edge)" = "hangar-edge 700" ] || fail "the edge's state is $(stat -c '%U %a' /var/lib/hangar-edge)"
 	ss -Hltn | awk '{print $4}' | grep -qx '\*:443' || fail ":443 is not bound for every address: $(ss -Hltn)"
 
-	step "sibling domains under one registrable domain are refused before the running edge is touched"
+	step "sibling domains under one registrable domain are refused before any step, the running edge untouched"
 	cp /etc/hangar/local.env "$work/local.env.door"
-	unit_before=$(sha256sum /etc/systemd/system/hangar-edge.service)
+	unit_before=$(sha256sum /etc/systemd/system/hangar-edge.service /usr/local/bin/hangar-edge)
 	sed -i 's/^HANGAR_CP_DOMAIN=.*/HANGAR_CP_DOMAIN=cp.example.com/; s/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.example.com/; s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=https://console.cp.example.com|' /etc/hangar/local.env
-	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >"$log" 2>&1; then
-		fail "the edge step ran with sibling domains"
-	fi
-	grep -q "the edge unit's command line: --cp-domain cp.example.com and --domain user.example.com must not share a registrable domain" "$log" ||
-		fail "unexpected refusal: $(cat "$log")"
-	grep -q '^apply: ' "$log" && fail "the edge step changed something before the refusal: $(grep '^apply: ' "$log")"
-	[ "$(sha256sum /etc/systemd/system/hangar-edge.service)" = "$unit_before" ] || fail "the refused run changed the edge's unit"
-	[ "$(main_pid hangar-edge)" = "$pid" ] || fail "the refused run restarted the edge"
+	for run_only in "" "--only edge"; do
+		# shellcheck disable=SC2086 # $run_only is no option or two words
+		if "$host_dir/bootstrap.sh" --release "$edge_release" $run_only >"$log" 2>&1; then
+			fail "bootstrap.sh $run_only ran with sibling domains"
+		fi
+		grep -q "the edge unit's command line: --cp-domain cp.example.com and --domain user.example.com must not share a registrable domain" "$log" ||
+			fail "unexpected refusal: $(cat "$log")"
+		grep -qE '^(== |apply: )' "$log" && fail "bootstrap.sh $run_only ran a step before the refusal: $(grep -E '^(== |apply: )' "$log")"
+		[ "$(sha256sum /etc/systemd/system/hangar-edge.service /usr/local/bin/hangar-edge)" = "$unit_before" ] ||
+			fail "the refused run changed the edge's unit or binary"
+		[ "$(main_pid hangar-edge)" = "$pid" ] || fail "the refused run restarted the edge"
+	done
 	install -m 0600 "$work/local.env.door" /etc/hangar/local.env
 
 	step "the certificates come, and each site answers on IPv4 and IPv6, from the host and from outside"

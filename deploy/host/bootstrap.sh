@@ -52,6 +52,23 @@ if [ "$DRY_RUN" != 1 ] && { [ -z "$only" ] || [ "$only" = services ]; }; then
 	problem=$(auth_problem)
 	[ -z "$problem" ] || die "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
 fi
+# The edge step would refuse an edge that cannot run as local.env asks,
+# and the edge refuses to start on flags its own check-flags refuses, such
+# as two domains that share a registrable domain: refuse before any step,
+# the release step's new hangar-edge included, so a refused run changes
+# nothing. The hangar-edge that checks is the one the unit runs after this
+# run: the release's when the release step installs one, else (no
+# --release, or --only edge) the installed one.
+if [ -z "$only" ] || [ "$only" = edge ]; then
+	# shellcheck source=deploy/host/steps/85-edge.sh
+	. "$here/steps/85-edge.sh"
+	if [ -z "$only" ]; then
+		problem=$(services_endpoints_problem; edge_problem)
+	else
+		problem=$(services_endpoints_problem; HANGAR_RELEASE_DIR='' edge_problem)
+	fi
+	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
+fi
 # A hangar-node the release step installs refuses to start while anything
 # else has one of the VMs' ids; refuse before it is installed.
 if [ -z "$only" ] || [ "$only" = release ] || [ "$only" = services ]; then
