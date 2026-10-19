@@ -11,7 +11,7 @@ import { errorMessage } from "@/lib/api";
 
 /** The delete call, as a mutation of no variables gives it. */
 export type DeleteMutation = {
-  mutate: (variables: undefined, options: { onSuccess: () => void }) => void;
+  mutateAsync: (variables: undefined) => Promise<unknown>;
   isPending: boolean;
   error: unknown;
   reset: () => void;
@@ -82,12 +82,17 @@ export function ConfirmDeleteDialog({
           variant="danger"
           disabled={typed !== name || del.isPending || !!blocked}
           onClick={() =>
-            del.mutate(undefined, {
-              onSuccess: () => {
+            // The promise, not mutate's own onSuccess: that one is dropped
+            // when the dialog is gone before the call ends, as it is when the
+            // page it was opened on finds the object deleted first.
+            del.mutateAsync(undefined).then(
+              () => {
                 close();
                 after?.();
               },
-            })
+              // The error is del.error, shown above.
+              () => {},
+            )
           }
         >
           <Trash2 /> {del.isPending ? "Deleting…" : "Delete"}

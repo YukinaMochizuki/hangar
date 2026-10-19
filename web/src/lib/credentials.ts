@@ -309,7 +309,9 @@ export function useDeleteSecret(project: string, name: string) {
     mutationFn: async () => {
       await createClient(SecretService, transport).deleteSecret({ project, name });
     },
-    onSettled: () => queryClient.invalidateQueries(),
+    // Not awaited: the page that deleted the object goes on (to the list)
+    // before the refetch finds it gone and says so.
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }
 
@@ -355,6 +357,8 @@ export function useDeleteToken(project: string, name: string) {
     mutationFn: async () => {
       await createClient(ServiceTokenService, transport).deleteServiceToken({ project, name });
     },
-    onSettled: () => queryClient.invalidateQueries(),
+    // Not awaited: the page that deleted the object goes on (to the list)
+    // before the refetch finds it gone and says so.
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }

@@ -94,6 +94,8 @@ export function useDeleteMachine(kind: MachineKind, project: string, name: strin
       if (kind === "Container") await createClient(ContainerService, transport).deleteContainer({ project, name });
       else await createClient(VirtualMachineService, transport).deleteVirtualMachine({ project, name });
     },
-    onSettled: () => queryClient.invalidateQueries(),
+    // Not awaited: the page that deleted the object goes on (to the list)
+    // before the refetch finds it gone and says so.
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }
