@@ -625,6 +625,14 @@ EOF
 	grep -q "needs HANGAR_ACME_EMAIL in /etc/hangar/local.env" "$log" || fail "no refusal for the missing ACME email: $(cat "$log")"
 	sed -i "s|^HANGAR_PUBLIC_URL=.*|HANGAR_PUBLIC_URL=$TB_FRONT_DOOR_URL|" /etc/hangar/local.env
 	echo 'HANGAR_ACME_EMAIL=edge@example.com' >>/etc/hangar/local.env
+	# User content must not share a registrable domain with the console.
+	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.cp.test/' /etc/hangar/local.env
+	if "$host_dir/bootstrap.sh" --release "$edge_release" --only edge >"$log" 2>&1; then
+		fail "the front door ran with the endpoints' domain under the control plane's"
+	fi
+	grep -q "must not share a registrable domain" "$log" || fail "unexpected refusal: $(cat "$log")"
+	grep -q '^apply: ' "$log" && fail "the edge step changed something before the refusal: $(grep '^apply: ' "$log")"
+	sed -i 's/^HANGAR_EDGE_DOMAIN=.*/HANGAR_EDGE_DOMAIN=user.test/' /etc/hangar/local.env
 
 	"$host_dir/bootstrap.sh" --release "$edge_release" 2>&1 | tee "$log"
 	grep -qx "changes: $(grep -c '^apply: ' "$log")" "$log" || fail "summary does not match its changes"

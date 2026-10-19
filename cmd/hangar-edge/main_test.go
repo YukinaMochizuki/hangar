@@ -24,30 +24,38 @@ func TestTheFrontDoorNeedsAnACMEEmail(t *testing.T) {
 }
 
 // TestTheTwoDomainsAreApart: the edge refuses to start when --cp-domain
-// and --domain are the same or one is under the other, in any case and
-// with or without a final dot; domains that only end alike are apart.
+// and --domain share a registrable domain (the same, one under the other,
+// or siblings), in any case and with or without a final dot, or when one
+// is a public suffix with none; domains that only end alike, or are under
+// one public suffix, are apart.
 func TestTheTwoDomainsAreApart(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 	door := func(cp, domain string) flags {
 		return flags{cpDomain: cp, domain: domain, acmeMail: "ops@example.com"}
 	}
-	for _, d := range [][2]string{
-		{"example.com", "example.com"},
-		{"example.com", "Example.COM."},
-		{"example.com", "user.example.com"},
-		{"cp.example.com", "example.com"},
-		{"a.b.example.com", "example.com."},
+	for _, d := range [][3]string{
+		{"example.com", "example.com", "must not share a registrable domain"},
+		{"example.com", "Example.COM.", "must not share a registrable domain"},
+		{"example.com", "user.example.com", "must not share a registrable domain"},
+		{"cp.example.com", "example.com", "must not share a registrable domain"},
+		{"a.b.example.com", "example.com.", "must not share a registrable domain"},
+		{"cp.example.com", "user.example.com", "must not share a registrable domain"},
+		{"cp.example.co.uk", "user.example.co.uk", "must not share a registrable domain"},
+		{"com", "example.com", "--cp-domain com has no registrable domain"},
+		{"example.com", "co.uk", "--domain co.uk has no registrable domain"},
 	} {
 		err := run(context.Background(), door(d[0], d[1]), log)
-		if err == nil || !strings.Contains(err.Error(), "must be apart") {
-			t.Errorf("--cp-domain %s --domain %s: %v", d[0], d[1], err)
+		if err == nil || !strings.Contains(err.Error(), d[2]) {
+			t.Errorf("--cp-domain %s --domain %s: %v, want %q", d[0], d[1], err, d[2])
 		}
 	}
 	for _, d := range [][2]string{
 		{"hangarlab.cloud", "hangarlab.dev"},
 		{"cp.test", "user.test"},
+		{"flowcp.test", "hangarlab.test"},
 		{"example.com", "myexample.com"},
 		{"ample.com", "example.com"},
+		{"example.co.uk", "other.co.uk"},
 	} {
 		if err := checkFlags(door(d[0], d[1])); err != nil {
 			t.Errorf("--cp-domain %s --domain %s: %v", d[0], d[1], err)

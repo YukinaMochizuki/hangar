@@ -325,9 +325,12 @@ tunnel, the cutover there says in which order. It needs oidc auth
    `mailto:default` on a first start, which the CA refuses
    (`docs/decisions/front-door.md`).
 
-   The two domains must be apart: `hangar-edge` refuses to start when
-   `HANGAR_EDGE_DOMAIN` and `HANGAR_CP_DOMAIN` are the same or one is
-   under the other (`docs/decisions/public-endpoints.md`).
+   The two domains must not share a registrable domain
+   (`docs/decisions/public-endpoints.md`): the `edge` step refuses, before
+   it changes anything, a `HANGAR_EDGE_DOMAIN` and `HANGAR_CP_DOMAIN` that
+   are the same or one under the other, and `hangar-edge` refuses to start
+   on any pair that shares one, siblings such as `cp.example.com` and
+   `user.example.com` too.
 
    In oidc auth, `HANGAR_PUBLIC_URL` must then be
    `https://console.<HANGAR_CP_DOMAIN>`: Google returns to its
