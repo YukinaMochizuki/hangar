@@ -22,6 +22,7 @@ import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { Box, Check, Globe, MapPin, Server } from "lucide-react";
 import { useState } from "react";
 import { Input, Select } from "@/components/form";
+import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/components/container-advanced";
 import { Choice, FormSection as Section } from "@/components/form-page";
 import { Notice } from "@/components/notice";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -73,6 +74,10 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   // The disk as typed; null until the person edits it, while it follows
   // the minimum.
   const [diskText, setDiskText] = useState<string | null>(null);
+  // A container's process, folded until opened.
+  const [advanced, setAdvanced] = useState<Advanced>(noAdvanced);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const proc = advancedSpec(advanced);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
   const networks = useQuery(NetworkService.method.listNetworks, { project, pageSize: 1000 });
@@ -115,7 +120,15 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     kind === "container"
       ? create(ContainerSchema, {
           metadata: { name, project },
-          spec: { image, interfaces, resources: s && { ...s.resources, disk: diskQuantity } },
+          spec: {
+            image,
+            command: proc.command,
+            args: proc.args,
+            env: proc.env,
+            restartPolicy: proc.restartPolicy,
+            interfaces,
+            resources: s && { ...s.resources, disk: diskQuantity },
+          },
         })
       : create(VirtualMachineSchema, {
           metadata: { name, project },
@@ -137,6 +150,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const problems: string[] = [];
   if (!nameCheck.ok) problems.push(nameCheck.reason);
   if (kind === "container" && !image.trim()) problems.push("The image is empty.");
+  if (kind === "container") problems.push(...proc.problems);
   if (kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
   if (s && diskProblem) problems.push(diskProblem);
@@ -370,7 +384,13 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             </div>
           </Section>
 
-          <Section n={6} title="Name" hint="Unique among this project's machines of the kind">
+          {kind === "container" && (
+            <Section n={6} title="Advanced" hint="Optional, as a Compose service writes it">
+              <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
+            </Section>
+          )}
+
+          <Section n={kind === "container" ? 7 : 6} title="Name" hint="Unique among this project's machines of the kind">
             <div className="max-w-xl">
               <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Name" spellCheck={false} />
               {nameProblem && <p className="mt-1.5 text-[12px] text-fail">{nameProblem}</p>}
