@@ -54,10 +54,8 @@ func TestAHijackedConnectionHasNoWriteDeadline(t *testing.T) {
 	})
 }
 
-// TestAKeepAliveConnectionAnswersAfterIdling: the write deadline an answer
-// was left with is gone by the connection's next request, so what net/http
-// writes itself, a 100 Continue, goes out however long the connection
-// idled first.
+// TestAKeepAliveConnectionAnswersAfterIdling: no write deadline outlives an
+// answer, so net/http's own 100 Continue goes out after any idle time.
 func TestAKeepAliveConnectionAnswersAfterIdling(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		endpoints := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,12 +93,9 @@ func TestAKeepAliveConnectionAnswersAfterIdling(t *testing.T) {
 	})
 }
 
-// answerEndpoint answers / with 1 MiB, which it is still writing when it
-// is held, and /small with 100 bytes, which net/http sends after it. The
-// probes of a client that takes no answer use it rather than the API's
-// proxy, whose writer waits on a mutex while a write is held, which a
-// synctest bubble cannot wait past; the write deadlines are the door's,
-// the same for every site.
+// answerEndpoint answers / with 1 MiB and /small with 100 bytes, sent after
+// the handler. Not the API's proxy: a write held there blocks a mutex, which
+// a synctest bubble cannot wait past.
 var answerEndpoint = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 	n := 1 << 20
 	if r.URL.Path == "/small" {

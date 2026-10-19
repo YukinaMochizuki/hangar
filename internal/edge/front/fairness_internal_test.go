@@ -105,9 +105,8 @@ func TestAHeavyClientGivesUpItsIdlestThenItsNewest(t *testing.T) {
 }
 
 // TestANetworkSpreadOverItsAddressesGivesWayFirst: an attacker holding one
-// busy connection from each of many addresses of one /24, or /48, still
-// gives up a place to a client of another network, which no single client
-// of it would, holding no more than the newcomer would.
+// busy connection from each of many addresses of one /24, or /48, gives a
+// place to a newcomer from another network.
 func TestANetworkSpreadOverItsAddressesGivesWayFirst(t *testing.T) {
 	for _, tt := range []struct{ name, attacker, newcomer string }{
 		{"IPv4 /24", "203.0.113.%d", "198.51.100.1"},

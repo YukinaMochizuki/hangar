@@ -13,11 +13,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 )
 
-// limitBodyRate holds every request's body to MinBodyRate and
-// BodyReadTimeout, so a client that sends it slowly cannot hold a
-// connection. Only the body is held: a stream's response flows for as long
-// as it lasts, and a WebSocket's upgrade has no body, its frames being read
-// from the hijacked connection, which nothing here touches.
+// limitBodyRate holds every request's body, and nothing else, to
+// MinBodyRate and BodyReadTimeout (docs/decisions/front-door.md).
 func (l Limits) limitBodyRate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Body == nil || r.Body == http.NoBody {
@@ -59,11 +56,8 @@ func isUpgrade(r *http.Request) bool {
 }
 
 // rateBody is a request's body that fails with edge.ErrBodyTooSlow once
-// its client falls behind. Only the time spent waiting in Read counts, so
-// a handler that reads slowly, or a backend that takes the body slowly,
-// costs the client nothing. Each wait is held by a read deadline: it may
-// take what the bytes so far have earned at rate past the first timeout,
-// less what the waits took, and never more than timeout.
+// its client falls behind; how a wait's deadline is set is in
+// docs/decisions/front-door.md.
 type rateBody struct {
 	body     io.ReadCloser
 	deadline func(time.Time) error

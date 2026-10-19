@@ -17,10 +17,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/edge/front"
 )
 
-// pipeDoor is a front door on net.Pipe connections, each from client, so
-// a synctest bubble can hold it, as it cannot a socket. With TLS it
-// serves testdata/door.pem, a self-signed certificate for the door's
-// names, valid from 1990 to 2100 as a bubble's clock starts in 2000.
+// pipeDoor is a front door on net.Pipe connections, which a synctest bubble
+// can hold. With TLS it serves testdata/door.pem, self-signed for the door's
+// names, valid 1990 to 2100 as a bubble's clock starts in 2000.
 type pipeDoor struct {
 	https, http *pipeListener
 	log         *syncBuffer

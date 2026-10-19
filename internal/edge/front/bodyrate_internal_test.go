@@ -15,10 +15,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 )
 
-// pipeBody is a rateBody over the server end of a pipe, its deadlines the
-// pipe's, with the client end the test sends the body on. Both ends are
-// closed when the test's bubble returns, which must leave no goroutine
-// blocked.
+// pipeBody is a rateBody over a pipe's server end, with the client end to
+// send the body on; the test's cleanup closes both.
 func pipeBody(t *testing.T, rate int64, timeout time.Duration) (*rateBody, *sender) {
 	t.Helper()
 	c, s := net.Pipe()
@@ -131,10 +129,9 @@ func TestAStallIsCutWhateverCameBefore(t *testing.T) {
 	})
 }
 
-// TestAReadPastItsDeadlineIsACut: over HTTP/1 net/http ends the request's
-// context as the read that ran out of time fails, before that read
-// returns, so the proxy may see only the context ended; the body already
-// counts as cut then, and the API's proxy answers 408 for it.
+// TestAReadPastItsDeadlineIsACut: a read past its deadline counts as a cut
+// before it returns, so the API's proxy answers 408 when net/http has ended
+// the request's context first, as over HTTP/1.
 func TestAReadPastItsDeadlineIsACut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		b, _ := pipeBody(t, 1024, 30*time.Second)

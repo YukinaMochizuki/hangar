@@ -26,12 +26,9 @@ import (
 // each kind.
 const measureConns = 2000
 
-// TestMemoryPerConnection measures what the front door's process holds for
-// each open connection: one past its TLS handshake with no request yet, an
-// HTTP/1.1 keep-alive after a request, and an HTTP/2 connection after a
-// stream. The clients run in a process of their own, so what is measured is
-// the door's alone. It runs only with HANGAR_MEASURE_CONNS=1, as it opens
-// thousands of sockets; docs/decisions/front-door.md has its numbers.
+// TestMemoryPerConnection measures what the edge holds a connection, its
+// clients in a process of their own; HANGAR_MEASURE_CONNS=1 runs it, the
+// numbers are in docs/decisions/front-door.md.
 func TestMemoryPerConnection(t *testing.T) {
 	if os.Getenv("HANGAR_MEASURE_CONNS") == "" {
 		t.Skip("set HANGAR_MEASURE_CONNS=1 to measure")

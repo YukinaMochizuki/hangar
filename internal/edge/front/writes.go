@@ -8,12 +8,8 @@ import (
 	"time"
 )
 
-// boundWrites holds every response to StalledWriteTimeout a write: a
-// client that stops taking it, by an HTTP/2 window it never opens or a
-// connection it never reads, is cut. A response with nothing to send has
-// no deadline, so Watch, a log followed and an exec's output last as long
-// as they are used. A hijacked connection, a WebSocket's, is left to its
-// own liveness.
+// boundWrites holds every response, not a hijacked connection, to
+// StalledWriteTimeout a write (docs/decisions/front-door.md).
 func (l Limits) boundWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sw := &stallWriter{ResponseWriter: w, rc: http.NewResponseController(w), timeout: l.StalledWriteTimeout}
@@ -103,10 +99,9 @@ func (s *stallWriter) disarm() {
 	}
 }
 
-// handlerDone holds what net/http sends of the answer after the handler,
-// its buffered end, to one timeout. Over HTTP/1 net/http takes the
-// deadline away once the answer is out, before the connection's next
-// request.
+// handlerDone holds what net/http sends of the answer after the handler
+// to one timeout. Over HTTP/1 net/http takes the deadline away once the
+// answer is out.
 func (s *stallWriter) handlerDone() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

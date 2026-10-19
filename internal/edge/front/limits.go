@@ -60,10 +60,9 @@ type Limits struct {
 	// APIBodyBytes and EndpointBodyBytes cap a request's body to the API
 	// and to an endpoint.
 	APIBodyBytes, EndpointBodyBytes int64
-	// MinBodyRate is the bytes a second a request's body must arrive at, on
-	// average over the time the front door waits for it; BodyReadTimeout is
-	// the longest one wait may be. Upgraded connections are exempt
-	// (bodyrate.go).
+	// MinBodyRate is the bytes a second a request's body must average over
+	// the time spent waiting for it; BodyReadTimeout is the longest one
+	// wait may be (bodyrate.go).
 	MinBodyRate     int64
 	BodyReadTimeout time.Duration
 
@@ -188,10 +187,9 @@ func addrOf(remote string) (netip.Addr, bool) {
 // address space (RFC 6598), never a source from the internet.
 var hostTransit = netip.MustParsePrefix("100.64.0.0/10")
 
-// networks are the networks around addr whose connections are capped
-// together, with their caps: the IPv4 /24, or the IPv6 /56 and /48. None
-// for the host's own prefixes and its machines' IPv4, whose neighbours are
-// the host's machines and the host.
+// networks are the networks around addr capped together, with their caps:
+// the IPv4 /24, or the IPv6 /56 and /48; none for the host's own prefixes
+// and its machines' IPv4.
 func (l Limits) networks(addr netip.Addr) []network {
 	addr = addr.Unmap()
 	if addr.Is4() {

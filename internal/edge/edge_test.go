@@ -578,10 +578,9 @@ func closedWithin(c net.Conn, d time.Duration) error {
 	return nil
 }
 
-// TestASilentUpgradeEnds: an upgraded connection that carries no byte
-// either way for the idle timeout is closed, to a PUBLIC endpoint and to a
-// PRIVATE one alike; one that carries bytes stays, however long. The
-// timeout is real time, as the world's apiserver and sockets are.
+// TestASilentUpgradeEnds: an upgraded connection silent either way for the
+// idle timeout is closed, PUBLIC or PRIVATE; one carrying bytes either way
+// stays. Real time, as the world's apiserver and sockets are.
 func TestASilentUpgradeEnds(t *testing.T) {
 	const idle = 300 * time.Millisecond
 	for _, access := range []networkv1alpha1.PublicEndpointAccess{
