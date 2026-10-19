@@ -30,8 +30,12 @@ credentials. The node is a separate root process on the same host.
   is made at start and held in memory only; restarting the apiserver makes
   a new one, which cancels the sign-ins in progress (each person starts
   again) and is how it rotates. Only an `email_verified` email counts, in
-  lower case, so bindings by email apply unchanged. Only an invited email,
-  one holding a platform role (`tenancy-and-iam.md`), may sign in: anyone
+  lower case, so bindings by email apply unchanged. It must be ASCII, as
+  bindings and invitations must: lower-casing some other characters makes
+  an ASCII letter (U+212A KELVIN SIGN becomes `k`), so a provider's
+  address could otherwise match someone else's invitation. Only an
+  invited email, one holding a platform role (`tenancy-and-iam.md`), may
+  sign in: anyone
   else sees the not-invited page and gets no session, so strangers write
   nothing. The provider is a flag (`--oidc-issuer`), so others can be
   added as config. There is no email OTP.

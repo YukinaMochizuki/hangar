@@ -293,7 +293,7 @@ func TestBrowserSignIn(t *testing.T) {
 // no session behind.
 func TestSignInRefusals(t *testing.T) {
 	w := newOIDCWorld(t)
-	w.adminInvites("bob@example.com")
+	w.adminInvites("bob@example.com", "kate@example.com")
 
 	t.Run("forged state", func(t *testing.T) {
 		c := w.browser()
@@ -338,6 +338,8 @@ func TestSignInRefusals(t *testing.T) {
 	}{
 		{name: "unverified email", email: "bob@example.com", status: http.StatusBadRequest, want: "has not verified the email address bob@example.com"},
 		{name: "not invited", email: "eve@example.com", verified: true, status: http.StatusForbidden, want: "eve@example.com has not been invited to Hangar"},
+		// U+212A KELVIN SIGN lower-cases to k: kate's invitation.
+		{name: "non-ASCII email", email: "\u212aate@example.com", verified: true, status: http.StatusBadRequest, want: "only ASCII email addresses"},
 		{name: "another nonce", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["nonce"] = "other" }, status: http.StatusBadRequest, want: "for another sign-in"},
 		{name: "another audience", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["aud"] = "other-client" }, status: http.StatusBadRequest, want: "did not verify"},
 		{name: "expired ID token", email: "bob@example.com", verified: true, tamper: func(c map[string]any) { c["exp"] = time.Now().Add(-time.Hour).Unix() }, status: http.StatusBadRequest, want: "did not verify"},

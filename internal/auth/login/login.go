@@ -22,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
@@ -381,7 +382,9 @@ func (f *Flow) callback(w http.ResponseWriter, r *http.Request) {
 
 // verify exchanges the provider's code and checks its ID token: signed by
 // the provider for this client, with this sign-in's nonce, and a verified
-// email. It returns the email in lower case, or why it is refused.
+// email in ASCII. It returns the email in lower case, or why it is refused.
+// Lower-casing a non-ASCII address can make an ASCII one (U+212A KELVIN SIGN
+// becomes k), which may be someone else's invitation.
 func (f *Flow) verify(ctx context.Context, q url.Values, p pending) (email, reason string) {
 	if e := q.Get("error"); e != "" {
 		return "", "the identity provider returned an error (" + e + ")"
@@ -414,6 +417,11 @@ func (f *Flow) verify(ctx context.Context, q url.Values, p pending) (email, reas
 	}
 	if !claims.Verified {
 		return "", "the identity provider has not verified the email address " + claims.Email
+	}
+	for i := 0; i < len(claims.Email); i++ {
+		if claims.Email[i] >= utf8.RuneSelf {
+			return "", "Hangar takes only ASCII email addresses, not " + claims.Email
+		}
 	}
 	return strings.ToLower(claims.Email), ""
 }

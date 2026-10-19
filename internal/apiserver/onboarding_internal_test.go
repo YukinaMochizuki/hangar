@@ -424,9 +424,10 @@ func TestSignUpIsAllOrNothing(t *testing.T) {
 var nameClaimResource = registry.Resource{Kind: nameClaimKind}
 
 // TestInvitationRules: only platform.root reads and writes invitations; an
-// invitation is keyed by a lowercase email, names a plan that exists and a
-// cap of at least 1, and is for someone who has not signed up; a plan an
-// invitation or a User names is not deleted; and a User's plan must exist.
+// invitation is keyed by a lowercase ASCII email, names a plan that exists
+// and a cap of at least 1, and is for someone who has not signed up; a plan
+// an invitation or a User names is not deleted; and a User's plan must
+// exist.
 func TestInvitationRules(t *testing.T) {
 	s, system, user := running(t)
 	invite(t, s, "root@example.com", "platform.root")
@@ -454,6 +455,7 @@ func TestInvitationRules(t *testing.T) {
 
 	for name, spec := range map[string]*iamv1alpha1.InvitationSpec{
 		"Gil@example.com": nil, "gil": nil, "gil@": nil, "@example.com": nil, "gil@a@b": nil, "gil/x@example.com": nil,
+		"\u212aate@example.com": nil, "gil@ex\u00e4mple.com": nil,
 		"hal@example.com": {MaxOwnedTenants: proto.Int32(0)},
 	} {
 		wantCodeOf(t, apply(root, name, spec), connect.CodeInvalidArgument, "inviting "+name)
