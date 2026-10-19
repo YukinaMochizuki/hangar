@@ -122,7 +122,7 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		n, _ := io.Copy(io.Discard, r.Body)
 		_, _ = fmt.Fprintf(w, "port %d read %d", port, n)
 	})
-	mux.HandleFunc("/upgrade", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/upgrade", func(w http.ResponseWriter, r *http.Request) {
 		c, brw, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			return
@@ -131,7 +131,21 @@ func backend(t *testing.T, port int32, held chan<- struct{}) string {
 		_, _ = brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: echo\r\n" +
 			"Set-Cookie: ws=1; Domain=" + domain + "; Path=/\r\nSet-Cookie: " + edge.EndpointCookie + "=planted; Secure\r\n\r\n")
 		_ = brw.Flush()
-		_, _ = io.Copy(c, brw)
+		switch r.Header.Get("X-Upgrade-Mode") {
+		case "sink":
+			// Takes what comes, and sends nothing.
+			_, _ = io.Copy(io.Discard, brw)
+		case "ticker":
+			// Sends a byte every 50ms, and reads nothing.
+			for {
+				if _, err := c.Write([]byte("t")); err != nil {
+					return
+				}
+				time.Sleep(50 * time.Millisecond) //nolint:forbidigo // the gap between a talking endpoint's bytes
+			}
+		default:
+			_, _ = io.Copy(c, brw)
+		}
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -520,6 +534,37 @@ func (w *world) upgrade(header http.Header) net.Conn {
 	return c
 }
 
+// upgradeIn opens an upgraded connection to host's "/upgrade" with header,
+// in the backend's mode, sink or ticker; what follows the 101 is read from
+// the reader.
+func (w *world) upgradeIn(header http.Header, mode string) (net.Conn, *bufio.Reader) {
+	w.t.Helper()
+	c, err := net.Dial("tcp", strings.TrimPrefix(w.url, "http://"))
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	w.t.Cleanup(func() { _ = c.Close() })
+	req := "GET /upgrade HTTP/1.1\r\nHost: " + host + "\r\nConnection: Upgrade\r\nUpgrade: echo\r\nX-Upgrade-Mode: " + mode + "\r\n"
+	for k, vs := range header {
+		for _, v := range vs {
+			req += k + ": " + v + "\r\n"
+		}
+	}
+	if _, err := io.WriteString(c, req+"\r\n"); err != nil {
+		w.t.Fatal(err)
+	}
+	r := bufio.NewReader(c)
+	resp, err := http.ReadResponse(r, nil)
+	if err != nil {
+		w.t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		w.t.Fatalf("upgrading: %s", resp.Status)
+	}
+	return c, r
+}
+
 // closedWithin says whether c is closed, not merely silent, within d.
 func closedWithin(c net.Conn, d time.Duration) error {
 	_ = c.SetReadDeadline(time.Now().Add(d))
@@ -531,6 +576,56 @@ func closedWithin(c net.Conn, d time.Duration) error {
 		return err
 	}
 	return nil
+}
+
+// TestASilentUpgradeEnds: an upgraded connection that carries no byte
+// either way for the idle timeout is closed, to a PUBLIC endpoint and to a
+// PRIVATE one alike; one that carries bytes stays, however long. The
+// timeout is real time, as the world's apiserver and sockets are.
+func TestASilentUpgradeEnds(t *testing.T) {
+	const idle = 300 * time.Millisecond
+	for _, access := range []networkv1alpha1.PublicEndpointAccess{
+		networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC,
+		networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PRIVATE,
+	} {
+		t.Run(access.String(), func(t *testing.T) {
+			w := newWorldConfig(t, apiservertest.Start(t, nil), func(c *edge.Config) { c.UpgradeIdleTimeout = idle })
+			w.endpoint(8080, access)
+			header := w.rootCookie()
+			testutil.Eventually(w.t, "the endpoint served", func() (bool, string) {
+				status, body := w.get(header)
+				return status == http.StatusOK, body
+			})
+			silent := w.upgrade(header)
+			// Bytes one way alone keep a connection, either way.
+			sending, _ := w.upgradeIn(header, "sink")
+			receiving, received := w.upgradeIn(header, "ticker")
+			got := make(chan error, 1)
+			go func() {
+				_, err := io.Copy(io.Discard, received)
+				got <- err
+			}()
+			// Five timeouts, a byte every third of one.
+			for range 15 {
+				if _, err := io.WriteString(sending, "p"); err != nil {
+					t.Fatalf("a connection the client sends on was closed: %v", err)
+				}
+				time.Sleep(idle / 3) //nolint:forbidigo // the gap between a talking client's bytes
+			}
+			if err := closedWithin(silent, 5*time.Second); err != nil {
+				t.Errorf("a silent upgraded connection was kept: %v", err)
+			}
+			if err := closedWithin(sending, idle/3); !errors.Is(err, os.ErrDeadlineExceeded) {
+				t.Errorf("the connection the client sends on: %v", err)
+			}
+			select {
+			case err := <-got:
+				t.Errorf("the connection the endpoint sends on ended: %v", err)
+			default:
+			}
+			_ = receiving.Close()
+		})
+	}
 }
 
 // TestAnUpgradeEndsWithItsGrant: a caller whose grant goes loses what it

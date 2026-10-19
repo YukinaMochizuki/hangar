@@ -66,6 +66,7 @@ type flags struct {
 	acmeDNS, dnsTokenFile        string
 	consoleDir                   string
 	endpointResponseTimeout      time.Duration
+	upgradeIdleTimeout           time.Duration
 	limits                       front.Limits
 }
 
@@ -108,6 +109,7 @@ func bindFlags(fs *flag.FlagSet, f *flags) {
 	fs.StringVar(&f.dnsTokenFile, "cloudflare-dns-token-file", credential(dnsTokenCredential), "file only its owner reads holding a Cloudflare token that may edit DNS in the two domains' zones")
 	fs.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
 	fs.DurationVar(&f.endpointResponseTimeout, "endpoint-response-header-timeout", 100*time.Second, "how long an endpoint has to start its answer")
+	fs.DurationVar(&f.upgradeIdleTimeout, "upgrade-idle-timeout", edge.DefaultUpgradeIdleTimeout, "how long an upgraded connection to an endpoint, a WebSocket, may carry no byte either way")
 	limitFlags(fs, &f.limits)
 	fs.Func("own-prefix", "the host's own IPv6 prefix, such as its /64, whose addresses, its machines', are each a client of the limits by itself; repeatable", func(s string) error {
 		p, err := netip.ParsePrefix(s)
@@ -241,6 +243,7 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 		Domain:                f.domain,
 		ConsoleURL:            consoleURL,
 		ResponseHeaderTimeout: f.endpointResponseTimeout,
+		UpgradeIdleTimeout:    f.upgradeIdleTimeout,
 		Log:                   log,
 	})
 	g, ctx := errgroup.WithContext(ctx)

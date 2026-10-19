@@ -210,7 +210,13 @@ stand in front of the internet with nothing else in front of it.
     door's. Exec's own liveness counts no silence while a write is pending
     (`internal/execws`), so a client that stops reading an exec is dropped
     only by the door socket's TCP user timeout, 60 s without progress,
-    which Linux applies to a zero window from 5.11 on.
+    which Linux applies to a zero window from 5.11 on. An upgraded
+    connection to an endpoint, PUBLIC or PRIVATE, ends after 10 minutes
+    with no byte either way (`--upgrade-idle-timeout`,
+    `public-endpoints.md`). Exec and SSH WebSockets are the API's, which
+    the door proxies to the apiserver, never through the endpoints' edge:
+    their own pings, every 30 s, keep them, and fair eviction may still
+    close one of a client holding more than its share.
   - A client that sends no request on a connection is closed by the
     handshake and header timeout, then by the idle timeout; over HTTP/2,
     by the idle timeout and the pings.
