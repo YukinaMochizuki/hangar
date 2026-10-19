@@ -274,6 +274,28 @@ describe("Delete", () => {
     expect(deleted.map((r) => [r.project, r.name])).toEqual([["demo", "scratch"]]);
   });
 
+  it("opens the list even when the page finds the disk gone before every query is asked again", async () => {
+    // The disk is gone as soon as it is deleted, and another of the page's
+    // queries is slow to answer again: the page says "No such disk" first,
+    // which takes away the dialog that deleted it.
+    let disks = [free];
+    let deleted = false;
+    const a = storageApi({
+      disks: async () => ({ items: disks }),
+      get: (n) => disks.find((d) => d.metadata?.name === n),
+      images: () => (deleted ? never() : Promise.resolve({ items: [] })),
+      del: () => {
+        disks = [];
+        deleted = true;
+      },
+    });
+    render(<DiskDetail name="scratch" />, { wrapper: withApi(a) });
+    const d = await open();
+    fireEvent.change(within(d).getByRole("textbox"), { target: { value: "scratch" } });
+    fireEvent.click(within(d).getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/disks", params: { project: "demo" } }));
+  });
+
   it("says an attached disk is refused, and shows the API's refusal in the dialog", async () => {
     const a = api([attached], {
       del: () => {

@@ -154,6 +154,8 @@ export function useDelete(kind: NetworkKind, project: string, name: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => callsOf(kind, transport).del(project, name),
-    onSettled: () => queryClient.invalidateQueries(),
+    // Not awaited: the page that deleted the object goes on (to the list)
+    // before the refetch finds it gone and says so.
+    onSettled: () => void queryClient.invalidateQueries(),
   });
 }
