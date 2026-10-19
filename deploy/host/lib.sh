@@ -227,6 +227,19 @@ load_env() {
 		[[ $HANGAR_UPGRADES_TZ =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$HANGAR_UPGRADES_TZ" ] ||
 			die "HANGAR_UPGRADES_TZ must be a time zone in /usr/share/zoneinfo, such as Europe/Paris or UTC, not $HANGAR_UPGRADES_TZ"
 	fi
+	# Optional; the sshd step lets in ubuntu alone without it. It ends up in
+	# sshd's AllowUsers, where a pattern would let in more than it names, and
+	# root, whom the same drop-in keeps out, would let in no one.
+	if [ -n "${HANGAR_SSH_USERS:-}" ]; then
+		[[ $HANGAR_SSH_USERS =~ ^[a-z_][a-z0-9_-]*( [a-z_][a-z0-9_-]*)*$ ]] ||
+			die "HANGAR_SSH_USERS must be user names separated by single spaces, such as ubuntu, not $HANGAR_SSH_USERS"
+		[[ " $HANGAR_SSH_USERS " != *" root "* ]] ||
+			die "HANGAR_SSH_USERS must not list root: sshd keeps root out"
+	fi
+	# Overrides the sshd step's lockout guard for one run; kept in the file
+	# it would override it on every run.
+	! grep -Eq '^[[:space:]]*(export[[:space:]]+)?HANGAR_SSH_DROP_USERS=' "$env_file" ||
+		die "HANGAR_SSH_DROP_USERS belongs in one run's environment, not in $env_file"
 	# ip prints addresses in canonical form; compare against the same form.
 	HANGAR_IPV6_ADDR=$(ipv6_canon "$HANGAR_IPV6_ADDR")
 	HANGAR_UPLINK_MAC=${HANGAR_UPLINK_MAC,,}
