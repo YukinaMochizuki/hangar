@@ -18,8 +18,9 @@ SSHD_UNIT=ssh
 # The drop-in as sshd was last reloaded with it: a file changed since, by
 # hand or by a run that died before the reload, is reloaded again.
 SSHD_LOADED=$STATE_DIR/sshd.loaded
-# Set to 1 in the environment of a run to apply what would lock someone out
-# (keys lost with authorized_keys2, the operator not let in) anyway.
+# Set to 1 in the environment of one run, never in the host env file
+# (load_env refuses it there), to apply a list that stops letting in
+# someone who can log in today.
 SSHD_FORCE=${HANGAR_SSH_FORCE:-0}
 
 # sshd_settings prints the drop-in's settings, one "Keyword value" a line.
@@ -58,29 +59,49 @@ sshd_expected() {
 	done < <(sshd_settings)
 }
 
-# sshd_rundir makes sshd's privilege separation directory, without which
-# sshd -t and -T fail. ssh.service makes it when it starts, which under
-# socket activation may not have happened yet.
-sshd_rundir() { install -d -m 0755 /run/sshd; }
+# sshd_rundir_ok holds when sshd's privilege separation directory is there,
+# without which sshd -t and -T fail. ssh.service makes it when it starts,
+# which under socket activation may not have happened yet; a real run makes
+# it, a dry run and verify.sh only say it is missing.
+sshd_rundir_ok() { [ -d /run/sshd ]; }
+
+# sshd_copy DIR [FILE] copies sshd's config into DIR, DIR/sshd_config with
+# its Include of sshd_config.d reading DIR/sshd_config.d, where FILE stands
+# in for this step's drop-in (left out without FILE). It fails when
+# sshd_config does not include sshd_config.d, so sshd would not read ours.
+sshd_copy() {
+	local dir=$1 ours=${2:-} f
+	mkdir "$dir/sshd_config.d"
+	for f in "$SSHD_DIR"/sshd_config.d/*.conf; do
+		[ ! -f "$f" ] || [ "$f" = "$SSHD_FILE" ] || cp "$f" "$dir/sshd_config.d/"
+	done
+	[ -z "$ours" ] || cp "$ours" "$dir/sshd_config.d/${SSHD_FILE##*/}"
+	sed -E "s#^([[:space:]]*[Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]]+)($SSHD_DIR/)?sshd_config\.d/#\1$dir/sshd_config.d/#" \
+		"$SSHD_DIR/sshd_config" >"$dir/sshd_config"
+	grep -q "$dir/sshd_config.d/" "$dir/sshd_config" && return 0
+	log "$SSHD_DIR/sshd_config does not include sshd_config.d/*.conf, so sshd would not read $SSHD_FILE"
+	return 1
+}
 
 # sshd_candidate_ok holds when sshd -t accepts the config as it would be
-# with this step's drop-in in place of whatever is there now: a copy of
-# sshd_config whose Include of sshd_config.d reads a copy of that directory.
+# with this step's drop-in in place of whatever is there now.
 sshd_candidate_ok() {
-	local tmp f ok=1
+	local tmp ok=1
 	tmp=$(mktemp -d)
-	mkdir "$tmp/sshd_config.d"
-	for f in "$SSHD_DIR"/sshd_config.d/*.conf; do
-		[ ! -f "$f" ] || [ "$f" = "$SSHD_FILE" ] || cp "$f" "$tmp/sshd_config.d/"
-	done
-	sshd_conf >"$tmp/sshd_config.d/${SSHD_FILE##*/}"
-	sed -E "s#^([[:space:]]*[Ii][Nn][Cc][Ll][Uu][Dd][Ee][[:space:]]+)($SSHD_DIR/)?sshd_config\.d/#\1$tmp/sshd_config.d/#" \
-		"$SSHD_DIR/sshd_config" >"$tmp/sshd_config"
-	if ! grep -q "$tmp/sshd_config.d/" "$tmp/sshd_config"; then
-		log "$SSHD_DIR/sshd_config does not include sshd_config.d/*.conf, so sshd would not read $SSHD_FILE"
-	elif sshd_rundir && sshd -t -f "$tmp/sshd_config" >&2; then
-		ok=0
-	fi
+	sshd_conf >"$tmp/new.conf"
+	if sshd_copy "$tmp" "$tmp/new.conf" && sshd -t -f "$tmp/sshd_config" >&2; then ok=0; fi
+	rm -rf "$tmp"
+	return "$ok"
+}
+
+# sshd_running_config prints sshd -T for the config sshd runs with: our
+# drop-in as sshd was last reloaded with it, not as it is now, which may
+# have been changed by hand since.
+sshd_running_config() {
+	local tmp ours='' ok=1
+	if [ -f "$SSHD_LOADED" ]; then ours=$SSHD_LOADED; elif [ -f "$SSHD_FILE" ]; then ours=$SSHD_FILE; fi
+	tmp=$(mktemp -d)
+	if sshd_copy "$tmp" "$ours" && sshd -T -f "$tmp/sshd_config"; then ok=0; fi
 	rm -rf "$tmp"
 	return "$ok"
 }
@@ -91,14 +112,50 @@ sshd_keys() { [ -f "$1" ] && grep -Ev '^[[:space:]]*(#|$)' "$1" || true; }
 # sshd_lists USER succeeds when USER is one of the users sshd lets in.
 sshd_lists() { [[ " $SSHD_USERS " == *" $1 "* ]]; }
 
-# sshd_users_problem prints what would lock someone out, one line each:
-# root in the list (its one key is a stub, and the drop-in refuses root
-# anyway), no user with a key in .ssh/authorized_keys (the one file sshd
-# reads keys from once the drop-in is loaded), a user whose keys are all in
-# authorized_keys2, or the operator running the step left out. What only
-# keeps out a user who cannot log in today it warns of.
+# sshd_current_users prints the users other than root sshd lets in with a
+# key today: a key in a file the running config's AuthorizedKeysFile names,
+# and a name its AllowUsers matches, if it has any.
+sshd_current_users() {
+	local conf name home f has p ok
+	local -a files pats
+	conf=$(sshd_running_config) || return 1
+	read -ra files <<<"$(sed -n 's/^authorizedkeysfile //p' <<<"$conf")"
+	# A user@host pattern lets the user in from some hosts: count it.
+	read -ra pats <<<"$(sed -n 's/^allowusers //p' <<<"$conf" | sed 's/@.*//' | paste -sd' ' -)"
+	while IFS=: read -r name _ _ _ _ home _; do
+		[ "$name" != root ] && [ -n "$home" ] || continue
+		has=0
+		for f in "${files[@]}"; do
+			[ "$f" != none ] || continue
+			f=${f//%%/$'\001'}
+			f=${f//%h/$home}
+			f=${f//%u/$name}
+			f=${f//$'\001'/%}
+			[ "${f:0:1}" = / ] || f=$home/$f
+			if [ -n "$(sshd_keys "$f")" ]; then has=1; break; fi
+		done
+		[ "$has" = 1 ] || continue
+		if [ "${#pats[@]}" != 0 ]; then
+			ok=0
+			for p in "${pats[@]}"; do
+				# shellcheck disable=SC2053 # $p is a pattern, as sshd matches it.
+				if [[ $name == $p ]]; then ok=1; break; fi
+			done
+			[ "$ok" = 1 ] || continue
+		fi
+		printf '%s\n' "$name"
+	done < <(getent passwd)
+}
+
+# sshd_users_problem prints what would lock someone out, one line each,
+# and warns of what only keeps out who cannot log in today: root in the
+# list (its one key is a stub, and the drop-in refuses root anyway), no
+# user with a key in .ssh/authorized_keys (the one file sshd reads keys
+# from once the drop-in is loaded), and, unless HANGAR_SSH_FORCE=1, a
+# listed user whose keys are all in authorized_keys2 or a user who can log
+# in with a key today and could not after.
 sshd_users_problem() {
-	local u home keys keys2 n=0
+	local u home keys keys2 n=0 lost=() why current
 	for u in $SSHD_USERS; do
 		if [ "$u" = root ]; then
 			printf 'HANGAR_SSH_USERS lists root, whom PermitRootLogin no keeps out\n'
@@ -114,8 +171,7 @@ sshd_users_problem() {
 		if [ -n "$keys" ]; then
 			n=$((n + 1))
 		elif [ -n "$keys2" ]; then
-			[ "$SSHD_FORCE" = 1 ] ||
-				printf '%s has keys in %s/.ssh/authorized_keys2 alone, which sshd stops reading; move them to authorized_keys, or set HANGAR_SSH_FORCE=1\n' "$u" "$home"
+			lost+=("$u (keys in $home/.ssh/authorized_keys2 alone, which sshd stops reading)")
 		else
 			log "warning: $u has no key in $home/.ssh/authorized_keys and cannot log in"
 		fi
@@ -125,11 +181,29 @@ sshd_users_problem() {
 	done
 	[ "$n" != 0 ] ||
 		printf 'none of the users sshd would let in (%s) has a key in ~/.ssh/authorized_keys\n' "$SSHD_USERS"
-	# Empty under systemd-run, which the runbook runs the real thing in;
-	# the dry run before it, under sudo, catches it.
-	if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != root ] && ! sshd_lists "$SUDO_USER" && [ "$SSHD_FORCE" != 1 ]; then
-		printf 'sshd would not let in %s, who runs this; add them to HANGAR_SSH_USERS, or set HANGAR_SSH_FORCE=1\n' "$SUDO_USER"
+
+	if ! sshd_rundir_ok; then
+		log "note: no /run/sshd, so who can log in today is not known; a real run makes it and refuses to leave any of them out"
+	elif ! current=$(sshd_current_users); then
+		printf 'sshd -T fails on the config sshd runs with, so who can log in today is not known\n'
+	else
+		while read -r u; do
+			[ -n "$u" ] || continue
+			if ! sshd_lists "$u"; then
+				lost+=("$u (not in HANGAR_SSH_USERS)")
+			elif [ -z "$(sshd_keys "$(getent passwd "$u" | cut -d: -f6)/.ssh/authorized_keys")" ] &&
+				[[ " ${lost[*]} " != *" $u ("* ]]; then
+				lost+=("$u (no key in ~/.ssh/authorized_keys)")
+			fi
+		done <<<"$current"
 	fi
+	for why in "${lost[@]}"; do
+		if [ "$SSHD_FORCE" = 1 ]; then
+			log "warning: HANGAR_SSH_FORCE=1: sshd stops letting in $why"
+		else
+			printf 'sshd would stop letting in %s: add or fix them, or run with HANGAR_SSH_FORCE=1\n' "$why"
+		fi
+	done
 }
 
 sshd_loaded() { [ -f "$SSHD_FILE" ] && cmp -s "$SSHD_FILE" "$SSHD_LOADED"; }
@@ -161,10 +235,17 @@ sshd_matches() {
 
 sshd_apply() {
 	local problem before backup had=0 u
+	[ "$SSHD_FORCE" != 1 ] ||
+		log "warning: HANGAR_SSH_FORCE=1: this run applies HANGAR_SSH_USERS even if it locks out someone who can log in today"
+	# Not counted as a change: ssh.service makes it at every start.
+	[ "$DRY_RUN" = 1 ] || sshd_rundir_ok || install -d -m 0755 /run/sshd
 	problem=$(sshd_users_problem)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
-	sshd_candidate_ok ||
+	if ! sshd_rundir_ok; then
+		log "note: no /run/sshd, so sshd -t cannot check the new config; a real run makes it and refuses a config sshd -t refuses"
+	elif ! sshd_candidate_ok; then
 		refuse "sshd -t refuses the config with the drop-in this step would write to $SSHD_FILE"
+	fi
 
 	backup=$(mktemp)
 	if [ -f "$SSHD_FILE" ]; then cp -p "$SSHD_FILE" "$backup" && had=1; fi
@@ -188,13 +269,16 @@ sshd_apply() {
 
 sshd_verify() {
 	local line u
-	sshd_rundir
 	check "sshd drop-in $SSHD_FILE, root's, 644" \
 		sh -c "[ \"\$(stat -c '%U %a' '$SSHD_FILE')\" = 'root 644' ]"
 	check "sshd drop-in $SSHD_FILE as generated" cmp -s "$SSHD_FILE" <(sshd_conf)
 	check "sshd reloaded since $SSHD_FILE changed" sshd_loaded
-	check "sshd -t accepts the config" sshd -t
 	check "no Match block in $SSHD_DIR/sshd_config or sshd_config.d" test -z "$(sshd_matches)"
+	if ! sshd_rundir_ok; then
+		skip "sshd -t and sshd -T" "no /run/sshd: ssh.service has not started since boot; it reads the config when it does"
+		return 0
+	fi
+	check "sshd -t accepts the config" sshd -t
 	# sshd -T prints the config as sshd would read it now, after every
 	# drop-in: what the users get, whatever file sets it.
 	for u in $SSHD_USERS; do
