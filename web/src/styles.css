@@ -54,6 +54,51 @@
 }
 
 /*
+ * The 16 colours a machine's log asks for with ANSI codes (web/src/lib/ansi.ts),
+ * --ansi-0 to --ansi-15: black, red, green, yellow, blue, magenta, cyan,
+ * white, then their bright forms. Toned for the page, not a terminal's black:
+ * in the light theme "white" is a grey that reads on a light ground, and in
+ * the dark theme "black" is one that reads on a dark ground. The dark theme's
+ * are the web terminal's (web/src/components/terminal.tsx).
+ */
+:root {
+  --ansi-0: #3f3f46;
+  --ansi-1: #dc2626;
+  --ansi-2: #15803d;
+  --ansi-3: #a16207;
+  --ansi-4: #2563eb;
+  --ansi-5: #9333ea;
+  --ansi-6: #0e7490;
+  --ansi-7: #71717a;
+  --ansi-8: #71717a;
+  --ansi-9: #ef4444;
+  --ansi-10: #16a34a;
+  --ansi-11: #ca8a04;
+  --ansi-12: #3b82f6;
+  --ansi-13: #a855f7;
+  --ansi-14: #0891b2;
+  --ansi-15: #27272a;
+}
+[data-theme="dark"] {
+  --ansi-0: #71717a;
+  --ansi-1: #f87171;
+  --ansi-2: #4ade80;
+  --ansi-3: #facc15;
+  --ansi-4: #60a5fa;
+  --ansi-5: #c084fc;
+  --ansi-6: #22d3ee;
+  --ansi-7: #e4e4e7;
+  --ansi-8: #a1a1aa;
+  --ansi-9: #fca5a5;
+  --ansi-10: #86efac;
+  --ansi-11: #fde047;
+  --ansi-12: #93c5fd;
+  --ansi-13: #d8b4fe;
+  --ansi-14: #67e8f9;
+  --ansi-15: #fafafa;
+}
+
+/*
  * The accent is international orange, the high-visibility orange of
  * aerospace: flight recorders, obstruction markings, high-altitude and launch
  * suits. Toned slightly darker than the pure pigment so it holds contrast as

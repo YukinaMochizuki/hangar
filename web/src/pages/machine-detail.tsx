@@ -9,15 +9,16 @@ import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/con
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
 import { HostKeys } from "@/components/host-key";
 import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { parseAnsi, type AnsiColor, type AnsiSpan, type AnsiStyle } from "@/lib/ansi";
 import { artStatus } from "@/components/chassis-art";
 import { MachineActions } from "@/components/machine-actions";
 import { ConditionRow, ConditionsFold, EquivalentCard, Labels } from "@/components/object";
-import { PageBanner } from "@/components/notice";
+import { Notice, PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
 import { createdKey, useJustCreated } from "@/lib/just-created";
 import { DetailSkeleton } from "@/components/page";
@@ -35,7 +36,7 @@ import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
 
 const restartPolicies: Record<number, string> = {
-  [RestartPolicy.UNSPECIFIED]: "Default",
+  [RestartPolicy.UNSPECIFIED]: "Always (default)",
   [RestartPolicy.ALWAYS]: "Always",
   [RestartPolicy.ON_FAILURE]: "On failure",
   [RestartPolicy.NEVER]: "Never",
@@ -389,21 +390,103 @@ const decoder = new TextDecoder();
 const logTail = 50n;
 const keptLines = 200;
 
-type LogLine = { key: number; time?: Date; stream: MachineLogStream; text: string };
+export type LogLine = {
+  key: number;
+  time?: Date;
+  stream: MachineLogStream;
+  // What was written, its escape sequences gone, and in spans of the
+  // styles they asked for.
+  text: string;
+  spans: AnsiSpan[];
+  boot: number;
+  // Set on the line that ends a boot: how its process ended.
+  exit?: { code: number; signal: number };
+};
 
-function toLines(r: MachineLogRecord, next: () => number): LogLine[] {
+export function toLines(r: MachineLogRecord, next: () => number): LogLine[] {
   const time = date(r.time);
+  const boot = Number(r.boot);
   if (r.content.case === "exit") {
     const e = r.content.value;
-    return [{ key: next(), time, stream: r.stream, text: `boot ${r.boot} ended: exit ${e.code}${e.signal ? `, signal ${e.signal}` : ""}` }];
+    return [{ key: next(), time, stream: r.stream, text: "", spans: [], boot, exit: { code: e.code, signal: e.signal } }];
   }
   if (r.content.case !== "data") return [];
+  // A style set on one line of a record goes on to the next, as in a terminal.
+  let style: AnsiStyle = {};
   return decoder
     .decode(r.content.value)
     .replace(/\n$/, "")
     .split("\n")
-    .map((text) => ({ key: next(), time, stream: r.stream, text }));
+    .map((raw) => {
+      const { spans, end } = parseAnsi(raw, style);
+      style = end;
+      return { key: next(), time, stream: r.stream, text: spans.map((s) => s.text).join(""), spans, boot };
+    });
 }
+
+/** A span's style, as CSS; the 16 colours are the page's (--ansi-N in styles.css). */
+function spanStyle(s: AnsiStyle): CSSProperties | undefined {
+  const color = (c: AnsiColor | undefined) => (c === undefined ? undefined : typeof c === "number" ? `var(--ansi-${c})` : c);
+  let fg = color(s.fg);
+  let bg = color(s.bg);
+  if (s.inverse) [fg, bg] = [bg ?? "var(--surface-2)", fg ?? "var(--foreground)"];
+  if (!fg && !bg && !s.bold && !s.dim && !s.italic && !s.underline) return undefined;
+  return {
+    color: fg ?? (s.bold ? "var(--foreground)" : undefined),
+    backgroundColor: bg,
+    fontWeight: s.bold ? 600 : undefined,
+    opacity: s.dim ? 0.7 : undefined,
+    fontStyle: s.italic ? "italic" : undefined,
+    textDecoration: s.underline ? "underline" : undefined,
+  };
+}
+
+/** What the machine does when its process ends, if this page can tell. */
+function restartOf(m: MachineView): RestartPolicy | undefined {
+  const p = m.machine?.spec?.restartPolicy ?? (m.container ? m.container.spec?.restartPolicy ?? RestartPolicy.UNSPECIFIED : undefined);
+  return p === RestartPolicy.UNSPECIFIED && m.container ? RestartPolicy.ALWAYS : p || undefined;
+}
+
+const restartWords: Record<number, string> = {
+  [RestartPolicy.ALWAYS]: "always",
+  [RestartPolicy.ON_FAILURE]: "on failure",
+  [RestartPolicy.NEVER]: "never",
+};
+
+/**
+ * The line that ends a boot, said in words: how the process ended, and what
+ * came of it. A later boot in the log says it booted again; for the last
+ * boot, the restart policy says what follows.
+ */
+export function bootEnd(l: LogLine, lastBoot: number, m: MachineView): string {
+  const e = l.exit!;
+  const how = e.signal ? `the process was ended by signal ${e.signal} (exit ${e.code})` : `the process exited with code ${e.code}`;
+  const policy = restartOf(m);
+  const word = policy ? restartWords[policy] : undefined;
+  let then = "";
+  if (l.boot < lastBoot) then = word ? `booted again (restart: ${word})` : "booted again";
+  else if (m.stopped) then = "stopped";
+  else if (policy === RestartPolicy.ALWAYS || (policy === RestartPolicy.ON_FAILURE && (e.code !== 0 || e.signal))) then = `booting again (restart: ${word})`;
+  else if (word) then = `stays off (restart: ${word})`;
+  return [`boot ${l.boot} ended`, how, then].filter(Boolean).join(" · ");
+}
+
+// A container whose boots ended this often within this window is starting
+// over, not running.
+const loopEnds = 3;
+const loopWindowMs = 10 * 60_000;
+
+/** How many of the container's boots ended lately, when it looks caught in a loop of them. */
+export function restartLoop(lines: LogLine[], m: MachineView, now: number): number {
+  if (!m.container || m.stopped) return 0;
+  const ends = lines.filter((l) => l.exit && l.time && now - l.time.getTime() < loopWindowMs).length;
+  return ends >= loopEnds ? ends : 0;
+}
+
+const stamp = (t?: Date) => t?.toISOString().slice(11, 19) ?? "--:--:--";
+
+// How near the bottom, in pixels, the log counts as scrolled to its end.
+const atEndSlack = 8;
 
 /**
  * The last of what the machine wrote, followed while the page is open, over
@@ -444,6 +527,39 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
     })();
     return () => abort.abort();
   }, [transport, m.project, m.kind, m.name]);
+  // The clock the restart loop is judged by, so that boots that ended long
+  // ago stop counting while the page is open.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const lastBoot = lines.reduce((b, l) => Math.max(b, l.boot), 0);
+  const loop = restartLoop(lines, m, now);
+  // Scrolled to its end, the log stays there as lines come, as a terminal
+  // does; scrolled up, it stays where it was read, and a button goes back.
+  // It opens at its end.
+  const pre = useRef<HTMLPreElement>(null);
+  const [atEnd, setAtEnd] = useState(true);
+  // The last line there was when the person scrolled up from the end.
+  const [seen, setSeen] = useState(-1);
+  const lastKey = lines.at(-1)?.key ?? -1;
+  useLayoutEffect(() => {
+    const el = pre.current;
+    if (el && atEnd) el.scrollTop = el.scrollHeight;
+  }, [lines, atEnd]);
+  const onScroll = () => {
+    const el = pre.current;
+    if (!el) return;
+    const end = el.scrollHeight - el.scrollTop - el.clientHeight <= atEndSlack;
+    if (atEnd && !end) setSeen(lastKey);
+    setAtEnd(end);
+  };
+  const toEnd = () => {
+    const el = pre.current;
+    if (el) el.scrollTop = el.scrollHeight;
+    setAtEnd(true);
+  };
 
   return (
     <Card className="overflow-hidden">
@@ -466,13 +582,48 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
       ) : lines.length === 0 ? (
         <div className="px-4 py-3 text-[13px] text-muted">No output recorded.</div>
       ) : (
-        <pre className="max-h-80 overflow-auto bg-surface-2 px-4 py-3 font-mono text-[12px] leading-6 text-muted">
-          {lines.map((l) => (
-            <div key={l.key} className={cn(l.stream === MachineLogStream.STDERR && "text-fail", l.stream === MachineLogStream.EXIT && "text-pending")}>
-              <span className="select-none text-subtle">{l.time?.toISOString().slice(11, 19) ?? "--:--:--"}</span> {l.text}
-            </div>
-          ))}
-        </pre>
+        <>
+          {loop > 0 && (
+            <Notice tone="warning" title="This container keeps starting over" className="m-3">
+              Its process ended {loop} times in the last {loopWindowMs / 60_000} minutes, and each time the restart policy booted it
+              again. A process that ends as soon as it starts does this, such as an image's shell with no terminal attached. A
+              command that keeps running stays up, and a restart policy of on failure or never leaves it off.
+            </Notice>
+          )}
+          <div className="relative">
+            <pre ref={pre} onScroll={onScroll} className="max-h-80 overflow-auto bg-surface-2 px-4 py-3 font-mono text-[12px] leading-6 text-muted">
+              {lines.map((l) =>
+                l.exit ? (
+                  <div key={l.key} className="flex items-center gap-2 text-pending">
+                    <span className="select-none text-subtle">{stamp(l.time)}</span>
+                    <span aria-hidden className="h-px w-3 shrink-0 bg-pending/40" />
+                    <span className="min-w-0 whitespace-pre-wrap">{bootEnd(l, lastBoot, m)}</span>
+                    <span aria-hidden className="h-px min-w-3 flex-1 bg-pending/40" />
+                  </div>
+                ) : (
+                  <div key={l.key} className={cn("whitespace-pre-wrap break-words", l.stream === MachineLogStream.STDERR && "text-fail")}>
+                    <span className="select-none text-subtle">{stamp(l.time)}</span>{" "}
+                    {l.spans.map((s, i) => (
+                      <span key={i} style={spanStyle(s.style)}>
+                        {s.text}
+                      </span>
+                    ))}
+                  </div>
+                ),
+              )}
+            </pre>
+            {!atEnd && (
+              <button
+                type="button"
+                onClick={toEnd}
+                className="absolute bottom-3 right-5 flex h-7 items-center gap-1.5 rounded-full border bg-surface px-3 text-[12px] text-muted shadow-sm hover:text-foreground"
+              >
+                <ArrowDown className="size-3.5" />
+                {lastKey > seen ? "New lines" : "Latest"}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </Card>
   );

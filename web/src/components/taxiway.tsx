@@ -21,8 +21,12 @@ export function Taxiway({ stops, gather = false }: { stops: Stop[]; gather?: boo
   const n = stops.length;
   const still = useReducedMotion();
   return (
-    // Clipped, so stops pulled into the last one never show past it.
-    <ol className="flex items-start overflow-hidden">
+    // Clipped across, so stops pulled into the last one never show past it,
+    // but not up and down, where a stop's ping grows past its row; the
+    // padding, given back by the margin, leaves the first stop's ping room
+    // on the left. Isolated, so the stops' z-index orders them among
+    // themselves and never lifts them over the page's sticky header.
+    <ol className="isolate -mx-2 flex items-start overflow-x-clip px-2">
       {stops.map((s, i) => {
         const next = stops[i + 1];
         const covered = next && (next.state === "done" || next.state === "current" || next.state === "failed" || next.state === "idle");

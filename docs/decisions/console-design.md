@@ -255,7 +255,19 @@ for a platform administrator; at today's size that is a handful of calls.
   past the tenant's limit through other projects' usage is refused by the
   API, and the form shows that refusal.
 - **Logs** are `MachineCapabilityService.Logs`, the server stream `hangar
-  logs -f` reads, followed while the page is open.
+  logs -f` reads, followed while the page is open. The end of a boot is a
+  rule across the log saying how the process ended and what came of it:
+  booted again (a later boot is in the log), or, for the last, what the
+  restart policy does next. A container whose boots ended three times in
+  ten minutes gets a warning above the log that it keeps starting over,
+  and why that usually is: a process that ends at once, under restart
+  always. The count is the console's, from the log it holds; the API keeps
+  no restart count. The log is coloured as a terminal would colour it, from
+  its ANSI SGR codes (`web/src/lib/ansi.ts`), in a palette toned for each
+  theme (`--ansi-0` to `--ansi-15`); every other escape sequence and
+  control character is dropped. It opens at its end and, while scrolled to
+  its end, stays there as lines come; scrolled up, it stays where it is
+  read, with a button back to the end that says when new lines came.
 - **A container has a terminal**, `hangar exec -it … -- sh` in the browser:
   the exec WebSocket (`streaming-transport.md`, `web/src/lib/exec.ts`) under
   xterm.js (`web/src/components/terminal.tsx`). It is in two places, one
