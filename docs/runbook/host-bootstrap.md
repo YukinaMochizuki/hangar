@@ -3,7 +3,8 @@
 `deploy/host/` brings a freshly installed host to the state hangar expects:
 packages and a pinned Cloud Hypervisor, swap mirrored on md RAID1, the `hangar`
 pool's properties and datasets, netplan owned by us with IPv6 off the
-prefix's `::` address, proxy NDP, forwarding, and vsock, unattended security
+prefix's `::` address, the host's firewall, sshd for keys only, proxy NDP,
+forwarding, and vsock, unattended security
 upgrades in a fixed window, a hangar release (the binaries, the guest kernel
 and the initramfs), `hangar-apiserver` and `hangar-node` as systemd
 services, and the front door, `hangar-edge`, once it has its settings. It
@@ -109,7 +110,7 @@ It refuses when nothing is, and when the installed files do not match the
 checksums recorded for them (a run that died half-way, or a file replaced
 by hand), so that no service restarts onto files of two releases; rerun
 with `--release DIR`. `--only <step>` runs a single step
-(`packages`, `swap-raid`, `zfs`, `network`, `firewall`, `sysctl`, `upgrades`,
+(`packages`, `swap-raid`, `zfs`, `network`, `firewall`, `sshd`, `sysctl`, `upgrades`,
 `release`, `services`, `edge`).
 
 ## Datasets, upgrades, the release and the services
@@ -141,6 +142,30 @@ with `--release DIR`. `--only <step>` runs a single step
   `nftables.service`, whose stock `/etc/nftables.conf` flushes every
   table, the node agent's too: do not enable it. To open a port, change
   `FIREWALL_TCP_PORTS` in the step and re-run it.
+- `sshd` writes `/etc/ssh/sshd_config.d/10-hangar.conf` (root's, 0644):
+  password and keyboard-interactive logins off, no root login, keys read
+  from `~/.ssh/authorized_keys` only (not `authorized_keys2`),
+  `AllowUsers` the users `HANGAR_SSH_USERS` names (`ubuntu` when unset),
+  no X11 forwarding, `MaxAuthTries 4` and `LoginGraceTime 30`. TCP
+  forwarding is left on. sshd reads `sshd_config.d/*.conf` in name order
+  and keeps the first value it reads, so the file sorts before the cloud
+  image's `50-cloud-init.conf` and `60-cloudimg-settings.conf`, which stay
+  as installed. Before it writes the file the step has `sshd -t` check the
+  config with it, and refuses when sshd refuses or when none of those users
+  has a key in `~/.ssh/authorized_keys`; it warns of keys only in
+  `authorized_keys2`, which stop working. After writing it runs `sshd -t`
+  again and puts the old file back if that fails. It then reloads
+  `ssh.service` if it runs (a reload keeps every open session); when only
+  `ssh.socket` does, sshd reads the file at the next connection. It reloads
+  again whenever the file is not what it last reloaded with
+  (`/var/lib/hangar-bootstrap/sshd.loaded`). `verify.sh` checks the
+  settings in `sshd -T`, so a drop-in sorting before ours that loosens one
+  fails it. With `MaxAuthTries 4`, a client that offers more than three
+  other keys first is cut off: name the key (`IdentitiesOnly yes` and
+  `IdentityFile` in `~/.ssh/config`). After a run that changed the file,
+  log in again from a second terminal before closing the first. To back
+  out by hand: `sudo rm /etc/ssh/sshd_config.d/10-hangar.conf && sudo
+  systemctl reload ssh` (the next run writes it again).
 - `upgrades` keeps Ubuntu's unattended upgrades to their default origins
   (security only), never reboots, and moves `apt-daily.timer` to 03:30 and
   `apt-daily-upgrade.timer` to 04:00 in `HANGAR_UPGRADES_TZ` (UTC unless
@@ -1015,7 +1040,12 @@ nothing, and a dead IPv6 config is rolled back. Its settings are in
 at mode 644, a run refuses without it, `--env FILE` reads another, a file
 another user can write or own is refused before it is read, an unknown
 `HANGAR_UPGRADES_TZ` is refused, the upgrade timers are in the one it sets,
-and `--host` is refused. It needs a release
+and `--host` is refused. sshd lets in only the user who ran it with sudo
+(`ubuntu` without sudo), with a key in `~/.ssh/authorized_keys`: log in
+to the VM that way, or keep a console. It checks the sshd settings in
+`sshd -T`, that a drop-in sorting before ours fails verify, that a config
+`sshd -t` refuses is neither written nor loaded, and that a hand-changed
+drop-in fails verify and is written back and reloaded. It needs a release
 (`HANGAR_TESTBED_RELEASE=DIR`, the `host/` of what `make release` writes), installs the services
 from it, and checks: the node is Ready; the release step installs
 `hangar-fetch-release` and verify catches a changed one; that release,

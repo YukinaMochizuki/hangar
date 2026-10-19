@@ -40,7 +40,7 @@ front_door_kit=$(cd "$front_door_kit" && pwd)
 state_digest() {
 	{
 		cat /etc/fstab /proc/swaps /etc/mdadm/mdadm.conf
-		ls -lR /etc/netplan /etc/sysctl.d /etc/modprobe.d /etc/modules-load.d \
+		ls -lR /etc/netplan /etc/sysctl.d /etc/modprobe.d /etc/modules-load.d /etc/ssh/sshd_config.d \
 			/etc/cloud/cloud.cfg.d /etc/systemd/network /etc/initramfs-tools/conf.d
 		ls -l /usr/local/bin /var/lib/hangar-bootstrap
 		cat /etc/netplan/*.yaml
@@ -120,6 +120,9 @@ EOF
 	ip -4 -o addr show dev tb-uplink scope global | grep -q . || fail "no DHCPv4 lease on tb-uplink"
 
 	mkdir -p /etc/hangar
+	# The sshd step lets in only this user: the one running the test, who
+	# must log in with a key.
+	local ssh_user=${SUDO_USER:-ubuntu}
 	install -m 0600 /dev/null "$env_file"
 	cat >"$env_file" <<EOF
 HANGAR_UPLINK=tb-uplink
@@ -138,6 +141,7 @@ HANGAR_RESERVED_MEMORY=256Mi
 HANGAR_DEFAULT_MAX_OWNED_TENANTS=3
 HANGAR_NODE_NAME=testbed
 HANGAR_UPGRADES_TZ=Europe/Paris
+HANGAR_SSH_USERS=$ssh_user
 HANGAR_REGION=region-1
 HANGAR_CHASSIS=generic-1u-2x-u2
 EOF
@@ -1066,6 +1070,40 @@ test_verify_catches_drift() {
 	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair the rule's mode"
 }
 
+test_sshd() {
+	local dropin=/etc/ssh/sshd_config.d/10-hangar.conf line
+	step "sshd takes the drop-in: keys only, no root, the test's user alone"
+	for line in 'passwordauthentication no' 'kbdinteractiveauthentication no' 'permitrootlogin no' \
+		'x11forwarding no' 'authorizedkeysfile .ssh/authorized_keys' 'maxauthtries 4' 'logingracetime 30'; do
+		sshd -T | grep -qxF "$line" || fail "sshd -T does not say $line"
+		grep -q "^PASS sshd -T: $line$" "$work/first-verify.log" || fail "verify does not check $line"
+	done
+	[ "$(sshd -T | sed -n 's/^allowusers //p')" = "${SUDO_USER:-ubuntu}" ] || fail "sshd lets in $(sshd -T | sed -n 's/^allowusers //p')"
+
+	step "a drop-in that sorts before ours and loosens sshd fails verify"
+	printf 'PasswordAuthentication yes\n' >/etc/ssh/sshd_config.d/05-tb.conf
+	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with password logins on"; fi
+	grep -q '^FAIL sshd -T: passwordauthentication no$' "$work/sshd-verify.log" || fail "verify does not name it: $(grep FAIL "$work/sshd-verify.log")"
+	rm /etc/ssh/sshd_config.d/05-tb.conf
+
+	step "a config sshd -t refuses is never written or loaded"
+	printf 'NoSuchKeyword yes\n' >/etc/ssh/sshd_config.d/05-tb.conf
+	printf '# changed by hand\n' >>"$dropin"
+	cp "$dropin" "$work/sshd-before.conf"
+	if "$host_dir/bootstrap.sh" --only sshd 2>"$work/sshd-refused.log"; then fail "bootstrap ran with a config sshd -t refuses"; fi
+	grep -q 'sshd -t refuses' "$work/sshd-refused.log" || fail "unexpected refusal: $(cat "$work/sshd-refused.log")"
+	cmp -s "$dropin" "$work/sshd-before.conf" || fail "the refused run changed $dropin"
+	rm /etc/ssh/sshd_config.d/05-tb.conf
+
+	step "a drop-in changed by hand fails verify, and a run writes it back and reloads sshd"
+	if "$host_dir/verify.sh" >"$work/sshd-verify.log"; then fail "verify passed with $dropin changed"; fi
+	grep -q "^FAIL sshd reloaded since $dropin changed$" "$work/sshd-verify.log" || fail "verify does not see sshd was not reloaded"
+	"$host_dir/bootstrap.sh" --only sshd 2>"$work/sshd-run.log" >/dev/null
+	grep -q '^apply: reload sshd' "$work/sshd-run.log" || fail "the run did not reload sshd: $(cat "$work/sshd-run.log")"
+	"$host_dir/verify.sh" >/dev/null || fail "bootstrap did not repair sshd"
+	[ "$("$host_dir/bootstrap.sh" --only sshd)" = "changes: 0" ] || fail "a second sshd run changed something"
+}
+
 test_host_env_and_fetch() {
 	step "verify checks the host env file is root's, mode 0600"
 	"$host_dir/verify.sh" >"$work/env-verify.log" || fail "verify: $(grep FAIL "$work/env-verify.log")"
@@ -1180,6 +1218,7 @@ test_refuses_unknown_installer_keys
 test_refuses_vm_id_clash
 test_dry_run_changes_nothing
 test_converges_and_is_idempotent
+test_sshd
 test_host_env_and_fetch
 test_fetched_release_checks_placement
 test_admin_socket
