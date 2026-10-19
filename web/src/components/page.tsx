@@ -88,6 +88,19 @@ export function LoadingTable() {
   );
 }
 
+/**
+ * How many of a list's objects its table shows, under the table, in line
+ * with the text of its first column (the cells' px-4), not with the card's
+ * edge.
+ */
+export function ListCount({ shown, total }: { shown: number; total: number }) {
+  return (
+    <p className="mt-3 px-4 text-[12px] text-subtle tabular">
+      {shown} of {total}
+    </p>
+  );
+}
+
 /** A list's body: loading, failed, empty, or the list itself. */
 export function ListFrame({
   state,
