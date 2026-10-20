@@ -1,0 +1,190 @@
+# promtool test rules for deploy/host/monitoring/rules/services.yml: each
+# alert fires on what it is for, at the severity it is routed by, and stays
+# quiet on what it is not for, a tenant's doing above all. make
+# test-monitoring runs them.
+rule_files:
+  - ../rules/services.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: server errors past 5% of the API's calls for 10 minutes are critical; client errors are not counted
+    interval: 1m
+    input_series:
+      # 60 calls a minute, ok throughout.
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/hangar.compute.v1alpha1.MachineService/Get",code="ok"}'
+        values: '0+60x40'
+      # Clients asking for what is not there: never the server's failure.
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/hangar.compute.v1alpha1.MachineService/Get",code="not_found"}'
+        values: '0+30x40'
+      # Internal errors, 10 a minute from minute 10 on: 10%.
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/hangar.compute.v1alpha1.MachineService/Get",code="internal"}'
+        values: '0x10 0+10x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiErrorsHigh
+        exp_alerts: []
+      # The rate is past 5% a few minutes in; the alert waits 10 more.
+      - eval_time: 18m
+        alertname: ApiErrorsHigh
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ApiErrorsHigh
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "10% of the API's calls fail with a server error"
+              description: "journalctl -u hangar-apiserver; sum by (procedure, code) (rate(hangar_apiserver_rpc_requests_total[5m])) in Prometheus says which."
+
+  - name: client errors alone, however many, are not the API failing
+    interval: 1m
+    input_series:
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/p",code="ok"}'
+        values: '0+1x40'
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/p",code="permission_denied"}'
+        values: '0+50x40'
+      - series: 'hangar_apiserver_rpc_requests_total{job="hangar-apiserver",instance="a",procedure="/p",code="deadline_exceeded"}'
+        values: '0+50x40'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: ApiErrorsHigh
+        exp_alerts: []
+
+  - name: a p99 past one second for 15 minutes is a warning
+    interval: 1m
+    input_series:
+      # Each minute 100 calls: up to minute 10 all under 0.1 s, then 5 of
+      # them take between 2.5 and 5 s.
+      - series: 'hangar_apiserver_rpc_duration_seconds_bucket{job="hangar-apiserver",instance="a",procedure="/p",le="0.1"}'
+        values: '0+100x10 1000+95x30'
+      - series: 'hangar_apiserver_rpc_duration_seconds_bucket{job="hangar-apiserver",instance="a",procedure="/p",le="2.5"}'
+        values: '0+100x10 1000+95x30'
+      - series: 'hangar_apiserver_rpc_duration_seconds_bucket{job="hangar-apiserver",instance="a",procedure="/p",le="5"}'
+        values: '0+100x40'
+      - series: 'hangar_apiserver_rpc_duration_seconds_bucket{job="hangar-apiserver",instance="a",procedure="/p",le="+Inf"}'
+        values: '0+100x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiLatencyHigh
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: ApiLatencyHigh
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: ApiLatencyHigh
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "The API's p99 latency is 4.5s"
+              description: "histogram_quantile(0.99, sum by (le, procedure) (rate(hangar_apiserver_rpc_duration_seconds_bucket[5m]))) in Prometheus says which procedure."
+
+  - name: a node not Ready for 3 minutes is critical, with the admin socket's command
+    interval: 1m
+    input_series:
+      - series: 'hangar_apiserver_node_ready{job="hangar-apiserver",instance="a",node="ovh-sgp02-01",status="True"}'
+        values: '1x5 0x10'
+      - series: 'hangar_apiserver_node_ready{job="hangar-apiserver",instance="a",node="ovh-sgp02-01",status="False"}'
+        values: '0x15'
+      - series: 'hangar_apiserver_node_ready{job="hangar-apiserver",instance="a",node="ovh-sgp02-01",status="Unknown"}'
+        values: '0x5 1x10'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: NodeNotReady
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: NodeNotReady
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: NodeNotReady
+        exp_alerts:
+          - exp_labels: {severity: critical, job: hangar-apiserver, instance: a, node: ovh-sgp02-01, status: Unknown}
+            exp_annotations:
+              summary: "Node ovh-sgp02-01 is not Ready: its Ready is Unknown"
+              description: "sudo hangar --context local get nodes; systemctl status hangar-node; journalctl -u hangar-node."
+
+  - name: the node's tunnel down for 3 minutes is critical; a blip is not
+    interval: 1m
+    input_series:
+      - series: 'hangar_node_tunnel_connected{job="hangar-node",instance="n"}'
+        values: '1x3 0 1x3 0x6'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: NodeTunnelDown
+        exp_alerts: []
+      - eval_time: 13m
+        alertname: NodeTunnelDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: hangar-node, instance: n}
+            exp_annotations:
+              summary: "hangar-node's tunnel to the apiserver is down"
+              description: "The apiserver cannot reach the node's machines. sudo hangar --context local get nodes; journalctl -u hangar-node -u hangar-apiserver."
+
+  - name: machines the platform failed, for 15 minutes, are critical and counted, never named
+    interval: 1m
+    input_series:
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Running",reason="Running"}'
+        values: '5x40'
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Pending",reason="DiskFailed"}'
+        values: '_x5 2x35'
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Failed",reason="DiskFailed"}'
+        values: '_x5 1x35'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts:
+          - exp_labels: {severity: critical, reason: DiskFailed}
+            exp_annotations:
+              summary: "3 machines are blocked by DiskFailed, which only the platform causes"
+              description: "sudo hangar --context local get machines -A lists every machine and its READY; sudo hangar --context local get machines -A -o yaml shows each one's reason and message. journalctl -u hangar-node."
+
+  - name: a tenant's failures and crash loops alert no one; the crash loops are recorded
+    interval: 1m
+    input_series:
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Failed",reason="Exited"}'
+        values: '4x40'
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Failed",reason="BootFailed"}'
+        values: '2x40'
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Pending",reason="ImagePullFailed"}'
+        values: '3x40'
+      - series: 'hangar_apiserver_machines_crash_looping{job="hangar-apiserver",instance="a"}'
+        values: '0x5 3x35'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts: []
+    promql_expr_test:
+      - expr: hangar:machines_crash_looping:sum
+        eval_time: 30m
+        exp_samples:
+          - labels: 'hangar:machines_crash_looping:sum'
+            value: 3
+      # No rule alerts on the crash loops: only the recording rule reads them.
+      - expr: ALERTS
+        eval_time: 40m
+        exp_samples: []
+
+  - name: the front door's control-plane 5xx past 5% for 15 minutes is a warning; an endpoint's 5xx is not
+    interval: 1m
+    input_series:
+      - series: 'hangar_edge_requests_total{job="hangar-edge",instance="e",route="control-plane",status_class="2xx"}'
+        values: '0+90x40'
+      - series: 'hangar_edge_requests_total{job="hangar-edge",instance="e",route="control-plane",status_class="5xx"}'
+        values: '0x10 0+10x30'
+      - series: 'hangar_edge_requests_total{job="hangar-edge",instance="e",route="endpoint",status_class="2xx"}'
+        values: '0+10x40'
+      - series: 'hangar_edge_requests_total{job="hangar-edge",instance="e",route="endpoint",status_class="5xx"}'
+        values: '0+90x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: EdgeErrorsHigh
+        exp_alerts: []
+      - eval_time: 35m
+        alertname: EdgeErrorsHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, route: control-plane}
+            exp_annotations:
+              summary: "10% of the front door's control-plane requests end in 5xx"
+              description: "journalctl -u hangar-edge -u hangar-apiserver; hangar_edge_upstream_errors_total counts the 502 and 503 the edge answered itself."

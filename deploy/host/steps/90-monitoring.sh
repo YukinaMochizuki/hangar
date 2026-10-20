@@ -6,11 +6,13 @@
 # and the monitoring stack's alone) and hwmon collectors, and what
 # hangar-zpool-metrics adds of each pool; smartctl_exporter on each NVMe disk;
 # and blackbox_exporter, probing the API's /healthz and the console over
-# HTTPS with the front door on. Each runs as a systemd service of its own
-# user and listens on loopback alone, so the firewall stays at 22, 80 and 443.
-# Each binary is pinned in versions.env, as Cloud Hypervisor is. A unit, a
-# configuration or a binary changed restarts that service, here and nowhere
-# else.
+# HTTPS with the front door on. Prometheus also scrapes hangar-apiserver,
+# hangar-node and hangar-edge on the loopback addresses the other steps give
+# them (--metrics-listen), each whose binary takes the flag. Each of the
+# monitoring services runs as a systemd service of its own user and listens
+# on loopback alone, so the firewall stays at 22, 80 and 443. Each binary is
+# pinned in versions.env, as Cloud Hypervisor is. A unit, a configuration or
+# a binary changed restarts that service, here and nowhere else.
 
 # The other steps' names and helpers: the services' and the edge's units,
 # the firewall's, the datasets'.
@@ -60,6 +62,9 @@ MON_AM_LISTEN=127.0.0.1:9093
 MON_NODE_LISTEN=127.0.0.1:9100
 MON_SMARTCTL_LISTEN=127.0.0.1:9633
 MON_BLACKBOX_LISTEN=127.0.0.1:9115
+# The rules files of deploy/host/monitoring/rules this step installs, each
+# NAME.yml: the host's, and the platform's services'.
+MON_RULE_FILES="host services"
 
 # mon_unit_of KEY prints the service KEY runs as, which is also its user.
 mon_unit_of() { printf 'hangar-%s\n' "${1//_/-}"; }
@@ -164,7 +169,17 @@ mon_probes() {
 	printf '%s\n' "https://api.$cp/healthz https_healthz" "https://console.$cp/ https_2xx"
 }
 
+# mon_service_targets prints each of the platform's services Prometheus
+# scrapes, as its job and address: those that run here and serve /metrics
+# (services_metrics_on).
+mon_service_targets() {
+	! services_metrics_on hangar-apiserver || printf '%s\n' "hangar-apiserver $SERVICES_APISERVER_METRICS"
+	! services_metrics_on hangar-node || printf '%s\n' "hangar-node $SERVICES_NODE_METRICS"
+	! services_edge_on || ! services_metrics_on hangar-edge || printf '%s\n' "hangar-edge $SERVICES_EDGE_METRICS"
+}
+
 mon_prometheus_config() {
+	local job addr
 	cat <<EOF
 # Written by deploy/host/steps/90-monitoring.sh.
 global:
@@ -203,6 +218,15 @@ scrape_configs:
     static_configs:
       - targets: ["$MON_BLACKBOX_LISTEN"]
 EOF
+	# The services' own metrics, as they serve them: their labels are the
+	# platform's alone (docs/decisions/monitoring.md), and nothing is added.
+	while read -r job addr; do
+		cat <<EOF
+  - job_name: $job
+    static_configs:
+      - targets: ["$addr"]
+EOF
+	done < <(mon_service_targets)
 	local url module
 	[ -n "$(mon_probes)" ] || return 0
 	cat <<EOF
@@ -547,15 +571,24 @@ EOF
 # mon_files prints each file this step writes but the units: PATH MODE
 # GENERATOR.
 mon_files() {
+	local r
+	printf '%s\n' "$MON_PROM_CONFIG 644 mon_prometheus_config"
+	for r in $MON_RULE_FILES; do printf '%s\n' "$MON_RULES_DIR/$r.yml 644 mon_rules_$r"; done
 	printf '%s\n' \
-		"$MON_PROM_CONFIG 644 mon_prometheus_config" \
-		"$MON_RULES_DIR/host.yml 644 mon_rules" \
 		"$MON_AM_CONFIG 644 mon_alertmanager_config" \
 		"$MON_BLACKBOX_CONFIG 644 mon_blackbox_config" \
 		"$MON_ZPOOL_METRICS 755 mon_zpool_script"
 }
 
-mon_rules() { cat "$MON_SRC/rules/host.yml"; }
+mon_rules_host() { cat "$MON_SRC/rules/host.yml"; }
+mon_rules_services() { cat "$MON_SRC/rules/services.yml"; }
+
+# mon_rules_into DIR writes each rules file into DIR, as the step installs
+# them, for promtool to check.
+mon_rules_into() {
+	local r
+	for r in $MON_RULE_FILES; do "mon_rules_$r" >"$1/$r.yml"; done
+}
 mon_zpool_script() { cat "$MON_SRC/zpool-metrics.sh"; }
 
 # mon_unit_files prints each unit file: PATH GENERATOR.
@@ -664,6 +697,15 @@ mon_until() {
 	return 1
 }
 
+# mon_target_up JOB ADDR holds when Prometheus scrapes JOB at ADDR, and it
+# is up.
+mon_target_up() {
+	mon_get "http://$MON_PROM_LISTEN/api/v1/targets?state=active" | python3 -c '
+import json, sys
+t = json.load(sys.stdin)["data"]["activeTargets"]
+sys.exit(0 if any(x["labels"].get("job") == sys.argv[1] and x["labels"].get("instance") == sys.argv[2] and x["health"] == "up" for x in t) else 1)' "$1" "$2"
+}
+
 # mon_targets_up holds when Prometheus scrapes every target it has, each up.
 mon_targets_up() {
 	mon_get "http://$MON_PROM_LISTEN/api/v1/targets?state=active" | python3 -c '
@@ -673,10 +715,10 @@ sys.exit(0 if t and all(x["health"] == "up" for x in t) else 1)'
 }
 
 # mon_rules_loaded holds when Prometheus has loaded every rule of the rules
-# file, and evaluated them without error.
+# files, alerting and recording, and evaluated them without error.
 mon_rules_loaded() {
-	local want
-	want=$(grep -cE '^ +- alert: ' "$MON_SRC/rules/host.yml")
+	local want r
+	want=$(for r in $MON_RULE_FILES; do "mon_rules_$r"; done | grep -cE '^ +- (alert|record): ')
 	mon_get "http://$MON_PROM_LISTEN/api/v1/rules" | python3 -c '
 import json, sys
 g = json.load(sys.stdin)["data"]["groups"]
@@ -716,8 +758,9 @@ mon_config_problem() {
 	local tmp out
 	[ -x "$MON_BIN_DIR/promtool" ] && [ -x "$MON_BIN_DIR/amtool" ] || return 0
 	tmp=$(mktemp -d)
-	mon_rules >"$tmp/host.yml"
-	mon_prometheus_config | sed "s|$MON_RULES_DIR/\\*.yml|$tmp/host.yml|" >"$tmp/prometheus.yml"
+	mkdir "$tmp/rules"
+	mon_rules_into "$tmp/rules"
+	mon_prometheus_config | sed "s|$MON_RULES_DIR/\\*.yml|$tmp/rules/*.yml|" >"$tmp/prometheus.yml"
 	mon_alertmanager_config >"$tmp/alertmanager.yml"
 	out=$("$MON_BIN_DIR/promtool" check config "$tmp/prometheus.yml" 2>&1) ||
 		printf 'promtool refuses the Prometheus configuration: %s\n' "$(tr '\n' ' ' <<<"$out")"
@@ -727,7 +770,13 @@ mon_config_problem() {
 }
 
 monitoring_apply() {
-	local c u path mode gen before reload=0 problem
+	local c u r path mode gen before reload=0 problem
+
+	# Which services serve /metrics, asked here once for the run; the
+	# services and edge steps warn of those that do not.
+	services_metrics_on hangar-apiserver || true
+	services_metrics_on hangar-node || true
+	! services_edge_on || services_metrics_on hangar-edge || true
 
 	for c in $MON_COMPONENTS; do
 		u=$(mon_unit_of "$c")
@@ -763,8 +812,10 @@ monitoring_apply() {
 	done < <(mon_files)
 	# Other rules files are not this step's: Prometheus would load them.
 	for path in "$MON_RULES_DIR"/*; do
-		[ -e "$path" ] && [ "$path" != "$MON_RULES_DIR/host.yml" ] || continue
-		run "remove $path: the rules are deploy/host/monitoring/rules/host.yml" rm -f "$path"
+		[ -e "$path" ] || continue
+		r=$(basename "$path")
+		[[ $r != *.yml || " $MON_RULE_FILES " != *" ${r%.yml} "* ]] || continue
+		run "remove $path: the rules are deploy/host/monitoring/rules/{$(printf '%s' "$MON_RULE_FILES" | tr ' ' ',')}.yml" rm -f "$path"
 		services_mark "$(mon_unit_of prometheus)"
 	done
 
@@ -822,7 +873,11 @@ monitoring_verify() {
 	check "the monitoring services listen on loopback only" mon_loopback_only
 	check "$MON_ZPOOL_UNIT wrote $MON_TEXTFILE_DIR/zpool.prom within 3 minutes" mon_textfile_fresh
 	check "Prometheus scrapes every target, each up" mon_until 30 mon_targets_up
-	check "Prometheus has loaded every rule of host.yml, each healthy" mon_until 15 mon_rules_loaded
+	local job addr
+	while read -r job addr; do
+		check "Prometheus scrapes $job's /metrics at $addr, up" mon_until 30 mon_target_up "$job" "$addr"
+	done < <(mon_service_targets)
+	check "Prometheus has loaded every rule of ${MON_RULE_FILES// /.yml and }.yml, each healthy" mon_until 15 mon_rules_loaded
 	check "Alertmanager has Watchdog from Prometheus" mon_until 45 mon_watchdog_through
 	if [ -n "$(mon_nvme_devices)" ]; then
 		check "smartctl_exporter reports every NVMe disk: $(mon_nvme_devices | paste -sd' ' -)" mon_nvme_seen

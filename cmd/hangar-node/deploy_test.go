@@ -273,3 +273,38 @@ problem=$(`+checkScript+`)
 		return len(left) == 0, fmt.Sprintf("%v in %s", left, parent)
 	})
 }
+
+// TestTheAgentServesMetricsWhenItTakesTheFlag: the services step passes
+// the agent --metrics-listen only when the hangar-node the run installs
+// takes it, as its answer to -h says: the release's with --release, else
+// the installed one. One from before the flag, or none to ask, runs
+// without it, and the step warns. The release's copy is gone afterwards.
+func TestTheAgentServesMetricsWhenItTakesTheFlag(t *testing.T) {
+	node := buildNode(t)
+	installedNew := filepath.Dir(node)
+	installedOld := filepath.Dir(stub(t, `echo "Usage of $0:" >&2; echo "  -name string" >&2; exit 0`))
+	none := t.TempDir()
+	const script = `SERVICES_INSTALLED_BIN=$INSTALLED SERVICES_CHECK_PARENT=$CHECK_PARENT
+services_metrics_note hangar-node
+printf '[%s]\n' "$(services_metrics_flag hangar-node "$SERVICES_NODE_METRICS")"`
+	for _, tt := range []struct {
+		what, installed, release, flag, warning string
+	}{
+		{"this hangar-node installed", installedNew, "", "[ --metrics-listen 127.0.0.1:9102]", ""},
+		{"one from before the flag installed", installedOld, "", "[]", "the hangar-node this run installs has no --metrics-listen"},
+		{"a release of this hangar-node over an old one", installedOld, release(t, node), "[ --metrics-listen 127.0.0.1:9102]", ""},
+		{"none installed", none, "", "[]", "hangar-node runs without --metrics-listen, and Prometheus does not scrape it: cannot tell: no " + none + "/hangar-node"},
+	} {
+		parent := t.TempDir()
+		out, errOut, ok := services(t, []string{"INSTALLED=" + tt.installed, "HANGAR_RELEASE_DIR=" + tt.release, "CHECK_PARENT=" + parent}, script)
+		if !ok || strings.TrimSpace(out) != tt.flag {
+			t.Errorf("%s: ok %t, flag %q; want %q", tt.what, ok, out, tt.flag)
+		}
+		if tt.warning == "" && strings.Contains(errOut, "warning") || !strings.Contains(errOut, tt.warning) {
+			t.Errorf("%s: warned %q, want %q", tt.what, errOut, tt.warning)
+		}
+		if left, _ := os.ReadDir(parent); len(left) > 0 {
+			t.Errorf("%s: the check left %v in %s", tt.what, left, parent)
+		}
+	}
+}

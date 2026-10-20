@@ -75,10 +75,12 @@ edge_front_flags() {
 }
 
 # edge_flags prints the edge's flags as its unit runs it: the same words
-# its ExecStart has, which edge_problem has the edge itself check.
+# its ExecStart has, which edge_problem has the edge itself check. With
+# --metrics-listen when the edge takes it.
 edge_flags() {
-	printf -- '--api-socket %s --dial-socket %s --domain %s --console-url %s%s\n' \
-		"$SERVICES_EDGE_SOCKET" "$SERVICES_EDGE_DIAL" "$(local_env HANGAR_EDGE_DOMAIN)" "$(local_env HANGAR_PUBLIC_URL)" "$(edge_front_flags)"
+	printf -- '--api-socket %s --dial-socket %s --domain %s --console-url %s%s%s\n' \
+		"$SERVICES_EDGE_SOCKET" "$SERVICES_EDGE_DIAL" "$(local_env HANGAR_EDGE_DOMAIN)" "$(local_env HANGAR_PUBLIC_URL)" "$(edge_front_flags)" \
+		"$(services_metrics_flag hangar-edge "$SERVICES_EDGE_METRICS")"
 }
 
 edge_unit() {
@@ -387,6 +389,7 @@ edge_apply() {
 	fi
 	problem=$(services_endpoints_problem; edge_problem installed)
 	[ -z "$problem" ] || refuse "$(printf '%s' "$problem" | tr '\n' ';' | sed 's/;/; /g')"
+	services_metrics_note hangar-edge
 	if [ -e "$EDGE_DNS_TOKEN" ] && ! edge_dns_token_ok; then
 		log "warning: $EDGE_DNS_TOKEN was $(stat -c '%U:%G mode %a' "$EDGE_DNS_TOKEN"): whoever could read it may have the token; consider rolling it (docs/runbook/cloudflare.md)"
 		run "give $EDGE_DNS_TOKEN to root, mode 600" sh -c "chown root:root '$EDGE_DNS_TOKEN' && chmod 600 '$EDGE_DNS_TOKEN'"
@@ -440,6 +443,7 @@ edge_verify() {
 	check "unit $EDGE_UNIT enabled, active, running what is installed" edge_running_ok
 	check "edge runs as $SERVICES_EDGE_USER with no capability" edge_unprivileged
 	check "edge listens on :443 and :80 for every address, and nothing else but on loopback" edge_listens_ok
+	services_metrics_verify hangar-edge "$SERVICES_EDGE_METRICS" hangar_edge_
 	for n in $(edge_cert_names); do
 		check "certificate for ${n/#wildcard_/*} in $EDGE_STATE, more than $EDGE_CERT_MIN_DAYS days left" edge_cert_ok "$n"
 	done
