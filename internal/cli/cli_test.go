@@ -594,6 +594,7 @@ func TestExitCodes(t *testing.T) {
 	}{
 		{"unknown kind", "", []string{"get", "widgets"}, cli.ExitUsage},
 		{"unknown flag", "", []string{"get", "tenants", "--bogus"}, cli.ExitUsage},
+		{"unknown command", "", []string{"aply", "-f", "-"}, cli.ExitUsage},
 		{"missing arguments", "", []string{"wait", "container"}, cli.ExitUsage},
 		{"bad output", "", []string{"get", "tenants", "-o", "xml"}, cli.ExitUsage},
 		{"unknown field in a manifest", "apiVersion: tenancy.hangarlab.cloud/v1alpha1\nkind: Tenant\nmetadata: {name: x}\nspec: {colour: red}\n", []string{"apply", "-f", "-"}, cli.ExitUsage},

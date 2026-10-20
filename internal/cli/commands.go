@@ -211,7 +211,12 @@ func (a *app) getCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get KIND [NAME...]",
 		Short: "Show objects of a kind",
-		Args:  args(1, -1),
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return usageErr("usage: %s\n%s", cmd.UseLine(), knownKinds())
+			}
+			return nil
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output == "" {
 				output = "table"
