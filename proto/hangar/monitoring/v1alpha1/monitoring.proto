@@ -1,0 +1,207 @@
+syntax = "proto3";
+
+package hangar.monitoring.v1alpha1;
+
+import "google/protobuf/timestamp.proto";
+
+// MonitoringService is the platform's health, for its administrators: fixed
+// queries the apiserver makes of the host's Prometheus and Alertmanager.
+// There is no query passthrough: the PromQL behind each answer lives in the
+// apiserver, so a caller can ask only what this service names. Every call
+// needs platform.monitoring.read, which only platform.root holds, and fails
+// with UNAVAILABLE while the apiserver has no Prometheus (or, for
+// ListAlerts, no Alertmanager) to ask, or cannot reach it. Nothing answered
+// names a tenant, a project or a machine: machines are counted. It is not a
+// resource's service, so it is written by hand rather than generated. See
+// docs/decisions/monitoring.md.
+service MonitoringService {
+  // GetOverview answers each layer's state now: reachability, the host, the
+  // platform's services, and the machines, counted.
+  rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
+  // GetSeries answers one named series over a range, at a step the server
+  // picks for the range.
+  rpc GetSeries(GetSeriesRequest) returns (GetSeriesResponse);
+  // ListAlerts answers the alerts firing now, from Alertmanager, but those
+  // silenced or inhibited and the always-firing Watchdog.
+  rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+}
+
+// Health is a layer's or a check's state.
+enum Health {
+  HEALTH_UNSPECIFIED = 0;
+  HEALTH_OK = 1;
+  // As an alert of severity warning would say, whether or not one fires yet.
+  HEALTH_WARNING = 2;
+  // As an alert of severity critical would say.
+  HEALTH_CRITICAL = 3;
+  // Recorded and shown, alerting no one: what a tenant's own program did.
+  HEALTH_INFO = 4;
+  // Prometheus has no data for the check, such as when an exporter is down.
+  HEALTH_UNKNOWN = 5;
+}
+
+// Layer names one of the four layers the platform is watched in.
+enum Layer {
+  LAYER_UNSPECIFIED = 0;
+  // The API and the console over HTTPS, and their certificates.
+  LAYER_REACHABILITY = 1;
+  // CPU, memory, swap, the ZFS pools, the md mirror, the NVMe disks, time.
+  LAYER_HOST = 2;
+  // Each hangar-* unit, each Node's Ready, the node tunnel.
+  LAYER_SERVICES = 3;
+  // Tenants' machines, counted.
+  LAYER_MACHINES = 4;
+}
+
+message GetOverviewRequest {}
+
+message GetOverviewResponse {
+  // The Node this apiserver runs machines on, when it accepts one node
+  // agent; empty otherwise.
+  string node = 1;
+  // When Prometheus was asked.
+  google.protobuf.Timestamp observe_time = 2;
+  // Every layer, in the order of Layer.
+  repeated LayerState layers = 3;
+}
+
+// LayerState is one layer's state now.
+message LayerState {
+  Layer layer = 1;
+  // The worst of its checks', and, for the machines layer, WARNING while a
+  // machine is blocked by the platform.
+  Health health = 2;
+  repeated Check checks = 3;
+  // Set for LAYER_MACHINES alone.
+  MachineCounts machines = 4;
+}
+
+// Check is one line of a layer: what is checked, and what it reads now.
+message Check {
+  // What is checked, such as "CPU", "Pool hangar" or "hangar-apiserver".
+  string name = 1;
+  Health health = 2;
+  // What it reads, for people, such as "ONLINE · 344 of 840 GiB · 41%".
+  string value = 3;
+}
+
+// MachineCounts are the platform's machines, counted, never named.
+message MachineCounts {
+  // Machines by phase, every phase in a fixed order, those with none too.
+  repeated PhaseCount phases = 1;
+  // Machines blocked for a reason only the platform causes (DiskFailed,
+  // NetworkFailed), by reason; these alert.
+  repeated ReasonCount platform_failures = 2;
+  // Machines ended by their own program (Exited, BootFailed), by reason;
+  // recorded, alerting no one.
+  repeated ReasonCount program_failures = 3;
+  // Machines in a crash loop; recorded, alerting no one.
+  int32 crash_looping = 4;
+}
+
+message PhaseCount {
+  // A machine phase's word: "Running", "Pending", "Creating", "Stopped",
+  // "Suspended" or "Failed".
+  string phase = 1;
+  int32 count = 2;
+}
+
+message ReasonCount {
+  // A reason of a machine's Ready condition, such as "DiskFailed".
+  string reason = 1;
+  int32 count = 2;
+}
+
+// SeriesName names a series. Each is one fixed query in the apiserver.
+enum SeriesName {
+  SERIES_NAME_UNSPECIFIED = 0;
+  // The share of the host's CPU time not idle; UNIT_RATIO.
+  SERIES_NAME_HOST_CPU = 1;
+  // The host's memory in use, the ARC the kernel can take back counted as
+  // free; UNIT_BYTES, out of the host's memory.
+  SERIES_NAME_HOST_MEMORY = 2;
+  // What the ZFS pools hold; UNIT_BYTES, out of their size.
+  SERIES_NAME_POOL_USED = 3;
+  // The API's calls a second; UNIT_PER_SECOND.
+  SERIES_NAME_API_REQUEST_RATE = 4;
+  // The share of the API's calls that failed on the server's side
+  // (internal, unknown, unavailable, data loss, deadline exceeded);
+  // UNIT_RATIO.
+  SERIES_NAME_API_ERROR_RATE = 5;
+  // The 99th percentile of how long the API's unary calls took;
+  // UNIT_SECONDS.
+  SERIES_NAME_API_LATENCY_P99 = 6;
+}
+
+// SeriesRange is how far back a series reaches from now. The server picks
+// the step: a minute for an hour, 15 minutes for a day, an hour for 7 days.
+enum SeriesRange {
+  SERIES_RANGE_UNSPECIFIED = 0;
+  SERIES_RANGE_ONE_HOUR = 1;
+  SERIES_RANGE_ONE_DAY = 2;
+  SERIES_RANGE_SEVEN_DAYS = 3;
+}
+
+// Unit is what a series' values count.
+enum Unit {
+  UNIT_UNSPECIFIED = 0;
+  // A share, 0 to 1.
+  UNIT_RATIO = 1;
+  UNIT_BYTES = 2;
+  UNIT_PER_SECOND = 3;
+  UNIT_SECONDS = 4;
+}
+
+message GetSeriesRequest {
+  SeriesName name = 1;
+  SeriesRange range = 2;
+}
+
+message GetSeriesResponse {
+  SeriesName name = 1;
+  Unit unit = 2;
+  // The time between points, which the server picks for the range.
+  int32 step_seconds = 3;
+  // Oldest first. A step with no value, such as a share of no calls or one
+  // while Prometheus was down, has no point.
+  repeated Point points = 4;
+  // What the value is out of, when it has a ceiling: the host's memory, the
+  // pools' size. Unset otherwise.
+  optional double capacity = 5;
+  // Where an alerting rule fires on the series' value, when one does. Unset
+  // otherwise.
+  optional double alert_above = 6;
+}
+
+message Point {
+  google.protobuf.Timestamp time = 1;
+  double value = 2;
+}
+
+message ListAlertsRequest {}
+
+message ListAlertsResponse {
+  // Most severe first, then oldest first.
+  repeated Alert alerts = 1;
+}
+
+// Severity is an alert's, as its rule labels it.
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  // Sent at once.
+  SEVERITY_CRITICAL = 1;
+  // Held to the daily window.
+  SEVERITY_WARNING = 2;
+}
+
+// Alert is one alert firing now.
+message Alert {
+  // The alerting rule's name, such as "ZpoolNotOnline".
+  string name = 1;
+  // An alert whose rule labels no known severity counts as critical, as
+  // Alertmanager routes it.
+  Severity severity = 2;
+  // The rule's summary annotation.
+  string summary = 3;
+  google.protobuf.Timestamp start_time = 4;
+}

@@ -20,6 +20,7 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1/monitoringv1alpha1connect"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1/tenancyv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
@@ -198,6 +199,7 @@ type clients struct {
 	tokens     iamv1alpha1connect.ServiceTokenServiceClient
 	issuer     iamv1alpha1connect.ServiceTokenIssuerServiceClient
 	capability computev1alpha1connect.MachineCapabilityServiceClient
+	monitoring monitoringv1alpha1connect.MonitoringServiceClient
 }
 
 func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption) clients {
@@ -217,6 +219,7 @@ func newClients(hc connect.HTTPClient, url string, opts ...connect.ClientOption)
 		tokens:     iamv1alpha1connect.NewServiceTokenServiceClient(hc, url, opts...),
 		issuer:     iamv1alpha1connect.NewServiceTokenIssuerServiceClient(hc, url, opts...),
 		capability: computev1alpha1connect.NewMachineCapabilityServiceClient(hc, url, opts...),
+		monitoring: monitoringv1alpha1connect.NewMonitoringServiceClient(hc, url, opts...),
 	}
 }
 

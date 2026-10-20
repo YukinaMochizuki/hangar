@@ -92,7 +92,10 @@ restart count.
   which only `platform.root` holds. There is no PromQL passthrough: the
   browser cannot ask Prometheus anything the API does not name, and changing
   a query never changes the API. The console shows it on a Monitoring page
-  only an administrator sees.
+  only an administrator sees. The apiserver reaches Prometheus and
+  Alertmanager at `--prometheus-url` and `--alertmanager-url`, which must be
+  loopback, with a bounded time and answer size; without them, or when they
+  do not answer, the calls fail with `Unavailable`.
 
 ## Consequences
 

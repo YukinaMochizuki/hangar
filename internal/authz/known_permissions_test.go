@@ -39,6 +39,7 @@ func TestKnownPermissions(t *testing.T) {
 		"tenancy.tenants.create", "compute.machines.logs", "compute.machines.exec",
 		"compute.machines.ssh", "network.publicendpoints.access",
 		"compute.machinesizes.get", "compute.machinesizes.apply", "compute.machinesizes.updateStatus",
+		"platform.monitoring.read",
 	} {
 		if !KnownPermission(perm) {
 			t.Errorf("%q is not known", perm)
@@ -47,6 +48,7 @@ func TestKnownPermissions(t *testing.T) {
 	for _, perm := range []string{
 		"", "compute.containers", "compute.containers.aply", "compute.containers.logs",
 		"tenancy.projects.create", "compute.containers.access", "nosuch.things.get", "compute.containers.apply.x",
+		"platform.monitoring.get", "platform.monitoring.apply", "compute.containers.read",
 	} {
 		if KnownPermission(perm) {
 			t.Errorf("%q is known", perm)

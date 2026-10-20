@@ -10,6 +10,7 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	monitoringv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 )
@@ -39,9 +40,10 @@ const (
 	udelete = "iam.users.delete"
 	cstatus = "compute.containers.updateStatus"
 	stapply = "iam.servicetokens.apply"
+	monread = "platform.monitoring.read"
 )
 
-var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, msget, msapply, msdel, msstat, udelete, cstatus, stapply}
+var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, msget, msapply, msdel, msstat, udelete, cstatus, stapply, monread}
 
 func testPermissions(c clients, scope *iamv1alpha1.BindingScope, perms ...string) ([]string, error) {
 	res, err := c.accounts.TestPermissions(context.Background(), connect.NewRequest(&iamv1alpha1.TestPermissionsRequest{Scope: scope, Permissions: perms}))
@@ -59,8 +61,8 @@ type permEnv struct {
 	callers map[string]clients
 }
 
-func newPermEnv(t *testing.T) permEnv {
-	e := newEnv(t)
+func newPermEnv(t *testing.T, opts ...envOption) permEnv {
+	e := newEnv(t, opts...)
 	ctx := t.Context()
 	const (
 		sam   = "sam@example.com"
@@ -105,7 +107,7 @@ func newPermEnv(t *testing.T) permEnv {
 func TestTestPermissionsByRole(t *testing.T) {
 	e := newPermEnv(t)
 	var (
-		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply}
+		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply, monread}
 		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, msget, stapply}
 		member    = []string{tcreate, iget, msget}
 		viewer    = []string{cget, tcreate, iget, msget}
@@ -215,6 +217,16 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 				}))
 				return err
 			}, 0},
+			// No Prometheus is configured here, so a caller who may read the
+			// platform's monitoring is told it is unavailable.
+			{platformScope(), monread, func() error {
+				_, err := c.monitoring.GetOverview(ctx, connect.NewRequest(&monitoringv1alpha1.GetOverviewRequest{}))
+				return err
+			}, connect.CodeUnavailable},
+			{tenantScope("acme"), monread, func() error {
+				_, err := c.monitoring.ListAlerts(ctx, connect.NewRequest(&monitoringv1alpha1.ListAlertsRequest{}))
+				return err
+			}, connect.CodeUnavailable},
 			// The container has no machine, as the controllers do not run here,
 			// so a caller who may read its logs is told so.
 			{projectScope("web"), logs, func() error {
@@ -264,7 +276,7 @@ func TestTestPermissionsChecksItsRequest(t *testing.T) {
 			all = append(all, r.Group+"."+r.Plural+"."+v)
 		}
 	}
-	all = append(all, tcreate, "compute.machines.logs", exec, "compute.machines.ssh", "network.publicendpoints.access")
+	all = append(all, tcreate, "compute.machines.logs", exec, "compute.machines.ssh", "network.publicendpoints.access", monread)
 	for chunk := range slices.Chunk(all, 100) {
 		if _, err := testPermissions(e.as(root), platformScope(), chunk...); err != nil {
 			t.Errorf("asking for known permissions: %v", err)

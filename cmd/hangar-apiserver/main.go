@@ -59,6 +59,9 @@ type flags struct {
 	secretsKEK     string
 	previousKEKs   []string
 	metricsListen  string
+	// prometheusURL and alertmanagerURL are what MonitoringService asks.
+	prometheusURL   string
+	alertmanagerURL string
 	// maxOwnedTenants is the default cap on the tenants one person or
 	// service token owns.
 	maxOwnedTenants int
@@ -89,6 +92,8 @@ func main() {
 		return nil
 	})
 	flag.StringVar(&f.metricsListen, "metrics-listen", "", "loopback address to serve /metrics on, such as 127.0.0.1:9101, apart from the API; empty disables it")
+	flag.StringVar(&f.prometheusURL, "prometheus-url", "", "the host's Prometheus on loopback, such as http://127.0.0.1:9090, which MonitoringService asks; empty, it answers Unavailable")
+	flag.StringVar(&f.alertmanagerURL, "alertmanager-url", "", "the host's Alertmanager on loopback, such as http://127.0.0.1:9093, which MonitoringService asks for alerts; empty, it answers Unavailable")
 	flag.IntVar(&f.maxOwnedTenants, "default-max-owned-tenants", apiserver.DefaultMaxOwnedTenants,
 		"how many tenants one person or service token may own, unless their User says otherwise; at least 1")
 	flag.Parse()
@@ -133,6 +138,14 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	}
 	defer func() { _ = st.Close() }()
 
+	for _, fl := range []struct{ name, url string }{{"--prometheus-url", f.prometheusURL}, {"--alertmanager-url", f.alertmanagerURL}} {
+		if fl.url == "" {
+			continue
+		}
+		if err := apiserver.CheckMonitoringURL(fl.url); err != nil {
+			return fmt.Errorf("%s: %w", fl.name, err)
+		}
+	}
 	if f.maxOwnedTenants < 1 {
 		return fmt.Errorf("--default-max-owned-tenants is %d; it must be at least 1", f.maxOwnedTenants)
 	}
@@ -211,6 +224,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
 		PublicEndpoints: apiserver.PublicEndpointsConfig{Domain: f.endpointDomain}, DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
+		Monitoring: apiserver.MonitoringConfig{PrometheusURL: f.prometheusURL, AlertmanagerURL: f.alertmanagerURL},
 	})
 	public, err := publicChain(f, srv, st)
 	if err != nil {

@@ -57,6 +57,9 @@ func TestBuiltInRolesHoldExactly(t *testing.T) {
 		if got, w := role.Grants(CreateTenant), strings.HasPrefix(name, "platform."); got != w {
 			t.Errorf("%s grants %s: %t, want %t", name, CreateTenant, got, w)
 		}
+		if got, w := role.Grants(MonitoringRead), name == "platform.root"; got != w {
+			t.Errorf("%s grants %s: %t, want %t", name, MonitoringRead, got, w)
+		}
 	}
 	for name, level := range map[string]ScopeLevel{
 		"tenant.owner": TenantLevel, "tenant.viewer": TenantLevel,
