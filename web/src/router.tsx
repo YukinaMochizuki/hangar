@@ -16,6 +16,9 @@ import { CreateSecret } from "@/pages/create-secret";
 import { CreateServiceToken } from "@/pages/create-service-token";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
+import { CreateFileShare } from "@/pages/create-file-share";
+import { FileShareDetail } from "@/pages/file-share-detail";
+import { FileShareList } from "@/pages/file-share-list";
 import { Gate } from "@/pages/gate";
 import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
@@ -195,6 +198,31 @@ const diskRoute = createRoute({
     return <DiskDetail key={name} name={name} />;
   },
 });
+const fileSharesRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/file-shares",
+  validateSearch: newSearch,
+  beforeLoad: toCreatePage("file-share"),
+  component: FileShareList,
+});
+const fileShareRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/file-shares/$name",
+  component: function FileSharePage() {
+    const { name } = fileShareRoute.useParams();
+    return <FileShareDetail key={name} name={name} />;
+  },
+});
+const newFileShareRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/new/file-share",
+  // network names the networks it opens on, comma-separated, such as from a network's page.
+  validateSearch: (s: Record<string, unknown>): { network?: string } => (typeof s.network === "string" && s.network !== "" ? { network: s.network } : {}),
+  component: function NewFileShare() {
+    const { network } = newFileShareRoute.useSearch();
+    return <CreateFileShare key={network} networks={network?.split(",").filter(Boolean)} />;
+  },
+});
 const imagesRoute = createRoute({ getParentRoute: () => projectRoute, path: "/images", component: ImageList });
 const imageRoute = createRoute({
   getParentRoute: () => projectRoute,
@@ -363,6 +391,9 @@ export const routeTree = rootRoute.addChildren([
     newTokenRoute,
     disksRoute,
     diskRoute,
+    fileSharesRoute,
+    fileShareRoute,
+    newFileShareRoute,
     imagesRoute,
     imageRoute,
     membersRoute,

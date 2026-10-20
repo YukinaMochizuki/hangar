@@ -11,6 +11,7 @@ import { useMachines } from "@/lib/machines";
 import { useAddresses, useNetworks, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
 import { useProjects } from "@/lib/projects";
 import { useDisks, useImages } from "@/lib/storage";
+import { useFileShares } from "@/lib/file-shares";
 import { never, polyfillDialog, withApi, type Api } from "@/test/harness";
 import { lists, paletteApi, type PaletteFake } from "@/test/palette-api";
 
@@ -245,6 +246,7 @@ describe("CommandPalette", () => {
     for (const [title, call] of [
       ["New virtual machine", { to: "/projects/$project/new", params: { project: "demo" }, search: { kind: "vm" } }],
       ["New disk", { to: "/projects/demo/new/disk" }],
+      ["New file share", { to: "/projects/demo/new/file-share" }],
       ["New network", { to: "/projects/demo/new/network" }],
       ["New security group", { to: "/projects/demo/new/security-group" }],
       ["Reserve address", { to: "/projects/demo/new/address" }],
@@ -264,6 +266,15 @@ describe("CommandPalette", () => {
     await findOption("New disk");
     expect(titles().filter((t) => /^(New|Add|Reserve) /.test(t))).toEqual(["New disk"]);
     expect(titles()).toContain("Switch project…");
+  });
+
+  it("offers New file share where storage.fileshares.apply is held, and finds a share by name", async () => {
+    setup({ perms: () => ["storage.fileshares.apply"] });
+    await findOption("New file share");
+    expect(titles().filter((t) => /^(New|Add|Reserve) /.test(t))).toEqual(["New file share"]);
+    type("assets");
+    fireEvent.click(await findOption("assets"));
+    expect(navigate).toHaveBeenLastCalledWith({ to: "/projects/demo/file-shares/assets" });
   });
 
   it("hides every action while the permissions are not known, and says nothing of it", async () => {
@@ -325,6 +336,7 @@ describe("CommandPalette", () => {
     function Page() {
       useMachines("demo");
       useDisks("demo");
+      useFileShares("demo");
       useImages();
       useNetworks("demo");
       useSecurityGroups("demo");

@@ -2,7 +2,7 @@
 // groups. The sidebar and the command palette both list them from here, so
 // a page joins both when it is added.
 
-import { Box, Disc3, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
+import { Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
 
 export type PageLink = { label: string; icon: LucideIcon; to: string };
 
@@ -24,6 +24,7 @@ export function projectPages(project: string): PageSection[] {
       group: "Storage",
       items: [
         { label: "Disks", icon: HardDrive, to: `${base}/disks` },
+        { label: "File shares", icon: Folders, to: `${base}/file-shares` },
         { label: "Images", icon: Disc3, to: `${base}/images` },
       ],
     },

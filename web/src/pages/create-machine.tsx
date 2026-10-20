@@ -19,7 +19,11 @@ import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/securi
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { imageFloorGiB } from "@/lib/storage";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
-import { Box, Check, Globe, MapPin, Server } from "lucide-react";
+import { Box, Check, Globe, MapPin, Server, Undo2, X } from "lucide-react";
+import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
+import { addNetworks, removeNetworks, sharePerms, shareName, shareUses, shareYaml, useFileShares, withNetworks } from "@/lib/file-shares";
+import { useDeclarations } from "@/components/file-shares";
+import { useCan } from "@/lib/permissions";
 import { useState } from "react";
 import { Input, Select } from "@/components/form";
 import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/components/container-advanced";
@@ -59,6 +63,46 @@ function useOverQuota(project: string) {
   };
 }
 
+/**
+ * The shares a create changed before it failed: each stated, with Undo,
+ * which takes the added networks off again unless a machine mounts the
+ * share from one of them by now.
+ */
+function SharesChanged({ project, applied, onUndone }: { project: string; applied: { share: string; adds: string[] }[]; onUndone: (share: string) => void }) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  const decls = useDeclarations(project);
+  const undo = useMutation({
+    mutationFn: async ({ share, adds }: { share: string; adds: string[] }) => {
+      await removeNetworks(transport, project, share, adds, (s) => shareUses(s, decls.items).map((u) => u.network));
+      return share;
+    },
+    onSuccess: (share) => onUndone(share),
+    onSettled: () => queryClient.invalidateQueries(),
+  });
+  return (
+    <Notice tone="warning" title={applied.length === 1 ? <>File share <span className="font-mono">{applied[0]!.share}</span> was changed</> : `${applied.length} file shares were changed`}>
+      {applied.map((a) => (
+        <div key={a.share} className="mt-1 flex items-center justify-between gap-2">
+          <span>
+            <span className="font-mono">{a.adds.join(", ")}</span> was added to <span className="font-mono">{a.share}</span>.
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            disabled={undo.isPending || decls.loading || !!decls.error}
+            onClick={() => undo.mutate(a)}
+          >
+            <Undo2 /> {undo.isPending && undo.variables?.share === a.share ? "Undoing…" : "Undo"}
+          </Button>
+        </div>
+      ))}
+      {decls.error != null && <div className="mt-1">The project's machines did not load, so which machines mount from these networks is not known.</div>}
+      {undo.error != null && <div className="mt-1 text-fail">{errorMessage(undo.error)}</div>}
+    </Notice>
+  );
+}
+
 export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: CreateKind; size?: string }) {
   const project = useProjectName();
   const navigate = useNavigate();
@@ -70,6 +114,18 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const [size, setSize] = useState(initialSize);
   const [network, setNetwork] = useState("default");
   const [groups, setGroups] = useState<string[]>(["default"]);
+  // Interfaces after the first, each added for a file share on its network, in the network's default group.
+  const [extraNets, setExtraNets] = useState<string[]>([]);
+  const [justAdded, setJustAdded] = useState<{ network: string; share: string } | null>(null);
+  // A container's volumes, the row whose source list is open, and the
+  // networks to add to shares when it is created.
+  const [volumes, setVolumes] = useState<VolumeRow[]>([]);
+  const [pickerOpen, setPickerOpen] = useState<number | null>(null);
+  const [shareAdds, setShareAdds] = useState<ShareAdds>({});
+  // The shares this page has changed and not undone: a create that failed
+  // after them leaves them changed, so they are stated, skipped on a retry,
+  // and can be undone.
+  const [applied, setApplied] = useState<{ share: string; adds: string[] }[]>([]);
   const [name, setName] = useState("");
   // The disk as typed; null until the person edits it, while it follows
   // the minimum.
@@ -85,6 +141,9 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const existing = useMachines(project, kind === "container" ? "Container" : "VirtualMachine");
   const overQuota = useOverQuota(project);
   const machineSizes = useMachineSizes();
+  const shares = useFileShares(project);
+  const sharePerm = useCan({ level: "project", name: project }, [sharePerms.apply]);
+  const mayApplyShares = sharePerm.known ? sharePerm.can(sharePerms.apply) : undefined;
 
   const chosenImage = vmImage || images.data?.items[0]?.metadata?.name || "";
   // The size asked for, if the platform lists it, or else its first.
@@ -112,10 +171,27 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   const noun = kind === "container" ? "container" : "virtual machine";
 
   // The object as it is sent, and as its manifest shows it.
+  const extra = kind === "container" ? extraNets.filter((n) => n !== network) : [];
   const interfaces =
-    network === "default" && groups.length === 1 && groups[0] === "default"
+    network === "default" && groups.length === 1 && groups[0] === "default" && extra.length === 0
       ? []
-      : [create(NetworkInterfaceSchema, { network, securityGroups: groups })];
+      : [
+          create(NetworkInterfaceSchema, { network, securityGroups: groups }),
+          ...extra.map((n) => create(NetworkInterfaceSchema, { network: n, securityGroups: ["default"] })),
+        ];
+  const onNetworks = [network, ...extra];
+  const addInterface = (n: string, share: string) => {
+    if (!onNetworks.includes(n)) setExtraNets([...extraNets, n]);
+    setJustAdded({ network: n, share });
+  };
+  // The shares this container adds its network to, among those it mounts.
+  const sharesChanged =
+    kind === "container"
+      ? Object.entries(shareAdds).flatMap(([n, adds]) => {
+          const sh = shares.items.find((x) => shareName(x) === n);
+          return sh && volumes.some((v) => v.kind === "FileShare" && v.source === n) ? [{ share: sh, adds }] : [];
+        })
+      : [];
   const obj: Container | VirtualMachine =
     kind === "container"
       ? create(ContainerSchema, {
@@ -127,6 +203,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             env: proc.env,
             restartPolicy: proc.restartPolicy,
             interfaces,
+            volumes: volumes.map((v) => ({ source: v.source, sourceKind: v.kind === "FileShare" ? "FileShare" : "", target: v.target, readOnly: v.readOnly })),
             resources: s && { ...s.resources, disk: diskQuantity },
           },
         })
@@ -138,7 +215,14 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
             rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s ? diskQuantity : "" } } },
           },
         });
-  const yaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
+  const machineYaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
+  // A share this container adds its network to is applied before it, as a document of its own.
+  const shareDocs = sharesChanged.map(({ share, adds }) => shareYaml(withNetworks(share, networksAfter(share, { [shareName(share)]: adds }))));
+  const yaml = [...shareDocs, machineYaml].join("\n---\n");
+  const cli = [
+    ...sharesChanged.map(({ share }) => `hangar apply -p ${project} -f ${shareName(share)}.yaml`),
+    `hangar apply --create-only -p ${project} -f ${name || "machine"}.yaml`,
+  ];
 
   // Nothing is sent until the project's machines of the kind are known and
   // the name is not among them (lib/create.ts).
@@ -151,6 +235,15 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
   if (!nameCheck.ok) problems.push(nameCheck.reason);
   if (kind === "container" && !image.trim()) problems.push("The image is empty.");
   if (kind === "container") problems.push(...proc.problems);
+  if (kind === "container") {
+    problems.push(...volumeProblems(volumes));
+    for (const v of volumes) {
+      if (v.kind !== "FileShare" || !v.source) continue;
+      const sh = shares.items.find((x) => shareName(x) === v.source);
+      if (!sh) problems.push(shares.loading ? "The file shares are loading." : `File share ${v.source} does not exist.`);
+      else if (!networksAfter(sh, shareAdds).some((n) => onNetworks.includes(n))) problems.push(`File share ${v.source} is on none of this container's networks.`);
+    }
+  }
   if (kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
   if (s && diskProblem) problems.push(diskProblem);
@@ -160,6 +253,19 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
     mutationFn: async () => {
       // A machine is never sent without one of the platform's sizes.
       if (!s) throw new Error("No machine size is chosen.");
+      // The shares first: admission refuses a container declaring a share on none of its networks.
+      for (const { share, adds } of sharesChanged) {
+        const n = shareName(share);
+        if (applied.some((a) => a.share === n && adds.every((x) => a.adds.includes(x)))) continue;
+        let added: string[];
+        try {
+          added = await addNetworks(transport, project, n, adds);
+        } catch (err) {
+          throw new Error(`Adding ${adds.join(", ")} to file share ${n} failed: ${errorMessage(err)}`, { cause: err });
+        }
+        // Only what this page added is its to undo; a network already there was someone else's.
+        if (added.length) setApplied((was) => [...was.filter((a) => a.share !== n), { share: n, adds: added }]);
+      }
       try {
         if (kind === "container") {
           await createClient(ContainerService, transport).applyContainer({ container: obj as Container, createOnly: true });
@@ -336,6 +442,7 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
               ) : (
                 <div className="rounded-lg border bg-surface px-4 py-3">
                   <label className="text-[13px] font-medium" htmlFor="network">
+                    {extra.length > 0 && <span className="mr-2 font-mono text-[12px] font-normal text-subtle">eth0</span>}
                     Network
                   </label>
                   <Select
@@ -376,6 +483,36 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                   </div>
                 </div>
               )}
+              {extra.map((n, i) => (
+                <div
+                  key={n}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg border bg-surface px-4 py-2.5 text-[13px]",
+                    justAdded?.network === n && "border-accent ring-1 ring-accent",
+                  )}
+                >
+                  <span className="font-mono text-[12px] text-subtle">eth{i + 1}</span>
+                  <span className="font-mono font-medium">{n}</span>
+                  <span className="font-mono text-[11.5px] text-muted">{networks.data?.items.find((x) => x.metadata?.name === n)?.spec?.ipv4Cidr}</span>
+                  <span className="flex h-6 items-center gap-1 rounded border border-accent bg-accent-soft px-2 font-mono text-[11.5px]">
+                    <Check className="size-3 text-accent" />
+                    default
+                  </span>
+                  {justAdded?.network === n && (
+                    <span className="text-[12px] text-muted">
+                      Added for file share <span className="font-mono">{justAdded.share}</span>
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove interface on ${n}`}
+                    onClick={() => setExtraNets(extraNets.filter((x) => x !== n))}
+                    className="ml-auto rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
               <p className="flex items-start gap-2 text-[12px] text-muted">
                 <Globe className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
                 Every interface gets a public IPv6 /128. Inbound traffic from the internet is denied unless one of its
@@ -385,12 +522,30 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
           </Section>
 
           {kind === "container" && (
-            <Section n={6} title="Advanced" hint="Optional, as a Compose service writes it">
+            <Section n={6} title="Volumes" hint="Disks and file shares, mounted in the container">
+              <VolumePicker
+                project={project}
+                rows={volumes}
+                onChange={setVolumes}
+                open={pickerOpen}
+                onOpen={setPickerOpen}
+                networks={onNetworks}
+                onAddInterface={addInterface}
+                shareAdds={shareAdds}
+                onShareAdds={setShareAdds}
+                applied={applied.map((a) => a.share)}
+                mayApplyShares={mayApplyShares}
+              />
+            </Section>
+          )}
+
+          {kind === "container" && (
+            <Section n={7} title="Advanced" hint="Optional, as a Compose service writes it">
               <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
             </Section>
           )}
 
-          <Section n={kind === "container" ? 7 : 6} title="Name" hint="Unique among this project's machines of the kind">
+          <Section n={kind === "container" ? 8 : 6} title="Name" hint="Unique among this project's machines of the kind">
             <div className="max-w-xl">
               <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Name" spellCheck={false} />
               {nameProblem && <p className="mt-1.5 text-[12px] text-fail">{nameProblem}</p>}
@@ -443,6 +598,18 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                     {errorMessage(submit.error)}
                   </Notice>
                 )}
+                {applied.length > 0 && !submit.isPending && (
+                  <SharesChanged
+                    project={project}
+                    applied={applied}
+                    onUndone={(n) => {
+                      setApplied((was) => was.filter((a) => a.share !== n));
+                      const next = { ...shareAdds };
+                      delete next[n];
+                      setShareAdds(next);
+                    }}
+                  />
+                )}
                 <Button
                   type="submit"
                   variant="primary"
@@ -460,9 +627,12 @@ export function CreateMachine({ kind: initialKind, size: initialSize }: { kind: 
                 <CopyButton text={yaml} />
               </div>
               <pre className="overflow-x-auto px-4 py-3 font-mono text-[11.5px] leading-5 text-muted">{yaml}</pre>
-              <div className="border-t px-4 py-2.5 font-mono text-[11.5px]">
-                <span className="select-none text-accent">$ </span>hangar apply --create-only -p {project} -f {name || "machine"}.yaml
-              </div>
+              {cli.map((line, i) => (
+                <div key={line} className={cn("px-4 py-2.5 font-mono text-[11.5px]", i === 0 ? "border-t" : "-mt-2 pt-0")}>
+                  <span className="select-none text-accent">$ </span>
+                  {line}
+                </div>
+              ))}
             </Card>
           </div>
         </aside>

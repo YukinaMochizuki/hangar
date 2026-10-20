@@ -27,6 +27,7 @@ import {
   type SecurityGroup,
 } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
+import { FileShareService } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { fakeApi } from "@/test/harness";
@@ -119,6 +120,8 @@ export type Overrides = Partial<{
   listPublicEndpoints: () => unknown;
   listMachines: () => unknown;
   listContainers: () => unknown;
+  /** The project's file shares; none unless set. */
+  listFileShares: () => unknown;
   apply: (req: unknown) => unknown;
   del: (req: unknown) => unknown;
   /** TestPermissions' answer; unset, the caller holds every permission asked. */
@@ -176,6 +179,7 @@ export function networkApi(o: Overrides = {}): NetworkApi {
   const eps = kindOn(PublicEndpointSchema, server.endpoints);
   const deleted = (req: unknown) => (o.del ? o.del(req) : {});
   const api = fakeApi((r: ConnectRouter) => {
+    r.service(FileShareService, { listFileShares: (() => (o.listFileShares ? o.listFileShares() : { items: [] })) as never });
     r.service(NetworkService, {
       listNetworks: (() => (o.listNetworks ? o.listNetworks() : { items: networks() })) as never,
       getNetwork: (req) => ({ network: nets.get(req.name) }),

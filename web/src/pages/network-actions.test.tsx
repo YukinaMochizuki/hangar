@@ -198,6 +198,29 @@ describe("networks", () => {
     expect(button("Delete").disabled).toBe(true);
   });
 
+  it("says a network a file share is on is not deleted, and offers no Delete", async () => {
+    const api = show(<NetworkDetail name="sandbox" />, {
+      listFileShares: () => ({ items: [{ metadata: { name: "cache", project: "demo" }, spec: { networks: ["default", "sandbox"], size: "10Gi" } }] }),
+    });
+    await screen.findByText("Summary");
+    await waitFor(() => expect(screen.queryAllByLabelText("Loading")).toHaveLength(0));
+    click("Delete");
+    type("Name, to confirm", "sandbox");
+    expect(await screen.findByText("1 file share is on this network.")).toBeTruthy();
+    expect(button("Delete").disabled).toBe(true);
+    expect(writes(api)).toEqual([]);
+  });
+
+  it("keeps Delete off while whether a file share is on the network is not known", async () => {
+    show(<NetworkDetail name="sandbox" />, { listFileShares: refuse(Code.Unavailable, "down") });
+    await screen.findByText("Summary");
+    await waitFor(() => expect(screen.queryAllByLabelText("Loading")).toHaveLength(0));
+    click("Delete");
+    type("Name, to confirm", "sandbox");
+    expect(await screen.findByText("The project's file shares did not load, so whether one is on this network is not known.")).toBeTruthy();
+    expect(button("Delete").disabled).toBe(true);
+  });
+
   it("shows a refused delete in the dialog", async () => {
     show(<NetworkDetail name="sandbox" />, { del: refuse(Code.FailedPrecondition, "network is in use") });
     await screen.findByText("Summary");

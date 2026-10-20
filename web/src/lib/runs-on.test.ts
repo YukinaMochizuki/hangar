@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ContainerRunState, ContainerSchema } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineSchema } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
-import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { ConditionSchema, ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { describe, expect, it } from "vitest";
 import { containerView } from "@/lib/machines";
 import { runsOnState } from "@/lib/runs-on";
@@ -47,6 +47,16 @@ describe("runsOnState", () => {
 
   it("is not schedulable, with the scheduler's words, when its Machine is not Scheduled", () => {
     expect(runsOnState(view({ scheduled: "false" }))).toEqual({ kind: "unschedulable", message: noRoom });
+  });
+
+  it("is held back, with the API's words, when the container's machine cannot be made as it asks", () => {
+    const v = view({ machine: false });
+    v.container!.status!.conditions = [
+      create(ConditionSchema, { type: "Ready", status: ConditionStatus.FALSE, reason: "MachineHeldBack", message: 'failed_precondition: file share "media" is on no node yet' }),
+    ];
+    expect(runsOnState(v)).toEqual({ kind: "heldBack", message: 'file share "media" is on no node yet' });
+    // A placement still wins, and a stopped container is stopped.
+    expect(runsOnState({ ...v, stopped: true })).toEqual({ kind: "stopped" });
   });
 
   it("takes the container's Ready condition when the Machine is not known", () => {
