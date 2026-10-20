@@ -69,6 +69,19 @@ var (
 // of a project through the edge.
 var PublicEndpointAccess = Permission(registry.PublicEndpoint, Access)
 
+// MonitoringRead is the permission to read the platform's monitoring
+// (MonitoringService). It is on no kind, and held at the platform alone. See
+// docs/decisions/monitoring.md.
+const MonitoringRead = "platform.monitoring.read"
+
+// platformPermissions are on no kind: they are held at the platform, and
+// checked there whatever the scope.
+var platformPermissions = []string{MonitoringRead}
+
+// IsPlatform reports whether a permission is on no kind, and so is held and
+// checked at the platform alone.
+func IsPlatform(permission string) bool { return slices.Contains(platformPermissions, permission) }
+
 // userVerbs are what roles may grant. UpdateStatus is reserved for the node
 // and the apiserver itself; see docs/decisions/apply-semantics.md.
 var userVerbs = []Verb{Get, List, Watch, Apply, Delete}
@@ -139,7 +152,7 @@ var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, PublicEndp
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
-	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append([]string{CreateTenant}, reachPermissions...), Member: true},
+	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append(append([]string{CreateTenant}, reachPermissions...), platformPermissions...), Member: true},
 	// Sponsors will also see aggregated platform data, never other tenants'
 	// resources; that data has no API yet.
 	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
@@ -163,7 +176,8 @@ var Roles = map[string]Role{
 var kindVerbs = append(slices.Clone(userVerbs), UpdateStatus)
 
 // knownPermissions maps every permission there is to its kind and verb: each
-// kind's kindVerbs, and the special actions roles name one by one.
+// kind's kindVerbs, the special actions roles name one by one, and the
+// platform permissions, whose kind is the zero Resource.
 var knownPermissions = func() map[string]knownPermission {
 	out := map[string]knownPermission{}
 	for _, r := range registry.All {
@@ -177,6 +191,9 @@ var knownPermissions = func() map[string]knownPermission {
 				out[perm] = knownPermission{r, verbOf(perm)}
 			}
 		}
+	}
+	for _, perm := range platformPermissions {
+		out[perm] = knownPermission{verb: verbOf(perm)}
 	}
 	return out
 }()

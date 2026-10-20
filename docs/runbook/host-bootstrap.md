@@ -308,6 +308,14 @@ with `--release DIR`. `--only <step>` runs a single step
   warns, and Prometheus does not scrape it. `verify.sh` checks each serves
   its own metrics there, or says SKIP.
 
+  The apiserver asks the `monitoring` step's Prometheus and Alertmanager
+  for the console's Monitoring page (`MonitoringService`), with
+  `--prometheus-url http://127.0.0.1:9090 --alertmanager-url
+  http://127.0.0.1:9093`, passed the same way only when its binary takes
+  them; without them the page answers Unavailable, and the step warns.
+  `verify.sh` checks the apiserver answers `GetOverview` and `ListAlerts`
+  on the admin socket, or says SKIP.
+
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
   file), and nothing else. A changed socket unit, or one that is down,

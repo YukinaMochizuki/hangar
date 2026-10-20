@@ -49,6 +49,9 @@ cloud, and some people fund the hardware and should see more of it.
     hold these reach permissions (`machine-model.md`, `node-tunnel.md`,
     `vm-ssh.md`). Holding them is no write to the Machine, which stays
     system-managed.
+  - A few permissions are on no kind and are held at the platform alone:
+    `platform.monitoring.read`, reading the platform's monitoring
+    (`monitoring.md`), which only `platform.root` holds.
   - Roles bundle permissions, and a check compares the permission asked
     for with every bound role's, never a role's name. They are built in
     for now and may become resources later. Below the platform they follow
@@ -157,8 +160,9 @@ cloud, and some people fund the hardware and should see more of it.
     same inheritance, so no role table or system-managed kind is kept
     twice: writes to `Machine` and `Node`, and deleting a `User`, are
     held by nobody, and kinds that live at the platform (`Image`,
-    `Plan`, `User`, `Invitation`, `Node`, opening a tenant) are answered
-    at the platform whatever the scope.
+    `Plan`, `User`, `Invitation`, `Node`, opening a tenant), and the
+    permissions on no kind, are answered at the platform whatever the
+    scope.
   - A tenant or project answers only when the caller may get it and it
     exists; any other gets the empty subset, so the call tells nothing
     of which tenants and projects there are. A `platform.member` may

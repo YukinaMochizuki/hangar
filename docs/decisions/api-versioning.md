@@ -12,6 +12,8 @@ at different speeds.
 - Proto packages are split by group: `hangar.meta.v1` (the shared envelope, not
   a resource group), `hangar.tenancy`, `hangar.iam`, `hangar.compute`,
   `hangar.storage`, `hangar.network`, each with its own version.
+  `hangar.monitoring` holds no resource, only the platform's
+  `MonitoringService` (`monitoring.md`).
 - The `apiVersion` users write is `<group>.hangarlab.cloud/<version>` (for
   example `compute.hangarlab.cloud/v1alpha1`), mapped 1:1 from the proto
   package. The registry derives one from the other mechanically.

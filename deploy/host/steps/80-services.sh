@@ -75,6 +75,12 @@ SERVICES_APISERVER_METRICS=127.0.0.1:9101
 SERVICES_NODE_METRICS=127.0.0.1:9102
 # shellcheck disable=SC2034
 SERVICES_EDGE_METRICS=127.0.0.1:9103
+# Where the apiserver asks the monitoring step's Prometheus and Alertmanager
+# for MonitoringService, the console's Monitoring page: 90-monitoring.sh's
+# MON_PROM_LISTEN and MON_AM_LISTEN. An apiserver whose binary has no
+# --prometheus-url runs without both, and the page answers Unavailable.
+SERVICES_PROMETHEUS_URL=http://127.0.0.1:9090
+SERVICES_ALERTMANAGER_URL=http://127.0.0.1:9093
 
 # services_edge_on holds when local.env names the public endpoints' domain:
 # then the edge runs.
@@ -312,6 +318,47 @@ services_metrics_flag() {
 	! services_metrics_on "$1" || printf -- ' --metrics-listen %s' "$2"
 }
 
+# services_monitoring_probe prints whether the hangar-apiserver this run
+# installs (release_bin) takes --prometheus-url, and with it
+# --alertmanager-url, as binary_has_check tells from its answer to -h: has
+# or lacks; or why it cannot tell, and fails. A subshell, so its traps are
+# its own.
+services_monitoring_probe() (
+	release_bin hangar-apiserver "hangar-apiserver's --prometheus-url" monitoring || exit 1
+	binary_has_check hangar-apiserver -prometheus-url "$bin"
+)
+
+# services_monitoring_on holds when the hangar-apiserver this run installs
+# asks Prometheus and Alertmanager. The answer is kept for the run as
+# services_metrics_on keeps its own (services_monitoring_note asks in the
+# step's shell).
+services_monitoring_on() {
+	local out
+	if [[ ${SERVICES_MONITORING_HAS:-} != "${HANGAR_RELEASE_DIR:-}|"* ]]; then
+		out=$(services_monitoring_probe 2>&1) || out="cannot tell: $out"
+		SERVICES_MONITORING_HAS="${HANGAR_RELEASE_DIR:-}|$out"
+	fi
+	[ "${SERVICES_MONITORING_HAS#*|}" = has ]
+}
+
+# services_monitoring_note asks services_monitoring_on in this shell, and
+# warns when the apiserver will not ask Prometheus and Alertmanager.
+services_monitoring_note() {
+	services_monitoring_on && return 0
+	if [ "${SERVICES_MONITORING_HAS#*|}" = lacks ]; then
+		log "warning: the hangar-apiserver this run installs has no --prometheus-url: it runs without it, and the console's Monitoring page answers Unavailable"
+	else
+		log "warning: hangar-apiserver runs without --prometheus-url and --alertmanager-url, and the console's Monitoring page answers Unavailable: ${SERVICES_MONITORING_HAS#*|}"
+	fi
+}
+
+# services_monitoring_flags prints the apiserver's --prometheus-url and
+# --alertmanager-url, with a space before them, when its binary takes them;
+# nothing otherwise.
+services_monitoring_flags() {
+	! services_monitoring_on || printf -- ' --prometheus-url %s --alertmanager-url %s' "$SERVICES_PROMETHEUS_URL" "$SERVICES_ALERTMANAGER_URL"
+}
+
 # services_placement_problem prints why the agent would not report the
 # placement the host env file gives as given, by the agent's own check
 # (hangar-node check-placement; release_check says which hangar-node).
@@ -484,7 +531,7 @@ EnvironmentFile=$LOCAL_ENV
 # The public API is on loopback in either auth mode, for the host itself,
 # and the front door reaches it through the public socket. The node socket
 # accepts root's agent; the admin socket, root.
-ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS --default-max-owned-tenants $HANGAR_DEFAULT_MAX_OWNED_TENANTS$(services_metrics_flag hangar-apiserver "$SERVICES_APISERVER_METRICS")
+ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS --default-max-owned-tenants $HANGAR_DEFAULT_MAX_OWNED_TENANTS$(services_metrics_flag hangar-apiserver "$SERVICES_APISERVER_METRICS")$(services_monitoring_flags)
 Sockets=$(for s in $(services_sockets); do printf '%s.socket ' "$s"; done | sed 's/ $//')
 Restart=on-failure
 RestartSec=2
@@ -766,6 +813,24 @@ services_metrics_verify() {
 	fi
 }
 
+# services_monitoring_ok holds when the apiserver, asked as root on the
+# admin socket, answers MonitoringService's GetOverview, which asks
+# Prometheus, and ListAlerts, which asks Alertmanager. For up to 30 s: the
+# monitoring step may have just started them.
+services_monitoring_ok() {
+	local i m ok
+	for i in $(seq 1 15); do
+		ok=1
+		for m in GetOverview ListAlerts; do
+			curl -fsS --max-time 15 --unix-socket "$SERVICES_ADMIN_SOCKET" -H 'Content-Type: application/json' -d '{}' \
+				"http://local/hangar.monitoring.v1alpha1.MonitoringService/$m" >/dev/null 2>&1 || ok=0
+		done
+		[ "$ok" = 0 ] || return 0
+		[ "$i" = 15 ] || sleep 2
+	done
+	return 1
+}
+
 # services_node_ready asks the API, as root on the host through the admin
 # socket (whatever the public listener's auth), whether the node is Ready, for
 # up to 30 s: an agent that just started takes a moment.
@@ -825,6 +890,7 @@ services_apply() {
 
 	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
 	services_metrics_note hangar-apiserver hangar-node
+	services_monitoring_note
 	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
 	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
 
@@ -960,6 +1026,11 @@ services_verify() {
 	check "node $HANGAR_NODE_NAME Ready (hangar get node)" services_node_ready
 	services_metrics_verify hangar-apiserver "$SERVICES_APISERVER_METRICS" hangar_apiserver_
 	services_metrics_verify hangar-node "$SERVICES_NODE_METRICS" hangar_node_
+	if services_monitoring_on; then
+		check "apiserver answers MonitoringService from Prometheus ($SERVICES_PROMETHEUS_URL) and Alertmanager ($SERVICES_ALERTMANAGER_URL)" services_monitoring_ok
+	else
+		skip "the apiserver's MonitoringService" "$SERVICES_INSTALLED_BIN/hangar-apiserver has no --prometheus-url, or cannot tell: the console's Monitoring page answers Unavailable"
+	fi
 	if [ -e "$SERVICES_SMOKE_TOKEN" ]; then
 		check "smoke token $SERVICES_SMOKE_TOKEN, root's, mode 600, is serviceToken:smoke/smoke and lists the smoke project's containers" services_smoke_token_ok
 	else

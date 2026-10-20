@@ -129,10 +129,14 @@ func (s *Server) exists(ctx context.Context, b *backend, name string) (bool, err
 
 // holds reports whether p holds a known permission at sc, by the check its
 // call makes: the machine capabilities and endpoint access by the
-// authorizer, as their handlers ask it, and everything else by its kind's
-// backend, with the kind's own rules and target.
+// authorizer, as their handlers ask it, the platform permissions by the
+// authorizer at the platform, whatever the scope, and everything else by its
+// kind's backend, with the kind's own rules and target.
 func (s *Server) holds(p auth.Principal, perm string, sc testedScope) bool {
 	r, verb, _ := authz.LookupPermission(perm)
+	if authz.IsPlatform(perm) {
+		return s.authz.Allowed(p, perm, authz.Target{})
+	}
 	if authz.IsReach(perm) {
 		return s.authz.Allowed(p, perm, sc.target)
 	}

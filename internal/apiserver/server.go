@@ -23,6 +23,7 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1/monitoringv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
@@ -107,6 +108,9 @@ type Config struct {
 	// people who sign in. Nil issues none, and ServiceTokenIssuerService
 	// fails.
 	Credentials store.Credentials
+	// Monitoring is where MonitoringService asks; unset, its calls fail
+	// with Unavailable.
+	Monitoring MonitoringConfig
 }
 
 // Server is the API server. Create it with New, start its background work
@@ -192,6 +196,8 @@ type Server struct {
 	rpc       *rpcMetrics
 	boots     *bootTracker
 	bootWatch *controller.Controller
+	// prometheus and alertmanager are what MonitoringService asks.
+	prometheus, alertmanager *monitoringBackend
 }
 
 // New returns a server over cfg.Store.
@@ -245,6 +251,7 @@ func New(cfg Config) *Server {
 	if cfg.Credentials != nil {
 		s.sessions = s.newSessions(cfg.Credentials)
 	}
+	s.newMonitoring(cfg.Monitoring)
 	for _, r := range registry.All {
 		s.backends[r.Kind] = &backend{s: s, r: r, hooks: hooksFor(r)}
 	}
@@ -285,6 +292,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, s.interceptors(chain)))
+	mux.Handle(monitoringv1alpha1connect.NewMonitoringServiceHandler(monitoring{s}, s.interceptors(chain)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
