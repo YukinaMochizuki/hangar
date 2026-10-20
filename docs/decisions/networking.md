@@ -331,7 +331,7 @@ address.
   169.254.169.254, port 80, an address its bridge holds beside the
   gateway, in the form of cloud-init's NoCloud datasource, which a VM is
   pointed at by its SMBIOS serial number
-  (`ds=nocloud;s=http://169.254.169.254/nocloud/`). It serves
+  (`ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net`, `vm-boot.md`). It serves
   `/nocloud/meta-data` (the instance id, its name as hostname),
   `user-data` and `vendor-data`, each for the machine whose address the
   request comes from, which the binding above makes sound; any other

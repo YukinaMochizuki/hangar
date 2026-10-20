@@ -81,5 +81,11 @@ change; for now only the platform chooses which images exist.
   makes a disk of the image; nothing is mirrored.
 - Changing an image's URL or digest affects only disks made afterwards: a
   disk keeps the base it was cloned from.
+- **The catalogue is a file in the repo**, `deploy/catalog/images.yaml`,
+  applied to production by hand: each image pinned to a dated file, with
+  where its sha256 came from and the key its signature was checked with.
+  `TestTheImageCatalogue` (L4) boots each image as the platform runs it
+  before it goes in or moves to a newer file
+  (`docs/runbook/vm-images.md`).
 - `qemu-img` is a host package (`deploy/host/versions.env`), kept current
   by unattended upgrades, with a version floor `verify.sh` checks.

@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -93,6 +93,16 @@ e2e-host-flow: guest-initramfs $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/flow/ $(if $(RUN),-run '$(RUN)')
+
+# The image catalogue's VMs alone (deploy/catalog/images.yaml), one after
+# another, minutes each: IMAGES names them, comma-separated, or all, which
+# is the default (docs/runbook/vm-images.md).
+e2e-host-images: guest-initramfs $(E2E_HOST_ROOTFS)
+	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
+	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
+	HANGAR_TESTBED_IMAGES=$(or $(IMAGES),all) \
+	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
+		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 4h -v ./test/testbed/flow/ -run '^TestTheImageCatalogue$$'
 
 # The real network driver's tests alone: root, but no KVM and no guest
 # artifacts.

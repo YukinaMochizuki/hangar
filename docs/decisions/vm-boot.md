@@ -37,9 +37,15 @@ booted kernels of their own, moved there too.
   Boot, or the full OVMF used, later, without changing the API.
 - **Nothing of the platform runs inside.** Network and keys come through
   cloud-init: Cloud Hypervisor gives the VM the SMBIOS system serial number
-  `ds=nocloud;s=http://169.254.169.254/nocloud/`, which cloud-init reads as
-  its NoCloud datasource, served by the metadata service of the VM's
-  networks. Images are used unmodified.
+  `ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net`, which
+  cloud-init reads as its NoCloud datasource, served by the metadata
+  service of the VM's networks. Images are used unmodified. `dsmode=net`
+  says the seed is read once the network is up. cloud-init 24.4 and later
+  infer that from the http URL, but 22.4 (Debian 12's) takes `ds=nocloud`
+  alone for a local seed, drops the seed its network stage fetched, and
+  boots with no datasource. Every version reads a `dsmode` given there
+  before inferring one. Not `ds=nocloud-net`, which newer cloud-init
+  reports as deprecated.
 - **What cloud-init gets** (`networking.md`, the metadata service):
   `meta-data` with the VM's uid as `instance-id` and its name as
   `local-hostname`; `user-data`, the VM's `userData` exactly as written
