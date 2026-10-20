@@ -3,7 +3,7 @@
 // docs/decisions/console-design.md says what it does.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeftRight, Box, Building2, Disc3, FolderKanban, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
+import { ArrowLeftRight, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NewProjectDialog, ProjectPicker, createProject } from "@/components/project-picker";
 import { projectPages, tenantPages, type PageSection } from "@/components/pages-nav";
@@ -21,12 +21,14 @@ import { machinePerms, useCan, useTenantsWhere } from "@/lib/permissions";
 import { projectLabel, useProjects } from "@/lib/projects";
 import { quantityGiB } from "@/lib/quantity";
 import { useDisks, useImages } from "@/lib/storage";
+import { sharePerms, useFileShares } from "@/lib/file-shares";
 
 /** What each "New …" action needs at the project, as TestPermissions names it. */
 export const actionPerms = {
   container: machinePerms.container,
   vm: machinePerms.vm,
   disk: "storage.disks.apply",
+  fileShare: sharePerms.apply,
   network: permission("network", "apply"),
   securityGroup: permission("securityGroup", "apply"),
   address: permission("address", "apply"),
@@ -158,6 +160,7 @@ function useProjectModel(project: string, hands: Hands): Model {
   const place: Place = { kind: "project", name: project };
   const machines = useMachines(project, undefined, cached);
   const disks = useDisks(project, cached);
+  const fileShares = useFileShares(project, cached);
   const images = useImages(cached);
   const networks = useNetworks(project, cached);
   const groups = useSecurityGroups(project, cached);
@@ -180,6 +183,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     [actionPerms.container, "New container", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "container" } }))],
     [actionPerms.vm, "New virtual machine", () => hands.done(() => void navigate({ to: "/projects/$project/new", params: p, search: { kind: "vm" } }))],
     [actionPerms.disk, "New disk", newPage("disk")],
+    [actionPerms.fileShare, "New file share", newPage("file-share")],
     [actionPerms.network, "New network", newPage("network")],
     [actionPerms.securityGroup, "New security group", newPage("security-group")],
     [actionPerms.address, "Reserve address", newPage("address")],
@@ -221,6 +225,12 @@ function useProjectModel(project: string, hands: Hands): Model {
       "Disks",
       HardDrive,
       disks.items.map((d) => ({ name: nameOf(d), detail: gib(d.status?.size || d.spec?.size), to: `${base}/disks/${nameOf(d)}` })),
+    ),
+    obj(
+      "file-shares",
+      "File shares",
+      Folders,
+      fileShares.items.map((f) => ({ name: nameOf(f), detail: f.status?.addresses.map((a) => a.address).join(", ") || undefined, to: `${base}/file-shares/${nameOf(f)}` })),
     ),
     obj("images", "Images", Disc3, images.items.map((i) => ({ name: nameOf(i), to: `${base}/images/${nameOf(i)}` }))),
     obj("networks", "Networks", Network, networks.items.map((n) => ({ name: nameOf(n), detail: n.spec?.ipv4Cidr || undefined, to: `${base}/networks/${nameOf(n)}` }))),
@@ -265,6 +275,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     sources: [
       ...sourceOf("machines", "machines", { ...machines, held: machines.items.length > 0 }),
       ...sourceOf("disks", "disks", { ...disks, held: disks.items.length > 0 }),
+      ...sourceOf("file-shares", "file shares", { ...fileShares, held: fileShares.items.length > 0 }),
       ...sourceOf("images", "images", { ...images, held: images.items.length > 0 }),
       ...sourceOf("networks", "networks", { ...networks, held: networks.items.length > 0 }),
       ...sourceOf("security-groups", "security groups", { ...groups, held: groups.items.length > 0 }),

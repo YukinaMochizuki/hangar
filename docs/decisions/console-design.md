@@ -327,13 +327,18 @@ for a platform administrator; at today's size that is a handful of calls.
   |---|---|---|---|
   | Scheduling | asked to run, no placement, not refused | "Scheduling…" | empty, a faint light sweeping across it |
   | Not schedulable | the Machine's `Scheduled` condition False; the Machine not known, the container's or VM's `Ready` reason `Unschedulable` | "Not schedulable", in the warning colour | the scheduler's message, as a sentence |
+  | Held back | not placed, the container's `Ready` reason `MachineHeldBack`, such as for a file share on no node yet | "Held back", in the warning colour | the API's message, as a sentence |
   | Stopped, never placed | stopped, no placement | nothing | empty |
   | Placed | `status.placement` | the host's name | the host's drawing and rows |
 
-  A placement wins over every other state. Before placement nothing of the
-  hardware is known, so nothing of it is drawn: the empty body is as tall
-  as a placed one, so the page does not move when the host comes, and the
-  sweep covers it to the card's rounded edges.
+  A placement wins over every other state. A held back container's
+  lifecycle shows Scheduled as not reached, marked "Held back"; the reason
+  is said once, in this panel. A machine on no node has never booted, so
+  its Recent logs card states that it has not started and asks for no log.
+  Before placement
+  nothing of the hardware is known, so nothing of it is drawn: the empty
+  body is as tall as a placed one, so the page does not move when the host
+  comes, and the sweep covers it to the card's rounded edges.
 - **A host arrives only when watched.** When the placement comes while the
   page is open, the host's lines trace themselves, its LEDs light one after
   another and its rows fade in in order, about a second in all, after a

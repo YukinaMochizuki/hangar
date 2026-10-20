@@ -118,6 +118,7 @@ export function Choice({
   disabled,
   label,
   className,
+  role = "radio",
   children,
 }: {
   selected: boolean;
@@ -125,12 +126,14 @@ export function Choice({
   disabled?: boolean;
   label?: string;
   className?: string;
+  /** "checkbox" for a card of a group that takes more than one. */
+  role?: "radio" | "checkbox";
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      role="radio"
+      role={role}
       aria-checked={selected}
       aria-label={label}
       disabled={disabled}

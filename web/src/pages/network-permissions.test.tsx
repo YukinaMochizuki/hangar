@@ -44,7 +44,12 @@ type Case = {
 
 const cases: Case[] = [
   { name: "networks list", page: () => <NetworkList />, ready: "sandbox", controls: { "network.networks.apply": ["New network"] } },
-  { name: "network page", page: () => <NetworkDetail name="sandbox" />, ready: "Summary", controls: { "network.networks.delete": ["Delete"] } },
+  {
+    name: "network page",
+    page: () => <NetworkDetail name="sandbox" />,
+    ready: "Summary",
+    controls: { "network.networks.delete": ["Delete"], "storage.fileshares.apply": ["New file share"] },
+  },
   {
     name: "security groups list",
     page: () => <SecurityGroupList />,

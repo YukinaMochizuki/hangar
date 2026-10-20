@@ -6,7 +6,8 @@ import { HangarMark } from "@/components/marks";
 import { cn } from "@/lib/cn";
 import { useReducedMotion } from "@/lib/motion";
 
-export type StopState = "done" | "current" | "todo" | "failed" | "idle";
+/** held is a stop not reached, which something holds the machine back from, as its note says. */
+export type StopState = "done" | "current" | "todo" | "failed" | "idle" | "held";
 
 const dashedH = "bg-[repeating-linear-gradient(to_right,var(--accent)_0_6px,transparent_6px_12px)] opacity-50";
 export type Stop = { label: string; state: StopState; note?: string };
@@ -56,6 +57,7 @@ export function Taxiway({ stops, gather = false }: { stops: Stop[]; gather?: boo
                   s.state === "failed" && "bg-fail",
                   s.state === "idle" && "bg-off",
                   s.state === "todo" && "border-2 border-dashed border-accent/60 bg-background",
+                  s.state === "held" && "border-2 border-dashed border-pending bg-background",
                 )}
               >
                 {(s.state === "current" || s.state === "failed") && (
@@ -71,12 +73,14 @@ export function Taxiway({ stops, gather = false }: { stops: Stop[]; gather?: boo
                 />
               )}
             </div>
-            <div className={cn("mt-2 pr-3 text-[12.5px]", s.state === "todo" ? "text-subtle" : "font-medium")}>{s.label}</div>
+            <div className={cn("mt-2 pr-3 text-[12.5px]", s.state === "todo" || s.state === "held" ? "text-subtle" : "font-medium")}>{s.label}</div>
             {s.note && (
               <div
                 className={cn(
-                  "truncate pr-3 font-mono text-[11.5px]",
-                  s.state === "failed" ? "text-fail" : s.state === "current" ? "text-pending" : "text-muted",
+                  "pr-3 text-[11.5px]",
+                  // A hold is said in words; other notes are codes, such as a node or a reason.
+                  s.state === "held" ? "truncate" : "truncate font-mono",
+                  s.state === "failed" ? "text-fail" : s.state === "current" || s.state === "held" ? "text-pending" : "text-muted",
                 )}
               >
                 {s.note}

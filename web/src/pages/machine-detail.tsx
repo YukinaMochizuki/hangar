@@ -34,6 +34,7 @@ import { useReducedMotion } from "@/lib/motion";
 import { formatNumber } from "@/lib/quantity";
 import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
+import { VmFileSharesCard } from "@/components/file-shares";
 
 const restartPolicies: Record<number, string> = {
   [RestartPolicy.UNSPECIFIED]: "Always (default)",
@@ -100,6 +101,8 @@ function lifecycle(m: MachineView): Stop[] {
   if (m.stopped || m.phase === MachinePhase.STOPPED) {
     return [...labels.slice(0, 3).map((label) => ({ label, state: "done" as const })), { label: "Stopped", state: "idle" }];
   }
+  // Held back before the scheduler sees it: not scheduled. Why is the Runs on panel's to say.
+  if (runsOnState(m).kind === "heldBack") return at(0, "held", "Held back");
   switch (m.phase) {
     case MachinePhase.RUNNING:
       return labels.map((label, j) => ({
@@ -494,6 +497,15 @@ const atEndSlack = 8;
  */
 function Logs({ m }: { m: MachineView }) {
   const [attempt, setAttempt] = useState(0);
+  // A machine on no node has never booted, so it has no log to ask for.
+  if (!m.node) {
+    return (
+      <Card className="overflow-hidden">
+        <CardHeader title="Recent logs" />
+        <div className="px-4 py-3 text-[13px] text-muted">No logs: {m.name} has not started.</div>
+      </Card>
+    );
+  }
   return <LogStream key={attempt} m={m} onRetry={() => setAttempt(attempt + 1)} />;
 }
 
@@ -742,6 +754,7 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
           {terminal && <TerminalCard m={m} />}
           <Summary m={m} />
           <Networking m={m} />
+          {m.kind === "VirtualMachine" && <VmFileSharesCard m={m} />}
           <Conditions m={m} />
           <Logs m={m} />
         </div>

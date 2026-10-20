@@ -27,6 +27,8 @@ import {
   type Attachment,
 } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
+import { NetworkFileSharesCard } from "@/components/file-shares";
+import { shareNetworks, sharePerms, useFileShares } from "@/lib/file-shares";
 
 function ReadyCell({ n }: { n: Network }) {
   const ready = conditionOf(n.status?.conditions, "Ready");
@@ -207,10 +209,14 @@ export function NetworkDetail({ name }: { name: string }) {
   const groups = useSecurityGroups(project);
   const [deleting, setDeleting] = useState(false);
   const navigate = useNavigate();
-  const { can: may } = useCan({ level: "project", name: project }, [permission("network", "delete")]);
+  // One answer for the page: its Delete, and its File shares card's New file share.
+  const { can: may } = useCan({ level: "project", name: project }, [permission("network", "delete"), sharePerms.apply]);
   const n = nets.items.find((x) => nameOf(x) === name);
   const on = att.items.filter((a) => a.network === name);
   const machines = new Set(on.map((a) => `${a.kind}/${a.name}`)).size;
+  // The API refuses to delete a network a file share is on, as one a machine is on.
+  const shares = useFileShares(project);
+  const sharesOn = shares.items.filter((s) => shareNetworks(s).includes(name)).length;
   const cidr = n?.spec?.ipv4Cidr ?? "";
   const ready = conditionOf(n?.status?.conditions, "Ready");
   return (
@@ -275,6 +281,7 @@ export function NetworkDetail({ name }: { name: string }) {
                   </dl>
                 </Card>
                 <AttachmentsCard title="Interfaces" items={on} state={att} empty="No machine has an interface on this network." />
+                <NetworkFileSharesCard network={name} canApply={may(sharePerms.apply)} />
                 <Card>
                   <CardHeader title="Security groups" />
                   <ul className="divide-y">
@@ -321,7 +328,16 @@ export function NetworkDetail({ name }: { name: string }) {
                 ? "The project's default network is made again, with the range 10.0.0.0/24, shortly after it goes."
                 : "Security groups of the network stay until deleted."
             }
-            blocked={usageBlock(att, machines > 0 ? `${machines} ${machines === 1 ? "machine is" : "machines are"} on this network.` : undefined)}
+            blocked={
+              usageBlock(att, machines > 0 ? `${machines} ${machines === 1 ? "machine is" : "machines are"} on this network.` : undefined) ??
+              (shares.loading
+                ? "The project's file shares are still loading."
+                : shares.error != null
+                  ? "The project's file shares did not load, so whether one is on this network is not known."
+                  : sharesOn > 0
+                    ? `${sharesOn} ${sharesOn === 1 ? "file share is" : "file shares are"} on this network.`
+                    : undefined)
+            }
           />
         </>
       )}

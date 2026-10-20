@@ -173,6 +173,17 @@ const submitOf = () => screen.getAllByRole("button").find((b) => /^(Create|Reser
 // page needs filled to send, and where a create lands.
 const pages: [string, string, string, () => void, string][] = [
   ["disks", "disk", "New disk", () => type(field("Disk name"), "fresh"), "/projects/demo/disks/fresh"],
+  [
+    "file-shares",
+    "file-share",
+    "New file share",
+    () => {
+      type(field("File share name"), "fresh");
+      // The fake project's one network is backend, not default.
+      fireEvent.click(screen.getByRole("checkbox", { name: "backend" }));
+    },
+    "/projects/demo/file-shares/fresh",
+  ],
   ["networks", "network", "New network", () => type(field("Network name"), "fresh"), "/projects/demo/networks/fresh"],
   ["addresses", "address", "Reserve address", () => type(field("Address name"), "fresh"), "/projects/demo/addresses/fresh"],
   ["public-endpoints", "public-endpoint", "New public endpoint", () => type(field("Endpoint name"), "fresh"), "/projects/demo/public-endpoints/fresh"],

@@ -5,6 +5,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ContainerService } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachinePhase, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { MachineCapabilityService } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
 import { VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { AccountService, WhoAmIResponseSchema } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { MemberService } from "@hangar/api/hangar/iam/v1alpha1/member_pb";
@@ -17,6 +18,7 @@ import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/publi
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { SecretService } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { DiskService } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import { FileShareService } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
@@ -43,6 +45,7 @@ export const lists = {
     ],
   }),
   listDisks: () => ({ items: [{ metadata: meta("pg-data"), spec: { size: "100Gi" }, status: { size: "100Gi" } }] }),
+  listFileShares: () => ({ items: [{ metadata: meta("assets"), spec: { networks: ["backend"], size: "50Gi" }, status: { addresses: [{ network: "backend", address: "10.1.0.7" }] } }] }),
   listImages: () => ({ items: [{ metadata: { name: "debian-13" }, spec: {} }] }),
   listNetworks: () => ({ items: [{ metadata: meta("backend"), spec: { ipv4Cidr: "10.1.0.0/24" } }] }),
   listSecurityGroups: () => ({ items: [{ metadata: meta("ssh-admin"), spec: { network: "backend", ingress: [{}, {}], egress: [{}] } }] }),
@@ -93,8 +96,18 @@ export function paletteApi(f: PaletteFake = {}) {
     r.service(ContainerService, { listContainers: () => l("listContainers")() });
     r.service(VirtualMachineService, { listVirtualMachines: () => l("listVirtualMachines")() });
     r.service(MachineService, { listMachines: () => l("listMachines")() });
+    // One line of output, then the stream ends, for whatever machine is asked.
+    r.service(MachineCapabilityService, {
+      async *logs() {
+        yield { records: [{ boot: 1n, content: { case: "data" as const, value: new TextEncoder().encode("listening on :8080\n") } }] };
+      },
+    });
     // Creates answer as the API does, with the object made.
     r.service(DiskService, { listDisks: () => l("listDisks")(), applyDisk: (req) => ({ disk: req.disk, created: true }) });
+    r.service(FileShareService, {
+      listFileShares: () => l("listFileShares")(),
+      applyFileShare: (req) => ({ fileShare: req.fileShare, created: true }),
+    });
     r.service(ImageService, { listImages: () => l("listImages")() });
     r.service(NetworkService, { listNetworks: () => l("listNetworks")(), applyNetwork: (req) => ({ network: req.network, created: true }) });
     r.service(SecurityGroupService, {

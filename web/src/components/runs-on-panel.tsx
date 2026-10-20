@@ -130,10 +130,11 @@ function sentence(s: string): string {
 /**
  * A machine's Runs on panel. Its header says where the machine stands, on
  * the right where the host's name goes once it is placed: "Scheduling…",
- * "Not schedulable", nothing for a machine stopped before it was placed, or
- * the host. Until it is placed the body is empty, as tall as it will be: a
- * light sweeps across it while the machine is being scheduled, and the
- * scheduler's words stand in it when it cannot be. When the placement comes
+ * "Not schedulable", "Held back", nothing for a machine stopped before it
+ * was placed, or the host. Until it is placed the body is empty, as tall as
+ * it will be: a light sweeps across it while the machine is being
+ * scheduled, and the scheduler's or the API's words stand in it when it
+ * cannot be. When the placement comes
  * while the panel is shown, or the panel opens on a machine just created
  * (fresh), the host draws itself in and its rows fade in; with reduced
  * motion asked for, nothing sweeps and the host simply appears. share is the
@@ -149,6 +150,8 @@ export function RunsOnPanel({ state, status, share, fresh }: { state: RunsOnStat
       <span className="text-[12px] text-muted">Scheduling…</span>
     ) : state.kind === "unschedulable" ? (
       <span className="text-[12px] font-medium text-pending">Not schedulable</span>
+    ) : state.kind === "heldBack" ? (
+      <span className="text-[12px] font-medium text-pending">Held back</span>
     ) : undefined;
   return (
     // Clipped to the card's corners, so the sweep reaches its bottom edge.
@@ -168,7 +171,7 @@ export function RunsOnPanel({ state, status, share, fresh }: { state: RunsOnStat
               <div className="runs-on-sweep absolute inset-0" />
             </div>
           )}
-          {state.kind === "unschedulable" && state.message && (
+          {(state.kind === "unschedulable" || state.kind === "heldBack") && state.message && (
             <p className="absolute inset-x-0 top-0 px-6 pt-10 text-center text-[13px] leading-relaxed text-muted">{sentence(state.message)}</p>
           )}
         </div>
