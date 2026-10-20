@@ -194,16 +194,23 @@ alerting:
     - static_configs:
         - targets: ["$MON_AM_LISTEN"]
 
+# Every series of this host carries its Node's name as node, so each host's
+# series stay apart once there are more (docs/decisions/monitoring.md); the
+# apiserver's are the platform's, not this host's, and name their nodes
+# themselves.
 scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["$MON_PROM_LISTEN"]
+        labels: {node: $HANGAR_NODE_NAME}
   - job_name: alertmanager
     static_configs:
       - targets: ["$MON_AM_LISTEN"]
+        labels: {node: $HANGAR_NODE_NAME}
   - job_name: node
     static_configs:
       - targets: ["$MON_NODE_LISTEN"]
+        labels: {node: $HANGAR_NODE_NAME}
     metric_relabel_configs:
       # Each dataset's counters, a machine's volumes among them, named in a
       # label: no tenant in a label.
@@ -214,18 +221,23 @@ scrape_configs:
     scrape_interval: 60s
     static_configs:
       - targets: ["$MON_SMARTCTL_LISTEN"]
+        labels: {node: $HANGAR_NODE_NAME}
   - job_name: blackbox-exporter
     static_configs:
       - targets: ["$MON_BLACKBOX_LISTEN"]
+        labels: {node: $HANGAR_NODE_NAME}
 EOF
 	# The services' own metrics, as they serve them: their labels are the
-	# platform's alone (docs/decisions/monitoring.md), and nothing is added.
+	# platform's alone (docs/decisions/monitoring.md). The host's node and
+	# edge get its Node's name; the apiserver, whose node_ready names each
+	# node itself, nothing.
 	while read -r job addr; do
 		cat <<EOF
   - job_name: $job
     static_configs:
       - targets: ["$addr"]
 EOF
+		[ "$job" = hangar-apiserver ] || printf '        labels: {node: %s}\n' "$HANGAR_NODE_NAME"
 	done < <(mon_service_targets)
 	local url module
 	[ -n "$(mon_probes)" ] || return 0
@@ -241,6 +253,7 @@ EOF
       - targets: ["$url"]
         labels:
           __param_module: $module
+          node: $HANGAR_NODE_NAME
 EOF
 	done < <(mon_probes)
 	cat <<EOF
