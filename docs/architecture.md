@@ -119,14 +119,19 @@ port
 
 ## Metrics
 
-Given `--metrics-listen`, `hangar-apiserver` serves `/metrics`, and nothing
-else, on a loopback address of its own, for the host's Prometheus: never on
-the API's mux, so no route reaches it through the front door
-(`internal/metrics`). It counts its Connect calls by procedure and code, each
-Node's `Ready`, and machines by phase and reason and in a crash loop, never
-naming one. A metric's labels hold only values the platform defines and
-bounds; a test holds every registered metric to the list in
-`internal/metrics` (`decisions/monitoring.md`).
+Given `--metrics-listen`, `hangar-apiserver`, `hangar-node` and
+`hangar-edge` each serve `/metrics`, and nothing else, on a loopback address
+of their own, for the host's Prometheus: never on an API's mux, so no route
+reaches it through the front door (`internal/metrics`). The apiserver counts
+its Connect calls by procedure and code, each Node's `Ready`, and machines
+by phase and reason and in a crash loop, never naming one. The node agent
+counts its tunnel, its failed reports, its image pulls and its image cache.
+The edge counts the front door's requests by route (control plane, console,
+endpoints) and status class, what it answered itself when the apiserver or
+an endpoint did not, and when each of its certificates expires. A metric's
+labels hold only values the platform defines and bounds; a test holds every
+registered metric to the list in `internal/metrics`
+(`decisions/monitoring.md`).
 
 ## Where the reasoning lives
 

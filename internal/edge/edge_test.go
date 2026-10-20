@@ -774,3 +774,44 @@ func TestARequestTheEdgeEndsIsAnswered(t *testing.T) {
 		t.Fatal("the request outlived its endpoint's change")
 	}
 }
+
+// TestAnEndpointThatDoesNotAnswerIsAnUpstreamFailure: the edge says so of a
+// request whose endpoint's port nothing serves, and not of one answered.
+func TestAnEndpointThatDoesNotAnswerIsAnUpstreamFailure(t *testing.T) {
+	w := newWorld(t)
+	var failed atomic.Int32
+	counted := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		w.edge.ServeHTTP(rw, r.WithContext(edge.WithUpstreamFailed(r.Context(), func() { failed.Add(1) })))
+	}))
+	defer counted.Close()
+	get := func() (int, string) {
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, counted.URL+"/", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	w.endpoint(8080, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	testutil.Eventually(w.t, "the endpoint on 8080", func() (bool, string) {
+		code, body := get()
+		return code == http.StatusOK, fmt.Sprint(code, body)
+	})
+	if n := failed.Load(); n != 0 {
+		t.Errorf("an endpoint that answered: %d upstream failures", n)
+	}
+	w.endpoint(9999, networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC)
+	testutil.Eventually(w.t, "the endpoint on 9999 not answering", func() (bool, string) {
+		code, body := get()
+		return code == http.StatusBadGateway, fmt.Sprint(code, body)
+	})
+	if n := failed.Load(); n != 1 {
+		t.Errorf("after one request not answered: %d upstream failures", n)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/caddyserver/certmagic"
 	"go.uber.org/zap"
@@ -49,11 +50,30 @@ type CertConfig struct {
 	Log   *slog.Logger
 }
 
+// Certs are the front door's certificates, as Certificates keeps them.
+type Certs struct {
+	// TLS hands each handshake the certificate for its server name; one for
+	// a name without a certificate yet, or no name the front door has,
+	// fails.
+	TLS   *tls.Config
+	cache *certmagic.Cache
+}
+
+// NotAfter is when the certificate held for name expires, the latest of
+// them if several are; false while none is held.
+func (c *Certs) NotAfter(name string) (time.Time, bool) {
+	var last time.Time
+	for _, cert := range c.cache.AllMatchingCertificates(name) {
+		if cert.Leaf != nil && cert.Leaf.NotAfter.After(last) {
+			last = cert.Leaf.NotAfter
+		}
+	}
+	return last, !last.IsZero()
+}
+
 // Certificates keeps the front door's certificates: it gets those it lacks
-// and renews them, in the background, until ctx is done. The TLS config it
-// returns hands each handshake the certificate for its server name; one for
-// a name without a certificate yet, or no name the front door has, fails.
-func Certificates(ctx context.Context, cc CertConfig) (*tls.Config, error) {
+// and renews them, in the background, until ctx is done.
+func Certificates(ctx context.Context, cc CertConfig) (*Certs, error) {
 	if cc.Storage == "" {
 		return nil, errors.New("certificates need a storage directory")
 	}
@@ -115,5 +135,5 @@ func Certificates(ctx context.Context, cc CertConfig) (*tls.Config, error) {
 		cache.Stop()
 	}()
 	cc.Log.Info("keeping certificates", "names", cc.Names, "ca", cc.CA, "storage", cc.Storage)
-	return &tls.Config{GetCertificate: cfg.GetCertificate}, nil
+	return &Certs{TLS: &tls.Config{GetCertificate: cfg.GetCertificate}, cache: cache}, nil
 }

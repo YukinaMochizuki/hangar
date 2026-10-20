@@ -49,9 +49,10 @@ type Config struct {
 // Front routes the requests the front door takes. Create it with New and
 // serve it with Serve.
 type Front struct {
-	cfg    Config
-	counts *counts
-	api    *httputil.ReverseProxy
+	cfg     Config
+	counts  *counts
+	metrics *frontMetrics
+	api     *httputil.ReverseProxy
 	// refusalEvery is how often the refused connections are summed up in
 	// the log.
 	refusalEvery time.Duration
@@ -69,7 +70,7 @@ func New(cfg Config) (*Front, error) {
 		cfg.Log = slog.Default()
 	}
 	cfg.CPDomain, cfg.UserDomain = strings.ToLower(cfg.CPDomain), strings.ToLower(cfg.UserDomain)
-	f := &Front{cfg: cfg, counts: newCounts(cfg.Limits), refusalEvery: refusalSummaryEvery}
+	f := &Front{cfg: cfg, counts: newCounts(cfg.Limits), metrics: newFrontMetrics(), refusalEvery: refusalSummaryEvery}
 	f.api = &httputil.ReverseProxy{
 		Rewrite: f.rewriteAPI,
 		Transport: &http.Transport{
@@ -227,6 +228,7 @@ func (f *Front) apiError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	f.cfg.Log.Warn("the apiserver did not answer", "path", r.URL.Path, "error", err)
+	edge.UpstreamFailed(r.Context())
 	page(w, http.StatusBadGateway, pageAPIDown)
 }
 
@@ -249,7 +251,8 @@ type Listeners struct {
 }
 
 // Serve serves the front door on ls until ctx is done, with TLS from
-// tlsConfig, then lets the requests in flight finish for a while.
+// tlsConfig, then lets the requests in flight finish for a while. What it
+// serves over TLS is counted in its Collectors.
 func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) error {
 	l := f.cfg.Limits
 	summary := newRefusals()
@@ -283,7 +286,7 @@ func (f *Front) Serve(ctx context.Context, ls Listeners, tlsConfig *tls.Config) 
 	tc.MinVersion = tls.VersionTLS12
 	tc.NextProtos = []string{"h2", "http/1.1"}
 	https := &http.Server{
-		Handler:           l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f))),
+		Handler:           f.measure(l.boundWrites(l.limitBodyRate(f.counts.limitRequests(f)))),
 		ConnState:         f.counts.connState,
 		TLSConfig:         tc,
 		Protocols:         protocols,

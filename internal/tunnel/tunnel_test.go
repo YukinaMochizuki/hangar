@@ -168,6 +168,7 @@ func (n *node) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type agent struct {
 	opened atomic.Int32
+	closed atomic.Int32
 	stop   func()
 }
 
@@ -188,6 +189,7 @@ func startAgentLive(t *testing.T, a *apiserver, handler http.Handler, dial func(
 			Dial: dial, Handler: handler, Liveness: live,
 			MinBackoff: 10 * time.Millisecond, MaxBackoff: 50 * time.Millisecond,
 			Opened: func() { ag.opened.Add(1) },
+			Closed: func() { ag.closed.Add(1) },
 		}).Run(ctx)
 	}()
 	ag.stop = func() {
@@ -392,6 +394,9 @@ func TestADisconnectMidStream(t *testing.T) {
 		t.Fatal("the dropped tunnel is still the node's")
 	}
 	hello(t, again)
+	if opened, closed := ag.opened.Load(), ag.closed.Load(); closed != opened-1 {
+		t.Errorf("the agent was told of %d tunnels closed of %d opened, one of them open", closed, opened)
+	}
 }
 
 // TestCancellingACallEndsItOnTheNode: a call the apiserver gives up ends

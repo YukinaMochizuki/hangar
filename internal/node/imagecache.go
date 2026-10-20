@@ -85,6 +85,7 @@ func (a *Agent) evictImages(ctx context.Context, used map[string]bool, need *dri
 			unusedBlobs += n
 		}
 	}
+	defer func() { a.metrics.imageCache.Set(float64(held)) }()
 	slices.SortFunc(candidates, func(x, y string) int {
 		return cmp.Or(images[x].usedAt.Compare(images[y].usedAt), cmp.Compare(x, y))
 	})

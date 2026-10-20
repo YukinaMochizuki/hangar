@@ -34,6 +34,8 @@ type puller struct {
 	// makeRoom removes images nothing uses until what full asked for would
 	// fit, and says whether it removed any.
 	makeRoom func(ctx context.Context, full *driver.NoSpaceError) bool
+	// pulled is told how each job ended: err, under ctx.
+	pulled func(ctx context.Context, err error)
 
 	mu sync.Mutex
 	// ctx and notify are set when the agent runs: jobs run under ctx, and
@@ -83,6 +85,7 @@ func newPuller(images driver.Images, storage driver.Storage, clock clockwork.Clo
 	return &puller{
 		images: images, storage: storage, clock: clock, timeout: timeout, slots: newFIFO(slots),
 		makeRoom: func(context.Context, *driver.NoSpaceError) bool { return false },
+		pulled:   func(context.Context, error) {},
 		ctx:      context.Background(), notify: func() {},
 		jobs: map[string]*pull{}, wants: map[string]string{},
 	}
@@ -148,6 +151,7 @@ func (p *puller) wait() {
 func (p *puller) run(ctx context.Context, j *pull, ref string) {
 	defer p.running.Done()
 	err := p.prepare(ctx, j, ref)
+	p.pulled(ctx, err)
 	p.mu.Lock()
 	j.cancel()
 	j.running, j.unpacking, j.cancel = false, false, nil

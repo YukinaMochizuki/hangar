@@ -226,9 +226,10 @@ func (a *Agent) reportImage(ctx context.Context, img *storagev1alpha1.Image, c *
 		return
 	}
 	rv := img.GetMetadata().GetResourceVersion()
-	if _, err := a.imagesAPI.UpdateImageStatus(ctx, connect.NewRequest(&storagev1alpha1.UpdateImageStatusRequest{
+	_, err := a.imagesAPI.UpdateImageStatus(ctx, connect.NewRequest(&storagev1alpha1.UpdateImageStatusRequest{
 		Name: img.GetMetadata().GetName(), Status: status, ExpectedResourceVersion: &rv,
-	})); err != nil {
+	}))
+	if err := a.metrics.statusWritten(err); err != nil {
 		a.cfg.Log.Warn("reporting an image failed", "image", img.GetMetadata().GetName(), "error", err)
 	}
 }
@@ -263,7 +264,7 @@ func (a *Agent) writeDiskStatus(ctx context.Context, d *storagev1alpha1.Disk, co
 	_, err := a.disks.UpdateDiskStatus(ctx, connect.NewRequest(&storagev1alpha1.UpdateDiskStatusRequest{
 		Project: d.GetMetadata().GetProject(), Name: d.GetMetadata().GetName(), Status: status, ExpectedResourceVersion: &rv,
 	}))
-	return err
+	return a.metrics.statusWritten(err)
 }
 
 // volumes makes the volumes of the disks m lists, in its order. A disk not

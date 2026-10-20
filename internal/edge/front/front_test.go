@@ -69,7 +69,7 @@ func newCA(t *testing.T) *testCA {
 }
 
 // certs keeps the front door's certificates in storage until the test ends.
-func (c *testCA) certs(t *testing.T, storage string, log *slog.Logger) *tls.Config {
+func (c *testCA) certs(t *testing.T, storage string, log *slog.Logger) *front.Certs {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -93,6 +93,9 @@ type door struct {
 	client, client1 *http.Client
 	roots           *testCA
 	log             *syncBuffer
+	// front is the front door served, and certs its certificates.
+	front *front.Front
+	certs *front.Certs
 }
 
 // options change what a test door is started with.
@@ -166,7 +169,7 @@ func startDoor(t *testing.T, c *testCA, o options) *door {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- f.Serve(ctx, front.Listeners{HTTPS: https, HTTP: plain}, tc) }()
+	go func() { done <- f.Serve(ctx, front.Listeners{HTTPS: https, HTTP: plain}, tc.TLS) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -174,7 +177,7 @@ func startDoor(t *testing.T, c *testCA, o options) *door {
 		}
 	})
 
-	d := &door{https: https.Addr().String(), http: plain.Addr().String(), roots: c, log: logs}
+	d := &door{https: https.Addr().String(), http: plain.Addr().String(), roots: c, log: logs, front: f, certs: tc}
 	d.client = d.newClient(true)
 	d.client1 = d.newClient(false)
 	d.waitCertificates(t, apiHost, consoleHost, webHost)

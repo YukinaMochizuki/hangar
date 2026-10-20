@@ -618,7 +618,7 @@ func (a *Agent) writeStatus(ctx context.Context, m *computev1alpha1.Machine, obs
 	_, err := a.machines.UpdateMachineStatus(ctx, connect.NewRequest(&computev1alpha1.UpdateMachineStatusRequest{
 		Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName(), Status: status, ExpectedResourceVersion: &rv,
 	}))
-	return err
+	return a.metrics.statusWritten(err)
 }
 
 func (a *Agent) getMachine(ctx context.Context, k controller.Key) (*computev1alpha1.Machine, error) {

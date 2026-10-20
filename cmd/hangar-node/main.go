@@ -11,6 +11,9 @@
 //
 // hangar-node natlog --port PORT --at TIME finds the machine an abuse
 // report about the host's IPv4 address names, in the agent's NAT log.
+//
+// With --metrics-listen the agent serves /metrics, and nothing else, on a
+// loopback address (docs/decisions/monitoring.md).
 package main
 
 import (
@@ -34,6 +37,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/metrics"
 	"github.com/YukinaMochizuki/hangar/internal/node"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/diskimage"
@@ -89,6 +93,7 @@ func main() {
 		natLog         = flag.String("nat-log-dir", defaultNATLog, "with this host's network driver, where each new IPv4 connection out of the networks is logged for 30 days, root's alone; empty logs none")
 		cacheHigh      = flag.String("image-cache-high", fmt.Sprintf("%dGi", node.DefaultImageCacheHigh>>30), "what the container images no machine uses may keep, their cached blobs and their bases, past which the least recently used go; count it in --reserved-disk")
 		cacheLow       = flag.String("image-cache-low", "", "what is left of the images no machine uses once some go past --image-cache-high; empty for four fifths of it")
+		metricsListen  = flag.String("metrics-listen", "", "loopback address to serve /metrics on, such as 127.0.0.1:9102; empty disables it")
 	)
 	placement := bindPlacement(flag.CommandLine)
 	hf.bind(flag.CommandLine)
@@ -102,6 +107,13 @@ func main() {
 	if err != nil {
 		log.Error("node agent stopped", "error", err)
 		os.Exit(1)
+	}
+	var metricsLn net.Listener
+	if *metricsListen != "" {
+		if metricsLn, err = metrics.Listen(ctx, *metricsListen); err != nil {
+			log.Error("node agent stopped", "error", fmt.Errorf("--metrics-listen: %w", err))
+			os.Exit(1)
+		}
 	}
 	d, closeDrivers, err := drivers(ctx, *hostDrivers, hf)
 	if err != nil {
@@ -146,6 +158,16 @@ func main() {
 		Log:            log,
 	})
 	if err == nil {
+		if metricsLn != nil {
+			reg := metrics.NewRegistry()
+			reg.MustRegister(agent.Collectors()...)
+			// The agent runs on without its metrics.
+			go func() {
+				if err := metrics.Serve(ctx, metricsLn, reg, log); err != nil {
+					log.Error("serving metrics failed", "error", err)
+				}
+			}()
+		}
 		log.Info("node agent starting", "node", *name, "socket", *socket, "drivers", *hostDrivers, "version", node.Version())
 		err = agent.Run(ctx)
 	}
