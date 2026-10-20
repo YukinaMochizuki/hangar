@@ -38,19 +38,47 @@ Hangar has one host, so only the second shape keeps the host out of it.
   `volmode=dev`, attached to the server alone as a virtio-blk disk, as a
   Disk's volume is (`storage-zfs.md`). The server makes an ext4
   filesystem on it when it is blank and grows it to the device, as
-  hangar-init does a container's volume (`container-volumes.md`); only
-  the server's kernel ever mounts it, and clients see files over NFS,
-  never the device. The host never reads it.
+  hangar-init does a container's volume (`container-volumes.md`), with no
+  `lost+found` at its root; only the server's kernel ever mounts it, and
+  clients see files over NFS, never the device. The host never reads it.
+  The export is `sync`: a write a client was told is stable is on the
+  zvol.
 - **The server is the platform's, not the tenant's.** It cannot be exec'd
   or ssh'd into, has no egress and no NAT, and is driven by the node over
   vsock alone, its agent answering only CID 2 as hangar-init does
   (`guest-agent.md`). It runs while its share exists; a share used by no
   one keeps running (stopping idle servers may come later). Its size is
-  the platform's, one vCPU and 256Mi to start, to be measured on the
-  testbed.
+  the platform's: one vCPU and 256Mi, which held two busy clients with
+  170 MB to spare on the testbed (128Mi worked; 64Mi did not boot).
+- **Everything the server runs beside `nfsd` is Go, in its PID 1**: the
+  answers to the kernel's export upcalls (`auth.unix.ip`, `nfsd.fh`,
+  `nfsd.export`) and its client tracking (in place of `nfsdcld`). No
+  nfs-utils, and no C of ours. `auth.unix.gid` is never opened, so a
+  client's own groups count. Client records are kept in a `trusted.*`
+  xattr of the share's root, which travels with the zvol and which NFS
+  never shows a client.
+- **The wire block size is pinned (1 MiB), never derived from the
+  server's memory.** `nfsd` defaults it to a 4096th of RAM, so a 256Mi
+  server would cap I/O at 32 KiB (a third of the throughput), and a
+  server restarted smaller than its clients mounted against hangs them.
 - **NFSv4.2 over TCP only**, port 2049, one export, the share's root, as
-  the pseudo-root `/`: a client mounts `<address>:/`. No NFSv3, so no
-  rpcbind or mountd on the wire.
+  the pseudo-root `/`: a client mounts `<address>:/`. No NFSv3, 4.0 or
+  4.1, so no rpcbind or mountd on the wire. The export is `secure`: a
+  client's requests come from privileged ports, so an unprivileged user
+  in a client cannot speak AUTH_SYS as another.
+- **A restart is seconds, not minutes.** The server's lease and grace
+  periods are 15 s, not 90; containers mount with `timeo=50` (5 s), not
+  600; a server is stopped gracefully where it can be; and it starts
+  `nfsd` only once it has its export, which its boot disk carries, so a
+  client is never refused for being unknown. On the testbed a graceful
+  restart paused a writer 3 s, and a killed server 4 to 5 s, its clients'
+  locks kept; with the defaults a killed server stalled them a minute.
+- **Each client has an NFSv4 identity of its own.** Without one, every
+  guest is the same client (`Linux NFSv4.2 (none)`), and one guest's
+  mount evicts another's state. hangar-init writes the machine's uid to
+  `/sys/fs/nfs/net/nfs_client/identifier` before mounting, rather than
+  trust a hostname the tenant sets; a VM's mount instructions set
+  `nfs.nfs4_unique_id` the same way.
 - **A share, its server and every machine using it are on one node**, the
   share's: the scheduler binds the share when its server is placed, and
   a machine declaring a share goes only to that node, as a machine with a
@@ -87,7 +115,11 @@ Hangar has one host, so only the second shape keeps the host out of it.
   declaring machines' addresses on its networks, each `rw` or `ro`, and
   the node keeps it so over vsock as machines come and go; the server
   drops its client caches with each change, so a machine that stops
-  declaring a share loses it at once, its mount included.
+  declaring a share loses it at once, its mount included: its next
+  operation fails (within a second on the testbed). Writes it had
+  buffered on files already open never land, though its program may not
+  learn so until it syncs or closes, and its opens and locks hold others
+  back until its lease runs out, at most 15 s.
 - **The declaration is the opening.** A declaring machine reaches its
   share's port 2049 whatever its security groups allow, as a
   `PublicEndpoint` is its own opening (`public-endpoints.md`); nothing
@@ -109,7 +141,7 @@ Hangar has one host, so only the second shape keeps the host out of it.
 - **Containers mount a share `nosuid,nodev`**, always, so a setuid file
   one machine's root writes is never one another machine's user runs. A
   VM mounts its shares itself; the console's mount command carries the
-  same options.
+  same options, and `timeo=50`.
 
 ### The API
 
@@ -172,14 +204,17 @@ Hangar has one host, so only the second shape keeps the host out of it.
   and a share's server is a machine the node runs, restarts and sweeps
   like any other.
 - The platform kernel carries `nfsd` and the NFSv4.1 and 4.2 client
-  (`guest-kernel.md`); the initramfs gains what the server needs to
-  answer `nfsd`'s export and identity upcalls and to keep NFSv4 client
-  state across its restarts, in Go in hangar-init where it can be.
+  (`guest-kernel.md`), and the server's PID 1 answers `nfsd`'s upcalls
+  and tracks its clients itself; the PoC on the testbed needed no C
+  userspace for either.
 - A share is crash-consistent only, as a zvol is; its snapshots and
   backups come with the roadmap's, and the server, being the platform's,
   can freeze its own filesystem for them.
 - NFS is fine for large files and slow for small-file metadata and heavy
   fsync (`storage-zfs.md`); a share is for sharing data, not a working
-  directory.
+  directory. On the testbed, large reads and writes ran as fast as on a
+  Disk, while creating small files ran about 50 a second (a Disk without
+  fsync: 24,000), since each create is committed to the zvol before it
+  is answered.
 - Isolation inside one network now rests on each tap receiving only its
   own unicast (`networking.md`), not on addresses trusting each other.
