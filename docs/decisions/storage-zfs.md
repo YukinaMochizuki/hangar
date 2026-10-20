@@ -31,9 +31,10 @@ unreliable on virtio-fs.
 - **Images are pulled into a cache on the host** (`hangar/images`), keyed by
   digest: the blobs, and a record of the image of the host's platform
   (linux/amd64) that the digest names, an index's or a manifest's. A cached
-  digest needs no registry until it is forgotten, which happens once no base
-  of it is left. A blob is checked against its size and digest before it
-  enters the cache.
+  digest needs no registry until it is forgotten, with its base, when the
+  node agent evicts it: no machine uses it, and it is the least recently
+  used past the image cache's bounds (`node-agent.md`). A blob is checked
+  against its size and digest before it enters the cache.
 - **The host unpacks a tenant's layers, as root, but never follows them out
   of the directory.** Every path is resolved inside it with `openat2` and
   `RESOLVE_IN_ROOT`, as the image's own processes would resolve it with the

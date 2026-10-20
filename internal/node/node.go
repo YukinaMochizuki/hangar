@@ -108,13 +108,22 @@ type Config struct {
 	// host's networks (internal/node/natlog), if the network driver can
 	// tell them; empty logs none.
 	NATLog string
-	Clock  clockwork.Clock
-	Log    *slog.Logger
+	// ImageCacheHigh and ImageCacheLow bound the images no machine uses
+	// (docs/decisions/node-agent.md). Zero means DefaultImageCacheHigh,
+	// and for ImageCacheLow four fifths of ImageCacheHigh.
+	ImageCacheHigh, ImageCacheLow int64
+
+	Clock clockwork.Clock
+	Log   *slog.Logger
 }
 
 // DefaultMaxPulls is how many images a node prepares at once by default:
 // pulls and unpacks share the host's disks and CPUs with running machines.
 const DefaultMaxPulls = 2
+
+// DefaultImageCacheHigh is how much the images no machine uses may take by
+// default (docs/decisions/node-agent.md).
+const DefaultImageCacheHigh = 20 << 30
 
 // Agent is a running node agent.
 type Agent struct {
@@ -214,6 +223,15 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.MaxPulls < 0 || cfg.MaxUnpackWork < 0 {
 		return nil, fmt.Errorf("max pulls %d and max unpack work %d cannot be negative", cfg.MaxPulls, cfg.MaxUnpackWork)
 	}
+	if cfg.ImageCacheHigh == 0 {
+		cfg.ImageCacheHigh = DefaultImageCacheHigh
+	}
+	if cfg.ImageCacheLow == 0 {
+		cfg.ImageCacheLow = cfg.ImageCacheHigh / 5 * 4
+	}
+	if cfg.ImageCacheLow < 0 || cfg.ImageCacheLow > cfg.ImageCacheHigh {
+		return nil, fmt.Errorf("the image cache's low mark %d must be from 0 to its high mark %d", cfg.ImageCacheLow, cfg.ImageCacheHigh)
+	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
@@ -249,6 +267,7 @@ func New(cfg Config) (*Agent, error) {
 	a.diskTrigger = make(chan struct{}, 1)
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
+		puller.makeRoom = a.makeRoom
 	}
 	return a, nil
 }

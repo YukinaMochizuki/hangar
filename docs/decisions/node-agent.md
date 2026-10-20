@@ -18,9 +18,10 @@ with the host after any of these, and nothing would notice.
   host has.
 - **A sweep removes what nothing accounts for**: VMs, root disks and
   interfaces of machines that are not on this node any more, volumes of Disks
-  that are not bound to it any more, then networks and image bases nothing on
-  the host uses or is being built from; a disk image's base also stays while
-  an Image names it (`docs/decisions/vm-images.md`). It runs at start and
+  that are not bound to it any more, then networks nothing on the host uses,
+  disk images' bases nothing uses or is being built from, unless an Image
+  names them (`docs/decisions/vm-images.md`), and container images past the
+  image cache's bounds (below). It runs at start and
   every minute, under the same lock as the reconciles. A list it
   could not read, from the API or from a driver, stops whatever depends on
   it: a failed list must never read as "nothing is wanted", since a driver
@@ -173,14 +174,60 @@ with the host after any of these, and nothing would notice.
   names another image. A tag moving upstream never rebuilds a container's
   disk, whatever else changes. A new image rebuilds the root disk (see
   `machine-model.md`); any other change restarts the VM on the disk it has. A
-  digest the host has pulled is read from its cache until its base goes, so
-  a running machine never depends on the registry. The cache answers a
-  digest only for the repositories it was fetched from in full; a machine
+  digest the host has pulled is read from its cache until it is evicted
+  (below), so a running machine never depends on the registry. The cache
+  answers a digest only for the repositories it was fetched from in full; a machine
   naming it from another fetches it in full from there first. A machine
   with image pull secrets resolves its reference with its own login, in a
   pull of its own; only machines without credentials share a pull, which
   resolves anonymously, and a digest in a machine's status needs resolving
   no more (`secrets.md`).
+- **A container image outlives its last machine** (decided 2026-10-20), as
+  kubelet's image garbage collection keeps images: deleting a container,
+  rebuilding it with a changed spec, or making it again later finds its
+  image's base and cache record still there, and fetches no blob again
+  (the reference is still resolved, as a new machine's always is). Each
+  digest has a last use, kept on the host so the agent's restart keeps it:
+  the base's snapshot records when it was made, last cloned from, and last
+  had a root disk cloned from it deleted, so an image a machine ran on for
+  months is not the first to go once it stops (`hangar:used-at`), and the
+  cache record's modification time when
+  `Config` or `Unpack` last read it; the later of the two counts. A digest
+  a root disk, a pull under way or a machine waiting for it uses is never
+  evicted, judged at the eviction, not as the sweep began (a finished pull
+  of a machine gone uses nothing); nor is one the cache says is being
+  pulled, which eviction passes by, base and record, never waits for, and
+  leaves to the next sweep. The sweep evicts the others, base first and
+  then cache record, so a base that will not go keeps its image whole,
+  least recently used first,
+  while they take more than `--image-cache-high` (20 GiB by default; their
+  blobs, those no digest in use holds, and their bases' `used`), down to
+  `--image-cache-low` (four fifths of it by default, so one sweep frees a
+  few images, not one at each sweep); and while the cache's blobs take
+  more than 85% of the image dataset, down to 80%, kubelet's thresholds.
+  Disk images downloaded and images being unpacked, which share the
+  dataset, do not count: they go by themselves. A step of a pull with too
+  little room evicts in the same order, then is tried once more: fetching
+  the blobs into the cache, and unpacking beside them, both in the image
+  dataset, and making the base, on the pool (decided 2026-10-20). What is
+  freed is counted by what the images evicted take as the drivers list
+  them, their blobs or their bases' `used`, never by what is free read
+  again: ZFS shows freed blocks free some seconds later, and counts the
+  bytes compression leaves, which no measure of an unpack foretells.
+  Fetching the blobs and making the base know what they lack, and evict
+  until that much is freed. An unpack that runs out is known to need only
+  more than it had: each try evicts what frees its image's compressed
+  size, and one still short evicts as much again at the next. If what a
+  step is known to need is more than its room holds empty, or evicting
+  every image no machine uses would not free what it is known to lack,
+  none is evicted, and the pull fails as the disk's. An unpack is never
+  known to need more than its room holds, so one that could never fit
+  evicts its compressed size of the images no machine uses at each try,
+  until none is left. A digest
+  evicted and asked for again is pulled again, as any digest the host
+  lacks. The bases kept sit on the pool, so `deploy/host` counts
+  `--image-cache-high` in `--reserved-disk`
+  (`docs/runbook/host-bootstrap.md`).
 - **What runs keeps running.** A step the agent cannot check again (the
   registry, a driver list, the network's object) leaves the status of a
   machine running its current spec as it is, with one exception: once the

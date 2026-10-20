@@ -12,7 +12,8 @@ import (
 )
 
 // sweep removes what no machine on this node accounts for, and volumes no
-// Disk bound to it does, then networks and bases nothing uses
+// Disk bound to it does, then networks nothing uses, and the container
+// images nothing uses past the image cache's bounds
 // (docs/decisions/node-agent.md). A list it could not read stops whatever
 // depends on it: a failed list is never an empty one.
 // A VM is stopped off the host lock, and what its machine has left goes at
@@ -188,14 +189,8 @@ func (a *Agent) sweep(ctx context.Context) error {
 		for digest := range pulling {
 			used[digest] = true
 		}
-		if bases, err := d.Storage.Bases(ctx); keep(err) {
-			for _, b := range bases {
-				if !used[b] && keep(d.Storage.DeleteBase(ctx, b)) {
-					a.puller.forget(b)
-					keep(d.Images.Forget(ctx, b))
-				}
-			}
-		}
+		_, err := a.evictImages(ctx, used, nil)
+		keep(err)
 	}
 	return errors.Join(errs...)
 }

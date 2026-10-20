@@ -1,9 +1,9 @@
 package registry_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
@@ -11,40 +11,72 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/ocilayer"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/registry/registrytest"
 )
 
-// TestForgetWaitsForAPullOfItsDigest: a digest forgotten while it is being
-// pulled stays forgotten; the pull does not bring it back.
-func TestForgetWaitsForAPullOfItsDigest(t *testing.T) {
+// TestForgetRefusesAPullOfItsDigest: a digest being pulled is not
+// forgotten, nor waited for: Forget says it is busy at once, and once the
+// pull is done forgets it.
+func TestForgetRefusesAPullOfItsDigest(t *testing.T) {
 	r := registrytest.New(t)
 	d := newImages(t, t.TempDir(), ocilayer.Limits{})
 	ref, digest := r.Push(t, "app:1", image(t, "amd64", nil, gzLayer(t, "f", "x")))
 	arrived, release := r.Block("app")
+	defer release()
 	pulled := make(chan error, 1)
 	go func() {
 		_, err := d.Config(t.Context(), ref, digest, anon)
 		pulled <- err
 	}()
 	<-arrived // the pull is under way
-	forgot := make(chan error, 1)
-	go func() { forgot <- d.Forget(t.Context(), digest) }()
-	select {
-	case err := <-forgot:
-		t.Fatalf("Forget returned during the pull of its digest: %v", err)
-	case <-time.After(100 * time.Millisecond):
+	if err := d.Forget(t.Context(), digest); !errors.Is(err, driver.ErrBusy) {
+		t.Errorf("forgetting a digest being pulled: %v, want busy", err)
 	}
 	release()
 	if err := <-pulled; err != nil {
 		t.Fatal(err)
 	}
-	if err := <-forgot; err != nil {
+	if err := d.Forget(t.Context(), digest); err != nil {
 		t.Fatal(err)
 	}
 	r.Withdraw("app")
 	if _, err := d.Config(t.Context(), ref, digest, anon); err == nil {
 		t.Error("a digest forgotten during its pull is still cached")
+	}
+}
+
+// TestTheCacheSaysWhatIsBeingPulled: a cached digest being fetched again,
+// from another repository, is listed busy until the fetch is done.
+func TestTheCacheSaysWhatIsBeingPulled(t *testing.T) {
+	r := registrytest.New(t)
+	d := newImages(t, t.TempDir(), ocilayer.Limits{})
+	ref, digest := r.Push(t, "app:1", image(t, "amd64", nil, gzLayer(t, "f", "x")))
+	if _, err := d.Config(t.Context(), ref, digest, anon); err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := cachedOf(t, d, digest); c.Busy {
+		t.Error("a digest no pull holds is listed busy")
+	}
+	mirror := r.Mirror(t, "mirror:1", digest)
+	arrived, release := r.Block("mirror")
+	defer release()
+	pulled := make(chan error, 1)
+	go func() {
+		_, err := d.Config(t.Context(), mirror, digest, anon)
+		pulled <- err
+	}()
+	<-arrived
+	if c, _ := cachedOf(t, d, digest); !c.Busy {
+		t.Error("a digest being fetched again is not listed busy")
+	}
+	release()
+	if err := <-pulled; err != nil {
+		t.Fatal(err)
+	}
+	if c, _ := cachedOf(t, d, digest); c.Busy {
+		t.Error("a digest fetched is listed busy")
 	}
 }
 

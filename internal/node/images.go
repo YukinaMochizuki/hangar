@@ -31,6 +31,9 @@ type puller struct {
 	slots *fifo
 	// running counts the jobs, for the agent to wait for them as it stops.
 	running sync.WaitGroup
+	// makeRoom removes images nothing uses until what full asked for would
+	// fit, and says whether it removed any.
+	makeRoom func(ctx context.Context, full *driver.NoSpaceError) bool
 
 	mu sync.Mutex
 	// ctx and notify are set when the agent runs: jobs run under ctx, and
@@ -79,7 +82,8 @@ const (
 func newPuller(images driver.Images, storage driver.Storage, clock clockwork.Clock, timeout time.Duration, slots int) *puller {
 	return &puller{
 		images: images, storage: storage, clock: clock, timeout: timeout, slots: newFIFO(slots),
-		ctx: context.Background(), notify: func() {},
+		makeRoom: func(context.Context, *driver.NoSpaceError) bool { return false },
+		ctx:      context.Background(), notify: func() {},
 		jobs: map[string]*pull{}, wants: map[string]string{},
 	}
 }
@@ -199,21 +203,32 @@ func (p *puller) prepare(ctx context.Context, j *pull, ref string) error {
 	p.mu.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, p.timeout)
 	defer cancel()
-	err = p.storage.EnsureBase(ctx, digest, config.Size, func(dir string) error {
+	fill := func(dir string) error {
 		err := p.images.Unpack(ctx, ref, digest, dir, creds)
 		switch {
-		case errors.Is(err, driver.ErrNoSpace):
+		case errors.Is(err, driver.ErrNoSpace) || driver.OutOfRoom(err):
 			return blocked(computeapi.ReasonDiskFailed, err)
 		case err != nil:
 			return pullFailed(err)
 		}
 		return nil
-	})
+	}
+	err = p.storage.EnsureBase(ctx, digest, config.Size, fill)
+	if p.roomMade(ctx, err) {
+		err = p.storage.EnsureBase(ctx, digest, config.Size, fill)
+	}
 	var s *stuck
 	if err != nil && !errors.As(err, &s) {
 		return blocked(computeapi.ReasonDiskFailed, err)
 	}
 	return err
+}
+
+// roomMade says err is a *driver.NoSpaceError makeRoom made room for, so
+// the step is worth trying once more.
+func (p *puller) roomMade(ctx context.Context, err error) bool {
+	var full *driver.NoSpaceError
+	return errors.As(err, &full) && p.makeRoom(ctx, full)
 }
 
 // pullFailed says a pull failed, and whether the registry refused it.
@@ -247,6 +262,12 @@ func (p *puller) fetch(ctx context.Context, j *pull, ref string, creds driver.Cr
 		return "", driver.ImageConfig{}, badErr
 	}
 	config, err := p.images.Config(ctx, ref, digest, creds)
+	if p.roomMade(ctx, err) {
+		config, err = p.images.Config(ctx, ref, digest, creds)
+	}
+	if errors.Is(err, driver.ErrNoSpace) {
+		return "", driver.ImageConfig{}, blocked(computeapi.ReasonDiskFailed, err)
+	}
 	if err != nil {
 		return "", driver.ImageConfig{}, pullFailed(err)
 	}
@@ -292,6 +313,24 @@ func (p *puller) keep(mine map[string]bool) map[string]bool {
 		}
 	}
 	return digests
+}
+
+// digests returns the digests of the jobs running or some machine waits
+// on; a finished job of machines gone is kept until keep, but uses nothing.
+func (p *puller) digests() map[string]bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	wanted := map[string]bool{}
+	for _, key := range p.wants {
+		wanted[key] = true
+	}
+	out := map[string]bool{}
+	for key, j := range p.jobs {
+		if j.digest != "" && (j.running || wanted[key]) {
+			out[j.digest] = true
+		}
+	}
+	return out
 }
 
 // forget drops the finished jobs of a digest whose base is gone, so asking
