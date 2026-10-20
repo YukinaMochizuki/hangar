@@ -18,7 +18,7 @@ import (
 // disk's own operating system through firmware, as specified, and says what
 // it then runs. Nothing runs in such a guest for the agent to ask: the
 // machine is ready once its VM runs (docs/decisions/vm-boot.md).
-func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine, vm *driver.VM, epoch int64) (*observation, error) {
+func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine, vm *driver.VM, epoch int64, vcpus int32, memoryMiB int64) (*observation, error) {
 	uid := m.GetMetadata().GetUid()
 	// Its root disk first, as the firmware boots the first disk.
 	vols, err := a.volumes(ctx, m)
@@ -34,10 +34,6 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		return nil, err
 	}
 	a.netChecked[uid] = epoch
-	vcpus, memoryMiB, err := vmSize(m.GetSpec().GetResources())
-	if err != nil {
-		return nil, blocked(computeapi.ReasonBootFailed, err)
-	}
 	// The guest learns these by DHCP, from the same leases; the spec
 	// carries them as a container's does.
 	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)

@@ -169,6 +169,13 @@ func port(s string) (uint16, error) {
 type Member struct {
 	Addrs  []netip.Addr
 	Groups []string
+	// Isolated makes the interface a member of no group, Default
+	// included, whatever Groups says: no group's rule names it as a peer,
+	// and its policy allows nothing in or out. What the host's firewall lets
+	// every tap reach whatever its policy (its network's DHCP, DNS and
+	// metadata, the gateway's SSH, endpoint ports) still applies. A file
+	// share's server is (docs/decisions/file-shares.md).
+	Isolated bool
 }
 
 // Policy is what one interface may receive and send. Replies to what is
@@ -192,10 +199,11 @@ func (p Policy) Size() int {
 }
 
 // Resolve gives each member of a network its policy, from the network's
-// groups by name. A member in no group is in Default. A group a member
-// names that does not exist lets in nothing and lets out nothing, so a
-// member is never more open for a group missing; a rule naming a group that
-// does not exist, or has no members, allows nothing.
+// groups by name. A member naming no group is in Default, unless it is
+// Isolated. A group a member names that does not exist lets in nothing and
+// lets out nothing, so a member is never more open for a group missing; a
+// rule naming a group that does not exist, or has no members, allows
+// nothing.
 func Resolve(groups map[string]Group, members []Member) []Policy {
 	inGroup := map[string][]netip.Prefix{}
 	for _, m := range members {
@@ -221,7 +229,7 @@ func Resolve(groups map[string]Group, members []Member) []Policy {
 	}
 	out := make([]Policy, len(members))
 	for i, m := range members {
-		p := Policy{EgressAll: true}
+		p := Policy{EgressAll: !m.Isolated}
 		for _, name := range groupsOf(m) {
 			if name == Default {
 				p.Ingress = append(p.Ingress, Rule{Protocol: All, Peers: slices.Clone(inGroup[Default])})
@@ -247,6 +255,9 @@ func Resolve(groups map[string]Group, members []Member) []Policy {
 }
 
 func groupsOf(m Member) []string {
+	if m.Isolated {
+		return nil
+	}
 	if len(m.Groups) == 0 {
 		return []string{Default}
 	}

@@ -38,3 +38,28 @@ func TestOnlyItsNodeServesAGuestsData(t *testing.T) {
 		}
 	}
 }
+
+// TestAShareServerIsNotServed: a network's services name a container's
+// machine after its container, and serve it; a file share's server, though
+// its share may share the name, is named in NAT logs by its own machine's
+// name, and is not served: no name, lease or metadata, and no group.
+func TestAShareServerIsNotServed(t *testing.T) {
+	owned := func(name, kind, owner string, boot *computev1alpha1.MachineSpec) *computev1alpha1.Machine {
+		return &computev1alpha1.Machine{
+			Metadata: &metav1.ObjectMeta{Name: name, OwnerReferences: []*metav1.OwnerReference{{Kind: kind, Name: owner, Controller: true}}},
+			Spec:     boot,
+		}
+	}
+	ctr := owned("ct-data", "Container", "data", &computev1alpha1.MachineSpec{
+		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx"}},
+	})
+	server := owned("fs-data", "FileShare", "data", &computev1alpha1.MachineSpec{
+		Boot: &computev1alpha1.MachineSpec_FileShareServer{FileShareServer: &computev1alpha1.FileShareServerBoot{FileShare: "data", Size: "1Gi"}},
+	})
+	if name, served := servedAs(ctr); name != "data" || !served {
+		t.Errorf("a container's machine is %q, served %t", name, served)
+	}
+	if name, served := servedAs(server); name != "fs-data" || served {
+		t.Errorf("a share's server is %q, served %t", name, served)
+	}
+}

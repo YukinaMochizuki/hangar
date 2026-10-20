@@ -223,19 +223,21 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			if nic.GetNetwork() != k.Name || err != nil {
 				continue
 			}
-			name := machineDNSName(m)
 			addrs := []netip.Addr{addr.Addr()}
-			if v6, ok := ipv6Of(nic); ok {
-				addrs = append(addrs, v6)
-				leases6[mac(m.GetMetadata().GetUid(), nic.GetName())] = v6
-			}
-			for _, a := range addrs {
-				if !slices.Contains(names[name], a) {
-					names[name] = append(names[name], a)
+			name, served := servedAs(m)
+			if served {
+				if v6, ok := ipv6Of(nic); ok {
+					addrs = append(addrs, v6)
+					leases6[mac(m.GetMetadata().GetUid(), nic.GetName())] = v6
 				}
+				for _, a := range addrs {
+					if !slices.Contains(names[name], a) {
+						names[name] = append(names[name], a)
+					}
+				}
+				leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
+				instances[addr.Addr()] = a.instance(m, name)
 			}
-			leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}
-			instances[addr.Addr()] = a.instance(m, name)
 			nat.Machines[addr.Addr()] = natlog.Machine{Name: name, UID: m.GetMetadata().GetUid()}
 			on = append(on, m.GetMetadata().GetUid())
 			if m.GetSpec().GetNode() == a.cfg.Name {
@@ -243,7 +245,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				mineAt = append(mineAt, len(members))
 				mineNames = append(mineNames, m.GetMetadata().GetName())
 			}
-			members = append(members, secgroup.Member{Addrs: addrs, Groups: nic.GetSecurityGroups()})
+			members = append(members, secgroup.Member{Addrs: addrs, Groups: nic.GetSecurityGroups(), Isolated: !served})
 		}
 	}
 	groups, err := a.groupsOf(ctx, k)
@@ -338,15 +340,19 @@ func (s *netServices) forget(networkUID string) {
 	s.nat.Forget(networkUID)
 }
 
-// machineDNSName is the name a machine answers to in its project: that of the
-// object it was made from, such as its Container, or its own.
-func machineDNSName(m *computev1alpha1.Machine) string {
+// servedAs is m's name on its networks, its owner's or its own, and
+// whether it gets a DNS name, leases and metadata: a file share's server
+// does not, and is named fs-<share> in NAT logs alone (file-shares.md).
+func servedAs(m *computev1alpha1.Machine) (name string, served bool) {
+	if m.GetSpec().GetFileShareServer() != nil {
+		return m.GetMetadata().GetName(), false
+	}
 	for _, ref := range m.GetMetadata().GetOwnerReferences() {
 		if ref.GetController() {
-			return ref.GetName()
+			return ref.GetName(), true
 		}
 	}
-	return m.GetMetadata().GetName()
+	return m.GetMetadata().GetName(), true
 }
 
 // guestDNS is what a machine's guest resolves with: the resolver of its first

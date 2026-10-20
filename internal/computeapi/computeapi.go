@@ -44,6 +44,12 @@ func MachineDisks(spec *computev1alpha1.MachineSpec) []string {
 // gone, and reports DiskReleased.
 const DiskInUseFinalizer = registry.Domain + "/disk-in-use"
 
+// DependentsFinalizer keeps an object that cascades in place, marked as
+// being deleted, until everything it owns is gone: a tenant's projects, a
+// FileShare's server. A node lets go of a deleted share only once it is
+// gone, and reports FileShareReleased.
+const DependentsFinalizer = registry.Domain + "/dependents"
+
 // Condition types. Each has one writer.
 const (
 	// NodeReady says a Node's agent is reporting. The agent sets it true with
@@ -68,6 +74,9 @@ const (
 	DiskReady = "Ready"
 	// DiskReleased is the node's: a deleted disk is gone from the host.
 	DiskReleased = "Released"
+	// FileShareReleased is the node's: a deleted share's node holds nothing
+	// of it any more.
+	FileShareReleased = "Released"
 	// ImageVerified is any node's: True once a node has fetched the image,
 	// found it matches its sha256 and made a disk image of it; False, with
 	// one of the Image reasons, when the image at that generation can never

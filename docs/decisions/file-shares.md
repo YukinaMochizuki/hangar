@@ -1,9 +1,19 @@
 # File shares: one NFS server microVM per share, on its own zvol
 
-Status: accepted, 2026-10. The API, its admission and the quota are
-built; a share stays Pending, a container declaring it is held back and a
-VM runs without it, as its server, its node's part and the mounts are not
-built.
+Status: accepted, 2026-10. Built: the API, its admission and the quota;
+the server's machine (boot `file_share_server`, naming the share and its
+volume's size), its placement, which binds the share to its node, its
+addresses, and the share's users, phase and deletion; and of the node's
+part, that a server is in no security group and has no name, lease or
+metadata on its networks, and that a deleted share's node reports it
+Released once its server is gone (it holds nothing of a share yet). Not
+built: what the server boots, its volume, its export and its 2049-only,
+reply-only rules on the host, and the mounts; until those rules exist,
+what the host lets every tap reach (DHCP, DNS and metadata at its
+network's gateway, the gateway's SSH) applies to a server's taps too.
+So the node fails to boot a server and a share stays Pending; a
+container declaring a share is refused by its node, its VM stopped if it
+ran; and a VM runs without its shares.
 
 ## Context
 
@@ -83,11 +93,15 @@ Hangar has one host, so only the second shape keeps the host out of it.
   trust a hostname the tenant sets; a VM's mount instructions set
   `nfs.nfs4_unique_id` the same way.
 - **A share, its server and every machine using it are on one node**, the
-  share's: the scheduler binds the share when its server is placed, and
-  a machine declaring a share goes only to that node, as a machine with a
-  bound Disk does. There is no network between nodes yet; when there is,
-  a share's traffic between nodes must be encrypted (RPC-with-TLS,
-  RFC 9289, with certificates per machine), before any crosses one.
+  share's: the scheduler binds the share when its server is placed, with
+  room for its volume. While machines declaring the share are placed
+  (VMs, which are placed regardless), the server goes only to the node
+  most of them run on, and waits there for room rather than go elsewhere;
+  with none placed, it goes to any node with room. A machine declaring a
+  share goes only to its node, as a machine with a bound Disk does. There
+  is no network between nodes yet; when there is, a share's traffic
+  between nodes must be encrypted (RPC-with-TLS, RFC 9289, with
+  certificates per machine), before any crosses one.
 
 ### Networks and who may mount
 
@@ -101,6 +115,16 @@ Hangar has one host, so only the second shape keeps the host out of it.
   endpoint in each VNet, and an EFS file system a mount target in each
   subnet. The alternative, a client with a second interface on the
   share's network, makes that client a bridge between the networks.
+- **A share's networks never overlap.** Networks may (`networking.md`),
+  but the server's export knows a client by its address alone
+  (`auth.unix.ip`), so two declaring machines of one address on two of
+  its networks could not be told apart: the guest refuses such an export
+  and keeps the last, and taking one machine's access away would then
+  fail open. Admission refuses a share on two networks whose ranges
+  overlap, naming them, as it is made or a network is added to it; a
+  network a share names is refused such a range as it is made (a
+  network's range never changes); `default`'s range counts before it is
+  made.
 - **The server can never connect to anything.** On the host, in each
   network's `bridge hangar_sg` (`networking.md`), the server's taps take
   only new TCP connections to 2049 from the machines allowed below, and

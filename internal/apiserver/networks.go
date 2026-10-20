@@ -253,8 +253,15 @@ func (s *Server) assignAddresses(ctx context.Context, owner ipv6Owner, current, 
 // interface an Address names takes the Address's, once no other machine
 // holds it, which errAddressMoving says is still to come; any other keeps
 // the one it has while it is of that prefix and no Address reserves it, and
-// otherwise draws a new one. The caller holds s.ipam.
+// otherwise draws a new one. A file share's server has none: it is reached
+// from its networks alone (file-shares.md). The caller holds s.ipam.
 func (s *Server) assignIPv6(ctx context.Context, owner ipv6Owner, current, want *computev1alpha1.MachineSpec) error {
+	if want.GetFileShareServer() != nil {
+		for _, nic := range want.GetInterfaces() {
+			nic.Ipv6 = ""
+		}
+		return nil
+	}
 	prefix, err := s.nodePrefix(ctx, want.GetNode())
 	if err != nil {
 		return err

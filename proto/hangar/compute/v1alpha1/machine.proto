@@ -35,6 +35,7 @@ message MachineSpec {
   oneof boot {
     ContainerBoot container = 10;
     FirmwareBoot firmware = 11;
+    FileShareServerBoot file_share_server = 12;
   }
   repeated MachineInterface interfaces = 20;
   RestartPolicy restart_policy = 21;
@@ -117,6 +118,17 @@ message FirmwareBoot {
   MachineCloudInit cloud_init = 2;
 }
 
+// FileShareServerBoot boots the platform's NFS server of a FileShare: the
+// system machine the share owns, which serves it from a volume of its own,
+// and declares no disk or file share. See docs/decisions/file-shares.md.
+message FileShareServerBoot {
+  // Names the FileShare, in the machine's project, the machine serves.
+  string file_share = 1;
+  // The size of the share's volume on its node, its status.size, in whole
+  // Gi: the server starts again on the grown volume when it changes.
+  string size = 2;
+}
+
 // MachineCloudInit is a firmware machine's NoCloud data, served by its
 // networks' metadata service. Changing it does not restart the machine:
 // cloud-init reads it once per instance.
@@ -140,7 +152,10 @@ message MachineInterface {
   // "10.0.0.5/24". Assigned by the apiserver; empty until it is.
   string ipv4 = 3;
   // The SecurityGroups the interface is in, "default" included when it is;
-  // never empty once the controller has written it.
+  // never empty once a container's or VM's controller has written it.
+  // Empty on a file share's server, which is in no group, not even
+  // "default": no group's rule lets it in or out
+  // (docs/decisions/file-shares.md).
   repeated string security_groups = 4;
   // The interface's public address, a /128 of its node's IPv6 prefix, such
   // as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128". Assigned by the apiserver once
