@@ -21,7 +21,7 @@ import (
 )
 
 // Prefix is where the NoCloud documents are, as the guest is told with
-// ds=nocloud;s=http://169.254.169.254/nocloud/.
+// ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net (chvm.NoCloudSerial).
 const Prefix = "/nocloud/"
 
 // Instance is what the service says of one machine.

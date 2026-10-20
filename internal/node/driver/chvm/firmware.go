@@ -28,8 +28,11 @@ const DefaultFirmwareStopGrace = 60 * time.Second
 
 // NoCloudSerial is the SMBIOS system serial number a firmware VM is given:
 // cloud-init reads it as where its NoCloud datasource is, the metadata
-// service every network of the VM's has.
-const NoCloudSerial = "ds=nocloud;s=http://169.254.169.254/nocloud/"
+// service every network of the VM's has. Its dsmode says the seed is read
+// once the network is up: without it, cloud-init 22.4 (Debian 12's) takes
+// ds=nocloud for a local seed and drops what its network stage fetched;
+// 24.4 and later take net from the http URL, and keep a dsmode given.
+const NoCloudSerial = "ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net"
 
 // pressPowerButton presses the power button of the VM whose Cloud
 // Hypervisor serves its API at socket: an ACPI event the guest's operating

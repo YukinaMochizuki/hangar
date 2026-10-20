@@ -77,6 +77,28 @@ func chArgsOf(t *testing.T, dir string) []string {
 	return ch.Args
 }
 
+// TestTheNoCloudSerialSaysNet: the serial number, split as cloud-init
+// splits it, names NoCloud, seeds it from the metadata service, and says
+// dsmode net, which cloud-init 22.4 needs to keep an http seed and every
+// later one honours first.
+func TestTheNoCloudSerialSaysNet(t *testing.T) {
+	fields := strings.Split(NoCloudSerial, ";")
+	if fields[0] != "ds=nocloud" {
+		t.Errorf("%q does not start with ds=nocloud", NoCloudSerial)
+	}
+	kv := map[string]string{}
+	for _, f := range fields[1:] {
+		k, v, _ := strings.Cut(f, "=")
+		kv[k] = v
+	}
+	if want := "http://" + driver.MetadataAddr.String() + "/nocloud/"; kv["s"] != want {
+		t.Errorf("seedfrom %q, not %q", kv["s"], want)
+	}
+	if kv["dsmode"] != "net" {
+		t.Errorf("dsmode %q, not net", kv["dsmode"])
+	}
+}
+
 // TestAFirmwareVMBootsItsOwnKernel: Cloud Hypervisor gets the firmware,
 // its volumes, the root first, as vda and on, the NoCloud serial number, an
 // API socket, its serial console, and the balloon its freed memory goes
@@ -91,7 +113,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 	for _, want := range []string{
 		"--firmware /fw/CLOUDHV.fd",
 		"--balloon size=0,free_page_reporting=on",
-		"--platform serial_number=ds=nocloud;s=http://169.254.169.254/nocloud/",
+		"--platform serial_number=ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net",
 		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net",
 		"--api-socket path=" + filepath.Join(dir, apiFile),
 		"--console off",
