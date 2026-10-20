@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -116,7 +117,10 @@ func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 		kind, _ := fields["kind"].(string)
 		res, ok := registry.Lookup(apiVersion, kind)
 		if !ok {
-			return nil, usageErr("%s: unknown apiVersion %q and kind %q", where, apiVersion, kind)
+			return nil, fmt.Errorf("%s: %w", where, unknownManifestKind(apiVersion, kind))
+		}
+		if err := checkFields(node.Content[0], res.Message.Descriptor()); err != nil {
+			return nil, usageErr("%s, %v", where, err)
 		}
 		numbersAsText(node.Content[0], res.Message.Descriptor())
 		var typed any
@@ -129,11 +133,15 @@ func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 		}
 		obj := res.Message.New().Interface()
 		if err := protojson.Unmarshal(js, obj); err != nil {
-			return nil, usageErr("%s: %v", where, err)
+			return nil, usageErr("%s: %s", where, protojsonPosition.ReplaceAllString(err.Error(), ""))
 		}
 		out = append(out, manifest{source: where, r: res, obj: obj})
 	}
 }
+
+// protojsonPosition is where protojson says an error is: in the JSON made from
+// the YAML, which the user never saw.
+var protojsonPosition = regexp.MustCompile(`^proto: (\(line \d+:\d+\): )?`)
 
 // numbersAsText retags every number in n that stands where md has a string
 // field as a string, so it decodes as the text written: protojson takes no

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -116,6 +117,11 @@ func Run(ctx context.Context, args []string, stdio IO, opts Options) int {
 		return ExitOK
 	case errors.As(err, &remote):
 		return int(remote)
+	}
+	// Cobra's own error for a command line that names no command, which
+	// it gives no type to tell it by.
+	if strings.HasPrefix(err.Error(), "unknown command ") {
+		err = &exitError{code: ExitUsage, err: fmt.Errorf("%w\nrun hangar --help for the commands", err)}
 	}
 	_, _ = fmt.Fprintln(stdio.Err, "error:", err)
 	return exitCode(err)
@@ -254,7 +260,7 @@ func (a *app) projectFor(r registry.Resource, c *Context) (string, error) {
 func findKind(name string) (registry.Resource, error) {
 	r, ok := registry.Find(name)
 	if !ok {
-		return registry.Resource{}, usageErr("unknown kind %q", name)
+		return registry.Resource{}, unknownKind(name)
 	}
 	return r, nil
 }
