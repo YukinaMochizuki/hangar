@@ -119,7 +119,7 @@ func decodeManifests(source string, r io.Reader) ([]manifest, error) {
 		if !ok {
 			return nil, fmt.Errorf("%s: %w", where, unknownManifestKind(apiVersion, kind))
 		}
-		if err := checkFields(node.Content[0], res.Message.Descriptor()); err != nil {
+		if err := checkFields(node.Content[0], res.Message.Descriptor(), res.Kind); err != nil {
 			return nil, usageErr("%s, %v", where, err)
 		}
 		numbersAsText(node.Content[0], res.Message.Descriptor())

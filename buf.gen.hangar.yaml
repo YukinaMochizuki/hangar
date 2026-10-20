@@ -12,6 +12,10 @@ plugins:
     opt: [mode=registry, domain=hangarlab.cloud]
     strategy: all
   - local: [go, run, ./tools/protoc-gen-hangar]
+    out: gen/go
+    opt: [mode=schema, domain=hangarlab.cloud]
+    strategy: all
+  - local: [go, run, ./tools/protoc-gen-hangar]
     out: internal/apiserver/servicegen
     opt: mode=server
     strategy: all

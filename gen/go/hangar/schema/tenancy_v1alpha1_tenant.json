@@ -1,0 +1,316 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.tenancy.v1alpha1.Limits": {
+      "additionalProperties": false,
+      "description": "Limits caps what a tenant, or one of its projects, may hold. Where Limits is set says what an unset field means. cpu and memory count only machines asked to run; a stopped machine still counts its disk and its place among machines.",
+      "properties": {
+        "addresses": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "cpu": {
+          "description": "vCPUs, a quantity in Kubernetes syntax, such as \"8\" or \"2500m\".",
+          "type": "string"
+        },
+        "disk": {
+          "description": "Disk space, a quantity such as \"200Gi\": containers' disks, Disks, the root disks VMs have made from images, and FileShares.",
+          "type": "string"
+        },
+        "fileShares": {
+          "description": "FileShares. A share's server is the platform's, and counts toward no limit.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "machines": {
+          "description": "Containers and virtual machines, together.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "memory": {
+          "description": "Memory, a quantity such as \"16Gi\".",
+          "type": "string"
+        },
+        "networks": {
+          "description": "Networks, each project's default network among them.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "projects": {
+          "description": "Projects of the tenant. Only a Plan sets it.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "publicEndpoints": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "serviceTokens": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.tenancy.v1alpha1.TenantSpec": {
+      "additionalProperties": false,
+      "description": "TenantSpec is the desired state of a tenant.",
+      "properties": {
+        "displayName": {
+          "type": "string"
+        },
+        "plan": {
+          "description": "Name of the Plan that sets this tenant's quota limits; empty means the platform default. An apply that leaves it empty keeps the stored plan; naming \"default\" moves the tenant back to the default, stored as empty.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.tenancy.v1alpha1.TenantStatus": {
+      "additionalProperties": false,
+      "description": "TenantStatus is the observed state of a tenant.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "limits": {
+          "$ref": "#/$defs/hangar.tenancy.v1alpha1.Limits",
+          "description": "The plan's limits; an unset field has no limit."
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "plan": {
+          "description": "The Plan the tenant has: spec.plan, or \"default\".",
+          "type": "string"
+        },
+        "usage": {
+          "$ref": "#/$defs/hangar.tenancy.v1alpha1.Usage",
+          "description": "What all the tenant's projects hold."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.tenancy.v1alpha1.Usage": {
+      "additionalProperties": false,
+      "description": "Usage is what a tenant, or one of its projects, holds, counted as Limits counts it.",
+      "properties": {
+        "addresses": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "cpu": {
+          "type": "string"
+        },
+        "disk": {
+          "type": "string"
+        },
+        "fileShares": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "machines": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "memory": {
+          "type": "string"
+        },
+        "networks": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "projects": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "publicEndpoints": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "serviceTokens": {
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Tenant is who: the people and identities that own projects. Membership is expressed with RoleBindings scoped to the tenant.",
+  "properties": {
+    "apiVersion": {
+      "const": "tenancy.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Tenant",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.tenancy.v1alpha1.TenantSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.tenancy.v1alpha1.TenantStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "Tenant",
+  "type": "object"
+}

@@ -24,11 +24,17 @@ what it cannot.
       an owner reference (see `docs/decisions/apply-semantics.md`).
 - [ ] Enums have an `_UNSPECIFIED` zero value, and the code treats it as a
       default or rejects it, explicitly.
+- [ ] The comments on the message, its fields and its enum values are
+      written for a user of the API: they are what `hangar explain` and the
+      served schema show (`docs/decisions/api-schema.md`). A doc they need
+      is named by its `docs/` path, which the schema links; nothing names a
+      path under `internal/` or `cmd/`.
 
 ## Generated code
 
 - [ ] `make gen` ran, and the result is committed: the Go and TypeScript
-      messages, the registry entry, and the handler shim.
+      messages, the registry entry, the handler shim, and the kind's JSON
+      Schema under `gen/go/hangar/schema`, read through as a user would.
 
 ## Behaviour
 

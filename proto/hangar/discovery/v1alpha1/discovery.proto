@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package hangar.discovery.v1alpha1;
+
+import "hangar/meta/v1/options.proto";
+
+// DiscoveryService says which kinds the API serves and what each kind's
+// objects hold, so a client built before a kind was added can still find and
+// explain it. Any authenticated caller may call it. It is not a resource's
+// service, so it is written by hand rather than generated. See
+// docs/decisions/api-schema.md.
+service DiscoveryService {
+  // ListAPIResources lists every kind, ordered by group and kind.
+  rpc ListAPIResources(ListAPIResourcesRequest) returns (ListAPIResourcesResponse);
+  // GetSchema returns the JSON Schema of one kind's objects. A kind that does
+  // not exist under the apiVersion is NotFound.
+  rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse);
+}
+
+message ListAPIResourcesRequest {}
+
+message ListAPIResourcesResponse {
+  repeated APIResource resources = 1;
+}
+
+// APIResource is one kind, as manifests and the CLI name it.
+message APIResource {
+  // Such as compute.hangarlab.cloud/v1alpha1.
+  string api_version = 1;
+  // Such as Container.
+  string kind = 2;
+  // The lowercase plural, such as containers, which the CLI and
+  // permissions use.
+  string plural = 3;
+  repeated string short_names = 4;
+  hangar.meta.v1.Scope scope = 5;
+  // The first sentence of the kind's description.
+  string description = 6;
+}
+
+message GetSchemaRequest {
+  string api_version = 1;
+  string kind = 2;
+}
+
+message GetSchemaResponse {
+  // A JSON Schema (draft 2020-12) of the kind's objects, as protojson writes
+  // them: fields by their JSON names, nested messages under $defs, each
+  // field's comment as its description. The API reads more than it states:
+  // fields by their proto names, enums by number, nulls. A oneof's members
+  // exclude each other only in their descriptions.
+  string json_schema = 1;
+}

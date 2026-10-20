@@ -1,0 +1,308 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.FileShareAddress": {
+      "additionalProperties": false,
+      "description": "FileShareAddress is a share's server's address on one network.",
+      "properties": {
+        "address": {
+          "description": "An IPv4 address, such as \"10.0.0.7\".",
+          "type": "string"
+        },
+        "network": {
+          "description": "Names a Network in the share's project.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.FileShareSpec": {
+      "additionalProperties": false,
+      "description": "FileShareSpec is the desired state of a file share.",
+      "properties": {
+        "anonGid": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "anonUid": {
+          "description": "The user and group squashed users become; unset is 65534 (nobody). Set only with squash ROOT or ALL.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "networks": {
+          "description": "Names the Networks, in the share's project, the share is served on, at most 8, each once; empty is \"default\". A machine mounts the share from the first of its own networks the share is on. A network a declaring machine mounts from cannot be removed.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "size": {
+          "description": "As a Disk's: a quantity in whole Gi, such as \"20Gi\", at least 1Gi; a size that is not whole Gi is rounded up. It can grow but never shrink.",
+          "type": "string"
+        },
+        "squash": {
+          "description": "Which users of a client the server maps to anon_uid and anon_gid; unset is NONE.\n\n- FILE_SHARE_SQUASH_NONE: Every user keeps its uid and gids, root included.\n- FILE_SHARE_SQUASH_ROOT: Root becomes the anonymous user; other users keep theirs.\n- FILE_SHARE_SQUASH_ALL: Every user becomes the anonymous user.",
+          "enum": [
+            "FILE_SHARE_SQUASH_NONE",
+            "FILE_SHARE_SQUASH_ROOT",
+            "FILE_SHARE_SQUASH_ALL"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.FileShareStatus": {
+      "additionalProperties": false,
+      "description": "FileShareStatus is the observed state of a file share.",
+      "properties": {
+        "addresses": {
+          "description": "The server's address on each of the share's networks, which a client on that network mounts.",
+          "items": {
+            "$ref": "#/$defs/hangar.storage.v1alpha1.FileShareAddress"
+          },
+          "type": "array"
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "node": {
+          "description": "Names the Node the share and its server live on. Empty until its server is placed; once set it never changes.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "phase": {
+          "description": "FileSharePhase is where a file share is in its lifecycle.\n\n- FILE_SHARE_PHASE_PENDING: Not yet served: its server is not placed, or not yet running.\n- FILE_SHARE_PHASE_AVAILABLE: Served, and declared by no machine.\n- FILE_SHARE_PHASE_IN_USE: Served, and declared by a machine.",
+          "enum": [
+            "FILE_SHARE_PHASE_PENDING",
+            "FILE_SHARE_PHASE_AVAILABLE",
+            "FILE_SHARE_PHASE_IN_USE"
+          ],
+          "type": "string"
+        },
+        "size": {
+          "description": "The size the share has on its node, in whole Gi: spec.size once its node has room for it, and never less than before.",
+          "type": "string"
+        },
+        "users": {
+          "description": "What mounts the share, one entry per declaring machine.",
+          "items": {
+            "$ref": "#/$defs/hangar.storage.v1alpha1.FileShareUser"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.FileShareUser": {
+      "additionalProperties": false,
+      "description": "FileShareUser is a machine that declares a share.",
+      "properties": {
+        "kind": {
+          "description": "The kind and name of what the machine was made from, in the share's project, such as Container \"web\".",
+          "type": "string"
+        },
+        "machine": {
+          "description": "Names the Machine.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "network": {
+          "description": "Names the Network the machine mounts the share from.",
+          "type": "string"
+        },
+        "path": {
+          "description": "Where a container mounts the share, as its spec has it; empty for a virtual machine, which mounts its shares itself.",
+          "type": "string"
+        },
+        "readOnly": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "FileShare is a filesystem in a project that many machines mount at once over NFS, from its networks. A server microVM of the platform's serves it from a volume of its own, on one node. A machine mounts only the shares it declares: a container as a volume, a virtual machine in spec.file_shares. See docs/decisions/file-shares.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "storage.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "FileShare",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.FileShareSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.FileShareStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "FileShare",
+  "type": "object"
+}

@@ -1,0 +1,454 @@
+{
+  "$defs": {
+    "hangar.compute.v1alpha1.NetworkInterface": {
+      "additionalProperties": false,
+      "description": "NetworkInterface is one network interface a Container or VirtualMachine asks for. Its name is eth0, eth1… by position; its address comes from the network's range.",
+      "properties": {
+        "network": {
+          "description": "Names a network in the object's project.",
+          "type": "string"
+        },
+        "securityGroups": {
+          "description": "SecurityGroups of the network the interface is in; empty is the network's implicit \"default\" alone. Naming others without \"default\" leaves it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.Placement": {
+      "additionalProperties": false,
+      "description": "Placement describes the hardware of a machine's host, never its load; every tenant with a machine on the node reads it. Fields are at most 64 printable characters. See docs/decisions/machine-placement.md.",
+      "properties": {
+        "chassis": {
+          "description": "Names the host's chassis, a DNS-1123 label such as \"generic-1u-2x-u2\"; a client draws one it does not know, or none, as a generic server.",
+          "type": "string"
+        },
+        "cpuGeneration": {
+          "description": "The CPU's microarchitecture and code name, such as \"Example Gen 3\": known to the node agent for the CPUs it has a name for, or from the node's configuration.",
+          "type": "string"
+        },
+        "cpuModel": {
+          "description": "The CPU as the host names it, without its core count, such as \"Example CPU 1000\".",
+          "type": "string"
+        },
+        "memory": {
+          "description": "The kind of the host's memory, never its size, such as \"DDR4-3200 ECC\".",
+          "type": "string"
+        },
+        "network": {
+          "description": "The host's Ethernet ports by the most speed each supports, never its link's, such as \"2 × 10 GbE\".",
+          "type": "string"
+        },
+        "region": {
+          "description": "The region the host is in, such as \"region-1\", from the node's configuration.",
+          "type": "string"
+        },
+        "site": {
+          "description": "The site within the region, such as a datacenter's name \"site-a\", from the node's configuration.",
+          "type": "string"
+        },
+        "storage": {
+          "description": "The host's disks by kind, such as \"2 × NVMe SSD\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineDisk": {
+      "additionalProperties": false,
+      "description": "VirtualMachineDisk is a Disk attached to a VM.",
+      "properties": {
+        "disk": {
+          "description": "Names a Disk in the VM's project.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineFileShare": {
+      "additionalProperties": false,
+      "description": "VirtualMachineFileShare is a FileShare a VM declares.",
+      "properties": {
+        "name": {
+          "description": "Names a FileShare in the VM's project.",
+          "type": "string"
+        },
+        "readOnly": {
+          "description": "The share's server exports it to the VM read-only.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineImageDisk": {
+      "additionalProperties": false,
+      "description": "VirtualMachineImageDisk is a root disk the VM's controller makes from an image.",
+      "properties": {
+        "deletePolicy": {
+          "description": "VirtualMachineDeletePolicy says what becomes of a root disk made for a VM when the VM is deleted.\n\n- VIRTUAL_MACHINE_DELETE_POLICY_RETAIN: Keeps the disk, which another VM can then name as its root disk.",
+          "enum": [
+            "VIRTUAL_MACHINE_DELETE_POLICY_DELETE",
+            "VIRTUAL_MACHINE_DELETE_POLICY_RETAIN"
+          ],
+          "type": "string"
+        },
+        "image": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.ImageSource"
+        },
+        "size": {
+          "description": "As a Disk's size; empty is 10Gi. It can grow but never shrink.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineInterfaceStatus": {
+      "additionalProperties": false,
+      "description": "VirtualMachineInterfaceStatus is one of a VM's interfaces as it is.",
+      "properties": {
+        "ipv4": {
+          "description": "The address with its network's prefix length, such as \"10.0.0.5/24\".",
+          "type": "string"
+        },
+        "ipv6": {
+          "description": "The public IPv6 address, such as \"2001:db8:0:1:8a3f:12c4:9e01:77b2/128\", which the guest leases by DHCPv6; empty while its host has no prefix.",
+          "type": "string"
+        },
+        "name": {
+          "description": "As the guest names it, such as \"eth0\".",
+          "type": "string"
+        },
+        "network": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineResources": {
+      "additionalProperties": false,
+      "description": "VirtualMachineResources sizes the VM. Each field is a quantity in Kubernetes syntax, such as \"2\" or \"2Gi\"; empty takes the default.",
+      "properties": {
+        "cpu": {
+          "description": "Whole vCPUs; the default is 1.",
+          "type": "string"
+        },
+        "memory": {
+          "description": "Guest memory, at least 256Mi; the default is 1Gi.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineRootDisk": {
+      "additionalProperties": false,
+      "description": "VirtualMachineRootDisk is the disk a VM boots from.",
+      "properties": {
+        "disk": {
+          "description": "Names an existing Disk in the VM's project.\n\nSet at most one of fromImage, disk.",
+          "type": "string"
+        },
+        "fromImage": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineImageDisk",
+          "description": "A disk made for the VM, named after it with \"-root\".\n\nSet at most one of fromImage, disk."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineSSHHostKey": {
+      "additionalProperties": false,
+      "description": "VirtualMachineSSHHostKey is a host key of a VM's sshd, as recorded.",
+      "properties": {
+        "publicKey": {
+          "description": "In authorized_keys form, such as \"ssh-ed25519 AAAA...\".",
+          "type": "string"
+        },
+        "recordTime": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineSpec": {
+      "additionalProperties": false,
+      "description": "VirtualMachineSpec is the desired state of a virtual machine.",
+      "properties": {
+        "disks": {
+          "description": "Disks attached after the root disk, in this order.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineDisk"
+          },
+          "type": "array"
+        },
+        "fileShares": {
+          "description": "The FileShares the VM may mount, at most 8, each once and on one of its networks. The VM mounts them itself, from the address the share has on its network; the platform writes nothing into its operating system. Changing them restarts nothing. See docs/decisions/file-shares.md.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineFileShare"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "description": "The VM's network interfaces, eth0, eth1 and on, in this order. Empty is one interface on the network \"default\". Changing them restarts the VM.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.NetworkInterface"
+          },
+          "type": "array"
+        },
+        "resources": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineResources"
+        },
+        "rootDisk": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineRootDisk",
+          "description": "The disk the VM boots from, its first."
+        },
+        "runState": {
+          "description": "Whether the VM should be running; unset is RUNNING. Stopping presses the VM's power button and powers it off after a grace. Only a guest that powers itself off stays off; stop and start the VM to boot it again. A VM that crashes, or whose host shut down, boots again. Apply replaces the whole spec, so applying a manifest that leaves this out starts the VM.",
+          "enum": [
+            "VIRTUAL_MACHINE_RUN_STATE_RUNNING",
+            "VIRTUAL_MACHINE_RUN_STATE_STOPPED"
+          ],
+          "type": "string"
+        },
+        "sshAuthorizedKeys": {
+          "description": "SSH public keys, each a line of an authorized_keys file, which the guest's cloud-init gives its default user (such as \"ubuntu\") on its first boot, through vendor-data. A user_data that sets ssh_authorized_keys itself, or turns vendor-data off, takes precedence.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "userData": {
+          "description": "Handed to the guest's cloud-init unchanged, as user-data, such as a #cloud-config document or a script; at most 16 KiB. cloud-init runs it on the VM's first boot only, so changing it neither restarts the VM nor runs again in it. See docs/decisions/vm-boot.md.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineStatus": {
+      "additionalProperties": false,
+      "description": "VirtualMachineStatus is the observed state of a virtual machine.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "description": "The VM's interfaces, with their addresses once assigned.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineInterfaceStatus"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "placement": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.Placement",
+          "description": "The hardware of the node the VM is placed on, as that node describes it now; unset until it is placed."
+        },
+        "rootDisk": {
+          "description": "Names the Disk the VM boots from.",
+          "type": "string"
+        },
+        "sshHostKeys": {
+          "description": "The host keys the apiserver trusts the VM's sshd by, for an exec, which is an SSH login: recorded on the first, and every later login must present one of them. MachineCapabilityService.ForgetSSHHostKeys clears them. See docs/decisions/vm-ssh.md.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineSSHHostKey"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.ImageSource": {
+      "additionalProperties": false,
+      "description": "ImageSource names the Image a disk is copied from. See docs/decisions/vm-images.md.",
+      "properties": {
+        "name": {
+          "description": "Names a global Image.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "VirtualMachine runs a disk image's own operating system, booted through firmware, as its own microVM. See docs/decisions/machine-model.md and docs/decisions/vm-boot.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "compute.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "VirtualMachine",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "VirtualMachine",
+  "type": "object"
+}

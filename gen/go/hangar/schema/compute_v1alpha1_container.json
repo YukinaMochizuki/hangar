@@ -1,0 +1,437 @@
+{
+  "$defs": {
+    "hangar.compute.v1alpha1.ContainerPort": {
+      "additionalProperties": false,
+      "description": "ContainerPort is a port the container listens on.",
+      "properties": {
+        "name": {
+          "description": "DNS-1123 label, unique within the container.",
+          "type": "string"
+        },
+        "port": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "protocol": {
+          "description": "Protocol is a transport protocol.",
+          "enum": [
+            "PROTOCOL_TCP",
+            "PROTOCOL_UDP"
+          ],
+          "type": "string"
+        },
+        "public": {
+          "description": "Expose the port over HTTPS through a PRIVATE PublicEndpoint the container owns, named \"<container>-<name>\". TCP only.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerSpec": {
+      "additionalProperties": false,
+      "description": "ContainerSpec is the desired state of a container.",
+      "properties": {
+        "args": {
+          "description": "Overrides the image command.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "description": "Overrides the image entrypoint.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.EnvVar"
+          },
+          "type": "array"
+        },
+        "image": {
+          "description": "OCI image reference. Changing it rebuilds the root disk. A tag is resolved when the container first runs it; to pick up a tag that moved since, name the image by its new digest or another tag.",
+          "type": "string"
+        },
+        "imagePullSecrets": {
+          "description": "Names Secrets of type registry-auth, in the container's project, whose logins its node pulls the image with: the first that holds a login for the image's registry. Changing them restarts nothing; they count at the next pull. See docs/decisions/secrets.md.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "description": "The networks the container is on, at most 8, each once; empty is one interface on \"default\". The first holds the default route. Changing them restarts the container.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.NetworkInterface"
+          },
+          "type": "array"
+        },
+        "ports": {
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerPort"
+          },
+          "type": "array"
+        },
+        "resources": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.Resources"
+        },
+        "restartPolicy": {
+          "description": "RestartPolicy says when a container's process is restarted after it exits.",
+          "enum": [
+            "RESTART_POLICY_ALWAYS",
+            "RESTART_POLICY_ON_FAILURE",
+            "RESTART_POLICY_NEVER"
+          ],
+          "type": "string"
+        },
+        "runState": {
+          "description": "Whether the container should be running; unset is RUNNING. Stopping sends the process SIGTERM, SIGKILL after a grace, and powers the VM off for good: the restart policy never brings a stopped container back. The root disk is kept, and RUNNING boots it again. Apply replaces the whole spec, so applying a manifest that leaves this out starts the container. The status condition Stopped says when a stop has taken effect.",
+          "enum": [
+            "CONTAINER_RUN_STATE_RUNNING",
+            "CONTAINER_RUN_STATE_STOPPED"
+          ],
+          "type": "string"
+        },
+        "volumes": {
+          "description": "The Disks and FileShares the container mounts, at most 8, as a Compose service's volumes in their long syntax. A disk is mounted by one machine at a time, and pins the container to the disk's node; a share must be on one of its networks and on a node, to which it pins the container; one on no node yet holds the container back. Changing them restarts the container. See docs/decisions/container-volumes.md.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerVolume"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerStatus": {
+      "additionalProperties": false,
+      "description": "ContainerStatus is the observed state of a container.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "placement": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.Placement",
+          "description": "The hardware of the node the container is placed on, as that node describes it now; unset until it is placed."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerVolume": {
+      "additionalProperties": false,
+      "description": "ContainerVolume is a volume a container mounts, as Compose writes one.",
+      "properties": {
+        "readOnly": {
+          "type": "boolean"
+        },
+        "source": {
+          "description": "Names what is mounted, in the container's project: a Disk, unless source_kind says otherwise.",
+          "type": "string"
+        },
+        "sourceKind": {
+          "description": "The kind source names. Hangar's, not Compose's: \"Disk\", which empty means, or \"FileShare\", which is mounted over NFS, nosuid and nodev, and never filled from the image.",
+          "type": "string"
+        },
+        "target": {
+          "description": "Where the volume is mounted: an absolute path, neither / nor under /proc, /sys, /dev or /run, resolved as the image's processes resolve it, and made if it is missing.",
+          "type": "string"
+        },
+        "type": {
+          "description": "\"volume\", the only type for now; empty means it. \"bind\" and \"tmpfs\" are refused.",
+          "type": "string"
+        },
+        "volume": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerVolumeOptions"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerVolumeOptions": {
+      "additionalProperties": false,
+      "description": "ContainerVolumeOptions are a Compose volume's own options.",
+      "properties": {
+        "nocopy": {
+          "description": "Leaves a new volume empty, rather than filled with what the image has at the target. Always so for a file share.",
+          "type": "boolean"
+        },
+        "subpath": {
+          "description": "Mounts this directory of the volume, a relative path, which must exist, instead of the whole volume.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.EnvVar": {
+      "additionalProperties": false,
+      "description": "EnvVar is one environment variable.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.NetworkInterface": {
+      "additionalProperties": false,
+      "description": "NetworkInterface is one network interface a Container or VirtualMachine asks for. Its name is eth0, eth1… by position; its address comes from the network's range.",
+      "properties": {
+        "network": {
+          "description": "Names a network in the object's project.",
+          "type": "string"
+        },
+        "securityGroups": {
+          "description": "SecurityGroups of the network the interface is in; empty is the network's implicit \"default\" alone. Naming others without \"default\" leaves it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.Placement": {
+      "additionalProperties": false,
+      "description": "Placement describes the hardware of a machine's host, never its load; every tenant with a machine on the node reads it. Fields are at most 64 printable characters. See docs/decisions/machine-placement.md.",
+      "properties": {
+        "chassis": {
+          "description": "Names the host's chassis, a DNS-1123 label such as \"generic-1u-2x-u2\"; a client draws one it does not know, or none, as a generic server.",
+          "type": "string"
+        },
+        "cpuGeneration": {
+          "description": "The CPU's microarchitecture and code name, such as \"Example Gen 3\": known to the node agent for the CPUs it has a name for, or from the node's configuration.",
+          "type": "string"
+        },
+        "cpuModel": {
+          "description": "The CPU as the host names it, without its core count, such as \"Example CPU 1000\".",
+          "type": "string"
+        },
+        "memory": {
+          "description": "The kind of the host's memory, never its size, such as \"DDR4-3200 ECC\".",
+          "type": "string"
+        },
+        "network": {
+          "description": "The host's Ethernet ports by the most speed each supports, never its link's, such as \"2 × 10 GbE\".",
+          "type": "string"
+        },
+        "region": {
+          "description": "The region the host is in, such as \"region-1\", from the node's configuration.",
+          "type": "string"
+        },
+        "site": {
+          "description": "The site within the region, such as a datacenter's name \"site-a\", from the node's configuration.",
+          "type": "string"
+        },
+        "storage": {
+          "description": "The host's disks by kind, such as \"2 × NVMe SSD\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.Resources": {
+      "additionalProperties": false,
+      "description": "Resources sizes the microVM. Each field is a quantity in Kubernetes syntax, such as \"2\", \"512Mi\" or \"10Gi\"; empty takes the default.",
+      "properties": {
+        "cpu": {
+          "description": "Whole vCPUs: \"2\" or \"2000m\", never a fraction.",
+          "type": "string"
+        },
+        "disk": {
+          "description": "Root disk size, at least 1Gi. It can grow but never shrink.",
+          "type": "string"
+        },
+        "memory": {
+          "description": "Guest memory, at least 128Mi.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Container runs an OCI image as its own microVM. See docs/decisions/machine-model.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "compute.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Container",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "Container",
+  "type": "object"
+}
