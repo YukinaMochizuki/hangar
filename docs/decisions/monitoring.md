@@ -49,11 +49,11 @@ restart count.
   in the repo, checked by `promtool` in CI.
 - **Alerts go to one private Telegram chat.** Two severities: `critical` is
   sent at once (a service down, a pool or mirror degraded, a disk failing, a
-  filesystem nearly full); `warning` is held to one daily window and sent as
-  one message (a certificate under 14 days, wear rising, platform-caused
-  machine failures that persist). The bot token is a file Alertmanager reads
-  (`bot_token_file`), installed from the vault like the host's other secrets;
-  the chat id is in the host env file.
+  filesystem nearly full, a machine the platform has kept from running for a
+  quarter of an hour); `warning` is held to one daily window and sent as
+  one message (a certificate under 14 days, wear rising). The bot token is
+  a file Alertmanager reads (`bot_token_file`), installed from the vault
+  like the host's other secrets; the chat id is in the host env file.
 - **No outside watcher, for now.** Nothing off the host checks it, so the
   host going down, losing its network, or its monitoring stopping alerts no
   one. The owner accepts this for M4. Alertmanager carries an always-firing
