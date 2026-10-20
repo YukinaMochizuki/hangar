@@ -5,6 +5,7 @@ package vmtest
 import (
 	"bufio"
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -35,6 +36,10 @@ type VM struct {
 	// Guest reaches the guest's agent; the machine UID it is given is
 	// ignored.
 	Guest chguest.Guest
+	// Disks are attached after the boot disk, as vdc on, raw.
+	Disks []string
+	// CPUs and MemoryMB size the guest; 0 is 2 and 2048.
+	CPUs, MemoryMB int
 
 	t       testing.TB
 	dir     string
@@ -78,10 +83,6 @@ func New(t testing.TB, cfg *guestv1.BootConfig) *VM {
 	})
 	v.Guest = chguest.Guest{Socket: func(string) string { return v.Path("vsock") }}
 
-	mac, addr, gw := v.Net()
-	if len(cfg.GetInterfaces()) == 0 {
-		cfg.Interfaces = []*guestv1.Interface{{Mac: mac, Address: addr, Gateway: gw}}
-	}
 	// Sparse, and a reflink where the filesystem has them.
 	if out, err := exec.Command("cp", "--sparse=always", "--reflink=auto", in.Rootfs, v.Path("root.img")).CombinedOutput(); err != nil {
 		t.Fatalf("copying the root disk: %v: %s", err, out)
@@ -90,6 +91,19 @@ func New(t testing.TB, cfg *guestv1.BootConfig) *VM {
 	// the guest's first reads, and the root mount alone takes 300ms or more.
 	if out, err := exec.Command("sync", v.Path("root.img")).CombinedOutput(); err != nil {
 		t.Fatalf("flushing the root disk: %v: %s", err, out)
+	}
+	v.SetBootConfig(cfg)
+	return v
+}
+
+// SetBootConfig writes the boot disk anew with cfg, whose interface is
+// filled in when it has none, for the next Start.
+func (v *VM) SetBootConfig(cfg *guestv1.BootConfig) {
+	t := v.t
+	t.Helper()
+	mac, addr, gw := v.Net()
+	if len(cfg.GetInterfaces()) == 0 {
+		cfg.Interfaces = []*guestv1.Interface{{Mac: mac, Address: addr, Gateway: gw}}
 	}
 	var disk bytes.Buffer
 	if err := bootdisk.Write(&disk, cfg); err != nil {
@@ -102,7 +116,12 @@ func New(t testing.TB, cfg *guestv1.BootConfig) *VM {
 	if err := os.WriteFile(v.Path("boot.img"), disk.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return v
+}
+
+// Addr is the guest's IPv4 address, without the prefix length.
+func (v *VM) Addr() string {
+	_, addr, _ := v.Net()
+	return strings.TrimSuffix(addr, "/24")
 }
 
 // Path is a file in the guest's directory: root.img, boot.img, console (the
@@ -131,23 +150,44 @@ func (v *VM) Put(src, name string) {
 }
 
 // Start launches Cloud Hypervisor as the node will: the root disk on vda,
-// the boot disk on vdb, the virtio console to a file, hybrid vsock.
+// the boot disk on vdb, Disks after them, the virtio console to a file,
+// hybrid vsock. A guest that is off may be started again, on the same
+// disks; its console and serial logs then start anew.
 func (v *VM) Start() {
 	t := v.t
 	t.Helper()
+	if v.cmd != nil {
+		select {
+		case <-v.exited:
+		default:
+			t.Fatal("Start: the guest is running")
+		}
+		v.stop()
+		v.exited = make(chan struct{})
+		// Cloud Hypervisor will not listen where a socket is left.
+		_ = os.Remove(v.Path("vsock"))
+	}
 	mac, _, gw := v.Net()
-	v.cmd = exec.Command("cloud-hypervisor",
+	cpus, mem := cmp.Or(v.CPUs, 2), cmp.Or(v.MemoryMB, 2048)
+	disks := []string{"path=" + v.Path("root.img") + ",image_type=raw", "path=" + v.Path("boot.img") + ",image_type=raw,readonly=on"}
+	for _, d := range v.Disks {
+		disks = append(disks, "path="+d+",image_type=raw")
+	}
+	args := []string{
 		"--kernel", in.Kernel,
 		"--initramfs", in.Initramfs,
 		"--cmdline", in.Cmdline,
-		"--cpus", "boot=2",
-		"--memory", "size=2048M",
-		"--disk", "path="+v.Path("root.img")+",image_type=raw", "path="+v.Path("boot.img")+",image_type=raw,readonly=on",
+		"--cpus", fmt.Sprintf("boot=%d", cpus),
+		"--memory", fmt.Sprintf("size=%dM", mem),
+		"--disk",
+	}
+	args = append(append(args, disks...),
 		"--net", fmt.Sprintf("tap=%s%d,ip=%s,mask=255.255.255.0,mac=%s", tapPrefix, v.n, gw, mac),
 		"--vsock", fmt.Sprintf("cid=%d,socket=%s", GuestCID, v.Path("vsock")),
 		"--console", "file="+v.Path("console"),
 		"--serial", "file="+v.Path("serial"),
 	)
+	v.cmd = exec.Command("cloud-hypervisor", args...)
 	// The guest dies with the test binary, however that ends.
 	v.cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	log, err := os.Create(v.Path("ch.log"))
@@ -172,6 +212,13 @@ func (v *VM) Start() {
 
 // Exited is closed once Cloud Hypervisor has exited.
 func (v *VM) Exited() <-chan struct{} { return v.exited }
+
+// Kill kills Cloud Hypervisor, as a crash of the host's side would end the
+// guest, and waits for it to exit.
+func (v *VM) Kill() {
+	_ = v.cmd.Process.Kill()
+	<-v.exited
+}
 
 // dump logs what the host saw of a failed guest.
 func (v *VM) dump() {
@@ -279,6 +326,8 @@ type ExecOpts struct {
 	CloseStdin bool
 	TTY        bool
 	Size       *guestv1.WindowSize
+	// User runs the process as Process.user says; empty is root.
+	User string
 	// Signal is sent once the first output arrives.
 	Signal int32
 }
@@ -289,7 +338,7 @@ func (v *VM) Exec(ctx context.Context, args []string, o ExecOpts) (ExecResult, e
 	defer done()
 	stream := c.Exec(ctx)
 	defer func() { _ = stream.CloseResponse() }()
-	start := &guestv1.ExecStart{Process: &guestv1.Process{Args: args}, Tty: o.TTY, Size: o.Size}
+	start := &guestv1.ExecStart{Process: &guestv1.Process{Args: args, User: o.User}, Tty: o.TTY, Size: o.Size}
 	if err := stream.Send(&guestv1.ExecRequest{Message: &guestv1.ExecRequest_Start{Start: start}}); err != nil {
 		return ExecResult{}, err
 	}

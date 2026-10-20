@@ -1,0 +1,75 @@
+syntax = "proto3";
+
+// What the node tells a FileShare's server: hangar-init, booted with
+// BootConfig.file_share_server, serving one share over NFSv4.2. See
+// docs/decisions/file-shares.md.
+package hangar.guest.v1;
+
+// FileShareServerService is served by hangar-init in a FileShare's server,
+// beside GuestAgentService, on the same vsock port and to the host alone.
+service FileShareServerService {
+  // SetExport replaces the server's whole export. The server drops what
+  // nfsd cached of the last one, so a client's next request is judged by
+  // this one: a client left out loses the share at once, its mount
+  // included. The first export a server has, from its boot disk or from
+  // this call, starts nfsd.
+  rpc SetExport(SetExportRequest) returns (SetExportResponse);
+}
+
+message SetExportRequest {
+  FileShareExport export = 1;
+}
+
+message SetExportResponse {}
+
+// FileShareServer makes a guest a FileShare's server, which serves the
+// filesystem on its first data disk (/dev/vdc), made when the disk is
+// blank, over NFSv4.2 on port 2049 to the clients its export lists. It
+// reads its boot disk at vdb as every guest does, and never reads vda. It
+// runs no process of the tenant's.
+message FileShareServer {
+  // The export the server starts with. Without one, nfsd waits for the
+  // first SetExport.
+  FileShareExport export = 1;
+}
+
+// FileShareExport is who may mount a share, and how. It is the share's
+// root, exported as the pseudo-root, secure and sync.
+message FileShareExport {
+  // Each client by its address; one may be listed once. A client not
+  // listed is refused.
+  repeated FileShareClient clients = 1;
+  FileShareSquash squash = 2;
+  // The user and group squashed users become, the API's 65534 when it
+  // sets none.
+  uint32 anon_uid = 3;
+  uint32 anon_gid = 4;
+}
+
+// FileShareClient is one machine allowed to mount the share.
+message FileShareClient {
+  // An IPv4 or IPv6 address, without a prefix length.
+  string address = 1;
+  // Enforced by the server, whatever the client's mount says.
+  bool read_only = 2;
+}
+
+// FileShareSquash is which users of a client become the anonymous user.
+enum FileShareSquash {
+  // Refused: the node always says which.
+  FILE_SHARE_SQUASH_UNSPECIFIED = 0;
+  // Every user keeps its uid and gids, root included.
+  FILE_SHARE_SQUASH_NONE = 1;
+  // Root becomes the anonymous user; other users keep theirs.
+  FILE_SHARE_SQUASH_ROOT = 2;
+  // Every user becomes the anonymous user.
+  FILE_SHARE_SQUASH_ALL = 3;
+}
+
+// FileShareMount is a FileShare a container mounts as a volume, over
+// NFSv4.2, nosuid and nodev.
+message FileShareMount {
+  // The share's server on the machine's network, an IPv4 or IPv6
+  // address.
+  string address = 1;
+}

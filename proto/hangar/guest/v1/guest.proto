@@ -8,12 +8,14 @@ syntax = "proto3";
 package hangar.guest.v1;
 
 import "google/protobuf/duration.proto";
+import "hangar/guest/v1/file_share.proto";
 
 // BootConfig is all a guest needs from the node to boot, and to boot again:
 // what to run and how it reaches the network. It comes on a small read-only
 // disk (internal/guest/bootdisk).
 message BootConfig {
   // The container's main process. The guest powers off when it exits.
+  // Unused by a FileShare's server.
   Process process = 1;
   repeated Interface interfaces = 2;
   string hostname = 3;
@@ -24,12 +26,18 @@ message BootConfig {
   // The volumes to mount before the process runs, in this order. See
   // docs/decisions/container-volumes.md.
   repeated Volume volumes = 6;
+  // The machine's uid, its NFSv4 client identity: unique to the machine,
+  // and not the hostname, which the tenant sets.
+  string machine_uid = 7;
+  // Set, the guest is this FileShare's server instead of a container: it
+  // has no root disk and no process, and ignores volumes.
+  FileShareServer file_share_server = 8;
 }
 
-// Volume is a disk the guest mounts: formatted when blank, and filled from
-// the image when new.
+// Volume is a disk the guest mounts, formatted when blank and filled from
+// the image when new; or a FileShare, mounted over NFS, never filled.
 message Volume {
-  // The block device, such as /dev/vdc.
+  // The block device, such as /dev/vdc; empty for a FileShare.
   string device = 1;
   // An absolute path, resolved in the root disk.
   string target = 2;
@@ -38,8 +46,11 @@ message Volume {
   bool nocopy = 4;
   // A directory of the volume, relative, mounted instead of all of it.
   string subpath = 5;
-  // The Disk's name, for messages.
+  // The Disk's or the FileShare's name, for messages.
   string name = 6;
+  // Set for a FileShare instead of device. It is mounted once the network
+  // is up, and nocopy is implied.
+  FileShareMount file_share = 7;
 }
 
 // Process is a process to run in the guest.

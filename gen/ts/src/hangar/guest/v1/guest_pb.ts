@@ -12,13 +12,15 @@ import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegen
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
 import type { Duration } from "@bufbuild/protobuf/wkt";
 import { file_google_protobuf_duration } from "@bufbuild/protobuf/wkt";
+import type { FileShareMount, FileShareServer } from "./file_share_pb";
+import { file_hangar_guest_v1_file_share } from "./file_share_pb";
 import type { Message } from "@bufbuild/protobuf";
 
 /**
  * Describes the file hangar/guest/v1/guest.proto.
  */
 export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
-  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSLIAQoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lImoKBlZvbHVtZRIOCgZkZXZpY2UYASABKAkSDgoGdGFyZ2V0GAIgASgJEhEKCXJlYWRfb25seRgDIAEoCBIOCgZub2NvcHkYBCABKAgSDwoHc3VicGF0aBgFIAEoCRIMCgRuYW1lGAYgASgJIkcKB1Byb2Nlc3MSDAoEYXJncxgBIAMoCRILCgNlbnYYAiADKAkSEwoLd29ya2luZ19kaXIYAyABKAkSDAoEdXNlchgEIAEoCSJeCglJbnRlcmZhY2USCwoDbWFjGAEgASgJEg8KB2FkZHJlc3MYAiABKAkSDwoHZ2F0ZXdheRgDIAEoCRIMCgRpcHY2GAQgASgJEhQKDGlwdjZfZ2F0ZXdheRgFIAEoCSJACg5TZXRJUHY2UmVxdWVzdBIuCgppbnRlcmZhY2VzGAEgAygLMhouaGFuZ2FyLmd1ZXN0LnYxLkludGVyZmFjZSIRCg9TZXRJUHY2UmVzcG9uc2UiNwoLU3RvcFJlcXVlc3QSKAoFZ3JhY2UYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iDgoMU3RvcFJlc3BvbnNlIg0KC1BpbmdSZXF1ZXN0IkoKDFBpbmdSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEikKBnVwdGltZRgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiLLAQoLRXhlY1JlcXVlc3QSKwoFc3RhcnQYASABKAsyGi5oYW5nYXIuZ3Vlc3QudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABIyCgtzdGRpbl9jbG9zZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5TdGRpbkNsb3NlSAASLQoGcmVzaXplGAQgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemVIABIQCgZzaWduYWwYBSABKAVIAEIJCgdtZXNzYWdlIm4KCUV4ZWNTdGFydBIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSCwoDdHR5GAIgASgIEikKBHNpemUYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZSIMCgpTdGRpbkNsb3NlIigKCldpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNImgKDEV4ZWNSZXNwb25zZRIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABIpCgRleGl0GAMgASgLMhkuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNFeGl0SABCCQoHbWVzc2FnZSIoCghFeGVjRXhpdBIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBTK0AgoRR3Vlc3RBZ2VudFNlcnZpY2USQwoEUGluZxIcLmhhbmdhci5ndWVzdC52MS5QaW5nUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5QaW5nUmVzcG9uc2USRwoERXhlYxIcLmhhbmdhci5ndWVzdC52MS5FeGVjUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5FeGVjUmVzcG9uc2UoATABEkMKBFN0b3ASHC5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlc3BvbnNlEkwKB1NldElQdjYSHy5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlcXVlc3QaIC5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlc3BvbnNlQsEBChNjb20uaGFuZ2FyLmd1ZXN0LnYxQgpHdWVzdFByb3RvUAFaQGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2d1ZXN0L3YxO2d1ZXN0djGiAgNIR1iqAg9IYW5nYXIuR3Vlc3QuVjHKAg9IYW5nYXJcR3Vlc3RcVjHiAhtIYW5nYXJcR3Vlc3RcVjFcR1BCTWV0YWRhdGHqAhFIYW5nYXI6Okd1ZXN0OjpWMWIGcHJvdG8z", [file_google_protobuf_duration]);
+  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKaAgoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlciKfAQoGVm9sdW1lEg4KBmRldmljZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSEQoJcmVhZF9vbmx5GAMgASgIEg4KBm5vY29weRgEIAEoCBIPCgdzdWJwYXRoGAUgASgJEgwKBG5hbWUYBiABKAkSMwoKZmlsZV9zaGFyZRgHIAEoCzIfLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVNb3VudCJHCgdQcm9jZXNzEgwKBGFyZ3MYASADKAkSCwoDZW52GAIgAygJEhMKC3dvcmtpbmdfZGlyGAMgASgJEgwKBHVzZXIYBCABKAkiXgoJSW50ZXJmYWNlEgsKA21hYxgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEg8KB2dhdGV3YXkYAyABKAkSDAoEaXB2NhgEIAEoCRIUCgxpcHY2X2dhdGV3YXkYBSABKAkiQAoOU2V0SVB2NlJlcXVlc3QSLgoKaW50ZXJmYWNlcxgBIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2UiEQoPU2V0SVB2NlJlc3BvbnNlIjcKC1N0b3BSZXF1ZXN0EigKBWdyYWNlGAEgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIg4KDFN0b3BSZXNwb25zZSINCgtQaW5nUmVxdWVzdCJKCgxQaW5nUmVzcG9uc2USDwoHdmVyc2lvbhgBIAEoCRIpCgZ1cHRpbWUYAiABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iywEKC0V4ZWNSZXF1ZXN0EisKBXN0YXJ0GAEgASgLMhouaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNTdGFydEgAEg8KBXN0ZGluGAIgASgMSAASMgoLc3RkaW5fY2xvc2UYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuU3RkaW5DbG9zZUgAEi0KBnJlc2l6ZRgEIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSJuCglFeGVjU3RhcnQSKQoHcHJvY2VzcxgBIAEoCzIYLmhhbmdhci5ndWVzdC52MS5Qcm9jZXNzEgsKA3R0eRgCIAEoCBIpCgRzaXplGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemUiDAoKU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJoCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKQoEZXhpdBgDIAEoCzIZLmhhbmdhci5ndWVzdC52MS5FeGVjRXhpdEgAQgkKB21lc3NhZ2UiKAoIRXhlY0V4aXQSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUytAIKEUd1ZXN0QWdlbnRTZXJ2aWNlEkMKBFBpbmcSHC5oYW5nYXIuZ3Vlc3QudjEuUGluZ1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuUGluZ1Jlc3BvbnNlEkcKBEV4ZWMSHC5oYW5nYXIuZ3Vlc3QudjEuRXhlY1JlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuRXhlY1Jlc3BvbnNlKAEwARJDCgRTdG9wEhwuaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlN0b3BSZXNwb25zZRJMCgdTZXRJUHY2Eh8uaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXF1ZXN0GiAuaGFuZ2FyLmd1ZXN0LnYxLlNldElQdjZSZXNwb25zZULBAQoTY29tLmhhbmdhci5ndWVzdC52MUIKR3Vlc3RQcm90b1ABWkBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ndWVzdC92MTtndWVzdHYxogIDSEdYqgIPSGFuZ2FyLkd1ZXN0LlYxygIPSGFuZ2FyXEd1ZXN0XFYx4gIbSGFuZ2FyXEd1ZXN0XFYxXEdQQk1ldGFkYXRh6gIRSGFuZ2FyOjpHdWVzdDo6VjFiBnByb3RvMw", [file_google_protobuf_duration, file_hangar_guest_v1_file_share]);
 
 /**
  * BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -30,6 +32,7 @@ export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
 export type BootConfig = Message<"hangar.guest.v1.BootConfig"> & {
   /**
    * The container's main process. The guest powers off when it exits.
+   * Unused by a FileShare's server.
    *
    * @generated from field: hangar.guest.v1.Process process = 1;
    */
@@ -66,6 +69,22 @@ export type BootConfig = Message<"hangar.guest.v1.BootConfig"> & {
    * @generated from field: repeated hangar.guest.v1.Volume volumes = 6;
    */
   volumes: Volume[];
+
+  /**
+   * The machine's uid, its NFSv4 client identity: unique to the machine,
+   * and not the hostname, which the tenant sets.
+   *
+   * @generated from field: string machine_uid = 7;
+   */
+  machineUid: string;
+
+  /**
+   * Set, the guest is this FileShare's server instead of a container: it
+   * has no root disk and no process, and ignores volumes.
+   *
+   * @generated from field: hangar.guest.v1.FileShareServer file_share_server = 8;
+   */
+  fileShareServer?: FileShareServer | undefined;
 };
 
 /**
@@ -76,14 +95,14 @@ export const BootConfigSchema: GenMessage<BootConfig> = /*@__PURE__*/
   messageDesc(file_hangar_guest_v1_guest, 0);
 
 /**
- * Volume is a disk the guest mounts: formatted when blank, and filled from
- * the image when new.
+ * Volume is a disk the guest mounts, formatted when blank and filled from
+ * the image when new; or a FileShare, mounted over NFS, never filled.
  *
  * @generated from message hangar.guest.v1.Volume
  */
 export type Volume = Message<"hangar.guest.v1.Volume"> & {
   /**
-   * The block device, such as /dev/vdc.
+   * The block device, such as /dev/vdc; empty for a FileShare.
    *
    * @generated from field: string device = 1;
    */
@@ -116,11 +135,19 @@ export type Volume = Message<"hangar.guest.v1.Volume"> & {
   subpath: string;
 
   /**
-   * The Disk's name, for messages.
+   * The Disk's or the FileShare's name, for messages.
    *
    * @generated from field: string name = 6;
    */
   name: string;
+
+  /**
+   * Set for a FileShare instead of device. It is mounted once the network
+   * is up, and nocopy is implied.
+   *
+   * @generated from field: hangar.guest.v1.FileShareMount file_share = 7;
+   */
+  fileShare?: FileShareMount | undefined;
 };
 
 /**

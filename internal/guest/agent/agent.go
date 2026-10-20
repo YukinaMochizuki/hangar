@@ -30,6 +30,8 @@ const MaxMessage = 1 << 20
 
 // Server serves GuestAgentService.
 type Server struct {
+	// Reaper starts what Exec runs; without one, as in a FileShare's server,
+	// which runs nothing of the tenant's, Exec is refused.
 	Reaper *supervise.Reaper
 	// Root is where processes find their programs and users; "/" in the
 	// guest.
@@ -101,6 +103,9 @@ const drainTimeout = 2 * time.Second
 // Exec runs a process for as long as the call lasts. The process group is
 // killed if the caller goes away first.
 func (s *Server) Exec(ctx context.Context, stream *connect.BidiStream[guestv1.ExecRequest, guestv1.ExecResponse]) error {
+	if s.Reaper == nil {
+		return connect.NewError(connect.CodeUnimplemented, errors.New("this guest runs no processes"))
+	}
 	first, err := stream.Receive()
 	if err != nil {
 		return err
