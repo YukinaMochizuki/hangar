@@ -37,9 +37,10 @@ gives the semantics users already know.
   give, and is refused, as `tmpfs` is until it is built; both are refused
   by name, not as unknown.
 - **`source` names a Disk, or what `sourceKind` says.** `sourceKind` is
-  Hangar's, not Compose's: empty is `Disk`, the only kind for now. A
-  `FileShare` (`storage-zfs.md`) will be another kind, the service side
-  written the same way; what backs a volume is chosen where Compose
+  Hangar's, not Compose's: empty is `Disk`, the only kind built so far.
+  `FileShare` (`file-shares.md`) is the other, the service side written
+  the same way, mounted over NFS `nosuid,nodev` and never filled from the
+  image; what backs a volume is chosen where Compose
   chooses it, by the top-level volume's driver, which the translator maps
   to the kind. Two kinds keep their own names, so a source never depends on
   which kind happens to hold a name.

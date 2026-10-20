@@ -11,6 +11,7 @@ the change.
 | `machine-model.md` | Containers and VMs are both microVMs; one internal `Machine` |
 | `machine-placement.md` | A container's or VM's status carries its node's `Placement`, the host's hardware and nothing of its load |
 | `storage-zfs.md` | ZFS zvols for machine disks, NFS for shared files, no virtio-fs |
+| `file-shares.md` | `FileShare`: NFSv4.2 served by a server microVM per share from its own zvol, on one to eight networks; only declaring machines mount it, and the server can only reply |
 | `container-volumes.md` | A container mounts Disks as volumes in Compose's long syntax, formatted and filled from the image in the guest; a Disk's status says what it is used as |
 | `vm-images.md` | A platform catalogue of disk images, fetched by URL and sha256 and written raw onto a base |
 | `machine-sizes.md` | `MachineSize`: the sizes machines are offered in are the platform's, set by its administrator, read by all; a template, never recorded on a machine |

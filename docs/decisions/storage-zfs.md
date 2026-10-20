@@ -18,10 +18,12 @@ unreliable on virtio-fs.
 - Every machine disk is a zvol. OCI and cloud images are converted once into a
   base zvol snapshot, and each machine clones from it.
 - Datasets are for the host itself (image cache, database, logs, later memory
-  snapshots) and for shared storage.
-- Shared storage (`FileShare`) is a dataset exported over NFSv4 on the tenant's
-  private network. It is for sharing data, not a working directory: workspaces,
-  databases and `/var/lib/docker` stay on zvols.
+  snapshots).
+- Shared storage (`FileShare`) is served over NFSv4 on the tenant's private
+  networks by a server microVM of its own, from a zvol only that server
+  mounts (`file-shares.md`); the host never parses NFS. It is for sharing
+  data, not a working directory: workspaces, databases and
+  `/var/lib/docker` stay on zvols.
 - Guests never mount virtio-fs.
 
 ### Container images and root disks
