@@ -1182,6 +1182,14 @@ func (d network) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 			}
 		}
 	}
+	for uid, ifs := range d.h.interfaces {
+		for name, o := range ifs {
+			if o.NetworkUID == i.NetworkUID && strings.EqualFold(o.MAC, i.MAC) && (uid != i.MachineUID || name != i.Name) {
+				return driver.Interface{}, fmt.Errorf("machine %s's %s: %s is machine %s's %s's: %w",
+					i.MachineUID, i.Name, i.MAC, uid, name, driver.ErrMACInUse)
+			}
+		}
+	}
 	sum := sha256.Sum256([]byte(i.MachineUID + "/" + i.Name))
 	i.Device = "hm" + hex.EncodeToString(sum[:])[:13]
 	if d.h.interfaces[i.MachineUID] == nil {

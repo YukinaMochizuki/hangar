@@ -40,7 +40,8 @@ func BreakNftWatch(d *Driver, networkUID string) bool {
 func EventsRead() int64 { return eventsRead.Load() }
 
 // FailSubscriptions makes the named subscriptions ("links", "addrs" or
-// "routes") of watches started from now on fail; none makes them work again.
+// "routes", or a network's "neighs") of watches started from now on fail;
+// none makes them work again.
 func FailSubscriptions(what ...string) error {
 	if len(what) == 0 {
 		subscribeNS.Store(nil)

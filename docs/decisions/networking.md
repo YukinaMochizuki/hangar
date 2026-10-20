@@ -194,15 +194,23 @@ address.
     aliases, before a tap joins the bridge, and go with it. So a guest
     cannot pass as another of its network, which the metadata service
     and file shares' exports (`file-shares.md`) rely on to know who asks.
-  - **A tap receives only its own unicast** (decided 2026-10, not built
-    yet). Each tap's MAC, from its alias, is a static entry of the
-    bridge's forwarding database on that tap, and taps do not take
-    flooded unknown unicast; broadcast, and so ARP and DHCP, still
-    floods. A bridge that has not learnt, or has aged out, where a MAC is
-    otherwise floods a frame for it to every tap, so a machine could read
-    its neighbours' traffic. With it, nothing of one machine's unicast
+  - **A tap receives only its own unicast.** Each tap is a bridge port
+    that neither learns nor takes flooded unknown unicast, and its MAC,
+    from its alias, is a static entry of the bridge's forwarding database
+    on that tap, gone with the tap; broadcast and multicast still flood to
+    it, for ARP, DHCP and neighbour discovery. A bridge that has not
+    learnt, or has forgotten, where a MAC is otherwise floods a frame for
+    it to every tap, so a machine could read its neighbours' traffic; here
+    such a frame is dropped. With it, nothing of one machine's unicast
     reaches another, which is what lets a file share's traffic go
-    unencrypted on one node.
+    unencrypted on one node. A tap joins the bridge down, and is up only
+    once its port is set, so it is never flooded. No two interfaces of a
+    network, nor an interface and the gateway, have one MAC: the driver
+    refuses the second (`ErrMACInUse`). The driver reads the port's flags
+    and the tap's entries back, removes every other entry on a tap but the
+    kernel's own, and puts back the bridge's own entry for the gateway,
+    which a flush takes too. It watches all of these, and an entry on the
+    bridge itself for a tap's MAC, which would take that tap's frames.
   - **A file share's server sends only replies** (`file-shares.md`): in
     `bridge hangar_sg`, its taps take only new TCP connections to 2049
     from the machines declaring the share, whatever their security

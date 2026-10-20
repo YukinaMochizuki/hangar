@@ -387,6 +387,9 @@ func ensureBridge(h *netlink.Handle, uid string) (netlink.Link, error) {
 	if err := ensureMAC(h, br, mac); err != nil {
 		return nil, err
 	}
+	if err := ensureBridgeEntry(h, br, mac); err != nil {
+		return nil, err
+	}
 	return br, ensureUp(h, br)
 }
 
@@ -740,6 +743,9 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 			}
 		}
 	}
+	if err := macTaken(all, i); err != nil {
+		return driver.Interface{}, err
+	}
 	// The interface's other taps, on another network or duplicates, go,
 	// unless a VM holds one; that is refused, as deleting the interface is.
 	var link netlink.Link
@@ -789,10 +795,29 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if err := ensureFirewallTable(ns, gateway); err != nil {
 		return driver.Interface{}, err
 	}
+	// A tap joins the bridge down and comes up once its port is set. An up
+	// port with carrier forwards at once, and would be flooded until then.
 	if link.Attrs().MasterIndex != br.Attrs().Index {
+		if link.Attrs().Flags&net.FlagUp != 0 {
+			if err := h.LinkSetDown(link); err != nil {
+				return driver.Interface{}, err
+			}
+		}
 		if err := h.LinkSetMasterByIndex(link, br.Attrs().Index); err != nil {
 			return driver.Interface{}, err
 		}
+		if link, err = h.LinkByIndex(link.Attrs().Index); err != nil {
+			return driver.Interface{}, err
+		}
+	}
+	ports, err := openPortSocket(ns)
+	if err != nil {
+		return driver.Interface{}, err
+	}
+	defer ports.Close()
+	mac, _ := net.ParseMAC(i.MAC)
+	if err := ensurePort(h, ports, br, link, mac); err != nil {
+		return driver.Interface{}, fmt.Errorf("machine %s's %s: %w", i.MachineUID, i.Name, err)
 	}
 	if err := ensureUp(h, link); err != nil {
 		return driver.Interface{}, err

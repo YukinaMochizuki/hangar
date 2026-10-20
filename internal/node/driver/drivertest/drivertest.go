@@ -6,6 +6,7 @@ package drivertest
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"net/netip"
@@ -682,9 +683,12 @@ var testNet = driver.NetworkSpec{
 	UID: "n1", CIDR: netip.MustParsePrefix("10.0.0.0/24"), Transit: netip.MustParsePrefix("100.64.0.0/31"),
 }
 
+// eth0 is machine's eth0 on testNet, with a MAC of its own, as no two
+// interfaces of a network may share one.
 func eth0(machine string) driver.Interface {
+	sum := sha256.Sum256([]byte(machine))
 	return driver.Interface{
-		MachineUID: machine, Name: "eth0", NetworkUID: testNet.UID, MAC: "02:00:00:00:00:01",
+		MachineUID: machine, Name: "eth0", NetworkUID: testNet.UID, MAC: fmt.Sprintf("02:01:%02x:%02x:%02x:%02x", sum[0], sum[1], sum[2], sum[3]),
 		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"),
 	}
 }
@@ -720,6 +724,15 @@ func network(t *testing.T, h Host) {
 	}
 	if second.Device == made.Device {
 		t.Errorf("two machines share the device %q", made.Device)
+	}
+	// One MAC's frames go to one tap.
+	twin := eth0("m3")
+	twin.MAC, twin.Address = strings.ToUpper(made.MAC), netip.MustParsePrefix("10.0.0.4/24")
+	if _, err := h.Network.EnsureInterface(ctx, twin); !errors.Is(err, driver.ErrMACInUse) {
+		t.Errorf("an interface given the MAC another of its network has: %v, want ErrMACInUse", err)
+	}
+	if ifs, _ := h.Network.Interfaces(ctx); len(ifs) != 2 {
+		t.Errorf("after refusing a MAC, interfaces %+v", ifs)
 	}
 	must(t, h.Network.DeleteInterfaces(ctx, other.MachineUID))
 	must(t, h.Network.DeleteInterfaces(ctx, "m1"))

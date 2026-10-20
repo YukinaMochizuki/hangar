@@ -1,6 +1,7 @@
 package hostnet
 
 import (
+	"bytes"
 	"net"
 	"strings"
 	"sync"
@@ -131,6 +132,20 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 	for _, l := range all {
 		seen[l.Attrs().Index] = stateOf(l)
 	}
+	// ports is each bridge port's flags as last seen. A port seen the first
+	// time is a change only if its flags are not as the driver sets them.
+	ports := map[int]portFlags{}
+	// isTapMAC says whether mac is a tap's interface's, by its alias.
+	isTapMAC := func(mac net.HardwareAddr) bool {
+		for _, l := range seen {
+			if t, ok := decodeTap(l.alias); ok && strings.HasPrefix(l.name, tapPrefix) {
+				if m, err := net.ParseMAC(t.MAC); err == nil && bytes.Equal(m, mac) {
+					return true
+				}
+			}
+		}
+		return false
+	}
 	// A subscription that failed to start never closes its channel, so only
 	// those that started are drained.
 	var started []func()
@@ -148,8 +163,27 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 		opts = append(opts, nftables.WithNetNSFd(int(*ns)))
 	}
 	var conn *nftables.Conn
+	var neighs chan netlink.NeighUpdate
+	// The port flags the driver sets are read here, as a port's messages
+	// come; the netlink package parses only some of them.
+	var portSock *portSocket
 	if err == nil {
 		started = append(started, func() { drain(routes) })
+		// Only a network's namespace has the driver's bridge.
+		if ns != nil {
+			neighs = make(chan netlink.NeighUpdate, 64)
+			err = netlink.NeighSubscribeWithOptions(neighs, w.subs, netlink.NeighSubscribeOptions{Namespace: at("neighs"), ErrorCallback: fail})
+		}
+	}
+	if err == nil {
+		if neighs != nil {
+			started = append(started, func() { drain(neighs) })
+		}
+		if ns != nil {
+			portSock, err = openPortSocket(*ns)
+		}
+	}
+	if err == nil {
 		conn, err = nftables.New(opts...)
 	}
 	var tables chan *nftables.MonitorEvent
@@ -164,6 +198,9 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 		w.endSubs()
 		for _, f := range started {
 			f()
+		}
+		if portSock != nil {
+			portSock.Close()
 		}
 		return nil, err
 	}
@@ -187,6 +224,9 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 			for _, f := range started {
 				f()
 			}
+			if portSock != nil {
+				portSock.Close()
+			}
 		}()
 		for {
 			var changed bool
@@ -200,9 +240,29 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 					continue
 				}
 				// A bridge port's state comes in messages of its own, which
-				// lack the rest of the link; its master is in the link's.
+				// lack the rest of the link; its master is in the link's. Of
+				// the port's, only the flags the driver sets matter: its
+				// forwarding state follows the tap's carrier.
 				if u.Family == unix.AF_BRIDGE {
-					continue
+					idx := int(u.Index)
+					if u.Header.Type != unix.RTM_NEWLINK || portSock == nil {
+						delete(ports, idx)
+						continue
+					}
+					all, err := portSock.flags()
+					if err != nil {
+						changed = true
+						break
+					}
+					now, isPort := all[idx]
+					if !isPort {
+						delete(ports, idx)
+						continue
+					}
+					before, known := ports[idx]
+					ports[idx] = now
+					changed = known && before != now || !known && now != tapPort
+					break
 				}
 				// A link's carrier comes and goes on its own, as a tap's
 				// with its VM: only what the driver sets is a change.
@@ -227,6 +287,13 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 				}
 				changed = u.Family == unix.AF_INET && (u.LinkIndex == 0 || ours(u.LinkIndex)) ||
 					u.Family == unix.AF_INET6 && ours6(u.LinkIndex)
+			case u, ok := <-neighs:
+				if !ok {
+					neighs = nil
+					continue
+				}
+				l, known := seen[u.LinkIndex]
+				changed = isDriversEntry(u.Neigh, l, known, isTapMAC)
 			case e, ok := <-tables:
 				if !ok {
 					fail(nil)
@@ -241,6 +308,27 @@ func (d *Driver) startWatch(ns *netns.NsHandle) (*watch, error) {
 		}
 	}()
 	return w, nil
+}
+
+// isDriversEntry says whether n, an entry of a bridge's forwarding database
+// on link l, is one the driver sets or removes: every one on a tap but the
+// kernel's own for its address, the bridge's for its own, and one on the
+// bridge for a tap's interface's MAC, which takes that tap's frames.
+func isDriversEntry(n netlink.Neigh, l linkState, known bool, isTapMAC func(net.HardwareAddr) bool) bool {
+	if n.Family != unix.AF_BRIDGE || n.MasterIndex == 0 {
+		return false
+	}
+	if !known {
+		return true
+	}
+	own, _ := net.ParseMAC(l.mac)
+	switch {
+	case strings.HasPrefix(l.name, tapPrefix):
+		return !isKernels(n, own)
+	case l.name == nsBridge:
+		return isBridgeEntry(n, n.LinkIndex, own) || isTapMAC(n.HardwareAddr)
+	}
+	return false
 }
 
 // linkState is what of a link the driver sets or relies on.
