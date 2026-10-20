@@ -141,15 +141,63 @@ type seriesDef struct {
 
 // promQL is the query for a range, its rate window filled in.
 func (d seriesDef) promQL(r seriesRange) string {
-	w := max(r.step, minRateWindow)
-	return strings.ReplaceAll(d.query, "$window", strconv.FormatInt(int64(w/time.Second), 10)+"s")
+	return withWindow(d.query, max(r.step, minRateWindow))
 }
 
-const gib = 1 << 30
+// withWindow fills $window in a query with w, written as Prometheus writes
+// a duration: 5m, 1h.
+func withWindow(q string, w time.Duration) string {
+	d := strconv.FormatInt(int64(w/time.Second), 10) + "s"
+	switch {
+	case w%time.Hour == 0:
+		d = strconv.FormatInt(int64(w/time.Hour), 10) + "h"
+	case w%time.Minute == 0:
+		d = strconv.FormatInt(int64(w/time.Minute), 10) + "m"
+	}
+	return strings.ReplaceAll(q, "$window", d)
+}
 
-// apiServerErrorCodes are the Connect codes that are the server's failing,
-// as the rpc metrics label them; the others are the caller's.
-const apiServerErrorCodes = `internal|unknown|unavailable|data_loss|deadline_exceeded`
+// The thresholds a check or a series' alert_above stands at, each that of
+// the alerting rule named, in deploy/host/monitoring/rules/host.yml or
+// services.yml. TestThresholdsMatchTheRules holds them to the rules' text.
+const (
+	// CertificateExpiresSoon and CertificateRenewalLate, in days.
+	certCriticalDays = 7
+	certWarningDays  = 14
+	// HostMemoryLow, in bytes left.
+	memoryLowBytes = 1073741824
+	// ZpoolAlmostFull and ZpoolFilling, a share of the pool.
+	poolCriticalUsed = 0.9
+	poolWarningUsed  = 0.8
+	// ImagesQuotaAlmostFull, a share of the quota.
+	imagesCriticalUsed = 0.9
+	// SmartWearHigh, in percent of the rated endurance.
+	diskWearWarning = 80
+	// DiskTemperatureHigh, in °C.
+	diskTempWarning = 70
+	// ClockNotSynchronised, in seconds of offset.
+	clockOffsetWarning = 0.5
+	// UnitRestartingOften, restarts in an hour.
+	unitRestartsWarning = 3
+	// ApiErrorsHigh, a share of the API's calls.
+	apiErrorRateCritical = 0.05
+	// ApiLatencyHigh, in seconds.
+	apiLatencyWarning = 1
+)
+
+// apiServerErrorCodes are the Connect codes a server's own failure ends a
+// call with, as ApiErrorsHigh counts them; the others are the caller's.
+const apiServerErrorCodes = `unknown|internal|unavailable|data_loss`
+
+// The API's error rate is ApiErrorsHigh's: calls ended with a server error,
+// over all calls.
+const (
+	apiErrorCallsRate = `sum(rate(hangar_apiserver_rpc_requests_total{code=~"` + apiServerErrorCodes + `"}[$window]))`
+	apiCallsRate      = `sum(rate(hangar_apiserver_rpc_requests_total[$window]))`
+	// apiLatencyP99 is ApiLatencyHigh's: unary calls only, as the
+	// apiserver leaves streams out of its histogram.
+	apiLatencyP99 = `histogram_quantile(0.99, sum by (le) (rate(hangar_apiserver_rpc_duration_seconds_bucket[$window])))`
+)
 
 var seriesDefs = map[monitoringv1alpha1.SeriesName]seriesDef{
 	monitoringv1alpha1.SeriesName_SERIES_NAME_HOST_CPU: {
@@ -160,27 +208,31 @@ var seriesDefs = map[monitoringv1alpha1.SeriesName]seriesDef{
 		query:    qMemTotal + ` - (` + qMemAvailable + `)`,
 		unit:     monitoringv1alpha1.Unit_UNIT_BYTES,
 		capacity: qMemTotal,
-		// HostMemoryLow: less than 1 GiB left.
-		alertAboveOf: func(total float64) float64 { return total - gib },
+		// HostMemoryLow.
+		alertAboveOf: func(total float64) float64 { return total - memoryLowBytes },
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_POOL_USED: {
 		query:    `sum(hangar_zpool_allocated_bytes)`,
 		unit:     monitoringv1alpha1.Unit_UNIT_BYTES,
 		capacity: `sum(hangar_zpool_size_bytes)`,
-		// ZpoolAlmostFull: over 90%.
-		alertAboveOf: func(size float64) float64 { return 0.9 * size },
+		// ZpoolAlmostFull.
+		alertAboveOf: func(size float64) float64 { return poolCriticalUsed * size },
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_API_REQUEST_RATE: {
-		query: `sum(rate(hangar_apiserver_rpc_requests_total[$window]))`,
+		query: apiCallsRate,
 		unit:  monitoringv1alpha1.Unit_UNIT_PER_SECOND,
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_API_ERROR_RATE: {
-		query: `(sum(rate(hangar_apiserver_rpc_requests_total{code=~"` + apiServerErrorCodes + `"}[$window])) or vector(0)) / sum(rate(hangar_apiserver_rpc_requests_total[$window]))`,
-		unit:  monitoringv1alpha1.Unit_UNIT_RATIO,
+		// A share of none while no call has failed yet, which the
+		// apiserver reports no series for.
+		query:      `(` + apiErrorCallsRate + ` or vector(0)) / ` + apiCallsRate,
+		unit:       monitoringv1alpha1.Unit_UNIT_RATIO,
+		alertAbove: apiErrorRateCritical,
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_API_LATENCY_P99: {
-		query: `histogram_quantile(0.99, sum by (le) (rate(hangar_apiserver_rpc_duration_seconds_bucket[$window])))`,
-		unit:  monitoringv1alpha1.Unit_UNIT_SECONDS,
+		query:      apiLatencyP99,
+		unit:       monitoringv1alpha1.Unit_UNIT_SECONDS,
+		alertAbove: apiLatencyWarning,
 	},
 }
 
@@ -270,9 +322,9 @@ func reachabilityLayer(r results) *monitoringv1alpha1.LayerState {
 		// CertificateExpiresSoon and CertificateRenewalLate.
 		h := healthOK
 		switch {
-		case d < 7:
+		case d < certCriticalDays:
 			h = healthCritical
-		case d < 14:
+		case d < certWarningDays:
 			h = healthWarning
 		}
 		checks = append(checks, check("Certificate "+hostLabel(u), h, "%s left", plural(int(math.Floor(d)), "day")))
@@ -297,9 +349,9 @@ func hostLayer(r results) *monitoringv1alpha1.LayerState {
 	total, hasTotal := first(r[qMemTotal])
 	avail, hasAvail := first(r[qMemAvailable])
 	if hasTotal && hasAvail {
-		// HostMemoryLow: less than 1 GiB left.
+		// HostMemoryLow.
 		h := healthOK
-		if avail < gib {
+		if avail < memoryLowBytes {
 			h = healthCritical
 		}
 		checks = append(checks, check("Memory", h, "%s", bytesOf(total-avail, total)))
@@ -313,9 +365,9 @@ func hostLayer(r results) *monitoringv1alpha1.LayerState {
 	}
 	checks = append(checks, poolChecks(r)...)
 	if used, has := first(r[qImagesUsed]); has {
-		// ImagesQuotaAlmostFull: over 90%.
+		// ImagesQuotaAlmostFull.
 		h := healthOK
-		if used > 0.9 {
+		if used > imagesCriticalUsed {
 			h = healthCritical
 		}
 		checks = append(checks, check("hangar/images", h, "%.0f%% of quota", used*100))
@@ -329,7 +381,7 @@ func hostLayer(r results) *monitoringv1alpha1.LayerState {
 	switch {
 	case !hasSynced:
 		checks = append(checks, noData("Time sync"))
-	case synced == 1 && offset <= 0.5:
+	case synced == 1 && offset <= clockOffsetWarning:
 		checks = append(checks, check("Time sync", healthOK, "synced · %s", millis(offset)))
 	default:
 		// ClockNotSynchronised.
@@ -372,9 +424,9 @@ func poolChecks(r results) []*monitoringv1alpha1.Check {
 			used := alloc[p] / size[p]
 			// ZpoolAlmostFull and ZpoolFilling.
 			switch {
-			case used > 0.9:
+			case used > poolCriticalUsed:
 				h = worse(h, healthCritical)
-			case used > 0.8:
+			case used > poolWarningUsed:
 				h = worse(h, healthWarning)
 			}
 			parts = append(parts, bytesOf(alloc[p], size[p]), fmt.Sprintf("%.0f%%", used*100))
@@ -436,14 +488,14 @@ func diskChecks(r results) []*monitoringv1alpha1.Check {
 		}
 		if w, has := wear[d]; has {
 			// SmartWearHigh.
-			if w > 80 {
+			if w > diskWearWarning {
 				h = worse(h, healthWarning)
 			}
 			parts = append(parts, fmt.Sprintf("wear %.0f%%", w))
 		}
 		if t, has := temp[d]; has {
 			// DiskTemperatureHigh.
-			if t > 70 {
+			if t > diskTempWarning {
 				h = worse(h, healthWarning)
 			}
 			parts = append(parts, fmt.Sprintf("%.0f °C", t))
@@ -473,7 +525,7 @@ func servicesLayer(r results) *monitoringv1alpha1.LayerState {
 		case active[u] != 1:
 			// UnitNotActive.
 			checks = append(checks, check(name, healthCritical, "not active · %s", restarts))
-		case hour[u] > 3:
+		case hour[u] > unitRestartsWarning:
 			// UnitRestartingOften.
 			checks = append(checks, check(name, healthWarning, "active · %s", restarts))
 		default:
@@ -529,8 +581,9 @@ func machinesLayer(r results) *monitoringv1alpha1.LayerState {
 	m.ProgramFailures = count(programReasons)
 	l := layer(monitoringv1alpha1.Layer_LAYER_MACHINES, nil)
 	l.Machines = m
+	// MachinesFailedByThePlatform.
 	if len(m.PlatformFailures) > 0 {
-		l.Health = healthWarning
+		l.Health = healthCritical
 	}
 	return l
 }

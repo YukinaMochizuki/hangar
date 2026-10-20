@@ -68,8 +68,8 @@ message GetOverviewResponse {
 // LayerState is one layer's state now.
 message LayerState {
   Layer layer = 1;
-  // The worst of its checks', and, for the machines layer, WARNING while a
-  // machine is blocked by the platform.
+  // The worst of its checks', and, for the machines layer, CRITICAL while
+  // a machine is blocked by the platform.
   Health health = 2;
   repeated Check checks = 3;
   // Set for LAYER_MACHINES alone.
@@ -125,11 +125,11 @@ enum SeriesName {
   // The API's calls a second; UNIT_PER_SECOND.
   SERIES_NAME_API_REQUEST_RATE = 4;
   // The share of the API's calls that failed on the server's side
-  // (internal, unknown, unavailable, data loss, deadline exceeded);
-  // UNIT_RATIO.
+  // (unknown, internal, unavailable, data loss), as the alerting rule
+  // ApiErrorsHigh counts them; UNIT_RATIO.
   SERIES_NAME_API_ERROR_RATE = 5;
-  // The 99th percentile of how long the API's unary calls took;
-  // UNIT_SECONDS.
+  // The 99th percentile of how long the API's unary calls took, as the
+  // alerting rule ApiLatencyHigh has it; UNIT_SECONDS.
   SERIES_NAME_API_LATENCY_P99 = 6;
 }
 

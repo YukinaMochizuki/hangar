@@ -160,11 +160,11 @@ const (
 	// The API's calls a second; UNIT_PER_SECOND.
 	SeriesName_SERIES_NAME_API_REQUEST_RATE SeriesName = 4
 	// The share of the API's calls that failed on the server's side
-	// (internal, unknown, unavailable, data loss, deadline exceeded);
-	// UNIT_RATIO.
+	// (unknown, internal, unavailable, data loss), as the alerting rule
+	// ApiErrorsHigh counts them; UNIT_RATIO.
 	SeriesName_SERIES_NAME_API_ERROR_RATE SeriesName = 5
-	// The 99th percentile of how long the API's unary calls took;
-	// UNIT_SECONDS.
+	// The 99th percentile of how long the API's unary calls took, as the
+	// alerting rule ApiLatencyHigh has it; UNIT_SECONDS.
 	SeriesName_SERIES_NAME_API_LATENCY_P99 SeriesName = 6
 )
 
@@ -484,8 +484,8 @@ func (x *GetOverviewResponse) GetLayers() []*LayerState {
 type LayerState struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Layer Layer                  `protobuf:"varint,1,opt,name=layer,proto3,enum=hangar.monitoring.v1alpha1.Layer" json:"layer,omitempty"`
-	// The worst of its checks', and, for the machines layer, WARNING while a
-	// machine is blocked by the platform.
+	// The worst of its checks', and, for the machines layer, CRITICAL while
+	// a machine is blocked by the platform.
 	Health Health   `protobuf:"varint,2,opt,name=health,proto3,enum=hangar.monitoring.v1alpha1.Health" json:"health,omitempty"`
 	Checks []*Check `protobuf:"bytes,3,rep,name=checks,proto3" json:"checks,omitempty"`
 	// Set for LAYER_MACHINES alone.

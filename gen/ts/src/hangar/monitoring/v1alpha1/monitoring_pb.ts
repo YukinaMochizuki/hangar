@@ -73,8 +73,8 @@ export type LayerState = Message<"hangar.monitoring.v1alpha1.LayerState"> & {
   layer: Layer;
 
   /**
-   * The worst of its checks', and, for the machines layer, WARNING while a
-   * machine is blocked by the platform.
+   * The worst of its checks', and, for the machines layer, CRITICAL while
+   * a machine is blocked by the platform.
    *
    * @generated from field: hangar.monitoring.v1alpha1.Health health = 2;
    */
@@ -535,16 +535,16 @@ export enum SeriesName {
 
   /**
    * The share of the API's calls that failed on the server's side
-   * (internal, unknown, unavailable, data loss, deadline exceeded);
-   * UNIT_RATIO.
+   * (unknown, internal, unavailable, data loss), as the alerting rule
+   * ApiErrorsHigh counts them; UNIT_RATIO.
    *
    * @generated from enum value: SERIES_NAME_API_ERROR_RATE = 5;
    */
   API_ERROR_RATE = 5,
 
   /**
-   * The 99th percentile of how long the API's unary calls took;
-   * UNIT_SECONDS.
+   * The 99th percentile of how long the API's unary calls took, as the
+   * alerting rule ApiLatencyHigh has it; UNIT_SECONDS.
    *
    * @generated from enum value: SERIES_NAME_API_LATENCY_P99 = 6;
    */

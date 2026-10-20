@@ -367,7 +367,7 @@ func TestMonitoringOverview(t *testing.T) {
 				c("Node n1", hOK, "Ready"),
 				c("Node tunnel", hOK, "connected"),
 			}},
-			{Layer: mon.Layer_LAYER_MACHINES, Health: hWarning, Machines: &mon.MachineCounts{
+			{Layer: mon.Layer_LAYER_MACHINES, Health: hCritical, Machines: &mon.MachineCounts{
 				Phases: []*mon.PhaseCount{
 					{Phase: "Running", Count: 14}, {Phase: "Pending", Count: 1}, {Phase: "Creating"},
 					{Phase: "Stopped", Count: 6}, {Phase: "Suspended"}, {Phase: "Failed", Count: 3},
@@ -426,7 +426,7 @@ func TestMonitoringSeries(t *testing.T) {
 		memory  = `sum(node_memory_MemTotal_bytes) - (sum(node_memory_MemAvailable_bytes) + (sum(clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0)) or vector(0)))`
 		pool    = `sum(hangar_zpool_allocated_bytes)`
 		rate    = `sum(rate(hangar_apiserver_rpc_requests_total[$w]))`
-		errors  = `(sum(rate(hangar_apiserver_rpc_requests_total{code=~"internal|unknown|unavailable|data_loss|deadline_exceeded"}[$w])) or vector(0)) / sum(rate(hangar_apiserver_rpc_requests_total[$w]))`
+		errors  = `(sum(rate(hangar_apiserver_rpc_requests_total{code=~"unknown|internal|unavailable|data_loss"}[$w])) or vector(0)) / sum(rate(hangar_apiserver_rpc_requests_total[$w]))`
 		latency = `histogram_quantile(0.99, sum by (le) (rate(hangar_apiserver_rpc_duration_seconds_bucket[$w])))`
 	)
 	series := []struct {
@@ -439,17 +439,17 @@ func TestMonitoringSeries(t *testing.T) {
 		{mon.SeriesName_SERIES_NAME_HOST_MEMORY, memory, mon.Unit_UNIT_BYTES, proto.Float64(128 * gib), proto.Float64(127 * gib)},
 		{mon.SeriesName_SERIES_NAME_POOL_USED, pool, mon.Unit_UNIT_BYTES, proto.Float64(840 * gib), proto.Float64(0.9 * 840 * gib)},
 		{mon.SeriesName_SERIES_NAME_API_REQUEST_RATE, rate, mon.Unit_UNIT_PER_SECOND, nil, nil},
-		{mon.SeriesName_SERIES_NAME_API_ERROR_RATE, errors, mon.Unit_UNIT_RATIO, nil, nil},
-		{mon.SeriesName_SERIES_NAME_API_LATENCY_P99, latency, mon.Unit_UNIT_SECONDS, nil, nil},
+		{mon.SeriesName_SERIES_NAME_API_ERROR_RATE, errors, mon.Unit_UNIT_RATIO, nil, proto.Float64(0.05)},
+		{mon.SeriesName_SERIES_NAME_API_LATENCY_P99, latency, mon.Unit_UNIT_SECONDS, nil, proto.Float64(1)},
 	}
 	ranges := []struct {
 		rg         mon.SeriesRange
 		span, step time.Duration
 		window     string
 	}{
-		{mon.SeriesRange_SERIES_RANGE_ONE_HOUR, time.Hour, time.Minute, "300s"},
-		{mon.SeriesRange_SERIES_RANGE_ONE_DAY, 24 * time.Hour, 15 * time.Minute, "900s"},
-		{mon.SeriesRange_SERIES_RANGE_SEVEN_DAYS, 7 * 24 * time.Hour, time.Hour, "3600s"},
+		{mon.SeriesRange_SERIES_RANGE_ONE_HOUR, time.Hour, time.Minute, "5m"},
+		{mon.SeriesRange_SERIES_RANGE_ONE_DAY, 24 * time.Hour, 15 * time.Minute, "15m"},
+		{mon.SeriesRange_SERIES_RANGE_SEVEN_DAYS, 7 * 24 * time.Hour, time.Hour, "1h"},
 	}
 	promTime := func(t time.Time) string { return fmt.Sprintf("%.3f", float64(t.UnixMilli())/1000) }
 	for _, s := range series {
