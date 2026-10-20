@@ -117,6 +117,17 @@ node agent, over a socket of its own, for a connection to the endpoint's
 port
 (`decisions/public-endpoints.md`).
 
+## Metrics
+
+Given `--metrics-listen`, `hangar-apiserver` serves `/metrics`, and nothing
+else, on a loopback address of its own, for the host's Prometheus: never on
+the API's mux, so no route reaches it through the front door
+(`internal/metrics`). It counts its Connect calls by procedure and code, each
+Node's `Ready`, and machines by phase and reason and in a crash loop, never
+naming one. A metric's labels hold only values the platform defines and
+bounds; a test holds every registered metric to the list in
+`internal/metrics` (`decisions/monitoring.md`).
+
 ## Where the reasoning lives
 
 `docs/decisions/` records why each of these choices was made.

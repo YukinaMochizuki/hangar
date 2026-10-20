@@ -95,7 +95,7 @@ func (s *Server) PublicHandler(chain auth.Chain) http.Handler {
 	mux := s.mux(chain)
 	if s.login != nil {
 		s.login.Mount(mux)
-		mux.Handle(iamv1alpha1connect.NewSessionServiceHandler(sessions{s: s, chain: chain}))
+		mux.Handle(iamv1alpha1connect.NewSessionServiceHandler(sessions{s: s, chain: chain}, connect.WithInterceptors(s.rpc)))
 	}
 	return mux
 }
@@ -107,7 +107,7 @@ func (s *Server) AdminHandler(chain auth.Chain) http.Handler {
 	if s.login != nil {
 		h := sessions{s: s, chain: chain}
 		mux.Handle(iamv1alpha1connect.SessionServiceRevokeSessionsProcedure,
-			connect.NewUnaryHandler(iamv1alpha1connect.SessionServiceRevokeSessionsProcedure, h.RevokeSessions))
+			connect.NewUnaryHandler(iamv1alpha1connect.SessionServiceRevokeSessionsProcedure, h.RevokeSessions, connect.WithInterceptors(s.rpc)))
 	}
 	return mux
 }

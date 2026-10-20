@@ -71,7 +71,10 @@ restart count.
   edge's configuration. Never a tenant, project, machine or
   endpoint name, a uid, a hostname, an address, or an email. Metrics then
   carry nothing of a tenant's, and tenants cannot grow the series by making
-  names. A test holds every registered metric to this. An alert that counts
+  names. A node's name may look like a hostname, but it is the platform's
+  own: the operator gives it (`--node-name`), one per host, so it carries
+  nothing of a tenant's and grows only with the hosts; each Node's `Ready`
+  needs it. A test holds every registered metric to this. An alert that counts
   machines says how to list them (`sudo hangar --context local get …` on the
   admin socket) instead of naming them.
 - **The console shows the operator a fixed view, through the API.** A
