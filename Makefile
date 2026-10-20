@@ -46,8 +46,10 @@ breaking:
 		echo "breaking: main has no proto/ yet"; \
 	fi
 
+# test/e2e alone takes about nine minutes under -race, near go test's default
+# ten-minute limit, and longer on CI, where every package runs at once.
 test:
-	go test -race ./...
+	go test -race -timeout 20m ./...
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,
