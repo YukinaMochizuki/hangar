@@ -440,7 +440,7 @@ func (d *Driver) uplinkHolds(a netip.Addr) (bool, error) {
 
 // dumped lists with list, again while the kernel says the dump was
 // interrupted by a change, as it is while it sets a link's IPv6 up.
-func dumped[T any](list func() ([]T, error)) ([]T, error) {
+func dumped[T any](list func() (T, error)) (T, error) {
 	for range 10 {
 		got, err := list()
 		if !errors.Is(err, netlink.ErrDumpInterrupted) {

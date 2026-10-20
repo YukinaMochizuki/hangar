@@ -408,6 +408,17 @@ func TestDrift(t *testing.T) {
 		{"root end of the veth's MAC changed", [][]string{{"ip", "link", "set", rootVeth(t), "address", "02:00:00:00:ff:01"}}, true},
 		{"namespace end of the veth's MAC changed", [][]string{{"ip", "-n", ns, "link", "set", "hn-up", "address", "02:00:00:00:ff:02"}}, false},
 		{"tap taken off the bridge", [][]string{{"ip", "-n", ns, "link", "set", made[0].Device, "nomaster"}}, true},
+		// a1's frames for a2 are then dropped, not flooded.
+		{"a tap's forwarding entry deleted", [][]string{{"ip", "netns", "exec", ns, "bridge", "fdb", "del", strings.ToLower(made[1].MAC), "dev", made[1].Device, "master"}}, true},
+		{"a tap's MAC moved to another tap", [][]string{{"ip", "netns", "exec", ns, "bridge", "fdb", "replace", strings.ToLower(made[1].MAC), "dev", made[0].Device, "master", "static"}}, true},
+		// The bridge's own entry goes too, and with it the gateway.
+		{"forwarding database flushed", [][]string{{"ip", "netns", "exec", ns, "bridge", "fdb", "flush", "dev", "hn-br"}}, true},
+		// a2's frames then go to the namespace.
+		{"a tap's MAC made the bridge's own", [][]string{{"ip", "netns", "exec", ns, "bridge", "fdb", "replace", strings.ToLower(made[1].MAC), "dev", "hn-br", "self", "permanent"}}, true},
+		{"broadcast flooding off on a tap", [][]string{{"ip", "-n", ns, "link", "set", made[0].Device, "type", "bridge_slave", "bcast_flood", "off"}}, false},
+		{"multicast flooding off on a tap", [][]string{{"ip", "-n", ns, "link", "set", made[0].Device, "type", "bridge_slave", "mcast_flood", "off"}}, false},
+		{"learning on a tap", [][]string{{"ip", "-n", ns, "link", "set", made[0].Device, "type", "bridge_slave", "learning", "on"}}, false},
+		{"unicast flooding to a tap", [][]string{{"ip", "-n", ns, "link", "set", made[0].Device, "type", "bridge_slave", "flood", "on"}}, false},
 		{"default route deleted", [][]string{{"ip", "-n", ns, "route", "del", "default"}}, true},
 		{"routes flushed", [][]string{{"ip", "-n", ns, "route", "flush", "table", "main"}}, true},
 		{"root routes flushed", [][]string{{"ip", "route", "flush", "dev", rootVeth(t)}}, true},
@@ -453,6 +464,11 @@ func TestDrift(t *testing.T) {
 			if rules := run(t, "ip", "netns", "exec", ns, "nft", "list", "chain", "bridge", "hangar_sg", "prerouting"); !strings.Contains(rules, "nothing else") ||
 				!strings.Contains(rules, a1.nic.Device) {
 				t.Errorf("after ensuring again, the firewall is not whole:\n%s", rules)
+			}
+			for _, i := range made {
+				if err := portWhole(t, i); err != nil {
+					t.Errorf("after ensuring again: %v", err)
+				}
 			}
 			if addrs := run(t, "ip", "-n", ns, "-4", "addr", "show", "dev", "hn-br"); !strings.Contains(addrs, "169.254.169.254/32") {
 				t.Errorf("after ensuring again, the bridge lacks the metadata address:\n%s", addrs)

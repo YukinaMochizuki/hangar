@@ -46,6 +46,9 @@ var (
 	// ErrIPv6InUse means an interface was asked for with the IPv6 address
 	// another interface on the host holds.
 	ErrIPv6InUse = errors.New("IPv6 address held by another interface")
+	// ErrMACInUse means an interface was asked for with the MAC another
+	// interface of its network, or the network's gateway, has.
+	ErrMACInUse = errors.New("MAC held by another interface of the network")
 	// ErrImageTooLarge means an image is beyond what the host unpacks.
 	ErrImageTooLarge = errors.New("image too large")
 	// ErrInvalidImage means an image holds what the host refuses to
@@ -256,7 +259,9 @@ type Network interface {
 	// EnsureInterface makes the tap for a machine interface in its
 	// network's namespace, or corrects it, and returns the interface with
 	// its Device. An IPv6 address another interface holds is refused with
-	// ErrIPv6InUse: one address is delivered to one interface.
+	// ErrIPv6InUse: one address is delivered to one interface. A MAC
+	// another interface of the network, or its gateway, has is refused
+	// with ErrMACInUse: one MAC's frames go to one tap.
 	EnsureInterface(ctx context.Context, i Interface) (Interface, error)
 	// Interfaces lists every machine interface on the host, as it was
 	// ensured.

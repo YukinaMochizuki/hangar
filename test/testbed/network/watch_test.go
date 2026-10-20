@@ -71,7 +71,7 @@ func TestFailedSubscriptions(t *testing.T) {
 	d := newDriver(t, hostnet.Config{Uplink: upstreamLink})
 	nets := []driver.NetworkSpec{netA}
 	ensure(t, d, nets)
-	for _, what := range []string{"links", "addrs", "routes"} {
+	for _, what := range []string{"links", "addrs", "routes", "neighs"} {
 		t.Run(what, func(t *testing.T) {
 			if err := hostnet.FailSubscriptions(what); err != nil {
 				t.Fatal(err)
