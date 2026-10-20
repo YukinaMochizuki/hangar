@@ -172,9 +172,9 @@ func TestAStopRacesNothing(t *testing.T) {
 	}
 	mwg.Wait()
 
-	testutil.Eventually(t, "nothing left on the host", func() (bool, string) {
+	testutil.Eventually(t, "nothing but images left on the host", func() (bool, string) {
 		s := host.Snapshot()
-		return s.Empty(), fmt.Sprintf("%+v", s)
+		return s.EmptyButImages(), fmt.Sprintf("%+v", s)
 	})
 	o.report(t)
 }

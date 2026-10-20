@@ -3,8 +3,10 @@
 // them from there with package ocilayer. A cached digest records the
 // repositories it was fetched from in full, and never needs the registry
 // again for them until it is forgotten; another repository fetches it in
-// full first (driver.Images). It knows nothing of where an unpacked image
-// goes; see package zfsstore for that.
+// full first (driver.Images). Its record's modification time is when it was
+// last used. It knows nothing of where an unpacked image goes, nor of when
+// a digest is to be forgotten; see package zfsstore and the node agent's
+// sweep for those.
 package registry
 
 import (
@@ -26,6 +28,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -34,6 +37,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote/transport"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/klauspost/compress/zstd"
+	"golang.org/x/sys/unix"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/keylock"
@@ -329,6 +333,10 @@ func (d *Images) get(ctx context.Context, ref, digest string, creds driver.Crede
 	rec, release, err := d.cached(hex)
 	switch {
 	case err == nil && slices.Contains(rec.Sources, repo):
+		if err := d.touch(hex); err != nil {
+			release()
+			return nil, nil, err
+		}
 		return rec, release, nil
 	case err == nil:
 		release()
@@ -346,6 +354,72 @@ func (d *Images) get(ctx context.Context, ref, digest string, creds driver.Crede
 		return nil, nil, err
 	}
 	return rec, d.pin(rec.blobs()), nil
+}
+
+// touch records that the digest of hex was used now. The caller holds its
+// lock.
+func (d *Images) touch(hex string) error {
+	now := time.Now()
+	return os.Chtimes(d.recordPath(hex), now, now)
+}
+
+func (d *Images) Cached(context.Context) (driver.ImageCache, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var out driver.ImageCache
+	var err error
+	if out.Total, out.Free, err = d.room(); err != nil {
+		return driver.ImageCache{}, err
+	}
+	records, err := os.ReadDir(filepath.Join(d.cfg.Cache, "images"))
+	if err != nil {
+		return driver.ImageCache{}, err
+	}
+	for _, e := range records {
+		hex, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || !digestRE.MatchString("sha256:"+hex) {
+			continue
+		}
+		rec, err := d.readRecord(hex)
+		if err != nil {
+			return driver.ImageCache{}, err
+		}
+		fi, err := e.Info()
+		if errors.Is(err, os.ErrNotExist) {
+			continue // forgotten since it was listed
+		}
+		if err != nil {
+			return driver.ImageCache{}, err
+		}
+		img := driver.CachedImage{Digest: "sha256:" + hex, UsedAt: fi.ModTime(), Busy: d.digests.Held(hex), Blobs: map[string]int64{}}
+		for _, l := range rec.Layers {
+			if _, err := os.Stat(d.blobPath(l.Digest)); err == nil {
+				img.Blobs[l.Digest] = l.Size
+			}
+		}
+		out.Images = append(out.Images, img)
+	}
+	return out, nil
+}
+
+// room returns the bytes of the cache's filesystem, as its quota bounds
+// them, and those free.
+func (d *Images) room() (total, free int64, err error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(d.cfg.Cache, &st); err != nil {
+		return 0, 0, err
+	}
+	return int64(st.Blocks) * st.Bsize, int64(st.Bavail) * st.Bsize, nil
+}
+
+// needRoom fails with a *driver.NoSpaceError unless the cache has need
+// bytes free for what.
+func (d *Images) needRoom(what string, need int64) error {
+	_, free, err := d.room()
+	if err != nil || free >= need {
+		return err
+	}
+	return &driver.NoSpaceError{What: what, Room: driver.ImageRoom, Need: need, Free: free}
 }
 
 // cached returns the record of hex with its blobs pinned, if the cache
@@ -474,8 +548,28 @@ func (d *Images) pull(ctx context.Context, ref, digest, hex string, creds driver
 
 	release := d.pin(rec.blobs())
 	defer release()
-	for _, l := range rec.Layers {
+	// missing is what each layer on still has to bring into the cache.
+	missing := make([]int64, len(rec.Layers)+1)
+	seen := map[string]bool{}
+	for i := len(rec.Layers) - 1; i >= 0; i-- {
+		l := rec.Layers[i]
+		missing[i] = missing[i+1]
+		if _, err := os.Stat(d.blobPath(l.Digest)); err != nil && !seen[l.Digest] {
+			missing[i] += l.Size
+		}
+		seen[l.Digest] = true
+	}
+	blobs := "the blobs of " + pinned.String()
+	if err := d.needRoom(blobs, missing[0]); err != nil {
+		return nil, err
+	}
+	for i, l := range rec.Layers {
 		if err := d.fetchBlob(ctx, pinned.Context().Digest(l.Digest), l, opts); err != nil {
+			if driver.OutOfRoom(err) {
+				// Taken since it was checked.
+				_, free, _ := d.room()
+				return nil, &driver.NoSpaceError{What: blobs, Room: driver.ImageRoom, Need: missing[i], Free: free}
+			}
 			return nil, err
 		}
 	}
@@ -602,7 +696,11 @@ func (d *Images) Forget(_ context.Context, digest string) error {
 	if err != nil {
 		return err
 	}
-	defer d.digests.Lock(hex)()
+	unlock, ok := d.digests.TryLock(hex)
+	if !ok {
+		return fmt.Errorf("forgetting %s while it is pulled: %w", digest, driver.ErrBusy)
+	}
+	defer unlock()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if err := os.Remove(d.recordPath(hex)); err != nil && !errors.Is(err, os.ErrNotExist) {

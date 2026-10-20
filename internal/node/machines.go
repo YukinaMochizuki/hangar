@@ -219,7 +219,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if err != nil {
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
-	if !slices.Contains(bases, digest) {
+	if !slices.ContainsFunc(bases, func(b driver.Base) bool { return b.Digest == digest }) {
 		// Gone since it was made: make it again.
 		a.puller.forget(digest)
 		return notReady(phaseOf(vm), computeapi.ReasonPulling, "pulling "+boot.GetImage()),

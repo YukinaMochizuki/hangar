@@ -10,9 +10,10 @@ import (
 	"testing"
 )
 
-// fakeZFSScript is a zfs command for the calls New, EnsureRoot and
-// EnsureVolume make: list (of a name, or of a parent's children, which it
-// has none of), get, create, clone and set. Each dataset is a file of
+// fakeZFSScript is a zfs command for the calls New, EnsureRoot,
+// DeleteRoot and EnsureVolume make: list (of a name, or of a parent's
+// children, which it has none of), get, create, clone, set and destroy.
+// Each dataset is a file of
 // property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %;
 // every call is logged to $FAKEZFS/log. $FAKEZFS/set-fails makes set fail
 // before its change, and $FAKEZFS/set-killed SIGKILLs set once its change
@@ -54,6 +55,10 @@ set)
 	put "$(file "$2")" "${1%%=*}" "${1#*=}"
 	[ -e "$FAKEZFS/set-killed" ] && kill -9 $$
 	exit 0 ;;
+destroy)
+	f=$(file "$1")
+	[ -f "$f" ] || { echo "cannot open '$1': dataset does not exist" >&2; exit 1; }
+	rm "$f" ;;
 *)
 	echo "fake zfs: $cmd $*" >&2; exit 2 ;;
 esac

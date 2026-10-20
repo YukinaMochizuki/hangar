@@ -20,6 +20,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
@@ -38,7 +39,25 @@ type Host struct {
 	pullErr   map[string]error              // by reference
 	private   map[string]driver.Login       // by repository, the login it asks for
 	unpackErr map[string]error              // by reference, or digest
-	pulled    map[string]bool               // digests in the host's cache
+	pulled    map[string]time.Time          // digests in the host's cache, when last used
+	pulls     map[string]int                // fetches in full from a registry, by digest
+	// cacheSize is the bytes the image room holds: the layers, as
+	// ImageConfig.Size counts them, of the digests in the cache, and an
+	// unpack under way.
+	cacheSize int64
+	// unpackedSize is what each digest unpacks to, by digest; its
+	// ImageConfig.Size if none.
+	unpackedSize map[string]int64
+	// imageTaken is what else takes the image room, as downloads and
+	// unpacks under way do.
+	imageTaken int64
+	// deferFrees says the room an unpack out of room took shows free only
+	// once the next base is begun, as ZFS frees a destroyed file's blocks
+	// after the call; freeing is that room, meanwhile.
+	deferFrees bool
+	freeing    int64
+	// storageSize is the bytes the storage holds.
+	storageSize int64
 	// sources are, by digest in the cache, the repositories it was fetched
 	// from; holds and claims, by repository, the digests a registry serves,
 	// or only says it has.
@@ -46,7 +65,8 @@ type Host struct {
 	resolved               map[string]int // resolutions, by reference
 
 	bases     map[string]int64 // sizes, by digest
-	baseSize  int64            // of every base made from now on
+	baseUsed  map[string]time.Time
+	baseSize  int64 // of every base made from now on
 	building  map[string]*sync.Mutex
 	roots     map[string]driver.Disk
 	volumes   map[string]driver.Volume // by disk uid
@@ -118,6 +138,7 @@ type Host struct {
 	removalErr  error                        // fails stopping VMs and removing disks and interfaces
 	netErr      error                        // fails making and listing networks and interfaces
 	cloneErr    error                        // fails making root disks
+	baseDelErr  error                        // fails deleting bases
 	capErr      error                        // fails reading the storage's capacity
 	vmChanges   chan struct{}
 	netChange   chan struct{}
@@ -136,7 +157,9 @@ type vm struct {
 // New returns an empty host.
 func New() *Host {
 	return &Host{
-		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, private: map[string]driver.Login{}, pulled: map[string]bool{},
+		tags: map[string]string{}, configs: map[string]driver.ImageConfig{}, pullErr: map[string]error{}, private: map[string]driver.Login{}, pulled: map[string]time.Time{},
+		pulls: map[string]int{}, cacheSize: DefaultImageCacheSize, baseUsed: map[string]time.Time{},
+		unpackedSize: map[string]int64{}, storageSize: Capacity,
 		sources: map[string]map[string]bool{}, holds: map[string]map[string]bool{}, claims: map[string]map[string]bool{},
 		unpackErr: map[string]error{}, resolved: map[string]int{}, hung: map[string]bool{},
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
@@ -345,7 +368,67 @@ func (h *Host) ForgetSources() {
 // DefaultBaseSize is the size of a base unless SetBaseSize says otherwise.
 const DefaultBaseSize = 64 << 20
 
-// Capacity is the fake storage's size.
+// DefaultImageCacheSize is the image cache's room unless SetImageCacheSize
+// says otherwise.
+const DefaultImageCacheSize = 100 << 30
+
+// SetImageCacheSize sets the bytes the image cache may hold, as the
+// quota of its dataset does.
+func (h *Host) SetImageCacheSize(size int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.cacheSize = size
+}
+
+// SetUnpackedSize sets what the image of digest unpacks to, in the image
+// room beside the cache.
+func (h *Host) SetUnpackedSize(digest string, size int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.unpackedSize[digest] = size
+}
+
+// TakeImageRoom has n bytes of the image room taken by what is not the
+// cache's, as a disk image downloaded or an unpack under way takes it.
+func (h *Host) TakeImageRoom(n int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.imageTaken = n
+}
+
+// DeferFrees makes the room an unpack out of room took show free, in
+// what Images.Cached says, only once the next base is begun, as ZFS shows
+// a destroyed file's blocks free some seconds after.
+func (h *Host) DeferFrees(on bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.deferFrees = on
+}
+
+// FailDeleteBase makes deleting bases fail with err; nil clears it.
+func (h *Host) FailDeleteBase(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.baseDelErr = err
+}
+
+// SetStorageSize sets the bytes the storage holds, as the pool's size
+// does.
+func (h *Host) SetStorageSize(size int64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.storageSize = size
+}
+
+// Pulls returns how often digest was fetched in full from a registry.
+func (h *Host) Pulls(digest string) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.pulls[digest]
+}
+
+// Capacity is the fake storage's size unless SetStorageSize says
+// otherwise.
 const Capacity = 1 << 40
 
 // SetBaseSize sets the size of the bases made from now on, as a larger image
@@ -413,6 +496,7 @@ const (
 	ListVolumes    = "volumes"
 	ListImageBases = "imagebases"
 	ListLogs       = "logs"
+	ListImageCache = "imagecache"
 )
 
 // FailListing makes the listings named, or every one if none is, fail with
@@ -421,7 +505,7 @@ func (h *Host) FailListing(err error, lists ...string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(lists) == 0 {
-		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListImageBases, ListLogs}
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListImageBases, ListLogs, ListImageCache}
 	}
 	for _, l := range lists {
 		h.listErr[l] = err
@@ -574,6 +658,7 @@ func (h *Host) LoseBase(digest string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.bases, digest)
+	delete(h.baseUsed, digest)
 }
 
 // Leave puts objects on the host that no machine accounts for, as a crash
@@ -582,6 +667,7 @@ func (h *Host) Leave(machineUID, networkUID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.bases["sha256:orphan"] = h.baseSize
+	h.baseUsed["sha256:orphan"] = time.Now()
 	h.roots[machineUID] = driver.Disk{MachineUID: machineUID, Digest: "sha256:orphan", Path: "/dev/fake/" + machineUID}
 	h.networks[networkUID] = driver.NetworkSpec{UID: networkUID}
 	h.newInstance(networkUID)
@@ -669,6 +755,13 @@ func (s Snapshot) Empty() bool {
 		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.Listening) == 0
 }
 
+// EmptyButImages reports whether the host holds nothing but the container
+// images' bases it keeps for their next use.
+func (s Snapshot) EmptyButImages() bool {
+	s.Bases = nil
+	return s.Empty()
+}
+
 // Snapshot returns a copy of what the host holds.
 func (h *Host) Snapshot() Snapshot {
 	h.mu.Lock()
@@ -691,6 +784,15 @@ func (h *Host) Snapshot() Snapshot {
 
 // Cached reports whether the host's image cache holds digest.
 func (h *Host) Cached(digest string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	_, ok := h.pulled[digest]
+	return ok
+}
+
+// CacheUsedAt returns when the image cache last used digest; zero for one
+// it does not hold.
+func (h *Host) CacheUsedAt(digest string) time.Time {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.pulled[digest]
@@ -758,6 +860,7 @@ func (d images) byDigest(ctx context.Context, ref, digest string, creds driver.C
 	}
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
+	config, known := d.h.configs[digest]
 	if cached = d.h.sources[digest][repo]; !cached {
 		if err := d.h.pullErr[ref]; err != nil {
 			return driver.ImageConfig{}, err
@@ -765,14 +868,51 @@ func (d images) byDigest(ctx context.Context, ref, digest string, creds driver.C
 		if !d.h.holds[repo][digest] {
 			return driver.ImageConfig{}, fmt.Errorf("%s@%s: the registry serves none of its blobs: %w", ref, digest, driver.ErrImageNotFound)
 		}
+		if _, in := d.h.pulled[digest]; known && !in {
+			if free := d.h.imageFreeLocked(); config.Size > free {
+				return driver.ImageConfig{}, &driver.NoSpaceError{What: "the blobs of " + ref + "@" + digest, Room: driver.ImageRoom, Need: config.Size, Free: free}
+			}
+		}
 	}
-	config, ok := d.h.configs[digest]
-	if !ok {
+	if !known {
 		return driver.ImageConfig{}, fmt.Errorf("%s@%s: %w", ref, digest, driver.ErrImageNotFound)
 	}
-	d.h.pulled[digest] = true
+	if !cached {
+		d.h.pulls[digest]++
+	}
+	d.h.pulled[digest] = time.Now()
 	add(d.h.sources, digest, repo)
 	return config, nil
+}
+
+// imageFreeLocked is what is free in the image room. Callers hold h.mu.
+func (h *Host) imageFreeLocked() int64 { return h.cacheSize - h.cachedLocked() - h.imageTaken }
+
+// cachedLocked is what the image cache holds. Callers hold h.mu.
+func (h *Host) cachedLocked() int64 {
+	var n int64
+	for digest := range h.pulled {
+		n += h.configs[digest].Size
+	}
+	return n
+}
+
+// blob names the one blob the fake keeps of a digest.
+func blob(digest string) string { return "blob-of-" + digest }
+
+func (d images) Cached(context.Context) (driver.ImageCache, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := d.h.listErr[ListImageCache]; err != nil {
+		return driver.ImageCache{}, err
+	}
+	out := driver.ImageCache{Total: d.h.cacheSize, Free: d.h.imageFreeLocked() - d.h.freeing}
+	for _, digest := range slices.Sorted(maps.Keys(d.h.pulled)) {
+		out.Images = append(out.Images, driver.CachedImage{
+			Digest: digest, UsedAt: d.h.pulled[digest], Blobs: map[string]int64{blob(digest): d.h.configs[digest].Size},
+		})
+	}
+	return out, nil
 }
 
 func (d images) Config(ctx context.Context, ref, digest string, creds driver.Credentials) (driver.ImageConfig, error) {
@@ -812,6 +952,17 @@ func (d images) Unpack(ctx context.Context, ref, digest, dir string, creds drive
 			return ctx.Err()
 		}
 	}
+	d.h.mu.Lock()
+	size := d.h.configs[digest].Size
+	unpacked, ok := d.h.unpackedSize[digest]
+	if !ok {
+		unpacked = size
+	}
+	free := d.h.imageFreeLocked()
+	d.h.mu.Unlock()
+	if unpacked > free {
+		return &os.PathError{Op: "write", Path: filepath.Join(dir, "image"), Err: syscall.ENOSPC}
+	}
 	return os.WriteFile(filepath.Join(dir, "image"), []byte(digest), 0o644)
 }
 
@@ -835,10 +986,17 @@ func (d storage) EnsureBase(_ context.Context, digest string, size int64, fill f
 		d.h.mu.Unlock()
 		return nil
 	}
-	full := d.h.full || size > Capacity-d.h.usedLocked()
+	full := d.h.full
+	d.h.freeing = 0
+	storageFree, imageFree := d.h.storageSize-d.h.usedLocked(), d.h.imageFreeLocked()
 	d.h.mu.Unlock()
-	if full {
+	switch {
+	case full:
 		return driver.ErrNoSpace
+	case size > imageFree:
+		return &driver.NoSpaceError{What: "unpacking " + digest, Room: driver.ImageRoom, Need: size, Free: imageFree}
+	case size > storageFree:
+		return &driver.NoSpaceError{What: "the base of " + digest, Room: driver.StorageRoom, Need: size, Free: storageFree}
 	}
 	dir, err := os.MkdirTemp("", "fake-base")
 	if err != nil {
@@ -846,6 +1004,14 @@ func (d storage) EnsureBase(_ context.Context, digest string, size int64, fill f
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	if err := fill(dir); err != nil {
+		if driver.OutOfRoom(err) {
+			d.h.mu.Lock()
+			if d.h.deferFrees {
+				d.h.freeing = imageFree
+			}
+			d.h.mu.Unlock()
+			return driver.UnpackShortfall("unpacking "+digest, size, imageFree, err)
+		}
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(dir, "image")); err != nil {
@@ -853,29 +1019,41 @@ func (d storage) EnsureBase(_ context.Context, digest string, size int64, fill f
 	}
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
+	if free := d.h.storageSize - d.h.usedLocked(); d.h.baseSize > free {
+		return &driver.NoSpaceError{What: "the base of " + digest, Room: driver.StorageRoom, Need: d.h.baseSize, Free: free}
+	}
 	d.h.bases[digest] = d.h.baseSize
+	d.h.baseUsed[digest] = time.Now()
 	d.h.unpacked[digest]++
 	return nil
 }
 
-func (d storage) Bases(context.Context) ([]string, error) {
+func (d storage) Bases(context.Context) ([]driver.Base, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	if err := d.h.listErr[ListBases]; err != nil {
 		return nil, err
 	}
-	return slices.Sorted(maps.Keys(d.h.bases)), nil
+	var out []driver.Base
+	for _, digest := range slices.Sorted(maps.Keys(d.h.bases)) {
+		out = append(out, driver.Base{Digest: digest, Size: d.h.bases[digest], UsedAt: d.h.baseUsed[digest]})
+	}
+	return out, nil
 }
 
 func (d storage) DeleteBase(_ context.Context, digest string) error {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
+	if d.h.baseDelErr != nil {
+		return d.h.baseDelErr
+	}
 	for _, r := range d.h.roots {
 		if r.Digest == digest {
 			return fmt.Errorf("base %s has root disks cloned from it", digest)
 		}
 	}
 	delete(d.h.bases, digest)
+	delete(d.h.baseUsed, digest)
 	return nil
 }
 
@@ -907,6 +1085,7 @@ func (d storage) EnsureRoot(_ context.Context, machineUID, digest string, size i
 	}
 	r := driver.Disk{MachineUID: machineUID, Digest: digest, Path: "/dev/fake/" + machineUID, Size: size}
 	d.h.roots[machineUID] = r
+	d.h.baseUsed[digest] = time.Now()
 	return r, nil
 }
 
@@ -928,6 +1107,11 @@ func (d storage) DeleteRoot(_ context.Context, machineUID string) error {
 	if v, ok := d.h.vms[machineUID]; ok && v.State == driver.VMRunning || d.h.heldDisks[machineUID] > 0 {
 		return fmt.Errorf("the root disk of machine %s is in use", machineUID)
 	}
+	if r, ok := d.h.roots[machineUID]; ok {
+		if _, ok := d.h.bases[r.Digest]; ok {
+			d.h.baseUsed[r.Digest] = time.Now()
+		}
+	}
 	delete(d.h.roots, machineUID)
 	return nil
 }
@@ -938,7 +1122,7 @@ func (d storage) EnsureImageBase(_ context.Context, digest string, size int64, f
 		d.h.mu.Unlock()
 		return nil
 	}
-	full := d.h.full || size > Capacity-d.h.usedLocked()
+	full := d.h.full || size > d.h.storageSize-d.h.usedLocked()
 	d.h.mu.Unlock()
 	if full {
 		return driver.ErrNoSpace
@@ -1040,9 +1224,9 @@ func (d storage) Capacity(context.Context) (driver.Capacity, error) {
 		return driver.Capacity{}, d.h.capErr
 	}
 	if d.h.full {
-		return driver.Capacity{Total: Capacity}, nil
+		return driver.Capacity{Total: d.h.storageSize}, nil
 	}
-	return driver.Capacity{Total: Capacity, Free: Capacity - d.h.usedLocked()}, nil
+	return driver.Capacity{Total: d.h.storageSize, Free: d.h.storageSize - d.h.usedLocked()}, nil
 }
 
 // usedLocked is what the bases take. Callers hold h.mu.

@@ -2,12 +2,13 @@
 // command. Each image digest gets a base: a zvol filled with mkfs.ext4 -d
 // from the unpacked image, so the host never mounts it, and snapshotted.
 // Each machine's root disk is a sparse clone of its image's base, grown to
-// the size asked for; the guest grows its filesystem as it boots. Each disk
-// image, such as a distribution's cloud image, gets a base too, written
-// raw onto a zvol and snapshotted. Each API Disk gets a volume of its own,
-// a sparse zvol the host never reads, blank or cloned from a disk image's
-// base. Every
-// dataset the driver makes carries a user property naming what it serves,
+// the size asked for; the guest grows its filesystem as it boots. A base's
+// snapshot records when it was last used: made, cloned from, or a root
+// disk cloned from it deleted. Each disk image, such as a distribution's
+// cloud image, gets a base too, written raw onto a zvol and snapshotted.
+// Each API Disk gets a volume of its own, a sparse zvol the host never
+// reads, blank or cloned from a disk image's base. Every dataset the
+// driver makes carries a user property naming what it serves,
 // which is how it is listed and how the driver knows it as its own: a
 // dataset without it is never changed or destroyed. See
 // docs/decisions/storage-zfs.md.
@@ -41,6 +42,8 @@ const (
 	propDigest  = "hangar:digest"
 	propMachine = "hangar:machine"
 	propDisk    = "hangar:disk"
+	// propUsedAt is when a base was last used, RFC 3339.
+	propUsedAt = "hangar:used-at"
 )
 
 // baseSnapshot names the snapshot a base is cloned from; a base without it
@@ -288,7 +291,15 @@ func (s *Store) lock(digest string) func() { return s.building.Lock(digest) }
 // images, that never got their snapshot, as a crash while making one leaves
 // them.
 func (s *Store) clearUnfinished(ctx context.Context) error {
-	if err := s.clearUnfinishedIn(ctx, s.bases(), s.baseName, s.Bases); err != nil {
+	bases := func(ctx context.Context) ([]string, error) {
+		bs, err := s.Bases(ctx)
+		var out []string
+		for _, b := range bs {
+			out = append(out, b.Digest)
+		}
+		return out, err
+	}
+	if err := s.clearUnfinishedIn(ctx, s.bases(), s.baseName, bases); err != nil {
 		return err
 	}
 	return s.clearUnfinishedIn(ctx, s.vmBases(), s.vmBaseName, s.ImageBases)
@@ -349,7 +360,8 @@ func (s *Store) EnsureBase(ctx context.Context, digest string, size int64, fill 
 		}
 	}
 
-	if err := s.room(ctx, digest, size); err != nil {
+	free, err := s.room(ctx, digest, size)
+	if err != nil {
 		return err
 	}
 	dir, err := os.MkdirTemp(s.cfg.Scratch, "base-")
@@ -358,6 +370,9 @@ func (s *Store) EnsureBase(ctx context.Context, digest string, size int64, fill 
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 	if err := fill(dir); err != nil {
+		if driver.OutOfRoom(err) {
+			return driver.UnpackShortfall("unpacking "+digest, size, free, err)
+		}
 		return fmt.Errorf("filling the base of %s: %w", digest, err)
 	}
 	size, err = baseSize(dir)
@@ -369,7 +384,7 @@ func (s *Store) EnsureBase(ctx context.Context, digest string, size int64, fill 
 		return err
 	}
 	if c.Free < size {
-		return fmt.Errorf("the base of %s needs %d bytes, %d are free: %w", digest, size, c.Free, driver.ErrNoSpace)
+		return &driver.NoSpaceError{What: "the base of " + digest, Room: driver.StorageRoom, Need: size, Free: c.Free}
 	}
 	if _, err := zfs(ctx, "create", "-s", "-V", strconv.FormatInt(size, 10),
 		"-o", "volmode=dev", "-o", propDigest+"="+digest, vol); err != nil {
@@ -383,24 +398,26 @@ func (s *Store) EnsureBase(ctx context.Context, digest string, size int64, fill 
 	return nil
 }
 
-// room fails with ErrNoSpace, before anything is unpacked, unless the image
-// of size bytes, compressed, fits both where it is unpacked and in the pool.
-func (s *Store) room(ctx context.Context, digest string, size int64) error {
+// room fails with a *driver.NoSpaceError, before anything is unpacked,
+// unless the image of size bytes, compressed, fits both where it is
+// unpacked and in the pool, and returns what is free where it is unpacked.
+func (s *Store) room(ctx context.Context, digest string, size int64) (int64, error) {
 	var st unix.Statfs_t
 	if err := unix.Statfs(s.cfg.Scratch, &st); err != nil {
-		return err
+		return 0, err
 	}
-	if free := int64(st.Bavail) * st.Bsize; free < size {
-		return fmt.Errorf("unpacking %s takes at least %d bytes, %d are free: %w", digest, size, free, driver.ErrNoSpace)
+	free := int64(st.Bavail) * st.Bsize
+	if free < size {
+		return 0, &driver.NoSpaceError{What: "unpacking " + digest, Room: driver.ImageRoom, Need: size, Free: free}
 	}
 	c, err := s.Capacity(ctx)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if c.Free < size+baseOverhead {
-		return fmt.Errorf("the base of %s takes at least %d bytes, %d are free: %w", digest, size+baseOverhead, c.Free, driver.ErrNoSpace)
+		return 0, &driver.NoSpaceError{What: "the base of " + digest, Room: driver.StorageRoom, Need: size + baseOverhead, Free: c.Free}
 	}
-	return nil
+	return free, nil
 }
 
 // writeBase makes the filesystem of a base from dir and finishes the base.
@@ -417,12 +434,15 @@ func (s *Store) writeBase(ctx context.Context, vol, snap, digest, dir string) er
 		"-d", dir, dev); err != nil {
 		return fmt.Errorf("making the base of %s: %w", digest, err)
 	}
-	if _, err := zfs(ctx, "snapshot", "-o", propDigest+"="+digest, snap); err != nil {
+	if _, err := zfs(ctx, "snapshot", "-o", propDigest+"="+digest, "-o", usedNow(), snap); err != nil {
 		return err
 	}
 	_, err = zfs(ctx, "set", "readonly=on", vol)
 	return err
 }
+
+// usedNow is the property saying a base is used now.
+func usedNow() string { return propUsedAt + "=" + time.Now().UTC().Format(time.RFC3339Nano) }
 
 // baseSize returns the size of the base for what dir holds.
 func baseSize(dir string) (int64, error) {
@@ -511,17 +531,34 @@ func VolumeOf(f *os.File) (string, error) {
 	return string(name), nil
 }
 
-func (s *Store) Bases(ctx context.Context) ([]string, error) {
-	snaps, err := list(ctx, "snapshot", s.bases(), "name", propDigest)
+func (s *Store) Bases(ctx context.Context) ([]driver.Base, error) {
+	snaps, err := list(ctx, "snapshot", s.bases(), "name", propDigest, propUsedAt)
 	if err != nil {
 		return nil, err
 	}
-	var out []string
+	// A volume's used counts its snapshot's blocks too.
+	vols, err := list(ctx, "volume", s.bases(), "name", "used")
+	if err != nil {
+		return nil, err
+	}
+	used := map[string]string{}
+	for _, row := range vols {
+		used[row[0]] = row[1]
+	}
+	var out []driver.Base
 	for _, row := range snaps {
 		name, digest := row[0], row[1]
-		if vol, err := s.baseName(digest); err == nil && name == vol+"@"+baseSnapshot {
-			out = append(out, digest)
+		vol, err := s.baseName(digest)
+		if err != nil || name != vol+"@"+baseSnapshot {
+			continue
 		}
+		size, err := strconv.ParseInt(used[vol], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s: used %q", vol, used[vol])
+		}
+		// A base with no time is the least recently used.
+		at, _ := time.Parse(time.RFC3339Nano, row[2])
+		out = append(out, driver.Base{Digest: digest, Size: size, UsedAt: at})
 	}
 	return out, nil
 }
@@ -600,6 +637,9 @@ func (s *Store) EnsureRoot(ctx context.Context, machineUID, digest string, size 
 		if want < baseSize {
 			return driver.Disk{}, fmt.Errorf("%w: %d bytes asked, the base of %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
 		}
+		if _, err := zfs(ctx, "set", usedNow(), snap); err != nil {
+			return driver.Disk{}, err
+		}
 		if err := clone(ctx, snap, vol, propMachine+"="+machineUID, propDigest+"="+digest); err != nil {
 			return driver.Disk{}, err
 		}
@@ -652,8 +692,32 @@ func (s *Store) DeleteRoot(ctx context.Context, machineUID string) error {
 	if r.machine != machineUID {
 		return fmt.Errorf("%s is not machine %s's root disk; left alone", vol, machineUID)
 	}
+	// Its base was in use until now. Recorded first, so a failure leaves
+	// the root to be deleted, and the use recorded, again.
+	if err := s.touchBase(ctx, r.digest); err != nil {
+		return err
+	}
 	// zfs refuses while the device is open, as a running VM holds it.
 	return destroy(ctx, vol)
+}
+
+// touchBase records that the base of digest, if there is one of the
+// driver's, is used now.
+func (s *Store) touchBase(ctx context.Context, digest string) error {
+	if !digestRE.MatchString(digest) {
+		return nil // no base can be of it
+	}
+	vol, err := s.baseName(digest)
+	if err != nil {
+		return err
+	}
+	snap := vol + "@" + baseSnapshot
+	p, ok, err := props(ctx, snap, propDigest)
+	if err != nil || !ok || p[propDigest] != digest {
+		return err
+	}
+	_, err = zfs(ctx, "set", usedNow(), snap)
+	return err
 }
 
 func (s *Store) EnsureImageBase(ctx context.Context, digest string, size int64, fill func(dev string) error) error {

@@ -4,6 +4,7 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -63,7 +64,14 @@ type world struct {
 	// edgeDial, if set before the agent starts, is where it takes
 	// hangar-edge's dials, from this process.
 	edgeDial net.Listener
-	stop     func()
+	// imageCacheHigh and imageCacheLow, if set before the agent starts,
+	// bound the images no machine uses.
+	imageCacheHigh, imageCacheLow int64
+	// sweepInterval, if set before the agent starts, is how often it
+	// sweeps; 100ms if not.
+	sweepInterval time.Duration
+
+	stop func()
 	// agent is the running node agent; nil while it is stopped.
 	agent *node.Agent
 }
@@ -168,13 +176,15 @@ func (w *world) startAgent() {
 			return &computev1alpha1.NodeResources{Cpu: "8", Memory: "16Gi"}, nil
 		},
 		HeartbeatInterval: 50 * time.Millisecond,
-		SweepInterval:     100 * time.Millisecond,
+		SweepInterval:     cmp.Or(w.sweepInterval, 100*time.Millisecond),
 		PullTimeout:       w.pullTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
 		Metadata:          w.metadata,
 		IPv6Prefix:        w.ipv6Prefix,
 		EdgeDial:          w.edgeDial,
 		EdgeUIDs:          []uint32{uint32(os.Getuid())},
+		ImageCacheHigh:    w.imageCacheHigh,
+		ImageCacheLow:     w.imageCacheLow,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),
@@ -327,9 +337,9 @@ func (w *world) waitGone(name string) {
 
 func (w *world) waitHostEmpty() {
 	w.t.Helper()
-	testutil.Eventually(w.t, "the host to hold nothing", func() (bool, string) {
+	testutil.Eventually(w.t, "the host to hold nothing but images", func() (bool, string) {
 		s := w.host.Snapshot()
-		return s.Empty(), fmt.Sprintf("%+v", s)
+		return s.EmptyButImages(), fmt.Sprintf("%+v", s)
 	})
 }
 
@@ -460,10 +470,11 @@ func TestChangesReachTheHost(t *testing.T) {
 		return s.Roots[uid].Digest == "sha256:nginx-3" && s.VMs[uid].Spec.Root.Digest == "sha256:nginx-3", fmt.Sprintf("%+v", s.Roots)
 	})
 	w.waitReason("api", "Running")
-	testutil.Eventually(w.t, "the old image's base swept, and forgotten", func() (bool, string) {
-		b := w.host.Snapshot().Bases
-		return fmt.Sprint(b) == "[sha256:nginx-3]" && !w.host.Cached("sha256:nginx-1"), fmt.Sprint(b)
-	})
+	// The old image is kept for its next use.
+	w.sweeps(1)
+	if b := w.host.Snapshot().Bases; fmt.Sprint(b) != "[sha256:nginx-1 sha256:nginx-3]" || !w.host.Cached("sha256:nginx-1") {
+		t.Errorf("bases %v, the old image cached: %t", b, w.host.Cached("sha256:nginx-1"))
+	}
 }
 
 // TestFailuresAreReportedAndOutlived: each way the host can fail shows on
@@ -533,7 +544,7 @@ func TestAnExitedContainerSaysSo(t *testing.T) {
 
 // TestTheNodePicksUpWhereItLeftOff: a machine deleted while the agent is
 // down is released when it returns, and whatever the host holds that no
-// machine accounts for is removed.
+// machine accounts for is removed, but the images kept for their next use.
 func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
@@ -561,7 +572,7 @@ func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 		s := w.host.Snapshot()
 		_, vm := s.VMs[web]
 		return len(s.VMs) == 1 && vm && len(s.Roots) == 1 && len(s.Interfaces) == 1 && len(s.Networks) == 1 &&
-			len(s.Bases) == 1 && slices.Equal(s.Logs, []string{web}), fmt.Sprintf("%+v", s)
+			slices.Contains(s.Bases, "sha256:nginx-1") && slices.Equal(s.Logs, []string{web}), fmt.Sprintf("%+v", s)
 	})
 	w.waitReason("web", "Running")
 	if vm := w.host.Snapshot().VMs[web]; vm.Boots != 1 {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -684,7 +685,8 @@ func TestAHungGuestThatAnswersAgainRuns(t *testing.T) {
 }
 
 // TestAMachineDeletedWhilePulling: deleting a machine whose image is still
-// being pulled leaves nothing behind once the pull ends.
+// being pulled leaves nothing behind once the pull ends but the image, kept
+// for its next use.
 func TestAMachineDeletedWhilePulling(t *testing.T) {
 	w := newWorld(t)
 	letGo := w.host.HoldUnpack("nginx")
@@ -697,7 +699,14 @@ func TestAMachineDeletedWhilePulling(t *testing.T) {
 	w.sweeps(3)
 	letGo()
 	w.waitHostEmpty()
-	testutil.Eventually(w.t, "the image forgotten", func() (bool, string) { return !w.host.Cached("sha256:nginx-1"), "" })
+	testutil.Eventually(w.t, "the image kept", func() (bool, string) {
+		b := w.host.Snapshot().Bases
+		return slices.Equal(b, []string{"sha256:nginx-1"}) && w.host.Cached("sha256:nginx-1"), fmt.Sprint(b)
+	})
+	w.sweeps(1)
+	if b := w.host.Snapshot().Bases; !slices.Equal(b, []string{"sha256:nginx-1"}) || !w.host.Cached("sha256:nginx-1") {
+		t.Errorf("after a sweep: bases %v, the image cached: %t", b, w.host.Cached("sha256:nginx-1"))
+	}
 }
 
 // TestUnpackFailuresAreBlamedRight: a layer that cannot be fetched is the

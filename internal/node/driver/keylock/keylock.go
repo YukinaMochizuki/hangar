@@ -42,6 +42,40 @@ func (m *Map) Lock(key string) (unlock func()) {
 	}
 }
 
+// TryLock takes the lock of key if no one holds it, and returns its unlock;
+// ok is false, and nothing taken, if someone does.
+func (m *Map) TryLock(key string) (unlock func(), ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.locks[key] != nil {
+		return nil, false
+	}
+	if m.locks == nil {
+		m.locks = map[string]*entry{}
+	}
+	e := &entry{users: 1}
+	e.Lock()
+	m.locks[key] = e
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			e.Unlock()
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if e.users--; e.users == 0 {
+				delete(m.locks, key)
+			}
+		})
+	}, true
+}
+
+// Held says someone holds or waits for the lock of key.
+func (m *Map) Held(key string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.locks[key] != nil
+}
+
 // Len returns how many keys have a lock held or waited for.
 func (m *Map) Len() int {
 	m.mu.Lock()

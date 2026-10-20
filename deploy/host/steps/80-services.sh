@@ -131,10 +131,16 @@ services_mark() {
 	run "mark $1 for restart" sh -c "mkdir -p $STATE_DIR && touch $(services_marker "$1")"
 }
 
+# SERVICES_IMAGE_CACHE_HIGH is the agent's --image-cache-high, in GiB: what
+# the container images no machine uses may keep, their bases on the pool
+# among it (docs/decisions/node-agent.md).
+SERVICES_IMAGE_CACHE_HIGH=20
+
 # services_reserved_disk is what root disks may not take from the pool: what
-# the image cache and the VMs' directories may hold, their quotas.
+# the image cache and the VMs' directories may hold, their quotas, and the
+# bases of the images no machine uses.
 services_reserved_disk() {
-	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA")))
+	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA") + SERVICES_IMAGE_CACHE_HIGH))
 }
 
 # services_placement_args sets SERVICES_PLACEMENT to the agent's placement
@@ -477,7 +483,7 @@ ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 ExecStartPre=/usr/bin/mountpoint -q /var/log/hangar/nat
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
-ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)
+ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --image-cache-high ${SERVICES_IMAGE_CACHE_HIGH}Gi --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)
 Restart=always
 RestartSec=2
 # Each VM is a transient unit of its own (hangar-vm-*.service), outside this

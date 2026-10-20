@@ -54,7 +54,70 @@ var (
 	// ErrDigestMismatch means what was downloaded is not what its digest
 	// names.
 	ErrDigestMismatch = errors.New("digest mismatch")
+	// ErrBusy means what was asked waits on work under way; ask again
+	// later.
+	ErrBusy = errors.New("busy with work under way")
 )
+
+// Room is where a NoSpaceError found too little room.
+type Room int
+
+const (
+	// UnknownRoom says nothing of where; the node agent takes it as
+	// ImageRoom.
+	UnknownRoom Room = iota
+	// ImageRoom is where images are cached and unpacked, which
+	// ImageCache.Free counts.
+	ImageRoom
+	// StorageRoom is where bases and disks are, which Storage.Capacity
+	// counts.
+	StorageRoom
+)
+
+// NoSpaceError is ErrNoSpace saying where, and how much room was wanted.
+type NoSpaceError struct {
+	What string
+	Room Room
+	// Need is the bytes that had to be free, and Free those that were:
+	// making room is making Need less Free. Need is what to try with if
+	// Least is less.
+	Need, Free int64
+	// Least is the bytes known to have to be free, at most Need; zero
+	// means Need.
+	Least int64
+}
+
+// AtLeast is Least, or Need if Least is zero.
+func (e *NoSpaceError) AtLeast() int64 {
+	if e.Least == 0 {
+		return e.Need
+	}
+	return e.Least
+}
+
+func (e *NoSpaceError) Error() string {
+	if e.AtLeast() < e.Need {
+		return fmt.Sprintf("%s takes at least %d bytes, perhaps %d, %d are free: %v", e.What, e.AtLeast(), e.Need, e.Free, ErrNoSpace)
+	}
+	return fmt.Sprintf("%s takes %d bytes, %d are free: %v", e.What, e.Need, e.Free, ErrNoSpace)
+}
+
+func (e *NoSpaceError) Is(target error) bool { return target == ErrNoSpace }
+
+// UnpackShortfall is the NoSpaceError of what, the unpack of an image of
+// layers of size bytes compressed that ran out of the free bytes it had,
+// failing with err: known to need more than free, it asks for size more
+// at a try, as nothing it can measure of the unpack tells what its room
+// will take (docs/decisions/node-agent.md).
+func UnpackShortfall(what string, size, free int64, err error) *NoSpaceError {
+	return &NoSpaceError{What: fmt.Sprintf("%s (%v)", what, err), Room: ImageRoom, Need: free + max(size, 1), Least: free + 1, Free: free}
+}
+
+// OutOfRoom says err is a write its filesystem, or its quota, had no room
+// for.
+func OutOfRoom(err error) bool {
+	return errors.Is(err, syscall.ENOSPC) || errors.Is(err, syscall.EDQUOT)
+}
 
 // Credentials finds the login for a registry, named by its host as in
 // docker login, such as ghcr.io or index.docker.io. A zero Login pulls
@@ -108,26 +171,53 @@ func Repository(ref string) (string, error) {
 }
 
 // Images resolves and unpacks OCI images for the host's platform. The host
-// keeps a pulled digest in its cache until forgotten, with the
-// repositories (Repository) it was fetched from in full: Config and Unpack
-// answer a digest from the cache only for a reference naming one of them.
+// keeps a pulled digest in its cache until forgotten, with when it was last
+// used and the repositories (Repository) it was fetched from in full:
+// Config and Unpack answer a digest from the cache only for a reference
+// naming one of them.
 // For any other, they first fetch the manifest, the config and every layer
 // from the reference's repository with creds, each checked against its
 // digest, even what the cache holds; a repository that cannot serve them
 // fails the pull. Failed pulls wrap ErrImageNotFound, ErrUnauthorized,
-// ErrRegistryUnreachable or ctx's error. See docs/decisions/secrets.md.
+// ErrRegistryUnreachable or ctx's error, or are a *NoSpaceError of
+// ImageRoom when the cache has no room for the blobs. See
+// docs/decisions/secrets.md.
 type Images interface {
 	// Resolve returns the digest the reference names now, as its registry
 	// says: it proves nothing about the content a digest names.
 	Resolve(ctx context.Context, ref string, creds Credentials) (digest string, err error)
-	// Config returns how the image wants to be run.
+	// Config returns how the image wants to be run. It and Unpack count as
+	// a use of the digest.
 	Config(ctx context.Context, ref, digest string, creds Credentials) (ImageConfig, error)
 	// Unpack writes the image's root filesystem into the empty dir, never
 	// outside it; an image larger than the host allows is ErrImageTooLarge.
 	Unpack(ctx context.Context, ref, digest, dir string, creds Credentials) error
-	// Forget drops what the host keeps of a digest, once no base of it is
-	// left.
+	// Cached lists what the cache keeps, and the room where it keeps it.
+	Cached(ctx context.Context) (ImageCache, error)
+	// Forget drops what the host keeps of a digest, its blobs no other
+	// digest holds among them. While the digest is being pulled it fails
+	// at once with ErrBusy.
 	Forget(ctx context.Context, digest string) error
+}
+
+// ImageCache is what the host keeps of the images it pulled.
+type ImageCache struct {
+	Images []CachedImage
+	// Total is the bytes the cache may take, its blobs and what else
+	// shares their room, and Free what of it is left.
+	Total, Free int64
+}
+
+// CachedImage is a digest in the cache.
+type CachedImage struct {
+	Digest string
+	// UsedAt is when Config or Unpack last read it, kept on the host.
+	UsedAt time.Time
+	// Busy says it is being pulled, so Forget would fail with ErrBusy.
+	Busy bool
+	// Blobs are the sizes of the blobs it holds, by digest. Digests may
+	// share blobs.
+	Blobs map[string]int64
 }
 
 // ImageConfig is the part of an OCI image config a container runs by.
@@ -173,10 +263,13 @@ type FetchedImage interface {
 type Storage interface {
 	// EnsureBase makes a digest's base once, filling an empty dir with fill,
 	// unless size (ImageConfig.Size, or zero) exceeds the room left; fill's
-	// error is returned wrapped.
+	// error is returned wrapped. Too little room, where dir is or for the
+	// base, is a *NoSpaceError, of ImageRoom or StorageRoom; one where
+	// fill ran out says what the image is likely to need there, and as its
+	// Least only more than was free.
 	EnsureBase(ctx context.Context, digest string, size int64, fill func(dir string) error) error
-	// Bases lists the digests that have a base.
-	Bases(ctx context.Context) ([]string, error)
+	// Bases lists the bases.
+	Bases(ctx context.Context) ([]Base, error)
 	// DeleteBase removes a base. It fails while a root disk cloned from it
 	// exists, as a ZFS snapshot with clones does.
 	DeleteBase(ctx context.Context, digest string) error
@@ -186,8 +279,8 @@ type Storage interface {
 	EnsureRoot(ctx context.Context, machineUID, digest string, size int64) (Disk, error)
 	// Roots lists every machine's root disk.
 	Roots(ctx context.Context) ([]Disk, error)
-	// DeleteRoot removes a machine's root disk. It fails while the machine's
-	// VM runs.
+	// DeleteRoot removes a machine's root disk, a use of its base. It fails
+	// while the machine's VM runs.
 	DeleteRoot(ctx context.Context, machineUID string) error
 	// EnsureImageBase makes the base of a disk image of digest once: a
 	// volume of size bytes, which fill writes given its device, kept
@@ -210,6 +303,16 @@ type Storage interface {
 	// Capacity returns how much the storage holds, and how much of it is
 	// free.
 	Capacity(ctx context.Context) (Capacity, error)
+}
+
+// Base is an OCI image's base.
+type Base struct {
+	Digest string
+	// Size is the bytes it takes in the storage.
+	Size int64
+	// UsedAt is when it was last used, kept on the host: made, cloned
+	// from, or a root disk cloned from it deleted.
+	UsedAt time.Time
 }
 
 // Disk is a machine's root disk.

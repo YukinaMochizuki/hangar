@@ -264,8 +264,10 @@ with `--release DIR`. `--only <step>` runs a single step
     machines may reach the front door's :80 and :443 and nothing else of
     the host; `docs/decisions/networking.md`), `--public-ipv6-prefix` its
     /64, from which every machine interface gets its public IPv6 address,
-    `--reserved-disk` the sum
-    of both quotas, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
+    `--image-cache-high 20Gi` (what the container images no machine uses
+    may keep, `docs/decisions/node-agent.md`), `--reserved-disk` the sum
+    of both quotas and those 20 GiB, the bases of those images being on
+    the pool, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
     plus the host's own overhead), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
     that socket, root's and group `hangar-edge`'s, 0660, and takes
@@ -971,9 +973,14 @@ these before `hangar-node` starts; the `packages` and `zfs` steps make them:
   few times the largest image the host should take, such as 100G on the
   current host. The image cache and the directory images are unpacked in
   both go under it, on that one dataset: both hold tenant content. The
-  `services` step passes the sum of this quota and `hangar/vms`'s to
-  `hangar-node --reserved-disk`. Kept disk-image bases (3 to 10 GiB each, `docs/runbook/vm-images.md`, one
-  per Image used on the host, under `hangar/vmbases`) sit on the pool outside
+  `services` step passes the sum of this quota, `hangar/vms`'s and the
+  agent's `--image-cache-high` (20Gi, which it sets too) to
+  `hangar-node --reserved-disk`: the bases of container images no machine
+  uses, kept for their next use (`docs/decisions/node-agent.md`), sit on
+  the pool under `hangar/bases`, and are bounded by it. The bases of
+  images machines use, and kept disk-image bases (3 to 10 GiB each,
+  `docs/runbook/vm-images.md`, one per Image used on the host, under
+  `hangar/vmbases`), sit on the pool outside
   that reservation, so the pool's free space must leave room for them.
 - Nothing else: the driver makes `hangar/bases`, `hangar/roots`,
   `hangar/disks` and `hangar/vmbases` (`mountpoint=none`) under the pool

@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/netip"
 	"os"
@@ -30,6 +31,7 @@ import (
 	"syscall"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node"
@@ -85,6 +87,8 @@ func main() {
 		edgeSocket     = flag.String("edge-dial-socket", "", "the unix socket hangar-edge asks for connections to public endpoints on; empty disables it")
 		edgeUser       = flag.String("edge-user", "", "the user hangar-edge runs as: the only peer the edge dial socket takes, and its group the socket's; required with --edge-dial-socket")
 		natLog         = flag.String("nat-log-dir", defaultNATLog, "with this host's network driver, where each new IPv4 connection out of the networks is logged for 30 days, root's alone; empty logs none")
+		cacheHigh      = flag.String("image-cache-high", fmt.Sprintf("%dGi", node.DefaultImageCacheHigh>>30), "what the container images no machine uses may keep, their cached blobs and their bases, past which the least recently used go; count it in --reserved-disk")
+		cacheLow       = flag.String("image-cache-low", "", "what is left of the images no machine uses once some go past --image-cache-high; empty for four fifths of it")
 	)
 	placement := bindPlacement(flag.CommandLine)
 	hf.bind(flag.CommandLine)
@@ -110,6 +114,11 @@ func main() {
 		log.Error("node agent stopped", "error", err)
 		os.Exit(1)
 	}
+	high, low, err := parseImageCache(*cacheHigh, *cacheLow)
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	edgeDial, edgeUIDs, err := listenEdgeDial(*edgeSocket, *edgeUser)
 	if err != nil {
 		log.Error("node agent stopped", "error", err)
@@ -122,17 +131,19 @@ func main() {
 		Tunnel: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
 		},
-		Reserved:      &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
-		Placement:     placement,
-		MaxPulls:      *maxPulls,
-		MaxUnpackWork: hf.maxUnpackWork,
-		Drivers:       d,
-		DNSUpstreams:  upstreams,
-		IPv6Prefix:    prefix,
-		EdgeDial:      edgeDial,
-		EdgeUIDs:      edgeUIDs,
-		NATLog:        *natLog,
-		Log:           log,
+		Reserved:       &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
+		Placement:      placement,
+		MaxPulls:       *maxPulls,
+		MaxUnpackWork:  hf.maxUnpackWork,
+		Drivers:        d,
+		DNSUpstreams:   upstreams,
+		IPv6Prefix:     prefix,
+		EdgeDial:       edgeDial,
+		EdgeUIDs:       edgeUIDs,
+		NATLog:         *natLog,
+		ImageCacheHigh: high,
+		ImageCacheLow:  low,
+		Log:            log,
 	})
 	if err == nil {
 		log.Info("node agent starting", "node", *name, "socket", *socket, "drivers", *hostDrivers, "version", node.Version())
@@ -282,6 +293,23 @@ func (hf hostFlags) prefix() (netip.Prefix, error) {
 		return netip.Prefix{}, fmt.Errorf("--public-ipv6-prefix: %w", err)
 	}
 	return p, nil
+}
+
+// parseImageCache reads --image-cache-high and --image-cache-low, the
+// latter zero when empty.
+func parseImageCache(high, low string) (int64, int64, error) {
+	h, err := quantity.Bytes(high)
+	if err != nil || h == 0 || h > math.MaxInt64 {
+		return 0, 0, fmt.Errorf("--image-cache-high: %q is not a size above zero", high)
+	}
+	if low == "" {
+		return int64(h), 0, nil
+	}
+	l, err := quantity.Bytes(low)
+	if err != nil || l == 0 || l > h {
+		return 0, 0, fmt.Errorf("--image-cache-low: %q is not a size above zero and up to --image-cache-high", low)
+	}
+	return int64(h), int64(l), nil
 }
 
 // parseUpstreams reads --dns-upstreams: addresses, each on port 53.

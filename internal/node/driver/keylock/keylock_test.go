@@ -50,3 +50,33 @@ func TestOneHolderPerKey(t *testing.T) {
 	<-done // not held up by x
 	other()
 }
+
+// TestTryLockTakesOnlyAFreeKey: TryLock fails at once on a key held, takes
+// a free one, and what it takes holds others off until let go.
+func TestTryLockTakesOnlyAFreeKey(t *testing.T) {
+	var m keylock.Map
+	held := m.Lock("a")
+	if _, ok := m.TryLock("a"); ok {
+		t.Error("took a key held")
+	}
+	if !m.Held("a") || m.Held("b") {
+		t.Errorf("held: a %t, b %t; want a only", m.Held("a"), m.Held("b"))
+	}
+	held()
+	if m.Held("a") {
+		t.Error("a key let go is held")
+	}
+	unlock, ok := m.TryLock("a")
+	if !ok {
+		t.Fatal("did not take a free key")
+	}
+	if _, ok := m.TryLock("a"); ok {
+		t.Error("took a key TryLock holds")
+	}
+	unlock()
+	unlock()
+	if n := m.Len(); n != 0 {
+		t.Errorf("%d keys kept with nobody holding them", n)
+	}
+	m.Lock("a")()
+}

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -170,6 +171,9 @@ func images(t *testing.T, h Host) {
 	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
 		t.Errorf("config: %v", err)
 	}
+	if c, ok := cachedImage(t, h.Images, digest); !ok || c.UsedAt.IsZero() || len(c.Blobs) == 0 {
+		t.Errorf("a pulled digest is cached as %+v (listed: %t)", c, ok)
+	}
 	dir := t.TempDir()
 	must(t, h.Images.Unpack(ctx, ref, digest, dir, anon))
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) == 0 {
@@ -182,17 +186,66 @@ func images(t *testing.T, h Host) {
 
 	// A pulled digest is the host's until forgotten, registry or not.
 	h.Withdraw(t, ref)
+	before := time.Now()
 	if _, err := h.Images.Config(ctx, ref, digest, anon); err != nil {
 		t.Errorf("config of a pulled digest with the registry down: %v", err)
+	}
+	if c, _ := cachedImage(t, h.Images, digest); c.UsedAt.Before(before) {
+		t.Errorf("read from the cache at %v, it is last used at %v", before, c.UsedAt)
 	}
 	if err := h.Images.Unpack(ctx, ref, digest, t.TempDir(), anon); err != nil {
 		t.Errorf("unpacking a pulled digest with the registry down: %v", err)
 	}
 	must(t, h.Images.Forget(ctx, digest))
 	must(t, h.Images.Forget(ctx, digest))
+	if _, ok := cachedImage(t, h.Images, digest); ok {
+		t.Error("a forgotten digest is listed in the cache")
+	}
 	if _, err := h.Images.Config(ctx, ref, digest, anon); err == nil {
 		t.Error("a forgotten digest answered with the registry down")
 	}
+}
+
+// cachedImage returns what the cache lists of digest, checking the room it
+// says it has.
+func cachedImage(t *testing.T, images driver.Images, digest string) (driver.CachedImage, bool) {
+	t.Helper()
+	c, err := images.Cached(t.Context())
+	must(t, err)
+	if c.Total <= 0 || c.Free < 0 || c.Free > c.Total {
+		t.Errorf("the image cache's room: %d free of %d", c.Free, c.Total)
+	}
+	for _, i := range c.Images {
+		if i.Digest == digest {
+			return i, true
+		}
+	}
+	return driver.CachedImage{}, false
+}
+
+// baseOf returns the base of digest as listed.
+func baseOf(t *testing.T, s driver.Storage, digest string) (driver.Base, bool) {
+	t.Helper()
+	bases, err := s.Bases(t.Context())
+	must(t, err)
+	for _, b := range bases {
+		if b.Digest == digest {
+			return b, true
+		}
+	}
+	return driver.Base{}, false
+}
+
+// digestsOf returns the digests of the bases listed.
+func digestsOf(t *testing.T, s driver.Storage) []string {
+	t.Helper()
+	bases, err := s.Bases(t.Context())
+	must(t, err)
+	var out []string
+	for _, b := range bases {
+		out = append(out, b.Digest)
+	}
+	return out
 }
 
 // privateImages: a private repository answers only its login, by tag and by
@@ -326,8 +379,11 @@ func storage(t *testing.T, h Host) {
 	if filled {
 		t.Error("an existing base was filled again")
 	}
-	if bases, err := h.Storage.Bases(ctx); err != nil || len(bases) != 1 || bases[0] != digest {
-		t.Errorf("bases %v %v", bases, err)
+	if bases := digestsOf(t, h.Storage); !slices.Equal(bases, []string{digest}) {
+		t.Errorf("bases %v", bases)
+	}
+	if b, _ := baseOf(t, h.Storage, digest); b.Size <= 0 || b.UsedAt.IsZero() {
+		t.Errorf("a base made is listed as %+v", b)
 	}
 	// A fill that fails leaves no base.
 	_, failing := h.Publish(t, "failing:1")
@@ -335,23 +391,41 @@ func storage(t *testing.T, h Host) {
 	if err := h.Storage.EnsureBase(ctx, failing, 0, func(string) error { return failed }); !errors.Is(err, failed) {
 		t.Errorf("a failing fill: %v, want its error", err)
 	}
-	if bases, _ := h.Storage.Bases(ctx); slices.Contains(bases, failing) {
+	if _, ok := baseOf(t, h.Storage, failing); ok {
 		t.Error("a failed fill left a base")
 	}
 	// An image larger than the room left is refused before it is unpacked.
 	c, err := h.Storage.Capacity(ctx)
 	must(t, err)
+	// It says how much it needs, where to unpack it or for its base.
+	var full *driver.NoSpaceError
 	if err := h.Storage.EnsureBase(ctx, failing, c.Free+1, func(string) error {
 		t.Error("an image larger than the room left was unpacked")
 		return nil
-	}); !errors.Is(err, driver.ErrNoSpace) {
-		t.Errorf("an image larger than the room left: %v, want no space", err)
+	}); !errors.As(err, &full) || !errors.Is(err, driver.ErrNoSpace) || full.Need <= full.Free {
+		t.Errorf("an image larger than the room left: %v, want no space, more needed than free", err)
+	}
+	// A fill that runs out of room says more is needed where it unpacks.
+	full = nil
+	// It knows only that it needs more than was free, and aims at more.
+	if err := h.Storage.EnsureBase(ctx, failing, 1<<20, func(dir string) error {
+		return &os.PathError{Op: "write", Path: dir, Err: syscall.ENOSPC}
+	}); !errors.As(err, &full) || full.Room != driver.ImageRoom ||
+		full.AtLeast() <= full.Free || full.AtLeast() >= full.Need {
+		t.Errorf("a fill out of room: %v (%+v), want at least more than free needed where it unpacks, and more aimed at", err, full)
+	}
+	if _, ok := baseOf(t, h.Storage, failing); ok {
+		t.Error("a fill out of room left a base")
 	}
 
+	before := time.Now()
 	root, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
 	must(t, err)
 	if root.MachineUID != "m1" || root.Digest != digest || root.Path == "" || root.Size < rootSize {
 		t.Errorf("root %+v", root)
+	}
+	if b, _ := baseOf(t, h.Storage, digest); b.UsedAt.Before(before) {
+		t.Errorf("cloned from at %v, its base is last used at %v", before, b.UsedAt)
 	}
 	again, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
 	if err != nil || again != root {
@@ -373,7 +447,12 @@ func storage(t *testing.T, h Host) {
 		t.Errorf("capacity %+v %v", c, err)
 	}
 
+	// A root disk going is its base's last use.
+	before = time.Now()
 	must(t, h.Storage.DeleteRoot(ctx, "m1"))
+	if b, _ := baseOf(t, h.Storage, digest); b.UsedAt.Before(before) {
+		t.Errorf("a root disk of it deleted at %v, the base is last used at %v", before, b.UsedAt)
+	}
 	must(t, h.Storage.DeleteRoot(ctx, "m1"))
 	must(t, h.Storage.DeleteBase(ctx, digest))
 	must(t, h.Storage.DeleteBase(ctx, digest))
@@ -496,12 +575,21 @@ func reopening(t *testing.T, h Host) {
 	must(t, err)
 	r2, err := h.Storage.EnsureRoot(ctx, "m2", digest, grownSize)
 	must(t, err)
+	base, _ := baseOf(t, h.Storage, digest)
+	cached, _ := cachedImage(t, h.Images, digest)
 
-	// What one instance made, another finds, the registry gone.
+	// What one instance made, another finds, the registry gone, and when
+	// it was last used.
 	h.Withdraw(t, ref)
 	images, storage := h.Reopen(t)
-	if bases, err := storage.Bases(ctx); err != nil || !slices.Equal(bases, []string{digest}) {
-		t.Errorf("bases after reopening: %v %v", bases, err)
+	if bases := digestsOf(t, storage); !slices.Equal(bases, []string{digest}) {
+		t.Errorf("bases after reopening: %v", bases)
+	}
+	if b, _ := baseOf(t, storage, digest); !b.UsedAt.Equal(base.UsedAt) {
+		t.Errorf("the base last used at %v, after reopening at %v", base.UsedAt, b.UsedAt)
+	}
+	if c, _ := cachedImage(t, images, digest); !c.UsedAt.Equal(cached.UsedAt) {
+		t.Errorf("the cached digest last used at %v, after reopening at %v", cached.UsedAt, c.UsedAt)
 	}
 	roots, err := storage.Roots(ctx)
 	must(t, err)

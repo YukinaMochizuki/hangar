@@ -100,7 +100,12 @@ func (f *fakeZFS) checkClone(vol string, size, want int64, grown bool) {
 	if len(clones) != 1 || strings.Contains(clones[0], "volsize=") {
 		f.t.Errorf("clones: %q", clones)
 	}
-	sets := f.calls("set")
+	var sets []string
+	for _, s := range f.calls("set") {
+		if strings.HasSuffix(s, " "+vol) {
+			sets = append(sets, s)
+		}
+	}
 	switch {
 	case grown && (len(sets) != 1 || sets[0] != "set volsize="+itoa(want)+" "+vol):
 		f.t.Errorf("grown by %q", sets)
