@@ -368,6 +368,23 @@ var errSilent = errors.New("the upgraded connection carried nothing for too long
 // door has cut it for arriving too slowly (internal/edge/front).
 var ErrBodyTooSlow = errors.New("the request body arrived too slowly")
 
+type upstreamFailedKey struct{}
+
+// WithUpstreamFailed returns ctx, a request's, with failed, which is called
+// when the request's upstream (the apiserver, or an endpoint's machine)
+// does not answer it.
+func WithUpstreamFailed(ctx context.Context, failed func()) context.Context {
+	return context.WithValue(ctx, upstreamFailedKey{}, failed)
+}
+
+// UpstreamFailed says to ctx's WithUpstreamFailed, if any, that the
+// request's upstream did not answer it.
+func UpstreamFailed(ctx context.Context) {
+	if failed, ok := ctx.Value(upstreamFailedKey{}).(func()); ok {
+		failed()
+	}
+}
+
 type bodyCutKey struct{}
 
 // WithBodyCut returns ctx, a request's, with cut, which says whether the
@@ -840,5 +857,8 @@ func (e *Edge) proxyError(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	e.cfg.Log.Info("an endpoint did not answer", "endpoint", ep.project+"/"+ep.name, "error", err)
+	if status != http.StatusNotFound {
+		UpstreamFailed(r.Context())
+	}
 	http.Error(w, msg, status)
 }

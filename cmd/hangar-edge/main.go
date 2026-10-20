@@ -11,6 +11,9 @@
 //
 // hangar-edge check-flags takes the edge's flags and fails, saying why, on
 // any of the edge's checks of its flags (checkFlags); it starts nothing.
+//
+// With --metrics-listen the edge serves /metrics, and nothing else, on a
+// loopback address (docs/decisions/monitoring.md).
 package main
 
 import (
@@ -34,6 +37,7 @@ import (
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/cloudflare"
+	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/net/publicsuffix"
 	"golang.org/x/sync/errgroup"
 
@@ -41,6 +45,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
 	"github.com/YukinaMochizuki/hangar/internal/edge/front"
+	"github.com/YukinaMochizuki/hangar/internal/metrics"
 	"github.com/YukinaMochizuki/hangar/internal/sdsocket"
 )
 
@@ -65,6 +70,7 @@ type flags struct {
 	acmeCA, acmeCARoot, acmeMail string
 	acmeDNS, dnsTokenFile        string
 	consoleDir                   string
+	metricsListen                string
 	endpointResponseTimeout      time.Duration
 	upgradeIdleTimeout           time.Duration
 	limits                       front.Limits
@@ -108,6 +114,7 @@ func bindFlags(fs *flag.FlagSet, f *flags) {
 	fs.StringVar(&f.acmeDNS, "acme-dns", "cloudflare", "how DNS-01 challenges are answered: cloudflare"+testDNSUsage)
 	fs.StringVar(&f.dnsTokenFile, "cloudflare-dns-token-file", credential(dnsTokenCredential), "file only its owner reads holding a Cloudflare token that may edit DNS in the two domains' zones")
 	fs.StringVar(&f.consoleDir, "console-dir", "", "directory of the console's files, index.html at its top; empty, the console is not installed")
+	fs.StringVar(&f.metricsListen, "metrics-listen", "", "loopback address to serve /metrics on, such as 127.0.0.1:9103; empty disables it")
 	fs.DurationVar(&f.endpointResponseTimeout, "endpoint-response-header-timeout", 100*time.Second, "how long an endpoint has to start its answer")
 	fs.DurationVar(&f.upgradeIdleTimeout, "upgrade-idle-timeout", edge.DefaultUpgradeIdleTimeout, "how long an upgraded connection to an endpoint, a WebSocket, may carry no byte either way")
 	limitFlags(fs, &f.limits)
@@ -252,12 +259,21 @@ func run(ctx context.Context, f flags, log *slog.Logger) error {
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return e.Run(ctx) })
 
+	reg := metrics.NewRegistry()
 	if f.cpDomain != "" {
-		serve, err := frontDoor(ctx, f, log, socks, e)
+		serve, collectors, err := frontDoor(ctx, f, log, socks, e)
 		if err != nil {
 			return err
 		}
+		reg.MustRegister(collectors...)
 		g.Go(serve)
+	}
+	if f.metricsListen != "" {
+		ln, err := metrics.Listen(ctx, f.metricsListen)
+		if err != nil {
+			return fmt.Errorf("--metrics-listen: %w", err)
+		}
+		g.Go(func() error { return metrics.Serve(ctx, ln, reg, log) })
 	}
 	if err := socks.Unused(); err != nil {
 		return err
@@ -296,6 +312,11 @@ func checkFlags(f flags) error {
 	if f.listen != "" && !loopback(f.listen) {
 		return fmt.Errorf("--listen %q is not a loopback address: it serves plain HTTP, for tests on the host alone", f.listen)
 	}
+	if f.metricsListen != "" {
+		if err := metrics.CheckAddr(f.metricsListen); err != nil {
+			return fmt.Errorf("--metrics-listen: %w", err)
+		}
+	}
 	if _, err := consoleOrigin(f); err != nil {
 		return err
 	}
@@ -331,8 +352,8 @@ func domainsApart(cp, user string) error {
 }
 
 // frontDoor sets up the front door on :443 and :80 and returns what serves
-// it until ctx is done.
-func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.Sockets, endpoints http.Handler) (func() error, error) {
+// it until ctx is done, and its metrics.
+func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.Sockets, endpoints http.Handler) (func() error, []prometheus.Collector, error) {
 	door, err := front.New(front.Config{
 		CPDomain: f.cpDomain, UserDomain: f.domain,
 		DialAPI: func(ctx context.Context) (net.Conn, error) {
@@ -341,21 +362,21 @@ func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.S
 		Endpoints: endpoints, ConsoleDir: f.consoleDir, Limits: f.limits, Log: log,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	dns, resolvers, err := dnsProvider(ctx, f, log)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var roots *x509.CertPool
 	if f.acmeCARoot != "" {
 		pem, err := os.ReadFile(f.acmeCARoot)
 		if err != nil {
-			return nil, fmt.Errorf("--acme-ca-root: %w", err)
+			return nil, nil, fmt.Errorf("--acme-ca-root: %w", err)
 		}
 		roots = x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("--acme-ca-root %s holds no certificate", f.acmeCARoot)
+			return nil, nil, fmt.Errorf("--acme-ca-root %s holds no certificate", f.acmeCARoot)
 		}
 	}
 	tc, err := front.Certificates(ctx, front.CertConfig{
@@ -363,20 +384,20 @@ func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.S
 		DNS: dns, Resolvers: resolvers, Names: door.Names(), Log: log,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	https, err := socks.TCP(ctx, httpsSocketName, f.httpsListen, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	plain, err := socks.TCP(ctx, httpSocketName, f.httpListen, nil)
 	if err != nil {
 		_ = https.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	return func() error {
-		return door.Serve(ctx, front.Listeners{HTTPS: https, HTTP: plain}, tc)
-	}, nil
+		return door.Serve(ctx, front.Listeners{HTTPS: https, HTTP: plain}, tc.TLS)
+	}, door.Collectors(tc), nil
 }
 
 // dnsProvider is what answers the DNS-01 challenges, as --acme-dns says,

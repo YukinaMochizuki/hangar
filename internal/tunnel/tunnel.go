@@ -65,8 +65,9 @@ type Agent struct {
 	// means 200 ms and 5 s.
 	MinBackoff, MaxBackoff time.Duration
 	Log                    *slog.Logger
-	// Opened, if set, is told of each tunnel opened.
-	Opened func()
+	// Opened, if set, is told of each tunnel opened, and Closed of each
+	// opened tunnel ending.
+	Opened, Closed func()
 }
 
 // Run keeps the tunnel open until ctx ends, and returns once every call
@@ -190,6 +191,9 @@ func (a *Agent) serve(ctx context.Context, handler http.Handler, calls *calls) (
 	}
 	if a.Opened != nil {
 		a.Opened()
+	}
+	if a.Closed != nil {
+		defer a.Closed()
 	}
 	live := a.Liveness.orDefault()
 	// x/net deprecates http2.Server; net/http's cannot serve one accepted conn.

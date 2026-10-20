@@ -22,7 +22,10 @@ import (
 func (a *Agent) serveTunnel(ctx context.Context) {
 	mux := http.NewServeMux()
 	mux.Handle(nodev1connect.NewNodeServiceHandler(nodeService{a: a, agent: ctx}, connect.WithReadMaxBytes(1<<20)))
-	(&tunnel.Agent{Dial: a.cfg.Tunnel, Handler: mux, Liveness: a.cfg.TunnelLiveness, Log: a.cfg.Log}).Run(ctx)
+	(&tunnel.Agent{
+		Dial: a.cfg.Tunnel, Handler: mux, Liveness: a.cfg.TunnelLiveness, Log: a.cfg.Log,
+		Opened: a.metrics.tunnelOpen, Closed: a.metrics.tunnelClosed,
+	}).Run(ctx)
 }
 
 // nodeService is the NodeService the agent serves the apiserver. agent

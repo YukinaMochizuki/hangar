@@ -172,6 +172,8 @@ type Agent struct {
 	// storage, memory and network are what Run read of the host as it
 	// started.
 	storage, memory, network string
+	// metrics are what the agent counts for its metrics listener.
+	metrics *agentMetrics
 }
 
 // New returns an agent for cfg.
@@ -258,6 +260,7 @@ func New(cfg Config) (*Agent, error) {
 		netChecked: map[string]int64{},
 		told:       map[string]toldIPv6{},
 		puller:     puller,
+		metrics:    newAgentMetrics(),
 		stops:      newStops(),
 		guests:     newGuests(),
 		trigger:    make(chan struct{}, 1),
@@ -268,6 +271,7 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
 		puller.makeRoom = a.makeRoom
+		puller.pulled = a.metrics.pulled
 	}
 	return a, nil
 }
@@ -356,6 +360,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer ticker.Stop()
 	for {
 		if err := a.report(ctx); err != nil && ctx.Err() == nil {
+			a.metrics.heartbeatFailures.Inc()
 			a.cfg.Log.Error("reporting the node failed", "error", err)
 		}
 		select {
