@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -123,13 +123,19 @@ gen-check: deps
 		rm -rf $$snap; exit 1; \
 	fi; rm -rf $$snap
 
-check: lint breaking test test-web gen-check
+check: lint breaking test test-web test-monitoring gen-check
 
 # The console (web/): its types, its lint and its unit tests.
 test-web: deps
 	pnpm --dir web typecheck
 	pnpm --dir web lint
 	pnpm --dir web test
+
+# The host's alerting rules and their tests, and the Prometheus and
+# Alertmanager configurations deploy/host writes, by the promtool and amtool
+# pinned with the host's binaries in deploy/host/versions.env.
+test-monitoring:
+	tools/check-monitoring.sh
 
 dev:
 	go run ./cmd/hangar-apiserver --auth-mode=dev
@@ -161,5 +167,7 @@ tools:
 	@$(BUF) --version | sed 's/^/buf /'
 	@$(TOOL) sqlc version | sed 's/^/sqlc /'
 	@$(GOLANGCI_LINT) version --short | sed 's/^/golangci-lint /'
+	@tools/prom-tool.sh promtool --version | sed -n 1p
+	@tools/prom-tool.sh amtool --version 2>&1 | sed -n 1p
 	@node --version | sed 's/^/node /'
 	@pnpm --version | sed 's/^/pnpm /'

@@ -1,0 +1,248 @@
+# The host's alerting rules (docs/decisions/monitoring.md), which the
+# monitoring step installs for Prometheus (deploy/host/steps/90-monitoring.sh).
+# Checked and tested by promtool in CI: make test-monitoring, with the tests in
+# deploy/host/monitoring/tests/. severity is critical, sent at once, or
+# warning, held to the daily window; Alertmanager routes on nothing else but
+# Watchdog's name.
+#
+# Every label an alert carries is the platform's: a unit, a mount point, a
+# pool, a disk, a probed URL of the control plane. Never a tenant's.
+groups:
+  - name: hangar-pool
+    rules:
+      - alert: ZpoolNotOnline
+        expr: node_zfs_zpool_state{state!="online"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ZFS pool {{ $labels.zpool }} is {{ $labels.state }}"
+          description: "zpool status {{ $labels.zpool }} says which device; docs/runbook/host-bootstrap.md."
+
+      - alert: ZpoolDataErrors
+        expr: hangar_zpool_data_errors > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "ZFS pool {{ $labels.zpool }} has {{ $value }} permanent data errors"
+          description: "zpool status -v {{ $labels.zpool }} lists the files."
+
+      - alert: ZpoolDeviceErrors
+        expr: hangar_zpool_device_errors > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "ZFS pool {{ $labels.zpool }} counts {{ $value }} {{ $labels.type }} errors on its devices"
+          description: "The mirror repaired them, but a disk is going; zpool status {{ $labels.zpool }} says which. zpool clear once it is dealt with."
+
+      - alert: ZpoolAlmostFull
+        expr: hangar_zpool_allocated_bytes / hangar_zpool_size_bytes > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "ZFS pool {{ $labels.zpool }} is {{ $value | humanizePercentage }} full"
+
+      - alert: ZpoolFilling
+        expr: hangar_zpool_allocated_bytes / hangar_zpool_size_bytes > 0.8 <= 0.9
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "ZFS pool {{ $labels.zpool }} is {{ $value | humanizePercentage }} full"
+
+      - alert: ZpoolMetricsStale
+        expr: time() - hangar_zpool_metrics_timestamp_seconds > 900
+        labels:
+          severity: warning
+        annotations:
+          summary: "The pools' size and errors were last read {{ $value | humanizeDuration }} ago"
+          description: "systemctl status hangar-zpool-metrics.service says why."
+
+      - alert: ImagesQuotaAlmostFull
+        expr: |
+          1 - node_filesystem_avail_bytes{mountpoint="/var/lib/hangar/images"}
+            / node_filesystem_size_bytes{mountpoint="/var/lib/hangar/images"} > 0.9
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "hangar/images is {{ $value | humanizePercentage }} of its quota"
+          description: "Image pulls fail once it is full; docs/runbook/host-bootstrap.md, Quotas."
+
+  - name: hangar-disks
+    rules:
+      - alert: MdArrayDegraded
+        expr: |
+          max without (state) (
+            node_md_disks{state="failed"} > 0
+            or node_md_disks_required - ignoring(state) node_md_disks{state="active"} > 0
+            or node_md_state{state="inactive"} == 1
+          )
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "md array {{ $labels.device }} is degraded"
+          description: "cat /proc/mdstat; mdadm --detail /dev/{{ $labels.device }}."
+
+      - alert: SmartFailed
+        expr: smartctl_device_smart_status == 0 or smartctl_device_critical_warning > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk {{ $labels.device }} fails its SMART health check"
+          description: "smartctl -a /dev/{{ $labels.device }}."
+
+      - alert: SmartMediaErrors
+        expr: smartctl_device_media_errors > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk {{ $labels.device }} has {{ $value }} media errors"
+          description: "smartctl -a /dev/{{ $labels.device }}."
+
+      - alert: SmartWearHigh
+        expr: smartctl_device_percentage_used > 80
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk {{ $labels.device }} has used {{ $value }}% of its rated endurance"
+
+      - alert: DiskTemperatureHigh
+        expr: smartctl_device_temperature{temperature_type="current"} > 70
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk {{ $labels.device }} is at {{ $value }}°C"
+
+      - alert: SensorTemperatureHigh
+        expr: node_hwmon_temp_celsius >= (node_hwmon_temp_max_celsius > 0)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sensor {{ $labels.chip }} {{ $labels.sensor }} is at {{ $value }}°C, at or past its maximum"
+
+  - name: hangar-host
+    rules:
+      - alert: FilesystemAlmostFull
+        expr: |
+          1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs|vfat"}
+            / node_filesystem_size_bytes{fstype=~"ext4|xfs|vfat"} > 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+
+      - alert: FilesystemFilling
+        expr: |
+          1 - node_filesystem_avail_bytes{fstype=~"ext4|xfs|vfat"}
+            / node_filesystem_size_bytes{fstype=~"ext4|xfs|vfat"} > 0.8 <= 0.9
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"
+
+      # What the kernel can still hand out: MemAvailable, and what the ARC
+      # would give back down to its minimum, which MemAvailable leaves out.
+      - alert: HostMemoryLow
+        expr: |
+          node_memory_MemAvailable_bytes
+            + clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0) < 1073741824
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The host has {{ $value | humanize1024 }}B of memory left"
+
+      # The share of time every task waited for memory (PSI full).
+      - alert: HostMemoryPressure
+        expr: rate(node_pressure_memory_stalled_seconds_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Tasks on the host stall on memory {{ $value | humanizePercentage }} of the time"
+
+      - alert: ClockNotSynchronised
+        expr: node_timex_sync_status == 0 or abs(node_timex_offset_seconds) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The host's clock is not synchronised"
+          description: "timedatectl timesync-status."
+
+  - name: hangar-units
+    rules:
+      # node_exporter reports only the units the monitoring step names: the
+      # platform's own and the monitoring stack's, each of which must run.
+      - alert: UnitNotActive
+        expr: node_systemd_unit_state{state="active"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.name }} is not active"
+          description: "systemctl status {{ $labels.name }}; journalctl -u {{ $labels.name }}."
+
+      # systemd's count of automatic restarts (NRestarts), which a start by
+      # hand resets: a difference, since increase() extrapolates past 3.
+      - alert: UnitRestartingOften
+        expr: node_systemd_service_restart_total - node_systemd_service_restart_total offset 1h > 3
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} restarted {{ $value | humanize }} times in the last hour"
+          description: "journalctl -u {{ $labels.name }}."
+
+      - alert: MonitoringTargetDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Prometheus cannot scrape {{ $labels.job }} at {{ $labels.instance }}"
+
+  - name: hangar-reachability
+    rules:
+      - alert: EndpointDown
+        expr: probe_success{job="blackbox"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.instance }} fails its HTTPS probe"
+          description: "curl -v {{ $labels.instance }}; systemctl status hangar-edge."
+
+      - alert: CertificateExpiresSoon
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox"} - time() < 7 * 86400
+        labels:
+          severity: critical
+        annotations:
+          summary: "The certificate {{ $labels.instance }} serves expires in {{ $value | humanizeDuration }}"
+          description: "certmagic renews with about 30 days left: journalctl -u hangar-edge says why it has not."
+
+      - alert: CertificateRenewalLate
+        expr: 7 * 86400 <= probe_ssl_earliest_cert_expiry{job="blackbox"} - time() < 14 * 86400
+        labels:
+          severity: warning
+        annotations:
+          summary: "The certificate {{ $labels.instance }} serves expires in {{ $value | humanizeDuration }}"
+          description: "certmagic renews with about 30 days left: journalctl -u hangar-edge says why it has not."
+
+  - name: hangar-meta
+    rules:
+      # Always firing, so a receiver outside the host can tell the alerting
+      # path is alive (a dead man's switch). Alertmanager sends it nowhere
+      # until one is added.
+      - alert: Watchdog
+        expr: vector(1)
+        labels:
+          severity: warning
+        annotations:
+          summary: "The alerting pipeline works"

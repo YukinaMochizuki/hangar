@@ -89,6 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: make lint-sh
+      - run: make test-monitoring
 
   web:
     needs: changes
