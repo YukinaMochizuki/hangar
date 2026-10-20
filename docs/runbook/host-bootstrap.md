@@ -298,6 +298,16 @@ with `--release DIR`. `--only <step>` runs a single step
     agent runs itself: each VM is a transient unit of its own and outlives
     a stop or restart of it.
 
+  Each serves its metrics on loopback for the `monitoring` step's
+  Prometheus ("Monitoring and alerts" below): the apiserver with
+  `--metrics-listen 127.0.0.1:9101`, the agent with `--metrics-listen
+  127.0.0.1:9102`. The step passes the flag only when the binary the run
+  installs takes it, which it tells as it tells an old hangar-node for
+  `check-placement` (its answer to `-h`, the release's copy with
+  `--release`); a binary from before the flag runs without it, the step
+  warns, and Prometheus does not scrape it. `verify.sh` checks each serves
+  its own metrics there, or says SKIP.
+
   It restarts a service whose unit it changed, or whose binary the `release`
   step replaced (the running process's `/proc/PID/exe` is then a deleted
   file), and nothing else. A changed socket unit, or one that is down,
@@ -335,7 +345,10 @@ with `--release DIR`. `--only <step>` runs a single step
   keeps the sockets, and new connections wait for the edge. `verify.sh`
   checks it runs as `hangar-edge` with no capability at all, listens on
   `*:443` and `*:80` and on nothing else but loopback (a testbed's edge
-  answers DNS-01 there), and, with a TLS handshake to the
+  answers DNS-01 there, and it serves its metrics on `127.0.0.1:9103`,
+  `--metrics-listen`, when the release's hangar-edge takes the flag, as for
+  the services above), that it serves its metrics there, and, with a TLS
+  handshake to the
   host's own :443 for each name, that it serves a certificate the system's
   roots trust, valid for the name, with more than 14 days left, and that
   `api.`'s `/healthz` says `ok`.
@@ -975,11 +988,29 @@ changed unit, configuration or binary restarts that service, and nothing
 else. Before writing the configuration the step has the installed
 `promtool` and `amtool` check it, and refuses what they refuse.
 
-The rules are `deploy/host/monitoring/rules/host.yml`, with their tests in
+Prometheus also scrapes the platform's own services, each on the loopback
+address the `services` and `edge` steps give it with `--metrics-listen`,
+as a job of its name, and only those whose binary takes the flag (a
+release from before it is warned of and not scraped):
+
+| Job | Target | What it serves |
+|---|---|---|
+| `hangar-apiserver` | `127.0.0.1:9101` | Connect calls by procedure and code, and their latency; each Node's `Ready`; machines by phase and reason, and in a crash loop, counted, never named |
+| `hangar-node` | `127.0.0.1:9102` | The tunnel to the apiserver, failed reports, image pulls, the image cache |
+| `hangar-edge` | `127.0.0.1:9103` | With the front door on: its requests by route (control plane, console, endpoints) and status class, what it answered itself, its certificates' expiry |
+
+Their metrics are scraped as they are served: no relabeling adds a label,
+and none of theirs names a tenant (`docs/decisions/monitoring.md`).
+`verify.sh` checks each of these targets is up, as it checks every
+target.
+
+The rules are `deploy/host/monitoring/rules/host.yml`, the host's, and
+`services.yml`, the services', with their tests in
 `deploy/host/monitoring/tests/`; `make test-monitoring` (part of `make
 check` and CI) runs `promtool check rules` and `promtool test rules` on
 them and checks the configurations the step writes, with the same
-versions. Each alert is `critical` or `warning`:
+versions. The step installs both, and removes any other file in
+`/etc/hangar/monitoring/rules`. Each alert is `critical` or `warning`:
 
 - critical, sent at once (one message an alert name, again every 4 hours
   while it fires, and when it resolves): a pool not ONLINE or with
@@ -987,14 +1018,29 @@ versions. Each alert is `critical` or `warning`:
   with media errors, a filesystem or a pool past 90%, `hangar/images` past
   90% of its quota, memory short for 10 minutes, a watched unit not active
   for 2 minutes, a monitoring target down, an HTTPS probe failing for 5
-  minutes, a certificate with under 7 days left;
+  minutes, a certificate with under 7 days left; more than 5% of the
+  API's calls ending in a server error (`unknown`, `internal`,
+  `unavailable`, `data_loss`) for 10 minutes, a Node not `Ready` for 3
+  minutes, the agent's tunnel to the apiserver down for 3 minutes, a
+  machine blocked by `DiskFailed` or `NetworkFailed`, reasons only the
+  platform causes, for 15 minutes;
 - warning, held to one window a day, 09:00 to 10:00 in
   `HANGAR_ALERTS_TZ` (`HANGAR_UPGRADES_TZ`, else UTC, when unset), all in
   one message, never their resolution: a pool or filesystem past 80%, read,
   write or checksum errors on a pool's devices, SMART wear past 80%, a disk
   or sensor too hot, the clock not synchronised, a unit restarted more than
   3 times in an hour, the pools' metrics stale, a certificate with under 14
-  days left.
+  days left; the API's p99 latency past 1 s for 15 minutes, more than 5%
+  of the front door's control-plane or console requests ending in 5xx for
+  15 minutes.
+
+What a tenant's program does alerts no one: a machine `Exited`,
+`BootFailed` or failing its image pull, an endpoint's 5xx, and machines
+in a crash loop, which `hangar:machines_crash_looping:sum` records. An
+alert that counts machines never names them: its message says to list
+them on the admin socket, `sudo hangar --context local get machines -A`
+(`-o yaml` for each one's reason); the Node alerts say `sudo hangar
+--context local get nodes`.
 
 `Watchdog` always fires and goes to no one, until a dead man's switch
 outside the host is added as its receiver.

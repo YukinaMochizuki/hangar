@@ -131,7 +131,9 @@ endpoints) and status class, what it answered itself when the apiserver or
 an endpoint did not, and when each of its certificates expires. A metric's
 labels hold only values the platform defines and bounds; a test holds every
 registered metric to the list in `internal/metrics`
-(`decisions/monitoring.md`).
+(`decisions/monitoring.md`). `deploy/host` gives them `127.0.0.1:9101`,
+`:9102` and `:9103`, and its Prometheus scrapes them there and alerts on
+them (`deploy/host/monitoring/rules/services.yml`).
 
 ## Where the reasoning lives
 

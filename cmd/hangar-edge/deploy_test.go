@@ -150,6 +150,25 @@ func TestTheEdgeStepHasTheEdgeCheckItsFlags(t *testing.T) {
 	if !strings.HasPrefix(out, "same\n") || !strings.Contains(out, " --cp-domain hangarlab.cloud ") || !strings.Contains(out, " --acme-email ops@example.com ") {
 		t.Errorf("the checked flags are not the unit's: %q", out)
 	}
+	// This edge takes --metrics-listen, so the unit passes it, and its
+	// check-flags takes it.
+	if !strings.Contains(out, " --metrics-listen 127.0.0.1:9103") {
+		t.Errorf("the edge's flags have no --metrics-listen: %q", out)
+	}
+}
+
+// TestAnEdgeFromBeforeMetricsRunsWithout: a release whose hangar-edge has
+// no --metrics-listen gets none in its unit, which it would refuse, and the
+// step warns that Prometheus does not scrape it.
+func TestAnEdgeFromBeforeMetricsRunsWithout(t *testing.T) {
+	old := releaseOf(t, []byte("#!/bin/sh\necho 'usage: hangar-edge [flags]' >&2\necho '  -domain string' >&2\nexit 0\n"))
+	out, errOut := edgeStep(t, old, frontDoorEnv("hangarlab.cloud", "hangarlab.dev"), "services_metrics_note hangar-edge; edge_flags")
+	if strings.Contains(out, "--metrics-listen") || !strings.Contains(out, " --cp-domain hangarlab.cloud ") {
+		t.Errorf("an edge from before --metrics-listen: flags %q", out)
+	}
+	if !strings.Contains(errOut, "the hangar-edge this run installs has no --metrics-listen") {
+		t.Errorf("an edge from before --metrics-listen: warned %q", errOut)
+	}
 }
 
 // TestAnEdgeFromBeforeCheckFlagsIsWarnedOf: a release whose hangar-edge

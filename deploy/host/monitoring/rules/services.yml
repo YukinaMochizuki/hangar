@@ -1,0 +1,99 @@
+# The platform's services' alerting rules (docs/decisions/monitoring.md), on
+# what hangar-apiserver, hangar-node and hangar-edge serve on their metrics
+# listeners, which the monitoring step installs for Prometheus beside host.yml
+# (deploy/host/steps/90-monitoring.sh). Checked and tested by promtool in CI:
+# make test-monitoring, with the tests in deploy/host/monitoring/tests/.
+# severity is critical, sent at once, or warning, held to the daily window.
+#
+# Alerts are for what the platform did, never for what a tenant's program
+# did: machines are counted by a reason only the platform causes, a tenant's
+# crash loop is recorded and alerts no one, and the edge's endpoints, which
+# a tenant's program answers, are left out of its errors. Every label is the
+# platform's: a procedure, a code, a node's name, a reason, a route. An
+# alert that counts machines says how to list them on the admin socket.
+groups:
+  - name: hangar-api
+    rules:
+      # The Connect codes a server's own failure ends a call with, as HTTP
+      # 5xx: unknown, internal, unavailable, data_loss. Not deadline_exceeded
+      # (the caller's deadline; slowness is ApiLatencyHigh's) nor
+      # unimplemented (a call to a procedure there is not).
+      - alert: ApiErrorsHigh
+        expr: |
+          sum(rate(hangar_apiserver_rpc_requests_total{code=~"unknown|internal|unavailable|data_loss"}[5m]))
+            / sum(rate(hangar_apiserver_rpc_requests_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of the API's calls fail with a server error"
+          description: "journalctl -u hangar-apiserver; sum by (procedure, code) (rate(hangar_apiserver_rpc_requests_total[5m])) in Prometheus says which."
+
+      # Unary calls only: the apiserver leaves streams, such as watches, out
+      # of its histogram.
+      - alert: ApiLatencyHigh
+        expr: |
+          histogram_quantile(0.99, sum by (le) (rate(hangar_apiserver_rpc_duration_seconds_bucket[5m]))) > 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The API's p99 latency is {{ $value | humanizeDuration }}"
+          description: "histogram_quantile(0.99, sum by (le, procedure) (rate(hangar_apiserver_rpc_duration_seconds_bucket[5m]))) in Prometheus says which procedure."
+
+  - name: hangar-nodes
+    rules:
+      # Unknown when the agent stopped reporting, False when it reports it is
+      # not ready.
+      - alert: NodeNotReady
+        expr: hangar_apiserver_node_ready{status!="True"} == 1
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} is not Ready: its Ready is {{ $labels.status }}"
+          description: "sudo hangar --context local get nodes; systemctl status hangar-node; journalctl -u hangar-node."
+
+      # The agent's own view; while it is down Prometheus cannot scrape it,
+      # and MonitoringTargetDown and NodeNotReady say so instead.
+      - alert: NodeTunnelDown
+        expr: hangar_node_tunnel_connected == 0
+        for: 3m
+        labels:
+          severity: critical
+        annotations:
+          summary: "hangar-node's tunnel to the apiserver is down"
+          description: "The apiserver cannot reach the node's machines. sudo hangar --context local get nodes; journalctl -u hangar-node -u hangar-apiserver."
+
+  - name: hangar-machines
+    rules:
+      # A reason only the platform causes: its disks or its network failed
+      # the machine, whatever the tenant asked.
+      - alert: MachinesFailedByThePlatform
+        expr: sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed"}) > 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} machines are blocked by {{ $labels.reason }}, which only the platform causes"
+          description: "sudo hangar --context local get machines -A lists every machine and its READY; sudo hangar --context local get machines -A -o yaml shows each one's reason and message. journalctl -u hangar-node."
+
+      # A tenant's program exiting again and again is its own: recorded for
+      # the operator's view, never alerted on.
+      - record: hangar:machines_crash_looping:sum
+        expr: sum(hangar_apiserver_machines_crash_looping)
+
+  - name: hangar-edge
+    rules:
+      # The control plane's routes, the API and the console's files: an
+      # endpoint's 5xx is a tenant's program's, or its machine stopped.
+      - alert: EdgeErrorsHigh
+        expr: |
+          sum by (route) (rate(hangar_edge_requests_total{route=~"control-plane|console",status_class="5xx"}[5m]))
+            / sum by (route) (rate(hangar_edge_requests_total{route=~"control-plane|console"}[5m])) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value | humanizePercentage }} of the front door's {{ $labels.route }} requests end in 5xx"
+          description: "journalctl -u hangar-edge -u hangar-apiserver; hangar_edge_upstream_errors_total counts the 502 and 503 the edge answered itself."

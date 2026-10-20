@@ -67,6 +67,14 @@ SERVICES_CHECK_PARENT=/usr/local/lib
 SERVICES_INSTALLED_BIN=/usr/local/bin
 # The apiserver's public socket, there only with the front door on.
 SERVICES_PUBLIC_SOCKET_UNIT=hangar-apiserver-public
+# Where each service serves /metrics (--metrics-listen), on loopback, for
+# the monitoring step's Prometheus: ports none of the monitoring stack's
+# (90-monitoring.sh) takes. A service whose binary has no --metrics-listen
+# runs without it, and is not scraped. The edge's is the edge step's.
+SERVICES_APISERVER_METRICS=127.0.0.1:9101
+SERVICES_NODE_METRICS=127.0.0.1:9102
+# shellcheck disable=SC2034
+SERVICES_EDGE_METRICS=127.0.0.1:9103
 
 # services_edge_on holds when local.env names the public endpoints' domain:
 # then the edge runs.
@@ -202,16 +210,15 @@ binary_has_check() {
 # check-placement.
 node_check_placement() { binary_has_check hangar-node check-placement "$1"; }
 
-# release_check NAME CHECK WHAT TAG ARGS... prints why NAME's own check,
-# NAME CHECK ARGS..., refuses WHAT, in the NAME this run installs: the
-# release's with --release, else the installed one. Nothing when it passes,
-# or when that NAME is one from before CHECK, which it warns of; a NAME
-# that cannot run is a problem. The release's copy is made in a directory
-# named for TAG. A subshell, so its traps are its own.
-release_check() (
-	name=$1 check=$2 what=$3 tag=$4
-	shift 4
-	bin=$SERVICES_INSTALLED_BIN/$name dir=${HANGAR_RELEASE_DIR:-} tmp='' shown=$SERVICES_INSTALLED_BIN/$name
+# release_bin NAME WHAT TAG sets bin to the NAME this run installs, ready
+# to run: the release's with --release, else the installed one; and shown
+# to the path to name it by. The release's copy is made in a directory named
+# for TAG, and removed as the calling subshell ends, whose traps it sets.
+# When there is no NAME to run it prints why WHAT cannot be checked, and
+# fails.
+release_bin() {
+	local name=$1 what=$2 tag=$3 dir=${HANGAR_RELEASE_DIR:-}
+	bin=$SERVICES_INSTALLED_BIN/$name tmp='' shown=$SERVICES_INSTALLED_BIN/$name
 	if [ -n "$dir" ]; then
 		shown=$dir/$name
 		# The release's file need not be executable (a fetched release keeps
@@ -227,19 +234,30 @@ release_check() (
 		if ! tmp=$(mktemp -d "$SERVICES_CHECK_PARENT/.hangar-$tag-check.XXXXXX" 2>&1); then
 			printf '%s cannot be checked: no directory for a copy of %s: %s\n' "$what" "$shown" "$tmp"
 			tmp=''
-			exit 0
+			return 1
 		fi
 		install -m 0700 "$dir/$name" "$tmp/$name" 2>/dev/null || true
 		if ! grep -E "^[0-9a-f]{64}  $name\$" "$dir/SHA256SUMS" 2>/dev/null | sed "s|  $name\$|  $tmp/$name|" |
 			sha256sum -c --quiet --status 2>/dev/null; then
 			printf '%s\n' "$dir/$name does not match $dir/SHA256SUMS; $what cannot be checked with it"
-			exit 0
+			return 1
 		fi
 		bin=$tmp/$name
 	elif [ ! -x "$bin" ]; then
 		printf '%s\n' "no $bin to check $what with; install a release first"
-		exit 0
+		return 1
 	fi
+}
+
+# release_check NAME CHECK WHAT TAG ARGS... prints why NAME's own check,
+# NAME CHECK ARGS..., refuses WHAT, in the NAME this run installs
+# (release_bin). Nothing when it passes, or when that NAME is one from
+# before CHECK, which it warns of; a NAME that cannot run is a problem. A
+# subshell, so its traps are its own.
+release_check() (
+	name=$1 check=$2 what=$3 tag=$4
+	shift 4
+	release_bin "$name" "$what" "$tag" || exit 0
 	if ! has=$(binary_has_check "$name" "$check" "$bin"); then
 		printf '%s cannot be checked with %s: %s\n' "$what" "$shown" "$has"
 	elif [ "$has" = lacks ]; then
@@ -249,6 +267,50 @@ release_check() (
 	fi
 	exit 0
 )
+
+# services_metrics_probe NAME prints whether the NAME this run installs
+# (release_bin) takes --metrics-listen, as binary_has_check tells from its
+# answer to -h: has or lacks; or why it cannot tell, and fails. A subshell,
+# so its traps are its own.
+services_metrics_probe() (
+	release_bin "$1" "$1's --metrics-listen" metrics || exit 1
+	binary_has_check "$1" -metrics-listen "$bin"
+)
+
+# services_metrics_on NAME holds when the NAME this run installs serves
+# /metrics: its unit then passes --metrics-listen, and Prometheus scrapes
+# it. The answer is kept for the run, in the shell that first asks
+# (services_metrics_note asks in the step's own), for the release in
+# HANGAR_RELEASE_DIR or none.
+services_metrics_on() {
+	local v=SERVICES_METRICS_HAS_${1//-/_} out
+	if [[ ${!v:-} != "${HANGAR_RELEASE_DIR:-}|"* ]]; then
+		out=$(services_metrics_probe "$1" 2>&1) || out="cannot tell: $out"
+		printf -v "$v" '%s|%s' "${HANGAR_RELEASE_DIR:-}" "$out"
+	fi
+	[ "${!v#*|}" = has ]
+}
+
+# services_metrics_note NAME... asks services_metrics_on of each NAME in
+# this shell, and warns of each that serves no /metrics.
+services_metrics_note() {
+	local n v
+	for n in "$@"; do
+		services_metrics_on "$n" && continue
+		v=SERVICES_METRICS_HAS_${n//-/_}
+		if [ "${!v#*|}" = lacks ]; then
+			log "warning: the $n this run installs has no --metrics-listen: it runs without it, and Prometheus does not scrape it"
+		else
+			log "warning: $n runs without --metrics-listen, and Prometheus does not scrape it: ${!v#*|}"
+		fi
+	done
+}
+
+# services_metrics_flag NAME ADDR prints NAME's --metrics-listen ADDR, with
+# a space before it, when its binary takes it; nothing otherwise.
+services_metrics_flag() {
+	! services_metrics_on "$1" || printf -- ' --metrics-listen %s' "$2"
+}
 
 # services_placement_problem prints why the agent would not report the
 # placement the host env file gives as given, by the agent's own check
@@ -422,7 +484,7 @@ EnvironmentFile=$LOCAL_ENV
 # The public API is on loopback in either auth mode, for the host itself,
 # and the front door reaches it through the public socket. The node socket
 # accepts root's agent; the admin socket, root.
-ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS --default-max-owned-tenants $HANGAR_DEFAULT_MAX_OWNED_TENANTS
+ExecStart=/usr/local/bin/hangar-apiserver --db $SERVICES_STATE/hangar.db --listen $SERVICES_LISTEN $(services_auth_flags) --socket $SERVICES_SOCKET --admin-socket $SERVICES_ADMIN_SOCKET --node-uid 0 --node-name $HANGAR_NODE_NAME --bootstrap-admin \${HANGAR_BOOTSTRAP_ADMIN} --ssh-ca-key $SERVICES_SSH_CA $(services_endpoint_flags) --secrets-kek $SERVICES_SECRETS_KEK --secrets-kek-previous $SERVICES_SECRETS_KEK_PREVIOUS --default-max-owned-tenants $HANGAR_DEFAULT_MAX_OWNED_TENANTS$(services_metrics_flag hangar-apiserver "$SERVICES_APISERVER_METRICS")
 Sockets=$(for s in $(services_sockets); do printf '%s.socket ' "$s"; done | sed 's/ $//')
 Restart=on-failure
 RestartSec=2
@@ -483,7 +545,7 @@ ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 ExecStartPre=/usr/bin/mountpoint -q /var/log/hangar/nat
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
-ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --image-cache-high ${SERVICES_IMAGE_CACHE_HIGH}Gi --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)
+ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --image-cache-high ${SERVICES_IMAGE_CACHE_HIGH}Gi --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)$(services_metrics_flag hangar-node "$SERVICES_NODE_METRICS")
 Restart=always
 RestartSec=2
 # Each VM is a transient unit of its own (hangar-vm-*.service), outside this
@@ -681,6 +743,29 @@ services_loopback_only() {
 	[ -n "$addrs" ] && ! grep -qvE '^(127\.[0-9.]+|\[::1\]):[0-9]+$' <<<"$addrs"
 }
 
+# services_metrics_ok ADDR PREFIX holds when ADDR serves /metrics with a
+# metric whose name starts with PREFIX: the service's own, not only the Go
+# runtime's. For up to 15 s: a service that just started takes a moment.
+services_metrics_ok() {
+	local i out
+	for i in $(seq 1 15); do
+		out=$(curl -fsS --max-time 5 "http://$1/metrics" 2>/dev/null) && grep -q "^$2" <<<"$out" && return 0
+		[ "$i" = 15 ] || sleep 1
+	done
+	return 1
+}
+
+# services_metrics_verify NAME ADDR PREFIX checks NAME serves its metrics
+# on ADDR when its binary takes --metrics-listen, and says it is skipped
+# when not.
+services_metrics_verify() {
+	if services_metrics_on "$1"; then
+		check "$1 serves /metrics on $2" services_metrics_ok "$2" "$3"
+	else
+		skip "$1's metrics" "$SERVICES_INSTALLED_BIN/$1 has no --metrics-listen, or cannot tell: Prometheus does not scrape it"
+	fi
+}
+
 # services_node_ready asks the API, as root on the host through the admin
 # socket (whatever the public listener's auth), whether the node is Ready, for
 # up to 30 s: an agent that just started takes a moment.
@@ -739,6 +824,7 @@ services_apply() {
 	fi
 
 	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
+	services_metrics_note hangar-apiserver hangar-node
 	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
 	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
 
@@ -872,6 +958,8 @@ services_verify() {
 	check "apiserver runs $(auth_mode) auth as $LOCAL_ENV asks: $(services_auth_flags)" services_auth_running_ok
 	check "apiserver listens on loopback only" services_loopback_only
 	check "node $HANGAR_NODE_NAME Ready (hangar get node)" services_node_ready
+	services_metrics_verify hangar-apiserver "$SERVICES_APISERVER_METRICS" hangar_apiserver_
+	services_metrics_verify hangar-node "$SERVICES_NODE_METRICS" hangar_node_
 	if [ -e "$SERVICES_SMOKE_TOKEN" ]; then
 		check "smoke token $SERVICES_SMOKE_TOKEN, root's, mode 600, is serviceToken:smoke/smoke and lists the smoke project's containers" services_smoke_token_ok
 	else
