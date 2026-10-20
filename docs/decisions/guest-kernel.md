@@ -129,6 +129,18 @@ the `user.max_user_namespaces` sysctl.
   `CONFIG_BRIDGE`, `CONFIG_BRIDGE_NETFILTER`, `CONFIG_BRIDGE_VLAN_FILTERING`,
   `CONFIG_VETH`, `CONFIG_TUN`, `CONFIG_MACVLAN`, `CONFIG_IPVLAN`, `CONFIG_VXLAN`,
   `CONFIG_WIREGUARD`.
+- The NFSv4.2 client over TCP, with which machines mount FileShares
+  (`docs/decisions/file-shares.md`): `CONFIG_NFS_FS`, `CONFIG_NFS_V4`,
+  `CONFIG_NFS_V4_1`, `CONFIG_NFS_V4_2`, `CONFIG_NFS_DISABLE_UDP_SUPPORT`.
+- `nfsd`, serving NFSv4 only: `CONFIG_NFSD`, `CONFIG_NFSD_V4`, with
+  `CONFIG_NFSD_V2`, `CONFIG_NFSD_V3_ACL` and
+  `CONFIG_NFSD_LEGACY_CLIENT_TRACKING` off. It is in the one platform kernel
+  for the FileShare server's microVM, which boots this kernel like every
+  other platform guest; container guests carry it unused. A second kernel
+  for one guest would be a second config to audit, build and test; nfsd and
+  the newer client cost every guest about 0.5 MB of kernel image (text,
+  data and bss, measured on 6.18). The v3 server cannot be left out of the
+  build, so the server turns it off at run time.
 
 ## Consequences
 
