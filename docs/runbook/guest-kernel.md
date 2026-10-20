@@ -97,9 +97,12 @@ which may belong to another module) as a static binary (`CGO_ENABLED=0`,
 `bin/guest/initramfs.cpio`, an uncompressed newc archive holding `/init`,
 `/sbin/mke2fs` and the empty directories `dev`, `proc`, `sys` and
 `newroot`. There are no device nodes: hangar-init mounts devtmpfs itself,
-then mounts the root disk on `/newroot`, formats and mounts the
-container's volumes (`docs/decisions/container-volumes.md`), and switches
-to it.
+brings the network up, then mounts the root disk on `/newroot`, formats
+and mounts the container's volumes, FileShares over NFS
+(`docs/decisions/container-volumes.md`), and switches to it. A boot disk
+naming a FileShare's server makes it that server instead, which stays in
+the initramfs and serves its data disk over nfsd
+(`docs/decisions/file-shares.md`).
 
 `guest/e2fsprogs/build.sh` downloads the e2fsprogs release
 `guest/e2fsprogs/e2fsprogs.env` pins into `.cache/e2fsprogs/`, checks its
@@ -167,6 +170,13 @@ Take every patch release of the current LTS line.
 4. `guest/kernel/build.sh --update-config`. Usually only the version line in
    `config` changes; anything else in the diff deserves a look.
 5. Build and boot it, and run Docker in a guest, before committing.
+6. Check whether a FileShare's server still needs to wait out its first
+   second before it starts nfsd (`firstSecond` in
+   `internal/guest/fileshare`): nfsd's `create_client` stamps a client with
+   `ktime_get_boottime_seconds()`, and `is_client_expired` takes a
+   `cl_time` of 0 for expired (`fs/nfsd/nfs4state.c`). If either has
+   changed, keep or drop the wait to match, and run the FileShare tests on
+   the testbed (`docs/runbook/testbed.md`).
 
 ## Move to the next LTS
 
@@ -181,6 +191,6 @@ Move once kernel.org marks the new line `longterm`, not before.
 3. `--update-config` and read the whole `config` diff; new defaults arrive
    with every release.
 4. Build, boot and run Docker in a guest, and compare boot time against the
-   previous kernel.
+   previous kernel. Check nfsd's first second as for a patch release.
 5. Update the current line named in `docs/decisions/guest-kernel.md` in the
    same change.

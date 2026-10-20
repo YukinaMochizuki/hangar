@@ -36,8 +36,14 @@ const probeSize = 1 << 20
 var platformDirs = []string{"/proc", "/sys", "/dev", "/run"}
 
 // Volumes mounts the container's volumes in root, the root disk before it
-// becomes /, as docs/decisions/container-volumes.md says.
-func Volumes(root string, vols []*guestv1.Volume, logf func(format string, args ...any)) error {
+// becomes /, as docs/decisions/container-volumes.md says. A FileShare's is
+// mounted over NFS, as the client clientID, which the network must reach.
+func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(format string, args ...any)) error {
+	if slices.ContainsFunc(vols, func(v *guestv1.Volume) bool { return v.GetFileShare() != nil }) {
+		if err := setNFSClientID(clientID); err != nil {
+			return err
+		}
+	}
 	// Where each target leads in the image as it is: what a new volume is
 	// filled from, and the order the volumes are bound in, the outer first.
 	in := make([]string, len(vols))
@@ -66,21 +72,36 @@ func Volumes(root string, vols []*guestv1.Volume, logf func(format string, args 
 		}
 	}
 	order := bindOrder(in)
+	rootfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(rootfd) }()
 	// Read-only only once all are bound, so an inner mountpoint can be made
 	// in a read-only outer volume.
-	bound := make([]string, len(vols))
+	bound := make([]int, len(vols))
+	defer func() {
+		for _, fd := range bound {
+			if fd > 0 {
+				_ = unix.Close(fd)
+			}
+		}
+	}()
 	for _, i := range order {
-		full, err := bind(root, vols[i], staged[i])
+		fd, err := bind(root, rootfd, vols[i], staged[i])
 		if err != nil {
 			return fmt.Errorf("volume %s at %s: %w", vols[i].GetName(), vols[i].GetTarget(), err)
 		}
-		bound[i] = full
+		bound[i] = fd
 	}
 	for i, v := range vols {
-		if v.GetReadOnly() {
-			if err := unix.Mount("", bound[i], "", unix.MS_BIND|unix.MS_REMOUNT|unix.MS_RDONLY, ""); err != nil {
-				return fmt.Errorf("volume %s at %s: making it read-only: %w", v.GetName(), v.GetTarget(), err)
-			}
+		if !v.GetReadOnly() {
+			continue
+		}
+		// Not a bind remount, which would clear nosuid and nodev.
+		ro := &unix.MountAttr{Attr_set: unix.MOUNT_ATTR_RDONLY}
+		if err := unix.MountSetattr(bound[i], "", unix.AT_EMPTY_PATH, ro); err != nil {
+			return fmt.Errorf("volume %s at %s: making it read-only: %w", v.GetName(), v.GetTarget(), err)
 		}
 	}
 	return nil
@@ -93,7 +114,7 @@ func imageTarget(root, target string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if t == "/" || slices.ContainsFunc(platformDirs, func(d string) bool { return t == d || strings.HasPrefix(t, d+"/") }) {
+	if platformOwned(t) {
 		return "", fmt.Errorf("it leads to %s, where the platform mounts its own", t)
 	}
 	return t, nil
@@ -116,35 +137,23 @@ func depth(p string) int {
 	return strings.Count(filepath.Clean("/"+p), "/")
 }
 
-// stage mounts v's device whole at dir, formatting it if it is blank, grows
-// it to the device, and, when it is new, fills it from src in root.
+// stage mounts v whole at dir: a FileShare over NFS; a disk formatted if it
+// is blank, grown to the device, and, when it is new, filled from src in
+// root.
 func stage(root string, v *guestv1.Volume, src, dir string, logf func(string, ...any)) error {
-	dev := v.GetDevice()
-	kind, err := probeDevice(dev)
-	if err != nil {
-		return err
-	}
-	switch kind {
-	case contentBlank:
-		if err := format(dev); err != nil {
+	if v.GetFileShare() != nil {
+		m, err := shareMount(v, dir)
+		if err != nil {
 			return err
 		}
-		logf("hangar-init: volume %s is new: made an ext4 filesystem on %s", v.GetName(), dev)
-	case contentExt4:
-	default:
-		return fmt.Errorf("%s holds %s, neither ext4 nor zeros, and is never formatted", dev, kind)
+		return m.do()
 	}
-	if err := (mount{dev, dir, "ext4", "", 0}).do(); err != nil {
-		return err
+	if v.GetDevice() == "" {
+		return errors.New("it names neither a device nor a FileShare")
 	}
-	fresh, err := newVolume(dir)
+	fresh, err := MountData(v.GetDevice(), dir, 0, "volume "+v.GetName(), logf)
 	if err != nil {
 		return err
-	}
-	if from, to, err := GrowRoot(dir, dev); err != nil {
-		logf("hangar-init: volume %s stays its size: %v", v.GetName(), err)
-	} else if to > from {
-		logf("hangar-init: grew volume %s from %d to %d blocks", v.GetName(), from, to)
 	}
 	if !fresh || v.GetNocopy() || v.GetSubpath() != "" {
 		return nil
@@ -167,43 +176,89 @@ func stage(root string, v *guestv1.Volume, src, dir string, logf func(string, ..
 	return nil
 }
 
-// bind mounts what the container sees of a staged volume at its target in
-// root, resolved again now the outer volumes are there, and returns where:
-// the volume, or its subpath.
-func bind(root string, v *guestv1.Volume, staged string) (string, error) {
-	src := staged
-	if sub := v.GetSubpath(); sub != "" {
-		in, err := resolveIn(staged, sub)
-		if err != nil {
-			return "", err
-		}
-		src = filepath.Join(staged, in)
-		if fi, err := os.Stat(src); err != nil || !fi.IsDir() {
-			return "", fmt.Errorf("subpath %s is not a directory of the volume", sub)
-		}
-	}
-	target, err := imageTarget(root, v.GetTarget())
+// bind mounts what the container sees of a staged volume, the volume or its
+// subpath, at its target in root, resolved again now the outer volumes are
+// there, and returns an fd of the mount. Each is resolved to an fd that is
+// then mounted, never by name again.
+func bind(root string, rootfd int, v *guestv1.Volume, staged string) (int, error) {
+	src, err := unix.Open(staged, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return "", err
+		return -1, err
 	}
-	full := filepath.Join(root, target)
-	if err := os.MkdirAll(full, 0o755); err != nil {
-		return "", err
+	defer func() { _ = unix.Close(src) }()
+	if sub := v.GetSubpath(); sub != "" {
+		fd, err := openDirIn(src, sub)
+		if err != nil {
+			return -1, fmt.Errorf("subpath %s is not a directory of the volume: %w", sub, err)
+		}
+		_ = unix.Close(src)
+		src = fd
 	}
-	if fi, err := os.Stat(full); err != nil || !fi.IsDir() {
-		return "", fmt.Errorf("%s in the image is not a directory", v.GetTarget())
+	target, err := makeDirIn(root, rootfd, v.GetTarget(), platformOwned)
+	if err != nil {
+		return -1, fmt.Errorf("%s in the image is not a directory: %w", v.GetTarget(), err)
 	}
-	if err := unix.Mount(src, full, "", unix.MS_BIND, ""); err != nil {
-		return "", fmt.Errorf("binding it: %w", err)
+	defer func() { _ = unix.Close(target) }()
+	where, err := whereIn(root, target)
+	if err != nil {
+		return -1, err
 	}
-	return full, nil
+	if platformOwned(where) {
+		return -1, fmt.Errorf("it leads to %s, where the platform mounts its own", where)
+	}
+	tree, err := unix.OpenTree(src, "", unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC|unix.AT_EMPTY_PATH)
+	if err != nil {
+		return -1, fmt.Errorf("cloning it: %w", err)
+	}
+	if err := unix.MoveMount(tree, "", target, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH); err != nil {
+		_ = unix.Close(tree)
+		return -1, fmt.Errorf("binding it: %w", err)
+	}
+	return tree, nil
+}
+
+// MountData mounts the ext4 filesystem on dev at dir with flags, making it
+// first when dev is blank, and grows it to dev; what, such as "volume
+// data", names it in logf's messages. A dev holding anything else is
+// refused, never formatted. mkfsArgs go to mke2fs before the device. It
+// reports whether the filesystem is new, holding nothing, an empty
+// lost+found removed.
+func MountData(dev, dir string, flags uintptr, what string, logf func(string, ...any), mkfsArgs ...string) (fresh bool, err error) {
+	kind, err := probeDevice(dev)
+	if err != nil {
+		return false, err
+	}
+	switch kind {
+	case contentBlank:
+		if err := format(dev, mkfsArgs...); err != nil {
+			return false, err
+		}
+		logf("hangar-init: %s is new: made an ext4 filesystem on %s", what, dev)
+	case contentExt4:
+	default:
+		return false, fmt.Errorf("%s holds %s, neither ext4 nor zeros, and is never formatted", dev, kind)
+	}
+	if err := (mount{dev, dir, "ext4", "", flags}).do(); err != nil {
+		return false, err
+	}
+	fresh, err = newVolume(dir)
+	if err != nil {
+		return false, err
+	}
+	if from, to, err := GrowRoot(dir, dev); err != nil {
+		logf("hangar-init: %s stays its size: %v", what, err)
+	} else if to > from {
+		logf("hangar-init: grew %s from %d to %d blocks", what, from, to)
+	}
+	return fresh, nil
 }
 
 // format makes an ext4 filesystem on a blank device, with no root reserve,
 // as the root disk has none. No reaper runs before the root switch, so
 // os/exec may wait for mke2fs.
-func format(dev string) error {
-	out, err := exec.Command(Mke2fs, "-q", "-F", "-t", "ext4", "-m", "0", dev).CombinedOutput()
+func format(dev string, args ...string) error {
+	args = append(append([]string{"-q", "-F", "-t", "ext4", "-m", "0"}, args...), dev)
+	out, err := exec.Command(Mke2fs, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("mke2fs %s: %w: %s", dev, err, bytes.TrimSpace(out[:min(len(out), 1024)]))
 	}

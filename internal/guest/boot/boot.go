@@ -71,10 +71,10 @@ func ReadConfig() (*guestv1.BootConfig, error) {
 }
 
 // SwitchRoot mounts the root disk, grows its filesystem to the disk (or says
-// why not with logf), mounts the volumes in it, makes it the root keeping
-// /dev, /proc and /sys, and drops the initramfs; hangar-init runs on from
-// memory.
-func SwitchRoot(volumes []*guestv1.Volume, logf func(format string, args ...any)) error {
+// why not with logf), mounts the volumes in it, FileShares as the NFS client
+// clientID, makes it the root keeping /dev, /proc and /sys, and drops the
+// initramfs; hangar-init runs on from memory.
+func SwitchRoot(volumes []*guestv1.Volume, clientID string, logf func(format string, args ...any)) error {
 	if err := (mount{RootDevice, newRoot, "ext4", "", 0}).do(); err != nil {
 		return err
 	}
@@ -84,7 +84,7 @@ func SwitchRoot(volumes []*guestv1.Volume, logf func(format string, args ...any)
 		logf("hangar-init: grew the root filesystem from %d to %d blocks", from, to)
 	}
 	// Before the switch: mke2fs is in the initramfs.
-	if err := Volumes(newRoot, volumes, logf); err != nil {
+	if err := Volumes(newRoot, volumes, clientID, logf); err != nil {
 		return err
 	}
 	for _, dir := range []string{"/dev", "/proc", "/sys"} {
@@ -268,71 +268,157 @@ func Identity(root string, cfg *guestv1.BootConfig) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	rootfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(rootfd) }()
 	for name, content := range files {
 		source := filepath.Join(dir, name)
 		if err := os.WriteFile(source, []byte(content), 0o644); err != nil {
 			return err
 		}
-		a, err := placement(root, "/etc/"+name)
-		if err != nil {
-			return err
-		}
-		if a.write != "" {
-			if err := os.MkdirAll(filepath.Dir(a.write), 0o755); err != nil {
-				return err
-			}
-			if err := os.WriteFile(a.write, []byte(content), 0o644); err != nil {
-				return err
-			}
-			continue
-		}
-		if a.create {
-			if err := os.WriteFile(a.bind, nil, 0o644); err != nil {
-				return err
-			}
-		}
-		if err := unix.Mount(source, a.bind, "", unix.MS_BIND, ""); err != nil {
-			return fmt.Errorf("mounting %s over %s: %w", name, a.bind, err)
+		if err := provide(root, rootfd, "/etc/"+name, source, content); err != nil {
+			return fmt.Errorf("/etc/%s: %w", name, err)
 		}
 	}
 	return nil
 }
 
-// action is how one of the platform's files reaches the path the image
-// reads it from.
-type action struct {
-	// bind is the file to mount over; create makes it first, empty.
-	bind   string
-	create bool
-	// write is a path under /run, the platform's own tmpfs, written to
-	// directly: where an image's symlink points, such as systemd's
-	// /run/systemd/resolve/stub-resolv.conf.
-	write string
+// provide puts the platform's file source, holding content, where path
+// leads in root: written there under /run, mounted over it elsewhere.
+func provide(root string, rootfd int, path, source, content string) error {
+	p, err := placement(root, rootfd, path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(p.fd) }()
+	if p.write {
+		if err := unix.Ftruncate(p.fd, 0); err != nil {
+			return err
+		}
+		if n, err := unix.Write(p.fd, []byte(content)); err != nil || n != len(content) {
+			return fmt.Errorf("writing %s: %d bytes of %d: %w", p.where, n, len(content), err)
+		}
+		return nil
+	}
+	tree, err := unix.OpenTree(unix.AT_FDCWD, source, unix.OPEN_TREE_CLONE|unix.OPEN_TREE_CLOEXEC)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(tree) }()
+	if err := unix.MoveMount(tree, "", p.fd, "", unix.MOVE_MOUNT_F_EMPTY_PATH|unix.MOVE_MOUNT_T_EMPTY_PATH); err != nil {
+		return fmt.Errorf("mounting it over %s: %w", p.where, err)
+	}
+	return nil
 }
 
-// placement decides how the platform's file reaches path in root.
-func placement(root, path string) (action, error) {
-	target, err := resolveIn(root, path)
+// placed is where one of the platform's files goes, held by its fd.
+type placed struct {
+	fd    int
+	where string
+	// write: under /run, the platform's own tmpfs, it is written, not
+	// mounted over.
+	write bool
+}
+
+func underRun(p string) bool { return p == "/run" || strings.HasPrefix(p, "/run/") }
+
+// placement finds where the platform's file for path goes in root, every
+// name resolved in root by the kernel and held by its fd, as a share over
+// /etc may be changed meanwhile: an existing file, to mount over; a missing
+// one, made empty, to mount over; one under /run, or that a symlink to
+// nowhere puts there, such as systemd's stub-resolv.conf, to write.
+func placement(root string, rootfd int, path string) (placed, error) {
+	fd, err := openat2(rootfd, path, &unix.OpenHow{Flags: unix.O_PATH | unix.O_CLOEXEC, Resolve: inRoot})
+	if err == nil {
+		return existing(root, rootfd, fd)
+	}
+	if !errors.Is(err, unix.ENOENT) {
+		return placed{}, err
+	}
+	dir, name := filepath.Split(path)
+	parent, err := makeDirIn(root, rootfd, dir, platformOwned)
 	if err != nil {
-		return action{}, err
+		return placed{}, err
 	}
-	if target == "/run" || strings.HasPrefix(target, "/run/") {
-		return action{write: filepath.Join(root, target)}, nil
+	defer func() { _ = unix.Close(parent) }()
+	under, err := whereIn(root, parent)
+	if err != nil {
+		return placed{}, err
 	}
-	full := filepath.Join(root, target)
-	_, err = os.Stat(full)
+	nfd, err := unix.Openat(parent, name, unix.O_CREAT|unix.O_EXCL|unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o644)
+	if err == nil {
+		where := filepath.Join(under, name)
+		if platformOwned(where) && !underRun(where) {
+			_ = unix.Close(nfd)
+			return placed{}, fmt.Errorf("it leads to %s, where the platform mounts its own", where)
+		}
+		return placed{fd: nfd, where: where, write: underRun(where)}, nil
+	}
+	if !errors.Is(err, unix.EEXIST) {
+		return placed{}, err
+	}
+	// A symlink to nowhere, followed only into /run.
+	buf := make([]byte, unix.PathMax)
+	n, err := unix.Readlinkat(parent, name, buf)
+	if err != nil {
+		return placed{}, err
+	}
+	lead := string(buf[:n])
+	if !filepath.IsAbs(lead) {
+		lead = filepath.Join(under, lead)
+	}
+	lead = filepath.Clean(lead)
+	nowhere := fmt.Errorf("%s points at %s, which is not there", path, lead)
+	ldir, lname := filepath.Split(lead)
+	lfd, err := makeDirIn(root, rootfd, ldir, func(w string) bool { return !underRun(w) })
+	if err != nil {
+		return placed{}, nowhere
+	}
+	defer func() { _ = unix.Close(lfd) }()
+	if w, err := whereIn(root, lfd); err != nil || !underRun(w) {
+		return placed{}, nowhere
+	}
+	wfd, err := unix.Openat(lfd, lname, unix.O_CREAT|unix.O_WRONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0o644)
+	if err != nil {
+		return placed{}, err
+	}
+	where, err := whereIn(root, wfd)
+	if err != nil {
+		_ = unix.Close(wfd)
+		return placed{}, err
+	}
+	return placed{fd: wfd, where: where, write: true}, nil
+}
+
+// existing places the platform's file over fd, an existing file in root:
+// written if it is under /run, else mounted over.
+func existing(root string, rootfd, fd int) (placed, error) {
+	where, err := whereIn(root, fd)
+	if err != nil {
+		_ = unix.Close(fd)
+		return placed{}, err
+	}
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil || st.Mode&unix.S_IFMT != unix.S_IFREG {
+		_ = unix.Close(fd)
+		return placed{}, fmt.Errorf("%s is not a file", where)
+	}
 	switch {
-	case err == nil:
-		return action{bind: full}, nil
-	case !errors.Is(err, os.ErrNotExist):
-		return action{}, err
-	case target != filepath.Clean(path):
-		return action{}, fmt.Errorf("%s points at %s, which is not there", path, target)
+	case underRun(where):
+		_ = unix.Close(fd)
+		// /run is the platform's, so nobody else changes it meanwhile.
+		wfd, err := openat2(rootfd, where, &unix.OpenHow{Flags: unix.O_WRONLY | unix.O_CLOEXEC, Resolve: inRoot | unix.RESOLVE_NO_SYMLINKS})
+		if err != nil {
+			return placed{}, err
+		}
+		return placed{fd: wfd, where: where, write: true}, nil
+	case platformOwned(where):
+		_ = unix.Close(fd)
+		return placed{}, fmt.Errorf("it leads to %s, where the platform mounts its own", where)
 	}
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return action{}, err
-	}
-	return action{bind: full, create: true}, nil
+	return placed{fd: fd, where: where}, nil
 }
 
 // resolveIn follows the symlinks in path as root's processes would see

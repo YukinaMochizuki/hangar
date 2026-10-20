@@ -3,15 +3,17 @@
 Status: accepted, 2026-10. Built: the API, its admission and the quota;
 the server's machine (boot `file_share_server`, naming the share and its
 volume's size), its placement, which binds the share to its node, its
-addresses, and the share's users, phase and deletion; and of the node's
-part, that a server is in no security group and has no name, lease or
-metadata on its networks, and that a deleted share's node reports it
-Released once its server is gone (it holds nothing of a share yet). Not
-built: what the server boots, its volume, its export and its 2049-only,
-reply-only rules on the host, and the mounts; until those rules exist,
-what the host lets every tap reach (DHCP, DNS and metadata at its
-network's gateway, the gateway's SSH) applies to a server's taps too.
-So the node fails to boot a server and a share stays Pending; a
+addresses, and the share's users, phase and deletion; the guest side,
+the server's PID 1 (nfsd, its upcalls, client tracking, `SetExport`) and
+a container's mounts; and of the node's part, that a server is in no
+security group and has no name, lease or metadata on its networks, and
+that a deleted share's node reports it Released once its server is gone
+(it holds nothing of a share yet). Not built: the node booting the
+server, its volume, pushing its export, its 2049-only, reply-only rules
+on the host, and giving a container its shares' addresses; until those
+rules exist, what the host lets every tap reach (DHCP, DNS and metadata
+at its network's gateway, the gateway's SSH) applies to a server's taps
+too. So the node fails to boot a server and a share stays Pending; a
 container declaring a share is refused by its node, its VM stopped if it
 ran; and a VM runs without its shares.
 
@@ -69,7 +71,24 @@ Hangar has one host, so only the second shape keeps the host out of it.
   nfs-utils, and no C of ours. `auth.unix.gid` is never opened, so a
   client's own groups count. Client records are kept in a `trusted.*`
   xattr of the share's root, which travels with the zvol and which NFS
-  never shows a client.
+  never shows a client; the filesystem is made with `ea_inode`, so they
+  are not held to the one block an inode's attributes otherwise share.
+  They are bounded, 512 clients and 60 KiB: past either, the least
+  recently created or reclaimed client is dropped, which costs it only
+  its reclaim after a restart. Records the server cannot read, corrupt or
+  from a newer version, never stop it: it says so on its console, moves
+  them to a `.bad` attribute beside them (or drops them where that does
+  not fit), and runs its grace period with no client to reclaim.
+- **That PID 1 is hangar-init**, in the platform's one initramfs, made the
+  server by its boot disk (`BootConfig.file_share_server`, with the
+  export it starts with), not a second program: one initramfs to build,
+  release and boot, chosen by nothing but what the node writes on the
+  boot disk, and the boot, the console and the host-only agent shared
+  with containers'. It stays in the initramfs, with no root disk to
+  switch to; the share is its first data disk, `vdc`. Its agent answers
+  Ping, Stop and `FileShareServerService.SetExport`, which replaces the
+  whole export, and refuses Exec. Containers carry the server's code
+  unused, as they carry `nfsd`.
 - **The wire block size is pinned (1 MiB), never derived from the
   server's memory.** `nfsd` defaults it to a 4096th of RAM, so a 256Mi
   server would cap I/O at 32 KiB (a third of the throughput), and a
@@ -83,9 +102,16 @@ Hangar has one host, so only the second shape keeps the host out of it.
   periods are 15 s, not 90; containers mount with `timeo=50` (5 s), not
   600; a server is stopped gracefully where it can be; and it starts
   `nfsd` only once it has its export, which its boot disk carries, so a
-  client is never refused for being unknown. On the testbed a graceful
-  restart paused a writer 3 s, and a killed server 4 to 5 s, its clients'
-  locks kept; with the defaults a killed server stalled them a minute.
+  client is never refused for being unknown; never in its first second
+  of uptime either, as nfsd takes a client it first sees then for
+  expired. On the testbed a restart, stopped or killed, paused a writer
+  1.4 to 17.8 s, its clients' locks kept; with the defaults a killed
+  server stalled them a minute. How long depends on the client's
+  reconnects, which come 3 s, then 6 s and 12 s more, after it loses its
+  connection (or notices it lost it, 5 s on, for a killed server), and
+  fail at once while the server is down: a writer waits for the first
+  that finds it back. A client gone for good holds the others' new opens
+  back for the 15 s grace period.
 - **Each client has an NFSv4 identity of its own.** Without one, every
   guest is the same client (`Linux NFSv4.2 (none)`), and one guest's
   mount evicts another's state. hangar-init writes the machine's uid to

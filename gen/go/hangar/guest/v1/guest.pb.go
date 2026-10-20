@@ -34,6 +34,7 @@ const (
 type BootConfig struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The container's main process. The guest powers off when it exits.
+	// Unused by a FileShare's server.
 	Process    *Process     `protobuf:"bytes,1,opt,name=process,proto3" json:"process,omitempty"`
 	Interfaces []*Interface `protobuf:"bytes,2,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	Hostname   string       `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
@@ -43,9 +44,15 @@ type BootConfig struct {
 	Search []string `protobuf:"bytes,5,rep,name=search,proto3" json:"search,omitempty"`
 	// The volumes to mount before the process runs, in this order. See
 	// docs/decisions/container-volumes.md.
-	Volumes       []*Volume `protobuf:"bytes,6,rep,name=volumes,proto3" json:"volumes,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Volumes []*Volume `protobuf:"bytes,6,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	// The machine's uid, its NFSv4 client identity: unique to the machine,
+	// and not the hostname, which the tenant sets.
+	MachineUid string `protobuf:"bytes,7,opt,name=machine_uid,json=machineUid,proto3" json:"machine_uid,omitempty"`
+	// Set, the guest is this FileShare's server instead of a container: it
+	// has no root disk and no process, and ignores volumes.
+	FileShareServer *FileShareServer `protobuf:"bytes,8,opt,name=file_share_server,json=fileShareServer,proto3" json:"file_share_server,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *BootConfig) Reset() {
@@ -120,11 +127,25 @@ func (x *BootConfig) GetVolumes() []*Volume {
 	return nil
 }
 
-// Volume is a disk the guest mounts: formatted when blank, and filled from
-// the image when new.
+func (x *BootConfig) GetMachineUid() string {
+	if x != nil {
+		return x.MachineUid
+	}
+	return ""
+}
+
+func (x *BootConfig) GetFileShareServer() *FileShareServer {
+	if x != nil {
+		return x.FileShareServer
+	}
+	return nil
+}
+
+// Volume is a disk the guest mounts, formatted when blank and filled from
+// the image when new; or a FileShare, mounted over NFS, never filled.
 type Volume struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The block device, such as /dev/vdc.
+	// The block device, such as /dev/vdc; empty for a FileShare.
 	Device string `protobuf:"bytes,1,opt,name=device,proto3" json:"device,omitempty"`
 	// An absolute path, resolved in the root disk.
 	Target   string `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
@@ -133,8 +154,11 @@ type Volume struct {
 	Nocopy bool `protobuf:"varint,4,opt,name=nocopy,proto3" json:"nocopy,omitempty"`
 	// A directory of the volume, relative, mounted instead of all of it.
 	Subpath string `protobuf:"bytes,5,opt,name=subpath,proto3" json:"subpath,omitempty"`
-	// The Disk's name, for messages.
-	Name          string `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	// The Disk's or the FileShare's name, for messages.
+	Name string `protobuf:"bytes,6,opt,name=name,proto3" json:"name,omitempty"`
+	// Set for a FileShare instead of device. It is mounted once the network
+	// is up, and nocopy is implied.
+	FileShare     *FileShareMount `protobuf:"bytes,7,opt,name=file_share,json=fileShare,proto3" json:"file_share,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -209,6 +233,13 @@ func (x *Volume) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *Volume) GetFileShare() *FileShareMount {
+	if x != nil {
+		return x.FileShare
+	}
+	return nil
 }
 
 // Process is a process to run in the guest.
@@ -1063,7 +1094,7 @@ var File_hangar_guest_v1_guest_proto protoreflect.FileDescriptor
 
 const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\"\x85\x02\n" +
+	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a hangar/guest/v1/file_share.proto\"\xf4\x02\n" +
 	"\n" +
 	"BootConfig\x122\n" +
 	"\aprocess\x18\x01 \x01(\v2\x18.hangar.guest.v1.ProcessR\aprocess\x12:\n" +
@@ -1073,14 +1104,19 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\bhostname\x18\x03 \x01(\tR\bhostname\x12 \n" +
 	"\vnameservers\x18\x04 \x03(\tR\vnameservers\x12\x16\n" +
 	"\x06search\x18\x05 \x03(\tR\x06search\x121\n" +
-	"\avolumes\x18\x06 \x03(\v2\x17.hangar.guest.v1.VolumeR\avolumes\"\x9b\x01\n" +
+	"\avolumes\x18\x06 \x03(\v2\x17.hangar.guest.v1.VolumeR\avolumes\x12\x1f\n" +
+	"\vmachine_uid\x18\a \x01(\tR\n" +
+	"machineUid\x12L\n" +
+	"\x11file_share_server\x18\b \x01(\v2 .hangar.guest.v1.FileShareServerR\x0ffileShareServer\"\xdb\x01\n" +
 	"\x06Volume\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1b\n" +
 	"\tread_only\x18\x03 \x01(\bR\breadOnly\x12\x16\n" +
 	"\x06nocopy\x18\x04 \x01(\bR\x06nocopy\x12\x18\n" +
 	"\asubpath\x18\x05 \x01(\tR\asubpath\x12\x12\n" +
-	"\x04name\x18\x06 \x01(\tR\x04name\"d\n" +
+	"\x04name\x18\x06 \x01(\tR\x04name\x12>\n" +
+	"\n" +
+	"file_share\x18\a \x01(\v2\x1f.hangar.guest.v1.FileShareMountR\tfileShare\"d\n" +
 	"\aProcess\x12\x12\n" +
 	"\x04args\x18\x01 \x03(\tR\x04args\x12\x10\n" +
 	"\x03env\x18\x02 \x03(\tR\x03env\x12\x1f\n" +
@@ -1169,34 +1205,38 @@ var file_hangar_guest_v1_guest_proto_goTypes = []any{
 	(*WindowSize)(nil),          // 13: hangar.guest.v1.WindowSize
 	(*ExecResponse)(nil),        // 14: hangar.guest.v1.ExecResponse
 	(*ExecExit)(nil),            // 15: hangar.guest.v1.ExecExit
-	(*durationpb.Duration)(nil), // 16: google.protobuf.Duration
+	(*FileShareServer)(nil),     // 16: hangar.guest.v1.FileShareServer
+	(*FileShareMount)(nil),      // 17: hangar.guest.v1.FileShareMount
+	(*durationpb.Duration)(nil), // 18: google.protobuf.Duration
 }
 var file_hangar_guest_v1_guest_proto_depIdxs = []int32{
 	2,  // 0: hangar.guest.v1.BootConfig.process:type_name -> hangar.guest.v1.Process
 	3,  // 1: hangar.guest.v1.BootConfig.interfaces:type_name -> hangar.guest.v1.Interface
 	1,  // 2: hangar.guest.v1.BootConfig.volumes:type_name -> hangar.guest.v1.Volume
-	3,  // 3: hangar.guest.v1.SetIPv6Request.interfaces:type_name -> hangar.guest.v1.Interface
-	16, // 4: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
-	16, // 5: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
-	11, // 6: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
-	12, // 7: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
-	13, // 8: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
-	2,  // 9: hangar.guest.v1.ExecStart.process:type_name -> hangar.guest.v1.Process
-	13, // 10: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
-	15, // 11: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
-	8,  // 12: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
-	10, // 13: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
-	6,  // 14: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
-	4,  // 15: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
-	9,  // 16: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
-	14, // 17: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
-	7,  // 18: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
-	5,  // 19: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
-	16, // [16:20] is the sub-list for method output_type
-	12, // [12:16] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	16, // 3: hangar.guest.v1.BootConfig.file_share_server:type_name -> hangar.guest.v1.FileShareServer
+	17, // 4: hangar.guest.v1.Volume.file_share:type_name -> hangar.guest.v1.FileShareMount
+	3,  // 5: hangar.guest.v1.SetIPv6Request.interfaces:type_name -> hangar.guest.v1.Interface
+	18, // 6: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
+	18, // 7: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
+	11, // 8: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
+	12, // 9: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
+	13, // 10: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
+	2,  // 11: hangar.guest.v1.ExecStart.process:type_name -> hangar.guest.v1.Process
+	13, // 12: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
+	15, // 13: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
+	8,  // 14: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
+	10, // 15: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
+	6,  // 16: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
+	4,  // 17: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
+	9,  // 18: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
+	14, // 19: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
+	7,  // 20: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
+	5,  // 21: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
+	18, // [18:22] is the sub-list for method output_type
+	14, // [14:18] is the sub-list for method input_type
+	14, // [14:14] is the sub-list for extension type_name
+	14, // [14:14] is the sub-list for extension extendee
+	0,  // [0:14] is the sub-list for field type_name
 }
 
 func init() { file_hangar_guest_v1_guest_proto_init() }
@@ -1204,6 +1244,7 @@ func file_hangar_guest_v1_guest_proto_init() {
 	if File_hangar_guest_v1_guest_proto != nil {
 		return
 	}
+	file_hangar_guest_v1_file_share_proto_init()
 	file_hangar_guest_v1_guest_proto_msgTypes[10].OneofWrappers = []any{
 		(*ExecRequest_Start)(nil),
 		(*ExecRequest_Stdin)(nil),

@@ -4,7 +4,8 @@
 // serves the guest agent over vsock, and runs the container's process. When
 // that process ends, it records how on the console and powers the guest off;
 // the host's restart policy decides what comes next. See
-// docs/decisions/guest-agent.md.
+// docs/decisions/guest-agent.md. A boot disk naming a FileShare's server
+// makes the guest that server instead (docs/decisions/file-shares.md).
 package main
 
 import (
@@ -90,15 +91,19 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	if err != nil {
 		return failed, fmt.Errorf("reading the boot disk: %w", err)
 	}
-	if err := boot.SwitchRoot(cfg.GetVolumes(), logf); err != nil {
+	if cfg.GetFileShareServer() != nil {
+		return runServer(cfg, logf, started)
+	}
+	// Before the volumes, which a FileShare's are reached over.
+	if err := boot.Network(cfg.GetInterfaces()); err != nil {
+		return failed, fmt.Errorf("network: %w", err)
+	}
+	if err := boot.SwitchRoot(cfg.GetVolumes(), cfg.GetMachineUid(), logf); err != nil {
 		return failed, err
 	}
 	workload, err := boot.System()
 	if err != nil {
 		return failed, err
-	}
-	if err := boot.Network(cfg.GetInterfaces()); err != nil {
-		return failed, fmt.Errorf("network: %w", err)
 	}
 	if err := boot.Identity("/", cfg); err != nil {
 		return failed, err
@@ -192,6 +197,11 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			stopper.Stop(grace)
 		},
 	}, connect.WithReadMaxBytes(agent.MaxMessage))
+	serveHTTP(ln, h)
+}
+
+// serveHTTP serves h over HTTP/2 without TLS on ln until it is closed.
+func serveHTTP(ln net.Listener, h http.Handler) {
 	protocols := &http.Protocols{}
 	protocols.SetUnencryptedHTTP2(true)
 	go func() { _ = (&http.Server{Handler: h, Protocols: protocols}).Serve(ln) }()

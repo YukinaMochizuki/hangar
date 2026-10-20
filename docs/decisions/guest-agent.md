@@ -27,7 +27,11 @@ to boot again.
   readable by any process in the guest; not files written into the image.
 - **A container's volumes are mounted before the switch to the root
   disk**, from the list the boot disk holds: a blank one formatted, a new
-  one copied into from the image, as `container-volumes.md` says.
+  one copied into from the image, as `container-volumes.md` says. The
+  network comes up first, since a FileShare's volume is mounted over it,
+  as the NFS client the machine's uid names (`file-shares.md`).
+- **A boot disk naming a FileShare's server makes hangar-init that
+  server** instead of a container's PID 1 (`file-shares.md`).
 - **The agent speaks Connect over vsock**, port 1024, with the service in
   `proto/hangar/guest/v1`. It is internal but versioned with buf breaking,
   since a guest keeps the hangar-init it booted with while the node is

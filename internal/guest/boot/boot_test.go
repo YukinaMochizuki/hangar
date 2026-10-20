@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 )
 
@@ -29,31 +31,55 @@ func TestTheIdentityFilesReachWhereTheImageReadsThem(t *testing.T) {
 	_ = os.Symlink("/var/run/resolvconf/resolv.conf", filepath.Join(etc, "resolvconf"))
 	_ = os.Symlink("../../../../etc/hosts", filepath.Join(etc, "climbing"))
 	_ = os.Symlink("loop", filepath.Join(etc, "loop"))
+	// What another client of a share over /etc could plant.
+	outside := t.TempDir()
+	_ = os.MkdirAll(filepath.Join(root, "proc/sys"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "proc/sys/x"), nil, 0o644)
+	_ = os.Symlink("/proc/sys/x", filepath.Join(etc, "toproc"))
+	_ = os.Symlink("/proc/missing", filepath.Join(etc, "toproc-missing"))
+	_ = os.Symlink(outside+"/f", filepath.Join(etc, "out"))
+	_ = os.Symlink("/etc", filepath.Join(etc, "dir"))
+	rootfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = unix.Close(rootfd) }()
 
 	for _, tt := range []struct {
-		path string
-		want action
+		path, where string
+		write       bool
 	}{
-		{"/etc/hosts", action{bind: filepath.Join(etc, "hosts")}},
-		{"/etc/resolv.conf", action{write: filepath.Join(root, "run/systemd/resolve/stub-resolv.conf")}},
-		{"/etc/hostname", action{bind: filepath.Join(root, "lib/net/hostname")}},
-		{"/etc/absent", action{bind: filepath.Join(etc, "absent"), create: true}},
-		{"/etc/resolvconf", action{write: filepath.Join(root, "run/resolvconf/resolv.conf")}},
-		{"/etc/climbing", action{bind: filepath.Join(etc, "hosts")}}, // .. stops at the root
+		{"/etc/hosts", "/etc/hosts", false},
+		{"/etc/resolv.conf", "/run/systemd/resolve/stub-resolv.conf", true},
+		{"/etc/hostname", "/lib/net/hostname", false},
+		{"/etc/absent", "/etc/absent", false},
+		{"/etc/resolvconf", "/run/resolvconf/resolv.conf", true},
+		{"/etc/climbing", "/etc/hosts", false}, // .. stops at the root
 	} {
-		got, err := placement(root, tt.path)
-		if err != nil || got != tt.want {
-			t.Errorf("%s: %+v %v, want %+v", tt.path, got, err, tt.want)
+		got, err := placement(root, rootfd, tt.path)
+		if err != nil {
+			t.Errorf("%s: %v", tt.path, err)
+			continue
+		}
+		_ = unix.Close(got.fd)
+		if got.where != tt.where || got.write != tt.write {
+			t.Errorf("%s: %s (write %t), want %s (write %t)", tt.path, got.where, got.write, tt.where, tt.write)
 		}
 	}
-	if _, err := placement(root, "/etc/dangling"); err == nil {
-		t.Error("a symlink to nothing outside /run was taken")
-	}
-	if _, err := placement(root, "/etc/loop"); err == nil {
-		t.Error("a symlink loop was taken")
+	for _, path := range []string{"/etc/dangling", "/etc/loop", "/etc/toproc", "/etc/toproc-missing", "/etc/out", "/etc/dir"} {
+		if got, err := placement(root, rootfd, path); err == nil {
+			_ = unix.Close(got.fd)
+			t.Errorf("%s was taken, to %s", path, got.where)
+		}
 	}
 	if fi, err := os.Stat(filepath.Join(etc, "hosts")); err != nil || fi.Size() != int64(len("image's")) {
 		t.Error("deciding where to put a file wrote to the image")
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("a file was made outside the root: %v", entries)
+	}
+	if _, err := os.Lstat(filepath.Join(root, "proc/missing")); err == nil {
+		t.Error("a file was made in the image's /proc")
 	}
 }
 
