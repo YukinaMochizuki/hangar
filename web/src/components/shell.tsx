@@ -6,7 +6,7 @@ import { ChevronsUpDown, LogOut, Menu, Monitor, Moon, Sun, type LucideIcon } fro
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { CommandPalette } from "@/components/command-palette";
 import { HangarMark } from "@/components/marks";
-import { projectPages, tenantPages } from "@/components/pages-nav";
+import { platformPages, projectPages, tenantPages } from "@/components/pages-nav";
 import { SearchButton } from "@/components/palette-view";
 import { ProjectPicker } from "@/components/project-picker";
 import { Notice } from "@/components/notice";
@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/states";
 import { errorMessage, signOut } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMachines } from "@/lib/machines";
+import { useMayReadMonitoring } from "@/lib/permissions";
 import { usePrefs, type ThemePref } from "@/lib/prefs";
 import { projectLabel, rememberProject, useProjects } from "@/lib/projects";
 import { useMember } from "@/lib/session";
@@ -49,12 +50,15 @@ export function useTenantName(): string {
 
 // The switcher names where the console is; it opens the picker, which lists
 // every tenant and project the member sees.
-function ProjectSwitcher({ place }: { place: Place }) {
-  const { projects, loading, tenantName } = useProjects();
+// On the platform's pages it names the platform, never the project whose
+// sidebar the console kept.
+function ProjectSwitcher({ place, platform }: { place: Place; platform?: boolean }) {
+  const { projects, loading: listing, tenantName } = useProjects();
   const [open, setOpen] = useState(false);
   const project = place.kind === "project" ? place.name : "";
   const current = projects.find((p) => p.metadata?.name === project);
-  const label = place.kind === "tenant" ? tenantName(place.name) : projectLabel(current, project);
+  const label = platform ? "Platform" : place.kind === "tenant" ? tenantName(place.name) : projectLabel(current, project);
+  const loading = listing && !platform;
 
   return (
     <div className="mx-3 mb-2">
@@ -73,12 +77,12 @@ function ProjectSwitcher({ place }: { place: Place }) {
             <span className="block truncate text-[13px] font-medium leading-tight">{label}</span>
           )}
           <span className="block truncate font-mono text-[11px] leading-tight text-subtle">
-            {place.kind === "tenant" ? `Tenant · ${place.name}` : project}
+            {platform ? "Every tenant" : place.kind === "tenant" ? `Tenant · ${place.name}` : project}
           </span>
         </span>
         <ChevronsUpDown className="size-3.5 shrink-0 text-subtle" />
       </button>
-      <ProjectPicker place={place} open={open} onClose={() => setOpen(false)} />
+      <ProjectPicker place={platform ? { kind: "project", name: "" } : place} open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
@@ -164,6 +168,7 @@ function ProjectSidebar({ project }: { project: string }) {
   const counts: Record<string, number | undefined> = { Containers: count(containers), "Virtual machines": count(vms), Disks: count(disks) };
   // Only pages that exist are listed; a kind joins when its page does.
   const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] })) }));
+  if (useMayReadMonitoring().may) nav.push(...platformPages());
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }
 
@@ -171,12 +176,18 @@ function ProjectSidebar({ project }: { project: string }) {
 function TenantSidebar({ tenant }: { tenant: string }) {
   const base = `/tenants/${tenant}`;
   const nav: NavSection[] = tenantPages(tenant);
+  if (useMayReadMonitoring().may) nav.push(...platformPages());
   return <SidebarFrame place={{ kind: "tenant", name: tenant }} base={base} nav={nav} />;
+}
+
+/** The platform's own pages: only its group, under a switcher that names the platform. */
+function PlatformSidebar({ place }: { place: Place }) {
+  return <SidebarFrame place={place} base="/platform" nav={platformPages()} platform />;
 }
 
 type NavSection = { group?: string; items: NavItem[] };
 
-function SidebarFrame({ place, base, nav }: { place: Place; base: string; nav: NavSection[] }) {
+function SidebarFrame({ place, base, nav, platform }: { place: Place; base: string; nav: NavSection[]; platform?: boolean }) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { open, setOpen } = useContext(MenuContext);
   useEffect(() => setOpen(false), [path, setOpen]);
@@ -194,7 +205,7 @@ function SidebarFrame({ place, base, nav }: { place: Place; base: string; nav: N
         <HangarMark className="size-5 text-foreground" />
         <span className="text-[15px] font-semibold tracking-[-0.02em]">Hangar</span>
       </Link>
-      <ProjectSwitcher place={place} />
+      <ProjectSwitcher place={place} platform={platform} />
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {nav.map((section, i) => (
           <div key={i} className="mb-3">
@@ -228,15 +239,16 @@ const crumbLink = "truncate text-muted hover:text-foreground";
 
 /**
  * The top bar: the menu button on small screens and the breadcrumbs. The
- * tenant's crumb opens the tenant's pages, the project's its overview.
+ * tenant's crumb opens the tenant's pages, the project's its overview. A
+ * platform page is in no tenant or project, so it names neither.
  */
-export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
+export function Topbar({ crumbs, platform }: { crumbs: ReactNode[]; platform?: boolean }) {
   const { setOpen } = useContext(MenuContext);
   const project = useProjectName();
   const tenantPage = useTenantName();
   const { projects, tenantName } = useProjects();
   const p = projects.find((x) => x.metadata?.name === project);
-  const tenant = tenantPage || p?.spec?.tenant || "";
+  const tenant = platform ? "" : tenantPage || p?.spec?.tenant || "";
   const place: Place = tenantPage ? { kind: "tenant", name: tenantPage } : { kind: "project", name: project };
   // ⌘K or Ctrl+K opens the palette from anywhere on the page.
   const [searching, setSearching] = useState(false);
@@ -258,7 +270,7 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
           </Link>,
         ]
       : []),
-    ...(project
+    ...(project && !platform
       ? [
           <Link key="p" to="/projects/$project" params={{ project }} className={crumbLink}>
             {projectLabel(p, project)}
@@ -286,16 +298,26 @@ export function Topbar({ crumbs }: { crumbs: ReactNode[] }) {
   );
 }
 
-export function Shell({ place, children }: { place: Place; children: ReactNode }) {
+/**
+ * The frame of every page. A platform page keeps the place of the project
+ * used last, which the palette searches, and draws the platform's sidebar.
+ */
+export function Shell({ place, platform, children }: { place: Place; platform?: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    if (place.kind === "project") rememberProject(place.name);
-  }, [place]);
+    if (place.kind === "project" && !platform) rememberProject(place.name);
+  }, [place, platform]);
   return (
     <PlaceContext.Provider value={place}>
       <MenuContext.Provider value={{ open, setOpen }}>
         <div className="flex min-h-screen">
-          {place.kind === "project" ? <ProjectSidebar project={place.name} /> : <TenantSidebar tenant={place.name} />}
+          {platform ? (
+            <PlatformSidebar place={place} />
+          ) : place.kind === "project" ? (
+            <ProjectSidebar project={place.name} />
+          ) : (
+            <TenantSidebar tenant={place.name} />
+          )}
           {open && <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setOpen(false)} />}
           <div className="min-w-0 flex-1">{children}</div>
         </div>

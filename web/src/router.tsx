@@ -24,6 +24,7 @@ import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
 import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
+import { Monitoring } from "@/pages/monitoring";
 import { TerminalPage } from "@/pages/machine-terminal";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
@@ -369,6 +370,27 @@ const tenantRoute = createRoute({
   },
 });
 const tenantOverviewRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/", component: TenantOverview });
+
+// The platform's pages belong to no project. They keep the project used last
+// as the palette's place, so the palette still finds what it holds.
+const monitoringRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/monitoring",
+  // range opens the charts on one of their ranges; any other value is the default.
+  validateSearch: (s: Record<string, unknown>): { range?: "1h" | "24h" | "7d" } =>
+    s.range === "1h" || s.range === "24h" || s.range === "7d" ? { range: s.range } : {},
+  component: function PlatformMonitoring() {
+    const { range } = monitoringRoute.useSearch();
+    const { projects, loading } = useProjects();
+    if (loading) return null;
+    const project = pickProject(projects)?.metadata?.name ?? "";
+    return (
+      <Shell key={project} place={{ kind: "project", name: project }} platform>
+        <Monitoring range={range} />
+      </Shell>
+    );
+  },
+});
 const tenantMembersRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/members", component: TenantMembers });
 
 /** Every page, for the router and for tests that route over memory history. */
@@ -404,6 +426,7 @@ export const routeTree = rootRoute.addChildren([
     ...networkRoutes,
   ]),
   tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
+  monitoringRoute,
 ]);
 
 export const router = createRouter({ routeTree });
