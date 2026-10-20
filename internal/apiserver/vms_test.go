@@ -205,7 +205,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 	if spec.GetFirmware().GetRootDisk() != "web-root" || spec.GetContainer() != nil || len(spec.GetDisks()) != 1 || spec.GetDisks()[0].GetDisk() != "data" ||
 		spec.GetRestartPolicy() != computev1alpha1.RestartPolicy_RESTART_POLICY_ON_FAILURE ||
 		spec.GetResources().GetCpu() != "1" || spec.GetResources().GetMemory() != "1024Mi" || spec.GetResources().GetDisk() != "" ||
-		len(spec.GetInterfaces()) != 1 || spec.GetInterfaces()[0].GetName() != "eth0" || spec.GetInterfaces()[0].GetNetwork() != DefaultNetwork ||
+		len(spec.GetInterfaces()) != 1 || spec.GetInterfaces()[0].GetName() != "eth0" || spec.GetInterfaces()[0].GetNetwork() != computeapi.DefaultNetwork ||
 		!slices.Equal(spec.GetInterfaces()[0].GetSecurityGroups(), []string{secgroup.Default}) {
 		t.Errorf("machine spec %v", spec)
 	}
@@ -230,7 +230,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 		t.Fatal(err)
 	}
 	two := proto.Clone(vm).(*computev1alpha1.VirtualMachine)
-	two.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork}, {Network: "back"}}
+	two.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork}, {Network: "back"}}
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, two); err != nil {
 		t.Fatal(err)
 	}

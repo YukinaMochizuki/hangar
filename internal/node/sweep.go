@@ -12,8 +12,8 @@ import (
 )
 
 // sweep removes what no machine on this node accounts for, and volumes no
-// Disk bound to it does, then networks nothing uses, and the container
-// images nothing uses past the image cache's bounds
+// Disk or FileShare bound to it does, then networks nothing uses, and the
+// container images nothing uses past the image cache's bounds
 // (docs/decisions/node-agent.md). A list it could not read stops whatever
 // depends on it: a failed list is never an empty one.
 // A VM is stopped off the host lock, and what its machine has left goes at
@@ -153,6 +153,26 @@ func (a *Agent) sweep(ctx context.Context) error {
 							a.images.forget(b)
 						}
 					}
+				}
+			}
+		}
+	}
+
+	// A share's volume goes once no share bound to this node is its: a
+	// share outlives its server, which holds it. The share controller
+	// removes a deleted share's own.
+	if shares, _, err := a.api.ListAll(ctx, registry.FileShare, client.ListOptions{}); keep(err) {
+		bound := map[string]bool{}
+		for _, o := range shares {
+			if fs := o.(*storagev1alpha1.FileShare); fs.GetStatus().GetNode() == a.cfg.Name {
+				bound[fs.GetMetadata().GetUid()] = true
+			}
+		}
+		if vols, err := d.Storage.ShareVolumes(ctx); keep(err) {
+			for _, v := range vols {
+				if !bound[v.ShareUID] {
+					a.cfg.Log.Info("removing a volume no file share accounts for", "share_uid", v.ShareUID)
+					keep(d.Storage.DeleteShareVolume(ctx, v.ShareUID))
 				}
 			}
 		}

@@ -16,6 +16,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -142,7 +143,7 @@ func (s *Server) onboard(ctx context.Context, p auth.Principal, username, displa
 		// The project controller would make it too, but later: made here,
 		// the project is ready as soon as signing up answers.
 		if _, err := s.backend(registry.Network).Create(ctx, &networkv1alpha1.Network{
-			Metadata: &metav1.ObjectMeta{Project: name, Name: DefaultNetwork},
+			Metadata: &metav1.ObjectMeta{Project: name, Name: computeapi.DefaultNetwork},
 			Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
 		}); err != nil {
 			return err

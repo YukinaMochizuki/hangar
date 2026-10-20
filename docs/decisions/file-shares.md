@@ -1,21 +1,11 @@
 # File shares: one NFS server microVM per share, on its own zvol
 
-Status: accepted, 2026-10. Built: the API, its admission and the quota;
-the server's machine (boot `file_share_server`, naming the share and its
-volume's size), its placement, which binds the share to its node, its
-addresses, and the share's users, phase and deletion; the guest side,
-the server's PID 1 (nfsd, its upcalls, client tracking, `SetExport`) and
-a container's mounts; and of the node's part, that a server is in no
-security group and has no name, lease or metadata on its networks, and
-that a deleted share's node reports it Released once its server is gone
-(it holds nothing of a share yet). Not built: the node booting the
-server, its volume, pushing its export, its 2049-only, reply-only rules
-on the host, and giving a container its shares' addresses; until those
-rules exist, what the host lets every tap reach (DHCP, DNS and metadata
-at its network's gateway, the gateway's SSH) applies to a server's taps
-too. So the node fails to boot a server and a share stays Pending; a
-container declaring a share is refused by its node, its VM stopped if it
-ran; and a VM runs without its shares.
+Status: accepted, 2026-10. FileShare is built: the API, its admission and
+the quota; the server's machine, its placement and addresses, and the
+share's users, phase and deletion; the guest side, the server's PID 1
+and a container's mounts; and the node's part, the share's zvol, the
+server's boot, its export kept in step, its 2049-only, reply-only rules
+on the host, and a container's mounts of its shares' addresses.
 
 ## Context
 
@@ -85,10 +75,11 @@ Hangar has one host, so only the second shape keeps the host out of it.
   release and boot, chosen by nothing but what the node writes on the
   boot disk, and the boot, the console and the host-only agent shared
   with containers'. It stays in the initramfs, with no root disk to
-  switch to; the share is its first data disk, `vdc`. Its agent answers
-  Ping, Stop and `FileShareServerService.SetExport`, which replaces the
-  whole export, and refuses Exec. Containers carry the server's code
-  unused, as they carry `nfsd`.
+  switch to; the share is its first data disk, `vdc`, after a blank file
+  the node gives it as `vda`, which it never reads, and its boot disk.
+  Its agent answers Ping, Stop and `FileShareServerService.SetExport`,
+  which replaces the whole export, and refuses Exec. Containers carry the
+  server's code unused, as they carry `nfsd`.
 - **The wire block size is pinned (1 MiB), never derived from the
   server's memory.** `nfsd` defaults it to a 4096th of RAM, so a 256Mi
   server would cap I/O at 32 KiB (a third of the throughput), and a
@@ -158,7 +149,10 @@ Hangar has one host, so only the second shape keeps the host out of it.
   has, they send only from their own address and MAC. A server whose
   guest is taken can answer its clients and nothing else: it reaches no
   machine and no other network, and what passes between the networks of
-  a share is the share's files, which is its purpose.
+  a share is the share's files, which is its purpose. A server's taps
+  are named apart from every other tap (`networking.md`), so the
+  firewall holds them to this from the moment they are made, before any
+  rule names their clients.
 - **A machine mounts only the shares it declares.** A container declares
   one as a volume, `sourceKind: FileShare` (`container-volumes.md`); a VM
   in `spec.fileShares` (`name`, `readOnly`). A declaration naming a share
@@ -166,9 +160,25 @@ Hangar has one host, so only the second shape keeps the host out of it.
   share's networks; one naming a share that does not exist yet holds the
   machine back, as a Disk does. The server's export lists exactly the
   declaring machines' addresses on its networks, each `rw` or `ro`, and
-  the node keeps it so over vsock as machines come and go; the server
-  drops its client caches with each change, so a machine that stops
-  declaring a share loses it at once, its mount included: its next
+  the node keeps it so over vsock as machines come and go, and at each
+  boot of the server, which starts from the export its boot disk was
+  written with. An export the server refuses leaves it serving the last
+  it took, and is reported on its machine (`ExportFailed`), the share
+  `Pending` until it takes one. A container mounts each share once, and a
+  mount refused fails its boot, so the node starts a container's VM only
+  once each share's server has an address on the network it mounts from,
+  runs on its node, and has taken, in its current boot, an export holding
+  the container, and that network's firewall, as the host reads it back,
+  lets the container in to the server's 2049 and out to it. Until then it
+  waits (`FileShareNotReady`), neither booted nor failed, a VM of its
+  earlier spec running on, and is checked again as soon as a server takes
+  an export or a firewall is written. A boot of the container's own
+  restart policy, as when it exits while its share's server starts again
+  after a resize, is not gated: its mount may fail, and the policy tries
+  it again (a `never` container is never booted so). A running container
+  whose share can no longer be mounted is stopped. The server drops its
+  client caches with each change, so a machine that stops declaring a
+  share loses it at once, its mount included: its next
   operation fails (within a second on the testbed). Writes it had
   buffered on files already open never land, though its program may not
   learn so until it syncs or closes, and its opens and locks hold others

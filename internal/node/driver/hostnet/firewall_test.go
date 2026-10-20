@@ -24,11 +24,11 @@ func TestFirewallChains(t *testing.T) {
 		}
 		return out
 	}
-	if got := names(none); !slices.Equal(got, []string{"prerouting", "forward", "output"}) {
+	if got := names(none); !slices.Equal(got, []string{"fileshare_in", "fileshare_out", "prerouting", "forward", "output"}) {
 		t.Fatalf("no taps: chains %v", got)
 	}
-	// With no tap's chains, every base chain ends in a drop: a tap without
-	// a policy is closed both ways.
+	// With no tap's chains, every chain ends in a drop: a tap without a
+	// policy is closed both ways, a file share's server's to all.
 	for _, c := range none {
 		if last := c.rules[len(c.rules)-1]; last.says != "nothing else" || verdictOf(last) != expr.VerdictDrop {
 			t.Errorf("%s ends with %q, verdict %v", c.name, last.says, verdictOf(last))

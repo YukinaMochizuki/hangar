@@ -7,7 +7,8 @@
 // disk cloned from it deleted. Each disk image, such as a distribution's
 // cloud image, gets a base too, written raw onto a zvol and snapshotted.
 // Each API Disk gets a volume of its own, a sparse zvol the host never
-// reads, blank or cloned from a disk image's base. Every dataset the
+// reads, blank or cloned from a disk image's base, and each FileShare a
+// blank one its server alone has. Every dataset the
 // driver makes carries a user property naming what it serves,
 // which is how it is listed and how the driver knows it as its own: a
 // dataset without it is never changed or destroyed. See
@@ -42,6 +43,7 @@ const (
 	propDigest  = "hangar:digest"
 	propMachine = "hangar:machine"
 	propDisk    = "hangar:disk"
+	propShare   = "hangar:fileshare"
 	// propUsedAt is when a base was last used, RFC 3339.
 	propUsedAt = "hangar:used-at"
 )
@@ -65,8 +67,9 @@ const (
 type Config struct {
 	// Dataset is the parent of the driver's datasets, such as the pool
 	// hangar; it must exist. The driver keeps bases in Dataset/bases, root
-	// disks in Dataset/roots, volumes in Dataset/disks and disk images'
-	// bases in Dataset/vmbases, and makes those if need be.
+	// disks in Dataset/roots, volumes in Dataset/disks, disk images' bases
+	// in Dataset/vmbases and FileShares' volumes in Dataset/shares, and
+	// makes those if need be.
 	Dataset string
 	// Scratch is a directory, root's alone, to unpack images in before they
 	// go into their base. The driver owns all of it.
@@ -108,7 +111,7 @@ func New(ctx context.Context, cfg Config) (*Store, error) {
 	// Each zvol inherits volmode=dev from these, so its device is made as
 	// dev, never made as the default and then made again when its own
 	// volmode=dev is set (docs/decisions/storage-zfs.md).
-	for _, ds := range []string{s.bases(), s.roots(), s.disks(), s.vmBases()} {
+	for _, ds := range []string{s.bases(), s.roots(), s.disks(), s.vmBases(), s.shares()} {
 		p, ok, err := props(ctx, ds, "volmode")
 		switch {
 		case err != nil:
@@ -144,6 +147,7 @@ func (s *Store) bases() string   { return s.cfg.Dataset + "/bases" }
 func (s *Store) roots() string   { return s.cfg.Dataset + "/roots" }
 func (s *Store) disks() string   { return s.cfg.Dataset + "/disks" }
 func (s *Store) vmBases() string { return s.cfg.Dataset + "/vmbases" }
+func (s *Store) shares() string  { return s.cfg.Dataset + "/shares" }
 
 var (
 	digestRE = regexp.MustCompile(`^sha256:([0-9a-f]{64})$`)
@@ -186,6 +190,15 @@ func (s *Store) volumeName(uid string) (string, error) {
 		return "", fmt.Errorf("%q cannot name a disk's volume", uid)
 	}
 	return s.disks() + "/" + uid, nil
+}
+
+// shareName returns the volume of a FileShare, or fails for a uid that
+// cannot name one.
+func (s *Store) shareName(uid string) (string, error) {
+	if !uidRE.MatchString(uid) {
+		return "", fmt.Errorf("%q cannot name a file share's volume", uid)
+	}
+	return s.shares() + "/" + uid, nil
 }
 
 func device(volume string) string { return "/dev/zvol/" + volume }
@@ -960,6 +973,87 @@ func (s *Store) DeleteVolume(ctx context.Context, diskUID string) error {
 		return fmt.Errorf("%s is not disk %s's volume; left alone", vol, diskUID)
 	}
 	// zfs refuses while the device is open, as a running VM holds it.
+	return destroy(ctx, vol)
+}
+
+// shareOf returns the FileShare a volume serves and its size, as its
+// properties say.
+func shareOf(ctx context.Context, vol string) (share string, size int64, ok bool, err error) {
+	p, ok, err := props(ctx, vol, propShare, "volsize")
+	if err != nil || !ok {
+		return "", 0, ok, err
+	}
+	size, err = strconv.ParseInt(p["volsize"], 10, 64)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("%s: volsize %q", vol, p["volsize"])
+	}
+	return unset(p[propShare]), size, true, nil
+}
+
+func (s *Store) EnsureShareVolume(ctx context.Context, shareUID string, size int64) (driver.ShareVolume, error) {
+	vol, err := s.shareName(shareUID)
+	if err != nil {
+		return driver.ShareVolume{}, err
+	}
+	want := roundUp(max(size, 1), align)
+	share, have, ok, err := shareOf(ctx, vol)
+	switch {
+	case err != nil:
+		return driver.ShareVolume{}, err
+	case ok && share != shareUID:
+		return driver.ShareVolume{}, fmt.Errorf("%s is not file share %s's volume; left alone", vol, shareUID)
+	case !ok:
+		if _, err := zfs(ctx, "create", "-s", "-V", strconv.FormatInt(want, 10),
+			"-o", "volmode=dev", "-o", propShare+"="+shareUID, vol); err != nil {
+			return driver.ShareVolume{}, err
+		}
+		have = want
+	}
+	if have < want {
+		if err := s.grow(ctx, vol, want); err != nil {
+			return driver.ShareVolume{}, err
+		}
+		have = want
+	}
+	if _, err := s.waitDev(ctx, vol); err != nil {
+		return driver.ShareVolume{}, err
+	}
+	return driver.ShareVolume{ShareUID: shareUID, Path: device(vol), Size: have}, nil
+}
+
+func (s *Store) ShareVolumes(ctx context.Context) ([]driver.ShareVolume, error) {
+	rows, err := list(ctx, "volume", s.shares(), "name", propShare, "volsize")
+	if err != nil {
+		return nil, err
+	}
+	var out []driver.ShareVolume
+	for _, row := range rows {
+		name, share := row[0], row[1]
+		if vol, err := s.shareName(share); err != nil || vol != name {
+			continue // not ours
+		}
+		size, err := strconv.ParseInt(row[2], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s: volsize %q", name, row[2])
+		}
+		out = append(out, driver.ShareVolume{ShareUID: share, Path: device(name), Size: size})
+	}
+	return out, nil
+}
+
+func (s *Store) DeleteShareVolume(ctx context.Context, shareUID string) error {
+	vol, err := s.shareName(shareUID)
+	if err != nil {
+		return err
+	}
+	share, _, ok, err := shareOf(ctx, vol)
+	if err != nil || !ok {
+		return err
+	}
+	if share != shareUID {
+		return fmt.Errorf("%s is not file share %s's volume; left alone", vol, shareUID)
+	}
+	// zfs refuses while the device is open, as a running server holds it.
 	return destroy(ctx, vol)
 }
 

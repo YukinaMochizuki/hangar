@@ -27,7 +27,6 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
-	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
 
 // Host is a simulated host. The zero value is not usable; call New.
@@ -71,9 +70,17 @@ type Host struct {
 	roots     map[string]driver.Disk
 	volumes   map[string]driver.Volume // by disk uid
 	full      bool
-	heldDisks map[string]int           // root disks in use, by machine uid
-	heldVols  map[string]int           // volumes in use, by disk uid
-	held      map[string]chan struct{} // unpacks waiting to be let go, by reference
+	heldDisks map[string]int // root disks in use, by machine uid
+	heldVols  map[string]int // volumes in use, by disk uid
+	// shareVols are FileShares' volumes, by share uid; exports what each
+	// share's server holds, by machine uid, which exportErr refuses, by
+	// machine uid or "" for every one; exportCalls counts SetExport.
+	shareVols   map[string]driver.ShareVolume
+	heldShares  map[string]int // share volumes in use, by share uid
+	exports     map[string]driver.ShareExport
+	exportErr   map[string]error
+	exportCalls map[string]int
+	held        map[string]chan struct{} // unpacks waiting to be let go, by reference
 
 	// vmBases are disk images' bases' sizes, by digest; diskImages what the
 	// fake image servers serve, by URL, and fetches the fetches of each.
@@ -99,10 +106,7 @@ type Host struct {
 	dials  []string
 	// firewalls are the policies ensured, by network uid, then machine uid
 	// and interface name.
-	firewalls map[string]map[string]secgroup.Policy
-	// edgePorts are the ports ensured for public endpoints, by network uid,
-	// then machine uid and interface name.
-	edgePorts map[string]map[string][]uint16
+	firewalls map[string]map[string]driver.InterfacePolicy
 	// firewallLimit, if not 0, bounds a firewall in place of
 	// driver.MaxFirewallRules.
 	firewallLimit int
@@ -166,9 +170,9 @@ func New() *Host {
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
 		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
-		firewalls: map[string]map[string]secgroup.Policy{},
-		edgePorts: map[string]map[string][]uint16{},
-		vms:       map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		firewalls: map[string]map[string]driver.InterfacePolicy{},
+		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{},
+		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
@@ -494,6 +498,7 @@ const (
 	ListRoots      = "roots"
 	ListBases      = "bases"
 	ListVolumes    = "volumes"
+	ListShares     = "shares"
 	ListImageBases = "imagebases"
 	ListLogs       = "logs"
 	ListImageCache = "imagecache"
@@ -505,7 +510,7 @@ func (h *Host) FailListing(err error, lists ...string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if len(lists) == 0 {
-		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListImageBases, ListLogs, ListImageCache}
+		lists = []string{ListVMs, ListInterfaces, ListNetworks, ListRoots, ListBases, ListVolumes, ListShares, ListImageBases, ListLogs, ListImageCache}
 	}
 	for _, l := range lists {
 		h.listErr[l] = err
@@ -572,7 +577,7 @@ func (h *Host) exitLocked(machineUID string, code int) error {
 		v.boots++
 		v.Started = time.Now()
 		h.boot(machineUID)
-		h.bootGuestIPv6(v)
+		h.bootGuest(v)
 	default:
 		v.State = driver.VMExited
 		v.ExitCode = code
@@ -635,7 +640,6 @@ func (h *Host) removeNetwork(networkUID string) {
 	delete(h.networks, networkUID)
 	delete(h.instances, networkUID)
 	delete(h.firewalls, networkUID)
-	delete(h.edgePorts, networkUID)
 	for uid, ifs := range h.interfaces {
 		for name, i := range ifs {
 			if i.NetworkUID != networkUID {
@@ -726,13 +730,15 @@ func (h *Host) GuestStops(machineUID string) int {
 
 // Snapshot is what the host holds.
 type Snapshot struct {
-	Bases      []string
-	Roots      map[string]driver.Disk
-	Volumes    map[string]driver.Volume
-	ImageBases []string
-	Networks   map[string]driver.NetworkSpec
-	Interfaces map[string][]driver.Interface
-	VMs        map[string]VMView
+	Bases   []string
+	Roots   map[string]driver.Disk
+	Volumes map[string]driver.Volume
+	// ShareVolumes are FileShares' volumes, by share uid.
+	ShareVolumes map[string]driver.ShareVolume
+	ImageBases   []string
+	Networks     map[string]driver.NetworkSpec
+	Interfaces   map[string][]driver.Interface
+	VMs          map[string]VMView
 	// Logs are the machines whose console logs the host keeps.
 	Logs []string
 	// Listening are the sockets still open, such as "udp 10.0.0.1:53", by
@@ -751,7 +757,7 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ImageBases) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ShareVolumes) == 0 && len(s.ImageBases) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
 		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.Listening) == 0
 }
 
@@ -767,7 +773,8 @@ func (h *Host) Snapshot() Snapshot {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	s := Snapshot{
-		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Networks: maps.Clone(h.networks),
+		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), ShareVolumes: maps.Clone(h.shareVols),
+		ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
 		Listening: h.listening(),
 	}
@@ -1436,7 +1443,14 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	if err := d.h.bootErr[""]; err != nil {
 		return err
 	}
-	switch {
+	switch srv := spec.FileShareServer; {
+	case srv != nil:
+		if spec.Firmware || spec.Root != (driver.Disk{}) || len(spec.Disks) > 0 || len(spec.Mounts) > 0 || len(spec.Run.Command) > 0 {
+			return fmt.Errorf("machine %s, a file share's server, has a root disk, volumes, mounts or a process", spec.MachineUID)
+		}
+		if have, ok := d.h.shareVols[srv.Volume.ShareUID]; !ok || have != srv.Volume {
+			return fmt.Errorf("machine %s has no share volume %s as specified", spec.MachineUID, srv.Volume.Path)
+		}
 	case spec.Firmware && (spec.Root != driver.Disk{} || len(spec.Disks) == 0):
 		return fmt.Errorf("machine %s boots firmware from a volume, not root disk %+v", spec.MachineUID, spec.Root)
 	case !spec.Firmware:
@@ -1450,13 +1464,16 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		}
 	}
 	for _, m := range spec.Mounts {
-		if spec.Firmware || m.Disk < 0 || m.Disk >= len(spec.Disks) || m.Target == "" {
+		if spec.Firmware || (!m.Share.IsValid() && (m.Disk < 0 || m.Disk >= len(spec.Disks))) || m.Target == "" {
 			return fmt.Errorf("machine %s: mount %+v is of no volume of its, or has no target", spec.MachineUID, m)
 		}
 	}
 	for _, i := range spec.Interfaces {
 		if have, ok := d.h.interfaces[spec.MachineUID][i.Name]; !ok || have != i {
 			return fmt.Errorf("machine %s has no interface %s as specified", spec.MachineUID, i.Name)
+		}
+		if i.FileShareServer != (spec.FileShareServer != nil) {
+			return fmt.Errorf("machine %s's interface %s is a file share server's only if the machine is", spec.MachineUID, i.Name)
 		}
 	}
 	boots := 1
@@ -1469,15 +1486,19 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		boots: boots,
 	}
 	d.h.boot(spec.MachineUID)
-	d.h.bootGuestIPv6(d.h.vms[spec.MachineUID])
+	d.h.bootGuest(d.h.vms[spec.MachineUID])
 	return nil
 }
 
-// bootGuestIPv6 has a container's guest, booting, hold what its boot disk
-// gives it, written when the VM started: as hangar-init does, whatever it
-// was told in an earlier boot.
-func (h *Host) bootGuestIPv6(v *vm) {
-	if !v.spec.Firmware {
+// bootGuest has a guest, booting, hold what its boot disk gives it, written
+// when the VM started: as hangar-init does, whatever it was told in an
+// earlier boot. A container's is its public IPv6, a share's server's its
+// export.
+func (h *Host) bootGuest(v *vm) {
+	switch {
+	case v.spec.FileShareServer != nil:
+		h.exports[v.MachineUID] = cloneExport(v.spec.FileShareServer.Export)
+	case !v.spec.Firmware:
 		h.guestIPv6[v.MachineUID] = driver.GuestIPv6Of(v.spec.Interfaces)
 	}
 }

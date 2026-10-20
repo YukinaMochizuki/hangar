@@ -1,7 +1,7 @@
 // Package computeapi is what the apiserver and the node agent must read
-// alike in Machines, Nodes and Disks: what their status says, of which each
-// writes a part and reads the other's, and which Disks a Machine's spec
-// names.
+// alike in Machines, Nodes, Disks and FileShares: what their status says,
+// of which each writes a part and reads the other's, which Disks a
+// Machine's spec names, and which networks a FileShare is on.
 package computeapi
 
 import (
@@ -10,7 +10,21 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 )
+
+// DefaultNetwork is the network every project has: the one a machine
+// naming no interface joins, and a FileShare naming no network is on.
+const DefaultNetwork = "default"
+
+// ShareNetworks are the networks a FileShare is on: those its spec names,
+// or DefaultNetwork if it names none.
+func ShareNetworks(spec *storagev1alpha1.FileShareSpec) []string {
+	if len(spec.GetNetworks()) == 0 {
+		return []string{DefaultNetwork}
+	}
+	return spec.GetNetworks()
+}
 
 // VirtioDevice is how a Linux guest names the virtio disk the hypervisor
 // attaches n-th, from 0: vda to vdz, then vdaa on.
@@ -116,6 +130,13 @@ const (
 	ReasonNetworkNotReady = "NetworkNotReady"
 	// ReasonDiskNotReady means an attached disk is not on the node yet.
 	ReasonDiskNotReady = "DiskNotReady"
+	// ReasonExportFailed means a file share's server did not take the
+	// export its node told it, and serves the one it had.
+	ReasonExportFailed = "ExportFailed"
+	// ReasonFileShareNotReady means a container waits to boot for a file
+	// share it mounts: its server on the node is not running yet, or has
+	// not yet taken an export holding the container.
+	ReasonFileShareNotReady = "FileShareNotReady"
 )
 
 // ParseIPv6Prefix reads the IPv6 prefix a Node reports: a global unicast

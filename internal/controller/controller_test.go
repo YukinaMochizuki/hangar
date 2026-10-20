@@ -659,3 +659,24 @@ func TestStatusReportsTheQueue(t *testing.T) {
 		return r.count(Key{Name: "a"}) == 2 && len(got.Retries) == 0 && got.InFlight == 0, fmt.Sprintf("%+v", got)
 	})
 }
+
+// TestEnqueueReconcilesTheKey: a key queued by hand is reconciled as a
+// watched change mapped to it would be; queued before Run, nothing is.
+func TestEnqueueReconcilesTheKey(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		src := newMemSource(store.Key{Kind: "A", Name: "a"})
+		r := newRecorder()
+		c := &Controller{Name: "t", Source: src, Reconciler: r, Watches: []Watch{{Kind: "A", Map: Self}}}
+		c.Enqueue(Key{Name: "early"})
+		run(t, c)
+		synctest.Wait()
+		if n := r.count(Key{Name: "a"}); n != 1 {
+			t.Fatalf("listed %d times, want 1", n)
+		}
+		c.Enqueue(Key{Name: "a"}, Key{Name: "b"})
+		synctest.Wait()
+		if a, b, early := r.count(Key{Name: "a"}), r.count(Key{Name: "b"}), r.count(Key{Name: "early"}); a != 2 || b != 1 || early != 0 {
+			t.Errorf("reconciled a %d, b %d, early %d times; want 2, 1, 0", a, b, early)
+		}
+	})
+}

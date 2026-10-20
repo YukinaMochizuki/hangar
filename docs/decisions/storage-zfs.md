@@ -138,7 +138,13 @@ unreliable on virtio-fs.
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
   volume restarts the machine it is attached to, as a grown root disk does.
-- **Every zvol is made `volmode=dev` from the start.** The driver's four
+- **A volume per FileShare**: `hangar/shares/<share uid>`, a sparse zvol,
+  `volmode=dev`, blank, at the size its server's machine names, grown,
+  never shrunk; only that server has it, and makes its filesystem
+  (`file-shares.md`). Growing it restarts the server. It goes when its
+  share is deleted, once its server is gone, or when the sweep finds no
+  share bound to the node for it.
+- **Every zvol is made `volmode=dev` from the start.** The driver's five
   parent datasets carry `volmode=dev`, so a zvol's device is made as `dev`
   when the zvol is. A zvol given `-o volmode=dev` under a parent without it
   gets its device made with the default mode (its partition table scanned),
@@ -163,7 +169,8 @@ unreliable on virtio-fs.
 - **The driver knows its datasets by their user properties**: `hangar:digest`
   on a base and its snapshot, `hangar:machine` and `hangar:digest` on a root
   disk, `hangar:disk` (and `hangar:digest`, for one cloned from a disk
-  image) on a volume. It lists from them, and a dataset whose
+  image) on a volume, `hangar:fileshare` on a share's. It lists from them,
+  and a dataset whose
   properties do not match its name is never listed, changed or destroyed,
   whatever it is called. It
   never destroys recursively; ZFS itself refuses to destroy a base with
@@ -207,8 +214,8 @@ unreliable on virtio-fs.
 - Every clone of a base shares its filesystem UUID.
 - The pool, the `hangar/images` dataset and its quota are the host's to
   provision (`docs/runbook/host-bootstrap.md`); the driver makes
-  `hangar/bases`, `hangar/roots`, `hangar/disks` and `hangar/vmbases`
-  itself.
+  `hangar/bases`, `hangar/roots`, `hangar/disks`, `hangar/vmbases` and
+  `hangar/shares` itself.
 - The layers' size is a floor: an image compressing far more than the usual
   can still fill `hangar/images` while it unpacks, up to the quota, and
   fail there.

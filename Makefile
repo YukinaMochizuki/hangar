@@ -61,7 +61,7 @@ test-root:
 		./internal/node/driver/chvm/
 
 e2e:
-	go test -race -tags e2e ./test/e2e/...
+	go test -race -timeout 20m -tags e2e ./test/e2e/...
 
 # Real-host tests (L4), on a testbed VM only: they boot guests as root.
 # docs/runbook/testbed.md says what they need and how to provide it.

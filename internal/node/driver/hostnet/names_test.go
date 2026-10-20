@@ -2,6 +2,7 @@ package hostnet
 
 import (
 	"encoding/binary"
+	"fmt"
 	"net/netip"
 	"slices"
 	"strings"
@@ -315,5 +316,31 @@ func TestIsOurs(t *testing.T) {
 		if got := isOurs(c.data); got != c.want {
 			t.Errorf("isOurs(%+v) = %t", c.data, got)
 		}
+	}
+}
+
+// TestAServersTapIsNamedApart: a file share's server's tap is named from
+// its own prefix, which no other tap's name can start with, at the length
+// every link's name is, and is read back as a server's by its name alone;
+// any other tap is no server's.
+func TestAServersTapIsNamedApart(t *testing.T) {
+	for i := range 1000 {
+		key := fmt.Sprintf("m%d/eth0", i)
+		srv, tap := linkName(tapPrefixOf(driver.Interface{FileShareServer: true}), key, 0), linkName(tapPrefixOf(driver.Interface{}), key, 0)
+		if !strings.HasPrefix(srv, "hnts") || len(srv) != 15 || !isServerTap(srv) {
+			t.Fatalf("a server's tap is named %q", srv)
+		}
+		if !strings.HasPrefix(tap, tapPrefix) || len(tap) != 15 || isServerTap(tap) {
+			t.Fatalf("a tap of no server is named %q", tap)
+		}
+	}
+	m := tapMeta{Machine: "m1", Name: "eth0"}
+	if !m.iface("n1", "hnts00000000001").FileShareServer || m.iface("n1", "hnt000000000001").FileShareServer {
+		t.Error("a tap is read back as a server's by other than its name")
+	}
+	if checkInterface(driver.Interface{MachineUID: "m1", Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
+		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"),
+		IPv6: netip.MustParseAddr("2001:db8::1"), FileShareServer: true}) == nil {
+		t.Error("a server's interface with a public address")
 	}
 }

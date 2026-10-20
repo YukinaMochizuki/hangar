@@ -17,8 +17,9 @@ import (
 )
 
 // shareController lets go of what the host holds for the FileShares bound
-// to this node once they are deleted, and says so with Released, which the
-// share's deletion waits for (docs/decisions/file-shares.md).
+// to this node once they are deleted, their volumes, and says so with
+// Released, which the share's deletion waits for
+// (docs/decisions/file-shares.md). Their servers make and grow them.
 func (a *Agent) shareController() *controller.Controller {
 	return &controller.Controller{
 		Name:       "fileshares",
@@ -40,8 +41,6 @@ func (a *Agent) shareIfMine(_ context.Context, o store.Object) []controller.Key 
 
 // reconcileShare brings the host in line with one share bound to this node.
 func (a *Agent) reconcileShare(ctx context.Context, k controller.Key) error {
-	a.host.Lock()
-	defer a.host.Unlock()
 	res, err := a.shares.GetFileShare(ctx, connect.NewRequest(&storagev1alpha1.GetFileShareRequest{Project: k.Project, Name: k.Name}))
 	if connect.CodeOf(err) == connect.CodeNotFound {
 		return nil
@@ -57,7 +56,12 @@ func (a *Agent) reconcileShare(ctx context.Context, k controller.Key) error {
 		slices.Contains(fs.GetMetadata().GetFinalizers(), computeapi.DependentsFinalizer) {
 		return nil
 	}
-	if err := a.releaseShare(ctx, fs); err != nil {
+	// Only a release touches the host: a live share, every event of which
+	// lands here, holds up no machine's reconcile.
+	a.host.Lock()
+	err = a.releaseShare(ctx, fs)
+	a.host.Unlock()
+	if err != nil {
 		return err
 	}
 	// The apiserver keeps all of the status but the node's conditions.
@@ -74,9 +78,8 @@ func (a *Agent) reconcileShare(ctx context.Context, k controller.Key) error {
 }
 
 // releaseShare removes what the host holds for a deleted share, whose
-// server is gone. The node makes nothing for a share yet, so there is
-// nothing to remove.
-// TODO(819a74ea): destroy the share's volume here, once the node makes it.
-func (a *Agent) releaseShare(context.Context, *storagev1alpha1.FileShare) error {
-	return nil
+// server is gone: its volume, which the storage refuses to destroy while a
+// VM still has it.
+func (a *Agent) releaseShare(ctx context.Context, fs *storagev1alpha1.FileShare) error {
+	return a.cfg.Drivers.Storage.DeleteShareVolume(ctx, fs.GetMetadata().GetUid())
 }

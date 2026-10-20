@@ -279,7 +279,7 @@ func platformAnswers(p *fakeProm) {
 	p.vector(`min by (instance) (probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) / 86400`, ts("12.4", "instance", api), ts("61.2", "instance", console))
 	p.vector(`sum by (phase) (hangar_apiserver_machines)`,
 		ts("14", "phase", "Running"), ts("1", "phase", "Pending"), ts("6", "phase", "Stopped"), ts("3", "phase", "Failed"))
-	p.vector(`sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed|Exited|BootFailed"})`,
+	p.vector(`sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed|ExportFailed|Exited|BootFailed"})`,
 		ts("2", "reason", "DiskFailed"), ts("1", "reason", "Exited"))
 	p.vector(`max(hangar_apiserver_machines_crash_looping)`, ts("1"))
 }

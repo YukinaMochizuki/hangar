@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -450,7 +451,7 @@ func (s *Server) tally(ctx context.Context, tenant string, over *override) (tall
 			}
 		}
 		hasDefault := slices.ContainsFunc(in[registry.Network.Kind], func(n proto.Message) bool {
-			return object.Meta(n).GetName() == DefaultNetwork
+			return object.Meta(n).GetName() == computeapi.DefaultNetwork
 		})
 		if !hasDefault && p.GetMetadata().GetDeleteTime() == nil {
 			a[dimNetworks]++

@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -43,10 +44,7 @@ func decodeFileShare(o store.Object) (*storagev1alpha1.FileShare, bool) {
 // shareNetworks are the networks a share is on: those its spec names, or
 // the default network when it names none.
 func shareNetworks(spec *storagev1alpha1.FileShareSpec) []string {
-	if len(spec.GetNetworks()) == 0 {
-		return []string{DefaultNetwork}
-	}
-	return spec.GetNetworks()
+	return computeapi.ShareNetworks(spec)
 }
 
 // shareBytes reads a share's spec.size.
@@ -188,7 +186,7 @@ func validateFileShare(ctx context.Context, s *Server, _ auth.Principal, old, ob
 // networkRange is the IPv4 range of a project's network, ok false for one
 // not made yet; default's is always DefaultNetworkCIDR, made or not.
 func (s *Server) networkRange(ctx context.Context, project, name string) (netip.Prefix, bool, error) {
-	if name == DefaultNetwork {
+	if name == computeapi.DefaultNetwork {
 		return netip.MustParsePrefix(DefaultNetworkCIDR), true, nil
 	}
 	obj, err := s.get(ctx, registry.Network, resource.Key{Project: project, Name: name})

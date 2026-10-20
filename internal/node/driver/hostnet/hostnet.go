@@ -216,7 +216,7 @@ func (d *Driver) EnsureNetwork(_ context.Context, n driver.NetworkSpec) error {
 		return err
 	}
 	// Before any tap can join the bridge, so none is ever unfiltered.
-	if err := ensureFirewallTable(ns, n.CIDR.Addr().Next()); err != nil {
+	if err := ensureFirewallTable(ns, n.CIDR.Addr().Next(), false); err != nil {
 		return fmt.Errorf("network %s: %w", n.UID, err)
 	}
 	if err := ensureBinding(ns, h, d.cfg.IPv6Prefix); err != nil {
@@ -746,15 +746,16 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if err := macTaken(all, i); err != nil {
 		return driver.Interface{}, err
 	}
-	// The interface's other taps, on another network or duplicates, go,
-	// unless a VM holds one; that is refused, as deleting the interface is.
+	// The interface's other taps, on another network, of a server's when it
+	// is none or the other way round, or duplicates, go, unless a VM holds
+	// one; that is refused, as deleting the interface is.
 	var link netlink.Link
 	var others []tap
 	for _, t := range all {
 		if !t.ok || t.meta.Machine != i.MachineUID || t.meta.Name != i.Name {
 			continue
 		}
-		if t.network == i.NetworkUID && link == nil {
+		if t.network == i.NetworkUID && link == nil && isServerTap(t.link.Attrs().Name) == i.FileShareServer {
 			link = t.link
 			continue
 		}
@@ -792,7 +793,7 @@ func (d *Driver) EnsureInterface(_ context.Context, i driver.Interface) (driver.
 	if err != nil {
 		return driver.Interface{}, fmt.Errorf("network %s: %w", i.NetworkUID, err)
 	}
-	if err := ensureFirewallTable(ns, gateway); err != nil {
+	if err := ensureFirewallTable(ns, gateway, i.FileShareServer); err != nil {
 		return driver.Interface{}, err
 	}
 	// A tap joins the bridge down and comes up once its port is set. An up
@@ -836,7 +837,7 @@ func makeTap(ns netns.NsHandle, h *netlink.Handle, i driver.Interface, all []tap
 	if err != nil {
 		return nil, err
 	}
-	name, err := freeName(tapPrefix, i.MachineUID+"/"+i.Name, func(n string) bool {
+	name, err := freeName(tapPrefixOf(i), i.MachineUID+"/"+i.Name, func(n string) bool {
 		return slices.ContainsFunc(all, func(t tap) bool { return t.link.Attrs().Name == n }) ||
 			slices.ContainsFunc(links, func(l netlink.Link) bool { return l.Attrs().Name == n })
 	})

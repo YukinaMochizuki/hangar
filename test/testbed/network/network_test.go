@@ -71,6 +71,16 @@ func wipe(t *testing.T) {
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
 		guests := map[string]*guest{}
+		// serving are the guests that serve or reach, one an interface.
+		serving := map[string]*guest{}
+		guestOn := func(t *testing.T, nic driver.Interface) *guest {
+			if g := serving[nic.MachineUID+"/"+nic.Name]; g != nil {
+				return g
+			}
+			g := newGuest(t, nic)
+			serving[nic.MachineUID+"/"+nic.Name] = g
+			return g
+		}
 		return drivertest.Host{
 			Network: newDriver(t, hostnet.Config{Uplink: upstreamLink}),
 			ServeGuest: func(t *testing.T, nic driver.Interface, ports ...uint16) {
@@ -78,7 +88,10 @@ func TestConformance(t *testing.T) {
 				for i, p := range ports {
 					ints[i] = int(p)
 				}
-				echoServer(t, newGuest(t, nic), ints...)
+				echoServer(t, guestOn(t, nic), ints...)
+			},
+			Reaches: func(t *testing.T, from driver.Interface, to netip.AddrPort) bool {
+				return connects(guestOn(t, from), to.Addr().String(), int(to.Port()))
 			},
 			// The guest holds its tap only while it connects, so the suite
 			// can delete the interface after.

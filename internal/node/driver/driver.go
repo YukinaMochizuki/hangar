@@ -303,6 +303,15 @@ type Storage interface {
 	Volumes(ctx context.Context) ([]Volume, error)
 	// DeleteVolume removes a Disk's volume. It fails while a VM has it.
 	DeleteVolume(ctx context.Context, diskUID string) error
+	// EnsureShareVolume returns a FileShare's volume of at least size
+	// bytes: blank when made, grown, never shrunk. The host never reads it;
+	// the share's server makes its filesystem (docs/decisions/file-shares.md).
+	EnsureShareVolume(ctx context.Context, shareUID string, size int64) (ShareVolume, error)
+	// ShareVolumes lists every FileShare's volume.
+	ShareVolumes(ctx context.Context) ([]ShareVolume, error)
+	// DeleteShareVolume removes a FileShare's volume. It fails while a VM
+	// has it.
+	DeleteShareVolume(ctx context.Context, shareUID string) error
 	// Capacity returns how much the storage holds, and how much of it is
 	// free.
 	Capacity(ctx context.Context) (Capacity, error)
@@ -339,6 +348,17 @@ type Volume struct {
 	Size int64
 	// Digest is the disk image it was cloned from; empty for a blank one.
 	Digest string `json:",omitempty"`
+}
+
+// ShareVolume is the block device of a FileShare, which only its server
+// has.
+type ShareVolume struct {
+	ShareUID string
+	// Path is the block device the server is given.
+	Path string
+	// Size is the volume's size in bytes, at least what was asked for. The
+	// server grows its filesystem to it as it boots.
+	Size int64
 }
 
 // Capacity is the storage's size and free space, in bytes.
@@ -399,11 +419,27 @@ type Network interface {
 	// EnsureFirewall makes each machine interface of the network on the
 	// host hold exactly its policy, replacing the network's whole set at
 	// once; an interface given none, or one made since, receives and sends
-	// nothing but its network's services and replies. Policies of
+	// nothing but its network's services and replies. A file share's
+	// server's interface (Interface.FileShareServer) takes no policy and no
+	// service: it receives only new TCP connections to ShareServerPort from
+	// its ShareClients, and sends only replies on them; given none, or made
+	// since, nothing at all. Policies of
 	// interfaces not on the host are ignored. Policies of the interfaces on
 	// the host larger than MaxFirewallRules together are refused, and the
 	// firewall is then left as it was.
 	EnsureFirewall(ctx context.Context, networkUID string, policies []InterfacePolicy) error
+	// ShareRules reads back from the host the file share rules in force in
+	// a network's firewall, by machine uid and interface name, such as
+	// "uid/eth0": what each interface was given of an InterfacePolicy's
+	// ShareClients and Shares, as its rules now stand.
+	ShareRules(ctx context.Context, networkUID string) (map[string]ShareRules, error)
+}
+
+// ShareRules are an interface's file share rules in force: of a server's,
+// the clients it takes on ShareServerPort; of any other, the servers it
+// reaches there.
+type ShareRules struct {
+	Clients, Servers []netip.Addr
 }
 
 // PacketKind is what IPv6 packets a PacketConn receives.
@@ -441,7 +477,18 @@ type InterfacePolicy struct {
 	// EdgePorts are the TCP ports of the interface that public endpoints
 	// reach, which Dial from the gateway passes whatever Policy says.
 	EdgePorts []uint16
+	// Shares are the addresses of the file share servers the interface
+	// connects to on ShareServerPort whatever Policy says: those of the
+	// shares its machine declares, on this network.
+	Shares []netip.Addr
+	// ShareClients, of a file share's server's interface, are the
+	// addresses that may connect to it, the machines declaring its share on
+	// this network; its Policy is ignored.
+	ShareClients []netip.Addr
 }
+
+// ShareServerPort is the port a file share's server serves NFS on.
+const ShareServerPort = 2049
 
 // MetadataAddr is the metadata service's address in every network, as
 // clouds have it; a network's bridge holds it beside the gateway.
@@ -479,6 +526,9 @@ type Interface struct {
 	// characters, as Linux allows. The network driver chooses it; the
 	// hypervisor driver opens it.
 	Device string
+	// FileShareServer makes it an interface of a file share's server, which
+	// the firewall closes to all but its share's clients (EnsureFirewall).
+	FileShareServer bool `json:",omitempty"`
 }
 
 // Hypervisor runs VMs. A VM exited for good stays listed, with its exit
@@ -594,7 +644,47 @@ type VMSpec struct {
 	// Left out of the hash when empty, as Disks are.
 	Mounts  []Mount `json:",omitempty"`
 	Restart RestartPolicy
+	// FileShareServer boots the VM as a FileShare's server, as hangar-init
+	// is made one by its boot disk: no Root, Disks, Mounts or Run, a blank
+	// disk at vda that it never reads, and its share's volume at vdc,
+	// after its boot disk (docs/decisions/file-shares.md).
+	FileShareServer *ShareServer `json:",omitempty"`
 }
+
+// ShareServer is what a FileShare's server is booted with.
+type ShareServer struct {
+	Volume ShareVolume
+	// Export is what its boot disk gives it to start with. It is no part of
+	// the spec's Hash: the server is told a new one while it runs
+	// (Guest.SetExport), and a boot by its restart policy starts from the
+	// one its VM was started with.
+	Export ShareExport
+}
+
+// ShareExport is who may mount a share, and how.
+type ShareExport struct {
+	// Clients are each machine's address, once.
+	Clients []ShareClient
+	Squash  Squash
+	// AnonUID and AnonGID are the user and group squashed users become.
+	AnonUID, AnonGID uint32
+}
+
+// ShareClient is a machine allowed to mount a share.
+type ShareClient struct {
+	Address netip.Addr
+	// ReadOnly is enforced by the server.
+	ReadOnly bool
+}
+
+// Squash is which users of a share's clients become its anonymous user.
+type Squash int
+
+const (
+	SquashNone Squash = iota + 1
+	SquashRoot
+	SquashAll
+)
 
 // Mount is one of a VM's Disks mounted in its guest as a volume. See
 // docs/decisions/container-volumes.md.
@@ -607,6 +697,10 @@ type Mount struct {
 	ReadOnly bool   `json:",omitempty"`
 	Nocopy   bool   `json:",omitempty"`
 	Subpath  string `json:",omitempty"`
+	// Share, if valid, makes it a FileShare mounted over NFS from its
+	// server at this address, and Disk and Nocopy mean nothing; Name is
+	// the share's.
+	Share netip.Addr `json:",omitzero"`
 }
 
 // Hash identifies the spec: a VM started with a spec of another hash runs
@@ -619,6 +713,16 @@ func (s VMSpec) Hash() string {
 		s.Interfaces[i].IPv6 = netip.Addr{}
 	}
 	return s.hash()
+}
+
+// noExport is the spec less what a share's server is told while it runs.
+func (s VMSpec) noExport() VMSpec {
+	if s.FileShareServer != nil {
+		srv := *s.FileShareServer
+		srv.Export = ShareExport{}
+		s.FileShareServer = &srv
+	}
+	return s
 }
 
 // LegacyHash is the Hash nodes gave a spec before an interface's IPv6
@@ -637,7 +741,7 @@ func (s VMSpec) LegacyHash(started []Interface) string {
 }
 
 func (s VMSpec) hash() string {
-	b, err := json.Marshal(s)
+	b, err := json.Marshal(s.noExport())
 	if err != nil {
 		panic(fmt.Sprintf("encoding a VM spec: %v", err)) // every field encodes
 	}
@@ -709,6 +813,9 @@ type Guest interface {
 	// A guest that cannot, as one started before it could, fails with
 	// ErrGuestCannot.
 	SetIPv6(ctx context.Context, machineUID string, ifaces []GuestIPv6) error
+	// SetExport replaces the whole export of a FileShare's server. A server
+	// refusing it keeps the export it had, and the error says why.
+	SetExport(ctx context.Context, machineUID string, export ShareExport) error
 }
 
 // GuestIPv6 is one guest interface's public IPv6, by its MAC: an address

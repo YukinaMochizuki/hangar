@@ -20,6 +20,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -337,7 +338,7 @@ func TestANetworkWithAShareStays(t *testing.T) {
 	if err != nil && !strings.Contains(err.Error(), "file share data") {
 		t.Errorf("the refusal says %v", err)
 	}
-	_, err = networks.Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil)
+	_, err = networks.Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil)
 	if err != nil {
 		t.Errorf("deleting a network no share is on: %v", err)
 	}

@@ -47,6 +47,13 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 			}
 			return func() { _ = f.Close() }
 		},
+		HoldShareVolume: func(t *testing.T, v driver.ShareVolume) func() {
+			f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func() { _ = f.Close() }
+		},
 		HoldVolume: func(t *testing.T, v driver.Volume) func() {
 			f, err := os.OpenFile(v.Path, os.O_RDWR, 0)
 			if err != nil {
@@ -61,7 +68,9 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 		Firmware:         true,
 		AskedToStop: func(t *testing.T, uid string) bool {
 			for _, r := range consoleOf(t, uid) {
-				if r.Stream == console.Init && strings.Contains(string(r.Payload), "hangar-init: stopping the container") {
+				// A file share's server says so of itself.
+				if r.Stream == console.Init && (strings.Contains(string(r.Payload), "hangar-init: stopping the container") ||
+					strings.Contains(string(r.Payload), "hangar-init: stopping the share's server")) {
 					return true
 				}
 			}

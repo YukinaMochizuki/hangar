@@ -230,13 +230,13 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 	// The VM's group; root's, with no VM user.
 	gid := int(ln.VMUser)
-	if err := prepareDir(dir, gid, ln.Spec.Firmware); err != nil {
+	if err := prepareDir(dir, gid, readFiles(ln.Spec)); err != nil {
 		return 0, err
 	}
 	// Held open while the VM runs, O_EXCL: no other zvol can take its
 	// device's number, which the node names. A firmware VM boots its first
-	// volume instead.
-	if !ln.Spec.Firmware {
+	// volume instead, and a file share's server has a blank file.
+	if !ln.Spec.Firmware && ln.Spec.FileShareServer == nil {
 		root, err := l.OpenDisk(ln.Spec.Root.Path)
 		if err != nil {
 			return 0, err
@@ -252,14 +252,14 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 			_ = f.Close()
 		}
 	}()
-	for n, v := range ln.Spec.Disks {
-		f, err := l.OpenDisk(v.Path)
+	for n, path := range dataDisks(ln.Spec) {
+		f, err := l.OpenDisk(path)
 		if err != nil {
-			return 0, fmt.Errorf("disk %s: %w", v.DiskUID, err)
+			return 0, fmt.Errorf("disk %s: %w", path, err)
 		}
 		vols = append(vols, f)
 		if err := l.MakeNode(f, filepath.Join(dir, volumeNode(n)), gid); err != nil {
-			return 0, fmt.Errorf("disk %s's node: %w", v.DiskUID, err)
+			return 0, fmt.Errorf("disk %s's node: %w", path, err)
 		}
 	}
 	var taps []*os.File
@@ -547,11 +547,11 @@ func openFIFO(path string, gid int) (*os.File, error) {
 	return f, nil
 }
 
-// prepareDir makes the VM's directory and what Cloud Hypervisor reads in
-// it the group gid's, and chDir afresh, where it writes. With no VM user
-// (gid 0) they are root's alone. Nothing in the directory is Cloud
+// prepareDir makes the VM's directory and reads, what Cloud Hypervisor
+// reads in it, the group gid's, and chDir afresh, where it writes. With no
+// VM user (gid 0) they are root's alone. Nothing in the directory is Cloud
 // Hypervisor's to remove or replace, nor to read but what it needs.
-func prepareDir(dir string, gid int, firmware bool) error {
+func prepareDir(dir string, gid int, reads []string) error {
 	dirMode, readMode, chMode := os.FileMode(0o700), os.FileMode(0o600), os.FileMode(0o700)
 	if gid != 0 {
 		dirMode, readMode, chMode = 0o710, 0o640, 0o770
@@ -560,9 +560,9 @@ func prepareDir(dir string, gid int, firmware bool) error {
 		name string
 		mode os.FileMode
 	}
-	files := []file{{"", dirMode}, {bootFile, readMode}}
-	if firmware {
-		files = files[:1] // a firmware VM has no boot disk
+	files := []file{{"", dirMode}}
+	for _, name := range reads {
+		files = append(files, file{name, readMode})
 	}
 	for _, p := range files {
 		f, err := os.OpenFile(filepath.Join(dir, p.name), os.O_RDONLY|syscall.O_NOFOLLOW, 0)
@@ -704,10 +704,15 @@ func kvmGroups(kvm string) (string, error) {
 const freePageReporting = "size=0,free_page_reporting=on"
 
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
-// the boot disk and the volumes, at their nodes in dir, and the taps on fds
-// 3 and on, as the launcher passes them.
+// or a file share's server's blank file, the boot disk and the volumes, or
+// the server's share, at their nodes in dir, and the taps on fds 3 and on,
+// as the launcher passes them.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
+	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw"
+	if s.FileShareServer != nil {
+		vda = "path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on"
+	}
 	args := []string{
 		"--kernel", ln.Kernel,
 		"--initramfs", ln.Initramfs,
@@ -716,10 +721,10 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
 		"--balloon", freePageReporting,
 		"--disk",
-		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
+		vda,
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
 	}
-	for n := range s.Disks {
+	for n := range dataDisks(s) {
 		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw")
 	}
 	if taps > 0 {

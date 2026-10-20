@@ -24,7 +24,15 @@ type tapPolicy struct {
 	policy secgroup.Policy
 	// edgePorts are the ports public endpoints reach from the gateway.
 	edgePorts []uint16
+	// shares are the file share servers it connects to on their port.
+	shares []netip.Addr
+	// clients, of a file share's server's tap, which takes no policy, are
+	// what may connect to it.
+	clients []netip.Addr
 }
+
+// server says whether the tap is a file share's server's.
+func (t tapPolicy) server() bool { return isServerTap(t.name) }
 
 func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies []driver.InterfacePolicy) error {
 	if err := checkUID(networkUID); err != nil {
@@ -64,9 +72,15 @@ func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies [
 		if !isTap(l) || !ok {
 			continue
 		}
-		if p, ok := byIface[m.Machine+"/"+m.Name]; ok {
-			taps = append(taps, tapPolicy{name: l.Attrs().Name, policy: p.Policy, edgePorts: p.EdgePorts})
-			size += p.Policy.Size() + len(p.EdgePorts)
+		p, ok := byIface[m.Machine+"/"+m.Name]
+		switch {
+		case !ok:
+		case isServerTap(l.Attrs().Name):
+			taps = append(taps, tapPolicy{name: l.Attrs().Name, clients: p.ShareClients})
+			size += len(p.ShareClients)
+		default:
+			taps = append(taps, tapPolicy{name: l.Attrs().Name, policy: p.Policy, edgePorts: p.EdgePorts, shares: p.Shares})
+			size += p.Policy.Size() + len(p.EdgePorts) + len(p.Shares)
 		}
 	}
 	if size > driver.MaxFirewallRules {
@@ -79,10 +93,144 @@ func (d *Driver) EnsureFirewall(_ context.Context, networkUID string, policies [
 	return writeFirewall(ns, chains)
 }
 
+func (d *Driver) ShareRules(_ context.Context, networkUID string) (map[string]driver.ShareRules, error) {
+	if err := checkUID(networkUID); err != nil {
+		return nil, err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ns, ok, err := openNS(networkUID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("network %s has no namespace on the host", networkUID)
+	}
+	defer func() { _ = ns.Close() }()
+	h, err := netlink.NewHandleAt(ns)
+	if err != nil {
+		return nil, err
+	}
+	defer h.Close()
+	links, err := h.LinkList()
+	if err != nil {
+		return nil, err
+	}
+	ifaces := map[string]string{} // tap name to machine uid/interface name
+	for _, l := range links {
+		if m, ok := decodeTap(l.Attrs().Alias); ok && isTap(l) {
+			ifaces[l.Attrs().Name] = m.Machine + "/" + m.Name
+		}
+	}
+	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
+	if err != nil {
+		return nil, err
+	}
+	chains, err := conn.ListChainsOfTableFamily(nftables.TableFamilyBridge)
+	if err != nil {
+		return nil, fmt.Errorf("listing nft chains: %w", err)
+	}
+	byChain := map[string][]*nftables.Rule{}
+	for _, c := range chains {
+		if c.Table.Name != FirewallTable {
+			continue
+		}
+		rules, err := conn.GetRules(c.Table, c)
+		if err != nil {
+			return nil, fmt.Errorf("listing nft rules: %w", err)
+		}
+		byChain[c.Name] = rules
+	}
+	return shareRulesOf(byChain, ifaces), nil
+}
+
+// shareRulesOf reads the file share rules in force from a firewall's rules,
+// by chain, of the taps named in ifaces, by machine uid and interface name:
+// those in fileshare_in, by the server's tap they let in to, and those in a
+// tap's out_ chain. A rule counts only if it is as the driver writes it.
+func shareRulesOf(byChain map[string][]*nftables.Rule, ifaces map[string]string) map[string]driver.ShareRules {
+	out := map[string]driver.ShareRules{}
+	_, in, _ := shareServerChains(nil)
+	for chain, rules := range byChain {
+		tap, client := "", chain == in
+		if !client {
+			var ok bool
+			if tap, ok = strings.CutPrefix(chain, "out_"); !ok {
+				continue
+			}
+		}
+		for _, r := range rules {
+			name, saddr, daddr := ruleFields(r.Exprs)
+			switch {
+			case client && saddr.IsValid() && commentIs(r, shareClientRule(name, saddr)):
+				if key, ok := ifaces[name]; ok && isServerTap(name) {
+					rs := out[key]
+					rs.Clients = append(rs.Clients, saddr)
+					out[key] = rs
+				}
+			case !client && daddr.IsValid() && commentIs(r, shareServerRule(tap, daddr)):
+				if key, ok := ifaces[tap]; ok {
+					rs := out[key]
+					rs.Servers = append(rs.Servers, daddr)
+					out[key] = rs
+				}
+			}
+		}
+	}
+	return out
+}
+
+// commentIs says whether r is as want writes it: its comment is want's,
+// which holds a hash of want's expressions, and so is a hash of its own.
+func commentIs(r *nftables.Rule, want ruleSpec) bool {
+	c, err := want.comment()
+	if err != nil || commentOf(r) != c {
+		return false
+	}
+	have, err := ruleSpec{says: want.says, exprs: r.Exprs}.comment()
+	return err == nil && have == c
+}
+
+// ruleFields reads what a rule matches of the interface it goes out of and
+// of its IPv4 source and destination, each a whole address.
+func ruleFields(exprs []expr.Any) (oif string, saddr, daddr netip.Addr) {
+	field := ""
+	for _, e := range exprs {
+		switch e := e.(type) {
+		case *expr.Meta:
+			field = ""
+			if e.Key == expr.MetaKeyOIFNAME {
+				field = "oif"
+			}
+		case *expr.Payload:
+			field = ""
+			if e.Base == expr.PayloadBaseNetworkHeader && e.Len == 4 && e.Offset == 12 {
+				field = "saddr"
+			} else if e.Base == expr.PayloadBaseNetworkHeader && e.Len == 4 && e.Offset == 16 {
+				field = "daddr"
+			}
+		case *expr.Cmp:
+			switch a, ok := netip.AddrFromSlice(e.Data); {
+			case field == "oif":
+				oif = strings.TrimRight(string(e.Data), "\x00")
+			case field == "saddr" && ok && a.Is4():
+				saddr = a
+			case field == "daddr" && ok && a.Is4():
+				daddr = a
+			}
+			field = ""
+		}
+	}
+	return oif, saddr, daddr
+}
+
 // ensureFirewallTable makes the namespace's firewall if it has none: with no
 // policy yet, every tap receives and sends nothing but its network's
-// services and replies. A firewall there already is the agent's to keep.
-func ensureFirewallTable(ns netns.NsHandle, gateway netip.Addr) error {
+// services and replies, and a file share's server's nothing at all. A
+// firewall there already is the agent's to keep; for a server's tap, one
+// written before servers had chains of their own, which would give it what
+// every tap has, is an error until the agent writes it again.
+func ensureFirewallTable(ns netns.NsHandle, gateway netip.Addr, server bool) error {
 	conn, err := nftables.New(nftables.WithNetNSFd(int(ns)))
 	if err != nil {
 		return err
@@ -92,6 +240,19 @@ func ensureFirewallTable(ns netns.NsHandle, gateway netip.Addr) error {
 		return fmt.Errorf("listing nft tables: %w", err)
 	}
 	if slices.ContainsFunc(tables, func(t *nftables.Table) bool { return t.Name == FirewallTable }) {
+		if !server {
+			return nil
+		}
+		chains, err := conn.ListChainsOfTableFamily(nftables.TableFamilyBridge)
+		if err != nil {
+			return fmt.Errorf("listing nft chains: %w", err)
+		}
+		_, in, out := shareServerChains(nil)
+		for _, name := range []string{in, out} {
+			if !slices.ContainsFunc(chains, func(c *nftables.Chain) bool { return c.Table.Name == FirewallTable && c.Name == name }) {
+				return fmt.Errorf("the network's firewall has no chain %s for file share servers yet", name)
+			}
+		}
 		return nil
 	}
 	chains, _ := firewallChains(gateway, nil)
@@ -127,11 +288,19 @@ func gatewayOf(h *netlink.Handle) (netip.Addr, error) {
 // prerouting, what is sent to it in forward (from another tap) and output
 // (from the namespace, or routed there); a connection's replies pass either
 // way, and a tap with no chains of its own sends and receives nothing else.
+// File share servers' taps, known by their names, go to chains of their
+// own before anything else, which every tap they have no rule for meets
+// closed (shareServerChains).
 func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 	taps = slices.Clone(taps)
 	slices.SortFunc(taps, func(a, b tapPolicy) int { return strings.Compare(a.name, b.name) })
 	accept := []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}}
 	drop := []expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}
+	servers, serverIn, serverOut := shareServerChains(taps)
+	toServers := ruleSpec{says: "a file share's server's taps receive only what their chain lets in",
+		exprs: slices.Concat(matchIfnamePrefix(expr.MetaKeyOIFNAME, serverTapPrefix), []expr.Any{&expr.Verdict{Kind: expr.VerdictJump, Chain: serverIn}})}
+	fromServers := ruleSpec{says: "a file share's server's taps send only what their chain lets out",
+		exprs: slices.Concat(matchIfnamePrefix(expr.MetaKeyIIFNAME, serverTapPrefix), []expr.Any{&expr.Verdict{Kind: expr.VerdictJump, Chain: serverOut}})}
 	notTap := ruleSpec{says: "what is not a tap's passes", exprs: slices.Concat(ifnameNotPrefix(expr.MetaKeyIIFNAME, tapPrefix), accept)}
 	notToTap := ruleSpec{says: "what is not for a tap passes", exprs: slices.Concat(ifnameNotPrefix(expr.MetaKeyOIFNAME, tapPrefix), accept)}
 	replies := ruleSpec{says: "a connection's replies pass", exprs: slices.Concat(ctEstablishedOrRelated(), accept)}
@@ -159,7 +328,7 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 		{says: "listener reports from no address pass",
 			exprs: slices.Concat(v6, matchHopLimit(1), matchSaddr6(unspecified), matchICMPv6Type(143), accept)},
 	}
-	egress := slices.Concat([]ruleSpec{notTap, replies, arp, ndFromTap, dad}, mld, []ruleSpec{
+	egress := slices.Concat([]ruleSpec{fromServers, notTap, replies, arp, ndFromTap, dad}, mld, []ruleSpec{
 		{says: "DHCPv6 to the servers' group passes",
 			exprs: slices.Concat(matchEtherType(etherIPv6), matchDaddr6(netip.MustParsePrefix("ff02::1:2/128")), matchUDPPorts(546, 547), accept)},
 		{says: "DHCP broadcast from a tap passes",
@@ -173,30 +342,34 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 		{says: "the metadata service is always reachable",
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchDaddr(netip.PrefixFrom(driver.MetadataAddr, 32)), matchL4(unix.IPPROTO_TCP), matchDport(80, 80), accept)},
 	})
-	forward := slices.Concat([]ruleSpec{notToTap, replies, arp, ndOnLink, dad}, mld)
-	output := slices.Concat([]ruleSpec{notToTap, replies, arp, ndOnLink}, mld, []ruleSpec{
+	forward := slices.Concat([]ruleSpec{toServers, notToTap, replies, arp, ndOnLink, dad}, mld)
+	output := slices.Concat([]ruleSpec{toServers, notToTap, replies, arp, ndOnLink}, mld, []ruleSpec{
 		{says: fmt.Sprintf("DHCP replies from the server at %s pass", gateway),
 			exprs: slices.Concat(matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchUDPPorts(67, 68), accept)},
 		{says: fmt.Sprintf("DHCPv6 replies from the server at %s pass", driver.GatewayIPv6),
 			exprs: slices.Concat(matchEtherType(etherIPv6), matchSaddr6(netip.PrefixFrom(driver.GatewayIPv6, 128)), matchUDPPorts(547, 546), accept)},
 		platformSSH(gateway),
 	})
-	var chains []chainSpec
+	chains := servers
 	for _, t := range taps {
+		if t.server() {
+			continue
+		}
 		in, out := "in_"+t.name, "out_"+t.name
 		policyIn, err := policyRules(t.name, "in", t.policy.Ingress, true)
 		if err != nil {
 			return nil, err
 		}
 		inRules := slices.Concat(edgePorts(gateway, t.name, t.edgePorts), policyIn)
-		var outRules []ruleSpec
+		outRules := toShareServers(t.name, t.shares)
 		if t.policy.EgressAll {
-			outRules = []ruleSpec{{says: t.name + " sends anything", exprs: accept}}
+			outRules = append(outRules, ruleSpec{says: t.name + " sends anything", exprs: accept})
 		} else {
-			if outRules, err = policyRules(t.name, "out", t.policy.Egress, false); err != nil {
+			policyOut, err := policyRules(t.name, "out", t.policy.Egress, false)
+			if err != nil {
 				return nil, err
 			}
-			outRules = append(outRules, ruleSpec{says: t.name + " sends nothing else", exprs: drop})
+			outRules = append(append(outRules, policyOut...), ruleSpec{says: t.name + " sends nothing else", exprs: drop})
 		}
 		chains = append(chains, chainSpec{name: in, regular: true, rules: inRules}, chainSpec{name: out, regular: true, rules: outRules})
 		jumpIn := slices.Concat(matchIfname(expr.MetaKeyOIFNAME, t.name), []expr.Any{&expr.Verdict{Kind: expr.VerdictJump, Chain: in}})
@@ -215,6 +388,94 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 		base("forward", *nftables.ChainHookForward, forward),
 		base("output", *nftables.ChainHookOutput, output),
 	), nil
+}
+
+// shareServerChains are the chains of file share servers' taps, by name,
+// which the base chains jump to before anything else: what is sent to them
+// (in) and what they send (out). Into one: ARP, and new TCP connections to
+// its port from its clients, then what follows on them; from one: ARP, and
+// replies on connections made to its port. Nothing else, of a network's
+// services, its groups or the platform's ways in: the binding holds what
+// they send to their own addresses (docs/decisions/file-shares.md).
+func shareServerChains(taps []tapPolicy) (chains []chainSpec, in, out string) {
+	in, out = "fileshare_in", "fileshare_out"
+	accept := &expr.Verdict{Kind: expr.VerdictAccept}
+	arp := ruleSpec{says: "ARP passes", exprs: slices.Concat(matchEtherType(etherARP), []expr.Any{accept})}
+	none := ruleSpec{says: "nothing else", exprs: []expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}}
+	inRules := []ruleSpec{arp}
+	for _, t := range taps {
+		if !t.server() {
+			continue
+		}
+		clients := slices.Clone(t.clients)
+		slices.SortFunc(clients, netip.Addr.Compare)
+		for _, c := range slices.Compact(clients) {
+			if !c.Is4() {
+				continue // its tap sends no IPv6
+			}
+			inRules = append(inRules, shareClientRule(t.name, c))
+		}
+	}
+	outRules := []ruleSpec{arp,
+		{says: fmt.Sprintf("replies from port %d pass", driver.ShareServerPort),
+			exprs: slices.Concat(matchEtherType(etherIPv4), matchL4(unix.IPPROTO_TCP), matchSport(driver.ShareServerPort),
+				ctStateIn(expr.CtStateBitESTABLISHED), ctDirection(ctReply), []expr.Any{accept})},
+	}
+	return []chainSpec{
+		{name: in, regular: true, rules: append(inRules, none)},
+		{name: out, regular: true, rules: append(outRules, none)},
+	}, in, out
+}
+
+// toShareServers let a tap connect to the file share servers at addrs on
+// their port, whatever its groups say: the declaration is the opening.
+func toShareServers(tap string, addrs []netip.Addr) []ruleSpec {
+	addrs = slices.Clone(addrs)
+	slices.SortFunc(addrs, netip.Addr.Compare)
+	var out []ruleSpec
+	for _, a := range slices.Compact(addrs) {
+		if !a.Is4() {
+			continue
+		}
+		out = append(out, shareServerRule(tap, a))
+	}
+	return out
+}
+
+// shareClientRule lets client connect to the server's tap on its port.
+func shareClientRule(tap string, client netip.Addr) ruleSpec {
+	return ruleSpec{says: fmt.Sprintf("%s: %s connects to port %d", tap, client, driver.ShareServerPort),
+		exprs: slices.Concat(matchIfname(expr.MetaKeyOIFNAME, tap), matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(client, 32)),
+			matchL4(unix.IPPROTO_TCP), matchDport(driver.ShareServerPort, driver.ShareServerPort),
+			ctStateIn(expr.CtStateBitNEW|expr.CtStateBitESTABLISHED), ctDirection(ctOriginal), []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})}
+}
+
+// shareServerRule lets a tap connect to the file share server at addr on
+// its port.
+func shareServerRule(tap string, addr netip.Addr) ruleSpec {
+	return ruleSpec{says: fmt.Sprintf("%s connects to the file share at %s", tap, addr),
+		exprs: slices.Concat(matchEtherType(etherIPv4), matchDaddr(netip.PrefixFrom(addr, 32)), matchL4(unix.IPPROTO_TCP),
+			matchDport(driver.ShareServerPort, driver.ShareServerPort), []expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})}
+}
+
+// A connection's directions, as conntrack's direction key gives them.
+const (
+	ctOriginal byte = 0
+	ctReply    byte = 1
+)
+
+// ctStateIn matches a connection in any of the states bits.
+func ctStateIn(bits uint32) []expr.Any {
+	return []expr.Any{
+		&expr.Ct{Register: 1, Key: expr.CtKeySTATE},
+		&expr.Bitwise{SourceRegister: 1, DestRegister: 1, Len: 4, Mask: binaryutil.NativeEndian.PutUint32(bits), Xor: make([]byte, 4)},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: make([]byte, 4)},
+	}
+}
+
+// ctDirection matches a packet going the connection's way d.
+func ctDirection(d byte) []expr.Any {
+	return []expr.Any{&expr.Ct{Register: 1, Key: expr.CtKeyDIRECTION}, &expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{d}}}
 }
 
 // policyRules are a tap's ingress or egress rules, each written once for

@@ -1012,8 +1012,8 @@ var privateIPv4 = []netip.Prefix{
 func validateNetwork(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	n := obj.(*networkv1alpha1.Network)
 	cidr := n.GetSpec().GetIpv4Cidr()
-	if n.GetMetadata().GetName() == DefaultNetwork && cidr != DefaultNetworkCIDR {
-		return invalid("network %q always has spec.ipv4_cidr %s; give another range another name", DefaultNetwork, DefaultNetworkCIDR)
+	if n.GetMetadata().GetName() == computeapi.DefaultNetwork && cidr != DefaultNetworkCIDR {
+		return invalid("network %q always has spec.ipv4_cidr %s; give another range another name", computeapi.DefaultNetwork, DefaultNetworkCIDR)
 	}
 	p, err := netip.ParsePrefix(cidr)
 	if err != nil || !p.Addr().Is4() {

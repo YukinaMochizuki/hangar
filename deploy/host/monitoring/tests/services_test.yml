@@ -140,6 +140,48 @@ tests:
               summary: "3 machines are blocked by DiskFailed, which only the platform causes"
               description: "sudo hangar --context local get machines -A lists every machine and its READY; sudo hangar --context local get machines -A -o yaml shows each one's reason and message. journalctl -u hangar-node."
 
+  - name: a file share's server refusing its export, for 15 minutes, is the platform's
+    interval: 1m
+    input_series:
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Running",reason="ExportFailed"}'
+        values: '_x5 1x35'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts:
+          - exp_labels: {severity: critical, reason: ExportFailed}
+            exp_annotations:
+              summary: "1 machines are blocked by ExportFailed, which only the platform causes"
+              description: "sudo hangar --context local get machines -A lists every machine and its READY; sudo hangar --context local get machines -A -o yaml shows each one's reason and message. journalctl -u hangar-node."
+
+  - name: containers waiting for their file shares page only past half an hour
+    interval: 1m
+    input_series:
+      # A boot's wait, a few minutes: no alert.
+      - series: 'hangar_apiserver_machines{job="hangar-apiserver",instance="a",phase="Creating",reason="FileShareNotReady"}'
+        values: '_x5 2x10 _x10 2x40'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: MachinesWaitingForTheirFileShares
+        exp_alerts: []
+      - eval_time: 50m
+        alertname: MachinesWaitingForTheirFileShares
+        exp_alerts: []
+      - eval_time: 58m
+        alertname: MachinesWaitingForTheirFileShares
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "2 machines have waited half an hour for their file shares' servers to serve them"
+              description: "sudo hangar --context local get machines -A -o yaml shows each one's message, naming its share; the share's server is the machine fs-<share>. journalctl -u hangar-node."
+      # Not the platform's failure: the other alert says nothing of it.
+      - eval_time: 58m
+        alertname: MachinesFailedByThePlatform
+        exp_alerts: []
+
   - name: a tenant's failures and crash loops alert no one; the crash loops are recorded
     interval: 1m
     input_series:

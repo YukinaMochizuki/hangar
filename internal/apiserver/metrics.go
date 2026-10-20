@@ -200,6 +200,7 @@ var machineReasons = map[string]bool{
 	computeapi.ReasonImagePullUnauthorized: true, computeapi.ReasonDiskFailed: true, computeapi.ReasonDiskTooSmall: true,
 	computeapi.ReasonNetworkFailed: true, computeapi.ReasonBootFailed: true, computeapi.ReasonExited: true,
 	computeapi.ReasonPoweredOff: true, computeapi.ReasonNetworkNotReady: true, computeapi.ReasonDiskNotReady: true,
+	computeapi.ReasonExportFailed: true, computeapi.ReasonFileShareNotReady: true,
 }
 
 func machineReason(r string) string {

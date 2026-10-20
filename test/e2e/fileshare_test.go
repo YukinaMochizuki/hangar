@@ -69,8 +69,8 @@ func (w *world) applyVMSharing(name string, shares ...*computev1alpha1.VirtualMa
 }
 
 // TestAVirtualMachinesSharesRestartNothing: a VM declaring file shares runs
-// on their node, and changing what it declares, or how, changes its machine
-// and leaves its VM running.
+// on their node, is in their exports, and changing what it declares, or
+// how, changes its machine and the exports, and leaves its VM running.
 func TestAVirtualMachinesSharesRestartNothing(t *testing.T) {
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
@@ -99,20 +99,30 @@ func TestAVirtualMachinesSharesRestartNothing(t *testing.T) {
 	if lines := w.vmLogs("web"); slices.ContainsFunc(lines, func(l string) bool { return strings.Contains(l, ":end:") }) {
 		t.Errorf("the VM's log has a boot's end after its shares changed: %q", lines)
 	}
+	at := netip.MustParsePrefix(w.machine2(vmMachineOf("web")).GetSpec().GetInterfaces()[0].GetIpv4()).Addr()
+	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534,
+		Clients: []driver.ShareClient{{Address: at, ReadOnly: true}}})
+	w.waitExport("logs", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534,
+		Clients: []driver.ShareClient{{Address: at}}})
 
 	if _, err := w.root.Delete(context.Background(), registry.VirtualMachine, client.Key{Project: project, Name: "web"}); err != nil {
 		t.Fatal(err)
 	}
 	w.deleteImage("noble")
+	for _, name := range []string{"data", "logs"} {
+		testutil.Eventually(t, "file share "+name+" deleted, once no machine declares it", func() (bool, string) {
+			_, err := w.root.Delete(context.Background(), registry.FileShare, client.Key{Project: project, Name: name})
+			return err == nil, fmt.Sprint(err)
+		})
+		w.shareGone(project, name)
+	}
 	w.waitHostEmpty()
 }
 
 // TestAContainerNeverRunsWithoutItsShare: a container declaring a share on
 // no node, whose server the node has no room for, is held back, and nothing
-// boots on the host; once the share is on the node, which cannot mount
-// shares yet, the node refuses to boot it, rather than let it write to its
-// root disk at the share's target. The node cannot boot the share's server
-// yet either.
+// boots on the host; once the share is on the node, it boots once, with
+// the share mounted from its server's address, never without it.
 func TestAContainerNeverRunsWithoutItsShare(t *testing.T) {
 	w := newWorld(t)
 	w.applyShare("assets", "64Ti")
@@ -132,41 +142,63 @@ func TestAContainerNeverRunsWithoutItsShare(t *testing.T) {
 
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
-	refused := w.waitReason("db", "BootFailed")
-	if msg := ready(refused).GetMessage(); !strings.Contains(msg, "file share assets at /srv cannot be mounted") {
-		t.Errorf("Ready says %q", msg)
-	}
-	if vms := w.host.Snapshot().VMs; len(vms) != 0 {
-		t.Errorf("the host runs %v for a container whose share it cannot mount", vms)
+	w.waitReason("db", "Running")
+	vm := w.host.Snapshot().VMs[w.machine("db").GetMetadata().GetUid()]
+	want := driver.Mount{Name: "assets", Target: "/srv", Share: w.shareAddr("assets", "default")}
+	if vm.Boots != 1 || !slices.Equal(vm.Spec.Mounts, []driver.Mount{want}) {
+		t.Errorf("the container booted %d times, mounting %+v, want once, mounting %+v", vm.Boots, vm.Spec.Mounts, want)
 	}
 	w.delete("db")
+	w.waitGone("db")
+	if _, err := w.root.Delete(context.Background(), registry.FileShare, client.Key{Project: project, Name: "assets"}); err != nil {
+		t.Fatal(err)
+	}
+	w.shareGone(project, "assets")
 	w.waitHostEmpty()
 }
 
-// TestARunningContainerThatAddsAShareStops: a running container that comes
-// to declare a share on its node, which the node cannot mount yet, has its
-// VM stopped and is refused, rather than left running without the share.
-func TestARunningContainerThatAddsAShareStops(t *testing.T) {
+// shareAddr is the address of a share's server on network, as the share's
+// status says.
+func (w *world) shareAddr(name, network string) netip.Addr {
+	w.t.Helper()
+	var at netip.Addr
+	testutil.Eventually(w.t, "file share "+name+"'s address on "+network, func() (bool, string) {
+		fs, _ := get[*storagev1alpha1.FileShare](w, registry.FileShare, name)
+		for _, a := range fs.GetStatus().GetAddresses() {
+			if a.GetNetwork() == network {
+				at = netip.MustParseAddr(a.GetAddress())
+			}
+		}
+		return at.IsValid(), fmt.Sprint(fs.GetStatus().GetAddresses())
+	})
+	return at
+}
+
+// TestARunningContainerThatAddsAShareRestartsWithIt: a running container
+// that comes to declare a share on its node is started again, mounting it.
+func TestARunningContainerThatAddsAShareRestartsWithIt(t *testing.T) {
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
 	w.apply(container("db", "nginx"))
 	w.waitReason("db", "Running")
-	if vms := w.host.Snapshot().VMs; len(vms) != 1 {
-		t.Fatalf("the host runs %v, want the container's VM", vms)
-	}
+	uid := w.machine("db").GetMetadata().GetUid()
+	before := w.host.Snapshot().VMs[uid]
 	c := container("db", "nginx")
-	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{{Source: "assets", SourceKind: "FileShare", Target: "/srv"}}
+	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{{Source: "assets", SourceKind: "FileShare", Target: "/srv", ReadOnly: true}}
 	w.apply(c)
-	refused := w.waitReason("db", "BootFailed")
-	if msg := ready(refused).GetMessage(); !strings.Contains(msg, "file share assets at /srv cannot be mounted") {
-		t.Errorf("Ready says %q", msg)
+	w.waitReason("db", "Running")
+	now := w.host.Snapshot().VMs[uid]
+	want := driver.Mount{Name: "assets", Target: "/srv", ReadOnly: true, Share: w.shareAddr("assets", "default")}
+	if now.Started.Equal(before.Started) || !slices.Equal(now.Spec.Mounts, []driver.Mount{want}) {
+		t.Errorf("the container runs %+v from %v, was started %v; want it started again mounting %+v", now.Spec.Mounts, now.Started, before.Started, want)
 	}
-	testutil.Eventually(t, "the container's VM stopped", func() (bool, string) {
-		vms := w.host.Snapshot().VMs
-		return len(vms) == 0, fmt.Sprint(vms)
-	})
 	w.delete("db")
+	w.waitGone("db")
+	if _, err := w.root.Delete(context.Background(), registry.FileShare, client.Key{Project: project, Name: "assets"}); err != nil {
+		t.Fatal(err)
+	}
+	w.shareGone(project, "assets")
 	w.waitHostEmpty()
 }
 
@@ -180,14 +212,18 @@ func (w *world) shareGone(p, name string) {
 	})
 }
 
-// TestADeletedShareGoes: a share placed on the node, whose server the node
-// has taken, goes once deleted: its server is released, and the node says
-// it holds nothing of the share.
+// TestADeletedShareGoes: a share placed on the node, whose server runs on
+// its volume, goes once deleted: its server is released, its volume
+// destroyed, and the node says it holds nothing of the share.
 func TestADeletedShareGoes(t *testing.T) {
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
-	w.waitMachine("fs-assets", computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, computeapi.ReasonBootFailed)
+	w.waitMachine("fs-assets", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
+	fs, _ := get[*storagev1alpha1.FileShare](w, registry.FileShare, "assets")
+	if _, ok := w.host.Snapshot().ShareVolumes[fs.GetMetadata().GetUid()]; !ok {
+		t.Fatal("the share's server runs with no volume of the share on the host")
+	}
 	if _, err := w.root.Delete(context.Background(), registry.FileShare, client.Key{Project: project, Name: "assets"}); err != nil {
 		t.Fatal(err)
 	}
@@ -233,8 +269,8 @@ func TestDeletingAProjectTakesItsPlacedShares(t *testing.T) {
 // name there, even its share's, which a container may have too; it is in
 // no security group, so the container's default group does not let it
 // in; and it is served no metadata. (Its own policy, which lets nothing in
-// or out, is internal/secgroup's: the node makes no interface for a server
-// it cannot boot yet.)
+// or out, is internal/secgroup's, and none of its firewall's rules:
+// TestAShareIsServed.)
 func TestAShareServerIsNoNeighbour(t *testing.T) {
 	w := newIdleWorld(t)
 	w.dnsUpstreams = nil
@@ -290,7 +326,7 @@ func TestAShareIsReleasedAfterItsServer(t *testing.T) {
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
-	w.waitMachine("fs-assets", computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, computeapi.ReasonBootFailed)
+	w.waitMachine("fs-assets", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
 	w.host.FailRemoval(errors.New("device busy"))
 	if _, err := w.root.Delete(context.Background(), registry.FileShare, client.Key{Project: project, Name: "assets"}); err != nil {
 		t.Fatal(err)
@@ -303,6 +339,9 @@ func TestAShareIsReleasedAfterItsServer(t *testing.T) {
 	}
 	if c := conditions.Find(fs.GetStatus().GetConditions(), computeapi.FileShareReleased); c != nil {
 		t.Errorf("the share is %v while its server is held", c)
+	}
+	if _, ok := w.host.Snapshot().ShareVolumes[fs.GetMetadata().GetUid()]; !ok {
+		t.Error("the share's volume went while its server is held")
 	}
 	w.host.FailRemoval(nil)
 	w.shareGone(project, "assets")

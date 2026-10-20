@@ -18,6 +18,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -80,7 +81,7 @@ func TestNetworkAdmission(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	other := network(DefaultNetwork, "10.5.0.0/24")
+	other := network(computeapi.DefaultNetwork, "10.5.0.0/24")
 	other.Metadata.Project = "api"
 	_, err = b.Apply(user, other)
 	wantCodeOf(t, err, connect.CodeInvalidArgument, "a default network with another range")
@@ -94,7 +95,7 @@ func TestEveryProjectGetsADefaultNetwork(t *testing.T) {
 	s, system, user := controlled(t)
 	var first *networkv1alpha1.Network
 	testutil.Eventually(t, "the default network with its transit link", func() bool {
-		first = getNetwork(t, s, system, DefaultNetwork)
+		first = getNetwork(t, s, system, computeapi.DefaultNetwork)
 		return first != nil && conditions.IsTrue(first.GetStatus().GetConditions(), NetworkReady)
 	})
 	// Signing up made other projects' networks, which may have been given
@@ -105,17 +106,17 @@ func TestEveryProjectGetsADefaultNetwork(t *testing.T) {
 	}
 	// A network with its transit link is left alone.
 	testutil.Unchanged(t, "a ready network", 300*time.Millisecond,
-		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: DefaultNetwork}))
-	if rv := getNetwork(t, s, system, DefaultNetwork).GetMetadata().GetResourceVersion(); rv != first.GetMetadata().GetResourceVersion() {
+		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}))
+	if rv := getNetwork(t, s, system, computeapi.DefaultNetwork).GetMetadata().GetResourceVersion(); rv != first.GetMetadata().GetResourceVersion() {
 		t.Errorf("a ready network kept being written: resource version %d, then %d", first.GetMetadata().GetResourceVersion(), rv)
 	}
 
 	// Deleted, it comes back.
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Fatal(err)
 	}
 	testutil.Eventually(t, "a new default network", func() bool {
-		n := getNetwork(t, s, system, DefaultNetwork)
+		n := getNetwork(t, s, system, computeapi.DefaultNetwork)
 		return n != nil && n.GetMetadata().GetUid() != first.GetMetadata().GetUid()
 	})
 }
@@ -214,7 +215,7 @@ func TestConcurrentMachinesNeverShareAnAddress(t *testing.T) {
 // and gets a machine as soon as an address frees.
 func TestAFullNetworkSaysSo(t *testing.T) {
 	s, system, user := controlled(t)
-	testutil.Eventually(t, "the default network", func() bool { return getNetwork(t, s, system, DefaultNetwork) != nil })
+	testutil.Eventually(t, "the default network", func() bool { return getNetwork(t, s, system, computeapi.DefaultNetwork) != nil })
 	// 10.0.0.0/24 has 253 addresses for machines: .2 to .254.
 	for i := 2; i <= 254; i++ {
 		m := machine(fmt.Sprintf("m%d", i), "")
@@ -243,12 +244,12 @@ func TestANetworkInUseCannotBeDeleted(t *testing.T) {
 	s, system, user := controlled(t)
 	applyCtr(t, s, user, ctr("api"))
 	waitMachine(t, s, system, "ct-api", "addressed", func(m *computev1alpha1.Machine) bool { return ipv4Of(m) != "" })
-	_, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil)
+	_, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil)
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "deleting a network in use")
 	if err != nil && !strings.Contains(err.Error(), "ct-api") {
 		t.Errorf("the refusal does not name the machine: %v", err)
 	}
-	if n := getNetwork(t, s, system, DefaultNetwork); n.GetMetadata().GetDeleteTime() != nil {
+	if n := getNetwork(t, s, system, computeapi.DefaultNetwork); n.GetMetadata().GetDeleteTime() != nil {
 		t.Error("a refused delete marked the network")
 	}
 
@@ -256,7 +257,7 @@ func TestANetworkInUseCannotBeDeleted(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitGone(t, s, system, registry.Machine, "ct-api")
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Errorf("deleting a network no machine is on: %v", err)
 	}
 }
@@ -266,7 +267,7 @@ func TestANetworkInUseCannotBeDeleted(t *testing.T) {
 func TestAContainerProceedsOnceItsNetworkExists(t *testing.T) {
 	s, system, user := running(t)
 	// Held by its finalizer, which no controller is running to remove.
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Fatal(err)
 	}
 	applyCtr(t, s, user, ctr("api"))
@@ -296,7 +297,7 @@ func TestTransitLinksAreDistinctAndReused(t *testing.T) {
 		})
 		return n
 	}
-	first := ready(DefaultNetwork, "the default network's transit link")
+	first := ready(computeapi.DefaultNetwork, "the default network's transit link")
 	// Signing up made networks too; once they have their links, none takes
 	// the one freed below.
 	waitSettled(t, s)
@@ -308,12 +309,12 @@ func TestTransitLinksAreDistinctAndReused(t *testing.T) {
 	}
 
 	// The default network goes and comes back; the new one gets the freed link.
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Fatal(err)
 	}
 	var again *networkv1alpha1.Network
 	testutil.Eventually(t, "a new default network with a transit link", func() bool {
-		again = getNetwork(t, s, system, DefaultNetwork)
+		again = getNetwork(t, s, system, computeapi.DefaultNetwork)
 		return again != nil && again.GetMetadata().GetUid() != first.GetMetadata().GetUid() &&
 			conditions.IsTrue(again.GetStatus().GetConditions(), NetworkReady)
 	})
@@ -335,15 +336,15 @@ func TestADeletedProjectsNetworkWaitsForItsMachines(t *testing.T) {
 	}
 	m := waitMachine(t, s, system, "ct-api", "marked", func(m *computev1alpha1.Machine) bool { return m.GetMetadata().GetDeleteTime() != nil })
 	testutil.Eventually(t, "the network to be marked", func() bool {
-		n := getNetwork(t, s, system, DefaultNetwork)
+		n := getNetwork(t, s, system, computeapi.DefaultNetwork)
 		return n != nil && n.GetMetadata().GetDeleteTime() != nil
 	})
 	testutil.Unchanged(t, "a network with a machine still on it", 300*time.Millisecond,
-		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: DefaultNetwork}))
+		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}))
 
 	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, m.GetMetadata().GetGeneration(),
 		&metav1.Condition{Type: MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
-	testutil.Eventually(t, "the network to go", func() bool { return getNetwork(t, s, system, DefaultNetwork) == nil })
+	testutil.Eventually(t, "the network to go", func() bool { return getNetwork(t, s, system, computeapi.DefaultNetwork) == nil })
 }
 
 func TestFirstFreeHostSkipsReservedAddresses(t *testing.T) {
@@ -365,10 +366,10 @@ func TestFirstFreeHostSkipsReservedAddresses(t *testing.T) {
 // handed a default network again.
 func TestADeletingProjectGetsNoNewNetwork(t *testing.T) {
 	s, system, user := running(t)
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.reconcileNetwork(system, controller.Key{Project: "web", Name: DefaultNetwork}); err != nil {
+	if err := s.reconcileNetwork(system, controller.Key{Project: "web", Name: computeapi.DefaultNetwork}); err != nil {
 		t.Fatal(err)
 	}
 	// A network nobody releases keeps the project in deletion.
@@ -381,7 +382,7 @@ func TestADeletingProjectGetsNoNewNetwork(t *testing.T) {
 	if err := s.reconcileProject(system, controller.Key{Name: "web"}); err != nil {
 		t.Fatalf("reconciling a deleting project: %v", err)
 	}
-	if getNetwork(t, s, system, DefaultNetwork) != nil {
+	if getNetwork(t, s, system, computeapi.DefaultNetwork) != nil {
 		t.Error("a deleting project got a default network")
 	}
 }
@@ -428,20 +429,22 @@ func TestANetworkIsNotReleasedUnderAMachineJoiningIt(t *testing.T) {
 	// What ensureMachine does: choose an address and write the machine,
 	// holding ipam throughout.
 	s.ipam.Lock()
-	addr, err := s.freeAddress(system, "web", DefaultNetwork)
+	addr, err := s.freeAddress(system, "web", computeapi.DefaultNetwork)
 	if err != nil {
 		s.ipam.Unlock()
 		t.Fatal(err)
 	}
-	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: DefaultNetwork}, nil); err != nil {
+	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		s.ipam.Unlock()
 		t.Fatal(err)
 	}
 	released := make(chan error, 1)
-	go func() { released <- s.reconcileNetwork(system, controller.Key{Project: "web", Name: DefaultNetwork}) }()
+	go func() {
+		released <- s.reconcileNetwork(system, controller.Key{Project: "web", Name: computeapi.DefaultNetwork})
+	}()
 	// The release waits on ipam; one that did not would finish meanwhile.
 	testutil.Unchanged(t, "the network being deleted, ipam held", 50*time.Millisecond,
-		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: DefaultNetwork}))
+		versionOf(s, system, registry.Network, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}))
 	m := machine("m", "")
 	m.Spec.Interfaces[0].Ipv4 = addr
 	_, err = s.backend(registry.Machine).Apply(system, m)
@@ -452,7 +455,7 @@ func TestANetworkIsNotReleasedUnderAMachineJoiningIt(t *testing.T) {
 	if err := <-released; err != nil {
 		t.Fatal(err)
 	}
-	if getNetwork(t, s, system, DefaultNetwork) == nil {
+	if getNetwork(t, s, system, computeapi.DefaultNetwork) == nil {
 		t.Errorf("the network went while machine m joined it with %s", addr)
 	}
 }

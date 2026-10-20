@@ -85,7 +85,7 @@ const (
 	// there are none, so the crash-loop gauge, always reported, says
 	// whether Prometheus has the apiserver's metrics at all.
 	qMachinePhases  = `sum by (phase) (hangar_apiserver_machines)`
-	qMachineReasons = `sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed|Exited|BootFailed"})`
+	qMachineReasons = `sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed|ExportFailed|Exited|BootFailed"})`
 	qCrashLooping   = `max(hangar_apiserver_machines_crash_looping)`
 )
 
@@ -113,7 +113,7 @@ var (
 // which alert, and those of a tenant's own program, which alert no one. They
 // match qMachineReasons.
 var (
-	platformReasons = []string{computeapi.ReasonDiskFailed, computeapi.ReasonNetworkFailed}
+	platformReasons = []string{computeapi.ReasonDiskFailed, computeapi.ReasonNetworkFailed, computeapi.ReasonExportFailed}
 	programReasons  = []string{computeapi.ReasonExited, computeapi.ReasonBootFailed}
 )
 

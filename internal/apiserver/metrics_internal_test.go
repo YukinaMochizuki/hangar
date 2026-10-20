@@ -76,7 +76,7 @@ func TestMetricsNameNoTenant(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.backend(registry.Network).Apply(system, &networkv1alpha1.Network{
-		Metadata: &metav1.ObjectMeta{Project: projectName, Name: DefaultNetwork},
+		Metadata: &metav1.ObjectMeta{Project: projectName, Name: computeapi.DefaultNetwork},
 		Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
 	}); err != nil {
 		t.Fatal(err)
@@ -212,5 +212,15 @@ func TestCrashLoopingMachinesAreCounted(t *testing.T) {
 	clock.Advance(time.Second)
 	if n := looping(); n != 0 {
 		t.Errorf("once its first boot left the window, %v machines loop; want 0", n)
+	}
+}
+
+// TestFileShareReasonsAreCounted: the reasons a node gives of file shares,
+// which the platform's alerts read, are counted as themselves, not Other.
+func TestFileShareReasonsAreCounted(t *testing.T) {
+	for _, r := range []string{computeapi.ReasonExportFailed, computeapi.ReasonFileShareNotReady} {
+		if got := machineReason(r); got != r {
+			t.Errorf("reason %s counted as %s", r, got)
+		}
 	}
 }

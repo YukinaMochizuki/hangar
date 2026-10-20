@@ -187,6 +187,9 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if m.GetSpec().GetFirmware() != nil {
 		return a.convergeFirmware(ctx, m, vm, epoch, vcpus, memoryMiB)
 	}
+	if m.GetSpec().GetFileShareServer() != nil {
+		return a.convergeShareServer(ctx, m, vm, epoch, vcpus, memoryMiB)
+	}
 	uid := m.GetMetadata().GetUid()
 	d := a.cfg.Drivers
 	boot := m.GetSpec().GetContainer()
@@ -194,11 +197,16 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, computeapi.ReasonBootFailed,
 			"the machine has no boot source this node knows"), nil
 	}
-	// A spec the node cannot boot, such as one mounting a file share, is
-	// refused before anything is prepared for it.
-	mnts, err := mounts(m.GetSpec())
-	if err != nil {
-		return nil, a.refuse(ctx, vm, err)
+	// A spec the node cannot boot as it stands, such as one mounting a
+	// file share whose server has no address yet, is refused before
+	// anything is prepared for it: it never boots without its volumes.
+	mnts, err := a.mounts(ctx, m)
+	var no *unbootable
+	switch {
+	case errors.As(err, &no):
+		return nil, a.refuse(ctx, vm, no.err)
+	case err != nil:
+		return nil, err // the API could not be read: what runs keeps running
 	}
 
 	// A reference is resolved once, so a tag moving upstream never rebuilds
@@ -294,6 +302,21 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		Mounts:      mnts,
 		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
+	// Its one mount of each share fails the boot if the share's server does
+	// not serve it yet: a boot the node starts waits, its VM of an earlier
+	// spec running on. A boot of the VM's own restart policy is not gated:
+	// its mount may fail, and the policy tries it again.
+	if vm == nil || (vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces)) {
+		why, err := a.sharesServe(ctx, m, mnts)
+		switch {
+		case err != nil:
+			return nil, err
+		case why != "":
+			a.waitForShares(controller.Key{Project: m.GetMetadata().GetProject(), Name: m.GetMetadata().GetName()})
+			return notReady(phaseOf(vm), computeapi.ReasonFileShareNotReady, why),
+				fmt.Errorf("%w: machine %s: %s", controller.ErrWaiting, spec.Machine, why)
+		}
+	}
 	obs, err := a.ensureVM(ctx, spec, vm)
 	if obs != nil {
 		obs.image, obs.digest = boot.GetImage(), digest
@@ -301,10 +324,11 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	return obs, cmp.Or(err, pending)
 }
 
-// refuse reports a spec the node will never boot as it stands, such as a
-// container's mounting a file share, once vm, the VM of an earlier spec if
-// any, is stopped. A spec that may still boot, once an image is pulled or
-// a disk made, keeps the VM it replaces running meanwhile.
+// refuse reports a spec the node will not boot as it stands, such as a
+// container's mounting a file share whose server has no address yet, once
+// vm, the VM of an earlier spec if any, is stopped. A spec that may still
+// boot, once an image is pulled or a disk made, keeps the VM it replaces
+// running meanwhile.
 func (a *Agent) refuse(ctx context.Context, vm *driver.VM, why error) error {
 	if vm != nil {
 		if err := a.stopVM(ctx, vm.MachineUID); err != nil {
@@ -508,6 +532,9 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		started: timestamppb.New(vm.Started),
 		applied: true,
 	}
+	if spec.FileShareServer != nil {
+		return a.ensureExport(ctx, spec, vm, running)
+	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
 	switch {
 	case restarted:
@@ -593,6 +620,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	a.puller.drop(uid)
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
+	delete(a.exported, uid)
 	a.forgetGuest(uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{
@@ -681,21 +709,34 @@ func runSpec(boot *computev1alpha1.ContainerBoot, image driver.ImageConfig) driv
 	}
 }
 
-// mounts are the volumes a container machine's guest mounts, each by its
-// index in the machine's disks, in the order volumes ensures them. A volume
-// of a disk the machine does not list holds it up: it would run without it.
-// So does a file share, which this node cannot mount yet
-// (docs/decisions/file-shares.md).
-func mounts(spec *computev1alpha1.MachineSpec) ([]driver.Mount, error) {
+// unbootable is why the node will not boot a spec as it stands, as mounts
+// finds it, for refuse.
+type unbootable struct{ err error }
+
+func (u *unbootable) Error() string { return u.err.Error() }
+func (u *unbootable) Unwrap() error { return u.err }
+
+// mounts are the volumes a container machine's guest mounts: a disk by its
+// index in the machine's disks, in the order volumes ensures them, and a
+// file share by its server's address (shareMount). A volume of a disk the
+// machine does not list, or a share it cannot mount yet, holds it up: it
+// would run without it.
+func (a *Agent) mounts(ctx context.Context, m *computev1alpha1.Machine) ([]driver.Mount, error) {
+	spec := m.GetSpec()
 	disks := computeapi.MachineDisks(spec)
 	var out []driver.Mount
 	for _, v := range spec.GetContainer().GetVolumes() {
 		if v.GetFileShare() != "" {
-			return nil, fmt.Errorf("file share %s at %s cannot be mounted: this node does not mount file shares yet", v.GetFileShare(), v.GetTarget())
+			mnt, err := a.shareMount(ctx, m, v)
+			if err != nil {
+				return nil, err // unbootable, or the API not read
+			}
+			out = append(out, mnt)
+			continue
 		}
 		i := slices.Index(disks, v.GetDisk())
 		if i < 0 {
-			return nil, fmt.Errorf("volume %s at %s is not one of the machine's disks", v.GetDisk(), v.GetTarget())
+			return nil, &unbootable{fmt.Errorf("volume %s at %s is not one of the machine's disks", v.GetDisk(), v.GetTarget())}
 		}
 		out = append(out, driver.Mount{
 			Disk: i, Name: v.GetDisk(), Target: v.GetTarget(),

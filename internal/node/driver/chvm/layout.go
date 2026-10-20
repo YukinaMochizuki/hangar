@@ -25,6 +25,9 @@ const (
 	specFile = "spec.json"
 	// bootFile is the boot disk (internal/guest/bootdisk).
 	bootFile = "boot.img"
+	// blankFile is a file share's server's vda, in place of a root disk:
+	// blank, and never read, but by the kernel probing it.
+	blankFile = "blank.img"
 	// diskNode is a node of the root disk's device, made by the launcher
 	// for Cloud Hypervisor to open, as the jailer makes one in its chroot.
 	diskNode = "disk"
@@ -63,6 +66,34 @@ const (
 
 // volumeNode is the node of the spec's n-th volume, from 0.
 func volumeNode(n int) string { return fmt.Sprintf("%s%d", volumeNodePrefix, n+1) }
+
+// dataDisks are the devices of the disks a VM has after its boot disk, vdc
+// on, each with a volumeNode: a file share's server's share, or the spec's
+// volumes.
+func dataDisks(s driver.VMSpec) []string {
+	if s.FileShareServer != nil {
+		return []string{s.FileShareServer.Volume.Path}
+	}
+	out := make([]string, len(s.Disks))
+	for n, v := range s.Disks {
+		out[n] = v.Path
+	}
+	return out
+}
+
+// readFiles are the files of a VM's directory that Cloud Hypervisor reads.
+func readFiles(s driver.VMSpec) []string {
+	switch {
+	case s.Firmware:
+		return nil
+	case s.FileShareServer != nil:
+		return []string{bootFile, blankFile}
+	}
+	return []string{bootFile}
+}
+
+// blankSize is the size of a file share's server's blank vda.
+const blankSize = 1 << 20
 
 // logFiles are what Stop keeps of a VM's directory.
 var logFiles = []string{ConsoleLog, ConsoleLog + ".1", SerialLog, SerialLog + ".1"}
