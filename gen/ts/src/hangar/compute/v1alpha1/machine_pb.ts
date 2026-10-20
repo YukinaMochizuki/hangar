@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/machine.proto.
  */
 export const file_hangar_compute_v1alpha1_machine: GenFile = /*@__PURE__*/
-  fileDesc("CiVoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lLnByb3RvEhdoYW5nYXIuY29tcHV0ZS52MWFscGhhMSLlAQoHTWFjaGluZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIyCgRzcGVjGAQgASgLMiQuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZVNwZWMSNgoGc3RhdHVzGAUgASgLMiYuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZVN0YXR1czodirUYGQoHTWFjaGluZRIIbWFjaGluZXMaAm1jIAEigwQKC01hY2hpbmVTcGVjEgwKBG5vZGUYASABKAkSNQoJcmVzb3VyY2VzGAIgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUmVzb3VyY2VzEjsKCXJ1bl9zdGF0ZRgDIAEoDjIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVSdW5TdGF0ZRI7Cgljb250YWluZXIYCiABKAsyJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXJCb290SAASOQoIZmlybXdhcmUYCyABKAsyJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5GaXJtd2FyZUJvb3RIABI9CgppbnRlcmZhY2VzGBQgAygLMikuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUludGVyZmFjZRI+Cg5yZXN0YXJ0X3BvbGljeRgVIAEoDjImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlJlc3RhcnRQb2xpY3kSMwoFZGlza3MYFiADKAsyJC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lRGlzaxI+CgtmaWxlX3NoYXJlcxgXIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVGaWxlU2hhcmVCBgoEYm9vdCIbCgtNYWNoaW5lRGlzaxIMCgRkaXNrGAEgASgJIkoKEE1hY2hpbmVGaWxlU2hhcmUSEgoKZmlsZV9zaGFyZRgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDwoHbmV0d29yaxgDIAEoCSLGAQoNQ29udGFpbmVyQm9vdBINCgVpbWFnZRgBIAEoCRIPCgdjb21tYW5kGAIgAygJEgwKBGFyZ3MYAyADKAkSLAoDZW52GAQgAygLMh8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRW52VmFyEhoKEmltYWdlX3B1bGxfc2VjcmV0cxgFIAMoCRI9Cgd2b2x1bWVzGAYgAygLMiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyQm9vdFZvbHVtZSJ7ChNDb250YWluZXJCb290Vm9sdW1lEgwKBGRpc2sYASABKAkSDgoGdGFyZ2V0GAIgASgJEhEKCXJlYWRfb25seRgDIAEoCBIOCgZub2NvcHkYBCABKAgSDwoHc3VicGF0aBgFIAEoCRISCgpmaWxlX3NoYXJlGAYgASgJImAKDEZpcm13YXJlQm9vdBIRCglyb290X2Rpc2sYASABKAkSPQoKY2xvdWRfaW5pdBgCIAEoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDbG91ZEluaXQiTwoQTWFjaGluZUNsb3VkSW5pdBITCgtpbnN0YW5jZV9pZBgBIAEoCRIRCgl1c2VyX2RhdGEYAiABKAkSEwoLdmVuZG9yX2RhdGEYAyABKAkiZgoQTWFjaGluZUludGVyZmFjZRIMCgRuYW1lGAEgASgJEg8KB25ldHdvcmsYAiABKAkSDAoEaXB2NBgDIAEoCRIXCg9zZWN1cml0eV9ncm91cHMYBCADKAkSDAoEaXB2NhgFIAEoCSLlAQoNTWFjaGluZVN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24SNAoFcGhhc2UYAyABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMaW1hZ2VfZGlnZXN0GAQgASgJEi0KCWJvb3RfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFaW1hZ2UYBiABKAkiMgoRR2V0TWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJIkcKEkdldE1hY2hpbmVSZXNwb25zZRIxCgdtYWNoaW5lGAEgASgLMiAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZSJlChNMaXN0TWFjaGluZXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkicgoUTGlzdE1hY2hpbmVzUmVzcG9uc2USLwoFaXRlbXMYASADKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIQCghyZXZpc2lvbhgDIAEoAyJXChRXYXRjaE1hY2hpbmVzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhYKDnNpbmNlX3JldmlzaW9uGAMgASgDIoUBChVXYXRjaE1hY2hpbmVzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIxCgdtYWNoaW5lGAIgASgLMiAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZRIQCghyZXZpc2lvbhgDIAEoAyJdChNBcHBseU1hY2hpbmVSZXF1ZXN0EjEKB21hY2hpbmUYASABKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhMKC2NyZWF0ZV9vbmx5GAIgASgIImwKFEFwcGx5TWFjaGluZVJlc3BvbnNlEjEKB21hY2hpbmUYASABKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgiewoURGVsZXRlTWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJKChVEZWxldGVNYWNoaW5lUmVzcG9uc2USMQoHbWFjaGluZRgBIAEoCzIgLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmUiuQEKGlVwZGF0ZU1hY2hpbmVTdGF0dXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRI2CgZzdGF0dXMYAyABKAsyJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJQChtVcGRhdGVNYWNoaW5lU3RhdHVzUmVzcG9uc2USMQoHbWFjaGluZRgBIAEoCzIgLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmUqcgoPTWFjaGluZVJ1blN0YXRlEiEKHU1BQ0hJTkVfUlVOX1NUQVRFX1VOU1BFQ0lGSUVEEAASHQoZTUFDSElORV9SVU5fU1RBVEVfUlVOTklORxABEh0KGU1BQ0hJTkVfUlVOX1NUQVRFX1NUT1BQRUQQAirRAQoMTWFjaGluZVBoYXNlEh0KGU1BQ0hJTkVfUEhBU0VfVU5TUEVDSUZJRUQQABIZChVNQUNISU5FX1BIQVNFX1BFTkRJTkcQARIaChZNQUNISU5FX1BIQVNFX0NSRUFUSU5HEAISGQoVTUFDSElORV9QSEFTRV9SVU5OSU5HEAMSGQoVTUFDSElORV9QSEFTRV9TVE9QUEVEEAQSGAoUTUFDSElORV9QSEFTRV9GQUlMRUQQBRIbChdNQUNISU5FX1BIQVNFX1NVU1BFTkRFRBAGMrYFCg5NYWNoaW5lU2VydmljZRJlCgpHZXRNYWNoaW5lEiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0TWFjaGluZVJlcXVlc3QaKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5HZXRNYWNoaW5lUmVzcG9uc2USawoMTGlzdE1hY2hpbmVzEiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTGlzdE1hY2hpbmVzUmVxdWVzdBotLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxpc3RNYWNoaW5lc1Jlc3BvbnNlEnAKDVdhdGNoTWFjaGluZXMSLS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaE1hY2hpbmVzUmVxdWVzdBouLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLldhdGNoTWFjaGluZXNSZXNwb25zZTABEmsKDEFwcGx5TWFjaGluZRIsLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5TWFjaGluZVJlcXVlc3QaLS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5BcHBseU1hY2hpbmVSZXNwb25zZRJuCg1EZWxldGVNYWNoaW5lEi0uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRGVsZXRlTWFjaGluZVJlcXVlc3QaLi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5EZWxldGVNYWNoaW5lUmVzcG9uc2USgAEKE1VwZGF0ZU1hY2hpbmVTdGF0dXMSMy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5VcGRhdGVNYWNoaW5lU3RhdHVzUmVxdWVzdBo0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlVwZGF0ZU1hY2hpbmVTdGF0dXNSZXNwb25zZUL7AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQgxNYWNoaW5lUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("CiVoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lLnByb3RvEhdoYW5nYXIuY29tcHV0ZS52MWFscGhhMSLlAQoHTWFjaGluZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRIyCgRzcGVjGAQgASgLMiQuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZVNwZWMSNgoGc3RhdHVzGAUgASgLMiYuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZVN0YXR1czodirUYGQoHTWFjaGluZRIIbWFjaGluZXMaAm1jIAEizgQKC01hY2hpbmVTcGVjEgwKBG5vZGUYASABKAkSNQoJcmVzb3VyY2VzGAIgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUmVzb3VyY2VzEjsKCXJ1bl9zdGF0ZRgDIAEoDjIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVSdW5TdGF0ZRI7Cgljb250YWluZXIYCiABKAsyJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXJCb290SAASOQoIZmlybXdhcmUYCyABKAsyJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5GaXJtd2FyZUJvb3RIABJJChFmaWxlX3NoYXJlX3NlcnZlchgMIAEoCzIsLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkZpbGVTaGFyZVNlcnZlckJvb3RIABI9CgppbnRlcmZhY2VzGBQgAygLMikuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUludGVyZmFjZRI+Cg5yZXN0YXJ0X3BvbGljeRgVIAEoDjImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlJlc3RhcnRQb2xpY3kSMwoFZGlza3MYFiADKAsyJC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lRGlzaxI+CgtmaWxlX3NoYXJlcxgXIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVGaWxlU2hhcmVCBgoEYm9vdCIbCgtNYWNoaW5lRGlzaxIMCgRkaXNrGAEgASgJIkoKEE1hY2hpbmVGaWxlU2hhcmUSEgoKZmlsZV9zaGFyZRgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDwoHbmV0d29yaxgDIAEoCSLGAQoNQ29udGFpbmVyQm9vdBINCgVpbWFnZRgBIAEoCRIPCgdjb21tYW5kGAIgAygJEgwKBGFyZ3MYAyADKAkSLAoDZW52GAQgAygLMh8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRW52VmFyEhoKEmltYWdlX3B1bGxfc2VjcmV0cxgFIAMoCRI9Cgd2b2x1bWVzGAYgAygLMiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyQm9vdFZvbHVtZSJ7ChNDb250YWluZXJCb290Vm9sdW1lEgwKBGRpc2sYASABKAkSDgoGdGFyZ2V0GAIgASgJEhEKCXJlYWRfb25seRgDIAEoCBIOCgZub2NvcHkYBCABKAgSDwoHc3VicGF0aBgFIAEoCRISCgpmaWxlX3NoYXJlGAYgASgJImAKDEZpcm13YXJlQm9vdBIRCglyb290X2Rpc2sYASABKAkSPQoKY2xvdWRfaW5pdBgCIAEoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDbG91ZEluaXQiNwoTRmlsZVNoYXJlU2VydmVyQm9vdBISCgpmaWxlX3NoYXJlGAEgASgJEgwKBHNpemUYAiABKAkiTwoQTWFjaGluZUNsb3VkSW5pdBITCgtpbnN0YW5jZV9pZBgBIAEoCRIRCgl1c2VyX2RhdGEYAiABKAkSEwoLdmVuZG9yX2RhdGEYAyABKAkiZgoQTWFjaGluZUludGVyZmFjZRIMCgRuYW1lGAEgASgJEg8KB25ldHdvcmsYAiABKAkSDAoEaXB2NBgDIAEoCRIXCg9zZWN1cml0eV9ncm91cHMYBCADKAkSDAoEaXB2NhgFIAEoCSLlAQoNTWFjaGluZVN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24SNAoFcGhhc2UYAyABKA4yJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lUGhhc2USFAoMaW1hZ2VfZGlnZXN0GAQgASgJEi0KCWJvb3RfdGltZRgFIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFaW1hZ2UYBiABKAkiMgoRR2V0TWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJIkcKEkdldE1hY2hpbmVSZXNwb25zZRIxCgdtYWNoaW5lGAEgASgLMiAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZSJlChNMaXN0TWFjaGluZXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkicgoUTGlzdE1hY2hpbmVzUmVzcG9uc2USLwoFaXRlbXMYASADKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIQCghyZXZpc2lvbhgDIAEoAyJXChRXYXRjaE1hY2hpbmVzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhYKDnNpbmNlX3JldmlzaW9uGAMgASgDIoUBChVXYXRjaE1hY2hpbmVzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRIxCgdtYWNoaW5lGAIgASgLMiAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZRIQCghyZXZpc2lvbhgDIAEoAyJdChNBcHBseU1hY2hpbmVSZXF1ZXN0EjEKB21hY2hpbmUYASABKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhMKC2NyZWF0ZV9vbmx5GAIgASgIImwKFEFwcGx5TWFjaGluZVJlc3BvbnNlEjEKB21hY2hpbmUYASABKAsyIC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgiewoURGVsZXRlTWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJKChVEZWxldGVNYWNoaW5lUmVzcG9uc2USMQoHbWFjaGluZRgBIAEoCzIgLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmUiuQEKGlVwZGF0ZU1hY2hpbmVTdGF0dXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRI2CgZzdGF0dXMYAyABKAsyJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJQChtVcGRhdGVNYWNoaW5lU3RhdHVzUmVzcG9uc2USMQoHbWFjaGluZRgBIAEoCzIgLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmUqcgoPTWFjaGluZVJ1blN0YXRlEiEKHU1BQ0hJTkVfUlVOX1NUQVRFX1VOU1BFQ0lGSUVEEAASHQoZTUFDSElORV9SVU5fU1RBVEVfUlVOTklORxABEh0KGU1BQ0hJTkVfUlVOX1NUQVRFX1NUT1BQRUQQAirRAQoMTWFjaGluZVBoYXNlEh0KGU1BQ0hJTkVfUEhBU0VfVU5TUEVDSUZJRUQQABIZChVNQUNISU5FX1BIQVNFX1BFTkRJTkcQARIaChZNQUNISU5FX1BIQVNFX0NSRUFUSU5HEAISGQoVTUFDSElORV9QSEFTRV9SVU5OSU5HEAMSGQoVTUFDSElORV9QSEFTRV9TVE9QUEVEEAQSGAoUTUFDSElORV9QSEFTRV9GQUlMRUQQBRIbChdNQUNISU5FX1BIQVNFX1NVU1BFTkRFRBAGMrYFCg5NYWNoaW5lU2VydmljZRJlCgpHZXRNYWNoaW5lEiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0TWFjaGluZVJlcXVlc3QaKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5HZXRNYWNoaW5lUmVzcG9uc2USawoMTGlzdE1hY2hpbmVzEiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTGlzdE1hY2hpbmVzUmVxdWVzdBotLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxpc3RNYWNoaW5lc1Jlc3BvbnNlEnAKDVdhdGNoTWFjaGluZXMSLS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaE1hY2hpbmVzUmVxdWVzdBouLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLldhdGNoTWFjaGluZXNSZXNwb25zZTABEmsKDEFwcGx5TWFjaGluZRIsLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5TWFjaGluZVJlcXVlc3QaLS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5BcHBseU1hY2hpbmVSZXNwb25zZRJuCg1EZWxldGVNYWNoaW5lEi0uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRGVsZXRlTWFjaGluZVJlcXVlc3QaLi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5EZWxldGVNYWNoaW5lUmVzcG9uc2USgAEKE1VwZGF0ZU1hY2hpbmVTdGF0dXMSMy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5VcGRhdGVNYWNoaW5lU3RhdHVzUmVxdWVzdBo0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlVwZGF0ZU1hY2hpbmVTdGF0dXNSZXNwb25zZUL7AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQgxNYWNoaW5lUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * Machine is one microVM as the node runs it. Controllers create machines from
@@ -101,6 +101,12 @@ export type MachineSpec = Message<"hangar.compute.v1alpha1.MachineSpec"> & {
      */
     value: FirmwareBoot;
     case: "firmware";
+  } | {
+    /**
+     * @generated from field: hangar.compute.v1alpha1.FileShareServerBoot file_share_server = 12;
+     */
+    value: FileShareServerBoot;
+    case: "fileShareServer";
   } | { case: undefined; value?: undefined };
 
   /**
@@ -345,6 +351,37 @@ export const FirmwareBootSchema: GenMessage<FirmwareBoot> = /*@__PURE__*/
   messageDesc(file_hangar_compute_v1alpha1_machine, 6);
 
 /**
+ * FileShareServerBoot boots the platform's NFS server of a FileShare: the
+ * system machine the share owns, which serves it from a volume of its own,
+ * and declares no disk or file share. See docs/decisions/file-shares.md.
+ *
+ * @generated from message hangar.compute.v1alpha1.FileShareServerBoot
+ */
+export type FileShareServerBoot = Message<"hangar.compute.v1alpha1.FileShareServerBoot"> & {
+  /**
+   * Names the FileShare, in the machine's project, the machine serves.
+   *
+   * @generated from field: string file_share = 1;
+   */
+  fileShare: string;
+
+  /**
+   * The size of the share's volume on its node, its status.size, in whole
+   * Gi: the server starts again on the grown volume when it changes.
+   *
+   * @generated from field: string size = 2;
+   */
+  size: string;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.FileShareServerBoot.
+ * Use `create(FileShareServerBootSchema)` to create a new message.
+ */
+export const FileShareServerBootSchema: GenMessage<FileShareServerBoot> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine, 7);
+
+/**
  * MachineCloudInit is a firmware machine's NoCloud data, served by its
  * networks' metadata service. Changing it does not restart the machine:
  * cloud-init reads it once per instance.
@@ -380,7 +417,7 @@ export type MachineCloudInit = Message<"hangar.compute.v1alpha1.MachineCloudInit
  * Use `create(MachineCloudInitSchema)` to create a new message.
  */
 export const MachineCloudInitSchema: GenMessage<MachineCloudInit> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 7);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 8);
 
 /**
  * MachineInterface is one network interface of the machine.
@@ -412,7 +449,10 @@ export type MachineInterface = Message<"hangar.compute.v1alpha1.MachineInterface
 
   /**
    * The SecurityGroups the interface is in, "default" included when it is;
-   * never empty once the controller has written it.
+   * never empty once a container's or VM's controller has written it.
+   * Empty on a file share's server, which is in no group, not even
+   * "default": no group's rule lets it in or out
+   * (docs/decisions/file-shares.md).
    *
    * @generated from field: repeated string security_groups = 4;
    */
@@ -433,7 +473,7 @@ export type MachineInterface = Message<"hangar.compute.v1alpha1.MachineInterface
  * Use `create(MachineInterfaceSchema)` to create a new message.
  */
 export const MachineInterfaceSchema: GenMessage<MachineInterface> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 8);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 9);
 
 /**
  * MachineStatus is what the node and the scheduler observed.
@@ -485,7 +525,7 @@ export type MachineStatus = Message<"hangar.compute.v1alpha1.MachineStatus"> & {
  * Use `create(MachineStatusSchema)` to create a new message.
  */
 export const MachineStatusSchema: GenMessage<MachineStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 9);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 10);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetMachineRequest
@@ -507,7 +547,7 @@ export type GetMachineRequest = Message<"hangar.compute.v1alpha1.GetMachineReque
  * Use `create(GetMachineRequestSchema)` to create a new message.
  */
 export const GetMachineRequestSchema: GenMessage<GetMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 10);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 11);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetMachineResponse
@@ -524,7 +564,7 @@ export type GetMachineResponse = Message<"hangar.compute.v1alpha1.GetMachineResp
  * Use `create(GetMachineResponseSchema)` to create a new message.
  */
 export const GetMachineResponseSchema: GenMessage<GetMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 11);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 12);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListMachinesRequest
@@ -558,7 +598,7 @@ export type ListMachinesRequest = Message<"hangar.compute.v1alpha1.ListMachinesR
  * Use `create(ListMachinesRequestSchema)` to create a new message.
  */
 export const ListMachinesRequestSchema: GenMessage<ListMachinesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 12);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 13);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListMachinesResponse
@@ -585,7 +625,7 @@ export type ListMachinesResponse = Message<"hangar.compute.v1alpha1.ListMachines
  * Use `create(ListMachinesResponseSchema)` to create a new message.
  */
 export const ListMachinesResponseSchema: GenMessage<ListMachinesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 13);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 14);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchMachinesRequest
@@ -614,7 +654,7 @@ export type WatchMachinesRequest = Message<"hangar.compute.v1alpha1.WatchMachine
  * Use `create(WatchMachinesRequestSchema)` to create a new message.
  */
 export const WatchMachinesRequestSchema: GenMessage<WatchMachinesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 14);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 15);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchMachinesResponse
@@ -641,7 +681,7 @@ export type WatchMachinesResponse = Message<"hangar.compute.v1alpha1.WatchMachin
  * Use `create(WatchMachinesResponseSchema)` to create a new message.
  */
 export const WatchMachinesResponseSchema: GenMessage<WatchMachinesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 15);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 16);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyMachineRequest
@@ -665,7 +705,7 @@ export type ApplyMachineRequest = Message<"hangar.compute.v1alpha1.ApplyMachineR
  * Use `create(ApplyMachineRequestSchema)` to create a new message.
  */
 export const ApplyMachineRequestSchema: GenMessage<ApplyMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 16);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 17);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyMachineResponse
@@ -692,7 +732,7 @@ export type ApplyMachineResponse = Message<"hangar.compute.v1alpha1.ApplyMachine
  * Use `create(ApplyMachineResponseSchema)` to create a new message.
  */
 export const ApplyMachineResponseSchema: GenMessage<ApplyMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 17);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 18);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteMachineRequest
@@ -719,7 +759,7 @@ export type DeleteMachineRequest = Message<"hangar.compute.v1alpha1.DeleteMachin
  * Use `create(DeleteMachineRequestSchema)` to create a new message.
  */
 export const DeleteMachineRequestSchema: GenMessage<DeleteMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 18);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 19);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteMachineResponse
@@ -736,7 +776,7 @@ export type DeleteMachineResponse = Message<"hangar.compute.v1alpha1.DeleteMachi
  * Use `create(DeleteMachineResponseSchema)` to create a new message.
  */
 export const DeleteMachineResponseSchema: GenMessage<DeleteMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 19);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 20);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateMachineStatusRequest
@@ -768,7 +808,7 @@ export type UpdateMachineStatusRequest = Message<"hangar.compute.v1alpha1.Update
  * Use `create(UpdateMachineStatusRequestSchema)` to create a new message.
  */
 export const UpdateMachineStatusRequestSchema: GenMessage<UpdateMachineStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 20);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 21);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateMachineStatusResponse
@@ -785,7 +825,7 @@ export type UpdateMachineStatusResponse = Message<"hangar.compute.v1alpha1.Updat
  * Use `create(UpdateMachineStatusResponseSchema)` to create a new message.
  */
 export const UpdateMachineStatusResponseSchema: GenMessage<UpdateMachineStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_machine, 21);
+  messageDesc(file_hangar_compute_v1alpha1_machine, 22);
 
 /**
  * MachineRunState is whether the machine should be running.

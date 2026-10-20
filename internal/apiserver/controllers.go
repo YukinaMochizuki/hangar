@@ -17,6 +17,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
@@ -139,6 +140,22 @@ func (s *Server) newControllers() []*controller.Controller {
 			},
 		},
 		{
+			Name: "fileshare", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileFileShare),
+			Watches: []controller.Watch{
+				{Kind: registry.FileShare.Kind, Map: s.shareAndWaiting},
+				// Its server, and the machines declaring it, are its status.
+				{Kind: registry.Machine.Kind, Map: s.sharesOfMachine, SkipResync: true},
+				// A node going quiet changes whether its shares are served, and
+				// any node change may make room for one to grow; so may a disk
+				// going or shrinking.
+				{Kind: registry.Node.Kind, Map: s.sharesOnNode, SkipResync: true},
+				{Kind: registry.Disk.Kind, Map: s.sharesWaitingForRoom, SkipResync: true},
+				// A network appearing gives a server waiting for it an address.
+				{Kind: registry.Network.Kind, Map: s.sharesInProject, SkipResync: true},
+			},
+		},
+		{
 			Name: "project-networks", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileProject),
 			Watches: []controller.Watch{
@@ -164,6 +181,8 @@ func (s *Server) newControllers() []*controller.Controller {
 				// So may a disk going or shrinking, and a disk is where some
 				// machines must go.
 				{Kind: registry.Disk.Kind, Map: s.unscheduledMachines, SkipResync: true},
+				// And a file share going, whose volume its node keeps until then.
+				{Kind: registry.FileShare.Kind, Map: s.unscheduledMachines, SkipResync: true},
 			},
 		},
 		s.usageController(),
@@ -721,10 +740,11 @@ func (s *Server) scheduleMachine(ctx context.Context, key resource.Key, m *compu
 
 // place picks a node for m and writes it, as one decision about the node's
 // memory and disk: the node its bound disks and its file shares live on,
-// if any. The disks m lists that live on no node yet are bound to it first,
-// and the IPv6 addresses of the node's prefix are given with it, so the
-// machine starts with them. Without a fit it returns no machine and says
-// why.
+// if any, or for a share's server the node its share goes to
+// (serverPlacement). The disks m lists that live on no node yet are bound
+// to it first, and so is the share a server serves, and the IPv6 addresses
+// of the node's prefix are given with it, so the machine starts with them.
+// Without a fit it returns no machine and says why.
 func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Machine, string, string, error) {
 	s.ipam.Lock()
 	defer s.ipam.Unlock()
@@ -743,6 +763,19 @@ func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*comput
 	}
 	disksOn = cmp.Or(disksOn, sharesOn)
 	var extra uint64
+	var share *storagev1alpha1.FileShare
+	if m.GetSpec().GetFileShareServer() != nil {
+		if disksOn, share, why, err = s.serverPlacement(ctx, m); err != nil || why != "" {
+			return nil, "", why, err
+		}
+		if share != nil {
+			b, err := shareBytes(share.GetSpec())
+			if err != nil {
+				return nil, "", "", fmt.Errorf("file share %s: %w", share.GetMetadata().GetName(), err)
+			}
+			extra = wholeGi(b) * quantity.GiB
+		}
+	}
 	for _, d := range unbound {
 		b, err := diskBytes(d.GetSpec())
 		if err != nil {
@@ -758,6 +791,11 @@ func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*comput
 	// sends the machine there next time.
 	if err := s.bindDisks(ctx, node, unbound); err != nil {
 		return nil, "", "", err
+	}
+	if share != nil {
+		if err := s.bindShare(ctx, node, share); err != nil {
+			return nil, "", "", err
+		}
 	}
 	placed := proto.Clone(m).(*computev1alpha1.Machine)
 	placed.Spec.Node = node
@@ -797,10 +835,10 @@ func (s *Server) setScheduled(ctx context.Context, key resource.Key, m *computev
 	return err
 }
 
-// nodeUsage returns every node and what machines and disks hold on each. A
-// machine or disk still being deleted holds its share until released. Disks
-// are sparse, so a machine holds the root disk size it declares, and a disk
-// the size it has, not what was written to them.
+// nodeUsage returns every node and what machines, disks and file shares
+// hold on each. One still being deleted holds its part until released.
+// Disks are sparse, so a machine holds the root disk size it declares, and
+// a disk or a share the size it has, not what was written to them.
 func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]held, error) {
 	nodeObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
 	if err != nil {
@@ -851,6 +889,27 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 		}
 		u := used[n]
 		u.disk = add(u.disk, size)
+		used[n] = u
+	}
+	shareObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.FileShare.Kind})
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, o := range shareObjs {
+		fs, ok := decodeFileShare(o)
+		if !ok {
+			return nil, nil, fmt.Errorf("decode file share %s/%s", o.Project, o.Name)
+		}
+		n := fs.GetStatus().GetNode()
+		if n == "" {
+			continue
+		}
+		size, err := optionalBytes(fs.GetStatus().GetSize())
+		if err != nil {
+			return nil, nil, fmt.Errorf("file share %s/%s status.size: %w", o.Project, o.Name, err)
+		}
+		u := used[n]
+		u.disk = add(u.disk, wholeGi(size)*quantity.GiB)
 		used[n] = u
 	}
 	nodes := make([]*computev1alpha1.Node, 0, len(nodeObjs))

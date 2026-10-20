@@ -337,7 +337,7 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 		}
 		s.capacity.Lock()
 		defer s.capacity.Unlock()
-		err = s.diskGrowthFits(ctx, placedOn, 0, want)
+		err = s.growthFits(ctx, "the disk", placedOn, 0, want)
 		var stuck *blocked
 		switch {
 		case errors.As(err, &stuck):
@@ -367,7 +367,7 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 		if wholeGi(want) > wholeGi(have) {
 			s.capacity.Lock()
 			defer s.capacity.Unlock()
-			err := s.diskGrowthFits(ctx, node, have, want)
+			err := s.growthFits(ctx, "the disk", node, have, want)
 			var stuck *blocked
 			switch {
 			case errors.As(err, &stuck):
@@ -400,10 +400,11 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 	return err
 }
 
-// diskGrowthFits says whether a disk on node can grow from have to want
-// bytes: the growth must fit in what the node has left. A node that reports
-// no disk is not checked. The caller holds s.capacity.
-func (s *Server) diskGrowthFits(ctx context.Context, node string, have, want uint64) error {
+// growthFits says whether what, a volume on node such as "the disk", can
+// grow from have to want bytes: the growth must fit in what the node has
+// left. A node that reports no disk is not checked. The caller holds
+// s.capacity.
+func (s *Server) growthFits(ctx context.Context, what, node string, have, want uint64) error {
 	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
 		return err
@@ -412,15 +413,15 @@ func (s *Server) diskGrowthFits(ctx context.Context, node string, have, want uin
 	for _, n := range nodes {
 		if n.GetMetadata().GetName() == node {
 			if room, err = roomOf(n); err != nil {
-				return &blocked{"NodeSizeUnreadable", err.Error() + "; the disk keeps its size"}
+				return &blocked{"NodeSizeUnreadable", err.Error() + "; " + what + " keeps its size"}
 			}
 		}
 	}
 	growth := wholeGi(want)*quantity.GiB - wholeGi(have)*quantity.GiB
 	if left := free(room.disk, used[node].disk); room.hasDisk && growth > left {
 		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
-			"node %s has %s of disk free, and growing the disk to %s takes %s more; it keeps %s",
-			node, quantity.FormatDisk(left), quantity.FormatDisk(want), quantity.FormatDisk(growth), quantity.FormatDisk(have))}
+			"node %s has %s of disk free, and growing %s to %s takes %s more; it keeps %s",
+			node, quantity.FormatDisk(left), what, quantity.FormatDisk(want), quantity.FormatDisk(growth), quantity.FormatDisk(have))}
 	}
 	return nil
 }

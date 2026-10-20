@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -143,6 +144,15 @@ func validateFileShare(ctx context.Context, s *Server, _ auth.Principal, old, ob
 		}
 	}
 	name := fs.GetMetadata().GetName()
+	var added []string
+	for _, n := range now {
+		if !slices.Contains(before, n) {
+			added = append(added, n)
+		}
+	}
+	if err := s.checkShareRanges(ctx, project, name, now, added, nil); err != nil {
+		return invalid("%v", err)
+	}
 	declarers, err := s.declarersOf(ctx, project, name)
 	if err != nil {
 		return err
@@ -171,6 +181,84 @@ func validateFileShare(ctx context.Context, s *Server, _ auth.Principal, old, ob
 	if len(cut) > 0 {
 		return failedPrecondition("file share %q on network %s could not be reached by %s, which declare it; put it on one of their networks",
 			name, strings.Join(now, ", "), strings.Join(cut, ", "))
+	}
+	return nil
+}
+
+// networkRange is the IPv4 range of a project's network, ok false for one
+// not made yet; default's is always DefaultNetworkCIDR, made or not.
+func (s *Server) networkRange(ctx context.Context, project, name string) (netip.Prefix, bool, error) {
+	if name == DefaultNetwork {
+		return netip.MustParsePrefix(DefaultNetworkCIDR), true, nil
+	}
+	obj, err := s.get(ctx, registry.Network, resource.Key{Project: project, Name: name})
+	if err != nil || obj == nil {
+		return netip.Prefix{}, false, err
+	}
+	p, err := netip.ParsePrefix(obj.(*networkv1alpha1.Network).GetSpec().GetIpv4Cidr())
+	return p, err == nil, nil
+}
+
+// checkShareRanges refuses share on networks two of which, one of them
+// among added, have overlapping ranges: its server's export knows a client
+// by its address alone, so it could not tell apart two machines of one
+// address on the two networks, nor take one's access away alone
+// (docs/decisions/file-shares.md). known gives ranges not stored yet, as a
+// network being made has. A network not made yet is checked when it is.
+func (s *Server) checkShareRanges(ctx context.Context, project, share string, networks, added []string, known map[string]netip.Prefix) error {
+	if len(added) == 0 {
+		return nil
+	}
+	ranges := map[string]netip.Prefix{}
+	for _, n := range networks {
+		if p, ok := known[n]; ok {
+			ranges[n] = p
+			continue
+		}
+		p, ok, err := s.networkRange(ctx, project, n)
+		if err != nil {
+			return err
+		}
+		if ok {
+			ranges[n] = p
+		}
+	}
+	for _, a := range added {
+		pa, ok := ranges[a]
+		if !ok {
+			continue
+		}
+		for _, b := range networks {
+			if pb, ok := ranges[b]; ok && b != a && pa.Overlaps(pb) {
+				return fmt.Errorf("file share %q cannot be on networks %s (%s) and %s (%s), whose ranges overlap: "+
+					"its server knows a client by its address alone, and could not tell their machines apart", share, b, pb, a, pa)
+			}
+		}
+	}
+	return nil
+}
+
+// checkRangeOfShares refuses a network being made, of range p, that a share
+// naming it is on with another network whose range overlaps p
+// (checkShareRanges). The caller holds s.attach, which every share write
+// holds too.
+func (s *Server) checkRangeOfShares(ctx context.Context, project, network string, p netip.Prefix) error {
+	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.FileShare.Kind, Project: project})
+	if err != nil {
+		return err
+	}
+	for _, o := range objs {
+		fs, ok := decodeFileShare(o)
+		if !ok {
+			return fmt.Errorf("decode file share %s/%s", o.Project, o.Name)
+		}
+		nets := shareNetworks(fs.GetSpec())
+		if fs.GetMetadata().GetDeleteTime() != nil || !slices.Contains(nets, network) {
+			continue
+		}
+		if err := s.checkShareRanges(ctx, project, o.Name, nets, []string{network}, map[string]netip.Prefix{network: p}); err != nil {
+			return failedPrecondition("network %q: %v", network, err)
+		}
 	}
 	return nil
 }

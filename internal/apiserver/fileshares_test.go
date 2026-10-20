@@ -116,6 +116,7 @@ func TestFileShareAdmission(t *testing.T) {
 			if _, err := b.Delete(user, resource.Key{Project: "web", Name: "fs"}, nil); err != nil {
 				t.Fatal(err)
 			}
+			letShareGo(t, s, system, "fs")
 		}
 	}
 
@@ -388,10 +389,10 @@ func TestADeclaredShareCannotBeDeleted(t *testing.T) {
 	if _, err := shares.Delete(user, key, nil); err != nil {
 		t.Errorf("deleting a share only a machine being deleted declares: %v", err)
 	}
-	if getShare(t, s, system, "data") != nil {
-		t.Error("a deleted share is still there")
+	if fs := getShare(t, s, system, "data"); fs.GetMetadata().GetDeleteTime() == nil {
+		t.Error("a deleted share is not being deleted")
 	}
-	// Gone, it holds back what declares it again.
+	// Being deleted, it holds back what declares it again.
 	_, err = machines.Apply(system, declaring(machine("ct-b", ""), "data"))
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "declaring a deleted share")
 
@@ -428,6 +429,13 @@ func TestDeletingAProjectTakesItsShares(t *testing.T) {
 	if _, err := s.backend(registry.Project).Delete(user, resource.Key{Name: "web"}, nil); err != nil {
 		t.Fatal(err)
 	}
+	// Bound to n1, it waits for n1 to release its volume.
+	waitShare(t, s, system, "data", "being deleted", func(fs *storagev1alpha1.FileShare) bool {
+		return fs.GetMetadata().GetDeleteTime() != nil
+	})
+	reportShareCond(t, s, system, "data", "n1", &metav1.Condition{
+		Type: FileShareReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Released",
+	})
 	testutil.Eventually(t, "the share to go with its project", func() bool { return getShare(t, s, system, "data") == nil })
 }
 
@@ -468,8 +476,9 @@ func TestAContainerWaitsForItsShare(t *testing.T) {
 	}
 	heldBack(`file share "assets" does not exist`)
 
-	// Made, on no node, it holds the container back still.
-	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("assets", "1Gi")); err != nil {
+	// Made, on no node, it holds the container back still: no node has room
+	// for its server's volume.
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("assets", tooBig)); err != nil {
 		t.Fatal(err)
 	}
 	heldBack(`file share "assets" is on no node yet`)
@@ -477,6 +486,13 @@ func TestAContainerWaitsForItsShare(t *testing.T) {
 	// On a node, the share takes the container there, though another node
 	// has more room.
 	bindShare(t, s, system, "assets", "n1", "1Gi")
+	// Its server follows it there, though n2 has more room.
+	waitMachine(t, s, system, "fs-assets", "placed on the share's node", func(m *computev1alpha1.Machine) bool {
+		return m.GetSpec().GetNode() != ""
+	})
+	if node := getMachine(t, s, system, resource.Key{Project: "web", Name: "fs-assets"}).GetSpec().GetNode(); node != "n1" {
+		t.Errorf("the server of a share on n1 is on %s", node)
+	}
 	m := waitMachine(t, s, system, machineName("web"), "placed on the share's node", func(m *computev1alpha1.Machine) bool {
 		return m.GetSpec().GetNode() == "n1"
 	})
@@ -492,7 +508,7 @@ func TestAContainerWaitsForItsShare(t *testing.T) {
 	// is held back for one on no node; a VM's takes it with the rest of its
 	// change, such as a stop.
 	for name, node := range map[string]string{"elsewhere": "n2", "nowhere": ""} {
-		if _, err := s.backend(registry.FileShare).Apply(user, fileShare(name, "1Gi")); err != nil {
+		if _, err := s.backend(registry.FileShare).Apply(user, fileShare(name, tooBig)); err != nil {
 			t.Fatal(err)
 		}
 		if node != "" {
@@ -583,12 +599,14 @@ func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"data", "logs"} {
-		if _, err := s.backend(registry.FileShare).Apply(user, fileShare(name, "1Gi")); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
+		t.Fatal(err)
 	}
-	bindShare(t, s, system, "data", "n1", "1Gi")
+	// No node has room for logs until it shrinks.
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("logs", tooBig)); err != nil {
+		t.Fatal(err)
+	}
+	waitShare(t, s, system, "data", "on n1", func(fs *storagev1alpha1.FileShare) bool { return fs.GetStatus().GetNode() == "n1" })
 	vm := vmFromImage("web", "noble")
 	vm.Spec.FileShares = []*computev1alpha1.VirtualMachineFileShare{{Name: "data"}}
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, vm); err != nil {
@@ -625,7 +643,9 @@ func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
 	})
 	// Settled first, so only the share's change can tell the VM.
 	waitSettled(t, s)
-	bindShare(t, s, system, "logs", "n1", "1Gi")
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("logs", "1Gi")); err != nil {
+		t.Fatal(err)
+	}
 	got := waitVM(t, s, system, "web", "saying its shares are on its node", func(vm *computev1alpha1.VirtualMachine) bool {
 		return sharesOnNode(vm).GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_TRUE
 	})
@@ -634,7 +654,7 @@ func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
 	}
 
 	// A share of another node is taken, and said to be off its node.
-	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("far", "1Gi")); err != nil {
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("far", tooBig)); err != nil {
 		t.Fatal(err)
 	}
 	bindShare(t, s, system, "far", "n2", "1Gi")
@@ -999,7 +1019,7 @@ func TestAMachineKeepsTheNetworkItMountsFrom(t *testing.T) {
 	if _, err := shares.Apply(user, fileShare("data", "1Gi", "back")); err != nil {
 		t.Fatal(err)
 	}
-	bindShare(t, s, system, "data", "n1", "1Gi")
+	waitShare(t, s, system, "data", "on n1", func(fs *storagev1alpha1.FileShare) bool { return fs.GetStatus().GetNode() == "n1" })
 	c := ctr("api")
 	c.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: "default"}, {Network: "back"}}
 	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{shareVol("data", "/data")}
@@ -1098,5 +1118,87 @@ func TestTheNetworkAShareIsMountedFromIsSettledOnce(t *testing.T) {
 	}
 	if n := mountsFrom("ct-y"); n != "a" {
 		t.Errorf("ct-y mounts from %q, want a, as named", n)
+	}
+}
+
+// TestAShareIsOnNoOverlappingNetworks: a share is refused two networks
+// whose ranges overlap, naming them, as it is made or a network is added
+// to it, and a network naming a share's is refused a range overlapping
+// another of the share's as it is made; default's range counts before
+// default is made. Networks of overlapping ranges are otherwise fine.
+func TestAShareIsOnNoOverlappingNetworks(t *testing.T) {
+	s, _, user := running(t)
+	shares, networks := s.backend(registry.FileShare), s.backend(registry.Network)
+	for name, cidr := range map[string]string{"a": "10.1.0.0/24", "b": "10.1.0.0/25", "c": "10.2.0.0/24"} {
+		if _, err := networks.Apply(user, network(name, cidr)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	refused := func(what string, err error, code connect.Code, names ...string) {
+		t.Helper()
+		wantCodeOf(t, err, code, what)
+		for _, n := range names {
+			if err != nil && !strings.Contains(err.Error(), n) {
+				t.Errorf("%s: the refusal does not name %s: %v", what, n, err)
+			}
+		}
+	}
+	_, err := shares.Apply(user, fileShare("data", "1Gi", "a", "b"))
+	refused("a share on overlapping networks", err, connect.CodeInvalidArgument, "a (10.1.0.0/24)", "b (10.1.0.0/25)", "ranges overlap")
+	// A project whose default no controller has made yet.
+	if _, err := s.backend(registry.Project).Apply(user, &tenancyv1alpha1.Project{
+		Metadata: &metav1.ObjectMeta{Name: "fresh"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "acme"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wide := network("wide", "10.0.0.0/16")
+	wide.Metadata.Project = "fresh"
+	if _, err := networks.Apply(user, wide); err != nil {
+		t.Fatal(err)
+	}
+	fresh := fileShare("data", "1Gi", "default", "wide")
+	fresh.Metadata.Project = "fresh"
+	_, err = shares.Apply(user, fresh)
+	refused("a share on wide and default, not made yet", err, connect.CodeInvalidArgument, "default (10.0.0.0/24)", "wide")
+
+	if _, err := shares.Apply(user, fileShare("data", "1Gi", "a", "c")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = shares.Apply(user, fileShare("data", "1Gi", "a", "c", "b"))
+	refused("adding an overlapping network", err, connect.CodeInvalidArgument, "b (10.1.0.0/25)")
+	if _, err := shares.Apply(user, fileShare("data", "1Gi", "c", "a")); err != nil {
+		t.Errorf("reordering the networks of a share: %v", err)
+	}
+
+	// A network named before it is made is checked as it is made.
+	if _, err := shares.Apply(user, fileShare("later", "1Gi", "a", "e")); err != nil {
+		t.Fatal(err)
+	}
+	_, err = networks.Apply(user, network("e", "10.1.0.128/25"))
+	refused("making a network overlapping another of a share naming it", err, connect.CodeFailedPrecondition, `file share "later"`, "a (10.1.0.0/24)")
+	if _, err := networks.Apply(user, network("e", "10.3.0.0/24")); err != nil {
+		t.Errorf("making a network of its own range: %v", err)
+	}
+}
+
+// TestJoiningAndMakingANetworkAreOneDecision: a share joining a network not
+// made yet, and that network being made with a range overlapping another of
+// the share's, race; never do both happen. The network is made as the
+// system, which takes no quota lock, as user applies of both kinds do.
+func TestJoiningAndMakingANetworkAreOneDecision(t *testing.T) {
+	s, system, user := running(t)
+	if _, err := s.backend(registry.Network).Apply(user, network("a", "10.1.0.0/24")); err != nil {
+		t.Fatal(err)
+	}
+	for round := range 20 {
+		share, net := fmt.Sprintf("s%d", round), fmt.Sprintf("n%d", round)
+		var wg sync.WaitGroup
+		var shareErr, netErr error
+		wg.Go(func() { _, shareErr = s.backend(registry.FileShare).Apply(user, fileShare(share, "1Gi", "a", net)) })
+		wg.Go(func() { _, netErr = s.backend(registry.Network).Apply(system, network(net, "10.1.0.0/25")) })
+		wg.Wait()
+		if shareErr == nil && netErr == nil {
+			t.Fatalf("round %d: share %s is on a and %s, whose ranges overlap", round, share, net)
+		}
 	}
 }

@@ -925,7 +925,11 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 			return nil, connect.NewError(connect.CodeAborted,
 				fmt.Errorf("%s %s is at resource version %d, not %d", b.r.Kind, key.Name, cur.Revision, *expected))
 		}
-		object.SetStatus(obj, status)
+		if p.Type == auth.Node && b.hooks.fromNode != nil {
+			object.SetStatus(obj, b.hooks.fromNode(object.Status(obj), status))
+		} else {
+			object.SetStatus(obj, status)
+		}
 		data, err := encode(obj)
 		if err != nil {
 			return nil, apiError(err)

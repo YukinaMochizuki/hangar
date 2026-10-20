@@ -86,6 +86,21 @@
       },
       "type": "object"
     },
+    "hangar.compute.v1alpha1.FileShareServerBoot": {
+      "additionalProperties": false,
+      "description": "FileShareServerBoot boots the platform's NFS server of a FileShare: the system machine the share owns, which serves it from a volume of its own, and declares no disk or file share. See docs/decisions/file-shares.md.",
+      "properties": {
+        "fileShare": {
+          "description": "Names the FileShare, in the machine's project, the machine serves.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The size of the share's volume on its node, its status.size, in whole Gi: the server starts again on the grown volume when it changes.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.FirmwareBoot": {
       "additionalProperties": false,
       "description": "FirmwareBoot boots a disk's own operating system through the platform's firmware, as a VirtualMachine does. See docs/decisions/vm-boot.md.",
@@ -171,7 +186,7 @@
           "type": "string"
         },
         "securityGroups": {
-          "description": "The SecurityGroups the interface is in, \"default\" included when it is; never empty once the controller has written it.",
+          "description": "The SecurityGroups the interface is in, \"default\" included when it is; never empty once a container's or VM's controller has written it. Empty on a file share's server, which is in no group, not even \"default\": no group's rule lets it in or out (docs/decisions/file-shares.md).",
           "items": {
             "type": "string"
           },
@@ -186,7 +201,7 @@
       "properties": {
         "container": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerBoot",
-          "description": "Set at most one of container, firmware."
+          "description": "Set at most one of container, firmware, fileShareServer."
         },
         "disks": {
           "description": "Disks attached after the ones the boot makes, in this order. A disk is attached to one machine at a time.",
@@ -194,6 +209,10 @@
             "$ref": "#/$defs/hangar.compute.v1alpha1.MachineDisk"
           },
           "type": "array"
+        },
+        "fileShareServer": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.FileShareServerBoot",
+          "description": "Set at most one of container, firmware, fileShareServer."
         },
         "fileShares": {
           "description": "The FileShares the machine may mount, each once. A share on a node keeps the machine to that node. A container's machine declares only shares on a node; a VM's may declare one on no node yet, which it mounts once the share is on its node. Changing them restarts nothing: a container's restart comes from its volumes changing.",
@@ -204,7 +223,7 @@
         },
         "firmware": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.FirmwareBoot",
-          "description": "Set at most one of container, firmware."
+          "description": "Set at most one of container, firmware, fileShareServer."
         },
         "interfaces": {
           "items": {

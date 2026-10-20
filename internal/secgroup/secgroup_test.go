@@ -93,6 +93,8 @@ func TestResolve(t *testing.T) {
 		{Addrs: as("10.0.0.6"), Groups: []string{"sandbox"}},             // locked down
 		{Addrs: as("10.0.0.7"), Groups: []string{"web", "not-made-yet"}}, // a group missing
 		{Addrs: as("10.0.0.8"), Groups: []string{"nobody"}},              // names a group that is not there
+		{Addrs: as("10.0.0.9"), Isolated: true},                          // a file share's server
+		{Addrs: as("10.0.0.10"), Groups: []string{"web"}, Isolated: true},
 	}
 	got := Resolve(groups, members)
 
@@ -114,5 +116,17 @@ func TestResolve(t *testing.T) {
 	}
 	if m := got[5]; m.EgressAll || len(m.Egress) != 0 || len(m.Ingress) != 1 {
 		t.Errorf("a member of a group not made yet must be no more open, and send nothing: %+v", m)
+	}
+	// Isolated members are in no group, Default included, and are let
+	// neither in nor out.
+	for i, m := range got[7:] {
+		if m.EgressAll || len(m.Egress) != 0 || len(m.Ingress) != 0 {
+			t.Errorf("isolated member %d: %+v", i, m)
+		}
+	}
+	for _, peer := range slices.Concat(got[0].Ingress[0].Peers, got[2].Ingress[0].Peers) {
+		if peer == p("10.0.0.9") || peer == p("10.0.0.10") {
+			t.Errorf("an isolated member is a peer of default or web: %v", peer)
+		}
 	}
 }

@@ -383,7 +383,11 @@ address.
     members, and lets everything out. An interface naming no group is in
     it alone; naming groups without `default` takes it out; `[default,
     web]` keeps it in both. So machines naming nothing behave as before
-    groups existed. Other groups' rules may name `default` as a peer.
+    groups existed. Other groups' rules may name `default` as a peer. A
+    file share's server is the exception: it names no group and is in
+    none, `default` included, so no group's rule lets it in, and its own
+    policy allows nothing; what the host lets every tap reach still
+    applies (`file-shares.md`).
   - A group an interface names that does not exist lets nothing in and,
     so that a missing group never opens anything, nothing out. A rule
     naming a group that does not exist, or has no members, allows nothing,

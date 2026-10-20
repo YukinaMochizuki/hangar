@@ -48,7 +48,9 @@ what it cannot.
 - [ ] If only the apiserver's controllers write the kind, `hooksFor` marks it
       `systemManaged` and its comment says so; if a node agent reports its
       status, `nodeOf` names the node allowed to (`anyNodeReports` lets every
-      node, for what holds on every node, as an Image's). A global kind every
+      node, for what holds on every node, as an Image's), and, where the
+      apiserver derives the rest of that status, `fromNode` keeps all but
+      the node's own part, as a FileShare's. A global kind every
       tenant reads, as the Image catalogue, sets `readableByAll`. Tests show a
       caller with the broadest role is still refused.
 - [ ] If a new object claims something global besides its name, which no

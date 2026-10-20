@@ -59,8 +59,11 @@ a copy of a global `Image`, a distribution's disk image that platform
 administrators add to the catalogue by URL and sha256. A `FileShare` is a
 filesystem of a project on one to eight of its networks, which the
 machines that declare it, a container as a volume and a VM in its spec,
-are to mount over NFS from a server microVM of the platform's; only its
-API is built so far (`decisions/file-shares.md`). A global
+are to mount over NFS from a server microVM of the platform's: a system
+`Machine` the share owns, which the scheduler places with the share's
+volume, binding the share to that node. Its API and that machine are
+built so far, not what the machine boots nor the mounts
+(`decisions/file-shares.md`). A global
 `MachineSize`, also the administrators' and read by all, is a template of
 cpu, memory and disk that clients fill a new machine's from, and that
 admission holds tenants' machines to; a machine does not record its size

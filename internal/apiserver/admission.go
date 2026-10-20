@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -74,9 +75,8 @@ func checkMetaKeys(p auth.Principal, meta, stored *metav1.ObjectMeta) error {
 	return nil
 }
 
-// dependentsFinalizer keeps a tenant or project in place, marked as being
-// deleted, until everything it owns is gone.
-const dependentsFinalizer = registry.Domain + "/dependents"
+// dependentsFinalizer is described in computeapi.
+const dependentsFinalizer = computeapi.DependentsFinalizer
 
 // kindHooks is what differs between kinds in the generic machinery.
 type kindHooks struct {
@@ -186,6 +186,9 @@ type kindHooks struct {
 	// validateStatus, if set, checks every status written, whoever writes
 	// it.
 	validateStatus func(status proto.Message) error
+	// fromNode, if set, is the status stored when a node agent writes
+	// reported over stored: what of it the node owns, and stored's rest.
+	fromNode func(stored, reported proto.Message) proto.Message
 	// redact, if set, clears in place what no answer may hold, whoever
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
@@ -347,14 +350,19 @@ func hooksFor(r registry.Resource) kindHooks {
 		}
 	case registry.FileShare.Kind:
 		// It is Pending from its creation; its node reports on it once its
-		// server is placed there. Its writes hold attach: the networks it may
-		// leave or join are checked against what declares it and the
-		// networks being deleted, and those against it.
+		// server is placed there, and writes only its own conditions. Its
+		// writes hold attach: the networks it may leave or join are checked
+		// against what declares it and the networks being deleted, and those
+		// against it. Deleting it deletes its server, and then waits for its
+		// node to release its volume.
 		return kindHooks{
 			target:       projectTarget,
 			owner:        ownedByProject,
 			validate:     validateFileShare,
 			beforeDelete: refuseDeletingDeclaredShare,
+			cascades:     true,
+			finalizers:   []string{NodeCleanupFinalizer},
+			fromNode:     fileShareFromNode,
 			initialStatus: func() proto.Message {
 				return &storagev1alpha1.FileShareStatus{Phase: storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_PENDING}
 			},
@@ -416,8 +424,10 @@ func hooksFor(r registry.Resource) kindHooks {
 			claim:    endpointClaim,
 		}
 	case registry.Network.Kind:
-		// Its writes hold attach: whether a share is on it is checked
-		// against the shares, and a share joining it against it.
+		// Its writes hold attach: whether a share is on it, and as it is
+		// made whether a share naming it is on another network of an
+		// overlapping range, are checked against the shares, and a share
+		// joining it against it.
 		return kindHooks{
 			target:       projectTarget,
 			owner:        ownedByProject,
@@ -904,6 +914,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	if f := spec.GetFirmware(); f != nil && f.GetRootDisk() == "" {
 		return invalid("spec.firmware.root_disk is required")
 	}
+	if err := validateServerBoot(spec); err != nil {
+		return err
+	}
 	if ci := spec.GetFirmware().GetCloudInit(); len(ci.GetUserData()) > maxUserData || len(ci.GetVendorData()) > maxVendorData {
 		return invalid("spec.firmware.cloud_init: user_data of %d bytes, at most %d; vendor_data of %d, at most %d",
 			len(ci.GetUserData()), maxUserData, len(ci.GetVendorData()), maxVendorData)
@@ -961,6 +974,31 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	return s.checkDeclaring(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec)
 }
 
+// validateServerBoot checks the machine of a file share's server: it
+// names its share, and the size of its volume in whole Gi, attaches no
+// disk, declares no share, and has no public address.
+func validateServerBoot(spec *computev1alpha1.MachineSpec) error {
+	b := spec.GetFileShareServer()
+	if b == nil {
+		return nil
+	}
+	if err := ValidName(b.GetFileShare()); err != nil {
+		return invalid("spec.file_share_server.file_share: %v", err)
+	}
+	if size, err := quantity.Bytes(b.GetSize()); err != nil || size == 0 || size%quantity.GiB != 0 {
+		return invalid("spec.file_share_server.size %q is not a size in whole Gi", b.GetSize())
+	}
+	if len(spec.GetDisks()) > 0 || len(spec.GetFileShares()) > 0 {
+		return invalid("a file share's server attaches no disk and declares no file share")
+	}
+	for _, nic := range spec.GetInterfaces() {
+		if nic.GetIpv6() != "" {
+			return invalid("spec.interfaces[%s].ipv6: a file share's server has no public address", nic.GetName())
+		}
+	}
+	return nil
+}
+
 // privateIPv4 are the RFC 1918 ranges networks may use.
 var privateIPv4 = []netip.Prefix{
 	netip.MustParsePrefix("10.0.0.0/8"),
@@ -968,7 +1006,10 @@ var privateIPv4 = []netip.Prefix{
 	netip.MustParsePrefix("192.168.0.0/16"),
 }
 
-func validateNetwork(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
+// validateNetwork checks a network's range, and, as a network is made, that
+// no share naming it is on another network of an overlapping range. Its
+// range never changes once made.
+func validateNetwork(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	n := obj.(*networkv1alpha1.Network)
 	cidr := n.GetSpec().GetIpv4Cidr()
 	if n.GetMetadata().GetName() == DefaultNetwork && cidr != DefaultNetworkCIDR {
@@ -984,12 +1025,13 @@ func validateNetwork(_ context.Context, _ *Server, _ auth.Principal, _, obj prot
 	if p.Bits() < 16 || p.Bits() > 28 {
 		return invalid("spec.ipv4_cidr %q must be between /16 and /28", cidr)
 	}
-	for _, r := range privateIPv4 {
-		if r.Bits() <= p.Bits() && r.Contains(p.Addr()) {
-			return nil
-		}
+	if !slices.ContainsFunc(privateIPv4, func(r netip.Prefix) bool { return r.Bits() <= p.Bits() && r.Contains(p.Addr()) }) {
+		return invalid("spec.ipv4_cidr %q is not inside a private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)", cidr)
 	}
-	return invalid("spec.ipv4_cidr %q is not inside a private range (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)", cidr)
+	if old != nil {
+		return nil
+	}
+	return s.checkRangeOfShares(ctx, n.GetMetadata().GetProject(), n.GetMetadata().GetName(), p)
 }
 
 // grantTenantOwner binds the tenant's creator as its owner. The binding is

@@ -120,7 +120,11 @@ with the host after any of these, and nothing would notice.
   kinds. What the host notices on its own (a VM exiting, networkd removing a
   link) checks every machine again. A second controller keeps the volumes of
   the Disks bound to the node, at the size their status says, and removes a
-  deleted one's once no machine lists it, reporting `Released`.
+  deleted one's once no machine lists it, reporting `Released`. A third,
+  `fileshares`, lets go of what the host holds of a deleted FileShare bound
+  to the node once its server is gone (its `dependents` finalizer), and
+  reports `Released`; the node holds nothing of a share yet
+  (`file-shares.md`).
 - **Nothing slow runs under the host lock.** Reconciles and the sweep take
   turns under one lock, so each step under it must be short. Preparing an
   image (resolving, pulling, making its base) can take minutes, so a puller

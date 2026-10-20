@@ -180,8 +180,12 @@ func (a *Agent) stop(ctx context.Context, vm *driver.VM) (*observation, error) {
 // converge makes the host run m as specified and says what it then runs.
 // epoch is the network driver's change count when the reconcile began.
 func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *driver.VM, epoch int64) (*observation, error) {
+	vcpus, memoryMiB, err := vmSize(m.GetSpec().GetResources())
+	if err != nil {
+		return nil, a.refuse(ctx, vm, err)
+	}
 	if m.GetSpec().GetFirmware() != nil {
-		return a.convergeFirmware(ctx, m, vm, epoch)
+		return a.convergeFirmware(ctx, m, vm, epoch, vcpus, memoryMiB)
 	}
 	uid := m.GetMetadata().GetUid()
 	d := a.cfg.Drivers
@@ -189,6 +193,12 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if boot == nil {
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_FAILED, computeapi.ReasonBootFailed,
 			"the machine has no boot source this node knows"), nil
+	}
+	// A spec the node cannot boot, such as one mounting a file share, is
+	// refused before anything is prepared for it.
+	mnts, err := mounts(m.GetSpec())
+	if err != nil {
+		return nil, a.refuse(ctx, vm, err)
 	}
 
 	// A reference is resolved once, so a tag moving upstream never rebuilds
@@ -269,14 +279,6 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	}
 	a.netChecked[uid] = epoch
 
-	vcpus, memoryMiB, err := vmSize(m.GetSpec().GetResources())
-	if err != nil {
-		return nil, blocked(computeapi.ReasonBootFailed, err)
-	}
-	mnts, err := mounts(m.GetSpec())
-	if err != nil {
-		return nil, blocked(computeapi.ReasonBootFailed, err)
-	}
 	nameservers, search := guestDNS(m.GetMetadata().GetProject(), ifaces)
 	spec := driver.VMSpec{
 		MachineUID:  uid,
@@ -297,6 +299,19 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		obs.image, obs.digest = boot.GetImage(), digest
 	}
 	return obs, cmp.Or(err, pending)
+}
+
+// refuse reports a spec the node will never boot as it stands, such as a
+// container's mounting a file share, once vm, the VM of an earlier spec if
+// any, is stopped. A spec that may still boot, once an image is pulled or
+// a disk made, keeps the VM it replaces running meanwhile.
+func (a *Agent) refuse(ctx context.Context, vm *driver.VM, why error) error {
+	if vm != nil {
+		if err := a.stopVM(ctx, vm.MachineUID); err != nil {
+			return err
+		}
+	}
+	return blocked(computeapi.ReasonBootFailed, why)
 }
 
 // interfaces works out the host side of each of m's interfaces, making
