@@ -196,6 +196,19 @@ CONFIG_FANOTIFY=y
 CONFIG_INOTIFY_USER=y
 CONFIG_NFS_FS=y
 CONFIG_NFS_V4=y
+# FileShares are NFSv4.2 over TCP (docs/decisions/file-shares.md).
+CONFIG_NFS_V4_1=y
+CONFIG_NFS_V4_2=y
+CONFIG_NFS_DISABLE_UDP_SUPPORT=y
+# nfsd, for the FileShare server's guest; container guests carry it unused.
+# NFSv4 only: the v2 server and v3 ACLs are off (the v3 server cannot be left
+# out of the build; the server turns it off at run time). Client tracking is
+# the server's PID 1, in place of nfsdcld, not the legacy upcall.
+CONFIG_NFSD=y
+CONFIG_NFSD_V4=y
+CONFIG_NFSD_V2=n
+CONFIG_NFSD_V3_ACL=n
+CONFIG_NFSD_LEGACY_CLIENT_TRACKING=n
 CONFIG_BTRFS_FS=n
 CONFIG_ISO9660_FS=y
 CONFIG_VFAT_FS=y
