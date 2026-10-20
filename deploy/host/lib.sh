@@ -14,6 +14,10 @@ STATE_DIR=/var/lib/hangar-bootstrap
 INITRAMFS_MARKER=$STATE_DIR/initramfs-pending
 INITRAMFS_PENDING=0
 ROLLBACK_UNIT=hangar-netplan-rollback
+# The quota of Prometheus's dataset (the monitoring step's), here because the
+# services step counts it in what root disks may not take from the pool.
+# shellcheck disable=SC2034
+MON_TSDB_QUOTA=20G
 # The host's settings, which bootstrap.sh and verify.sh read unless --env
 # names another file: its uplink, addresses, disks, quotas and Node name
 # (deploy/host/host.env.example lists them). It is kept by the operator, not

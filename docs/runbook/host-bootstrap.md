@@ -267,7 +267,8 @@ with `--release DIR`. `--only <step>` runs a single step
     /64, from which every machine interface gets its public IPv6 address,
     `--image-cache-high 20Gi` (what the container images no machine uses
     may keep, `docs/decisions/node-agent.md`), `--reserved-disk` the sum
-    of both quotas and those 20 GiB, the bases of those images being on
+    of both quotas, Prometheus's dataset's quota (`MON_TSDB_QUOTA` in
+    `deploy/host/lib.sh`) and those 20 GiB, the bases of those images being on
     the pool, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
     plus the host's own overhead), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes

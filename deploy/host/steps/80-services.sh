@@ -137,10 +137,10 @@ services_mark() {
 SERVICES_IMAGE_CACHE_HIGH=20
 
 # services_reserved_disk is what root disks may not take from the pool: what
-# the image cache and the VMs' directories may hold, their quotas, and the
-# bases of the images no machine uses.
+# the image cache, the VMs' directories and Prometheus's data may hold, their
+# quotas, and the bases of the images no machine uses.
 services_reserved_disk() {
-	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA") + SERVICES_IMAGE_CACHE_HIGH))
+	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA") + $(gib_of "$MON_TSDB_QUOTA") + SERVICES_IMAGE_CACHE_HIGH))
 }
 
 # services_placement_args sets SERVICES_PLACEMENT to the agent's placement

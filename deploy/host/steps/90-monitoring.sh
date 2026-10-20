@@ -48,7 +48,7 @@ MON_WARNING_WINDOW_END=10:00
 # MON_TSDB_RETENTION_SIZE, before the quota is reached.
 MON_TSDB_DATASET=$HANGAR_ZPOOL/prometheus
 MON_TSDB=/var/lib/hangar/prometheus
-MON_TSDB_PROPS=setuid=off,exec=off,devices=off,quota=20G
+MON_TSDB_PROPS=setuid=off,exec=off,devices=off,quota=$MON_TSDB_QUOTA
 MON_TSDB_RETENTION_TIME=30d
 MON_TSDB_RETENTION_SIZE=16GB
 MON_AM_STATE=/var/lib/hangar-alertmanager
