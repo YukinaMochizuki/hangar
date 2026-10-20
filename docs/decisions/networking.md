@@ -193,7 +193,20 @@ address.
     rules of its own sends nothing. Its rules are written from the taps'
     aliases, before a tap joins the bridge, and go with it. So a guest
     cannot pass as another of its network, which the metadata service
-    relies on to know who asks.
+    and file shares' exports (`file-shares.md`) rely on to know who asks.
+  - **A tap receives only its own unicast** (decided 2026-10, not built
+    yet). Each tap's MAC, from its alias, is a static entry of the
+    bridge's forwarding database on that tap, and taps do not take
+    flooded unknown unicast; broadcast, and so ARP and DHCP, still
+    floods. A bridge that has not learnt, or has aged out, where a MAC is
+    otherwise floods a frame for it to every tap, so a machine could read
+    its neighbours' traffic. With it, nothing of one machine's unicast
+    reaches another, which is what lets a file share's traffic go
+    unencrypted on one node.
+  - **A file share's server sends only replies** (`file-shares.md`): in
+    `bridge hangar_sg`, its taps take only new TCP connections to 2049
+    from the machines declaring the share, whatever their security
+    groups say, and send only replies on connections made to it.
   - Each of the three layers holds without the others: the binding, the
     namespace's filter and the host's. A frame to a group address skips
     the binding, and meets the namespace's filter and its reverse-path
