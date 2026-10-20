@@ -181,6 +181,12 @@ type Server struct {
 	// is how far garbage collection has come.
 	controllers []*controller.Controller
 	gc          gcProgress
+	// rpc counts the Connect calls served; boots follows machines' boot
+	// times, through bootWatch, for the crash-loop gauge. bootWatch writes
+	// nothing, so it runs even when the config disables the controllers.
+	rpc       *rpcMetrics
+	boots     *bootTracker
+	bootWatch *controller.Controller
 }
 
 // New returns a server over cfg.Store.
@@ -223,6 +229,13 @@ func New(cfg Config) *Server {
 		tunnels:    &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
 		nodeCalls:  newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
 		tokenUses:  make(chan tokenUse, 256),
+		rpc:        newRPCMetrics(),
+		boots:      newBootTracker(cfg.Clock),
+	}
+	s.bootWatch = &controller.Controller{
+		Name: "machineboots", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+		Reconciler: controller.ReconcilerFunc(s.reconcileBoots),
+		Watches:    []controller.Watch{{Kind: registry.Machine.Kind, Map: controller.Self}},
 	}
 	if cfg.Credentials != nil {
 		s.sessions = s.newSessions(cfg.Credentials)
@@ -239,7 +252,7 @@ func New(cfg Config) *Server {
 // ControllerStatus reports what each controller and the garbage collector
 // are doing.
 func (s *Server) ControllerStatus() []controller.Status {
-	st := []controller.Status{s.gc.status()}
+	st := []controller.Status{s.gc.status(), s.bootWatch.Status()}
 	for _, c := range s.controllers {
 		st = append(st, c.Status())
 	}
@@ -257,25 +270,26 @@ func (s *Server) Handler(chain auth.Chain) http.Handler {
 func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux := http.NewServeMux()
 	servicegen.Mount(mux, func(r registry.Resource) resource.Backend { return s.backend(r) },
-		connect.WithInterceptors(s.interceptor(chain)))
-	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, connect.WithInterceptors(s.interceptor(chain))))
+		s.interceptors(chain))
+	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, s.interceptors(chain)))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
-	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, s.interceptors(chain)))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
-	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, connect.WithInterceptors(s.interceptor(chain))))
-	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, connect.WithInterceptors(s.interceptor(chain))))
-	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, connect.WithInterceptors(s.interceptor(chain))))
-	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, connect.WithInterceptors(s.interceptor(chain))))
+	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, s.interceptors(chain)))
+	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, s.interceptors(chain)))
+	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, s.interceptors(chain)))
+	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, s.interceptors(chain)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
 	})
 	return mux
 }
 
-// interceptor authenticates the Connect calls a listener takes with chain,
-// and rechecks its streams on the server's clock.
-func (s *Server) interceptor(chain auth.Chain) connect.Interceptor {
-	return chain.InterceptorOn(s.clock, s.log)
+// interceptors count the Connect calls a listener takes, authenticate them
+// with chain, and recheck its streams on the server's clock. Counting comes
+// first, so calls refused for their credentials are counted too.
+func (s *Server) interceptors(chain auth.Chain) connect.HandlerOption {
+	return connect.WithInterceptors(s.rpc, chain.InterceptorOn(s.clock, s.log))
 }
 
 // openTunnel takes a node agent's tunnel (internal/tunnel). The tunnel is
@@ -326,6 +340,7 @@ func (s *Server) Run(ctx context.Context) error {
 	for _, c := range s.controllers {
 		g.Go(func() error { return c.Run(gctx) })
 	}
+	g.Go(func() error { return s.bootWatch.Run(gctx) })
 	g.Go(func() error { return s.runGC(gctx) })
 	g.Go(func() error { return s.runCompaction(gctx) })
 	if s.sessions != nil {

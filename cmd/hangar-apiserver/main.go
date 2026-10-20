@@ -4,7 +4,9 @@
 // forwards the same public API to from :443, with each client's address;
 // one for the node agent; one for hangar-edge's own reads; and one for root
 // on the host. See docs/decisions/authentication.md and
-// docs/decisions/front-door.md.
+// docs/decisions/front-door.md. With --metrics-listen it also serves
+// /metrics, and nothing else, on a loopback address of its own
+// (docs/decisions/monitoring.md).
 package main
 
 import (
@@ -29,6 +31,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/login"
 	"github.com/YukinaMochizuki/hangar/internal/auth/token"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/metrics"
 	"github.com/YukinaMochizuki/hangar/internal/sdsocket"
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
 	"github.com/YukinaMochizuki/hangar/internal/sshca"
@@ -55,6 +58,7 @@ type flags struct {
 	endpointDomain string
 	secretsKEK     string
 	previousKEKs   []string
+	metricsListen  string
 	// maxOwnedTenants is the default cap on the tenants one person or
 	// service token owns.
 	maxOwnedTenants int
@@ -84,6 +88,7 @@ func main() {
 		f.previousKEKs = append(f.previousKEKs, s)
 		return nil
 	})
+	flag.StringVar(&f.metricsListen, "metrics-listen", "", "loopback address to serve /metrics on, such as 127.0.0.1:9101, apart from the API; empty disables it")
 	flag.IntVar(&f.maxOwnedTenants, "default-max-owned-tenants", apiserver.DefaultMaxOwnedTenants,
 		"how many tenants one person or service token may own, unless their User says otherwise; at least 1")
 	flag.Parse()
@@ -187,6 +192,13 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	if err != nil {
 		return err
 	}
+	var metricsLn net.Listener
+	if f.metricsListen != "" {
+		if metricsLn, err = metrics.Listen(ctx, f.metricsListen); err != nil {
+			return fmt.Errorf("--metrics-listen: %w", err)
+		}
+		defer func() { _ = metricsLn.Close() }()
+	}
 
 	ca, err := loadSSHCA(f.sshCAKey, log)
 	if err != nil {
@@ -211,6 +223,11 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	}
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return srv.Run(ctx) })
+	if metricsLn != nil {
+		reg := metrics.NewRegistry()
+		reg.MustRegister(srv.Collectors()...)
+		g.Go(func() error { return metrics.Serve(ctx, metricsLn, reg, log) })
+	}
 	g.Go(func() error {
 		log.Info("serving the public API", "address", ln.Addr().String(), "auth", f.authMode)
 		return serve(ctx, &http.Server{Handler: auth.ClientIPFromConn(srv.PublicHandler(public)), Protocols: protocols()}, ln)
