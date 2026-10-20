@@ -1,0 +1,190 @@
+syntax = "proto3";
+
+package hangar.storage.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// FileShare is a filesystem in a project that many machines mount at once
+// over NFS, from its networks. A server microVM of the platform's serves it
+// from a volume of its own, on one node. A machine mounts only the shares it
+// declares: a container as a volume, a virtual machine in spec.file_shares.
+// See docs/decisions/file-shares.md.
+message FileShare {
+  option (hangar.meta.v1.resource) = {
+    kind: "FileShare"
+    plural: "fileshares"
+    short_names: ["fs"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  FileShareSpec spec = 4;
+  FileShareStatus status = 5;
+}
+
+// FileShareSpec is the desired state of a file share.
+message FileShareSpec {
+  // Names the Networks, in the share's project, the share is served on, at
+  // most 8, each once; empty is "default". A machine mounts the share from
+  // the first of its own networks the share is on. A network a declaring
+  // machine mounts from cannot be removed.
+  repeated string networks = 1;
+  // As a Disk's: a quantity in whole Gi, such as "20Gi", at least 1Gi; a
+  // size that is not whole Gi is rounded up. It can grow but never shrink.
+  string size = 2;
+  // Which users of a client the server maps to anon_uid and anon_gid;
+  // unset is NONE.
+  FileShareSquash squash = 3;
+  // The user and group squashed users become; unset is 65534 (nobody). Set
+  // only with squash ROOT or ALL.
+  optional uint32 anon_uid = 4;
+  optional uint32 anon_gid = 5;
+}
+
+// FileShareSquash is which client users a share's server maps to its
+// anonymous user. Clients are AUTH_SYS: the server takes the uid and gids a
+// client sends.
+enum FileShareSquash {
+  // Means NONE.
+  FILE_SHARE_SQUASH_UNSPECIFIED = 0;
+  // Every user keeps its uid and gids, root included.
+  FILE_SHARE_SQUASH_NONE = 1;
+  // Root becomes the anonymous user; other users keep theirs.
+  FILE_SHARE_SQUASH_ROOT = 2;
+  // Every user becomes the anonymous user.
+  FILE_SHARE_SQUASH_ALL = 3;
+}
+
+// FileShareStatus is the observed state of a file share.
+message FileShareStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  FileSharePhase phase = 3;
+  // Names the Node the share and its server live on. Empty until its
+  // server is placed; once set it never changes.
+  string node = 4;
+  // The size the share has on its node, in whole Gi: spec.size once its
+  // node has room for it, and never less than before.
+  string size = 5;
+  // The server's address on each of the share's networks, which a client
+  // on that network mounts.
+  repeated FileShareAddress addresses = 6;
+  // What mounts the share, one entry per declaring machine.
+  repeated FileShareUser users = 7;
+}
+
+// FileShareAddress is a share's server's address on one network.
+message FileShareAddress {
+  // Names a Network in the share's project.
+  string network = 1;
+  // An IPv4 address, such as "10.0.0.7".
+  string address = 2;
+}
+
+// FileShareUser is a machine that declares a share.
+message FileShareUser {
+  // The kind and name of what the machine was made from, in the share's
+  // project, such as Container "web".
+  string kind = 1;
+  string name = 2;
+  // Names the Machine.
+  string machine = 3;
+  // Names the Network the machine mounts the share from.
+  string network = 4;
+  bool read_only = 5;
+  // Where a container mounts the share, as its spec has it; empty for a
+  // virtual machine, which mounts its shares itself.
+  string path = 6;
+}
+
+// FileSharePhase is where a file share is in its lifecycle.
+enum FileSharePhase {
+  FILE_SHARE_PHASE_UNSPECIFIED = 0;
+  // Not yet served: its server is not placed, or not yet running.
+  FILE_SHARE_PHASE_PENDING = 1;
+  // Served, and declared by no machine.
+  FILE_SHARE_PHASE_AVAILABLE = 2;
+  // Served, and declared by a machine.
+  FILE_SHARE_PHASE_IN_USE = 3;
+}
+
+// FileShareService manages file shares.
+service FileShareService {
+  rpc GetFileShare(GetFileShareRequest) returns (GetFileShareResponse);
+  rpc ListFileShares(ListFileSharesRequest) returns (ListFileSharesResponse);
+  rpc WatchFileShares(WatchFileSharesRequest) returns (stream WatchFileSharesResponse);
+  rpc ApplyFileShare(ApplyFileShareRequest) returns (ApplyFileShareResponse);
+  rpc DeleteFileShare(DeleteFileShareRequest) returns (DeleteFileShareResponse);
+  rpc UpdateFileShareStatus(UpdateFileShareStatusRequest) returns (UpdateFileShareStatusResponse);
+}
+
+message GetFileShareRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetFileShareResponse {
+  FileShare file_share = 1;
+}
+
+message ListFileSharesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListFileSharesResponse {
+  repeated FileShare items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchFileSharesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchFileSharesResponse {
+  hangar.meta.v1.EventType type = 1;
+  FileShare file_share = 2;
+  int64 revision = 3;
+}
+
+message ApplyFileShareRequest {
+  FileShare file_share = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyFileShareResponse {
+  FileShare file_share = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteFileShareRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteFileShareResponse {
+  FileShare file_share = 1;
+}
+
+message UpdateFileShareStatusRequest {
+  string project = 1;
+  string name = 2;
+  FileShareStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateFileShareStatusResponse {
+  FileShare file_share = 1;
+}

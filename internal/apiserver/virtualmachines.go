@@ -147,6 +147,14 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	if err := s.validateInterfaces(ctx, vm.GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
+	shares := vmShares(spec)
+	if err := checkShareNames("spec.file_shares", shares); err != nil {
+		return err
+	}
+	if err := s.checkShareReach(ctx, vm.GetMetadata().GetProject(), "virtual machine "+vm.GetMetadata().GetName(),
+		interfaceNetworks(spec.GetInterfaces()), shares); err != nil {
+		return err
+	}
 	if n := len(spec.GetUserData()); n > maxUserData {
 		return invalid("spec.user_data is %d bytes, at most %d (16 KiB)", n, maxUserData)
 	}
@@ -518,7 +526,19 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 	for _, d := range spec.GetDisks() {
 		out.Disks = append(out.Disks, &computev1alpha1.MachineDisk{Disk: d.GetDisk()})
 	}
+	for _, f := range spec.GetFileShares() {
+		out.FileShares = append(out.FileShares, &computev1alpha1.MachineFileShare{FileShare: f.GetName(), ReadOnly: f.GetReadOnly()})
+	}
 	return out, nil
+}
+
+// vmShares are the names of the FileShares a VM declares.
+func vmShares(spec *computev1alpha1.VirtualMachineSpec) []string {
+	var out []string
+	for _, f := range spec.GetFileShares() {
+		out = append(out, f.GetName())
+	}
+	return out
 }
 
 // reportVirtualMachine writes a VM's status, conditional on vm as read:
@@ -542,6 +562,11 @@ func (s *Server) reportVirtualMachine(ctx context.Context, vm *computev1alpha1.V
 	status.ObservedGeneration = gen
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
 	status.Conditions = conditions.Set(status.GetConditions(), stopped, s.clock.Now())
+	shares, err := s.ownSharesOnNode(ctx, vm.GetMetadata().GetUid(), m, gen)
+	if err != nil {
+		return err
+	}
+	status.Conditions = setOrDrop(status.GetConditions(), FileSharesOnNode, shares, s.clock.Now())
 	status.RootDisk = vmRootDisk(vm)
 	status.Placement = placementOf(vm.GetMetadata().GetUid(), m, node)
 	status.Interfaces = nil
@@ -557,7 +582,7 @@ func (s *Server) reportVirtualMachine(ctx context.Context, vm *computev1alpha1.V
 	}
 	rv := vm.GetMetadata().GetResourceVersion()
 	key := resource.Key{Project: vm.GetMetadata().GetProject(), Name: vm.GetMetadata().GetName()}
-	_, err := s.backend(registry.VirtualMachine).UpdateStatus(s.system(ctx), key, status, &rv)
+	_, err = s.backend(registry.VirtualMachine).UpdateStatus(s.system(ctx), key, status, &rv)
 	return err
 }
 

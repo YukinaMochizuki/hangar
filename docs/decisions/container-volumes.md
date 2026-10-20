@@ -37,13 +37,18 @@ gives the semantics users already know.
   give, and is refused, as `tmpfs` is until it is built; both are refused
   by name, not as unknown.
 - **`source` names a Disk, or what `sourceKind` says.** `sourceKind` is
-  Hangar's, not Compose's: empty is `Disk`, the only kind built so far.
-  `FileShare` (`file-shares.md`) is the other, the service side written
-  the same way, mounted over NFS `nosuid,nodev` and never filled from the
-  image; what backs a volume is chosen where Compose
-  chooses it, by the top-level volume's driver, which the translator maps
-  to the kind. Two kinds keep their own names, so a source never depends on
-  which kind happens to hold a name.
+  Hangar's, not Compose's: empty is `Disk`. `FileShare` (`file-shares.md`)
+  is the other, the service side written the same way: its machine
+  declares the share, `volume.nocopy` is implied and `volume.subpath`
+  allowed. It is mounted over NFS `nosuid,nodev` and never filled from the
+  image, once the node mounts shares, which it does not yet. A container
+  never runs with a share unmounted, as its process would write to its
+  root disk at the target: one declaring a share on no node yet is held
+  back (`MachineHeldBack`), and its node refuses to boot one it cannot
+  mount. What backs a volume is chosen where Compose chooses it, by the
+  top-level volume's driver, which the translator maps to the kind. Two
+  kinds keep their own names, so a source never depends on which kind
+  happens to hold a name.
 - **A Disk is a Compose named volume on one node.** One machine has it at
   a time, so a disk shared between services, and a service with replicas
   and a volume, cannot be expressed; both wait for `FileShare`. A

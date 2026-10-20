@@ -91,7 +91,11 @@ func (s *Server) onboard(ctx context.Context, p auth.Principal, username, displa
 	defer s.users.Unlock()
 	s.plans.Lock()
 	defer s.plans.Unlock()
-	ctx = holding(s.system(ctx), &s.users, &s.plans)
+	// The default network's writes hold attach, which every write waiting
+	// for this transaction may hold: it is taken before the transaction.
+	s.attach.Lock()
+	defer s.attach.Unlock()
+	ctx = holding(s.system(ctx), &s.users, &s.plans, &s.attach)
 	res := &iamv1alpha1.SignUpResponse{}
 	err := s.atomically(ctx, func(ctx context.Context) error {
 		inv, err := s.invitationOf(ctx, p.ID)

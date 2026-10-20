@@ -138,6 +138,9 @@ type kindHooks struct {
 	// apiserver's own, whatever the caller's roles, before anything else is
 	// done; it is what the refusal tells the caller.
 	neverDeleted string
+	// initialStatus, if set, returns the status every new object of the
+	// kind is stored with, in place of none.
+	initialStatus func() proto.Message
 	// finalizers are added to every new object of the kind; the controller
 	// that owns each removes it.
 	finalizers []string
@@ -315,8 +318,11 @@ func hooksFor(r registry.Resource) kindHooks {
 		}
 	case registry.Container.Kind:
 		// Deleting a container waits for its machine to be gone from the
-		// node, so the deletion a client watches is the real one.
-		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer, cascades: true}
+		// node, so the deletion a client watches is the real one. Its writes
+		// hold attach: the shares it declares are checked against it, and it
+		// against them.
+		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer, cascades: true,
+			writeLocks: only(attachLock)}
 	case registry.Machine.Kind:
 		// A machine is owned by the object it was made from, which is
 		// already owned by the project.
@@ -339,6 +345,22 @@ func hooksFor(r registry.Resource) kindHooks {
 			nodeOf:       func(obj proto.Message) string { return obj.(*storagev1alpha1.Disk).GetStatus().GetNode() },
 			writeLocks:   only(attachLock),
 		}
+	case registry.FileShare.Kind:
+		// It is Pending from its creation; its node reports on it once its
+		// server is placed there. Its writes hold attach: the networks it may
+		// leave or join are checked against what declares it and the
+		// networks being deleted, and those against it.
+		return kindHooks{
+			target:       projectTarget,
+			owner:        ownedByProject,
+			validate:     validateFileShare,
+			beforeDelete: refuseDeletingDeclaredShare,
+			initialStatus: func() proto.Message {
+				return &storagev1alpha1.FileShareStatus{Phase: storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_PENDING}
+			},
+			nodeOf:     func(obj proto.Message) string { return obj.(*storagev1alpha1.FileShare).GetStatus().GetNode() },
+			writeLocks: only(attachLock),
+		}
 	case registry.Image.Kind:
 		// Platform administrators keep the catalogue that every tenant
 		// makes disks from.
@@ -358,9 +380,10 @@ func hooksFor(r registry.Resource) kindHooks {
 		}
 	case registry.VirtualMachine.Kind:
 		// Deleting a VM waits for its machine to be gone from the node, and
-		// for a root disk it owns. Its applies and deletes hold Disk's lock:
+		// for a root disk it owns. Its applies and deletes hold attach:
 		// whether its root disk is owned by it is checked against it, both
-		// ways (checkRootDiskOwner, refuseDeletingUnsettledVM).
+		// ways (checkRootDiskOwner, refuseDeletingUnsettledVM), and so are
+		// the file shares it declares.
 		return kindHooks{
 			target:       projectTarget,
 			owner:        ownedByProject,
@@ -393,12 +416,15 @@ func hooksFor(r registry.Resource) kindHooks {
 			claim:    endpointClaim,
 		}
 	case registry.Network.Kind:
+		// Its writes hold attach: whether a share is on it is checked
+		// against the shares, and a share joining it against it.
 		return kindHooks{
 			target:       projectTarget,
 			owner:        ownedByProject,
 			validate:     validateNetwork,
 			beforeDelete: refuseDeletingInUse,
 			finalizers:   []string{NetworkInUseFinalizer},
+			writeLocks:   only(attachLock),
 		}
 	case registry.SecurityGroup.Kind:
 		return kindHooks{
@@ -702,6 +728,10 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	if err := validateContainerVolumes(spec.GetVolumes()); err != nil {
 		return err
 	}
+	if err := s.checkShareReach(ctx, meta.GetProject(), "container "+meta.GetName(), interfaceNetworks(spec.GetInterfaces()),
+		containerShares(spec.GetVolumes())); err != nil {
+		return err
+	}
 	if err := s.validateContainerResources(ctx, old, spec.GetResources()); err != nil {
 		return err
 	}
@@ -744,6 +774,17 @@ func (s *Server) validateInterfaces(ctx context.Context, project string, nics []
 		}
 	}
 	return nil
+}
+
+// interfaceNetworks are the networks a Container's or VirtualMachine's
+// interfaces are on, as its machine has them: the default network when it
+// names none.
+func interfaceNetworks(nics []*computev1alpha1.NetworkInterface) []string {
+	var out []string
+	for _, nic := range machineInterfaces(nics) {
+		out = append(out, nic.GetNetwork())
+	}
+	return out
 }
 
 // validateContainerResources checks the quantities a container asks for,
@@ -914,7 +955,10 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	if old != nil {
 		oldSpec = old.(*computev1alpha1.Machine).GetSpec()
 	}
-	return s.checkAttaching(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec)
+	if err := s.checkAttaching(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec); err != nil {
+		return err
+	}
+	return s.checkDeclaring(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec)
 }
 
 // privateIPv4 are the RFC 1918 ranges networks may use.

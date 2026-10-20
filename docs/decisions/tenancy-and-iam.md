@@ -283,13 +283,13 @@ tenant's: what all its projects together hold, against its Plan.
 
 - `Plan` is a global kind only platform administrators read and write. Its
   `spec.limits` caps cpu, memory, disk, machines, projects, networks,
-  addresses, public endpoints and service tokens; a field left unset has no
-  limit. A tenant with an empty `spec.plan` has the plan `default`, a
-  trial's, which the apiserver makes the first time it starts on a store,
-  with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5 projects, 5
-  networks, 5 addresses, 10 public endpoints and 10 service tokens.
-  File shares, once built, add `fileShares` (3 on the default plan) and
-  count their sizes as disk (`file-shares.md`). The
+  addresses, public endpoints, service tokens and file shares; a field left
+  unset has no limit. A tenant with an empty `spec.plan` has the plan
+  `default`, a trial's, which the apiserver makes the first time it starts
+  on a store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
+  projects, 5 networks, 5 addresses, 10 public endpoints, 10 service
+  tokens and 3 file shares (`fileShares`). A file share's size counts as
+  disk, and its server toward no limit (`file-shares.md`). The
   default limits are data from then on: the administrator changes them
   with apply. Paying users get a larger plan, through their Invitation or
   their User. The default plan, and a plan a tenant, a User or an
@@ -305,12 +305,13 @@ tenant's: what all its projects together hold, against its Plan.
   for. cpu and memory count only machines asked to run; a stopped machine
   counts its disk and its place among machines (the AWS and GCP model), so
   starting one is checked and can be refused. Disk is containers' disks,
-  Disks, and the root disks VMs have made from images. Such a root disk
-  counts once, by its VM: the size the VM asks for, or, once the Disk
-  exists, the larger of that and the Disk's spec and status sizes. So
+  Disks, FileShares, and the root disks VMs have made from images. Such a
+  root disk counts once, by its VM: the size the VM asks for, or, once the
+  Disk exists, the larger of that and the Disk's spec and status sizes. So
   shrinking the VM's size frees nothing the disk still holds, and growing
-  the Disk itself raises the VM's count and is checked. A project counts its
-  `default` network from the moment it is created.
+  the Disk itself raises the VM's count and is checked. A FileShare counts
+  as a Disk does, the larger of its spec and status sizes. A project counts
+  its `default` network from the moment it is created.
 - Admission refuses, with `ResourceExhausted`, a write that would take a
   tenant or project past a limit, naming the limit, its value, the usage and
   what the write would bring it to. Only what the write raises is checked:

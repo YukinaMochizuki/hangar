@@ -131,10 +131,14 @@ type Server struct {
 	// interface addresses, a network's transit link) and the release of a
 	// network. Whoever holds both takes ipam first.
 	ipam sync.Mutex
-	// attach serializes every apply and delete of machines and disks, from
-	// the admission checks to the write, so a disk is attached to one
-	// machine at a time and never to one being deleted. The backend takes it
-	// last, under ipam and capacity.
+	// attach serializes every apply and delete of machines, containers,
+	// virtual machines, disks, file shares and networks, from the admission
+	// checks to the write, so a disk is attached to one machine at a time
+	// and never to one being deleted, and a share never leaves a network
+	// what declares it mounts it from nor stays on one deleted. The backend
+	// takes it under ipam and capacity; onboarding, whose transaction writes
+	// a network, takes it after users and plans and before the transaction,
+	// which every other write waits for.
 	attach sync.Mutex
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.

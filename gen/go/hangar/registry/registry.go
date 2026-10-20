@@ -191,6 +191,16 @@ var (
 		Message:    (*v1alpha14.Disk)(nil).ProtoReflect().Type(),
 		Service:    "hangar.storage.v1alpha1.DiskService",
 	}
+	FileShare = Resource{
+		Group:      "storage",
+		Version:    "v1alpha1",
+		Kind:       "FileShare",
+		Plural:     "fileshares",
+		ShortNames: []string{"fs"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha14.FileShare)(nil).ProtoReflect().Type(),
+		Service:    "hangar.storage.v1alpha1.FileShareService",
+	}
 	Image = Resource{
 		Group:      "storage",
 		Version:    "v1alpha1",
@@ -250,6 +260,7 @@ var All = []Resource{
 	SecurityGroup,
 	Secret,
 	Disk,
+	FileShare,
 	Image,
 	Plan,
 	Project,

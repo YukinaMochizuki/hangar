@@ -140,10 +140,13 @@ export type ContainerSpec = Message<"hangar.compute.v1alpha1.ContainerSpec"> & {
   imagePullSecrets: string[];
 
   /**
-   * The Disks the container mounts, at most 8, as a Compose service's
-   * volumes in their long syntax. A disk is mounted by one machine at a
-   * time, and pins the container to the disk's node. Changing them restarts
-   * the container. See docs/decisions/container-volumes.md.
+   * The Disks and FileShares the container mounts, at most 8, as a Compose
+   * service's volumes in their long syntax. A disk is mounted by one
+   * machine at a time, and pins the container to the disk's node; a share
+   * must be on one of its networks and on a node, to which it pins the
+   * container; one on no node yet holds the container back.
+   * Changing them restarts the container. See
+   * docs/decisions/container-volumes.md.
    *
    * @generated from field: repeated hangar.compute.v1alpha1.ContainerVolume volumes = 11;
    */
@@ -180,8 +183,9 @@ export type ContainerVolume = Message<"hangar.compute.v1alpha1.ContainerVolume">
   source: string;
 
   /**
-   * The kind source names. Hangar's, not Compose's: empty is "Disk", the
-   * only kind for now.
+   * The kind source names. Hangar's, not Compose's: "Disk", which empty
+   * means, or "FileShare", which is mounted over NFS, nosuid and nodev,
+   * and never filled from the image.
    *
    * @generated from field: string source_kind = 3;
    */
@@ -222,7 +226,7 @@ export const ContainerVolumeSchema: GenMessage<ContainerVolume> = /*@__PURE__*/
 export type ContainerVolumeOptions = Message<"hangar.compute.v1alpha1.ContainerVolumeOptions"> & {
   /**
    * Leaves a new volume empty, rather than filled with what the image has
-   * at the target.
+   * at the target. Always so for a file share.
    *
    * @generated from field: bool nocopy = 1;
    */

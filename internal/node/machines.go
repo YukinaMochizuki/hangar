@@ -669,10 +669,15 @@ func runSpec(boot *computev1alpha1.ContainerBoot, image driver.ImageConfig) driv
 // mounts are the volumes a container machine's guest mounts, each by its
 // index in the machine's disks, in the order volumes ensures them. A volume
 // of a disk the machine does not list holds it up: it would run without it.
+// So does a file share, which this node cannot mount yet
+// (docs/decisions/file-shares.md).
 func mounts(spec *computev1alpha1.MachineSpec) ([]driver.Mount, error) {
 	disks := computeapi.MachineDisks(spec)
 	var out []driver.Mount
 	for _, v := range spec.GetContainer().GetVolumes() {
+		if v.GetFileShare() != "" {
+			return nil, fmt.Errorf("file share %s at %s cannot be mounted: this node does not mount file shares yet", v.GetFileShare(), v.GetTarget())
+		}
 		i := slices.Index(disks, v.GetDisk())
 		if i < 0 {
 			return nil, fmt.Errorf("volume %s at %s is not one of the machine's disks", v.GetDisk(), v.GetTarget())

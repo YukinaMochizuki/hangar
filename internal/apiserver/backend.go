@@ -598,6 +598,9 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	meta.Generation = 1
 	meta.DeleteTime = nil
 	object.SetStatus(in, nil)
+	if b.hooks.initialStatus != nil {
+		object.SetStatus(in, b.hooks.initialStatus())
+	}
 	if b.hooks.seal != nil {
 		if err := b.hooks.seal(b.s, nil, in); err != nil {
 			return resource.ApplyResult{}, err

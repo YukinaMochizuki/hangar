@@ -56,7 +56,11 @@ addresses from the apiserver; every project has a `default` network. A
 one machine at a time; it lives on the node of the first machine it was
 attached to, and every later machine with it goes there. A disk is blank or
 a copy of a global `Image`, a distribution's disk image that platform
-administrators add to the catalogue by URL and sha256. A global
+administrators add to the catalogue by URL and sha256. A `FileShare` is a
+filesystem of a project on one to eight of its networks, which the
+machines that declare it, a container as a volume and a VM in its spec,
+are to mount over NFS from a server microVM of the platform's; only its
+API is built so far (`decisions/file-shares.md`). A global
 `MachineSize`, also the administrators' and read by all, is a template of
 cpu, memory and disk that clients fill a new machine's from, and that
 admission holds tenants' machines to; a machine does not record its size

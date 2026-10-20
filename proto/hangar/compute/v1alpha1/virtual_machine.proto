@@ -53,6 +53,19 @@ message VirtualMachineSpec {
   // on the VM's first boot only, so changing it neither restarts the VM
   // nor runs again in it. See docs/decisions/vm-boot.md.
   string user_data = 7;
+  // The FileShares the VM may mount, at most 8, each once and on one of its
+  // networks. The VM mounts them itself, from the address the share has on
+  // its network; the platform writes nothing into its operating system.
+  // Changing them restarts nothing. See docs/decisions/file-shares.md.
+  repeated VirtualMachineFileShare file_shares = 8;
+}
+
+// VirtualMachineFileShare is a FileShare a VM declares.
+message VirtualMachineFileShare {
+  // Names a FileShare in the VM's project.
+  string name = 1;
+  // The share's server exports it to the VM read-only.
+  bool read_only = 2;
 }
 
 // VirtualMachineResources sizes the VM. Each field is a quantity in
