@@ -574,6 +574,57 @@ Settled with the owner on screenshots before the pages read the API.
   token pages have no controls, and an object page's CLI lists only the
   commands the caller may run.
 
+### Platform monitoring
+
+Settled with the owner on screenshots of mock data before the page read the
+API (`monitoring.md`).
+
+- **One page, `/platform/monitoring`, for platform administrators**
+  (`web/src/pages/monitoring.tsx`). The sidebar's Platform group lists it
+  only when `TestPermissions` at the platform holds
+  `platform.monitoring.read` (`useMayReadMonitoring` in
+  `web/src/lib/permissions.ts`); while the answer is unknown or failed it is
+  hidden, and nothing is said. Opened without the permission, the page
+  states that the account's roles do not include it. A platform page
+  belongs to no project: its sidebar holds the Platform group alone, under a
+  switcher that reads "Platform · Every tenant", and its crumbs name no
+  tenant or project. The palette keeps the project used last as its place.
+- **What it shows, densest first.** Under the title, on one line, the
+  hosts it reads and when Prometheus was asked. Then the alerts firing, full
+  width, one line each, most severe and then oldest first, or one line
+  saying none fire. Then a card per layer, each with its LED and its word
+  (OK, Warning, Critical, No data): Reachability and Machines for the
+  platform, Host and Platform services for each node, named by the node.
+  Then six charts over 1h, 24h or 7d (`?range=` opens one): the host's
+  CPU, memory and pools, and the API's requests, errors and p99. With more
+  than one node a node picker beside the range chooses whose host the
+  first three show, and each further node's two cards sit under the first
+  ones.
+- **The cards are packed, not rowed.** On two columns Reachability tops the
+  first node's Host and its Services tops Machines; on three the short two
+  stack in the first column beside Host and Machines, the first row as tall
+  as Reachability alone, so no short card leaves a gap beside a tall one.
+  Rows are as dense as the project picker's.
+- **What a value means is the API's.** A check's name and value are shown
+  as the apiserver words them, and its state as the API gives it; a check
+  Prometheus has no data for is grey, "no data". Machines are counted by
+  phase, the six phases in the API's order, with those blocked by the
+  platform, those ended by their own program and those in a crash loop;
+  Failed is red only while the platform caused a failure, as a program's
+  own alerts no one. No tenant, project or machine is named: the CLI line
+  to list them on the host's admin socket is beside the counts.
+- **Charts are inline SVG** (`web/src/components/series-chart.tsx`): no chart
+  library, and nothing the Content-Security-Policy refuses. Points are
+  placed by time over the range ending now, a step without a point breaks
+  the line, and the API's `alert_above`, when it gives one, is a dashed line
+  named in the header; HOST_CPU has none and draws none. A series with no
+  point in the range says so in the plot.
+- **When Prometheus is not there**, the API answers Unavailable: one notice
+  stands where the cards and charts would be, with the API's message, and
+  the alerts, which Alertmanager answers, stay. An Alertmanager not there is
+  one line in the alerts card. Unavailable is not retried at once; the page
+  asks again every 30 s (charts every 60 s), as lists do.
+
 ### How the session reaches the API, and CSRF
 
 - **One origin.** hangar-edge serves the console's files and the API's paths

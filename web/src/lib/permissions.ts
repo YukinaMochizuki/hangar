@@ -6,7 +6,11 @@
 import { useQuery, useTransport, createQueryOptions } from "@connectrpc/connect-query";
 import { skipToken, useQueries } from "@tanstack/react-query";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
+import { create } from "@bufbuild/protobuf";
+import { EmptySchema } from "@bufbuild/protobuf/wkt";
+import { BindingScopeSchema } from "@hangar/api/hangar/iam/v1alpha1/role_binding_pb";
 import { toBindingScope, type Scope } from "@/lib/members";
+import { monitoringPermission } from "@/lib/monitoring";
 
 /**
  * Which of the permissions the caller holds at the scope, asked in one call.
@@ -32,6 +36,19 @@ export const machinePerms = { container: "compute.containers.apply", vm: "comput
 export function useMayCreateMachines(project: string): { container: boolean; vm: boolean } {
   const { can } = useCan({ level: "project", name: project }, [machinePerms.container, machinePerms.vm]);
   return { container: can(machinePerms.container), vm: can(machinePerms.vm) };
+}
+
+const platformScope = create(BindingScopeSchema, { target: { case: "platform", value: create(EmptySchema) } });
+
+/**
+ * Whether the caller may read the platform's monitoring
+ * (`platform.monitoring.read`, which only platform.root holds), asked of
+ * TestPermissions at the platform and held, as useCan holds a permission,
+ * only once the answer came and named it.
+ */
+export function useMayReadMonitoring() {
+  const q = useQuery(AccountService.method.testPermissions, { scope: platformScope, permissions: [monitoringPermission] }, { staleTime: 30_000, retry: false });
+  return { may: q.data?.permissions.includes(monitoringPermission) ?? false, known: q.isSuccess, settled: q.isSuccess || q.isError, error: q.error };
 }
 
 /**
