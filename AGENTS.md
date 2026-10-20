@@ -39,6 +39,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make e2e-host` | Real-host tests (L4): boots guests as root, on a disposable testbed VM only |
 | `make dev` | Run the apiserver locally in dev auth mode |
 | `make lint-sh` | shellcheck every shell script (part of `make check`) |
+| `make test-monitoring` | promtool checks and tests the host's alerting rules, and promtool and amtool the monitoring configuration `deploy/host` writes (part of `make check`) |
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
 | `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
 | `make tools` | Print the pinned tool versions |

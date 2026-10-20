@@ -14,6 +14,10 @@ STATE_DIR=/var/lib/hangar-bootstrap
 INITRAMFS_MARKER=$STATE_DIR/initramfs-pending
 INITRAMFS_PENDING=0
 ROLLBACK_UNIT=hangar-netplan-rollback
+# The quota of Prometheus's dataset (the monitoring step's), here because the
+# services step counts it in what root disks may not take from the pool.
+# shellcheck disable=SC2034
+MON_TSDB_QUOTA=20G
 # The host's settings, which bootstrap.sh and verify.sh read unless --env
 # names another file: its uplink, addresses, disks, quotas and Node name
 # (deploy/host/host.env.example lists them). It is kept by the operator, not
@@ -226,6 +230,24 @@ load_env() {
 	if [ -n "${HANGAR_UPGRADES_TZ:-}" ]; then
 		[[ $HANGAR_UPGRADES_TZ =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$HANGAR_UPGRADES_TZ" ] ||
 			die "HANGAR_UPGRADES_TZ must be a time zone in /usr/share/zoneinfo, such as Europe/Paris or UTC, not $HANGAR_UPGRADES_TZ"
+	fi
+	# Optional, the monitoring step's: the Telegram chat alerts go to, a
+	# number (a group's is negative); without it alerts reach no one. The
+	# time zone of the daily window warnings are sent in, which an
+	# Alertmanager location takes; HANGAR_UPGRADES_TZ's, else UTC, without
+	# it. The Telegram API's address, which only a testbed sets, to a
+	# stand-in on loopback.
+	if [ -n "${HANGAR_ALERTS_TELEGRAM_CHAT_ID:-}" ]; then
+		[[ $HANGAR_ALERTS_TELEGRAM_CHAT_ID =~ ^-?[1-9][0-9]*$ ]] ||
+			die "HANGAR_ALERTS_TELEGRAM_CHAT_ID must be a Telegram chat id, a whole number such as -1001234567890, not $HANGAR_ALERTS_TELEGRAM_CHAT_ID"
+	fi
+	if [ -n "${HANGAR_ALERTS_TZ:-}" ]; then
+		[[ $HANGAR_ALERTS_TZ =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$HANGAR_ALERTS_TZ" ] ||
+			die "HANGAR_ALERTS_TZ must be a time zone in /usr/share/zoneinfo, such as Europe/Paris or UTC, not $HANGAR_ALERTS_TZ"
+	fi
+	if [ -n "${HANGAR_ALERTS_TELEGRAM_API_URL:-}" ]; then
+		[[ $HANGAR_ALERTS_TELEGRAM_API_URL =~ ^(https://[A-Za-z0-9.-]+|http://127\.0\.0\.1)(:[0-9]+)?$ ]] ||
+			die "HANGAR_ALERTS_TELEGRAM_API_URL must be https://HOST[:PORT], or http://127.0.0.1:PORT for a stand-in, not $HANGAR_ALERTS_TELEGRAM_API_URL"
 	fi
 	# Optional; the sshd step lets in ubuntu alone without it. It ends up in
 	# sshd's AllowUsers, where a pattern would let in more than it names, and

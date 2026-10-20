@@ -1,0 +1,440 @@
+# promtool test rules for deploy/host/monitoring/rules/host.yml: each alert
+# fires on what it is for, at the severity it is routed by, and stays quiet
+# on what it is not for. make test-monitoring runs them.
+rule_files:
+  - ../rules/host.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: a pool that is not online is critical; online is quiet
+    interval: 1m
+    input_series:
+      - series: 'node_zfs_zpool_state{job="node",instance="h",zpool="hangar",state="online"}'
+        values: '1x5 0x5'
+      - series: 'node_zfs_zpool_state{job="node",instance="h",zpool="hangar",state="degraded"}'
+        values: '0x5 1x5'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: ZpoolNotOnline
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: ZpoolNotOnline
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, zpool: hangar, state: degraded}
+            exp_annotations:
+              summary: "ZFS pool hangar is degraded"
+              description: "zpool status hangar says which device; docs/runbook/host-bootstrap.md."
+
+  - name: data errors are critical, device errors a warning
+    interval: 1m
+    input_series:
+      - series: 'hangar_zpool_data_errors{job="node",instance="h",zpool="hangar"}'
+        values: '0 0 2'
+      - series: 'hangar_zpool_device_errors{job="node",instance="h",zpool="hangar",type="checksum"}'
+        values: '0 3 3'
+      - series: 'hangar_zpool_device_errors{job="node",instance="h",zpool="hangar",type="read"}'
+        values: '0 0 0'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: ZpoolDataErrors
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: ZpoolDataErrors
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, zpool: hangar}
+            exp_annotations:
+              summary: "ZFS pool hangar has 2 permanent data errors"
+              description: "zpool status -v hangar lists the files."
+      - eval_time: 1m
+        alertname: ZpoolDeviceErrors
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, zpool: hangar, type: checksum}
+            exp_annotations:
+              summary: "ZFS pool hangar counts 3 checksum errors on its devices"
+              description: "The mirror repaired them, but a disk is going; zpool status hangar says which. zpool clear once it is dealt with."
+
+  - name: a pool past 80% is a warning, past 90% critical, and never both
+    interval: 1m
+    input_series:
+      - series: 'hangar_zpool_size_bytes{job="node",instance="h",zpool="hangar"}'
+        values: '1000x80'
+      - series: 'hangar_zpool_allocated_bytes{job="node",instance="h",zpool="hangar"}'
+        values: '700x10 850x40 950x30'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ZpoolFilling
+        exp_alerts: []
+      - eval_time: 45m
+        alertname: ZpoolFilling
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, zpool: hangar}
+            exp_annotations:
+              summary: "ZFS pool hangar is 85% full"
+      - eval_time: 45m
+        alertname: ZpoolAlmostFull
+        exp_alerts: []
+      - eval_time: 60m
+        alertname: ZpoolAlmostFull
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, zpool: hangar}
+            exp_annotations:
+              summary: "ZFS pool hangar is 95% full"
+      - eval_time: 60m
+        alertname: ZpoolFilling
+        exp_alerts: []
+
+  - name: pool metrics not read for 15 minutes are a warning
+    interval: 1m
+    input_series:
+      # The textfile's timestamp stops moving at 10m.
+      - series: 'hangar_zpool_metrics_timestamp_seconds{job="node",instance="h"}'
+        values: '0+60x10 600x20'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ZpoolMetricsStale
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: ZpoolMetricsStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h}
+            exp_annotations:
+              summary: "The pools' size and errors were last read 20m 0s ago"
+              description: "systemctl status hangar-zpool-metrics.service says why."
+
+  - name: hangar/images past 90% of its quota is critical; other datasets are not it
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_size_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/images",fstype="zfs",device="hangar/images"}'
+        values: '100x30'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/images",fstype="zfs",device="hangar/images"}'
+        values: '50x10 5x20'
+      - series: 'node_filesystem_size_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/vms",fstype="zfs",device="hangar/vms"}'
+        values: '100x30'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="h",mountpoint="/var/lib/hangar/vms",fstype="zfs",device="hangar/vms"}'
+        values: '1x30'
+    alert_rule_test:
+      - eval_time: 20m
+        alertname: ImagesQuotaAlmostFull
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: ImagesQuotaAlmostFull
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, mountpoint: /var/lib/hangar/images, fstype: zfs, device: hangar/images}
+            exp_annotations:
+              summary: "hangar/images is 95% of its quota"
+              description: "Image pulls fail once it is full; docs/runbook/host-bootstrap.md, Quotas."
+      # A ZFS dataset is the pool's to alert on, not the filesystem alerts'.
+      - eval_time: 26m
+        alertname: FilesystemAlmostFull
+        exp_alerts: []
+
+  - name: a filesystem past 80% is a warning, past 90% critical
+    interval: 1m
+    input_series:
+      - series: 'node_filesystem_size_bytes{job="node",instance="h",mountpoint="/",fstype="ext4",device="/dev/md1"}'
+        values: '100x70'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="h",mountpoint="/",fstype="ext4",device="/dev/md1"}'
+        values: '30x5 15x40 5x20'
+      - series: 'node_filesystem_size_bytes{job="node",instance="h",mountpoint="/run",fstype="tmpfs",device="tmpfs"}'
+        values: '100x70'
+      - series: 'node_filesystem_avail_bytes{job="node",instance="h",mountpoint="/run",fstype="tmpfs",device="tmpfs"}'
+        values: '1x70'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FilesystemFilling
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, mountpoint: /, fstype: ext4, device: /dev/md1}
+            exp_annotations:
+              summary: "Filesystem / is 85% full"
+      - eval_time: 40m
+        alertname: FilesystemAlmostFull
+        exp_alerts: []
+      - eval_time: 55m
+        alertname: FilesystemAlmostFull
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, mountpoint: /, fstype: ext4, device: /dev/md1}
+            exp_annotations:
+              summary: "Filesystem / is 95% full"
+
+  - name: a degraded or failed md array is critical
+    interval: 1m
+    input_series:
+      - series: 'node_md_disks_required{job="node",instance="h",device="md127"}'
+        values: '2x10'
+      - series: 'node_md_disks{job="node",instance="h",device="md127",state="active"}'
+        values: '2x3 1x6'
+      - series: 'node_md_disks{job="node",instance="h",device="md127",state="failed"}'
+        values: '0x3 1x6'
+      - series: 'node_md_state{job="node",instance="h",device="md127",state="active"}'
+        values: '1x10'
+      - series: 'node_md_state{job="node",instance="h",device="md127",state="inactive"}'
+        values: '0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MdArrayDegraded
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: MdArrayDegraded
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, device: md127}
+            exp_annotations:
+              summary: "md array md127 is degraded"
+              description: "cat /proc/mdstat; mdadm --detail /dev/md127."
+
+  - name: an md array short of a disk is critical without one marked failed
+    interval: 1m
+    input_series:
+      - series: 'node_md_disks_required{job="node",instance="h",device="md127"}'
+        values: '2x5'
+      - series: 'node_md_disks{job="node",instance="h",device="md127",state="active"}'
+        values: '1x5'
+      - series: 'node_md_disks{job="node",instance="h",device="md127",state="failed"}'
+        values: '0x5'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: MdArrayDegraded
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, device: md127}
+            exp_annotations:
+              summary: "md array md127 is degraded"
+              description: "cat /proc/mdstat; mdadm --detail /dev/md127."
+
+  - name: SMART failures and media errors are critical, wear and heat warnings
+    interval: 1m
+    input_series:
+      - series: 'smartctl_device_smart_status{job="smartctl",instance="h",device="nvme0"}'
+        values: '1 0'
+      - series: 'smartctl_device_critical_warning{job="smartctl",instance="h",device="nvme1"}'
+        values: '0 4'
+      - series: 'smartctl_device_media_errors{job="smartctl",instance="h",device="nvme0"}'
+        values: '0 1'
+      - series: 'smartctl_device_percentage_used{job="smartctl",instance="h",device="nvme0"}'
+        values: '80 81'
+      - series: 'smartctl_device_temperature{job="smartctl",instance="h",device="nvme0",temperature_type="current"}'
+        values: '75x20'
+      - series: 'smartctl_device_temperature{job="smartctl",instance="h",device="nvme1",temperature_type="current"}'
+        values: '50x20'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: SmartFailed
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SmartFailed
+        exp_alerts:
+          - exp_labels: {severity: critical, job: smartctl, instance: h, device: nvme0}
+            exp_annotations:
+              summary: "Disk nvme0 fails its SMART health check"
+              description: "smartctl -a /dev/nvme0."
+          - exp_labels: {severity: critical, job: smartctl, instance: h, device: nvme1}
+            exp_annotations:
+              summary: "Disk nvme1 fails its SMART health check"
+              description: "smartctl -a /dev/nvme1."
+      - eval_time: 1m
+        alertname: SmartMediaErrors
+        exp_alerts:
+          - exp_labels: {severity: critical, job: smartctl, instance: h, device: nvme0}
+            exp_annotations:
+              summary: "Disk nvme0 has 1 media errors"
+              description: "smartctl -a /dev/nvme0."
+      - eval_time: 0m
+        alertname: SmartWearHigh
+        exp_alerts: []
+      - eval_time: 1m
+        alertname: SmartWearHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: smartctl, instance: h, device: nvme0}
+            exp_annotations:
+              summary: "Disk nvme0 has used 81% of its rated endurance"
+      - eval_time: 16m
+        alertname: DiskTemperatureHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: smartctl, instance: h, device: nvme0, temperature_type: current}
+            exp_annotations:
+              summary: "Disk nvme0 is at 75°C"
+
+  - name: a sensor at its maximum is a warning; one with no maximum is not
+    interval: 1m
+    input_series:
+      - series: 'node_hwmon_temp_celsius{job="node",instance="h",chip="platform_coretemp_0",sensor="temp1"}'
+        values: '90x20'
+      - series: 'node_hwmon_temp_max_celsius{job="node",instance="h",chip="platform_coretemp_0",sensor="temp1"}'
+        values: '85x20'
+      - series: 'node_hwmon_temp_celsius{job="node",instance="h",chip="platform_coretemp_0",sensor="temp2"}'
+        values: '40x20'
+      - series: 'node_hwmon_temp_max_celsius{job="node",instance="h",chip="platform_coretemp_0",sensor="temp2"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 16m
+        alertname: SensorTemperatureHigh
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, chip: platform_coretemp_0, sensor: temp1}
+            exp_annotations:
+              summary: "Sensor platform_coretemp_0 temp1 is at 90°C, at or past its maximum"
+
+  - name: memory counts what the ARC gives back, and lasting pressure is critical
+    interval: 1m
+    input_series:
+      # 512 MiB available, but 4 GiB of ARC above its minimum: no alert.
+      - series: 'node_memory_MemAvailable_bytes{job="node",instance="h"}'
+        values: '536870912x30'
+      - series: 'node_zfs_arc_size{job="node",instance="h"}'
+        values: '5368709120x15 1073741824x15'
+      - series: 'node_zfs_arc_c_min{job="node",instance="h"}'
+        values: '1073741824x30'
+      # Stalled 20% of every second from 10m on.
+      - series: 'node_pressure_memory_stalled_seconds_total{job="node",instance="h"}'
+        values: '0x10 0+12x20'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: HostMemoryLow
+        exp_alerts: []
+      - eval_time: 27m
+        alertname: HostMemoryLow
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h}
+            exp_annotations:
+              summary: "The host has 512MiB of memory left"
+      - eval_time: 12m
+        alertname: HostMemoryPressure
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: HostMemoryPressure
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h}
+            exp_annotations:
+              summary: "Tasks on the host stall on memory 20% of the time"
+
+  - name: an unsynchronised clock is a warning
+    interval: 1m
+    input_series:
+      - series: 'node_timex_sync_status{job="node",instance="h"}'
+        values: '1x5 0x20'
+      - series: 'node_timex_offset_seconds{job="node",instance="h"}'
+        values: '0x25'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ClockNotSynchronised
+        exp_alerts: []
+      - eval_time: 21m
+        alertname: ClockNotSynchronised
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h}
+            exp_annotations:
+              summary: "The host's clock is not synchronised"
+              description: "timedatectl timesync-status."
+
+  - name: a unit not active for 2 minutes is critical
+    interval: 1m
+    input_series:
+      - series: 'node_systemd_unit_state{job="node",instance="h",name="hangar-node.service",state="active",type="simple"}'
+        values: '1x3 0x5'
+      - series: 'node_systemd_unit_state{job="node",instance="h",name="hangar-apiserver.service",state="active",type="exec"}'
+        values: '1x8'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: UnitNotActive
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: UnitNotActive
+        exp_alerts:
+          - exp_labels: {severity: critical, job: node, instance: h, name: hangar-node.service, state: active, type: simple}
+            exp_annotations:
+              summary: "hangar-node.service is not active"
+              description: "systemctl status hangar-node.service; journalctl -u hangar-node.service."
+
+  - name: more than 3 restarts in an hour is a warning; 3 is not
+    interval: 5m
+    input_series:
+      # Four restarts from 65m to 80m.
+      - series: 'node_systemd_service_restart_total{job="node",instance="h",name="hangar-edge.service"}'
+        values: '0x12 1 2 3 4x5'
+      # Three restarts within ten minutes.
+      - series: 'node_systemd_service_restart_total{job="node",instance="h",name="hangar-node.service"}'
+        values: '5x14 6 7 8x5'
+    alert_rule_test:
+      - eval_time: 75m
+        alertname: UnitRestartingOften
+        exp_alerts: []
+      - eval_time: 85m
+        alertname: UnitRestartingOften
+        exp_alerts:
+          - exp_labels: {severity: warning, job: node, instance: h, name: hangar-edge.service}
+            exp_annotations:
+              summary: "hangar-edge.service restarted 4 times in the last hour"
+              description: "journalctl -u hangar-edge.service."
+
+  - name: a monitoring target down for 2 minutes is critical
+    interval: 1m
+    input_series:
+      - series: 'up{job="smartctl",instance="127.0.0.1:9633"}'
+        values: '1x2 0x5'
+      - series: 'up{job="node",instance="127.0.0.1:9100"}'
+        values: '1x7'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: MonitoringTargetDown
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: MonitoringTargetDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: smartctl, instance: "127.0.0.1:9633"}
+            exp_annotations:
+              summary: "Prometheus cannot scrape smartctl at 127.0.0.1:9633"
+
+  - name: a failing probe is critical after 5 minutes
+    interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox",instance="https://api.example.test/healthz"}'
+        values: '1x2 0x10'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: EndpointDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: EndpointDown
+        exp_alerts:
+          - exp_labels: {severity: critical, job: blackbox, instance: "https://api.example.test/healthz"}
+            exp_annotations:
+              summary: "https://api.example.test/healthz fails its HTTPS probe"
+              description: "curl -v https://api.example.test/healthz; systemctl status hangar-edge."
+
+  - name: a certificate under 14 days is a warning, under 7 critical, never both
+    interval: 1d
+    input_series:
+      # Expires 20 days after the start: 13 days left at day 7, 6 at day 14.
+      - series: 'probe_ssl_earliest_cert_expiry{job="blackbox",instance="https://console.example.test/"}'
+        values: '1728000x20'
+    alert_rule_test:
+      - eval_time: 5d
+        alertname: CertificateRenewalLate
+        exp_alerts: []
+      - eval_time: 7d
+        alertname: CertificateRenewalLate
+        exp_alerts:
+          - exp_labels: {severity: warning, job: blackbox, instance: "https://console.example.test/"}
+            exp_annotations:
+              summary: "The certificate https://console.example.test/ serves expires in 13d 0h 0m 0s"
+              description: "certmagic renews with about 30 days left: journalctl -u hangar-edge says why it has not."
+      - eval_time: 7d
+        alertname: CertificateExpiresSoon
+        exp_alerts: []
+      - eval_time: 14d
+        alertname: CertificateExpiresSoon
+        exp_alerts:
+          - exp_labels: {severity: critical, job: blackbox, instance: "https://console.example.test/"}
+            exp_annotations:
+              summary: "The certificate https://console.example.test/ serves expires in 6d 0h 0m 0s"
+              description: "certmagic renews with about 30 days left: journalctl -u hangar-edge says why it has not."
+      - eval_time: 14d
+        alertname: CertificateRenewalLate
+        exp_alerts: []
+
+  - name: Watchdog always fires
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: Watchdog
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations:
+              summary: "The alerting pipeline works"

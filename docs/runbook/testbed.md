@@ -193,7 +193,9 @@ deletes, through the API, only the containers it makes, first and last;
 image bases stay. On a `hangar-testbed` VM, install the services with
 `bootstrap.sh --env FILE --only` for the `packages`, `zfs`, `upgrades`,
 `release` and `services` steps (never `network` or `swap-raid`), from an
-env file naming the VM's uplink and address.
+env file naming the VM's uplink and address. The `monitoring` step goes
+the same way after them, with Alertmanager pointed at a stand-in for
+Telegram (`docs/runbook/host-bootstrap.md`, "Testing a change").
 
 `make e2e-host-network` runs the network tests alone, which need no guest
 artifacts, no KVM and no Cloud Hypervisor: a bare Ubuntu 24.04 VM with Go,

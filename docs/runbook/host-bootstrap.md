@@ -7,8 +7,9 @@ prefix's `::` address, the host's firewall, sshd for keys only, proxy NDP,
 forwarding, and vsock, unattended security
 upgrades in a fixed window, a hangar release (the binaries, the guest kernel
 and the initramfs), `hangar-apiserver` and `hangar-node` as systemd
-services, and the front door, `hangar-edge`, once it has its settings. It
-is safe to re-run.
+services, the front door, `hangar-edge`, once it has its settings, and the
+host's monitoring: Prometheus, Alertmanager sending to Telegram, and their
+exporters. It is safe to re-run.
 
 ## Before the first run
 
@@ -116,7 +117,7 @@ checksums recorded for them (a run that died half-way, or a file replaced
 by hand), so that no service restarts onto files of two releases; rerun
 with `--release DIR`. `--only <step>` runs a single step
 (`packages`, `swap-raid`, `zfs`, `network`, `firewall`, `sshd`, `sysctl`, `upgrades`,
-`release`, `services`, `edge`).
+`release`, `services`, `edge`, `monitoring`).
 
 ## Datasets, upgrades, the release and the services
 
@@ -266,7 +267,8 @@ with `--release DIR`. `--only <step>` runs a single step
     /64, from which every machine interface gets its public IPv6 address,
     `--image-cache-high 20Gi` (what the container images no machine uses
     may keep, `docs/decisions/node-agent.md`), `--reserved-disk` the sum
-    of both quotas and those 20 GiB, the bases of those images being on
+    of both quotas, Prometheus's dataset's quota (`MON_TSDB_QUOTA` in
+    `deploy/host/lib.sh`) and those 20 GiB, the bases of those images being on
     the pool, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
     plus the host's own overhead), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
@@ -348,6 +350,8 @@ with `--release DIR`. `--only <step>` runs a single step
   left. The `services` step stops such a tunnel before it would restart
   the apiserver into dev auth, which trusts a header. The cutover is in
   `docs/runbook/cloudflare.md`.
+- `monitoring` installs the host's monitoring
+  (`docs/decisions/monitoring.md`; "Monitoring and alerts" below).
 
 ## The front door
 
@@ -947,6 +951,99 @@ sudo hangar --context local token rotate smoke --project smoke --secret-file /et
 The old secret stops working at once. `hangar token get --project smoke`
 shows when the current one expires and when it was last used.
 
+## Monitoring and alerts
+
+The `monitoring` step runs five services, each as a system user of its
+own name, sandboxed, listening on loopback alone, so the firewall stays at
+22, 80 and 443 (`docs/decisions/monitoring.md`):
+
+| Service | Listens on | Does |
+|---|---|---|
+| `hangar-prometheus` | `127.0.0.1:9090` | Scrapes the others every 30 s, evaluates the rules, keeps 30 days (at most 16 GB) on `hangar/prometheus` (`/var/lib/hangar/prometheus`, quota 20G, its user's, 0700) |
+| `hangar-alertmanager` | `127.0.0.1:9093` | Sends alerts to Telegram; no cluster port. What it has sent and its silences are in `/var/lib/hangar-alertmanager` |
+| `hangar-node-exporter` | `127.0.0.1:9100` | The host: CPU, memory and pressure, filesystems, ZFS (the pool's state, the ARC), md, hwmon, time sync, and the state and restart count of the platform's units and the monitoring stack's alone, never a VM's |
+| `hangar-smartctl-exporter` | `127.0.0.1:9633` | Each NVMe controller's SMART: health, media errors, wear, temperature. The devices are named in its unit, so a disk added later takes a run of the step |
+| `hangar-blackbox-exporter` | `127.0.0.1:9115` | With the front door on, `https://api.<cp-domain>/healthz` (must say `ok`) and `https://console.<cp-domain>/` over HTTPS, as a client resolves them, and the days left on their certificates |
+
+`hangar-zpool-metrics.timer` runs `/usr/local/libexec/hangar-zpool-metrics`
+each minute, as root, which writes each pool's size, allocation and error
+counts for node_exporter (`/var/lib/hangar-node-exporter/textfile`). Every
+binary is pinned in `deploy/host/versions.env` with its sha256, as Cloud
+Hypervisor is, and installed in `/usr/local/bin` with `promtool` and
+`amtool`; the configuration is written to `/etc/hangar/monitoring/`. A
+changed unit, configuration or binary restarts that service, and nothing
+else. Before writing the configuration the step has the installed
+`promtool` and `amtool` check it, and refuses what they refuse.
+
+The rules are `deploy/host/monitoring/rules/host.yml`, with their tests in
+`deploy/host/monitoring/tests/`; `make test-monitoring` (part of `make
+check` and CI) runs `promtool check rules` and `promtool test rules` on
+them and checks the configurations the step writes, with the same
+versions. Each alert is `critical` or `warning`:
+
+- critical, sent at once (one message an alert name, again every 4 hours
+  while it fires, and when it resolves): a pool not ONLINE or with
+  permanent data errors, an md array degraded, a disk failing SMART or
+  with media errors, a filesystem or a pool past 90%, `hangar/images` past
+  90% of its quota, memory short for 10 minutes, a watched unit not active
+  for 2 minutes, a monitoring target down, an HTTPS probe failing for 5
+  minutes, a certificate with under 7 days left;
+- warning, held to one window a day, 09:00 to 10:00 in
+  `HANGAR_ALERTS_TZ` (`HANGAR_UPGRADES_TZ`, else UTC, when unset), all in
+  one message, never their resolution: a pool or filesystem past 80%, read,
+  write or checksum errors on a pool's devices, SMART wear past 80%, a disk
+  or sensor too hot, the clock not synchronised, a unit restarted more than
+  3 times in an hour, the pools' metrics stale, a certificate with under 14
+  days left.
+
+`Watchdog` always fires and goes to no one, until a dead man's switch
+outside the host is added as its receiver.
+
+**The Telegram bot.** Alerts go to one chat: its id is
+`HANGAR_ALERTS_TELEGRAM_CHAT_ID` in the host env file (a number; a
+group's is negative), and the bot's token is
+`/etc/hangar/alertmanager-telegram-token`, root's and
+`hangar-alertmanager`'s group's, mode 0640, which Alertmanager reads as it
+sends. The token is kept in the vault; nothing in `deploy/host` makes one.
+After the step has run once (it makes the group), install it from a box
+that holds it in its environment, without it passing through a terminal
+or the shell history:
+
+```sh
+printenv HANGAR_TELEGRAM_BOT_TOKEN | ssh <host> 'sudo install -o root -g hangar-alertmanager -m 0640 /dev/stdin /etc/hangar/alertmanager-telegram-token && sudo systemctl restart hangar-alertmanager'
+```
+
+While the host env file names no chat, or the token is missing, the step
+warns that alerts reach no one, and `verify.sh` prints a SKIP line, or
+fails the token. A token file open to others is given back to root and
+the group, 0640. A new token is the same command.
+
+**Looking at it.** Nothing of it is reachable from outside: forward the
+ports over SSH, then open `http://localhost:9090` (Prometheus: queries,
+targets, rules, alerts; an alert's link in Telegram opens there) or
+`http://localhost:9093` (Alertmanager: what is firing, silences):
+
+```sh
+ssh -N -L 9090:127.0.0.1:9090 -L 9093:127.0.0.1:9093 <host>
+```
+
+On the host, `amtool --alertmanager.url=http://127.0.0.1:9093 alert query`
+lists what fires, and `amtool --alertmanager.url=http://127.0.0.1:9093
+silence add alertname=<name> --duration=2h --comment=<why>` silences one
+while it is dealt with.
+
+**A test alert.** To check the path to Telegram, send a critical alert by
+hand; it arrives within a minute, and resolves after 5:
+
+```sh
+amtool --alertmanager.url=http://127.0.0.1:9093 alert add alertname=HangarTestAlert severity=critical \
+  --annotation="summary=\"A test alert from $(hostname)\""
+```
+
+With `severity=warning` instead it waits for the day's window. `verify.sh`
+checks the path from a rule to Alertmanager (Alertmanager has `Watchdog`),
+not Telegram itself.
+
 ## When the network step fails
 
 It refuses to take over when the installer's stanza for the uplink sets
@@ -1186,3 +1283,14 @@ shellcheck over every script.
 
 `HANGAR_TESTBED_FLOW_INSTALLED=1` runs the L4 flow (`docs/runbook/testbed.md`)
 against the services the steps installed instead of processes of its own.
+
+The `monitoring` step is tried on a `hangar-testbed` VM with the services
+installed as `docs/runbook/testbed.md` says, then `--only monitoring`. An
+env file with `HANGAR_ALERTS_TELEGRAM_API_URL=http://127.0.0.1:PORT` points
+Alertmanager at a stand-in for the Telegram API on loopback, which answers
+`{"ok": true, "result": {...}}` and logs what it is sent, with any token in
+the token file: stopping `hangar-node` must bring a critical message within
+about three minutes, and a warning (`amtool alert add`) none until
+`HANGAR_ALERTS_TZ` puts the window around the present and the step runs
+again. A VM has no NVMe disk, so `smartctl_exporter`'s reading of one is
+not tried there.
