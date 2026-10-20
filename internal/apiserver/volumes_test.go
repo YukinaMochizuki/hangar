@@ -40,7 +40,11 @@ func TestContainerVolumeAdmission(t *testing.T) {
 		"bind":                {[]*computev1alpha1.ContainerVolume{{Type: "bind", Source: "/srv", Target: "/d"}}, false},
 		"tmpfs":               {[]*computev1alpha1.ContainerVolume{{Type: "tmpfs", Target: "/d"}}, false},
 		"an unknown type":     {[]*computev1alpha1.ContainerVolume{{Type: "npipe", Source: "d", Target: "/d"}}, false},
-		"a FileShare":         {[]*computev1alpha1.ContainerVolume{{Source: "d", SourceKind: "FileShare", Target: "/d"}}, false},
+		"a FileShare":         {[]*computev1alpha1.ContainerVolume{{Source: "d", SourceKind: "FileShare", Target: "/d"}}, true},
+		"a share's directory": {[]*computev1alpha1.ContainerVolume{{Source: "d", SourceKind: "FileShare", Target: "/d", Volume: &computev1alpha1.ContainerVolumeOptions{Subpath: "a/b"}}}, true},
+		"a share twice":       {[]*computev1alpha1.ContainerVolume{{Source: "s", SourceKind: "FileShare", Target: "/a"}, {Source: "s", SourceKind: "FileShare", Target: "/b"}}, false},
+		"a disk and a share":  {[]*computev1alpha1.ContainerVolume{vol("d", "/a"), {Source: "d", SourceKind: "FileShare", Target: "/b"}}, true},
+		"an unknown kind":     {[]*computev1alpha1.ContainerVolume{{Source: "d", SourceKind: "Secret", Target: "/d"}}, false},
 		"no source":           {[]*computev1alpha1.ContainerVolume{vol("", "/d")}, false},
 		"a source not a name": {[]*computev1alpha1.ContainerVolume{vol("Data_1", "/d")}, false},
 		"a disk twice":        {[]*computev1alpha1.ContainerVolume{vol("d", "/a"), vol("d", "/b")}, false},
@@ -77,16 +81,30 @@ func TestOnlyListedDisksAreMounted(t *testing.T) {
 	mount := func(disk, target string) *computev1alpha1.ContainerBootVolume {
 		return &computev1alpha1.ContainerBootVolume{Disk: disk, Target: target}
 	}
+	shared := func(spec *computev1alpha1.MachineSpec, shares ...string) *computev1alpha1.MachineSpec {
+		for _, s := range shares {
+			spec.FileShares = append(spec.FileShares, &computev1alpha1.MachineFileShare{FileShare: s})
+		}
+		return spec
+	}
+	share := func(name, target string) *computev1alpha1.ContainerBootVolume {
+		return &computev1alpha1.ContainerBootVolume{FileShare: name, Target: target, Nocopy: true}
+	}
 	for name, tt := range map[string]struct {
 		spec *computev1alpha1.MachineSpec
 		ok   bool
 	}{
-		"a disk it lists":      {spec([]string{"a", "b"}, mount("b", "/b")), true},
-		"a disk not mounted":   {spec([]string{"a"}), true},
-		"a disk it lists not":  {spec([]string{"a"}, mount("b", "/b")), false},
-		"a disk mounted twice": {spec([]string{"a"}, mount("a", "/a"), mount("a", "/b")), false},
-		"two at one target":    {spec([]string{"a", "b"}, mount("a", "/d"), mount("b", "/d")), false},
-		"a target under /sys":  {spec([]string{"a"}, mount("a", "/sys/x")), false},
+		"a disk it lists":            {spec([]string{"a", "b"}, mount("b", "/b")), true},
+		"a disk not mounted":         {spec([]string{"a"}), true},
+		"a disk it lists not":        {spec([]string{"a"}, mount("b", "/b")), false},
+		"a disk mounted twice":       {spec([]string{"a"}, mount("a", "/a"), mount("a", "/b")), false},
+		"two at one target":          {spec([]string{"a", "b"}, mount("a", "/d"), mount("b", "/d")), false},
+		"a target under /sys":        {spec([]string{"a"}, mount("a", "/sys/x")), false},
+		"a share it declares":        {shared(spec([]string{"a"}, mount("a", "/a"), share("s", "/s")), "s"), true},
+		"a share it does not":        {spec(nil, share("s", "/s")), false},
+		"a share listed as a disk":   {spec([]string{"s"}, share("s", "/s")), false},
+		"a share mounted twice":      {shared(spec(nil, share("s", "/a"), share("s", "/b")), "s"), false},
+		"a disk and a share at once": {shared(spec([]string{"a"}, &computev1alpha1.ContainerBootVolume{Disk: "a", FileShare: "s", Target: "/a"}), "s"), false},
 	} {
 		err := validateBootVolumes(tt.spec)
 		if got := err == nil; got != tt.ok {

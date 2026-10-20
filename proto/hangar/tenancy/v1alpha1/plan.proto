@@ -44,8 +44,8 @@ message Limits {
   optional string cpu = 1;
   // Memory, a quantity such as "16Gi".
   optional string memory = 2;
-  // Disk space, a quantity such as "200Gi": containers' disks, Disks, and
-  // the root disks VMs have made from images.
+  // Disk space, a quantity such as "200Gi": containers' disks, Disks, the
+  // root disks VMs have made from images, and FileShares.
   optional string disk = 3;
   // Containers and virtual machines, together.
   optional int32 machines = 4;
@@ -56,6 +56,9 @@ message Limits {
   optional int32 addresses = 7;
   optional int32 public_endpoints = 8;
   optional int32 service_tokens = 9;
+  // FileShares. A share's server is the platform's, and counts toward no
+  // limit.
+  optional int32 file_shares = 10;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
@@ -70,6 +73,7 @@ message Usage {
   int32 addresses = 7;
   int32 public_endpoints = 8;
   int32 service_tokens = 9;
+  int32 file_shares = 10;
 }
 
 // PlanService manages plans.

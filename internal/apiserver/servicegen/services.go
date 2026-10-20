@@ -45,6 +45,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
 	mux.Handle(secretsv1alpha1connect.NewSecretServiceHandler(&secretService{b: backends(registry.Secret)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewDiskServiceHandler(&diskService{b: backends(registry.Disk)}, opts...))
+	mux.Handle(storagev1alpha1connect.NewFileShareServiceHandler(&fileShareService{b: backends(registry.FileShare)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewImageServiceHandler(&imageService{b: backends(registry.Image)}, opts...))
 	mux.Handle(tenancyv1alpha1connect.NewPlanServiceHandler(&planService{b: backends(registry.Plan)}, opts...))
 	mux.Handle(tenancyv1alpha1connect.NewProjectServiceHandler(&projectService{b: backends(registry.Project)}, opts...))
@@ -1054,6 +1055,73 @@ func (s *diskService) UpdateDiskStatus(ctx context.Context, req *connect.Request
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha14.UpdateDiskStatusResponse{Disk: obj.(*v1alpha14.Disk)}), nil
+}
+
+type fileShareService struct {
+	b resource.Backend
+}
+
+func (s *fileShareService) GetFileShare(ctx context.Context, req *connect.Request[v1alpha14.GetFileShareRequest]) (*connect.Response[v1alpha14.GetFileShareResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.GetFileShareResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
+}
+
+func (s *fileShareService) ListFileShares(ctx context.Context, req *connect.Request[v1alpha14.ListFileSharesRequest]) (*connect.Response[v1alpha14.ListFileSharesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha14.ListFileSharesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha14.FileShare))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *fileShareService) WatchFileShares(ctx context.Context, req *connect.Request[v1alpha14.WatchFileSharesRequest], stream *connect.ServerStream[v1alpha14.WatchFileSharesResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha14.WatchFileSharesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.FileShare = ev.Object.(*v1alpha14.FileShare)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *fileShareService) ApplyFileShare(ctx context.Context, req *connect.Request[v1alpha14.ApplyFileShareRequest]) (*connect.Response[v1alpha14.ApplyFileShareResponse], error) {
+	in := req.Msg.GetFileShare()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("file_share is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.ApplyFileShareResponse{FileShare: res.Object.(*v1alpha14.FileShare), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *fileShareService) DeleteFileShare(ctx context.Context, req *connect.Request[v1alpha14.DeleteFileShareRequest]) (*connect.Response[v1alpha14.DeleteFileShareResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.DeleteFileShareResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
+}
+
+func (s *fileShareService) UpdateFileShareStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateFileShareStatusRequest]) (*connect.Response[v1alpha14.UpdateFileShareStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.UpdateFileShareStatusResponse{FileShare: obj.(*v1alpha14.FileShare)}), nil
 }
 
 type imageService struct {

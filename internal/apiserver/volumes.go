@@ -34,13 +34,13 @@ const (
 // over anything a volume would put there.
 var platformMounts = []string{"/proc", "/sys", "/dev", "/run"}
 
-// validateContainerVolumes checks a container's volumes: each a Disk, once,
-// at a target of its own.
+// validateContainerVolumes checks a container's volumes: each a Disk or a
+// FileShare, once, at a target of its own.
 func validateContainerVolumes(volumes []*computev1alpha1.ContainerVolume) error {
 	if len(volumes) > MaxVolumes {
 		return invalid("spec.volumes: %d volumes, at most %d", len(volumes), MaxVolumes)
 	}
-	disks, targets := map[string]bool{}, map[string]bool{}
+	disks, shares, targets := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for i, v := range volumes {
 		switch v.GetType() {
 		case "", volumeTypeVolume:
@@ -51,18 +51,24 @@ func validateContainerVolumes(volumes []*computev1alpha1.ContainerVolume) error 
 		default:
 			return invalid("spec.volumes[%d].type %q is not volume", i, v.GetType())
 		}
-		switch v.GetSourceKind() {
-		case "", sourceKindDisk:
-		default:
-			return invalid("spec.volumes[%d].source_kind %q is not Disk", i, v.GetSourceKind())
-		}
 		if err := ValidName(v.GetSource()); err != nil {
 			return invalid("spec.volumes[%d].source: %v", i, err)
 		}
-		if disks[v.GetSource()] {
-			return invalid("spec.volumes: disk %q is mounted twice", v.GetSource())
+		// Each kind keeps its own names, so a disk and a share may share one.
+		switch v.GetSourceKind() {
+		case "", sourceKindDisk:
+			if disks[v.GetSource()] {
+				return invalid("spec.volumes: disk %q is mounted twice", v.GetSource())
+			}
+			disks[v.GetSource()] = true
+		case sourceKindFileShare:
+			if shares[v.GetSource()] {
+				return invalid("spec.volumes: file share %q is mounted twice", v.GetSource())
+			}
+			shares[v.GetSource()] = true
+		default:
+			return invalid("spec.volumes[%d].source_kind %q is not Disk or FileShare", i, v.GetSourceKind())
 		}
-		disks[v.GetSource()] = true
 		if err := checkTarget(v.GetTarget()); err != nil {
 			return invalid("spec.volumes[%d].target: %v", i, err)
 		}
@@ -116,37 +122,73 @@ func checkSubpath(sub string) error {
 	return nil
 }
 
+// containerShares are the names of the FileShares a container's volumes
+// mount.
+func containerShares(volumes []*computev1alpha1.ContainerVolume) []string {
+	var out []string
+	for _, v := range volumes {
+		if v.GetSourceKind() == sourceKindFileShare {
+			out = append(out, v.GetSource())
+		}
+	}
+	return out
+}
+
 // machineVolumes are a container's volumes as its machine lists them: its
-// disks, in order, and what its boot mounts of them.
-func machineVolumes(volumes []*computev1alpha1.ContainerVolume) ([]*computev1alpha1.MachineDisk, []*computev1alpha1.ContainerBootVolume) {
+// disks and its file shares, each in order, and what its boot mounts of
+// them. A share is never filled from the image.
+func machineVolumes(volumes []*computev1alpha1.ContainerVolume) ([]*computev1alpha1.MachineDisk, []*computev1alpha1.MachineFileShare, []*computev1alpha1.ContainerBootVolume) {
 	var disks []*computev1alpha1.MachineDisk
+	var shares []*computev1alpha1.MachineFileShare
 	var mounts []*computev1alpha1.ContainerBootVolume
 	for _, v := range volumes {
-		disks = append(disks, &computev1alpha1.MachineDisk{Disk: v.GetSource()})
-		mounts = append(mounts, &computev1alpha1.ContainerBootVolume{
-			Disk: v.GetSource(), Target: v.GetTarget(), ReadOnly: v.GetReadOnly(),
+		mount := &computev1alpha1.ContainerBootVolume{
+			Target: v.GetTarget(), ReadOnly: v.GetReadOnly(),
 			Nocopy: v.GetVolume().GetNocopy(), Subpath: v.GetVolume().GetSubpath(),
-		})
+		}
+		if v.GetSourceKind() == sourceKindFileShare {
+			shares = append(shares, &computev1alpha1.MachineFileShare{FileShare: v.GetSource(), ReadOnly: v.GetReadOnly()})
+			mount.FileShare, mount.Nocopy = v.GetSource(), true
+		} else {
+			disks = append(disks, &computev1alpha1.MachineDisk{Disk: v.GetSource()})
+			mount.Disk = v.GetSource()
+		}
+		mounts = append(mounts, mount)
 	}
-	return disks, mounts
+	return disks, shares, mounts
 }
 
 // validateBootVolumes checks what a container machine's boot mounts: each
-// one of its disks, at most once, at a target of its own.
+// one of its disks or one of its file shares, at most once, at a target of
+// its own.
 func validateBootVolumes(spec *computev1alpha1.MachineSpec) error {
-	listed := map[string]bool{}
+	listed, declared := map[string]bool{}, map[string]bool{}
 	for _, d := range spec.GetDisks() {
 		listed[d.GetDisk()] = true
 	}
-	mounted, targets := map[string]bool{}, map[string]bool{}
+	for _, f := range spec.GetFileShares() {
+		declared[f.GetFileShare()] = true
+	}
+	mounted, shared, targets := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for i, v := range spec.GetContainer().GetVolumes() {
-		if !listed[v.GetDisk()] {
+		switch {
+		case v.GetDisk() != "" && v.GetFileShare() != "":
+			return invalid("spec.container.volumes[%d] names both disk %q and file share %q", i, v.GetDisk(), v.GetFileShare())
+		case v.GetFileShare() != "":
+			if !declared[v.GetFileShare()] {
+				return invalid("spec.container.volumes[%d]: file share %q is not one of spec.file_shares", i, v.GetFileShare())
+			}
+			if shared[v.GetFileShare()] {
+				return invalid("spec.container.volumes: file share %q is mounted twice", v.GetFileShare())
+			}
+			shared[v.GetFileShare()] = true
+		case !listed[v.GetDisk()]:
 			return invalid("spec.container.volumes[%d]: disk %q is not one of spec.disks", i, v.GetDisk())
-		}
-		if mounted[v.GetDisk()] {
+		case mounted[v.GetDisk()]:
 			return invalid("spec.container.volumes: disk %q is mounted twice", v.GetDisk())
+		default:
+			mounted[v.GetDisk()] = true
 		}
-		mounted[v.GetDisk()] = true
 		if err := checkTarget(v.GetTarget()); err != nil {
 			return invalid("spec.container.volumes[%d].target: %v", i, err)
 		}
@@ -210,7 +252,7 @@ func (s *Server) containersMountingDisk(ctx context.Context, o store.Object) []c
 			continue
 		}
 		if slices.ContainsFunc(obj.(*computev1alpha1.Container).GetSpec().GetVolumes(), func(v *computev1alpha1.ContainerVolume) bool {
-			return v.GetSource() == o.Name
+			return v.GetSourceKind() != sourceKindFileShare && v.GetSource() == o.Name
 		}) {
 			keys = append(keys, controller.Key{Project: co.Project, Name: co.Name})
 		}

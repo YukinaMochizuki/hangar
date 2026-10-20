@@ -649,7 +649,7 @@ func TestTheDefaultPlanAndCap(t *testing.T) {
 	want := &tenancyv1alpha1.Limits{
 		Cpu: proto.String("8"), Memory: proto.String("16Gi"), Disk: proto.String("100Gi"),
 		Machines: proto.Int32(10), Projects: proto.Int32(5), Networks: proto.Int32(5), Addresses: proto.Int32(5),
-		PublicEndpoints: proto.Int32(10), ServiceTokens: proto.Int32(10),
+		PublicEndpoints: proto.Int32(10), ServiceTokens: proto.Int32(10), FileShares: proto.Int32(3),
 	}
 	if !proto.Equal(plan.GetSpec().GetLimits(), want) {
 		t.Errorf("the default plan's limits are %v, want %v", plan.GetSpec().GetLimits(), want)

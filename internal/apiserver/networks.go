@@ -193,10 +193,11 @@ func (s *Server) machinesOn(ctx context.Context, project, network string) ([]str
 	return names, nil
 }
 
-// refuseDeletingInUse keeps users from deleting a network machines are on:
-// one being deleted could not take new machines, and the deletion could not
-// be taken back. A project being deleted takes its networks with it, and
-// they wait for their machines under NetworkInUseFinalizer.
+// refuseDeletingInUse keeps users from deleting a network machines or file
+// shares are on: one being deleted could not take new machines, and the
+// deletion could not be taken back. A project being deleted takes its
+// networks with it, and they wait for their machines under
+// NetworkInUseFinalizer.
 func refuseDeletingInUse(ctx context.Context, s *Server, obj proto.Message) error {
 	n := obj.(*networkv1alpha1.Network)
 	project, err := s.get(ctx, registry.Project, resource.Key{Name: n.GetMetadata().GetProject()})
@@ -207,11 +208,19 @@ func refuseDeletingInUse(ctx context.Context, s *Server, obj proto.Message) erro
 		return nil
 	}
 	machines, err := s.machinesOn(ctx, n.GetMetadata().GetProject(), n.GetMetadata().GetName())
-	if err != nil || len(machines) == 0 {
+	if err != nil {
 		return err
 	}
-	return failedPrecondition("network %q is in use by machines %s; delete their containers first",
-		n.GetMetadata().GetName(), strings.Join(machines, ", "))
+	if len(machines) > 0 {
+		return failedPrecondition("network %q is in use by machines %s; delete their containers first",
+			n.GetMetadata().GetName(), strings.Join(machines, ", "))
+	}
+	shares, err := s.sharesOn(ctx, n.GetMetadata().GetProject(), n.GetMetadata().GetName())
+	if err != nil || len(shares) == 0 {
+		return err
+	}
+	return failedPrecondition("network %q has file share %s on it; take the network out of their spec.networks first",
+		n.GetMetadata().GetName(), strings.Join(shares, ", "))
 }
 
 // assignAddresses fills in the IPv4 address of every interface in want that

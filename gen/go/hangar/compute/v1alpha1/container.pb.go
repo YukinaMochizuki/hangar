@@ -287,10 +287,13 @@ type ContainerSpec struct {
 	// the image's registry. Changing them restarts nothing; they count at the
 	// next pull. See docs/decisions/secrets.md.
 	ImagePullSecrets []string `protobuf:"bytes,10,rep,name=image_pull_secrets,json=imagePullSecrets,proto3" json:"image_pull_secrets,omitempty"`
-	// The Disks the container mounts, at most 8, as a Compose service's
-	// volumes in their long syntax. A disk is mounted by one machine at a
-	// time, and pins the container to the disk's node. Changing them restarts
-	// the container. See docs/decisions/container-volumes.md.
+	// The Disks and FileShares the container mounts, at most 8, as a Compose
+	// service's volumes in their long syntax. A disk is mounted by one
+	// machine at a time, and pins the container to the disk's node; a share
+	// must be on one of its networks and on a node, to which it pins the
+	// container; one on no node yet holds the container back.
+	// Changing them restarts the container. See
+	// docs/decisions/container-volumes.md.
 	Volumes       []*ContainerVolume `protobuf:"bytes,11,rep,name=volumes,proto3" json:"volumes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -412,8 +415,9 @@ type ContainerVolume struct {
 	// Names what is mounted, in the container's project: a Disk, unless
 	// source_kind says otherwise.
 	Source string `protobuf:"bytes,2,opt,name=source,proto3" json:"source,omitempty"`
-	// The kind source names. Hangar's, not Compose's: empty is "Disk", the
-	// only kind for now.
+	// The kind source names. Hangar's, not Compose's: "Disk", which empty
+	// means, or "FileShare", which is mounted over NFS, nosuid and nodev,
+	// and never filled from the image.
 	SourceKind string `protobuf:"bytes,3,opt,name=source_kind,json=sourceKind,proto3" json:"source_kind,omitempty"`
 	// Where the volume is mounted: an absolute path, neither / nor under
 	// /proc, /sys, /dev or /run, resolved as the image's processes resolve
@@ -501,7 +505,7 @@ func (x *ContainerVolume) GetVolume() *ContainerVolumeOptions {
 type ContainerVolumeOptions struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Leaves a new volume empty, rather than filled with what the image has
-	// at the target.
+	// at the target. Always so for a file share.
 	Nocopy bool `protobuf:"varint,1,opt,name=nocopy,proto3" json:"nocopy,omitempty"`
 	// Mounts this directory of the volume, a relative path, which must exist,
 	// instead of the whole volume.

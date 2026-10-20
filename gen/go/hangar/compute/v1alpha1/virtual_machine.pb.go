@@ -236,7 +236,12 @@ type VirtualMachineSpec struct {
 	// #cloud-config document or a script; at most 16 KiB. cloud-init runs it
 	// on the VM's first boot only, so changing it neither restarts the VM
 	// nor runs again in it. See docs/decisions/vm-boot.md.
-	UserData      string `protobuf:"bytes,7,opt,name=user_data,json=userData,proto3" json:"user_data,omitempty"`
+	UserData string `protobuf:"bytes,7,opt,name=user_data,json=userData,proto3" json:"user_data,omitempty"`
+	// The FileShares the VM may mount, at most 8, each once and on one of its
+	// networks. The VM mounts them itself, from the address the share has on
+	// its network; the platform writes nothing into its operating system.
+	// Changing them restarts nothing. See docs/decisions/file-shares.md.
+	FileShares    []*VirtualMachineFileShare `protobuf:"bytes,8,rep,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -320,6 +325,68 @@ func (x *VirtualMachineSpec) GetUserData() string {
 	return ""
 }
 
+func (x *VirtualMachineSpec) GetFileShares() []*VirtualMachineFileShare {
+	if x != nil {
+		return x.FileShares
+	}
+	return nil
+}
+
+// VirtualMachineFileShare is a FileShare a VM declares.
+type VirtualMachineFileShare struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Names a FileShare in the VM's project.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// The share's server exports it to the VM read-only.
+	ReadOnly      bool `protobuf:"varint,2,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VirtualMachineFileShare) Reset() {
+	*x = VirtualMachineFileShare{}
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VirtualMachineFileShare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VirtualMachineFileShare) ProtoMessage() {}
+
+func (x *VirtualMachineFileShare) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VirtualMachineFileShare.ProtoReflect.Descriptor instead.
+func (*VirtualMachineFileShare) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *VirtualMachineFileShare) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VirtualMachineFileShare) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
 // VirtualMachineResources sizes the VM. Each field is a quantity in
 // Kubernetes syntax, such as "2" or "2Gi"; empty takes the default.
 type VirtualMachineResources struct {
@@ -334,7 +401,7 @@ type VirtualMachineResources struct {
 
 func (x *VirtualMachineResources) Reset() {
 	*x = VirtualMachineResources{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -346,7 +413,7 @@ func (x *VirtualMachineResources) String() string {
 func (*VirtualMachineResources) ProtoMessage() {}
 
 func (x *VirtualMachineResources) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -359,7 +426,7 @@ func (x *VirtualMachineResources) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineResources.ProtoReflect.Descriptor instead.
 func (*VirtualMachineResources) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{2}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *VirtualMachineResources) GetCpu() string {
@@ -390,7 +457,7 @@ type VirtualMachineRootDisk struct {
 
 func (x *VirtualMachineRootDisk) Reset() {
 	*x = VirtualMachineRootDisk{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -402,7 +469,7 @@ func (x *VirtualMachineRootDisk) String() string {
 func (*VirtualMachineRootDisk) ProtoMessage() {}
 
 func (x *VirtualMachineRootDisk) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -415,7 +482,7 @@ func (x *VirtualMachineRootDisk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineRootDisk.ProtoReflect.Descriptor instead.
 func (*VirtualMachineRootDisk) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{3}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *VirtualMachineRootDisk) GetSource() isVirtualMachineRootDisk_Source {
@@ -475,7 +542,7 @@ type VirtualMachineImageDisk struct {
 
 func (x *VirtualMachineImageDisk) Reset() {
 	*x = VirtualMachineImageDisk{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +554,7 @@ func (x *VirtualMachineImageDisk) String() string {
 func (*VirtualMachineImageDisk) ProtoMessage() {}
 
 func (x *VirtualMachineImageDisk) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +567,7 @@ func (x *VirtualMachineImageDisk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineImageDisk.ProtoReflect.Descriptor instead.
 func (*VirtualMachineImageDisk) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{4}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *VirtualMachineImageDisk) GetImage() *v1alpha1.ImageSource {
@@ -535,7 +602,7 @@ type VirtualMachineDisk struct {
 
 func (x *VirtualMachineDisk) Reset() {
 	*x = VirtualMachineDisk{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -547,7 +614,7 @@ func (x *VirtualMachineDisk) String() string {
 func (*VirtualMachineDisk) ProtoMessage() {}
 
 func (x *VirtualMachineDisk) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -560,7 +627,7 @@ func (x *VirtualMachineDisk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineDisk.ProtoReflect.Descriptor instead.
 func (*VirtualMachineDisk) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{5}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *VirtualMachineDisk) GetDisk() string {
@@ -593,7 +660,7 @@ type VirtualMachineStatus struct {
 
 func (x *VirtualMachineStatus) Reset() {
 	*x = VirtualMachineStatus{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -605,7 +672,7 @@ func (x *VirtualMachineStatus) String() string {
 func (*VirtualMachineStatus) ProtoMessage() {}
 
 func (x *VirtualMachineStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -618,7 +685,7 @@ func (x *VirtualMachineStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineStatus.ProtoReflect.Descriptor instead.
 func (*VirtualMachineStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{6}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *VirtualMachineStatus) GetObservedGeneration() int64 {
@@ -675,7 +742,7 @@ type VirtualMachineSSHHostKey struct {
 
 func (x *VirtualMachineSSHHostKey) Reset() {
 	*x = VirtualMachineSSHHostKey{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -687,7 +754,7 @@ func (x *VirtualMachineSSHHostKey) String() string {
 func (*VirtualMachineSSHHostKey) ProtoMessage() {}
 
 func (x *VirtualMachineSSHHostKey) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -700,7 +767,7 @@ func (x *VirtualMachineSSHHostKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineSSHHostKey.ProtoReflect.Descriptor instead.
 func (*VirtualMachineSSHHostKey) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{7}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *VirtualMachineSSHHostKey) GetPublicKey() string {
@@ -734,7 +801,7 @@ type VirtualMachineInterfaceStatus struct {
 
 func (x *VirtualMachineInterfaceStatus) Reset() {
 	*x = VirtualMachineInterfaceStatus{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -746,7 +813,7 @@ func (x *VirtualMachineInterfaceStatus) String() string {
 func (*VirtualMachineInterfaceStatus) ProtoMessage() {}
 
 func (x *VirtualMachineInterfaceStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -759,7 +826,7 @@ func (x *VirtualMachineInterfaceStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VirtualMachineInterfaceStatus.ProtoReflect.Descriptor instead.
 func (*VirtualMachineInterfaceStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{8}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *VirtualMachineInterfaceStatus) GetName() string {
@@ -800,7 +867,7 @@ type GetVirtualMachineRequest struct {
 
 func (x *GetVirtualMachineRequest) Reset() {
 	*x = GetVirtualMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -812,7 +879,7 @@ func (x *GetVirtualMachineRequest) String() string {
 func (*GetVirtualMachineRequest) ProtoMessage() {}
 
 func (x *GetVirtualMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -825,7 +892,7 @@ func (x *GetVirtualMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVirtualMachineRequest.ProtoReflect.Descriptor instead.
 func (*GetVirtualMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{9}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetVirtualMachineRequest) GetProject() string {
@@ -851,7 +918,7 @@ type GetVirtualMachineResponse struct {
 
 func (x *GetVirtualMachineResponse) Reset() {
 	*x = GetVirtualMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +930,7 @@ func (x *GetVirtualMachineResponse) String() string {
 func (*GetVirtualMachineResponse) ProtoMessage() {}
 
 func (x *GetVirtualMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +943,7 @@ func (x *GetVirtualMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVirtualMachineResponse.ProtoReflect.Descriptor instead.
 func (*GetVirtualMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{10}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetVirtualMachineResponse) GetVirtualMachine() *VirtualMachine {
@@ -899,7 +966,7 @@ type ListVirtualMachinesRequest struct {
 
 func (x *ListVirtualMachinesRequest) Reset() {
 	*x = ListVirtualMachinesRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -911,7 +978,7 @@ func (x *ListVirtualMachinesRequest) String() string {
 func (*ListVirtualMachinesRequest) ProtoMessage() {}
 
 func (x *ListVirtualMachinesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -924,7 +991,7 @@ func (x *ListVirtualMachinesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVirtualMachinesRequest.ProtoReflect.Descriptor instead.
 func (*ListVirtualMachinesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{11}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListVirtualMachinesRequest) GetProject() string {
@@ -966,7 +1033,7 @@ type ListVirtualMachinesResponse struct {
 
 func (x *ListVirtualMachinesResponse) Reset() {
 	*x = ListVirtualMachinesResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -978,7 +1045,7 @@ func (x *ListVirtualMachinesResponse) String() string {
 func (*ListVirtualMachinesResponse) ProtoMessage() {}
 
 func (x *ListVirtualMachinesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -991,7 +1058,7 @@ func (x *ListVirtualMachinesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVirtualMachinesResponse.ProtoReflect.Descriptor instead.
 func (*ListVirtualMachinesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{12}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListVirtualMachinesResponse) GetItems() []*VirtualMachine {
@@ -1027,7 +1094,7 @@ type WatchVirtualMachinesRequest struct {
 
 func (x *WatchVirtualMachinesRequest) Reset() {
 	*x = WatchVirtualMachinesRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1039,7 +1106,7 @@ func (x *WatchVirtualMachinesRequest) String() string {
 func (*WatchVirtualMachinesRequest) ProtoMessage() {}
 
 func (x *WatchVirtualMachinesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1052,7 +1119,7 @@ func (x *WatchVirtualMachinesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchVirtualMachinesRequest.ProtoReflect.Descriptor instead.
 func (*WatchVirtualMachinesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{13}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WatchVirtualMachinesRequest) GetProject() string {
@@ -1087,7 +1154,7 @@ type WatchVirtualMachinesResponse struct {
 
 func (x *WatchVirtualMachinesResponse) Reset() {
 	*x = WatchVirtualMachinesResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1099,7 +1166,7 @@ func (x *WatchVirtualMachinesResponse) String() string {
 func (*WatchVirtualMachinesResponse) ProtoMessage() {}
 
 func (x *WatchVirtualMachinesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1112,7 +1179,7 @@ func (x *WatchVirtualMachinesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchVirtualMachinesResponse.ProtoReflect.Descriptor instead.
 func (*WatchVirtualMachinesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{14}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WatchVirtualMachinesResponse) GetType() v1.EventType {
@@ -1147,7 +1214,7 @@ type ApplyVirtualMachineRequest struct {
 
 func (x *ApplyVirtualMachineRequest) Reset() {
 	*x = ApplyVirtualMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1159,7 +1226,7 @@ func (x *ApplyVirtualMachineRequest) String() string {
 func (*ApplyVirtualMachineRequest) ProtoMessage() {}
 
 func (x *ApplyVirtualMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1172,7 +1239,7 @@ func (x *ApplyVirtualMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyVirtualMachineRequest.ProtoReflect.Descriptor instead.
 func (*ApplyVirtualMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{15}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ApplyVirtualMachineRequest) GetVirtualMachine() *VirtualMachine {
@@ -1200,7 +1267,7 @@ type ApplyVirtualMachineResponse struct {
 
 func (x *ApplyVirtualMachineResponse) Reset() {
 	*x = ApplyVirtualMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1212,7 +1279,7 @@ func (x *ApplyVirtualMachineResponse) String() string {
 func (*ApplyVirtualMachineResponse) ProtoMessage() {}
 
 func (x *ApplyVirtualMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1225,7 +1292,7 @@ func (x *ApplyVirtualMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyVirtualMachineResponse.ProtoReflect.Descriptor instead.
 func (*ApplyVirtualMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{16}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ApplyVirtualMachineResponse) GetVirtualMachine() *VirtualMachine {
@@ -1260,7 +1327,7 @@ type DeleteVirtualMachineRequest struct {
 
 func (x *DeleteVirtualMachineRequest) Reset() {
 	*x = DeleteVirtualMachineRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1272,7 +1339,7 @@ func (x *DeleteVirtualMachineRequest) String() string {
 func (*DeleteVirtualMachineRequest) ProtoMessage() {}
 
 func (x *DeleteVirtualMachineRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1285,7 +1352,7 @@ func (x *DeleteVirtualMachineRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVirtualMachineRequest.ProtoReflect.Descriptor instead.
 func (*DeleteVirtualMachineRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{17}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteVirtualMachineRequest) GetProject() string {
@@ -1318,7 +1385,7 @@ type DeleteVirtualMachineResponse struct {
 
 func (x *DeleteVirtualMachineResponse) Reset() {
 	*x = DeleteVirtualMachineResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1330,7 +1397,7 @@ func (x *DeleteVirtualMachineResponse) String() string {
 func (*DeleteVirtualMachineResponse) ProtoMessage() {}
 
 func (x *DeleteVirtualMachineResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1343,7 +1410,7 @@ func (x *DeleteVirtualMachineResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteVirtualMachineResponse.ProtoReflect.Descriptor instead.
 func (*DeleteVirtualMachineResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{18}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DeleteVirtualMachineResponse) GetVirtualMachine() *VirtualMachine {
@@ -1365,7 +1432,7 @@ type UpdateVirtualMachineStatusRequest struct {
 
 func (x *UpdateVirtualMachineStatusRequest) Reset() {
 	*x = UpdateVirtualMachineStatusRequest{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1377,7 +1444,7 @@ func (x *UpdateVirtualMachineStatusRequest) String() string {
 func (*UpdateVirtualMachineStatusRequest) ProtoMessage() {}
 
 func (x *UpdateVirtualMachineStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1390,7 +1457,7 @@ func (x *UpdateVirtualMachineStatusRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use UpdateVirtualMachineStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateVirtualMachineStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{19}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateVirtualMachineStatusRequest) GetProject() string {
@@ -1430,7 +1497,7 @@ type UpdateVirtualMachineStatusResponse struct {
 
 func (x *UpdateVirtualMachineStatusResponse) Reset() {
 	*x = UpdateVirtualMachineStatusResponse{}
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1442,7 +1509,7 @@ func (x *UpdateVirtualMachineStatusResponse) String() string {
 func (*UpdateVirtualMachineStatusResponse) ProtoMessage() {}
 
 func (x *UpdateVirtualMachineStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1455,7 +1522,7 @@ func (x *UpdateVirtualMachineStatusResponse) ProtoReflect() protoreflect.Message
 
 // Deprecated: Use UpdateVirtualMachineStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateVirtualMachineStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{20}
+	return file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UpdateVirtualMachineStatusResponse) GetVirtualMachine() *VirtualMachine {
@@ -1477,7 +1544,7 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x12?\n" +
 	"\x04spec\x18\x04 \x01(\v2+.hangar.compute.v1alpha1.VirtualMachineSpecR\x04spec\x12E\n" +
 	"\x06status\x18\x05 \x01(\v2-.hangar.compute.v1alpha1.VirtualMachineStatusR\x06status:+\x8a\xb5\x18'\n" +
-	"\x0eVirtualMachine\x12\x0fvirtualmachines\x1a\x02vm \x01\"\xdb\x03\n" +
+	"\x0eVirtualMachine\x12\x0fvirtualmachines\x1a\x02vm \x01\"\xae\x04\n" +
 	"\x12VirtualMachineSpec\x12N\n" +
 	"\tresources\x18\x01 \x01(\v20.hangar.compute.v1alpha1.VirtualMachineResourcesR\tresources\x12L\n" +
 	"\troot_disk\x18\x02 \x01(\v2/.hangar.compute.v1alpha1.VirtualMachineRootDiskR\brootDisk\x12A\n" +
@@ -1487,7 +1554,12 @@ const file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc = "" +
 	"\n" +
 	"interfaces\x18\x06 \x03(\v2).hangar.compute.v1alpha1.NetworkInterfaceR\n" +
 	"interfaces\x12\x1b\n" +
-	"\tuser_data\x18\a \x01(\tR\buserData\"C\n" +
+	"\tuser_data\x18\a \x01(\tR\buserData\x12Q\n" +
+	"\vfile_shares\x18\b \x03(\v20.hangar.compute.v1alpha1.VirtualMachineFileShareR\n" +
+	"fileShares\"J\n" +
+	"\x17VirtualMachineFileShare\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1b\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\"C\n" +
 	"\x17VirtualMachineResources\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\"\x93\x01\n" +
@@ -1599,82 +1671,84 @@ func file_hangar_compute_v1alpha1_virtual_machine_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_compute_v1alpha1_virtual_machine_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_hangar_compute_v1alpha1_virtual_machine_proto_goTypes = []any{
 	(VirtualMachineDeletePolicy)(0),            // 0: hangar.compute.v1alpha1.VirtualMachineDeletePolicy
 	(VirtualMachineRunState)(0),                // 1: hangar.compute.v1alpha1.VirtualMachineRunState
 	(*VirtualMachine)(nil),                     // 2: hangar.compute.v1alpha1.VirtualMachine
 	(*VirtualMachineSpec)(nil),                 // 3: hangar.compute.v1alpha1.VirtualMachineSpec
-	(*VirtualMachineResources)(nil),            // 4: hangar.compute.v1alpha1.VirtualMachineResources
-	(*VirtualMachineRootDisk)(nil),             // 5: hangar.compute.v1alpha1.VirtualMachineRootDisk
-	(*VirtualMachineImageDisk)(nil),            // 6: hangar.compute.v1alpha1.VirtualMachineImageDisk
-	(*VirtualMachineDisk)(nil),                 // 7: hangar.compute.v1alpha1.VirtualMachineDisk
-	(*VirtualMachineStatus)(nil),               // 8: hangar.compute.v1alpha1.VirtualMachineStatus
-	(*VirtualMachineSSHHostKey)(nil),           // 9: hangar.compute.v1alpha1.VirtualMachineSSHHostKey
-	(*VirtualMachineInterfaceStatus)(nil),      // 10: hangar.compute.v1alpha1.VirtualMachineInterfaceStatus
-	(*GetVirtualMachineRequest)(nil),           // 11: hangar.compute.v1alpha1.GetVirtualMachineRequest
-	(*GetVirtualMachineResponse)(nil),          // 12: hangar.compute.v1alpha1.GetVirtualMachineResponse
-	(*ListVirtualMachinesRequest)(nil),         // 13: hangar.compute.v1alpha1.ListVirtualMachinesRequest
-	(*ListVirtualMachinesResponse)(nil),        // 14: hangar.compute.v1alpha1.ListVirtualMachinesResponse
-	(*WatchVirtualMachinesRequest)(nil),        // 15: hangar.compute.v1alpha1.WatchVirtualMachinesRequest
-	(*WatchVirtualMachinesResponse)(nil),       // 16: hangar.compute.v1alpha1.WatchVirtualMachinesResponse
-	(*ApplyVirtualMachineRequest)(nil),         // 17: hangar.compute.v1alpha1.ApplyVirtualMachineRequest
-	(*ApplyVirtualMachineResponse)(nil),        // 18: hangar.compute.v1alpha1.ApplyVirtualMachineResponse
-	(*DeleteVirtualMachineRequest)(nil),        // 19: hangar.compute.v1alpha1.DeleteVirtualMachineRequest
-	(*DeleteVirtualMachineResponse)(nil),       // 20: hangar.compute.v1alpha1.DeleteVirtualMachineResponse
-	(*UpdateVirtualMachineStatusRequest)(nil),  // 21: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
-	(*UpdateVirtualMachineStatusResponse)(nil), // 22: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
-	(*v1.ObjectMeta)(nil),                      // 23: hangar.meta.v1.ObjectMeta
-	(*NetworkInterface)(nil),                   // 24: hangar.compute.v1alpha1.NetworkInterface
-	(*v1alpha1.ImageSource)(nil),               // 25: hangar.storage.v1alpha1.ImageSource
-	(*v1.Condition)(nil),                       // 26: hangar.meta.v1.Condition
-	(*Placement)(nil),                          // 27: hangar.compute.v1alpha1.Placement
-	(*timestamppb.Timestamp)(nil),              // 28: google.protobuf.Timestamp
-	(v1.EventType)(0),                          // 29: hangar.meta.v1.EventType
+	(*VirtualMachineFileShare)(nil),            // 4: hangar.compute.v1alpha1.VirtualMachineFileShare
+	(*VirtualMachineResources)(nil),            // 5: hangar.compute.v1alpha1.VirtualMachineResources
+	(*VirtualMachineRootDisk)(nil),             // 6: hangar.compute.v1alpha1.VirtualMachineRootDisk
+	(*VirtualMachineImageDisk)(nil),            // 7: hangar.compute.v1alpha1.VirtualMachineImageDisk
+	(*VirtualMachineDisk)(nil),                 // 8: hangar.compute.v1alpha1.VirtualMachineDisk
+	(*VirtualMachineStatus)(nil),               // 9: hangar.compute.v1alpha1.VirtualMachineStatus
+	(*VirtualMachineSSHHostKey)(nil),           // 10: hangar.compute.v1alpha1.VirtualMachineSSHHostKey
+	(*VirtualMachineInterfaceStatus)(nil),      // 11: hangar.compute.v1alpha1.VirtualMachineInterfaceStatus
+	(*GetVirtualMachineRequest)(nil),           // 12: hangar.compute.v1alpha1.GetVirtualMachineRequest
+	(*GetVirtualMachineResponse)(nil),          // 13: hangar.compute.v1alpha1.GetVirtualMachineResponse
+	(*ListVirtualMachinesRequest)(nil),         // 14: hangar.compute.v1alpha1.ListVirtualMachinesRequest
+	(*ListVirtualMachinesResponse)(nil),        // 15: hangar.compute.v1alpha1.ListVirtualMachinesResponse
+	(*WatchVirtualMachinesRequest)(nil),        // 16: hangar.compute.v1alpha1.WatchVirtualMachinesRequest
+	(*WatchVirtualMachinesResponse)(nil),       // 17: hangar.compute.v1alpha1.WatchVirtualMachinesResponse
+	(*ApplyVirtualMachineRequest)(nil),         // 18: hangar.compute.v1alpha1.ApplyVirtualMachineRequest
+	(*ApplyVirtualMachineResponse)(nil),        // 19: hangar.compute.v1alpha1.ApplyVirtualMachineResponse
+	(*DeleteVirtualMachineRequest)(nil),        // 20: hangar.compute.v1alpha1.DeleteVirtualMachineRequest
+	(*DeleteVirtualMachineResponse)(nil),       // 21: hangar.compute.v1alpha1.DeleteVirtualMachineResponse
+	(*UpdateVirtualMachineStatusRequest)(nil),  // 22: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
+	(*UpdateVirtualMachineStatusResponse)(nil), // 23: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
+	(*v1.ObjectMeta)(nil),                      // 24: hangar.meta.v1.ObjectMeta
+	(*NetworkInterface)(nil),                   // 25: hangar.compute.v1alpha1.NetworkInterface
+	(*v1alpha1.ImageSource)(nil),               // 26: hangar.storage.v1alpha1.ImageSource
+	(*v1.Condition)(nil),                       // 27: hangar.meta.v1.Condition
+	(*Placement)(nil),                          // 28: hangar.compute.v1alpha1.Placement
+	(*timestamppb.Timestamp)(nil),              // 29: google.protobuf.Timestamp
+	(v1.EventType)(0),                          // 30: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_virtual_machine_proto_depIdxs = []int32{
-	23, // 0: hangar.compute.v1alpha1.VirtualMachine.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	24, // 0: hangar.compute.v1alpha1.VirtualMachine.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	3,  // 1: hangar.compute.v1alpha1.VirtualMachine.spec:type_name -> hangar.compute.v1alpha1.VirtualMachineSpec
-	8,  // 2: hangar.compute.v1alpha1.VirtualMachine.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
-	4,  // 3: hangar.compute.v1alpha1.VirtualMachineSpec.resources:type_name -> hangar.compute.v1alpha1.VirtualMachineResources
-	5,  // 4: hangar.compute.v1alpha1.VirtualMachineSpec.root_disk:type_name -> hangar.compute.v1alpha1.VirtualMachineRootDisk
-	7,  // 5: hangar.compute.v1alpha1.VirtualMachineSpec.disks:type_name -> hangar.compute.v1alpha1.VirtualMachineDisk
+	9,  // 2: hangar.compute.v1alpha1.VirtualMachine.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
+	5,  // 3: hangar.compute.v1alpha1.VirtualMachineSpec.resources:type_name -> hangar.compute.v1alpha1.VirtualMachineResources
+	6,  // 4: hangar.compute.v1alpha1.VirtualMachineSpec.root_disk:type_name -> hangar.compute.v1alpha1.VirtualMachineRootDisk
+	8,  // 5: hangar.compute.v1alpha1.VirtualMachineSpec.disks:type_name -> hangar.compute.v1alpha1.VirtualMachineDisk
 	1,  // 6: hangar.compute.v1alpha1.VirtualMachineSpec.run_state:type_name -> hangar.compute.v1alpha1.VirtualMachineRunState
-	24, // 7: hangar.compute.v1alpha1.VirtualMachineSpec.interfaces:type_name -> hangar.compute.v1alpha1.NetworkInterface
-	6,  // 8: hangar.compute.v1alpha1.VirtualMachineRootDisk.from_image:type_name -> hangar.compute.v1alpha1.VirtualMachineImageDisk
-	25, // 9: hangar.compute.v1alpha1.VirtualMachineImageDisk.image:type_name -> hangar.storage.v1alpha1.ImageSource
-	0,  // 10: hangar.compute.v1alpha1.VirtualMachineImageDisk.delete_policy:type_name -> hangar.compute.v1alpha1.VirtualMachineDeletePolicy
-	26, // 11: hangar.compute.v1alpha1.VirtualMachineStatus.conditions:type_name -> hangar.meta.v1.Condition
-	10, // 12: hangar.compute.v1alpha1.VirtualMachineStatus.interfaces:type_name -> hangar.compute.v1alpha1.VirtualMachineInterfaceStatus
-	27, // 13: hangar.compute.v1alpha1.VirtualMachineStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
-	9,  // 14: hangar.compute.v1alpha1.VirtualMachineStatus.ssh_host_keys:type_name -> hangar.compute.v1alpha1.VirtualMachineSSHHostKey
-	28, // 15: hangar.compute.v1alpha1.VirtualMachineSSHHostKey.record_time:type_name -> google.protobuf.Timestamp
-	2,  // 16: hangar.compute.v1alpha1.GetVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 17: hangar.compute.v1alpha1.ListVirtualMachinesResponse.items:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	29, // 18: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.type:type_name -> hangar.meta.v1.EventType
-	2,  // 19: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 20: hangar.compute.v1alpha1.ApplyVirtualMachineRequest.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 21: hangar.compute.v1alpha1.ApplyVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	2,  // 22: hangar.compute.v1alpha1.DeleteVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	8,  // 23: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
-	2,  // 24: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
-	11, // 25: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:input_type -> hangar.compute.v1alpha1.GetVirtualMachineRequest
-	13, // 26: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:input_type -> hangar.compute.v1alpha1.ListVirtualMachinesRequest
-	15, // 27: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:input_type -> hangar.compute.v1alpha1.WatchVirtualMachinesRequest
-	17, // 28: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:input_type -> hangar.compute.v1alpha1.ApplyVirtualMachineRequest
-	19, // 29: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:input_type -> hangar.compute.v1alpha1.DeleteVirtualMachineRequest
-	21, // 30: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
-	12, // 31: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:output_type -> hangar.compute.v1alpha1.GetVirtualMachineResponse
-	14, // 32: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:output_type -> hangar.compute.v1alpha1.ListVirtualMachinesResponse
-	16, // 33: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:output_type -> hangar.compute.v1alpha1.WatchVirtualMachinesResponse
-	18, // 34: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:output_type -> hangar.compute.v1alpha1.ApplyVirtualMachineResponse
-	20, // 35: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:output_type -> hangar.compute.v1alpha1.DeleteVirtualMachineResponse
-	22, // 36: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
-	31, // [31:37] is the sub-list for method output_type
-	25, // [25:31] is the sub-list for method input_type
-	25, // [25:25] is the sub-list for extension type_name
-	25, // [25:25] is the sub-list for extension extendee
-	0,  // [0:25] is the sub-list for field type_name
+	25, // 7: hangar.compute.v1alpha1.VirtualMachineSpec.interfaces:type_name -> hangar.compute.v1alpha1.NetworkInterface
+	4,  // 8: hangar.compute.v1alpha1.VirtualMachineSpec.file_shares:type_name -> hangar.compute.v1alpha1.VirtualMachineFileShare
+	7,  // 9: hangar.compute.v1alpha1.VirtualMachineRootDisk.from_image:type_name -> hangar.compute.v1alpha1.VirtualMachineImageDisk
+	26, // 10: hangar.compute.v1alpha1.VirtualMachineImageDisk.image:type_name -> hangar.storage.v1alpha1.ImageSource
+	0,  // 11: hangar.compute.v1alpha1.VirtualMachineImageDisk.delete_policy:type_name -> hangar.compute.v1alpha1.VirtualMachineDeletePolicy
+	27, // 12: hangar.compute.v1alpha1.VirtualMachineStatus.conditions:type_name -> hangar.meta.v1.Condition
+	11, // 13: hangar.compute.v1alpha1.VirtualMachineStatus.interfaces:type_name -> hangar.compute.v1alpha1.VirtualMachineInterfaceStatus
+	28, // 14: hangar.compute.v1alpha1.VirtualMachineStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
+	10, // 15: hangar.compute.v1alpha1.VirtualMachineStatus.ssh_host_keys:type_name -> hangar.compute.v1alpha1.VirtualMachineSSHHostKey
+	29, // 16: hangar.compute.v1alpha1.VirtualMachineSSHHostKey.record_time:type_name -> google.protobuf.Timestamp
+	2,  // 17: hangar.compute.v1alpha1.GetVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 18: hangar.compute.v1alpha1.ListVirtualMachinesResponse.items:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	30, // 19: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.type:type_name -> hangar.meta.v1.EventType
+	2,  // 20: hangar.compute.v1alpha1.WatchVirtualMachinesResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 21: hangar.compute.v1alpha1.ApplyVirtualMachineRequest.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 22: hangar.compute.v1alpha1.ApplyVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	2,  // 23: hangar.compute.v1alpha1.DeleteVirtualMachineResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	9,  // 24: hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.VirtualMachineStatus
+	2,  // 25: hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse.virtual_machine:type_name -> hangar.compute.v1alpha1.VirtualMachine
+	12, // 26: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:input_type -> hangar.compute.v1alpha1.GetVirtualMachineRequest
+	14, // 27: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:input_type -> hangar.compute.v1alpha1.ListVirtualMachinesRequest
+	16, // 28: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:input_type -> hangar.compute.v1alpha1.WatchVirtualMachinesRequest
+	18, // 29: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:input_type -> hangar.compute.v1alpha1.ApplyVirtualMachineRequest
+	20, // 30: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:input_type -> hangar.compute.v1alpha1.DeleteVirtualMachineRequest
+	22, // 31: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
+	13, // 32: hangar.compute.v1alpha1.VirtualMachineService.GetVirtualMachine:output_type -> hangar.compute.v1alpha1.GetVirtualMachineResponse
+	15, // 33: hangar.compute.v1alpha1.VirtualMachineService.ListVirtualMachines:output_type -> hangar.compute.v1alpha1.ListVirtualMachinesResponse
+	17, // 34: hangar.compute.v1alpha1.VirtualMachineService.WatchVirtualMachines:output_type -> hangar.compute.v1alpha1.WatchVirtualMachinesResponse
+	19, // 35: hangar.compute.v1alpha1.VirtualMachineService.ApplyVirtualMachine:output_type -> hangar.compute.v1alpha1.ApplyVirtualMachineResponse
+	21, // 36: hangar.compute.v1alpha1.VirtualMachineService.DeleteVirtualMachine:output_type -> hangar.compute.v1alpha1.DeleteVirtualMachineResponse
+	23, // 37: hangar.compute.v1alpha1.VirtualMachineService.UpdateVirtualMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
+	32, // [32:38] is the sub-list for method output_type
+	26, // [26:32] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_virtual_machine_proto_init() }
@@ -1684,19 +1758,19 @@ func file_hangar_compute_v1alpha1_virtual_machine_proto_init() {
 	}
 	file_hangar_compute_v1alpha1_interface_proto_init()
 	file_hangar_compute_v1alpha1_placement_proto_init()
-	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[3].OneofWrappers = []any{
+	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[4].OneofWrappers = []any{
 		(*VirtualMachineRootDisk_FromImage)(nil),
 		(*VirtualMachineRootDisk_Disk)(nil),
 	}
-	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[17].OneofWrappers = []any{}
-	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[19].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[18].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_virtual_machine_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc), len(file_hangar_compute_v1alpha1_virtual_machine_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

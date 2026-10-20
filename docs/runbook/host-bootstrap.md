@@ -490,6 +490,11 @@ the tenants each person opened by the `hangarlab.cloud/opened-by`
 annotation, which only tenants opened from that version on carry: tenants
 opened before it count toward no one's cap.
 
+Upgrading past the change that added `FileShare`: the `default` Plan
+already in the store keeps its limits, which have no `fileShares`, so
+tenants may make any number of shares until it is set ("Quotas" below).
+A share's size counts toward `disk` from the start.
+
 Upgrading past the change that added Invitations and the tenant signing
 up opens: existing Users keep what they have, and only people who sign up
 from then on get a tenant and a project made for them, which counts toward
@@ -685,10 +690,10 @@ with the caller's pid, as `local:root@<node>`.
 The limits every tenant has unless it names a plan are the `default` Plan
 (`docs/decisions/tenancy-and-iam.md`), a trial's. The apiserver makes it
 once, on a new store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
-projects, 5 networks, 5 addresses, 10 public endpoints and 10 service
-tokens. From then on the plan is data: the apiserver never changes it
-again, so a store made before these limits keeps the ones it was made
-with, and the operator sets them, as platform root, with apply; a field left
+projects, 5 networks, 5 addresses, 10 public endpoints, 10 service
+tokens and 3 file shares. From then on the plan is data: the apiserver
+never changes it again, so a store made before these limits keeps the ones
+it was made with, and the operator sets them, as platform root, with apply; a field left
 out has no limit:
 
 ```yaml
@@ -708,6 +713,7 @@ spec:
     addresses: 5
     publicEndpoints: 10
     serviceTokens: 10
+    fileShares: 3
 ```
 
 `sudo hangar --context local apply -f default-plan.yaml` on the host, or

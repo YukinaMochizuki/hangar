@@ -1,6 +1,9 @@
 # File shares: one NFS server microVM per share, on its own zvol
 
-Status: accepted, 2026-10. Not built yet.
+Status: accepted, 2026-10. The API, its admission and the quota are
+built; a share stays Pending, a container declaring it is held back and a
+VM runs without it, as its server, its node's part and the mounts are not
+built.
 
 ## Context
 

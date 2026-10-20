@@ -52,6 +52,7 @@ func DefaultLimits() *tenancyv1alpha1.Limits {
 		Addresses:       proto.Int32(5),
 		PublicEndpoints: proto.Int32(10),
 		ServiceTokens:   proto.Int32(10),
+		FileShares:      proto.Int32(3),
 	}
 }
 
@@ -70,11 +71,12 @@ const (
 	dimAddresses
 	dimPublicEndpoints
 	dimServiceTokens
+	dimFileShares
 	numDims
 )
 
 // dimNames are the dimensions as Limits and Usage name them.
-var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens"}
+var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares"}
 
 // amounts are what something holds, by dimension.
 type amounts [numDims]int64
@@ -126,7 +128,7 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 		v *int32
 	}{
 		{dimMachines, l.Machines}, {dimProjects, l.Projects}, {dimNetworks, l.Networks}, {dimAddresses, l.Addresses},
-		{dimPublicEndpoints, l.PublicEndpoints}, {dimServiceTokens, l.ServiceTokens},
+		{dimPublicEndpoints, l.PublicEndpoints}, {dimServiceTokens, l.ServiceTokens}, {dimFileShares, l.FileShares},
 	} {
 		if c.v == nil {
 			continue
@@ -205,7 +207,7 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	}
 	l.Cpu, l.Memory, l.Disk = str(dimCPU), str(dimMemory), str(dimDisk)
 	l.Machines, l.Projects, l.Networks, l.Addresses = count(dimMachines), count(dimProjects), count(dimNetworks), count(dimAddresses)
-	l.PublicEndpoints, l.ServiceTokens = count(dimPublicEndpoints), count(dimServiceTokens)
+	l.PublicEndpoints, l.ServiceTokens, l.FileShares = count(dimPublicEndpoints), count(dimServiceTokens), count(dimFileShares)
 	return l
 }
 
@@ -221,6 +223,7 @@ func (a amounts) usage() *tenancyv1alpha1.Usage {
 		Addresses:       int32(a[dimAddresses]),
 		PublicEndpoints: int32(a[dimPublicEndpoints]),
 		ServiceTokens:   int32(a[dimServiceTokens]),
+		FileShares:      int32(a[dimFileShares]),
 	}
 }
 
@@ -241,6 +244,7 @@ var quotaCounters = map[string]func(obj proto.Message, in projectObjects) amount
 	registry.Network.Kind:        countsOne(dimNetworks),
 	registry.Address.Kind:        countsOne(dimAddresses),
 	registry.PublicEndpoint.Kind: endpointAmounts,
+	registry.FileShare.Kind:      fileShareAmounts,
 }
 
 func countsOne(d dim) func(proto.Message, projectObjects) amounts {

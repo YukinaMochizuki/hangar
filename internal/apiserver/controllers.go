@@ -61,8 +61,10 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.Network.Kind, Map: s.containersInProject, SkipResync: true},
 				// A disk going may make room for a resize.
 				{Kind: registry.Disk.Kind, Map: s.containersOnDiskNode, SkipResync: true},
-				// A disk made or let go unblocks the containers mounting it.
+				// A disk made or let go unblocks the containers mounting it, and a
+				// file share made or put on a node those declaring it.
 				{Kind: registry.Disk.Kind, Map: s.containersMountingDisk, SkipResync: true},
+				{Kind: registry.FileShare.Kind, Map: s.containersMountingShare, SkipResync: true},
 				// An Address binding, moving or going changes the interfaces
 				// of the containers it binds or leaves.
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.Container), SkipResync: true},
@@ -88,6 +90,8 @@ func (s *Server) newControllers() []*controller.Controller {
 				// disk changing those that boot from it or keep it.
 				{Kind: registry.Network.Kind, Map: s.vmsInProject, SkipResync: true},
 				{Kind: registry.Disk.Kind, Map: s.vmsInProject, SkipResync: true},
+				// A file share made unblocks the VMs declaring it.
+				{Kind: registry.FileShare.Kind, Map: s.vmsInProject, SkipResync: true},
 				// An image fixed lets a root disk be made of it.
 				{Kind: registry.Image.Kind, Map: s.vmsOfImage, SkipResync: true},
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.VirtualMachine), SkipResync: true},
@@ -458,7 +462,8 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 		return m, nil
 	}
 	// The node is the scheduler's to set, and addresses the machine already
-	// has stay; everything else follows the container.
+	// has stay; everything else follows the container. The networks it
+	// mounts its file shares from are admission's to keep (settleNetwork).
 	want.Node = m.GetSpec().GetNode()
 	s.ipam.Lock()
 	defer s.ipam.Unlock()
@@ -539,7 +544,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 	if cs.GetRunState() == computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
 		runState = computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
 	}
-	disks, mounts := machineVolumes(cs.GetVolumes())
+	disks, shares, mounts := machineVolumes(cs.GetVolumes())
 	return &computev1alpha1.MachineSpec{
 		Resources: sz.canonical(),
 		RunState:  runState,
@@ -551,6 +556,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 		Interfaces:    machineInterfaces(cs.GetInterfaces()),
 		RestartPolicy: restart,
 		Disks:         disks,
+		FileShares:    shares,
 	}, nil
 }
 
@@ -714,10 +720,11 @@ func (s *Server) scheduleMachine(ctx context.Context, key resource.Key, m *compu
 }
 
 // place picks a node for m and writes it, as one decision about the node's
-// memory and disk. The disks m lists that live on no node yet are bound to
-// it first, and the IPv6 addresses of the node's prefix are given with it, so
-// the machine starts with them. Without a fit it returns no machine and
-// says why.
+// memory and disk: the node its bound disks and its file shares live on,
+// if any. The disks m lists that live on no node yet are bound to it first,
+// and the IPv6 addresses of the node's prefix are given with it, so the
+// machine starts with them. Without a fit it returns no machine and says
+// why.
 func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*computev1alpha1.Machine, string, string, error) {
 	s.ipam.Lock()
 	defer s.ipam.Unlock()
@@ -727,6 +734,14 @@ func (s *Server) place(ctx context.Context, m *computev1alpha1.Machine) (*comput
 	if err != nil || why != "" {
 		return nil, "", why, err
 	}
+	sharesOn, why, err := s.machineShares(ctx, m)
+	if err != nil || why != "" {
+		return nil, "", why, err
+	}
+	if disksOn != "" && sharesOn != "" && disksOn != sharesOn && m.GetSpec().GetContainer() != nil {
+		return nil, "", fmt.Sprintf("its disks live on node %s and its file shares on node %s", disksOn, sharesOn), nil
+	}
+	disksOn = cmp.Or(disksOn, sharesOn)
 	var extra uint64
 	for _, d := range unbound {
 		b, err := diskBytes(d.GetSpec())
@@ -897,7 +912,7 @@ func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine, only 
 	if only != "" {
 		nodes = slices.DeleteFunc(nodes, func(n *computev1alpha1.Node) bool { return n.GetMetadata().GetName() != only })
 		if len(nodes) == 0 {
-			return "", fmt.Sprintf("its disks live on node %s, which is not registered", only), nil
+			return "", fmt.Sprintf("its disks or file shares live on node %s, which is not registered", only), nil
 		}
 	}
 	type candidate struct {

@@ -41,12 +41,34 @@ message MachineSpec {
   // Disks attached after the ones the boot makes, in this order. A disk is
   // attached to one machine at a time.
   repeated MachineDisk disks = 22;
+  // The FileShares the machine may mount, each once. A share on a node
+  // keeps the machine to that node. A container's machine declares only
+  // shares on a node; a VM's may declare one on no node yet, which it
+  // mounts once the share is on its node. Changing them restarts nothing:
+  // a container's restart comes from its volumes changing.
+  repeated MachineFileShare file_shares = 23;
 }
 
 // MachineDisk is a Disk attached to the machine as a block device.
 message MachineDisk {
   // Names a Disk in the machine's project.
   string disk = 1;
+}
+
+// MachineFileShare is a FileShare the machine declares. See
+// docs/decisions/file-shares.md.
+message MachineFileShare {
+  // Names a FileShare in the machine's project.
+  string file_share = 1;
+  // The share's server exports it to the machine read-only.
+  bool read_only = 2;
+  // Names the Network, one of the machine's interfaces', the machine mounts
+  // the share from. Set by the apiserver when the machine first declares
+  // the share, to the first of its networks the share is on, and kept
+  // while it declares the share and has an interface on that network: its
+  // mounts last across the share's server restarting. A controller leaves
+  // it empty.
+  string network = 3;
 }
 
 // ContainerBoot boots an OCI image as the root disk, with hangar-init as PID 1
@@ -63,19 +85,25 @@ message ContainerBoot {
   // container's spec.imagePullSecrets does. Only the machine's node gets
   // their logins, one pull at a time (ImagePullCredentialsService).
   repeated string image_pull_secrets = 5;
-  // The machine's disks the guest mounts, as the container's spec.volumes
-  // has them. Each names one of the machine's spec.disks, at most once.
+  // The machine's disks and file shares the guest mounts, as the
+  // container's spec.volumes has them. Each names one of the machine's
+  // spec.disks or spec.file_shares, at most once.
   repeated ContainerBootVolume volumes = 6;
 }
 
-// ContainerBootVolume is one of the machine's disks, mounted in the guest.
+// ContainerBootVolume is one of the machine's disks or file shares,
+// mounted in the guest.
 message ContainerBootVolume {
-  // Names one of the machine's spec.disks.
+  // Names one of the machine's spec.disks; empty when file_share is set.
   string disk = 1;
   string target = 2;
   bool read_only = 3;
+  // Always set for a file share, which is never filled from the image.
   bool nocopy = 4;
   string subpath = 5;
+  // Names one of the machine's spec.file_shares, mounted over NFS; empty
+  // when disk is set.
+  string file_share = 6;
 }
 
 // FirmwareBoot boots a disk's own operating system through the platform's
