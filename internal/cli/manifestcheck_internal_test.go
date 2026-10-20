@@ -18,22 +18,22 @@ func TestManifestErrorsSayWhatIsRight(t *testing.T) {
 		{
 			"unknown field",
 			containerHead + "spec:\n  image: x\n  resources:\n    cpus: 2\n",
-			[]string{"document 1, line 7: spec.resources.cpus: unknown field", "did you mean cpu?", "spec.resources has cpu, memory, disk"},
+			[]string{"document 1, line 7: spec.resources.cpus: unknown field", "did you mean cpu?", "spec.resources has cpu, memory, disk", "\nrun hangar explain container.spec.resources for what it takes"},
 		},
 		{
 			"unknown top-level field",
 			containerHead + "specs: {image: x}\n",
-			[]string{"line 4: specs: unknown field; did you mean spec?", "the object has "},
+			[]string{"line 4: specs: unknown field; did you mean spec?", "the object has ", "run hangar explain container for"},
 		},
 		{
 			"enum value by its last word",
 			containerHead + "spec: {image: x, runState: running}\n",
-			[]string{"line 4: spec.runState: \"running\" is not a ContainerRunState", "want one of CONTAINER_RUN_STATE_RUNNING, CONTAINER_RUN_STATE_STOPPED", "did you mean CONTAINER_RUN_STATE_RUNNING?"},
+			[]string{"run hangar explain container.spec.runState for", "line 4: spec.runState: \"running\" is not a ContainerRunState", "want one of CONTAINER_RUN_STATE_RUNNING, CONTAINER_RUN_STATE_STOPPED", "did you mean CONTAINER_RUN_STATE_RUNNING?"},
 		},
 		{
 			"field in a list item",
 			containerHead + "spec:\n  image: x\n  ports:\n  - name: http\n    prot: 80\n",
-			[]string{"line 8: spec.ports[0].prot: unknown field; did you mean port?"},
+			[]string{"line 8: spec.ports[0].prot: unknown field; did you mean port?", "run hangar explain container.spec.ports for"},
 		},
 		{
 			"word for a number",

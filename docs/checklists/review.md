@@ -41,6 +41,9 @@ those rules.
 - [ ] `buf lint` and `buf breaking` (WIRE_JSON against `main`) pass. Removed
       fields are `reserved`, by number and by name.
 - [ ] A new resource satisfies the envelope check (`go test` runs it).
+- [ ] A changed comment on a resource's messages reads right in the
+      regenerated schema under `gen/go/hangar/schema`, which users see
+      through `hangar explain` (`docs/decisions/api-schema.md`).
 
 ## Changes touching authentication or authorization
 

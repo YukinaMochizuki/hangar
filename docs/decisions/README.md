@@ -19,6 +19,7 @@ the change.
 | `api-rpc-shape.md` | One typed service per kind, buf STANDARD request/response wrappers |
 | `apply-semantics.md` | Apply replaces the spec; field ownership; status subresource |
 | `resource-codegen.md` | Resources are declared in proto; codegen and a test do the rest |
+| `api-schema.md` | `DiscoveryService` serves the kinds and each kind's JSON Schema, generated from proto with its comments, docs named in them as links at the server's revision; `hangar api-resources` and `hangar explain` read it |
 | `sqlite-store.md` | SQLite with a global revision and a replayable event log |
 | `buf-breaking-wire-json.md` | WIRE_JSON breaking checks are enforced even in alpha |
 | `tenancy-and-iam.md` | Tenant and Project; permissions, roles and bindings |

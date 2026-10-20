@@ -2,9 +2,9 @@
 // Connect handler shims from the resource declarations in proto/. See
 // docs/decisions/resource-codegen.md.
 //
-// It runs with strategy "all" in one of two modes: mode=registry writes the
-// public registry package under gen/go, and mode=server writes the handler
-// shims under internal/.
+// It runs with strategy "all" in one of three modes: mode=registry writes the
+// public registry package under gen/go, mode=schema the JSON Schema of every
+// kind beside it, and mode=server writes the handler shims under internal/.
 package main
 
 import (
@@ -36,7 +36,7 @@ const (
 
 func main() {
 	var flags flag.FlagSet
-	mode := flags.String("mode", "", "registry or server")
+	mode := flags.String("mode", "", "registry, schema or server")
 	domain := flags.String("domain", "", "suffix of every API group, such as hangarlab.cloud")
 	protogen.Options{ParamFunc: flags.Set}.Run(func(gen *protogen.Plugin) error {
 		gen.SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
@@ -50,10 +50,15 @@ func main() {
 				return fmt.Errorf("mode=registry needs domain=<suffix>")
 			}
 			genRegistry(gen, kinds, *domain)
+		case "schema":
+			if *domain == "" {
+				return fmt.Errorf("mode=schema needs domain=<suffix>")
+			}
+			return genSchema(gen, kinds, *domain)
 		case "server":
 			genServer(gen, kinds)
 		default:
-			return fmt.Errorf("unknown mode %q; want registry or server", *mode)
+			return fmt.Errorf("unknown mode %q; want registry, schema or server", *mode)
 		}
 		return nil
 	})

@@ -1,0 +1,296 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.DiskAttachment": {
+      "additionalProperties": false,
+      "description": "DiskAttachment is how a disk is attached, as the spec of the machine listing it says.",
+      "properties": {
+        "as": {
+          "description": "DiskAttachmentRole is what a machine uses a disk as.\n\n- DISK_ATTACHMENT_ROLE_BOOT: The disk a VM boots from.\n- DISK_ATTACHMENT_ROLE_DATA: A block device given to the guest as it is.\n- DISK_ATTACHMENT_ROLE_VOLUME: A filesystem a container mounts.",
+          "enum": [
+            "DISK_ATTACHMENT_ROLE_BOOT",
+            "DISK_ATTACHMENT_ROLE_DATA",
+            "DISK_ATTACHMENT_ROLE_VOLUME"
+          ],
+          "type": "string"
+        },
+        "device": {
+          "description": "The disk's place in the order the hypervisor attaches disks, as a Linux guest names virtio disks, such as \"vdc\".",
+          "type": "string"
+        },
+        "kind": {
+          "description": "The kind and name of what the machine was made from, in the disk's project, such as Container \"web\".",
+          "type": "string"
+        },
+        "machine": {
+          "description": "Names the Machine.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "description": "Where a VOLUME is mounted in the guest, as the container's spec has it.",
+          "type": "string"
+        },
+        "readOnly": {
+          "description": "Whether a VOLUME is mounted read-only.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.DiskSource": {
+      "additionalProperties": false,
+      "description": "DiskSource is what a disk is made from. Leaving it empty makes a blank disk, all zeros.",
+      "properties": {
+        "image": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.ImageSource",
+          "description": "A copy of an image, grown to the disk's size, which must be at least the image's status.disk_size.\n\nSet at most one of image."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.DiskSpec": {
+      "additionalProperties": false,
+      "description": "DiskSpec is the desired state of a disk.",
+      "properties": {
+        "size": {
+          "description": "A quantity in whole Gi, such as \"20Gi\", at least 1Gi; a size that is not whole Gi is rounded up. It can grow but never shrink. A machine sees a disk grown while it runs once it boots again.",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.DiskSource",
+          "description": "What the disk holds when it is made."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.DiskStatus": {
+      "additionalProperties": false,
+      "description": "DiskStatus is the observed state of a disk. The apiserver writes its node, size, machine, attachment, phase and the Allocated condition; the disk's node writes the Ready and Released conditions.",
+      "properties": {
+        "attachment": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.DiskAttachment",
+          "description": "What the disk is attached to and used as; unset when it is attached to none. See docs/decisions/container-volumes.md."
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "machine": {
+          "description": "Names the Machine, in the disk's project, the disk is attached to; empty when it is attached to none. As attachment.machine.",
+          "type": "string"
+        },
+        "node": {
+          "description": "Names the Node the disk lives on. Empty until a machine using it is placed; once set it never changes.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "phase": {
+          "description": "DiskPhase is where a disk is in its lifecycle.\n\n- DISK_PHASE_PENDING: Not yet made on a node: no machine has used it, or its node is making it.\n- DISK_PHASE_AVAILABLE: Made on its node and attached to no machine.\n- DISK_PHASE_IN_USE: Attached to a machine.",
+          "enum": [
+            "DISK_PHASE_PENDING",
+            "DISK_PHASE_AVAILABLE",
+            "DISK_PHASE_IN_USE"
+          ],
+          "type": "string"
+        },
+        "size": {
+          "description": "The size the disk has on its node, in whole Gi: spec.size once its node has room for it, and never less than before.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.ImageSource": {
+      "additionalProperties": false,
+      "description": "ImageSource names the Image a disk is copied from. See docs/decisions/vm-images.md.",
+      "properties": {
+        "name": {
+          "description": "Names a global Image.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Disk is a durable block device in a project. It lives on one node, the one that ran the first machine it was attached to, and outlives the machines it is attached to, one at a time. See docs/decisions/machine-model.md and docs/decisions/storage-zfs.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "storage.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Disk",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.DiskSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.DiskStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "Disk",
+  "type": "object"
+}

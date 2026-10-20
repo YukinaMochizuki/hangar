@@ -191,6 +191,7 @@ func (a *app) root() *cobra.Command {
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &exitError{code: ExitUsage, err: err} })
 	root.AddCommand(a.configCmd(), a.loginCmd(), a.logoutCmd(), a.signupCmd(), a.whoamiCmd(), a.applyCmd(), a.createCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd(), a.tokenCmd(), a.adminCmd())
 	root.AddCommand(a.memberCmd(), a.projectCmd())
+	root.AddCommand(a.apiResourcesCmd(), a.explainCmd())
 	return root
 }
 

@@ -1,0 +1,478 @@
+{
+  "$defs": {
+    "hangar.compute.v1alpha1.ContainerBoot": {
+      "additionalProperties": false,
+      "description": "ContainerBoot boots an OCI image as the root disk, with hangar-init as PID 1 running the image's process.",
+      "properties": {
+        "args": {
+          "description": "Overrides the image command.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "command": {
+          "description": "Overrides the image entrypoint.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "env": {
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.EnvVar"
+          },
+          "type": "array"
+        },
+        "image": {
+          "description": "OCI image reference, as the user gave it.",
+          "type": "string"
+        },
+        "imagePullSecrets": {
+          "description": "Names Secrets in the machine's project to pull the image with, as the container's spec.imagePullSecrets does. Only the machine's node gets their logins, one pull at a time (ImagePullCredentialsService).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "volumes": {
+          "description": "The machine's disks and file shares the guest mounts, as the container's spec.volumes has them. Each names one of the machine's spec.disks or spec.file_shares, at most once.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerBootVolume"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.ContainerBootVolume": {
+      "additionalProperties": false,
+      "description": "ContainerBootVolume is one of the machine's disks or file shares, mounted in the guest.",
+      "properties": {
+        "disk": {
+          "description": "Names one of the machine's spec.disks; empty when file_share is set.",
+          "type": "string"
+        },
+        "fileShare": {
+          "description": "Names one of the machine's spec.file_shares, mounted over NFS; empty when disk is set.",
+          "type": "string"
+        },
+        "nocopy": {
+          "description": "Always set for a file share, which is never filled from the image.",
+          "type": "boolean"
+        },
+        "readOnly": {
+          "type": "boolean"
+        },
+        "subpath": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.EnvVar": {
+      "additionalProperties": false,
+      "description": "EnvVar is one environment variable.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.FirmwareBoot": {
+      "additionalProperties": false,
+      "description": "FirmwareBoot boots a disk's own operating system through the platform's firmware, as a VirtualMachine does. See docs/decisions/vm-boot.md.",
+      "properties": {
+        "cloudInit": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.MachineCloudInit",
+          "description": "What the guest's cloud-init is served by the metadata service. Only the node the machine is on reads it."
+        },
+        "rootDisk": {
+          "description": "Names the Disk, in the machine's project, booted from: attached first, before spec.disks, and attached to one machine at a time as they are.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineCloudInit": {
+      "additionalProperties": false,
+      "description": "MachineCloudInit is a firmware machine's NoCloud data, served by its networks' metadata service. Changing it does not restart the machine: cloud-init reads it once per instance.",
+      "properties": {
+        "instanceId": {
+          "description": "Served as meta-data's instance-id; empty is the machine's uid. A new instance id is a new first boot to cloud-init.",
+          "type": "string"
+        },
+        "userData": {
+          "description": "Served as user-data, unchanged; at most 16 KiB.",
+          "type": "string"
+        },
+        "vendorData": {
+          "description": "Served as vendor-data, the platform's settings; at most 64 KiB.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineDisk": {
+      "additionalProperties": false,
+      "description": "MachineDisk is a Disk attached to the machine as a block device.",
+      "properties": {
+        "disk": {
+          "description": "Names a Disk in the machine's project.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineFileShare": {
+      "additionalProperties": false,
+      "description": "MachineFileShare is a FileShare the machine declares. See docs/decisions/file-shares.md.",
+      "properties": {
+        "fileShare": {
+          "description": "Names a FileShare in the machine's project.",
+          "type": "string"
+        },
+        "network": {
+          "description": "Names the Network, one of the machine's interfaces', the machine mounts the share from. Set by the apiserver when the machine first declares the share, to the first of its networks the share is on, and kept while it declares the share and has an interface on that network: its mounts last across the share's server restarting. A controller leaves it empty.",
+          "type": "string"
+        },
+        "readOnly": {
+          "description": "The share's server exports it to the machine read-only.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineInterface": {
+      "additionalProperties": false,
+      "description": "MachineInterface is one network interface of the machine.",
+      "properties": {
+        "ipv4": {
+          "description": "The interface's address with the network's prefix length, such as \"10.0.0.5/24\". Assigned by the apiserver; empty until it is.",
+          "type": "string"
+        },
+        "ipv6": {
+          "description": "The interface's public address, a /128 of its node's IPv6 prefix, such as \"2001:db8:0:1:8a3f:12c4:9e01:77b2/128\". Assigned by the apiserver once the machine is on a node that has a prefix; empty otherwise.",
+          "type": "string"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the machine.",
+          "type": "string"
+        },
+        "network": {
+          "description": "Names a network in the machine's project.",
+          "type": "string"
+        },
+        "securityGroups": {
+          "description": "The SecurityGroups the interface is in, \"default\" included when it is; never empty once the controller has written it.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineSpec": {
+      "additionalProperties": false,
+      "description": "MachineSpec is what the node should run.",
+      "properties": {
+        "container": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.ContainerBoot",
+          "description": "Set at most one of container, firmware."
+        },
+        "disks": {
+          "description": "Disks attached after the ones the boot makes, in this order. A disk is attached to one machine at a time.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.MachineDisk"
+          },
+          "type": "array"
+        },
+        "fileShares": {
+          "description": "The FileShares the machine may mount, each once. A share on a node keeps the machine to that node. A container's machine declares only shares on a node; a VM's may declare one on no node yet, which it mounts once the share is on its node. Changing them restarts nothing: a container's restart comes from its volumes changing.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.MachineFileShare"
+          },
+          "type": "array"
+        },
+        "firmware": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.FirmwareBoot",
+          "description": "Set at most one of container, firmware."
+        },
+        "interfaces": {
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.MachineInterface"
+          },
+          "type": "array"
+        },
+        "node": {
+          "description": "Names the Node that runs the machine. Empty until the scheduler places it; once set it never changes.",
+          "type": "string"
+        },
+        "resources": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.Resources"
+        },
+        "restartPolicy": {
+          "description": "RestartPolicy says when a container's process is restarted after it exits.",
+          "enum": [
+            "RESTART_POLICY_ALWAYS",
+            "RESTART_POLICY_ON_FAILURE",
+            "RESTART_POLICY_NEVER"
+          ],
+          "type": "string"
+        },
+        "runState": {
+          "description": "MachineRunState is whether the machine should be running.",
+          "enum": [
+            "MACHINE_RUN_STATE_RUNNING",
+            "MACHINE_RUN_STATE_STOPPED"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.MachineStatus": {
+      "additionalProperties": false,
+      "description": "MachineStatus is what the node and the scheduler observed.",
+      "properties": {
+        "bootTime": {
+          "description": "When the running instance booted.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "image": {
+          "description": "The image reference image_digest was resolved from. The node resolves a reference once: it resolves it again only when the spec names another image, so a tag moving upstream never rebuilds a machine's disk.",
+          "type": "string"
+        },
+        "imageDigest": {
+          "description": "Digest of the image the root disk was built from.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "phase": {
+          "description": "MachinePhase is where the machine is in its lifecycle.\n\n- MACHINE_PHASE_PENDING: Accepted, not yet placed on a node or not yet picked up by it.\n- MACHINE_PHASE_CREATING: The node is building its disk or booting it.\n- MACHINE_PHASE_SUSPENDED: Memory saved to disk, not running. Reserved for snapshots.",
+          "enum": [
+            "MACHINE_PHASE_PENDING",
+            "MACHINE_PHASE_CREATING",
+            "MACHINE_PHASE_RUNNING",
+            "MACHINE_PHASE_STOPPED",
+            "MACHINE_PHASE_FAILED",
+            "MACHINE_PHASE_SUSPENDED"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.Resources": {
+      "additionalProperties": false,
+      "description": "Resources sizes the microVM. Each field is a quantity in Kubernetes syntax, such as \"2\", \"512Mi\" or \"10Gi\"; empty takes the default.",
+      "properties": {
+        "cpu": {
+          "description": "Whole vCPUs: \"2\" or \"2000m\", never a fraction.",
+          "type": "string"
+        },
+        "disk": {
+          "description": "Root disk size, at least 1Gi. It can grow but never shrink.",
+          "type": "string"
+        },
+        "memory": {
+          "description": "Guest memory, at least 128Mi.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Machine is one microVM as the node runs it. Controllers create machines from the user-facing kinds that run as microVMs; users can read them but never write them. See docs/decisions/machine-model.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "compute.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "Machine",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.MachineSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.compute.v1alpha1.MachineStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "Machine",
+  "type": "object"
+}

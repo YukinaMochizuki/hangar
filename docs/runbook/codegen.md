@@ -13,6 +13,7 @@ Everything generated comes from `proto/` or from SQL, and is committed.
 | | protoc-gen-connect-go | `gen/go/.../<pkg>connect` clients and handler interfaces |
 | | protoc-gen-es | `gen/ts/src/...` TypeScript messages and service descriptors |
 | `buf.gen.hangar.yaml` | protoc-gen-hangar, `mode=registry` | `gen/go/hangar/registry/registry.go` |
+| | protoc-gen-hangar, `mode=schema` | `gen/go/hangar/schema`: each kind's JSON Schema, which `DiscoveryService` serves (`docs/decisions/api-schema.md`) |
 | | protoc-gen-hangar, `mode=server` | `internal/apiserver/servicegen/services.go` |
 
 `make gen` then runs sqlc (`sqlc.yaml`), which turns
@@ -27,8 +28,10 @@ test next to `services.go` survives.
 
 ## Changing protoc-gen-hangar
 
-1. Edit `tools/protoc-gen-hangar/main.go`.
-2. `make gen`, then read the diff of `registry.go` and `services.go`.
+1. Edit `tools/protoc-gen-hangar`: `main.go` holds the registry and the
+   shims, `schema.go` the JSON Schemas.
+2. `make gen`, then read the diff of `registry.go`, `services.go` and the
+   schemas under `gen/go/hangar/schema`.
 3. `go test ./internal/apiserver/servicegen/` exercises the shims through real
    Connect calls against a recording backend; extend it when the shim gains
    behaviour.
@@ -43,7 +46,7 @@ the contract in `internal/store/storetest`.
 ## The API group domain
 
 The suffix in every `apiVersion` (`hangarlab.cloud`) is the `domain` option of the
-registry plugin in `buf.gen.hangar.yaml`, and nowhere else.
+registry and schema plugins in `buf.gen.hangar.yaml`, and nowhere else.
 
 ## Troubleshooting
 

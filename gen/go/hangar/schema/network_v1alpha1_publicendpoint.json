@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.PublicEndpointSpec": {
+      "additionalProperties": false,
+      "description": "PublicEndpointSpec is what the endpoint reaches and who may use it.",
+      "properties": {
+        "access": {
+          "description": "Who may use the endpoint; unset is PRIVATE.\n\n- PUBLIC_ENDPOINT_ACCESS_PRIVATE: Only those who hold network.publicendpoints.access on the endpoint's project, signed in through Hangar or holding a Hangar token.\n- PUBLIC_ENDPOINT_ACCESS_PUBLIC: Anyone on the internet, with no sign-in.",
+          "enum": [
+            "PUBLIC_ENDPOINT_ACCESS_PRIVATE",
+            "PUBLIC_ENDPOINT_ACCESS_PUBLIC"
+          ],
+          "type": "string"
+        },
+        "port": {
+          "description": "The TCP port the target serves plain HTTP on, 1 to 65535.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "target": {
+          "$ref": "#/$defs/hangar.network.v1alpha1.PublicEndpointTarget",
+          "description": "The machine the endpoint reaches, on its first interface (eth0). A target that does not exist yet is waited for."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.PublicEndpointStatus": {
+      "additionalProperties": false,
+      "description": "PublicEndpointStatus is where the endpoint is and whether it serves.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "hostname": {
+          "description": "The endpoint's hostname, such as \"web-demo.hangarlab.dev\".",
+          "type": "string"
+        },
+        "machine": {
+          "description": "The Machine the endpoint reaches; empty while its target has none.",
+          "type": "string"
+        },
+        "node": {
+          "description": "The Node that machine runs on; empty while it is not placed.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "url": {
+          "description": "The endpoint's URL, such as \"https://web-demo.hangarlab.dev\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.PublicEndpointTarget": {
+      "additionalProperties": false,
+      "description": "PublicEndpointTarget is a VirtualMachine or Container in the endpoint's project.",
+      "properties": {
+        "container": {
+          "description": "Names a Container.\n\nSet at most one of virtualMachine, container.",
+          "type": "string"
+        },
+        "virtualMachine": {
+          "description": "Names a VirtualMachine.\n\nSet at most one of virtualMachine, container.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "PublicEndpoint exposes one TCP port of a VirtualMachine or Container over HTTPS, at https://<name>-<project>.<endpoint domain>, through Hangar's edge proxy. The hostname is claimed when the endpoint is made and never given to another endpoint. A container port with `public: true` makes one of these. See docs/decisions/public-endpoints.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "network.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "PublicEndpoint",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.PublicEndpointSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.PublicEndpointStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "PublicEndpoint",
+  "type": "object"
+}

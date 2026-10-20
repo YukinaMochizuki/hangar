@@ -1,7 +1,9 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -15,18 +17,34 @@ type fieldError struct {
 	line int
 	path string
 	msg  string
+	// about is the field hangar explain would describe what is right at,
+	// as explain names it: the kind, then the fields, without list indexes
+	// or map keys.
+	about string
+}
+
+func fieldErr(line int, path, msg string) *fieldError {
+	return &fieldError{line: line, path: path, msg: msg, about: path}
 }
 
 func (e *fieldError) Error() string {
-	return fmt.Sprintf("line %d: %s: %s", e.line, e.path, e.msg)
+	return fmt.Sprintf("line %d: %s: %s\nrun hangar explain %s for what it takes", e.line, e.path, e.msg, e.about)
 }
 
-// checkFields checks the object n against md before protojson decodes it,
-// which would say neither where in the file a mistake is nor what the field
-// takes. It finds unknown fields, enum values that are none of the enum's,
-// and values of the wrong shape; protojson stays the last word.
-func checkFields(n *yaml.Node, md protoreflect.MessageDescriptor) error {
-	return checkMessage(n, md, "")
+// fieldIndex is a list index or a map key in a field path.
+var fieldIndex = regexp.MustCompile(`\[[^]]*\]`)
+
+// checkFields checks the object n of kind against md before protojson
+// decodes it, which would say neither where in the file a mistake is nor what
+// the field takes. It finds unknown fields, enum values that are none of the
+// enum's, and values of the wrong shape; protojson stays the last word.
+func checkFields(n *yaml.Node, md protoreflect.MessageDescriptor, kind string) error {
+	err := checkMessage(n, md, "")
+	var fe *fieldError
+	if errors.As(err, &fe) {
+		fe.about = strings.TrimSuffix(strings.ToLower(kind)+"."+fieldIndex.ReplaceAllString(fe.about, ""), ".")
+	}
+	return err
 }
 
 func checkMessage(n *yaml.Node, md protoreflect.MessageDescriptor, path string) error {
@@ -35,7 +53,9 @@ func checkMessage(n *yaml.Node, md protoreflect.MessageDescriptor, path string) 
 		return nil
 	}
 	if n.Kind != yaml.MappingNode {
-		return &fieldError{n.Line, orTop(path), "want an object, with fields " + fieldNames(md)}
+		e := fieldErr(n.Line, orTop(path), "want an object, with fields "+fieldNames(md))
+		e.about = path
+		return e
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k, v := n.Content[i], n.Content[i+1]
@@ -51,7 +71,9 @@ func checkMessage(n *yaml.Node, md protoreflect.MessageDescriptor, path string) 
 			fd = md.Fields().ByName(protoreflect.Name(k.Value))
 		}
 		if fd == nil {
-			return &fieldError{k.Line, at, unknownField(k.Value, md, path)}
+			e := fieldErr(k.Line, at, unknownField(k.Value, md, path))
+			e.about = path
+			return e
 		}
 		if err := checkField(v, fd, at); err != nil {
 			return err
@@ -83,7 +105,7 @@ func checkField(v *yaml.Node, fd protoreflect.FieldDescriptor, at string) error 
 	switch {
 	case fd.IsMap():
 		if v.Kind != yaml.MappingNode {
-			return &fieldError{v.Line, at, "want an object of keys and values"}
+			return fieldErr(v.Line, at, "want an object of keys and values")
 		}
 		for j := 0; j+1 < len(v.Content); j += 2 {
 			if err := checkValue(v.Content[j+1], fd.MapValue(), fmt.Sprintf("%s[%s]", at, v.Content[j].Value)); err != nil {
@@ -93,7 +115,7 @@ func checkField(v *yaml.Node, fd protoreflect.FieldDescriptor, at string) error 
 		return nil
 	case fd.IsList():
 		if v.Kind != yaml.SequenceNode {
-			return &fieldError{v.Line, at, "want a list"}
+			return fieldErr(v.Line, at, "want a list")
 		}
 		for j, item := range v.Content {
 			if err := checkValue(item, fd, fmt.Sprintf("%s[%d]", at, j)); err != nil {
@@ -122,23 +144,23 @@ func checkValue(v *yaml.Node, fd protoreflect.FieldDescriptor, at string) error 
 		return checkMessage(v, md, at)
 	}
 	if v.Kind != yaml.ScalarNode {
-		return &fieldError{v.Line, at, "want a single value, not a list or an object"}
+		return fieldErr(v.Line, at, "want a single value, not a list or an object")
 	}
 	switch fd.Kind() {
 	case protoreflect.EnumKind:
 		return checkEnum(v, fd.Enum(), at)
 	case protoreflect.BoolKind:
 		if v.ShortTag() != "!!bool" {
-			return &fieldError{v.Line, at, fmt.Sprintf("%q is not true or false", v.Value)}
+			return fieldErr(v.Line, at, fmt.Sprintf("%q is not true or false", v.Value))
 		}
 	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind,
 		protoreflect.Int64Kind, protoreflect.Sint64Kind, protoreflect.Sfixed64Kind:
 		if _, err := strconv.ParseInt(v.Value, 10, 64); err != nil {
-			return &fieldError{v.Line, at, fmt.Sprintf("%q is not a whole number", v.Value)}
+			return fieldErr(v.Line, at, fmt.Sprintf("%q is not a whole number", v.Value))
 		}
 	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind, protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
 		if _, err := strconv.ParseUint(v.Value, 10, 64); err != nil {
-			return &fieldError{v.Line, at, fmt.Sprintf("%q is not a whole number of 0 or more", v.Value)}
+			return fieldErr(v.Line, at, fmt.Sprintf("%q is not a whole number of 0 or more", v.Value))
 		}
 	}
 	return nil
@@ -162,7 +184,7 @@ func checkEnum(v *yaml.Node, ed protoreflect.EnumDescriptor, at string) error {
 			break
 		}
 	}
-	return &fieldError{v.Line, at, msg}
+	return fieldErr(v.Line, at, msg)
 }
 
 // enumValues lists the values a manifest may write for ed, without the zero

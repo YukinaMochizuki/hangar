@@ -1,0 +1,283 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.EgressRule": {
+      "additionalProperties": false,
+      "description": "EgressRule lets out what goes to a peer.",
+      "properties": {
+        "ports": {
+          "description": "As IngressRule.ports.",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "SecurityGroupProtocol is what a rule matches.",
+          "enum": [
+            "SECURITY_GROUP_PROTOCOL_ALL",
+            "SECURITY_GROUP_PROTOCOL_TCP",
+            "SECURITY_GROUP_PROTOCOL_UDP",
+            "SECURITY_GROUP_PROTOCOL_ICMP"
+          ],
+          "type": "string"
+        },
+        "to": {
+          "$ref": "#/$defs/hangar.network.v1alpha1.SecurityGroupPeer"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.IngressRule": {
+      "additionalProperties": false,
+      "description": "IngressRule lets in what comes from a peer.",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/hangar.network.v1alpha1.SecurityGroupPeer"
+        },
+        "ports": {
+          "description": "Ports, such as \"443\", \"8000-8080\" or \"80,443\"; empty is every port. Only TCP and UDP take ports.",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "SecurityGroupProtocol is what a rule matches.",
+          "enum": [
+            "SECURITY_GROUP_PROTOCOL_ALL",
+            "SECURITY_GROUP_PROTOCOL_TCP",
+            "SECURITY_GROUP_PROTOCOL_UDP",
+            "SECURITY_GROUP_PROTOCOL_ICMP"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.SecurityGroupPeer": {
+      "additionalProperties": false,
+      "description": "SecurityGroupPeer is the other end of a rule.",
+      "properties": {
+        "cidr": {
+          "description": "An IPv4 or IPv6 range, such as \"0.0.0.0/0\", \"10.0.0.0/24\" or \"::/0\". A range matches only addresses of its own family.\n\nSet at most one of cidr, group.",
+          "type": "string"
+        },
+        "group": {
+          "description": "The members of a group of the same network, \"default\" included.\n\nSet at most one of cidr, group.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.SecurityGroupSpec": {
+      "additionalProperties": false,
+      "description": "SecurityGroupSpec is the group's rules.",
+      "properties": {
+        "egress": {
+          "description": "What a member may send. Empty lets everything out; once one group of an interface has egress rules, the interface sends only what some rule of its groups allows.",
+          "items": {
+            "$ref": "#/$defs/hangar.network.v1alpha1.EgressRule"
+          },
+          "type": "array"
+        },
+        "ingress": {
+          "description": "What may come into a member.",
+          "items": {
+            "$ref": "#/$defs/hangar.network.v1alpha1.IngressRule"
+          },
+          "type": "array"
+        },
+        "network": {
+          "description": "Names a network in the group's project; only its interfaces join the group.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.SecurityGroupStatus": {
+      "additionalProperties": false,
+      "description": "SecurityGroupStatus is the envelope's status. Nothing writes it: a group's rules take effect on the nodes, which report through each Machine's status, not here.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "SecurityGroup is a set of allow rules for the interfaces on one network that name it, as in AWS: stateful, ingress denied unless a rule allows it, egress open unless the group has egress rules. Every network also has an implicit group \"default\", which is no object: it lets in its own members. See docs/decisions/networking.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "network.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "SecurityGroup",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.SecurityGroupSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.SecurityGroupStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "SecurityGroup",
+  "type": "object"
+}
