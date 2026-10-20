@@ -972,7 +972,7 @@ these before `hangar-node` starts; the `packages` and `zfs` steps make them:
   current host. The image cache and the directory images are unpacked in
   both go under it, on that one dataset: both hold tenant content. The
   `services` step passes the sum of this quota and `hangar/vms`'s to
-  `hangar-node --reserved-disk`. Kept disk-image bases (about 4 GiB each, one
+  `hangar-node --reserved-disk`. Kept disk-image bases (3 to 10 GiB each, `docs/runbook/vm-images.md`, one
   per Image used on the host, under `hangar/vmbases`) sit on the pool outside
   that reservation, so the pool's free space must leave room for them.
 - Nothing else: the driver makes `hangar/bases`, `hangar/roots`,

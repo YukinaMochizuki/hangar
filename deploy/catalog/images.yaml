@@ -1,0 +1,90 @@
+# The platform's image catalogue (docs/decisions/vm-images.md): the
+# distributions' own amd64 cloud images, each pinned to a dated file and the
+# sha256 of it. Apply it with `hangar apply -f deploy/catalog/images.yaml`
+# through the admin socket; docs/runbook/vm-images.md says how, and how to
+# move an image to a newer file. test/testbed/flow/images_test.go boots each
+# of them (HANGAR_TESTBED_IMAGES).
+#
+# Where each sha256 comes from is noted above the image: the distribution's
+# checksum file, beside the image, and the key its signature was checked
+# with, by fingerprint, as the distribution's own site publishes it.
+#
+# The names have no dots, and a disk names its image by name: renaming one
+# leaves its disks without an image. ubuntu-24-04 is as it was applied by
+# hand before this file existed. Rocky 10 and AlmaLinux 10 are left out for
+# now: docs/runbook/vm-images.md says why.
+
+# SHA256SUMS of release-20260926, signed by the UEC Image Automatic Signing
+# Key, D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81.
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: ubuntu-24-04}
+spec:
+  url: https://cloud-images.ubuntu.com/releases/noble/release-20260926/ubuntu-24.04-server-cloudimg-amd64.img
+  sha256: 6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2
+  os: ubuntu
+  version: "24.04"
+  defaultUser: ubuntu
+---
+# SHA256SUMS of release-20260927, signed by the UEC Image Automatic Signing
+# Key, D2EB44626FDDC30B513D5BB71A5D6C4C7DB87C81.
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: ubuntu-26-04}
+spec:
+  url: https://cloud-images.ubuntu.com/releases/resolute/release-20260927/ubuntu-26.04-server-cloudimg-amd64.img
+  sha256: 8800651811af9a85465ad1d552add729947bb16488dddb4a9b5305a3d97332b2
+  os: ubuntu
+  version: "26.04"
+  defaultUser: ubuntu
+---
+# Debian signs no checksum file of its cloud images: the file was checked
+# against SHA512SUMS of 20261018-2635, fetched over HTTPS from
+# cloud.debian.org, and its sha256 taken from it.
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: debian-12}
+spec:
+  url: https://cloud.debian.org/images/cloud/bookworm/20261018-2635/debian-12-genericcloud-amd64-20261018-2635.qcow2
+  sha256: c0a478483fb1a6c098b79edd27e6ec25db63dd359896e87dcf5c91e07b5fd503
+  os: debian
+  version: "12"
+  defaultUser: debian
+---
+# As debian-12: SHA512SUMS of 20261017-2634, over HTTPS.
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: debian-13}
+spec:
+  url: https://cloud.debian.org/images/cloud/trixie/20261017-2634/debian-13-genericcloud-amd64-20261017-2634.qcow2
+  sha256: 87211f082e2983a1c2209a2626f9f6762073a92c6a63a8ce321608ca496c3b02
+  os: debian
+  version: "13"
+  defaultUser: debian
+---
+# The image's .CHECKSUM, signed (.CHECKSUM.asc) by Rocky Enterprise Software
+# Foundation - Release key 2022, 21CB256AE16FC54C6E652949702D426D350D275D.
+# Under pub/rocky/9.8 while 9.8 is current; once it is not, the file moves
+# to vault/rocky/9.8 (docs/runbook/vm-images.md).
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: rocky-9}
+spec:
+  url: https://dl.rockylinux.org/pub/rocky/9.8/images/x86_64/Rocky-9-GenericCloud-Base-9.8-20260525.0.x86_64.qcow2
+  sha256: 92c206cc6f790c61583247eefe87890f8828420662c17cacf247cec78ab4eec8
+  os: rocky
+  version: "9.8"
+  defaultUser: rocky
+---
+# The directory's CHECKSUM, signed (CHECKSUM.asc) by AlmaLinux OS 9,
+# BF18AC2876178908D6E71267D36CB86CB86B3716. Under almalinux/9.8 while 9.8
+# is current; then at vault.almalinux.org/9.8.
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: Image
+metadata: {name: almalinux-9}
+spec:
+  url: https://repo.almalinux.org/almalinux/9.8/cloud/x86_64/images/AlmaLinux-9-GenericCloud-9.8-20261005.x86_64.qcow2
+  sha256: 25942b554efaac077e2f60d6bb27bd3332c171454cc21bbd33e5f79244d7570f
+  os: almalinux
+  version: "9.8"
+  defaultUser: almalinux
