@@ -85,18 +85,22 @@ func (Health) EnumDescriptor() ([]byte, []int) {
 	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{0}
 }
 
-// Layer names one of the four layers the platform is watched in.
+// Layer names one of the four layers the platform is watched in. Two are
+// the platform's, two each node's.
 type Layer int32
 
 const (
 	Layer_LAYER_UNSPECIFIED Layer = 0
-	// The API and the console over HTTPS, and their certificates.
+	// The platform's: the API and the console over HTTPS, and their
+	// certificates.
 	Layer_LAYER_REACHABILITY Layer = 1
-	// CPU, memory, swap, the ZFS pools, the md mirror, the NVMe disks, time.
+	// A node's: CPU, memory, swap, the ZFS pools, the md mirror, the NVMe
+	// disks, time.
 	Layer_LAYER_HOST Layer = 2
-	// Each hangar-* unit, each Node's Ready, the node tunnel.
+	// A node's: each hangar-* unit on its host, the apiserver's included
+	// where it runs, the Node's Ready, and its agent's tunnel.
 	Layer_LAYER_SERVICES Layer = 3
-	// Tenants' machines, counted.
+	// The platform's: tenants' machines, counted.
 	Layer_LAYER_MACHINES Layer = 4
 )
 
@@ -145,17 +149,18 @@ func (Layer) EnumDescriptor() ([]byte, []int) {
 	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{1}
 }
 
-// SeriesName names a series. Each is one fixed query in the apiserver.
+// SeriesName names a series. Each is one fixed query in the apiserver. The
+// HOST_ and POOL_ series are a node's, the API_ ones the platform's.
 type SeriesName int32
 
 const (
 	SeriesName_SERIES_NAME_UNSPECIFIED SeriesName = 0
-	// The share of the host's CPU time not idle; UNIT_RATIO.
+	// The share of the node's CPU time not idle; UNIT_RATIO.
 	SeriesName_SERIES_NAME_HOST_CPU SeriesName = 1
-	// The host's memory in use, the ARC the kernel can take back counted as
-	// free; UNIT_BYTES, out of the host's memory.
+	// The node's memory in use, the ARC the kernel can take back counted as
+	// free; UNIT_BYTES, out of the node's memory.
 	SeriesName_SERIES_NAME_HOST_MEMORY SeriesName = 2
-	// What the ZFS pools hold; UNIT_BYTES, out of their size.
+	// What the node's ZFS pools hold; UNIT_BYTES, out of their size.
 	SeriesName_SERIES_NAME_POOL_USED SeriesName = 3
 	// The API's calls a second; UNIT_PER_SECOND.
 	SeriesName_SERIES_NAME_API_REQUEST_RATE SeriesName = 4
@@ -418,13 +423,14 @@ func (*GetOverviewRequest) Descriptor() ([]byte, []int) {
 
 type GetOverviewResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The Node this apiserver runs machines on, when it accepts one node
-	// agent; empty otherwise.
-	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
 	// When Prometheus was asked.
-	ObserveTime *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=observe_time,json=observeTime,proto3" json:"observe_time,omitempty"`
-	// Every layer, in the order of Layer.
-	Layers        []*LayerState `protobuf:"bytes,3,rep,name=layers,proto3" json:"layers,omitempty"`
+	ObserveTime *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=observe_time,json=observeTime,proto3" json:"observe_time,omitempty"`
+	// The platform's layers, LAYER_REACHABILITY and LAYER_MACHINES, in that
+	// order.
+	Layers []*LayerState `protobuf:"bytes,2,rep,name=layers,proto3" json:"layers,omitempty"`
+	// Each node, by name: every Node this apiserver accepts, and any other
+	// Prometheus has series of.
+	Nodes         []*NodeOverview `protobuf:"bytes,3,rep,name=nodes,proto3" json:"nodes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -459,13 +465,6 @@ func (*GetOverviewResponse) Descriptor() ([]byte, []int) {
 	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{1}
 }
 
-func (x *GetOverviewResponse) GetNode() string {
-	if x != nil {
-		return x.Node
-	}
-	return ""
-}
-
 func (x *GetOverviewResponse) GetObserveTime() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ObserveTime
@@ -474,6 +473,68 @@ func (x *GetOverviewResponse) GetObserveTime() *timestamppb.Timestamp {
 }
 
 func (x *GetOverviewResponse) GetLayers() []*LayerState {
+	if x != nil {
+		return x.Layers
+	}
+	return nil
+}
+
+func (x *GetOverviewResponse) GetNodes() []*NodeOverview {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+// NodeOverview is one node's layers.
+type NodeOverview struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The Node's name, which its host's series carry as their node label.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// LAYER_HOST and LAYER_SERVICES, in that order.
+	Layers        []*LayerState `protobuf:"bytes,2,rep,name=layers,proto3" json:"layers,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeOverview) Reset() {
+	*x = NodeOverview{}
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeOverview) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeOverview) ProtoMessage() {}
+
+func (x *NodeOverview) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeOverview.ProtoReflect.Descriptor instead.
+func (*NodeOverview) Descriptor() ([]byte, []int) {
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *NodeOverview) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *NodeOverview) GetLayers() []*LayerState {
 	if x != nil {
 		return x.Layers
 	}
@@ -496,7 +557,7 @@ type LayerState struct {
 
 func (x *LayerState) Reset() {
 	*x = LayerState{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[2]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -508,7 +569,7 @@ func (x *LayerState) String() string {
 func (*LayerState) ProtoMessage() {}
 
 func (x *LayerState) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[2]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -521,7 +582,7 @@ func (x *LayerState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LayerState.ProtoReflect.Descriptor instead.
 func (*LayerState) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{2}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LayerState) GetLayer() Layer {
@@ -566,7 +627,7 @@ type Check struct {
 
 func (x *Check) Reset() {
 	*x = Check{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[3]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -578,7 +639,7 @@ func (x *Check) String() string {
 func (*Check) ProtoMessage() {}
 
 func (x *Check) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[3]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -591,7 +652,7 @@ func (x *Check) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Check.ProtoReflect.Descriptor instead.
 func (*Check) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{3}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Check) GetName() string {
@@ -634,7 +695,7 @@ type MachineCounts struct {
 
 func (x *MachineCounts) Reset() {
 	*x = MachineCounts{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[4]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -646,7 +707,7 @@ func (x *MachineCounts) String() string {
 func (*MachineCounts) ProtoMessage() {}
 
 func (x *MachineCounts) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[4]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -659,7 +720,7 @@ func (x *MachineCounts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MachineCounts.ProtoReflect.Descriptor instead.
 func (*MachineCounts) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{4}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MachineCounts) GetPhases() []*PhaseCount {
@@ -702,7 +763,7 @@ type PhaseCount struct {
 
 func (x *PhaseCount) Reset() {
 	*x = PhaseCount{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[5]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -714,7 +775,7 @@ func (x *PhaseCount) String() string {
 func (*PhaseCount) ProtoMessage() {}
 
 func (x *PhaseCount) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[5]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -727,7 +788,7 @@ func (x *PhaseCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PhaseCount.ProtoReflect.Descriptor instead.
 func (*PhaseCount) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{5}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *PhaseCount) GetPhase() string {
@@ -755,7 +816,7 @@ type ReasonCount struct {
 
 func (x *ReasonCount) Reset() {
 	*x = ReasonCount{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[6]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -767,7 +828,7 @@ func (x *ReasonCount) String() string {
 func (*ReasonCount) ProtoMessage() {}
 
 func (x *ReasonCount) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[6]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -780,7 +841,7 @@ func (x *ReasonCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReasonCount.ProtoReflect.Descriptor instead.
 func (*ReasonCount) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{6}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ReasonCount) GetReason() string {
@@ -798,16 +859,19 @@ func (x *ReasonCount) GetCount() int32 {
 }
 
 type GetSeriesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          SeriesName             `protobuf:"varint,1,opt,name=name,proto3,enum=hangar.monitoring.v1alpha1.SeriesName" json:"name,omitempty"`
-	Range         SeriesRange            `protobuf:"varint,2,opt,name=range,proto3,enum=hangar.monitoring.v1alpha1.SeriesRange" json:"range,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  SeriesName             `protobuf:"varint,1,opt,name=name,proto3,enum=hangar.monitoring.v1alpha1.SeriesName" json:"name,omitempty"`
+	Range SeriesRange            `protobuf:"varint,2,opt,name=range,proto3,enum=hangar.monitoring.v1alpha1.SeriesRange" json:"range,omitempty"`
+	// The Node a node's series is for: required for those, refused for the
+	// platform's. An unknown Node is NOT_FOUND.
+	Node          string `protobuf:"bytes,3,opt,name=node,proto3" json:"node,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSeriesRequest) Reset() {
 	*x = GetSeriesRequest{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[7]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -819,7 +883,7 @@ func (x *GetSeriesRequest) String() string {
 func (*GetSeriesRequest) ProtoMessage() {}
 
 func (x *GetSeriesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[7]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -832,7 +896,7 @@ func (x *GetSeriesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSeriesRequest.ProtoReflect.Descriptor instead.
 func (*GetSeriesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{7}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GetSeriesRequest) GetName() SeriesName {
@@ -849,28 +913,37 @@ func (x *GetSeriesRequest) GetRange() SeriesRange {
 	return SeriesRange_SERIES_RANGE_UNSPECIFIED
 }
 
+func (x *GetSeriesRequest) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
 type GetSeriesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  SeriesName             `protobuf:"varint,1,opt,name=name,proto3,enum=hangar.monitoring.v1alpha1.SeriesName" json:"name,omitempty"`
-	Unit  Unit                   `protobuf:"varint,2,opt,name=unit,proto3,enum=hangar.monitoring.v1alpha1.Unit" json:"unit,omitempty"`
+	// The Node the series is for; empty for the platform's.
+	Node string `protobuf:"bytes,2,opt,name=node,proto3" json:"node,omitempty"`
+	Unit Unit   `protobuf:"varint,3,opt,name=unit,proto3,enum=hangar.monitoring.v1alpha1.Unit" json:"unit,omitempty"`
 	// The time between points, which the server picks for the range.
-	StepSeconds int32 `protobuf:"varint,3,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
+	StepSeconds int32 `protobuf:"varint,4,opt,name=step_seconds,json=stepSeconds,proto3" json:"step_seconds,omitempty"`
 	// Oldest first. A step with no value, such as a share of no calls or one
 	// while Prometheus was down, has no point.
-	Points []*Point `protobuf:"bytes,4,rep,name=points,proto3" json:"points,omitempty"`
+	Points []*Point `protobuf:"bytes,5,rep,name=points,proto3" json:"points,omitempty"`
 	// What the value is out of, when it has a ceiling: the host's memory, the
 	// pools' size. Unset otherwise.
-	Capacity *float64 `protobuf:"fixed64,5,opt,name=capacity,proto3,oneof" json:"capacity,omitempty"`
+	Capacity *float64 `protobuf:"fixed64,6,opt,name=capacity,proto3,oneof" json:"capacity,omitempty"`
 	// Where an alerting rule fires on the series' value, when one does. Unset
 	// otherwise.
-	AlertAbove    *float64 `protobuf:"fixed64,6,opt,name=alert_above,json=alertAbove,proto3,oneof" json:"alert_above,omitempty"`
+	AlertAbove    *float64 `protobuf:"fixed64,7,opt,name=alert_above,json=alertAbove,proto3,oneof" json:"alert_above,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GetSeriesResponse) Reset() {
 	*x = GetSeriesResponse{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[8]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -882,7 +955,7 @@ func (x *GetSeriesResponse) String() string {
 func (*GetSeriesResponse) ProtoMessage() {}
 
 func (x *GetSeriesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[8]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -895,7 +968,7 @@ func (x *GetSeriesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSeriesResponse.ProtoReflect.Descriptor instead.
 func (*GetSeriesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{8}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *GetSeriesResponse) GetName() SeriesName {
@@ -903,6 +976,13 @@ func (x *GetSeriesResponse) GetName() SeriesName {
 		return x.Name
 	}
 	return SeriesName_SERIES_NAME_UNSPECIFIED
+}
+
+func (x *GetSeriesResponse) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
 }
 
 func (x *GetSeriesResponse) GetUnit() Unit {
@@ -950,7 +1030,7 @@ type Point struct {
 
 func (x *Point) Reset() {
 	*x = Point{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[9]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -962,7 +1042,7 @@ func (x *Point) String() string {
 func (*Point) ProtoMessage() {}
 
 func (x *Point) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[9]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -975,7 +1055,7 @@ func (x *Point) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Point.ProtoReflect.Descriptor instead.
 func (*Point) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{9}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *Point) GetTime() *timestamppb.Timestamp {
@@ -1000,7 +1080,7 @@ type ListAlertsRequest struct {
 
 func (x *ListAlertsRequest) Reset() {
 	*x = ListAlertsRequest{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[10]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1012,7 +1092,7 @@ func (x *ListAlertsRequest) String() string {
 func (*ListAlertsRequest) ProtoMessage() {}
 
 func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[10]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1025,7 +1105,7 @@ func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{10}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{11}
 }
 
 type ListAlertsResponse struct {
@@ -1038,7 +1118,7 @@ type ListAlertsResponse struct {
 
 func (x *ListAlertsResponse) Reset() {
 	*x = ListAlertsResponse{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1050,7 +1130,7 @@ func (x *ListAlertsResponse) String() string {
 func (*ListAlertsResponse) ProtoMessage() {}
 
 func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1063,7 +1143,7 @@ func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsResponse.ProtoReflect.Descriptor instead.
 func (*ListAlertsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{11}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListAlertsResponse) GetAlerts() []*Alert {
@@ -1090,7 +1170,7 @@ type Alert struct {
 
 func (x *Alert) Reset() {
 	*x = Alert{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1102,7 +1182,7 @@ func (x *Alert) String() string {
 func (*Alert) ProtoMessage() {}
 
 func (x *Alert) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1115,7 +1195,7 @@ func (x *Alert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Alert.ProtoReflect.Descriptor instead.
 func (*Alert) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{12}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *Alert) GetName() string {
@@ -1151,11 +1231,14 @@ var File_hangar_monitoring_v1alpha1_monitoring_proto protoreflect.FileDescriptor
 const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\n" +
 	"+hangar/monitoring/v1alpha1/monitoring.proto\x12\x1ahangar.monitoring.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x14\n" +
-	"\x12GetOverviewRequest\"\xa8\x01\n" +
-	"\x13GetOverviewResponse\x12\x12\n" +
-	"\x04node\x18\x01 \x01(\tR\x04node\x12=\n" +
-	"\fobserve_time\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vobserveTime\x12>\n" +
-	"\x06layers\x18\x03 \x03(\v2&.hangar.monitoring.v1alpha1.LayerStateR\x06layers\"\x83\x02\n" +
+	"\x12GetOverviewRequest\"\xd4\x01\n" +
+	"\x13GetOverviewResponse\x12=\n" +
+	"\fobserve_time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\vobserveTime\x12>\n" +
+	"\x06layers\x18\x02 \x03(\v2&.hangar.monitoring.v1alpha1.LayerStateR\x06layers\x12>\n" +
+	"\x05nodes\x18\x03 \x03(\v2(.hangar.monitoring.v1alpha1.NodeOverviewR\x05nodes\"b\n" +
+	"\fNodeOverview\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12>\n" +
+	"\x06layers\x18\x02 \x03(\v2&.hangar.monitoring.v1alpha1.LayerStateR\x06layers\"\x83\x02\n" +
 	"\n" +
 	"LayerState\x127\n" +
 	"\x05layer\x18\x01 \x01(\x0e2!.hangar.monitoring.v1alpha1.LayerR\x05layer\x12:\n" +
@@ -1177,17 +1260,19 @@ const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\x05count\x18\x02 \x01(\x05R\x05count\";\n" +
 	"\vReasonCount\x12\x16\n" +
 	"\x06reason\x18\x01 \x01(\tR\x06reason\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x05R\x05count\"\x8d\x01\n" +
+	"\x05count\x18\x02 \x01(\x05R\x05count\"\xa1\x01\n" +
 	"\x10GetSeriesRequest\x12:\n" +
 	"\x04name\x18\x01 \x01(\x0e2&.hangar.monitoring.v1alpha1.SeriesNameR\x04name\x12=\n" +
-	"\x05range\x18\x02 \x01(\x0e2'.hangar.monitoring.v1alpha1.SeriesRangeR\x05range\"\xc7\x02\n" +
+	"\x05range\x18\x02 \x01(\x0e2'.hangar.monitoring.v1alpha1.SeriesRangeR\x05range\x12\x12\n" +
+	"\x04node\x18\x03 \x01(\tR\x04node\"\xdb\x02\n" +
 	"\x11GetSeriesResponse\x12:\n" +
-	"\x04name\x18\x01 \x01(\x0e2&.hangar.monitoring.v1alpha1.SeriesNameR\x04name\x124\n" +
-	"\x04unit\x18\x02 \x01(\x0e2 .hangar.monitoring.v1alpha1.UnitR\x04unit\x12!\n" +
-	"\fstep_seconds\x18\x03 \x01(\x05R\vstepSeconds\x129\n" +
-	"\x06points\x18\x04 \x03(\v2!.hangar.monitoring.v1alpha1.PointR\x06points\x12\x1f\n" +
-	"\bcapacity\x18\x05 \x01(\x01H\x00R\bcapacity\x88\x01\x01\x12$\n" +
-	"\valert_above\x18\x06 \x01(\x01H\x01R\n" +
+	"\x04name\x18\x01 \x01(\x0e2&.hangar.monitoring.v1alpha1.SeriesNameR\x04name\x12\x12\n" +
+	"\x04node\x18\x02 \x01(\tR\x04node\x124\n" +
+	"\x04unit\x18\x03 \x01(\x0e2 .hangar.monitoring.v1alpha1.UnitR\x04unit\x12!\n" +
+	"\fstep_seconds\x18\x04 \x01(\x05R\vstepSeconds\x129\n" +
+	"\x06points\x18\x05 \x03(\v2!.hangar.monitoring.v1alpha1.PointR\x06points\x12\x1f\n" +
+	"\bcapacity\x18\x06 \x01(\x01H\x00R\bcapacity\x88\x01\x01\x12$\n" +
+	"\valert_above\x18\a \x01(\x01H\x01R\n" +
 	"alertAbove\x88\x01\x01B\v\n" +
 	"\t_capacityB\x0e\n" +
 	"\f_alert_above\"M\n" +
@@ -1263,7 +1348,7 @@ func file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_monitoring_v1alpha1_monitoring_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_hangar_monitoring_v1alpha1_monitoring_proto_goTypes = []any{
 	(Health)(0),                   // 0: hangar.monitoring.v1alpha1.Health
 	(Layer)(0),                    // 1: hangar.monitoring.v1alpha1.Layer
@@ -1273,50 +1358,53 @@ var file_hangar_monitoring_v1alpha1_monitoring_proto_goTypes = []any{
 	(Severity)(0),                 // 5: hangar.monitoring.v1alpha1.Severity
 	(*GetOverviewRequest)(nil),    // 6: hangar.monitoring.v1alpha1.GetOverviewRequest
 	(*GetOverviewResponse)(nil),   // 7: hangar.monitoring.v1alpha1.GetOverviewResponse
-	(*LayerState)(nil),            // 8: hangar.monitoring.v1alpha1.LayerState
-	(*Check)(nil),                 // 9: hangar.monitoring.v1alpha1.Check
-	(*MachineCounts)(nil),         // 10: hangar.monitoring.v1alpha1.MachineCounts
-	(*PhaseCount)(nil),            // 11: hangar.monitoring.v1alpha1.PhaseCount
-	(*ReasonCount)(nil),           // 12: hangar.monitoring.v1alpha1.ReasonCount
-	(*GetSeriesRequest)(nil),      // 13: hangar.monitoring.v1alpha1.GetSeriesRequest
-	(*GetSeriesResponse)(nil),     // 14: hangar.monitoring.v1alpha1.GetSeriesResponse
-	(*Point)(nil),                 // 15: hangar.monitoring.v1alpha1.Point
-	(*ListAlertsRequest)(nil),     // 16: hangar.monitoring.v1alpha1.ListAlertsRequest
-	(*ListAlertsResponse)(nil),    // 17: hangar.monitoring.v1alpha1.ListAlertsResponse
-	(*Alert)(nil),                 // 18: hangar.monitoring.v1alpha1.Alert
-	(*timestamppb.Timestamp)(nil), // 19: google.protobuf.Timestamp
+	(*NodeOverview)(nil),          // 8: hangar.monitoring.v1alpha1.NodeOverview
+	(*LayerState)(nil),            // 9: hangar.monitoring.v1alpha1.LayerState
+	(*Check)(nil),                 // 10: hangar.monitoring.v1alpha1.Check
+	(*MachineCounts)(nil),         // 11: hangar.monitoring.v1alpha1.MachineCounts
+	(*PhaseCount)(nil),            // 12: hangar.monitoring.v1alpha1.PhaseCount
+	(*ReasonCount)(nil),           // 13: hangar.monitoring.v1alpha1.ReasonCount
+	(*GetSeriesRequest)(nil),      // 14: hangar.monitoring.v1alpha1.GetSeriesRequest
+	(*GetSeriesResponse)(nil),     // 15: hangar.monitoring.v1alpha1.GetSeriesResponse
+	(*Point)(nil),                 // 16: hangar.monitoring.v1alpha1.Point
+	(*ListAlertsRequest)(nil),     // 17: hangar.monitoring.v1alpha1.ListAlertsRequest
+	(*ListAlertsResponse)(nil),    // 18: hangar.monitoring.v1alpha1.ListAlertsResponse
+	(*Alert)(nil),                 // 19: hangar.monitoring.v1alpha1.Alert
+	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
 }
 var file_hangar_monitoring_v1alpha1_monitoring_proto_depIdxs = []int32{
-	19, // 0: hangar.monitoring.v1alpha1.GetOverviewResponse.observe_time:type_name -> google.protobuf.Timestamp
-	8,  // 1: hangar.monitoring.v1alpha1.GetOverviewResponse.layers:type_name -> hangar.monitoring.v1alpha1.LayerState
-	1,  // 2: hangar.monitoring.v1alpha1.LayerState.layer:type_name -> hangar.monitoring.v1alpha1.Layer
-	0,  // 3: hangar.monitoring.v1alpha1.LayerState.health:type_name -> hangar.monitoring.v1alpha1.Health
-	9,  // 4: hangar.monitoring.v1alpha1.LayerState.checks:type_name -> hangar.monitoring.v1alpha1.Check
-	10, // 5: hangar.monitoring.v1alpha1.LayerState.machines:type_name -> hangar.monitoring.v1alpha1.MachineCounts
-	0,  // 6: hangar.monitoring.v1alpha1.Check.health:type_name -> hangar.monitoring.v1alpha1.Health
-	11, // 7: hangar.monitoring.v1alpha1.MachineCounts.phases:type_name -> hangar.monitoring.v1alpha1.PhaseCount
-	12, // 8: hangar.monitoring.v1alpha1.MachineCounts.platform_failures:type_name -> hangar.monitoring.v1alpha1.ReasonCount
-	12, // 9: hangar.monitoring.v1alpha1.MachineCounts.program_failures:type_name -> hangar.monitoring.v1alpha1.ReasonCount
-	2,  // 10: hangar.monitoring.v1alpha1.GetSeriesRequest.name:type_name -> hangar.monitoring.v1alpha1.SeriesName
-	3,  // 11: hangar.monitoring.v1alpha1.GetSeriesRequest.range:type_name -> hangar.monitoring.v1alpha1.SeriesRange
-	2,  // 12: hangar.monitoring.v1alpha1.GetSeriesResponse.name:type_name -> hangar.monitoring.v1alpha1.SeriesName
-	4,  // 13: hangar.monitoring.v1alpha1.GetSeriesResponse.unit:type_name -> hangar.monitoring.v1alpha1.Unit
-	15, // 14: hangar.monitoring.v1alpha1.GetSeriesResponse.points:type_name -> hangar.monitoring.v1alpha1.Point
-	19, // 15: hangar.monitoring.v1alpha1.Point.time:type_name -> google.protobuf.Timestamp
-	18, // 16: hangar.monitoring.v1alpha1.ListAlertsResponse.alerts:type_name -> hangar.monitoring.v1alpha1.Alert
-	5,  // 17: hangar.monitoring.v1alpha1.Alert.severity:type_name -> hangar.monitoring.v1alpha1.Severity
-	19, // 18: hangar.monitoring.v1alpha1.Alert.start_time:type_name -> google.protobuf.Timestamp
-	6,  // 19: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:input_type -> hangar.monitoring.v1alpha1.GetOverviewRequest
-	13, // 20: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:input_type -> hangar.monitoring.v1alpha1.GetSeriesRequest
-	16, // 21: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:input_type -> hangar.monitoring.v1alpha1.ListAlertsRequest
-	7,  // 22: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:output_type -> hangar.monitoring.v1alpha1.GetOverviewResponse
-	14, // 23: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:output_type -> hangar.monitoring.v1alpha1.GetSeriesResponse
-	17, // 24: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:output_type -> hangar.monitoring.v1alpha1.ListAlertsResponse
-	22, // [22:25] is the sub-list for method output_type
-	19, // [19:22] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	20, // 0: hangar.monitoring.v1alpha1.GetOverviewResponse.observe_time:type_name -> google.protobuf.Timestamp
+	9,  // 1: hangar.monitoring.v1alpha1.GetOverviewResponse.layers:type_name -> hangar.monitoring.v1alpha1.LayerState
+	8,  // 2: hangar.monitoring.v1alpha1.GetOverviewResponse.nodes:type_name -> hangar.monitoring.v1alpha1.NodeOverview
+	9,  // 3: hangar.monitoring.v1alpha1.NodeOverview.layers:type_name -> hangar.monitoring.v1alpha1.LayerState
+	1,  // 4: hangar.monitoring.v1alpha1.LayerState.layer:type_name -> hangar.monitoring.v1alpha1.Layer
+	0,  // 5: hangar.monitoring.v1alpha1.LayerState.health:type_name -> hangar.monitoring.v1alpha1.Health
+	10, // 6: hangar.monitoring.v1alpha1.LayerState.checks:type_name -> hangar.monitoring.v1alpha1.Check
+	11, // 7: hangar.monitoring.v1alpha1.LayerState.machines:type_name -> hangar.monitoring.v1alpha1.MachineCounts
+	0,  // 8: hangar.monitoring.v1alpha1.Check.health:type_name -> hangar.monitoring.v1alpha1.Health
+	12, // 9: hangar.monitoring.v1alpha1.MachineCounts.phases:type_name -> hangar.monitoring.v1alpha1.PhaseCount
+	13, // 10: hangar.monitoring.v1alpha1.MachineCounts.platform_failures:type_name -> hangar.monitoring.v1alpha1.ReasonCount
+	13, // 11: hangar.monitoring.v1alpha1.MachineCounts.program_failures:type_name -> hangar.monitoring.v1alpha1.ReasonCount
+	2,  // 12: hangar.monitoring.v1alpha1.GetSeriesRequest.name:type_name -> hangar.monitoring.v1alpha1.SeriesName
+	3,  // 13: hangar.monitoring.v1alpha1.GetSeriesRequest.range:type_name -> hangar.monitoring.v1alpha1.SeriesRange
+	2,  // 14: hangar.monitoring.v1alpha1.GetSeriesResponse.name:type_name -> hangar.monitoring.v1alpha1.SeriesName
+	4,  // 15: hangar.monitoring.v1alpha1.GetSeriesResponse.unit:type_name -> hangar.monitoring.v1alpha1.Unit
+	16, // 16: hangar.monitoring.v1alpha1.GetSeriesResponse.points:type_name -> hangar.monitoring.v1alpha1.Point
+	20, // 17: hangar.monitoring.v1alpha1.Point.time:type_name -> google.protobuf.Timestamp
+	19, // 18: hangar.monitoring.v1alpha1.ListAlertsResponse.alerts:type_name -> hangar.monitoring.v1alpha1.Alert
+	5,  // 19: hangar.monitoring.v1alpha1.Alert.severity:type_name -> hangar.monitoring.v1alpha1.Severity
+	20, // 20: hangar.monitoring.v1alpha1.Alert.start_time:type_name -> google.protobuf.Timestamp
+	6,  // 21: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:input_type -> hangar.monitoring.v1alpha1.GetOverviewRequest
+	14, // 22: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:input_type -> hangar.monitoring.v1alpha1.GetSeriesRequest
+	17, // 23: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:input_type -> hangar.monitoring.v1alpha1.ListAlertsRequest
+	7,  // 24: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:output_type -> hangar.monitoring.v1alpha1.GetOverviewResponse
+	15, // 25: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:output_type -> hangar.monitoring.v1alpha1.GetSeriesResponse
+	18, // 26: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:output_type -> hangar.monitoring.v1alpha1.ListAlertsResponse
+	24, // [24:27] is the sub-list for method output_type
+	21, // [21:24] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_hangar_monitoring_v1alpha1_monitoring_proto_init() }
@@ -1324,14 +1412,14 @@ func file_hangar_monitoring_v1alpha1_monitoring_proto_init() {
 	if File_hangar_monitoring_v1alpha1_monitoring_proto != nil {
 		return
 	}
-	file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[8].OneofWrappers = []any{}
+	file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[9].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc), len(file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

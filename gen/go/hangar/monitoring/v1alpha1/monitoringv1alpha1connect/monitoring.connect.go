@@ -46,11 +46,12 @@ const (
 
 // MonitoringServiceClient is a client for the hangar.monitoring.v1alpha1.MonitoringService service.
 type MonitoringServiceClient interface {
-	// GetOverview answers each layer's state now: reachability, the host, the
-	// platform's services, and the machines, counted.
+	// GetOverview answers each layer's state now: reachability and the
+	// machines, counted, for the platform; the host and its services for each
+	// node.
 	GetOverview(context.Context, *connect.Request[v1alpha1.GetOverviewRequest]) (*connect.Response[v1alpha1.GetOverviewResponse], error)
 	// GetSeries answers one named series over a range, at a step the server
-	// picks for the range.
+	// picks for the range: a host's for the node named, or the platform's.
 	GetSeries(context.Context, *connect.Request[v1alpha1.GetSeriesRequest]) (*connect.Response[v1alpha1.GetSeriesResponse], error)
 	// ListAlerts answers the alerts firing now, from Alertmanager, but those
 	// silenced or inhibited and the always-firing Watchdog.
@@ -115,11 +116,12 @@ func (c *monitoringServiceClient) ListAlerts(ctx context.Context, req *connect.R
 // MonitoringServiceHandler is an implementation of the hangar.monitoring.v1alpha1.MonitoringService
 // service.
 type MonitoringServiceHandler interface {
-	// GetOverview answers each layer's state now: reachability, the host, the
-	// platform's services, and the machines, counted.
+	// GetOverview answers each layer's state now: reachability and the
+	// machines, counted, for the platform; the host and its services for each
+	// node.
 	GetOverview(context.Context, *connect.Request[v1alpha1.GetOverviewRequest]) (*connect.Response[v1alpha1.GetOverviewResponse], error)
 	// GetSeries answers one named series over a range, at a step the server
-	// picks for the range.
+	// picks for the range: a host's for the node named, or the platform's.
 	GetSeries(context.Context, *connect.Request[v1alpha1.GetSeriesRequest]) (*connect.Response[v1alpha1.GetSeriesResponse], error)
 	// ListAlerts answers the alerts firing now, from Alertmanager, but those
 	// silenced or inhibited and the always-firing Watchdog.

@@ -20,30 +20,36 @@ import (
 // smartctl_exporter, blackbox_exporter, hangar-zpool-metrics) and Hangar's
 // own (internal/apiserver/metrics.go, the node agent's and the edge's). The
 // thresholds a check turns WARNING or CRITICAL at are those of the alerting
-// rules, deploy/host/monitoring/rules/host.yml, so the overview and the
-// alerts agree.
+// rules, deploy/host/monitoring/rules, so the overview and the alerts agree.
+//
+// Every series a host's Prometheus scrapes of that host carries its Node's
+// name as node, and the apiserver's Node Ready names each node itself: the
+// host queries keep node, by it or as scraped, and the overview tells the
+// nodes apart by it. The platform's queries drop it.
 const (
-	// The HTTPS probes of the API's /healthz and the console, by URL.
-	qProbeSuccess  = `probe_success{job="blackbox"}`
-	qProbeStatus   = `probe_http_status_code{job="blackbox"}`
-	qProbeDuration = `probe_duration_seconds{job="blackbox"}`
+	// The HTTPS probes of the API's /healthz and the console, by URL, from
+	// whichever hosts probe them: the worst of their answers.
+	qProbeSuccess  = `min by (instance) (probe_success{job="blackbox"})`
+	qProbeStatus   = `max by (instance) (probe_http_status_code{job="blackbox"})`
+	qProbeDuration = `max by (instance) (probe_duration_seconds{job="blackbox"})`
 	// Days left on the certificate each probed URL serves.
-	qCertDaysLeft = `(probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) / 86400`
+	qCertDaysLeft = `min by (instance) (probe_ssl_earliest_cert_expiry{job="blackbox"} - time()) / 86400`
 
-	qCPUBusy = `1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))`
-	qLoad1   = `max(node_load1)`
+	qCPUBusy = `1 - avg by (node) (rate(node_cpu_seconds_total{mode="idle"}[5m]))`
+	qLoad1   = `max by (node) (node_load1)`
 	// What the kernel can still hand out, as HostMemoryLow counts it:
-	// MemAvailable, and the ARC it would give back down to its minimum.
-	qMemTotal     = `sum(node_memory_MemTotal_bytes)`
-	qMemAvailable = `sum(node_memory_MemAvailable_bytes) + (sum(clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0)) or vector(0))`
-	qSwapUsed     = `sum(node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)`
+	// MemAvailable, and the ARC it would give back down to its minimum, or
+	// none on a node with no ARC.
+	qMemTotal     = `sum by (node) (node_memory_MemTotal_bytes)`
+	qMemAvailable = `sum by (node) (node_memory_MemAvailable_bytes) + (sum by (node) (clamp_min(node_zfs_arc_size - node_zfs_arc_c_min, 0)) or 0 * sum by (node) (node_memory_MemAvailable_bytes))`
+	qSwapUsed     = `sum by (node) (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes)`
 
 	// Each pool's state, by the state that holds.
 	qPoolState        = `node_zfs_zpool_state == 1`
 	qPoolSize         = `hangar_zpool_size_bytes`
 	qPoolAllocated    = `hangar_zpool_allocated_bytes`
 	qPoolDataErrors   = `hangar_zpool_data_errors`
-	qPoolDeviceErrors = `sum by (zpool) (hangar_zpool_device_errors)`
+	qPoolDeviceErrors = `sum by (node, zpool) (hangar_zpool_device_errors)`
 	qImagesUsed       = `1 - node_filesystem_avail_bytes{mountpoint="/var/lib/hangar/images"} / node_filesystem_size_bytes{mountpoint="/var/lib/hangar/images"}`
 
 	// Each md array's state, its active and its required disks, and, as
@@ -60,8 +66,8 @@ const (
 	qSmartWear            = `smartctl_device_percentage_used`
 	qSmartTemperature     = `smartctl_device_temperature{temperature_type="current"}`
 
-	qTimeSynced = `max(node_timex_sync_status)`
-	qTimeOffset = `max(abs(node_timex_offset_seconds))`
+	qTimeSynced = `max by (node) (node_timex_sync_status)`
+	qTimeOffset = `max by (node) (abs(node_timex_offset_seconds))`
 
 	// Each hangar-* service node_exporter reports: whether it is active,
 	// and its automatic restarts in a day and, as UnitRestartingOften
@@ -70,9 +76,9 @@ const (
 	qUnitRestarts1d = `clamp_min(node_systemd_service_restart_total{name=~"hangar-.+[.]service"} - node_systemd_service_restart_total{name=~"hangar-.+[.]service"} offset 1d, 0)`
 	qUnitRestarts1h = `clamp_min(node_systemd_service_restart_total{name=~"hangar-.+[.]service"} - node_systemd_service_restart_total{name=~"hangar-.+[.]service"} offset 1h, 0)`
 
-	// Each Node's Ready, by the status that holds; the node agent's tunnel.
+	// Each Node's Ready, by the status that holds; each agent's tunnel.
 	qNodeReady = `hangar_apiserver_node_ready == 1`
-	qTunnel    = `max(hangar_node_tunnel_connected)`
+	qTunnel    = `max by (node) (hangar_node_tunnel_connected)`
 
 	// Machines, counted: by phase, by the reasons the overview tells apart,
 	// and in a crash loop. The apiserver reports no machines series while
@@ -83,18 +89,25 @@ const (
 	qCrashLooping   = `max(hangar_apiserver_machines_crash_looping)`
 )
 
-// overviewQueries are every query GetOverview asks, each once.
-var overviewQueries = []string{
-	qProbeSuccess, qProbeStatus, qProbeDuration, qCertDaysLeft,
-	qCPUBusy, qLoad1, qMemTotal, qMemAvailable, qSwapUsed,
-	qPoolState, qPoolSize, qPoolAllocated, qPoolDataErrors, qPoolDeviceErrors, qImagesUsed,
-	qMdState, qMdActive, qMdRequired, qMdDegraded,
-	qSmartStatus, qSmartCriticalWarning, qSmartMediaErrors, qSmartWear, qSmartTemperature,
-	qTimeSynced, qTimeOffset,
-	qUnitActive, qUnitRestarts1d, qUnitRestarts1h,
-	qNodeReady, qTunnel,
-	qMachinePhases, qMachineReasons, qCrashLooping,
-}
+// platformQueries are the overview's queries of the platform's layers, and
+// nodeQueries those of each node's, each series of which carries node.
+var (
+	platformQueries = []string{
+		qProbeSuccess, qProbeStatus, qProbeDuration, qCertDaysLeft,
+		qMachinePhases, qMachineReasons, qCrashLooping,
+	}
+	nodeQueries = []string{
+		qCPUBusy, qLoad1, qMemTotal, qMemAvailable, qSwapUsed,
+		qPoolState, qPoolSize, qPoolAllocated, qPoolDataErrors, qPoolDeviceErrors, qImagesUsed,
+		qMdState, qMdActive, qMdRequired, qMdDegraded,
+		qSmartStatus, qSmartCriticalWarning, qSmartMediaErrors, qSmartWear, qSmartTemperature,
+		qTimeSynced, qTimeOffset,
+		qUnitActive, qUnitRestarts1d, qUnitRestarts1h,
+		qNodeReady, qTunnel,
+	}
+	// overviewQueries are every query GetOverview asks, each once.
+	overviewQueries = append(slices.Clone(platformQueries), nodeQueries...)
+)
 
 // Machine reasons the overview counts apart: those only the platform causes,
 // which alert, and those of a tenant's own program, which alert no one. They
@@ -126,9 +139,13 @@ const minRateWindow = 5 * time.Minute
 
 // seriesDef is one SeriesName's query.
 type seriesDef struct {
-	// query is the PromQL; $window stands for the rate window.
+	// query is the PromQL; $window stands for the rate window, and $node
+	// for the node a node's series is for.
 	query string
-	unit  monitoringv1alpha1.Unit
+	// perNode is set for a node's series, which a request names the node
+	// of.
+	perNode bool
+	unit    monitoringv1alpha1.Unit
 	// capacity, if set, is an instant query of what the value is out of,
 	// asked at the range's end; alertAboveOf turns it into where an alert
 	// fires.
@@ -139,10 +156,14 @@ type seriesDef struct {
 	alertAbove float64
 }
 
-// promQL is the query for a range, its rate window filled in.
-func (d seriesDef) promQL(r seriesRange) string {
-	return withWindow(d.query, max(r.step, minRateWindow))
+// promQL is the query for a range and a node, its rate window and node
+// filled in. node must be a valid name (ValidName), so it needs no quoting.
+func (d seriesDef) promQL(r seriesRange, node string) string {
+	return withNode(withWindow(d.query, max(r.step, minRateWindow)), node)
 }
+
+// withNode fills $node in a query with node, a valid name.
+func withNode(q, node string) string { return strings.ReplaceAll(q, "$node", node) }
 
 // withWindow fills $window in a query with w, written as Prometheus writes
 // a duration: 5m, 1h.
@@ -201,20 +222,24 @@ const (
 
 var seriesDefs = map[monitoringv1alpha1.SeriesName]seriesDef{
 	monitoringv1alpha1.SeriesName_SERIES_NAME_HOST_CPU: {
-		query: `1 - avg(rate(node_cpu_seconds_total{mode="idle"}[$window]))`,
-		unit:  monitoringv1alpha1.Unit_UNIT_RATIO,
+		query:   `1 - avg(rate(node_cpu_seconds_total{mode="idle",node="$node"}[$window]))`,
+		perNode: true,
+		unit:    monitoringv1alpha1.Unit_UNIT_RATIO,
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_HOST_MEMORY: {
-		query:    qMemTotal + ` - (` + qMemAvailable + `)`,
+		// As qMemAvailable counts it.
+		query:    `sum(node_memory_MemTotal_bytes{node="$node"}) - (sum(node_memory_MemAvailable_bytes{node="$node"}) + (sum(clamp_min(node_zfs_arc_size{node="$node"} - node_zfs_arc_c_min{node="$node"}, 0)) or vector(0)))`,
+		perNode:  true,
 		unit:     monitoringv1alpha1.Unit_UNIT_BYTES,
-		capacity: qMemTotal,
+		capacity: `sum(node_memory_MemTotal_bytes{node="$node"})`,
 		// HostMemoryLow.
 		alertAboveOf: func(total float64) float64 { return total - memoryLowBytes },
 	},
 	monitoringv1alpha1.SeriesName_SERIES_NAME_POOL_USED: {
-		query:    `sum(hangar_zpool_allocated_bytes)`,
+		query:    `sum(hangar_zpool_allocated_bytes{node="$node"})`,
+		perNode:  true,
 		unit:     monitoringv1alpha1.Unit_UNIT_BYTES,
-		capacity: `sum(hangar_zpool_size_bytes)`,
+		capacity: `sum(hangar_zpool_size_bytes{node="$node"})`,
 		// ZpoolAlmostFull.
 		alertAboveOf: func(size float64) float64 { return poolCriticalUsed * size },
 	},
@@ -254,6 +279,37 @@ func (r results) by(q, label string) map[string]float64 {
 		out[s.labels[label]] = s.value
 	}
 	return out
+}
+
+// forNode are the answers of the node queries for one node: their series
+// whose node label names it.
+func (r results) forNode(node string) results {
+	out := results{}
+	for _, q := range nodeQueries {
+		for _, s := range r[q] {
+			if s.labels["node"] == node {
+				out[q] = append(out[q], s)
+			}
+		}
+	}
+	return out
+}
+
+// nodes are the nodes the overview answers for, sorted: those given, and
+// every other a node query has a series of.
+func (r results) nodes(known []string) []string {
+	set := map[string]bool{}
+	for _, n := range known {
+		set[n] = true
+	}
+	for _, q := range nodeQueries {
+		for _, s := range r[q] {
+			if n := s.labels["node"]; n != "" {
+				set[n] = true
+			}
+		}
+	}
+	return keys(set)
 }
 
 // keys are a map's keys, sorted.
@@ -510,7 +566,9 @@ func diskChecks(r results) []*monitoringv1alpha1.Check {
 	return out
 }
 
-func servicesLayer(r results) *monitoringv1alpha1.LayerState {
+// servicesLayer is the services layer of the node named, from its answers
+// alone (results.forNode).
+func servicesLayer(node string, r results) *monitoringv1alpha1.LayerState {
 	var checks []*monitoringv1alpha1.Check
 	active := r.by(qUnitActive, "name")
 	day := r.by(qUnitRestarts1d, "name")
@@ -532,20 +590,16 @@ func servicesLayer(r results) *monitoringv1alpha1.LayerState {
 			checks = append(checks, check(name, healthOK, "active · %s", restarts))
 		}
 	}
-	ready := map[string]string{}
-	for _, s := range r[qNodeReady] {
-		ready[s.labels["node"]] = s.labels["status"]
+	// NodeNotReady.
+	switch ready := r[qNodeReady]; {
+	case len(ready) == 0:
+		checks = append(checks, noData("Node "+node))
+	case ready[0].labels["status"] == "True":
+		checks = append(checks, check("Node "+node, healthOK, "Ready"))
+	default:
+		checks = append(checks, check("Node "+node, healthCritical, "Ready %s", ready[0].labels["status"]))
 	}
-	if len(ready) == 0 {
-		checks = append(checks, noData("Nodes"))
-	}
-	for _, n := range keys(ready) {
-		if ready[n] == "True" {
-			checks = append(checks, check("Node "+n, healthOK, "Ready"))
-		} else {
-			checks = append(checks, check("Node "+n, healthCritical, "Ready %s", ready[n]))
-		}
-	}
+	// NodeTunnelDown.
 	switch v, has := first(r[qTunnel]); {
 	case !has:
 		checks = append(checks, noData("Node tunnel"))

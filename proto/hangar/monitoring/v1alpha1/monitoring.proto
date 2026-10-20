@@ -15,11 +15,12 @@ import "google/protobuf/timestamp.proto";
 // resource's service, so it is written by hand rather than generated. See
 // docs/decisions/monitoring.md.
 service MonitoringService {
-  // GetOverview answers each layer's state now: reachability, the host, the
-  // platform's services, and the machines, counted.
+  // GetOverview answers each layer's state now: reachability and the
+  // machines, counted, for the platform; the host and its services for each
+  // node.
   rpc GetOverview(GetOverviewRequest) returns (GetOverviewResponse);
   // GetSeries answers one named series over a range, at a step the server
-  // picks for the range.
+  // picks for the range: a host's for the node named, or the platform's.
   rpc GetSeries(GetSeriesRequest) returns (GetSeriesResponse);
   // ListAlerts answers the alerts firing now, from Alertmanager, but those
   // silenced or inhibited and the always-firing Watchdog.
@@ -40,29 +41,42 @@ enum Health {
   HEALTH_UNKNOWN = 5;
 }
 
-// Layer names one of the four layers the platform is watched in.
+// Layer names one of the four layers the platform is watched in. Two are
+// the platform's, two each node's.
 enum Layer {
   LAYER_UNSPECIFIED = 0;
-  // The API and the console over HTTPS, and their certificates.
+  // The platform's: the API and the console over HTTPS, and their
+  // certificates.
   LAYER_REACHABILITY = 1;
-  // CPU, memory, swap, the ZFS pools, the md mirror, the NVMe disks, time.
+  // A node's: CPU, memory, swap, the ZFS pools, the md mirror, the NVMe
+  // disks, time.
   LAYER_HOST = 2;
-  // Each hangar-* unit, each Node's Ready, the node tunnel.
+  // A node's: each hangar-* unit on its host, the apiserver's included
+  // where it runs, the Node's Ready, and its agent's tunnel.
   LAYER_SERVICES = 3;
-  // Tenants' machines, counted.
+  // The platform's: tenants' machines, counted.
   LAYER_MACHINES = 4;
 }
 
 message GetOverviewRequest {}
 
 message GetOverviewResponse {
-  // The Node this apiserver runs machines on, when it accepts one node
-  // agent; empty otherwise.
-  string node = 1;
   // When Prometheus was asked.
-  google.protobuf.Timestamp observe_time = 2;
-  // Every layer, in the order of Layer.
-  repeated LayerState layers = 3;
+  google.protobuf.Timestamp observe_time = 1;
+  // The platform's layers, LAYER_REACHABILITY and LAYER_MACHINES, in that
+  // order.
+  repeated LayerState layers = 2;
+  // Each node, by name: every Node this apiserver accepts, and any other
+  // Prometheus has series of.
+  repeated NodeOverview nodes = 3;
+}
+
+// NodeOverview is one node's layers.
+message NodeOverview {
+  // The Node's name, which its host's series carry as their node label.
+  string name = 1;
+  // LAYER_HOST and LAYER_SERVICES, in that order.
+  repeated LayerState layers = 2;
 }
 
 // LayerState is one layer's state now.
@@ -112,15 +126,16 @@ message ReasonCount {
   int32 count = 2;
 }
 
-// SeriesName names a series. Each is one fixed query in the apiserver.
+// SeriesName names a series. Each is one fixed query in the apiserver. The
+// HOST_ and POOL_ series are a node's, the API_ ones the platform's.
 enum SeriesName {
   SERIES_NAME_UNSPECIFIED = 0;
-  // The share of the host's CPU time not idle; UNIT_RATIO.
+  // The share of the node's CPU time not idle; UNIT_RATIO.
   SERIES_NAME_HOST_CPU = 1;
-  // The host's memory in use, the ARC the kernel can take back counted as
-  // free; UNIT_BYTES, out of the host's memory.
+  // The node's memory in use, the ARC the kernel can take back counted as
+  // free; UNIT_BYTES, out of the node's memory.
   SERIES_NAME_HOST_MEMORY = 2;
-  // What the ZFS pools hold; UNIT_BYTES, out of their size.
+  // What the node's ZFS pools hold; UNIT_BYTES, out of their size.
   SERIES_NAME_POOL_USED = 3;
   // The API's calls a second; UNIT_PER_SECOND.
   SERIES_NAME_API_REQUEST_RATE = 4;
@@ -155,22 +170,27 @@ enum Unit {
 message GetSeriesRequest {
   SeriesName name = 1;
   SeriesRange range = 2;
+  // The Node a node's series is for: required for those, refused for the
+  // platform's. An unknown Node is NOT_FOUND.
+  string node = 3;
 }
 
 message GetSeriesResponse {
   SeriesName name = 1;
-  Unit unit = 2;
+  // The Node the series is for; empty for the platform's.
+  string node = 2;
+  Unit unit = 3;
   // The time between points, which the server picks for the range.
-  int32 step_seconds = 3;
+  int32 step_seconds = 4;
   // Oldest first. A step with no value, such as a share of no calls or one
   // while Prometheus was down, has no point.
-  repeated Point points = 4;
+  repeated Point points = 5;
   // What the value is out of, when it has a ceiling: the host's memory, the
   // pools' size. Unset otherwise.
-  optional double capacity = 5;
+  optional double capacity = 6;
   // Where an alerting rule fires on the series' value, when one does. Unset
   // otherwise.
-  optional double alert_above = 6;
+  optional double alert_above = 7;
 }
 
 message Point {

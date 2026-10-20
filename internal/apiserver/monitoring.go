@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	monitoringv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 )
 
@@ -68,7 +69,8 @@ func (m monitoring) authorize(ctx context.Context) error {
 const maxConcurrentQueries = 8
 
 // GetOverview asks Prometheus every overview query at one instant, and
-// builds each layer from the answers.
+// builds the platform's layers from the answers, and each node's from those
+// of its series.
 func (m monitoring) GetOverview(ctx context.Context, _ *connect.Request[monitoringv1alpha1.GetOverviewRequest]) (*connect.Response[monitoringv1alpha1.GetOverviewResponse], error) {
 	if err := m.authorize(ctx); err != nil {
 		return nil, err
@@ -93,16 +95,21 @@ func (m monitoring) GetOverview(ctx context.Context, _ *connect.Request[monitori
 	}
 	res := &monitoringv1alpha1.GetOverviewResponse{
 		ObserveTime: timestamppb.New(now),
-		Layers:      []*monitoringv1alpha1.LayerState{reachabilityLayer(r), hostLayer(r), servicesLayer(r), machinesLayer(r)},
+		Layers:      []*monitoringv1alpha1.LayerState{reachabilityLayer(r), machinesLayer(r)},
 	}
-	if len(m.s.cfg.Nodes) == 1 {
-		res.Node = m.s.cfg.Nodes[0]
+	for _, n := range r.nodes(m.s.cfg.Nodes) {
+		rn := r.forNode(n)
+		res.Nodes = append(res.Nodes, &monitoringv1alpha1.NodeOverview{
+			Name:   n,
+			Layers: []*monitoringv1alpha1.LayerState{hostLayer(rn), servicesLayer(n, rn)},
+		})
 	}
 	return connect.NewResponse(res), nil
 }
 
 // GetSeries asks Prometheus one named series over the range, at the step
-// the range has, ending at the last whole step.
+// the range has, ending at the last whole step: of the node named, for a
+// node's series.
 func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitoringv1alpha1.GetSeriesRequest]) (*connect.Response[monitoringv1alpha1.GetSeriesResponse], error) {
 	if err := m.authorize(ctx); err != nil {
 		return nil, err
@@ -115,9 +122,28 @@ func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitori
 	if !ok {
 		return nil, invalid("range: %s is no range", req.Msg.GetRange())
 	}
+	node := req.Msg.GetNode()
+	switch {
+	case def.perNode && node == "":
+		return nil, invalid("node: %s is a node's series; name the node", req.Msg.GetName())
+	case !def.perNode && node != "":
+		return nil, invalid("node: %s is the platform's series, of no node", req.Msg.GetName())
+	case def.perNode:
+		// A valid name is a DNS label, which goes into the query as it is.
+		if err := ValidName(node); err != nil {
+			return nil, invalid("node: %v", err)
+		}
+		known, err := m.s.exists(ctx, m.s.backend(registry.Node), node)
+		if err != nil {
+			return nil, err
+		}
+		if !known {
+			return nil, connect.NewError(connect.CodeNotFound, fmt.Errorf("node %q: no such Node", node))
+		}
+	}
 	end := m.s.clock.Now().Truncate(rg.step)
 	start := end.Add(-rg.span)
-	q := def.promQL(rg)
+	q := def.promQL(rg, node)
 	series, err := m.s.prometheus.queryRange(ctx, q, start, end, rg.step)
 	if err != nil {
 		return nil, err
@@ -126,7 +152,7 @@ func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitori
 		return nil, connect.NewError(connect.CodeInternal, fmt.Errorf("the query %s answered %d series, not one", q, len(series)))
 	}
 	res := &monitoringv1alpha1.GetSeriesResponse{
-		Name: req.Msg.GetName(), Unit: def.unit, StepSeconds: int32(rg.step / time.Second),
+		Name: req.Msg.GetName(), Node: node, Unit: def.unit, StepSeconds: int32(rg.step / time.Second),
 	}
 	for _, s := range series {
 		for _, p := range s.points {
@@ -137,7 +163,7 @@ func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitori
 		}
 	}
 	if def.capacity != "" {
-		cap, err := m.s.prometheus.query(ctx, def.capacity, end)
+		cap, err := m.s.prometheus.query(ctx, withNode(def.capacity, node), end)
 		if err != nil {
 			return nil, err
 		}

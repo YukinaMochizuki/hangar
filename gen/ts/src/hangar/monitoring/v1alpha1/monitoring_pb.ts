@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/monitoring/v1alpha1/monitoring.proto.
  */
 export const file_hangar_monitoring_v1alpha1_monitoring: GenFile = /*@__PURE__*/
-  fileDesc("CitoYW5nYXIvbW9uaXRvcmluZy92MWFscGhhMS9tb25pdG9yaW5nLnByb3RvEhpoYW5nYXIubW9uaXRvcmluZy52MWFscGhhMSIUChJHZXRPdmVydmlld1JlcXVlc3QijQEKE0dldE92ZXJ2aWV3UmVzcG9uc2USDAoEbm9kZRgBIAEoCRIwCgxvYnNlcnZlX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEjYKBmxheWVycxgDIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxheWVyU3RhdGUi4gEKCkxheWVyU3RhdGUSMAoFbGF5ZXIYASABKA4yIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllchIyCgZoZWFsdGgYAiABKA4yIi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5IZWFsdGgSMQoGY2hlY2tzGAMgAygLMiEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuQ2hlY2sSOwoIbWFjaGluZXMYBCABKAsyKS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5NYWNoaW5lQ291bnRzIlgKBUNoZWNrEgwKBG5hbWUYASABKAkSMgoGaGVhbHRoGAIgASgOMiIuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuSGVhbHRoEg0KBXZhbHVlGAMgASgJIuUBCg1NYWNoaW5lQ291bnRzEjYKBnBoYXNlcxgBIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBoYXNlQ291bnQSQgoRcGxhdGZvcm1fZmFpbHVyZXMYAiADKAsyJy5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5SZWFzb25Db3VudBJBChBwcm9ncmFtX2ZhaWx1cmVzGAMgAygLMicuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuUmVhc29uQ291bnQSFQoNY3Jhc2hfbG9vcGluZxgEIAEoBSIqCgpQaGFzZUNvdW50Eg0KBXBoYXNlGAEgASgJEg0KBWNvdW50GAIgASgFIiwKC1JlYXNvbkNvdW50Eg4KBnJlYXNvbhgBIAEoCRINCgVjb3VudBgCIAEoBSKAAQoQR2V0U2VyaWVzUmVxdWVzdBI0CgRuYW1lGAEgASgOMiYuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2VyaWVzTmFtZRI2CgVyYW5nZRgCIAEoDjInLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNlcmllc1JhbmdlIpACChFHZXRTZXJpZXNSZXNwb25zZRI0CgRuYW1lGAEgASgOMiYuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2VyaWVzTmFtZRIuCgR1bml0GAIgASgOMiAuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuVW5pdBIUCgxzdGVwX3NlY29uZHMYAyABKAUSMQoGcG9pbnRzGAQgAygLMiEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuUG9pbnQSFQoIY2FwYWNpdHkYBSABKAFIAIgBARIYCgthbGVydF9hYm92ZRgGIAEoAUgBiAEBQgsKCV9jYXBhY2l0eUIOCgxfYWxlcnRfYWJvdmUiQAoFUG9pbnQSKAoEdGltZRgBIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDQoFdmFsdWUYAiABKAEiEwoRTGlzdEFsZXJ0c1JlcXVlc3QiRwoSTGlzdEFsZXJ0c1Jlc3BvbnNlEjEKBmFsZXJ0cxgBIAMoCzIhLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkFsZXJ0Io4BCgVBbGVydBIMCgRuYW1lGAEgASgJEjYKCHNldmVyaXR5GAIgASgOMiQuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2V2ZXJpdHkSDwoHc3VtbWFyeRgDIAEoCRIuCgpzdGFydF90aW1lGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCp9CgZIZWFsdGgSFgoSSEVBTFRIX1VOU1BFQ0lGSUVEEAASDQoJSEVBTFRIX09LEAESEgoOSEVBTFRIX1dBUk5JTkcQAhITCg9IRUFMVEhfQ1JJVElDQUwQAxIPCgtIRUFMVEhfSU5GTxAEEhIKDkhFQUxUSF9VTktOT1dOEAUqbgoFTGF5ZXISFQoRTEFZRVJfVU5TUEVDSUZJRUQQABIWChJMQVlFUl9SRUFDSEFCSUxJVFkQARIOCgpMQVlFUl9IT1NUEAISEgoOTEFZRVJfU0VSVklDRVMQAxISCg5MQVlFUl9NQUNISU5FUxAEKt4BCgpTZXJpZXNOYW1lEhsKF1NFUklFU19OQU1FX1VOU1BFQ0lGSUVEEAASGAoUU0VSSUVTX05BTUVfSE9TVF9DUFUQARIbChdTRVJJRVNfTkFNRV9IT1NUX01FTU9SWRACEhkKFVNFUklFU19OQU1FX1BPT0xfVVNFRBADEiAKHFNFUklFU19OQU1FX0FQSV9SRVFVRVNUX1JBVEUQBBIeChpTRVJJRVNfTkFNRV9BUElfRVJST1JfUkFURRAFEh8KG1NFUklFU19OQU1FX0FQSV9MQVRFTkNZX1A5ORAGKn0KC1Nlcmllc1JhbmdlEhwKGFNFUklFU19SQU5HRV9VTlNQRUNJRklFRBAAEhkKFVNFUklFU19SQU5HRV9PTkVfSE9VUhABEhgKFFNFUklFU19SQU5HRV9PTkVfREFZEAISGwoXU0VSSUVTX1JBTkdFX1NFVkVOX0RBWVMQAypjCgRVbml0EhQKEFVOSVRfVU5TUEVDSUZJRUQQABIOCgpVTklUX1JBVElPEAESDgoKVU5JVF9CWVRFUxACEhMKD1VOSVRfUEVSX1NFQ09ORBADEhAKDFVOSVRfU0VDT05EUxAEKlEKCFNldmVyaXR5EhgKFFNFVkVSSVRZX1VOU1BFQ0lGSUVEEAASFQoRU0VWRVJJVFlfQ1JJVElDQUwQARIUChBTRVZFUklUWV9XQVJOSU5HEAIy2gIKEU1vbml0b3JpbmdTZXJ2aWNlEm4KC0dldE92ZXJ2aWV3Ei4uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0T3ZlcnZpZXdSZXF1ZXN0Gi8uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0T3ZlcnZpZXdSZXNwb25zZRJoCglHZXRTZXJpZXMSLC5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5HZXRTZXJpZXNSZXF1ZXN0Gi0uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0U2VyaWVzUmVzcG9uc2USawoKTGlzdEFsZXJ0cxItLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxpc3RBbGVydHNSZXF1ZXN0Gi4uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTGlzdEFsZXJ0c1Jlc3BvbnNlQpMCCh5jb20uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTFCD01vbml0b3JpbmdQcm90b1ABWlZnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9tb25pdG9yaW5nL3YxYWxwaGExO21vbml0b3Jpbmd2MWFscGhhMaICA0hNWKoCGkhhbmdhci5Nb25pdG9yaW5nLlYxYWxwaGExygIaSGFuZ2FyXE1vbml0b3JpbmdcVjFhbHBoYTHiAiZIYW5nYXJcTW9uaXRvcmluZ1xWMWFscGhhMVxHUEJNZXRhZGF0YeoCHEhhbmdhcjo6TW9uaXRvcmluZzo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("CitoYW5nYXIvbW9uaXRvcmluZy92MWFscGhhMS9tb25pdG9yaW5nLnByb3RvEhpoYW5nYXIubW9uaXRvcmluZy52MWFscGhhMSIUChJHZXRPdmVydmlld1JlcXVlc3QiuAEKE0dldE92ZXJ2aWV3UmVzcG9uc2USMAoMb2JzZXJ2ZV90aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2CgZsYXllcnMYAiADKAsyJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllclN0YXRlEjcKBW5vZGVzGAMgAygLMiguaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTm9kZU92ZXJ2aWV3IlQKDE5vZGVPdmVydmlldxIMCgRuYW1lGAEgASgJEjYKBmxheWVycxgCIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxheWVyU3RhdGUi4gEKCkxheWVyU3RhdGUSMAoFbGF5ZXIYASABKA4yIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllchIyCgZoZWFsdGgYAiABKA4yIi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5IZWFsdGgSMQoGY2hlY2tzGAMgAygLMiEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuQ2hlY2sSOwoIbWFjaGluZXMYBCABKAsyKS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5NYWNoaW5lQ291bnRzIlgKBUNoZWNrEgwKBG5hbWUYASABKAkSMgoGaGVhbHRoGAIgASgOMiIuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuSGVhbHRoEg0KBXZhbHVlGAMgASgJIuUBCg1NYWNoaW5lQ291bnRzEjYKBnBoYXNlcxgBIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBoYXNlQ291bnQSQgoRcGxhdGZvcm1fZmFpbHVyZXMYAiADKAsyJy5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5SZWFzb25Db3VudBJBChBwcm9ncmFtX2ZhaWx1cmVzGAMgAygLMicuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuUmVhc29uQ291bnQSFQoNY3Jhc2hfbG9vcGluZxgEIAEoBSIqCgpQaGFzZUNvdW50Eg0KBXBoYXNlGAEgASgJEg0KBWNvdW50GAIgASgFIiwKC1JlYXNvbkNvdW50Eg4KBnJlYXNvbhgBIAEoCRINCgVjb3VudBgCIAEoBSKOAQoQR2V0U2VyaWVzUmVxdWVzdBI0CgRuYW1lGAEgASgOMiYuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2VyaWVzTmFtZRI2CgVyYW5nZRgCIAEoDjInLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNlcmllc1JhbmdlEgwKBG5vZGUYAyABKAkingIKEUdldFNlcmllc1Jlc3BvbnNlEjQKBG5hbWUYASABKA4yJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5TZXJpZXNOYW1lEgwKBG5vZGUYAiABKAkSLgoEdW5pdBgDIAEoDjIgLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlVuaXQSFAoMc3RlcF9zZWNvbmRzGAQgASgFEjEKBnBvaW50cxgFIAMoCzIhLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBvaW50EhUKCGNhcGFjaXR5GAYgASgBSACIAQESGAoLYWxlcnRfYWJvdmUYByABKAFIAYgBAUILCglfY2FwYWNpdHlCDgoMX2FsZXJ0X2Fib3ZlIkAKBVBvaW50EigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBXZhbHVlGAIgASgBIhMKEUxpc3RBbGVydHNSZXF1ZXN0IkcKEkxpc3RBbGVydHNSZXNwb25zZRIxCgZhbGVydHMYASADKAsyIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5BbGVydCKOAQoFQWxlcnQSDAoEbmFtZRgBIAEoCRI2CghzZXZlcml0eRgCIAEoDjIkLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNldmVyaXR5Eg8KB3N1bW1hcnkYAyABKAkSLgoKc3RhcnRfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAqfQoGSGVhbHRoEhYKEkhFQUxUSF9VTlNQRUNJRklFRBAAEg0KCUhFQUxUSF9PSxABEhIKDkhFQUxUSF9XQVJOSU5HEAISEwoPSEVBTFRIX0NSSVRJQ0FMEAMSDwoLSEVBTFRIX0lORk8QBBISCg5IRUFMVEhfVU5LTk9XThAFKm4KBUxheWVyEhUKEUxBWUVSX1VOU1BFQ0lGSUVEEAASFgoSTEFZRVJfUkVBQ0hBQklMSVRZEAESDgoKTEFZRVJfSE9TVBACEhIKDkxBWUVSX1NFUlZJQ0VTEAMSEgoOTEFZRVJfTUFDSElORVMQBCreAQoKU2VyaWVzTmFtZRIbChdTRVJJRVNfTkFNRV9VTlNQRUNJRklFRBAAEhgKFFNFUklFU19OQU1FX0hPU1RfQ1BVEAESGwoXU0VSSUVTX05BTUVfSE9TVF9NRU1PUlkQAhIZChVTRVJJRVNfTkFNRV9QT09MX1VTRUQQAxIgChxTRVJJRVNfTkFNRV9BUElfUkVRVUVTVF9SQVRFEAQSHgoaU0VSSUVTX05BTUVfQVBJX0VSUk9SX1JBVEUQBRIfChtTRVJJRVNfTkFNRV9BUElfTEFURU5DWV9QOTkQBip9CgtTZXJpZXNSYW5nZRIcChhTRVJJRVNfUkFOR0VfVU5TUEVDSUZJRUQQABIZChVTRVJJRVNfUkFOR0VfT05FX0hPVVIQARIYChRTRVJJRVNfUkFOR0VfT05FX0RBWRACEhsKF1NFUklFU19SQU5HRV9TRVZFTl9EQVlTEAMqYwoEVW5pdBIUChBVTklUX1VOU1BFQ0lGSUVEEAASDgoKVU5JVF9SQVRJTxABEg4KClVOSVRfQllURVMQAhITCg9VTklUX1BFUl9TRUNPTkQQAxIQCgxVTklUX1NFQ09ORFMQBCpRCghTZXZlcml0eRIYChRTRVZFUklUWV9VTlNQRUNJRklFRBAAEhUKEVNFVkVSSVRZX0NSSVRJQ0FMEAESFAoQU0VWRVJJVFlfV0FSTklORxACMtoCChFNb25pdG9yaW5nU2VydmljZRJuCgtHZXRPdmVydmlldxIuLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkdldE92ZXJ2aWV3UmVxdWVzdBovLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkdldE92ZXJ2aWV3UmVzcG9uc2USaAoJR2V0U2VyaWVzEiwuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0U2VyaWVzUmVxdWVzdBotLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkdldFNlcmllc1Jlc3BvbnNlEmsKCkxpc3RBbGVydHMSLS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MaXN0QWxlcnRzUmVxdWVzdBouLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxpc3RBbGVydHNSZXNwb25zZUKTAgoeY29tLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExQg9Nb25pdG9yaW5nUHJvdG9QAVpWZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvbW9uaXRvcmluZy92MWFscGhhMTttb25pdG9yaW5ndjFhbHBoYTGiAgNITViqAhpIYW5nYXIuTW9uaXRvcmluZy5WMWFscGhhMcoCGkhhbmdhclxNb25pdG9yaW5nXFYxYWxwaGEx4gImSGFuZ2FyXE1vbml0b3JpbmdcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhxIYW5nYXI6Ok1vbml0b3Jpbmc6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.GetOverviewRequest
@@ -32,26 +32,27 @@ export const GetOverviewRequestSchema: GenMessage<GetOverviewRequest> = /*@__PUR
  */
 export type GetOverviewResponse = Message<"hangar.monitoring.v1alpha1.GetOverviewResponse"> & {
   /**
-   * The Node this apiserver runs machines on, when it accepts one node
-   * agent; empty otherwise.
-   *
-   * @generated from field: string node = 1;
-   */
-  node: string;
-
-  /**
    * When Prometheus was asked.
    *
-   * @generated from field: google.protobuf.Timestamp observe_time = 2;
+   * @generated from field: google.protobuf.Timestamp observe_time = 1;
    */
   observeTime?: Timestamp | undefined;
 
   /**
-   * Every layer, in the order of Layer.
+   * The platform's layers, LAYER_REACHABILITY and LAYER_MACHINES, in that
+   * order.
    *
-   * @generated from field: repeated hangar.monitoring.v1alpha1.LayerState layers = 3;
+   * @generated from field: repeated hangar.monitoring.v1alpha1.LayerState layers = 2;
    */
   layers: LayerState[];
+
+  /**
+   * Each node, by name: every Node this apiserver accepts, and any other
+   * Prometheus has series of.
+   *
+   * @generated from field: repeated hangar.monitoring.v1alpha1.NodeOverview nodes = 3;
+   */
+  nodes: NodeOverview[];
 };
 
 /**
@@ -60,6 +61,34 @@ export type GetOverviewResponse = Message<"hangar.monitoring.v1alpha1.GetOvervie
  */
 export const GetOverviewResponseSchema: GenMessage<GetOverviewResponse> = /*@__PURE__*/
   messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 1);
+
+/**
+ * NodeOverview is one node's layers.
+ *
+ * @generated from message hangar.monitoring.v1alpha1.NodeOverview
+ */
+export type NodeOverview = Message<"hangar.monitoring.v1alpha1.NodeOverview"> & {
+  /**
+   * The Node's name, which its host's series carry as their node label.
+   *
+   * @generated from field: string name = 1;
+   */
+  name: string;
+
+  /**
+   * LAYER_HOST and LAYER_SERVICES, in that order.
+   *
+   * @generated from field: repeated hangar.monitoring.v1alpha1.LayerState layers = 2;
+   */
+  layers: LayerState[];
+};
+
+/**
+ * Describes the message hangar.monitoring.v1alpha1.NodeOverview.
+ * Use `create(NodeOverviewSchema)` to create a new message.
+ */
+export const NodeOverviewSchema: GenMessage<NodeOverview> = /*@__PURE__*/
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 2);
 
 /**
  * LayerState is one layer's state now.
@@ -98,7 +127,7 @@ export type LayerState = Message<"hangar.monitoring.v1alpha1.LayerState"> & {
  * Use `create(LayerStateSchema)` to create a new message.
  */
 export const LayerStateSchema: GenMessage<LayerState> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 2);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 3);
 
 /**
  * Check is one line of a layer: what is checked, and what it reads now.
@@ -131,7 +160,7 @@ export type Check = Message<"hangar.monitoring.v1alpha1.Check"> & {
  * Use `create(CheckSchema)` to create a new message.
  */
 export const CheckSchema: GenMessage<Check> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 3);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 4);
 
 /**
  * MachineCounts are the platform's machines, counted, never named.
@@ -175,7 +204,7 @@ export type MachineCounts = Message<"hangar.monitoring.v1alpha1.MachineCounts"> 
  * Use `create(MachineCountsSchema)` to create a new message.
  */
 export const MachineCountsSchema: GenMessage<MachineCounts> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 4);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 5);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.PhaseCount
@@ -200,7 +229,7 @@ export type PhaseCount = Message<"hangar.monitoring.v1alpha1.PhaseCount"> & {
  * Use `create(PhaseCountSchema)` to create a new message.
  */
 export const PhaseCountSchema: GenMessage<PhaseCount> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 5);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 6);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.ReasonCount
@@ -224,7 +253,7 @@ export type ReasonCount = Message<"hangar.monitoring.v1alpha1.ReasonCount"> & {
  * Use `create(ReasonCountSchema)` to create a new message.
  */
 export const ReasonCountSchema: GenMessage<ReasonCount> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 6);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 7);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.GetSeriesRequest
@@ -239,6 +268,14 @@ export type GetSeriesRequest = Message<"hangar.monitoring.v1alpha1.GetSeriesRequ
    * @generated from field: hangar.monitoring.v1alpha1.SeriesRange range = 2;
    */
   range: SeriesRange;
+
+  /**
+   * The Node a node's series is for: required for those, refused for the
+   * platform's. An unknown Node is NOT_FOUND.
+   *
+   * @generated from field: string node = 3;
+   */
+  node: string;
 };
 
 /**
@@ -246,7 +283,7 @@ export type GetSeriesRequest = Message<"hangar.monitoring.v1alpha1.GetSeriesRequ
  * Use `create(GetSeriesRequestSchema)` to create a new message.
  */
 export const GetSeriesRequestSchema: GenMessage<GetSeriesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 7);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 8);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.GetSeriesResponse
@@ -258,14 +295,21 @@ export type GetSeriesResponse = Message<"hangar.monitoring.v1alpha1.GetSeriesRes
   name: SeriesName;
 
   /**
-   * @generated from field: hangar.monitoring.v1alpha1.Unit unit = 2;
+   * The Node the series is for; empty for the platform's.
+   *
+   * @generated from field: string node = 2;
+   */
+  node: string;
+
+  /**
+   * @generated from field: hangar.monitoring.v1alpha1.Unit unit = 3;
    */
   unit: Unit;
 
   /**
    * The time between points, which the server picks for the range.
    *
-   * @generated from field: int32 step_seconds = 3;
+   * @generated from field: int32 step_seconds = 4;
    */
   stepSeconds: number;
 
@@ -273,7 +317,7 @@ export type GetSeriesResponse = Message<"hangar.monitoring.v1alpha1.GetSeriesRes
    * Oldest first. A step with no value, such as a share of no calls or one
    * while Prometheus was down, has no point.
    *
-   * @generated from field: repeated hangar.monitoring.v1alpha1.Point points = 4;
+   * @generated from field: repeated hangar.monitoring.v1alpha1.Point points = 5;
    */
   points: Point[];
 
@@ -281,7 +325,7 @@ export type GetSeriesResponse = Message<"hangar.monitoring.v1alpha1.GetSeriesRes
    * What the value is out of, when it has a ceiling: the host's memory, the
    * pools' size. Unset otherwise.
    *
-   * @generated from field: optional double capacity = 5;
+   * @generated from field: optional double capacity = 6;
    */
   capacity?: number | undefined;
 
@@ -289,7 +333,7 @@ export type GetSeriesResponse = Message<"hangar.monitoring.v1alpha1.GetSeriesRes
    * Where an alerting rule fires on the series' value, when one does. Unset
    * otherwise.
    *
-   * @generated from field: optional double alert_above = 6;
+   * @generated from field: optional double alert_above = 7;
    */
   alertAbove?: number | undefined;
 };
@@ -299,7 +343,7 @@ export type GetSeriesResponse = Message<"hangar.monitoring.v1alpha1.GetSeriesRes
  * Use `create(GetSeriesResponseSchema)` to create a new message.
  */
 export const GetSeriesResponseSchema: GenMessage<GetSeriesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 8);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 9);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.Point
@@ -321,7 +365,7 @@ export type Point = Message<"hangar.monitoring.v1alpha1.Point"> & {
  * Use `create(PointSchema)` to create a new message.
  */
 export const PointSchema: GenMessage<Point> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 9);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 10);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.ListAlertsRequest
@@ -334,7 +378,7 @@ export type ListAlertsRequest = Message<"hangar.monitoring.v1alpha1.ListAlertsRe
  * Use `create(ListAlertsRequestSchema)` to create a new message.
  */
 export const ListAlertsRequestSchema: GenMessage<ListAlertsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 10);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 11);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.ListAlertsResponse
@@ -353,7 +397,7 @@ export type ListAlertsResponse = Message<"hangar.monitoring.v1alpha1.ListAlertsR
  * Use `create(ListAlertsResponseSchema)` to create a new message.
  */
 export const ListAlertsResponseSchema: GenMessage<ListAlertsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 11);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 12);
 
 /**
  * Alert is one alert firing now.
@@ -394,7 +438,7 @@ export type Alert = Message<"hangar.monitoring.v1alpha1.Alert"> & {
  * Use `create(AlertSchema)` to create a new message.
  */
 export const AlertSchema: GenMessage<Alert> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 12);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 13);
 
 /**
  * Health is a layer's or a check's state.
@@ -448,7 +492,8 @@ export const HealthSchema: GenEnum<Health> = /*@__PURE__*/
   enumDesc(file_hangar_monitoring_v1alpha1_monitoring, 0);
 
 /**
- * Layer names one of the four layers the platform is watched in.
+ * Layer names one of the four layers the platform is watched in. Two are
+ * the platform's, two each node's.
  *
  * @generated from enum hangar.monitoring.v1alpha1.Layer
  */
@@ -459,28 +504,31 @@ export enum Layer {
   UNSPECIFIED = 0,
 
   /**
-   * The API and the console over HTTPS, and their certificates.
+   * The platform's: the API and the console over HTTPS, and their
+   * certificates.
    *
    * @generated from enum value: LAYER_REACHABILITY = 1;
    */
   REACHABILITY = 1,
 
   /**
-   * CPU, memory, swap, the ZFS pools, the md mirror, the NVMe disks, time.
+   * A node's: CPU, memory, swap, the ZFS pools, the md mirror, the NVMe
+   * disks, time.
    *
    * @generated from enum value: LAYER_HOST = 2;
    */
   HOST = 2,
 
   /**
-   * Each hangar-* unit, each Node's Ready, the node tunnel.
+   * A node's: each hangar-* unit on its host, the apiserver's included
+   * where it runs, the Node's Ready, and its agent's tunnel.
    *
    * @generated from enum value: LAYER_SERVICES = 3;
    */
   SERVICES = 3,
 
   /**
-   * Tenants' machines, counted.
+   * The platform's: tenants' machines, counted.
    *
    * @generated from enum value: LAYER_MACHINES = 4;
    */
@@ -494,7 +542,8 @@ export const LayerSchema: GenEnum<Layer> = /*@__PURE__*/
   enumDesc(file_hangar_monitoring_v1alpha1_monitoring, 1);
 
 /**
- * SeriesName names a series. Each is one fixed query in the apiserver.
+ * SeriesName names a series. Each is one fixed query in the apiserver. The
+ * HOST_ and POOL_ series are a node's, the API_ ones the platform's.
  *
  * @generated from enum hangar.monitoring.v1alpha1.SeriesName
  */
@@ -505,22 +554,22 @@ export enum SeriesName {
   UNSPECIFIED = 0,
 
   /**
-   * The share of the host's CPU time not idle; UNIT_RATIO.
+   * The share of the node's CPU time not idle; UNIT_RATIO.
    *
    * @generated from enum value: SERIES_NAME_HOST_CPU = 1;
    */
   HOST_CPU = 1,
 
   /**
-   * The host's memory in use, the ARC the kernel can take back counted as
-   * free; UNIT_BYTES, out of the host's memory.
+   * The node's memory in use, the ARC the kernel can take back counted as
+   * free; UNIT_BYTES, out of the node's memory.
    *
    * @generated from enum value: SERIES_NAME_HOST_MEMORY = 2;
    */
   HOST_MEMORY = 2,
 
   /**
-   * What the ZFS pools hold; UNIT_BYTES, out of their size.
+   * What the node's ZFS pools hold; UNIT_BYTES, out of their size.
    *
    * @generated from enum value: SERIES_NAME_POOL_USED = 3;
    */
@@ -679,8 +728,9 @@ export const SeveritySchema: GenEnum<Severity> = /*@__PURE__*/
  */
 export const MonitoringService: GenService<{
   /**
-   * GetOverview answers each layer's state now: reachability, the host, the
-   * platform's services, and the machines, counted.
+   * GetOverview answers each layer's state now: reachability and the
+   * machines, counted, for the platform; the host and its services for each
+   * node.
    *
    * @generated from rpc hangar.monitoring.v1alpha1.MonitoringService.GetOverview
    */
@@ -691,7 +741,7 @@ export const MonitoringService: GenService<{
   },
   /**
    * GetSeries answers one named series over a range, at a step the server
-   * picks for the range.
+   * picks for the range: a host's for the node named, or the platform's.
    *
    * @generated from rpc hangar.monitoring.v1alpha1.MonitoringService.GetSeries
    */

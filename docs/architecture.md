@@ -140,6 +140,9 @@ asks the host's Prometheus and Alertmanager, given `--prometheus-url` and
 `--alertmanager-url` (loopback only), with fixed queries whose PromQL is in
 `internal/apiserver/monitoringqueries.go`, and answers only callers holding
 `platform.monitoring.read`. Without them its calls fail with `Unavailable`.
+It answers reachability and machines for the platform, and the host and its
+services for each node, by the `node` label the host's series carry. The
+services step passes both flags (`deploy/host/steps/80-services.sh`).
 
 ## Where the reasoning lives
 
