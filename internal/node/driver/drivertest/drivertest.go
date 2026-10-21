@@ -75,6 +75,11 @@ type Host struct {
 	// AskedToStop reports whether the guest of the machine's VM, stopped,
 	// was asked to stop its process before the VM went.
 	AskedToStop func(t *testing.T, machineUID string) bool
+	// BootDisk reads back what the machine's listed server's next boot
+	// takes from its boot disk: its export, and the disk's file mode and
+	// group, zero where the host has no file. The boot exports part runs
+	// only with it.
+	BootDisk func(t *testing.T, machineUID string) (export driver.ShareExport, mode os.FileMode, gid int)
 	// Exec are the programs the guests can exec.
 	Exec *ExecPrograms
 	// Firmware says the hypervisor boots firmware VMs (VMSpec.Firmware).
@@ -153,6 +158,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
 	part("file share servers", shareServers, vms)
+	part("boot exports", bootExports, func(h Host) bool { return vms(h) && h.BootDisk != nil })
 	part("guest IPv6", guestIPv6, func(h Host) bool {
 		return vms(h) && h.IPv6Prefix.IsValid() && h.GuestIPv6 != nil && h.Exit != nil
 	})

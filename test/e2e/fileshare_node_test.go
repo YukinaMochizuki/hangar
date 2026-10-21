@@ -24,6 +24,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
@@ -219,16 +220,15 @@ func TestAShareIsServed(t *testing.T) {
 	}
 
 	// Booted again by its policy, it holds its boot disk's export, and is
-	// told the share's again.
+	// told the share's again all the same: the agent knows what a boot holds
+	// only by telling it.
 	uid := w.machine2("fs-data").GetMetadata().GetUid()
 	calls := w.host.ExportCalls(uid)
 	if err := w.host.Exit(uid, 1); err != nil {
 		t.Fatal(err)
 	}
 	w.waitExport("data", now)
-	if w.host.ExportCalls(uid) == calls {
-		t.Error("the server booting again was told nothing, though its boot disk holds an older export")
-	}
+	testutil.Eventually(t, "the server booting again told its export", func() bool { return w.host.ExportCalls(uid) > calls })
 	if waiting := w.waitSettled(); len(waiting) > 0 {
 		t.Errorf("still waiting on %v", waiting)
 	}
@@ -267,6 +267,124 @@ func TestARefusedExportIsReported(t *testing.T) {
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_IN_USE)
 	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534,
 		Clients: []driver.ShareClient{{Address: containerAddr(w, "web")}}})
+}
+
+// TestARestartedServerServesItsCurrentExport: a server booted again by its
+// restart policy, its node unable to tell it anything, serves from the
+// start the export as last computed: a client added since its VM started
+// is in it, and a client removed while it ran, its guest answering
+// nothing, is not.
+func TestARestartedServerServesItsCurrentExport(t *testing.T) {
+	w := newWorld(t)
+	w.applyShare("data", "1Gi")
+	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
+	uid := w.machine2("fs-data").GetMetadata().GetUid()
+	w.apply(sharing("web", "data", false))
+	w.apply(sharing("reader", "data", true))
+	w.waitReason("web", "Running")
+	w.waitReason("reader", "Running")
+	web, reader := containerAddr(w, "web"), containerAddr(w, "reader")
+	both := []driver.ShareClient{{Address: web}, {Address: reader, ReadOnly: true}}
+	slices.SortFunc(both, func(a, b driver.ShareClient) int { return a.Address.Compare(b.Address) })
+	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534, Clients: both})
+	if waiting := w.waitSettled(); len(waiting) > 0 {
+		t.Fatalf("still waiting on %v", waiting)
+	}
+	// restart has the server booted again by its policy while its guest
+	// answers nothing, and says what it serves from the start.
+	restart := func() driver.ShareExport {
+		t.Helper()
+		before := w.server("data")
+		w.host.Silence(uid, true)
+		if err := w.host.Exit(uid, 1); err != nil {
+			t.Fatal(err)
+		}
+		if after := w.server("data"); after.Boots != before.Boots+1 {
+			t.Fatalf("the server booted %d times, then %d", before.Boots, after.Boots)
+		}
+		got, _ := w.host.Export(uid)
+		return got
+	}
+
+	// Its clients came after its VM started: the boot holds them.
+	if got := restart(); !slices.Equal(got.Clients, both) {
+		t.Errorf("booted again, the server serves %+v, not its clients %+v", got.Clients, both)
+	}
+
+	// A client removed while the server runs but answers nothing: its next
+	// boot does not serve it, though the node has told the server nothing
+	// since.
+	calls := w.host.ExportCalls(uid)
+	w.delete("reader")
+	w.waitGone("reader")
+	w.waitSettled()
+	if got := restart(); !slices.Equal(got.Clients, []driver.ShareClient{{Address: web}}) {
+		t.Errorf("booted again after a client was removed while it answered nothing, the server serves %+v", got.Clients)
+	}
+	if w.host.ExportCalls(uid) != calls {
+		t.Error("a silent server was told its export: the boot proves nothing")
+	}
+	w.host.Silence(uid, false)
+	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534, Clients: []driver.ShareClient{{Address: web}}})
+	if waiting := w.waitSettled(); len(waiting) > 0 {
+		t.Errorf("still waiting on %v", waiting)
+	}
+}
+
+// TestABootDiskIsWrittenBeforeItsServerIsTold: a server's boot disk,
+// written at its start, is written again only when its export changes, and
+// then before the server is told; a settled server's, never.
+func TestABootDiskIsWrittenBeforeItsServerIsTold(t *testing.T) {
+	w := newWorld(t)
+	w.applyShare("data", "1Gi")
+	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
+	uid := w.machine2("fs-data").GetMetadata().GetUid()
+	logIs := func(what string, want ...string) {
+		t.Helper()
+		if waiting := w.waitSettled(); len(waiting) > 0 {
+			t.Fatalf("still waiting on %v", waiting)
+		}
+		if got := w.host.ExportLog(uid); !slices.Equal(got, want) {
+			t.Errorf("%s: the server's export was asked %q, want %q", what, got, want)
+		}
+	}
+	logIs("started", "tell")
+	w.apply(sharing("web", "data", false))
+	w.waitReason("web", "Running")
+	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534,
+		Clients: []driver.ShareClient{{Address: containerAddr(w, "web")}}})
+	logIs("a client added", "tell", "boot", "tell")
+	if err := w.host.Exit(uid, 1); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, "the server booting again told its export", func() bool { return len(w.host.ExportLog(uid)) == 4 })
+	logIs("booted again by its policy", "tell", "boot", "tell", "tell")
+}
+
+// TestABootDiskRefusingItsExportIsReported: a server whose boot disk cannot
+// be given its export serves it all the same, told, but is reported not
+// ready, a restart losing it, and tried again until the disk takes it.
+func TestABootDiskRefusingItsExportIsReported(t *testing.T) {
+	w := newWorld(t)
+	w.applyShare("data", "1Gi")
+	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
+	uid := w.machine2("fs-data").GetMetadata().GetUid()
+	w.host.FailBootExport(errors.New("no space left on device"))
+	w.apply(sharing("web", "data", false))
+	m := w.waitMachine("fs-data", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonExportFailed)
+	if msg := conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReady).GetMessage(); !strings.Contains(msg, "boot disk") ||
+		!strings.Contains(msg, "no space left on device") {
+		t.Errorf("Ready says %q", msg)
+	}
+	clients := []driver.ShareClient{{Address: containerAddr(w, "web")}}
+	w.waitExport("data", driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534, Clients: clients})
+	// Tried again, with nothing else changing.
+	w.reconciled("machines", controller.Key{Project: project, Name: "fs-data"}, 1)
+	w.host.FailBootExport(nil)
+	w.waitMachine("fs-data", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
+	if got, _ := w.host.BootExport(uid); !slices.Equal(got.Clients, clients) {
+		t.Errorf("the boot disk holds %+v, want %+v", got.Clients, clients)
+	}
 }
 
 // TestGrowingAShareRestartsItsServer: a share grown grows its volume, and

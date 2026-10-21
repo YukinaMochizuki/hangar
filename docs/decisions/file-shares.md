@@ -161,15 +161,33 @@ Hangar has one host, so only the second shape keeps the host out of it.
   machine back, as a Disk does. The server's export lists exactly the
   declaring machines' addresses on its networks, each `rw` or `ro`, and
   the node keeps it so over vsock as machines come and go, and at each
-  boot of the server, which starts from the export its boot disk was
-  written with. An export the server refuses leaves it serving the last
-  it took, and is reported on its machine (`ExportFailed`), the share
-  `Pending` until it takes one. A container mounts each share once, and a
-  mount refused fails its boot, so the node starts a container's VM only
-  once each share's server has an address on the network it mounts from,
-  runs on its node, and has taken, in its current boot, an export holding
-  the container, and that network's firewall, as the host reads it back,
-  lets the container in to the server's 2049 and out to it. Until then it
+  boot of the server. **The boot disk follows the export:** each export
+  the node computes is written to the server's boot disk first (aside,
+  synced, renamed over it, never in place), whether the server runs or
+  is down, then told the server; so a restart by its own restart policy,
+  killed or crashed, the node no part of it, serves the current export
+  from its first second: a client added since its VM started is never
+  refused (EACCES on a hard mount, not a pause), and one removed while it
+  was down is not served, the node having seen the removal before the
+  boot (one it sees after is told the boot, as any change is). Cloud
+  Hypervisor opens the boot disk by its path at each launch, and the boot
+  running keeps the one it opened; the new disk is the VM user's group's
+  to read before it is renamed in, as the launcher makes the old one, so
+  a launch racing the rewrite opens either. The export is no part of the
+  spec's hash, so the rewrite restarts nothing.
+  An export the server refuses leaves it serving the last it took, and is
+  reported on its machine (`ExportFailed`), the share `Pending` until it
+  takes one. So is a boot disk that does not take it, tried again until
+  it does; the server is told the export all the same, so a restart
+  before the disk takes it boots from the old disk, which may still
+  serve a client removed since, until the node tells that boot, as every
+  boot was before the disk followed the export. A container mounts each
+  share once, and a mount refused fails its boot, so the node starts a
+  container's VM only once each share's server has an address on the
+  network it mounts from, runs on its node, and has taken, in its current
+  boot, an export holding the container, and that network's firewall, as
+  the host reads it back, lets the container in to the server's 2049 and
+  out to it. Until then it
   waits (`FileShareNotReady`), neither booted nor failed, a VM of its
   earlier spec running on, and is checked again as soon as a server takes
   an export or a firewall is written. A boot of the container's own

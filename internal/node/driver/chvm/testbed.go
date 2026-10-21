@@ -27,6 +27,10 @@ func (h *Hypervisor) BreakSystemd() {
 	}
 }
 
+// BootDiskPath is the machine's VM's boot disk, as Cloud Hypervisor opens
+// it at each launch.
+func (h *Hypervisor) BootDiskPath(uid string) string { return filepath.Join(h.dir(uid), bootFile) }
+
 // StartUnconfined starts a VM as a driver without VM users did: its spec
 // file holds none, and its unit, which runs launcher (a command line such
 // as Config.Launcher), has no sandbox, so the launcher runs Cloud

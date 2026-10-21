@@ -221,11 +221,20 @@ func checkUID(uid string) error {
 
 // writeAtomic writes a file whole or not at all.
 func writeAtomic(path string, data []byte) error {
+	return writeAtomicAs(path, data, nil)
+}
+
+// writeAtomicAs is writeAtomic, the file given to prepare before it is in
+// place, as for its owner and mode.
+func writeAtomicAs(path string, data []byte, prepare func(*os.File) error) error {
 	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
 	if err != nil {
 		return err
 	}
 	_, err = f.Write(data)
+	if err == nil && prepare != nil {
+		err = prepare(f)
+	}
 	if err == nil {
 		err = f.Sync()
 	}
