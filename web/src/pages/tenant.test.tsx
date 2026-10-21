@@ -47,6 +47,8 @@ type Setup = {
   checkName?: "never" | "fail" | boolean;
   /** Someone else holds the name by the time the apply comes. */
   taken?: boolean;
+  /** The caller holds platform.monitoring.read at the platform, as an administrator does. */
+  platform?: boolean;
 };
 
 function api(s: Setup = {}): Api {
@@ -91,6 +93,7 @@ function api(s: Setup = {}): Api {
       testPermissions: async (req) => {
         if (s.permissions === "never") return never();
         if (s.permissions === "fail") throw new ConnectError("unavailable", Code.Unavailable);
+        if (req.scope?.target.case === "platform") return { permissions: s.platform ? req.permissions.filter((p) => p === "platform.monitoring.read") : [] };
         const at = req.scope?.target.case === "tenant" ? req.scope.target.value : "";
         return { permissions: (s.creatableIn ?? ["acme", "empty"]).includes(at) ? req.permissions.filter((p) => p === create) : [] };
       },
@@ -322,6 +325,34 @@ describe("ProjectPicker", () => {
     cleanup();
     show({ creatableIn: ["zeta"] });
     expect(await screen.findByRole("button", { name: /New project/ })).toBeTruthy();
+  });
+
+  // The platform is a place of its own, beside the tenants rather than among them.
+  it("offers Platform beside New project to an administrator, never as a row, and opens the platform's pages", async () => {
+    show({ platform: true });
+    fireEvent.click(await screen.findByRole("button", { name: /Platform/ }));
+    expect(navigate).toHaveBeenCalledWith({ to: "/platform/monitoring" });
+    expect(rows().some((r) => r?.includes("Platform"))).toBe(false);
+  });
+
+  it("offers no Platform to whoever lacks the permission, or while the answer has not come", async () => {
+    const a = show();
+    await screen.findByText("Agents");
+    await waitFor(() => expect(a.requests.some((r) => r.method === "TestPermissions" && JSON.stringify(r.request).includes("monitoring"))).toBe(true));
+    expect(screen.queryByRole("button", { name: /Platform/ })).toBeNull();
+    cleanup();
+    show({ permissions: "never" });
+    await screen.findByText("Agents");
+    expect(screen.queryByRole("button", { name: /Platform/ })).toBeNull();
+  });
+
+  it("marks Platform as where the console is when opened on the platform's pages", async () => {
+    render(<ProjectPicker place={{ kind: "platform" }} open onClose={() => {}} />, { wrapper: withApi(api({ platform: true }), "acme-web") });
+    const button = await screen.findByRole("button", { name: /Platform/ });
+    expect(button.getAttribute("aria-current")).toBe("page");
+    // No project row is the current one there.
+    await screen.findByText("Web");
+    expect(screen.getByText("Web").closest("tr")!.getAttribute("aria-current")).toBeNull();
   });
 });
 

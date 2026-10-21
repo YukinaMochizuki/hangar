@@ -88,7 +88,8 @@ export function paletteApi(f: PaletteFake = {}) {
     r.service(AccountService, {
       whoAmI: () => create(WhoAmIResponseSchema, { member: true, type: "user", id: "ada@example.com", user: { metadata: { name: "ada" }, spec: { displayName: "Ada" } } }),
       testPermissions: async (req) => {
-        const scope = req.scope?.target.case === "tenant" ? `tenant:${req.scope.target.value}` : `project:${req.scope?.target.value}`;
+        const t = req.scope?.target;
+        const scope = t?.case === "platform" ? "platform" : t?.case === "tenant" ? `tenant:${t.value}` : `project:${t?.value}`;
         const held = f.perms ? await f.perms(scope) : req.permissions;
         return { permissions: req.permissions.filter((p) => held.includes(p)) };
       },

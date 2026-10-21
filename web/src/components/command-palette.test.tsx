@@ -96,6 +96,17 @@ describe("CommandPalette", () => {
     expect(openWhenCalled).toBe(false);
   });
 
+  it("lists the platform's pages, named as the platform's, to an administrator alone", async () => {
+    setup();
+    const o = await findOption("Platform › Monitoring");
+    fireEvent.click(o);
+    expect(navigate).toHaveBeenCalledWith({ to: "/platform/monitoring" });
+    cleanup();
+    setup({ perms: (scope) => (scope === "platform" ? [] : ["compute.containers.apply"]) });
+    await findOption("New container");
+    expect(titles()).not.toContain("Platform › Monitoring");
+  });
+
   it("says a fact beside each object", async () => {
     setup();
     const fact = async (q: string, title: string, text: string) => {
@@ -132,6 +143,9 @@ describe("CommandPalette", () => {
     expect(active()).toBe(option("New virtual machine"));
     expect(box().getAttribute("aria-activedescendant")).toBe(option("New virtual machine").id);
     key("ArrowUp");
+    key("ArrowUp");
+    // The last page: the platform's follow the project's for an administrator.
+    expect(active()).toBe(option("Platform › Monitoring"));
     key("ArrowUp");
     expect(active()).toBe(option("Service tokens"));
     key("Enter");
