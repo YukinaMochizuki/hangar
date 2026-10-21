@@ -2,9 +2,10 @@
 
 import { useNavigate } from "@tanstack/react-router";
 import { VirtualMachineDeletePolicy } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
-import { MoreHorizontal, Play, Square, Trash2, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Play, Square, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
+import { AnchoredLayer, RowMenu } from "@/components/menu";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui";
 import { useDeleteMachine, useSetRunState, type RunState } from "@/lib/actions";
@@ -85,57 +86,36 @@ export function MachineActions({ m }: { m: MachineView }) {
 /** The same actions in a row's menu. */
 export function MachineRowMenu({ m }: { m: MachineView }) {
   const run = useSetRunState(m.kind, m.project, m.name);
-  const [open, setOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  const item = "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] hover:bg-surface-2 disabled:opacity-50";
   return (
-    <div ref={ref} className="relative">
-      <Button variant="ghost" size="icon" aria-label={`Actions for ${m.name}`} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
-        <MoreHorizontal />
-      </Button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-40 rounded-md border bg-surface py-1 shadow-lg">
-          {m.stopped ? (
-            <button role="menuitem" className={item} disabled={m.deleting} onClick={() => (run.mutate("running"), setOpen(false))}>
-              <Play className="size-3.5" /> Start
-            </button>
-          ) : (
-            <button role="menuitem" className={item} disabled={m.deleting} onClick={() => (run.mutate("stopped"), setOpen(false))}>
-              <Square className="size-3.5" /> Stop
-            </button>
+    <RowMenu
+      label={`Actions for ${m.name}`}
+      actions={[
+        m.stopped
+          ? { label: "Start", icon: Play, disabled: m.deleting, onSelect: () => run.mutate("running") }
+          : { label: "Stop", icon: Square, disabled: m.deleting, onSelect: () => run.mutate("stopped") },
+        { label: "Delete", icon: Trash2, danger: true, disabled: m.deleting, onSelect: () => setDeleting(true) },
+      ]}
+    >
+      {(anchor) => (
+        <>
+          {run.error && (
+            <AnchoredLayer anchor={anchor} className="w-72">
+              <Notice tone="error" title={runErrorTitle(run.variables)} className="pr-8">
+                {errorMessage(run.error)}
+              </Notice>
+              <button
+                aria-label="Dismiss"
+                onClick={() => run.reset()}
+                className="absolute right-1.5 top-1.5 rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </AnchoredLayer>
           )}
-          <button role="menuitem" className={`${item} text-fail`} disabled={m.deleting} onClick={() => (setDeleting(true), setOpen(false))}>
-            <Trash2 className="size-3.5" /> Delete
-          </button>
-        </div>
+          <DeleteDialog m={m} open={deleting} onClose={() => setDeleting(false)} />
+        </>
       )}
-      {run.error && (
-        <div className="absolute right-0 top-full z-20 mt-1 w-72">
-          <Notice tone="error" title={runErrorTitle(run.variables)} className="pr-8">
-            {errorMessage(run.error)}
-          </Notice>
-          <button
-            aria-label="Dismiss"
-            onClick={() => run.reset()}
-            className="absolute right-1.5 top-1.5 rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
-          >
-            <X className="size-3.5" />
-          </button>
-        </div>
-      )}
-      <DeleteDialog m={m} open={deleting} onClose={() => setDeleting(false)} />
-    </div>
+    </RowMenu>
   );
 }
