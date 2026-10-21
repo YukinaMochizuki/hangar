@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"slices"
 	"sync"
+	"time"
 
 	"google.golang.org/protobuf/proto"
 
@@ -223,6 +224,8 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	var mine []driver.InterfacePolicy
 	var mineAt []int
 	var mineNames []string
+	var mineAddrs []netip.Addr
+	owners := map[netip.Addr]string{}
 	for _, o := range objs {
 		m := o.(*computev1alpha1.Machine)
 		for _, nic := range m.GetSpec().GetInterfaces() {
@@ -231,6 +234,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				continue
 			}
 			addrs := []netip.Addr{addr.Addr()}
+			owners[addr.Addr()] = ifaceID(m.GetMetadata().GetUid(), nic.GetName())
 			name, served := servedAs(m)
 			if served {
 				if v6, ok := ipv6Of(nic); ok {
@@ -252,6 +256,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName(), ShareClients: clients, Shares: servers})
 				mineAt = append(mineAt, len(members))
 				mineNames = append(mineNames, m.GetMetadata().GetName())
+				mineAddrs = append(mineAddrs, addr.Addr())
 			}
 			members = append(members, secgroup.Member{Addrs: addrs, Groups: nic.GetSecurityGroups(), Isolated: !served})
 		}
@@ -272,6 +277,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			mine[i].EdgePorts = edge[mineNames[i]]
 		}
 	}
+	a.keepRevoked(ctx, k, cidr, shares, mine, mineAddrs, owners)
 	// The network's services follow its machines whatever becomes of the
 	// firewall, which lets them through in any case.
 	s.name(k, on)
@@ -439,4 +445,53 @@ func (a *Agent) groupsOf(ctx context.Context, network controller.Key) (map[strin
 		groups[sg.GetMetadata().GetName()] = g
 	}
 	return groups, nil
+}
+
+// keepRevoked adds to mine, the policies of this node's interfaces at
+// addrs on network k, each removed client's rules to a server still
+// answering it (revocations); none if the VMs cannot be listed.
+func (a *Agent) keepRevoked(ctx context.Context, k controller.Key, cidr netip.Prefix, shares *projectShares,
+	mine []driver.InterfacePolicy, addrs []netip.Addr, owners map[netip.Addr]string) {
+	servers := map[string]bool{}
+	for _, m := range shares.servers {
+		servers[m.GetMetadata().GetUid()] = true
+	}
+	var vms []driver.VM
+	listed := false
+	toServers := map[netip.Addr][]netip.Addr{}
+	for i, p := range mine {
+		if !servers[p.MachineUID] {
+			continue
+		}
+		if !listed {
+			var err error
+			if vms, err = a.cfg.Drivers.Hypervisor.VMs(ctx); err != nil {
+				// Fail closed: as if no server ran, every removal cut.
+				a.cfg.Log.Warn("listing VMs; removed file share clients are cut at once", "network", k.Name, "error", err)
+				vms = nil
+			}
+			listed = true
+		}
+		var boot time.Time
+		if j := slices.IndexFunc(vms, func(v driver.VM) bool { return v.MachineUID == p.MachineUID }); j >= 0 && vms[j].State == driver.VMRunning {
+			boot = vms[j].Started
+		}
+		kept := a.revoking.lingering(k, p.MachineUID, boot, cidr, p.ShareClients, owners, a.cfg.Clock.Now(), a.scheduleNetwork)
+		mine[i].ShareClients = append(mine[i].ShareClients, kept...)
+		for _, c := range kept {
+			toServers[c] = append(toServers[c], addrs[i])
+		}
+	}
+	for i := range mine {
+		for _, srv := range toServers[addrs[i]] {
+			if !slices.Contains(mine[i].Shares, srv) {
+				mine[i].Shares = append(mine[i].Shares, srv)
+			}
+		}
+	}
+}
+
+// scheduleNetwork queues network k again after d.
+func (a *Agent) scheduleNetwork(k controller.Key, d time.Duration) {
+	a.cfg.Clock.AfterFunc(d, func() { a.requeueNetworksOf([]controller.Key{k}) })
 }

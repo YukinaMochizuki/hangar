@@ -9,12 +9,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/miekg/dns"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
@@ -25,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -346,4 +349,122 @@ func TestAShareIsReleasedAfterItsServer(t *testing.T) {
 	w.host.FailRemoval(nil)
 	w.shareGone(project, "assets")
 	w.waitHostEmpty()
+}
+
+// TestARevokedClientIsCutOnceItsServerDropsIt: a removed client reaches
+// its server until the server takes the export without it and a grace
+// more; at once if it refuses; for good past the bound if it never answers.
+func TestARevokedClientIsCutOnceItsServerDropsIt(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	w.applyShare("data", "1Gi")
+	w.shareOnNode("data")
+	// Locked: the declaration is its one way to the server.
+	w.applyGroup("locked", &networkv1alpha1.SecurityGroupSpec{Network: "default",
+		Egress: []*networkv1alpha1.EgressRule{{Protocol: networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_TCP, Ports: "443",
+			To: &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Cidr{Cidr: "203.0.113.1/32"}}}}})
+	declare := func(shares ...*computev1alpha1.VirtualMachineFileShare) {
+		t.Helper()
+		if _, err := w.root.Apply(context.Background(), registry.VirtualMachine, &computev1alpha1.VirtualMachine{
+			Metadata: &metav1.ObjectMeta{Project: project, Name: "web"},
+			Spec: &computev1alpha1.VirtualMachineSpec{
+				RootDisk: &computev1alpha1.VirtualMachineRootDisk{Source: &computev1alpha1.VirtualMachineRootDisk_FromImage{
+					FromImage: &computev1alpha1.VirtualMachineImageDisk{Image: &storagev1alpha1.ImageSource{Name: "noble"}},
+				}},
+				Interfaces: []*computev1alpha1.NetworkInterface{{Network: "default", SecurityGroups: []string{"locked"}}},
+				FileShares: shares,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data := &computev1alpha1.VirtualMachineFileShare{Name: "data"}
+	declare(data)
+	w.waitVMReason("web", "Running")
+	server := netip.AddrPortFrom(w.shareAddr("data", "default"), driver.ShareServerPort)
+	w.host.ServeGuest(w.networkUID("default"), server, echoBack)
+	nic := w.host.Snapshot().Interfaces[w.machine2(vmMachineOf("web")).GetMetadata().GetUid()][0]
+	srv := w.machine2("fs-data").GetMetadata().GetUid()
+	holds := func() bool {
+		e, _ := w.host.Export(srv)
+		return slices.ContainsFunc(e.Clients, func(c driver.ShareClient) bool { return c.Address == nic.Address.Addr() })
+	}
+	// declared has the VM declare the share again, the server hold it and
+	// the VM reach it.
+	declared := func() {
+		t.Helper()
+		declare(data)
+		testutil.Eventually(t, "the server holding the VM", holds)
+		testutil.Eventually(t, "the VM reaching its share's server", func() bool { return w.reachesFrom(nic, server) })
+	}
+	groups := 0
+	// rewrite has the firewall written again, as any group change does.
+	rewrite := func() {
+		groups++
+		w.applyGroup(fmt.Sprintf("other-%d", groups), &networkv1alpha1.SecurityGroupSpec{Network: "default"})
+	}
+	reachesAll := func(what string, d time.Duration) {
+		t.Helper()
+		rewrite()
+		for end := time.Now().Add(d); time.Now().Before(end); {
+			if !w.reachesFrom(nic, server) {
+				t.Fatalf("%s: the VM was cut", what)
+			}
+		}
+	}
+	reachesNone := func(what string, d time.Duration) {
+		t.Helper()
+		for end := time.Now().Add(d); time.Now().Before(end); {
+			rewrite()
+			// Spaces the rewrites over d, through which it must stay cut.
+			time.Sleep(200 * time.Millisecond) //nolint:forbidigo // pacing the rewrites, not waiting for one
+			if w.reachesFrom(nic, server) {
+				t.Fatalf("%s: the VM reaches the server again", what)
+			}
+		}
+	}
+	w.waitSettled()
+
+	// Taken late: the server answering nothing, the removal waits on it;
+	// once it takes the export, a grace more, then cut.
+	w.host.Silence(srv, true)
+	declare()
+	w.waitSettled()
+	reachesAll("removed, the server not told", time.Second)
+	w.host.Silence(srv, false)
+	testutil.Eventually(t, "the server taking the export without the VM", func() bool { return !holds() })
+	taken := time.Now()
+	reachesAll("the export taken, in the grace", time.Second)
+	testutil.EventuallyWithin(t, 7*time.Second, "the VM cut after the grace", func() bool { return !w.reachesFrom(nic, server) })
+	t.Logf("cut %v after the export was taken", time.Since(taken).Round(100*time.Millisecond))
+
+	// Never answered: cut at the bound, and for good.
+	declared()
+	w.host.Silence(srv, true)
+	declare()
+	w.waitSettled()
+	removed := time.Now()
+	reachesAll("removed, the server not told", time.Second)
+	testutil.EventuallyWithin(t, 13*time.Second, "the VM cut at the bound", func() bool { return !w.reachesFrom(nic, server) })
+	t.Logf("cut %v after the removal, the server silent", time.Since(removed).Round(100*time.Millisecond))
+	reachesNone("past the bound, the server still silent", 3*time.Second)
+	w.host.Silence(srv, false)
+	testutil.Eventually(t, "the server taking the export without the VM", func() bool { return !holds() })
+	reachesNone("past the bound, the export then taken", time.Second)
+
+	// Refused: the push not answered within the agent's timeout.
+	declared()
+	release := w.host.HoldExport(srv)
+	defer release()
+	declare()
+	testutil.EventuallyWithin(t, 5*time.Second, "the VM cut once the server did not take the export", func() bool { return !w.reachesFrom(nic, server) })
+	release()
+
+	// The VMs not listed: fail closed, cut at once, the firewall written.
+	declared()
+	w.host.FailListing(errors.New("listing failed"), fake.ListVMs)
+	declare()
+	testutil.EventuallyWithin(t, time.Second, "the VM cut, the VMs not listed", func() bool { return !w.reachesFrom(nic, server) })
+	w.host.FailListing(nil, fake.ListVMs)
 }

@@ -285,9 +285,10 @@ func TestAShareVolumeGoesOnlyOnceItsServerIs(t *testing.T) {
 func TestAnExportTakenRequeuesWaitingMachines(t *testing.T) {
 	host := fake.New()
 	var queued []controller.Key
-	a := &Agent{cfg: Config{Name: "n1", Drivers: &Drivers{Guest: host.Guest()}}, exported: map[string]toldExport{}, shareWaiters: map[controller.Key]bool{},
+	a := &Agent{cfg: Config{Name: "n1", Drivers: &Drivers{Guest: host.Guest()}}, exported: map[string]toldExport{}, revoking: newRevocations(), shareWaiters: map[controller.Key]bool{},
 		requeue: func(keys ...controller.Key) { queued = append(queued, keys...) }}
 	a.cfg.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
+	a.cfg.Clock = clockwork.NewRealClock()
 	ctx := t.Context()
 	must := func(err error) {
 		t.Helper()

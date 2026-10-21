@@ -104,9 +104,15 @@ func TestReleasingAShareIsConditional(t *testing.T) {
 	if c := conditions.Find(get().GetStatus().GetConditions(), "Ready"); c.GetReason() != "Deleting" {
 		t.Errorf("the condition written between the read and the write is %v", c)
 	}
-	if err := a.reconcileShare(ctx, k); err != nil {
-		t.Fatal(err)
-	}
+	// The apiserver's controller writes the deleted share's status too, so
+	// the node's next write may meet another version: it reads again.
+	testutil.Eventually(t, "the share released", func() (bool, string) {
+		err := a.reconcileShare(ctx, k)
+		if connect.CodeOf(err) != connect.CodeAborted && err != nil {
+			t.Fatal(err)
+		}
+		return err == nil, fmt.Sprint(err)
+	})
 	testutil.Eventually(t, "the share gone once released", func() (bool, string) {
 		_, err := system.GetFileShare(ctx, connect.NewRequest(&storagev1alpha1.GetFileShareRequest{Project: key.Project, Name: key.Name}))
 		return connect.CodeOf(err) == connect.CodeNotFound, fmt.Sprint(err)

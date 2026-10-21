@@ -83,11 +83,22 @@ func (h *Host) LeaveShareVolume(shareUID string) {
 	h.shareVols[shareUID] = driver.ShareVolume{ShareUID: shareUID, Path: "/dev/fake/shares/" + shareUID, Size: 1 << 30}
 }
 
-func (d guest) SetExport(_ context.Context, machineUID string, export driver.ShareExport) error {
+func (d guest) SetExport(ctx context.Context, machineUID string, export driver.ShareExport) error {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	d.h.exportCalls[machineUID]++
 	d.h.exportLog[machineUID] = append(d.h.exportLog[machineUID], "tell")
+	if hold, ok := d.h.exportHolds[machineUID]; ok {
+		d.h.mu.Unlock()
+		select {
+		case <-hold:
+		case <-ctx.Done():
+		}
+		d.h.mu.Lock()
+		if ctx.Err() != nil {
+			return fmt.Errorf("the guest agent of machine %s did not answer: %w", machineUID, ctx.Err())
+		}
+	}
 	v, ok := d.h.vms[machineUID]
 	if !ok || v.State != driver.VMRunning {
 		return errUnknownVM
@@ -178,6 +189,21 @@ func (h *Host) ExportLog(machineUID string) []string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return slices.Clone(h.exportLog[machineUID])
+}
+
+// HoldExport keeps the machine's server from answering SetExport, as a
+// slow one, until release, or each call's context ends.
+func (h *Host) HoldExport(machineUID string) (release func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	hold := make(chan struct{})
+	h.exportHolds[machineUID] = hold
+	return sync.OnceFunc(func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		delete(h.exportHolds, machineUID)
+		close(hold)
+	})
 }
 
 // FailBootExport makes SetBootExport fail with err; nil clears it.
