@@ -183,7 +183,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
 	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
-		Reaper: reaper, Root: "/", Version: buildinfo.Version(), Started: started, Cgroup: workload,
+		Reaper: reaper, Root: "/", Version: buildinfo.Version() + buildMarker, Started: started, Cgroup: workload,
 		OnPanic: func(r any) { logf("hangar-init: guest agent: %v", r) },
 		ApplyIPv6: func(ifaces []*guestv1.Interface) error {
 			err := v6.Set(ifaces)
