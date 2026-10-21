@@ -263,3 +263,29 @@ describe("a create page", () => {
     expect(router.state.location.href).toBe("/projects/demo/disks/new");
   });
 });
+
+describe("the platform's Monitoring link", () => {
+  // The Overview was Monitoring before the platform had pages of its own.
+  it("opens the Overview, keeping its range, in place of the old page", async () => {
+    const { router } = app(["/platform/monitoring?range=7d"]);
+    await waitFor(() => expect(router.state.location.href).toBe("/platform?range=7d"));
+  });
+});
+
+describe("the platform's pages", () => {
+  it.each([
+    ["/platform", "Overview"],
+    ["/platform/nodes", "Nodes"],
+  ])("%s opens %s in the platform's frame", async (path, title) => {
+    app([path]);
+    await screen.findByRole("heading", { level: 1, name: title });
+    expect(screen.getByText("Every tenant")).toBeTruthy();
+    expect(within(screen.getByRole("complementary")).getByRole("link", { name: title, current: "page" })).toBeTruthy();
+  });
+
+  it("opens a node's page under Nodes", async () => {
+    app(["/platform/nodes/ovh-1"]);
+    await waitFor(() => expect(within(screen.getByRole("complementary")).getByRole("link", { name: "Nodes", current: "page" })).toBeTruthy());
+    expect(screen.getAllByText("ovh-1").length).toBeGreaterThan(0);
+  });
+});

@@ -98,13 +98,13 @@ describe("CommandPalette", () => {
 
   it("lists the platform's pages, named as the platform's, to an administrator alone", async () => {
     setup();
-    const o = await findOption("Platform › Monitoring");
+    const o = await findOption("Platform › Overview");
     fireEvent.click(o);
-    expect(navigate).toHaveBeenCalledWith({ to: "/platform/monitoring" });
+    expect(navigate).toHaveBeenCalledWith({ to: "/platform" });
     cleanup();
     setup({ perms: (scope) => (scope === "platform" ? [] : ["compute.containers.apply"]) });
     await findOption("New container");
-    expect(titles()).not.toContain("Platform › Monitoring");
+    expect(titles()).not.toContain("Platform › Overview");
   });
 
   it("says a fact beside each object", async () => {
@@ -145,7 +145,8 @@ describe("CommandPalette", () => {
     key("ArrowUp");
     key("ArrowUp");
     // The last page: the platform's follow the project's for an administrator.
-    expect(active()).toBe(option("Platform › Monitoring"));
+    expect(active()).toBe(option("Platform › Nodes"));
+    key("ArrowUp");
     key("ArrowUp");
     expect(active()).toBe(option("Service tokens"));
     key("Enter");

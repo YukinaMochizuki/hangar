@@ -224,4 +224,8 @@ message Alert {
   // The rule's summary annotation.
   string summary = 3;
   google.protobuf.Timestamp start_time = 4;
+  // The Node the alert is for, from its node label, which every series a
+  // host's Prometheus scrapes from that host carries; empty for the
+  // platform's, such as the API's errors.
+  string node = 5;
 }

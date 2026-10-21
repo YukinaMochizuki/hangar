@@ -51,6 +51,13 @@ export function useMayReadMonitoring() {
   return { may: q.data?.permissions.includes(monitoringPermission) ?? false, known: q.isSuccess, settled: q.isSuccess || q.isError, error: q.error };
 }
 
+/** Which of the permissions the caller holds at the platform, as useCan answers for a scope. */
+export function usePlatformCan(permissions: string[]) {
+  const q = useQuery(AccountService.method.testPermissions, { scope: platformScope, permissions }, { staleTime: 30_000, retry: false });
+  const held = new Set(q.data?.permissions ?? []);
+  return { can: (p: string) => held.has(p), known: q.isSuccess, settled: q.isSuccess || q.isError, error: q.error };
+}
+
 /**
  * Of the tenants named, those where the caller holds the permission, asked
  * once per tenant. `known` is true only once every answer came, and `error`

@@ -184,8 +184,9 @@ func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitori
 const watchdog = "Watchdog"
 
 // ListAlerts answers the alerts Alertmanager has firing, but Watchdog, with
-// their name, severity, summary and start: never their other labels or
-// annotations.
+// their name, severity, summary, start and node: never their other labels
+// or annotations. A node's name is the platform's own (monitoring.md, "No
+// tenant in a label").
 func (m monitoring) ListAlerts(ctx context.Context, _ *connect.Request[monitoringv1alpha1.ListAlertsRequest]) (*connect.Response[monitoringv1alpha1.ListAlertsResponse], error) {
 	if err := m.authorize(ctx); err != nil {
 		return nil, err
@@ -205,7 +206,7 @@ func (m monitoring) ListAlerts(ctx context.Context, _ *connect.Request[monitorin
 			sev = monitoringv1alpha1.Severity_SEVERITY_WARNING
 		}
 		res.Alerts = append(res.Alerts, &monitoringv1alpha1.Alert{
-			Name: name, Severity: sev, Summary: a.Annotations["summary"], StartTime: timestamppb.New(a.StartsAt),
+			Name: name, Severity: sev, Summary: a.Annotations["summary"], StartTime: timestamppb.New(a.StartsAt), Node: a.Labels["node"],
 		})
 	}
 	slices.SortStableFunc(res.Alerts, func(a, b *monitoringv1alpha1.Alert) int {

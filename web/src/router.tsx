@@ -2,7 +2,7 @@
 // project is in the path, so a link to a page names its project.
 
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect, useNavigate, useSearch } from "@tanstack/react-router";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { Shell } from "@/components/shell";
 import { ErrorNotice, StandalonePage } from "@/components/states";
 import { newSearch, type NewProps } from "@/lib/new-param";
@@ -24,7 +24,8 @@ import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
 import { MachineDetail } from "@/pages/machine-detail";
 import { MachineList } from "@/pages/machine-list";
-import { Monitoring } from "@/pages/monitoring";
+import { PlatformOverview } from "@/pages/monitoring";
+import { NodeDetail, NodeList } from "@/pages/nodes";
 import { TerminalPage } from "@/pages/machine-terminal";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
@@ -373,21 +374,63 @@ const tenantOverviewRoute = createRoute({ getParentRoute: () => tenantRoute, pat
 
 // The platform's pages belong to no project. They keep the project used last
 // as the palette's place, so the palette still finds what it holds.
+function PlatformShell({ children }: { children: ReactNode }) {
+  const { projects, loading } = useProjects();
+  if (loading) return null;
+  const project = pickProject(projects)?.metadata?.name ?? "";
+  return (
+    <Shell key={project} place={{ kind: "project", name: project }} platform>
+      {children}
+    </Shell>
+  );
+}
+
+type RangeSearch = { range?: "1h" | "24h" | "7d" };
+// range opens the charts on one of their ranges; any other value is the default.
+const rangeSearch = (s: Record<string, unknown>): RangeSearch => (s.range === "1h" || s.range === "24h" || s.range === "7d" ? { range: s.range } : {});
+
+const platformRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform",
+  validateSearch: rangeSearch,
+  component: function PlatformOverviewPage() {
+    const { range } = platformRoute.useSearch();
+    return (
+      <PlatformShell>
+        <PlatformOverview range={range} />
+      </PlatformShell>
+    );
+  },
+});
+// The Overview was Monitoring before the platform had pages of its own; old links still open it.
 const monitoringRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/platform/monitoring",
-  // range opens the charts on one of their ranges; any other value is the default.
-  validateSearch: (s: Record<string, unknown>): { range?: "1h" | "24h" | "7d" } =>
-    s.range === "1h" || s.range === "24h" || s.range === "7d" ? { range: s.range } : {},
-  component: function PlatformMonitoring() {
-    const { range } = monitoringRoute.useSearch();
-    const { projects, loading } = useProjects();
-    if (loading) return null;
-    const project = pickProject(projects)?.metadata?.name ?? "";
+  validateSearch: rangeSearch,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: "/platform", search, replace: true });
+  },
+});
+const nodesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/nodes",
+  component: () => (
+    <PlatformShell>
+      <NodeList />
+    </PlatformShell>
+  ),
+});
+const nodeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/platform/nodes/$node",
+  validateSearch: rangeSearch,
+  component: function NodePage() {
+    const { node } = nodeRoute.useParams();
+    const { range } = nodeRoute.useSearch();
     return (
-      <Shell key={project} place={{ kind: "project", name: project }} platform>
-        <Monitoring range={range} />
-      </Shell>
+      <PlatformShell>
+        <NodeDetail key={node} name={node} range={range} />
+      </PlatformShell>
     );
   },
 });
@@ -426,7 +469,10 @@ export const routeTree = rootRoute.addChildren([
     ...networkRoutes,
   ]),
   tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
+  platformRoute,
   monitoringRoute,
+  nodesRoute,
+  nodeRoute,
 ]);
 
 export const router = createRouter({ routeTree });

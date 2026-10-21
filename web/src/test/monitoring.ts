@@ -1,10 +1,14 @@
-// MonitoringService answers for tests, as the apiserver gives them, and an
-// in-memory API serving them with TestPermissions.
+// MonitoringService and NodeService answers for tests, as the apiserver
+// gives them, and an in-memory API serving them with TestPermissions and the
+// machines ListMachines counts per node.
 
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError } from "@connectrpc/connect";
+import { MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { NodeService } from "@hangar/api/hangar/compute/v1alpha1/node_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import {
   GetOverviewResponseSchema,
   GetSeriesResponseSchema,
@@ -20,7 +24,7 @@ import {
   type GetSeriesResponse,
   type ListAlertsResponse,
 } from "@hangar/api/hangar/monitoring/v1alpha1/monitoring_pb";
-import { fakeApi } from "@/test/harness";
+import { fakeApi, never } from "@/test/harness";
 
 export const now = new Date("2026-10-20T12:00:00Z");
 
@@ -73,10 +77,35 @@ export function series(req: GetSeriesRequest): GetSeriesResponse {
   });
 }
 
-export function alerts(): ListAlertsResponse {
+/** One alert of the platform's, naming no node; given nodes, one more for each, naming it. */
+export function alerts(nodes: string[] = []): ListAlertsResponse {
+  const at = timestampFromDate(new Date(now.getTime() - 5 * 60_000));
   return create(ListAlertsResponseSchema, {
-    alerts: [{ name: "TestAlert", severity: Severity.WARNING, summary: "A test alert.", startTime: timestampFromDate(new Date(now.getTime() - 5 * 60_000)) }],
+    alerts: [
+      { name: "TestAlert", severity: Severity.WARNING, summary: "A test alert.", startTime: at },
+      ...nodes.map((node) => ({ name: `HostAlert-${node}`, severity: Severity.CRITICAL, summary: `Something on ${node}.`, startTime: at, node })),
+    ],
   });
+}
+
+/**
+ * A Node as the apiserver answers it: Ready unless said, with its placement,
+ * 32 vCPUs, 128Gi and 840Gi, of which it offers machines 20, 76Gi and 496Gi
+ * unless allocatable says otherwise.
+ */
+export function node(name: string, f: { ready?: ConditionStatus; cordoned?: boolean; allocatable?: { cpu: string; memory: string; disk: string } } = {}) {
+  return {
+    metadata: { name },
+    spec: { unschedulable: f.cordoned ?? false },
+    status: {
+      conditions: [{ type: "Ready", status: f.ready ?? ConditionStatus.TRUE, reason: f.ready === ConditionStatus.UNKNOWN ? "NodeStatusUnknown" : "AgentReporting" }],
+      capacity: { cpu: "32", memory: "128Gi", disk: "840Gi" },
+      allocatable: f.allocatable ?? { cpu: "20", memory: "76Gi", disk: "496Gi" },
+      lastHeartbeatTime: timestampFromDate(new Date(now.getTime() - 10_000)),
+      agentVersion: "v0.14.2",
+      placement: { region: "region-1", site: "site-a", cpuModel: "Example CPU 1000", chassis: "generic-1u-2x-u2" },
+    },
+  };
 }
 
 export const unavailable = () => new ConnectError("Prometheus at http://127.0.0.1:9090: connection refused", Code.Unavailable);
@@ -87,10 +116,32 @@ export function monitoringApi(f: {
   overview?: () => GetOverviewResponse;
   alerts?: () => ListAlertsResponse;
   series?: (req: GetSeriesRequest) => GetSeriesResponse;
+  /** The Nodes NodeService lists; one Ready "dev" unless said. */
+  nodes?: ReturnType<typeof node>[];
+  /** The node of each machine ListMachines answers; each asks for 2 vCPUs, 4Gi and 20Gi. */
+  machinesOn?: string[];
+  /** What TestPermissions answers: as perms names, or never. */
+  permissions?: "never";
+  /** ListNodes fails, as an apiserver that cannot read them. */
+  nodesFail?: boolean;
 } = {}) {
   return fakeApi((r) => {
     r.service(AccountService, {
-      testPermissions: (req) => ({ permissions: req.permissions.filter((p) => (f.perms ?? ["platform.monitoring.read"]).includes(p)) }),
+      testPermissions: (req) =>
+        f.permissions === "never"
+          ? never()
+          : { permissions: req.permissions.filter((p) => (f.perms ?? ["platform.monitoring.read", "compute.nodes.list", "compute.machines.list"]).includes(p)) },
+    });
+    r.service(NodeService, {
+      listNodes: () => {
+        if (f.nodesFail) throw new ConnectError("the store is unavailable", Code.Unavailable);
+        return { items: f.nodes ?? [node("dev")] };
+      },
+    });
+    r.service(MachineService, {
+      listMachines: () => ({
+        items: (f.machinesOn ?? []).map((n, i) => ({ metadata: { name: `m${i}` }, spec: { node: n, resources: { cpu: "2", memory: "4Gi", disk: "20Gi" } } })),
+      }),
     });
     r.service(MonitoringService, {
       getOverview: () => (f.overview ?? overview)(),

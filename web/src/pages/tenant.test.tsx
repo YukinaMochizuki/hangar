@@ -331,7 +331,7 @@ describe("ProjectPicker", () => {
   it("offers Platform beside New project to an administrator, never as a row, and opens the platform's pages", async () => {
     show({ platform: true });
     fireEvent.click(await screen.findByRole("button", { name: /Platform/ }));
-    expect(navigate).toHaveBeenCalledWith({ to: "/platform/monitoring" });
+    expect(navigate).toHaveBeenCalledWith({ to: "/platform" });
     expect(rows().some((r) => r?.includes("Platform"))).toBe(false);
   });
 

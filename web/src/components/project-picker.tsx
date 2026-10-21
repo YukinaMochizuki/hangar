@@ -92,7 +92,7 @@ export function ProjectPicker({ place, open, onClose }: { place: PickerPlace; op
                 onClick={() => {
                   setQuery("");
                   onClose();
-                  void navigate({ to: "/platform/monitoring" });
+                  void navigate({ to: "/platform" });
                 }}
               >
                 <Layers /> Platform
