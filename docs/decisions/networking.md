@@ -91,7 +91,8 @@ address.
     old one then sends nothing out for about 30 s.
   - A veth's root end is `hnv` and a tap `hnt`, then 12 hex digits of a
     hash of the network uid, or of the machine uid and interface name, which
-    fits Linux's 15 characters. A tap lives in its network's namespace, but
+    fits Linux's 15 characters; a file share's server's tap is `hnts` and
+    11, `s` being no hex digit. A tap lives in its network's namespace, but
     its name is unique on the host. A name another link holds is skipped for
     the hash of the key and a counter. The link alias holds the uid, and for
     a tap the interface as ensured; listing reads it back from there.
@@ -214,7 +215,21 @@ address.
   - **A file share's server sends only replies** (`file-shares.md`): in
     `bridge hangar_sg`, its taps take only new TCP connections to 2049
     from the machines declaring the share, whatever their security
-    groups say, and send only replies on connections made to it.
+    groups say, and send only replies on connections made to it. Each
+    base chain sends what is from or for an `hnts` tap to a chain of
+    servers' own before any other rule, so nothing every tap has (its
+    network's DHCP, DNS and metadata, the gateway's SSH, an edge port, a
+    group) reaches a server or lets it out: into one, ARP and TCP to 2049
+    from each client by its address, new or established, the way the
+    connection was made; from one, ARP and TCP from 2049 on an
+    established connection, the way of its replies. A server's tap no
+    rule names, as one made since, takes nothing. A server's tap is
+    refused on a network whose firewall has no servers' chains yet, as one
+    an older agent wrote, until the agent writes it again. A client's own
+    chain lets its TCP to its shares' servers' 2049 out before its groups'
+    rules. The driver reads both kinds of rule back from the table as they
+    stand (`ShareRules`), which the agent waits for before booting a
+    container that mounts a share (`file-shares.md`).
   - Each of the three layers holds without the others: the binding, the
     namespace's filter and the host's. A frame to a group address skips
     the binding, and meets the namespace's filter and its reverse-path
@@ -386,8 +401,8 @@ address.
     groups existed. Other groups' rules may name `default` as a peer. A
     file share's server is the exception: it names no group and is in
     none, `default` included, so no group's rule lets it in, and its own
-    policy allows nothing; what the host lets every tap reach still
-    applies (`file-shares.md`).
+    policy allows nothing; nor does what the host lets every tap reach
+    apply to it (above).
   - A group an interface names that does not exist lets nothing in and,
     so that a missing group never opens anything, nothing out. A rule
     naming a group that does not exist, or has no members, allows nothing,

@@ -653,7 +653,8 @@ func TestSharesTakeRoomOnTheirNode(t *testing.T) {
 }
 
 // TestAGrowthWaitsForRoom: a share's growth its node has no room for is
-// granted once a disk or another share on the node goes.
+// granted once a disk, another share or a machine on the node goes, or the
+// node grows.
 func TestAGrowthWaitsForRoom(t *testing.T) {
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
@@ -724,6 +725,11 @@ func TestAGrowthWaitsForRoom(t *testing.T) {
 		&metav1.Condition{Type: MachineReleased, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Cleaned"})
 	waitGone(t, s, system, registry.Machine, machineName("api"))
 	grown("96Gi")
+
+	// And its node growing.
+	grow("150Gi")
+	nodeSized(t, s, system, "n1", 8192, 200)
+	grown("150Gi")
 }
 
 // TestAServerWaitsForAnAddress: a server on a network not made yet, or
@@ -787,4 +793,47 @@ func TestAStaleReportKeepsTheBind(t *testing.T) {
 	if fs := getShare(t, s, system, "data"); fs.GetStatus().GetNode() != "n1" || fs.GetStatus().GetSize() != "1Gi" {
 		t.Errorf("the bind was undone: %v", fs.GetStatus())
 	}
+}
+
+// TestAShareFollowsItsNodeNotItsHeartbeats: a heartbeat that changes
+// nothing maps to no share on the node; the node going quiet makes its
+// shares' servers unready, and coming back ready again.
+func TestAShareFollowsItsNodeNotItsHeartbeats(t *testing.T) {
+	s, system, user := controlled(t, "n1")
+	nodeSized(t, s, system, "n1", 8192, 100)
+	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
+		t.Fatal(err)
+	}
+	serverRunning(t, s, system, "data")
+	waitShare(t, s, system, "data", "available", sharePhase(storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE))
+	mapped := func() []controller.Key {
+		t.Helper()
+		n, err := s.store.Get(system, s.backend(registry.Node).storeKey(resource.Key{Name: "n1"}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.sharesOnNode(system, n)
+	}
+	nodeSized(t, s, system, "n1", 8192, 100)
+	if keys := mapped(); len(keys) != 0 {
+		t.Errorf("a heartbeat maps to %v", keys)
+	}
+	quiet := func(st metav1.ConditionStatus) {
+		t.Helper()
+		if _, err := s.backend(registry.Node).UpdateStatus(asNode(system, "n1"), resource.Key{Name: "n1"}, &computev1alpha1.NodeStatus{
+			Capacity:   &computev1alpha1.NodeResources{Cpu: "8", Memory: "8192Mi", Disk: "100Gi"},
+			Conditions: []*metav1.Condition{{Type: NodeReady, Status: st, Reason: "Quiet"}},
+		}, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	quiet(metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN)
+	waitShare(t, s, system, "data", "unready on a quiet node", func(fs *storagev1alpha1.FileShare) bool {
+		return shareCond(fs, FileShareServerReady).GetReason() == "NodeNotReporting"
+	})
+	if keys := mapped(); len(keys) != 0 {
+		t.Errorf("a quiet node's write maps to %v, which already says so", keys)
+	}
+	nodeSized(t, s, system, "n1", 8192, 100)
+	waitShare(t, s, system, "data", "available once its node is back", sharePhase(storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE))
 }

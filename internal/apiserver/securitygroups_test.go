@@ -11,6 +11,7 @@ import (
 	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 )
 
 // elsewhere is a group of another network than the default one.
@@ -23,7 +24,7 @@ func elsewhere() *networkv1alpha1.SecurityGroup {
 func group(name string, ingress ...*networkv1alpha1.IngressRule) *networkv1alpha1.SecurityGroup {
 	return &networkv1alpha1.SecurityGroup{
 		Metadata: &metav1.ObjectMeta{Project: "web", Name: name},
-		Spec:     &networkv1alpha1.SecurityGroupSpec{Network: DefaultNetwork, Ingress: ingress},
+		Spec:     &networkv1alpha1.SecurityGroupSpec{Network: computeapi.DefaultNetwork, Ingress: ingress},
 	}
 }
 
@@ -101,7 +102,7 @@ func TestInterfaceGroupAdmission(t *testing.T) {
 		"more than five":    {[]string{"a", "b", "c", "d", "e", "f"}, false},
 		"another network's": {[]string{"default", "elsewhere"}, false},
 	} {
-		nics := []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: tc.groups}}
+		nics := []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork, SecurityGroups: tc.groups}}
 		c := ctr("api")
 		c.Spec.Interfaces = nics
 		_, err := s.backend(registry.Container).Apply(user, c)
@@ -125,7 +126,7 @@ func TestAGroupInUseStays(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := ctr("api")
-	c.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: []string{"default", "web-in"}}}
+	c.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork, SecurityGroups: []string{"default", "web-in"}}}
 	applyCtr(t, s, user, c)
 	waitMachine(t, s, system, "ct-api", "in both groups", func(m *computev1alpha1.Machine) bool {
 		nics := m.GetSpec().GetInterfaces()
@@ -157,7 +158,7 @@ func TestAVMHoldsItsGroupsBeforeItHasAMachine(t *testing.T) {
 		t.Fatal(err)
 	}
 	vm := vmFromImage("web", "noble")
-	vm.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork, SecurityGroups: []string{"ssh-in"}}}
+	vm.Spec.Interfaces = []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork, SecurityGroups: []string{"ssh-in"}}}
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, vm); err != nil {
 		t.Fatal(err)
 	}

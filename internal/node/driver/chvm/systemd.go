@@ -140,8 +140,8 @@ func devices(spec driver.VMSpec) []pathPair {
 	if spec.Root.Path != "" {
 		out = append(out, pathPair{spec.Root.Path, "rwm"})
 	}
-	for _, v := range spec.Disks {
-		out = append(out, pathPair{v.Path, "rwm"})
+	for _, path := range dataDisks(spec) {
+		out = append(out, pathPair{path, "rwm"})
 	}
 	return out
 }

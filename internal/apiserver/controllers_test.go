@@ -15,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -157,7 +158,7 @@ func TestAContainerGetsAMachine(t *testing.T) {
 		RunState:      computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
 		RestartPolicy: computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS,
 		Boot:          &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx"}},
-		Interfaces:    []*computev1alpha1.MachineInterface{{Name: "eth0", Network: DefaultNetwork, Ipv4: "10.0.0.2/24", SecurityGroups: []string{"default"}}},
+		Interfaces:    []*computev1alpha1.MachineInterface{{Name: "eth0", Network: computeapi.DefaultNetwork, Ipv4: "10.0.0.2/24", SecurityGroups: []string{"default"}}},
 	}
 	if !proto.Equal(m.GetSpec(), want) {
 		t.Errorf("machine spec\n got %v\nwant %v", m.GetSpec(), want)

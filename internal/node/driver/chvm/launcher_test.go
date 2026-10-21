@@ -234,6 +234,8 @@ func (g *launcherGuest) Exec(context.Context, string, driver.ExecSpec) (driver.E
 
 func (g *launcherGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) error { return nil }
 
+func (g *launcherGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
+
 func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {
 	g.mu.Lock()
 	g.graces = append(g.graces, grace)

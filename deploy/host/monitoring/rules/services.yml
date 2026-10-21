@@ -68,15 +68,27 @@ groups:
   - name: hangar-machines
     rules:
       # A reason only the platform causes: its disks or its network failed
-      # the machine, whatever the tenant asked.
+      # the machine, or a file share's server refused the export its node
+      # told it, whatever the tenant asked.
       - alert: MachinesFailedByThePlatform
-        expr: sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed"}) > 0
+        expr: sum by (reason) (hangar_apiserver_machines{reason=~"DiskFailed|NetworkFailed|ExportFailed"}) > 0
         for: 15m
         labels:
           severity: critical
         annotations:
           summary: "{{ $value }} machines are blocked by {{ $labels.reason }}, which only the platform causes"
           description: "sudo hangar --context local get machines -A lists every machine and its READY; sudo hangar --context local get machines -A -o yaml shows each one's reason and message. journalctl -u hangar-node."
+
+      # A container waits for its file shares' servers to serve it, the
+      # platform's, for seconds as they boot; half an hour is never a boot.
+      - alert: MachinesWaitingForTheirFileShares
+        expr: sum(hangar_apiserver_machines{reason="FileShareNotReady"}) > 0
+        for: 30m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $value }} machines have waited half an hour for their file shares' servers to serve them"
+          description: "sudo hangar --context local get machines -A -o yaml shows each one's message, naming its share; the share's server is the machine fs-<share>. journalctl -u hangar-node."
 
       # A tenant's program exiting again and again is its own: recorded for
       # the operator's view, never alerted on.

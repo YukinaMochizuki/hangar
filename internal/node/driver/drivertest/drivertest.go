@@ -60,8 +60,9 @@ type Host struct {
 	// Hold keeps a root disk in use, as a running VM does, until release.
 	Hold func(t *testing.T, d driver.Disk) (release func())
 	// HoldVolume keeps a volume in use, as a running VM does, until
-	// release.
-	HoldVolume func(t *testing.T, v driver.Volume) (release func())
+	// release; HoldShareVolume a file share's volume, as its server does.
+	HoldVolume      func(t *testing.T, v driver.Volume) (release func())
+	HoldShareVolume func(t *testing.T, v driver.ShareVolume) (release func())
 	// Exit ends the guest process of a running VM with code, as the
 	// container's process exiting does.
 	Exit func(t *testing.T, machineUID string, code int)
@@ -84,6 +85,11 @@ type Host struct {
 	// ServeGuest has a guest on the interface echo what each TCP connection
 	// to its address on the ports sends, until the test ends.
 	ServeGuest func(t *testing.T, nic driver.Interface, ports ...uint16)
+	// Reaches has the guest on the interface open a TCP connection to an
+	// address of its network, and says whether what it sends is echoed,
+	// within a couple of seconds. The file share servers' firewall part
+	// runs only with it and ServeGuest.
+	Reaches func(t *testing.T, from driver.Interface, to netip.AddrPort) bool
 	// GuestIPv6 reads, from inside the guest of the machine's running VM,
 	// what it holds of its public IPv6: each of the interfaces the platform
 	// gave it, by MAC, with its global address and, if the default route is
@@ -121,6 +127,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("deleting disks", deletingDisks, disks)
 	part("reopening", reopening, disks)
 	part("volumes", volumes, func(h Host) bool { return h.Storage != nil })
+	part("share volumes", shareVolumes, func(h Host) bool { return h.Storage != nil })
 	part("disk images", diskImages, func(h Host) bool {
 		return h.Storage != nil && h.DiskImages != nil && h.PublishDiskImage != nil
 	})
@@ -131,6 +138,9 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("dialing SSH", dialSSH, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("dialing edge ports", dialEdgePorts, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("network firewall", networkFirewall, nets)
+	part("file share servers' firewall", shareServerFirewall, func(h Host) bool {
+		return h.Network != nil && h.ServeGuest != nil && h.Reaches != nil
+	})
 	part("NAT flows", natFlows, func(h Host) bool {
 		_, ok := h.Network.(driver.NATFlows)
 		return ok && h.Connect != nil
@@ -142,6 +152,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
+	part("file share servers", shareServers, vms)
 	part("guest IPv6", guestIPv6, func(h Host) bool {
 		return vms(h) && h.IPv6Prefix.IsValid() && h.GuestIPv6 != nil && h.Exit != nil
 	})

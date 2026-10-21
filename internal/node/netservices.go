@@ -135,6 +135,8 @@ func (a *Agent) networkController() *controller.Controller {
 			{Kind: registry.SecurityGroup.Kind, Map: networkOfGroup},
 			// A public endpoint opens its machine's port to the edge.
 			{Kind: registry.PublicEndpoint.Kind, Map: a.networksOfEndpointObject, SkipResync: true},
+			// A file share's server takes its clients, and they reach it.
+			{Kind: registry.FileShare.Kind, Map: networksOfShare, SkipResync: true},
 		},
 		// The network driver's changes, its own included, are when a
 		// namespace comes, goes or is made again.
@@ -204,6 +206,11 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	if err != nil {
 		return err
 	}
+	shareObjs, _, err := a.api.ListAll(ctx, registry.FileShare, client.ListOptions{Project: k.Project})
+	if err != nil {
+		return err
+	}
+	shares := newProjectShares(shareObjs, objs)
 	names := map[string][]netip.Addr{}
 	leases := dhcp.Leases{Gateway: cidr.Addr().Next(), Search: []string{resolver.Search(k.Project)}, ByMAC: map[string]dhcp.Lease{}}
 	instances := map[netip.Addr]metadata.Instance{}
@@ -241,7 +248,8 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 			nat.Machines[addr.Addr()] = natlog.Machine{Name: name, UID: m.GetMetadata().GetUid()}
 			on = append(on, m.GetMetadata().GetUid())
 			if m.GetSpec().GetNode() == a.cfg.Name {
-				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName()})
+				clients, servers := shares.sharePolicy(m, k.Name)
+				mine = append(mine, driver.InterfacePolicy{MachineUID: m.GetMetadata().GetUid(), Name: nic.GetName(), ShareClients: clients, Shares: servers})
 				mineAt = append(mineAt, len(members))
 				mineNames = append(mineNames, m.GetMetadata().GetName())
 			}
@@ -278,6 +286,7 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		// network's services until they can be.
 		closed := make([]driver.InterfacePolicy, len(mine))
 		for i, p := range mine {
+			// Nothing reaches a file share's server given none.
 			closed[i] = driver.InterfacePolicy{MachineUID: p.MachineUID, Name: p.Name}
 		}
 		if cerr := a.cfg.Drivers.Network.EnsureFirewall(ctx, uid, closed); cerr != nil {
@@ -285,6 +294,8 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 		}
 		return blocked(computeapi.ReasonNetworkFailed, err)
 	}
+	// Containers waiting for their shares' rules to be in force.
+	a.requeueShareWaiters()
 	return nil
 }
 

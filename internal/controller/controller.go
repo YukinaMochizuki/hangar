@@ -134,6 +134,14 @@ func (c *Controller) Status() Status {
 	return Status{Name: c.Name}
 }
 
+// Enqueue queues keys to be reconciled, as a watched change mapped to them
+// would; before Run, or after it ends, it does nothing.
+func (c *Controller) Enqueue(keys ...Key) {
+	if q := c.q.Load(); q != nil {
+		q.addAll(keys)
+	}
+}
+
 // Run reconciles until ctx is done, and returns once every reconcile it
 // started has finished. A failing source is retried, never fatal: one
 // controller's trouble must not stop the other background work of the

@@ -156,8 +156,17 @@ type Agent struct {
 	netEpoch   atomic.Int64
 	netChecked map[string]int64
 	// told is, by machine uid, what each container's guest holds of its
-	// public IPv6 in its current boot. Guarded by host.
-	told map[string]toldIPv6
+	// public IPv6 in its current boot, and exported what each file share's
+	// server holds of its export. Guarded by host.
+	told     map[string]toldIPv6
+	exported map[string]toldExport
+	// shareWaiters are the machines waiting for their shares to serve them
+	// (sharesServe), which a server taking an export, or a network's
+	// firewall written, queues again; requeue queues them, the machine
+	// controller's Enqueue unless a test says otherwise.
+	waitMu       sync.Mutex
+	shareWaiters map[controller.Key]bool
+	requeue      func(...controller.Key)
 	// netsvc serves the networks on the host their services, resolver
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
@@ -249,30 +258,33 @@ func New(cfg Config) (*Agent, error) {
 		images = newImageMaker(cfg.Drivers.DiskImages, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 	}
 	a := &Agent{
-		cfg:        cfg,
-		api:        client.New(cfg.HTTP, cfg.BaseURL),
-		nodes:      computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
-		machines:   computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
-		networks:   networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
-		disks:      storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
-		shares:     storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
-		imagesAPI:  storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
-		pullCreds:  nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
-		images:     images,
-		netChecked: map[string]int64{},
-		told:       map[string]toldIPv6{},
-		puller:     puller,
-		metrics:    newAgentMetrics(),
-		stops:      newStops(),
-		guests:     newGuests(),
-		trigger:    make(chan struct{}, 1),
-		netsvc:     netsvc,
-		netTrigger: make(chan struct{}, 1),
+		cfg:          cfg,
+		api:          client.New(cfg.HTTP, cfg.BaseURL),
+		nodes:        computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
+		machines:     computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
+		networks:     networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
+		disks:        storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
+		shares:       storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
+		imagesAPI:    storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		pullCreds:    nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
+		images:       images,
+		netChecked:   map[string]int64{},
+		told:         map[string]toldIPv6{},
+		exported:     map[string]toldExport{},
+		shareWaiters: map[controller.Key]bool{},
+		puller:       puller,
+		metrics:      newAgentMetrics(),
+		stops:        newStops(),
+		guests:       newGuests(),
+		trigger:      make(chan struct{}, 1),
+		netsvc:       netsvc,
+		netTrigger:   make(chan struct{}, 1),
 	}
 	a.diskTrigger = make(chan struct{}, 1)
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
 		a.sharesCtl = a.shareController()
+		a.requeue = a.machinesCtl.Enqueue
 		puller.makeRoom = a.makeRoom
 		puller.pulled = a.metrics.pulled
 	}
@@ -415,7 +427,8 @@ func (a *Agent) followHost(ctx context.Context) {
 }
 
 // machineController runs the machines placed on this node, on changes to
-// machines and their networks and disks, and on what followHost notices.
+// machines and their networks, disks and file shares, and on what
+// followHost notices.
 func (a *Agent) machineController() *controller.Controller {
 	return &controller.Controller{
 		Name:       "machines",
@@ -429,6 +442,9 @@ func (a *Agent) machineController() *controller.Controller {
 			// So does a disk getting bound here, and a disk growing changes the
 			// VMs that have it.
 			{Kind: registry.Disk.Kind, Map: a.machinesWithDisk, SkipResync: true},
+			// A share's addresses, users and squash change its server and the
+			// containers mounting it.
+			{Kind: registry.FileShare.Kind, Map: a.machinesOfShare, SkipResync: true},
 		},
 		Trigger: a.trigger,
 		Clock:   a.cfg.Clock,
@@ -436,6 +452,9 @@ func (a *Agent) machineController() *controller.Controller {
 	}
 }
 
+// machineIfMine maps a machine to itself, if it is on this node. A machine
+// coming to declare a file share, or ceasing to, reaches the share's server
+// through the share's users, which the apiserver rewrites (machinesOfShare).
 func (a *Agent) machineIfMine(_ context.Context, o store.Object) []controller.Key {
 	var m computev1alpha1.Machine
 	if proto.Unmarshal(o.Data, &m) != nil || m.GetSpec().GetNode() != a.cfg.Name {

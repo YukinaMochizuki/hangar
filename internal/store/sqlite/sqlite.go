@@ -29,6 +29,11 @@ const (
 	// it switches to reading the events table to catch up.
 	subscriberBuffer = 1024
 	replayBatch      = 500
+	// idleReaders is how many read connections stay open between reads.
+	// Every controller reads at once; with database/sql's default of two,
+	// the rest are closed as each read ends and opened again for the next,
+	// and opening one runs the pragmas and parses the schema.
+	idleReaders = 16
 )
 
 // Store is a store.Store backed by one SQLite database file.
@@ -79,6 +84,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		_ = wdb.Close()
 		return nil, err
 	}
+	rdb.SetMaxIdleConns(idleReaders)
 	s, err := open(ctx, rdb, wdb)
 	if err != nil {
 		_ = rdb.Close()

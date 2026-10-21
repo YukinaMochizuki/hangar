@@ -71,6 +71,30 @@ func (g Guest) SetIPv6(ctx context.Context, machineUID string, ifaces []driver.G
 	return err
 }
 
+// SetExport replaces the export of a FileShare's server, which its
+// hangar-init serves beside the guest agent.
+func (g Guest) SetExport(ctx context.Context, machineUID string, export driver.ShareExport) error {
+	socket := g.Socket(machineUID)
+	tr := transport(func(ctx context.Context) (net.Conn, error) { return Dial(ctx, socket, agent.Port) })
+	defer tr.CloseIdleConnections()
+	c := guestv1connect.NewFileShareServerServiceClient(&http.Client{Transport: tr}, "http://guest", connect.WithReadMaxBytes(agent.MaxMessage))
+	_, err := c.SetExport(ctx, connect.NewRequest(&guestv1.SetExportRequest{Export: ExportOf(export)}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	return err
+}
+
+// ExportOf is export as a share's server takes it, on its boot disk or by
+// SetExport.
+func ExportOf(export driver.ShareExport) *guestv1.FileShareExport {
+	out := &guestv1.FileShareExport{Squash: guestv1.FileShareSquash(export.Squash), AnonUid: export.AnonUID, AnonGid: export.AnonGID}
+	for _, c := range export.Clients {
+		out.Clients = append(out.Clients, &guestv1.FileShareClient{Address: c.Address.String(), ReadOnly: c.ReadOnly})
+	}
+	return out
+}
+
 // Client is a client of the machine's guest agent, bounding what it takes
 // from the guest; done closes its connections once idle. It dials when first
 // used, and again whenever the connection is lost, as when the VM restarts.

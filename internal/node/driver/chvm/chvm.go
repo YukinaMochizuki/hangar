@@ -410,6 +410,11 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		if err := writeAtomic(filepath.Join(dir, bootFile), disk); err != nil {
 			return err
 		}
+		if spec.FileShareServer != nil {
+			if err := writeAtomic(filepath.Join(dir, blankFile), make([]byte, blankSize)); err != nil {
+				return err
+			}
+		}
 	}
 	user, err := h.writeLaunch(dir, ln)
 	if err != nil {
@@ -455,7 +460,14 @@ func checkSpec(s driver.VMSpec) error {
 	if s.VCPUs < 1 || s.MemoryMiB < 1 {
 		return fmt.Errorf("machine %s: %d vCPUs and %d MiB of memory", s.MachineUID, s.VCPUs, s.MemoryMiB)
 	}
-	switch {
+	switch srv := s.FileShareServer; {
+	case srv != nil:
+		if s.Firmware || s.Root != (driver.Disk{}) || len(s.Disks) > 0 || len(s.Mounts) > 0 || len(s.Run.Command) > 0 {
+			return fmt.Errorf("machine %s: a file share's server has no root disk, volume, mount or process", s.MachineUID)
+		}
+		if srv.Volume.ShareUID == "" || srv.Volume.Path == "" {
+			return fmt.Errorf("machine %s: share volume %+v has no share or path", s.MachineUID, srv.Volume)
+		}
 	case s.Firmware && (s.Root != driver.Disk{} || len(s.Disks) == 0):
 		return fmt.Errorf("machine %s: a firmware VM boots its first volume, not a root disk", s.MachineUID)
 	case !s.Firmware && (s.Root.MachineUID != s.MachineUID || s.Root.Path == ""):
@@ -469,7 +481,7 @@ func checkSpec(s driver.VMSpec) error {
 		seen[v.Path] = true
 	}
 	for _, m := range s.Mounts {
-		if s.Firmware || m.Disk < 0 || m.Disk >= len(s.Disks) || m.Target == "" {
+		if s.Firmware || (!m.Share.IsValid() && (m.Disk < 0 || m.Disk >= len(s.Disks))) || m.Target == "" {
 			return fmt.Errorf("machine %s: mount %+v is of no volume of its, or has no target", s.MachineUID, m)
 		}
 	}
@@ -477,12 +489,18 @@ func checkSpec(s driver.VMSpec) error {
 		if i.MachineUID != s.MachineUID || i.Device == "" {
 			return fmt.Errorf("machine %s: interface %+v is not its, or has no device", s.MachineUID, i)
 		}
+		// A server's tap is closed to all but its clients, and only a
+		// server's: a server never runs on a tap open as any other.
+		if i.FileShareServer != (s.FileShareServer != nil) {
+			return fmt.Errorf("machine %s: interface %s is a file share's server's only if the machine is", s.MachineUID, i.Name)
+		}
 	}
 	return nil
 }
 
-// bootDisk is the boot disk of spec: what to run, the network, the
-// hostname, the resolvers.
+// bootDisk is the boot disk of spec: what to run, or the export a file
+// share's server starts with, the network, the hostname, the resolvers and
+// the machine's uid.
 func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 	cfg := &guestv1.BootConfig{
 		Process: &guestv1.Process{
@@ -491,6 +509,11 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		Hostname:    hostname(spec),
 		Nameservers: spec.Nameservers,
 		Search:      spec.Search,
+		MachineUid:  spec.MachineUID,
+	}
+	if srv := spec.FileShareServer; srv != nil {
+		cfg.Process = nil
+		cfg.FileShareServer = &guestv1.FileShareServer{Export: chguest.ExportOf(srv.Export)}
 	}
 	for n, i := range spec.Interfaces {
 		// The default route goes by the first interface; the guest takes
@@ -509,6 +532,13 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		cfg.Interfaces = append(cfg.Interfaces, nic)
 	}
 	for _, m := range spec.Mounts {
+		if m.Share.IsValid() {
+			cfg.Volumes = append(cfg.Volumes, &guestv1.Volume{
+				Target: m.Target, ReadOnly: m.ReadOnly, Subpath: m.Subpath, Name: m.Name,
+				FileShare: &guestv1.FileShareMount{Address: m.Share.String()},
+			})
+			continue
+		}
 		cfg.Volumes = append(cfg.Volumes, &guestv1.Volume{
 			Device: "/dev/" + computeapi.VirtioDevice(computeapi.FirstContainerDisk+m.Disk),
 			Target: m.Target, ReadOnly: m.ReadOnly, Nocopy: m.Nocopy, Subpath: m.Subpath, Name: m.Name,

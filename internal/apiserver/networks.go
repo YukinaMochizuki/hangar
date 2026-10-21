@@ -75,12 +75,12 @@ func (s *Server) reconcileProject(ctx context.Context, k controller.Key) error {
 	if obj.(*tenancyv1alpha1.Project).GetMetadata().GetDeleteTime() != nil {
 		return nil
 	}
-	existing, err := s.get(ctx, registry.Network, resource.Key{Project: k.Name, Name: DefaultNetwork})
+	existing, err := s.get(ctx, registry.Network, resource.Key{Project: k.Name, Name: computeapi.DefaultNetwork})
 	if err != nil || existing != nil {
 		return err
 	}
 	_, err = s.backend(registry.Network).Create(s.system(ctx), &networkv1alpha1.Network{
-		Metadata: &metav1.ObjectMeta{Project: k.Name, Name: DefaultNetwork},
+		Metadata: &metav1.ObjectMeta{Project: k.Name, Name: computeapi.DefaultNetwork},
 		Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
 	})
 	if connect.CodeOf(err) == connect.CodeAlreadyExists {

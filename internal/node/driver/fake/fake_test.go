@@ -76,6 +76,7 @@ func host(h *fake.Host) drivertest.Host {
 		Reopen:           func(*testing.T) (driver.Images, driver.Storage) { return h.Images(), h.Storage() },
 		Hold:             func(_ *testing.T, d driver.Disk) func() { return h.HoldDisk(d.MachineUID) },
 		HoldVolume:       func(_ *testing.T, v driver.Volume) func() { return h.HoldVolume(v.DiskUID) },
+		HoldShareVolume:  func(_ *testing.T, v driver.ShareVolume) func() { return h.HoldShareVolume(v.ShareUID) },
 		ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
 		AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
 		Firmware:         true,
@@ -83,6 +84,18 @@ func host(h *fake.Host) drivertest.Host {
 			for _, p := range ports {
 				h.ServeGuest(nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), p), echo)
 			}
+		},
+		Reaches: func(_ *testing.T, from driver.Interface, to netip.AddrPort) bool {
+			c, err := h.GuestConnect(from, to)
+			if err != nil {
+				return false
+			}
+			defer func() { _ = c.Close() }()
+			_ = c.SetDeadline(time.Now().Add(2 * time.Second))
+			b := make([]byte, 2)
+			_, werr := c.Write([]byte("hi"))
+			_, rerr := io.ReadFull(c, b)
+			return werr == nil && rerr == nil && string(b) == "hi"
 		},
 		Connect: func(t *testing.T, nic driver.Interface, srcPort uint16) (netip.AddrPort, netip.AddrPort) {
 			dst := netip.MustParseAddrPort("198.51.100.7:443")

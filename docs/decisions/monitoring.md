@@ -34,8 +34,12 @@ restart count.
     and machines in a crash loop.
 - **Alerts are for what the platform did, never for what a tenant's program
   did.** A machine blocked for a reason only the platform causes
-  (`DiskFailed`, `NetworkFailed`, …) alerts. A tenant's `Exited`, `BootFailed`
-  or crash loop is recorded and shown to the operator but alerts no one.
+  (`DiskFailed`, `NetworkFailed`, a file share's server refusing its export
+  `ExportFailed`, …) alerts, and so does a container waiting for its file
+  shares' servers (`FileShareNotReady`), past half an hour rather than a
+  quarter, as it waits seconds at every boot. A tenant's `Exited`,
+  `BootFailed` or crash loop is recorded and shown to the operator but
+  alerts no one.
 - **Prometheus and Alertmanager on the host, no Grafana.** Collected by
   `node_exporter` (zfs, mdadm, systemd, hwmon collectors), `smartctl_exporter`
   and the services' own `/metrics`. Prometheus keeps 30 days. Every one of

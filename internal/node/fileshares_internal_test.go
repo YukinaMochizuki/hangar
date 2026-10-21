@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/netip"
+	"slices"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -15,7 +17,9 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
@@ -107,4 +111,42 @@ func TestReleasingAShareIsConditional(t *testing.T) {
 		_, err := system.GetFileShare(ctx, connect.NewRequest(&storagev1alpha1.GetFileShareRequest{Project: key.Project, Name: key.Name}))
 		return connect.CodeOf(err) == connect.CodeNotFound, fmt.Sprint(err)
 	})
+}
+
+// TestAFirewallWrittenRequeuesWaitingMachines: a network's firewall written
+// while a container waits for its shares' rules has that machine queued
+// again, once; written with none waiting, nothing is.
+func TestAFirewallWrittenRequeuesWaitingMachines(t *testing.T) {
+	env := apiservertest.Start(t, nil)
+	env.Setup()
+	host := fake.New()
+	a, err := New(Config{
+		Name: apiservertest.Node, HTTP: client.UnixSocket(env.Socket), BaseURL: client.UnixSocketURL,
+		Drivers: &Drivers{Images: host.Images(), Storage: host.Storage(), Network: host.Network(), Hypervisor: host.Hypervisor(), Guest: host.Guest()},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	k := controller.Key{Project: apiservertest.Project, Name: computeapi.DefaultNetwork}
+	var uid string
+	testutil.Eventually(t, "the default network", func() (bool, string) {
+		n, err := a.getNetwork(ctx, k.Project, k.Name)
+		uid = n.GetMetadata().GetUid()
+		return err == nil && uid != "", fmt.Sprint(err)
+	})
+	if err := host.Network().EnsureNetwork(ctx, driver.NetworkSpec{UID: uid, CIDR: netip.MustParsePrefix("10.0.0.0/24"), Transit: netip.MustParsePrefix("100.64.0.0/31")}); err != nil {
+		t.Fatal(err)
+	}
+	var queued []controller.Key
+	a.requeue = func(keys ...controller.Key) { queued = append(queued, keys...) }
+	waiting := controller.Key{Project: apiservertest.Project, Name: "web"}
+	a.waitForShares(waiting)
+	if err := a.reconcileNetworkServices(ctx, k); err != nil || !slices.Equal(queued, []controller.Key{waiting}) {
+		t.Errorf("written with a container waiting: %v, queued %v", err, queued)
+	}
+	queued = nil
+	if err := a.reconcileNetworkServices(ctx, k); err != nil || queued != nil {
+		t.Errorf("written with none waiting: %v, queued %v", err, queued)
+	}
 }

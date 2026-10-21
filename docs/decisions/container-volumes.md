@@ -40,12 +40,15 @@ gives the semantics users already know.
   Hangar's, not Compose's: empty is `Disk`. `FileShare` (`file-shares.md`)
   is the other, the service side written the same way: its machine
   declares the share, `volume.nocopy` is implied and `volume.subpath`
-  allowed. It is mounted over NFS `nosuid,nodev` and never filled from the
-  image, once the node mounts shares, which it does not yet. A container
-  never runs with a share unmounted, as its process would write to its
-  root disk at the target: one declaring a share on no node yet is held
-  back (`MachineHeldBack`), and its node refuses to boot one it cannot
-  mount. What backs a volume is chosen where Compose chooses it, by the
+  allowed. It is mounted over NFS `nosuid,nodev`, from the share's
+  server's address on the network the machine mounts it from, and never
+  filled from the image. A container never runs with a share unmounted, as
+  its process would write to its root disk at the target: one declaring a
+  share on no node yet is held back (`MachineHeldBack`), its node refuses
+  to boot one whose share's server has no address there yet, stopping it
+  if it ran, and it waits (`FileShareNotReady`) until that server serves
+  it (`file-shares.md`).
+  What backs a volume is chosen where Compose chooses it, by the
   top-level volume's driver, which the translator maps to the kind. Two
   kinds keep their own names, so a source never depends on which kind
   happens to hold a name.

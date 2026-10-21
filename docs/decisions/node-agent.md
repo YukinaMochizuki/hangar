@@ -17,11 +17,12 @@ with the host after any of these, and nothing would notice.
   lists what it made. A reconcile compares what the API wants with what the
   host has.
 - **A sweep removes what nothing accounts for**: VMs, root disks and
-  interfaces of machines that are not on this node any more, volumes of Disks
-  that are not bound to it any more, then networks nothing on the host uses,
-  disk images' bases nothing uses or is being built from, unless an Image
-  names them (`docs/decisions/vm-images.md`), and container images past the
-  image cache's bounds (below). It runs at start and
+  interfaces of machines that are not on this node any more, volumes of
+  Disks and FileShares that are not bound to it any more, then networks
+  nothing on the host uses, disk images' bases nothing uses or is being
+  built from, unless an Image names them (`docs/decisions/vm-images.md`),
+  and container images past the image cache's bounds (below). It runs at
+  start and
   every minute, under the same lock as the reconciles. A list it
   could not read, from the API or from a driver, stops whatever depends on
   it: a failed list must never read as "nothing is wanted", since a driver
@@ -116,15 +117,15 @@ with the host after any of these, and nothing would notice.
 - **The driver touches only its own**: units named `hangar-vm-<uid>` for a
   uid it takes, and its directory.
 - **The node follows the API like a controller** (`controller.APISource`),
-  with Machines placed on it and their Networks and Disks as the watched
-  kinds. What the host notices on its own (a VM exiting, networkd removing a
-  link) checks every machine again. A second controller keeps the volumes of
-  the Disks bound to the node, at the size their status says, and removes a
-  deleted one's once no machine lists it, reporting `Released`. A third,
-  `fileshares`, lets go of what the host holds of a deleted FileShare bound
-  to the node once its server is gone (its `dependents` finalizer), and
-  reports `Released`; the node holds nothing of a share yet
-  (`file-shares.md`).
+  with Machines placed on it and their Networks, Disks and FileShares as
+  the watched kinds. What the host notices on its own (a VM exiting,
+  networkd removing a link) checks every machine again. A second
+  controller keeps the volumes of the Disks bound to the node, at the size
+  their status says, and removes a deleted one's once no machine lists it,
+  reporting `Released`. A FileShare's volume is its server's machine's to
+  make and grow, as the server boots on it (`file-shares.md`); a third
+  controller, `fileshares`, destroys a deleted share's once its server is
+  gone (its `dependents` finalizer), and reports `Released`.
 - **Nothing slow runs under the host lock.** Reconciles and the sweep take
   turns under one lock, so each step under it must be short. Preparing an
   image (resolving, pulling, making its base) can take minutes, so a puller

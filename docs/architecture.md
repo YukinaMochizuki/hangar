@@ -61,9 +61,10 @@ filesystem of a project on one to eight of its networks, which the
 machines that declare it, a container as a volume and a VM in its spec,
 are to mount over NFS from a server microVM of the platform's: a system
 `Machine` the share owns, which the scheduler places with the share's
-volume, binding the share to that node. Its API, that machine and the
-guest side (the server's PID 1, a container's mounts) are built, not the
-node's part: the server's volume, boot and export (`decisions/file-shares.md`). A global
+volume, binding the share to that node; the node runs the server on a
+zvol of the share's, keeps its export to the declaring machines'
+addresses, and lets nothing but their NFS reach it
+(`decisions/file-shares.md`). A global
 `MachineSize`, also the administrators' and read by all, is a template of
 cpu, memory and disk that clients fill a new machine's from, and that
 admission holds tenants' machines to; a machine does not record its size

@@ -471,9 +471,18 @@ func (s *Server) shareAndWaiting(ctx context.Context, o store.Object) []controll
 	return keys
 }
 
-// sharesOnNode maps a node to the shares on it, whose servers it runs: a
-// node going quiet, or making room, changes them.
+// sharesOnNode maps a node to the shares on it that it may change: those
+// whose ServerReady disagrees with whether it reports, as it goes quiet or
+// comes back, and those waiting for room. A heartbeat that changes neither
+// maps to none: each share's reconcile takes s.ipam, and a node beats more
+// often than its shares change.
 func (s *Server) sharesOnNode(ctx context.Context, n store.Object) []controller.Key {
+	var node computev1alpha1.Node
+	if err := proto.Unmarshal(n.Data, &node); err != nil {
+		s.log.Error("decoding node failed", "node", n.Name, "error", err)
+		return nil
+	}
+	reporting := conditions.IsTrue(node.GetStatus().GetConditions(), NodeReady)
 	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.FileShare.Kind})
 	if err != nil {
 		s.log.Error("listing file shares failed", "error", err)
@@ -481,7 +490,12 @@ func (s *Server) sharesOnNode(ctx context.Context, n store.Object) []controller.
 	}
 	var keys []controller.Key
 	for _, o := range objs {
-		if fs, ok := decodeFileShare(o); ok && fs.GetStatus().GetNode() == n.Name {
+		fs, ok := decodeFileShare(o)
+		if !ok || fs.GetStatus().GetNode() != n.Name {
+			continue
+		}
+		quiet := shareCond(fs, FileShareServerReady).GetReason() == "NodeNotReporting"
+		if reporting == quiet || shareCond(fs, FileShareAllocated).GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE {
 			keys = append(keys, controller.Key{Project: o.Project, Name: o.Name})
 		}
 	}

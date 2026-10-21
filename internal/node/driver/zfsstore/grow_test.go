@@ -27,13 +27,13 @@ func TestNewMakesItsDatasetsVolmodeDev(t *testing.T) {
 	if _, err := New(t.Context(), Config{Dataset: "hangar", Scratch: t.TempDir(), Log: f.s.cfg.Log}); err != nil {
 		t.Fatal(err)
 	}
-	for _, ds := range []string{"hangar/bases", "hangar/roots", "hangar/disks", "hangar/vmbases"} {
+	for _, ds := range []string{"hangar/bases", "hangar/roots", "hangar/disks", "hangar/vmbases", "hangar/shares"} {
 		if got := f.prop(ds, "volmode"); got != "dev" {
 			t.Errorf("%s has volmode %q", ds, got)
 		}
 	}
-	if got := f.calls("create"); len(got) != 2 || !strings.Contains(got[0], "-o volmode=dev hangar/bases") ||
-		!strings.Contains(got[1], "-o volmode=dev hangar/vmbases") {
+	if got := f.calls("create"); len(got) != 3 || !strings.Contains(got[0], "-o volmode=dev hangar/bases") ||
+		!strings.Contains(got[1], "-o volmode=dev hangar/vmbases") || !strings.Contains(got[2], "-o volmode=dev hangar/shares") {
 		t.Errorf("made %q", got)
 	}
 	if got := f.calls("set"); len(got) != 1 || got[0] != "set volmode=dev hangar/disks" {

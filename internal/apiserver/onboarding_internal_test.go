@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -111,7 +112,7 @@ func TestSignUpOpensATenantAndProject(t *testing.T) {
 		!ownedBy(project.GetMetadata(), tenant.GetMetadata().GetUid()) {
 		t.Errorf("the project: %v, owners %v", project.GetSpec(), project.GetMetadata().GetOwnerReferences())
 	}
-	network := mustGet[*networkv1alpha1.Network](t, s, system, registry.Network, resource.Key{Project: name, Name: DefaultNetwork})
+	network := mustGet[*networkv1alpha1.Network](t, s, system, registry.Network, resource.Key{Project: name, Name: computeapi.DefaultNetwork})
 	if network.GetSpec().GetIpv4Cidr() != DefaultNetworkCIDR {
 		t.Errorf("the default network: %v", network.GetSpec())
 	}
@@ -386,7 +387,7 @@ func TestSignUpIsAllOrNothing(t *testing.T) {
 				nameClaim(registry.Tenant, resource.Key{Name: "fay-fffff"}),
 				{Kind: registry.Project.Kind, Name: "fay-fffff"},
 				nameClaim(registry.Project, resource.Key{Name: "fay-fffff"}),
-				{Kind: registry.Network.Kind, Project: "fay-fffff", Name: DefaultNetwork},
+				{Kind: registry.Network.Kind, Project: "fay-fffff", Name: computeapi.DefaultNetwork},
 			} {
 				if _, err := s.store.Get(system, key); !errors.Is(err, store.ErrNotFound) {
 					t.Errorf("%v after a failed sign-up: %v", key, err)

@@ -41,8 +41,6 @@ const (
 	// with spec.run_state has taken effect: the machine's VM is down for
 	// good, its disk kept. False while the container is asked to run.
 	ContainerStopped = "Stopped"
-	// DefaultNetwork is the network every container's machine joins.
-	DefaultNetwork = "default"
 )
 
 func (s *Server) newControllers() []*controller.Controller {
@@ -584,7 +582,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 // none, in the network's implicit default group.
 func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alpha1.MachineInterface {
 	if len(nics) == 0 {
-		nics = []*computev1alpha1.NetworkInterface{{Network: DefaultNetwork}}
+		nics = []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork}}
 	}
 	out := make([]*computev1alpha1.MachineInterface, len(nics))
 	for i, nic := range nics {

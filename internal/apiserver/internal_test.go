@@ -20,6 +20,7 @@ import (
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller/controllertest"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/store/sqlite"
@@ -74,7 +75,7 @@ func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, sys
 	// What the project controller does, for tests that run without it.
 	if cfg.DisableControllers {
 		if _, err := s.backend(registry.Network).Apply(system, &networkv1alpha1.Network{
-			Metadata: &metav1.ObjectMeta{Project: "web", Name: DefaultNetwork},
+			Metadata: &metav1.ObjectMeta{Project: "web", Name: computeapi.DefaultNetwork},
 			Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
 		}); err != nil {
 			t.Fatal(err)

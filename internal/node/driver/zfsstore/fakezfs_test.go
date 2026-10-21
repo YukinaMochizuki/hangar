@@ -11,8 +11,9 @@ import (
 )
 
 // fakeZFSScript is a zfs command for the calls New, EnsureRoot,
-// DeleteRoot and EnsureVolume make: list (of a name, or of a parent's
-// children, which it has none of), get, create, clone, set and destroy.
+// DeleteRoot, EnsureVolume and the share volumes' make: list (of a name,
+// or of a parent's children, which it has none of), get, create (a
+// volume's -s and -V too), clone, set and destroy.
 // Each dataset is a file of
 // property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %;
 // every call is logged to $FAKEZFS/log. $FAKEZFS/set-fails makes set fail
@@ -32,7 +33,14 @@ list)
 	echo "$4" ;;
 create)
 	opts=
-	while [ "$1" = -o ]; do opts="$opts $2"; shift 2; done
+	while :; do
+		case $1 in
+		-s) opts="$opts sparse=yes"; shift ;;
+		-V) opts="$opts volsize=$2"; shift 2 ;;
+		-o) opts="$opts $2"; shift 2 ;;
+		*) break ;;
+		esac
+	done
 	f=$(file "$1"); : >"$f"
 	for o in $opts; do put "$f" "${o%%=*}" "${o#*=}"; done ;;
 get)

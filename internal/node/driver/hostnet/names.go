@@ -25,6 +25,10 @@ const (
 	vethPrefix = Prefix + "v"
 	// tapPrefix names a machine interface's tap.
 	tapPrefix = Prefix + "t"
+	// serverTapPrefix names a file share's server's tap, among the taps:
+	// what follows tapPrefix is otherwise a hex digit. The firewall closes
+	// every tap of it to all but its share's clients, by its name alone.
+	serverTapPrefix = tapPrefix + "s"
 	// Inside a namespace the names are fixed: everything there is the driver's.
 	nsUplink = Prefix + "-up"
 	nsBridge = Prefix + "-br"
@@ -37,8 +41,9 @@ const (
 	// LimitTable is the inet-family table in each network's namespace
 	// limiting the new connections its machines open, of both families.
 	LimitTable = "hangar_limit"
-	// hashLen hex digits of the hash follow the three-character prefix.
-	hashLen = 12
+	// nameLen is the longest a link's name is: the prefix, then hex digits
+	// of the hash, 12 after a three-character prefix.
+	nameLen = 15
 	// nameAttempts bounds the names tried for one object when the first are
 	// taken by others.
 	nameAttempts = 16
@@ -62,7 +67,18 @@ func linkName(p, key string, attempt int) string {
 		key = fmt.Sprintf("%s#%d", key, attempt)
 	}
 	sum := sha256.Sum256([]byte(key))
-	return p + hex.EncodeToString(sum[:])[:hashLen]
+	return p + hex.EncodeToString(sum[:])[:nameLen-len(p)]
+}
+
+// isServerTap says whether the tap of this name is a file share's server's.
+func isServerTap(name string) bool { return strings.HasPrefix(name, serverTapPrefix) }
+
+// tapPrefixOf is the prefix of i's tap's name.
+func tapPrefixOf(i driver.Interface) string {
+	if i.FileShareServer {
+		return serverTapPrefix
+	}
+	return tapPrefix
 }
 
 // gatewayMAC is the MAC of a network's gateway: locally administered,
@@ -143,6 +159,7 @@ func (m tapMeta) iface(networkUID, device string) driver.Interface {
 	return driver.Interface{
 		MachineUID: m.Machine, Name: m.Name, NetworkUID: networkUID, MAC: m.MAC,
 		Address: m.Address, Gateway: m.Gateway, IPv6: m.IPv6, Device: device,
+		FileShareServer: isServerTap(device),
 	}
 }
 
@@ -184,6 +201,10 @@ func checkInterface(i driver.Interface) error {
 	}
 	if i.IPv6.IsValid() && (!i.IPv6.Is6() || i.IPv6.Is4In6() || i.IPv6.Zone() != "" || !i.IPv6.IsGlobalUnicast()) {
 		return fmt.Errorf("interface %s of machine %s: %s is not a global IPv6 address", i.Name, i.MachineUID, i.IPv6)
+	}
+	// Its binding would let it send IPv6, which its firewall takes nothing of.
+	if i.FileShareServer && i.IPv6.IsValid() {
+		return fmt.Errorf("interface %s of machine %s: a file share's server has no public address", i.Name, i.MachineUID)
 	}
 	return nil
 }
