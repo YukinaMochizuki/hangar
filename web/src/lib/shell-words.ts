@@ -61,3 +61,11 @@ export function splitWords(line: string): Words {
   if (inWord) words.push(word);
   return { words };
 }
+
+// A word that splitWords reads back as it is, unquoted.
+const bare = /^[A-Za-z0-9_@%+=:,./-]+$/;
+
+/** Writes words as one line that splitWords splits back into them: a word with anything else in it is single-quoted. */
+export function joinWords(words: string[]): string {
+  return words.map((w) => (bare.test(w) ? w : `'${w.replaceAll("'", `'\\''`)}'`)).join(" ");
+}

@@ -108,7 +108,9 @@ the front door (`front-door.md`) from the same release as the binaries.
   names the mechanism underneath: microVMs, firmware, the hypervisor.
 - **Quota is not shown when creating a machine.** The form warns only when
   this creation would go past a limit, never when a limit is near: creating
-  is not to be discouraged. The Overview shows usage against limits.
+  is not to be discouraged. Editing or resizing a machine warns the same
+  way, on what the change adds to the project, never on the machine's whole
+  size. The Overview shows usage against limits.
 
 ### Pages and gating
 
@@ -246,6 +248,57 @@ for a platform administrator; at today's size that is a handful of calls.
   button the form says that refusal as it says a name in the list, that a
   machine of the name exists in the project; any other error shows as the
   API gave it.
+- **A machine is edited on the create form, opened on it**, at
+  `/projects/<project>/containers/<name>/edit` and `/vms/<name>/edit`
+  (`web/src/pages/edit-machine.tsx`), from Edit in the machine's head and
+  in its row's menu. Every field is prefilled from the spec. Kind and Name
+  are each one locked line, and a VM's image is locked, saying that a VM's
+  root disk is made from its image once and its source does not change; a
+  VM's root disk size is locked too, as it grows on its disk's page. Only
+  the parts of the spec the person changed are written back over the
+  object as read (`web/src/lib/machine-edit.ts`), so labels, the run state
+  and every field the form does not show stay as they were. The apply is
+  at the resource version the page opened on: what was changed depends on
+  what was seen, so a newer object is never written over. The API then
+  answers Aborted, and the page says "NAME changed since you opened it."
+  with Reload, which opens the form on the object as it is now; nothing is
+  read again and applied by itself. The command is `hangar apply`, without
+  `--create-only`.
+- **The summary of an edit lists what applying does**, each changed field
+  under its effect, as the node does it (`web/src/lib/machine-edit.ts`). A
+  field that reaches the spec the node boots the machine with
+  (`driver.VMSpec`, built in `internal/node/machines.go` and `vmboot.go`
+  from the Machine the container and VM controllers write) changes that
+  spec's hash, and the node stops and starts the machine (`ensureVM`):
+  interfaces, a container's volumes, entrypoint, command, environment and
+  restart policy, cpu, memory and a container's disk. A container's image
+  rebuilds the root disk when the reference names another image. Image
+  pull secrets, read only when an image is pulled, a VM's file shares,
+  which change its shares' exports, and user data, which the metadata
+  service hands to cloud-init on the first boot, reach no VMSpec and
+  restart nothing. With nothing changed it says "No change" and Apply is
+  off.
+- **An edit keeps the machine's own size** until another is chosen: the
+  listed size its cpu and memory match is marked Current; a spec matching
+  none shows a Custom card first, with its cpu and memory, chosen and
+  marked "Current, no listed size", and is never moved to a listed size by
+  itself. A container's disk starts at the disk it has and never follows a
+  chosen size: a disk grows and never shrinks, so it grows only when the
+  person types a larger one. Its smallest is the disk its machine holds
+  once placed, and before that the disk the spec asks for, in whole GiB
+  rounded up. A stored disk that is not whole GiB, such as `10G`, is sent
+  back as it is, and checked only once the person changes it.
+- **Resize is a dialog on the machine's page** for the size alone: the
+  platform's sizes, the current one (or Custom) marked, and that resizing
+  restarts the machine, or for a stopped one that the new size counts once
+  it starts; the disk stays as it is. It applies cpu and memory alone, at
+  the version of the object the dialog opened on, and says so when the
+  object changed since, as the edit page does.
+- **Edit and Resize show only when TestPermissions holds the kind's apply
+  permission** (`compute.containers.apply`, `compute.virtualmachines.apply`),
+  as "What a control is shown for" says; the edit page states the refusal
+  once the answer gives one. Neither is offered for a machine being
+  deleted, whose edit page says so and holds no form.
 - **The sizes are the platform's**, read from the API
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
   `machine-sizes.md`); the console holds none of its own and offers no

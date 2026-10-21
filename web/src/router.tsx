@@ -16,6 +16,7 @@ import { CreateSecret } from "@/pages/create-secret";
 import { CreateServiceToken } from "@/pages/create-service-token";
 import { DiskDetail } from "@/pages/disk-detail";
 import { DiskList } from "@/pages/disk-list";
+import { EditMachine } from "@/pages/edit-machine";
 import { CreateFileShare } from "@/pages/create-file-share";
 import { FileShareDetail } from "@/pages/file-share-detail";
 import { FileShareList } from "@/pages/file-share-list";
@@ -100,6 +101,22 @@ const containerRoute = createRoute({
   component: function ContainerPage() {
     const { name } = containerRoute.useParams();
     return <MachineDetail key={name} kind="Container" name={name} />;
+  },
+});
+const containerEditRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/containers/$name/edit",
+  component: function ContainerEdit() {
+    const { name } = containerEditRoute.useParams();
+    return <EditMachine key={name} kind="Container" name={name} />;
+  },
+});
+const vmEditRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/vms/$name/edit",
+  component: function VMEdit() {
+    const { name } = vmEditRoute.useParams();
+    return <EditMachine key={name} kind="VirtualMachine" name={name} />;
   },
 });
 const containerTerminalRoute = createRoute({
@@ -444,7 +461,9 @@ export const routeTree = rootRoute.addChildren([
     containersRoute,
     containerRoute,
     containerTerminalRoute,
+    containerEditRoute,
     vmTerminalRoute,
+    vmEditRoute,
     vmsRoute,
     vmRoute,
     newRoute,

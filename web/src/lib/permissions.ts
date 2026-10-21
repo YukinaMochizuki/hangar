@@ -38,6 +38,17 @@ export function useMayCreateMachines(project: string): { container: boolean; vm:
   return { container: can(machinePerms.container), vm: can(machinePerms.vm) };
 }
 
+/**
+ * Whether the caller may change a machine of the kind in the project (edit
+ * and resize), which is the kind's apply permission; `refused` only once the
+ * answer came without it.
+ */
+export function useMayApplyMachine(project: string, kind: "Container" | "VirtualMachine") {
+  const perm = kind === "Container" ? machinePerms.container : machinePerms.vm;
+  const q = useCan({ level: "project", name: project }, [machinePerms.container, machinePerms.vm]);
+  return { may: q.can(perm), refused: q.known && !q.can(perm) };
+}
+
 const platformScope = create(BindingScopeSchema, { target: { case: "platform", value: create(EmptySchema) } });
 
 /**

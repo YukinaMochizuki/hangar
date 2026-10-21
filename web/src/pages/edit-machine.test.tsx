@@ -1,0 +1,454 @@
+// @vitest-environment jsdom
+
+import { create } from "@bufbuild/protobuf";
+import { Code, ConnectError, type ConnectRouter } from "@connectrpc/connect";
+import { ContainerRunState, ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
+import { MachineSchema, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { MachineSizeSchema, MachineSizeService } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
+import { VirtualMachineSchema, VirtualMachineService, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
+import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { ImageSchema, ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
+import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { MachineActions, MachineRowMenu } from "@/components/machine-actions";
+import { containerView } from "@/lib/machines";
+import { EditMachine } from "@/pages/edit-machine";
+import { fakeApi, never, polyfillDialog, withApi } from "@/test/harness";
+
+const navigate = vi.fn();
+vi.mock("@tanstack/react-router", async (orig) => ({
+  ...(await orig<typeof import("@tanstack/react-router")>()),
+  useNavigate: () => navigate,
+  Link: ({ to, params, children, className }: { to: string; params?: Record<string, string>; children?: ReactNode; className?: string }) => (
+    <a href={Object.entries(params ?? {}).reduce((p, [k, v]) => p.replace(`$${k}`, v), to)} className={className}>
+      {children}
+    </a>
+  ),
+}));
+
+beforeAll(polyfillDialog);
+beforeEach(() => navigate.mockReset());
+afterEach(cleanup);
+
+const web = (rv = 21n, image = "nginx:1") =>
+  create(ContainerSchema, {
+    metadata: { name: "web", project: "demo", uid: "u-web", resourceVersion: rv, labels: { team: "a" } },
+    spec: { image, env: [{ name: "MODE", value: "prod" }], resources: { cpu: "1", memory: "512Mi" }, runState: ContainerRunState.STOPPED, imagePullSecrets: ["ghcr"] },
+  });
+
+const db = () =>
+  create(VirtualMachineSchema, {
+    metadata: { name: "db", project: "demo", uid: "u-db", resourceVersion: 42n },
+    spec: {
+      resources: { cpu: "3", memory: "6Gi" },
+      rootDisk: { source: { case: "fromImage", value: { image: { name: "ubuntu-24.04" }, size: "30Gi" } } },
+      sshAuthorizedKeys: ["ssh-ed25519 AAAA me"],
+    },
+    status: { rootDisk: "db-root" },
+  });
+
+const size = (name: string, cpu: string, memory: string, disk: string, order: number) =>
+  create(MachineSizeSchema, { metadata: { name }, spec: { displayName: name.toUpperCase(), cpu, memory, disk, order } });
+
+type Fake = {
+  container?: () => Container;
+  vm?: () => VirtualMachine;
+  /** The container's Machine: on node, holding disk. */
+  machine?: { node: string; disk: string };
+  /** What ApplyContainer and ApplyVirtualMachine fail with, when set. */
+  fail?: () => ConnectError | undefined;
+  perms?: () => Promise<string[]> | string[];
+  quota?: { limits: { memory?: string }; usage: { memory?: string } };
+};
+
+const applyPerms = ["compute.containers.apply", "compute.virtualmachines.apply"];
+
+function api(f: Fake = {}) {
+  return fakeApi((r: ConnectRouter) => {
+    r.service(ContainerService, {
+      listContainers: () => ({ items: [f.container?.() ?? web()] }),
+      getContainer: () => ({ container: f.container?.() ?? web() }),
+      applyContainer: (req) => {
+        const err = f.fail?.();
+        if (err) throw err;
+        return { container: req.container };
+      },
+    });
+    r.service(VirtualMachineService, {
+      listVirtualMachines: () => ({ items: [f.vm?.() ?? db()] }),
+      getVirtualMachine: () => ({ virtualMachine: f.vm?.() ?? db() }),
+      applyVirtualMachine: (req) => {
+        const err = f.fail?.();
+        if (err) throw err;
+        return { virtualMachine: req.virtualMachine };
+      },
+    });
+    r.service(MachineService, {
+      listMachines: () => ({
+        items: f.machine
+          ? [
+              create(MachineSchema, {
+                metadata: { name: "m-web", project: "demo", uid: "m-u-web", ownerReferences: [{ kind: "Container", name: "web", controller: true }] },
+                spec: { node: f.machine.node, resources: { cpu: "1", memory: "512Mi", disk: f.machine.disk } },
+              }),
+            ]
+          : [],
+      }),
+    });
+    r.service(MachineSizeService, {
+      listMachineSizes: () => ({ items: [size("xs", "1", "512Mi", "5Gi", 0), size("s", "1", "2Gi", "10Gi", 10), size("m", "2", "4Gi", "20Gi", 20)] }),
+    });
+    r.service(AccountService, { testPermissions: async () => ({ permissions: await (f.perms?.() ?? applyPerms) }) });
+    r.service(ProjectService, {
+      getProject: () => ({ project: { metadata: { name: "demo" }, status: f.quota ?? { limits: {}, usage: {} } } }),
+      listProjects: () => ({ items: [] }),
+    });
+    r.service(TenantService, { listTenants: () => ({ items: [] }) });
+    r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
+    r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [{ metadata: { name: "web" }, spec: { network: "default" } }] }) });
+    r.service(ImageService, { listImages: () => ({ items: [create(ImageSchema, { metadata: { name: "ubuntu-24.04" }, spec: { os: "ubuntu", version: "24.04" } })] }) });
+  });
+}
+
+const applyButton = () => screen.getByRole("button", { name: /Apply changes|No change|Applying/ }) as HTMLButtonElement;
+const sizeCard = (label: string) => screen.getByRole("radio", { name: `Size ${label}` });
+
+/** The applies sent, with what they carried. */
+function applies(a: ReturnType<typeof api>) {
+  return a.requests
+    .filter((c) => c.method === "ApplyContainer" || c.method === "ApplyVirtualMachine")
+    .map((c) => {
+      const r = c.request as { container?: Container; virtualMachine?: VirtualMachine; createOnly: boolean };
+      return { obj: (r.container ?? r.virtualMachine)!, createOnly: r.createOnly };
+    });
+}
+
+async function openEdit(kind: "Container" | "VirtualMachine", f: Fake = {}) {
+  const a = api(f);
+  render(<EditMachine kind={kind} name={kind === "Container" ? "web" : "db"} />, { wrapper: withApi(a) });
+  await screen.findByRole("heading", { name: kind === "Container" ? "Edit web" : "Edit db" });
+  await waitFor(() => expect(screen.queryAllByRole("radio", { name: /^Size / }).length).toBeGreaterThan(0));
+  return a;
+}
+
+describe("the edit page", () => {
+  it("prefills a container's fields, locks its kind and name, and says No change", async () => {
+    await openEdit("Container");
+    expect((screen.getByLabelText("Image") as HTMLInputElement).value).toBe("nginx:1");
+    expect(screen.getByText("A machine's kind does not change.")).toBeTruthy();
+    expect(screen.getByText("A machine's name does not change.")).toBeTruthy();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.queryByRole("radiogroup", { name: "Kind" })).toBeNull();
+    expect(sizeCard("XS").getAttribute("aria-checked")).toBe("true");
+    expect(within(sizeCard("XS")).getByText("Current")).toBeTruthy();
+    expect((screen.getByLabelText("Disk, GiB") as HTMLInputElement).value).toBe("10");
+    fireEvent.click(screen.getByRole("button", { name: /Entrypoint, command, restart, environment/ }));
+    expect((screen.getByLabelText("Variable 1 value") as HTMLInputElement).value).toBe("prod");
+    expect(screen.getByText(/^No change\. /)).toBeTruthy();
+    expect(applyButton().textContent).toBe("No change");
+    expect(applyButton().disabled).toBe(true);
+    expect(screen.getByText("hangar apply -p demo -f web.yaml", { exact: false })).toBeTruthy();
+    expect(screen.queryByText(/--create-only/)).toBeNull();
+  });
+
+  it("locks a VM's image and root disk, and shows a size no listed one matches as Custom", async () => {
+    await openEdit("VirtualMachine");
+    expect(screen.getByText("A VM's root disk is made from its image once; its source does not change.")).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "Image" })).toBeNull();
+    expect(screen.queryByLabelText("Disk, GiB")).toBeNull();
+    expect(screen.getByText("The root disk grows on its own page.")).toBeTruthy();
+    expect(sizeCard("Custom").getAttribute("aria-checked")).toBe("true");
+    expect(within(sizeCard("Custom")).getByText("Current, no listed size")).toBeTruthy();
+    expect(applyButton().disabled).toBe(true);
+  });
+
+  it("keeps a Custom size unless another is chosen", async () => {
+    const a = await openEdit("VirtualMachine");
+    fireEvent.click(screen.getByRole("button", { name: "web" }));
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    expect(screen.getByText("Restarts the VM")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    const vm = applies(a)[0]!.obj as VirtualMachine;
+    expect(vm.spec?.resources).toMatchObject({ cpu: "3", memory: "6Gi" });
+    expect(vm.spec?.interfaces.map((i) => i.securityGroups)).toEqual([["default", "web"]]);
+    expect(vm.spec?.sshAuthorizedKeys).toEqual(["ssh-ed25519 AAAA me"]);
+    expect(vm.metadata?.resourceVersion).toBe(42n);
+  });
+
+  it("refuses a container disk smaller than the one it has", async () => {
+    await openEdit("Container");
+    fireEvent.change(screen.getByLabelText("Disk, GiB"), { target: { value: "5" } });
+    expect(screen.getAllByText("The disk is 10 GiB and never shrinks; 5 GiB is less.").length).toBeGreaterThan(0);
+    expect(applyButton().disabled).toBe(true);
+  });
+
+  it("lists what applying does, and applies at the version read, keeping what the form does not show", async () => {
+    const a = await openEdit("Container");
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    expect(screen.getByText("Rebuilds the root disk")).toBeTruthy();
+    expect(screen.getByText("nginx:1 → nginx:2")).toBeTruthy();
+    expect(screen.queryByText("Restarts the container")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /Entrypoint, command, restart, environment/ }));
+    fireEvent.change(screen.getByLabelText("Variable 1 value"), { target: { value: "dev" } });
+    expect(screen.getByText("Restarts the container")).toBeTruthy();
+    expect(screen.getByText("MODE changed")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/containers/$name", params: { project: "demo", name: "web" }, replace: true }));
+    expect(a.calls).not.toContain("GetContainer");
+    const [sent] = applies(a);
+    expect(applies(a)).toHaveLength(1);
+    expect(sent!.createOnly).toBe(false);
+    const c = sent!.obj as Container;
+    expect(c.metadata).toMatchObject({ resourceVersion: 21n, labels: { team: "a" } });
+    expect(c.spec).toMatchObject({ image: "nginx:2", runState: ContainerRunState.STOPPED, imagePullSecrets: ["ghcr"], resources: { cpu: "1", memory: "512Mi", disk: "" } });
+    expect(c.spec?.env.map((e) => [e.name, e.value])).toEqual([["MODE", "dev"]]);
+  });
+
+  it("warns on quota only when the difference takes the project past a limit", async () => {
+    // XS to S adds 1.5 GiB: 3.5 + 1.5 fits 5 GiB, though S's whole 2 GiB would not.
+    await openEdit("Container", { quota: { limits: { memory: "5Gi" }, usage: { memory: "3584Mi" } } });
+    // M adds 3.5 GiB, past the limit; S adds 1.5 GiB, within it, whatever its whole size.
+    await waitFor(() => expect(within(sizeCard("M")).queryByText("Over quota")).toBeTruthy());
+    expect(within(sizeCard("S")).queryByText("Over quota")).toBeNull();
+    fireEvent.click(sizeCard("S"));
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    expect(screen.queryByText(/Over the project's/)).toBeNull();
+    cleanup();
+    const a = await openEdit("Container", { quota: { limits: { memory: "4608Mi" }, usage: { memory: "3584Mi" } } });
+    await waitFor(() => expect(within(sizeCard("S")).queryByText("Over quota")).toBeTruthy());
+    fireEvent.click(sizeCard("S"));
+    expect(screen.getByText("Over the project's memory limit")).toBeTruthy();
+    expect(screen.getByText(/The change adds 1\.5 GiB; 1 GiB of 4\.5 GiB is left\./)).toBeTruthy();
+    expect(applyButton().disabled).toBe(true);
+    fireEvent.submit(applyButton().closest("form")!);
+    expect(applies(a)).toEqual([]);
+  });
+
+  it("says the object changed since it opened, writes nothing over it, and starts again from it on Reload", async () => {
+    let current = web();
+    let conflict = true;
+    const a = await openEdit("Container", {
+      container: () => current,
+      fail: () => (conflict ? new ConnectError("Container web is at resource version 25, not 21", Code.Aborted) : undefined),
+    });
+    current = web(25n, "nginx:1.5");
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    fireEvent.click(applyButton());
+    await screen.findByText("web changed since you opened it.");
+    expect(screen.getByText("Nothing was applied.")).toBeTruthy();
+    expect(applyButton().disabled).toBe(true);
+    // One write, at the version opened; nothing read again and written over.
+    expect(applies(a).map((x) => x.obj.metadata?.resourceVersion)).toEqual([21n]);
+    expect(a.calls).not.toContain("GetContainer");
+    expect(navigate).not.toHaveBeenCalled();
+
+    conflict = false;
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect((screen.getByLabelText("Image") as HTMLInputElement).value).toBe("nginx:1.5"));
+    expect(screen.queryByText("web changed since you opened it.")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(2));
+    expect(applies(a)[1]!.obj.metadata?.resourceVersion).toBe(25n);
+  });
+
+  it("sends a stored disk that is not whole GiB back as it is, and lets another change through", async () => {
+    const ten = web();
+    ten.spec!.resources!.disk = "10G";
+    const a = await openEdit("Container", { container: () => ten });
+    expect((screen.getByLabelText("Disk, GiB") as HTMLInputElement).value).toBe("9.3");
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    expect(screen.queryByText(/not a whole number/)).toBeNull();
+    expect(screen.queryByText("Disk", { selector: "li span" })).toBeNull();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.resources?.disk).toBe("10G");
+  });
+
+  it("holds the disk to what the placed machine has, or before it is placed to the spec's", async () => {
+    const grown = web();
+    grown.spec!.resources!.disk = "30Gi";
+    // Placed on a 20 GiB disk: a growth to 30 GiB not yet taken may be withdrawn to 25.
+    await openEdit("Container", { container: () => grown, machine: { node: "n1", disk: "20Gi" } });
+    await screen.findByText("At least 20 GiB; it never shrinks");
+    fireEvent.change(screen.getByLabelText("Disk, GiB"), { target: { value: "25" } });
+    expect(screen.queryByText(/never shrinks; 25 GiB is less/)).toBeNull();
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    cleanup();
+    // Not placed: the spec's 30 GiB holds, whatever the machine's spec says.
+    await openEdit("Container", { container: () => grown, machine: { node: "", disk: "20Gi" } });
+    await screen.findByText("At least 30 GiB; it never shrinks");
+    fireEvent.change(screen.getByLabelText("Disk, GiB"), { target: { value: "25" } });
+    expect(screen.getAllByText("The disk is 30 GiB and never shrinks; 25 GiB is less.").length).toBeGreaterThan(0);
+    expect(applyButton().disabled).toBe(true);
+  });
+
+  it("leaves the interfaces as they were written when they are not changed", async () => {
+    const explicit = web();
+    explicit.spec!.interfaces = [{ $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [] }];
+    const a = await openEdit("Container", { container: () => explicit });
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    expect(screen.queryByText("Restarts the container")).toBeNull();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.interfaces).toEqual(explicit.spec?.interfaces);
+  });
+
+  it("shows a VM's own interfaces after the first, and keeps them", async () => {
+    const two = db();
+    two.spec!.interfaces = [
+      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [] },
+      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "data", securityGroups: ["db"] },
+    ];
+    const a = await openEdit("VirtualMachine", { vm: () => two });
+    expect(screen.getByText("eth1")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Remove interface on data" })).toBeTruthy();
+    fireEvent.click(sizeCard("M"));
+    expect(screen.queryByText(/^Interfaces$/)).toBeNull();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    const sent = applies(a)[0]!.obj as VirtualMachine;
+    expect(sent.spec?.interfaces).toEqual(two.spec?.interfaces);
+    expect(sent.spec?.resources).toMatchObject({ cpu: "2", memory: "4Gi" });
+  });
+
+  it("says a machine being deleted is, and shows no form", async () => {
+    const going = web();
+    going.metadata!.deleteTime = { $typeName: "google.protobuf.Timestamp", seconds: 1n, nanos: 0 };
+    const a = api({ container: () => going });
+    render(<EditMachine kind="Container" name="web" />, { wrapper: withApi(a) });
+    await screen.findByText("web is being deleted");
+    expect(screen.queryByLabelText("Image")).toBeNull();
+  });
+
+  it("states a refusal when the caller may not apply the kind, and shows no form", async () => {
+    const a = api({ perms: () => [] });
+    render(<EditMachine kind="Container" name="web" />, { wrapper: withApi(a) });
+    await screen.findByText("This account's roles do not include changing containers in this project.");
+    expect(screen.queryByLabelText("Image")).toBeNull();
+  });
+
+  it("shows nothing while the permission is not known", async () => {
+    const a = api({ perms: () => never() });
+    render(<EditMachine kind="Container" name="web" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(a.calls).toContain("ListContainers"));
+    await waitFor(() => expect(a.calls).toContain("TestPermissions"));
+    expect(screen.queryByLabelText("Image")).toBeNull();
+    expect(screen.queryByText(/roles do not include/)).toBeNull();
+  });
+});
+
+describe("Edit and Resize on the machine's page and its row", () => {
+  const m = () => containerView(web(), undefined);
+
+  it("show Edit and Resize only when the kind's apply permission is held", async () => {
+    const a = api({ perms: () => ["compute.virtualmachines.apply"] });
+    render(<MachineActions m={m()} />, { wrapper: withApi(a) });
+    await waitFor(() => expect(a.calls).toContain("TestPermissions"));
+    await screen.findByRole("button", { name: /Start/ });
+    // The answer came, and named only the VM's permission.
+    await waitFor(() =>
+      expect(
+        a.client
+          .getQueryCache()
+          .getAll()
+          .some((q) => JSON.stringify(q.queryKey).includes("TestPermissions") && q.state.status === "success"),
+      ).toBe(true),
+    );
+    expect(screen.queryByRole("link", { name: /Edit/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Resize/ })).toBeNull();
+    cleanup();
+    render(<MachineActions m={m()} />, { wrapper: withApi(api()) });
+    expect((await screen.findByRole("link", { name: /Edit/ })).getAttribute("href")).toBe("/projects/demo/containers/web/edit");
+    expect(screen.getByRole("button", { name: /Resize/ })).toBeTruthy();
+  });
+
+  it("put Edit in the row's menu only where it may be used", () => {
+    render(<MachineRowMenu m={m()} />, { wrapper: withApi(api()) });
+    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
+    expect(screen.queryByRole("menuitem", { name: /Edit/ })).toBeNull();
+    cleanup();
+    render(<MachineRowMenu m={m()} mayEdit />, { wrapper: withApi(api()) });
+    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/containers/$name/edit", params: { project: "demo", name: "web" } });
+    cleanup();
+    render(<MachineRowMenu m={{ ...m(), deleting: true }} mayEdit />, { wrapper: withApi(api()) });
+    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
+    expect(screen.getByRole("menuitem", { name: /Delete/ })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: /Edit/ })).toBeNull();
+  });
+});
+
+describe("Resize", () => {
+  async function openResize(f: Fake = {}) {
+    const a = api(f);
+    render(<MachineActions m={containerView(web(), undefined)} />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Resize/ }));
+    await screen.findByRole("radio", { name: "Size S" });
+    return a;
+  }
+
+  it("marks the current size, says the machine restarts, and applies the resources alone at the version read", async () => {
+    const a = await openResize();
+    const dialog = screen.getByRole("dialog");
+    expect(within(sizeCard("XS")).getByText("Current")).toBeTruthy();
+    expect(within(dialog).getByText(/is stopped; the new size counts once it starts\./)).toBeTruthy();
+    fireEvent.click(sizeCard("S"));
+    fireEvent.click(screen.getByRole("button", { name: /Resize to S/ }));
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect(a.calls).not.toContain("GetContainer");
+    const c = applies(a)[0]!.obj as Container;
+    const was = web();
+    expect(c.metadata?.resourceVersion).toBe(21n);
+    expect(c.spec?.resources).toMatchObject({ cpu: "1", memory: "2Gi", disk: "" });
+    expect({ ...c.spec, resources: undefined }).toEqual({ ...was.spec, resources: undefined });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("says a running container restarts", async () => {
+    const running = web();
+    running.spec!.runState = ContainerRunState.RUNNING;
+    render(<MachineActions m={containerView(running, undefined)} />, { wrapper: withApi(api()) });
+    fireEvent.click(await screen.findByRole("button", { name: /Resize/ }));
+    expect(await screen.findByText(/Resizing restarts the container\./)).toBeTruthy();
+  });
+
+  it("writes nothing over a newer object, and says it changed", async () => {
+    const a = await openResize({ fail: () => new ConnectError("Container web is at resource version 25, not 21", Code.Aborted) });
+    fireEvent.click(sizeCard("S"));
+    fireEvent.click(screen.getByRole("button", { name: /Resize to S/ }));
+    await screen.findByText("web changed since this dialog opened.");
+    expect((screen.getByRole("button", { name: /Resize to S/ }) as HTMLButtonElement).disabled).toBe(true);
+    expect(applies(a)).toHaveLength(1);
+    expect(a.calls).not.toContain("GetContainer");
+  });
+
+  it("starts again from the object as it is now on Reload", async () => {
+    let current = web();
+    let refused = true;
+    const a = await openResize({
+      container: () => current,
+      fail: () => (refused ? new ConnectError("Container web is at resource version 25, not 21", Code.Aborted) : undefined),
+    });
+    current = web(25n, "nginx:1.5");
+    fireEvent.click(sizeCard("S"));
+    fireEvent.click(screen.getByRole("button", { name: /Resize to S/ }));
+    await screen.findByText("web changed since this dialog opened.");
+    refused = false;
+    fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    await waitFor(() => expect(screen.queryByText("web changed since this dialog opened.")).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: /Resize to S/ }));
+    await waitFor(() => expect(applies(a)).toHaveLength(2));
+    const c = applies(a)[1]!.obj as Container;
+    expect(c.metadata?.resourceVersion).toBe(25n);
+    expect(c.spec).toMatchObject({ image: "nginx:1.5", resources: { cpu: "1", memory: "2Gi" } });
+  });
+});

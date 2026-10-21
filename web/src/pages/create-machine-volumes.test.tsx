@@ -95,6 +95,16 @@ describe("the volume picker", () => {
     expect(screen.getByText(/network: data/)).toBeTruthy();
   });
 
+  it("drops the interface added for a share when the kind is switched to a virtual machine", async () => {
+    const { list } = await openPicker({});
+    fireEvent.click(within(list).getByRole("button", { name: /Add interface on data/ }));
+    expect(await screen.findByText("eth1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: /^Virtual machine/ }));
+    await waitFor(() => expect(screen.queryByText("eth1")).toBeNull());
+    expect(screen.queryByText(/network: data/)).toBeNull();
+    expect(screen.queryByText(/interfaces:/)).toBeNull();
+  });
+
   it("applies the share with the container's network before creating the container", async () => {
     const order: string[] = [];
     const apply = vi.fn((r: ApplyFileShareRequest) => void order.push(`share:${r.fileShare?.spec?.networks.join(",")}`));

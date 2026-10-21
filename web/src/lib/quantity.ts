@@ -29,6 +29,11 @@ export function quantityGiB(q: string | undefined): number {
   return toGiB(parseQuantity(q));
 }
 
+/** A disk quantity in whole GiB, rounded up as the API rounds it; NaN when there is none. */
+export function wholeGiB(q: string | undefined): number {
+  return Math.ceil(parseQuantity(q) / GiB);
+}
+
 /** A cpu quantity in whole or fractional vCPUs. */
 export function quantityCPU(q: string | undefined): number {
   return parseQuantity(q);
