@@ -638,7 +638,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	delete(a.told, uid)
 	delete(a.exported, uid)
 	delete(a.bootExported, uid)
-	a.requeueNetworksOf(a.revoking.refused(uid))
+	a.requeueNetworksOf(a.revoking.forget(uid))
 	a.forgetGuest(uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{

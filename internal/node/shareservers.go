@@ -132,6 +132,8 @@ type shareClient struct {
 	network  string
 	addr     netip.Addr
 	readOnly bool
+	// iface is the machine's interface at addr: its uid/name.
+	iface string
 }
 
 // clients are the machines declaring share fs, not being deleted, each on
@@ -150,7 +152,8 @@ func (p *projectShares) clients(fs *storagev1alpha1.FileShare) []shareClient {
 		}
 		for _, nic := range m.GetSpec().GetInterfaces() {
 			if a, err := netip.ParsePrefix(nic.GetIpv4()); err == nil && nic.GetNetwork() == f.GetNetwork() {
-				out = append(out, shareClient{machine: m.GetMetadata().GetName(), network: f.GetNetwork(), addr: a.Addr(), readOnly: f.GetReadOnly()})
+				out = append(out, shareClient{machine: m.GetMetadata().GetName(), network: f.GetNetwork(), addr: a.Addr(), readOnly: f.GetReadOnly(),
+					iface: ifaceID(m.GetMetadata().GetUid(), nic.GetName())})
 			}
 		}
 	}
@@ -253,7 +256,11 @@ func (a *Agent) convergeShareServer(ctx context.Context, m *computev1alpha1.Mach
 	for _, nic := range m.GetSpec().GetInterfaces() {
 		nets = append(nets, controller.Key{Project: m.GetMetadata().GetProject(), Name: nic.GetNetwork()})
 	}
-	a.revoking.on(uid, nets)
+	clients := map[netip.Addr]string{}
+	for _, c := range p.clients(fs) {
+		clients[c.addr] = c.iface
+	}
+	a.revoking.on(uid, nets, clients)
 	// No resolver, nor any other of its networks' services, answers it.
 	spec := driver.VMSpec{
 		MachineUID:      uid,
@@ -520,3 +527,6 @@ func (a *Agent) requeueNetworksOf(keys []controller.Key) {
 		a.requeueNetworks(keys...)
 	}
 }
+
+// ifaceID names a machine's interface, as revocations know an address's.
+func ifaceID(machineUID, name string) string { return machineUID + "/" + name }

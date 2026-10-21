@@ -201,10 +201,14 @@ Hangar has one host, so only the second shape keeps the host out of it.
   firewall cuts:** a removed client's firewall rules to the server (the
   server's for it, and its own opening) stay while the server's running
   boot still holds it, at most 10 s from when the node first saw the
-  removal, and then 5 s (the clients' `timeo`) once that boot has taken
-  the export without it, so the client's operations in that time get the
-  server's EACCES; they go at once when the server refuses an export or
-  does not take it within the agent's 2 s, or runs another boot. Cut
+  removal (past that it stays cut until the server holds it anew), and
+  then 5 s (the clients' `timeo`) once that boot has taken the export
+  without it, so the client's operations in that time get the server's
+  EACCES; they go at once when the server refuses an export or does not
+  take it within the agent's 2 s, runs another boot, the address is
+  another interface's, or the agent cannot list its VMs. What it holds
+  back is in the agent's memory: an agent started again cuts the
+  removals in flight at once, failing closed. Cut
   first, or as the export is taken (milliseconds after it is sent), the
   client's packets were dropped before the server could refuse them,
   and on a hard mount its processes hung until killed. One that touches
