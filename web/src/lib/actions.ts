@@ -2,20 +2,24 @@
 // own call, so the API's rules (roles, quota, admission) decide, and its
 // error is what the console shows.
 
-import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { Code, ConnectError, createClient, type Transport } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { create } from "@bufbuild/protobuf";
 import {
   ContainerRunState,
+  ContainerSchema,
   ContainerService,
   ContainerSpecSchema,
+  type Container,
 } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import {
   VirtualMachineRunState,
   VirtualMachineService,
   VirtualMachineSpecSchema,
+  type VirtualMachine,
 } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import type { MachineObject } from "@/lib/machine-edit";
 import type { MachineKind } from "@/lib/machines";
 
 export type RunState = "running" | "stopped";
@@ -83,6 +87,45 @@ export function useSetRunState(kind: MachineKind, project: string, name: string)
       }
     },
     onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+/**
+ * Applies a container or VM as it is, at the resource version it carries:
+ * a change made on what the person saw. A newer object makes the API answer
+ * Aborted, and nothing is read again or written over it.
+ */
+export async function applyMachineAt(transport: Transport, o: MachineObject): Promise<void> {
+  // Without a version Apply is create-or-update, which would write over whatever is there.
+  if (!o.metadata?.resourceVersion) throw new Error(`${o.metadata?.name ?? "The object"} carries no resource version to apply at.`);
+  if (o.$typeName === ContainerSchema.typeName) await createClient(ContainerService, transport).applyContainer({ container: o as Container });
+  else await createClient(VirtualMachineService, transport).applyVirtualMachine({ virtualMachine: o as VirtualMachine });
+}
+
+/** applyMachineAt as a mutation, the lists asked again once it settles. */
+export function useApplyMachineAt() {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (o: MachineObject) => applyMachineAt(transport, o),
+    onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+/** Reads a container or VM as it is now, for a form to start again from. */
+export function useReadMachine(kind: MachineKind, project: string, name: string) {
+  const transport = useTransport();
+  return useMutation({
+    mutationFn: async (): Promise<MachineObject> => {
+      if (kind === "Container") {
+        const { container } = await createClient(ContainerService, transport).getContainer({ project, name });
+        if (!container) throw new Error(`${name} is gone.`);
+        return container;
+      }
+      const { virtualMachine } = await createClient(VirtualMachineService, transport).getVirtualMachine({ project, name });
+      if (!virtualMachine) throw new Error(`${name} is gone.`);
+      return virtualMachine;
+    },
   });
 }
 

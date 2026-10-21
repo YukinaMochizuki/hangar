@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitWords } from "@/lib/shell-words";
+import { joinWords, splitWords } from "@/lib/shell-words";
 
 describe("splitWords", () => {
   it.each([
@@ -24,5 +24,18 @@ describe("splitWords", () => {
     [`sh \\`, "The line ends in a backslash."],
   ])("refuses %j", (line, error) => {
     expect(splitWords(line)).toEqual({ error });
+  });
+});
+
+describe("joinWords", () => {
+  it.each([
+    [[], ""],
+    [["sleep", "infinity"], "sleep infinity"],
+    [["echo", "hi there"], "echo 'hi there'"],
+    [["sh", "-c", "echo 'a' && echo \"b\""], `sh -c 'echo '\\''a'\\'' && echo "b"'`],
+    [["", "$HOME", "a\\b"], `'' '$HOME' 'a\\b'`],
+  ])("writes %j as a line splitWords reads back", (words, line) => {
+    expect(joinWords(words)).toBe(line);
+    expect(splitWords(line)).toEqual({ words });
   });
 });

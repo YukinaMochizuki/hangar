@@ -62,9 +62,10 @@ export function MachineList({ kind }: { kind: MachineKind }) {
   const noun = kind === "Container" ? "container" : "virtual machine";
   const rows = items.filter((m) => filters.find((f) => f.id === filter)!.match(m) && (!query || m.name.includes(query)));
 
-  // New shows only once the caller is known to hold the kind's apply permission.
+  // New, and a row's Edit, show only once the caller is known to hold the kind's apply permission.
   const may = useMayCreateMachines(project);
-  const newLink = may[kind === "Container" ? "container" : "vm"] && (
+  const mayApply = may[kind === "Container" ? "container" : "vm"];
+  const newLink = mayApply && (
     <Link
       to="/projects/$project/new"
       params={{ project }}
@@ -130,7 +131,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                   <span className="shrink-0 text-right">
                     <MachineStatusCell m={m} />
                   </span>
-                  <MachineRowMenu m={m} />
+                  <MachineRowMenu m={m} mayEdit={mayApply} />
                 </li>
               ))}
               {rows.length === 0 && <NoMatch noun={noun} />}
@@ -181,7 +182,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">{m.created?.toISOString().slice(0, 10)}</td>
                       <td className="px-2 py-2.5">
-                        <MachineRowMenu m={m} />
+                        <MachineRowMenu m={m} mayEdit={mayApply} />
                       </td>
                     </tr>
                   );
