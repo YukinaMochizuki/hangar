@@ -2,7 +2,7 @@
 // and the theme), the top bar with its breadcrumbs, and the page between.
 
 import { Link, useRouterState } from "@tanstack/react-router";
-import { ChevronsUpDown, LogOut, Menu, Monitor, Moon, Sun, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ChevronsUpDown, LogOut, Menu, Monitor, Moon, Layers, Sun, type LucideIcon } from "lucide-react";
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { CommandPalette } from "@/components/command-palette";
 import { HangarMark } from "@/components/marks";
@@ -14,7 +14,6 @@ import { Skeleton } from "@/components/states";
 import { errorMessage, signOut } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { useMachines } from "@/lib/machines";
-import { useMayReadMonitoring } from "@/lib/permissions";
 import { usePrefs, type ThemePref } from "@/lib/prefs";
 import { projectLabel, rememberProject, useProjects } from "@/lib/projects";
 import { useMember } from "@/lib/session";
@@ -68,7 +67,7 @@ function ProjectSwitcher({ place, platform }: { place: Place; platform?: boolean
         className="flex w-full items-center gap-2.5 rounded-md border bg-background px-2.5 py-2 text-left hover:border-border-strong"
       >
         <span className="flex size-6 shrink-0 items-center justify-center rounded bg-accent-soft font-mono text-[11px] font-semibold uppercase text-accent">
-          {label[0]}
+          {platform ? <Layers className="size-3.5" strokeWidth={1.75} /> : label[0]}
         </span>
         <span className="min-w-0 flex-1">
           {loading ? (
@@ -82,7 +81,7 @@ function ProjectSwitcher({ place, platform }: { place: Place; platform?: boolean
         </span>
         <ChevronsUpDown className="size-3.5 shrink-0 text-subtle" />
       </button>
-      <ProjectPicker place={platform ? { kind: "project", name: "" } : place} open={open} onClose={() => setOpen(false)} />
+      <ProjectPicker place={platform ? { kind: "platform" } : place} open={open} onClose={() => setOpen(false)} />
     </div>
   );
 }
@@ -168,7 +167,6 @@ function ProjectSidebar({ project }: { project: string }) {
   const counts: Record<string, number | undefined> = { Containers: count(containers), "Virtual machines": count(vms), Disks: count(disks) };
   // Only pages that exist are listed; a kind joins when its page does.
   const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] })) }));
-  if (useMayReadMonitoring().may) nav.push(...platformPages());
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }
 
@@ -176,18 +174,47 @@ function ProjectSidebar({ project }: { project: string }) {
 function TenantSidebar({ tenant }: { tenant: string }) {
   const base = `/tenants/${tenant}`;
   const nav: NavSection[] = tenantPages(tenant);
-  if (useMayReadMonitoring().may) nav.push(...platformPages());
   return <SidebarFrame place={{ kind: "tenant", name: tenant }} base={base} nav={nav} />;
 }
 
-/** The platform's own pages: only its group, under a switcher that names the platform. */
+/**
+ * The platform's own pages, under a switcher that names the platform, and a
+ * way back to the project used last. The picker is the way in: the
+ * platform is a place, as a tenant or a project is, never a group of a
+ * project's pages.
+ */
 function PlatformSidebar({ place }: { place: Place }) {
-  return <SidebarFrame place={place} base="/platform" nav={platformPages()} platform />;
+  const { projects } = useProjects();
+  const project = place.kind === "project" ? place.name : "";
+  const back = project ? (
+    <Link
+      to="/projects/$project"
+      params={{ project }}
+      className="mx-3 mb-1 flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted hover:bg-surface-2 hover:text-foreground"
+    >
+      <ArrowLeft className="size-3.5" strokeWidth={1.75} />
+      <span className="truncate">Back to {projectLabel(projects.find((p) => p.metadata?.name === project), project)}</span>
+    </Link>
+  ) : undefined;
+  return <SidebarFrame place={place} base="/platform" nav={platformPages()} platform back={back} />;
 }
 
 type NavSection = { group?: string; items: NavItem[] };
 
-function SidebarFrame({ place, base, nav, platform }: { place: Place; base: string; nav: NavSection[]; platform?: boolean }) {
+function SidebarFrame({
+  place,
+  base,
+  nav,
+  platform,
+  back,
+}: {
+  place: Place;
+  base: string;
+  nav: NavSection[];
+  platform?: boolean;
+  /** A link out of the place, under the switcher. */
+  back?: ReactNode;
+}) {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { open, setOpen } = useContext(MenuContext);
   useEffect(() => setOpen(false), [path, setOpen]);
@@ -206,6 +233,7 @@ function SidebarFrame({ place, base, nav, platform }: { place: Place; base: stri
         <span className="text-[15px] font-semibold tracking-[-0.02em]">Hangar</span>
       </Link>
       <ProjectSwitcher place={place} platform={platform} />
+      {back}
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         {nav.map((section, i) => (
           <div key={i} className="mb-3">

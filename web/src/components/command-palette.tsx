@@ -6,7 +6,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowLeftRight, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NewProjectDialog, ProjectPicker, createProject } from "@/components/project-picker";
-import { projectPages, tenantPages, type PageSection } from "@/components/pages-nav";
+import { platformPages, projectPages, tenantPages, type PageSection } from "@/components/pages-nav";
 import { PaletteView, type Entry, type Section, type SourceState } from "@/components/palette-view";
 import type { Place } from "@/components/shell";
 import { phaseLabel } from "@/components/ui";
@@ -17,7 +17,7 @@ import { roleLabel, useMembers, type Scope } from "@/lib/members";
 import { nameOf, useAddresses, useNetworks, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
 import { permission } from "@/lib/network-actions";
 import { matchSections } from "@/lib/palette";
-import { machinePerms, useCan, useTenantsWhere } from "@/lib/permissions";
+import { machinePerms, useCan, useMayReadMonitoring, useTenantsWhere } from "@/lib/permissions";
 import { projectLabel, useProjects } from "@/lib/projects";
 import { quantityGiB } from "@/lib/quantity";
 import { useDisks, useImages } from "@/lib/storage";
@@ -83,12 +83,16 @@ type Hands = {
   handOver: (t: Then) => void;
 };
 
-function pageEntries(sections: PageSection[], go: (to: string) => void): Section {
-  return {
-    key: "pages",
-    title: "Pages",
-    entries: sections.flatMap((s) => s.items).map((p) => ({ id: `page:${p.to}`, icon: p.icon, title: p.label, run: () => go(p.to) })),
-  };
+function pageEntries(sections: PageSection[], go: (to: string) => void, platform: boolean): Section {
+  // The platform's pages follow the place's own, named as the platform's, for
+  // whoever holds their permission, as the picker lists the platform.
+  const own = sections.flatMap((s) => s.items).map((p) => ({ id: `page:${p.to}`, icon: p.icon, title: p.label, run: () => go(p.to) }));
+  const theirs = platform
+    ? platformPages()
+        .flatMap((s) => s.items)
+        .map((p) => ({ id: `page:${p.to}`, icon: p.icon, title: `Platform › ${p.label}`, run: () => go(p.to) }))
+    : [];
+  return { key: "pages", title: "Pages", entries: [...own, ...theirs] };
 }
 
 /** Projects and tenants, as the picker lists them; and the state of the list. */
@@ -172,6 +176,7 @@ function useProjectModel(project: string, hands: Hands): Model {
   const tokenRoles = useTokenRoles(project, cached);
   const places = usePlaces(place, hands);
   const go = (to: string) => hands.done(() => void navigate({ to }));
+  const platform = useMayReadMonitoring().may;
   const members = useMemberSection({ level: "project", name: project }, () => go(`/projects/${project}/members`));
   const { can } = useCan({ level: "project", name: project }, Object.values(actionPerms));
   const common = useCommonActions(places.tenantNames, hands);
@@ -270,7 +275,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     project,
   );
   return {
-    always: [actions, pageEntries(projectPages(project), go)],
+    always: [actions, pageEntries(projectPages(project), go, platform)],
     searched,
     sources: [
       ...sourceOf("machines", "machines", { ...machines, held: machines.items.length > 0 }),
@@ -295,11 +300,12 @@ function useTenantModel(tenant: string, hands: Hands): Model {
   const navigate = useNavigate();
   const places = usePlaces({ kind: "tenant", name: tenant }, hands);
   const go = (to: string) => hands.done(() => void navigate({ to }));
+  const platform = useMayReadMonitoring().may;
   const members = useMemberSection({ level: "tenant", name: tenant }, () => go(`/tenants/${tenant}/members`));
   const common = useCommonActions(places.tenantNames, hands);
   const { tenantName } = useProjects(cached);
   return {
-    always: [{ key: "actions", title: "Actions", entries: common }, pageEntries(tenantPages(tenant), go)],
+    always: [{ key: "actions", title: "Actions", entries: common }, pageEntries(tenantPages(tenant), go, platform)],
     searched: [members.section, ...places.sections],
     sources: [...members.source, ...places.source],
     noMatch: `${tenantName(tenant)}'s members, the projects and tenants, or the pages`,

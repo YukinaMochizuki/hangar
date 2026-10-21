@@ -175,6 +175,13 @@ joining it when its page does.
   ID, opened from the switcher at the top of the sidebar. A tenant's row
   opens its pages, a project's row the project. The top bar's tenant crumb
   opens the tenant's pages too.
+- **The platform is a place too**, beside the tenants rather than one of
+  them: a Platform button beside New project in the picker's title opens
+  the platform's pages, drawn only to whoever holds
+  `platform.monitoring.read` at the platform. No project's or tenant's
+  sidebar lists a platform page, so a project's sidebar holds the project
+  alone. Its icon is Layers wherever the platform is named. Settled with
+  the owner on screenshots: a row among the tenants read as one of them.
 - **A new project** is made from the picker or a tenant's Overview. Its
   name is global and never reused, so it is suggested from the display
   name as `hangar create` suggests it (the same slug and six random
@@ -580,15 +587,17 @@ Settled with the owner on screenshots of mock data before the page read the
 API (`monitoring.md`).
 
 - **One page, `/platform/monitoring`, for platform administrators**
-  (`web/src/pages/monitoring.tsx`). The sidebar's Platform group lists it
-  only when `TestPermissions` at the platform holds
-  `platform.monitoring.read` (`useMayReadMonitoring` in
+  (`web/src/pages/monitoring.tsx`), reached from the picker's Platform
+  button ("Tenants and projects" above) and from the palette, whose Pages
+  list it as "Platform › Monitoring", both only when `TestPermissions` at
+  the platform holds `platform.monitoring.read` (`useMayReadMonitoring` in
   `web/src/lib/permissions.ts`); while the answer is unknown or failed it is
   hidden, and nothing is said. Opened without the permission, the page
   states that the account's roles do not include it. A platform page
-  belongs to no project: its sidebar holds the Platform group alone, under a
-  switcher that reads "Platform · Every tenant", and its crumbs name no
-  tenant or project. The palette keeps the project used last as its place.
+  belongs to no project: its sidebar holds the platform's pages alone, under
+  a switcher that reads "Platform · Every tenant", with a link back to the
+  project used last, and its crumbs name no tenant or project. The palette
+  keeps the project used last as its place.
 - **What it shows, densest first.** Under the title, on one line, the
   hosts it reads and when Prometheus was asked. Then the alerts firing, full
   width, one line each, most severe and then oldest first, or one line

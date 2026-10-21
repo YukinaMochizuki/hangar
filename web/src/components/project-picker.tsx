@@ -1,10 +1,12 @@
 // Choosing where the console is: a dialog listing every tenant the member
 // sees, each with its projects under it, filtered by name or ID. A tenant's
-// row opens the tenant's own pages, a project's row the project. Creating a
-// project starts here too, and on a tenant's overview.
+// row opens the tenant's own pages, a project's row the project. Beside New
+// project, for a platform administrator alone, Platform opens the
+// platform's pages, which belong to no tenant. Creating a project starts
+// here too, and on a tenant's overview.
 
 import { useNavigate } from "@tanstack/react-router";
-import { Check, Plus, Search } from "lucide-react";
+import { Check, Plus, Search, Layers } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Select } from "@/components/form";
@@ -13,11 +15,14 @@ import { Skeleton } from "@/components/states";
 import type { Place } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { useTenantsWhere } from "@/lib/permissions";
+import { useMayReadMonitoring, useTenantsWhere } from "@/lib/permissions";
 import { cn } from "@/lib/cn";
 import { projectLabel, randomSuffix, slug, useCreateProject, useNameFree, useProjects } from "@/lib/projects";
 
 type Row = { kind: "tenant" | "project"; name: string; label: string; tenant: string };
+
+/** Where the picker is opened from: a tenant, a project, or the platform. */
+export type PickerPlace = Place | { kind: "platform"; name?: undefined };
 
 /** What creating a project in a tenant takes. */
 export const createProject = "tenancy.projects.apply";
@@ -34,8 +39,10 @@ function NewProjectButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-export function ProjectPicker({ place, open, onClose }: { place: Place; open: boolean; onClose: () => void }) {
+export function ProjectPicker({ place, open, onClose }: { place: PickerPlace; open: boolean; onClose: () => void }) {
   const { projects, loading, error, tenantName, tenantNames } = useProjects();
+  // Unknown or failed is not shown, as a control is not (docs/decisions/console-design.md).
+  const mayPlatform = useMayReadMonitoring().may;
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -61,7 +68,8 @@ export function ProjectPicker({ place, open, onClose }: { place: Place; open: bo
     else void navigate({ to: "/projects/$project", params: { project: r.name } });
   };
   const here = (r: Row) => r.kind === place.kind && r.name === place.name;
-  const defaultTenant = place.kind === "tenant" ? place.name : (projects.find((p) => p.metadata?.name === place.name)?.spec?.tenant ?? "");
+  const defaultTenant =
+    place.kind === "tenant" ? place.name : place.kind === "project" ? (projects.find((p) => p.metadata?.name === place.name)?.spec?.tenant ?? "") : "";
 
   return (
     <>
@@ -74,7 +82,25 @@ export function ProjectPicker({ place, open, onClose }: { place: Place; open: bo
         title="Projects and tenants"
         wide
         // The dialog draws its title row only while open, so the permission is asked only then.
-        action={<NewProjectButton onClick={() => setCreating(true)} />}
+        action={
+          <div className="flex items-center gap-2">
+            {mayPlatform && (
+              <Button
+                size="sm"
+                aria-current={place.kind === "platform" ? "page" : undefined}
+                className={cn(place.kind === "platform" && "border-accent text-accent")}
+                onClick={() => {
+                  setQuery("");
+                  onClose();
+                  void navigate({ to: "/platform/monitoring" });
+                }}
+              >
+                <Layers /> Platform
+              </Button>
+            )}
+            <NewProjectButton onClick={() => setCreating(true)} />
+          </div>
+        }
       >
         <label className="mt-2 flex h-9 items-center gap-2 rounded-md border border-border-strong bg-background px-2.5 focus-within:border-accent">
           <Search className="size-3.5 text-subtle" />
