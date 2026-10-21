@@ -249,6 +249,11 @@ func (a *Agent) convergeShareServer(ctx context.Context, m *computev1alpha1.Mach
 		return nil, err
 	}
 	a.netChecked[uid] = epoch
+	var nets []controller.Key
+	for _, nic := range m.GetSpec().GetInterfaces() {
+		nets = append(nets, controller.Key{Project: m.GetMetadata().GetProject(), Name: nic.GetNetwork()})
+	}
+	a.revoking.on(uid, nets)
 	// No resolver, nor any other of its networks' services, answers it.
 	spec := driver.VMSpec{
 		MachineUID:      uid,
@@ -290,9 +295,15 @@ func (a *Agent) ensureExport(ctx context.Context, spec driver.VMSpec, vm *driver
 		obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonExportFailed,
 			"the server did not take its export, and serves the one it had: "+err.Error())
 		obs.started = running.started
+		// Its removed clients are cut now, not left to hang on it.
+		a.requeueNetworksOf(a.revoking.refused(uid))
 		return obs, fmt.Errorf("machine %s's export: %w", spec.Machine, err)
 	}
 	a.exported[uid] = toldExport{boot: vm.Started, export: want}
+	// A client dropped is cut once it has had the time to hear so.
+	for _, k := range a.revoking.took(uid, vm.Started, want, a.cfg.Clock.Now()) {
+		a.scheduleNetwork(k, revokeGrace)
+	}
 	a.requeueShareWaiters()
 	return running, nil
 }
@@ -500,5 +511,12 @@ func (a *Agent) requeueShareWaiters() {
 	a.waitMu.Unlock()
 	if len(keys) > 0 && a.requeue != nil {
 		a.requeue(keys...)
+	}
+}
+
+// requeueNetworksOf queues the networks whose firewall waits on a server.
+func (a *Agent) requeueNetworksOf(keys []controller.Key) {
+	if len(keys) > 0 && a.requeueNetworks != nil {
+		a.requeueNetworks(keys...)
 	}
 }

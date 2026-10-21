@@ -196,8 +196,22 @@ Hangar has one host, so only the second shape keeps the host out of it.
   it again (a `never` container is never booted so). A running container
   whose share can no longer be mounted is stopped. The server drops its
   client caches with each change, so a machine that stops declaring a
-  share loses it at once, its mount included: its next
-  operation fails (within a second on the testbed). Writes it had
+  share loses it at once, its mount included: its next operation fails
+  (within a second on the testbed). **The server is told before the
+  firewall cuts:** a removed client's firewall rules to the server (the
+  server's for it, and its own opening) stay while the server's running
+  boot still holds it, at most 10 s from when the node first saw the
+  removal, and then 5 s (the clients' `timeo`) once that boot has taken
+  the export without it, so the client's operations in that time get the
+  server's EACCES; they go at once when the server refuses an export or
+  does not take it within the agent's 2 s, or runs another boot. Cut
+  first, or as the export is taken (milliseconds after it is sent), the
+  client's packets were dropped before the server could refuse them,
+  and on a hard mount its processes hung until killed. One that touches
+  the share only after the 5 s still hangs: the firewall does not keep
+  2049 open to a client it no longer has. An addition is the other way
+  round: the rules first, then the export (the boot gate waits for
+  both). Writes it had
   buffered on files already open never land, though its program may not
   learn so until it syncs or closes, and its opens and locks hold others
   back until its lease runs out, at most 15 s.

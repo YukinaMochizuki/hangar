@@ -170,6 +170,11 @@ type Agent struct {
 	waitMu       sync.Mutex
 	shareWaiters map[controller.Key]bool
 	requeue      func(...controller.Key)
+	// revoking holds a removed client's firewall cut until its server has
+	// dropped it; requeueNetworks queues the networks to write again, the
+	// network services controller's Enqueue unless a test says otherwise.
+	revoking        *revocations
+	requeueNetworks func(...controller.Key)
 	// netsvc serves the networks on the host their services, resolver
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
@@ -276,6 +281,7 @@ func New(cfg Config) (*Agent, error) {
 		exported:     map[string]toldExport{},
 		bootExported: map[string]driver.ShareExport{},
 		shareWaiters: map[controller.Key]bool{},
+		revoking:     newRevocations(),
 		puller:       puller,
 		metrics:      newAgentMetrics(),
 		stops:        newStops(),
@@ -289,6 +295,7 @@ func New(cfg Config) (*Agent, error) {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
 		a.sharesCtl = a.shareController()
 		a.requeue = a.machinesCtl.Enqueue
+		a.requeueNetworks = a.networksCtl.Enqueue
 		puller.makeRoom = a.makeRoom
 		puller.pulled = a.metrics.pulled
 	}

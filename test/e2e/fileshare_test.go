@@ -9,12 +9,14 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 	"github.com/miekg/dns"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1/storagev1alpha1connect"
@@ -346,4 +348,104 @@ func TestAShareIsReleasedAfterItsServer(t *testing.T) {
 	w.host.FailRemoval(nil)
 	w.shareGone(project, "assets")
 	w.waitHostEmpty()
+}
+
+// TestARevokedClientIsCutOnceItsServerDropsIt: a VM's declaration of a
+// share removed, the firewall keeps it reaching the share's server while
+// the server has not taken the export without it, and a while after, so
+// its next operation gets the server's refusal rather than hangs; it is
+// cut a while after the server takes that export, or at once when the
+// server refuses it, as when it does not answer in time.
+// The VM is egress-locked, so its own opening to the server is held too.
+func TestARevokedClientIsCutOnceItsServerDropsIt(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	w.applyShare("data", "1Gi")
+	w.shareOnNode("data")
+	// Locked: the declaration is its one way to the server.
+	w.applyGroup("locked", &networkv1alpha1.SecurityGroupSpec{Network: "default",
+		Egress: []*networkv1alpha1.EgressRule{{Protocol: networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_TCP, Ports: "443",
+			To: &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Cidr{Cidr: "203.0.113.1/32"}}}}})
+	declare := func(shares ...*computev1alpha1.VirtualMachineFileShare) {
+		t.Helper()
+		if _, err := w.root.Apply(context.Background(), registry.VirtualMachine, &computev1alpha1.VirtualMachine{
+			Metadata: &metav1.ObjectMeta{Project: project, Name: "web"},
+			Spec: &computev1alpha1.VirtualMachineSpec{
+				RootDisk: &computev1alpha1.VirtualMachineRootDisk{Source: &computev1alpha1.VirtualMachineRootDisk_FromImage{
+					FromImage: &computev1alpha1.VirtualMachineImageDisk{Image: &storagev1alpha1.ImageSource{Name: "noble"}},
+				}},
+				Interfaces: []*computev1alpha1.NetworkInterface{{Network: "default", SecurityGroups: []string{"locked"}}},
+				FileShares: shares,
+			},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	declare(&computev1alpha1.VirtualMachineFileShare{Name: "data"})
+	w.waitVMReason("web", "Running")
+	server := netip.AddrPortFrom(w.shareAddr("data", "default"), driver.ShareServerPort)
+	w.host.ServeGuest(w.networkUID("default"), server, echoBack)
+	nic := w.host.Snapshot().Interfaces[w.machine2(vmMachineOf("web")).GetMetadata().GetUid()][0]
+	srv := w.machine2("fs-data").GetMetadata().GetUid()
+	// reaching waits for the server to hold the VM in its export, and the
+	// VM to reach it.
+	reaching := func() {
+		t.Helper()
+		testutil.Eventually(t, "the server holding the VM", func() (bool, string) {
+			e, _ := w.host.Export(srv)
+			return slices.ContainsFunc(e.Clients, func(c driver.ShareClient) bool { return c.Address == nic.Address.Addr() }), fmt.Sprintf("%+v", e)
+		})
+		testutil.Eventually(t, "the VM reaching its share's server", func() bool { return w.reachesFrom(nic, server) })
+	}
+	reaching()
+	// keepsReaching says whether the VM reaches the server all along, a
+	// second after its declaration is removed: the firewall written by
+	// then, the server not answering.
+	keepsReaching := func() bool {
+		t.Helper()
+		calls := w.host.ExportCalls(srv)
+		declare()
+		testutil.Eventually(t, "the server told the export without the VM", func() bool { return w.host.ExportCalls(srv) > calls })
+		for end := time.Now().Add(time.Second); time.Now().Before(end); {
+			if !w.reachesFrom(nic, server) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Taken late: cut once taken.
+	release := w.host.HoldExport(srv)
+	if !keepsReaching() {
+		t.Error("the VM was cut from the server before the server took the export without it")
+	}
+	release()
+	// Its next operation hears so from the server, for a while, the
+	// firewall written again meanwhile (a group changed), then it is cut:
+	// on the export taken, not at revokeBound.
+	taken := time.Now()
+	testutil.Eventually(t, "the server taking the export without the VM", func() (bool, string) {
+		e, _ := w.host.Export(srv)
+		return !slices.ContainsFunc(e.Clients, func(c driver.ShareClient) bool { return c.Address == nic.Address.Addr() }), fmt.Sprintf("%+v", e)
+	})
+	w.applyGroup("other", &networkv1alpha1.SecurityGroupSpec{Network: "default"})
+	for end := time.Now().Add(time.Second); time.Now().Before(end); {
+		if !w.reachesFrom(nic, server) {
+			t.Fatal("the VM was cut from the server as soon as the server took the export without it")
+		}
+	}
+	testutil.EventuallyWithin(t, 7*time.Second, "the VM cut, a while after the server took the export", func() bool { return !w.reachesFrom(nic, server) })
+	t.Logf("cut %v after the export was taken", time.Since(taken).Round(100*time.Millisecond))
+
+	// Never taken: cut once the push fails, within the agent's guest
+	// timeout, well before revokeBound.
+	declare(&computev1alpha1.VirtualMachineFileShare{Name: "data"})
+	reaching()
+	release = w.host.HoldExport(srv)
+	defer release()
+	if !keepsReaching() {
+		t.Error("the VM was cut from the server before the server answered")
+	}
+	testutil.EventuallyWithin(t, 5*time.Second, "the VM cut once the server did not take the export", func() bool { return !w.reachesFrom(nic, server) })
 }

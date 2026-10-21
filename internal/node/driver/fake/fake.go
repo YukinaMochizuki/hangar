@@ -85,7 +85,10 @@ type Host struct {
 	exportLog map[string][]string
 	// bootExportErr refuses SetBootExport.
 	bootExportErr error
-	held          map[string]chan struct{} // unpacks waiting to be let go, by reference
+	// exportHolds keep SetExport, by machine uid, from answering until
+	// closed or its context ends.
+	exportHolds map[string]chan struct{}
+	held        map[string]chan struct{} // unpacks waiting to be let go, by reference
 
 	// vmBases are disk images' bases' sizes, by digest; diskImages what the
 	// fake image servers serve, by URL, and fetches the fetches of each.
@@ -176,7 +179,7 @@ func New() *Host {
 		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]driver.InterfacePolicy{},
-		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{},
+		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{}, exportHolds: map[string]chan struct{}{},
 		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
