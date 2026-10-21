@@ -5,10 +5,11 @@
 // yet is listed with that alone, never with whether they were invited.
 
 import { Code, ConnectError } from "@connectrpc/connect";
-import { MoreHorizontal, Plus, UserMinus } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Plus, UserMinus } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormField, Input, Select } from "@/components/form";
+import { RowMenu } from "@/components/menu";
 import { Notice } from "@/components/notice";
 import { Link } from "@tanstack/react-router";
 import { ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
@@ -130,38 +131,6 @@ function RemoveDialog({ scope, where, row, open, onClose }: { scope: Scope; wher
   );
 }
 
-function RowMenu({ onRemove }: { onRemove: () => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    document.addEventListener("mousedown", away);
-    return () => document.removeEventListener("mousedown", away);
-  }, [open]);
-  return (
-    <div ref={ref} className="relative">
-      <button aria-label="Actions" onClick={() => setOpen(!open)} className="rounded-md p-1.5 text-subtle hover:bg-surface-2 hover:text-foreground">
-        <MoreHorizontal className="size-4" />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 z-20 mt-1 w-40 rounded-md border bg-surface p-1 shadow-lg">
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onRemove();
-            }}
-            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-[13px] text-fail hover:bg-surface-2"
-          >
-            <UserMinus className="size-3.5" /> Remove
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** What the caller may do to the members of a scope: change and add (apply), remove (delete). */
 type May = { apply: boolean; remove: boolean; settled: boolean };
 
@@ -213,7 +182,7 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
           )}
         </td>
         <td className="px-2 py-2.5">
-          {may.remove && <RowMenu onRemove={() => setRemoving(true)} />}
+          {may.remove && <RowMenu label="Actions" actions={[{ label: "Remove", icon: UserMinus, danger: true, onSelect: () => setRemoving(true) }]} />}
           <RemoveDialog scope={scope} where={where} row={row} open={removing} onClose={() => setRemoving(false)} />
         </td>
       </tr>
