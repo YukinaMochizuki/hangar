@@ -3,6 +3,7 @@ package hostnet
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -324,6 +325,16 @@ func ensureNamedTable(conn *nftables.Conn, family nftables.TableFamily, name str
 		}
 	}
 	if err := conn.Flush(); err != nil {
+		// ENOBUFS is the socket's having had no room for the replies, which
+		// grow with the table (each rule is echoed): the kernel commits or
+		// refuses the batch before it replies, and the table says which.
+		if errors.Is(err, unix.ENOBUFS) {
+			same, _, verr := tableIs(conn, family, name, want)
+			if verr == nil && same {
+				return nil
+			}
+			err = errors.Join(err, verr)
+		}
 		return fmt.Errorf("writing nft table %s: %w", name, err)
 	}
 	return nil
