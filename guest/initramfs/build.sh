@@ -7,6 +7,10 @@
 #
 #   build.sh                  build ./cmd/hangar-init
 #   build.sh --main DIR       build the main package in DIR instead (any module)
+#   build.sh --tags TAGS      build it with these Go build tags; with testbed,
+#                             an initramfs for the L4 tests alone, never a host.
+#                             Needs HANGAR_INITRAMFS_OUT, so it never lands
+#                             where the platform's does
 #
 # SOURCE_DATE_EPOCH sets every entry's mtime; it defaults to the time of the
 # last commit. docs/runbook/guest-kernel.md covers how to boot the result.
@@ -17,16 +21,22 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 OUT=${HANGAR_INITRAMFS_OUT:-$REPO/bin/guest}
 MAIN=$REPO/cmd/hangar-init
+TAGS=
 
-usage() { echo "usage: $0 [--main DIR]" >&2; exit 2; }
+usage() { echo "usage: $0 [--main DIR] [--tags TAGS]" >&2; exit 2; }
 while [ $# -gt 0 ]; do
 	case $1 in
 	--main) [ $# -ge 2 ] || usage; MAIN=$2; shift 2 ;;
+	--tags) [ $# -ge 2 ] || usage; TAGS=$2; shift 2 ;;
 	*) usage ;;
 	esac
 done
 
 die() { echo "error: $*" >&2; exit 1; }
+[ -z "$TAGS" ] || [ -n "${HANGAR_INITRAMFS_OUT:-}" ] ||
+	die "--tags needs HANGAR_INITRAMFS_OUT, another directory than bin/guest"
+[ -z "$TAGS" ] || [ "$(realpath -m "$OUT")" != "$(realpath -m "$REPO/bin/guest")" ] ||
+	die "--tags never builds into bin/guest, the platform's initramfs"
 [ -d "$MAIN" ] || die "$MAIN: no such directory"
 MAIN=$(cd "$MAIN" && pwd)
 
@@ -44,7 +54,7 @@ mkdir -m 0755 "$ROOT"
 # stamp stays: it is the version the guest agent reports
 # (internal/buildinfo), and it is the same for every build of one tree.
 (cd "$MAIN" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath \
-	-ldflags=-buildid= -o "$STAGE/init" .)
+	-tags "$TAGS" -ldflags=-buildid= -o "$STAGE/init" .)
 install -m 0755 "$STAGE/init" "$ROOT/init"
 "$REPO/guest/e2fsprogs/build.sh"
 mkdir -m 0755 "$ROOT/sbin"

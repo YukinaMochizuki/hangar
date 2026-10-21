@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -74,7 +74,7 @@ E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3
 # Named by the image's digest, so a new pin makes a new image.
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
-e2e-host: guest-initramfs $(E2E_HOST_ROOTFS)
+e2e-host: guest-initramfs guest-initramfs-testbed $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
@@ -90,7 +90,7 @@ e2e-host-vms: guest-initramfs $(E2E_HOST_ROOTFS)
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 
 # The full flow alone: the real apiserver, node and CLI on every real driver.
-e2e-host-flow: guest-initramfs $(E2E_HOST_ROOTFS)
+e2e-host-flow: guest-initramfs guest-initramfs-testbed $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
@@ -160,8 +160,19 @@ guest-kernel:
 	guest/kernel/build.sh
 
 # INIT_MAIN=DIR packs another main package as /init (see docs/runbook/guest-kernel.md).
-guest-initramfs:
+guest-initramfs: guest-e2fsprogs
 	guest/initramfs/build.sh $(if $(INIT_MAIN),--main $(INIT_MAIN))
+
+# hangar-init with the testbed tag, whose FileShare servers run what the
+# host asks, for the L4 tests alone (docs/runbook/testbed.md). Never on a
+# host, never released.
+guest-initramfs-testbed: guest-e2fsprogs
+	HANGAR_INITRAMFS_OUT=$(abspath bin/guest-testbed) guest/initramfs/build.sh --tags testbed
+
+# The static mke2fs both initramfs pack, built once before either, so that
+# make -j does not build it twice into the same files.
+guest-e2fsprogs:
+	guest/e2fsprogs/build.sh
 
 tools:
 	@go tool protoc-gen-go --version

@@ -54,12 +54,14 @@ func runServer(cfg *guestv1.BootConfig, logf func(string, ...any), started time.
 
 // serveServerAgent serves a FileShare's server's agent on ln to the host
 // alone: Ping, Stop, which calls stop, and SetExport. It runs nothing else,
-// so Exec is refused, as is SetIPv6. It returns at once.
+// so Exec is refused (but in a build with the testbed tag,
+// server_testbed.go), as is SetIPv6. It returns at once.
 func serveServerAgent(ln net.Listener, exports guestv1connect.FileShareServerServiceHandler, stop func(), started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
 	mux := http.NewServeMux()
 	mux.Handle(guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
-		Version: buildinfo.Version(), Started: started,
+		Reaper: serverReaper(logf), Root: "/",
+		Version: buildinfo.Version() + buildMarker, Started: started,
 		OnPanic:  func(r any) { logf("hangar-init: guest agent: %v", r) },
 		StopMain: func(time.Duration) { stop() },
 	}, connect.WithReadMaxBytes(agent.MaxMessage)))

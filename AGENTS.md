@@ -42,6 +42,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make test-monitoring` | promtool checks and tests the host's alerting rules, and promtool and amtool the monitoring configuration `deploy/host` writes (part of `make check`) |
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
 | `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
+| `make guest-initramfs-testbed` | Build the L4 tests' own initramfs into `bin/guest-testbed/`, hangar-init with the `testbed` tag, whose FileShare servers run what the host asks (`docs/runbook/guest-kernel.md`); never on a host |
 | `make tools` | Print the pinned tool versions |
 
 The only toolchains needed are Go and Node (versions in `go.mod` and `.nvmrc`).

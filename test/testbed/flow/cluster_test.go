@@ -701,6 +701,8 @@ type tap struct {
 	name, netns string
 	machine     string
 	ipv4        string
+	// mac is the guest's, behind the tap.
+	mac string
 }
 
 // taps lists the taps in the network driver's namespaces.
@@ -720,11 +722,12 @@ func taps(t *testing.T) []tap {
 			var meta struct {
 				Machine string `json:"machine"`
 				IPv4    string `json:"ipv4"`
+				MAC     string `json:"mac"`
 			}
 			if !strings.HasPrefix(l.Name, hostnet.Prefix+"t") || json.Unmarshal([]byte(l.Alias), &meta) != nil {
 				continue
 			}
-			out = append(out, tap{name: l.Name, netns: ns, machine: meta.Machine, ipv4: meta.IPv4})
+			out = append(out, tap{name: l.Name, netns: ns, machine: meta.Machine, ipv4: meta.IPv4, mac: meta.MAC})
 		}
 	}
 	return out

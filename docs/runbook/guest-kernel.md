@@ -87,6 +87,7 @@ restored on another anyway.
 ```sh
 make guest-initramfs                      # or guest/initramfs/build.sh
 make guest-initramfs INIT_MAIN=path/to/dir  # pack another main package as /init
+make guest-initramfs-testbed              # the L4 tests' own, never a host's
 ```
 
 Needs Go, and a C toolchain the first time, for mke2fs. It builds
@@ -103,6 +104,13 @@ and mounts the container's volumes, FileShares over NFS
 naming a FileShare's server makes it that server instead, which stays in
 the initramfs and serves its data disk over nfsd
 (`docs/decisions/file-shares.md`).
+
+`make guest-initramfs-testbed` (`build.sh --tags testbed`, into
+`bin/guest-testbed/`) builds hangar-init with the `testbed` tag, whose
+FileShare servers run what the host asks over their agent and carry a
+probe, `/init netprobe` (`cmd/hangar-init/server_testbed.go`), for the L4
+tests alone (`docs/runbook/testbed.md`). It is never released nor put on a
+host.
 
 `guest/e2fsprogs/build.sh` downloads the e2fsprogs release
 `guest/e2fsprogs/e2fsprogs.env` pins into `.cache/e2fsprogs/`, checks its
