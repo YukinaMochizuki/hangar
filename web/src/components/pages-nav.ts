@@ -2,7 +2,7 @@
 // groups. The sidebar and the command palette both list them from here, so
 // a page joins both when it is added.
 
-import { Activity, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
+import { Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
 
 export type PageLink = { label: string; icon: LucideIcon; to: string };
 
@@ -50,7 +50,15 @@ export function projectPages(project: string): PageSection[] {
 
 /** The platform's pages, listed only to those who hold their permission. */
 export function platformPages(): PageSection[] {
-  return [{ group: "Platform", items: [{ label: "Monitoring", icon: Activity, to: "/platform/monitoring" }] }];
+  return [
+    {
+      group: "Platform",
+      items: [
+        { label: "Overview", icon: LayoutGrid, to: "/platform" },
+        { label: "Nodes", icon: Server, to: "/platform/nodes" },
+      ],
+    },
+  ];
 }
 
 /** A tenant's own pages. */

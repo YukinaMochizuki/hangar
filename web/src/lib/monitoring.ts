@@ -64,7 +64,8 @@ export type Series = {
 
 export type Severity = "critical" | "warning";
 
-export type Alert = { name: string; severity: Severity; summary: string; startTime?: Date };
+/** An alert firing; node is the Node it is for, empty for the platform's. */
+export type Alert = { name: string; severity: Severity; summary: string; startTime?: Date; node: string };
 
 /** What reading the page's data needs at the platform. */
 export const monitoringPermission = "platform.monitoring.read";
@@ -179,6 +180,7 @@ export function toAlerts(r: ListAlertsResponse): Alert[] {
     severity: a.severity === PbSeverity.WARNING ? "warning" : "critical",
     summary: a.summary,
     startTime: date(a.startTime),
+    node: a.node,
   }));
 }
 

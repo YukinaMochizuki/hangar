@@ -1162,8 +1162,12 @@ type Alert struct {
 	// Alertmanager routes it.
 	Severity Severity `protobuf:"varint,2,opt,name=severity,proto3,enum=hangar.monitoring.v1alpha1.Severity" json:"severity,omitempty"`
 	// The rule's summary annotation.
-	Summary       string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
-	StartTime     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	Summary   string                 `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
+	StartTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
+	// The Node the alert is for, from its node label, which every series a
+	// host's Prometheus scrapes from that host carries; empty for the
+	// platform's, such as the API's errors.
+	Node          string `protobuf:"bytes,5,opt,name=node,proto3" json:"node,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1226,6 +1230,13 @@ func (x *Alert) GetStartTime() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *Alert) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
 var File_hangar_monitoring_v1alpha1_monitoring_proto protoreflect.FileDescriptor
 
 const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
@@ -1281,13 +1292,14 @@ const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x01R\x05value\"\x13\n" +
 	"\x11ListAlertsRequest\"O\n" +
 	"\x12ListAlertsResponse\x129\n" +
-	"\x06alerts\x18\x01 \x03(\v2!.hangar.monitoring.v1alpha1.AlertR\x06alerts\"\xb2\x01\n" +
+	"\x06alerts\x18\x01 \x03(\v2!.hangar.monitoring.v1alpha1.AlertR\x06alerts\"\xc6\x01\n" +
 	"\x05Alert\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12@\n" +
 	"\bseverity\x18\x02 \x01(\x0e2$.hangar.monitoring.v1alpha1.SeverityR\bseverity\x12\x18\n" +
 	"\asummary\x18\x03 \x01(\tR\asummary\x129\n" +
 	"\n" +
-	"start_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime*}\n" +
+	"start_time\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartTime\x12\x12\n" +
+	"\x04node\x18\x05 \x01(\tR\x04node*}\n" +
 	"\x06Health\x12\x16\n" +
 	"\x12HEALTH_UNSPECIFIED\x10\x00\x12\r\n" +
 	"\tHEALTH_OK\x10\x01\x12\x12\n" +

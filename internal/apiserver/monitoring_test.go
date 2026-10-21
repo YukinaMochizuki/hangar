@@ -597,9 +597,13 @@ func TestMonitoringAlerts(t *testing.T) {
 	am := newFakeAlertmanager(t)
 	e := newEnv(t, withMonitoring("", am.URL))
 	now := e.clock.Now().UTC()
-	alert := func(name, severity, summary string, ago time.Duration) map[string]any {
+	alert := func(name, severity, summary string, ago time.Duration, node ...string) map[string]any {
+		labels := map[string]string{"alertname": name, "severity": severity, "tenant": "zebraco"}
+		if len(node) > 0 {
+			labels["node"] = node[0]
+		}
 		return map[string]any{
-			"labels":      map[string]string{"alertname": name, "severity": severity, "tenant": "zebraco"},
+			"labels":      labels,
 			"annotations": map[string]string{"summary": summary, "description": "zebra-vm in zebrapj"},
 			"startsAt":    now.Add(-ago).Format(time.RFC3339Nano),
 			"status":      map[string]any{"state": "active"},
@@ -608,13 +612,14 @@ func TestMonitoringAlerts(t *testing.T) {
 	am.alerts = []map[string]any{
 		alert("Watchdog", "warning", "The alerting pipeline works", 48*time.Hour),
 		alert("CertificateRenewalLate", "warning", "Certificate api expires in 12 days", 26*time.Hour),
-		alert("MdArrayDegraded", "critical", "md array md127 is degraded", 47*time.Minute),
+		alert("MdArrayDegraded", "critical", "md array md127 is degraded", 47*time.Minute, "n1"),
 		alert("Unlabelled", "", "A rule with no severity", time.Hour),
 	}
 	got := must[mon.ListAlertsResponse](t)(e.as(root).monitoring.ListAlerts(t.Context(), connect.NewRequest(&mon.ListAlertsRequest{})))
 	want := &mon.ListAlertsResponse{Alerts: []*mon.Alert{
 		{Name: "Unlabelled", Severity: mon.Severity_SEVERITY_CRITICAL, Summary: "A rule with no severity", StartTime: timestamppb.New(now.Add(-time.Hour))},
-		{Name: "MdArrayDegraded", Severity: mon.Severity_SEVERITY_CRITICAL, Summary: "md array md127 is degraded", StartTime: timestamppb.New(now.Add(-47 * time.Minute))},
+		// A host's alert names its node; the platform's name none.
+		{Name: "MdArrayDegraded", Severity: mon.Severity_SEVERITY_CRITICAL, Summary: "md array md127 is degraded", StartTime: timestamppb.New(now.Add(-47 * time.Minute)), Node: "n1"},
 		{Name: "CertificateRenewalLate", Severity: mon.Severity_SEVERITY_WARNING, Summary: "Certificate api expires in 12 days", StartTime: timestamppb.New(now.Add(-26 * time.Hour))},
 	}}
 	if !proto.Equal(got, want) {

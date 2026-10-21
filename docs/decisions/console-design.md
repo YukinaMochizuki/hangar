@@ -581,58 +581,89 @@ Settled with the owner on screenshots before the pages read the API.
   token pages have no controls, and an object page's CLI lists only the
   commands the caller may run.
 
-### Platform monitoring
+### Platform monitoring and Nodes
 
-Settled with the owner on screenshots of mock data before the page read the
-API (`monitoring.md`).
+Settled with the owner on screenshots of mock data before the pages read the
+API (`monitoring.md`): first as one Monitoring page, then split so that the
+Overview reads the platform and each node has a page of its own.
 
-- **One page, `/platform/monitoring`, for platform administrators**
-  (`web/src/pages/monitoring.tsx`), reached from the picker's Platform
-  button ("Tenants and projects" above) and from the palette, whose Pages
-  list it as "Platform › Monitoring", both only when `TestPermissions` at
-  the platform holds `platform.monitoring.read` (`useMayReadMonitoring` in
-  `web/src/lib/permissions.ts`); while the answer is unknown or failed it is
-  hidden, and nothing is said. Opened without the permission, the page
-  states that the account's roles do not include it. A platform page
-  belongs to no project: its sidebar holds the platform's pages alone, under
-  a switcher that reads "Platform · Every tenant", with a link back to the
-  project used last, and its crumbs name no tenant or project. The palette
-  keeps the project used last as its place.
-- **What it shows, densest first.** Under the title, on one line, the
-  hosts it reads and when Prometheus was asked. Then the alerts firing, full
-  width, one line each, most severe and then oldest first, or one line
-  saying none fire. Then a card per layer, each with its LED and its word
-  (OK, Warning, Critical, No data): Reachability and Machines for the
-  platform, Host and Platform services for each node, named by the node.
-  Then six charts over 1h, 24h or 7d (`?range=` opens one): the host's
-  CPU, memory and pools, and the API's requests, errors and p99. With more
-  than one node a node picker beside the range chooses whose host the
-  first three show, and each further node's two cards sit under the first
-  ones.
-- **The cards are packed, not rowed.** On two columns Reachability tops the
-  first node's Host and its Services tops Machines; on three the short two
-  stack in the first column beside Host and Machines, the first row as tall
-  as Reachability alone, so no short card leaves a gap beside a tall one.
-  Rows are as dense as the project picker's.
+- **The platform's pages are an Overview and Nodes**, `/platform`
+  (`web/src/pages/monitoring.tsx`) and `/platform/nodes` with
+  `/platform/nodes/<node>` (`web/src/pages/nodes.tsx`), for platform
+  administrators. They are reached from the picker's Platform button
+  ("Tenants and projects" above) and from the palette, whose Pages list
+  them as "Platform › Overview" and "Platform › Nodes", only when
+  `TestPermissions` at the platform holds `platform.monitoring.read`
+  (`useMayReadMonitoring` in `web/src/lib/permissions.ts`); while the answer
+  is unknown or failed they are hidden, and nothing is said. The Overview
+  states a refusal without that permission, the Nodes pages without
+  `compute.nodes.list`. Each page asks for what else it reads only once
+  the same answer holds its permission: the Nodes and every project's
+  machines (`compute.machines.list`) on the Overview, the monitoring on a
+  node's page, which without it says so in its place. A platform page belongs to no project: its sidebar
+  holds the platform's pages alone, under a switcher that reads "Platform ·
+  Every tenant", with a link back to the project used last, and its crumbs
+  name no tenant or project. The palette keeps the project used last as its
+  place. `/platform/monitoring`, the page before the split, opens the
+  Overview with its `?range=`.
+- **The Overview reads the platform, densest first.** Under the title, on
+  one line, how many nodes it reads and when Prometheus was asked. Then the
+  alerts firing, full width, one line each, most severe and then oldest
+  first, each naming its node as a link to the node's page, or "platform"
+  for the platform's own; or one line saying none fire. Then Reachability
+  and Machines side by side, each with its LED and its word (OK, Warning,
+  Critical, No data); the machines' six phases are one row of figures, so
+  the two cards stand about as tall. Then a row per node: its host's and
+  its services' state as Prometheus reads them, whether it reports and is
+  cordoned as its Node says, and its alerts and machines counted; a row
+  opens the node's page. Then the API's requests, errors and p99 over 1h,
+  24h or 7d (`?range=` opens one). No node's checks or charts are on the
+  Overview.
+- **Nodes lists each host's capacity to read at a glance.** A row is the
+  node, with its CPU model and region under its name, its state, and per
+  resource what the host has in bold; a bar of it, the part the host keeps
+  for itself (capacity less allocatable) in a light tone and what the
+  machines placed on it hold (their `spec.resources` summed, as the
+  scheduler counts them) in a dark one, which takes the pending colour from
+  80% of what the host offers, as a quota's bar does; and under it what is
+  left for another machine. vCPUs are shared, not reserved
+  (`machine-model.md`), so the vCPU column says how many are assigned,
+  which may pass what is offered. Then its machines counted and its last
+  report. A node's page also says what the host keeps.
+- **A node's page is that node alone.** Its head says whether it reports,
+  whether it is cordoned, its machines counted, and its last report. The
+  main column holds its alerts alone, its Host and Platform services cards,
+  its CPU and memory side by side with its pools across both under them
+  over a range, and its conditions; the side column its chassis drawn as a
+  machine's Runs on panel draws it (`web/src/components/chassis-art.tsx`)
+  with its placement, its resources as the list shows them, and its
+  agent's version, IPv6 prefix and last report. The page changes nothing:
+  a Node is system-managed (`apply-semantics.md`), so it shows that a node
+  is cordoned, in Kubernetes's word, and offers no control to cordon it.
 - **What a value means is the API's.** A check's name and value are shown
   as the apiserver words them, and its state as the API gives it; a check
   Prometheus has no data for is grey, "no data". Machines are counted by
   phase, the six phases in the API's order, with those blocked by the
   platform, those ended by their own program and those in a crash loop;
   Failed is red only while the platform caused a failure, as a program's
-  own alerts no one. No tenant, project or machine is named: the CLI line
-  to list them on the host's admin socket is beside the counts.
+  own alerts no one. No tenant, project or machine is named, on the
+  Overview or a node's page: the CLI line to list them on the host's admin
+  socket is beside the counts, and a node's machines are counted and
+  their resources summed from `MachineService.ListMachines` across every
+  project, never listed, asked every 30 s as the overview is.
 - **Charts are inline SVG** (`web/src/components/series-chart.tsx`): no chart
   library, and nothing the Content-Security-Policy refuses. Points are
   placed by time over the range ending now, a step without a point breaks
   the line, and the API's `alert_above`, when it gives one, is a dashed line
   named in the header; HOST_CPU has none and draws none. A series with no
   point in the range says so in the plot.
-- **When Prometheus is not there**, the API answers Unavailable: one notice
-  stands where the cards and charts would be, with the API's message, and
-  the alerts, which Alertmanager answers, stay. An Alertmanager not there is
-  one line in the alerts card. Unavailable is not retried at once; the page
-  asks again every 30 s (charts every 60 s), as lists do.
+- **When Prometheus is not there**, the API answers Unavailable: on the
+  Overview one notice stands where the cards, the nodes and the charts would
+  be, and on a node's page where its cards and charts would be, the Node
+  itself still shown; the alerts, which Alertmanager answers, stay. An
+  Alertmanager not there is one line in the alerts card. Unavailable is not
+  retried at once; the pages ask again every 30 s (charts every 60 s), as
+  lists do.
 
 ### How the session reaches the API, and CSRF
 
