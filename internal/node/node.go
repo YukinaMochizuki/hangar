@@ -35,6 +35,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/metadata"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/tunnel"
@@ -157,9 +158,11 @@ type Agent struct {
 	netChecked map[string]int64
 	// told is, by machine uid, what each container's guest holds of its
 	// public IPv6 in its current boot, and exported what each file share's
-	// server holds of its export. Guarded by host.
-	told     map[string]toldIPv6
-	exported map[string]toldExport
+	// server holds of its export, and bootExported what its VM's boot disk
+	// does, as far as the agent wrote it. Guarded by host.
+	told         map[string]toldIPv6
+	exported     map[string]toldExport
+	bootExported map[string]driver.ShareExport
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -271,6 +274,7 @@ func New(cfg Config) (*Agent, error) {
 		netChecked:   map[string]int64{},
 		told:         map[string]toldIPv6{},
 		exported:     map[string]toldExport{},
+		bootExported: map[string]driver.ShareExport{},
 		shareWaiters: map[controller.Key]bool{},
 		puller:       puller,
 		metrics:      newAgentMetrics(),

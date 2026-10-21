@@ -427,6 +427,43 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	return nil
 }
 
+// SetBootExport renames a new boot.img, already the VM user's group's to
+// read, over the old: the next launch opens it, a launch under way reads
+// one whole. The spec file is untouched (docs/decisions/file-shares.md).
+func (h *Hypervisor) SetBootExport(ctx context.Context, uid string, export driver.ShareExport) error {
+	if err := checkUID(uid); err != nil {
+		return err
+	}
+	unlock := h.locks.Lock(uid)
+	defer unlock()
+	unit, err := h.unit(ctx, uid)
+	if err != nil {
+		return err
+	}
+	if _, listed, err := h.vm(uid, unit); err != nil {
+		return err
+	} else if !listed {
+		return fmt.Errorf("machine %s has no VM whose boot disk to rewrite", uid)
+	}
+	dir := h.dir(uid)
+	ln, err := readLaunch(dir)
+	if err != nil {
+		return err
+	}
+	if ln.Spec.FileShareServer == nil || ln.Spec.Firmware {
+		return fmt.Errorf("machine %s's VM is no file share's server", uid)
+	}
+	srv := *ln.Spec.FileShareServer
+	srv.Export = export
+	ln.Spec.FileShareServer = &srv
+	disk, err := h.bootDisk(ln.Spec)
+	if err != nil {
+		return err
+	}
+	gid := int(ln.VMUser)
+	return writeAtomicAs(filepath.Join(dir, bootFile), disk, func(f *os.File) error { return setGroup(f, gid, readableMode(gid)) })
+}
+
 // writeLaunch writes the spec file, with the VM's id, and returns the id.
 func (h *Hypervisor) writeLaunch(dir string, ln launch) (uint32, error) {
 	h.users.Lock()

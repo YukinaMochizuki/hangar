@@ -322,3 +322,71 @@ func shareServers(t *testing.T, h Host) {
 	must(t, h.Network.DeleteInterfaces(ctx, "plain"))
 	must(t, h.Storage.DeleteShareVolume(ctx, "s1"))
 }
+
+// bootExports: a listed server's boot disk takes an export whole, as its
+// next boot reads it, the file's mode and group kept, so a launch can
+// still open it, and the server neither restarted nor its spec's hash
+// changed. A container's VM, a VM never started and a server stopped are
+// refused.
+func bootExports(t *testing.T, h Host) {
+	ctx := t.Context()
+	must(t, h.Network.EnsureNetwork(ctx, testNet))
+	vol, err := h.Storage.EnsureShareVolume(ctx, "s1", rootSize)
+	must(t, err)
+	nic, err := h.Network.EnsureInterface(ctx, nicAt("srv", 9, true))
+	must(t, err)
+	first := driver.ShareExport{Squash: driver.SquashNone, AnonUID: 65534, AnonGID: 65534,
+		Clients: []driver.ShareClient{{Address: netip.MustParseAddr("10.0.0.5")}}}
+	spec := driver.VMSpec{
+		MachineUID: "srv", Machine: "test/fs-s1", VCPUs: 1, MemoryMiB: 256, Interfaces: []driver.Interface{nic},
+		Restart: driver.RestartAlways, FileShareServer: &driver.ShareServer{Volume: vol, Export: first},
+	}
+	same := func(a, b driver.ShareExport) bool {
+		return a.Squash == b.Squash && a.AnonUID == b.AnonUID && a.AnonGID == b.AnonGID && slices.Equal(a.Clients, b.Clients)
+	}
+	must(t, h.Hypervisor.Start(ctx, spec))
+	// Its launcher has made the disk what Cloud Hypervisor opens.
+	testutil.EventuallyWithin(t, vmWait, "the server's agent answering", func() bool { return h.Guest.Ready(ctx, "srv") == nil })
+	vm, ok := vmOf(t, h, "srv")
+	if !ok {
+		t.Fatal("the server is not listed")
+	}
+	got, mode, gid := h.BootDisk(t, "srv")
+	if !same(got, first) {
+		t.Errorf("the boot disk holds %+v, started with %+v", got, first)
+	}
+	now := driver.ShareExport{Squash: driver.SquashAll, AnonUID: 1000, AnonGID: 1001, Clients: []driver.ShareClient{
+		{Address: netip.MustParseAddr("10.0.0.6"), ReadOnly: true}, {Address: netip.MustParseAddr("10.0.0.7")},
+	}}
+	must(t, h.Hypervisor.SetBootExport(ctx, "srv", now))
+	got, mode2, gid2 := h.BootDisk(t, "srv")
+	if !same(got, now) {
+		t.Errorf("the boot disk rewritten holds %+v, want %+v", got, now)
+	}
+	if mode2 != mode || gid2 != gid {
+		t.Errorf("the boot disk rewritten has mode %o and group %d, was %o and %d", mode2, gid2, mode, gid)
+	}
+	if again, ok := vmOf(t, h, "srv"); !ok || again.State != driver.VMRunning || again.SpecHash != spec.Hash() || !again.Started.Equal(vm.Started) {
+		t.Errorf("rewriting the boot disk left the server %+v, listed %t; it was %+v", again, ok, vm)
+	}
+
+	ctr := vmSpec(t, h, "ctr", driver.RestartAlways)
+	must(t, h.Hypervisor.Start(ctx, ctr))
+	if err := h.Hypervisor.SetBootExport(ctx, "ctr", now); err == nil {
+		t.Error("a container's VM was given an export")
+	}
+	if err := h.Hypervisor.SetBootExport(ctx, "never", now); err == nil {
+		t.Error("a VM never started was given an export")
+	}
+	must(t, h.Hypervisor.Stop(ctx, "srv"))
+	if err := h.Hypervisor.SetBootExport(ctx, "srv", now); err == nil {
+		t.Error("a server stopped was given an export")
+	}
+	must(t, h.Hypervisor.Stop(ctx, "ctr"))
+	for _, m := range []string{"srv", "ctr"} {
+		must(t, h.Hypervisor.DeleteLogs(ctx, m))
+		must(t, h.Network.DeleteInterfaces(ctx, m))
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "ctr"))
+	must(t, h.Storage.DeleteShareVolume(ctx, "s1"))
+}

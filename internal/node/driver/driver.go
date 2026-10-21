@@ -548,6 +548,10 @@ type Hypervisor interface {
 	// a few seconds more. A stopped VM is never started again by its
 	// restart policy.
 	Stop(ctx context.Context, machineUID string) error
+	// SetBootExport replaces, whole, the export on a listed server's boot
+	// disk, which its next boot by its restart policy serves; the boot
+	// running and SpecHash stay. Any other VM is refused (file-shares.md).
+	SetBootExport(ctx context.Context, machineUID string, export ShareExport) error
 	// VMs lists the VMs on the host, running or not.
 	VMs(ctx context.Context) ([]VM, error)
 	// Changes signals that a VM changed state on its own, such as exiting.

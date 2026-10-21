@@ -514,15 +514,25 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 			return nil, blocked(computeapi.ReasonBootFailed, err)
 		}
 		a.forgetGuest(spec.MachineUID)
+		if srv := spec.FileShareServer; srv != nil {
+			// Started with a boot disk holding its export.
+			a.bootExported[spec.MachineUID] = srv.Export
+		}
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting"),
 			fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine)
 	}
+	// A server's boot disk follows its export before anything waits on its
+	// guest: it matters most while the server is down.
+	var bootErr error
+	if spec.FileShareServer != nil {
+		bootErr = a.ensureBootExport(ctx, spec)
+	}
 	if vm.State == driver.VMExited {
-		return exited(vm), nil
+		return exited(vm), bootErr
 	}
 	if err := a.guestReady(ctx, spec.MachineUID); err != nil {
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, err.Error()),
-			fmt.Errorf("%w: machine %s's guest agent: %w", controller.ErrWaiting, spec.Machine, err)
+			errors.Join(fmt.Errorf("%w: machine %s's guest agent: %w", controller.ErrWaiting, spec.Machine, err), bootErr)
 	}
 	running := &observation{
 		phase: computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING,
@@ -533,7 +543,13 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		applied: true,
 	}
 	if spec.FileShareServer != nil {
-		return a.ensureExport(ctx, spec, vm, running)
+		obs, err := a.ensureExport(ctx, spec, vm, running)
+		if err == nil && bootErr != nil {
+			obs = notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonExportFailed,
+				"the server serves its export, but its boot disk did not take it, so a restart would serve an older one: "+bootErr.Error())
+			obs.started = running.started
+		}
+		return obs, errors.Join(err, bootErr)
 	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
 	switch {
@@ -621,6 +637,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
 	delete(a.exported, uid)
+	delete(a.bootExported, uid)
 	a.forgetGuest(uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")
 	obs.conds = append(obs.conds, &metav1.Condition{

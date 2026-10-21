@@ -3,7 +3,9 @@ package chvm
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -199,5 +201,173 @@ func TestTheLauncherAttachesAShare(t *testing.T) {
 	}
 	if len(ch.Args) > i+1+len(want) && ch.Args[i+1+len(want)] != "--net" {
 		t.Errorf("a disk past the share: %q", ch.Args[i+1+len(want)])
+	}
+}
+
+// TestABootDiskFollowsItsExport: a server's boot disk rewritten holds the
+// new export whole, as a new file renamed over the old: what has the old
+// one open, as the boot running does, keeps reading it, and the spec and
+// its hash stay. A container's VM, or a VM not listed, has no server's
+// boot disk to rewrite.
+func TestABootDiskFollowsItsExport(t *testing.T) {
+	ctx := t.Context()
+	h := newDriver(t, shortDir(t), newFakeSystemd(), &fakeGuest{})
+	spec := serverSpec("m1")
+	if err := h.Start(ctx, spec); err != nil {
+		t.Fatal(err)
+	}
+	// A group the test can give files to, as a user too.
+	setVMUser(t, h.dir("m1"), os.Getgid())
+	path := filepath.Join(h.dir("m1"), bootFile)
+	running, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = running.Close() }()
+	specFileBefore, err := os.ReadFile(filepath.Join(h.dir("m1"), specFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := driver.ShareExport{Squash: driver.SquashAll, AnonUID: 7, AnonGID: 8, Clients: []driver.ShareClient{{Address: netip.MustParseAddr("10.0.0.7")}}}
+	if err := h.SetBootExport(ctx, "m1", now); err != nil {
+		t.Fatal(err)
+	}
+	read := func(r io.Reader) *guestv1.FileShareExport {
+		t.Helper()
+		cfg, err := bootdisk.Read(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return cfg.GetFileShareServer().GetExport()
+	}
+	disk, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = disk.Close() }()
+	want := &guestv1.FileShareExport{Squash: guestv1.FileShareSquash_FILE_SHARE_SQUASH_ALL, AnonUid: 7, AnonGid: 8,
+		Clients: []*guestv1.FileShareClient{{Address: "10.0.0.7"}}}
+	if got := read(disk); !proto.Equal(got, want) {
+		t.Errorf("the boot disk holds %v, want %v", got, want)
+	}
+	if got := read(running); len(got.GetClients()) != 2 {
+		t.Errorf("the disk open before holds %v: rewritten in place, not renamed over", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(h.dir("m1"), specFile)); err != nil || !bytes.Equal(b, specFileBefore) {
+		t.Errorf("the spec file changed: %v", err)
+	}
+	vms, err := h.VMs(ctx)
+	if err != nil || len(vms) != 1 || vms[0].SpecHash != spec.Hash() || vms[0].State != driver.VMRunning {
+		t.Errorf("VMs %+v, %v; want m1 running, of its hash", vms, err)
+	}
+	if left, _ := filepath.Glob(filepath.Join(h.dir("m1"), ".*")); len(left) > 0 {
+		t.Errorf("left behind %v", left)
+	}
+
+	if err := h.Start(ctx, testSpec("m2", driver.RestartAlways)); err != nil {
+		t.Fatal(err)
+	}
+	ctrDisk, err := os.ReadFile(filepath.Join(h.dir("m2"), bootFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetBootExport(ctx, "m2", now); err == nil {
+		t.Error("a container's boot disk was given an export")
+	}
+	if b, _ := os.ReadFile(filepath.Join(h.dir("m2"), bootFile)); !bytes.Equal(b, ctrDisk) {
+		t.Error("a container's boot disk was rewritten")
+	}
+	if err := h.SetBootExport(ctx, "m3", now); err == nil {
+		t.Error("a VM never started was given a boot disk")
+	}
+	if _, err := os.Stat(h.dir("m3")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("a VM never started got a directory: %v", err)
+	}
+}
+
+// TestAnUnlistedServersBootDiskIsLeftAlone: a server whose directory is
+// there but whose VM is not listed, its unit gone with no exit record as
+// when it is interrupted, is the agent's to start again from a boot disk
+// of its own: the old one is not rewritten.
+func TestAnUnlistedServersBootDiskIsLeftAlone(t *testing.T) {
+	ctx := t.Context()
+	s := newFakeSystemd()
+	h := newDriver(t, shortDir(t), s, &fakeGuest{})
+	if err := h.Start(ctx, serverSpec("m1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.stop(ctx, unitName("m1")); err != nil {
+		t.Fatal(err)
+	}
+	if vms, err := h.VMs(ctx); err != nil || len(vms) != 0 {
+		t.Fatalf("VMs %+v, %v; want none listed", vms, err)
+	}
+	path := filepath.Join(h.dir("m1"), bootFile)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.SetBootExport(ctx, "m1", driver.ShareExport{Squash: driver.SquashAll}); err == nil {
+		t.Error("a server not listed was given a boot disk")
+	}
+	if after, err := os.ReadFile(path); err != nil || !bytes.Equal(after, before) {
+		t.Errorf("a server not listed had its boot disk rewritten: %v", err)
+	}
+}
+
+// TestARewrittenBootDiskKeepsItsMode: a server's boot disk rewritten is
+// the VM user's group's to read, as the launcher made the old one, so a
+// launch that prepared the directory before the rename can still open it;
+// with no VM user, root's alone. Run it as a user too
+// (docs/conventions/testing.md): the test's own group is the VM user's.
+func TestARewrittenBootDiskKeepsItsMode(t *testing.T) {
+	ctx := t.Context()
+	vmGID := os.Getgid()
+	if vmGID == 0 {
+		vmGID = 61234 // root can give a file any group
+	}
+	for _, tt := range []struct {
+		name string
+		gid  int
+		mode os.FileMode
+	}{{"a VM user", vmGID, 0o640}, {"no VM user", 0, 0o600}} {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newDriver(t, shortDir(t), newFakeSystemd(), &fakeGuest{})
+			spec := serverSpec("m1")
+			if err := h.Start(ctx, spec); err != nil {
+				t.Fatal(err)
+			}
+			dir := h.dir("m1")
+			setVMUser(t, dir, tt.gid)
+			// As the launcher does before it starts Cloud Hypervisor.
+			if err := prepareDir(dir, tt.gid, readFiles(spec)); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.SetBootExport(ctx, "m1", driver.ShareExport{Squash: driver.SquashAll}); err != nil {
+				t.Fatal(err)
+			}
+			wantGID := tt.gid
+			if tt.gid == 0 {
+				wantGID = os.Getgid()
+			}
+			if mode, gid := modeOf(t, filepath.Join(dir, bootFile)); mode != tt.mode || gid != wantGID {
+				t.Errorf("the boot disk rewritten has mode %o and group %d, want %o and %d", mode, gid, tt.mode, wantGID)
+			}
+		})
+	}
+}
+
+// setVMUser makes the VM of dir's spec file run as the VM user gid, 0 for
+// none, as its agent would have given it.
+func setVMUser(t *testing.T, dir string, gid int) {
+	t.Helper()
+	ln, err := readLaunch(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.VMUser = uint32(gid)
+	b, _ := json.Marshal(ln)
+	if err := os.WriteFile(filepath.Join(dir, specFile), b, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -4,6 +4,7 @@ package vms
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"io"
 	"net/netip"
@@ -13,6 +14,9 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/sys/unix"
+
+	"github.com/YukinaMochizuki/hangar/internal/guest/bootdisk"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
@@ -66,6 +70,9 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 		Exec:             &execPrograms,
 		ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
 		Firmware:         true,
+		BootDisk: func(t *testing.T, uid string) (driver.ShareExport, os.FileMode, int) {
+			return bootDiskOf(t, h.hv.BootDiskPath(uid))
+		},
 		AskedToStop: func(t *testing.T, uid string) bool {
 			for _, r := range consoleOf(t, uid) {
 				// A file share's server says so of itself.
@@ -77,6 +84,30 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 			return false
 		},
 	}
+}
+
+// bootDiskOf reads the export a server's boot disk at path holds, and the
+// file's mode and group.
+func bootDiskOf(t *testing.T, path string) (driver.ShareExport, os.FileMode, int) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := bootdisk.Read(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var st unix.Stat_t
+	if err := unix.Stat(path, &st); err != nil {
+		t.Fatal(err)
+	}
+	e := cfg.GetFileShareServer().GetExport()
+	out := driver.ShareExport{Squash: driver.Squash(e.GetSquash()), AnonUID: e.GetAnonUid(), AnonGID: e.GetAnonGid()}
+	for _, c := range e.GetClients() {
+		out.Clients = append(out.Clients, driver.ShareClient{Address: netip.MustParseAddr(c.GetAddress()), ReadOnly: c.GetReadOnly()})
+	}
+	return out, os.FileMode(st.Mode & 0o7777), int(st.Gid)
 }
 
 func testNet() driver.NetworkSpec {

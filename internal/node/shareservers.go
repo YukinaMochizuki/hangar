@@ -297,6 +297,25 @@ func (a *Agent) ensureExport(ctx context.Context, spec driver.VMSpec, vm *driver
 	return running, nil
 }
 
+// ensureBootExport writes a listed server's export to its boot disk, on a
+// change, before the server is told; a failed write is reported, and the
+// server told all the same (docs/decisions/file-shares.md).
+func (a *Agent) ensureBootExport(ctx context.Context, spec driver.VMSpec) error {
+	uid := spec.MachineUID
+	want := spec.FileShareServer.Export
+	if have, ok := a.bootExported[uid]; ok && sameExport(have, want) {
+		return nil
+	}
+	if err := a.cfg.Drivers.Hypervisor.SetBootExport(ctx, uid, want); err != nil {
+		// The disk holds what it did, bootExported says: written whole or
+		// not at all.
+		a.cfg.Log.Warn("a file share's server's boot disk did not take its export", "machine", spec.Machine, "machine_uid", uid, "error", err)
+		return fmt.Errorf("machine %s's boot disk: %w", spec.Machine, err)
+	}
+	a.bootExported[uid] = want
+	return nil
+}
+
 func sameExport(a, b driver.ShareExport) bool {
 	return a.Squash == b.Squash && a.AnonUID == b.AnonUID && a.AnonGID == b.AnonGID && slices.Equal(a.Clients, b.Clients)
 }

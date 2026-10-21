@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -78,8 +79,12 @@ func host(h *fake.Host) drivertest.Host {
 		HoldVolume:       func(_ *testing.T, v driver.Volume) func() { return h.HoldVolume(v.DiskUID) },
 		HoldShareVolume:  func(_ *testing.T, v driver.ShareVolume) func() { return h.HoldShareVolume(v.ShareUID) },
 		ReopenHypervisor: func(*testing.T) driver.Hypervisor { return h.Hypervisor() },
-		AskedToStop:      func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
-		Firmware:         true,
+		BootDisk: func(_ *testing.T, uid string) (driver.ShareExport, os.FileMode, int) {
+			e, _ := h.BootExport(uid)
+			return e, 0, 0
+		},
+		AskedToStop: func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
+		Firmware:    true,
 		ServeGuest: func(_ *testing.T, nic driver.Interface, ports ...uint16) {
 			for _, p := range ports {
 				h.ServeGuest(nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), p), echo)

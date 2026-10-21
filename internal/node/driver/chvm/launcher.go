@@ -552,9 +552,9 @@ func openFIFO(path string, gid int) (*os.File, error) {
 // VM user (gid 0) they are root's alone. Nothing in the directory is Cloud
 // Hypervisor's to remove or replace, nor to read but what it needs.
 func prepareDir(dir string, gid int, reads []string) error {
-	dirMode, readMode, chMode := os.FileMode(0o700), os.FileMode(0o600), os.FileMode(0o700)
+	dirMode, readMode, chMode := os.FileMode(0o700), readableMode(gid), os.FileMode(0o700)
 	if gid != 0 {
-		dirMode, readMode, chMode = 0o710, 0o640, 0o770
+		dirMode, chMode = 0o710, 0o770
 	}
 	type file struct {
 		name string
@@ -597,6 +597,15 @@ func prepareDir(dir string, gid int, reads []string) error {
 	}
 	defer func() { _ = f.Close() }()
 	return setGroup(f, gid, chMode)
+}
+
+// readableMode is the mode of what Cloud Hypervisor reads in the VM's
+// directory: the group gid's to read, or root's alone for gid 0.
+func readableMode(gid int) os.FileMode {
+	if gid != 0 {
+		return 0o640
+	}
+	return 0o600
 }
 
 // checkOwn refuses a file the launcher would run what it says of, unless it

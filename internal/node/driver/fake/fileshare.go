@@ -87,6 +87,7 @@ func (d guest) SetExport(_ context.Context, machineUID string, export driver.Sha
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	d.h.exportCalls[machineUID]++
+	d.h.exportLog[machineUID] = append(d.h.exportLog[machineUID], "tell")
 	v, ok := d.h.vms[machineUID]
 	if !ok || v.State != driver.VMRunning {
 		return errUnknownVM
@@ -135,6 +136,55 @@ func checkExport(e driver.ShareExport) error {
 func cloneExport(e driver.ShareExport) driver.ShareExport {
 	e.Clients = slices.Clone(e.Clients)
 	return e
+}
+
+// SetBootExport rewrites a listed server's boot disk, which each boot by
+// its restart policy takes its export from (bootGuest).
+func (d hypervisor) SetBootExport(_ context.Context, machineUID string, export driver.ShareExport) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	d.h.exportLog[machineUID] = append(d.h.exportLog[machineUID], "boot")
+	if err := d.h.bootExportErr; err != nil {
+		return err
+	}
+	v, ok := d.h.vms[machineUID]
+	if !ok {
+		return errUnknownVM
+	}
+	if v.spec.FileShareServer == nil {
+		return fmt.Errorf("machine %s's VM is no file share's server", machineUID)
+	}
+	srv := *v.spec.FileShareServer
+	srv.Export = cloneExport(export)
+	v.spec.FileShareServer = &srv
+	return nil
+}
+
+// BootExport is the export the boot disk of the machine's server's VM
+// holds; false for no server listed.
+func (h *Host) BootExport(machineUID string) (driver.ShareExport, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	v, ok := h.vms[machineUID]
+	if !ok || v.spec.FileShareServer == nil {
+		return driver.ShareExport{}, false
+	}
+	return cloneExport(v.spec.FileShareServer.Export), true
+}
+
+// ExportLog is what the machine's server's export was asked, in order:
+// "boot" for each SetBootExport, "tell" for each SetExport.
+func (h *Host) ExportLog(machineUID string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return slices.Clone(h.exportLog[machineUID])
+}
+
+// FailBootExport makes SetBootExport fail with err; nil clears it.
+func (h *Host) FailBootExport(err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.bootExportErr = err
 }
 
 // FailExport makes the machine's server refuse SetExport with err, or
