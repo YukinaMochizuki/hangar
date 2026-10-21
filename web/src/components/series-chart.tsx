@@ -28,8 +28,10 @@ export function axisMax(s: Series): number {
 /**
  * The line and the area under it, placed by time over the range ending
  * now. A step with no point breaks the line, as the API leaves it out.
+ * A point with no neighbour draws no line, so it goes in `dots` instead:
+ * a series only minutes old has a single point at a day's step.
  */
-export function plotPaths(s: Series, range: SeriesRange, max: number, now: Date): { line: string; area: string } {
+export function plotPaths(s: Series, range: SeriesRange, max: number, now: Date): { line: string; area: string; dots: string } {
   const span = rangeSeconds[range] * 1000;
   const start = now.getTime() - span;
   const gap = Math.max(s.stepSeconds, 1) * 1000 * 1.5;
@@ -43,9 +45,13 @@ export function plotPaths(s: Series, range: SeriesRange, max: number, now: Date)
     runs[runs.length - 1].push(`${x.toFixed(2)},${y.toFixed(2)}`);
     prev = t;
   }
-  const line = runs.map((r) => `M${r.join("L")}`).join("");
-  const area = runs.map((r) => `M${r[0].split(",")[0]},${H}L${r.join("L")}L${r[r.length - 1].split(",")[0]},${H}Z`).join("");
-  return { line, area };
+  const lines = runs.filter((r) => r.length > 1);
+  const line = lines.map((r) => `M${r.join("L")}`).join("");
+  const area = lines.map((r) => `M${r[0].split(",")[0]},${H}L${r.join("L")}L${r[r.length - 1].split(",")[0]},${H}Z`).join("");
+  // A zero-length segment with a round cap: a circle that the plot's
+  // stretch to its card's width does not flatten, as an SVG <circle> would be.
+  const dots = runs.filter((r) => r.length === 1).map((r) => `M${r[0]}L${r[0]}`).join("");
+  return { line, area, dots };
 }
 
 function Frame({ title, legend, value, children }: { title: string; legend?: ReactNode; value: ReactNode; children: ReactNode }) {
@@ -77,7 +83,7 @@ export function ChartPlaceholder({ title, children }: { title: string; children:
 
 export function SeriesChart({ title, series, range, now = new Date() }: { title: string; series: Series; range: SeriesRange; now?: Date }) {
   const max = axisMax(series);
-  const { line, area } = plotPaths(series, range, max, now);
+  const { line, area, dots } = plotPaths(series, range, max, now);
   const last = series.points.at(-1);
   const start = new Date(now.getTime() - rangeSeconds[range] * 1000);
   const mid = new Date(now.getTime() - (rangeSeconds[range] * 1000) / 2);
@@ -112,6 +118,7 @@ export function SeriesChart({ title, series, range, now = new Date() }: { title:
             ))}
             <path d={area} className="fill-foreground/[0.06]" />
             <path d={line} fill="none" className="stroke-foreground/80" strokeWidth={1.5} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+            {dots && <path d={dots} fill="none" className="stroke-foreground/80" strokeWidth={4} strokeLinecap="round" vectorEffect="non-scaling-stroke" />}
             {alertY !== undefined && (
               <line x1={0} x2={W} y1={alertY} y2={alertY} className="stroke-pending" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
             )}
