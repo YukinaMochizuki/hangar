@@ -88,6 +88,15 @@ describe("plotPaths", () => {
     expect(line.startsWith("M0.00,50.00")).toBe(true);
     expect(line.endsWith("300.00,50.00")).toBe(true);
   });
+
+  it("draws a point with no neighbour as a dot, as a line through it would have no length", () => {
+    const at = (min: number, value: number) => ({ time: new Date(now.getTime() - min * 60_000), value });
+    const s = { name: "HOST_CPU" as const, unit: "ratio" as const, stepSeconds: 900, points: [at(0, 0.5)] };
+    const { line, area, dots } = plotPaths(s, "24h", 1, now);
+    expect(line).toBe("");
+    expect(area).toBe("");
+    expect(dots).toBe("M300.00,50.00L300.00,50.00");
+  });
 });
 
 describe("formatValue", () => {
