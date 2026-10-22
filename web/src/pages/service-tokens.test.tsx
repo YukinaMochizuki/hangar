@@ -93,7 +93,7 @@ describe("ServiceTokenList", () => {
     await screen.findByRole("table");
     await waitFor(() => expect(a.calls).toContain("TestPermissions"));
     expect(screen.queryByRole("link", { name: /New token/ })).toBeNull();
-    expect(a.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["iam.servicetokens.apply"] });
+    expect(a.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["iam.servicetokens.apply", "iam.servicetokens.delete"] });
     cleanup();
 
     const b = credentialsApi({ tokens: async () => ({ items: [token("ci")] }), perms: () => never() });

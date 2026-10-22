@@ -134,6 +134,7 @@ function toDuration(id: string) {
 export const commands = {
   createSecret: (project: string, name: string) =>
     `hangar create secret registry ${name || "NAME"} --create-only --from-docker-config FILE -p ${project}`,
+  replaceSecret: (project: string, name: string) => `hangar create secret registry ${name} --from-docker-config FILE -p ${project}`,
   getSecret: (project: string, name: string) => `hangar get secret ${name} -p ${project}`,
   deleteSecret: (project: string, name: string) => `hangar delete secret ${name} -p ${project}`,
   createToken: (project: string, name: string, o: { role?: string; duration?: string; description?: string }) =>
@@ -265,7 +266,7 @@ export function tokenRoles(bindings: RoleBinding[], project: string): Record<str
   return roles;
 }
 
-/** The New secret form's values, between its submit and the call that sends them. */
+/** A secret form's values (New secret, Replace value), between its submit and the call that sends them. */
 export type ValuesRef = RefObject<SecretValues | null>;
 
 /** errNoValues refuses a create whose values are gone: a replay after the form closed sends nothing. */
@@ -298,6 +299,62 @@ export function useCreateSecret(project: string, valuesRef: ValuesRef) {
       }
     },
     onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+/**
+ * The keys a secret's type holds, each made from the values a form took.
+ * Apply replaces spec.data whole, so every write carries all of them.
+ */
+export function secretData(type: SecretType, v: SecretValues): Record<string, Uint8Array> {
+  if (type !== SecretType.REGISTRY_AUTH) throw new Error("The console writes registry logins alone.");
+  return { [dockerConfigKey]: dockerConfig(v) };
+}
+
+/**
+ * replacedSecret is the secret as read, its metadata (the resource version
+ * among it) unchanged, with spec.data the whole new value. What was read
+ * holds no value, so nothing old is carried.
+ */
+export function replacedSecret(read: Secret, v: SecretValues): Secret {
+  const out = withoutValues(read);
+  out.spec = create(SecretSpecSchema, { type: read.spec?.type, data: secretData(read.spec?.type ?? SecretType.UNSPECIFIED, v) });
+  return out;
+}
+
+/**
+ * useReplaceSecret applies a secret's new value over the secret as the
+ * dialog read it, at that resource version: a newer secret makes the API
+ * answer Aborted, and nothing is read again or written over it. The values
+ * are taken from valuesRef as useCreateSecret takes them; the variables
+ * are the secret as read, which holds none.
+ */
+export function useReplaceSecret(valuesRef: ValuesRef) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async (read: Secret) => {
+      const v = valuesRef.current;
+      valuesRef.current = null;
+      if (!v) throw new Error(errNoValues);
+      if (!read.metadata?.resourceVersion) throw new Error(`${read.metadata?.name ?? "The secret"} carries no resource version to apply at.`);
+      await createClient(SecretService, transport).applySecret({ secret: replacedSecret(read, v) });
+    },
+    onSettled: () => queryClient.invalidateQueries(),
+  });
+}
+
+/** useReadSecret reads a secret as it is now, its values dropped, for a dialog to start again from. */
+export function useReadSecret(project: string, name: string) {
+  const transport = useTransport();
+  return useMutation({
+    gcTime: 0,
+    mutationFn: async () => {
+      const { secret } = await createClient(SecretService, transport).getSecret({ project, name });
+      if (!secret) throw new Error(`${name} is gone.`);
+      return withoutValues(secret);
+    },
   });
 }
 

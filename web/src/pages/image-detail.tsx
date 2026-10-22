@@ -3,20 +3,21 @@
 
 import { Link } from "@tanstack/react-router";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
-import { Plus } from "lucide-react";
 import { PageBanner } from "@/components/notice";
 import { DetailSkeleton } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { DiskState, ImageStateCell } from "@/components/storage";
-import { ConditionsCard, EquivalentCard } from "@/components/object";
-import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field } from "@/components/ui";
+import { useImageActions, useImageCan } from "@/components/image-actions";
+import type { Can } from "@/components/object-actions";
+import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
+import { HeadActions } from "@/components/object-actions";
+import { Badge, Card, CardHeader, CopyButton, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
-import { useCan } from "@/lib/permissions";
 import { gib, diskImage, imageFloorGiB, imageState, useDisks, useImages } from "@/lib/storage";
 import { osLabel } from "@/pages/image-list";
 
-function Summary({ img }: { img: Image }) {
+function Summary({ img, onEditLabels }: { img: Image; onEditLabels?: () => void }) {
   const s = img.spec;
   return (
     <Card>
@@ -47,6 +48,7 @@ function Summary({ img }: { img: Image }) {
             <CopyButton text={s?.sha256 ?? ""} className="-mt-0.5 shrink-0" />
           </span>
         </Field>
+        <LabelsField labels={img.metadata?.labels ?? {}} onEdit={onEditLabels} />
         <Field label="Created">{date(img.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
       </dl>
     </Card>
@@ -90,8 +92,8 @@ function ProjectDisks({ img }: { img: Image }) {
 export function ImageDetail({ name }: { name: string }) {
   const project = useProjectName();
   const { items, loading, error, refetch } = useImages();
-  // New disk from it shows only once the caller is known to hold storage.disks.apply.
-  const canCreate = useCan({ level: "project", name: project }, ["storage.disks.apply"]).can("storage.disks.apply");
+  // Asked with the list, so the page's controls come with it, and once.
+  const can = useImageCan(project);
   const img = items.find((x) => x.metadata?.name === name);
   const crumbs = ["Images", name];
   if (loading) {
@@ -124,6 +126,13 @@ export function ImageDetail({ name }: { name: string }) {
       </>
     );
   }
+  return <Loaded img={img} project={project} crumbs={crumbs} can={can} />;
+}
+
+/** The page of an image that has loaded, its actions made once for its head and its labels. */
+function Loaded({ img, project, crumbs, can }: { img: Image; project: string; crumbs: string[]; can: Can }) {
+  const name = img.metadata?.name ?? "";
+  const set = useImageActions(img, project, can);
   const s = imageState(img);
   const floor = imageFloorGiB(img);
   const cli = [`hangar get image ${name}`, `hangar get image ${name} -o yaml`];
@@ -161,21 +170,16 @@ export function ImageDetail({ name }: { name: string }) {
               {img.status?.diskSize && <span className="tabular">{gib(img.status.diskSize)}</span>}
             </div>
           </div>
-          {canCreate &&
-            (s.tone === "fail" ? (
-              <Button variant="primary" disabled>
-                <Plus /> New disk from it
-              </Button>
-            ) : (
-              <Link to="/projects/$project/new/disk" params={{ project }} search={{ image: name }} className={buttonVariants({ variant: "primary" })}>
-                <Plus /> New disk from it
-              </Link>
-            ))}
+          {set.actions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <HeadActions set={set} />
+            </div>
+          )}
         </div>
       </div>
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
-          <Summary img={img} />
+          <Summary img={img} onEditLabels={set.editLabels?.onSelect} />
           <ProjectDisks img={img} />
           <ConditionsCard conditions={img.status?.conditions ?? []} />
         </div>
@@ -183,6 +187,7 @@ export function ImageDetail({ name }: { name: string }) {
           <EquivalentCard cli={cli} yaml={diskYaml} />
         </div>
       </div>
+      {set.dialogs}
     </>
   );
 }

@@ -15,16 +15,66 @@ import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { FormEquivalent, FormField, Input, Select } from "@/components/form";
-import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { EditLabelsDialog } from "@/components/labels-dialog";
+import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
+import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { date, machinePath, type MachineKind } from "@/lib/machines";
-import { isStale, permission, useApplyAt, useChange, useReload } from "@/lib/network-actions";
-import { useCan } from "@/lib/permissions";
+import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
 import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
+
+/**
+ * An address's actions, on its page and in its row's menu: Bind or Move,
+ * Unbind when bound, Edit labels and Delete, each shown once
+ * TestPermissions holds its permission; `after` follows a delete the API
+ * took.
+ */
+export function useAddressActions(a: Address, can: Can, after?: () => void): ActionSet {
+  const name = nameOf(a);
+  const [open, setOpen] = useState<"bind" | "unbind" | "delete" | "labels" | null>(null);
+  const mayApply = can(permission("address", "apply"));
+  const bound = targetOf(a.spec?.target);
+  const actions: ObjectAction[] = [];
+  if (mayApply) actions.push({ label: bound ? "Move" : "Bind", icon: Link2, onSelect: () => setOpen("bind") });
+  if (mayApply && bound) actions.push({ label: "Unbind", icon: Link2Off, onSelect: () => setOpen("unbind") });
+  if (can(permission("address", "delete"))) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    actions,
+    editLabels: editLabelsAction(mayApply, !!a.metadata?.deleteTime, () => setOpen("labels")),
+    deleting: !!a.metadata?.deleteTime,
+    dialogs: (
+      <>
+        {open === "bind" && <BindDialog open onClose={close} address={a} />}
+        {open === "unbind" && <UnbindDialog open onClose={close} address={a} />}
+        {open === "labels" && <EditLabelsDialog kind="address" object={a} onClose={close} />}
+        {open === "delete" && (
+          <DeleteDialog
+            kind="address"
+            name={name}
+            open
+            onClose={close}
+            after={after}
+            consequence={
+              bound
+                ? "The address is released once its interface lets go of it; the interface then draws a new automatic address."
+                : "The address is released."
+            }
+          />
+        )}
+      </>
+    ),
+  };
+}
+
+/** An address's row menu: the actions of its page. */
+function AddressRowMenu({ a, can }: { a: Address; can: Can }) {
+  return <ObjectRowMenu name={nameOf(a)} set={useAddressActions(a, can)} />;
+}
 
 /** Where an address stands, in the words of its Bound condition. */
 function stateOf(a: Address): { label: string; light: "ok" | "pending" | "off"; reason?: string; message?: string } {
@@ -68,7 +118,7 @@ export function AddressList() {
   const addrs = useAddresses(project);
   const [query, setQuery] = useState("");
   const rows = addrs.items.filter((a) => !query || nameOf(a).includes(query));
-  const { can: may } = useCan({ level: "project", name: project }, [permission("address", "apply")]);
+  const { can: may } = useNetworkCan("address", project);
   const newButton = may(permission("address", "apply")) ? (
     <Link to="/projects/$project/new/address" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> Reserve address
@@ -92,8 +142,8 @@ export function AddressList() {
           <Card className="md:hidden">
             <ul className="divide-y">
               {rows.map((a) => (
-                <li key={nameOf(a)}>
-                  <Link to="/projects/$project/addresses/$name" params={{ project, name: nameOf(a) }} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                <li key={nameOf(a)} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                  <Link to="/projects/$project/addresses/$name" params={{ project, name: nameOf(a) }} className="flex min-w-0 flex-1 items-center gap-3">
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{nameOf(a)}</span>
                       <span className="block truncate font-mono text-[11.5px] text-subtle">{bare(a.status?.ipv6 ?? "") || "not drawn yet"}</span>
@@ -102,6 +152,7 @@ export function AddressList() {
                       <StateCell a={a} />
                     </span>
                   </Link>
+                  <AddressRowMenu a={a} can={may} />
                 </li>
               ))}
               {rows.length === 0 && <NoMatch noun="address" />}
@@ -116,6 +167,7 @@ export function AddressList() {
                   <Th>State</Th>
                   <Th>Bound to</Th>
                   <Th>Created</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -136,9 +188,12 @@ export function AddressList() {
                       <TargetText a={a} />
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-muted">{date(a.metadata?.createTime)?.toISOString().slice(0, 10)}</td>
+                    <td className="px-2 py-2.5">
+                      <AddressRowMenu a={a} can={may} />
+                    </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <NoMatch noun="address" colSpan={5} />}
+                {rows.length === 0 && <NoMatch noun="address" colSpan={6} />}
               </tbody>
             </table>
           </Card>
@@ -154,120 +209,88 @@ export function AddressList() {
 export function AddressDetail({ name }: { name: string }) {
   const project = useProjectName();
   const addrs = useAddresses(project);
-  const [deleting, setDeleting] = useState(false);
-  const [binding, setBinding] = useState(false);
-  const [unbinding, setUnbinding] = useState(false);
-  const navigate = useNavigate();
-  const { can } = useCan({ level: "project", name: project }, [permission("address", "apply"), permission("address", "delete")]);
-  const mayApply = can(permission("address", "apply"));
-  const mayDelete = can(permission("address", "delete"));
+  // Asked with the list, so the page's controls come with it, and once.
+  const { can } = useNetworkCan("address", project);
   const a = addrs.items.find((x) => nameOf(x) === name);
-  const s = a ? stateOf(a) : undefined;
-  const bound = a && targetOf(a.spec?.target);
   return (
     <DetailFrame crumbs={["Addresses", name]} state={addrs} found={!!a} noun="address" name={name}>
-      {a && s && (
-        <>
-          <DetailHead
-            name={name}
-            kind="Address"
-            facts={
-              <>
-                <span className="inline-flex items-center gap-2">
-                  <Led tone={s.light} />
-                  {s.label}
-                </span>
-                {a.status?.ipv6 && <span className="font-mono text-[12px]">{bare(a.status.ipv6)}</span>}
-              </>
-            }
-            actions={
-              mayApply || mayDelete ? (
-                <>
-                  {mayApply && (
-                    <Button onClick={() => setBinding(true)}>
-                      <Link2 /> {bound ? "Move" : "Bind"}
-                    </Button>
-                  )}
-                  {mayApply && bound && (
-                    <Button onClick={() => setUnbinding(true)}>
-                      <Link2Off /> Unbind
-                    </Button>
-                  )}
-                  {mayDelete && (
-                    <Button variant="danger" onClick={() => setDeleting(true)}>
-                      <Trash2 /> Delete
-                    </Button>
-                  )}
-                </>
-              ) : undefined
-            }
-          />
-          <DetailBody
-            main={
-              <>
-                <Card>
-                  <CardHeader title="Summary" />
-                  <dl className="divide-y px-4">
-                    <Field label="Address" mono>
-                      {a.status?.ipv6 ? (
-                        <span className="flex items-center gap-1">
-                          {bare(a.status.ipv6)}
-                          <CopyButton text={bare(a.status.ipv6)} />
-                        </span>
-                      ) : (
-                        <span className="font-sans text-subtle">not drawn yet: no node has an IPv6 prefix</span>
-                      )}
-                    </Field>
-                    <Field label="Target">
-                      <TargetText a={a} />
-                    </Field>
-                    <Field label="State">
-                      <span className="inline-flex items-center gap-2">
-                        <Led tone={s.light} />
-                        {s.label}
-                        {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
-                      </span>
-                      {s.message && <span className="block text-[12.5px] text-muted">{s.message}</span>}
-                    </Field>
-                    <Field label="Held by" mono>
-                      {a.status?.machine || <span className="font-sans text-subtle">no machine</span>}
-                    </Field>
-                    <Field label="Labels">
-                      <Labels labels={a.metadata?.labels ?? {}} />
-                    </Field>
-                    <Field label="Created">{date(a.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
-                    <Field label="UID" mono>
-                      <span className="text-muted">{a.metadata?.uid}</span>
-                    </Field>
-                  </dl>
-                </Card>
-                <ConditionsCard conditions={a.status?.conditions ?? []} />
-              </>
-            }
-            side={
-              <EquivalentCard
-                cli={[`hangar get addr ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete addr ${name} -p ${project}`]}
-                yaml={addressYaml(a)}
-              />
-            }
-          />
-          <BindDialog key={`bind-${binding}`} open={binding} onClose={() => setBinding(false)} address={a} />
-          <UnbindDialog key={`unbind-${unbinding}`} open={unbinding} onClose={() => setUnbinding(false)} address={a} />
-          <DeleteDialog
-            kind="address"
-            name={name}
-            open={deleting}
-            onClose={() => setDeleting(false)}
-            after={() => void navigate({ to: "/projects/$project/addresses", params: { project } })}
-            consequence={
-              bound
-                ? "The address is released once its interface lets go of it; the interface then draws a new automatic address."
-                : "The address is released."
-            }
-          />
-        </>
-      )}
+      {a && <Loaded a={a} can={can} />}
     </DetailFrame>
+  );
+}
+
+/** The page of an address that has loaded, its actions made once for its head and its labels. */
+function Loaded({ a, can }: { a: Address; can: Can }) {
+  const name = nameOf(a);
+  const project = a.metadata?.project ?? "";
+  const navigate = useNavigate();
+  const set = useAddressActions(a, can, () => void navigate({ to: "/projects/$project/addresses", params: { project } }));
+  const s = stateOf(a);
+  return (
+    <>
+      <DetailHead
+        name={name}
+        kind="Address"
+        facts={
+          <>
+            <span className="inline-flex items-center gap-2">
+              <Led tone={s.light} />
+              {s.label}
+            </span>
+            {a.status?.ipv6 && <span className="font-mono text-[12px]">{bare(a.status.ipv6)}</span>}
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
+      <DetailBody
+        main={
+          <>
+            <Card>
+              <CardHeader title="Summary" />
+              <dl className="divide-y px-4">
+                <Field label="Address" mono>
+                  {a.status?.ipv6 ? (
+                    <span className="flex items-center gap-1">
+                      {bare(a.status.ipv6)}
+                      <CopyButton text={bare(a.status.ipv6)} />
+                    </span>
+                  ) : (
+                    <span className="font-sans text-subtle">not drawn yet: no node has an IPv6 prefix</span>
+                  )}
+                </Field>
+                <Field label="Target">
+                  <TargetText a={a} />
+                </Field>
+                <Field label="State">
+                  <span className="inline-flex items-center gap-2">
+                    <Led tone={s.light} />
+                    {s.label}
+                    {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
+                  </span>
+                  {s.message && <span className="block text-[12.5px] text-muted">{s.message}</span>}
+                </Field>
+                <Field label="Held by" mono>
+                  {a.status?.machine || <span className="font-sans text-subtle">no machine</span>}
+                </Field>
+                <LabelsField labels={a.metadata?.labels ?? {}} onEdit={set.editLabels?.onSelect} />
+                <Field label="Created">{date(a.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
+                <Field label="UID" mono>
+                  <span className="text-muted">{a.metadata?.uid}</span>
+                </Field>
+              </dl>
+            </Card>
+            <ConditionsCard conditions={a.status?.conditions ?? []} />
+          </>
+        }
+        side={
+          <EquivalentCard
+            cli={[`hangar get addr ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete addr ${name} -p ${project}`]}
+            yaml={addressYaml(a)}
+          />
+        }
+      />
+      {set.dialogs}
+    </>
   );
 }
 

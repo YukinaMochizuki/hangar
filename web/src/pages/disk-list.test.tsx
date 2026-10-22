@@ -111,7 +111,8 @@ describe("New disk, by permission", () => {
     for (const l of links) expect(l.getAttribute("href")).toBe("/projects/demo/new/disk");
     const asked = a.requests.find((r) => r.method === "TestPermissions")!.request as TestPermissionsRequest;
     expect(asked.scope?.target).toEqual(expect.objectContaining({ case: "project", value: "demo" }));
-    expect(asked.permissions).toEqual(["storage.disks.apply"]);
+    // One answer serves New disk and the rows' menus.
+    expect(asked.permissions).toEqual(["storage.disks.apply", "storage.disks.delete"]);
   });
 
   it("hides New disk from a caller who does not hold it, in the list and the empty state", async () => {
@@ -120,6 +121,23 @@ describe("New disk, by permission", () => {
     await screen.findByText("No disks");
     await waitFor(() => expect(a.calls).toContain("TestPermissions"));
     expect(screen.queryByRole("link", { name: "New disk" })).toBeNull();
+  });
+
+  it("asks once for New disk and every row's menu, even when the answer fails", async () => {
+    // The rows come after the answer failed, so each would ask again were it to ask for itself.
+    let failed!: () => void;
+    const answered = new Promise<void>((r) => (failed = r));
+    const a = storageApi({
+      disks: async () => (await answered, { items: [disk("scratch"), disk("pg")] }),
+      perms: () => {
+        failed();
+        return Promise.reject(new ConnectError("the apiserver is unavailable", Code.Unavailable));
+      },
+    });
+    render(<DiskList />, { wrapper: withApi(a) });
+    await within(await screen.findByRole("table")).findByText("pg");
+    expect(a.calls.filter((c) => c === "TestPermissions")).toHaveLength(1);
+    expect(screen.queryAllByRole("button", { name: /^Actions for/ })).toHaveLength(0);
   });
 
   it("hides New disk and says nothing while the answer is unknown", async () => {

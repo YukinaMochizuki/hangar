@@ -49,6 +49,21 @@ export function useMayApplyMachine(project: string, kind: "Container" | "Virtual
   return { may: q.can(perm), refused: q.known && !q.can(perm) };
 }
 
+/** What deleting a container or a virtual machine needs at the project. */
+export const machineDeletePerms = { container: "compute.containers.delete", vm: "compute.virtualmachines.delete" } as const;
+
+/**
+ * What a machine list's and page's controls need at the project, asked as
+ * one question for both kinds: each kind's apply (new, edit, resize, start,
+ * stop, labels) and its delete.
+ */
+export function useMachineCan(project: string) {
+  return useCan({ level: "project", name: project }, [machinePerms.container, machinePerms.vm, machineDeletePerms.container, machineDeletePerms.vm]);
+}
+
+/** The key a machine kind's permissions go by in machinePerms and machineDeletePerms. */
+export const machinePermKey = (kind: "Container" | "VirtualMachine") => (kind === "Container" ? "container" : "vm");
+
 const platformScope = create(BindingScopeSchema, { target: { case: "platform", value: create(EmptySchema) } });
 
 /**

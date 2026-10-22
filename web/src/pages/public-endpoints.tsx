@@ -17,16 +17,62 @@ import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { DeleteDialog, FormFooter } from "@/components/resource";
 import { FormEquivalent } from "@/components/form";
-import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { EditLabelsDialog } from "@/components/labels-dialog";
+import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
+import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { DetailBody, DetailFrame, DetailHead, ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { date, machinePath } from "@/lib/machines";
 import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints } from "@/lib/network";
-import { permission, useChange } from "@/lib/network-actions";
-import { useCan } from "@/lib/permissions";
+import { permission, useChange, useNetworkCan } from "@/lib/network-actions";
+
+/**
+ * An endpoint's actions, on its page and in its row's menu: Make public or
+ * private, Edit labels and Delete, each shown once TestPermissions holds
+ * its permission, and none for an endpoint a container's port made, which
+ * is the container's. `after` follows a delete the API took.
+ */
+export function useEndpointActions(e: PublicEndpoint, can: Can, after?: () => void): ActionSet {
+  const name = nameOf(e);
+  const [open, setOpen] = useState<"access" | "delete" | "labels" | null>(null);
+  const owned = !!ownerOf(e);
+  const mayApply = !owned && can(permission("publicEndpoint", "apply"));
+  const isPublic = e.spec?.access === PublicEndpointAccess.PUBLIC;
+  const actions: ObjectAction[] = [];
+  if (mayApply) actions.push({ label: isPublic ? "Make private" : "Make public", icon: isPublic ? Lock : Globe, onSelect: () => setOpen("access") });
+  if (!owned && can(permission("publicEndpoint", "delete")))
+    actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    actions,
+    editLabels: editLabelsAction(mayApply, !!e.metadata?.deleteTime, () => setOpen("labels")),
+    deleting: !!e.metadata?.deleteTime,
+    dialogs: (
+      <>
+        {open === "access" && <AccessDialog open onClose={close} endpoint={e} />}
+        {open === "labels" && <EditLabelsDialog kind="publicEndpoint" object={e} onClose={close} />}
+        {open === "delete" && (
+          <DeleteDialog
+            kind="publicEndpoint"
+            name={name}
+            open
+            onClose={close}
+            after={after}
+            consequence={`Its connections close. Its hostname stays claimed by this project: an endpoint named ${name} made here again takes it back, and no other ever does.`}
+          />
+        )}
+      </>
+    ),
+  };
+}
+
+/** An endpoint's row menu: the actions of its page. */
+function EndpointRowMenu({ e, can }: { e: PublicEndpoint; can: Can }) {
+  return <ObjectRowMenu name={nameOf(e)} set={useEndpointActions(e, can)} />;
+}
 
 function AccessBadge({ access }: { access: PublicEndpointAccess }) {
   const pub = access === PublicEndpointAccess.PUBLIC;
@@ -82,7 +128,7 @@ export function PublicEndpointList() {
   const eps = usePublicEndpoints(project);
   const [query, setQuery] = useState("");
   const rows = eps.items.filter((e) => !query || nameOf(e).includes(query));
-  const { can: may } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply")]);
+  const { can: may } = useNetworkCan("publicEndpoint", project);
   const newButton = may(permission("publicEndpoint", "apply")) ? (
     <Link to="/projects/$project/new/public-endpoint" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New public endpoint
@@ -115,6 +161,7 @@ export function PublicEndpointList() {
                     <span className="shrink-0 text-right">
                       <ReadyCell e={e} />
                     </span>
+                    <EndpointRowMenu e={e} can={may} />
                   </div>
                   <div className="mt-1 flex min-w-0">
                     <UrlLink e={e} className="text-[12px]" />
@@ -134,6 +181,7 @@ export function PublicEndpointList() {
                   <Th>Access</Th>
                   <Th>Reaches</Th>
                   <Th>Created</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -158,9 +206,12 @@ export function PublicEndpointList() {
                       <TargetText e={e} />
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-muted">{date(e.metadata?.createTime)?.toISOString().slice(0, 10)}</td>
+                    <td className="px-2 py-2.5">
+                      <EndpointRowMenu e={e} can={may} />
+                    </td>
                   </tr>
                 ))}
-                {rows.length === 0 && <NoMatch noun="public endpoint" colSpan={6} />}
+                {rows.length === 0 && <NoMatch noun="public endpoint" colSpan={7} />}
               </tbody>
             </table>
           </Card>
@@ -174,141 +225,116 @@ export function PublicEndpointList() {
 export function PublicEndpointDetail({ name }: { name: string }) {
   const project = useProjectName();
   const eps = usePublicEndpoints(project);
-  const [deleting, setDeleting] = useState(false);
-  const [changing, setChanging] = useState(false);
-  const navigate = useNavigate();
-  const { can } = useCan({ level: "project", name: project }, [permission("publicEndpoint", "apply"), permission("publicEndpoint", "delete")]);
-  const mayApply = can(permission("publicEndpoint", "apply"));
-  const mayDelete = can(permission("publicEndpoint", "delete"));
+  // Asked with the list, so the page's controls come with it, and once.
+  const { can } = useNetworkCan("publicEndpoint", project);
   const e = eps.items.find((x) => nameOf(x) === name);
-  const owner = e && ownerOf(e);
-  const ready = conditionOf(e?.status?.conditions, "Ready");
   return (
     <DetailFrame crumbs={["Public endpoints", name]} state={eps} found={!!e} noun="public endpoint" name={name}>
-      {e && (
-        <>
-          <DetailHead
-            name={name}
-            kind="Public endpoint"
-            facts={
-              <>
-                <span className="inline-flex items-center gap-2">
-                  <Led tone={lightOf(ready)} />
-                  {ready?.status === 1 ? "Ready" : "Not ready"}
-                </span>
-                <AccessBadge access={e.spec?.access ?? 0} />
-                <UrlLink e={e} />
-              </>
-            }
-            actions={
-              !owner && (mayApply || mayDelete) ? (
-                <>
-                  {mayApply && (
-                    <Button onClick={() => setChanging(true)}>
-                      {e.spec?.access === PublicEndpointAccess.PUBLIC ? <Lock /> : <Globe />}
-                      {e.spec?.access === PublicEndpointAccess.PUBLIC ? "Make private" : "Make public"}
-                    </Button>
-                  )}
-                  {mayDelete && (
-                    <Button variant="danger" onClick={() => setDeleting(true)}>
-                      <Trash2 /> Delete
-                    </Button>
-                  )}
-                </>
-              ) : undefined
-            }
-          />
-          <DetailBody
-            main={
-              <>
-                <Card>
-                  <CardHeader title="Summary" />
-                  <dl className="divide-y px-4">
-                    <Field label="URL">
-                      {e.status?.url ? (
-                        <span className="flex items-center gap-1">
-                          <UrlLink e={e} />
-                          <CopyButton text={e.status.url} />
-                        </span>
-                      ) : (
-                        <span className="text-subtle">no URL yet</span>
-                      )}
-                    </Field>
-                    <Field label="Reaches">
-                      <TargetText e={e} />
-                      <span className="block text-[12px] text-subtle">plain HTTP on its first interface, eth0</span>
-                    </Field>
-                    <Field label="Access">
-                      <AccessBadge access={e.spec?.access ?? 0} />
-                      <span className="block text-[12px] text-muted">
-                        {e.spec?.access === PublicEndpointAccess.PUBLIC
-                          ? "Anyone on the internet, with no sign-in."
-                          : "Only those who may use this project's endpoints, signed in through Hangar or holding a Hangar token."}
-                      </span>
-                    </Field>
-                    {owner && (
-                      <Field label="Made by">
-                        <Link to="/projects/$project/containers/$name" params={{ project, name: owner }} className="text-accent hover:underline">
-                          {owner}
-                        </Link>
-                        <span className="block text-[12px] text-muted">
-                          A public port of the container. The endpoint follows that port and goes with it.
-                        </span>
-                      </Field>
-                    )}
-                    <Field label="Machine" mono>
-                      {e.status?.machine || <span className="font-sans text-subtle">none</span>}
-                    </Field>
-                    <Field label="Host" mono>
-                      {e.status?.node || <span className="font-sans text-subtle">not placed</span>}
-                    </Field>
-                    <Field label="Labels">
-                      <Labels labels={e.metadata?.labels ?? {}} />
-                    </Field>
-                    <Field label="Created">{date(e.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
-                    <Field label="UID" mono>
-                      <span className="text-muted">{e.metadata?.uid}</span>
-                    </Field>
-                  </dl>
-                </Card>
-                {ready && ready.status !== 1 && ready.message && (
-                  <Card>
-                    <CardHeader title="Not ready" />
-                    <div className="px-4 py-3 text-[13px]">
-                      <span className="font-mono text-[12px] text-muted">{ready.reason}</span>
-                      <p className="mt-0.5">{ready.message}</p>
-                    </div>
-                  </Card>
-                )}
-                <ConditionsCard conditions={e.status?.conditions ?? []} />
-              </>
-            }
-            side={
-              <EquivalentCard
-                cli={[
-                  `hangar get ep ${name} -p ${project}`,
-                  ...(owner ? [] : [`hangar apply -p ${project} -f ${name}.yaml`, `hangar delete ep ${name} -p ${project}`]),
-                ]}
-                yaml={endpointYaml(e)}
-              />
-            }
-          />
-          {!owner && (
-            <>
-              <AccessDialog key={String(changing)} open={changing} onClose={() => setChanging(false)} endpoint={e} />
-              <DeleteDialog
-                kind="publicEndpoint"
-                name={name}
-                open={deleting}
-                onClose={() => setDeleting(false)}
-                after={() => void navigate({ to: "/projects/$project/public-endpoints", params: { project } })}
-                consequence={`Its connections close. Its hostname stays claimed by this project: an endpoint named ${name} made here again takes it back, and no other ever does.`}
-              />
-            </>
-          )}
-        </>
-      )}
+      {e && <Loaded e={e} can={can} />}
     </DetailFrame>
+  );
+}
+
+/** The page of an endpoint that has loaded, its actions made once for its head and its labels. */
+function Loaded({ e, can }: { e: PublicEndpoint; can: Can }) {
+  const name = nameOf(e);
+  const project = e.metadata?.project ?? "";
+  const navigate = useNavigate();
+  const set = useEndpointActions(e, can, () => void navigate({ to: "/projects/$project/public-endpoints", params: { project } }));
+  const owner = ownerOf(e);
+  const ready = conditionOf(e.status?.conditions, "Ready");
+  return (
+    <>
+      <DetailHead
+        name={name}
+        kind="Public endpoint"
+        facts={
+          <>
+            <span className="inline-flex items-center gap-2">
+              <Led tone={lightOf(ready)} />
+              {ready?.status === 1 ? "Ready" : "Not ready"}
+            </span>
+            <AccessBadge access={e.spec?.access ?? 0} />
+            <UrlLink e={e} />
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
+      <DetailBody
+        main={
+          <>
+            <Card>
+              <CardHeader title="Summary" />
+              <dl className="divide-y px-4">
+                <Field label="URL">
+                  {e.status?.url ? (
+                    <span className="flex items-center gap-1">
+                      <UrlLink e={e} />
+                      <CopyButton text={e.status.url} />
+                    </span>
+                  ) : (
+                    <span className="text-subtle">no URL yet</span>
+                  )}
+                </Field>
+                <Field label="Reaches">
+                  <TargetText e={e} />
+                  <span className="block text-[12px] text-subtle">plain HTTP on its first interface, eth0</span>
+                </Field>
+                <Field label="Access">
+                  <AccessBadge access={e.spec?.access ?? 0} />
+                  <span className="block text-[12px] text-muted">
+                    {e.spec?.access === PublicEndpointAccess.PUBLIC
+                      ? "Anyone on the internet, with no sign-in."
+                      : "Only those who may use this project's endpoints, signed in through Hangar or holding a Hangar token."}
+                  </span>
+                </Field>
+                {owner && (
+                  <Field label="Made by">
+                    <Link to="/projects/$project/containers/$name" params={{ project, name: owner }} className="text-accent hover:underline">
+                      {owner}
+                    </Link>
+                    <span className="block text-[12px] text-muted">
+                      A public port of the container. The endpoint follows that port and goes with it.
+                    </span>
+                  </Field>
+                )}
+                <Field label="Machine" mono>
+                  {e.status?.machine || <span className="font-sans text-subtle">none</span>}
+                </Field>
+                <Field label="Host" mono>
+                  {e.status?.node || <span className="font-sans text-subtle">not placed</span>}
+                </Field>
+                <LabelsField labels={e.metadata?.labels ?? {}} onEdit={set.editLabels?.onSelect} />
+                <Field label="Created">{date(e.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
+                <Field label="UID" mono>
+                  <span className="text-muted">{e.metadata?.uid}</span>
+                </Field>
+              </dl>
+            </Card>
+            {ready && ready.status !== 1 && ready.message && (
+              <Card>
+                <CardHeader title="Not ready" />
+                <div className="px-4 py-3 text-[13px]">
+                  <span className="font-mono text-[12px] text-muted">{ready.reason}</span>
+                  <p className="mt-0.5">{ready.message}</p>
+                </div>
+              </Card>
+            )}
+            <ConditionsCard conditions={e.status?.conditions ?? []} />
+          </>
+        }
+        side={
+          <EquivalentCard
+            cli={[
+              `hangar get ep ${name} -p ${project}`,
+              ...(owner ? [] : [`hangar apply -p ${project} -f ${name}.yaml`, `hangar delete ep ${name} -p ${project}`]),
+            ]}
+            yaml={endpointYaml(e)}
+          />
+        }
+      />
+      {set.dialogs}
+    </>
   );
 }
 

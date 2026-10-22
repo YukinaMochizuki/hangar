@@ -22,7 +22,9 @@ import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { EquivalentCard } from "@/components/object";
+import { EditLabelsDialog } from "@/components/labels-dialog";
+import { EquivalentCard, LabelsField } from "@/components/object";
+import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
@@ -200,13 +202,49 @@ function DeleteTokenDialog({ t, held, open, onClose, after }: { t: ServiceToken;
   );
 }
 
+/**
+ * A token's actions, on its page and in its row's menu: Rotate, Edit labels
+ * and Delete, each shown once TestPermissions holds its permission. Rotate
+ * opens the dialog its page or list holds (`rotate`), which keeps its place
+ * whatever the list does, so a secret it shows is never dropped with a row.
+ * `after` follows a delete the API took.
+ */
+export function useTokenActions(t: ServiceToken, held: Held, rotate: (t: ServiceToken) => void, can: Can, after?: () => void): ActionSet {
+  const name = t.metadata?.name ?? "";
+  const [open, setOpen] = useState<"delete" | "labels" | null>(null);
+  const actions: ObjectAction[] = [];
+  if (can(perms.tokenApply)) actions.push({ label: "Rotate", icon: RefreshCw, onSelect: () => rotate(t) });
+  if (can(perms.tokenDelete)) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    actions,
+    editLabels: editLabelsAction(can(perms.tokenApply), !!t.metadata?.deleteTime, () => setOpen("labels")),
+    deleting: !!t.metadata?.deleteTime,
+    dialogs: (
+      <>
+        {open === "labels" && <EditLabelsDialog kind="serviceToken" object={t} onClose={close} />}
+        {open === "delete" && (
+          <DeleteTokenDialog t={t} held={held.loading || held.error ? undefined : (held.roles[name] ?? [])} open onClose={close} after={after} />
+        )}
+      </>
+    ),
+  };
+}
+
+/** A token's row menu: the actions of its page. */
+function TokenRowMenu({ t, held, rotate, can }: { t: ServiceToken; held: Held; rotate: (t: ServiceToken) => void; can: Can }) {
+  return <ObjectRowMenu name={t.metadata?.name ?? ""} set={useTokenActions(t, held, rotate, can)} />;
+}
+
 /** ServiceTokenList is the project's tokens, with New token for owners. */
 export function ServiceTokenList() {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useServiceTokens(project);
   const held = useTokenRoles(project);
-  const createPerm = useCan({ level: "project", name: project }, [perms.tokenApply]);
+  const createPerm = useCan({ level: "project", name: project }, [perms.tokenApply, perms.tokenDelete]);
   const canCreate = createPerm.can(perms.tokenApply);
+  // The rotate dialog stands apart from the rows, so a list that changes under it never drops a secret it shows.
+  const [rotating, setRotating] = useState<ServiceToken | null>(null);
   const newButton = (
     <Link to="/projects/$project/new/service-token" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New token
@@ -247,6 +285,7 @@ export function ServiceTokenList() {
                     <span className="shrink-0 text-right">
                       <TokenState t={t} />
                     </span>
+                    <TokenRowMenu t={t} held={held} rotate={setRotating} can={createPerm.can} />
                   </li>
                 );
               })}
@@ -262,6 +301,7 @@ export function ServiceTokenList() {
                   <Th>Secret</Th>
                   <Th>Expires</Th>
                   <Th>Last used</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -290,6 +330,9 @@ export function ServiceTokenList() {
                       <td className="whitespace-nowrap px-4 py-2.5">
                         <LastUsed t={t} />
                       </td>
+                      <td className="px-2 py-2.5">
+                        <TokenRowMenu t={t} held={held} rotate={setRotating} can={createPerm.can} />
+                      </td>
                     </tr>
                   );
                 })}
@@ -298,6 +341,7 @@ export function ServiceTokenList() {
           </Card>
         </ListFrame>
       </div>
+      {rotating && <RotateDialog t={rotating} open onClose={() => setRotating(null)} />}
     </>
   );
 }
@@ -315,9 +359,8 @@ export function ServiceTokenDetail({ name }: { name: string }) {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useServiceTokens(project);
   const held = useTokenRoles(project);
-  const navigate = useNavigate();
   const [rotating, setRotating] = useState<ServiceToken | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  // Asked with the list, so the page's controls come with it, and once.
   const { can } = useCan({ level: "project", name: project }, [perms.tokenApply, perms.tokenDelete]);
   const t = items.find((x) => x.metadata?.name === name);
   const crumbs = [
@@ -350,109 +393,119 @@ export function ServiceTokenDetail({ name }: { name: string }) {
       </>
     );
   }
-  const tokenRoles = held.loading || held.error ? undefined : (held.roles[name] ?? []);
   return (
     <>
       <Topbar crumbs={crumbs} />
-      <div>
-        {loaded && error ? <StaleBanner what="service tokens" error={error} onRetry={refetch} /> : null}
-        <div className="border-b px-4 pb-5 pt-6 md:px-8">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2.5">
-                <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
-                <Badge>Service token</Badge>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-                <TokenState t={t} />
-                {t.status?.expireTime && <span>Expires {day(t.status.expireTime)}</span>}
-                <span>{t.status?.lastUseTime ? `Used ${relative(t.status.lastUseTime)}` : "Never used"}</span>
-              </div>
+      <Loaded t={t} held={held} stale={loaded ? error : null} refetch={refetch} rotate={setRotating} can={can} />
+      {null}
+      {rotate}
+    </>
+  );
+}
+
+/** The page of a token that has loaded, its actions made once for its head and its labels. */
+function Loaded({
+  t,
+  held,
+  stale,
+  refetch,
+  rotate,
+  can,
+}: {
+  t: ServiceToken;
+  held: Held;
+  stale: unknown;
+  refetch: () => void;
+  rotate: (t: ServiceToken) => void;
+  can: Can;
+}) {
+  const name = t.metadata?.name ?? "";
+  const project = t.metadata?.project ?? "";
+  const navigate = useNavigate();
+  const set = useTokenActions(t, held, rotate, can, () => void navigate({ to: "/projects/$project/service-tokens", params: { project } }));
+  const tokenRoles = held.loading || held.error ? undefined : (held.roles[name] ?? []);
+  return (
+    <div>
+      {stale ? <StaleBanner what="service tokens" error={stale} onRetry={refetch} /> : null}
+      <div className="border-b px-4 pb-5 pt-6 md:px-8">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <h1 className="truncate text-[22px] font-semibold tracking-tight">{name}</h1>
+              <Badge>Service token</Badge>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {can(perms.tokenApply) && (
-                <Button onClick={() => setRotating(t)} disabled={!!t.metadata?.deleteTime}>
-                  <RefreshCw /> Rotate
-                </Button>
-              )}
-              {can(perms.tokenDelete) && (
-                <Button variant="danger" onClick={() => setDeleting(true)} disabled={!!t.metadata?.deleteTime}>
-                  <Trash2 /> Delete
-                </Button>
-              )}
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
+              <TokenState t={t} />
+              {t.status?.expireTime && <span>Expires {day(t.status.expireTime)}</span>}
+              <span>{t.status?.lastUseTime ? `Used ${relative(t.status.lastUseTime)}` : "Never used"}</span>
             </div>
           </div>
-        </div>
-        <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <div className="min-w-0 space-y-5">
-            <Card>
-              <CardHeader title="Summary" />
-              <dl className="divide-y px-4">
-                <Field label="Description">{t.spec?.description || <span className="text-subtle">None</span>}</Field>
-                <Field label="Principal" mono>
-                  {tokenPrincipal(t)}
-                </Field>
-                <Field label="Secret">
-                  <span>
-                    <Prefix t={t} />
-                    {t.status?.secretPrefix && <span className="text-muted">, its first characters</span>}
-                  </span>
-                </Field>
-                <Field label="Issued">{t.status?.issueTime ? `${day(t.status.issueTime)} UTC` : <span className="text-subtle">Never</span>}</Field>
-                <Field label="Expires">
-                  <Expires t={t} />
-                </Field>
-                <Field label="Last used">
-                  <LastUsed t={t} />
-                </Field>
-                <Field label="Created">{day(t.metadata?.createTime)} UTC</Field>
-                <Field label="UID" mono>
-                  <span className="text-muted">{t.metadata?.uid}</span>
-                </Field>
-              </dl>
-            </Card>
-            <Card>
-              <CardHeader title="Roles in this project" />
-              {held.loading ? (
-                <SkeletonRows rows={1} />
-              ) : held.error ? (
-                <ErrorNotice error={held.error} title="The role bindings did not load" />
-              ) : !tokenRoles?.length ? (
-                <p className="px-4 py-4 text-[13px] text-muted">No binding names this token, so it holds nothing.</p>
-              ) : (
-                <ul className="divide-y">
-                  {tokenRoles.map((r) => (
-                    <li key={r} className="flex items-baseline gap-3 px-4 py-2.5 text-[13px]">
-                      <span className="w-16 shrink-0 font-medium">{roleLabel(r)}</span>
-                      <span className="font-mono text-[12px] text-muted">{r}</span>
-                      <span className="ml-auto text-[12px] text-subtle">deleted with the token</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
-          <div className="space-y-5">
-            <EquivalentCard
-              cli={[
-                commands.getToken(project, name),
-                ...(can(perms.tokenApply) ? [commands.rotateToken(project, name)] : []),
-                ...(can(perms.tokenDelete) ? [commands.deleteToken(project, name)] : []),
-              ]}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <HeadActions set={set} />
           </div>
         </div>
       </div>
-      {can(perms.tokenDelete) ? (
-        <DeleteTokenDialog
-          t={t}
-          held={tokenRoles}
-          open={deleting}
-          onClose={() => setDeleting(false)}
-          after={() => void navigate({ to: "/projects/$project/service-tokens", params: { project } })}
-        />
-      ) : null}
-      {rotate}
-    </>
+      <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0 space-y-5">
+          <Card>
+            <CardHeader title="Summary" />
+            <dl className="divide-y px-4">
+              <Field label="Description">{t.spec?.description || <span className="text-subtle">None</span>}</Field>
+              <Field label="Principal" mono>
+                {tokenPrincipal(t)}
+              </Field>
+              <Field label="Secret">
+                <span>
+                  <Prefix t={t} />
+                  {t.status?.secretPrefix && <span className="text-muted">, its first characters</span>}
+                </span>
+              </Field>
+              <Field label="Issued">{t.status?.issueTime ? `${day(t.status.issueTime)} UTC` : <span className="text-subtle">Never</span>}</Field>
+              <Field label="Expires">
+                <Expires t={t} />
+              </Field>
+              <Field label="Last used">
+                <LastUsed t={t} />
+              </Field>
+              <LabelsField labels={t.metadata?.labels ?? {}} onEdit={set.editLabels?.onSelect} />
+              <Field label="Created">{day(t.metadata?.createTime)} UTC</Field>
+              <Field label="UID" mono>
+                <span className="text-muted">{t.metadata?.uid}</span>
+              </Field>
+            </dl>
+          </Card>
+          <Card>
+            <CardHeader title="Roles in this project" />
+            {held.loading ? (
+              <SkeletonRows rows={1} />
+            ) : held.error ? (
+              <ErrorNotice error={held.error} title="The role bindings did not load" />
+            ) : !tokenRoles?.length ? (
+              <p className="px-4 py-4 text-[13px] text-muted">No binding names this token, so it holds nothing.</p>
+            ) : (
+              <ul className="divide-y">
+                {tokenRoles.map((r) => (
+                  <li key={r} className="flex items-baseline gap-3 px-4 py-2.5 text-[13px]">
+                    <span className="w-16 shrink-0 font-medium">{roleLabel(r)}</span>
+                    <span className="font-mono text-[12px] text-muted">{r}</span>
+                    <span className="ml-auto text-[12px] text-subtle">deleted with the token</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+        <div className="space-y-5">
+          <EquivalentCard
+            cli={[
+              commands.getToken(project, name),
+              ...(can(perms.tokenApply) ? [commands.rotateToken(project, name)] : []),
+              ...(can(perms.tokenDelete) ? [commands.deleteToken(project, name)] : []),
+            ]}
+          />
+        </div>
+      </div>
+      {set.dialogs}
+    </div>
   );
 }

@@ -135,7 +135,7 @@ describe("SecretList", () => {
     await screen.findByText("No secrets");
     await waitFor(() => expect(b.calls).toContain("TestPermissions"));
     expect(screen.queryByRole("link", { name: /New secret/ })).toBeNull();
-    expect(b.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["secrets.secrets.apply"] });
+    expect(b.requests.find((r) => r.method === "TestPermissions")?.request).toMatchObject({ permissions: ["secrets.secrets.apply", "secrets.secrets.delete"] });
   });
 });
 

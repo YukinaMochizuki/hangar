@@ -2,9 +2,9 @@
 // raw conditions, and the same object through the CLI or as YAML.
 
 import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Tag } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Card, CopyButton, Led } from "@/components/ui";
+import { Button, Card, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { ago, date } from "@/lib/machines";
 
@@ -20,6 +20,27 @@ export function Labels({ labels }: { labels: Record<string, string> }) {
         </span>
       ))}
     </span>
+  );
+}
+
+/**
+ * A summary's Labels row: the labels, and Edit labels beside them when the
+ * caller may change them (onEdit given), or a note on how they change when
+ * the console does not change them.
+ */
+export function LabelsField({ labels, onEdit, note }: { labels: Record<string, string>; onEdit?: () => void; note?: string }) {
+  return (
+    <Field label="Labels">
+      <span className="flex items-start justify-between gap-3">
+        <Labels labels={labels} />
+        {onEdit && (
+          <Button size="sm" variant="ghost" onClick={onEdit} className="-my-1 shrink-0">
+            <Tag /> Edit labels
+          </Button>
+        )}
+        {!onEdit && note && <span className="shrink-0 text-[12px] text-subtle">{note}</span>}
+      </span>
+    </Field>
   );
 }
 

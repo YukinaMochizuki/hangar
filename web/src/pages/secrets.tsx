@@ -7,17 +7,37 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import type { Secret } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { KeyRound, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { StaleBanner } from "@/components/credentials";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
-import { PageBanner } from "@/components/notice";
+import { Dialog } from "@/components/dialog";
+import { FormEquivalent } from "@/components/form";
+import { Notice, PageBanner } from "@/components/notice";
+import { HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
+import { StaleNotice } from "@/components/resource";
+import { SecretValuesFields, useSecretValuesForm } from "@/components/secret-values";
 import { DetailSkeleton, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { ConditionsCard, EquivalentCard } from "@/components/object";
+import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { Badge, Button, buttonVariants, Card, CardHeader, Field, Led } from "@/components/ui";
-import { commands, day, perms, secretFault, secretTypeLabel, useDeleteSecret, useSecretUse, useSecrets } from "@/lib/credentials";
+import { errorMessage } from "@/lib/api";
+import {
+  commands,
+  day,
+  dockerConfigKey,
+  perms,
+  secretFault,
+  secretTypeLabel,
+  useDeleteSecret,
+  useReadSecret,
+  useReplaceSecret,
+  useSecretUse,
+  useSecrets,
+  type SecretValues,
+} from "@/lib/credentials";
+import { isStale } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 
 function SecretState({ s }: { s: Secret }) {
@@ -100,12 +120,141 @@ function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: 
   );
 }
 
+/** Names, joined as a sentence lists them: "a", "a and b", "a, b and c". */
+function listed(names: string[]): string {
+  return names.length < 2 ? (names[0] ?? "") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+}
+
+/**
+ * ReplaceValueDialog takes a secret's whole value again, in New secret's
+ * fields, and applies it over the secret at the version the dialog opened
+ * on. Apply replaces spec.data whole, so the one key a registry login holds
+ * is sent with it. The values live in the fields alone; the dialog is
+ * mounted while open, so closing it drops them.
+ */
+function ReplaceValueDialog({ s, use, onClose }: { s: Secret; use: Use; onClose: () => void }) {
+  // The secret as the dialog opened on it; the list refreshing does not move it.
+  const [base, setBase] = useState(s);
+  const name = base.metadata?.name ?? "";
+  const project = base.metadata?.project ?? "";
+  const form = useSecretValuesForm();
+  const valuesRef = useRef<SecretValues | null>(null);
+  const apply = useReplaceSecret(valuesRef);
+  const reload = useReadSecret(project, name);
+  useEffect(() => {
+    const ref = valuesRef;
+    return () => {
+      ref.current = null;
+    };
+  }, []);
+  const stale = isStale(apply.error);
+  const send = () => {
+    if (form.problems.length > 0 || stale || apply.isPending) return;
+    valuesRef.current = form.values();
+    apply.mutate(base, { onSuccess: onClose });
+  };
+  // The value typed stays; Reload moves the dialog onto the secret as it is now, and nothing is applied until Replace value again.
+  const startAgain = () =>
+    reload.mutate(undefined, {
+      onSuccess: (fresh) => {
+        setBase(fresh);
+        apply.reset();
+      },
+    });
+  const registries = base.status?.registries ?? [];
+  const usedBy = use.names ?? [];
+  return (
+    <Dialog open onClose={onClose} title={`Replace the value of ${name}`} wide>
+      <p>
+        The whole value is given again. Once applied, the old value is gone: no page and no answer of the API holds it.
+        {registries.length > 0 && <> It now holds a login for {listed(registries)}; the new value replaces {registries.length === 1 ? "it" : "all of them"}.</>}
+      </p>
+      <p className="mt-2">
+        {use.loading
+          ? "The project's containers are still loading, so which of them name it is not known yet."
+          : use.error
+            ? "The project's containers did not load, so which of them name it is not known."
+            : usedBy.length === 0
+              ? "No container names it."
+              : `${listed(usedBy)} ${usedBy.length === 1 ? "names" : "name"} it. What runs keeps running; the new value counts at each one's next image pull.`}
+      </p>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send();
+        }}
+      >
+        <div className="mt-4 text-foreground">
+          <SecretValuesFields form={form} />
+        </div>
+        <p className="mt-3 text-[12px] text-subtle">
+          Applying replaces spec.data whole, so it sends every key: <span className="font-mono">{dockerConfigKey}</span>.
+        </p>
+        <FormEquivalent cli={[commands.replaceSecret(project, name)]} />
+        {/* The command builds the secret afresh (internal/cli/secret.go): no labels, no version to apply at. */}
+        <p className="mt-1.5 text-[12px] text-subtle">
+          Unlike this dialog, the command sets no labels
+          {Object.keys(base.metadata?.labels ?? {}).length > 0 ? `, so it drops ${name}'s` : ""}, and it replaces the secret whatever changed since it
+          was read.
+        </p>
+        {stale ? (
+          <StaleNotice title={`${name} changed since this dialog opened.`} reloading={reload.isPending} error={reload.error} onReload={startAgain} />
+        ) : (
+          apply.error != null && (
+            <Notice tone="error" title="Replacing the value failed" className="mt-3">
+              {errorMessage(apply.error)}
+            </Notice>
+          )
+        )}
+        {form.problems.length > 0 && <div className="mt-3 text-[12px] text-subtle">{form.problems.join(" ")}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button type="button" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit" variant="primary" disabled={form.problems.length > 0 || stale || apply.isPending}>
+            <KeyRound /> {apply.isPending ? "Replacing…" : "Replace value"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
+/**
+ * A secret's actions, on its page and in its row's menu: Replace value and
+ * Delete, each shown once TestPermissions holds its permission; `after`
+ * follows a delete the API took. Its labels are not edited apart: every
+ * apply of a secret carries its value, which nothing reads back.
+ */
+export function useSecretActions(s: Secret, use: Use, can: Can, after?: () => void): ActionSet {
+  const [open, setOpen] = useState<"replace" | "delete" | null>(null);
+  const actions: ObjectAction[] = [];
+  if (can(perms.secretApply)) actions.push({ label: "Replace value", icon: KeyRound, onSelect: () => setOpen("replace") });
+  if (can(perms.secretDelete)) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    actions,
+    deleting: !!s.metadata?.deleteTime,
+    dialogs: (
+      <>
+        {open === "replace" && <ReplaceValueDialog s={s} use={use} onClose={close} />}
+        {open === "delete" && <DeleteSecretDialog s={s} use={use} open onClose={close} after={after} />}
+      </>
+    ),
+  };
+}
+
+/** A secret's row menu: the actions of its page. */
+function SecretRowMenu({ s, use, can }: { s: Secret; use: Use; can: Can }) {
+  return <ObjectRowMenu name={s.metadata?.name ?? ""} set={useSecretActions(s, use, can)} />;
+}
+
 /** SecretList is the project's secrets, with New secret. */
 export function SecretList() {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useSecrets(project);
   const use = useSecretUse(project);
-  const createPerm = useCan({ level: "project", name: project }, [perms.secretApply]);
+  const createPerm = useCan({ level: "project", name: project }, [perms.secretApply, perms.secretDelete]);
   const canCreate = createPerm.can(perms.secretApply);
   const newButton = (
     <Link to="/projects/$project/new/secret" params={{ project }} className={buttonVariants({ variant: "primary" })}>
@@ -140,6 +289,7 @@ export function SecretList() {
                     <span className="shrink-0 text-right">
                       <SecretState s={s} />
                     </span>
+                    <SecretRowMenu s={s} use={{ ...use, names: use.use[name] }} can={createPerm.can} />
                   </li>
                 );
               })}
@@ -155,6 +305,7 @@ export function SecretList() {
                   <Th>Keys</Th>
                   <Th>Used by</Th>
                   <Th>Created</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -179,6 +330,9 @@ export function SecretList() {
                         <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
+                      <td className="px-2 py-2.5">
+                        <SecretRowMenu s={s} use={{ ...use, names: use.use[name] }} can={createPerm.can} />
+                      </td>
                     </tr>
                   );
                 })}
@@ -196,9 +350,8 @@ export function SecretDetail({ name }: { name: string }) {
   const project = useProjectName();
   const { items, loading, loaded, error, refetch } = useSecrets(project);
   const secretUse = useSecretUse(project);
-  const navigate = useNavigate();
-  const [deleting, setDeleting] = useState(false);
-  const canDelete = useCan({ level: "project", name: project }, [perms.secretDelete]).can(perms.secretDelete);
+  // Asked with the list, so the page's controls come with it, and once.
+  const { can } = useCan({ level: "project", name: project }, [perms.secretApply, perms.secretDelete]);
   const s = items.find((x) => x.metadata?.name === name);
   const crumbs = [
     <Link key="l" to="/projects/$project/secrets" params={{ project }}>
@@ -232,13 +385,21 @@ export function SecretDetail({ name }: { name: string }) {
       </>
     );
   }
+  return <Loaded s={s} crumbs={crumbs} use={{ names: secretUse.use[name], loading: secretUse.loading, error: secretUse.error }} stale={loaded ? error : null} refetch={refetch} can={can} />;
+}
+
+/** The page of a secret that has loaded, its actions made once for its head. */
+function Loaded({ s, crumbs, use, stale, refetch, can }: { s: Secret; crumbs: ReactNode[]; use: Use; stale: unknown; refetch: () => void; can: Can }) {
+  const name = s.metadata?.name ?? "";
+  const project = s.metadata?.project ?? "";
+  const navigate = useNavigate();
+  const set = useSecretActions(s, use, can, () => void navigate({ to: "/projects/$project/secrets", params: { project } }));
   const fault = secretFault(s);
-  const use: Use = { names: secretUse.use[name], loading: secretUse.loading, error: secretUse.error };
   const usedBy = use.names ?? [];
   return (
     <>
       <Topbar crumbs={crumbs} />
-      {loaded && error ? <StaleBanner what="secrets" error={error} onRetry={refetch} /> : null}
+      {stale ? <StaleBanner what="secrets" error={stale} onRetry={refetch} /> : null}
       {fault && (
         <PageBanner tone="error" title={`${name} cannot be opened: ${fault.reason}`}>
           {fault.message}
@@ -263,10 +424,10 @@ export function SecretDetail({ name }: { name: string }) {
               )}
             </div>
           </div>
-          {canDelete && (
-            <Button variant="danger" onClick={() => setDeleting(true)} disabled={!!s.metadata?.deleteTime}>
-              <Trash2 /> Delete
-            </Button>
+          {set.actions.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <HeadActions set={set} />
+            </div>
           )}
         </div>
       </div>
@@ -290,6 +451,7 @@ export function SecretDetail({ name }: { name: string }) {
               <Field label="Used by">
                 <UsedBy use={use} project={project} />
               </Field>
+              <LabelsField labels={s.metadata?.labels ?? {}} note="Changed only with the value, by hangar apply." />
               <Field label="Created">{s.metadata?.createTime ? `${day(s.metadata.createTime)} UTC` : ""}</Field>
               <Field label="UID" mono>
                 <span className="text-muted">{s.metadata?.uid}</span>
@@ -299,18 +461,16 @@ export function SecretDetail({ name }: { name: string }) {
           <ConditionsCard conditions={s.status?.conditions ?? []} />
         </div>
         <div className="space-y-5">
-          <EquivalentCard cli={[commands.getSecret(project, name), ...(canDelete ? [commands.deleteSecret(project, name)] : [])]} />
+          <EquivalentCard
+            cli={[
+              commands.getSecret(project, name),
+              ...(can(perms.secretApply) ? [commands.replaceSecret(project, name)] : []),
+              ...(can(perms.secretDelete) ? [commands.deleteSecret(project, name)] : []),
+            ]}
+          />
         </div>
       </div>
-      {canDelete && (
-        <DeleteSecretDialog
-          s={s}
-          use={use}
-          open={deleting}
-          onClose={() => setDeleting(false)}
-          after={() => void navigate({ to: "/projects/$project/secrets", params: { project } })}
-        />
-      )}
+      {set.dialogs}
     </>
   );
 }

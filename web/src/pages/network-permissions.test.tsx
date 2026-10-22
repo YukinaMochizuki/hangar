@@ -43,49 +43,55 @@ type Case = {
 };
 
 const cases: Case[] = [
-  { name: "networks list", page: () => <NetworkList />, ready: "sandbox", controls: { "network.networks.apply": ["New network"] } },
+  // A list asks for what its rows' menus need too, whose buttons draw no name of their own.
+  {
+    name: "networks list",
+    page: () => <NetworkList />,
+    ready: "sandbox",
+    controls: { "network.networks.apply": ["New network"], "network.networks.delete": [], "storage.fileshares.apply": [] },
+  },
   {
     name: "network page",
     page: () => <NetworkDetail name="sandbox" />,
     ready: "Summary",
-    controls: { "network.networks.delete": ["Delete"], "storage.fileshares.apply": ["New file share"] },
+    controls: { "network.networks.apply": ["Edit labels"], "network.networks.delete": ["Delete"], "storage.fileshares.apply": ["New file share"] },
   },
   {
     name: "security groups list",
     page: () => <SecurityGroupList />,
     ready: "web",
-    controls: { "network.securitygroups.apply": ["New security group"] },
+    controls: { "network.securitygroups.apply": ["New security group"], "network.securitygroups.delete": [] },
   },
   {
     name: "security group page",
     page: () => <SecurityGroupDetail name="web" />,
     ready: "Inbound",
-    controls: { "network.securitygroups.apply": ["Edit rules"], "network.securitygroups.delete": ["Delete"] },
+    controls: { "network.securitygroups.apply": ["Edit rules", "Edit labels"], "network.securitygroups.delete": ["Delete"] },
   },
-  { name: "addresses list", page: () => <AddressList />, ready: "spare", controls: { "network.addresses.apply": ["Reserve address"] } },
+  { name: "addresses list", page: () => <AddressList />, ready: "spare", controls: { "network.addresses.apply": ["Reserve address"], "network.addresses.delete": [] } },
   {
     name: "bound address page",
     page: () => <AddressDetail name="api" />,
     ready: "Summary",
-    controls: { "network.addresses.apply": ["Move", "Unbind"], "network.addresses.delete": ["Delete"] },
+    controls: { "network.addresses.apply": ["Move", "Unbind", "Edit labels"], "network.addresses.delete": ["Delete"] },
   },
   {
     name: "unbound address page",
     page: () => <AddressDetail name="spare" />,
     ready: "Summary",
-    controls: { "network.addresses.apply": ["Bind"], "network.addresses.delete": ["Delete"] },
+    controls: { "network.addresses.apply": ["Bind", "Edit labels"], "network.addresses.delete": ["Delete"] },
   },
   {
     name: "public endpoints list",
     page: () => <PublicEndpointList />,
     ready: "docs",
-    controls: { "network.publicendpoints.apply": ["New public endpoint"] },
+    controls: { "network.publicendpoints.apply": ["New public endpoint"], "network.publicendpoints.delete": [] },
   },
   {
     name: "public endpoint page",
     page: () => <PublicEndpointDetail name="docs" />,
     ready: "Summary",
-    controls: { "network.publicendpoints.apply": ["Make public"], "network.publicendpoints.delete": ["Delete"] },
+    controls: { "network.publicendpoints.apply": ["Make public", "Edit labels"], "network.publicendpoints.delete": ["Delete"] },
   },
 ];
 

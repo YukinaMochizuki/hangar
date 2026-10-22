@@ -216,7 +216,8 @@ joining it when its page does.
 ### What a control is shown for
 
 A page asks `AccountService.TestPermissions` which of the permissions its
-controls need the caller holds at the scope, in one call
+controls need the caller holds at the scope, in one call a scope (an
+image's page asks the project and the platform)
 (`web/src/lib/permissions.ts`), and shows a control only when the answer
 holds its permission: adding a member and changing a role need
 `iam.rolebindings.apply`, removing one `iam.rolebindings.delete`, and a new
@@ -230,6 +231,54 @@ API still checks every call, and a refusal is shown like any error. Pages whose 
 do not ask yet show them to everyone and show the API's refusal in place.
 New project asks once per tenant the member sees, which is every tenant
 for a platform administrator; at today's size that is a handful of calls.
+
+### An object's actions: its page's head and its row's menu
+
+Settled with the owner on screenshots before the dialogs sent anything.
+
+- **A row's "..." menu holds its object page's actions**, no more and no
+  fewer: the head's, in the head's order, with Edit labels before Delete.
+  Each kind makes them in one hook (`useDiskActions`, `useNetworkActions`
+  and the like, on `web/src/components/object-actions.tsx`) that the head
+  and the menu both draw, so they open the same dialogs and cannot drift
+  apart. Every list of a project's objects has the menu (`RowMenu`,
+  `web/src/components/menu.tsx`), in its desktop table and its phone list;
+  the File shares list, one table that scrolls sideways, has it there.
+  The built-in `default` security groups, which are no objects, have none.
+- **Both are gated by one answer**: a kind's list and its page each ask
+  TestPermissions one question at the project (its apply and delete
+  permissions; for a network also `storage.fileshares.apply`, for its
+  page's New file share; for containers and VMs both kinds' at once), and
+  hand the answer to its rows' menus and its head, which ask nothing of
+  their own, so a page or list asks once, even when the answer fails. An
+  image's asks the project about New disk from it and the platform about
+  its labels. A page asks with its list, so its controls come with it. An
+  action whose permission the answer does not hold is in neither the head
+  nor the menu, as "What a control is shown for" says. A row the caller
+  may do nothing to has no "..." button.
+- **An object being deleted** offers nothing that changes it: its row's
+  menu says "Being deleted: nothing to change." and holds no action, its
+  page's head draws its buttons off, and its page offers no Edit labels.
+- **Edit labels is one dialog for every kind**
+  (`web/src/components/labels-dialog.tsx`), opened from beside the labels
+  on the object's page and from the row's menu, where the kind's apply
+  permission is held. It edits rows of key and value and checks them as
+  the apiserver does (`checkMetaKeys` in `internal/apiserver/admission.go`,
+  `web/src/lib/labels.ts`): a key of 1 to 317 bytes, a value of at most
+  63, no key twice, and no key under `hangarlab.cloud/` or a subdomain of
+  it unless the object already holds it with that value. The system's
+  labels are shown locked and sent back as they are; an empty row is no
+  label. Lengths are counted in bytes, as the API counts them, and said so.
+  It says what applying does ("Adds team · Changes tier"), or "No
+  change" with Apply off, and shows the manifest and `hangar apply`. It
+  applies the object as it read it with only `metadata.labels` changed, at
+  the resource version read (`web/src/lib/object-kinds.ts`). A newer object
+  makes the API answer Aborted: the dialog says "NAME changed since this
+  dialog opened." with Reload, which reads the object and starts the rows
+  again from it; nothing is read again or applied by itself. Images, which
+  are the platform's, offer it only where `storage.images.apply` is held at
+  the platform. An endpoint a container's port made, which is the
+  container's, offers it nowhere, as it offers no other action.
 
 ### Machines
 
@@ -294,11 +343,12 @@ for a platform administrator; at today's size that is a handful of calls.
   it starts; the disk stays as it is. It applies cpu and memory alone, at
   the version of the object the dialog opened on, and says so when the
   object changed since, as the edit page does.
-- **Edit and Resize show only when TestPermissions holds the kind's apply
-  permission** (`compute.containers.apply`, `compute.virtualmachines.apply`),
+- **Edit, Resize, Start and Stop show only when TestPermissions holds the
+  kind's apply permission** (`compute.containers.apply`,
+  `compute.virtualmachines.apply`), and Delete only its delete permission,
   as "What a control is shown for" says; the edit page states the refusal
-  once the answer gives one. Neither is offered for a machine being
-  deleted, whose edit page says so and holds no form.
+  once the answer gives one. Edit and Resize are not offered for a
+  machine being deleted, whose edit page says so and holds no form.
 - **The sizes are the platform's**, read from the API
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
   `machine-sizes.md`); the console holds none of its own and offers no
@@ -474,19 +524,22 @@ Settled with the owner on the screens, before they read the API.
     shows the refusal when it comes; when that machine is being deleted,
     the API does not refuse, and the dialog says the data goes once the
     machine is gone.
-- **Images are read-only in the console.** Only platform administrators
-  write them (`vm-images.md`). An image's smallest disk is the larger of
-  its `min_disk_size` and its own size, as admission holds disks to. An
-  image's page offers "New disk from it", the New disk page
-  (`/new/disk?image=<name>`) on a boot disk of that image; it is disabled
-  for an image at fault (`Verified` False), which
-  the page names in a banner.
-- **Controls are shown as "What a control is shown for" says**, asked at
-  the project in one call a page: New disk and "New disk from it" need
-  `storage.disks.apply`, Grow `storage.disks.apply`, Delete
-  `storage.disks.delete`. While the answer loads, or when it failed, the
-  control is hidden and these pages say nothing about it, neither a
-  refusal nor the failed answer.
+- **Of an image, the console changes only its labels**, and only for
+  whoever holds `storage.images.apply` at the platform, which normally only
+  platform administrators do; they write images (`vm-images.md`). An
+  image's smallest disk is the larger of its `min_disk_size` and its own
+  size, as admission holds disks to. An image's page offers "New disk
+  from it", the New disk page (`/new/disk?image=<name>`) on a boot disk
+  of that image; it is disabled for an image at fault (`Verified` False),
+  which the page names in a banner.
+- **Controls are shown as "What a control is shown for" says**: a disk
+  list or page asks the project one question, and an image list or page
+  asks the project one and the platform one. New disk and "New disk from
+  it" need `storage.disks.apply` at the project, Grow and a disk's Edit
+  labels `storage.disks.apply`, Delete `storage.disks.delete`, and an
+  image's Edit labels `storage.images.apply` at the platform. While the
+  answer loads, or when it failed, the control is hidden and these pages
+  say nothing about it, neither a refusal nor the failed answer.
 - Sizes are whole GiB, read and written with `web/src/lib/quantity.ts`.
   The detail pages show their CLI and YAML, and each form the manifest
   it amounts to, copyable; the list pages are data alone.
@@ -594,8 +647,28 @@ Settled with the owner on screenshots before the pages read the API.
   the values. Creating never replaces, as for disks
   (`web/src/lib/create.ts`). Its command is
   `hangar create secret registry NAME --create-only --from-docker-config FILE`,
-  which names a file and never a value. Replacing a secret's values is
-  not offered in the console.
+  which names a file and never a value.
+- **Replace value** takes a secret's whole value again, in New secret's
+  fields (`web/src/components/secret-values.tsx`): its values are
+  write-only, so nothing of the old one is shown or kept. The dialog says
+  that the old value is gone once applied, which registries' logins the
+  new one replaces, and, as `secrets.md` says, that containers naming the
+  secret keep running and the new value counts at each one's next image
+  pull. It applies the secret as read with `spec.data` the whole new value,
+  every key of its type (a registry login's one, `.dockerconfigjson`),
+  since apply replaces `spec.data` whole; at the resource version read, so
+  a newer secret is refused, said, and moved onto with Reload, as Edit
+  labels does. The values go to the call through a ref, as New secret's do,
+  and the mutation holds the secret as read, which holds none. Its command
+  is `hangar create secret registry NAME --from-docker-config FILE`, which
+  builds the secret afresh: the dialog says beside it that the command sets
+  no labels, so it drops the secret's, and replaces the secret whatever
+  changed since it was read. No manifest is shown, which would hold the
+  value.
+- **A secret's labels are shown and not edited**: every apply of a secret
+  carries its value, which the console cannot read back, so its page says
+  beside them that they change only with the value, by `hangar apply`, and
+  it has no Edit labels.
 - **A service token's secret is shown once**, in a dialog over the New
   service token page (`web/src/pages/create-service-token.tsx`) or the
   Rotate dialog that returned it, with a copy button, and the dialog says
@@ -627,9 +700,10 @@ Settled with the owner on screenshots before the pages read the API.
   A copy button shows its check only once the clipboard took the text,
   and says "Not copied: the clipboard is unavailable." when it did not.
 - **Controls show only when the caller may use them**, as "What a control
-  is shown for" above says: `secrets.secrets.apply` for New secret,
-  `secrets.secrets.delete` for its Delete, `iam.servicetokens.apply` for
-  New token and Rotate, `iam.servicetokens.delete` for its Delete. Editors
+  is shown for" above says: `secrets.secrets.apply` for New secret and
+  Replace value, `secrets.secrets.delete` for its Delete,
+  `iam.servicetokens.apply` for New token, Rotate and a token's Edit labels,
+  `iam.servicetokens.delete` for its Delete. Editors
   read tokens and write none (`tenancy-and-iam.md`), so for them the
   token pages have no controls, and an object page's CLI lists only the
   commands the caller may run.

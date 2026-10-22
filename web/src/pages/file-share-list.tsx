@@ -4,14 +4,17 @@
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { NetworkChips, ShareState, useDeclarations, useSharePerms } from "@/components/file-shares";
+import type { FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
+import { useFileShareActions } from "@/components/file-share-actions";
+import { NetworkChips, ShareState, useDeclarations, useShareCan } from "@/components/file-shares";
 import { CappedNames } from "@/components/machine-names";
+import { ObjectRowMenu, type Can } from "@/components/object-actions";
 import { ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { buttonVariants, Card } from "@/components/ui";
-import { shareGiB, shareName, shareUses, useFileShares } from "@/lib/file-shares";
+import { shareGiB, shareName, sharePerms, shareUses, useFileShares } from "@/lib/file-shares";
 import { count } from "@/lib/network";
 import { formatNumber } from "@/lib/quantity";
 
@@ -21,11 +24,18 @@ const newButton = (project: string) => (
   </Link>
 );
 
+/** A share's row menu: the actions of its page. */
+function ShareRowMenu({ s, can }: { s: FileShare; can: Can }) {
+  return <ObjectRowMenu name={shareName(s)} set={useFileShareActions(s, can)} />;
+}
+
 export function FileShareList() {
   const project = useProjectName();
   const shares = useFileShares(project);
   const decls = useDeclarations(project);
-  const { canApply } = useSharePerms(project);
+  // One answer for New file share and every row's menu.
+  const { can } = useShareCan(project);
+  const canApply = can(sharePerms.apply);
   const [query, setQuery] = useState("");
   const rows = shares.items.filter((s) => !query || shareName(s).includes(query));
   return (
@@ -61,6 +71,7 @@ export function FileShareList() {
                   <Th>Networks and addresses</Th>
                   <Th>Size</Th>
                   <Th>Used by</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -97,10 +108,13 @@ export function FileShareList() {
                           </span>
                         )}
                       </td>
+                      <td className="px-2 py-2.5">
+                        <ShareRowMenu s={s} can={can} />
+                      </td>
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <NoMatch noun="file share" colSpan={5} />}
+                {rows.length === 0 && <NoMatch noun="file share" colSpan={6} />}
               </tbody>
             </table>
           </Card>
