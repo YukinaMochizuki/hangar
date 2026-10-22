@@ -93,12 +93,21 @@ restart count.
   fixed queries: an overview (each layer's state now), named series over a
   range (the PromQL lives in the apiserver, the name is an enum), and the
   alerts firing (from Alertmanager). It needs `platform.monitoring.read`,
-  which only `platform.root` holds. There is no PromQL passthrough: the
+  which `platform.root` and `platform.sponsor` hold (`tenancy-and-iam.md`):
+  nothing it answers is a tenant's. There is no PromQL passthrough: the
   browser cannot ask Prometheus anything the API does not name, and changing
   a query never changes the API. An alert names the node its `node` label
   names, empty for the platform's, and no other label. The console shows
-  it on the platform's Overview and on each node's page, which only an
-  administrator sees (`console-design.md`). The apiserver reaches Prometheus and
+  it on the platform's Overview and on each node's page, which only
+  administrators and sponsors see (`console-design.md`).
+- **What is placed on each node is counted by the apiserver, not by the
+  browser.** `ListNodeUsage`, under the same permission, answers each Node's
+  machines counted and their vCPUs, memory and disk summed, with the Disks
+  and FileShares placed there, as the scheduler counts them. It reads the
+  store, not Prometheus, so it answers while Prometheus is down, and it
+  names no machine: whoever reads the Nodes pages needs no
+  `compute.machines.list` across every project, which would hand them each
+  machine's spec. The apiserver reaches Prometheus and
   Alertmanager at `--prometheus-url` and `--alertmanager-url`, which must be
   loopback, with a bounded time and answer size; without them, or when they
   do not answer, the calls fail with `Unavailable`.

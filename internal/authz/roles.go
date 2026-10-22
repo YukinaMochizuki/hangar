@@ -153,9 +153,11 @@ var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, PublicEndp
 // everything a sponsor does, and a sponsor everything a member does.
 var Roles = map[string]Role{
 	"platform.root": {Level: PlatformLevel, verbs: userVerbs, permissions: append(append([]string{CreateTenant}, reachPermissions...), platformPermissions...), Member: true},
-	// Sponsors will also see aggregated platform data, never other tenants'
-	// resources; that data has no API yet.
-	"platform.sponsor": {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
+	// A sponsor funds the hardware and reads what the platform's own pages
+	// show: its monitoring and its Nodes, both of which count tenants'
+	// machines and never name them. It reads nothing of any tenant's
+	// (docs/decisions/tenancy-and-iam.md).
+	"platform.sponsor": {Level: PlatformLevel, permissions: append([]string{CreateTenant, MonitoringRead}, readPermissions(registry.Node)...), Member: true},
 	"platform.member":  {Level: PlatformLevel, permissions: []string{CreateTenant}, Member: true},
 	"tenant.owner":     {Level: TenantLevel, verbs: userVerbs, permissions: reachPermissions},
 	"tenant.viewer":    {Level: TenantLevel, verbs: readVerbs},

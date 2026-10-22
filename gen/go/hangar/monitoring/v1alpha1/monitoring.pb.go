@@ -1072,6 +1072,174 @@ func (x *Point) GetValue() float64 {
 	return 0
 }
 
+type ListNodeUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodeUsageRequest) Reset() {
+	*x = ListNodeUsageRequest{}
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodeUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodeUsageRequest) ProtoMessage() {}
+
+func (x *ListNodeUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodeUsageRequest.ProtoReflect.Descriptor instead.
+func (*ListNodeUsageRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{11}
+}
+
+type ListNodeUsageResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Each Node, by name, those with no machine too.
+	Nodes         []*NodeUsage `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodeUsageResponse) Reset() {
+	*x = ListNodeUsageResponse{}
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodeUsageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodeUsageResponse) ProtoMessage() {}
+
+func (x *ListNodeUsageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodeUsageResponse.ProtoReflect.Descriptor instead.
+func (*ListNodeUsageResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListNodeUsageResponse) GetNodes() []*NodeUsage {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+// NodeUsage is what the machines placed on one node hold there, summed,
+// never which machines they are.
+type NodeUsage struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The Node's name.
+	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
+	// Machines placed on the node.
+	Machines int32 `protobuf:"varint,2,opt,name=machines,proto3" json:"machines,omitempty"`
+	// The vCPUs the machines are given, summed: vCPUs are shared, not
+	// reserved, so this may pass what the node offers. A quantity, such as
+	// "12".
+	Cpu string `protobuf:"bytes,3,opt,name=cpu,proto3" json:"cpu,omitempty"`
+	// The memory the machines are given, a quantity such as "24Gi".
+	Memory string `protobuf:"bytes,4,opt,name=memory,proto3" json:"memory,omitempty"`
+	// The disk held on the node, a quantity such as "300Gi": the machines'
+	// disks, and the Disks and FileShares placed there, at the sizes they
+	// were made, as the scheduler counts them.
+	Disk          string `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeUsage) Reset() {
+	*x = NodeUsage{}
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeUsage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeUsage) ProtoMessage() {}
+
+func (x *NodeUsage) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeUsage.ProtoReflect.Descriptor instead.
+func (*NodeUsage) Descriptor() ([]byte, []int) {
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *NodeUsage) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
+func (x *NodeUsage) GetMachines() int32 {
+	if x != nil {
+		return x.Machines
+	}
+	return 0
+}
+
+func (x *NodeUsage) GetCpu() string {
+	if x != nil {
+		return x.Cpu
+	}
+	return ""
+}
+
+func (x *NodeUsage) GetMemory() string {
+	if x != nil {
+		return x.Memory
+	}
+	return ""
+}
+
+func (x *NodeUsage) GetDisk() string {
+	if x != nil {
+		return x.Disk
+	}
+	return ""
+}
+
 type ListAlertsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -1080,7 +1248,7 @@ type ListAlertsRequest struct {
 
 func (x *ListAlertsRequest) Reset() {
 	*x = ListAlertsRequest{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1092,7 +1260,7 @@ func (x *ListAlertsRequest) String() string {
 func (*ListAlertsRequest) ProtoMessage() {}
 
 func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[11]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1105,7 +1273,7 @@ func (x *ListAlertsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsRequest.ProtoReflect.Descriptor instead.
 func (*ListAlertsRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{11}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{14}
 }
 
 type ListAlertsResponse struct {
@@ -1118,7 +1286,7 @@ type ListAlertsResponse struct {
 
 func (x *ListAlertsResponse) Reset() {
 	*x = ListAlertsResponse{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1130,7 +1298,7 @@ func (x *ListAlertsResponse) String() string {
 func (*ListAlertsResponse) ProtoMessage() {}
 
 func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[12]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1143,7 +1311,7 @@ func (x *ListAlertsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListAlertsResponse.ProtoReflect.Descriptor instead.
 func (*ListAlertsResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{12}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListAlertsResponse) GetAlerts() []*Alert {
@@ -1174,7 +1342,7 @@ type Alert struct {
 
 func (x *Alert) Reset() {
 	*x = Alert{}
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1186,7 +1354,7 @@ func (x *Alert) String() string {
 func (*Alert) ProtoMessage() {}
 
 func (x *Alert) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[13]
+	mi := &file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1199,7 +1367,7 @@ func (x *Alert) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Alert.ProtoReflect.Descriptor instead.
 func (*Alert) Descriptor() ([]byte, []int) {
-	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{13}
+	return file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Alert) GetName() string {
@@ -1289,7 +1457,16 @@ const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\f_alert_above\"M\n" +
 	"\x05Point\x12.\n" +
 	"\x04time\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x04time\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\x01R\x05value\"\x13\n" +
+	"\x05value\x18\x02 \x01(\x01R\x05value\"\x16\n" +
+	"\x14ListNodeUsageRequest\"T\n" +
+	"\x15ListNodeUsageResponse\x12;\n" +
+	"\x05nodes\x18\x01 \x03(\v2%.hangar.monitoring.v1alpha1.NodeUsageR\x05nodes\"y\n" +
+	"\tNodeUsage\x12\x12\n" +
+	"\x04node\x18\x01 \x01(\tR\x04node\x12\x1a\n" +
+	"\bmachines\x18\x02 \x01(\x05R\bmachines\x12\x10\n" +
+	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
+	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
+	"\x04disk\x18\x05 \x01(\tR\x04disk\"\x13\n" +
 	"\x11ListAlertsRequest\"O\n" +
 	"\x12ListAlertsResponse\x129\n" +
 	"\x06alerts\x18\x01 \x03(\v2!.hangar.monitoring.v1alpha1.AlertR\x06alerts\"\xc6\x01\n" +
@@ -1339,12 +1516,13 @@ const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11SEVERITY_CRITICAL\x10\x01\x12\x14\n" +
-	"\x10SEVERITY_WARNING\x10\x022\xda\x02\n" +
+	"\x10SEVERITY_WARNING\x10\x022\xd0\x03\n" +
 	"\x11MonitoringService\x12n\n" +
 	"\vGetOverview\x12..hangar.monitoring.v1alpha1.GetOverviewRequest\x1a/.hangar.monitoring.v1alpha1.GetOverviewResponse\x12h\n" +
 	"\tGetSeries\x12,.hangar.monitoring.v1alpha1.GetSeriesRequest\x1a-.hangar.monitoring.v1alpha1.GetSeriesResponse\x12k\n" +
 	"\n" +
-	"ListAlerts\x12-.hangar.monitoring.v1alpha1.ListAlertsRequest\x1a..hangar.monitoring.v1alpha1.ListAlertsResponseB\x93\x02\n" +
+	"ListAlerts\x12-.hangar.monitoring.v1alpha1.ListAlertsRequest\x1a..hangar.monitoring.v1alpha1.ListAlertsResponse\x12t\n" +
+	"\rListNodeUsage\x120.hangar.monitoring.v1alpha1.ListNodeUsageRequest\x1a1.hangar.monitoring.v1alpha1.ListNodeUsageResponseB\x93\x02\n" +
 	"\x1ecom.hangar.monitoring.v1alpha1B\x0fMonitoringProtoP\x01ZVgithub.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1;monitoringv1alpha1\xa2\x02\x03HMX\xaa\x02\x1aHangar.Monitoring.V1alpha1\xca\x02\x1aHangar\\Monitoring\\V1alpha1\xe2\x02&Hangar\\Monitoring\\V1alpha1\\GPBMetadata\xea\x02\x1cHangar::Monitoring::V1alpha1b\x06proto3"
 
 var (
@@ -1360,7 +1538,7 @@ func file_hangar_monitoring_v1alpha1_monitoring_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_monitoring_v1alpha1_monitoring_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_hangar_monitoring_v1alpha1_monitoring_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_hangar_monitoring_v1alpha1_monitoring_proto_goTypes = []any{
 	(Health)(0),                   // 0: hangar.monitoring.v1alpha1.Health
 	(Layer)(0),                    // 1: hangar.monitoring.v1alpha1.Layer
@@ -1379,13 +1557,16 @@ var file_hangar_monitoring_v1alpha1_monitoring_proto_goTypes = []any{
 	(*GetSeriesRequest)(nil),      // 14: hangar.monitoring.v1alpha1.GetSeriesRequest
 	(*GetSeriesResponse)(nil),     // 15: hangar.monitoring.v1alpha1.GetSeriesResponse
 	(*Point)(nil),                 // 16: hangar.monitoring.v1alpha1.Point
-	(*ListAlertsRequest)(nil),     // 17: hangar.monitoring.v1alpha1.ListAlertsRequest
-	(*ListAlertsResponse)(nil),    // 18: hangar.monitoring.v1alpha1.ListAlertsResponse
-	(*Alert)(nil),                 // 19: hangar.monitoring.v1alpha1.Alert
-	(*timestamppb.Timestamp)(nil), // 20: google.protobuf.Timestamp
+	(*ListNodeUsageRequest)(nil),  // 17: hangar.monitoring.v1alpha1.ListNodeUsageRequest
+	(*ListNodeUsageResponse)(nil), // 18: hangar.monitoring.v1alpha1.ListNodeUsageResponse
+	(*NodeUsage)(nil),             // 19: hangar.monitoring.v1alpha1.NodeUsage
+	(*ListAlertsRequest)(nil),     // 20: hangar.monitoring.v1alpha1.ListAlertsRequest
+	(*ListAlertsResponse)(nil),    // 21: hangar.monitoring.v1alpha1.ListAlertsResponse
+	(*Alert)(nil),                 // 22: hangar.monitoring.v1alpha1.Alert
+	(*timestamppb.Timestamp)(nil), // 23: google.protobuf.Timestamp
 }
 var file_hangar_monitoring_v1alpha1_monitoring_proto_depIdxs = []int32{
-	20, // 0: hangar.monitoring.v1alpha1.GetOverviewResponse.observe_time:type_name -> google.protobuf.Timestamp
+	23, // 0: hangar.monitoring.v1alpha1.GetOverviewResponse.observe_time:type_name -> google.protobuf.Timestamp
 	9,  // 1: hangar.monitoring.v1alpha1.GetOverviewResponse.layers:type_name -> hangar.monitoring.v1alpha1.LayerState
 	8,  // 2: hangar.monitoring.v1alpha1.GetOverviewResponse.nodes:type_name -> hangar.monitoring.v1alpha1.NodeOverview
 	9,  // 3: hangar.monitoring.v1alpha1.NodeOverview.layers:type_name -> hangar.monitoring.v1alpha1.LayerState
@@ -1402,21 +1583,24 @@ var file_hangar_monitoring_v1alpha1_monitoring_proto_depIdxs = []int32{
 	2,  // 14: hangar.monitoring.v1alpha1.GetSeriesResponse.name:type_name -> hangar.monitoring.v1alpha1.SeriesName
 	4,  // 15: hangar.monitoring.v1alpha1.GetSeriesResponse.unit:type_name -> hangar.monitoring.v1alpha1.Unit
 	16, // 16: hangar.monitoring.v1alpha1.GetSeriesResponse.points:type_name -> hangar.monitoring.v1alpha1.Point
-	20, // 17: hangar.monitoring.v1alpha1.Point.time:type_name -> google.protobuf.Timestamp
-	19, // 18: hangar.monitoring.v1alpha1.ListAlertsResponse.alerts:type_name -> hangar.monitoring.v1alpha1.Alert
-	5,  // 19: hangar.monitoring.v1alpha1.Alert.severity:type_name -> hangar.monitoring.v1alpha1.Severity
-	20, // 20: hangar.monitoring.v1alpha1.Alert.start_time:type_name -> google.protobuf.Timestamp
-	6,  // 21: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:input_type -> hangar.monitoring.v1alpha1.GetOverviewRequest
-	14, // 22: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:input_type -> hangar.monitoring.v1alpha1.GetSeriesRequest
-	17, // 23: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:input_type -> hangar.monitoring.v1alpha1.ListAlertsRequest
-	7,  // 24: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:output_type -> hangar.monitoring.v1alpha1.GetOverviewResponse
-	15, // 25: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:output_type -> hangar.monitoring.v1alpha1.GetSeriesResponse
-	18, // 26: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:output_type -> hangar.monitoring.v1alpha1.ListAlertsResponse
-	24, // [24:27] is the sub-list for method output_type
-	21, // [21:24] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	23, // 17: hangar.monitoring.v1alpha1.Point.time:type_name -> google.protobuf.Timestamp
+	19, // 18: hangar.monitoring.v1alpha1.ListNodeUsageResponse.nodes:type_name -> hangar.monitoring.v1alpha1.NodeUsage
+	22, // 19: hangar.monitoring.v1alpha1.ListAlertsResponse.alerts:type_name -> hangar.monitoring.v1alpha1.Alert
+	5,  // 20: hangar.monitoring.v1alpha1.Alert.severity:type_name -> hangar.monitoring.v1alpha1.Severity
+	23, // 21: hangar.monitoring.v1alpha1.Alert.start_time:type_name -> google.protobuf.Timestamp
+	6,  // 22: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:input_type -> hangar.monitoring.v1alpha1.GetOverviewRequest
+	14, // 23: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:input_type -> hangar.monitoring.v1alpha1.GetSeriesRequest
+	20, // 24: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:input_type -> hangar.monitoring.v1alpha1.ListAlertsRequest
+	17, // 25: hangar.monitoring.v1alpha1.MonitoringService.ListNodeUsage:input_type -> hangar.monitoring.v1alpha1.ListNodeUsageRequest
+	7,  // 26: hangar.monitoring.v1alpha1.MonitoringService.GetOverview:output_type -> hangar.monitoring.v1alpha1.GetOverviewResponse
+	15, // 27: hangar.monitoring.v1alpha1.MonitoringService.GetSeries:output_type -> hangar.monitoring.v1alpha1.GetSeriesResponse
+	21, // 28: hangar.monitoring.v1alpha1.MonitoringService.ListAlerts:output_type -> hangar.monitoring.v1alpha1.ListAlertsResponse
+	18, // 29: hangar.monitoring.v1alpha1.MonitoringService.ListNodeUsage:output_type -> hangar.monitoring.v1alpha1.ListNodeUsageResponse
+	26, // [26:30] is the sub-list for method output_type
+	22, // [22:26] is the sub-list for method input_type
+	22, // [22:22] is the sub-list for extension type_name
+	22, // [22:22] is the sub-list for extension extendee
+	0,  // [0:22] is the sub-list for field type_name
 }
 
 func init() { file_hangar_monitoring_v1alpha1_monitoring_proto_init() }
@@ -1431,7 +1615,7 @@ func file_hangar_monitoring_v1alpha1_monitoring_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc), len(file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc)),
 			NumEnums:      6,
-			NumMessages:   14,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

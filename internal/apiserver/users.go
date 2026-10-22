@@ -132,6 +132,7 @@ func (a account) WhoAmI(ctx context.Context, _ *connect.Request[iamv1alpha1.WhoA
 	}
 	return connect.NewResponse(&iamv1alpha1.WhoAmIResponse{
 		Type: p.Type.String(), Id: p.ID, Invited: a.s.authz.IsInvited(p), Member: a.s.authz.IsMember(p), User: u,
+		PlatformRoles: a.s.authz.PlatformRoles(p),
 	}), nil
 }
 

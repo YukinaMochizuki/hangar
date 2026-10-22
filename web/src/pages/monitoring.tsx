@@ -39,10 +39,12 @@ function HealthCell({ health }: { health?: Health }) {
  * its alerts and machines, counted. A row opens the node's page.
  */
 function NodeRows({ o }: { o: Overview }) {
-  // Each source is asked only once the caller is known to hold its permission.
-  const p = usePlatformCan([nodePerms.list, nodePerms.machines]);
+  // The Nodes are asked only once the caller is known to hold their
+  // permission; what is placed on them is the monitoring's, which this page
+  // needs to be drawn at all.
+  const p = usePlatformCan([nodePerms.list]);
   const nodes = useNodes(p.can(nodePerms.list));
-  const machines = useMachinesPerNode(p.can(nodePerms.machines));
+  const machines = useMachinesPerNode();
   const alerts = useMonitoringAlerts(true).data;
   const failed = [nodes.error && `the nodes: ${errorMessage(nodes.error)}`, machines.error && `the machines: ${errorMessage(machines.error)}`].filter(Boolean);
   const views = new Map<string, NodeView>(nodes.items.map((n) => [n.name, n]));

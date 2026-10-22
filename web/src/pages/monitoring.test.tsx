@@ -76,13 +76,15 @@ describe("PlatformOverview", () => {
     expect(counts("b")).toEqual(["1", "1"]);
   });
 
-  it("asks for no Node and no machine without their permissions, still giving each node its row", async () => {
-    const api = monitoringApi({ perms: ["platform.monitoring.read"], overview: () => overview([nodeOverview("a")]) });
+  it("asks for no Node without compute.nodes.list, still giving each node its row and its machines", async () => {
+    const api = monitoringApi({ perms: ["platform.monitoring.read"], overview: () => overview([nodeOverview("a")]), nodes: [node("a")], machinesOn: ["a"] });
     render(<PlatformOverview />, { wrapper: withApi(api, platform) });
     await screen.findByText("Reachability");
     await waitFor(() => expect(api.calls.filter((c) => c === "TestPermissions").length).toBeGreaterThanOrEqual(2));
     expect(within(nodeRow("a")).getAllByText("OK")).toHaveLength(2);
-    expect(api.calls.filter((c) => c === "ListNodes" || c === "ListMachines")).toEqual([]);
+    // The machines are the monitoring's, counted by the apiserver.
+    await waitFor(() => expect(Array.from(nodeRow("a").querySelectorAll("td")).at(-2)?.textContent).toBe("1"));
+    expect(api.calls.filter((c) => c === "ListNodes")).toEqual([]);
     expect(screen.queryByText(/Did not load/)).toBeNull();
   });
 

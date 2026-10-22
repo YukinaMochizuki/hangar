@@ -39,6 +39,16 @@ the front door (`front-door.md`) from the same release as the binaries.
   and LEDs take it. States (ok, pending, failed, off) have colours of their
   own that the accent is never confused with. The accent is one set of
   variables per theme, so it can change in one place.
+- **A sponsor is badged in the sidebar's foot**: a "Sponsor" pill in an
+  amber-to-rose gradient after their name, the console's one gradient,
+  shown when `WhoAmI`'s platform roles include `platform.sponsor`. No ring
+  on the avatar and nothing in the logo's corner: settled with the owner on
+  screenshots, a ring and a pill together were too much. The badge follows
+  a `platform.sponsor` binding, not what is held: root holds what a sponsor
+  does without funding anything, so root alone, like a member, gets none,
+  and someone bound both is badged.
+  The badge says who someone is and decides no control, which
+  `TestPermissions` does (`tenancy-and-iam.md`).
 - **Hosts are line drawings**, monochrome, seen from below in perspective,
   one per chassis model (`web/src/components/chassis-art.tsx`); only LEDs
   are coloured. A host is described by its placement alone (region, site,
@@ -717,7 +727,8 @@ Overview reads the platform and each node has a page of its own.
 - **The platform's pages are an Overview and Nodes**, `/platform`
   (`web/src/pages/monitoring.tsx`) and `/platform/nodes` with
   `/platform/nodes/<node>` (`web/src/pages/nodes.tsx`), for platform
-  administrators. They are reached from the picker's Platform button
+  administrators and sponsors, who see them alike (`tenancy-and-iam.md`).
+  They are reached from the picker's Platform button
   ("Tenants and projects" above) and from the palette, whose Pages list
   them as "Platform › Overview" and "Platform › Nodes", only when
   `TestPermissions` at the platform holds `platform.monitoring.read`
@@ -725,9 +736,12 @@ Overview reads the platform and each node has a page of its own.
   is unknown or failed they are hidden, and nothing is said. The Overview
   states a refusal without that permission, the Nodes pages without
   `compute.nodes.list`. Each page asks for what else it reads only once
-  the same answer holds its permission: the Nodes and every project's
-  machines (`compute.machines.list`) on the Overview, the monitoring on a
-  node's page, which without it says so in its place. A platform page belongs to no project: its sidebar
+  the same answer holds its permission: the Nodes on the Overview, and on
+  the Nodes pages the monitoring, which without it a node's page says so in
+  its place. What is placed on each node, its machines counted and what is
+  held summed, comes from `MonitoringService.ListNodeUsage` under the
+  monitoring's permission, never from listing every project's machines
+  (`monitoring.md`). A platform page belongs to no project: its sidebar
   holds the platform's pages alone, under a switcher that reads "Platform ·
   Every tenant", with a link back to the project used last, and its crumbs
   name no tenant or project. The palette keeps the project used last as its
@@ -749,9 +763,10 @@ Overview reads the platform and each node has a page of its own.
 - **Nodes lists each host's capacity to read at a glance.** A row is the
   node, with its CPU model and region under its name, its state, and per
   resource what the host has in bold; a bar of it, the part the host keeps
-  for itself (capacity less allocatable) in a light tone and what the
-  machines placed on it hold (their `spec.resources` summed, as the
-  scheduler counts them) in a dark one, which takes the pending colour from
+  for itself (capacity less allocatable) in a light tone and what is
+  placed on it holds (the machines' `spec.resources` summed, with the Disks
+  and FileShares there, as the scheduler counts them,
+  `MonitoringService.ListNodeUsage`) in a dark one, which takes the pending colour from
   80% of what the host offers, as a quota's bar does; and under it what is
   left for another machine. vCPUs are shared, not reserved
   (`machine-model.md`), so the vCPU column says how many are assigned,

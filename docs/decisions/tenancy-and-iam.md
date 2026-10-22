@@ -51,7 +51,7 @@ cloud, and some people fund the hardware and should see more of it.
     system-managed.
   - A few permissions are on no kind and are held at the platform alone:
     `platform.monitoring.read`, reading the platform's monitoring
-    (`monitoring.md`), which only `platform.root` holds.
+    (`monitoring.md`), which `platform.root` and `platform.sponsor` hold.
   - Roles bundle permissions, and a check compares the permission asked
     for with every bound role's, never a role's name. They are built in
     for now and may become resources later. Below the platform they follow
@@ -270,9 +270,25 @@ cloud, and some people fund the hardware and should see more of it.
   as in Kubernetes (`secrets.md`).
 - No role grants apply or delete on system-managed kinds (`Machine`, `Node`);
   see `docs/decisions/apply-semantics.md`.
-- **Sponsors** (people who fund the hardware) get `platform.sponsor`: aggregated
-  platform data only (node capacity and utilization, per-tenant usage totals,
-  cost and traffic), never the contents of other tenants' resources.
+- **Sponsors** (people who fund the hardware) get `platform.sponsor`: the
+  platform's own pages, and nothing of any tenant's. There is one sponsor
+  role, not tiers of them. It holds what a member does, and
+  `platform.monitoring.read` with get, list and watch on `Node`, so a
+  sponsor reads what a platform administrator reads on the console's
+  platform pages: the monitoring, which counts tenants' machines and names
+  none (`monitoring.md`), each Node, and what is placed on each node,
+  summed (`MonitoringService.ListNodeUsage`). It reads no tenant, project
+  or machine, no logs, exec or ssh, and lists no tenant but its own.
+  Totals of what tenants hold, cost and traffic are not shown to anyone
+  yet; per-tenant figures are not for sponsors. Settled with the owner,
+  2026-10.
+  - `AccountService.WhoAmI` names the caller's platform roles, so the
+    console can badge a sponsor (`console-design.md`). The roles say who
+    someone is; what they may do is still asked by permission.
+  - `TestPermissions` answers nothing at a tenant or project a sponsor
+    cannot see, `platform.monitoring.read` included, though the
+    monitoring, which is asked at the platform, answers them; it is held
+    at the platform, where the console asks it.
 - **More quota is not a permission.** A tenant references a `Plan` (a
   platform-level resource defining quota limits), and a sponsor's tenant gets a
   larger plan. See "Quotas" below.

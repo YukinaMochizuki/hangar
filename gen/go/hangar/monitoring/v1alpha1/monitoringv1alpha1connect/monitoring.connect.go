@@ -42,6 +42,9 @@ const (
 	// MonitoringServiceListAlertsProcedure is the fully-qualified name of the MonitoringService's
 	// ListAlerts RPC.
 	MonitoringServiceListAlertsProcedure = "/hangar.monitoring.v1alpha1.MonitoringService/ListAlerts"
+	// MonitoringServiceListNodeUsageProcedure is the fully-qualified name of the MonitoringService's
+	// ListNodeUsage RPC.
+	MonitoringServiceListNodeUsageProcedure = "/hangar.monitoring.v1alpha1.MonitoringService/ListNodeUsage"
 )
 
 // MonitoringServiceClient is a client for the hangar.monitoring.v1alpha1.MonitoringService service.
@@ -56,6 +59,10 @@ type MonitoringServiceClient interface {
 	// ListAlerts answers the alerts firing now, from Alertmanager, but those
 	// silenced or inhibited and the always-firing Watchdog.
 	ListAlerts(context.Context, *connect.Request[v1alpha1.ListAlertsRequest]) (*connect.Response[v1alpha1.ListAlertsResponse], error)
+	// ListNodeUsage answers, for each node, how many machines are placed on
+	// it and what they hold there, as the scheduler counts it. It reads the
+	// store, not Prometheus, so it answers while Prometheus is down.
+	ListNodeUsage(context.Context, *connect.Request[v1alpha1.ListNodeUsageRequest]) (*connect.Response[v1alpha1.ListNodeUsageResponse], error)
 }
 
 // NewMonitoringServiceClient constructs a client for the
@@ -88,14 +95,21 @@ func NewMonitoringServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(monitoringServiceMethods.ByName("ListAlerts")),
 			connect.WithClientOptions(opts...),
 		),
+		listNodeUsage: connect.NewClient[v1alpha1.ListNodeUsageRequest, v1alpha1.ListNodeUsageResponse](
+			httpClient,
+			baseURL+MonitoringServiceListNodeUsageProcedure,
+			connect.WithSchema(monitoringServiceMethods.ByName("ListNodeUsage")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // monitoringServiceClient implements MonitoringServiceClient.
 type monitoringServiceClient struct {
-	getOverview *connect.Client[v1alpha1.GetOverviewRequest, v1alpha1.GetOverviewResponse]
-	getSeries   *connect.Client[v1alpha1.GetSeriesRequest, v1alpha1.GetSeriesResponse]
-	listAlerts  *connect.Client[v1alpha1.ListAlertsRequest, v1alpha1.ListAlertsResponse]
+	getOverview   *connect.Client[v1alpha1.GetOverviewRequest, v1alpha1.GetOverviewResponse]
+	getSeries     *connect.Client[v1alpha1.GetSeriesRequest, v1alpha1.GetSeriesResponse]
+	listAlerts    *connect.Client[v1alpha1.ListAlertsRequest, v1alpha1.ListAlertsResponse]
+	listNodeUsage *connect.Client[v1alpha1.ListNodeUsageRequest, v1alpha1.ListNodeUsageResponse]
 }
 
 // GetOverview calls hangar.monitoring.v1alpha1.MonitoringService.GetOverview.
@@ -113,6 +127,11 @@ func (c *monitoringServiceClient) ListAlerts(ctx context.Context, req *connect.R
 	return c.listAlerts.CallUnary(ctx, req)
 }
 
+// ListNodeUsage calls hangar.monitoring.v1alpha1.MonitoringService.ListNodeUsage.
+func (c *monitoringServiceClient) ListNodeUsage(ctx context.Context, req *connect.Request[v1alpha1.ListNodeUsageRequest]) (*connect.Response[v1alpha1.ListNodeUsageResponse], error) {
+	return c.listNodeUsage.CallUnary(ctx, req)
+}
+
 // MonitoringServiceHandler is an implementation of the hangar.monitoring.v1alpha1.MonitoringService
 // service.
 type MonitoringServiceHandler interface {
@@ -126,6 +145,10 @@ type MonitoringServiceHandler interface {
 	// ListAlerts answers the alerts firing now, from Alertmanager, but those
 	// silenced or inhibited and the always-firing Watchdog.
 	ListAlerts(context.Context, *connect.Request[v1alpha1.ListAlertsRequest]) (*connect.Response[v1alpha1.ListAlertsResponse], error)
+	// ListNodeUsage answers, for each node, how many machines are placed on
+	// it and what they hold there, as the scheduler counts it. It reads the
+	// store, not Prometheus, so it answers while Prometheus is down.
+	ListNodeUsage(context.Context, *connect.Request[v1alpha1.ListNodeUsageRequest]) (*connect.Response[v1alpha1.ListNodeUsageResponse], error)
 }
 
 // NewMonitoringServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -153,6 +176,12 @@ func NewMonitoringServiceHandler(svc MonitoringServiceHandler, opts ...connect.H
 		connect.WithSchema(monitoringServiceMethods.ByName("ListAlerts")),
 		connect.WithHandlerOptions(opts...),
 	)
+	monitoringServiceListNodeUsageHandler := connect.NewUnaryHandler(
+		MonitoringServiceListNodeUsageProcedure,
+		svc.ListNodeUsage,
+		connect.WithSchema(monitoringServiceMethods.ByName("ListNodeUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.monitoring.v1alpha1.MonitoringService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case MonitoringServiceGetOverviewProcedure:
@@ -161,6 +190,8 @@ func NewMonitoringServiceHandler(svc MonitoringServiceHandler, opts ...connect.H
 			monitoringServiceGetSeriesHandler.ServeHTTP(w, r)
 		case MonitoringServiceListAlertsProcedure:
 			monitoringServiceListAlertsHandler.ServeHTTP(w, r)
+		case MonitoringServiceListNodeUsageProcedure:
+			monitoringServiceListNodeUsageHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -180,4 +211,8 @@ func (UnimplementedMonitoringServiceHandler) GetSeries(context.Context, *connect
 
 func (UnimplementedMonitoringServiceHandler) ListAlerts(context.Context, *connect.Request[v1alpha1.ListAlertsRequest]) (*connect.Response[v1alpha1.ListAlertsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.monitoring.v1alpha1.MonitoringService.ListAlerts is not implemented"))
+}
+
+func (UnimplementedMonitoringServiceHandler) ListNodeUsage(context.Context, *connect.Request[v1alpha1.ListNodeUsageRequest]) (*connect.Response[v1alpha1.ListNodeUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.monitoring.v1alpha1.MonitoringService.ListNodeUsage is not implemented"))
 }

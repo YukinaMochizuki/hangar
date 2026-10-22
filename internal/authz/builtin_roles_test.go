@@ -18,7 +18,8 @@ func TestBuiltInRolesHoldExactly(t *testing.T) {
 		"platform.root": func(_ registry.Resource, v Verb, perm string) bool {
 			return isRead(v) || isWrite(v) || slices.Contains(reach, perm)
 		},
-		"platform.sponsor": func(registry.Resource, Verb, string) bool { return false },
+		// A sponsor reads the Nodes, the platform's own, and no kind else.
+		"platform.sponsor": func(r registry.Resource, v Verb, _ string) bool { return r.Kind == registry.Node.Kind && isRead(v) },
 		"platform.member":  func(registry.Resource, Verb, string) bool { return false },
 		"tenant.owner": func(_ registry.Resource, v Verb, perm string) bool {
 			return isRead(v) || isWrite(v) || slices.Contains(reach, perm)
@@ -57,7 +58,7 @@ func TestBuiltInRolesHoldExactly(t *testing.T) {
 		if got, w := role.Grants(CreateTenant), strings.HasPrefix(name, "platform."); got != w {
 			t.Errorf("%s grants %s: %t, want %t", name, CreateTenant, got, w)
 		}
-		if got, w := role.Grants(MonitoringRead), name == "platform.root"; got != w {
+		if got, w := role.Grants(MonitoringRead), name == "platform.root" || name == "platform.sponsor"; got != w {
 			t.Errorf("%s grants %s: %t, want %t", name, MonitoringRead, got, w)
 		}
 	}

@@ -30,6 +30,8 @@ type Target struct {
 
 // grant is one RoleBinding as the authorizer uses it.
 type grant struct {
+	// name is the role's, for saying which a caller holds; checks use role.
+	name    string
 	role    Role
 	tenant  string
 	project string
@@ -330,7 +332,7 @@ func (a *Authorizer) entryOf(rb *iamv1alpha1.RoleBinding) (bindingEntry, bool) {
 	default:
 		return bindingEntry{}, false
 	}
-	e.grant.role = role
+	e.grant.name, e.grant.role = spec.GetRole(), role
 	switch t := spec.GetScope().GetTarget().(type) {
 	case *iamv1alpha1.BindingScope_Platform:
 		e.grant.platform = true
@@ -489,6 +491,22 @@ func (a *Authorizer) IsInvited(p auth.Principal) bool {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.invited(p)
+}
+
+// PlatformRoles returns the names of the roles bound to p at the platform,
+// sorted, each once. It is for saying who someone is, such as a sponsor's
+// badge; whether p may do something is Allowed's, by permission.
+func (a *Authorizer) PlatformRoles(p auth.Principal) []string {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	var names []string
+	for _, g := range a.grants[subject{p.Type, p.ID}] {
+		if g.platform {
+			names = append(names, g.name)
+		}
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 // Username returns the name of a person's User, if they have signed up.

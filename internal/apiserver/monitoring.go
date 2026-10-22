@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +17,10 @@ import (
 
 	monitoringv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 // MonitoringConfig is where MonitoringService asks: the host's Prometheus
@@ -177,6 +181,81 @@ func (m monitoring) GetSeries(ctx context.Context, req *connect.Request[monitori
 		res.AlertAbove = proto.Float64(def.alertAbove)
 	}
 	return connect.NewResponse(res), nil
+}
+
+// ListNodeUsage answers, for each Node, its machines counted and what they
+// hold there, summed (nodeUsageSummary). It reads the store, so it answers
+// without Prometheus.
+func (m monitoring) ListNodeUsage(ctx context.Context, _ *connect.Request[monitoringv1alpha1.ListNodeUsageRequest]) (*connect.Response[monitoringv1alpha1.ListNodeUsageResponse], error) {
+	if err := m.authorize(ctx); err != nil {
+		return nil, err
+	}
+	nodes, err := m.s.nodeUsageSummary(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&monitoringv1alpha1.ListNodeUsageResponse{Nodes: nodes}), nil
+}
+
+// nodeUsageSummary is, for each Node by name, the machines placed on it
+// counted and their vCPUs summed, with the memory and disk held there as
+// the scheduler counts them (nodeUsage): the machines', and the disks' and
+// file shares' placed there. No machine, tenant or project is named.
+func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.NodeUsage, error) {
+	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
+	if err != nil {
+		return nil, err
+	}
+	machineObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Machine.Kind})
+	if err != nil {
+		return nil, err
+	}
+	type placed struct {
+		machines int32
+		cpu      int64
+	}
+	per := map[string]placed{}
+	for _, o := range machineObjs {
+		mc, ok := decodeMachine(o)
+		if !ok {
+			return nil, fmt.Errorf("decode machine %s", o.Name)
+		}
+		n := mc.GetSpec().GetNode()
+		if n == "" {
+			continue
+		}
+		p := per[n]
+		p.machines++
+		// The controllers write a machine's cpu in its canonical form; one
+		// that does not parse adds no vCPU, and the machine still counts.
+		// The scheduler does not count vCPUs, which are shared.
+		if c := mc.GetSpec().GetResources().GetCpu(); c != "" {
+			if v, err := quantity.CPU(c); err == nil {
+				p.cpu += int64(v)
+			}
+		}
+		per[n] = p
+	}
+	var out []*monitoringv1alpha1.NodeUsage
+	for _, n := range nodes {
+		name := n.GetMetadata().GetName()
+		p, h := per[name], used[name]
+		out = append(out, &monitoringv1alpha1.NodeUsage{
+			Node:     name,
+			Machines: p.machines,
+			Cpu:      strconv.FormatInt(p.cpu, 10),
+			Memory:   formatAmount(dimMemory, clampInt64(h.memory)),
+			Disk:     formatAmount(dimDisk, clampInt64(h.disk)),
+		})
+	}
+	slices.SortFunc(out, func(a, b *monitoringv1alpha1.NodeUsage) int { return strings.Compare(a.GetNode(), b.GetNode()) })
+	return out, nil
+}
+
+// clampInt64 is v, or the largest int64 when v is past it: nodeUsage holds
+// its sums at the largest uint64 rather than wrapping.
+func clampInt64(v uint64) int64 {
+	return int64(min(v, math.MaxInt64))
 }
 
 // watchdog is the always-firing alert that proves the alerting path works,

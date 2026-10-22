@@ -89,8 +89,8 @@ function CapacityCell({ c, wide }: { c: Capacity; wide?: boolean }) {
 
 const capacityLabel: Record<Capacity["kind"], string> = { cpu: "vCPU", memory: "Memory", disk: "Disk" };
 
-/** What a Nodes page may read beside the Nodes: every project's machines to count, and the monitoring. */
-type May = { machines: boolean; monitoring: boolean };
+/** What a Nodes page may read beside the Nodes: the monitoring, which counts what is placed on each. */
+type May = { monitoring: boolean };
 
 /**
  * A platform page that needs compute.nodes.list: nothing while unknown, the
@@ -98,7 +98,7 @@ type May = { machines: boolean; monitoring: boolean };
  * and handed to the page, which asks only for what it may.
  */
 function Gate({ title, crumbs, children }: { title: string; crumbs: ReactNode[]; children: (may: May) => ReactNode }) {
-  const p = usePlatformCan([nodePerms.list, nodePerms.machines, monitoringPermission]);
+  const p = usePlatformCan([nodePerms.list, monitoringPermission]);
   const top = <Topbar platform crumbs={crumbs} />;
   if (!p.settled) return top;
   if (p.error) {
@@ -125,7 +125,7 @@ function Gate({ title, crumbs, children }: { title: string; crumbs: ReactNode[];
   return (
     <>
       {top}
-      {children({ machines: p.can(nodePerms.machines), monitoring: p.can(monitoringPermission) })}
+      {children({ monitoring: p.can(monitoringPermission) })}
     </>
   );
 }
@@ -141,7 +141,7 @@ export function NodeList() {
 
 function NodeListBody({ may }: { may: May }) {
   const nodes = useNodes();
-  const machines = useMachinesPerNode(may.machines);
+  const machines = useMachinesPerNode(may.monitoring);
   return (
     <>
       <PageHead title="Nodes" description="The hosts that run machines: what each is, how it stands, and what it has free." />
@@ -240,7 +240,7 @@ function NodeDetailBody({ name, initial, may }: { name: string; initial: SeriesR
 }
 
 function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may: May }) {
-  const perNode = useMachinesPerNode(may.machines);
+  const perNode = useMachinesPerNode(may.monitoring);
   const machines = perNode.count(n.name);
   const [range, setRange] = useState<SeriesRange>(initial);
   const o = useMonitoringOverview(may.monitoring);
