@@ -365,6 +365,60 @@ unit, and checks each of these from there.
 - `/proc/sys` and `/sys` are read-only but readable, and the unit sees
   the host's devices' names in its read-only `/dev`.
 
+## CPU shares
+
+A VM's vCPUs are shared, never reserved: the scheduler holds a machine's
+memory and disk, not its CPUs. So that no mix of shapes changes how far the
+host's CPUs are shared, each VM's share of them under load follows its
+memory (#177):
+
+```
+ -.slice
+ ├─ system.slice   CPUWeight 100   every CPU
+ ├─ user.slice     CPUWeight 100   every CPU
+ └─ hangar.slice   CPUWeight 1000  AllowedCPUs: all but --reserved-cpu
+     └─ hangar-vm-<uid>.service    CPUWeight: memory / 256 MiB
+```
+
+- **Every VM's unit runs in `hangar.slice`** (`Slice=`), beside
+  `system.slice`, so the VMs share what the slice gets among themselves
+  alone. The name has no dash: systemd reads `hangar-vms.slice` as a slice
+  inside `hangar.slice`, and a weight counts only against its siblings.
+- **A VM's `CPUWeight` is one per 256 MiB of its memory**, within the 1 to
+  10000 systemd takes: 2 for 512 MiB, 16 for 4 GiB. Under full load the
+  slice's CPUs are split by memory, each VM taking no more than its vCPUs
+  and the rest going to the others; with CPUs idle, a VM uses them up to
+  its vCPUs, as before. On a host of 30 CPUs for VMs and about 100 GiB of
+  memory for them, a VM is sure of about 0.3 of a CPU per GiB.
+- **A FileShare's server has a weight of 100**, a 25 GiB machine's, not
+  its 256 MiB's 1: it serves every client of its share, which would wait on
+  it under load (`hard` mounts stall rather than fail). With its one vCPU
+  it takes at most one CPU.
+- **The slice's `CPUWeight` is 1000**, against the 100 of `system.slice`
+  and `user.slice`: under full load the VMs take most of the CPUs they may
+  use, and the host's services still get some of them.
+- **`--reserved-cpu` CPUs are the host's alone**: the slice's `AllowedCPUs`
+  is every online CPU but those, taken whole cores first, a core's SMT
+  siblings together (`MachineCPUs`, from `/sys/devices/system/cpu`), so no
+  vCPU shares a core with the agent, the apiserver or ZFS. The host's
+  services may still use every CPU, at their weight. The flag also comes
+  off the node's allocatable cpu, as before. Without it the slice has
+  every CPU. `deploy/host` passes `HANGAR_RESERVED_CPU` when the host env
+  file sets it.
+- **The agent owns the slice.** As the hypervisor driver starts it makes
+  `hangar.slice` a transient unit with its weight and CPUs, or sets them on
+  the one loaded already, at runtime, so a changed `--reserved-cpu` takes
+  effect when the agent starts again, and no file of the deploy's holds a
+  second copy. A VM's own weight is set when its unit starts: a VM
+  started before the slice existed runs in `system.slice`, unweighted,
+  until it is started again.
+
+`TestTheVMsShareTheirSliceByMemory` in `test/testbed/vms` reads, on a real
+host, the slice's `cpu.weight` and `cpuset.cpus.effective`, each unit's
+`cpu.weight`, and the CPUs its launcher may run on: systemd enables the
+cpuset controller no further down than the slice, whose cpuset binds the
+units' processes.
+
 ## Consequences
 
 - Recovering from a crash, a reinstall of the agent, or a machine deleted while

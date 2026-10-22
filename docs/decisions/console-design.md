@@ -343,50 +343,65 @@ Settled with the owner on screenshots before the dialogs sent anything.
   off.
 - **An edit keeps the machine's own size** until another is chosen: the
   listed size its cpu and memory match is marked Current; a spec matching
-  none shows a Custom card first, with its cpu and memory, chosen and
-  marked "Current, no listed size", and is never moved to a listed size by
-  itself. A container's disk starts at the disk it has and never follows a
-  chosen size: a disk grows and never shrinks, so it grows only when the
-  person types a larger one. Its smallest is the disk its machine holds
-  once placed, and before that the disk the spec asks for, in whole GiB
-  rounded up. A stored disk that is not whole GiB, such as `10G`, is sent
-  back as it is, and checked only once the person changes it.
+  none shows a card of its own first, Current, with its cpu and memory,
+  chosen and marked "Current, no listed size", and is never moved to a
+  listed size by itself. A container's disk starts at the disk it has and
+  never follows a chosen size: a disk grows and never shrinks, so it grows
+  only when the person types a larger one. Its smallest is the disk its
+  machine holds once placed, and before that the disk the spec asks for,
+  in whole GiB rounded up. A stored disk that is not whole GiB, such as
+  `10G`, is sent back as it is, and checked only once the person changes
+  it.
 - **Resize is a dialog on the machine's page** for the size alone: the
-  platform's sizes, the current one (or Custom) marked, and that resizing
-  restarts the machine, or for a stopped one that the new size counts once
-  it starts; the disk stays as it is. It applies cpu and memory alone, at
-  the version of the object the dialog opened on, and says so when the
-  object changed since, as the edit page does.
+  platform's sizes, the current one marked (a card of its own, Current,
+  when no listed size matches), and that resizing restarts the machine,
+  or for a stopped one that the new size counts once it starts; the disk
+  stays as it is. It applies cpu and memory alone, at the version of the
+  object the dialog opened on, and says so when the object changed since,
+  as the edit page does.
 - **Edit, Resize, Start and Stop show only when TestPermissions holds the
   kind's apply permission** (`compute.containers.apply`,
   `compute.virtualmachines.apply`), and Delete only its delete permission,
   as "What a control is shown for" says; the edit page states the refusal
   once the answer gives one. Edit and Resize are not offered for a
   machine being deleted, whose edit page says so and holds no form.
-- **The sizes are the platform's**, read from the API
+- **The sizes are the platform's presets**, read from the API
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
-  `machine-sizes.md`); the console holds none of its own and offers no
-  size outside them. The create form shows them by their `order` and fills
-  the machine's cpu and memory from the chosen one; `?size=` takes a
-  size's name, and a name the platform does not list chooses the first.
-  A size's card states its cpu and memory, not its disk.
-  With no size defined the form says "No machine sizes are defined on this
-  platform." and sends nothing. A list's size badge is the listed size
-  whose cpu and memory the machine has, and none when no size matches.
+  `machine-sizes.md`); the console holds none of its own. The create form
+  shows them by their `order` and fills the machine's cpu and memory from
+  the chosen one; `?size=` takes a size's name, and a name the platform
+  does not list chooses the first. A size's card states its cpu and
+  memory, not its disk. A size the shape rules refuse, stored before
+  them, is not offered, in the form or in Resize, since a machine of it
+  would be refused; lists still name machines by it. A list's size badge
+  is the listed size whose cpu and memory the machine has, and none when
+  no size matches.
+- **Custom, after the sizes, is a shape of the person's own.** Chosen, it
+  opens Memory (GiB, in steps of 0.25) and vCPUs fields, starting from the
+  shape chosen before, and says the vCPUs the memory allows; a shape the
+  rules refuse (`shapeProblem`, the apiserver's rules) is stated under the
+  fields and above the submit button, and the form sends nothing. Memory
+  goes out as whole Gi, or as Mi when it is not. With no size defined,
+  Custom is the only card and is chosen. An edited machine whose shape is
+  no listed size shows it as a card of its own, Current, beside Custom. The
+  Resize dialog offers the sizes alone; a shape of one's own is the edit
+  page's.
 - **The disk is chosen apart from the size**, as GCP and AWS choose a boot
   disk apart from the machine type. The create form's Disk field takes
-  whole GiB, at least the minimum its heading states: the chosen size's
-  disk, or for a VM its image's smallest disk (`imageFloorGiB`) where that
-  is larger. It holds that minimum, following the size and the image, until
-  the person edits it. Below the minimum, or not a whole number, the field
-  states the fact and the form sends nothing. The manifest and the summary
+  whole GiB, at least the minimum its heading states: 2 GiB, or for a VM
+  its image's smallest disk (`imageFloorGiB`) where that is larger. It
+  starts at the chosen size's disk (for Custom, the size's chosen before
+  it, or 10 GiB with none), or that minimum where it is larger, and
+  follows the size and the image until the person edits it. Below the
+  minimum, or not a whole number, the field states the fact and the form
+  sends nothing. The manifest and the summary
   show the value typed, refused or not. It goes to a container's
   `resources.disk` and a VM's `rootDisk.fromImage.size`. By the field: "A
   disk can grow later; growing restarts the machine. It never shrinks."
-- **A size's card is over quota by its own smallest disk**, with its cpu
-  and memory: the larger of its disk and the image's floor, never the disk
-  typed. A raised disk past the project's disk limit is stated under the
-  Disk field and above the submit button only.
+- **A size's card is over quota by the disk it starts at**, with its cpu
+  and memory: the larger of its disk and the floor, never the disk typed.
+  A raised disk past the project's disk limit is stated under the Disk
+  field and above the submit button only.
 - **The quota warning reads the project's status**: its limits, the smaller
   of its own and its tenant's, against its own usage. A creation that goes
   past the tenant's limit through other projects' usage is refused by the
