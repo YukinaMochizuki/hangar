@@ -162,6 +162,11 @@ type kindHooks struct {
 	// readableByAll lets everyone allowed to use Hangar at all get, list and
 	// watch every object of the kind, whatever their grants.
 	readableByAll bool
+	// readableBy, if set, reports whether p holds permission, the kind's
+	// get, list or watch, somewhere that lets it read obj besides obj's own
+	// target. It widens those reads alone (backend.mayRead); every other
+	// verb is decided at the target.
+	readableBy func(s *Server, p auth.Principal, permission string, obj proto.Message) bool
 	// anyNodeReports lets every node agent write the status of any object
 	// of the kind, for what is the same on every node.
 	anyNodeReports bool
@@ -437,6 +442,7 @@ func hooksFor(r registry.Resource) kindHooks {
 		return kindHooks{
 			target:            customDomainTarget,
 			targetNeedsObject: true,
+			readableBy:        readsCustomDomain,
 			owner:             customDomainOwner,
 			validate:          validateCustomDomain,
 			beforeDelete:      refuseDeletingDomainInUse,

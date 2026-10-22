@@ -20,7 +20,13 @@ otherwise a stale record pointing at the host would let anyone take it.
   both immutable, and `spec.projects`, the tenant's projects whose
   endpoints may serve under it (empty is all of them). Writes are at the
   tenant: whoever may write the tenant's objects there, its owner, writes
-  its domains; project roles do not. Domains count toward the plan's
+  its domains; project roles do not. Reads are at the tenant too, and also
+  at each project the domain lets serve under it (owner's decision), so a
+  project's people, its viewers included, see the domains they may use
+  and why one does not serve yet, and no other (the kind's `readableBy`).
+  A project's watch follows the allow-list as it is when each change is
+  sent: a domain that stops letting the project in sends it nothing more,
+  not its deletion. Domains count toward the plan's
   `domains` limit, which only a Plan sets. The kind is not `Domain`:
   `registry.Domain` is the API group's suffix.
 - **What a domain may be** (`internal/customdomain`): a hostname in lower

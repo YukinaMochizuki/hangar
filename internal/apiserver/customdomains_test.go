@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
@@ -502,27 +504,121 @@ func TestANestedDomainTakesNoHostnameFromAProjectItLeavesOut(t *testing.T) {
 	}
 }
 
-// TestProjectRolesDoNotReachCustomDomains: a domain is the tenant's, so
-// even a project's editor neither reads nor writes one; and no one but the
-// apiserver writes a domain's status, its owner included.
-func TestProjectRolesDoNotReachCustomDomains(t *testing.T) {
+// TestProjectRolesReadTheDomainsTheirProjectMayUse: a project's people,
+// viewers to owners, get, list and watch the tenant's domains that let
+// their project serve under them, and no other, as the allow-list stands
+// now; they write none of them. No one but the apiserver writes a domain's
+// status, its tenant's owner included.
+func TestProjectRolesReadTheDomainsTheirProjectMayUse(t *testing.T) {
 	s, system, user := running(t)
+	project(t, s, user, "blog")
+	bob := otherTenant(t, s)
 	b := s.backend(registry.CustomDomain)
-	if _, err := b.Apply(user, customDomain("example", "acme", "example.com")); err != nil {
+	since, err := s.store.Revision(system)
+	if err != nil {
 		t.Fatal(err)
 	}
-	for _, role := range []string{"project.owner", "project.editor"} {
-		who := bindProjectRole(t, s, system, strings.ReplaceAll(role, ".", "-")+"@example.com", role)
-		_, err := b.Apply(who, customDomain("mine", "acme", "mine.org"))
-		wantCodeOf(t, err, connect.CodePermissionDenied, role+" making a domain")
-		_, err = b.Get(who, resource.Key{Name: "example"})
-		wantCodeOf(t, err, connect.CodePermissionDenied, role+" reading a domain")
-		_, err = b.Delete(who, resource.Key{Name: "example"}, nil)
-		wantCodeOf(t, err, connect.CodePermissionDenied, role+" deleting a domain")
+	if _, err := b.Apply(user, customDomain("blog-only", "acme", "blog.org", "blog")); err != nil {
+		t.Fatal(err)
 	}
-	d := mustGet[*networkv1alpha1.CustomDomain](t, s, system, registry.CustomDomain, resource.Key{Name: "example"})
+	if _, err := b.Apply(user, customDomain("all", "acme", "example.com")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Apply(bob, customDomain("theirs", "other", "theirs.org")); err != nil {
+		t.Fatal(err)
+	}
+	names := func(ctx context.Context) []string {
+		t.Helper()
+		list, err := b.List(ctx, resource.ListOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, o := range list.Items {
+			out = append(out, object.Meta(o).GetName())
+		}
+		slices.Sort(out)
+		return out
+	}
+	for _, role := range []string{"project.viewer", "project.editor", "project.owner"} {
+		who := bindProjectRole(t, s, system, strings.ReplaceAll(role, ".", "-")+"@example.com", role)
+		if _, err := b.Get(who, resource.Key{Name: "all"}); err != nil {
+			t.Errorf("%s reading a domain every project may use: %v", role, err)
+		}
+		_, err := b.Get(who, resource.Key{Name: "blog-only"})
+		wantCodeOf(t, err, connect.CodePermissionDenied, role+" reading a domain another project may use")
+		_, err = b.Get(who, resource.Key{Name: "theirs"})
+		wantCodeOf(t, err, connect.CodePermissionDenied, role+" reading another tenant's domain")
+		if got := names(who); !slices.Equal(got, []string{"all"}) {
+			t.Errorf("%s lists %v; want [all]", role, got)
+		}
+		_, err = b.Apply(who, customDomain("mine", "acme", "mine.org"))
+		wantCodeOf(t, err, connect.CodePermissionDenied, role+" making a domain")
+		_, err = b.Apply(who, customDomain("all", "acme", "example.com", "web"))
+		wantCodeOf(t, err, connect.CodePermissionDenied, role+" changing a domain it reads")
+		_, err = b.Delete(who, resource.Key{Name: "all"}, nil)
+		wantCodeOf(t, err, connect.CodePermissionDenied, role+" deleting a domain it reads")
+	}
+
+	// A watch sends what a list would, as the allow-lists stand when each
+	// change is sent: of the two made first, the one the project may use;
+	// then blog-only once it lets web in; and nothing of all once it
+	// leaves web out, not even a deletion. A last change to blog-only fences
+	// the silence: it must come right after.
+	viewer := auth.WithPrincipal(system, auth.Principal{Type: auth.User, ID: "project-viewer@example.com"})
+	ctx, cancel := context.WithTimeout(viewer, 10*time.Second)
+	defer cancel()
+	type seenEvent struct {
+		typ  metav1.EventType
+		name string
+	}
+	seen := make(chan seenEvent, 16)
+	watched := make(chan error, 1)
+	go func() {
+		watched <- b.Watch(ctx, resource.WatchOptions{SinceRevision: since}, func(ev resource.Event) error {
+			if ev.Object != nil {
+				seen <- seenEvent{ev.Type, object.Meta(ev.Object).GetName()}
+			}
+			return nil
+		})
+	}()
+	next := func(want seenEvent) {
+		t.Helper()
+		select {
+		case got := <-seen:
+			if got != want {
+				t.Errorf("a project viewer's watch sent %v %s; want %v %s", got.typ, got.name, want.typ, want.name)
+			}
+		case err := <-watched:
+			t.Fatalf("the watch ended waiting for %s: %v", want.name, err)
+		case <-ctx.Done():
+			t.Fatalf("a project viewer's watch sent nothing for %s", want.name)
+		}
+	}
+	next(seenEvent{metav1.EventType_EVENT_TYPE_ADDED, "all"})
+	if _, err := b.Apply(user, customDomain("blog-only", "acme", "blog.org", "blog", "web")); err != nil {
+		t.Fatal(err)
+	}
+	next(seenEvent{metav1.EventType_EVENT_TYPE_MODIFIED, "blog-only"})
+	if _, err := b.Apply(user, customDomain("all", "acme", "example.com", "blog")); err != nil {
+		t.Fatal(err)
+	}
+	fence := customDomain("blog-only", "acme", "blog.org", "blog", "web")
+	fence.Metadata.Labels = map[string]string{"fence": "1"}
+	if _, err := b.Apply(user, fence); err != nil {
+		t.Fatal(err)
+	}
+	next(seenEvent{metav1.EventType_EVENT_TYPE_MODIFIED, "blog-only"})
+	cancel()
+
+	// What may be read follows the allow-lists as they are now.
+	if got := names(viewer); !slices.Equal(got, []string{"blog-only"}) {
+		t.Errorf("after the allow-lists changed, a web viewer lists %v; want [blog-only]", got)
+	}
+
+	d := mustGet[*networkv1alpha1.CustomDomain](t, s, system, registry.CustomDomain, resource.Key{Name: "all"})
 	rv := d.GetMetadata().GetResourceVersion()
-	_, err := b.UpdateStatus(user, resource.Key{Name: "example"}, &networkv1alpha1.CustomDomainStatus{Conditions: []*metav1.Condition{{
+	_, err = b.UpdateStatus(user, resource.Key{Name: "all"}, &networkv1alpha1.CustomDomainStatus{Conditions: []*metav1.Condition{{
 		Type: CustomDomainVerified, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE,
 	}}}, &rv)
 	wantCodeOf(t, err, connect.CodePermissionDenied, "the tenant's owner verifying its domain itself")

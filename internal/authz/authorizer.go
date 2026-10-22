@@ -444,6 +444,21 @@ const LocalRootRole = "platform.root"
 
 // Allowed reports whether p holds the permission on the target.
 func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool {
+	return a.allowedBy(p, permission, func(g grant) bool { return a.covers(g, t) })
+}
+
+// AllowedInProjectsOf reports whether p holds permission at some project of
+// tenant, or at the tenant or the platform, which cover them all. It looks
+// only at p's own grants, however many projects the tenant has.
+func (a *Authorizer) AllowedInProjectsOf(p auth.Principal, permission, tenant string) bool {
+	return a.allowedBy(p, permission, func(g grant) bool {
+		return a.covers(g, Target{Tenant: tenant}) || (g.project != "" && a.tenantOf[g.project] == tenant)
+	})
+}
+
+// allowedBy is Allowed with the grants that count chosen by covers, which
+// runs under a.mu.
+func (a *Authorizer) allowedBy(p auth.Principal, permission string, covers func(grant) bool) bool {
 	switch p.Type {
 	case auth.System:
 		return true
@@ -464,7 +479,7 @@ func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool
 		return false
 	}
 	for _, g := range a.grants[subject{p.Type, p.ID}] {
-		if g.role.Grants(permission) && a.covers(g, t) {
+		if g.role.Grants(permission) && covers(g) {
 			return true
 		}
 	}

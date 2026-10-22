@@ -75,6 +75,23 @@ func customDomainTarget(_ *Server, _ resource.Key, obj proto.Message, _ bool) au
 	return authz.Target{Tenant: d.GetSpec().GetTenant()}
 }
 
+// readsCustomDomain reports whether p may read a CustomDomain as one of the
+// people of a project it lets serve under it: those it names, or every
+// project of its tenant when it names none, so they see what they may use.
+func readsCustomDomain(s *Server, p auth.Principal, permission string, obj proto.Message) bool {
+	d, _ := obj.(*networkv1alpha1.CustomDomain)
+	projects := d.GetSpec().GetProjects()
+	if len(projects) == 0 {
+		return s.authz.AllowedInProjectsOf(p, permission, d.GetSpec().GetTenant())
+	}
+	for _, project := range projects {
+		if s.authz.Allowed(p, permission, authz.Target{Project: project}) {
+			return true
+		}
+	}
+	return false
+}
+
 func customDomainOwner(_ context.Context, _ *Server, obj proto.Message) (registry.Resource, resource.Key, bool) {
 	return registry.Tenant, resource.Key{Name: obj.(*networkv1alpha1.CustomDomain).GetSpec().GetTenant()}, true
 }

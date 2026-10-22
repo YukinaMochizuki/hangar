@@ -146,7 +146,10 @@ func (s *Server) holds(p auth.Principal, perm string, sc testedScope) bool {
 	case verb == authz.Create:
 		// Opening a tenant is checked at the platform, wherever it is asked.
 		target = authz.Target{}
-	case r.Kind == registry.Tenant.Kind:
+	case r.Kind == registry.Tenant.Kind, r.Kind == registry.CustomDomain.Kind:
+		// A CustomDomain is written at its tenant; the reads a project's
+		// people have of some (readsCustomDomain) are per domain, which no
+		// scope can say.
 		target = sc.tenant
 	case r.ProjectScoped(), r.Kind == registry.Project.Kind, r.Kind == registry.RoleBinding.Kind:
 		target = sc.target
