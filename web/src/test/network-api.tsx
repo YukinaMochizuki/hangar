@@ -137,7 +137,7 @@ type Named = { metadata?: ObjectMeta };
  * carries a version other than the stored one, and when create-only with
  * AlreadyExists for a name held, else stored at the next version.
  */
-function kindOn<D extends DescMessage>(schema: D, items: MessageShape<D>[]) {
+export function kindOn<D extends DescMessage>(schema: D, items: MessageShape<D>[]) {
   const find = (name: string) => items.findIndex((x) => (x as Named).metadata?.name === name);
   return {
     get(name: string) {

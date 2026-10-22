@@ -8,6 +8,8 @@ import { ErrorNotice, StandalonePage } from "@/components/states";
 import { newSearch, type NewProps } from "@/lib/new-param";
 import { pickProject, useProjects } from "@/lib/projects";
 import { CreateAddress } from "@/pages/create-address";
+import { CreateCustomDomain } from "@/pages/create-custom-domain";
+import { CustomDomainDetail, CustomDomainList } from "@/pages/custom-domains";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
@@ -452,6 +454,24 @@ const nodeRoute = createRoute({
   },
 });
 const tenantMembersRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/members", component: TenantMembers });
+const domainsRoute = createRoute({
+  getParentRoute: () => tenantRoute,
+  path: "/domains",
+  validateSearch: newSearch,
+  beforeLoad: ({ search, params }) => {
+    if (search.new === 1) throw redirect({ href: `/tenants/${params.tenant}/new/custom-domain`, replace: true });
+  },
+  component: CustomDomainList,
+});
+const domainRoute = createRoute({
+  getParentRoute: () => tenantRoute,
+  path: "/domains/$name",
+  component: function DomainPage() {
+    const { name } = domainRoute.useParams();
+    return <CustomDomainDetail key={name} name={name} />;
+  },
+});
+const newDomainRoute = createRoute({ getParentRoute: () => tenantRoute, path: "/new/custom-domain", component: CreateCustomDomain });
 
 /** Every page, for the router and for tests that route over memory history. */
 export const routeTree = rootRoute.addChildren([
@@ -487,7 +507,7 @@ export const routeTree = rootRoute.addChildren([
     tokenRoute,
     ...networkRoutes,
   ]),
-  tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute]),
+  tenantRoute.addChildren([tenantOverviewRoute, tenantMembersRoute, domainsRoute, domainRoute, newDomainRoute]),
   platformRoute,
   monitoringRoute,
   nodesRoute,

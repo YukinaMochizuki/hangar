@@ -68,6 +68,7 @@ export function CreateGate({
   perm,
   may,
   refusal,
+  where = "this project",
   children,
 }: {
   crumbs: ReactNode[];
@@ -77,6 +78,8 @@ export function CreateGate({
   may: boolean;
   /** What the caller's roles do not include, such as "creating disks". */
   refusal: string;
+  /** Where the object would be made: "this project", "this tenant". */
+  where?: string;
   children: ReactNode;
 }) {
   const [shown, setShown] = useState(may);
@@ -88,7 +91,7 @@ export function CreateGate({
       {perm.known ? (
         <div className="px-4 pb-10 pt-6 md:px-8">
           <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-          <p className="mt-1 max-w-2xl text-[13px] text-muted">This account's roles do not include {refusal} in this project.</p>
+          <p className="mt-1 max-w-2xl text-[13px] text-muted">This account's roles do not include {refusal} in {where}.</p>
         </div>
       ) : perm.error ? (
         <ErrorNotice error={perm.error} title="Whether this account may do this did not load" className="px-4 py-6 md:px-8" />

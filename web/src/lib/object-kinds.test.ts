@@ -9,6 +9,7 @@ import { ContainerSchema, ContainerService } from "@hangar/api/hangar/compute/v1
 import { VirtualMachineSchema, VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { ServiceTokenSchema, ServiceTokenService } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import { AddressSchema, AddressService } from "@hangar/api/hangar/network/v1alpha1/address_pb";
+import { CustomDomainSchema, CustomDomainService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { PublicEndpointAccess, PublicEndpointSchema, PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
@@ -58,6 +59,12 @@ const read: { [K in LabelKind]: () => LabelObject<K> } = {
       spec: { target: { object: { case: "container", value: "web" } }, port: 3000, access: PublicEndpointAccess.PRIVATE },
       status: { url: "https://docs-demo.example.com" },
     }),
+  customDomain: () =>
+    create(CustomDomainSchema, {
+      metadata: meta("example-com", true),
+      spec: { tenant: "acme", domain: "example.com", projects: ["web"] },
+      status: { challengeTarget: "k3x9.acme.example.net" },
+    }),
   serviceToken: () => create(ServiceTokenSchema, { metadata: meta("ci"), spec: { description: "deploys" }, status: { secretPrefix: "hgr_ab" } }),
   image: () =>
     create(ImageSchema, { metadata: meta("debian-13", true), spec: { url: "https://images.example.com/d.img", sha256: "ab".repeat(32), os: "debian" } }),
@@ -72,6 +79,7 @@ const schemas: { [K in LabelKind]: DescMessage } = {
   securityGroup: SecurityGroupSchema,
   address: AddressSchema,
   publicEndpoint: PublicEndpointSchema,
+  customDomain: CustomDomainSchema,
   serviceToken: ServiceTokenSchema,
   image: ImageSchema,
 };
@@ -89,6 +97,7 @@ function recording() {
     r.service(SecurityGroupService, { applySecurityGroup: (q) => keep(q.securityGroup) });
     r.service(AddressService, { applyAddress: (q) => keep(q.address) });
     r.service(PublicEndpointService, { applyPublicEndpoint: (q) => keep(q.publicEndpoint) });
+    r.service(CustomDomainService, { applyCustomDomain: (q) => keep(q.customDomain) });
     r.service(ServiceTokenService, { applyServiceToken: (q) => keep(q.serviceToken) });
     r.service(ImageService, { applyImage: (q) => keep(q.image) });
   });

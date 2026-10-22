@@ -14,6 +14,7 @@ import { VirtualMachineSchema, VirtualMachineService, type VirtualMachine } from
 import { ServiceTokenSchema, ServiceTokenService, type ServiceToken } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import type { ObjectMeta } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { AddressSchema, AddressService, type Address } from "@hangar/api/hangar/network/v1alpha1/address_pb";
+import { CustomDomainSchema, CustomDomainService, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, NetworkService, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { PublicEndpointSchema, PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupSchema, SecurityGroupService, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
@@ -31,6 +32,7 @@ type Objects = {
   securityGroup: SecurityGroup;
   address: Address;
   publicEndpoint: PublicEndpoint;
+  customDomain: CustomDomain;
   serviceToken: ServiceToken;
   image: Image;
 };
@@ -125,6 +127,16 @@ export const labelKinds: { [K in LabelKind]: KindInfo<K> } = {
     cli: "ep",
     get: async (t, project, name) => (await createClient(PublicEndpointService, t).getPublicEndpoint({ project, name })).publicEndpoint,
     apply: (t, o) => createClient(PublicEndpointService, t).applyPublicEndpoint({ publicEndpoint: o }),
+  },
+  customDomain: {
+    schema: CustomDomainSchema,
+    group: "network",
+    kind: "CustomDomain",
+    noun: "custom domain",
+    cli: "cdom",
+    global: true,
+    get: async (t, _project, name) => (await createClient(CustomDomainService, t).getCustomDomain({ name })).customDomain,
+    apply: (t, o) => createClient(CustomDomainService, t).applyCustomDomain({ customDomain: o }),
   },
   serviceToken: {
     schema: ServiceTokenSchema,
