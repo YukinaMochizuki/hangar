@@ -286,7 +286,7 @@ func TestCustomDomainVerification(t *testing.T) {
 	for name, want := range map[string]string{
 		"_acme-challenge.example.com": "CNAME " + target,
 		"*.example.com":               "CNAME cname.hangarlab.dev",
-		"example.com":                 "ALIAS cname.hangarlab.dev",
+		"example.com":                 "CNAME cname.hangarlab.dev",
 	} {
 		if records[name] != want {
 			t.Errorf("record %s is %q, want %q", name, records[name], want)
