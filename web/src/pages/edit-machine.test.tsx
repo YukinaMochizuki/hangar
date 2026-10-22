@@ -167,18 +167,42 @@ describe("the edit page", () => {
     expect(screen.queryByText(/--create-only/)).toBeNull();
   });
 
-  it("locks a VM's image and root disk, and shows a size no listed one matches as Custom", async () => {
+  it("locks a VM's image and root disk, and shows a size no listed one matches as Current", async () => {
     await openEdit("VirtualMachine");
     expect(screen.getByText("A VM's root disk is made from its image once; its source does not change.")).toBeTruthy();
     expect(screen.queryByRole("radiogroup", { name: "Image" })).toBeNull();
     expect(screen.queryByLabelText("Disk, GiB")).toBeNull();
     expect(screen.getByText("The root disk grows on its own page.")).toBeTruthy();
-    expect(sizeCard("Custom").getAttribute("aria-checked")).toBe("true");
-    expect(within(sizeCard("Custom")).getByText("Current, no listed size")).toBeTruthy();
+    expect(sizeCard("Current").getAttribute("aria-checked")).toBe("true");
+    expect(within(sizeCard("Current")).getByText("Current, no listed size")).toBeTruthy();
+    expect(sizeCard("Custom").getAttribute("aria-checked")).toBe("false");
     expect(applyButton().disabled).toBe(true);
   });
 
-  it("keeps a Custom size unless another is chosen", async () => {
+  it("edits a shape with Custom, starting from the machine's own, and sends nothing outside the rules", async () => {
+    const a = await openEdit("VirtualMachine");
+    fireEvent.click(sizeCard("Custom"));
+    expect(sizeCard("Custom").getAttribute("aria-checked")).toBe("true");
+    expect(sizeCard("Current").getAttribute("aria-checked")).toBe("false");
+    const memory = screen.getByLabelText("Memory, GiB") as HTMLInputElement;
+    const cpu = screen.getByLabelText("vCPUs") as HTMLInputElement;
+    expect([memory.value, cpu.value]).toEqual(["6", "3"]);
+    fireEvent.change(cpu, { target: { value: "13" } });
+    expect(screen.getAllByText("6 GiB of memory goes with 1 to 12 vCPUs, not 13.").length).toBeGreaterThan(0);
+    expect(applyButton().disabled).toBe(true);
+    fireEvent.change(memory, { target: { value: "8" } });
+    fireEvent.change(cpu, { target: { value: "4" } });
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    expect(screen.getByText("Restarts the VM")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    const vm = applies(a)[0]!.obj as VirtualMachine;
+    expect(vm.spec?.resources).toMatchObject({ cpu: "4", memory: "8Gi" });
+    // The root disk is the VM's own, untouched.
+    expect(vm.spec?.rootDisk?.source).toMatchObject({ case: "fromImage", value: { size: "30Gi" } });
+  });
+
+  it("keeps a size no listed one matches unless another is chosen", async () => {
     const a = await openEdit("VirtualMachine");
     fireEvent.click(screen.getByRole("button", { name: "web" }));
     await waitFor(() => expect(applyButton().disabled).toBe(false));

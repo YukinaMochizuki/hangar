@@ -276,7 +276,7 @@ describe("CreateMachine", () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="container" />, { wrapper: withApi(a) });
     const cards = await screen.findAllByRole("radio", { name: /^Size / });
-    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Size XS", "Size S", "Size M", "Size L"]);
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Size XS", "Size S", "Size M", "Size L", "Size Custom"]);
     // None asked for: the first is chosen.
     expect(cards[0].getAttribute("aria-checked")).toBe("true");
     fireEvent.click(screen.getByRole("radio", { name: "Size M" }));
@@ -302,21 +302,18 @@ describe("CreateMachine", () => {
     await waitFor(() => expect(screen.getByRole("radio", { name: "Size XS" }).getAttribute("aria-checked")).toBe("true"));
   });
 
-  it("says no size is defined, and sends nothing", async () => {
+  it("with no size defined, offers a shape of one's own, and sends it", async () => {
     const f: Fake = { containers: async () => ({ items: [] }), sizes: [] };
     const a = api(f);
     render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
-    await screen.findByText("No machine sizes are defined on this platform.");
-    expect(screen.queryAllByRole("radio", { name: /^Size / })).toEqual([]);
-    fill("api");
-    await screen.findByText(/No machine size is chosen\./);
-    expect(submitButton().disabled).toBe(true);
-    submit();
-    // The platform defines sizes, and they are asked for again.
-    f.sizes = madeUpSizes;
-    await a.client.refetchQueries();
+    const cards = await screen.findAllByRole("radio", { name: /^Size / });
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Size Custom"]);
+    expect(cards[0].getAttribute("aria-checked")).toBe("true");
+    expect(memoryField().value).toBe("1");
+    expect(cpuField().value).toBe("1");
+    typeMemory("0.5");
     await createAllowed(a, "api");
-    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "20Gi" });
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "512Mi", disk: "10Gi" });
   });
 
   it("says the sizes did not load, and sends nothing", async () => {
@@ -368,6 +365,76 @@ describe("CreateMachine", () => {
 });
 
 const diskField = () => screen.getByLabelText("Disk, GiB") as HTMLInputElement;
+const memoryField = () => screen.getByLabelText("Memory, GiB") as HTMLInputElement;
+const cpuField = () => screen.getByLabelText("vCPUs") as HTMLInputElement;
+const typeMemory = (v: string) => fireEvent.change(memoryField(), { target: { value: v } });
+const typeCPU = (v: string) => fireEvent.change(cpuField(), { target: { value: v } });
+
+describe("CreateMachine's custom size", () => {
+  it("starts from the size chosen before it, and sends the shape typed", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
+    await waitFor(() => expect(screen.getByRole("radio", { name: "Size M" }).getAttribute("aria-checked")).toBe("true"));
+    expect(screen.queryByLabelText("Memory, GiB")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Size Custom" }));
+    expect(screen.getByRole("radio", { name: "Size Custom" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Size M" }).getAttribute("aria-checked")).toBe("false");
+    expect(memoryField().value).toBe("4");
+    expect(cpuField().value).toBe("2");
+    typeMemory("1.5");
+    typeCPU("3");
+    expect(screen.getByText("1.5 GiB of memory goes with 1 to 3 vCPUs.")).toBeTruthy();
+    expect(manifest()).toContain("memory: 1536Mi");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "3", memory: "1536Mi", disk: "20Gi" });
+  });
+
+  it("refuses a shape outside the rules in place, and sends nothing", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("radio", { name: "Size Custom" }));
+    fill("api");
+    for (const [mem, cpu, why] of [
+      ["1", "8", "1 GiB of memory goes with 1 to 2 vCPUs, not 8."],
+      ["32", "1", "32 GiB of memory goes with 4 to 64 vCPUs, not 1."],
+      ["0.3", "1", "Memory is a whole number of 256 MiB steps, at least one."],
+      ["1", "", "The vCPUs are a whole number, at least 1."],
+    ]) {
+      typeMemory(mem!);
+      typeCPU(cpu!);
+      await screen.findAllByText(why!);
+      await waitFor(() => expect(existingLoaded()).toBe(true));
+      expect(submitButton().disabled).toBe(true);
+      submit();
+    }
+    typeMemory("0.25");
+    typeCPU("1");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "256Mi" });
+  });
+
+  it("does not offer a size stored before the rules that breaks them", async () => {
+    const a = api({ containers: async () => ({ items: [] }), sizes: [size("nano", "Nano", "1", "128Mi", "1Gi", 0), size("wide", "Wide", "8", "1Gi", "10Gi", 5), ...madeUpSizes] });
+    render(<CreateMachine kind="container" size="nano" />, { wrapper: withApi(a) });
+    const cards = await screen.findAllByRole("radio", { name: /^Size / });
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual(["Size XS", "Size S", "Size M", "Size L", "Size Custom"]);
+    // Asked for by name, it is not chosen: the first offered is.
+    expect(cards[0].getAttribute("aria-checked")).toBe("true");
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "512Mi" });
+  });
+
+  it("goes back to a size when one is chosen", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("radio", { name: "Size Custom" }));
+    typeCPU("9");
+    fireEvent.click(screen.getByRole("radio", { name: "Size S" }));
+    expect(screen.queryByLabelText("Memory, GiB")).toBeNull();
+    await createAllowed(a, "api");
+    expect(sentResources(a)).toMatchObject({ cpu: "1", memory: "2Gi", disk: "10Gi" });
+  });
+});
 /** The project's machines of the kind have loaded, so the button speaks for the form. */
 const existingLoaded = () => screen.queryByText("Loading names…") === null;
 const typeDisk = (v: string) => fireEvent.change(diskField(), { target: { value: v } });
@@ -381,10 +448,10 @@ describe("CreateMachine's disk", () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
     await waitFor(() => expect(diskField().value).toBe("20"));
-    expect(screen.getByText("Size M needs at least 20 GiB")).toBeTruthy();
+    // A size's disk is where the field starts; the least is the rules'.
+    expect(screen.getByText("At least 2 GiB")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Size L" }));
     expect(diskField().value).toBe("40");
-    expect(screen.getByText("Size L needs at least 40 GiB")).toBeTruthy();
     typeDisk("50");
     fireEvent.click(screen.getByRole("radio", { name: "Size S" }));
     expect(diskField().value).toBe("50");
@@ -403,22 +470,22 @@ describe("CreateMachine's disk", () => {
     expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "25Gi" });
   });
 
-  it("refuses a disk below the size's in place, shows it as typed, and sends nothing", async () => {
+  it("refuses a disk below 2 GiB in place, shows it as typed, and sends nothing; one below the size's is sent", async () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
     await waitFor(() => expect(diskField().value).toBe("20"));
-    typeDisk("15");
+    typeDisk("1");
     fill("api");
-    await screen.findAllByText("Size M needs a disk of at least 20 GiB; 15 GiB is less.");
-    expect(manifest()).toContain("disk: 15Gi");
-    expect(screen.getByText(/15 GiB disk/)).toBeTruthy();
+    await screen.findAllByText("A disk is at least 2 GiB; 1 GiB is less.");
+    expect(manifest()).toContain("disk: 1Gi");
+    expect(screen.getByText(/1 GiB disk/)).toBeTruthy();
     expect(diskField().getAttribute("aria-invalid")).toBe("true");
     await waitFor(() => expect(existingLoaded()).toBe(true));
     expect(submitButton().disabled).toBe(true);
     submit();
-    typeDisk("20");
+    typeDisk("15");
     await createAllowed(a, "api");
-    expect(sentResources(a)).toMatchObject({ disk: "20Gi" });
+    expect(sentResources(a)).toMatchObject({ cpu: "2", memory: "4Gi", disk: "15Gi" });
   });
 
   it("refuses a disk that is not a whole number of GiB, and sends nothing", async () => {
@@ -467,9 +534,9 @@ describe("CreateMachine's disk", () => {
     await waitFor(() => expect(existingLoaded()).toBe(true));
     expect(submitButton().disabled).toBe(true);
     submit();
-    // Of an image with no floor above it, the size's holds.
+    // Of an image with no floor above it, the rules' holds.
     await chooseImage("debian");
-    expect(screen.getByText("Size M needs at least 20 GiB")).toBeTruthy();
+    expect(screen.getByText("At least 2 GiB")).toBeTruthy();
     await chooseImage("ubuntu");
     typeDisk("30");
     await waitFor(() => expect(submitButton().disabled).toBe(false));

@@ -22,7 +22,7 @@ import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { containerDefaults, editedObject, vmDefaults, type MachineObject } from "@/lib/machine-edit";
 import { isStale } from "@/lib/network-actions";
-import { sizeOf, useMachineSizes, type Size } from "@/lib/machine-sizes";
+import { sizeOf, useMachineSizes, withinRules, type Size } from "@/lib/machine-sizes";
 import type { MachineView } from "@/lib/machines";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { useOverQuota } from "@/lib/over-quota";
@@ -67,7 +67,7 @@ const editPath = (m: MachineView) => (m.kind === "Container" ? "/projects/$proje
 
 /**
  * The size a machine's spec asks for: the listed size its cpu and memory
- * match, or Custom, never a listed size it does not match.
+ * match, or Current, never a listed size it does not match.
  */
 function specSize(o: MachineObject, sizes: Size[]): Size {
   const container = o.$typeName === ContainerSchema.typeName;
@@ -76,7 +76,7 @@ function specSize(o: MachineObject, sizes: Size[]): Size {
   const cpu = quantityCPU(res?.cpu || d.cpu);
   const memoryGi = quantityGiB(res?.memory || d.memory);
   const match = sizeOf({ cpu, memoryGi }, sizes);
-  return match ?? { name: "", label: "Custom", order: -1, cpu, memoryGi, diskGi: 0, resources: { cpu: res?.cpu ?? "", memory: res?.memory ?? "", disk: "" } };
+  return match ?? { name: "", label: "Current", order: -1, cpu, memoryGi, diskGi: 0, resources: { cpu: res?.cpu ?? "", memory: res?.memory ?? "", disk: "" } };
 }
 
 /**
@@ -94,13 +94,15 @@ export function ResizeDialog({ m, onClose }: { m: MachineView; onClose: () => vo
   const apply = useApplyMachineAt();
   const read = useReadMachine(m.kind, m.project, m.name);
   const stale = isStale(apply.error);
-  const current = specSize(base, machineSizes.sizes);
-  const to = machineSizes.sizes.find((z) => z.name === chosen && z.name !== current.name);
+  // The sizes offered: those a machine may have under the shape rules.
+  const offered = machineSizes.sizes.filter(withinRules);
+  const current = specSize(base, offered);
+  const to = offered.find((z) => z.name === chosen && z.name !== current.name);
   const noun = m.kind === "Container" ? "container" : "VM";
   const over = (z: Size) => overQuota({ machines: 0, cpu: z.cpu - current.cpu, memoryGi: z.memoryGi - current.memoryGi, diskGi: 0 });
   const toOver = to ? over(to) : [];
   const obj = to ? editedObject(base, { cpu: to.resources.cpu, memory: to.resources.memory }) : base;
-  const cards = [...(current.name ? [] : [current]), ...machineSizes.sizes];
+  const cards = [...(current.name ? [] : [current]), ...offered];
   const startAgain = () =>
     read.mutate(undefined, {
       onSuccess: (fresh) => {

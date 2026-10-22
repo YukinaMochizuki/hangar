@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { MachineSizeSchema } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
 import { describe, expect, it } from "vitest";
-import { sizeOf, sortSizes } from "@/lib/machine-sizes";
+import { cpuRange, memoryLabel, memoryQuantity, shapeProblem, sizeOf, sortSizes } from "@/lib/machine-sizes";
 
 /** A made-up size; a platform's real sizes are its administrator's. */
 const size = (name: string, displayName: string, cpu: string, memory: string, disk: string, order: number) =>
@@ -25,6 +25,54 @@ describe("sortSizes", () => {
 
   it("labels a size with no display name by its name", () => {
     expect(sortSizes([size("m", "", "2", "4Gi", "20Gi", 1)])[0].label).toBe("m");
+  });
+});
+
+// As the apiserver's TestCPURange (internal/apiserver).
+describe("cpuRange", () => {
+  it("allows 512 MiB to 8 GiB of memory per vCPU, and one vCPU always", () => {
+    const cases: [number, number, number][] = [
+      [256, 1, 1],
+      [512, 1, 1],
+      [768, 1, 1],
+      [1024, 1, 2],
+      [4096, 1, 8],
+      [8192, 1, 16],
+      [8448, 2, 16],
+      [12288, 2, 24],
+      [32768, 4, 64],
+    ];
+    for (const [mib, lo, hi] of cases) expect(cpuRange(mib), `${mib} MiB`).toEqual({ lo, hi });
+  });
+});
+
+describe("shapeProblem", () => {
+  it("takes a shape within the rules", () => {
+    for (const [cpu, mib] of [
+      [1, 256],
+      [2, 1024],
+      [8, 4096],
+      [2, 16384],
+    ]) {
+      expect(shapeProblem(cpu!, mib!), `${cpu} / ${mib}`).toBeUndefined();
+    }
+  });
+
+  it("says why a shape breaks them", () => {
+    expect(shapeProblem(1, 300)).toBe("Memory is a whole number of 256 MiB steps, at least one.");
+    expect(shapeProblem(1, 0)).toBe("Memory is a whole number of 256 MiB steps, at least one.");
+    expect(shapeProblem(1, NaN)).toBe("Memory is a whole number of 256 MiB steps, at least one.");
+    expect(shapeProblem(1.5, 1024)).toBe("The vCPUs are a whole number, at least 1.");
+    expect(shapeProblem(8, 256)).toBe("0.25 GiB of memory goes with 1 vCPU, not 8.");
+    expect(shapeProblem(1, 32768)).toBe("32 GiB of memory goes with 4 to 64 vCPUs, not 1.");
+  });
+});
+
+describe("memory as shown and sent", () => {
+  it("shows GiB, and sends whole Gi as Gi and the rest as Mi", () => {
+    expect(memoryLabel(1536)).toBe("1.5 GiB");
+    expect(memoryQuantity(1536)).toBe("1536Mi");
+    expect(memoryQuantity(2048)).toBe("2Gi");
   });
 });
 
