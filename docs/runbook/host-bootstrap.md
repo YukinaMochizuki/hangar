@@ -721,7 +721,7 @@ The limits every tenant has unless it names a plan are the `default` Plan
 (`docs/decisions/tenancy-and-iam.md`), a trial's. The apiserver makes it
 once, on a new store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
 projects, 5 networks, 5 addresses, 10 public endpoints, 10 service
-tokens and 3 file shares. From then on the plan is data: the apiserver
+tokens, 3 file shares, 3 custom domains and 5 port forwards. From then on the plan is data: the apiserver
 never changes it again, so a store made before these limits keeps the ones
 it was made with, and the operator sets them, as platform root, with apply; a field left
 out has no limit:
@@ -744,6 +744,8 @@ spec:
     publicEndpoints: 10
     serviceTokens: 10
     fileShares: 3
+    domains: 3
+    portForwards: 5
 ```
 
 `sudo hangar --context local apply -f default-plan.yaml` on the host, or

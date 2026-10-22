@@ -156,6 +156,11 @@ type Server struct {
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex
+	// portForwardPorts serializes every apply and delete of a PortForward,
+	// so no two draw one public port. testForwardPorts, if set, is the
+	// range a test draws them from in place of the platform's.
+	portForwardPorts sync.Mutex
+	testForwardPorts [2]int32
 	// users serializes every apply and delete of a User or an Invitation,
 	// so no two Users have one email and no Invitation is for an email with
 	// a User. Whoever holds it and plans takes users first.

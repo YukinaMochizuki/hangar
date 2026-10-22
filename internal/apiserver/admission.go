@@ -185,6 +185,16 @@ type kindHooks struct {
 	// hiddenFromNodes refuses node agents every read of the kind, which
 	// they otherwise have on every kind.
 	hiddenFromNodes bool
+	// nodeReads, if set, reports whether the node agent of node may read
+	// obj at all: by get, list, watch and status update. Without it a node
+	// reads every object of a kind not hidden from nodes.
+	nodeReads func(node string, obj proto.Message) bool
+	// drawStatus, if set, returns the status a new object is stored with,
+	// in place of initialStatus, from the object as admitted: what the
+	// apiserver draws for it among the others of its kind, which the kind's
+	// writeLocks keep from changing meanwhile. Its error refuses the
+	// create.
+	drawStatus func(ctx context.Context, s *Server, obj proto.Message) (proto.Message, error)
 	// nameIsEmail makes an object's name an email in lower case rather than
 	// a DNS label, as an Invitation's.
 	nameIsEmail bool
@@ -423,6 +433,23 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:   validateAddress,
 			writeLocks: only(addressLock),
 			finalizers: []string{AddressUnbindFinalizer},
+		}
+	case registry.PortForward.Kind:
+		// Its writes hold its lock: a new one's public port is drawn among
+		// the others' (drawPortForward). Its node, which opens the port,
+		// alone reads it among nodes, and reports when it has closed the
+		// port of one being deleted (docs/decisions/networking.md, "Port
+		// forwards").
+		return kindHooks{
+			target:     projectTarget,
+			owner:      ownedByProject,
+			validate:   validatePortForward,
+			writeLocks: only(portForwardLock),
+			drawStatus: drawPortForward,
+			finalizers: []string{NodeCleanupFinalizer},
+			nodeOf:     portForwardNode,
+			nodeReads:  func(node string, obj proto.Message) bool { return portForwardNode(obj) == node },
+			fromNode:   portForwardFromNode,
 		}
 	case registry.PublicEndpoint.Kind:
 		// Its hostname is claimed for good when it is made. An apply with
