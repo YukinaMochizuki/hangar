@@ -21,10 +21,12 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
-// The test's domains: the control plane's and the endpoints'.
+// The test's domains: the control plane's, the endpoints', and a tenant's
+// own.
 const (
-	cpDomain   = "cp.test"
-	userDomain = "user.test"
+	cpDomain     = "cp.test"
+	userDomain   = "user.test"
+	tenantDomain = "tenant.test"
 )
 
 var (
@@ -60,7 +62,7 @@ type testCA struct {
 
 func newCA(t *testing.T) *testCA {
 	t.Helper()
-	dns, err := acmetest.Start("127.0.0.1:0", cpDomain, userDomain)
+	dns, err := acmetest.Start("127.0.0.1:0", cpDomain, userDomain, tenantDomain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,6 +107,8 @@ type options struct {
 	api        http.Handler
 	endpoints  http.Handler
 	storage    string
+	// customHost, if set, is the front door's Config.CustomHost.
+	customHost func(string) bool
 	// prepare, if set, is given the front door before it serves.
 	prepare func(*front.Front)
 	// apiConnContext, if set, is the fake apiserver socket's ConnContext.
@@ -146,7 +150,7 @@ func startDoor(t *testing.T, c *testCA, o options) *door {
 	f, err := front.New(front.Config{
 		CPDomain: cpDomain, UserDomain: userDomain,
 		DialAPI:   func(ctx context.Context) (net.Conn, error) { return (&net.Dialer{}).DialContext(ctx, "unix", sock) },
-		Endpoints: o.endpoints, ConsoleDir: o.consoleDir, Limits: o.limits, Log: log,
+		Endpoints: o.endpoints, CustomHost: o.customHost, ConsoleDir: o.consoleDir, Limits: o.limits, Log: log,
 	})
 	if err != nil {
 		t.Fatal(err)

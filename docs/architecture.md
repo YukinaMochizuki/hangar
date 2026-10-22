@@ -72,6 +72,9 @@ admission holds tenants' machines to; a machine does not record its size
 exposes one port of a container or VM over HTTPS at
 `<endpoint>-<project>.hangarlab.dev`, private to those its tenant allows
 unless made public; a container's port marked `public` gets one. A
+public one may also serve at hostnames under a `CustomDomain`, a domain of
+the tenant's own that it proves with a CNAME, which also lets the edge get
+its certificates (`decisions/custom-domains.md`). A
 `Secret` holds a project's credentials, such as registry logins that a
 container names to pull its image with: its values are write-only and
 stored sealed under a key outside the database, and a node gets a login

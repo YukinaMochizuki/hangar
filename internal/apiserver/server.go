@@ -145,6 +145,11 @@ type Server struct {
 	// a network, takes it after users and plans and before the transaction,
 	// which every other write waits for.
 	attach sync.Mutex
+	// customDomains serializes every apply and delete of a CustomDomain and
+	// every apply of a PublicEndpoint with spec.hostnames, so no two
+	// tenants' domains overlap, no two endpoints hold one hostname, and no
+	// domain goes while an endpoint serves under it.
+	customDomains sync.Mutex
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex

@@ -5,9 +5,10 @@
 // (bodyrate.go) and responses a client stops taking (writes.go), and
 // routes each request by Host:
 // api.<cp-domain> to the apiserver, console.<cp-domain> to the console's
-// files and its API paths to the apiserver, and <label>.<user-domain> to
-// the public endpoints (internal/edge). :80 only redirects to https. See
-// docs/decisions/front-door.md.
+// files and its API paths to the apiserver, and <label>.<user-domain> and
+// the custom hostnames the endpoints serve to the public endpoints
+// (internal/edge). :80 only redirects to https. See
+// docs/decisions/front-door.md and docs/decisions/custom-domains.md.
 package front
 
 import (
@@ -39,6 +40,9 @@ type Config struct {
 	DialAPI func(ctx context.Context) (net.Conn, error)
 	// Endpoints serves the public endpoints.
 	Endpoints http.Handler
+	// CustomHost, if set, reports whether a hostname outside the front
+	// door's domains is one an endpoint serves now under a custom domain.
+	CustomHost func(host string) bool
 	// ConsoleDir holds the console's files, index.html at its top; empty,
 	// or without index.html, the console is not installed.
 	ConsoleDir string
@@ -114,7 +118,13 @@ func (f *Front) siteOf(host string) site {
 	case "console." + f.cfg.CPDomain:
 		return consoleSite
 	}
-	if l, ok := strings.CutSuffix(host, "."+f.cfg.UserDomain); ok && l != "" && !strings.Contains(l, ".") {
+	if l, ok := strings.CutSuffix(host, "."+f.cfg.UserDomain); ok {
+		if l != "" && !strings.Contains(l, ".") {
+			return endpointSite
+		}
+		return noSite
+	}
+	if f.cfg.CustomHost != nil && !strings.HasSuffix(host, "."+f.cfg.CPDomain) && f.cfg.CustomHost(host) {
 		return endpointSite
 	}
 	return noSite

@@ -34,7 +34,9 @@ stand in front of the internet with nothing else in front of it.
   certmagic, over ACME DNS-01 only, with libdns/cloudflare and a Cloudflare
   token that may edit DNS in the two zones and nothing else.
   - The certificates are `api.<cp-domain>`, `console.<cp-domain>` and
-    `*.<user-domain>`, one each.
+    `*.<user-domain>`, one each, and for each verified custom domain, the
+    domain's and its wildcard's, whose challenges the domain delegates by
+    a CNAME into the user domain's zone (`custom-domains.md`).
   - DNS-01 needs no traffic to the host, so certificates come before DNS
     points at it.
   - They are kept in the edge's state directory (`/var/lib/hangar-edge`,
@@ -82,6 +84,9 @@ stand in front of the internet with nothing else in front of it.
     (`console-design.md`).
   - `<label>.<user-domain>` goes to the public endpoints
     (`public-endpoints.md`), whose callers the edge signs in itself.
+  - A hostname outside both domains goes to the public endpoints while a
+    PUBLIC one asks for it under a verified custom domain
+    (`custom-domains.md`); no such name is under `<cp-domain>`.
   - Responses of `api.` and `console.` on :443 carry
     `Strict-Transport-Security: max-age=31536000`, without
     `includeSubDomains` or preload; the endpoints' carry none, as each

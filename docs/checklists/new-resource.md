@@ -42,7 +42,10 @@ what it cannot.
       including the rejection paths. A rule that reads other objects, such
       as "no other machine has this disk", holds the kind's `writeLocks`
       (among them the other kind's, the same lock) from the check to the
-      write, and a test races writers to show only one wins. A store
+      write, and a test races writers to show only one wins. When only
+      some objects of the kind take part in the rule, as a PublicEndpoint
+      with `spec.hostnames`, `applyLocks` takes the lock for those applies
+      alone, so the others are not serialized for nothing. A store
       transaction that writes the kind (`Server.atomically`) holds them
       from before it starts to its end.
 - [ ] If only the apiserver's controllers write the kind, `hooksFor` marks it

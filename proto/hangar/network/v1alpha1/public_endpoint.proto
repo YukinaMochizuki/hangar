@@ -33,6 +33,11 @@ message PublicEndpointSpec {
   int32 port = 2;
   // Who may use the endpoint; unset is PRIVATE.
   PublicEndpointAccess access = 3;
+  // More hostnames the endpoint serves at, besides its own, each a CustomDomain
+  // of the project's tenant or one label below one, such as
+  // "app.example.com". Only a PUBLIC endpoint may have them, and no other
+  // endpoint may hold one. See docs/decisions/custom-domains.md.
+  repeated string hostnames = 4;
 }
 
 // PublicEndpointTarget is a VirtualMachine or Container in the endpoint's
@@ -73,6 +78,9 @@ message PublicEndpointStatus {
   // one.
   reserved 7;
   reserved "access_application_id";
+  // The URLs of spec.hostnames that serve: those whose CustomDomain is
+  // verified. The Hostnames condition says why any other does not.
+  repeated string hostname_urls = 8;
 }
 
 // PublicEndpointService manages public endpoints.

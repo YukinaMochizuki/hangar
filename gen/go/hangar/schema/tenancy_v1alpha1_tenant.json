@@ -156,6 +156,11 @@
           "description": "Disk space, a quantity such as \"200Gi\": containers' disks, Disks, the root disks VMs have made from images, and FileShares.",
           "type": "string"
         },
+        "domains": {
+          "description": "CustomDomains of the tenant. Only a Plan sets it.",
+          "format": "int32",
+          "type": "integer"
+        },
         "fileShares": {
           "description": "FileShares. A share's server is the platform's, and counts toward no limit.",
           "format": "int32",
@@ -251,6 +256,10 @@
         },
         "disk": {
           "type": "string"
+        },
+        "domains": {
+          "format": "int32",
+          "type": "integer"
         },
         "fileShares": {
           "format": "int32",

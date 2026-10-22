@@ -12,8 +12,12 @@ import (
 func SetRegistering(e *Edge, f func()) { e.registering = f }
 
 // ConfineCookies is what the edge does to the Set-Cookie of each header
-// block an endpoint answers with.
-func ConfineCookies(h http.Header) { confineCookies(h) }
+// block an endpoint answers with at its own hostname.
+func ConfineCookies(h http.Header) { confineCookies(h, "") }
+
+// ConfineCustomCookies is what the edge does to them at a custom hostname
+// under domain.
+func ConfineCustomCookies(h http.Header, domain string) { confineCookies(h, domain) }
 
 // MayUse reports whether e's view lets p use the endpoints of project.
 func MayUse(e *Edge, p auth.Principal, project string) bool {

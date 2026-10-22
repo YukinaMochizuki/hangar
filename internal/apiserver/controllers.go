@@ -115,8 +115,11 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.Machine.Kind, Map: s.endpointsOfMachine, SkipResync: true},
 				// A node going quiet changes whether its endpoints serve.
 				{Kind: registry.Node.Kind, Map: s.endpointsOnNode, SkipResync: true},
+				// A custom domain verified makes the hostnames under it serve.
+				{Kind: registry.CustomDomain.Kind, Map: s.endpointsUnderDomain, SkipResync: true},
 			},
 		},
+		s.customDomainController(),
 		{
 			Name: "container-endpoints", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcileContainerEndpoints),

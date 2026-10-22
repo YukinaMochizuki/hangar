@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"connectrpc.com/connect"
 	"github.com/google/uuid"
@@ -183,14 +184,19 @@ func (b *backend) checkKey(k resource.Key) error {
 	return nil
 }
 
-// lockWrites takes the kind's writeLocks, in order, but those ctx says its
-// caller holds already, and returns what releases what it took.
-func (b *backend) lockWrites(ctx context.Context) (unlock func()) {
-	if b.hooks.writeLocks == nil {
-		return func() {}
+// lockWrites takes the kind's writeLocks, then, for an apply of in, its
+// applyLocks, in order, but those ctx says its caller holds already, and
+// returns what releases what it took. in is nil for a delete.
+func (b *backend) lockWrites(ctx context.Context, in proto.Message) (unlock func()) {
+	var mus []*sync.Mutex
+	if b.hooks.writeLocks != nil {
+		mus = append(mus, b.hooks.writeLocks(b.s)...)
+	}
+	if in != nil && b.hooks.applyLocks != nil {
+		mus = append(mus, b.hooks.applyLocks(b.s, in)...)
 	}
 	var unlocks []func()
-	for _, mu := range b.hooks.writeLocks(b.s) {
+	for _, mu := range mus {
 		unlocks = append(unlocks, lockUnlessHeld(ctx, mu))
 	}
 	return func() {
@@ -486,7 +492,7 @@ func (b *backend) apply(ctx context.Context, in proto.Message, createOnly bool) 
 	if createOnly && expected != 0 {
 		return resource.ApplyResult{}, invalid("a create-only apply takes no resourceVersion")
 	}
-	defer b.lockWrites(ctx)()
+	defer b.lockWrites(ctx, in)()
 	defer b.lockOthers(ctx, p)()
 	if p.Type != auth.System && countsTowardQuota(b.r.Kind) {
 		b.s.quota.Lock()
@@ -808,7 +814,7 @@ func (b *backend) Delete(ctx context.Context, key resource.Key, expected *int64)
 	if err := b.checkKey(key); err != nil {
 		return nil, err
 	}
-	defer b.lockWrites(ctx)()
+	defer b.lockWrites(ctx, nil)()
 	defer b.lockOthers(ctx, p)()
 	for range maxRetries {
 		cur, old, err := b.read(ctx, p, authz.Delete, key)

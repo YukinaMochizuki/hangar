@@ -26,11 +26,18 @@ import (
 const DefaultEndpointDomain = "hangarlab.dev"
 
 // PublicEndpointsConfig configures PublicEndpoints
-// (docs/decisions/public-endpoints.md).
+// (docs/decisions/public-endpoints.md) and the CustomDomains they serve
+// under (docs/decisions/custom-domains.md).
 type PublicEndpointsConfig struct {
 	// Domain holds every endpoint's hostname; empty is
 	// DefaultEndpointDomain.
 	Domain string
+	// ControlPlaneDomain is the console's and the API's; with Domain, no
+	// CustomDomain may be in its site.
+	ControlPlaneDomain string
+	// Resolvers are the DNS servers a CustomDomain's challenge CNAME is
+	// looked up at, as host:port; empty is the system's.
+	Resolvers []string
 }
 
 // PublicEndpoint condition types and reasons, the public endpoint
@@ -113,10 +120,10 @@ func IsPublic(ep *networkv1alpha1.PublicEndpoint) bool {
 	return ep.GetSpec().GetAccess() == networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC
 }
 
-// validatePublicEndpoint checks an endpoint's spec and its hostname label.
-// That no other endpoint holds the hostname is the claim's to decide, on
-// create (endpointClaim).
-func validatePublicEndpoint(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
+// validatePublicEndpoint checks an endpoint's spec, its hostname label and
+// the hostnames it serves at under CustomDomains. That no other endpoint
+// holds the label is the claim's to decide, on create (endpointClaim).
+func validatePublicEndpoint(ctx context.Context, s *Server, _ auth.Principal, _, obj proto.Message) error {
 	ep := obj.(*networkv1alpha1.PublicEndpoint)
 	spec := ep.GetSpec()
 	_, name, ok := endpointTargetOf(spec)
@@ -137,7 +144,10 @@ func validatePublicEndpoint(_ context.Context, _ *Server, _ auth.Principal, _, o
 		return invalid("spec.access %v is not PRIVATE or PUBLIC", spec.GetAccess())
 	}
 	// How many endpoints a tenant may have is its quota's (quotaCounters).
-	return checkEndpointLabel(endpointLabel(ep.GetMetadata().GetProject(), ep.GetMetadata().GetName()))
+	if err := checkEndpointLabel(endpointLabel(ep.GetMetadata().GetProject(), ep.GetMetadata().GetName())); err != nil {
+		return err
+	}
+	return s.checkEndpointHostnames(ctx, ep)
 }
 
 // endpointClaim is the claim an endpoint takes on its hostname label when
@@ -185,7 +195,8 @@ func endpointOwner(ctx context.Context, s *Server, obj proto.Message) (registry.
 	return ownedByProject(ctx, s, obj)
 }
 
-// reconcilePublicEndpoint reports where an endpoint's target runs.
+// reconcilePublicEndpoint reports where an endpoint's target runs, and
+// which of its custom hostnames serve.
 func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) error {
 	key := resource.Key{Project: k.Project, Name: k.Name}
 	obj, err := s.get(ctx, registry.PublicEndpoint, key)
@@ -222,6 +233,16 @@ func (s *Server) reconcilePublicEndpoint(ctx context.Context, k controller.Key) 
 		ready.Message = status.GetUrl() + " reaches port " + fmt.Sprint(ep.GetSpec().GetPort()) + " of " + machine
 	}
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
+	urls, hostnames, err := s.endpointHostnamesStatus(ctx, ep)
+	if err != nil {
+		return err
+	}
+	status.HostnameUrls = urls
+	if hostnames != nil {
+		status.Conditions = conditions.Set(status.GetConditions(), hostnames, s.clock.Now())
+	} else {
+		status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == PublicEndpointHostnames })
+	}
 	if !proto.Equal(status, ep.GetStatus()) {
 		rv := ep.GetMetadata().GetResourceVersion()
 		if _, err := s.backend(registry.PublicEndpoint).UpdateStatus(s.system(ctx), key, status, &rv); err != nil {

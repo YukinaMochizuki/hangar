@@ -152,6 +152,13 @@
           ],
           "type": "string"
         },
+        "hostnames": {
+          "description": "More hostnames the endpoint serves at, besides its own, each a CustomDomain of the project's tenant or one label below one, such as \"app.example.com\". Only a PUBLIC endpoint may have them, and no other endpoint may hold one. See docs/decisions/custom-domains.md.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "port": {
           "description": "The TCP port the target serves plain HTTP on, 1 to 65535.",
           "format": "int32",
@@ -177,6 +184,13 @@
         "hostname": {
           "description": "The endpoint's hostname, such as \"web-demo.hangarlab.dev\".",
           "type": "string"
+        },
+        "hostnameUrls": {
+          "description": "The URLs of spec.hostnames that serve: those whose CustomDomain is verified. The Hostnames condition says why any other does not.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "machine": {
           "description": "The Machine the endpoint reaches; empty while its target has none.",

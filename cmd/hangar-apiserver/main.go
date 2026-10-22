@@ -18,6 +18,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -39,26 +40,27 @@ import (
 )
 
 type flags struct {
-	db             string
-	listen         string
-	socket         string
-	adminSocket    string
-	nodeUID        uint
-	nodeName       string
-	authMode       string
-	oidcIssuer     string
-	oidcClientID   string
-	oidcSecretFile string
-	publicURL      string
-	bootstrapAdmin string
-	sshCAKey       string
-	edgeSocket     string
-	publicSocket   string
-	edgeUID        uint
-	endpointDomain string
-	secretsKEK     string
-	previousKEKs   []string
-	metricsListen  string
+	db              string
+	listen          string
+	socket          string
+	adminSocket     string
+	nodeUID         uint
+	nodeName        string
+	authMode        string
+	oidcIssuer      string
+	oidcClientID    string
+	oidcSecretFile  string
+	publicURL       string
+	bootstrapAdmin  string
+	sshCAKey        string
+	edgeSocket      string
+	publicSocket    string
+	edgeUID         uint
+	endpointDomain  string
+	domainResolvers []string
+	secretsKEK      string
+	previousKEKs    []string
+	metricsListen   string
 	// prometheusURL and alertmanagerURL are what MonitoringService asks.
 	prometheusURL   string
 	alertmanagerURL string
@@ -86,6 +88,10 @@ func main() {
 	flag.StringVar(&f.publicSocket, "public-socket", "", "unix socket hangar-edge forwards the public API to, from :443, with each client's address; empty disables it")
 	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge and public sockets; required with either")
 	flag.StringVar(&f.endpointDomain, "endpoint-domain", apiserver.DefaultEndpointDomain, "the domain public endpoints' hostnames are in")
+	flag.Func("custom-domain-resolver", "a DNS server, as host:port, that custom domains' challenge CNAMEs are looked up at; repeatable; none is the system's", func(s string) error {
+		f.domainResolvers = append(f.domainResolvers, s)
+		return nil
+	})
 	flag.StringVar(&f.secretsKEK, "secrets-kek", "", "the key-encryption key Secrets are sealed under, a file only its owner reads; missing, Secrets cannot be written, and the apiserver will not start while any are stored")
 	flag.Func("secrets-kek-previous", "a previous key-encryption key, only to open what it sealed, which is sealed again under --secrets-kek at start; repeatable", func(s string) error {
 		f.previousKEKs = append(f.previousKEKs, s)
@@ -223,7 +229,10 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	}
 	srv := apiserver.New(apiserver.Config{
 		Store: st, Logger: log, BootstrapAdmin: strings.ToLower(f.bootstrapAdmin), Nodes: nodes, SSHCA: ca, Secrets: keys,
-		PublicEndpoints: apiserver.PublicEndpointsConfig{Domain: f.endpointDomain}, DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
+		PublicEndpoints: apiserver.PublicEndpointsConfig{
+			Domain: f.endpointDomain, ControlPlaneDomain: controlPlaneDomain(f.publicURL), Resolvers: f.domainResolvers,
+		},
+		DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
 		Monitoring: apiserver.MonitoringConfig{PrometheusURL: f.prometheusURL, AlertmanagerURL: f.alertmanagerURL},
 	})
 	public, err := publicChain(f, srv, st)
@@ -484,4 +493,14 @@ func readSecretFile(path string) (token.Secret, error) {
 		return "", fmt.Errorf("%s is empty", path)
 	}
 	return token.Secret(secret), nil
+}
+
+// controlPlaneDomain is the domain of the console's origin, which no
+// custom domain may share a site with; "" without one.
+func controlPlaneDomain(publicURL string) string {
+	u, err := url.Parse(publicURL)
+	if err != nil {
+		return ""
+	}
+	return u.Hostname()
 }

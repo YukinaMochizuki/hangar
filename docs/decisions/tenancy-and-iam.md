@@ -303,13 +303,16 @@ tenant's: what all its projects together hold, against its Plan.
 
 - `Plan` is a global kind only platform administrators read and write. Its
   `spec.limits` caps cpu, memory, disk, machines, projects, networks,
-  addresses, public endpoints, service tokens and file shares; a field left
-  unset has no limit. A tenant with an empty `spec.plan` has the plan
-  `default`, a trial's, which the apiserver makes the first time it starts
+  addresses, public endpoints, service tokens, file shares and custom
+  domains; a field left unset has no limit. A tenant with an empty
+  `spec.plan` has the plan `default`, a trial's, which the apiserver makes
+  the first time it starts
   on a store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
   projects, 5 networks, 5 addresses, 10 public endpoints, 10 service
-  tokens and 3 file shares (`fileShares`). A file share's size counts as
-  disk, and its server toward no limit (`file-shares.md`). The
+  tokens, 3 file shares (`fileShares`) and 3 custom domains (`domains`). A
+  file share's size counts as disk, and its server toward no limit
+  (`file-shares.md`). Custom domains are the tenant's, not a project's, so
+  as with projects only a Plan limits them (`custom-domains.md`). The
   default limits are data from then on: the administrator changes them
   with apply. Paying users get a larger plan, through their Invitation or
   their User. The default plan, and a plan a tenant, a User or an
