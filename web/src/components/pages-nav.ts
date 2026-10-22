@@ -2,7 +2,7 @@
 // groups. The sidebar and the command palette both list them from here, so
 // a page joins both when it is added.
 
-import { Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
+import { AtSign, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
 
 export type PageLink = { label: string; icon: LucideIcon; to: string };
 
@@ -66,6 +66,7 @@ export function tenantPages(tenant: string): PageSection[] {
   const base = `/tenants/${tenant}`;
   return [
     { items: [{ label: "Overview", icon: LayoutGrid, to: base }] },
+    { group: "Network", items: [{ label: "Domains", icon: AtSign, to: `${base}/domains` }] },
     { group: "Access", items: [{ label: "Members", icon: Users, to: `${base}/members` }] },
   ];
 }
