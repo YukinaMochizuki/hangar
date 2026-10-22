@@ -63,8 +63,8 @@ export function useMachineSizes() {
 // at least 2 GiB.
 export const memoryStepMiB = 256;
 export const minDiskGi = 2;
-const minMiBPerCPU = 512;
-const maxMiBPerCPU = 8192;
+export const minMiBPerCPU = 512;
+export const maxMiBPerCPU = 8192;
 
 /** The fewest and most vCPUs a machine of memMiB may have. */
 export function cpuRange(memMiB: number): { lo: number; hi: number } {
@@ -102,6 +102,37 @@ export function shapeProblem(cpu: number, memMiB: number): string | undefined {
  */
 export function withinRules(z: Size): boolean {
   return shapeProblem(z.cpu, z.memoryGi * 1024) === undefined && z.diskGi >= minDiskGi;
+}
+
+// The memory a Custom shape's slider stops at, in GiB: the shapes people
+// ask for, denser where a step matters more.
+const commonGi = [0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256];
+
+// The slider's end with no size to go by.
+const fallbackMaxGi = 16;
+
+/** The memory slider's end and the vCPU slider's: twice the largest listed size's, but never less than what is asked to fit. */
+export function sliderLimits(sizes: Size[], fit: { memMiB: number; cpu: number }[] = []): { memMiB: number; cpu: number } {
+  const memGi = sizes.length > 0 ? 2 * Math.max(...sizes.map((z) => z.memoryGi)) : fallbackMaxGi;
+  const cpu = sizes.length > 0 ? 2 * Math.max(...sizes.map((z) => z.cpu)) : 2 * cpuRange(memGi * 1024).lo;
+  const memMiB = Math.max(memGi * 1024, ...fit.map((f) => f.memMiB));
+  return { memMiB, cpu: Math.max(cpu, cpuRange(memMiB).lo, ...fit.map((f) => f.cpu)) };
+}
+
+/**
+ * The memory slider's stops, in MiB, smallest first: the common shapes up to
+ * maxMiB, and each of extra (a machine's own memory, off the common ones)
+ * that keeps to the rules.
+ */
+export function memoryStops(maxMiB: number, extra: number[] = []): number[] {
+  const own = extra.filter((m) => Number.isInteger(m) && m >= memoryStepMiB && m % memoryStepMiB === 0);
+  return [...new Set([...commonGi.map((g) => g * 1024).filter((m) => m <= maxMiB), ...own])].sort((a, b) => a - b);
+}
+
+/** cpu moved into the range memMiB allows. */
+export function clampCPU(cpu: number, memMiB: number): number {
+  const { lo, hi } = cpuRange(memMiB);
+  return Math.min(Math.max(Math.round(cpu) || lo, lo), hi);
 }
 
 /** The listed size whose cpu and memory a machine has, if any. */

@@ -18,15 +18,22 @@ import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { imageFloorGiB } from "@/lib/storage";
-import { Box, Check, Globe, HardDrive, Lock, MapPin, RotateCw, Server, Undo2, X } from "lucide-react";
+import { Box, Check, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
 import { addNetworks, removeNetworks, sharePerms, shareName, shareUses, shareYaml, useFileShares, withNetworks } from "@/lib/file-shares";
 import { useDeclarations } from "@/components/file-shares";
 import { useCan } from "@/lib/permissions";
-import { useState, type ReactNode } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { Input, Select } from "@/components/form";
 import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/components/container-advanced";
 import { Choice, FormSection as Section } from "@/components/form-page";
+import { gibText, SizeSliders } from "@/components/size-sliders";
+import { MachinePortForwards } from "@/components/machine-port-forwards";
+import { noVmAdvanced, sshKeysOf, VmAdvancedFields, vmAdvancedProblems, type VmAdvanced } from "@/components/vm-advanced";
+import { dataDiskProblems, VmDisks } from "@/components/vm-disks";
+import { PortForwardSchema, PortForwardService } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
+import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
+import { forwardPlan, forwardRowsOf, protocolEnum, usePortForwardQuota, type ForwardRow } from "@/lib/port-forwards";
 import { Notice } from "@/components/notice";
 import { StaleNotice } from "@/components/resource";
 import { Topbar, useProjectName } from "@/components/shell";
@@ -45,6 +52,8 @@ import {
   networkFieldsOf,
   quotaDelta,
   vmDefaults,
+  vmShareRowsOf,
+  vmSharesOf,
   volumeRowsOf,
   volumesOf,
   type Change,
@@ -55,7 +64,20 @@ import {
 } from "@/lib/machine-edit";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { useMachines } from "@/lib/machines";
-import { cpuRange, memoryLabel, memoryQuantity, minDiskGi, shapeProblem, sizeOf, useMachineSizes, withinRules, type Size } from "@/lib/machine-sizes";
+import {
+  clampCPU,
+  maxMiBPerCPU,
+  minMiBPerCPU,
+  memoryQuantity,
+  memoryStops,
+  minDiskGi,
+  shapeProblem,
+  sizeOf,
+  sliderLimits,
+  useMachineSizes,
+  withinRules,
+  type Size,
+} from "@/lib/machine-sizes";
 import { isStale } from "@/lib/network-actions";
 import { useOverQuota } from "@/lib/over-quota";
 import { formatNumber, quantityCPU, quantityGiB, wholeGiB } from "@/lib/quantity";
@@ -120,7 +142,7 @@ const effectIcon = { rebuild: HardDrive, restart: RotateCw, nothing: Check } as 
 /** The right column's list of what applying does, grouped by effect, or that nothing differs. */
 function WhatApplyingDoes({ changes, noun }: { changes: Change[]; noun: string }) {
   if (changes.length === 0) {
-    return <div className="px-4 py-3 text-[12.5px] text-muted">No change. The form holds the {noun} as it is.</div>;
+    return <div className="px-4 py-3 text-[12.5px] text-muted">No change.</div>;
   }
   return (
     <div className="space-y-3 px-4 py-3">
@@ -185,6 +207,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     net: networkFieldsOf((baseC ?? baseV)?.spec?.interfaces ?? []),
     volumes: baseC ? volumeRowsOf(baseC) : [],
     advanced: baseC ? advancedOf(baseC) : noAdvanced,
+    vmShares: baseV ? vmShareRowsOf(baseV) : [],
+    dataDisks: baseV ? (baseV.spec?.disks ?? []).map((d) => d.disk) : [],
+    vmAdvanced: baseV ? { sshKeys: (baseV.spec?.sshAuthorizedKeys ?? []).join("\n"), userData: baseV.spec?.userData ?? "" } : noVmAdvanced,
     // The stored disk as the field shows it, which may not be whole GiB, such as 10G.
     diskText: baseC ? formatNumber(quantityGiB(baseC.spec?.resources?.disk || containerDefaults.disk)) : undefined,
     diskWholeGi: baseC ? wholeGiB(baseC.spec?.resources?.disk || containerDefaults.disk) : undefined,
@@ -193,9 +218,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const [image, setImage] = useState(initial.image);
   const [vmImage, setVmImage] = useState(baseRoot?.case === "fromImage" ? (baseRoot.value.image?.name ?? "") : "");
   const [size, setSize] = useState(initialSize);
-  // A shape of the person's own, as typed, once Custom is chosen; null while
-  // a size is.
-  const [custom, setCustom] = useState<{ cpu: string; memGi: string } | null>(null);
+  // A shape of the person's own, as the sliders set it, once Custom is
+  // chosen; null while a size is.
+  const [custom, setCustom] = useState<{ cpu: number; memMiB: number } | null>(null);
   const [network, setNetwork] = useState(initial.net.network);
   const [groups, setGroups] = useState<string[]>(initial.net.groups);
   // Interfaces after the first: an edited machine's own, and each added for a file share on its network, in the network's default group.
@@ -218,6 +243,13 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // A container's process, folded until opened.
   const [advanced, setAdvanced] = useState<Advanced>(initial.advanced);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // A VM's file shares, data disks, and its SSH keys and user data, folded until opened.
+  const [vmShares, setVmShares] = useState<VolumeRow[]>(initial.vmShares);
+  const [dataDisks, setDataDisks] = useState<string[]>(initial.dataDisks);
+  const [vmAdvanced, setVmAdvanced] = useState<VmAdvanced>(initial.vmAdvanced);
+  const [vmAdvancedOpen, setVmAdvancedOpen] = useState(false);
+  // The port forward rows as edited; null until then, while they are the forwards the machine has.
+  const [forwardEdits, setForwardEdits] = useState<ForwardRow[] | null>(null);
   const proc = advancedSpec(advanced);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
@@ -229,6 +261,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // The sizes offered: those a machine may have under the shape rules.
   const offered = machineSizes.sizes.filter(withinRules);
   const shares = useFileShares(project);
+  const forwards = usePortForwards(project);
+  const fwdQuota = usePortForwardQuota(project);
   const sharePerm = useCan({ level: "project", name: project }, [sharePerms.apply]);
   const mayApplyShares = sharePerm.known ? sharePerm.can(sharePerms.apply) : undefined;
 
@@ -255,9 +289,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const isCurrent = (z: Size) => !!edit && z.name === currentMatch?.name;
   // With no size to pick, a new machine's shape is the person's own.
   const noSizes = !machineSizes.loading && !machineSizes.error && offered.length === 0 && !current;
-  const customFields = custom ?? (noSizes ? { cpu: "1", memGi: "1" } : null);
-  const customCPU = Number(customFields?.cpu.trim() || NaN);
-  const customMiB = Number(customFields?.memGi.trim() || NaN) * 1024;
+  const customFields = custom ?? (noSizes ? { cpu: 1, memMiB: 1024 } : null);
+  const customCPU = customFields?.cpu ?? NaN;
+  const customMiB = customFields?.memMiB ?? NaN;
   const customProblem = customFields ? shapeProblem(customCPU, customMiB) : undefined;
   const customSize: Size | undefined = customFields
     ? {
@@ -266,17 +300,26 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
         order: -2,
         cpu: customCPU,
         memoryGi: customMiB / 1024,
-        // The disk follows the size chosen before, as the fields start from it.
+        // The disk follows the size chosen before, as the sliders start from it.
         diskGi: picked?.diskGi ?? 0,
-        resources: { cpu: customFields.cpu.trim(), memory: Number.isFinite(customMiB) ? memoryQuantity(customMiB) : "", disk: "" },
+        resources: { cpu: String(customCPU), memory: memoryQuantity(customMiB), disk: "" },
       }
     : undefined;
   const s = customSize ?? picked;
-  const customRange = Number.isInteger(customMiB) && customMiB > 0 ? cpuRange(customMiB) : undefined;
-  // Custom starts from the shape chosen before it.
+  // The sliders reach twice the largest size, and always the machine's own shape.
+  const ownShapes = [current, customFields && { cpu: customFields.cpu, memoryGi: customFields.memMiB / 1024 }].flatMap((x) =>
+    x ? [{ memMiB: Math.round(x.memoryGi * 1024), cpu: x.cpu }] : [],
+  );
+  const limits = sliderLimits(offered, ownShapes);
+  const stops = memoryStops(limits.memMiB, ownShapes.map((o) => o.memMiB));
+  // The size cards: an edited machine's own shape first when no size is it.
+  const cards = [...(current && !currentMatch ? [current] : []), ...offered];
+  // Custom starts from the shape chosen before it, on a stop and with vCPUs its memory allows.
   const pickCustom = () => {
     if (custom) return;
-    setCustom({ cpu: String(picked?.cpu ?? 1), memGi: String(picked?.memoryGi ?? 1) });
+    const from = Math.round((picked?.memoryGi ?? 1) * 1024);
+    const memMiB = stops.includes(from) ? from : (stops.find((m) => m >= from) ?? stops[stops.length - 1]);
+    setCustom({ memMiB, cpu: clampCPU(picked?.cpu ?? 1, memMiB) });
   };
   const pickSize = (name: string | undefined) => {
     setCustom(null);
@@ -319,9 +362,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const shortNoun = kind === "container" ? "container" : "VM";
 
   // The object as it is sent, and as its manifest shows it.
-  // A new VM takes none of the interfaces added for a container's file
-  // shares; an edited VM keeps its own.
-  const extra = kind === "container" || edit ? extraNets.filter((x) => x.network !== network) : [];
+  const extra = extraNets.filter((x) => x.network !== network);
   const netFields = { network, groups, extra };
   const interfaces = interfacesOf(netFields);
   const onNetworks = [network, ...extra.map((x) => x.network)];
@@ -329,14 +370,29 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     if (!onNetworks.includes(n)) setExtraNets([...extraNets, { network: n, groups: ["default"] }]);
     setJustAdded({ network: n, share });
   };
-  // The shares this container adds its network to, among those it mounts.
-  const sharesChanged =
-    kind === "container"
-      ? Object.entries(shareAdds).flatMap(([n, adds]) => {
-          const sh = shares.items.find((x) => shareName(x) === n);
-          return sh && volumes.some((v) => v.kind === "FileShare" && v.source === n) ? [{ share: sh, adds }] : [];
-        })
-      : [];
+  // The file shares the machine declares: a container's FileShare volumes, a VM's shares.
+  const shareRows = (kind === "container" ? volumes : vmShares).filter((v) => v.kind === "FileShare");
+  // The shares this machine adds its network to, among those it declares.
+  const sharesChanged = Object.entries(shareAdds).flatMap(([n, adds]) => {
+    const sh = shares.items.find((x) => shareName(x) === n);
+    return sh && shareRows.some((v) => v.source === n) ? [{ share: sh, adds }] : [];
+  });
+  const sshKeys = sshKeysOf(vmAdvanced);
+
+  // The port forwards: the machine's own until the rows are edited, and what applying does to them.
+  const forwardsHad = edit ? forwardRowsOf(forwards.items, kind === "container" ? "Container" : "VirtualMachine", name) : [];
+  const forwardRows = forwardEdits ?? forwardsHad;
+  const fwd = forwardPlan({ kind: kind === "container" ? "Container" : "VirtualMachine", name }, forwardRows, forwardsHad, forwards.items.map(nameOf));
+  const forwardObjs = fwd.make.map((f) =>
+    create(PortForwardSchema, {
+      metadata: { name: f.name, project },
+      spec: {
+        target: { object: { case: kind === "container" ? "container" : "virtualMachine", value: name }, interface: f.iface },
+        protocol: protocolEnum(f.protocol),
+        targetPort: f.port,
+      },
+    }),
+  );
 
   let obj: MachineObject;
   if (edit) {
@@ -353,6 +409,11 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       if (advanced.restart !== initial.advanced.restart) changed.restartPolicy = proc.restartPolicy;
       if (json(volumes) !== json(initial.volumes)) changed.volumes = volumes;
       if (diskEdited) changed.disk = diskQuantity;
+    } else {
+      if (json(dataDisks) !== json(initial.dataDisks)) changed.disks = dataDisks;
+      if (json(vmShares) !== json(initial.vmShares)) changed.fileShares = vmShares;
+      if (json(sshKeys) !== json(sshKeysOf(initial.vmAdvanced))) changed.sshAuthorizedKeys = sshKeys;
+      if (vmAdvanced.userData !== initial.vmAdvanced.userData) changed.userData = vmAdvanced.userData;
     }
     if (json(netFields) !== json(initial.net)) changed.interfaces = interfaces;
     if (s && s !== current) {
@@ -382,10 +443,17 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               interfaces,
               resources: s && { cpu: s.resources.cpu, memory: s.resources.memory },
               rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s ? diskQuantity : "" } } },
+              disks: dataDisks.filter(Boolean).map((disk) => ({ disk })),
+              fileShares: vmSharesOf(vmShares.filter((v) => v.source)),
+              sshAuthorizedKeys: sshKeys,
+              userData: vmAdvanced.userData,
             },
           });
   }
-  const changes = edit ? changesOf(edit.base, obj) : [];
+  const machineChanges = edit ? changesOf(edit.base, obj) : [];
+  // The forwards are objects of their own, made and deleted beside the machine, which they do not restart.
+  const forwardDetail = [...fwd.make.map((f) => `${f.name} added`), ...fwd.remove.map((n) => `${n} removed`)].join(", ");
+  const changes: Change[] = forwardDetail ? [...machineChanges, { field: "portForwards", label: "Port forwards", effect: "nothing", detail: forwardDetail }] : machineChanges;
 
   // A size's card is checked with the disk the field starts at for it,
   // never the one typed: a raised disk's overage is the Disk field's to
@@ -404,10 +472,12 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const machineYaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
   // A share this container adds its network to is applied before it, as a document of its own.
   const shareDocs = sharesChanged.map(({ share, adds }) => shareYaml(withNetworks(share, networksAfter(share, { [shareName(share)]: adds }))));
-  const yaml = [...shareDocs, machineYaml].join("\n---\n");
+  const yaml = [...shareDocs, machineYaml, ...forwardObjs.map(portForwardYaml)].join("\n---\n");
   const cli = [
     ...sharesChanged.map(({ share }) => `hangar apply -p ${project} -f ${shareName(share)}.yaml`),
     edit ? `hangar apply -p ${project} -f ${name}.yaml` : `hangar apply --create-only -p ${project} -f ${name || "machine"}.yaml`,
+    ...fwd.make.map((f) => `hangar apply --create-only -p ${project} -f ${f.name}.yaml`),
+    ...fwd.remove.map((n) => `hangar delete pf ${n} -p ${project}`),
   ];
 
   // Nothing is sent until the project's machines of the kind are known and
@@ -421,14 +491,22 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   if (!edit && !nameCheck.ok) problems.push(nameCheck.reason);
   if (kind === "container" && !image.trim()) problems.push("The image is empty.");
   if (kind === "container") problems.push(...proc.problems);
-  if (kind === "container") {
-    problems.push(...volumeProblems(volumes));
-    for (const v of volumes) {
-      if (v.kind !== "FileShare" || !v.source) continue;
-      const sh = shares.items.find((x) => shareName(x) === v.source);
-      if (!sh) problems.push(shares.loading ? "The file shares are loading." : `File share ${v.source} does not exist.`);
-      else if (!networksAfter(sh, shareAdds).some((n) => onNetworks.includes(n))) problems.push(`File share ${v.source} is on none of this container's networks.`);
-    }
+  if (kind === "container") problems.push(...volumeProblems(volumes));
+  else {
+    if (vmShares.some((v) => !v.source)) problems.push("A file share row has no share.");
+    if (new Set(vmShares.map((v) => v.source)).size < vmShares.length) problems.push("A file share is declared twice.");
+    problems.push(...dataDiskProblems(dataDisks), ...vmAdvancedProblems(vmAdvanced));
+  }
+  for (const v of shareRows) {
+    if (!v.source) continue;
+    const sh = shares.items.find((x) => shareName(x) === v.source);
+    if (!sh) problems.push(shares.loading ? "The file shares are loading." : `File share ${v.source} does not exist.`);
+    else if (!networksAfter(sh, shareAdds).some((n) => onNetworks.includes(n))) problems.push(`File share ${v.source} is on none of this ${noun}'s networks.`);
+  }
+  problems.push(...fwd.problems);
+  if (fwd.make.length > 0 && forwards.loading) problems.push("The port forwards are loading.");
+  if (fwdQuota.limit !== undefined && fwd.make.length > fwd.remove.length && fwdQuota.used + fwd.make.length - fwd.remove.length > fwdQuota.limit) {
+    problems.push(`The plan allows ${fwdQuota.limit} port forwards; ${fwdQuota.used} are used.`);
   }
   if (!edit && kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
@@ -453,10 +531,38 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
         // Only what this page added is its to undo; a network already there was someone else's.
         if (added.length) setApplied((was) => [...was.filter((a) => a.share !== n), { share: n, adds: added }]);
       }
+      const pfs = createClient(PortForwardService, transport);
+      const makeForwards = async () => {
+        const made: string[] = [];
+        for (const pf of forwardObjs) {
+          const n = pf.metadata?.name ?? "";
+          try {
+            await pfs.applyPortForward({ portForward: pf, createOnly: true });
+          } catch (err) {
+            throw Object.assign(new Error(`Creating port forward ${n} failed: ${errorMessage(err)}`, { cause: err }), { made });
+          }
+          made.push(n);
+        }
+        return made;
+      };
       if (edit) {
-        await edit.write(obj);
+        if (machineChanges.length > 0) await edit.write(obj);
+        for (const n of fwd.remove) {
+          try {
+            await pfs.deletePortForward({ project, name: n });
+          } catch (err) {
+            throw new Error(`Deleting port forward ${n} failed: ${errorMessage(err)}`, { cause: err });
+          }
+        }
+        await makeForwards();
         return;
       }
+      // The forwards first, each waiting for the machine it names: one the
+      // plan refuses then stops the create before the machine is made.
+      const made = await makeForwards().catch(async (err: Error & { made?: string[] }) => {
+        await Promise.allSettled((err.made ?? []).map((n) => pfs.deletePortForward({ project, name: n })));
+        throw err;
+      });
       try {
         if (kind === "container") {
           await createClient(ContainerService, transport).applyContainer({ container: obj as Container, createOnly: true });
@@ -467,6 +573,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
           });
         }
       } catch (err) {
+        // A machine not made leaves no forward behind.
+        await Promise.allSettled(made.map((n) => pfs.deletePortForward({ project, name: n })));
         throw createError(err, noun, name);
       }
     },
@@ -499,22 +607,10 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       >
         <div className="min-w-0">
           <h1 className="text-[22px] font-semibold tracking-tight">{edit ? `Edit ${name}` : "New machine"}</h1>
-          <p className="mt-1 text-[13px] text-muted">
-            {edit ? (
-              <>
-                A {noun} in <span className="font-mono text-foreground">{project}</span>, as read at resource version{" "}
-                <span className="font-mono text-foreground">{String(edit.base.metadata?.resourceVersion ?? 0n)}</span>.
-              </>
-            ) : (
-              <>
-                Created in <span className="font-mono text-foreground">{project}</span>.
-              </>
-            )}
-          </p>
 
           <Section n={1} title="Kind">
             {edit ? (
-              <Locked why="A machine's kind does not change.">
+              <Locked why="Does not change.">
                 <span className="flex items-center gap-2">
                   {kind === "container" ? <Box className="size-4 text-muted" strokeWidth={1.75} /> : <Server className="size-4 text-muted" strokeWidth={1.75} />}
                   {kind === "container" ? "Container" : "Virtual machine"}
@@ -524,11 +620,24 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               <div role="radiogroup" aria-label="Kind" className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
                 {(
                   [
-                    ["container", Box, "Container", "Runs a container image. Starts in seconds; exec and logs."],
-                    ["vm", Server, "Virtual machine", "A full operating system from a disk image. SSH and cloud-init."],
+                    ["container", Box, "Container", "A container image. Starts in seconds."],
+                    ["vm", Server, "Virtual machine", "A full operating system."],
                   ] as const
                 ).map(([id, Icon, label, text]) => (
-                  <Choice key={id} selected={kind === id} onClick={() => setKind(id)} className="p-4">
+                  <Choice
+                    key={id}
+                    selected={kind === id}
+                    onClick={() => {
+                      if (id === kind) return;
+                      // A kind's file shares are its own, so the interfaces and share changes made for them go with them.
+                      setKind(id);
+                      setExtraNets([]);
+                      setShareAdds({});
+                      setJustAdded(null);
+                      setPickerOpen(null);
+                    }}
+                    className="p-4"
+                  >
                     <Icon className="size-4 text-muted" strokeWidth={1.75} />
                     <div className="mt-2 text-[13.5px] font-medium">{label}</div>
                     <div className="mt-0.5 text-[12.5px] leading-snug text-muted">{text}</div>
@@ -548,12 +657,10 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                   aria-label="Image"
                   spellCheck={false}
                 />
-                <p className="mt-1.5 text-[12px] text-subtle">
-                  {edit && "Changing it rebuilds the root disk. "}Private images are pulled with a registry-auth secret of this project.
-                </p>
+                {edit && <p className="mt-1.5 text-[12px] text-subtle">Changing it rebuilds the root disk.</p>}
               </div>
             ) : edit ? (
-              <Locked why="A VM's root disk is made from its image once; its source does not change.">
+              <Locked why="Does not change.">
                 {baseRoot?.case === "disk" ? (
                   <>
                     Boots from disk <span className="font-mono">{baseRoot.value}</span>
@@ -596,7 +703,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             )}
           </Section>
 
-          <Section n={3} title="Size" hint="A preset of the platform's, or your own">
+          <Section n={3} title="Size">
             {machineSizes.loading ? (
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[0, 1, 2, 3].map((i) => (
@@ -607,8 +714,14 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
             ) : (
               <>
-              <div role="radiogroup" aria-label="Size" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[...(current && !currentMatch ? [current] : []), ...offered].map((z) => {
+              {/* One row on a wide screen, whatever the number of sizes; Custom last. */}
+              <div
+                role="radiogroup"
+                aria-label="Size"
+                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(var(--cards),minmax(0,1fr))]"
+                style={{ "--cards": cards.length + 1 } as CSSProperties}
+              >
+                {cards.map((z) => {
                   const tooBig = cardOver(z).length > 0;
                   const selected = !customFields && (z === current ? s === current : s === current ? isCurrent(z) : s?.name === z.name);
                   const own = z === current || isCurrent(z);
@@ -622,13 +735,13 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                     >
                       <div
                         className={cn(
-                          "break-words pr-5 font-mono font-semibold tracking-tight",
+                          "flex min-h-[26px] items-center break-words pr-5 font-mono font-semibold tracking-tight",
                           z.label.length > 4 ? "text-[17px] leading-tight" : "text-[26px] leading-none",
                         )}
                       >
                         {z.label}
                       </div>
-                      <div className="mt-4 space-y-1 font-mono text-[12.5px] tabular">
+                      <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
                         <div>
                           {formatNumber(z.cpu)} <span className="text-muted">vCPU</span>
                         </div>
@@ -642,121 +755,101 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                   );
                 })}
                 <Choice key="(custom)" label="Size Custom" selected={!!customFields} onClick={pickCustom} className="p-4">
-                  <div className="pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
-                  <div className="mt-4 text-[12.5px] text-muted">Your own vCPUs and memory</div>
+                  <div className="flex min-h-[26px] items-center pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
+                  <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
+                    {customFields ? (
+                      <>
+                        <div>
+                          {customCPU} <span className="text-muted">vCPU</span>
+                        </div>
+                        <div>
+                          {gibText(customMiB)} <span className="text-muted">GiB memory</span>
+                        </div>
+                      </>
+                    ) : (
+                      <SlidersHorizontal className="size-5 text-subtle" strokeWidth={1.5} />
+                    )}
+                    {/* The shape rule the rulers keep to, under the memory it is about. */}
+                    <div className="whitespace-nowrap font-sans text-[11px] text-subtle">
+                      {formatNumber(minMiBPerCPU / 1024)}–{formatNumber(maxMiBPerCPU / 1024)} GiB per vCPU
+                    </div>
+                  </div>
+                  {customFields && over.length > 0 && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
                 </Choice>
               </div>
               {customFields && (
-                <div className="mt-3 max-w-xl rounded-lg border bg-surface px-4 py-3">
-                  <div className="flex flex-wrap items-end gap-4">
-                    <label className="text-[13px] font-medium">
-                      Memory
-                      <span className="mt-1.5 flex items-center gap-2 font-normal">
-                        <Input
-                          type="number"
-                          inputMode="decimal"
-                          min={0.25}
-                          step={0.25}
-                          value={customFields.memGi}
-                          onChange={(e) => setCustom({ ...customFields, memGi: e.target.value })}
-                          aria-label="Memory, GiB"
-                          aria-invalid={!!customProblem && customProblem.startsWith("Memory")}
-                          className="w-28 tabular"
-                        />
-                        <span className="text-[13px] text-muted">GiB</span>
-                      </span>
-                    </label>
-                    <label className="text-[13px] font-medium">
-                      vCPUs
-                      <span className="mt-1.5 flex items-center gap-2 font-normal">
-                        <Input
-                          type="number"
-                          inputMode="numeric"
-                          min={customRange?.lo ?? 1}
-                          max={customRange?.hi}
-                          step={1}
-                          value={customFields.cpu}
-                          onChange={(e) => setCustom({ ...customFields, cpu: e.target.value })}
-                          aria-label="vCPUs"
-                          aria-invalid={!!customProblem && !customProblem.startsWith("Memory")}
-                          className="w-24 tabular"
-                        />
-                      </span>
-                    </label>
-                  </div>
-                  {customProblem ? (
-                    <p className="mt-2 text-[12px] text-fail">{customProblem}</p>
-                  ) : customRange ? (
-                    <p className="mt-2 text-[12px] text-muted">
-                      {memoryLabel(customMiB)} of memory goes with{" "}
-                      {customRange.lo === customRange.hi ? `${customRange.lo} vCPU${customRange.lo === 1 ? "" : "s"}` : `${customRange.lo} to ${customRange.hi} vCPUs`}.
-                    </p>
-                  ) : null}
-                  {over.length > 0 && !customProblem && <p className="mt-1 text-[12px] font-medium text-fail">Over quota</p>}
-                  <p className="mt-1.5 text-[12px] text-subtle">
-                    Memory comes in steps of 256 MiB. Each vCPU goes with 512 MiB to 8 GiB of memory; one vCPU goes with any. Under load, a machine's share of the host's CPUs follows its memory.
-                  </p>
+                <div className="mt-3">
+                  <SizeSliders
+                    memMiB={customMiB}
+                    cpu={customCPU}
+                    stops={stops}
+                    cpuMax={limits.cpu}
+                    over={over.length > 0}
+                    onChange={(shape) => setCustom(shape)}
+                  />
+                  {customProblem && <p className="mt-2 text-[12px] text-fail">{customProblem}</p>}
                 </div>
               )}
               </>
             )}
           </Section>
 
-          <Section
-            n={4}
-            title="Disk"
-            hint={baseV ? undefined : editFloor !== undefined ? `At least ${editFloor} GiB; it never shrinks` : byImage ? `The image ${chosenImage} needs at least ${minDisk} GiB` : `At least ${minDisk} GiB`}
-          >
-            {baseV ? (
-              <Locked
-                why={
-                  baseV.status?.rootDisk
-                    ? "The root disk grows on its own page."
-                    : "The root disk grows on its own page, once it is made."
-                }
-              >
-                {baseRoot?.case === "fromImage" ? (
-                  <span className="font-mono tabular">{formatNumber(quantityGiB(baseRoot.value.size || vmDefaults.disk))} GiB</span>
-                ) : (
-                  "The disk's own size"
-                )}
-                {baseV.status?.rootDisk && (
-                  <>
-                    {" "}
-                    · root disk{" "}
-                    <Link to="/projects/$project/disks/$name" params={{ project, name: baseV.status.rootDisk }} className="font-mono text-accent hover:underline">
-                      {baseV.status.rootDisk}
-                    </Link>
-                  </>
-                )}
-              </Locked>
-            ) : (
-              <div className="max-w-xl">
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    inputMode="numeric"
-                    min={minDisk}
-                    step={1}
-                    value={diskText ?? String(diskStart)}
-                    onChange={(e) => setDiskText(e.target.value)}
-                    aria-label="Disk, GiB"
-                    aria-invalid={!!diskProblem || !!diskOver}
-                    disabled={!s}
-                    className={cn("w-32 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
-                  />
-                  <span className="text-[13px] text-muted">GiB</span>
+          <Section n={4} title={kind === "vm" ? "Disks" : "Disk"}>
+            <div className="max-w-xl divide-y rounded-lg border bg-surface">
+              <div className="px-4 py-3">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className="flex w-24 shrink-0 items-center gap-2 text-[13px] font-medium">
+                    <HardDrive className="size-4 text-muted" strokeWidth={1.75} />
+                    {kind === "vm" ? "Boot" : "Root"}
+                  </span>
+                  {baseV ? (
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px]">
+                      <span className="font-mono tabular">
+                        {baseRoot?.case === "fromImage" ? `${formatNumber(quantityGiB(baseRoot.value.size || vmDefaults.disk))} GiB` : "its own size"}
+                      </span>
+                      {baseV.status?.rootDisk && (
+                        <Link to="/projects/$project/disks/$name" params={{ project, name: baseV.status.rootDisk }} className="font-mono text-[12.5px] text-accent hover:underline">
+                          {baseV.status.rootDisk}
+                        </Link>
+                      )}
+                      <span className="text-[12px] text-subtle">grows on its disk's page</span>
+                    </span>
+                  ) : (
+                    <>
+                      <Input
+                        type="number"
+                        inputMode="numeric"
+                        min={minDisk}
+                        step={1}
+                        value={diskText ?? String(diskStart)}
+                        onChange={(e) => setDiskText(e.target.value)}
+                        aria-label="Disk, GiB"
+                        aria-invalid={!!diskProblem || !!diskOver}
+                        disabled={!s}
+                        className={cn("h-8 w-24 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
+                      />
+                      <span className="text-[13px] text-muted">GiB</span>
+                      <span className="text-[12px] text-subtle">
+                        {editFloor !== undefined ? `≥ ${editFloor} GiB, never shrinks` : byImage ? `≥ ${minDisk} GiB for ${chosenImage}` : `≥ ${minDisk} GiB`}
+                      </span>
+                    </>
+                  )}
                 </div>
-                {s && diskProblem ? (
+                {!baseV && s && diskProblem ? (
                   <p className="mt-1.5 text-[12px] text-fail">{diskProblem}</p>
-                ) : diskOver ? (
+                ) : !baseV && diskOver ? (
                   <p className="mt-1.5 text-[12px] text-fail">
-                    Over quota: {formatNumber(diskOver.left)} GiB of the project's {formatNumber(diskOver.limit)} GiB of disk is left.
+                    Over quota: {formatNumber(diskOver.left)} of {formatNumber(diskOver.limit)} GiB left.
                   </p>
                 ) : null}
-                <p className="mt-1.5 text-[12px] text-subtle">A disk can grow later; growing restarts the machine. It never shrinks.</p>
               </div>
-            )}
+              {kind === "vm" && (
+                <div className="px-4 py-3">
+                  <div className="mb-2 text-[13px] font-medium">Data</div>
+                  <VmDisks project={project} rows={dataDisks} onChange={setDataDisks} vm={edit ? name : undefined} />
+                </div>
+              )}
+            </div>
           </Section>
 
           <Section n={5} title="Network">
@@ -841,39 +934,51 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               ))}
               <p className="flex items-start gap-2 text-[12px] text-muted">
                 <Globe className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-                Every interface gets a public IPv6 /128. Inbound traffic from the internet is denied unless one of its
-                security groups allows it.
+                Each interface gets a public IPv6 address; its security groups decide what gets in.
               </p>
             </div>
           </Section>
 
-          {kind === "container" && (
-            <Section n={6} title="Volumes" hint="Disks and file shares, mounted in the container">
-              <VolumePicker
-                project={project}
-                rows={volumes}
-                onChange={setVolumes}
-                open={pickerOpen}
-                onOpen={setPickerOpen}
-                networks={onNetworks}
-                onAddInterface={addInterface}
-                shareAdds={shareAdds}
-                onShareAdds={setShareAdds}
-                applied={applied.map((a) => a.share)}
-                mayApplyShares={mayApplyShares}
-              />
-            </Section>
-          )}
+          <Section n={6} title={kind === "container" ? "Volumes" : "File shares"}>
+            <VolumePicker
+              vm={kind === "vm"}
+              project={project}
+              rows={kind === "container" ? volumes : vmShares}
+              onChange={kind === "container" ? setVolumes : setVmShares}
+              open={pickerOpen}
+              onOpen={setPickerOpen}
+              networks={onNetworks}
+              onAddInterface={addInterface}
+              shareAdds={shareAdds}
+              onShareAdds={setShareAdds}
+              applied={applied.map((a) => a.share)}
+              mayApplyShares={mayApplyShares}
+            />
+          </Section>
 
-          {kind === "container" && (
-            <Section n={7} title="Advanced" hint="Optional, as a Compose service writes it">
+          <Section n={7} title="Port forwards">
+            <MachinePortForwards
+              kind={kind === "container" ? "Container" : "VirtualMachine"}
+              machine={name}
+              rows={forwardRows}
+              onChange={setForwardEdits}
+              nics={[{ network, groups }, ...extra]}
+              forwards={forwards.items}
+              groups={securityGroups.data?.items ?? []}
+            />
+          </Section>
+
+          <Section n={8} title="Advanced" hint="Optional">
+            {kind === "container" ? (
               <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
-            </Section>
-          )}
+            ) : (
+              <VmAdvancedFields value={vmAdvanced} onChange={setVmAdvanced} open={vmAdvancedOpen} onToggle={() => setVmAdvancedOpen(!vmAdvancedOpen)} />
+            )}
+          </Section>
 
-          <Section n={kind === "container" ? 8 : 6} title="Name" hint={edit ? undefined : "Unique among this project's machines of the kind"}>
+          <Section n={9} title="Name">
             {edit ? (
-              <Locked why="A machine's name does not change.">
+              <Locked why="Does not change.">
                 <span className="font-mono">{name}</span>
               </Locked>
             ) : (
@@ -908,13 +1013,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                   <div className="px-4 pt-3 text-[11.5px] text-subtle">What applying does</div>
                   <WhatApplyingDoes changes={changes} noun={shortNoun} />
                 </div>
-              ) : (
-                <div className="flex items-start gap-2.5 px-4 py-3 text-[12.5px]">
-                  <MapPin className="mt-0.5 size-3.5 shrink-0 text-muted" />
-                  <span className="text-muted">The scheduler picks the host. The {noun}'s page shows it once placed.</span>
-                </div>
-              )}
-              <div className={cn("space-y-3 px-4 py-3", !edit && "border-t")}>
+              ) : null}
+              <div className="space-y-3 px-4 py-3">
                 {over.length > 0 && (
                   <Notice tone="error" title={`Over the project's ${over.map((o) => o.label).join(" and ")} limit`}>
                     {over.map((o) => (

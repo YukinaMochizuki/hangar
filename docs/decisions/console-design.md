@@ -322,10 +322,9 @@ Settled with the owner on screenshots before the dialogs sent anything.
 - **A machine is edited on the create form, opened on it**, at
   `/projects/<project>/containers/<name>/edit` and `/vms/<name>/edit`
   (`web/src/pages/edit-machine.tsx`), from Edit in the machine's head and
-  in its row's menu. Every field is prefilled from the spec. Kind and Name
-  are each one locked line, and a VM's image is locked, saying that a VM's
-  root disk is made from its image once and its source does not change; a
-  VM's root disk size is locked too, as it grows on its disk's page. Only
+  in its row's menu. Every field is prefilled from the spec. Kind, Name
+  and a VM's image are each one locked line, "Does not change."; a VM's
+  boot disk size is stated with a link to its disk, where it grows. Only
   the parts of the spec the person changed are written back over the
   object as read (`web/src/lib/machine-edit.ts`), so labels, the run state
   and every field the form does not show stay as they were. The apply is
@@ -342,13 +341,14 @@ Settled with the owner on screenshots before the dialogs sent anything.
   from the Machine the container and VM controllers write) changes that
   spec's hash, and the node stops and starts the machine (`ensureVM`):
   interfaces, a container's volumes, entrypoint, command, environment and
-  restart policy, cpu, memory and a container's disk. A container's image
-  rebuilds the root disk when the reference names another image. Image
-  pull secrets, read only when an image is pulled, a VM's file shares,
-  which change its shares' exports, and user data, which the metadata
-  service hands to cloud-init on the first boot, reach no VMSpec and
-  restart nothing. With nothing changed it says "No change" and Apply is
-  off.
+  restart policy, cpu, memory, a container's disk and a VM's data disks. A
+  container's image rebuilds the root disk when the reference names
+  another image. Image pull secrets, read only when an image is pulled, a
+  VM's file shares, which change its shares' exports, and its SSH keys and
+  user data, which the metadata service hands to cloud-init on the first
+  boot, reach no VMSpec and restart nothing; nor do the port forwards made
+  or deleted beside the machine. With nothing changed it says "No change"
+  and Apply is off.
 - **An edit keeps the machine's own size** until another is chosen: the
   listed size its cpu and memory match is marked Current; a spec matching
   none shows a card of its own first, Current, with its cpu and memory,
@@ -360,40 +360,47 @@ Settled with the owner on screenshots before the dialogs sent anything.
   in whole GiB rounded up. A stored disk that is not whole GiB, such as
   `10G`, is sent back as it is, and checked only once the person changes
   it.
-- **Resize is a dialog on the machine's page** for the size alone: the
-  platform's sizes, the current one marked (a card of its own, Current,
-  when no listed size matches), and that resizing restarts the machine,
-  or for a stopped one that the new size counts once it starts; the disk
-  stays as it is. It applies cpu and memory alone, at the version of the
-  object the dialog opened on, and says so when the object changed since,
-  as the edit page does.
-- **Edit, Resize, Start and Stop show only when TestPermissions holds the
+- **A machine is resized on its edit page.** Its head and its row's menu
+  offer Edit, Start or Stop, Edit labels and Delete, and no Resize: one
+  place changes a machine's shape, with what applying does beside it.
+- **Edit, Start and Stop show only when TestPermissions holds the
   kind's apply permission** (`compute.containers.apply`,
   `compute.virtualmachines.apply`), and Delete only its delete permission,
   as "What a control is shown for" says; the edit page states the refusal
-  once the answer gives one. Edit and Resize are not offered for a
-  machine being deleted, whose edit page says so and holds no form.
+  once the answer gives one. Edit is not offered for a machine being
+  deleted, whose edit page says so and holds no form.
 - **The sizes are the platform's presets**, read from the API
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
   `machine-sizes.md`); the console holds none of its own. The create form
   shows them by their `order` and fills the machine's cpu and memory from
   the chosen one; `?size=` takes a size's name, and a name the platform
   does not list chooses the first. A size's card states its cpu and
-  memory, not its disk. A size the shape rules refuse, stored before
-  them, is not offered, in the form or in Resize, since a machine of it
+  memory, not its disk. The cards are one row on a wide screen, whatever
+  their number, Custom last, their lines level across the row. A size the
+  shape rules refuse, stored before them, is not offered, since a machine of it
   would be refused; lists still name machines by it. A list's size badge
   is the listed size whose cpu and memory the machine has, and none when
   no size matches.
-- **Custom, after the sizes, is a shape of the person's own.** Chosen, it
-  opens Memory (GiB, in steps of 0.25) and vCPUs fields, starting from the
-  shape chosen before, and says the vCPUs the memory allows; a shape the
-  rules refuse (`shapeProblem`, the apiserver's rules) is stated under the
-  fields and above the submit button, and the form sends nothing. Memory
+- **Custom, after the sizes, is a shape of the person's own**, set on two
+  rulers so that a shape the rules refuse (`shapeProblem`, the apiserver's
+  rules) cannot be set (`web/src/components/size-sliders.tsx`). The card
+  states the shape as the other cards do, and the rule in small print,
+  "0.5–8 GiB per vCPU". Chosen, a panel as wide as the cards' row opens
+  under them, starting from the shape chosen before: a memory ruler that
+  stops at the common shapes (0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 16,
+  24, 32 GiB and on) up to twice the platform's largest size, and a vCPU
+  ruler up to twice its largest vCPUs. The vCPUs the memory does not allow
+  are a hatched stretch with no ticks, which the pointer cannot reach,
+  with a note under it ("5+ need more memory", "1 needs less memory");
+  moving the memory moves the vCPUs into its range. Ticks are short and
+  thin, the pointer a small bar: the panel is a control, not a feature of
+  the page. Beside each ruler a field takes a value typed: memory any
+  whole number of 256 MiB steps, which becomes a stop of its own, vCPUs
+  any the memory allows; a value refused is marked and not taken. Memory
   goes out as whole Gi, or as Mi when it is not. With no size defined,
   Custom is the only card and is chosen. An edited machine whose shape is
-  no listed size shows it as a card of its own, Current, beside Custom. The
-  Resize dialog offers the sizes alone; a shape of one's own is the edit
-  page's.
+  no listed size shows it as a card of its own, Current, beside Custom, and
+  its shape is a stop of the rulers.
 - **The disk is chosen apart from the size**, as GCP and AWS choose a boot
   disk apart from the machine type. The create form's Disk field takes
   whole GiB, at least the minimum its heading states: 2 GiB, or for a VM
@@ -404,8 +411,36 @@ Settled with the owner on screenshots before the dialogs sent anything.
   minimum, or not a whole number, the field states the fact and the form
   sends nothing. The manifest and the summary
   show the value typed, refused or not. It goes to a container's
-  `resources.disk` and a VM's `rootDisk.fromImage.size`. By the field: "A
-  disk can grow later; growing restarts the machine. It never shrinks."
+  `resources.disk` and a VM's `rootDisk.fromImage.size`. Beside the
+  field its minimum: "≥ 2 GiB", "≥ 30 GiB for ubuntu-24", or on an edit
+  "≥ 20 GiB, never shrinks".
+- **A VM's Disks are its boot disk and its data disks**, one section
+  (`web/src/components/vm-disks.tsx`): the boot disk's size, then the
+  project's disks attached after it in order (`spec.disks`), each chosen
+  from a list where a root disk or a disk another machine holds is shown
+  and cannot be chosen. A disk is made on New disk, not here.
+- **A VM declares file shares as a container mounts them**, with the same
+  picker (`web/src/components/volume-picker.tsx`, `vm`): file shares
+  alone, no target, as the VM mounts a share itself, each read-only or
+  not, and a share on none of its networks offered with the two ways to
+  reach it. Switching Kind on New machine drops the interfaces and share
+  changes made for the other kind's shares.
+- **A machine's Advanced section is folded.** A container's holds its
+  process; a VM's its SSH keys, one a line, and its user data with its
+  size against the 16 KiB the API takes (`web/src/components/vm-advanced.tsx`).
+  Neither is needed to reach a VM: `hangar ssh` signs in without a key.
+- **Port forwards are made with the machine**, on New and Edit, both kinds
+  (`web/src/components/machine-port-forwards.tsx`, `forwardPlan` in
+  `web/src/lib/port-forwards.ts`): rows of protocol, port and, for a
+  machine of several, interface, each leading to a random public port. An
+  edit lists the forwards that lead to the machine with their address.
+  Each new row is a PortForward named from the machine and port, never a
+  name the project holds; a row removed is deleted. On create the forwards
+  are applied first, each waiting for its machine, so a plan's limit
+  stops the create before the machine is made; a machine then refused
+  takes them back. On an edit the machine is applied first, when it
+  changed, then the forwards. A port no security group of the row's
+  interface lets in is said under the row.
 - **A size's card is over quota by the disk it starts at**, with its cpu
   and memory: the larger of its disk and the floor, never the disk typed.
   A raised disk past the project's disk limit is stated under the Disk

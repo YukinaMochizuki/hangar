@@ -62,7 +62,7 @@ describe("the volume picker", () => {
     expect(within(list).getByText("File shares")).toBeTruthy();
     expect((within(list).getByRole("option", { name: /media/ }) as HTMLButtonElement).disabled).toBe(true);
     expect((within(list).getByRole("option", { name: /assets/ }) as HTMLButtonElement).disabled).toBe(false);
-    expect(within(list).getByText(/this container has no interface on/)).toBeTruthy();
+    expect(within(list).getAllByText("Not on this container's networks.").length).toBeGreaterThan(0);
     await within(list).findByRole("button", { name: /Add default to this share/ });
     const names = within(within(list).getByRole("group", { name: "Ways to use it" }))
       .getAllByRole("button")
@@ -110,7 +110,7 @@ describe("the volume picker", () => {
     const apply = vi.fn((r: ApplyFileShareRequest) => void order.push(`share:${r.fileShare?.spec?.networks.join(",")}`));
     const { api, list } = await openPicker({ apply });
     fireEvent.click(await within(list).findByRole("button", { name: /Add default to this share/ }));
-    expect(within(list).getByText(/will be updated with network/)).toBeTruthy();
+    expect(within(list).getByText(text("default is added to media on create."))).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Source of volume 1" }));
     fireEvent.change(screen.getByLabelText("Target"), { target: { value: "/media" } });
     fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:1" } });
@@ -162,8 +162,8 @@ describe("the volume picker", () => {
     expect(screen.queryByText(/nothing was created/)).toBeNull();
     // The picker no longer says the share is changed on create: it is changed.
     fireEvent.click(screen.getByRole("button", { name: "Source of volume 1" }));
-    expect(await screen.findByText(/added for this container, which is not created yet/)).toBeTruthy();
-    expect(screen.queryByText(/will be updated with network/)).toBeNull();
+    expect(await screen.findByText(text("media has network default now."))).toBeTruthy();
+    expect(screen.queryByText(/on create\./)).toBeNull();
     refuse = false;
     fireEvent.click(submitButton());
     await waitFor(() => expect(navigate).toHaveBeenCalled());

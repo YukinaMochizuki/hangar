@@ -4,7 +4,7 @@ import { PortForwardSchema, Protocol, type PortForward } from "@hangar/api/hanga
 import { SecurityGroupProtocol, SecurityGroupSchema } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { describe, expect, it } from "vitest";
 import { portForwardYaml, type Attachment } from "@/lib/network";
-import { examplesOf, forwardTargetOf, inboundOf, portProblem, portsHold, stateOf, suggestName } from "@/lib/port-forwards";
+import { examplesOf, forwardPlan, forwardRowsOf, forwardTargetOf, freeName, inboundOf, portProblem, portsHold, stateOf, suggestName } from "@/lib/port-forwards";
 
 const web = { kind: "Container" as const, name: "web", iface: "eth0" };
 
@@ -169,5 +169,58 @@ describe("the create form", () => {
     expect(yaml).toContain("targetPort: 22");
     expect(yaml).toContain("PROTOCOL_TCP");
     expect(yaml).not.toContain("23817");
+  });
+});
+
+describe("a machine form's port forwards", () => {
+  const web = { kind: "Container" as const, name: "web" };
+  const pf = (name: string, target: { container?: string; virtualMachine?: string }, port: number, protocol = Protocol.TCP, iface = "") =>
+    create(PortForwardSchema, {
+      metadata: { name },
+      spec: {
+        target: { object: target.container ? { case: "container", value: target.container } : { case: "virtualMachine", value: target.virtualMachine! }, interface: iface },
+        protocol,
+        targetPort: port,
+      },
+    });
+
+  it("reads the forwards that lead to the machine as its rows, and no other's", () => {
+    const all = [pf("web-22", { container: "web" }, 22), pf("game", { container: "web" }, 19132, Protocol.UDP, "eth1"), pf("db-5432", { virtualMachine: "web" }, 5432)];
+    expect(forwardRowsOf(all, "Container", "web")).toEqual([
+      { existing: "web-22", protocol: "TCP", port: "22", iface: "eth0" },
+      { existing: "game", protocol: "UDP", port: "19132", iface: "eth1" },
+    ]);
+  });
+
+  it("makes each new row, named from the machine and port and never a name the project holds", () => {
+    const plan = forwardPlan(web, [{ protocol: "TCP", port: "22", iface: "eth0" }, { protocol: "UDP", port: "53", iface: "eth1" }], [], ["web-22", "web-22-2"]);
+    expect(plan).toEqual({
+      make: [
+        { name: "web-22-3", protocol: "TCP", port: 22, iface: "eth0" },
+        { name: "web-53-udp", protocol: "UDP", port: 53, iface: "eth1" },
+      ],
+      remove: [],
+      problems: [],
+    });
+  });
+
+  it("deletes the forwards the rows no longer hold, and keeps the rest", () => {
+    const had = [
+      { existing: "web-22", protocol: "TCP" as const, port: "22", iface: "eth0" },
+      { existing: "web-80", protocol: "TCP" as const, port: "80", iface: "eth0" },
+    ];
+    expect(forwardPlan(web, [had[1]!], had, ["web-22", "web-80"])).toEqual({ make: [], remove: ["web-22"], problems: [] });
+  });
+
+  it("says which row's port is not one, and which repeats another", () => {
+    const had = [{ existing: "web-22", protocol: "TCP" as const, port: "22", iface: "eth0" }];
+    const plan = forwardPlan(web, [...had, { protocol: "TCP", port: "", iface: "eth0" }, { protocol: "TCP", port: "22", iface: "eth0" }], had, ["web-22"]);
+    expect(plan.problems).toEqual(["Port forward 2: The target port is empty.", "Port forward 3 repeats 22/tcp on eth0."]);
+  });
+
+  it("frees a name by counting up from 2, and leaves an empty one empty", () => {
+    expect(freeName("web-22", new Set())).toBe("web-22");
+    expect(freeName("web-22", new Set(["web-22", "web-22-2"]))).toBe("web-22-3");
+    expect(freeName("", new Set([""]))).toBe("");
   });
 });
