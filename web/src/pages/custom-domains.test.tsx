@@ -14,7 +14,10 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { CreateCustomDomain } from "@/pages/create-custom-domain";
 import { CustomDomainDetail, CustomDomainList } from "@/pages/custom-domains";
 import { domains, domainsApi, refuse, type DomainOverrides, type DomainsApi } from "@/test/domains-api";
-import { never, polyfillDialog, withApi } from "@/test/harness";
+import { deferred, never, polyfillDialog, withApi } from "@/test/harness";
+import { create } from "@bufbuild/protobuf";
+import { ConditionSchema, ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import type { CheckCustomDomainRequest } from "@hangar/api/hangar/network/v1alpha1/custom_domain_check_pb";
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
@@ -198,6 +201,93 @@ describe("a custom domain's page", () => {
     click("Reload");
     await waitFor(() => expect((screen.getByRole("checkbox", { name: /^Demo/ }) as HTMLInputElement).checked).toBe(true));
     expect(screen.queryByText(/changed since this dialog opened/)).toBeNull();
+  });
+});
+
+describe("Check now", () => {
+  /** The domains, example.org's Verified condition replaced. */
+  const withOrg = (status: ConditionStatus, reason: string, message: string) => {
+    const all = domains();
+    all[1].status!.conditions = [create(ConditionSchema, { type: "Verified", status, reason, message })];
+    return all;
+  };
+  const checks = (api: DomainsApi) => api.requests.filter((r) => r.method === "CheckCustomDomain").map((r) => r.request as CheckCustomDomainRequest);
+
+  it("is drawn on a domain waiting for DNS, with its command, for whoever may apply it at the tenant", async () => {
+    show(<CustomDomainDetail name="example-org" />);
+    expect(await screen.findByRole("button", { name: /Check now/ })).toBeTruthy();
+    expect(screen.getByText("hangar check customdomain example-org")).toBeTruthy();
+  });
+
+  it("is drawn when the last lookup failed", async () => {
+    const all = withOrg(ConditionStatus.FALSE, "LookupFailed", "looking up _acme-challenge.example.org failed: i/o timeout");
+    show(<CustomDomainDetail name="example-org" />, { listCustomDomains: () => ({ items: all }) });
+    expect((await screen.findAllByText("Lookup failed")).length).toBeGreaterThan(0);
+    expect(await screen.findByRole("button", { name: /Check now/ })).toBeTruthy();
+  });
+
+  it("is not drawn on a domain another tenant holds, which checking cannot change", async () => {
+    const api = show(<CustomDomainDetail name="shop-example-net" />);
+    await screen.findAllByText("Held by another tenant");
+    await waitFor(() => expect(api.calls).toContain("TestPermissions"));
+    // Edit projects comes with the same answer, so the answer is in.
+    await screen.findAllByRole("button", { name: /Edit projects/ });
+    expect(screen.queryByRole("button", { name: /Check now/ })).toBeNull();
+    expect(screen.queryByText(/hangar check/)).toBeNull();
+  });
+
+  it("is not drawn on a verified domain", async () => {
+    show(<CustomDomainDetail name="example-com" />);
+    await screen.findAllByRole("button", { name: /Edit projects/ });
+    expect(screen.queryByRole("button", { name: /Check now/ })).toBeNull();
+    expect(screen.queryByText(/hangar check/)).toBeNull();
+  });
+
+  it("is not drawn for someone whose roles hold no apply at the tenant", async () => {
+    show(<CustomDomainDetail name="example-org" />, { permissions: () => ({ permissions: ["network.customdomains.delete"] }) });
+    // Delete comes with the same answer, so the answer is in.
+    await screen.findAllByRole("button", { name: /Delete/ });
+    expect(screen.queryByRole("button", { name: /Check now/ })).toBeNull();
+    expect(screen.queryByText(/hangar check/)).toBeNull();
+  });
+
+  it("asks the API to check the domain by name, and is off while the call runs", async () => {
+    const answer = deferred<unknown>();
+    const api = show(<CustomDomainDetail name="example-org" />, { checkCustomDomain: () => answer.promise });
+    await screen.findByRole("button", { name: /Check now/ });
+    click(/Check now/);
+    await waitFor(() => expect(button(/Checking/).disabled).toBe(true));
+    expect(checks(api)).toEqual([expect.objectContaining({ name: "example-org" })]);
+    answer.resolve({ customDomain: domains()[1] });
+    await waitFor(() => expect(button(/Check now/).disabled).toBe(false));
+  });
+
+  it("shows the domain verified once the API answers that it is", async () => {
+    const verified = withOrg(ConditionStatus.TRUE, "Verified", "the challenge CNAME is in place")[1];
+    show(<CustomDomainDetail name="example-org" />, { checkCustomDomain: () => ({ customDomain: verified }) });
+    await screen.findByRole("button", { name: /Check now/ });
+    click(/Check now/);
+    await waitFor(() => expect(screen.queryByText("Waiting for DNS")).toBeNull());
+    expect(screen.getAllByText("Verified").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /Check now/ })).toBeNull();
+  });
+
+  it("shows what the lookup found when the domain still waits", async () => {
+    const still = withOrg(ConditionStatus.FALSE, "ChallengeRecordMissing", "_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net, not old.example.net")[1];
+    show(<CustomDomainDetail name="example-org" />, { checkCustomDomain: () => ({ customDomain: still }) });
+    await screen.findByRole("button", { name: /Check now/ });
+    click(/Check now/);
+    expect(await screen.findByText("_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net, not old.example.net.")).toBeTruthy();
+    expect(screen.queryByText("_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net.")).toBeNull();
+  });
+
+  it("shows the API's error on the card", async () => {
+    show(<CustomDomainDetail name="example-org" />, { checkCustomDomain: refuse(Code.Unavailable, "the domain's nameservers did not answer") });
+    await screen.findByRole("button", { name: /Check now/ });
+    click(/Check now/);
+    expect(await screen.findByText("Checking the domain failed")).toBeTruthy();
+    expect(screen.getByText("the domain's nameservers did not answer")).toBeTruthy();
+    expect(button(/Check now/).disabled).toBe(false);
   });
 });
 

@@ -8,6 +8,7 @@ import { useTransport } from "@connectrpc/connect-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { CustomDomainService, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
+import { CustomDomainCheckService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_check_pb";
 import { PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import type { Tone } from "@/components/ui";
 import { refetchInterval, type ListOpts } from "@/lib/machines";
@@ -132,6 +133,23 @@ export function useDeleteDomain(name: string) {
     mutationFn: () => createClient(CustomDomainService, transport).deleteCustomDomain({ name }),
     // Not awaited: the page that deleted it goes on to the list first.
     onSettled: () => void queryClient.invalidateQueries(),
+  });
+}
+
+/**
+ * Looks for the domain's challenge record now, at its own nameservers, and
+ * puts the domain the API answers with into the list the pages read, so
+ * the page shows what was found without waiting for the list's next read.
+ */
+export function useCheckDomain(name: string) {
+  const transport = useTransport();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => (await createClient(CustomDomainCheckService, transport).checkCustomDomain({ name })).customDomain,
+    onSuccess: (d) => {
+      if (!d) return;
+      queryClient.setQueryData<CustomDomain[]>(domainListKey, (items) => items?.map((x) => (nameOf(x) === nameOf(d) ? d : x)));
+    },
   });
 }
 

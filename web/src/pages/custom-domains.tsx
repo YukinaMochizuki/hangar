@@ -7,7 +7,7 @@ import { clone } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CustomDomainSchema, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import type { PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import { ArrowUpRight, FolderCog, Plus, Trash2 } from "lucide-react";
+import { ArrowUpRight, FolderCog, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
@@ -23,7 +23,8 @@ import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
-import { domainOf, domainPerms, domainState, useCustomDomains, useDeleteDomain, useDomainCan, usesOf, useTenantEndpoints, type DomainUse } from "@/lib/custom-domains";
+import { domainOf, domainPerms, domainState, useCheckDomain, useCustomDomains, useDeleteDomain, useDomainCan, usesOf, useTenantEndpoints, type DomainUse } from "@/lib/custom-domains";
+import { errorMessage } from "@/lib/api";
 import { date } from "@/lib/machines";
 import { count, customDomainYaml, nameOf } from "@/lib/network";
 import { isStale } from "@/lib/network-actions";
@@ -303,20 +304,7 @@ function Loaded({ d, all, can }: { d: CustomDomain; all: CustomDomain[]; can: Ca
       <DetailBody
         main={
           <>
-            {state.tone !== "ok" && (
-              <Card>
-                <CardHeader title={state.label} />
-                <div className="px-4 py-3 text-[13px]">
-                  {state.reason && <span className="font-mono text-[12px] text-muted">{state.reason}</span>}
-                  {state.message && <p className="mt-0.5">{sentence(state.message)}</p>}
-                  <p className="mt-1.5 text-[12.5px] text-muted">
-                    {state.reason === "HeldByAnotherTenant"
-                      ? "No endpoint serves under it, and no certificate is got for it, while theirs is."
-                      : "The record is looked for every minute until it is found. Endpoints may name hostnames under the domain meanwhile; they serve once it is verified."}
-                  </p>
-                </div>
-              </Card>
-            )}
+            {state.tone !== "ok" && <WaitingCard d={d} can={can} />}
             <RecordsCard d={d} />
             <Card>
               <CardHeader
@@ -359,7 +347,7 @@ function Loaded({ d, all, can }: { d: CustomDomain; all: CustomDomain[]; can: Ca
             <EquivalentCard
               cli={[
                 `hangar get cdom ${name}`,
-                ...(can(domainPerms.apply) ? [`hangar apply -f ${name}.yaml`] : []),
+                ...(can(domainPerms.apply) ? [`hangar apply -f ${name}.yaml`, ...(checkable(d) ? [`hangar check customdomain ${name}`] : [])] : []),
                 ...(can(domainPerms.delete) ? [`hangar delete cdom ${name}`] : []),
               ]}
               yaml={customDomainYaml(d)}
@@ -369,6 +357,53 @@ function Loaded({ d, all, can }: { d: CustomDomain; all: CustomDomain[]; can: Ca
       />
       {set.dialogs}
     </>
+  );
+}
+
+/**
+ * Whether checking now can change the domain's state: it is waiting for its
+ * record, or the last lookup failed. One another tenant holds stays so
+ * whatever its DNS says, and a verified one stays verified.
+ */
+const checkable = (d: CustomDomain) => domainState(d).tone !== "ok" && domainState(d).reason !== "HeldByAnotherTenant";
+
+/**
+ * Why the domain is not verified, as its Verified condition says, with
+ * Check now where looking again can change that and the caller may apply
+ * the domain. The API answers with the domain as the check left it, and the
+ * card shows that answer's message: what the lookup found.
+ */
+function WaitingCard({ d, can }: { d: CustomDomain; can: Can }) {
+  const state = domainState(d);
+  const check = useCheckDomain(nameOf(d));
+  return (
+    <Card>
+      <CardHeader
+        title={state.label}
+        action={
+          checkable(d) &&
+          can(domainPerms.apply) && (
+            <Button size="sm" onClick={() => check.mutate()} disabled={check.isPending} className="-mr-2">
+              <RefreshCw /> {check.isPending ? "Checking…" : "Check now"}
+            </Button>
+          )
+        }
+      />
+      <div className="px-4 py-3 text-[13px]">
+        {state.reason && <span className="font-mono text-[12px] text-muted">{state.reason}</span>}
+        {state.message && <p className="mt-0.5">{sentence(state.message)}</p>}
+        <p className="mt-1.5 text-[12.5px] text-muted">
+          {state.reason === "HeldByAnotherTenant"
+            ? "No endpoint serves under it, and no certificate is got for it, while theirs is."
+            : "The record is looked for every minute until it is found. Endpoints may name hostnames under the domain meanwhile; they serve once it is verified."}
+        </p>
+        {check.error != null && (
+          <Notice tone="error" title="Checking the domain failed" className="mt-3">
+            {errorMessage(check.error)}
+          </Notice>
+        )}
+      </div>
+    </Card>
   );
 }
 

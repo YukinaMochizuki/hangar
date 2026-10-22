@@ -15,6 +15,7 @@ import { VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtu
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { CustomDomainSchema, CustomDomainService, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
+import { CustomDomainCheckService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_check_pb";
 import { PublicEndpointAccess, PublicEndpointSchema, PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
@@ -76,6 +77,8 @@ export type DomainOverrides = Partial<{
   listPublicEndpoints: (req: { project: string; pageToken: string }) => unknown;
   applyCustomDomain: (req: unknown) => unknown;
   deleteCustomDomain: (req: unknown) => unknown;
+  /** CheckCustomDomain's answer; unset, the domain as the server holds it. */
+  checkCustomDomain: (req: { name: string }) => unknown;
   /** TestPermissions' answer; unset, the caller holds every permission asked. */
   permissions: (req: { permissions: string[] }) => unknown;
   /** What the server holds, when it differs from the lists (newer, say). */
@@ -96,6 +99,9 @@ export function domainsApi(o: DomainOverrides = {}) {
         return { customDomain: stored, created };
       }) as never,
       deleteCustomDomain: ((req: unknown) => (o.deleteCustomDomain ? o.deleteCustomDomain(req) : {})) as never,
+    });
+    r.service(CustomDomainCheckService, {
+      checkCustomDomain: ((req: { name: string }) => (o.checkCustomDomain ? o.checkCustomDomain(req) : { customDomain: cds.get(req.name) })) as never,
     });
     r.service(PublicEndpointService, {
       // No project lists every project's, as the API lists what the caller may read.
