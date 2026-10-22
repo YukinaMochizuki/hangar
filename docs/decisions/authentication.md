@@ -296,10 +296,11 @@ credentials. The node is a separate root process on the same host.
   uid of the edge's user (`--edge-uid`, never root) is the Edge principal
   `edge:<host>`, any other is refused. Its authenticator reads only what
   that listener recorded, as the admin socket's does, so no other listener
-  can produce it. It may get, list and watch public endpoints, role
-  bindings, projects and users, everywhere, and do nothing else, whatever
-  the bindings say. Users of public endpoints are not principals of the
-  API: the edge decides whether they may use an endpoint. To learn who they
+  can produce it. It may get, list and watch public endpoints, custom
+  domains (`custom-domains.md`), role bindings, projects and users,
+  everywhere, and do nothing else, whatever the bindings say. Users of
+  public endpoints are not principals of the API: the edge decides
+  whether they may use an endpoint. To learn who they
   are, it asks the apiserver on the edge socket, which alone serves it
   `EndpointAuthService`: who holds a credential brought to an endpoint (an
   endpoint session for that host, a CLI access token or a service token),

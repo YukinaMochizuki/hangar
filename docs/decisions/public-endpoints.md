@@ -23,7 +23,9 @@ callers of private endpoints in itself (`authentication.md`).
   `PUBLIC`. Its status says its URL, the machine and node it reaches, and
   whether it is `Ready`: its machine runs. The domain is the apiserver's
   `--endpoint-domain`, `hangarlab.dev` by default. The backend speaks
-  plain HTTP; the front door holds the TLS.
+  plain HTTP; the front door holds the TLS. A PUBLIC endpoint may also
+  serve at hostnames under its tenant's custom domains, in
+  `spec.hostnames` (`custom-domains.md`).
 - **The hostname is claimed for good**. `-`
   joins two names that may hold it themselves (`web-my` of `demo-1`, `web`
   of `my-demo-1`), so the hostname label is claimed when the endpoint is
@@ -145,7 +147,9 @@ callers of private endpoints in itself (`authentication.md`).
   them; a lookalike without the prefix is ignored. The endpoint domain is
   not on the Public Suffix List (at this scale the request would likely be
   refused). Instead the edge makes every
-  cookie an endpoint sets host-only: it removes the `Domain` attribute,
+  cookie an endpoint sets at its hostname under the endpoint domain
+  host-only (at a custom hostname, the tenant's own domain, it leaves the
+  cookie as written, `custom-domains.md`): it removes the `Domain` attribute,
   in any case and wherever it stands, from each `Set-Cookie` in every
   header block of an endpoint's answer, 1xx ones included, and keeps the
   rest as written. Browsers ignore `Set-Cookie` in trailers, so the edge
