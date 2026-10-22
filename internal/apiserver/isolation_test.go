@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -434,6 +435,59 @@ func TestPlatformMembership(t *testing.T) {
 	e.invite(dave, "platform.sponsor")
 	e.signUp(dave)
 	must[tenancyv1alpha1.ApplyTenantResponse](t)(e.as(dave).tenants.ApplyTenant(ctx, connect.NewRequest(tenant("daveco"))))
+}
+
+// TestASponsorReadsThePlatformAndNoTenant: a sponsor reads the Nodes and
+// what is placed on them, counted, and nothing of any tenant's: no tenant,
+// project or machine is listed or read. WhoAmI names the sponsor's
+// platform role, and a member's.
+func TestASponsorReadsThePlatformAndNoTenant(t *testing.T) {
+	e := newEnv(t)
+	ctx := t.Context()
+	e.setupTenant(alice, "acme", "web")
+	must[computev1alpha1.ApplyContainerResponse](t)(e.as(alice).containers.ApplyContainer(ctx, applyContainer(container("web", "api", "nginx"))))
+	const sam = "sam@example.com"
+	e.invite(sam, "platform.sponsor")
+	e.signUp(sam)
+	s := e.as(sam)
+
+	nodes := must[computev1alpha1.ListNodesResponse](t)(s.nodes.ListNodes(ctx, connect.NewRequest(&computev1alpha1.ListNodesRequest{})))
+	if len(nodes.GetItems()) != 1 || nodes.GetItems()[0].GetMetadata().GetName() != testNode {
+		t.Errorf("a sponsor lists nodes %v", nodes.GetItems())
+	}
+	must[computev1alpha1.GetNodeResponse](t)(s.nodes.GetNode(ctx, connect.NewRequest(&computev1alpha1.GetNodeRequest{Name: testNode})))
+	_, err := s.nodes.ApplyNode(ctx, connect.NewRequest(&computev1alpha1.ApplyNodeRequest{Node: nodes.GetItems()[0]}))
+	wantCode(t, err, connect.CodePermissionDenied, "a sponsor applying a node")
+
+	// Of the tenants, a sponsor sees only the one signing up opened for them.
+	for _, tn := range must[tenancyv1alpha1.ListTenantsResponse](t)(s.tenants.ListTenants(ctx, connect.NewRequest(&tenancyv1alpha1.ListTenantsRequest{}))).GetItems() {
+		if tn.GetMetadata().GetName() == "acme" {
+			t.Error("a sponsor lists another's tenant")
+		}
+	}
+	for _, p := range must[tenancyv1alpha1.ListProjectsResponse](t)(s.projects.ListProjects(ctx, connect.NewRequest(&tenancyv1alpha1.ListProjectsRequest{}))).GetItems() {
+		if p.GetMetadata().GetName() == "web" {
+			t.Error("a sponsor lists another's project")
+		}
+	}
+	_, err = s.tenants.GetTenant(ctx, connect.NewRequest(&tenancyv1alpha1.GetTenantRequest{Name: "acme"}))
+	wantCode(t, err, connect.CodePermissionDenied, "a sponsor reading another's tenant")
+	_, err = s.machines.ListMachines(ctx, connect.NewRequest(&computev1alpha1.ListMachinesRequest{Project: "web"}))
+	wantCode(t, err, connect.CodePermissionDenied, "a sponsor listing another's machines")
+	// Across every project, a list answers only the projects the caller
+	// reaches, which for a sponsor holds none of acme's.
+	for _, m := range must[computev1alpha1.ListMachinesResponse](t)(s.machines.ListMachines(ctx, connect.NewRequest(&computev1alpha1.ListMachinesRequest{}))).GetItems() {
+		if m.GetMetadata().GetProject() == "web" {
+			t.Error("a sponsor lists another's machine across projects")
+		}
+	}
+
+	for email, want := range map[string][]string{sam: {"platform.sponsor"}, alice: {"platform.member"}, root: {"platform.root"}} {
+		me := must[iamv1alpha1.WhoAmIResponse](t)(e.as(email).accounts.WhoAmI(ctx, connect.NewRequest(&iamv1alpha1.WhoAmIRequest{})))
+		if got := me.GetPlatformRoles(); !slices.Equal(got, want) {
+			t.Errorf("%s's platform roles are %v, want %v", email, got, want)
+		}
+	}
 }
 
 func TestBootstrapOnlyOnAnEmptyStore(t *testing.T) {

@@ -70,7 +70,11 @@ type WhoAmIResponse struct {
 	// up, or any other caller.
 	Member bool `protobuf:"varint,4,opt,name=member,proto3" json:"member,omitempty"`
 	// The caller's User, if they have signed up.
-	User          *User `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
+	User *User `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
+	// The roles bound to the caller at the platform, such as
+	// "platform.sponsor", sorted. They say who the caller is, for a badge;
+	// what the caller may do is TestPermissions'.
+	PlatformRoles []string `protobuf:"bytes,6,rep,name=platform_roles,json=platformRoles,proto3" json:"platform_roles,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -136,6 +140,13 @@ func (x *WhoAmIResponse) GetMember() bool {
 func (x *WhoAmIResponse) GetUser() *User {
 	if x != nil {
 		return x.User
+	}
+	return nil
+}
+
+func (x *WhoAmIResponse) GetPlatformRoles() []string {
+	if x != nil {
+		return x.PlatformRoles
 	}
 	return nil
 }
@@ -449,13 +460,14 @@ var File_hangar_iam_v1alpha1_account_proto protoreflect.FileDescriptor
 const file_hangar_iam_v1alpha1_account_proto_rawDesc = "" +
 	"\n" +
 	"!hangar/iam/v1alpha1/account.proto\x12\x13hangar.iam.v1alpha1\x1a&hangar/iam/v1alpha1/role_binding.proto\x1a\x1ehangar/iam/v1alpha1/user.proto\"\x0f\n" +
-	"\rWhoAmIRequest\"\x95\x01\n" +
+	"\rWhoAmIRequest\"\xbc\x01\n" +
 	"\x0eWhoAmIResponse\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\x12\x18\n" +
 	"\ainvited\x18\x03 \x01(\bR\ainvited\x12\x16\n" +
 	"\x06member\x18\x04 \x01(\bR\x06member\x12-\n" +
-	"\x04user\x18\x05 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\"N\n" +
+	"\x04user\x18\x05 \x01(\v2\x19.hangar.iam.v1alpha1.UserR\x04user\x12%\n" +
+	"\x0eplatform_roles\x18\x06 \x03(\tR\rplatformRoles\"N\n" +
 	"\rSignUpRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12!\n" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"q\n" +

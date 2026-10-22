@@ -12,7 +12,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/monitoring/v1alpha1/monitoring.proto.
  */
 export const file_hangar_monitoring_v1alpha1_monitoring: GenFile = /*@__PURE__*/
-  fileDesc("CitoYW5nYXIvbW9uaXRvcmluZy92MWFscGhhMS9tb25pdG9yaW5nLnByb3RvEhpoYW5nYXIubW9uaXRvcmluZy52MWFscGhhMSIUChJHZXRPdmVydmlld1JlcXVlc3QiuAEKE0dldE92ZXJ2aWV3UmVzcG9uc2USMAoMb2JzZXJ2ZV90aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2CgZsYXllcnMYAiADKAsyJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllclN0YXRlEjcKBW5vZGVzGAMgAygLMiguaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTm9kZU92ZXJ2aWV3IlQKDE5vZGVPdmVydmlldxIMCgRuYW1lGAEgASgJEjYKBmxheWVycxgCIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxheWVyU3RhdGUi4gEKCkxheWVyU3RhdGUSMAoFbGF5ZXIYASABKA4yIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllchIyCgZoZWFsdGgYAiABKA4yIi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5IZWFsdGgSMQoGY2hlY2tzGAMgAygLMiEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuQ2hlY2sSOwoIbWFjaGluZXMYBCABKAsyKS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5NYWNoaW5lQ291bnRzIlgKBUNoZWNrEgwKBG5hbWUYASABKAkSMgoGaGVhbHRoGAIgASgOMiIuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuSGVhbHRoEg0KBXZhbHVlGAMgASgJIuUBCg1NYWNoaW5lQ291bnRzEjYKBnBoYXNlcxgBIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBoYXNlQ291bnQSQgoRcGxhdGZvcm1fZmFpbHVyZXMYAiADKAsyJy5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5SZWFzb25Db3VudBJBChBwcm9ncmFtX2ZhaWx1cmVzGAMgAygLMicuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuUmVhc29uQ291bnQSFQoNY3Jhc2hfbG9vcGluZxgEIAEoBSIqCgpQaGFzZUNvdW50Eg0KBXBoYXNlGAEgASgJEg0KBWNvdW50GAIgASgFIiwKC1JlYXNvbkNvdW50Eg4KBnJlYXNvbhgBIAEoCRINCgVjb3VudBgCIAEoBSKOAQoQR2V0U2VyaWVzUmVxdWVzdBI0CgRuYW1lGAEgASgOMiYuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2VyaWVzTmFtZRI2CgVyYW5nZRgCIAEoDjInLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNlcmllc1JhbmdlEgwKBG5vZGUYAyABKAkingIKEUdldFNlcmllc1Jlc3BvbnNlEjQKBG5hbWUYASABKA4yJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5TZXJpZXNOYW1lEgwKBG5vZGUYAiABKAkSLgoEdW5pdBgDIAEoDjIgLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlVuaXQSFAoMc3RlcF9zZWNvbmRzGAQgASgFEjEKBnBvaW50cxgFIAMoCzIhLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBvaW50EhUKCGNhcGFjaXR5GAYgASgBSACIAQESGAoLYWxlcnRfYWJvdmUYByABKAFIAYgBAUILCglfY2FwYWNpdHlCDgoMX2FsZXJ0X2Fib3ZlIkAKBVBvaW50EigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBXZhbHVlGAIgASgBIhMKEUxpc3RBbGVydHNSZXF1ZXN0IkcKEkxpc3RBbGVydHNSZXNwb25zZRIxCgZhbGVydHMYASADKAsyIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5BbGVydCKcAQoFQWxlcnQSDAoEbmFtZRgBIAEoCRI2CghzZXZlcml0eRgCIAEoDjIkLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNldmVyaXR5Eg8KB3N1bW1hcnkYAyABKAkSLgoKc3RhcnRfdGltZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXASDAoEbm9kZRgFIAEoCSp9CgZIZWFsdGgSFgoSSEVBTFRIX1VOU1BFQ0lGSUVEEAASDQoJSEVBTFRIX09LEAESEgoOSEVBTFRIX1dBUk5JTkcQAhITCg9IRUFMVEhfQ1JJVElDQUwQAxIPCgtIRUFMVEhfSU5GTxAEEhIKDkhFQUxUSF9VTktOT1dOEAUqbgoFTGF5ZXISFQoRTEFZRVJfVU5TUEVDSUZJRUQQABIWChJMQVlFUl9SRUFDSEFCSUxJVFkQARIOCgpMQVlFUl9IT1NUEAISEgoOTEFZRVJfU0VSVklDRVMQAxISCg5MQVlFUl9NQUNISU5FUxAEKt4BCgpTZXJpZXNOYW1lEhsKF1NFUklFU19OQU1FX1VOU1BFQ0lGSUVEEAASGAoUU0VSSUVTX05BTUVfSE9TVF9DUFUQARIbChdTRVJJRVNfTkFNRV9IT1NUX01FTU9SWRACEhkKFVNFUklFU19OQU1FX1BPT0xfVVNFRBADEiAKHFNFUklFU19OQU1FX0FQSV9SRVFVRVNUX1JBVEUQBBIeChpTRVJJRVNfTkFNRV9BUElfRVJST1JfUkFURRAFEh8KG1NFUklFU19OQU1FX0FQSV9MQVRFTkNZX1A5ORAGKn0KC1Nlcmllc1JhbmdlEhwKGFNFUklFU19SQU5HRV9VTlNQRUNJRklFRBAAEhkKFVNFUklFU19SQU5HRV9PTkVfSE9VUhABEhgKFFNFUklFU19SQU5HRV9PTkVfREFZEAISGwoXU0VSSUVTX1JBTkdFX1NFVkVOX0RBWVMQAypjCgRVbml0EhQKEFVOSVRfVU5TUEVDSUZJRUQQABIOCgpVTklUX1JBVElPEAESDgoKVU5JVF9CWVRFUxACEhMKD1VOSVRfUEVSX1NFQ09ORBADEhAKDFVOSVRfU0VDT05EUxAEKlEKCFNldmVyaXR5EhgKFFNFVkVSSVRZX1VOU1BFQ0lGSUVEEAASFQoRU0VWRVJJVFlfQ1JJVElDQUwQARIUChBTRVZFUklUWV9XQVJOSU5HEAIy2gIKEU1vbml0b3JpbmdTZXJ2aWNlEm4KC0dldE92ZXJ2aWV3Ei4uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0T3ZlcnZpZXdSZXF1ZXN0Gi8uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0T3ZlcnZpZXdSZXNwb25zZRJoCglHZXRTZXJpZXMSLC5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5HZXRTZXJpZXNSZXF1ZXN0Gi0uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuR2V0U2VyaWVzUmVzcG9uc2USawoKTGlzdEFsZXJ0cxItLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxpc3RBbGVydHNSZXF1ZXN0Gi4uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTGlzdEFsZXJ0c1Jlc3BvbnNlQpMCCh5jb20uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTFCD01vbml0b3JpbmdQcm90b1ABWlZnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9tb25pdG9yaW5nL3YxYWxwaGExO21vbml0b3Jpbmd2MWFscGhhMaICA0hNWKoCGkhhbmdhci5Nb25pdG9yaW5nLlYxYWxwaGExygIaSGFuZ2FyXE1vbml0b3JpbmdcVjFhbHBoYTHiAiZIYW5nYXJcTW9uaXRvcmluZ1xWMWFscGhhMVxHUEJNZXRhZGF0YeoCHEhhbmdhcjo6TW9uaXRvcmluZzo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("CitoYW5nYXIvbW9uaXRvcmluZy92MWFscGhhMS9tb25pdG9yaW5nLnByb3RvEhpoYW5nYXIubW9uaXRvcmluZy52MWFscGhhMSIUChJHZXRPdmVydmlld1JlcXVlc3QiuAEKE0dldE92ZXJ2aWV3UmVzcG9uc2USMAoMb2JzZXJ2ZV90aW1lGAEgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBI2CgZsYXllcnMYAiADKAsyJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllclN0YXRlEjcKBW5vZGVzGAMgAygLMiguaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTm9kZU92ZXJ2aWV3IlQKDE5vZGVPdmVydmlldxIMCgRuYW1lGAEgASgJEjYKBmxheWVycxgCIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxheWVyU3RhdGUi4gEKCkxheWVyU3RhdGUSMAoFbGF5ZXIYASABKA4yIS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MYXllchIyCgZoZWFsdGgYAiABKA4yIi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5IZWFsdGgSMQoGY2hlY2tzGAMgAygLMiEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuQ2hlY2sSOwoIbWFjaGluZXMYBCABKAsyKS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5NYWNoaW5lQ291bnRzIlgKBUNoZWNrEgwKBG5hbWUYASABKAkSMgoGaGVhbHRoGAIgASgOMiIuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuSGVhbHRoEg0KBXZhbHVlGAMgASgJIuUBCg1NYWNoaW5lQ291bnRzEjYKBnBoYXNlcxgBIAMoCzImLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBoYXNlQ291bnQSQgoRcGxhdGZvcm1fZmFpbHVyZXMYAiADKAsyJy5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5SZWFzb25Db3VudBJBChBwcm9ncmFtX2ZhaWx1cmVzGAMgAygLMicuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuUmVhc29uQ291bnQSFQoNY3Jhc2hfbG9vcGluZxgEIAEoBSIqCgpQaGFzZUNvdW50Eg0KBXBoYXNlGAEgASgJEg0KBWNvdW50GAIgASgFIiwKC1JlYXNvbkNvdW50Eg4KBnJlYXNvbhgBIAEoCRINCgVjb3VudBgCIAEoBSKOAQoQR2V0U2VyaWVzUmVxdWVzdBI0CgRuYW1lGAEgASgOMiYuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2VyaWVzTmFtZRI2CgVyYW5nZRgCIAEoDjInLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlNlcmllc1JhbmdlEgwKBG5vZGUYAyABKAkingIKEUdldFNlcmllc1Jlc3BvbnNlEjQKBG5hbWUYASABKA4yJi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5TZXJpZXNOYW1lEgwKBG5vZGUYAiABKAkSLgoEdW5pdBgDIAEoDjIgLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlVuaXQSFAoMc3RlcF9zZWNvbmRzGAQgASgFEjEKBnBvaW50cxgFIAMoCzIhLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLlBvaW50EhUKCGNhcGFjaXR5GAYgASgBSACIAQESGAoLYWxlcnRfYWJvdmUYByABKAFIAYgBAUILCglfY2FwYWNpdHlCDgoMX2FsZXJ0X2Fib3ZlIkAKBVBvaW50EigKBHRpbWUYASABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg0KBXZhbHVlGAIgASgBIhYKFExpc3ROb2RlVXNhZ2VSZXF1ZXN0Ik0KFUxpc3ROb2RlVXNhZ2VSZXNwb25zZRI0CgVub2RlcxgBIAMoCzIlLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLk5vZGVVc2FnZSJWCglOb2RlVXNhZ2USDAoEbm9kZRgBIAEoCRIQCghtYWNoaW5lcxgCIAEoBRILCgNjcHUYAyABKAkSDgoGbWVtb3J5GAQgASgJEgwKBGRpc2sYBSABKAkiEwoRTGlzdEFsZXJ0c1JlcXVlc3QiRwoSTGlzdEFsZXJ0c1Jlc3BvbnNlEjEKBmFsZXJ0cxgBIAMoCzIhLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkFsZXJ0IpwBCgVBbGVydBIMCgRuYW1lGAEgASgJEjYKCHNldmVyaXR5GAIgASgOMiQuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuU2V2ZXJpdHkSDwoHc3VtbWFyeRgDIAEoCRIuCgpzdGFydF90aW1lGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIMCgRub2RlGAUgASgJKn0KBkhlYWx0aBIWChJIRUFMVEhfVU5TUEVDSUZJRUQQABINCglIRUFMVEhfT0sQARISCg5IRUFMVEhfV0FSTklORxACEhMKD0hFQUxUSF9DUklUSUNBTBADEg8KC0hFQUxUSF9JTkZPEAQSEgoOSEVBTFRIX1VOS05PV04QBSpuCgVMYXllchIVChFMQVlFUl9VTlNQRUNJRklFRBAAEhYKEkxBWUVSX1JFQUNIQUJJTElUWRABEg4KCkxBWUVSX0hPU1QQAhISCg5MQVlFUl9TRVJWSUNFUxADEhIKDkxBWUVSX01BQ0hJTkVTEAQq3gEKClNlcmllc05hbWUSGwoXU0VSSUVTX05BTUVfVU5TUEVDSUZJRUQQABIYChRTRVJJRVNfTkFNRV9IT1NUX0NQVRABEhsKF1NFUklFU19OQU1FX0hPU1RfTUVNT1JZEAISGQoVU0VSSUVTX05BTUVfUE9PTF9VU0VEEAMSIAocU0VSSUVTX05BTUVfQVBJX1JFUVVFU1RfUkFURRAEEh4KGlNFUklFU19OQU1FX0FQSV9FUlJPUl9SQVRFEAUSHwobU0VSSUVTX05BTUVfQVBJX0xBVEVOQ1lfUDk5EAYqfQoLU2VyaWVzUmFuZ2USHAoYU0VSSUVTX1JBTkdFX1VOU1BFQ0lGSUVEEAASGQoVU0VSSUVTX1JBTkdFX09ORV9IT1VSEAESGAoUU0VSSUVTX1JBTkdFX09ORV9EQVkQAhIbChdTRVJJRVNfUkFOR0VfU0VWRU5fREFZUxADKmMKBFVuaXQSFAoQVU5JVF9VTlNQRUNJRklFRBAAEg4KClVOSVRfUkFUSU8QARIOCgpVTklUX0JZVEVTEAISEwoPVU5JVF9QRVJfU0VDT05EEAMSEAoMVU5JVF9TRUNPTkRTEAQqUQoIU2V2ZXJpdHkSGAoUU0VWRVJJVFlfVU5TUEVDSUZJRUQQABIVChFTRVZFUklUWV9DUklUSUNBTBABEhQKEFNFVkVSSVRZX1dBUk5JTkcQAjLQAwoRTW9uaXRvcmluZ1NlcnZpY2USbgoLR2V0T3ZlcnZpZXcSLi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5HZXRPdmVydmlld1JlcXVlc3QaLy5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5HZXRPdmVydmlld1Jlc3BvbnNlEmgKCUdldFNlcmllcxIsLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkdldFNlcmllc1JlcXVlc3QaLS5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5HZXRTZXJpZXNSZXNwb25zZRJrCgpMaXN0QWxlcnRzEi0uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTGlzdEFsZXJ0c1JlcXVlc3QaLi5oYW5nYXIubW9uaXRvcmluZy52MWFscGhhMS5MaXN0QWxlcnRzUmVzcG9uc2USdAoNTGlzdE5vZGVVc2FnZRIwLmhhbmdhci5tb25pdG9yaW5nLnYxYWxwaGExLkxpc3ROb2RlVXNhZ2VSZXF1ZXN0GjEuaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTEuTGlzdE5vZGVVc2FnZVJlc3BvbnNlQpMCCh5jb20uaGFuZ2FyLm1vbml0b3JpbmcudjFhbHBoYTFCD01vbml0b3JpbmdQcm90b1ABWlZnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9tb25pdG9yaW5nL3YxYWxwaGExO21vbml0b3Jpbmd2MWFscGhhMaICA0hNWKoCGkhhbmdhci5Nb25pdG9yaW5nLlYxYWxwaGExygIaSGFuZ2FyXE1vbml0b3JpbmdcVjFhbHBoYTHiAiZIYW5nYXJcTW9uaXRvcmluZ1xWMWFscGhhMVxHUEJNZXRhZGF0YeoCHEhhbmdhcjo6TW9uaXRvcmluZzo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.GetOverviewRequest
@@ -368,6 +368,92 @@ export const PointSchema: GenMessage<Point> = /*@__PURE__*/
   messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 10);
 
 /**
+ * @generated from message hangar.monitoring.v1alpha1.ListNodeUsageRequest
+ */
+export type ListNodeUsageRequest = Message<"hangar.monitoring.v1alpha1.ListNodeUsageRequest"> & {
+};
+
+/**
+ * Describes the message hangar.monitoring.v1alpha1.ListNodeUsageRequest.
+ * Use `create(ListNodeUsageRequestSchema)` to create a new message.
+ */
+export const ListNodeUsageRequestSchema: GenMessage<ListNodeUsageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 11);
+
+/**
+ * @generated from message hangar.monitoring.v1alpha1.ListNodeUsageResponse
+ */
+export type ListNodeUsageResponse = Message<"hangar.monitoring.v1alpha1.ListNodeUsageResponse"> & {
+  /**
+   * Each Node, by name, those with no machine too.
+   *
+   * @generated from field: repeated hangar.monitoring.v1alpha1.NodeUsage nodes = 1;
+   */
+  nodes: NodeUsage[];
+};
+
+/**
+ * Describes the message hangar.monitoring.v1alpha1.ListNodeUsageResponse.
+ * Use `create(ListNodeUsageResponseSchema)` to create a new message.
+ */
+export const ListNodeUsageResponseSchema: GenMessage<ListNodeUsageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 12);
+
+/**
+ * NodeUsage is what the machines placed on one node hold there, summed,
+ * never which machines they are.
+ *
+ * @generated from message hangar.monitoring.v1alpha1.NodeUsage
+ */
+export type NodeUsage = Message<"hangar.monitoring.v1alpha1.NodeUsage"> & {
+  /**
+   * The Node's name.
+   *
+   * @generated from field: string node = 1;
+   */
+  node: string;
+
+  /**
+   * Machines placed on the node.
+   *
+   * @generated from field: int32 machines = 2;
+   */
+  machines: number;
+
+  /**
+   * The vCPUs the machines are given, summed: vCPUs are shared, not
+   * reserved, so this may pass what the node offers. A quantity, such as
+   * "12".
+   *
+   * @generated from field: string cpu = 3;
+   */
+  cpu: string;
+
+  /**
+   * The memory the machines are given, a quantity such as "24Gi".
+   *
+   * @generated from field: string memory = 4;
+   */
+  memory: string;
+
+  /**
+   * The disk held on the node, a quantity such as "300Gi": the machines'
+   * disks, and the Disks and FileShares placed there, at the sizes they
+   * were made, as the scheduler counts them.
+   *
+   * @generated from field: string disk = 5;
+   */
+  disk: string;
+};
+
+/**
+ * Describes the message hangar.monitoring.v1alpha1.NodeUsage.
+ * Use `create(NodeUsageSchema)` to create a new message.
+ */
+export const NodeUsageSchema: GenMessage<NodeUsage> = /*@__PURE__*/
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 13);
+
+/**
  * @generated from message hangar.monitoring.v1alpha1.ListAlertsRequest
  */
 export type ListAlertsRequest = Message<"hangar.monitoring.v1alpha1.ListAlertsRequest"> & {
@@ -378,7 +464,7 @@ export type ListAlertsRequest = Message<"hangar.monitoring.v1alpha1.ListAlertsRe
  * Use `create(ListAlertsRequestSchema)` to create a new message.
  */
 export const ListAlertsRequestSchema: GenMessage<ListAlertsRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 11);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 14);
 
 /**
  * @generated from message hangar.monitoring.v1alpha1.ListAlertsResponse
@@ -397,7 +483,7 @@ export type ListAlertsResponse = Message<"hangar.monitoring.v1alpha1.ListAlertsR
  * Use `create(ListAlertsResponseSchema)` to create a new message.
  */
 export const ListAlertsResponseSchema: GenMessage<ListAlertsResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 12);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 15);
 
 /**
  * Alert is one alert firing now.
@@ -447,7 +533,7 @@ export type Alert = Message<"hangar.monitoring.v1alpha1.Alert"> & {
  * Use `create(AlertSchema)` to create a new message.
  */
 export const AlertSchema: GenMessage<Alert> = /*@__PURE__*/
-  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 13);
+  messageDesc(file_hangar_monitoring_v1alpha1_monitoring, 16);
 
 /**
  * Health is a layer's or a check's state.
@@ -726,12 +812,12 @@ export const SeveritySchema: GenEnum<Severity> = /*@__PURE__*/
  * queries the apiserver makes of the host's Prometheus and Alertmanager.
  * There is no query passthrough: the PromQL behind each answer lives in the
  * apiserver, so a caller can ask only what this service names. Every call
- * needs platform.monitoring.read, which only platform.root holds, and fails
- * with UNAVAILABLE while the apiserver has no Prometheus (or, for
- * ListAlerts, no Alertmanager) to ask, or cannot reach it. Nothing answered
- * names a tenant, a project or a machine: machines are counted. It is not a
- * resource's service, so it is written by hand rather than generated. See
- * docs/decisions/monitoring.md.
+ * needs platform.monitoring.read, which platform.root and platform.sponsor
+ * hold, and those asking Prometheus (or, for ListAlerts, Alertmanager) fail
+ * with UNAVAILABLE while the apiserver has none to ask, or cannot reach it.
+ * Nothing answered names a tenant, a project or a machine: machines are
+ * counted. It is not a resource's service, so it is written by hand rather
+ * than generated. See docs/decisions/monitoring.md.
  *
  * @generated from service hangar.monitoring.v1alpha1.MonitoringService
  */
@@ -769,6 +855,18 @@ export const MonitoringService: GenService<{
     methodKind: "unary";
     input: typeof ListAlertsRequestSchema;
     output: typeof ListAlertsResponseSchema;
+  },
+  /**
+   * ListNodeUsage answers, for each node, how many machines are placed on
+   * it and what they hold there, as the scheduler counts it. It reads the
+   * store, not Prometheus, so it answers while Prometheus is down.
+   *
+   * @generated from rpc hangar.monitoring.v1alpha1.MonitoringService.ListNodeUsage
+   */
+  listNodeUsage: {
+    methodKind: "unary";
+    input: typeof ListNodeUsageRequestSchema;
+    output: typeof ListNodeUsageResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_monitoring_v1alpha1_monitoring, 0);

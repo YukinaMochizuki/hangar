@@ -51,10 +51,20 @@ describe("NodeList", () => {
     expect(within(cell("empty", 1)).getByText("76 GiB free")).toBeTruthy();
   });
 
-  it("says nothing of what machines hold without compute.machines.list, and asks for no machine", async () => {
-    const api = monitoringApi({ perms: ["compute.nodes.list"], machinesOn: ["a"] , nodes: [node("a")] });
+  it("says nothing of what machines hold without platform.monitoring.read, and asks for none of it", async () => {
+    const api = monitoringApi({ perms: ["compute.nodes.list"], machinesOn: ["a"], nodes: [node("a")] });
     render(<NodeList />, { wrapper: withApi(api, platform) });
     await waitFor(() => expect(within(cell("a", 1)).getByText("machines not known")).toBeTruthy());
+    expect(api.calls).not.toContain("ListNodeUsage");
+  });
+
+  // A sponsor holds the Nodes and the monitoring, and no machine: what is
+  // placed on each node comes summed, never as the machines themselves.
+  it("counts what each node holds without listing any machine", async () => {
+    const api = monitoringApi({ perms: ["compute.nodes.list", "platform.monitoring.read"], machinesOn: ["a", "a"], nodes: [node("a")] });
+    render(<NodeList />, { wrapper: withApi(api, platform) });
+    await waitFor(() => expect(within(cell("a", 0)).getByText("4 vCPU assigned")).toBeTruthy());
+    expect(Array.from(row("a").querySelectorAll("td")).at(-2)?.textContent).toBe("2");
     expect(api.calls).not.toContain("ListMachines");
   });
 
@@ -125,10 +135,10 @@ describe("NodeDetail", () => {
   });
 
   it("shows the node without its monitoring, asking none of it, without platform.monitoring.read", async () => {
-    const api = show({ perms: ["compute.nodes.list", "compute.machines.list"] });
+    const api = show({ perms: ["compute.nodes.list"] });
     await screen.findByText(/do not include reading the platform's monitoring/);
     expect(screen.getByText("Example CPU 1000")).toBeTruthy();
-    expect(api.calls.filter((c) => ["GetOverview", "GetSeries", "ListAlerts"].includes(c))).toEqual([]);
+    expect(api.calls.filter((c) => ["GetOverview", "GetSeries", "ListAlerts", "ListNodeUsage"].includes(c))).toEqual([]);
   });
 
   // A Node is system-managed: no one changes it from here (docs/decisions/apply-semantics.md).

@@ -181,11 +181,11 @@ func callMonitoring(t *testing.T, c clients) map[string]error {
 	return map[string]error{"GetOverview": overview, "GetSeries": series, "ListAlerts": alerts}
 }
 
-// TestMonitoringNeedsItsPermission: only platform.root, which holds
-// platform.monitoring.read, may read the platform's monitoring; every other
-// role, a service token without it, the node agent and someone never
-// invited are refused before anything is asked of Prometheus or
-// Alertmanager.
+// TestMonitoringNeedsItsPermission: only platform.root and
+// platform.sponsor, which hold platform.monitoring.read, may read the
+// platform's monitoring; every other role, a service token without it, the
+// node agent and someone never invited are refused before anything is
+// asked of Prometheus, Alertmanager or the store.
 func TestMonitoringNeedsItsPermission(t *testing.T) {
 	prom, am := newFakeProm(t), newFakeAlertmanager(t)
 	e := newPermEnv(t, withMonitoring(prom.URL, am.URL))
@@ -194,7 +194,7 @@ func TestMonitoringNeedsItsPermission(t *testing.T) {
 		"a stranger":     e.as("stranger@example.com"),
 	}
 	for role, c := range e.callers {
-		if role != "platform.root" {
+		if role != "platform.root" && role != "platform.sponsor" {
 			refused[role] = c
 		}
 	}
@@ -202,6 +202,8 @@ func TestMonitoringNeedsItsPermission(t *testing.T) {
 		for call, err := range callMonitoring(t, c) {
 			wantCode(t, err, connect.CodePermissionDenied, who+"'s "+call)
 		}
+		_, err := c.monitoring.ListNodeUsage(t.Context(), connect.NewRequest(&mon.ListNodeUsageRequest{}))
+		wantCode(t, err, connect.CodePermissionDenied, who+"'s ListNodeUsage")
 	}
 	if got := prom.requests(); len(got) != 0 {
 		t.Errorf("refused calls asked Prometheus %v", got)
@@ -209,10 +211,31 @@ func TestMonitoringNeedsItsPermission(t *testing.T) {
 	if got := am.requests(); len(got) != 0 {
 		t.Errorf("refused calls asked Alertmanager %v", got)
 	}
-	for call, err := range callMonitoring(t, e.callers["platform.root"]) {
-		if err != nil {
-			t.Errorf("platform.root's %s: %v", call, err)
+	for _, role := range []string{"platform.root", "platform.sponsor"} {
+		c := e.callers[role]
+		for call, err := range callMonitoring(t, c) {
+			if err != nil {
+				t.Errorf("%s's %s: %v", role, call, err)
+			}
 		}
+		if _, err := c.monitoring.ListNodeUsage(t.Context(), connect.NewRequest(&mon.ListNodeUsageRequest{})); err != nil {
+			t.Errorf("%s's ListNodeUsage: %v", role, err)
+		}
+	}
+}
+
+// TestNodeUsageNeedsNoPrometheus: ListNodeUsage reads the store, so it
+// answers every Node while no Prometheus is configured, and names nothing
+// but the Node.
+func TestNodeUsageNeedsNoPrometheus(t *testing.T) {
+	e := newEnv(t)
+	res, err := e.as(root).monitoring.ListNodeUsage(t.Context(), connect.NewRequest(&mon.ListNodeUsageRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &mon.ListNodeUsageResponse{Nodes: []*mon.NodeUsage{{Node: testNode, Cpu: "0", Memory: "0", Disk: "0"}}}
+	if !proto.Equal(res.Msg, want) {
+		t.Errorf("got %v, want %v", res.Msg, want)
 	}
 }
 

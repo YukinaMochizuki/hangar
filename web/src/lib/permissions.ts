@@ -68,7 +68,7 @@ const platformScope = create(BindingScopeSchema, { target: { case: "platform", v
 
 /**
  * Whether the caller may read the platform's monitoring
- * (`platform.monitoring.read`, which only platform.root holds), asked of
+ * (`platform.monitoring.read`, which platform.root and platform.sponsor hold), asked of
  * TestPermissions at the platform and held, as useCan holds a permission,
  * only once the answer came and named it.
  */

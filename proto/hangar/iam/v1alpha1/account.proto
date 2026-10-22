@@ -43,6 +43,10 @@ message WhoAmIResponse {
   bool member = 4;
   // The caller's User, if they have signed up.
   User user = 5;
+  // The roles bound to the caller at the platform, such as
+  // "platform.sponsor", sorted. They say who the caller is, for a badge;
+  // what the caller may do is TestPermissions'.
+  repeated string platform_roles = 6;
 }
 
 message SignUpRequest {

@@ -119,7 +119,23 @@ function ThemeSwitch() {
   );
 }
 
-function MemberFooter() {
+/** The platform role a sponsor holds, whose badge the account shows. */
+const sponsorRole = "platform.sponsor";
+
+/**
+ * A sponsor's badge: who they are, from WhoAmI, never what they may do,
+ * which is TestPermissions' (docs/decisions/console-design.md).
+ */
+function SponsorBadge() {
+  return (
+    <span className="shrink-0 rounded-full bg-linear-to-r from-amber-400 via-orange-500 to-rose-500 px-1.5 py-px text-[10px] font-semibold leading-tight text-white">
+      Sponsor
+    </span>
+  );
+}
+
+/** The sidebar's foot: who is signed in, a sponsor's badge, sign-out and the theme. */
+export function MemberFooter() {
   const who = useMember();
   const [error, setError] = useState<unknown>(null);
   const name = who.user?.spec?.displayName || who.user?.metadata?.name || who.id;
@@ -131,7 +147,10 @@ function MemberFooter() {
           {name[0]}
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] leading-tight">{name}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="truncate text-[13px] leading-tight">{name}</span>
+            {who.platformRoles.includes(sponsorRole) && <SponsorBadge />}
+          </span>
           <span className="block truncate font-mono text-[11px] leading-tight text-subtle">{who.id}</span>
         </span>
         <button

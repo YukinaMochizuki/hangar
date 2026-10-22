@@ -1,11 +1,10 @@
 // MonitoringService and NodeService answers for tests, as the apiserver
-// gives them, and an in-memory API serving them with TestPermissions and the
-// machines ListMachines counts per node.
+// gives them, and an in-memory API serving them with TestPermissions and
+// what ListNodeUsage sums per node.
 
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { NodeService } from "@hangar/api/hangar/compute/v1alpha1/node_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
@@ -118,7 +117,7 @@ export function monitoringApi(f: {
   series?: (req: GetSeriesRequest) => GetSeriesResponse;
   /** The Nodes NodeService lists; one Ready "dev" unless said. */
   nodes?: ReturnType<typeof node>[];
-  /** The node of each machine ListMachines answers; each asks for 2 vCPUs, 4Gi and 20Gi. */
+  /** The node of each machine ListNodeUsage sums; each holds 2 vCPUs, 4Gi and 20Gi. */
   machinesOn?: string[];
   /** What TestPermissions answers: as perms names, or never. */
   permissions?: "never";
@@ -130,7 +129,7 @@ export function monitoringApi(f: {
       testPermissions: (req) =>
         f.permissions === "never"
           ? never()
-          : { permissions: req.permissions.filter((p) => (f.perms ?? ["platform.monitoring.read", "compute.nodes.list", "compute.machines.list"]).includes(p)) },
+          : { permissions: req.permissions.filter((p) => (f.perms ?? ["platform.monitoring.read", "compute.nodes.list"]).includes(p)) },
     });
     r.service(NodeService, {
       listNodes: () => {
@@ -138,12 +137,13 @@ export function monitoringApi(f: {
         return { items: f.nodes ?? [node("dev")] };
       },
     });
-    r.service(MachineService, {
-      listMachines: () => ({
-        items: (f.machinesOn ?? []).map((n, i) => ({ metadata: { name: `m${i}` }, spec: { node: n, resources: { cpu: "2", memory: "4Gi", disk: "20Gi" } } })),
-      }),
-    });
     r.service(MonitoringService, {
+      listNodeUsage: () => ({
+        nodes: (f.nodes ?? [node("dev")]).map((n) => {
+          const count = (f.machinesOn ?? []).filter((on) => on === n.metadata?.name).length;
+          return { node: n.metadata?.name ?? "", machines: count, cpu: `${2 * count}`, memory: `${4 * count}Gi`, disk: `${20 * count}Gi` };
+        }),
+      }),
       getOverview: () => (f.overview ?? overview)(),
       listAlerts: () => (f.alerts ?? alerts)(),
       getSeries: (req) => (f.series ?? series)(req),

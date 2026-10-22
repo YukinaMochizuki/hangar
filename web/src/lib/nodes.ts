@@ -1,34 +1,36 @@
-// The platform's Nodes, for its administrators: what each host is and how
-// it stands, from NodeService, and the machines placed on it, counted, never
-// named (docs/decisions/monitoring.md, "No tenant in a label"). Read only:
+// The platform's Nodes, for its administrators and sponsors: what each host
+// is and how it stands, from NodeService, and the machines placed on it,
+// counted, never named, from MonitoringService.ListNodeUsage
+// (docs/decisions/monitoring.md, "No tenant in a label"). Read only:
 // Node is system-managed, written by the apiserver alone
 // (docs/decisions/apply-semantics.md).
 
 import { useQuery } from "@connectrpc/connect-query";
 import { skipToken } from "@tanstack/react-query";
-import { MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { NodeService, type Node } from "@hangar/api/hangar/compute/v1alpha1/node_pb";
+import { MonitoringService } from "@hangar/api/hangar/monitoring/v1alpha1/monitoring_pb";
 import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { date, refetchInterval } from "@/lib/machines";
 import { placementOf, type HostInfo } from "@/lib/placement";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
 
-/** What the Nodes pages read at the platform: the Nodes, and every project's machines to count. */
-export const nodePerms = { list: "compute.nodes.list", machines: "compute.machines.list" } as const;
+/** What the Nodes pages read at the platform: the Nodes. What is placed on them is the monitoring's. */
+export const nodePerms = { list: "compute.nodes.list" } as const;
 
 export type Readiness = "ready" | "notReady" | "unknown";
 
 export type Resources = { cpu: string; memory: string; disk: string };
 
-/** What the machines placed on a node ask for, summed: vCPUs and GiB. */
+/** What is placed on a node, summed, as the scheduler counts it: vCPUs and GiB. */
 export type Held = { cpu: number; memory: number; disk: number };
 
 /**
  * One resource of a host, in vCPUs or GiB, as the scheduler counts it
  * (internal/apiserver/resources.go): all the host has; what it keeps for
- * itself, the part of that not allocatable; what the machines placed on it
- * hold, their spec.resources summed; and what is left for another machine,
- * the allocatable less what they hold. vCPUs are shared, never reserved
+ * itself, the part of that not allocatable; what is placed on it holds, as
+ * ListNodeUsage answers it (the machines' spec.resources, and the disks and
+ * file shares there); and what is left for another machine, the
+ * allocatable less what is held. vCPUs are shared, never reserved
  * (docs/decisions/machine-model.md), so the machines' vCPUs are what is
  * assigned and may pass what is allocatable. total is NaN when the node
  * reports none; held is undefined until the machines are known.
@@ -102,23 +104,17 @@ export function useNodes(enabled = true) {
 }
 
 /**
- * How many machines each node has across every project, and what they hold
- * there: counts and sums alone, kept per node, never which machines. Asked
- * as often as the monitoring overview, not as a list page.
+ * How many machines each node has across every project, and what is held
+ * there, as the apiserver sums them (MonitoringService.ListNodeUsage):
+ * counts and sums alone, never which machines. Asked as often as the
+ * monitoring overview, not as a list page.
  */
 export function useMachinesPerNode(enabled = true) {
-  const q = useQuery(MachineService.method.listMachines, enabled ? { project: "", pageSize: 1000 } : skipToken, { refetchInterval: 30_000 });
+  const q = useQuery(MonitoringService.method.listNodeUsage, enabled ? {} : skipToken, { refetchInterval: 30_000 });
+  const num = (v: number) => (Number.isFinite(v) ? v : 0);
   const per = new Map<string, { count: number; held: Held }>();
-  for (const m of q.data?.items ?? []) {
-    const node = m.spec?.node;
-    if (!node) continue;
-    const r = m.spec?.resources;
-    const was = per.get(node) ?? { count: 0, held: { cpu: 0, memory: 0, disk: 0 } };
-    const num = (v: number) => (Number.isFinite(v) ? v : 0);
-    per.set(node, {
-      count: was.count + 1,
-      held: { cpu: was.held.cpu + num(quantityCPU(r?.cpu)), memory: was.held.memory + num(quantityGiB(r?.memory)), disk: was.held.disk + num(quantityGiB(r?.disk)) },
-    });
+  for (const u of q.data?.nodes ?? []) {
+    per.set(u.node, { count: u.machines, held: { cpu: num(quantityCPU(u.cpu)), memory: num(quantityGiB(u.memory)), disk: num(quantityGiB(u.disk)) } });
   }
   const known = q.data !== undefined;
   return {

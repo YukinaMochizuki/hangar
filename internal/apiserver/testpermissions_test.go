@@ -13,6 +13,7 @@ import (
 	monitoringv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/authz"
 )
 
 // The permissions the table tests, among them those whose real check is not
@@ -51,6 +52,18 @@ func testPermissions(c clients, scope *iamv1alpha1.BindingScope, perms ...string
 		return nil, err
 	}
 	return res.Msg.GetPermissions(), nil
+}
+
+// sees reports whether c may see scope, so TestPermissions answers there at
+// all. It asks for storage.images.get, which every caller holds at the
+// platform and is told of at every scope it may see, and at no other.
+func sees(t *testing.T, c clients, scope *iamv1alpha1.BindingScope) bool {
+	t.Helper()
+	got, err := testPermissions(c, scope, iget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(got) > 0
 }
 
 // permEnv is a tenant acme, with projects web and db, and someone holding
@@ -110,6 +123,7 @@ func TestTestPermissionsByRole(t *testing.T) {
 		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply, monread}
 		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, msget, stapply}
 		member    = []string{tcreate, iget, msget}
+		sponsor   = []string{tcreate, iget, msget, monread}
 		viewer    = []string{cget, tcreate, iget, msget}
 		projOwner = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tcreate, iget, msget, stapply}
 		editor    = []string{cget, capply, exec, logs, ssh, access, tcreate, iget, msget}
@@ -132,7 +146,7 @@ func TestTestPermissionsByRole(t *testing.T) {
 	// Columns in the order of scopes.
 	want := map[string][8][]string{
 		"platform.root":    {rootAll, rootAll, rootAll, rootAll, rootAll, rootAll, none, none},
-		"platform.sponsor": {member, none, none, none, none, none, none, none},
+		"platform.sponsor": {sponsor, none, none, none, none, none, none, none},
 		"platform.member":  {member, none, none, none, owner, owner, none, none},
 		"tenant.owner":     {member, owner, owner, owner, none, none, none, none},
 		"tenant.viewer":    {member, viewer, viewer, viewer, none, none, none, none},
@@ -161,6 +175,9 @@ func TestTestPermissionsByRole(t *testing.T) {
 // TestTestPermissionsAgreesWithCalls: for each role, what TestPermissions
 // answers is what the call it names does: the call gets past authorization
 // when the permission is held, and is refused with PermissionDenied when not.
+// The one exception is a platform permission asked at a scope the caller
+// cannot see, where TestPermissions answers nothing, so as not to tell which
+// tenants exist, though the call, checked at the platform, passes.
 func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 	e := newPermEnv(t)
 	ctx := t.Context()
@@ -252,6 +269,10 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 			switch {
 			case !passed && !refused:
 				t.Errorf("%s: %s: the call failed other than by authorization: %v", role, call.perm, err)
+			case passed && !held && authz.IsPlatform(call.perm) && !sees(t, c, call.scope):
+				// A scope the caller cannot see answers nothing, a platform
+				// permission the call checks at the platform included: a
+				// sponsor's monitoring at another's tenant.
 			case passed && !held:
 				t.Errorf("%s: TestPermissions says no %s, and the call got past authorization (%v)", role, call.perm, err)
 			case refused && held:

@@ -8,12 +8,12 @@ import "google/protobuf/timestamp.proto";
 // queries the apiserver makes of the host's Prometheus and Alertmanager.
 // There is no query passthrough: the PromQL behind each answer lives in the
 // apiserver, so a caller can ask only what this service names. Every call
-// needs platform.monitoring.read, which only platform.root holds, and fails
-// with UNAVAILABLE while the apiserver has no Prometheus (or, for
-// ListAlerts, no Alertmanager) to ask, or cannot reach it. Nothing answered
-// names a tenant, a project or a machine: machines are counted. It is not a
-// resource's service, so it is written by hand rather than generated. See
-// docs/decisions/monitoring.md.
+// needs platform.monitoring.read, which platform.root and platform.sponsor
+// hold, and those asking Prometheus (or, for ListAlerts, Alertmanager) fail
+// with UNAVAILABLE while the apiserver has none to ask, or cannot reach it.
+// Nothing answered names a tenant, a project or a machine: machines are
+// counted. It is not a resource's service, so it is written by hand rather
+// than generated. See docs/decisions/monitoring.md.
 service MonitoringService {
   // GetOverview answers each layer's state now: reachability and the
   // machines, counted, for the platform; the host and its services for each
@@ -25,6 +25,10 @@ service MonitoringService {
   // ListAlerts answers the alerts firing now, from Alertmanager, but those
   // silenced or inhibited and the always-firing Watchdog.
   rpc ListAlerts(ListAlertsRequest) returns (ListAlertsResponse);
+  // ListNodeUsage answers, for each node, how many machines are placed on
+  // it and what they hold there, as the scheduler counts it. It reads the
+  // store, not Prometheus, so it answers while Prometheus is down.
+  rpc ListNodeUsage(ListNodeUsageRequest) returns (ListNodeUsageResponse);
 }
 
 // Health is a layer's or a check's state.
@@ -196,6 +200,32 @@ message GetSeriesResponse {
 message Point {
   google.protobuf.Timestamp time = 1;
   double value = 2;
+}
+
+message ListNodeUsageRequest {}
+
+message ListNodeUsageResponse {
+  // Each Node, by name, those with no machine too.
+  repeated NodeUsage nodes = 1;
+}
+
+// NodeUsage is what the machines placed on one node hold there, summed,
+// never which machines they are.
+message NodeUsage {
+  // The Node's name.
+  string node = 1;
+  // Machines placed on the node.
+  int32 machines = 2;
+  // The vCPUs the machines are given, summed: vCPUs are shared, not
+  // reserved, so this may pass what the node offers. A quantity, such as
+  // "12".
+  string cpu = 3;
+  // The memory the machines are given, a quantity such as "24Gi".
+  string memory = 4;
+  // The disk held on the node, a quantity such as "300Gi": the machines'
+  // disks, and the Disks and FileShares placed there, at the sizes they
+  // were made, as the scheduler counts them.
+  string disk = 5;
 }
 
 message ListAlertsRequest {}
