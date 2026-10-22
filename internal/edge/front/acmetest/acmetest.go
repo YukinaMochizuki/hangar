@@ -32,13 +32,14 @@ type Server struct {
 
 	mu       sync.Mutex
 	txt      map[string][]string
+	cname    map[string]string
 	appended int
 }
 
 // Start serves zones, the domains names are under, on addr ("127.0.0.1:0"
 // for any port), until Close.
 func Start(addr string, zones ...string) (*Server, error) {
-	s := &Server{txt: map[string][]string{}}
+	s := &Server{txt: map[string][]string{}, cname: map[string]string{}}
 	for _, z := range zones {
 		s.zones = append(s.zones, dns.Fqdn(strings.ToLower(z)))
 	}
@@ -118,6 +119,20 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 			Hdr: dns.RR_Header{Name: zone, Rrtype: dns.TypeSOA, Class: dns.ClassINET, Ttl: 60},
 			Ns:  "ns." + zone, Mbox: "hostmaster." + zone, Serial: 1, Refresh: 60, Retry: 60, Expire: 60, Minttl: 1,
 		}
+		s.mu.Lock()
+		target, aliased := s.cname[name]
+		s.mu.Unlock()
+		if aliased && q.Qtype != dns.TypeSOA {
+			// As a recursive resolver answers: the alias, then what its
+			// target holds, which DNS-01 delegated by a CNAME needs.
+			m.Answer = append(m.Answer, &dns.CNAME{Hdr: dns.RR_Header{Name: q.Name, Rrtype: dns.TypeCNAME, Class: dns.ClassINET, Ttl: 1}, Target: target})
+			if q.Qtype == dns.TypeTXT {
+				for _, v := range s.TXT(target) {
+					m.Answer = append(m.Answer, &dns.TXT{Hdr: dns.RR_Header{Name: target, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: 1}, Txt: []string{v}})
+				}
+			}
+			continue
+		}
 		switch q.Qtype {
 		case dns.TypeSOA:
 			if name == zone {
@@ -139,6 +154,19 @@ func (s *Server) ServeDNS(w dns.ResponseWriter, req *dns.Msg) {
 		}
 	}
 	_ = w.WriteMsg(m)
+}
+
+// SetCNAME makes name an alias of target, as a domain's own DNS delegates
+// its DNS-01 challenges; an empty target removes it.
+func (s *Server) SetCNAME(name, target string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	name = dns.Fqdn(strings.ToLower(name))
+	if target == "" {
+		delete(s.cname, name)
+		return
+	}
+	s.cname[name] = dns.Fqdn(strings.ToLower(target))
 }
 
 // TXT returns the TXT records of name now.

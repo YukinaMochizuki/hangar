@@ -81,7 +81,7 @@ func TestAnAuthorizerFollowsASource(t *testing.T) {
 func TestTheEdgeMayOnlyRead(t *testing.T) {
 	_, a := setup(t, 0)
 	edge := auth.Principal{Type: auth.Edge, ID: "n1"}
-	for _, r := range []registry.Resource{registry.PublicEndpoint, registry.RoleBinding, registry.Project, registry.User} {
+	for _, r := range []registry.Resource{registry.PublicEndpoint, registry.CustomDomain, registry.RoleBinding, registry.Project, registry.User} {
 		for _, v := range []authz.Verb{authz.Get, authz.List, authz.Watch} {
 			if !a.Allowed(edge, authz.Permission(r, v), authz.Target{Project: "web"}) {
 				t.Errorf("the edge may not %s %s", v, r.Plural)

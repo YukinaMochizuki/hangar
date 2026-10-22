@@ -353,13 +353,13 @@ func domainsApart(cp, user string) error {
 
 // frontDoor sets up the front door on :443 and :80 and returns what serves
 // it until ctx is done, and its metrics.
-func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.Sockets, endpoints http.Handler) (func() error, []prometheus.Collector, error) {
+func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.Sockets, endpoints *edge.Edge) (func() error, []prometheus.Collector, error) {
 	door, err := front.New(front.Config{
 		CPDomain: f.cpDomain, UserDomain: f.domain,
 		DialAPI: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", f.publicSocket)
 		},
-		Endpoints: endpoints, ConsoleDir: f.consoleDir, Limits: f.limits, Log: log,
+		Endpoints: endpoints, CustomHost: endpoints.ServesCustomHost, ConsoleDir: f.consoleDir, Limits: f.limits, Log: log,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -386,6 +386,9 @@ func frontDoor(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.S
 	if err != nil {
 		return nil, nil, err
 	}
+	// Custom domains' challenges are answered in the endpoint domain's zone,
+	// which the DNS provider writes (docs/decisions/custom-domains.md).
+	go tc.KeepDelegated(ctx, endpoints.DomainChanges(), endpoints.VerifiedDomains)
 	https, err := socks.TCP(ctx, httpsSocketName, f.httpsListen, nil)
 	if err != nil {
 		return nil, nil, err

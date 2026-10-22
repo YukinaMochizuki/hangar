@@ -424,11 +424,12 @@ func (a *Authorizer) WaitFor(ctx context.Context, want int64) error {
 }
 
 // EdgeReads are all hangar-edge may do, everywhere: read the public
-// endpoints, and the bindings, projects and users that decide who may use
-// them (docs/decisions/public-endpoints.md).
+// endpoints, the custom domains they serve under, and the bindings,
+// projects and users that decide who may use them
+// (docs/decisions/public-endpoints.md, docs/decisions/custom-domains.md).
 var EdgeReads = func() []string {
 	var out []string
-	for _, r := range []registry.Resource{registry.PublicEndpoint, registry.RoleBinding, registry.Project, registry.User} {
+	for _, r := range []registry.Resource{registry.PublicEndpoint, registry.CustomDomain, registry.RoleBinding, registry.Project, registry.User} {
 		for _, v := range []Verb{Get, List, Watch} {
 			out = append(out, Permission(r, v))
 		}
@@ -466,6 +467,15 @@ func (a *Authorizer) Allowed(p auth.Principal, permission string, t Target) bool
 		}
 	}
 	return false
+}
+
+// TenantOf returns the tenant of a project in the view, if the view has the
+// project.
+func (a *Authorizer) TenantOf(project string) (string, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	t, ok := a.tenantOf[project]
+	return t, ok
 }
 
 // IsMember reports whether a person is a platform member: invited, and signed

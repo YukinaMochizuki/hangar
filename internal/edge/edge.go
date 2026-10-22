@@ -3,10 +3,12 @@
 // It routes by Host to the endpoint, makes sure a PRIVATE endpoint's caller
 // is signed in there, through a handoff from the console, or holds a Hangar
 // token, and may use it, and reaches the endpoint's machine through the node
-// agent's edge dial socket (internal/edgedial). It runs unprivileged, and
-// reads the API as the Edge principal: public endpoints, role bindings,
-// projects and users, and who holds a credential, nothing else. See
-// docs/decisions/public-endpoints.md.
+// agent's edge dial socket (internal/edgedial). A PUBLIC endpoint is also
+// served at its hostnames under its tenant's verified CustomDomains. It
+// runs unprivileged, and reads the API as the Edge principal: public
+// endpoints, custom domains, role bindings, projects and users, and who
+// holds a credential, nothing else. See docs/decisions/public-endpoints.md
+// and docs/decisions/custom-domains.md.
 package edge
 
 import (
@@ -20,6 +22,7 @@ import (
 	"net/http/httptrace"
 	"net/http/httputil"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -38,6 +41,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
+	"github.com/YukinaMochizuki/hangar/internal/customdomain"
 	"github.com/YukinaMochizuki/hangar/internal/edgedial"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -99,6 +103,17 @@ type Edge struct {
 	// byLabel and byUID are the live endpoints, by hostname label and uid.
 	byLabel map[string]endpoint
 	byUID   map[string]endpoint
+	// byHost are the uids of the live PUBLIC endpoints, by the hostnames
+	// they ask for under custom domains; a hostname serves only while the
+	// domain of domains it is under is verified (servesLocked).
+	byHost map[string]string
+	// domains are the custom domains not being deleted, verified or not.
+	domains []customdomain.Domain
+	// verified are the verified custom domains, the challenge target of
+	// each by its domain: those whose certificates the front door keeps.
+	verified map[string]string
+	// domainChanges takes a signal whenever verified changes.
+	domainChanges chan struct{}
 	// conns are the connections open to each endpoint, by uid, idle in the
 	// transport's pool or carrying a request: closed when the endpoint goes
 	// or anything of it changes (endpoint).
@@ -125,6 +140,18 @@ type endpoint struct {
 	public             bool
 	port               int32
 	target, machine    string
+	// hostnames are those it asks for under custom domains, sorted and
+	// joined by ","; only a PUBLIC endpoint's count.
+	hostnames string
+}
+
+// customHostnames are the hostnames an endpoint is served at under custom
+// domains, verified or not.
+func (ep endpoint) customHostnames() []string {
+	if !ep.public || ep.hostnames == "" {
+		return nil
+	}
+	return strings.Split(ep.hostnames, ",")
 }
 
 // New returns an edge for cfg.
@@ -150,14 +177,17 @@ func New(cfg Config) *Edge {
 		panic(err)
 	}
 	e := &Edge{
-		cfg:     cfg,
-		sealer:  sealer,
-		authz:   authz.NewFromSource(controller.APISource{Client: cfg.API}, nil),
-		byLabel: map[string]endpoint{},
-		byUID:   map[string]endpoint{},
-		conns:   map[string]map[net.Conn]bool{},
-		active:  map[*request]bool{},
-		synced:  make(chan struct{}),
+		cfg:           cfg,
+		sealer:        sealer,
+		authz:         authz.NewFromSource(controller.APISource{Client: cfg.API}, nil),
+		byLabel:       map[string]endpoint{},
+		byUID:         map[string]endpoint{},
+		byHost:        map[string]string{},
+		verified:      map[string]string{},
+		domainChanges: make(chan struct{}, 1),
+		conns:         map[string]map[net.Conn]bool{},
+		active:        map[*request]bool{},
+		synced:        make(chan struct{}),
 	}
 	e.proxy = &httputil.ReverseProxy{
 		Rewrite: e.rewrite,
@@ -170,7 +200,7 @@ func New(cfg Config) *Edge {
 		BufferPool:    ProxyBuffers,
 		ErrorHandler:  e.proxyError,
 		ModifyResponse: func(resp *http.Response) error {
-			confineCookies(resp.Header)
+			confineCookies(resp.Header, customDomainOf(resp.Request.Context()))
 			return nil
 		},
 	}
@@ -183,6 +213,7 @@ func (e *Edge) Run(ctx context.Context) error {
 	go func() { errc <- e.authz.Run(ctx) }()
 	go e.recheck(ctx)
 	go e.recheckCredentials(ctx)
+	go e.runDomains(ctx)
 	for ctx.Err() == nil {
 		if err := e.follow(ctx); err != nil && ctx.Err() == nil {
 			e.cfg.Log.Error("following public endpoints failed; reading them again", "error", err)
@@ -270,12 +301,18 @@ func decode(o store.Object) (ep endpoint, live bool) {
 	}
 	m := pe.GetMetadata()
 	spec := pe.GetSpec()
+	hostnames := slices.Clone(spec.GetHostnames())
+	for i, h := range hostnames {
+		hostnames[i] = Hostname(h)
+	}
+	slices.Sort(hostnames)
 	return endpoint{
 		project: m.GetProject(), name: m.GetName(), uid: m.GetUid(),
-		public:  spec.GetAccess() == networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC,
-		port:    spec.GetPort(),
-		target:  prototext(spec.GetTarget()),
-		machine: pe.GetStatus().GetMachine(),
+		public:    spec.GetAccess() == networkv1alpha1.PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_PUBLIC,
+		port:      spec.GetPort(),
+		target:    prototext(spec.GetTarget()),
+		machine:   pe.GetStatus().GetMachine(),
+		hostnames: strings.Join(slices.Compact(hostnames), ","),
 	}, m.GetDeleteTime() == nil
 }
 
@@ -317,6 +354,11 @@ func closeAll(conns []net.Conn) {
 func (e *Edge) put(ep endpoint) {
 	e.byUID[ep.uid] = ep
 	e.byLabel[label(ep.project, ep.name)] = ep
+	for _, h := range ep.customHostnames() {
+		// The apiserver gives a hostname to one endpoint at a time; one
+		// moved between two is the later's once both events are read.
+		e.byHost[h] = ep.uid
+	}
 }
 
 // drop forgets ep, and returns its connections for the caller to close once
@@ -326,6 +368,11 @@ func (e *Edge) drop(ep endpoint) []net.Conn {
 	delete(e.byUID, ep.uid)
 	if cur, ok := e.byLabel[label(ep.project, ep.name)]; ok && cur.uid == ep.uid {
 		delete(e.byLabel, label(ep.project, ep.name))
+	}
+	for _, h := range ep.customHostnames() {
+		if e.byHost[h] == ep.uid {
+			delete(e.byHost, h)
+		}
 	}
 	var out []net.Conn
 	for c := range e.conns[ep.uid] {
@@ -350,6 +397,9 @@ type request struct {
 	// check again while the request lasts.
 	cred token.Secret
 	host string
+	// custom says host is a custom hostname, which ends when it no longer
+	// serves.
+	custom bool
 	// cancel ends the request, as the edge's own doing (errEnded).
 	cancel context.CancelFunc
 }
@@ -445,19 +495,13 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the edge is starting; try again shortly", http.StatusServiceUnavailable)
 		return
 	}
-	l, ok := strings.CutSuffix(Hostname(r.Host), "."+e.cfg.Domain)
-	if !ok || l == "" || strings.Contains(l, ".") {
-		http.Error(w, "no such endpoint", http.StatusNotFound)
-		return
-	}
-	e.mu.RLock()
-	ep, ok := e.byLabel[l]
-	e.mu.RUnlock()
+	host := Hostname(r.Host)
+	ep, under, ok := e.route(host)
+	custom := under != ""
 	if !ok {
 		http.Error(w, "no such endpoint", http.StatusNotFound)
 		return
 	}
-	host := Hostname(r.Host)
 	// /.hangar/ is the edge's own, on every endpoint: never forwarded.
 	if p, ok := reservedPath(r.URL.Path); ok {
 		if !ep.public && p == login.EndpointCallbackPath && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
@@ -470,7 +514,7 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancelCause := context.WithCancelCause(r.Context())
 	defer cancelCause(nil)
 	cancel := func() { cancelCause(errEnded) }
-	req := &request{ep: ep, cancel: cancel, host: host}
+	req := &request{ep: ep, cancel: cancel, host: host, custom: custom}
 	if !ep.public {
 		p, cred, until, ok := e.authenticate(w, r, host, ep)
 		if !ok {
@@ -488,10 +532,11 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if e.registering != nil {
 		e.registering()
 	}
-	// Registered under the lock that changes endpoints: one changed since
-	// it was read is not served.
+	// Registered under the lock that changes endpoints and domains: one
+	// changed since it was read, or a custom hostname that no longer serves,
+	// is not served.
 	e.mu.Lock()
-	if cur, ok := e.byUID[ep.uid]; !ok || cur != ep {
+	if cur, ok := e.byUID[ep.uid]; !ok || cur != ep || (custom && !e.servesHostLocked(host)) {
 		e.mu.Unlock()
 		http.Error(w, "the endpoint changed; try again", http.StatusServiceUnavailable)
 		return
@@ -515,7 +560,81 @@ func (e *Edge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx, ended = e.endWhenSilent(ctx, func() { cancelCause(errSilent) })
 		defer ended()
 	}
-	e.forward(w, r.WithContext(context.WithValue(ctx, targetKey{}, ep)))
+	ctx = context.WithValue(ctx, targetKey{}, ep)
+	if custom {
+		ctx = context.WithValue(ctx, customDomainKey{}, under)
+	}
+	e.forward(w, r.WithContext(ctx))
+}
+
+// route finds the endpoint host is: one label under the endpoint domain, or
+// a custom hostname a PUBLIC endpoint serves at, under the custom domain
+// under says, "" for none.
+func (e *Edge) route(host string) (ep endpoint, under string, ok bool) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	if l, ok := strings.CutSuffix(host, "."+e.cfg.Domain); ok {
+		if l == "" || strings.Contains(l, ".") {
+			return endpoint{}, "", false
+		}
+		ep, ok = e.byLabel[l]
+		return ep, "", ok
+	}
+	d, ok := e.servesLocked(host)
+	if !ok {
+		return endpoint{}, "", false
+	}
+	return e.byUID[e.byHost[host]], d, true
+}
+
+// ServesCustomHost reports whether host is a custom hostname the edge
+// serves now (servesLocked).
+func (e *Edge) ServesCustomHost(host string) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.servesHostLocked(Hostname(host))
+}
+
+// servesLocked returns the custom domain host serves under: a PUBLIC
+// endpoint asks for it, and the domain it is under, of its project's
+// tenant's (customdomain.Of, as the apiserver admits it), is verified and
+// lets the project use it. The edge decides it itself, not trusting that
+// admission left nothing behind, such as the endpoints of a tenant being
+// deleted under a domain another tenant has since verified. Callers hold
+// e.mu.
+func (e *Edge) servesLocked(host string) (string, bool) {
+	uid, ok := e.byHost[host]
+	if !ok {
+		return "", false
+	}
+	ep, ok := e.byUID[uid]
+	if !ok || !ep.public {
+		return "", false
+	}
+	tenant, ok := e.authz.TenantOf(ep.project)
+	if !ok {
+		return "", false
+	}
+	d, ok := customdomain.Of(host, tenant, e.domains)
+	if !ok || !d.Verified || !d.Allows(ep.project) {
+		return "", false
+	}
+	return d.Domain, true
+}
+
+// servesHostLocked is whether servesLocked serves host.
+func (e *Edge) servesHostLocked(host string) bool {
+	_, ok := e.servesLocked(host)
+	return ok
+}
+
+type customDomainKey struct{}
+
+// customDomainOf is the custom domain ctx's request reached its endpoint
+// under, "" for one at the endpoint's own hostname.
+func customDomainOf(ctx context.Context) string {
+	d, _ := ctx.Value(customDomainKey{}).(string)
+	return d
 }
 
 // endWhenSilent watches the connection to the endpoint that ctx's request
@@ -575,16 +694,19 @@ func (e *Edge) forward(w http.ResponseWriter, r *http.Request) {
 	// The header map is read for trailers only when the handler returns, so
 	// what the proxy copied there after the body can still be taken out.
 	defer dropTrailerCookies(w.Header())
-	e.proxy.ServeHTTP(informationalFilter{w}, r)
+	e.proxy.ServeHTTP(informationalFilter{w, customDomainOf(r.Context())}, r)
 }
 
 // informationalFilter confines the cookies of each 1xx answer written
 // through it.
-type informationalFilter struct{ http.ResponseWriter }
+type informationalFilter struct {
+	http.ResponseWriter
+	domain string
+}
 
 func (w informationalFilter) WriteHeader(code int) {
 	if code >= 100 && code < 200 {
-		confineCookies(w.Header())
+		confineCookies(w.Header(), w.domain)
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
@@ -711,8 +833,11 @@ func hangarBearer(v string) (token.Secret, bool) {
 // the endpoint's own host: a Set-Cookie of one of Hangar's names goes, so it
 // cannot set or clear one, and every other loses its Domain attribute, so
 // the browser keeps it host-only rather than sending it to every endpoint
-// under the domain (docs/decisions/public-endpoints.md).
-func confineCookies(h http.Header) {
+// under the domain (docs/decisions/public-endpoints.md). At a custom
+// hostname under domain, a Domain of domain or under it stays: it reaches
+// only the tenant's own names. One above it, which other tenants' domains
+// can be under, goes (docs/decisions/custom-domains.md).
+func confineCookies(h http.Header, domain string) {
 	vs := h.Values("Set-Cookie")
 	if len(vs) == 0 {
 		return
@@ -724,21 +849,26 @@ func confineCookies(h http.Header) {
 		if strings.HasPrefix(strings.ToLower(name), platformCookiePrefix) {
 			continue
 		}
-		h.Add("Set-Cookie", withoutDomain(v))
+		h.Add("Set-Cookie", withoutDomain(v, domain))
 	}
 }
 
-// withoutDomain is the Set-Cookie value v without its Domain attributes, the
-// rest kept as written. Attributes split on ";" as browsers split them; a
-// cookie value cannot hold one.
-func withoutDomain(v string) string {
+// withoutDomain is the Set-Cookie value v without its Domain attributes but
+// those of keep or under it, if keep is set, the rest kept as written.
+// Attributes split on ";" as browsers split them; a cookie value cannot
+// hold one.
+func withoutDomain(v, keep string) string {
 	parts := strings.Split(v, ";")
 	kept := []string{parts[0]}
 	for _, p := range parts[1:] {
-		attr, _, _ := strings.Cut(p, "=")
-		if !strings.EqualFold(strings.TrimSpace(attr), "Domain") {
-			kept = append(kept, p)
+		attr, val, _ := strings.Cut(p, "=")
+		if strings.EqualFold(strings.TrimSpace(attr), "Domain") {
+			d := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(val), "."))
+			if keep == "" || (d != keep && !strings.HasSuffix(d, "."+keep)) {
+				continue
+			}
 		}
+		kept = append(kept, p)
 	}
 	return strings.Join(kept, ";")
 }

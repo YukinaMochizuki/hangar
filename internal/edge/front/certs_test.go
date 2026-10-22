@@ -24,6 +24,63 @@ func TestCertificatesNeedAnEmail(t *testing.T) {
 	}
 }
 
+// TestDelegatedCertificates: a tenant's domain that delegates its DNS-01
+// challenges by a CNAME into the endpoints' zone gets certificates for
+// itself and its wildcard, answered there, and loses them when it is
+// undelegated.
+func TestDelegatedCertificates(t *testing.T) {
+	c := newCA(t)
+	d := startDoor(t, c, defaultOptions())
+	challenge := "k3x9.acme." + userDomain
+	c.dns.SetCNAME("_acme-challenge."+tenantDomain, challenge)
+
+	if err := d.certs.Delegate(tenantDomain, challenge); err != nil {
+		t.Fatal(err)
+	}
+	d.waitCertificates(t, tenantDomain, "app."+tenantDomain)
+	for _, tt := range []struct{ name, want string }{
+		{tenantDomain, tenantDomain},
+		{"app." + tenantDomain, "*." + tenantDomain},
+	} {
+		conn, err := d.handshake(tt.name)
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+		leaf := conn.ConnectionState().PeerCertificates[0]
+		_ = conn.Close()
+		if !slices.Equal(leaf.DNSNames, []string{tt.want}) {
+			t.Errorf("%s: certificate for %v; want %s alone", tt.name, leaf.DNSNames, tt.want)
+		}
+	}
+	// The challenges were answered at the delegated name, never in the
+	// tenant's zone, and nothing of them is left.
+	if got := c.dns.TXT(challenge); len(got) > 0 {
+		t.Errorf("%s still has %q", challenge, got)
+	}
+	// Renewals answer there too; the front door's own names' at their own.
+	for names, want := range map[string]string{
+		tenantDomain:        challenge,
+		"*." + tenantDomain: challenge,
+		apiHost:             "",
+		"*." + userDomain:   "",
+	} {
+		if got := front.RenewalChallenge(d.certs, names); got != want {
+			t.Errorf("a certificate for %s renews at %q; want %q", names, got, want)
+		}
+	}
+
+	d.certs.Undelegate(tenantDomain)
+	if got := front.RenewalChallenge(d.certs, tenantDomain); got != "" {
+		t.Errorf("after the domain was undelegated, its renewal answers at %q", got)
+	}
+	for _, name := range []string{tenantDomain, "app." + tenantDomain} {
+		if conn, err := d.handshake(name); err == nil {
+			_ = conn.Close()
+			t.Errorf("%s: a handshake after the domain was undelegated", name)
+		}
+	}
+}
+
 // TestCertificatesOverDNS01: the front door gets its certificates from an
 // ACME CA through DNS-01 alone, the control plane's names and the
 // endpoints' wildcard, hands out none for any other name, keeps them only
