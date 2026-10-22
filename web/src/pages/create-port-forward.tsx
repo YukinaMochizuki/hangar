@@ -187,13 +187,26 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
           </div>
           {/* One row of two controls at the input's height, each labelled
               above; stacked on a phone. The protocol is the segmented
-              control New secret uses for its two forms. */}
+              control New secret uses for its two forms, its highlight one
+              element that slides to the chosen option (still under reduced
+              motion). */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[220px_140px]">
             <div>
               <span id="pf-protocol" className="text-[12.5px] text-foreground">
                 Protocol
               </span>
-              <div role="radiogroup" aria-labelledby="pf-protocol" className="mt-1.5 grid h-9 grid-cols-2 items-stretch rounded-md border border-border-strong bg-surface p-0.5">
+              <div
+                role="radiogroup"
+                aria-labelledby="pf-protocol"
+                className="relative mt-1.5 grid h-9 grid-cols-2 items-stretch rounded-md border border-border-strong bg-surface p-0.5"
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded bg-accent-soft ring-1 ring-accent transition-transform duration-200 ease-out motion-reduce:transition-none",
+                    protocol === "UDP" && "translate-x-full",
+                  )}
+                />
                 {protocols.map((p) => (
                   <button
                     key={p}
@@ -202,8 +215,8 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
                     aria-checked={protocol === p}
                     onClick={() => setProtocol(p)}
                     className={cn(
-                      "rounded font-mono text-[13px]",
-                      protocol === p ? "bg-accent-soft font-medium text-foreground ring-1 ring-accent" : "text-muted hover:text-foreground",
+                      "relative rounded font-mono text-[13px] transition-colors duration-200 motion-reduce:transition-none",
+                      protocol === p ? "font-medium text-foreground" : "text-muted hover:text-foreground",
                     )}
                   >
                     {p}
