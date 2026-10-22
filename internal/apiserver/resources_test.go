@@ -41,7 +41,7 @@ func nodeWithDisk(t *testing.T, s *Server, system context.Context, node, capacit
 }
 
 func TestAMachineGetsCanonicalQuantities(t *testing.T) {
-	s, system, user := controlled(t)
+	s, system, _ := controlled(t)
 	tests := []struct {
 		name string
 		in   *computev1alpha1.Resources
@@ -52,8 +52,10 @@ func TestAMachineGetsCanonicalQuantities(t *testing.T) {
 		{"defaults", &computev1alpha1.Resources{}, &computev1alpha1.Resources{Cpu: "1", Memory: "512Mi", Disk: "10Gi"}},
 		{"bytes", &computev1alpha1.Resources{Cpu: "1e0", Memory: "134217729", Disk: "1.5Gi"}, &computev1alpha1.Resources{Cpu: "1", Memory: "129Mi", Disk: "2Gi"}},
 	}
+	// As the system, which the shape rules do not hold: these test the
+	// canonical forms, of quantities no tenant may ask for.
 	for _, tt := range tests {
-		applyCtr(t, s, user, withResources(tt.name, tt.in))
+		applyCtr(t, s, system, withResources(tt.name, tt.in))
 		m := waitMachine(t, s, system, "ct-"+tt.name, "created", func(*computev1alpha1.Machine) bool { return true })
 		if !proto.Equal(m.GetSpec().GetResources(), tt.want) {
 			t.Errorf("%s: machine resources %v, want %v", tt.name, m.GetSpec().GetResources(), tt.want)
@@ -93,9 +95,11 @@ func TestContainerQuantitiesAreChecked(t *testing.T) {
 			t.Errorf("%v: got %v, want InvalidArgument saying %q", tt.res, err, tt.msg)
 		}
 	}
+	// The least a tenant may ask for, under the shape rules
+	// (machinesize_admission_internal_test.go has the rest).
 	for i, ok := range []*computev1alpha1.Resources{
-		{Cpu: "1", Memory: "128Mi", Disk: "1Gi"},
-		{Cpu: "2000m", Memory: "134217728", Disk: "1073741824"},
+		{Cpu: "1", Memory: "256Mi", Disk: "2Gi"},
+		{Cpu: "1000m", Memory: "268435456", Disk: "2147483648"},
 	} {
 		if _, err := b.Apply(user, withResources([]string{"least", "least-bytes"}[i], ok)); err != nil {
 			t.Errorf("%v: %v", ok, err)
@@ -232,14 +236,14 @@ func TestTheSchedulerFitsDisk(t *testing.T) {
 	// Exactly what is left fits.
 	applyCtr(t, s, user, withResources("b", &computev1alpha1.Resources{Disk: "10Gi"}))
 	waitMachine(t, s, system, "ct-b", "placed in what is left", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "d" })
-	applyCtr(t, s, user, withResources("c", &computev1alpha1.Resources{Disk: "1Gi"}))
+	applyCtr(t, s, user, withResources("c", &computev1alpha1.Resources{Disk: "2Gi"}))
 	waitMachine(t, s, system, "ct-c", "refused for lack of disk", func(m *computev1alpha1.Machine) bool {
 		sc := scheduled(m)
 		return m.GetSpec().GetNode() == "" && sc.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE &&
-			sc.GetMessage() == "no ready node has 1Gi of disk free"
+			sc.GetMessage() == "no ready node has 2Gi of disk free"
 	})
 	waitContainer(t, s, system, "c", "told why", func(c *computev1alpha1.Container) bool {
-		return containerReady(c).GetMessage() == "no ready node has 1Gi of disk free"
+		return containerReady(c).GetMessage() == "no ready node has 2Gi of disk free"
 	})
 
 	// A node that reports no disk is not checked for it.
@@ -250,7 +254,7 @@ func TestTheSchedulerFitsDisk(t *testing.T) {
 }
 
 func TestUnschedulableMessagesNameTheShortfall(t *testing.T) {
-	s, system, user := controlled(t, "mem", "disk")
+	s, system, _ := controlled(t, "mem", "disk")
 	// mem has memory and no disk to spare; disk has disk and no memory.
 	nodeWithDisk(t, s, system, "mem", "1Gi", "")
 	status := &computev1alpha1.NodeStatus{
@@ -272,8 +276,10 @@ func TestUnschedulableMessagesNameTheShortfall(t *testing.T) {
 		{"disk", &computev1alpha1.Resources{Memory: "128Mi", Disk: "2Ti"}, "no ready node has 2048Gi of disk free"},
 		{"either", &computev1alpha1.Resources{Memory: "8Gi", Disk: "2Ti"}, "no ready node has 8192Mi of memory or 2048Gi of disk free"},
 	}
+	// As the system, which the shape rules do not hold, for shapes as
+	// lopsided as the nodes.
 	for _, tt := range tests {
-		applyCtr(t, s, user, withResources(tt.name, tt.res))
+		applyCtr(t, s, system, withResources(tt.name, tt.res))
 		waitMachine(t, s, system, "ct-"+tt.name, "refused", func(m *computev1alpha1.Machine) bool {
 			return m.GetSpec().GetNode() == "" && scheduled(m).GetMessage() == tt.msg
 		})

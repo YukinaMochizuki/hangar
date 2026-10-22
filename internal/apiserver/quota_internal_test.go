@@ -182,7 +182,7 @@ func TestQuotaRefusesWhatWouldPassALimit(t *testing.T) {
 	_, err = b.Apply(user, ctr("c2"))
 	wantExhausted(t, err, "cpu limit is 2500m", "starting a stopped container past the cpu limit")
 
-	_, err = b.Apply(user, stopped(quotaCtr("c4", "", "", "1Gi")))
+	_, err = b.Apply(user, stopped(quotaCtr("c4", "", "", "2Gi")))
 	wantExhausted(t, err, `machines limit is 3 (plan "default") and it uses 3; this would bring it to 4`, "a fourth machine, even stopped")
 	_, err = b.Apply(user, quotaCtr("c1", "", "", "16Gi"))
 	wantExhausted(t, err, `disk limit is 35Gi (plan "default") and it uses 30Gi; this would bring it to 36Gi`, "growing a disk past the limit")

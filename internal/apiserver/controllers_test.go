@@ -54,9 +54,11 @@ func applyCtr(t *testing.T, s *Server, user context.Context, c *computev1alpha1.
 	}
 }
 
+// sized is a container of memMiB of memory, with the fewest vCPUs the shape
+// rules allow it.
 func sized(name string, memMiB int64) *computev1alpha1.Container {
 	c := ctr(name)
-	c.Spec.Resources = &computev1alpha1.Resources{Memory: fmt.Sprintf("%dMi", memMiB)}
+	c.Spec.Resources = &computev1alpha1.Resources{Cpu: fmt.Sprint(max(1, (memMiB+8191)/8192)), Memory: fmt.Sprintf("%dMi", memMiB)}
 	return c
 }
 
@@ -196,10 +198,10 @@ func TestSchedulerPicksAReadyNodeWithRoom(t *testing.T) {
 		return m.GetSpec().GetNode() == "big"
 	})
 
-	// big has 3584 MiB left, small 1024: 3800 fits nowhere.
-	applyCtr(t, s, user, sized("huge", 3800))
+	// big has 3584 MiB left, small 1024: 3840 fits nowhere.
+	applyCtr(t, s, user, sized("huge", 3840))
 	waitMachine(t, s, system, "ct-huge", "refused for lack of memory", func(m *computev1alpha1.Machine) bool {
-		return m.GetSpec().GetNode() == "" && scheduled(m).GetMessage() == "no ready node has 3800Mi of memory free"
+		return m.GetSpec().GetNode() == "" && scheduled(m).GetMessage() == "no ready node has 3840Mi of memory free"
 	})
 
 	// A cordoned node takes nothing new.

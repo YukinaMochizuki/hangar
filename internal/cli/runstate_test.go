@@ -97,7 +97,7 @@ func TestStopStart(t *testing.T) {
 		t.Errorf("after stop, run state %q", stopped.Spec.RunState)
 	}
 	if stopped.Spec.Image != before.Spec.Image || len(stopped.Spec.Ports) != 1 || stopped.Metadata.Labels["tier"] != "front" ||
-		stopped.Spec.Resources["cpu"] != "2" || stopped.Spec.Resources["memory"] != "512Mi" || stopped.Spec.Resources["disk"] != "20Gi" {
+		stopped.Spec.Resources["cpu"] != "2" || stopped.Spec.Resources["memory"] != "1Gi" || stopped.Spec.Resources["disk"] != "20Gi" {
 		t.Errorf("stop changed more than the run state: %+v", stopped)
 	}
 	if stopped.Metadata.Generation == before.Metadata.Generation {

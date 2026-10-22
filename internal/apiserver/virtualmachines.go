@@ -184,7 +184,7 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 			was = &shape
 		}
 	}
-	return s.checkMachineSize(ctx, p, was, cur,
+	return s.checkMachineShape(p, was, cur,
 		"spec.root_disk.from_image.size "+cmp.Or(spec.GetRootDisk().GetFromImage().GetSize(), defaultVMRootSize))
 }
 

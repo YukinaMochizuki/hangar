@@ -778,7 +778,7 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 			was = &shape
 		}
 	}
-	return s.checkMachineSize(ctx, p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
+	return s.checkMachineShape(p, was, cur, "spec.resources.disk "+cmp.Or(spec.GetResources().GetDisk(), defaultDisk))
 }
 
 // MaxInterfaces bounds the interfaces of a machine.

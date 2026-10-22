@@ -674,7 +674,7 @@ func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
 
 	// One whose machine is on no node says so.
 	big := vmFromImage("big", "noble")
-	big.Spec.Resources = &computev1alpha1.VirtualMachineResources{Memory: "64Gi"}
+	big.Spec.Resources = &computev1alpha1.VirtualMachineResources{Cpu: "8", Memory: "64Gi"}
 	big.Spec.FileShares = []*computev1alpha1.VirtualMachineFileShare{{Name: "data"}}
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, big); err != nil {
 		t.Fatal(err)
@@ -719,15 +719,15 @@ func TestFileSharesAreCounted(t *testing.T) {
 
 	// The usage says so, and a container declaring a share is one machine.
 	c := ctr("api")
-	c.Spec.Resources = &computev1alpha1.Resources{Disk: "1Gi"}
+	c.Spec.Resources = &computev1alpha1.Resources{Disk: "2Gi"}
 	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{shareVol("a", "/a")}
 	applyCtr(t, s, user, c)
 	tl, err := s.tally(system, "acme", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if u := tl.tenant.usage(); u.GetFileShares() != 2 || u.GetDisk() != "26Gi" || u.GetMachines() != 1 {
-		t.Errorf("usage %v, want 2 file shares, 26Gi of disk and 1 machine", u)
+	if u := tl.tenant.usage(); u.GetFileShares() != 2 || u.GetDisk() != "27Gi" || u.GetMachines() != 1 {
+		t.Errorf("usage %v, want 2 file shares, 27Gi of disk and 1 machine", u)
 	}
 	if ls, err := parseLimits(&tenancyv1alpha1.Limits{FileShares: proto.Int32(3)}); err != nil || !proto.Equal(ls.proto(), &tenancyv1alpha1.Limits{FileShares: proto.Int32(3)}) {
 		t.Errorf("file_shares 3 read back as %v (%v)", ls.proto(), err)

@@ -1,10 +1,8 @@
 package apiserver
 
 import (
-	"cmp"
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"google.golang.org/protobuf/proto"
@@ -15,7 +13,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
-	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 // maxDisplayName is the longest display name a size may have, enough for a
@@ -24,7 +21,8 @@ const maxDisplayName = 63
 
 // validateMachineSize checks a size as a container's resources are checked,
 // though a size has no defaults: cpu, memory and disk are all required, and
-// its disk is whole Gi, the unit a machine's disk is held in.
+// its disk is whole Gi, the unit a machine's disk is held in. A size is a
+// preset of a shape, so it keeps to the shape rules a tenant's machine does.
 func validateMachineSize(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
 	ms := obj.(*computev1alpha1.MachineSize)
 	if path := unknownField(ms.ProtoReflect(), "machine_size"); path != "" {
@@ -48,18 +46,67 @@ func validateMachineSize(_ context.Context, _ *Server, _ auth.Principal, _, obj 
 	if sz.disk, err = quantity.Bytes(spec.GetDisk()); err != nil {
 		return invalid("spec.disk: %v", err)
 	}
-	switch {
-	case sz.memory < minMemory:
-		return invalid("spec.memory %s is below the minimum of 128Mi", spec.GetMemory())
-	case sz.disk < minDisk:
-		return invalid("spec.disk %s is below the minimum of 1Gi", spec.GetDisk())
-	case sz.disk%quantity.GiB != 0:
+	if sz.disk%quantity.GiB != 0 {
 		return invalid("spec.disk %s is not a whole number of Gi", spec.GetDisk())
 	}
-	return checkMaximums(sz, "spec", spec.GetCpu(), spec.GetMemory(), spec.GetDisk())
+	if err := checkMaximums(sz, "spec", spec.GetCpu(), spec.GetMemory(), spec.GetDisk()); err != nil {
+		return err
+	}
+	return checkShape(machineShape{sizes: sz, hasDisk: true}, "spec", "spec.disk "+spec.GetDisk())
 }
 
-// machineShape is what a MachineSize fixes of a Container or a
+// The shape rules of docs/decisions/machine-sizes.md: memory in steps of
+// shapeMemoryStep, at least one step; between minMemoryPerCPU and
+// maxMemoryPerCPU of memory per vCPU, though one vCPU is always allowed; and
+// a root disk of at least minShapeDisk.
+const (
+	shapeMemoryStep = 256 * quantity.MiB
+	minMemoryPerCPU = 512 * quantity.MiB
+	maxMemoryPerCPU = 8 * quantity.GiB
+	minShapeDisk    = 2 * quantity.GiB
+)
+
+// cpuRange is the fewest and most vCPUs a machine of memory may have.
+func cpuRange(memory uint64) (lo, hi uint64) {
+	lo = max(1, (memory+maxMemoryPerCPU-1)/maxMemoryPerCPU)
+	hi = max(1, memory/minMemoryPerCPU)
+	return lo, hi
+}
+
+// checkShape refuses a shape outside the rules; at is the field holding cpu
+// and memory, and disk the field holding the disk and its value as written,
+// for the message.
+func checkShape(cur machineShape, at, disk string) error {
+	memory := quantity.FormatMemory(cur.memory)
+	if cur.memory%quantity.GiB == 0 {
+		memory = quantity.FormatDisk(cur.memory)
+	}
+	if cur.memory < shapeMemoryStep || cur.memory%shapeMemoryStep != 0 {
+		return invalid("%s.memory %s is not a whole number of 256Mi steps, at least one", at, memory)
+	}
+	if lo, hi := cpuRange(cur.memory); uint64(cur.cpu) < lo || uint64(cur.cpu) > hi {
+		return invalid("%s: a machine of %s of memory has %s, not %d; each vCPU goes with 512Mi to 8Gi of memory",
+			at, memory, cpuSpan(lo, hi), cur.cpu)
+	}
+	if cur.hasDisk && cur.disk < minShapeDisk {
+		return invalid("%s is below the minimum of 2Gi", disk)
+	}
+	return nil
+}
+
+// cpuSpan says lo to hi vCPUs, or lo alone where they are one.
+func cpuSpan(lo, hi uint64) string {
+	switch {
+	case lo != hi:
+		return fmt.Sprintf("%d to %d vCPUs", lo, hi)
+	case lo == 1:
+		return "1 vCPU"
+	default:
+		return fmt.Sprintf("%d vCPUs", lo)
+	}
+}
+
+// machineShape is what the shape rules check of a Container or a
 // VirtualMachine, with the defaults for what it leaves empty. hasDisk is
 // false for a VM that boots a Disk it names, whose size is the Disk's.
 type machineShape struct {
@@ -90,85 +137,19 @@ func vmShape(vm *computev1alpha1.VirtualMachine) (shape machineShape, ok bool) {
 	return shape, true
 }
 
-// definedSize is a MachineSize read as numbers, with its spec as written for
-// messages.
-type definedSize struct {
-	sizes
-	name string
-	spec *computev1alpha1.MachineSizeSpec
-}
-
-// checkMachineSize holds a machine to the sizes; see
+// checkMachineShape holds a machine to the shape rules; see
 // docs/decisions/machine-sizes.md. old is the stored machine's shape, nil on
 // create; disk is the field holding the disk and its value as written, for
-// the message.
-func (s *Server) checkMachineSize(ctx context.Context, p auth.Principal, old *machineShape, cur machineShape, disk string) error {
+// the message. Only a new shape is checked, and only for a caller who may
+// not define sizes.
+func (s *Server) checkMachineShape(p auth.Principal, old *machineShape, cur machineShape, disk string) error {
 	if old != nil && *old == cur {
 		return nil
 	}
 	if s.authz.Allowed(p, authz.Permission(registry.MachineSize, authz.Apply), authz.Target{}) {
 		return nil
 	}
-	defined, err := s.definedSizes(ctx)
-	if err != nil || len(defined) == 0 {
-		return err
-	}
-	var short *definedSize
-	for i, d := range defined {
-		if d.cpu != cur.cpu || d.memory != cur.memory {
-			continue
-		}
-		if !cur.hasDisk || cur.disk >= d.disk {
-			return nil
-		}
-		// The smallest disk is the least the machine would have to grow to.
-		if short == nil || d.disk < short.disk {
-			short = &defined[i]
-		}
-	}
-	list := make([]string, len(defined))
-	for i, d := range defined {
-		list[i] = fmt.Sprintf("%s: %s / %s / %s", d.name, d.spec.GetCpu(), d.spec.GetMemory(), d.spec.GetDisk())
-	}
-	if short != nil {
-		return invalid("%s is below the %s of machine size %q; the machine sizes (cpu / memory / disk) are %s",
-			disk, short.spec.GetDisk(), short.name, strings.Join(list, ", "))
-	}
-	return invalid("spec.resources: cpu %s and memory %s are those of no machine size; the machine sizes (cpu / memory / disk) are %s",
-		quantity.FormatCPU(cur.cpu), quantity.FormatMemory(cur.memory), strings.Join(list, ", "))
-}
-
-// definedSizes reads every MachineSize, in the order they are listed by. It
-// is one read of the store, made only for a machine whose shape is new and
-// whose writer is checked; the sizes are a handful.
-func (s *Server) definedSizes(ctx context.Context) ([]definedSize, error) {
-	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.MachineSize.Kind})
-	if err != nil {
-		return nil, err
-	}
-	var out []definedSize
-	for _, o := range objs {
-		obj, err := s.backend(registry.MachineSize).decode(o)
-		if err != nil {
-			return nil, err
-		}
-		ms := obj.(*computev1alpha1.MachineSize)
-		spec := ms.GetSpec()
-		d := definedSize{name: ms.GetMetadata().GetName(), spec: spec}
-		var cpuErr, memErr, diskErr error
-		d.cpu, cpuErr = quantity.CPU(spec.GetCpu())
-		d.memory, memErr = quantity.Bytes(spec.GetMemory())
-		d.disk, diskErr = quantity.Bytes(spec.GetDisk())
-		// Admission let in only sizes that parse.
-		if cpuErr != nil || memErr != nil || diskErr != nil {
-			continue
-		}
-		out = append(out, d)
-	}
-	slices.SortFunc(out, func(a, b definedSize) int {
-		return cmp.Or(cmp.Compare(a.spec.GetOrder(), b.spec.GetOrder()), strings.Compare(a.name, b.name))
-	})
-	return out, nil
+	return checkShape(cur, "spec.resources", disk)
 }
 
 // unknownField names the first message under m, m itself included, that

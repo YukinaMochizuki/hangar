@@ -180,7 +180,7 @@ func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 	// More memory than the node has: the change waits, the machine stays.
 	applyCtr(t, s, user, sized("a", 64*1024))
 	big := proto.Clone(vm).(*computev1alpha1.VirtualMachine)
-	big.Spec.Resources = &computev1alpha1.VirtualMachineResources{Memory: "64Gi"}
+	big.Spec.Resources = &computev1alpha1.VirtualMachineResources{Cpu: "8", Memory: "64Gi"}
 	if _, err := s.backend(registry.VirtualMachine).Apply(user, big); err != nil {
 		t.Fatal(err)
 	}
