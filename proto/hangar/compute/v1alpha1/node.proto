@@ -52,6 +52,10 @@ message NodeStatus {
   // The host's hardware, which the status of each Container and
   // VirtualMachine on the node carries.
   Placement placement = 8;
+  // The host's shared IPv4 address, such as "198.51.100.3", which its
+  // machines' IPv4 leaves as and where PortForwards to them are open; empty
+  // when the host has none, and PortForwards to its machines open nowhere.
+  string shared_ipv4 = 9;
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in

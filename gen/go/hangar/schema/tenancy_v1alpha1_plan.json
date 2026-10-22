@@ -180,6 +180,11 @@
           "format": "int32",
           "type": "integer"
         },
+        "portForwards": {
+          "description": "PortForwards, each holding a port of the shared IPv4 address.",
+          "format": "int32",
+          "type": "integer"
+        },
         "projects": {
           "description": "Projects of the tenant. Only a Plan sets it.",
           "format": "int32",

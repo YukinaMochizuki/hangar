@@ -171,7 +171,11 @@ type NodeStatus struct {
 	Ipv6Prefix string `protobuf:"bytes,7,opt,name=ipv6_prefix,json=ipv6Prefix,proto3" json:"ipv6_prefix,omitempty"`
 	// The host's hardware, which the status of each Container and
 	// VirtualMachine on the node carries.
-	Placement     *Placement `protobuf:"bytes,8,opt,name=placement,proto3" json:"placement,omitempty"`
+	Placement *Placement `protobuf:"bytes,8,opt,name=placement,proto3" json:"placement,omitempty"`
+	// The host's shared IPv4 address, such as "198.51.100.3", which its
+	// machines' IPv4 leaves as and where PortForwards to them are open; empty
+	// when the host has none, and PortForwards to its machines open nowhere.
+	SharedIpv4    string `protobuf:"bytes,9,opt,name=shared_ipv4,json=sharedIpv4,proto3" json:"shared_ipv4,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -260,6 +264,13 @@ func (x *NodeStatus) GetPlacement() *Placement {
 		return x.Placement
 	}
 	return nil
+}
+
+func (x *NodeStatus) GetSharedIpv4() string {
+	if x != nil {
+		return x.SharedIpv4
+	}
+	return ""
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in
@@ -971,7 +982,7 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\v2#.hangar.compute.v1alpha1.NodeStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
 	"\x04Node\x12\x05nodes \x02\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xda\x03\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xfb\x03\n" +
 	"\n" +
 	"NodeStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -984,7 +995,9 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\ragent_version\x18\x06 \x01(\tR\fagentVersion\x12\x1f\n" +
 	"\vipv6_prefix\x18\a \x01(\tR\n" +
 	"ipv6Prefix\x12@\n" +
-	"\tplacement\x18\b \x01(\v2\".hangar.compute.v1alpha1.PlacementR\tplacement\"l\n" +
+	"\tplacement\x18\b \x01(\v2\".hangar.compute.v1alpha1.PlacementR\tplacement\x12\x1f\n" +
+	"\vshared_ipv4\x18\t \x01(\tR\n" +
+	"sharedIpv4\"l\n" +
 	"\rNodeResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +

@@ -235,7 +235,9 @@ type Limits struct {
 	// limit.
 	FileShares *int32 `protobuf:"varint,10,opt,name=file_shares,json=fileShares,proto3,oneof" json:"file_shares,omitempty"`
 	// CustomDomains of the tenant. Only a Plan sets it.
-	Domains       *int32 `protobuf:"varint,11,opt,name=domains,proto3,oneof" json:"domains,omitempty"`
+	Domains *int32 `protobuf:"varint,11,opt,name=domains,proto3,oneof" json:"domains,omitempty"`
+	// PortForwards, each holding a port of the shared IPv4 address.
+	PortForwards  *int32 `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3,oneof" json:"port_forwards,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -347,6 +349,13 @@ func (x *Limits) GetDomains() int32 {
 	return 0
 }
 
+func (x *Limits) GetPortForwards() int32 {
+	if x != nil && x.PortForwards != nil {
+		return *x.PortForwards
+	}
+	return 0
+}
+
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
 // counts it.
 type Usage struct {
@@ -362,6 +371,7 @@ type Usage struct {
 	ServiceTokens   int32                  `protobuf:"varint,9,opt,name=service_tokens,json=serviceTokens,proto3" json:"service_tokens,omitempty"`
 	FileShares      int32                  `protobuf:"varint,10,opt,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
 	Domains         int32                  `protobuf:"varint,11,opt,name=domains,proto3" json:"domains,omitempty"`
+	PortForwards    int32                  `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3" json:"port_forwards,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -469,6 +479,13 @@ func (x *Usage) GetFileShares() int32 {
 func (x *Usage) GetDomains() int32 {
 	if x != nil {
 		return x.Domains
+	}
+	return 0
+}
+
+func (x *Usage) GetPortForwards() int32 {
+	if x != nil {
+		return x.PortForwards
 	}
 	return 0
 }
@@ -1127,7 +1144,7 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"\x91\x04\n" +
+	"conditions\"\xcd\x04\n" +
 	"\x06Limits\x12\x15\n" +
 	"\x03cpu\x18\x01 \x01(\tH\x00R\x03cpu\x88\x01\x01\x12\x1b\n" +
 	"\x06memory\x18\x02 \x01(\tH\x01R\x06memory\x88\x01\x01\x12\x17\n" +
@@ -1142,7 +1159,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	" \x01(\x05H\tR\n" +
 	"fileShares\x88\x01\x01\x12\x1d\n" +
 	"\adomains\x18\v \x01(\x05H\n" +
-	"R\adomains\x88\x01\x01B\x06\n" +
+	"R\adomains\x88\x01\x01\x12(\n" +
+	"\rport_forwards\x18\f \x01(\x05H\vR\fportForwards\x88\x01\x01B\x06\n" +
 	"\x04_cpuB\t\n" +
 	"\a_memoryB\a\n" +
 	"\x05_diskB\v\n" +
@@ -1155,7 +1173,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x0f_service_tokensB\x0e\n" +
 	"\f_file_sharesB\n" +
 	"\n" +
-	"\b_domains\"\xc4\x02\n" +
+	"\b_domainsB\x10\n" +
+	"\x0e_port_forwards\"\xe9\x02\n" +
 	"\x05Usage\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +
@@ -1169,7 +1188,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\vfile_shares\x18\n" +
 	" \x01(\x05R\n" +
 	"fileShares\x12\x18\n" +
-	"\adomains\x18\v \x01(\x05R\adomains\"$\n" +
+	"\adomains\x18\v \x01(\x05R\adomains\x12#\n" +
+	"\rport_forwards\x18\f \x01(\x05R\fportForwards\"$\n" +
 	"\x0eGetPlanRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"D\n" +
 	"\x0fGetPlanResponse\x121\n" +

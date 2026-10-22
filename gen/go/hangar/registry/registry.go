@@ -161,6 +161,16 @@ var (
 		Message:    (*v1alpha12.Network)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkService",
 	}
+	PortForward = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "PortForward",
+		Plural:     "portforwards",
+		ShortNames: []string{"pf"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.PortForward)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.PortForwardService",
+	}
 	PublicEndpoint = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -267,6 +277,7 @@ var All = []Resource{
 	Address,
 	CustomDomain,
 	Network,
+	PortForward,
 	PublicEndpoint,
 	SecurityGroup,
 	Secret,

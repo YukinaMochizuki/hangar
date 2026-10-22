@@ -61,6 +61,8 @@ message Limits {
   optional int32 file_shares = 10;
   // CustomDomains of the tenant. Only a Plan sets it.
   optional int32 domains = 11;
+  // PortForwards, each holding a port of the shared IPv4 address.
+  optional int32 port_forwards = 12;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
@@ -77,6 +79,7 @@ message Usage {
   int32 service_tokens = 9;
   int32 file_shares = 10;
   int32 domains = 11;
+  int32 port_forwards = 12;
 }
 
 // PlanService manages plans.

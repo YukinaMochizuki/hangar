@@ -69,6 +69,10 @@
         "placement": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.Placement",
           "description": "The host's hardware, which the status of each Container and VirtualMachine on the node carries."
+        },
+        "sharedIpv4": {
+          "description": "The host's shared IPv4 address, such as \"198.51.100.3\", which its machines' IPv4 leaves as and where PortForwards to them are open; empty when the host has none, and PortForwards to its machines open nowhere.",
+          "type": "string"
         }
       },
       "type": "object"
