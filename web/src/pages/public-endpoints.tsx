@@ -4,7 +4,8 @@
 // container's: the API sets its spec back and makes it again, so it offers
 // no edit and no delete here.
 
-import { create } from "@bufbuild/protobuf";
+import { clone, create } from "@bufbuild/protobuf";
+import type { CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   PublicEndpointAccess,
@@ -12,22 +13,27 @@ import {
   PublicEndpointSpecSchema,
   type PublicEndpoint,
 } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import { ArrowUpRight, Globe, Lock, Plus, Trash2 } from "lucide-react";
+import { ArrowUpRight, AtSign, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
-import { DeleteDialog, FormFooter } from "@/components/resource";
+import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
+import { Notice } from "@/components/notice";
+import { ErrorNotice, Skeleton } from "@/components/states";
 import { FormEquivalent } from "@/components/form";
+import { HostnameRows } from "@/components/hostnames";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { DetailBody, DetailFrame, DetailHead, ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { cn } from "@/lib/cn";
+import { domainFor, domainOf, hostnameOf, isVerified, rowProblems, rowsOf, useProjectDomains, type HostnameRow } from "@/lib/custom-domains";
 import { date, machinePath } from "@/lib/machines";
-import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints } from "@/lib/network";
-import { permission, useChange, useNetworkCan } from "@/lib/network-actions";
+import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints, type ListState } from "@/lib/network";
+import { isStale, permission, useChange, useNetworkCan } from "@/lib/network-actions";
+import { useApplyObjectAt, useReadObject } from "@/lib/object-kinds";
 
 /**
  * An endpoint's actions, on its page and in its row's menu: Make public or
@@ -37,12 +43,14 @@ import { permission, useChange, useNetworkCan } from "@/lib/network-actions";
  */
 export function useEndpointActions(e: PublicEndpoint, can: Can, after?: () => void): ActionSet {
   const name = nameOf(e);
-  const [open, setOpen] = useState<"access" | "delete" | "labels" | null>(null);
+  const [open, setOpen] = useState<"access" | "hostnames" | "delete" | "labels" | null>(null);
   const owned = !!ownerOf(e);
   const mayApply = !owned && can(permission("publicEndpoint", "apply"));
   const isPublic = e.spec?.access === PublicEndpointAccess.PUBLIC;
   const actions: ObjectAction[] = [];
   if (mayApply) actions.push({ label: isPublic ? "Make private" : "Make public", icon: isPublic ? Lock : Globe, onSelect: () => setOpen("access") });
+  // Only a public endpoint serves at custom hostnames (docs/decisions/custom-domains.md).
+  if (mayApply && isPublic) actions.push({ label: "Edit hostnames", icon: AtSign, onSelect: () => setOpen("hostnames") });
   if (!owned && can(permission("publicEndpoint", "delete")))
     actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
   const close = () => setOpen(null);
@@ -53,6 +61,7 @@ export function useEndpointActions(e: PublicEndpoint, can: Can, after?: () => vo
     dialogs: (
       <>
         {open === "access" && <AccessDialog open onClose={close} endpoint={e} />}
+        {open === "hostnames" && <HostnamesDialog onClose={close} endpoint={e} />}
         {open === "labels" && <EditLabelsDialog kind="publicEndpoint" object={e} onClose={close} />}
         {open === "delete" && (
           <DeleteDialog
@@ -311,6 +320,7 @@ function Loaded({ e, can }: { e: PublicEndpoint; can: Can }) {
                 </Field>
               </dl>
             </Card>
+            <HostnamesCard e={e} edit={set.actions.find((a) => a.label === "Edit hostnames")?.onSelect} />
             {ready && ready.status !== 1 && ready.message && (
               <Card>
                 <CardHeader title="Not ready" />
@@ -352,6 +362,9 @@ function AccessDialog({ open, onClose, endpoint }: { open: boolean; onClose: () 
     onClose();
   };
   const verb = toPublic ? "Make public" : "Make private";
+  // The API refuses a private endpoint custom hostnames (docs/decisions/custom-domains.md).
+  const hostnames = endpoint.spec?.hostnames ?? [];
+  const held = !toPublic && hostnames.length > 0;
   return (
     <Dialog open={open} onClose={close} title={toPublic ? `Make ${nameOf(endpoint)} public` : `Make ${nameOf(endpoint)} private`}>
       <p>
@@ -360,8 +373,14 @@ function AccessDialog({ open, onClose, endpoint }: { open: boolean; onClose: () 
           : "Only those who may use this project's endpoints reach it. Its open connections close."}
       </p>
       <FormEquivalent yaml={endpointYaml(obj)} cli={[`hangar apply -p ${project} -f ${nameOf(endpoint)}.yaml`]} />
+      {held && (
+        <Notice tone="warning" className="mt-3" title={`${nameOf(endpoint)} serves at ${hostnames.length === 1 ? "a custom hostname" : `${hostnames.length} custom hostnames`}: ${hostnames.join(", ")}.`}>
+          Only a public endpoint serves at custom hostnames; Edit hostnames takes them out.
+        </Notice>
+      )}
       <FormFooter
         problems={[]}
+        blocked={held}
         error={change.error}
         failed={toPublic ? "Making the endpoint public failed" : "Making the endpoint private failed"}
         pending={change.isPending}
@@ -386,3 +405,178 @@ function AccessDialog({ open, onClose, endpoint }: { open: boolean; onClose: () 
   );
 }
 
+/** A URL as a link, without its scheme. */
+function HostLink({ url }: { url: string }) {
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="inline-flex min-w-0 items-center gap-1 text-accent hover:underline">
+      <span className="truncate font-mono text-[12.5px]">{url.replace(/^https:\/\//, "")}</span>
+      <ArrowUpRight className="size-3 shrink-0" />
+    </a>
+  );
+}
+
+/**
+ * Where the endpoint serves: its own hostname, then each of spec.hostnames,
+ * with its URL when the status lists it, else why it waits, as the
+ * Hostnames condition says.
+ */
+function HostnamesCard({ e, edit }: { e: PublicEndpoint; edit?: () => void }) {
+  const domains = useProjectDomains(e.metadata?.project ?? "");
+  const hostnames = e.spec?.hostnames ?? [];
+  const cond = conditionOf(e.status?.conditions, "Hostnames");
+  const isPublic = e.spec?.access === PublicEndpointAccess.PUBLIC;
+  return (
+    <Card>
+      <CardHeader
+        title={
+          <span className="flex items-baseline gap-2">
+            Hostnames
+            <span className="font-mono text-[11.5px] font-normal text-subtle">{1 + hostnames.length}</span>
+          </span>
+        }
+        action={
+          edit && (
+            <Button size="sm" variant="ghost" onClick={edit} className="-mr-2">
+              <AtSign /> Edit hostnames
+            </Button>
+          )
+        }
+      />
+      <ul className="divide-y">
+        <li className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+          <Led tone={e.status?.url ? "ok" : "pending"} />
+          <span className="flex min-w-0 flex-1 items-center gap-1">
+            {e.status?.url ? (
+              <>
+                <HostLink url={e.status.url} />
+                <CopyButton text={e.status.url} />
+              </>
+            ) : (
+              <span className="text-subtle">no URL yet</span>
+            )}
+          </span>
+          <span className="shrink-0 text-[12px] text-subtle">its own</span>
+        </li>
+        {hostnames.map((h) => {
+          const url = e.status?.hostnameUrls.find((u) => u === `https://${h}`);
+          const d = domainFor(h, domains.items);
+          return (
+            <li key={h} className="flex items-start gap-3 px-4 py-2.5 text-[13px]">
+              <Led tone={url ? "ok" : "pending"} className="mt-1.5" />
+              <span className="min-w-0 flex-1">
+                {url ? (
+                  <span className="flex min-w-0 items-center gap-1">
+                    <HostLink url={url} />
+                    <CopyButton text={url} />
+                  </span>
+                ) : (
+                  <>
+                    <span className="block truncate font-mono text-[12.5px]">{h}</span>
+                    <span className="block text-[12px] text-muted">
+                      {cond?.reason === "DomainNotVerified" || (d && !isVerified(d))
+                        ? `Waits for ${d ? domainOf(d) : "its custom domain"} to be verified.`
+                        : "Not serving yet."}
+                    </span>
+                  </>
+                )}
+              </span>
+              <span className="shrink-0 pt-0.5 text-[12px] text-subtle">{url ? "serving" : "waiting"}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {hostnames.length === 0 && (
+        <p className="border-t px-4 py-2.5 text-[12.5px] text-muted">
+          {ownerOf(e)
+            ? "An endpoint a container's port made serves at its own hostname alone."
+            : isPublic
+              ? "No custom hostname."
+              : "Only public endpoints serve at custom hostnames."}
+        </p>
+      )}
+    </Card>
+  );
+}
+
+/** What applying the rows does to spec.hostnames, as "Adds a · Removes b"; "" for no change. */
+function hostnameChange(before: string[], after: string[]): string {
+  const added = after.filter((h) => !before.includes(h));
+  const removed = before.filter((h) => !after.includes(h));
+  return [...(added.length ? [`Adds ${added.join(", ")}`] : []), ...(removed.length ? [`Removes ${removed.join(", ")}`] : [])].join(" · ");
+}
+
+/**
+ * Edit hostnames: the endpoint's custom hostnames as the create page's rows.
+ * It applies the endpoint as it opened on with spec.hostnames alone
+ * changed, at that resource version, as Edit labels does: a newer endpoint
+ * is never written over, and Reload starts the rows again from it. The rows
+ * wait for the project's custom domains, which say where each hostname's
+ * domain ends.
+ */
+function HostnamesDialog({ onClose, endpoint }: { onClose: () => void; endpoint: PublicEndpoint }) {
+  const domains = useProjectDomains(endpoint.metadata?.project ?? "");
+  return (
+    <Dialog open onClose={onClose} title={`Edit hostnames of ${nameOf(endpoint)}`} wide>
+      {domains.loading ? (
+        <div aria-busy="true" aria-label="Loading" className="space-y-2 py-2">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      ) : domains.error ? (
+        <ErrorNotice error={domains.error} title="The project's custom domains did not load" onRetry={domains.refetch} className="px-0" />
+      ) : (
+        <HostnamesForm endpoint={endpoint} domains={domains} onClose={onClose} />
+      )}
+    </Dialog>
+  );
+}
+
+function HostnamesForm({ endpoint, domains, onClose }: { endpoint: PublicEndpoint; domains: ListState<CustomDomain>; onClose: () => void }) {
+  const [base, setBase] = useState(endpoint);
+  const project = base.metadata?.project ?? "";
+  const name = nameOf(base);
+  const before = base.spec?.hostnames ?? [];
+  const [rows, setRows] = useState<HostnameRow[]>(() => rowsOf(before, domains.items));
+  const apply = useApplyObjectAt("publicEndpoint");
+  const reload = useReadObject("publicEndpoint", project, name);
+  const stale = isStale(apply.error);
+  const after = rows.map(hostnameOf);
+  const change = hostnameChange(before, after);
+  const obj = clone(PublicEndpointSchema, base);
+  if (obj.spec) obj.spec.hostnames = after;
+  const startAgain = () =>
+    reload.mutate(undefined, {
+      onSuccess: (fresh) => {
+        setBase(fresh);
+        setRows(rowsOf(fresh.spec?.hostnames ?? [], domains.items));
+        apply.reset();
+      },
+    });
+  return (
+    <>
+      <p className="mb-4">
+        Besides <span className="font-mono text-foreground">{base.status?.hostname}</span>, the endpoint serves at these, each a custom domain of the
+        tenant or one label below one. Open connections at a hostname taken out close.
+      </p>
+      <HostnameRows rows={rows} onChange={setRows} domains={domains} />
+      <div className="mt-4 text-[12.5px] text-foreground">{change || "No change"}</div>
+      <FormEquivalent yaml={endpointYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />
+      {stale && <StaleNotice title={`${name} changed since this dialog opened.`} reloading={reload.isPending} error={reload.error} onReload={startAgain} />}
+      <FormFooter
+        problems={rowProblems(rows)}
+        blocked={!change || stale}
+        error={stale ? null : apply.error}
+        failed="Changing the hostnames failed"
+        pending={apply.isPending}
+        pendingLabel="Applying…"
+        label={
+          <>
+            <AtSign /> Apply
+          </>
+        }
+        onCancel={onClose}
+        onSubmit={() => apply.mutate(obj, { onSuccess: onClose })}
+      />
+    </>
+  );
+}

@@ -20,7 +20,7 @@ export function computeTiles(limits: Limits | undefined, usage: Usage | undefine
   ];
 }
 
-/** The counted kinds; a tenant's list starts with its projects. */
+/** The counted kinds; a tenant's list starts with its projects and ends with its custom domains, which are the tenant's alone. */
 export function otherTiles(limits: Limits | undefined, usage: Usage | undefined, withProjects = false): Tile[] {
   return [
     ...(withProjects ? [{ key: "projects", label: "Projects", used: usage?.projects ?? 0, limit: limits?.projects }] : []),
@@ -28,6 +28,7 @@ export function otherTiles(limits: Limits | undefined, usage: Usage | undefined,
     { key: "addresses", label: "Addresses", used: usage?.addresses ?? 0, limit: limits?.addresses },
     { key: "publicEndpoints", label: "Public endpoints", used: usage?.publicEndpoints ?? 0, limit: limits?.publicEndpoints },
     { key: "serviceTokens", label: "Service tokens", used: usage?.serviceTokens ?? 0, limit: limits?.serviceTokens },
+    ...(withProjects ? [{ key: "domains", label: "Domains", used: usage?.domains ?? 0, limit: limits?.domains }] : []),
   ];
 }
 

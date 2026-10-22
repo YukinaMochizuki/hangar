@@ -160,6 +160,7 @@ export function DetailFrame({
   found,
   noun,
   name,
+  where = "This project",
   children,
 }: {
   crumbs: ReactNode[];
@@ -167,6 +168,8 @@ export function DetailFrame({
   found: boolean;
   noun: string;
   name: string;
+  /** What holds the object, as the not-found sentence starts: "This project", "This tenant". */
+  where?: string;
   children: ReactNode;
 }) {
   return (
@@ -182,7 +185,7 @@ export function DetailFrame({
         </div>
       ) : !found ? (
         <EmptyState title={`No such ${noun}`}>
-          This project has no {noun} named <span className="font-mono">{name}</span>.
+          {where} has no {noun} named <span className="font-mono">{name}</span>.
         </EmptyState>
       ) : (
         children
