@@ -31,7 +31,7 @@ func TestNoMailFromANetwork(t *testing.T) {
 		name   string
 		chains []chainSpec
 	}{
-		{"IPv4", rootChains("eth0", netip.Addr{})},
+		{"IPv4", rootChains("eth0", netip.Addr{}, netip.Addr{})},
 		{"IPv6", rootChains6("eth0", prefix, netip.Addr{})},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -77,7 +77,7 @@ func ctStateOf(r ruleSpec) (uint32, bool) {
 func TestNothingInvalidLeavesANetwork(t *testing.T) {
 	prefix := netip.MustParsePrefix("2001:db8:0:1::/64")
 	for name, chains := range map[string][]chainSpec{
-		"IPv4": rootChains("eth0", netip.Addr{}),
+		"IPv4": rootChains("eth0", netip.Addr{}, netip.Addr{}),
 		"IPv6": rootChains6("eth0", prefix, netip.Addr{}),
 	} {
 		rules := forwardOf(t, chains).rules
@@ -106,7 +106,7 @@ func TestNothingInvalidLeavesANetwork(t *testing.T) {
 // rule sets, on a network's new connections, a mark of the tag and the
 // index of the link they came in by, which FollowNAT reads back.
 func TestNewConnectionsAreMarkedWithTheirVeth(t *testing.T) {
-	rules := forwardOf(t, rootChains("eth0", netip.Addr{})).rules
+	rules := forwardOf(t, rootChains("eth0", netip.Addr{}, netip.Addr{})).rules
 	r := rules[len(rules)-1]
 	var iif, set bool
 	var bits *expr.Bitwise

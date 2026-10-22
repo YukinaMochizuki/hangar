@@ -71,8 +71,9 @@ address.
   each kept until its last machine is gone.
 - **Inside a node**, each network's namespace reaches the host through a veth
   pair on its transit link. IPv4 egress is two NATs: the namespace maps its
-  range to its transit address, and the host maps 100.64.0.0/10 to the public
-  address. Overlapping tenant ranges never meet on the host.
+  range to its transit address, and the host maps 100.64.0.0/10 to the shared
+  address, or the host's own without one ("The shared IPv4 address",
+  below). Overlapping tenant ranges never meet on the host.
 - **The network driver (`internal/node/driver/hostnet`) builds a node's
   side** with netlink and nftables, never by running `ip` or `nft`, and keeps
   no state: its namespaces and links are named with the prefix `hn` and its
@@ -108,11 +109,14 @@ address.
     stays blocked, the host stays unreachable but for the front door's
     ports at its public addresses, which anyone reaches, and a network sends only from its own /128s. Table
     `ip hangar` in the root namespace has nine rules, eleven with a public
-    address set, however many networks there are:
+    address set and thirteen with a shared one too, however many networks
+    there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
       iif oif missing`), so a network sends only as its own transit address;
     - postrouting: 100.64.0.0/10 leaving the uplink is SNATed to the
+      shared address, TCP and UDP from its ports 32768 to 65535 (two
+      rules) and anything else as it is (a third); without one, to the
       configured public address (masqueraded if none is set);
     - forward, six: from `hnv*`, drop TCP to ports 25 and 465, and what
       conntrack finds invalid (the abuse protection below); into `hnv*`,
@@ -272,8 +276,8 @@ address.
     again at the next ensure.
   - What the driver needs of the host is deploy/host's: IPv4 forwarding on
     (it refuses to make a network otherwise), the uplink's name and,
-    optionally, the public address as `hangar-node` flags (`--uplink`,
-    `--public-ipv4`), and for IPv6 the prefix (`--public-ipv6-prefix`, the
+    optionally, the public and shared addresses as `hangar-node` flags (`--uplink`,
+    `--public-ipv4`, `--shared-ipv4`), and for IPv6 the prefix (`--public-ipv6-prefix`, the
     /64 of `HANGAR_IPV6_ADDR`), IPv6 forwarding and proxy NDP on the uplink
     (it refuses to make a network with a prefix otherwise), nftables in the kernel, `/run/netns` shared with the
     agent's mount namespace, no networkd config matching `hn*` links, and no
@@ -448,6 +452,27 @@ address.
     the network's interfaces on that node to all but its services rather
     than leave older rules in force, and the resolver, DHCP and metadata
     service keep following the network's machines.
+- **The shared IPv4 address**: the machines' IPv4 leaves as an address of
+  its own, another than the host's (`--shared-ipv4`, deploy/host's
+  `HANGAR_SHARED_IPV4`; at OVH an Additional IP routed to the server, so no
+  virtual MAC: no frame of a guest's reaches the switch). The host's own
+  address keeps SSH, the front door and the control plane's names, so what
+  machines do on the internet (a blocklisting, an abuse report, OVH's
+  mitigation of a flood, which is per address) never takes the platform
+  with it.
+  - The host holds the address on the uplink as a /32 with a preferred
+    lifetime of 0, so it takes the address in but never picks it to send
+    from, and its firewall drops all input to it: it serves nothing there,
+    SSH included. The machines' replies, de-NATed in prerouting, are
+    forwarded, never input.
+  - The machines' TCP and UDP leave it from ports 32768 to 65535, so the
+    ports below are free for forwards into machines, and a port at the
+    address is either a connection out, which the NAT log names, or a
+    forward in, never both.
+  - Networks still reach the front door at the host's own address only,
+    which is where the platform's public names resolve.
+  - Without one, the machines leave as the host's own address, as before
+    there was one.
 - **Public IPv6**: every machine interface has a public /128 of its host's
   /64 (above), its identity both ways, with no NAT, so one machine's abuse
   does not taint the shared IPv4. It is routed to the machine with proxy

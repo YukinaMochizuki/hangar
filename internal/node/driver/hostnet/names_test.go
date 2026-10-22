@@ -169,7 +169,7 @@ func comments(t *testing.T, chains []chainSpec) []string {
 }
 
 func TestChains(t *testing.T) {
-	masq := comments(t, rootChains("eth0", netip.Addr{}))
+	masq := comments(t, rootChains("eth0", netip.Addr{}, netip.Addr{}))
 	if len(masq) != 9 {
 		t.Fatalf("%d root rules, want 9: %q", len(masq), masq)
 	}
@@ -180,8 +180,10 @@ func TestChains(t *testing.T) {
 	// A change of parameters must change a comment, or tableIs would take
 	// the old rules for the new.
 	for _, other := range [][]string{
-		comments(t, rootChains("eth0", netip.MustParseAddr("192.0.2.1"))),
-		comments(t, rootChains("eth1", netip.Addr{})),
+		comments(t, rootChains("eth0", netip.MustParseAddr("192.0.2.1"), netip.Addr{})),
+		comments(t, rootChains("eth1", netip.Addr{}, netip.Addr{})),
+		comments(t, rootChains("eth0", netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("192.0.2.2"))),
+		comments(t, rootChains("eth0", netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("192.0.2.3"))),
 	} {
 		if !slices.ContainsFunc(other, func(c string) bool { return !slices.Contains(masq, c) }) {
 			t.Errorf("root rules for other parameters share every comment: %q", other)
@@ -197,7 +199,7 @@ func TestChains(t *testing.T) {
 	}
 	// What a comment says is not all: the same words over other
 	// expressions are another comment.
-	r := rootChains("eth0", netip.Addr{})[0].rules[0]
+	r := rootChains("eth0", netip.Addr{}, netip.Addr{})[0].rules[0]
 	before, _ := r.comment()
 	r.exprs = r.exprs[:len(r.exprs)-1]
 	if after, _ := r.comment(); after == before {
@@ -256,7 +258,7 @@ func TestTheFrontDoorIsTheHostsOnlyWayIn(t *testing.T) {
 		addr   netip.Addr
 		before int
 	}{
-		{"IPv4", rootChains("eth0", v4), v4, 0},
+		{"IPv4", rootChains("eth0", v4, netip.Addr{}), v4, 0},
 		{"IPv6", rootChains6("eth0", prefix, v6), v6, 2},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -285,7 +287,7 @@ func TestTheFrontDoorIsTheHostsOnlyWayIn(t *testing.T) {
 		})
 	}
 	// Without the host's addresses, a network reaches nothing of it.
-	if n := len(inputOf(t, rootChains("eth0", netip.Addr{})).rules); n != 1 {
+	if n := len(inputOf(t, rootChains("eth0", netip.Addr{}, netip.Addr{})).rules); n != 1 {
 		t.Errorf("IPv4 without a public address: %d input rules, want the drop alone", n)
 	}
 	if n := len(inputOf(t, rootChains6("eth0", prefix, netip.Addr{})).rules); n != 3 {

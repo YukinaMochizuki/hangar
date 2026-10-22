@@ -144,6 +144,7 @@ HANGAR_SWAP_MD_NAME=swap
 HANGAR_ZPOOL=hangar
 HANGAR_ARC_MAX_BYTES=1073741824
 HANGAR_PUBLIC_IPV4=192.0.2.10
+HANGAR_SHARED_IPV4=192.0.2.20
 HANGAR_IMAGES_QUOTA=1G
 HANGAR_VMS_QUOTA=1G
 HANGAR_RESERVED_MEMORY=256Mi
@@ -257,7 +258,7 @@ test_converges_and_is_idempotent() {
 	# Where machines reach the front door: the agent's rules for it are
 	# test/testbed/network's to test. The address is the env file's in its
 	# canonical form, as load_env makes it.
-	systemctl show -p ExecStart --value hangar-node | grep -q -- '--public-ipv4 192.0.2.10 --public-ipv6 2001:db8:0:1::1 --public-ipv6-prefix 2001:db8:0:1::/64' ||
+	systemctl show -p ExecStart --value hangar-node | grep -q -- '--public-ipv4 192.0.2.10 --shared-ipv4 192.0.2.20 --public-ipv6 2001:db8:0:1::1 --public-ipv6-prefix 2001:db8:0:1::/64' ||
 		fail "the agent is not given the host's addresses: $(systemctl show -p ExecStart --value hangar-node)"
 
 	step "the SSH CA, installed as the runbook says, is the apiserver's, and verify checks it"
@@ -604,7 +605,9 @@ door_curl() {
 test_front_door() {
 	step "the front door: hangar-edge, never root, takes :443 and :80 from systemd for IPv4 and IPv6, with certificates over DNS-01"
 	local tls=$work/front-door edge_release=$work/release-edge log=$work/door.log out v4 v6=2001:db8:0:1::1 pid since
-	v4=$(ip -4 -o addr show dev tb-uplink scope global | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+	# The host's own address, the DHCP lease: not the shared one, which the
+	# uplink holds beside it for the guests alone.
+	v4=$(ip -4 -o addr show dev tb-uplink scope global | awk '{print $4}' | grep -vx '192.0.2.20/32' | cut -d/ -f1 | head -n 1)
 	# The VM's own default route, learned on its real link, beats the
 	# uplink's for IPv6; on a host the uplink is the only one. Replies to
 	# the upstream leave by the uplink for this test.
@@ -750,7 +753,41 @@ EOF
 		from_outside curl -s -m 3 -o /dev/null "http://$addr:9999/" && fail "the outside reached :9999 at $addr"
 		from_outside timeout 3 bash -c "exec 3<>/dev/tcp/${addr//[\[\]]/}/22" || fail "the outside cannot reach SSH at $addr"
 	done
+	# The shared address is the guests' alone: nothing of the host's answers
+	# there, SSH and the front door included, and the host never sends from
+	# it.
+	# Each listing is read whole before it is matched: grep -q stops reading
+	# at its match, and the lister, killed by SIGPIPE, fails the pipeline.
+	local addrs fw
+	addrs=$(ip -4 -o addr show dev tb-uplink)
+	grep -qE ' inet 192\.0\.2\.20/32 .*deprecated' <<<"$addrs" ||
+		fail "the uplink does not hold the shared address as one never sent from: $addrs"
+	for port in 22 80 443 9999; do
+		from_outside timeout 3 bash -c "exec 3<>/dev/tcp/192.0.2.20/$port" && fail "the outside reached the host's :$port at the shared address"
+	done
 	systemctl stop tb-listen
+
+	step "unsetting the shared address takes it off the uplink; the network step alone drops input to it before putting it back"
+	grep -v '^HANGAR_SHARED_IPV4=' "$env_file" >"$work/noshared.env"
+	chmod 600 "$work/noshared.env"
+	"$host_dir/bootstrap.sh" --env "$work/noshared.env" >/dev/null || fail "bootstrap without a shared address failed"
+	addrs=$(ip -4 -o addr show dev tb-uplink)
+	grep -qF ' inet 192.0.2.20/' <<<"$addrs" && fail "the shared address stayed on the uplink: $addrs"
+	fw=$(nft list table inet hangar-host)
+	grep -qF 192.0.2.20 <<<"$fw" && fail "the firewall still names the shared address"
+	"$host_dir/verify.sh" --env "$work/noshared.env" >"$work/noshared-verify.log" || fail "verify without a shared address: $(grep FAIL "$work/noshared-verify.log")"
+	"$host_dir/bootstrap.sh" --only network >"$work/shared-back.log" 2>&1 || fail "the network step did not put the shared address back: $(cat "$work/shared-back.log")"
+	fw=$(nft list table inet hangar-host)
+	grep -qF 'ip daddr 192.0.2.20 drop' <<<"$fw" || fail "the shared address is back without the firewall dropping input to it: $fw"
+	addrs=$(ip -4 -o addr show dev tb-uplink)
+	grep -qE ' inet 192\.0\.2\.20/32 .*deprecated' <<<"$addrs" || fail "the network step did not put the shared address back: $addrs"
+	# The rest, the agent's --shared-ipv4 among it, comes back with a whole run.
+	"$host_dir/bootstrap.sh" >/dev/null || fail "bootstrap with the shared address back failed"
+	[[ "$(systemctl show -p ExecStart --value hangar-node)" == *'--shared-ipv4 192.0.2.20'* ]] || fail "the agent is not given the shared address back"
+	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after putting the shared address back"
+	# The netplan applies above took the test's own route to the upstream,
+	# made at the start of this test, with the rest of the uplink's.
+	ip -6 route replace 2001:db8:0:ff::/64 dev tb-uplink
 
 	step "with the firewall in place, a guest still reaches the outside over IPv4 NAT and IPv6, and is reached over IPv6"
 	# A stand-in for a guest: a namespace behind a veth, masqueraded out of
@@ -1061,8 +1098,11 @@ test_verify_catches_service_drift() {
 		fail "verify passed on a drifted host"
 	fi
 	# images, vms, natlog, release checksums, upgrade files, timers, units
-	# running, socket, loopback listener, node Ready.
-	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 10 ] || fail "expected 10 FAIL lines: $(cat "$work/drift2.log")"
+	# running, socket, loopback listener, node Ready; and, the apiserver
+	# being stopped, the monitoring step's four checks that reach it: its
+	# /metrics, MonitoringService, and Prometheus's scrapes of every target
+	# and of the apiserver.
+	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 14 ] || fail "expected 14 FAIL lines: $(cat "$work/drift2.log")"
 	"$host_dir/bootstrap.sh" --release "$release" >/dev/null
 	"$host_dir/verify.sh" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
 	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the repair"

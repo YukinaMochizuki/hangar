@@ -35,10 +35,18 @@ import (
 type Config struct {
 	// Uplink is the link the host reaches the internet through.
 	Uplink string
-	// PublicIPv4 is the address the networks' traffic leaves the uplink
-	// as. Unset, it is whichever address the uplink has when a connection
-	// starts.
+	// PublicIPv4 is the host's own address, where the networks reach the
+	// front door's ports, and, without SharedIPv4, the address their
+	// traffic leaves the uplink as. Unset, they reach nothing of the host's
+	// over IPv4, and their traffic leaves as whichever address the uplink
+	// has when a connection starts.
 	PublicIPv4 netip.Addr
+	// SharedIPv4 is the address the networks' traffic leaves the uplink as
+	// when set, another than the host's own, so what machines do on the
+	// internet is never the host's address's doing
+	// (docs/decisions/networking.md, "The shared IPv4 address"). Their TCP
+	// and UDP leave it from ports at and above SharedPortsFrom.
+	SharedIPv4 netip.Addr
 	// IPv6Prefix is the host's public /64, on the uplink's link, which
 	// interfaces' IPv6 addresses are of. Unset, the networks have no IPv6.
 	IPv6Prefix netip.Prefix
@@ -76,6 +84,9 @@ func New(cfg Config) (*Driver, error) {
 	}
 	if cfg.PublicIPv4.IsValid() && !cfg.PublicIPv4.Is4() {
 		return nil, fmt.Errorf("public address %s is not IPv4", cfg.PublicIPv4)
+	}
+	if cfg.SharedIPv4.IsValid() && (!cfg.SharedIPv4.Is4() || cfg.SharedIPv4 == cfg.PublicIPv4) {
+		return nil, fmt.Errorf("shared address %s is not an IPv4 address other than the public one", cfg.SharedIPv4)
 	}
 	if cfg.PublicIPv6.IsValid() && (!cfg.PublicIPv6.Is6() || cfg.PublicIPv6.Is4In6() || cfg.PublicIPv6.Zone() != "") {
 		return nil, fmt.Errorf("public address %s is not IPv6", cfg.PublicIPv6)
@@ -232,7 +243,7 @@ func (d *Driver) ensureRoot() error {
 	if err != nil {
 		return err
 	}
-	if err := ensureTable(conn, nftables.TableFamilyIPv4, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4)); err != nil {
+	if err := ensureTable(conn, nftables.TableFamilyIPv4, rootChains(d.cfg.Uplink, d.cfg.PublicIPv4, d.cfg.SharedIPv4)); err != nil {
 		return err
 	}
 	if d.cfg.IPv6Prefix.IsValid() {
