@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	secretsv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/secrets/v1alpha1"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
@@ -88,6 +90,8 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 		header += "\tREGISTRIES"
 	case registry.Disk.Kind:
 		header += "\tUSED AS"
+	case registry.PortForward.Kind:
+		header += "\tIPV4\tPORT\tPROTOCOL\tTARGET"
 	}
 	if allProjects && r.ProjectScoped() {
 		header = "PROJECT\t" + header
@@ -101,6 +105,8 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 			row += "\t" + cmp.Or(strings.Join(o.GetStatus().GetRegistries(), ","), "-")
 		case *storagev1alpha1.Disk:
 			row += "\t" + usedAs(o.GetStatus().GetAttachment())
+		case *networkv1alpha1.PortForward:
+			row += "\t" + forwardColumns(o)
 		}
 		if allProjects && r.ProjectScoped() {
 			row = meta.GetProject() + "\t" + row
@@ -118,6 +124,29 @@ func usedAs(a *storagev1alpha1.DiskAttachment) string {
 	}
 	role := strings.ToLower(strings.TrimPrefix(a.GetAs().String(), "DISK_ATTACHMENT_ROLE_"))
 	return role + " of " + strings.ToLower(cmp.Or(a.GetKind(), "machine")) + "/" + cmp.Or(a.GetName(), a.GetMachine())
+}
+
+// forwardColumns are a port forward's columns: its address, public port,
+// protocol, and the interface and port it leads to, such as
+// "container/web:eth0:8080"; "-" for what it does not have yet.
+func forwardColumns(pf *networkv1alpha1.PortForward) string {
+	port := "-"
+	if p := pf.GetStatus().GetPort(); p != 0 {
+		port = strconv.Itoa(int(p))
+	}
+	protocol := strings.TrimPrefix(pf.GetSpec().GetProtocol().String(), "PROTOCOL_")
+	t := pf.GetSpec().GetTarget()
+	target := "-"
+	switch {
+	case t.GetVirtualMachine() != "":
+		target = "virtualmachine/" + t.GetVirtualMachine()
+	case t.GetContainer() != "":
+		target = "container/" + t.GetContainer()
+	}
+	if target != "-" {
+		target += ":" + cmp.Or(t.GetInterface(), "eth0") + ":" + strconv.Itoa(int(pf.GetSpec().GetTargetPort()))
+	}
+	return strings.Join([]string{cmp.Or(pf.GetStatus().GetIpv4(), "-"), port, protocol, target}, "\t")
 }
 
 func objectName(r registry.Resource, o proto.Message) string {
