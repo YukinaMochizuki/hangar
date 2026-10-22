@@ -146,8 +146,11 @@ export function useCheckDomain(name: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async () => (await createClient(CustomDomainCheckService, transport).checkCustomDomain({ name })).customDomain,
-    onSuccess: (d) => {
+    onSuccess: async (d) => {
       if (!d) return;
+      // A poll of the list sent before the check wrote the status would
+      // answer after it with the domain as it was.
+      await queryClient.cancelQueries({ queryKey: domainListKey });
       queryClient.setQueryData<CustomDomain[]>(domainListKey, (items) => items?.map((x) => (nameOf(x) === nameOf(d) ? d : x)));
     },
   });

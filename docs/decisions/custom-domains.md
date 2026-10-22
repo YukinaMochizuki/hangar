@@ -55,22 +55,40 @@ otherwise a stale record pointing at the host would let anyone take it.
   a deleted one proves nothing for the next.
 - **It asks the domain's own nameservers** (`internal/dnscheck`), found
   through `--custom-domain-resolver` or the system's resolvers, without
-  recursion, following delegations below the zone; only when none of them
-  answers does it take a resolver's answer, and the status says whose it
-  was. A resolver keeps "no such record" for the zone's negative TTL, often
-  half an hour, and a tenant usually adds the record after making the
-  domain, so a resolver's answer would hold the domain back that long: it
-  did on the first production domain, whose host's resolver and OVH's
-  behind it both remembered the record missing.
+  recursion and over TCP, following delegations below the zone; only when
+  none of them answers does it take a resolver's answer, and the status
+  says whose it was. A resolver keeps "no such record" for the zone's
+  negative TTL, often half an hour, and a tenant usually adds the record
+  after making the domain, so a resolver's answer would hold the domain
+  back that long: it did on the first production domain, whose host's
+  resolver and OVH's behind it both remembered the record missing.
+- **The tenant names the servers asked**, through its zone's NS records
+  and glue, so a lookup is bounded: 15 seconds in all, 3 seconds a query,
+  4 nameservers and 6 addresses a level, 3 delegations, each to a zone
+  below the last and at or above the name looked up. Nameservers are asked
+  at public addresses alone, never loopback, private, link-local, shared
+  (100.64.0.0/10) or unique-local ones, which reach the apiserver's host
+  and networks; and the status says what failed in words of its own,
+  never a socket's error, which would name them. TCP, not UDP, so no one
+  off the path forges the answer. The controller's single worker waits on
+  one lookup at most that long.
+- **What was looked up must still be the domain's.** The lookup runs
+  outside the `customDomains` lock; under it, its answer is used only if
+  the domain read again has the UID and `spec.domain` looked up. Else a
+  tenant could delete a domain during a lookup in a zone of its own, make
+  it again under the name for another's, and answer with the new one's
+  target.
 - **Checking now.** `CustomDomainCheckService.CheckCustomDomain` (a
   service of its own, as the token issuer is) does one such check at once,
   writes the status and returns the domain; a verified one is returned as
   it is, nothing looked up. It takes `network.customdomains.apply` at the
   tenant, as changing the domain does: it writes the status and makes the
   apiserver ask the domain's nameservers, so a domain's readers in its
-  projects may not. `hangar check customdomain NAME` calls it, exiting 1
-  while not verified, and `--wait` asks again every 10 seconds; the
-  console's domain page has Check now.
+  projects may not. A domain is checked once in 5 seconds at most, and 4
+  checks run at once; past either, `RESOURCE_EXHAUSTED` says when to try
+  again. `hangar check customdomain NAME` calls it, exiting 1 while not
+  verified, and `--wait` asks again every 10 seconds, stopping when
+  another tenant holds the name; the console's domain page has Check now.
 - **What is served.** A verified domain gets two certificates, the
   domain's and its wildcard's, kept by the front door like its own
   (`internal/edge/front/certs.go`: one certmagic config per domain,
@@ -142,10 +160,15 @@ otherwise a stale record pointing at the host would let anyone take it.
 - A connection opened for one custom domain's certificate may carry
   requests for any endpoint hostname, as one for the endpoints' wildcard
   may: the front door's 421 tells its sites apart, not endpoints.
-- Tests: `internal/customdomain` (the rules); `internal/apiserver`
-  (`customdomains_test.go`: admission, who verifies first and two tenants
-  verifying at once, racing hostname claims, nested domains, who may read
-  and write, verification against a DNS server, the plan);
+- Tests: `internal/customdomain` (the rules); `internal/dnscheck` (the
+  nameservers asked over the resolver that remembers the record missing,
+  delegations and their bounds, public addresses alone, the lookup's
+  limits); `internal/apiserver` (`customdomains_test.go`: admission, who
+  verifies first and two tenants verifying at once, racing hostname
+  claims, nested domains, who may read and write, verification against a
+  DNS server, the plan; `customdomaincheck_test.go`: Check now, who may,
+  its limits, a domain made again during its lookup); `internal/cli`
+  (`check_test.go`);
   `internal/edge` (`domains_test.go`: serving only once verified and only
   under the endpoint's own tenant's domain, requests ended when a hostname
   stops, cookies); and `internal/edge/front` (certificates from pebble

@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -43,6 +44,9 @@ type PublicEndpointsConfig struct {
 	// Nameserver, if set, is where a nameserver of the given name and
 	// address is asked, as host:port; nil is its port 53. For tests.
 	Nameserver func(host string, addr netip.Addr) string
+	// CheckInterval is how soon CheckCustomDomain checks a domain again;
+	// zero is five seconds. For tests, which check one again at once.
+	CheckInterval time.Duration
 }
 
 // PublicEndpoint condition types and reasons, the public endpoint

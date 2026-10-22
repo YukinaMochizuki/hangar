@@ -23,6 +23,10 @@ const checkEvery = 10 * time.Second
 // errNotVerified is a check that found the domain not verified.
 var errNotVerified = errors.New("not verified")
 
+// reasonHeldByAnotherTenant is the Verified reason of a domain whose name
+// another tenant verified first, as the apiserver writes it.
+const reasonHeldByAnotherTenant = "HeldByAnotherTenant"
+
 // checkCmd is "check": a custom domain's challenge record looked for now.
 func (a *app) checkCmd() *cobra.Command {
 	var output string
@@ -41,7 +45,9 @@ tenant.
 
 It prints whether the domain is verified, and why not. It exits 0 once it
 is, and 1 when it is not: an agent can retry, or pass --wait, which asks
-again every 10 seconds until it is or the timeout passes (exit 5).
+again every 10 seconds until it is or the timeout passes (exit 5), and
+stops at once with exit 1 when another tenant holds the name, which no
+record of this tenant's changes.
 
 Only custom domains (customdomain, cdom) are checked.`,
 		Example: "  hangar check customdomain example-com\n  hangar check cdom example-com --wait --timeout=30m -o json",
@@ -49,6 +55,9 @@ Only custom domains (customdomain, cdom) are checked.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if output != "" && output != "name" && output != "json" {
 				return usageErr("check prints name or json, not %q", output)
+			}
+			if !wait && cmd.Flags().Changed("timeout") {
+				return usageErr("--timeout is how long --wait waits; pass --wait")
 			}
 			r, err := findKind(args[0])
 			if err != nil {
@@ -70,32 +79,46 @@ Only custom domains (customdomain, cdom) are checked.`,
 				ctx, cancel = context.WithTimeout(ctx, timeout)
 				defer cancel()
 			}
-			for {
-				res, err := checks.CheckCustomDomain(ctx, connect.NewRequest(&networkv1alpha1.CheckCustomDomainRequest{Name: args[1]}))
-				if err != nil {
-					if wait {
-						return timeoutOr(ctx, err)
-					}
-					return err
-				}
-				d := res.Msg.GetCustomDomain()
-				verified := conditions.Find(d.GetStatus().GetConditions(), "Verified")
-				done := verified.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_TRUE
-				if done || !wait {
-					if err := a.printCheck(cmd, output, r, d, verified); err != nil {
+			// last is what the last check found, printed when waiting ends
+			// without the domain verified.
+			var last *networkv1alpha1.CustomDomain
+			giveUp := func() error {
+				if last != nil {
+					if err := a.printCheck(cmd, output, r, last); err != nil {
 						return err
 					}
-					if done {
-						return nil
+				}
+				if ctx.Err() == context.DeadlineExceeded {
+					return &exitError{code: ExitTimeout, err: errors.New("timed out before the domain was verified")}
+				}
+				return errors.New("interrupted before the domain was verified")
+			}
+			for {
+				res, err := checks.CheckCustomDomain(ctx, connect.NewRequest(&networkv1alpha1.CheckCustomDomainRequest{Name: args[1]}))
+				switch {
+				case err != nil && wait && ctx.Err() != nil:
+					return giveUp()
+				case err != nil && wait && connect.CodeOf(err) == connect.CodeResourceExhausted:
+					// Checked a moment ago; the next round asks again.
+				case err != nil:
+					return err
+				default:
+					last = res.Msg.GetCustomDomain()
+					verified := conditions.Find(last.GetStatus().GetConditions(), "Verified")
+					done := verified.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_TRUE
+					if done || !wait || verified.GetReason() == reasonHeldByAnotherTenant {
+						if err := a.printCheck(cmd, output, r, last); err != nil {
+							return err
+						}
+						if done {
+							return nil
+						}
+						return &exitError{code: ExitError, err: errNotVerified}
 					}
-					return &exitError{code: ExitError, err: errNotVerified}
 				}
 				select {
 				case <-ctx.Done():
-					if err := a.printCheck(cmd, output, r, d, verified); err != nil {
-						return err
-					}
-					return timeoutOr(ctx, nil)
+					return giveUp()
 				case <-time.After(checkEvery):
 				}
 			}
@@ -108,7 +131,8 @@ Only custom domains (customdomain, cdom) are checked.`,
 }
 
 // printCheck prints what a check found.
-func (a *app) printCheck(cmd *cobra.Command, output string, r registry.Resource, d *networkv1alpha1.CustomDomain, verified *metav1.Condition) error {
+func (a *app) printCheck(cmd *cobra.Command, output string, r registry.Resource, d *networkv1alpha1.CustomDomain) error {
+	verified := conditions.Find(d.GetStatus().GetConditions(), "Verified")
 	switch output {
 	case "json":
 		return a.printObjects(cmd.OutOrStdout(), "json", r, []proto.Message{d}, true, false)

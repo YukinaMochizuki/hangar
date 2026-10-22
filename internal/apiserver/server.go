@@ -151,6 +151,8 @@ type Server struct {
 	// tenants' domains overlap, no two endpoints hold one hostname, and no
 	// domain goes while an endpoint serves under it.
 	customDomains sync.Mutex
+	// domainChecks bounds CheckCustomDomain's lookups.
+	domainChecks checkLimiter
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex

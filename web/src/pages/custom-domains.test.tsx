@@ -8,15 +8,17 @@
 
 import { Code } from "@connectrpc/connect";
 import type { ApplyCustomDomainRequest, DeleteCustomDomainRequest } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { CreateCustomDomain } from "@/pages/create-custom-domain";
+import { domainListKey } from "@/lib/custom-domains";
 import { CustomDomainDetail, CustomDomainList } from "@/pages/custom-domains";
 import { domains, domainsApi, refuse, type DomainOverrides, type DomainsApi } from "@/test/domains-api";
 import { deferred, never, polyfillDialog, withApi } from "@/test/harness";
 import { create } from "@bufbuild/protobuf";
 import { ConditionSchema, ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import type { CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import type { CheckCustomDomainRequest } from "@hangar/api/hangar/network/v1alpha1/custom_domain_check_pb";
 
 const navigate = vi.fn();
@@ -272,12 +274,37 @@ describe("Check now", () => {
     expect(screen.queryByRole("button", { name: /Check now/ })).toBeNull();
   });
 
+  it("keeps what the check answered over a poll of the list sent before it", async () => {
+    const verified = withOrg(ConditionStatus.TRUE, "Verified", "the challenge CNAME is in place, as ns1.example.org answers")[1];
+    const poll = deferred<unknown>();
+    let lists = 0;
+    const api = show(<CustomDomainDetail name="example-org" />, {
+      listCustomDomains: () => (++lists === 1 ? { items: domains() } : poll.promise),
+      checkCustomDomain: () => ({ customDomain: verified }),
+    });
+    await screen.findByRole("button", { name: /Check now/ });
+    const polled = api.client.refetchQueries({ queryKey: domainListKey });
+    await waitFor(() => expect(lists).toBe(2));
+    click(/Check now/);
+    await waitFor(() => expect(screen.queryByText("Waiting for DNS")).toBeNull());
+    // The poll's answer, the domain as it was, drawn if it is taken.
+    await act(async () => {
+      poll.resolve({ items: domains() });
+      await polled;
+    });
+    // What the next drawing of the page reads.
+    const cached = api.client.getQueryData<CustomDomain[]>(domainListKey)?.find((d) => d.metadata?.name === "example-org");
+    expect(cached?.status?.conditions[0]?.reason).toBe("Verified");
+    expect(screen.queryByText("Waiting for DNS")).toBeNull();
+    expect(screen.getAllByText("Verified").length).toBeGreaterThan(0);
+  });
+
   it("shows what the lookup found when the domain still waits", async () => {
-    const still = withOrg(ConditionStatus.FALSE, "ChallengeRecordMissing", "_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net, not old.example.net")[1];
+    const still = withOrg(ConditionStatus.FALSE, "ChallengeRecordMissing", "_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net; ns1.example.org answers it is one of old.example.net")[1];
     show(<CustomDomainDetail name="example-org" />, { checkCustomDomain: () => ({ customDomain: still }) });
     await screen.findByRole("button", { name: /Check now/ });
     click(/Check now/);
-    expect(await screen.findByText("_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net, not old.example.net.")).toBeTruthy();
+    expect(await screen.findByText("_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net; ns1.example.org answers it is one of old.example.net.")).toBeTruthy();
     expect(screen.queryByText("_acme-challenge.example.org must be a CNAME of t-example-org.acme.example.net.")).toBeNull();
   });
 

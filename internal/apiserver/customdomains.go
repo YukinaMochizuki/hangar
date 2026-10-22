@@ -390,9 +390,11 @@ func (s *Server) checkCustomDomain(ctx context.Context, name string) (*networkv1
 	}
 	var found dnscheck.Answer
 	var lookupErr error
-	if !isVerified(d) {
+	looked := !isVerified(d)
+	lookedUID, lookedDomain := d.GetMetadata().GetUid(), d.GetSpec().GetDomain()
+	if looked {
 		// Asked outside the lock, which DNS could otherwise hold for seconds.
-		found, lookupErr = s.lookupChallenge(ctx, customdomain.ChallengeName(d.GetSpec().GetDomain()))
+		found, lookupErr = s.lookupChallenge(ctx, customdomain.ChallengeName(lookedDomain))
 	}
 	// Whether another tenant verified the name first, and this status
 	// written, under the lock every write of a domain holds, so two tenants
@@ -404,6 +406,13 @@ func (s *Server) checkCustomDomain(ctx context.Context, name string) (*networkv1
 	}
 	d = obj.(*networkv1alpha1.CustomDomain)
 	if d.GetMetadata().GetDeleteTime() != nil {
+		return d, nil
+	}
+	// What was looked up is this domain's challenge only if the domain is
+	// still the one it was: deleted and made again under the name, its UID
+	// and so its challenge target differ, and with another spec.domain the
+	// record is another name's. Its own lookup, from the change, follows.
+	if looked && !isVerified(d) && (d.GetMetadata().GetUid() != lookedUID || d.GetSpec().GetDomain() != lookedDomain) {
 		return d, nil
 	}
 	gen := d.GetMetadata().GetGeneration()
