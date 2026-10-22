@@ -16,8 +16,11 @@ import { editLabelsAction, ObjectRowMenu, type ActionSet, type Can, type ObjectA
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { buttonVariants, Card, CardHeader, CopyButton, Led } from "@/components/ui";
-import { machinePath, type MachineView } from "@/lib/machines";
+import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { buttonVariants, Card, CardHeader, CopyButton, Led, phaseLabel } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { kindNoun, nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
 import { isStale, permission, useApplyAt, useNetworkCan, useReload } from "@/lib/network-actions";
 import {
@@ -198,6 +201,46 @@ export function ForwardTargetText({ t, protocol, port }: { t?: ForwardTarget; pr
   );
 }
 
+/**
+ * The target of a Ready forward whose machine is not running, with its
+ * state; undefined otherwise, and while the project's machines load or
+ * when they failed. Ready says the forward is in place, as an address is
+ * Bound whatever its machine does, so the console says this beside it.
+ */
+export function useIdleTarget(pf: PortForward): { t: ForwardTarget; state: string } | undefined {
+  const machines = useMachines(pf.metadata?.project ?? "");
+  const t = specOf(pf).target;
+  const ready = pf.status?.conditions.find((c) => c.type === "Ready")?.status === ConditionStatus.TRUE;
+  if (!t || !ready || pf.metadata?.deleteTime || machines.loading || machines.error) return undefined;
+  const m = machines.items.find((x) => x.kind === t.kind && x.name === t.name);
+  if (!m || (m.phase === MachinePhase.RUNNING && !m.stopped && !m.deleting)) return undefined;
+  return { t, state: m.deleting ? "Deleting" : m.stopped ? "Stopped" : phaseLabel(m.phase) };
+}
+
+/**
+ * "Ready, but web is not running · Starting", muted, the machine linked;
+ * nothing while it runs. plain leaves the link out, inside a row that is a
+ * link itself.
+ */
+export function NotRunningNote({ pf, className, plain }: { pf: PortForward; className?: string; plain?: boolean }) {
+  const project = useProjectName();
+  const idle = useIdleTarget(pf);
+  if (!idle) return null;
+  return (
+    <span className={cn("text-[11.5px] text-subtle", className)}>
+      Ready, but{" "}
+      {plain ? (
+        <span className="text-muted">{idle.t.name}</span>
+      ) : (
+        <Link to={machinePath(idle.t.kind)} params={{ project, name: idle.t.name }} className="text-muted underline-offset-2 hover:text-accent hover:underline">
+          {idle.t.name}
+        </Link>
+      )}{" "}
+      is not running · {idle.state}
+    </span>
+  );
+}
+
 /** What stands in for the address before it is known: the port alone, or nothing yet. */
 export const noAddress = (pf: PortForward) => (pf.status?.port ? `port ${pf.status.port}, no address yet` : "no port yet");
 
@@ -331,6 +374,7 @@ function MachineForwardRow({ pf, project }: { pf: PortForward; project: string }
           {s.label}
         </span>
       </div>
+      <NotRunningNote pf={pf} className="block" />
       {!pf.metadata?.deleteTime && <InboundBrief inbound={inbound} />}
     </li>
   );

@@ -20,6 +20,7 @@ import {
   InboundBrief,
   InboundNotice,
   noAddress,
+  NotRunningNote,
   useForwardInbound,
   usePortForwardActions,
 } from "@/components/port-forwards";
@@ -38,6 +39,7 @@ function StateWithInbound({ pf }: { pf: PortForward }) {
   return (
     <>
       <ForwardStateCell pf={pf} />
+      <NotRunningNote pf={pf} className="block" />
       {!pf.metadata?.deleteTime && <InboundBrief inbound={inbound} />}
     </>
   );
@@ -99,6 +101,7 @@ export function PortForwardList() {
                         <span className="block truncate font-mono text-[11.5px] text-subtle">
                           → {target?.name ?? "no target"} · {target?.iface ?? "eth0"} · {portLabel(targetPort, protocol)}
                         </span>
+                        <NotRunningNote pf={f} plain className="block truncate" />
                         <PhoneInbound pf={f} />
                       </span>
                       <span className="shrink-0 self-start text-right">
@@ -221,6 +224,7 @@ function ConnectCard({ pf }: { pf: PortForward }) {
           retargeting keeps it. The address is the shared IPv4 address of the node the target runs on.
         </p>
         {!addr && s.message && !pf.metadata?.deleteTime && <p className="mt-1 text-[12.5px] text-muted">{s.message}</p>}
+        <NotRunningNote pf={pf} className="mt-1 block text-[12.5px]" />
       </div>
       {inbound && target && !pf.metadata?.deleteTime && (
         <div className="border-t px-4 py-3">
@@ -273,6 +277,7 @@ function Loaded({ pf, can }: { pf: PortForward; can: Can }) {
             <span className="inline-flex items-center gap-2">
               <Led tone={s.light} pulse={s.pulse} />
               {s.label}
+              <NotRunningNote pf={pf} className="text-[12px]" />
             </span>
             {addr && <span className="font-mono text-[12px]">{addr}</span>}
             <span className="font-mono text-[12px]">

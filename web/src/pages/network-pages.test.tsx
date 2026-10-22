@@ -12,6 +12,7 @@ import { NetworkDetail, NetworkList } from "@/pages/networks";
 import { PortForwardDetail, PortForwardList } from "@/pages/port-forwards";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
+import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { containersNamed, machineOf, networkApi, type Overrides } from "@/test/network-api";
 
@@ -291,6 +292,26 @@ describe("a port forward's page", () => {
     expect(screen.getAllByText("Its port is released once node node-1 has closed it.").length).toBeGreaterThan(0);
     for (const b of screen.getAllByRole("button", { name: /Retarget|Delete/ })) expect((b as HTMLButtonElement).disabled).toBe(true);
     expect(screen.queryByText("No security group lets it in")).toBeNull();
+  });
+
+  it("says a Ready forward's machine is not running, with its state, and leaves the light as it is", async () => {
+    const starting = machineOf("api", "default", ["default", "web"]);
+    starting.status!.phase = MachinePhase.CREATING;
+    show(<PortForwardDetail name="api-ssh" />, { listMachines: () => ({ items: [starting] }) });
+    // The head and the Connect card.
+    expect(await screen.findAllByText(/is not running · Starting/)).toHaveLength(2);
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+    cleanup();
+    show(<PortForwardList />, { listMachines: () => ({ items: [starting] }) });
+    // api-ssh and api-dns are Ready, each on the phone list and the table; api-nossh is not Ready and old is being deleted.
+    expect(await screen.findAllByText(/is not running · Starting/)).toHaveLength(4);
+  });
+
+  it("says nothing of the machine while it runs", async () => {
+    show(<PortForwardDetail name="api-ssh" />);
+    await screen.findByText("Summary");
+    await screen.findAllByText("api-x1");
+    expect(screen.queryByText(/is not running/)).toBeNull();
   });
 
   it("states the plan's limit under the list once it is reached", async () => {
