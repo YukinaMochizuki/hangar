@@ -237,6 +237,12 @@ load_env() {
 	done
 	[[ $HANGAR_DEFAULT_MAX_OWNED_TENANTS =~ ^[1-9][0-9]*$ ]] ||
 		die "HANGAR_DEFAULT_MAX_OWNED_TENANTS must be a whole number of at least 1, not $HANGAR_DEFAULT_MAX_OWNED_TENANTS"
+	# Optional: the CPUs no VM runs on, kept for the host's services; the
+	# VMs may use every CPU without it.
+	if [ -n "${HANGAR_RESERVED_CPU:-}" ]; then
+		[[ $HANGAR_RESERVED_CPU =~ ^(0|[1-9][0-9]*)$ ]] ||
+			die "HANGAR_RESERVED_CPU must be a whole number of CPUs, such as 2, not $HANGAR_RESERVED_CPU"
+	fi
 	# Optional; the upgrades step takes UTC without it. It ends up in a
 	# timer's OnCalendar=, so it must be a zone this host knows.
 	if [ -n "${HANGAR_UPGRADES_TZ:-}" ]; then

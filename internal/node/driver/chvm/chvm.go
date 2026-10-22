@@ -70,6 +70,10 @@ type Config struct {
 	// DefaultFirmwareStopGrace.
 	Firmware          string
 	FirmwareStopGrace time.Duration
+	// MachineCPUs are the CPUs the VMs may use, as MachineCPUs reads them;
+	// none means every online CPU. New gives them to the VMs' slice, which a
+	// VM running already is in only from its next start.
+	MachineCPUs []int
 
 	// systemd, guest and powerButton, if set, replace systemd over D-Bus,
 	// the guests' agents and pressPowerButton, for tests.
@@ -85,6 +89,8 @@ type Config struct {
 	dynamicOK bool
 	// etc, if set, replaces /etc, where the host's users and groups are.
 	etc string
+	// sysfs, if set, replaces /sys, where the host's online CPUs are.
+	sysfs string
 	// removeAll, if set, replaces os.RemoveAll in removeRuntime.
 	removeAll func(string) error
 }
@@ -183,6 +189,21 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 			return nil, fmt.Errorf("systemd: %w", err)
 		}
 		h.sd = sd
+	}
+	cpus := cfg.MachineCPUs
+	if len(cpus) == 0 {
+		if cfg.sysfs == "" {
+			cfg.sysfs = "/sys"
+		}
+		var err error
+		if cpus, err = onlineCPUs(cfg.sysfs); err != nil {
+			h.sd.close()
+			return nil, err
+		}
+	}
+	if err := h.sd.slice(ctx, machinesSlice, machinesSliceDescription, sliceProps(cpus)); err != nil {
+		h.sd.close()
+		return nil, fmt.Errorf("the VMs' slice %s: %w", machinesSlice, err)
 	}
 	return h, nil
 }
