@@ -126,6 +126,22 @@ func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) boo
 	return b.s.authz.Allowed(p, authz.Permission(b.r, verb), t)
 }
 
+// mayRead reports whether p may act on obj, at key, with verb: as allowed
+// has it at obj's target, and, for get, list and watch alone, also where
+// the kind's readableBy says p may read it.
+func (b *backend) mayRead(p auth.Principal, verb authz.Verb, key resource.Key, obj proto.Message) bool {
+	if b.allowed(p, verb, b.target(key, obj)) {
+		return true
+	}
+	if b.hooks.readableBy == nil || (verb != authz.Get && verb != authz.List && verb != authz.Watch) {
+		return false
+	}
+	if b.hooks.hiddenFromNodes && p.Type == auth.Node {
+		return false
+	}
+	return b.hooks.readableBy(b.s, p, authz.Permission(b.r, verb), obj)
+}
+
 // readsOrReports lists the verbs anyone but the system may use on a
 // system-managed kind; any verb added later is refused until it is listed.
 func readsOrReports(v authz.Verb) bool {
@@ -259,8 +275,8 @@ func (b *backend) read(ctx context.Context, p auth.Principal, verb authz.Verb, k
 	if err != nil {
 		return store.Object{}, nil, apiError(err)
 	}
-	if err := b.authorize(p, verb, b.target(key, obj), b.asked(key)); err != nil {
-		return store.Object{}, nil, err
+	if !b.mayRead(p, verb, key, obj) {
+		return store.Object{}, nil, denied("%s may not %s %s", p, verb, b.asked(key))
 	}
 	return cur, obj, nil
 }
@@ -299,7 +315,7 @@ func (b *backend) List(ctx context.Context, opts resource.ListOptions) (resource
 			return resource.ListResult{}, apiError(err)
 		}
 		key := resource.Key{Project: o.Project, Name: o.Name}
-		if !b.allowed(p, authz.List, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
+		if !b.mayRead(p, authz.List, key, obj) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			continue
 		}
 		b.answer(p, obj)
@@ -401,7 +417,7 @@ func (b *backend) Watch(ctx context.Context, opts resource.WatchOptions, send fu
 			return err
 		}
 		key := resource.Key{Project: ev.Object.Project, Name: ev.Object.Name}
-		if !b.allowed(p, authz.Watch, b.target(key, obj)) || !sel.Matches(object.Meta(obj).GetLabels()) {
+		if !b.mayRead(p, authz.Watch, key, obj) || !sel.Matches(object.Meta(obj).GetLabels()) {
 			return nil
 		}
 		b.answer(p, obj)

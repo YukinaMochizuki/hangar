@@ -10,7 +10,9 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	monitoringv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1"
+	networkv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
@@ -42,9 +44,11 @@ const (
 	cstatus = "compute.containers.updateStatus"
 	stapply = "iam.servicetokens.apply"
 	monread = "platform.monitoring.read"
+	// A CustomDomain is written at its tenant: a project's roles never may.
+	cdapply = "network.customdomains.apply"
 )
 
-var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, msget, msapply, msdel, msstat, udelete, cstatus, stapply, monread}
+var tested = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, mapply, iget, iapply, msget, msapply, msdel, msstat, udelete, cstatus, stapply, monread, cdapply}
 
 func testPermissions(c clients, scope *iamv1alpha1.BindingScope, perms ...string) ([]string, error) {
 	res, err := c.accounts.TestPermissions(context.Background(), connect.NewRequest(&iamv1alpha1.TestPermissionsRequest{Scope: scope, Permissions: perms}))
@@ -120,8 +124,8 @@ func newPermEnv(t *testing.T, opts ...envOption) permEnv {
 func TestTestPermissionsByRole(t *testing.T) {
 	e := newPermEnv(t)
 	var (
-		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply, monread}
-		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, msget, stapply}
+		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply, monread, cdapply}
+		owner     = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, msget, stapply, cdapply}
 		member    = []string{tcreate, iget, msget}
 		sponsor   = []string{tcreate, iget, msget, monread}
 		viewer    = []string{cget, tcreate, iget, msget}
@@ -211,6 +215,13 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 			}, 0},
 			{tenantScope("acme"), tapply, func() error {
 				_, err := c.tenants.ApplyTenant(ctx, connect.NewRequest(tenant("acme")))
+				return err
+			}, 0},
+			{tenantScope("acme"), cdapply, func() error {
+				_, err := c.domains.ApplyCustomDomain(ctx, connect.NewRequest(&networkv1alpha1.ApplyCustomDomainRequest{CustomDomain: &networkv1alpha1.CustomDomain{
+					Metadata: &metav1.ObjectMeta{Name: fmt.Sprintf("probe-%d", i)},
+					Spec:     &networkv1alpha1.CustomDomainSpec{Tenant: "acme", Domain: fmt.Sprintf("probe-%d.org", i)},
+				}}))
 				return err
 			}, 0},
 			{projectScope("web"), mapply, func() error {

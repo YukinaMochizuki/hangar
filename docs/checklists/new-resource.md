@@ -56,6 +56,11 @@ what it cannot.
       the node's own part, as a FileShare's. A global kind every
       tenant reads, as the Image catalogue, sets `readableByAll`. Tests show a
       caller with the broadest role is still refused.
+- [ ] If people elsewhere than the object's target need to read it, as a
+      project's people read the CustomDomains that let their project use
+      them, `hooksFor` sets `readableBy`, which widens get, list and watch
+      alone; tests show those readers can write nothing, and lose the read
+      when the object stops naming their place.
 - [ ] If a new object claims something global besides its name, which no
       other object may ever hold, as an endpoint's hostname does,
       `hooksFor` sets `claim`, and a test races creators of it.
