@@ -13,6 +13,7 @@ import { CustomDomainDetail, CustomDomainList } from "@/pages/custom-domains";
 import { CreateDisk } from "@/pages/create-disk";
 import { CreateMachine, type CreateKind } from "@/pages/create-machine";
 import { CreateNetwork } from "@/pages/create-network";
+import { CreatePortForward } from "@/pages/create-port-forward";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { CreateSecret } from "@/pages/create-secret";
 import { CreateServiceToken } from "@/pages/create-service-token";
@@ -35,6 +36,7 @@ import { Overview } from "@/pages/overview";
 import { TenantOverview } from "@/pages/tenant-overview";
 import { AddressDetail, AddressList } from "@/pages/addresses";
 import { NetworkDetail, NetworkList } from "@/pages/networks";
+import { PortForwardDetail, PortForwardList } from "@/pages/port-forwards";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
 import { SecretDetail, SecretList } from "@/pages/secrets";
 import { EditSecurityGroup, NewSecurityGroup, SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
@@ -324,6 +326,32 @@ const endpointRoute = createRoute({
     return <PublicEndpointDetail key={name} name={name} />;
   },
 });
+const portForwardsRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/port-forwards",
+  validateSearch: newSearch,
+  beforeLoad: toCreatePage("port-forward"),
+  component: PortForwardList,
+});
+const portForwardRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/port-forwards/$name",
+  component: function PortForwardPage() {
+    const { name } = portForwardRoute.useParams();
+    return <PortForwardDetail key={name} name={name} />;
+  },
+});
+export const newPortForwardRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/new/port-forward",
+  // target is the interface it opens on, as Kind/machine/interface, such as from a machine's page.
+  validateSearch: (s: Record<string, unknown>): { target?: string } =>
+    typeof s.target === "string" && /^(Container|VirtualMachine)\/[^/]+\/[^/]+$/.test(s.target) ? { target: s.target } : {},
+  component: function NewPortForward() {
+    const { target } = newPortForwardRoute.useSearch();
+    return <CreatePortForward key={target} target={target} />;
+  },
+});
 const networkRoutes = [
   networksRoute,
   networkRoute,
@@ -335,6 +363,9 @@ const networkRoutes = [
   addressRoute,
   endpointsRoute,
   endpointRoute,
+  portForwardsRoute,
+  portForwardRoute,
+  newPortForwardRoute,
 ];
 
 const membersRoute = createRoute({

@@ -24,7 +24,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
 import { date, machinePath, type MachineKind } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
-import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments } from "@/lib/network";
+import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments, type Attachment } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
 
 /**
@@ -324,7 +324,8 @@ export const pickProblem = (p: InterfacePick) => (p.choice === typed && !p.own.m
 /**
  * InterfaceField chooses an address's interface among the project's
  * machines' interfaces, or a machine typed by name. current is the
- * interface the address is bound to, listed even when no machine has it.
+ * interface the address is bound to, listed even when no machine has it;
+ * items, when given, are the interfaces listed in place of the project's.
  */
 export function InterfaceField({
   pick,
@@ -332,6 +333,7 @@ export function InterfaceField({
   none,
   hint,
   current,
+  items,
 }: {
   pick: InterfacePick;
   onChange: (p: InterfacePick) => void;
@@ -339,9 +341,11 @@ export function InterfaceField({
   none: string;
   hint: string;
   current?: { value: string; label: string };
+  items?: Attachment[];
 }) {
   const project = useProjectName();
-  const att = useAttachments(project);
+  const fromProject = useAttachments(project);
+  const att = items ? { items } : fromProject;
   const listed = att.items.map((x) => `${x.kind}/${x.name}/${x.iface}`);
   const { own } = pick;
   return (
