@@ -52,6 +52,7 @@ export function FileShareList() {
           noun="file shares"
           empty={{
             title: "No file shares",
+            text: "A file share is storage that several machines mount at once over their network.",
             action: canApply ? newButton(project) : undefined,
           }}
         >

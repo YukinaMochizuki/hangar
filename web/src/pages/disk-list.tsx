@@ -77,7 +77,7 @@ export function DiskList() {
         <ListFrame
           state={{ ...disks, count: items.length }}
           noun="disks"
-          empty={{ title: "No disks", action: canCreate ? newButton : undefined }}
+          empty={{ title: "No disks", text: "A disk keeps data apart from any machine: a virtual machine boots from one or attaches it, a container mounts it as a volume.", action: canCreate ? newButton : undefined }}
         >
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <label className="flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-[13px] focus-within:border-border-strong sm:w-64">

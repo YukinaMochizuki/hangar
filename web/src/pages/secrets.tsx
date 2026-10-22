@@ -266,7 +266,7 @@ export function SecretList() {
         <ListFrame
           state={{ loading, error: loaded ? undefined : error, refetch, count: items.length }}
           noun="secrets"
-          empty={{ title: "No secrets", action: canCreate ? newButton : undefined }}
+          empty={{ title: "No secrets", text: "A secret holds values the project's containers use, such as a registry login, out of their spec.", action: canCreate ? newButton : undefined }}
         >
           <Card className="md:hidden">
             <ul className="divide-y">

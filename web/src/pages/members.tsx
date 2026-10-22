@@ -283,7 +283,7 @@ function MembersPage({
             <p className="px-4 py-6 text-[13px] text-muted">This account's roles do not include listing the members here.</p>
           </Card>
         ) : (
-          <ListFrame state={{ loading, error, refetch: () => void refetch(), count: rows.length }} noun="members" empty={{ title: "No members" }}>
+          <ListFrame state={{ loading, error, refetch: () => void refetch(), count: rows.length }} noun="members" empty={{ title: "No members", text: scope.level === "project" ? "No one holds a role here directly; the tenant's members reach the project through the tenant." : "No one holds a role in this tenant." }}>
             <NameFilter value={query} onChange={setQuery} placeholder="Email or username" label="Filter by email or username" />
             <Card className="overflow-x-auto">
               <table className="w-full text-[13px]">

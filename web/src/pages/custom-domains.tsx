@@ -159,6 +159,7 @@ export function CustomDomainList() {
           noun="custom domains"
           empty={{
             title: "No custom domains",
+            text: "A custom domain lets the tenant's public endpoints serve at hostnames of its own.",
             action: newButton,
           }}
         >

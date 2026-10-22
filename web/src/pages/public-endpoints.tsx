@@ -155,7 +155,7 @@ export function PublicEndpointList() {
         <ListFrame
           state={{ ...eps, count: eps.items.length }}
           noun="public endpoints"
-          empty={{ title: "No public endpoints", action: newButton }}
+          empty={{ title: "No public endpoints", text: "A public endpoint serves a machine's HTTP port over HTTPS, at a hostname.", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <Card className="md:hidden">

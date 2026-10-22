@@ -132,7 +132,7 @@ export function SecurityGroupList() {
         <ListFrame
           state={{ loading: groups.loading || nets.loading, error: groups.error ?? nets.error, refetch: groups.refetch, count: groups.items.length + listed.length }}
           noun="security groups"
-          empty={{ title: "No security groups", action: newButton }}
+          empty={{ title: "No security groups", text: "A security group holds the rules for what may reach an interface. An interface in no group is in its network's built-in default group.", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <MachinesNotice state={att} />

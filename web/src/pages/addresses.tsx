@@ -132,7 +132,7 @@ export function AddressList() {
         <ListFrame
           state={{ ...addrs, count: addrs.items.length }}
           noun="addresses"
-          empty={{ title: "No addresses", action: newButton }}
+          empty={{ title: "No addresses", text: "A reserved public IPv6 address stays the project's until deleted, and moves between machines unchanged.", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <Card className="md:hidden">

@@ -91,6 +91,10 @@ export function MachineList({ kind }: { kind: MachineKind }) {
           noun={`${noun}s`}
           empty={{
             title: `No ${noun}s`,
+            text:
+              kind === "Container"
+                ? "A container runs an image from a registry. It starts in seconds, with exec and logs."
+                : "A virtual machine runs a full operating system from a disk image, reached over SSH.",
             action: newLink,
           }}
         >

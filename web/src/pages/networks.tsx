@@ -124,7 +124,7 @@ export function NetworkList() {
         <ListFrame
           state={{ ...nets, count: nets.items.length }}
           noun="networks"
-          empty={{ title: "No networks", action: newButton }}
+          empty={{ title: "No networks", text: "A network is a private IPv4 range on which the project's machines reach one another.", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <MachinesNotice state={att} />

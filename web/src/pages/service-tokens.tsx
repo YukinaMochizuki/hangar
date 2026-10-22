@@ -265,6 +265,7 @@ export function ServiceTokenList() {
           noun="service tokens"
           empty={{
             title: "No service tokens",
+            text: "A service token signs a script or an agent in to the API, with the roles bound to it.",
             action: canCreate ? newButton : undefined,
           }}
         >

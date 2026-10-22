@@ -78,6 +78,7 @@ export function PortForwardList() {
           noun="port forwards"
           empty={{
             title: "No port forwards",
+            text: "A port forward opens one TCP or UDP port of a machine on a public IPv4 address.",
             action: newButton,
           }}
         >

@@ -43,7 +43,7 @@ export function ImageList() {
         <ListFrame
           state={{ loading, error, refetch, count: items.length }}
           noun="images"
-          empty={{ title: "No images" }}
+          empty={{ title: "No images", text: "The platform's operating system images, from which virtual machines and boot disks are made." }}
         >
           <div className="mb-3">
             <label className="flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-[13px] focus-within:border-border-strong sm:w-64">

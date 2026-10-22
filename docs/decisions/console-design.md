@@ -114,8 +114,9 @@ the front door (`front-door.md`) from the same release as the binaries.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
 - **Copy says only what the screen cannot.** A page head says what the
-  kind is in a few words, or nothing; an empty list is its title and its
-  create button; a field or section hint states a constraint the field
+  kind is in a few words, or nothing; an empty list is its title, one or
+  two sentences on what the kind is and does, and its create button; a
+  field or section hint states a constraint the field
   cannot show, in one short sentence. What a design shows (a range on a
   ruler, a lock on a field, a value no one can choose) is not also
   written, and nothing explains how Hangar works or what other features
