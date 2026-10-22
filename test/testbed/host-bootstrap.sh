@@ -1098,8 +1098,11 @@ test_verify_catches_service_drift() {
 		fail "verify passed on a drifted host"
 	fi
 	# images, vms, natlog, release checksums, upgrade files, timers, units
-	# running, socket, loopback listener, node Ready.
-	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 10 ] || fail "expected 10 FAIL lines: $(cat "$work/drift2.log")"
+	# running, socket, loopback listener, node Ready; and, the apiserver
+	# being stopped, the monitoring step's four checks that reach it: its
+	# /metrics, MonitoringService, and Prometheus's scrapes of every target
+	# and of the apiserver.
+	[ "$(grep -c '^FAIL' "$work/drift2.log")" = 14 ] || fail "expected 14 FAIL lines: $(cat "$work/drift2.log")"
 	"$host_dir/bootstrap.sh" --release "$release" >/dev/null
 	"$host_dir/verify.sh" >"$work/drift2.log" || fail "bootstrap did not repair the drift: $(grep FAIL "$work/drift2.log")"
 	[ "$("$host_dir/bootstrap.sh")" = "changes: 0" ] || fail "not converged after the repair"
