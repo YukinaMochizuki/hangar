@@ -45,7 +45,7 @@ export function EditMachine({ kind, name }: { kind: MachineKind; name: string })
   return (
     <DetailFrame crumbs={[kind === "Container" ? "Containers" : "Virtual machines", name, "Edit"]} state={machines} found={!!m} noun={noun} name={name}>
       {m?.deleting ? (
-        <EmptyState title={`${name} is being deleted`}>It goes once its machine and disks are gone, and is not edited meanwhile.</EmptyState>
+        <EmptyState title={`${name} is being deleted`} />
       ) : m && may ? (
         // Keyed by the object's identity, so one made again under the name starts a new edit.
         <EditForm key={m.uid} m={m} />

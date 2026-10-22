@@ -135,8 +135,7 @@ describe("New token", () => {
 
     const once = await screen.findByRole("dialog", { name: "Token release created" });
     expect(within(once).getByLabelText("Secret").textContent).toBe(issued[0]);
-    expect(within(once).getByText(/This secret is shown once/)).toBeTruthy();
-    expect(within(once).getByText(/no page, command or answer of the API shows it again/)).toBeTruthy();
+    expect(within(once).getByText(/Shown once; it cannot be read again/)).toBeTruthy();
     expect(within(once).getByRole("button", { name: "Copy" })).toBeTruthy();
     expect(a.calls.filter((c) => c === "CreateServiceToken")).toHaveLength(1);
     expect(sent).toMatchObject({ project: "demo", name: "release", description: "Publishes builds", role: "project.editor" });
@@ -297,7 +296,7 @@ describe("ServiceTokenDetail", () => {
 
   it("says a token no binding names holds nothing", async () => {
     render(<ServiceTokenDetail name="ci" />, { wrapper: withApi(fake({ bindings: async () => ({ items: [] }) })) });
-    await screen.findByText("No binding names this token, so it holds nothing.");
+    await screen.findByText("No roles.");
   });
 
   it("rotates with one RotateServiceToken, shows the new secret once, and drops it when closed", async () => {
@@ -305,7 +304,7 @@ describe("ServiceTokenDetail", () => {
     const a = fake({ rotateToken: (r) => (sent = r) });
     render(<ServiceTokenDetail name="ci" />, { wrapper: withApi(a) });
     fireEvent.click(await screen.findByRole("button", { name: /Rotate/ }));
-    expect(within(dialog()).getByText(/stops working the moment the new one is stored/)).toBeTruthy();
+    expect(within(dialog()).getByText(/stops working at once/)).toBeTruthy();
     fireEvent.change(within(dialog()).getByLabelText("Secret works for"), { target: { value: "720h" } });
     expect(commandLines()).toContain("$ hangar token rotate ci --duration 720h -p demo");
     fireEvent.click(within(dialog()).getByRole("button", { name: /Rotate secret/ }));
@@ -342,7 +341,7 @@ describe("ServiceTokenDetail", () => {
     // The rotate's own invalidate asks the list again, and it fails.
     fireEvent.click(within(dialog()).getByRole("button", { name: /Rotate secret/ }));
     await screen.findByRole("dialog", { name: "New secret of ci" });
-    await screen.findByText("The service tokens did not load again; this page shows the last answer.");
+    await screen.findByText("The service tokens did not reload; showing the last answer.");
     expect(screen.getByLabelText("Secret").textContent).toBe(issued[0]);
     expect(screen.getByRole("heading", { name: "ci" })).toBeTruthy();
     expect(screen.queryByText("The service token did not load")).toBeNull();

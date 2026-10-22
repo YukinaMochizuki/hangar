@@ -81,7 +81,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
       <Topbar crumbs={[title]} />
       <PageHead
         title={title}
-        description={kind === "Container" ? "Each runs one container image." : "Full operating systems booted from a disk image."}
+        description={kind === "Container" ? "Images from a registry, running" : "Full operating systems"}
         action={newLink}
       />
 
@@ -91,10 +91,6 @@ export function MachineList({ kind }: { kind: MachineKind }) {
           noun={`${noun}s`}
           empty={{
             title: `No ${noun}s`,
-            text:
-              kind === "Container"
-                ? "A container runs an image from a registry."
-                : "A virtual machine boots a full operating system from one of the platform's images.",
             action: newLink,
           }}
         >

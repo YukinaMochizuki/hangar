@@ -71,13 +71,13 @@ export function DiskList() {
   return (
     <>
       <Topbar crumbs={["Disks"]} />
-      <PageHead title="Disks" description="Durable block devices, each attached to one machine at a time." action={canCreate && newButton} />
+      <PageHead title="Disks" description="Block storage for virtual machines" action={canCreate && newButton} />
 
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ ...disks, count: items.length }}
           noun="disks"
-          empty={{ title: "No disks", text: "A disk outlives the machines it is attached to.", action: canCreate ? newButton : undefined }}
+          empty={{ title: "No disks", action: canCreate ? newButton : undefined }}
         >
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <label className="flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-[13px] focus-within:border-border-strong sm:w-64">

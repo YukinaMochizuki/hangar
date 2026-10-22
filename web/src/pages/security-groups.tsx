@@ -6,7 +6,7 @@
 import { clone, create } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupSpecSchema, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
-import { Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useState } from "react";
 import { DeleteDialog, MachinesNotice, MemberCount, StaleNotice, usageBlock } from "@/components/resource";
 import { Input, Select } from "@/components/form";
@@ -125,14 +125,14 @@ export function SecurityGroupList() {
       <Topbar crumbs={["Security groups"]} />
       <PageHead
         title="Security groups"
-        description="Allow rules for the interfaces that name a group. Inbound is denied unless a rule lets it in; outbound is open unless a group of the interface has outbound rules."
+        description="Firewall allow rules for interfaces"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ loading: groups.loading || nets.loading, error: groups.error ?? nets.error, refetch: groups.refetch, count: groups.items.length + listed.length }}
           noun="security groups"
-          empty={{ title: "No security groups", text: "An interface naming no group is in its network's built-in group default alone.", action: newButton }}
+          empty={{ title: "No security groups", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <MachinesNotice state={att} />
@@ -248,7 +248,7 @@ export function SecurityGroupList() {
 }
 
 /** A group's rules of one direction, each as the sentence of what it lets through. */
-function RulesView({ title, dir, rules, empty, foot }: { title: string; dir: Direction; rules: Rule[]; empty: string; foot?: string }) {
+function RulesView({ title, dir, rules, empty }: { title: string; dir: Direction; rules: Rule[]; empty: string }) {
   return (
     <Card className="overflow-hidden">
       <CardHeader
@@ -272,7 +272,6 @@ function RulesView({ title, dir, rules, empty, foot }: { title: string; dir: Dir
           ))}
         </ul>
       )}
-      {foot && <div className="border-t px-4 py-2.5 text-[12px] text-muted">{foot}</div>}
     </Card>
   );
 }
@@ -332,8 +331,7 @@ function Loaded({ g, can }: { g: SecurityGroup; can: Can }) {
               title="Outbound"
               dir="out"
               rules={g.spec?.egress ?? []}
-              empty="No outbound rules: this group restricts nothing its members send."
-              foot={(g.spec?.egress.length ?? 0) > 0 ? "A member sends only what some outbound rule of its groups lets out." : undefined}
+              empty="No outbound rules: this group restricts nothing."
             />
             <AttachmentsCard title="Members" items={members} state={att} empty="No interface names this group." />
             <Card>
@@ -518,27 +516,6 @@ function RulesEditor({
   );
 }
 
-/** How a group's rules work, beside its editor (docs/decisions/networking.md). */
-function HowGroupsWork() {
-  return (
-    <div className="border-b px-4 py-3">
-      <div className="flex items-center gap-2 text-[13px] font-medium">
-        <ShieldCheck className="size-4 text-subtle" /> How a group works
-      </div>
-      <ul className="mt-2 space-y-1.5 text-[12.5px] text-muted">
-        <li>
-          <span className="text-foreground">Inbound</span> is denied unless a rule of one of the interface's groups lets it in. Replies to what an
-          interface sent always come back.
-        </li>
-        <li>
-          <span className="text-foreground">Outbound</span> is allowed to everywhere while none of the interface's groups has outbound rules. Once one
-          does, the interface sends only what some rule lets out.
-        </li>
-      </ul>
-    </div>
-  );
-}
-
 /**
  * The page that makes a security group, or edits a group's rules. An edit is
  * applied at the version the page opened on: the rules shown are what it
@@ -607,10 +584,10 @@ function SecurityGroupForm({ group }: { group?: SecurityGroup }) {
   const n = group ? 0 : 2;
   const editors = (
     <>
-      <FormSection n={n + 1} title="Inbound rules" hint="What may come into a member">
+      <FormSection n={n + 1} title="Inbound rules">
         <RulesEditor title="Inbound" dir="in" rules={ingress} onChange={setIngress} groups={peersHere} self={name} empty="No rule: this group lets nothing in." />
       </FormSection>
-      <FormSection n={n + 2} title="Outbound rules" hint="What a member may send">
+      <FormSection n={n + 2} title="Outbound rules">
         <RulesEditor
           title="Outbound"
           dir="out"
@@ -618,7 +595,7 @@ function SecurityGroupForm({ group }: { group?: SecurityGroup }) {
           onChange={setEgress}
           groups={peersHere}
           self={name}
-          empty="No rule: everything may go out, unless another group of an interface has outbound rules."
+          empty="No rule: this group restricts nothing."
         />
       </FormSection>
     </>
@@ -627,56 +604,53 @@ function SecurityGroupForm({ group }: { group?: SecurityGroup }) {
     <FormPage
       crumbs={group ? undefined : ["Security groups", "New security group"]}
       title={group ? `Edit rules of ${nameOf(group)}` : "New security group"}
-      description={where ?? "Allow rules for the interfaces that name the group, on one network."}
+      description={where}
       onSubmit={send}
       side={
         <>
-          <Card>
-            <HowGroupsWork />
-            <FormSummary
-              summary={
-                <span className="text-[13px] text-muted">
-                  <span className="font-mono text-foreground">{name || "–"}</span> on {network || "–"}: {count(ingress.length, "inbound rule")},{" "}
-                  {egress.length === 0 ? "outbound open" : count(egress.length, "outbound rule")}
-                </span>
-              }
-              problems={problems}
-              blocked={stale}
-              notices={
+          <FormSummary
+            summary={
+              <span className="text-[13px] text-muted">
+                <span className="font-mono text-foreground">{name || "–"}</span> on {network || "–"}: {count(ingress.length, "inbound rule")},{" "}
+                {egress.length === 0 ? "outbound open" : count(egress.length, "outbound rule")}
+              </span>
+            }
+            problems={problems}
+            blocked={stale}
+            notices={
+              <>
+                {restricted.length > 0 && (
+                  <Notice tone="warning" title={`Outbound rules restrict ${count(restricted.length, "interface")}`}>
+                    {restricted.map((a) => a.name).join(", ")} on {network}.
+                  </Notice>
+                )}
+                {stale && (
+                  <StaleNotice title="The rules changed after this page opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
+                )}
+              </>
+            }
+            error={stale ? null : submit.error}
+            failed={group ? "Applying the rules failed" : "Creating the security group failed"}
+            cancelTo={group ? `/projects/${project}/security-groups/${nameOf(group)}` : `/projects/${project}/security-groups`}
+            pending={submit.isPending}
+            pendingLabel={group ? "Applying…" : "Creating…"}
+            label={
+              group ? (
+                "Apply rules"
+              ) : (
                 <>
-                  {restricted.length > 0 && (
-                    <Notice tone="warning" title={`Outbound rules restrict ${count(restricted.length, "interface")}`}>
-                      {restricted.map((a) => a.name).join(", ")} on network {network} then send only what an outbound rule of their groups lets out.
-                    </Notice>
-                  )}
-                  {stale && (
-                    <StaleNotice title="The rules changed after this page opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
-                  )}
+                  <Plus /> Create security group
                 </>
-              }
-              error={stale ? null : submit.error}
-              failed={group ? "Applying the rules failed" : "Creating the security group failed"}
-              cancelTo={group ? `/projects/${project}/security-groups/${nameOf(group)}` : `/projects/${project}/security-groups`}
-              pending={submit.isPending}
-              pendingLabel={group ? "Applying…" : "Creating…"}
-              label={
-                group ? (
-                  "Apply rules"
-                ) : (
-                  <>
-                    <Plus /> Create security group
-                  </>
-                )
-              }
-            />
-          </Card>
+              )
+            }
+          />
           <FormManifest yaml={securityGroupYaml(obj)} cli={[`hangar apply ${group ? "" : "--create-only "}-p ${project} -f ${name || "group"}.yaml`]} />
         </>
       }
     >
       {!group && (
         <>
-          <FormSection n={1} title="Network" hint="Only its interfaces can join the group; it cannot be changed later">
+          <FormSection n={1} title="Network" hint="Cannot be changed later">
             <div className="max-w-xl">
               <Select aria-label="Network" value={network} onChange={(e) => setNetwork(e.target.value)} disabled={nets.loading}>
                 {networks.map((x) => (
@@ -687,7 +661,7 @@ function SecurityGroupForm({ group }: { group?: SecurityGroup }) {
               </Select>
             </div>
           </FormSection>
-          <FormSection n={2} title="Group name" hint="Unique among this project's security groups">
+          <FormSection n={2} title="Group name">
             <div className="max-w-xl">
               <Input aria-label="Group name" value={name} onChange={(e) => setName(e.target.value.toLowerCase())} placeholder="web" spellCheck={false} />
             </div>

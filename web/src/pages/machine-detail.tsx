@@ -260,7 +260,7 @@ function Networking({ m }: { m: MachineView }) {
     <Card>
       <CardHeader title="Networking" />
       {m.interfaces.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No interfaces yet: addresses come once the machine is made.</div>
+        <div className="px-4 py-3 text-[13px] text-muted">No interfaces yet.</div>
       ) : (
         <>
         {/* On a phone, each interface is a card of its own: the table's
@@ -598,9 +598,7 @@ function LogStream({ m, onRetry }: { m: MachineView; onRetry: () => void }) {
         <>
           {loop > 0 && (
             <Notice tone="warning" title="This container keeps starting over" className="m-3">
-              Its process ended {loop} times in the last {loopWindowMs / 60_000} minutes, and each time the restart policy booted it
-              again. A process that ends as soon as it starts does this, such as an image's shell with no terminal attached. A
-              command that keeps running stays up, and a restart policy of on failure or never leaves it off.
+              Its process ended {loop} times in {loopWindowMs / 60_000} minutes. A command that exits at once, such as a shell with no terminal, does this.
             </Notice>
           )}
           <div className="relative">
@@ -763,9 +761,7 @@ function Loaded({
       <Topbar crumbs={crumbs} />
       {stale ? <StaleBanner what={`${noun}s`} error={stale} onRetry={refetch} /> : null}
       {m.deleting && (
-        <PageBanner tone="warning" title={`${m.name} is being deleted`}>
-          It goes once its machine and disks are gone.
-        </PageBanner>
+        <PageBanner tone="warning" title={`${m.name} is being deleted`} />
       )}
       {m.phase === MachinePhase.FAILED && ready?.message && (
         <PageBanner tone="error" title={`${m.name} failed: ${ready.reason}`}>

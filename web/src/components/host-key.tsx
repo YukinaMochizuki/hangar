@@ -62,7 +62,7 @@ export function HostKeys({ vm, project }: { vm: VirtualMachine; project: string 
     forget.reset();
     setAsking(false);
   };
-  if (keys.length === 0) return <span className="text-subtle">Not recorded yet; the first terminal login records it</span>;
+  if (keys.length === 0) return <span className="text-subtle">Not recorded yet</span>;
   return (
     <span className="block">
       {keys.map((k) => (
@@ -79,10 +79,7 @@ export function HostKeys({ vm, project }: { vm: VirtualMachine; project: string 
       {/* Outside the summary's field, whose break-all would break the dialog's prose mid-word. */}
       {createPortal(
       <Dialog open={asking} onClose={close} title={`Forget ${name}'s host key`}>
-        <p>
-          The next terminal login trusts whatever key the VM then shows, and records it. Forget it only when the VM's host keys were made
-          again in it; a key that changed for no reason you know of may be something else answering.
-        </p>
+        <p>The next login trusts whatever key the VM shows. A key that changed unexpectedly may be something else answering.</p>
         {forget.error != null && (
           <Notice tone="error" title="Forgetting the host key failed" className="mt-3">
             {errorMessage(forget.error)}

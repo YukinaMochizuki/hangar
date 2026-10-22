@@ -166,7 +166,7 @@ export function diskYaml(d: Disk): string {
 
 /** growFacts says what growing a disk does: it restarts the machine the disk is attached to, if any. */
 export function growFacts(machine: string | undefined): string | undefined {
-  return machine ? `Growing it restarts ${machine}, which it is attached to.` : undefined;
+  return machine ? `Growing it restarts ${machine}.` : undefined;
 }
 
 /** sizeFacts states a disk's spec.size and what its node holds. */
@@ -250,12 +250,12 @@ export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: I
  */
 export function diskDeleteFacts(d: Disk, machine: { name: string; deleting: boolean } | undefined): string {
   const name = d.metadata?.name ?? "";
-  if (machine && !machine.deleting) return `${name} is attached to ${machine.name}; the API refuses to delete a disk a live machine has.`;
+  if (machine && !machine.deleting) return `${name} is attached to ${machine.name}, which is not being deleted.`;
   const owner = rootDiskOwner(d);
   const root = owner ? ` It is the root disk made for ${owner}.` : "";
   if (machine) return `Its data is deleted with it, once ${machine.name}, which is being deleted, is gone.${root}`;
   if (owner) return `Its data is deleted with it.${root}`;
-  return "Its data is deleted with it, on its node, and cannot be read again.";
+  return "Its data is deleted with it.";
 }
 
 /** DeleteDiskDialog asks for the name typed to confirm, then sends DeleteDisk and shows its error. */

@@ -98,7 +98,7 @@ describe("FileShareDetail", () => {
     fireEvent.click(screen.getByText("Show all 6"));
     expect(usedByRows()).toHaveLength(6);
     // probe is on ops alone, so cannot use it.
-    expect(await screen.findByText(/no interface on/)).toBeTruthy();
+    expect(await screen.findByText(/not on/)).toBeTruthy();
     expect(screen.getByRole("button", { name: /Add network ops to this share/ })).toBeTruthy();
   });
 
@@ -138,7 +138,7 @@ describe("FileShareDetail", () => {
     await show(<FileShareDetail name="cache" />, { shares: [cache], containers, del });
     fireEvent.click(await screen.findByRole("button", { name: /Delete/ }));
     const dialog = await screen.findByRole("dialog");
-    await within(dialog).findByText(/The API refuses while any live machine declares this share/);
+    await within(dialog).findByText(/still declares? it/);
     fireEvent.change(within(dialog).getByLabelText("Name, to confirm"), { target: { value: "cache" } });
     expect((within(dialog).getByRole("button", { name: /^Delete$/ }) as HTMLButtonElement).disabled).toBe(true);
     expect(del).not.toHaveBeenCalled();

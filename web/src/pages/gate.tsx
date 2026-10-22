@@ -46,11 +46,7 @@ function LoadingPage() {
 export function SignInPage() {
   return (
     <StandalonePage title="Not signed in" footer="Hangar is open to invited people only.">
-      <p>
-        The console signs in with a Google account. A session ends after 3 days unused, and 14 days after signing in in any
-        case.
-      </p>
-      <a href={signInURL()} className={cn(buttonVariants({ variant: "primary" }), "mt-5 w-full")}>
+      <a href={signInURL()} className={cn(buttonVariants({ variant: "primary" }), "mt-1 w-full")}>
         Sign in with Google
       </a>
     </StandalonePage>
@@ -106,8 +102,7 @@ export function WaitingPage({ email, type, onCheck }: { email: string; type: str
     <StandalonePage title="No invitation yet" footer="This page checks again every 30 seconds.">
       <p>
         <span className="font-mono text-[12.5px] text-foreground">{email}</span> is signed in
-        {type !== "user" && <> as a {type}</>}, and holds no invitation to Hangar. Administrators invite people by email; the
-        console opens here once an invitation exists.
+        {type !== "user" && <> as a {type}</>} and has no invitation.
       </p>
       <SignOutButton className="mt-5 w-full" />
     </StandalonePage>
@@ -175,8 +170,7 @@ export function SignupPage({ email }: { email: string }) {
   return (
     <StandalonePage title="Hangar account">
       <p>
-        <span className="font-mono text-[12.5px] text-foreground">{email}</span> is invited and has no account yet. A
-        username is global and permanent: it never changes, and no one else can ever have it.
+        <span className="font-mono text-[12.5px] text-foreground">{email}</span> is invited. A username is permanent and unique.
       </p>
       <form
         className="mt-5 space-y-4"

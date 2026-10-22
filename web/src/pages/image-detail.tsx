@@ -28,13 +28,13 @@ function Summary({ img, onEditLabels }: { img: Image; onEditLabels?: () => void 
           {s?.arch || "amd64"}
         </Field>
         <Field label="Own size">
-          {img.status?.diskSize ? gib(img.status.diskSize) : <span className="text-subtle">Not known until a node has made a disk of it</span>}
+          {img.status?.diskSize ? gib(img.status.diskSize) : <span className="text-subtle">Not known yet</span>}
         </Field>
         <Field label="Smallest disk">
-          {s?.minDiskSize || img.status?.diskSize ? `${imageFloorGiB(img)} GiB` : <span className="text-subtle">Its own size, not known yet</span>}
+          {s?.minDiskSize || img.status?.diskSize ? `${imageFloorGiB(img)} GiB` : <span className="text-subtle">Not known yet</span>}
         </Field>
         <Field label="Default user" mono>
-          {s?.defaultUser || <span className="font-sans text-subtle">None; hangar ssh logs in only as a user it is given</span>}
+          {s?.defaultUser || <span className="font-sans text-subtle">None</span>}
         </Field>
         <Field label="URL" mono>
           <span className="flex items-start gap-1">
@@ -61,7 +61,7 @@ function ProjectDisks({ img }: { img: Image }) {
   const mine = items.filter((d) => diskImage(d) === img.metadata?.name);
   return (
     <Card>
-      <CardHeader title="Disks of this project made from it" />
+      <CardHeader title="Disks from this image" />
       {loading ? (
         <SkeletonRows rows={2} />
       ) : mine.length === 0 ? (
@@ -152,7 +152,7 @@ function Loaded({ img, project, crumbs, can }: { img: Image; project: string; cr
       <Topbar crumbs={crumbs} />
       {s.tone === "fail" && (
         <PageBanner tone="error" title={`${name} is at fault: ${s.reason}`}>
-          {s.message} No disk is made from it until its spec changes.
+          {s.message} No disk can be made from it.
         </PageBanner>
       )}
       <div className="border-b px-4 pb-5 pt-6 md:px-8">

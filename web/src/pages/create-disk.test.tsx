@@ -37,7 +37,7 @@ describe("New disk", () => {
     render(<CreateDisk />, { wrapper: withApi(a) });
     expect((await screen.findByRole("radio", { name: "Data disk" })).getAttribute("aria-checked")).toBe("true");
     expect(screen.queryByRole("radiogroup", { name: "Image" })).toBeNull();
-    expect(screen.getByText(/It is blank, with no filesystem: format and mount it in the VM, such as with mkfs\.ext4 \/dev\/vdb\./)).toBeTruthy();
+    expect(screen.getByText("Can grow later, never shrink.")).toBeTruthy();
     type("Disk name", "data");
     type("Size, GiB", "12");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
@@ -92,7 +92,6 @@ describe("New disk", () => {
     expect(screen.queryByRole("radio", { name: "alpine-3" })).toBeNull();
     expect(screen.getByText("10 GiB or more")).toBeTruthy();
     expect(screen.getByText("30 GiB or more")).toBeTruthy();
-    expect(screen.queryByText(/mkfs\.ext4/)).toBeNull();
     fireEvent.click(screen.getByRole("radio", { name: "ubuntu-2404" }));
     // The size follows the image's smallest disk until one is typed.
     expect((screen.getByLabelText("Size, GiB") as HTMLInputElement).value).toBe("30");

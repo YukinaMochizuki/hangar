@@ -101,7 +101,7 @@ describe("ProjectMembers", () => {
     const ada = screen.getByText("ada@example.com").closest("tr")!;
     expect(within(ada).getByText("You")).toBeTruthy();
     const carol = screen.getByText("carol@example.com").closest("tr")!;
-    expect(within(carol).getByText("Not a platform member yet; the role takes effect once they are.")).toBeTruthy();
+    expect(within(carol).getByText("Not signed up yet")).toBeTruthy();
     // The hint never says whether the person was invited.
     expect(document.body.textContent).not.toMatch(/invit/i);
   });
@@ -150,7 +150,7 @@ describe("ProjectMembers", () => {
     // the domain; and a domain past ASCII.
     for (const value of ["\u212aate@example.com", "kate@\u212aexample.com", "gil@ex\u00e4mple.com"]) {
       fireEvent.change(field, { target: { value } });
-      expect(screen.getByText("Hangar takes only ASCII email addresses.")).toBeTruthy();
+      expect(screen.getByText("ASCII email addresses only.")).toBeTruthy();
       expect((screen.getAllByRole("button", { name: "Add member" }).at(-1) as HTMLButtonElement).disabled).toBe(true);
       expect(screen.queryByText(/kate@(k?)example.com/)).toBeNull();
     }

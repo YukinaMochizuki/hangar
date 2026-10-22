@@ -43,7 +43,7 @@ export function FileShareList() {
       <Topbar crumbs={["File shares"]} />
       <PageHead
         title="File shares"
-        description="Shared file storage, mounted by many machines at once over NFS. A share is reachable from the networks it is on, at an address on each."
+        description="NFS storage shared by machines"
         action={canApply ? newButton(project) : undefined}
       />
       <div className="px-4 pb-10 md:px-8">
@@ -52,7 +52,6 @@ export function FileShareList() {
           noun="file shares"
           empty={{
             title: "No file shares",
-            text: "A file share holds files that several machines read and write at once, from the networks it is on.",
             action: canApply ? newButton(project) : undefined,
           }}
         >

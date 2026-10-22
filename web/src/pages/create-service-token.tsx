@@ -59,7 +59,6 @@ function TokenForm({ crumbs, project }: { crumbs: ReactNode[]; project: string }
       <FormPage
         crumbs={crumbs}
         title="New service token"
-        description="A credential an agent uses. It holds the roles bound to it here; its secret is shown once, when issued."
         onSubmit={send}
         side={
           <>
@@ -86,7 +85,7 @@ function TokenForm({ crumbs, project }: { crumbs: ReactNode[]; project: string }
           <fieldset className="max-w-xl">
             <legend className="sr-only">Role in this project</legend>
             <div className="divide-y rounded-md border bg-surface">
-              {[{ id: "", label: "None", holds: "The token holds only what bindings made later grant." }, ...roles.project].map((r) => (
+              {[{ id: "", label: "None", holds: "Roles can be bound later." }, ...roles.project].map((r) => (
                 <label key={r.id} className="flex cursor-pointer gap-2.5 px-3 py-2 hover:bg-surface-2/60">
                   <input type="radio" name="role" value={r.id} checked={role === r.id} onChange={() => setRole(r.id)} className="mt-0.5 accent-[var(--accent)]" />
                   <span className="min-w-0">
@@ -106,7 +105,7 @@ function TokenForm({ crumbs, project }: { crumbs: ReactNode[]; project: string }
             <DurationSelect value={duration} onChange={setDuration} />
           </div>
         </FormSection>
-        <FormSection n={3} title="Token name" hint="Unique among this project's service tokens">
+        <FormSection n={3} title="Token name">
           <div className="max-w-xl">
             <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Token name" spellCheck={false} placeholder="ci" />
             <p className="mt-1.5 text-[12px] text-subtle">It authenticates as serviceToken:{project}/{nameCheck.ok ? name : "NAME"}.</p>

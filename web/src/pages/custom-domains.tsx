@@ -100,8 +100,7 @@ function useDomainActions(d: CustomDomain, uses: Uses, can: Can, after?: () => v
             name={name}
             consequence={
               <>
-                No endpoint serves under <span className="font-mono text-foreground">{domainOf(d)}</span> any more, and its certificates are no longer
-                renewed. Its challenge record proves nothing for a custom domain made later, and another tenant may then verify the name.
+                Its certificates stop renewing, and another tenant may then claim <span className="font-mono text-foreground">{domainOf(d)}</span>.
               </>
             }
             cli={`hangar delete cdom ${name}`}
@@ -151,7 +150,7 @@ export function CustomDomainList() {
       <Topbar crumbs={["Domains"]} />
       <PageHead
         title="Domains"
-        description="The tenant's own domains, such as example.com. A public endpoint serves at the domain and one label below it once its DNS proves the domain is the tenant's."
+        description="The tenant's own domains"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
@@ -160,7 +159,6 @@ export function CustomDomainList() {
           noun="custom domains"
           empty={{
             title: "No custom domains",
-            text: "With one, the tenant's public endpoints serve at hostnames such as www.example.com as well as their own.",
             action: newButton,
           }}
         >
@@ -394,8 +392,8 @@ function WaitingCard({ d, can }: { d: CustomDomain; can: Can }) {
         {state.message && <p className="mt-0.5">{sentence(state.message)}</p>}
         <p className="mt-1.5 text-[12.5px] text-muted">
           {state.reason === "HeldByAnotherTenant"
-            ? "No endpoint serves under it, and no certificate is got for it, while theirs is."
-            : "The record is looked for every minute until it is found. Endpoints may name hostnames under the domain meanwhile; they serve once it is verified."}
+            ? "Nothing serves under it while another tenant holds it."
+            : "Checked every minute; endpoints under it serve once it is verified."}
         </p>
         {check.error != null && (
           <Notice tone="error" title="Checking the domain failed" className="mt-3">
@@ -417,10 +415,7 @@ function RecordsCard({ d }: { d: CustomDomain }) {
         <p className="px-4 py-3 text-[13px] text-muted">Not given yet.</p>
       ) : (
         <>
-          <p className="border-b px-4 py-2.5 text-[12.5px] text-muted">
-            Each record is DNS only, with no proxy in front (in Cloudflare, the grey cloud). Behind a proxy, the challenge record is not seen and no
-            certificate is got, and traffic does not reach Hangar directly.
-          </p>
+          <p className="border-b px-4 py-2.5 text-[12.5px] text-muted">DNS only, no proxy (in Cloudflare, the grey cloud): behind a proxy no certificate is issued.</p>
           <ul className="divide-y md:hidden">
             {records.map((r) => (
               <li key={r.name + r.type} className="px-4 py-2.5 text-[13px]">
@@ -491,10 +486,8 @@ function AllowedProjects({ d, tenant }: { d: CustomDomain; tenant: string }) {
   const shown = all ? projects.map((p) => p.metadata?.name ?? "") : names;
   return (
     <div className="px-4 py-3 text-[13px]">
-      <p className="text-muted">
-        {all ? "Every project of the tenant, and those made later, may serve under the domain." : "Only these projects may serve under the domain."}
-      </p>
-      <ul className="mt-2 flex flex-wrap gap-1.5">
+      {all && <p className="mb-2 text-muted">All projects, including those made later.</p>}
+      <ul className="flex flex-wrap gap-1.5">
         {shown.map((n) => (
           <li key={n}>
             <Link to="/projects/$project" params={{ project: n }} className="inline-flex items-baseline gap-1.5 rounded bg-surface-2 px-1.5 py-0.5 hover:text-accent">
@@ -529,7 +522,7 @@ function UsesCard({ uses }: { uses: Uses }) {
       ) : uses.error ? (
         <ErrorNotice error={uses.error} title="The tenant's endpoints did not load" onRetry={uses.refetch} />
       ) : uses.items.length === 0 ? (
-        <p className="px-4 py-3 text-[13px] text-muted">No endpoint has a hostname under the domain.</p>
+        <p className="px-4 py-3 text-[13px] text-muted">No endpoints.</p>
       ) : (
         <ul className="divide-y">
           {uses.items.map((u) => (
@@ -618,11 +611,10 @@ function EditProjectsDialog({ d, uses, onClose }: { d: CustomDomain; uses: Uses;
   const problems = all || after.length > 0 ? [] : ["No project is chosen."];
   return (
     <Dialog open onClose={onClose} title={`Edit projects of ${domainOf(d)}`} wide>
-      <p>Which of the tenant's projects may have endpoints serve under the domain.</p>
-      <div role="radiogroup" aria-label="Projects" className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <div role="radiogroup" aria-label="Projects" className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <Choice selected={all} onClick={() => setAll(true)} label="All projects" className="p-3">
           <div className="text-[13px] font-medium text-foreground">All projects</div>
-          <div className="mt-0.5 text-[12px] leading-snug">Every project of the tenant, and those made later.</div>
+          <div className="mt-0.5 text-[12px] leading-snug">Including projects made later.</div>
         </Choice>
         <Choice selected={!all} onClick={() => setAll(false)} label="Chosen projects" className="p-3">
           <div className="text-[13px] font-medium text-foreground">Chosen projects</div>
@@ -638,7 +630,7 @@ function EditProjectsDialog({ d, uses, onClose }: { d: CustomDomain; uses: Uses;
           className="mt-3"
           title={`${refused.map((u) => `${nameOf(u.endpoint)} of ${label(u.endpoint.metadata?.project ?? "")} serves at ${u.hostname}`).join("; ")}, under this domain.`}
         >
-          The API refuses to leave out a project while an endpoint of it serves under the domain.
+          A project cannot be left out while an endpoint of it serves under the domain.
         </Notice>
       )}
       {unknown && <Notice tone="warning" className="mt-3" title={unknown} />}

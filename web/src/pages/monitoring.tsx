@@ -115,7 +115,7 @@ function Head({ o }: { o?: Overview }) {
     <div className="px-4 pb-3 pt-5 md:px-8">
       <h1 className="text-[22px] font-semibold tracking-tight">Overview</h1>
       <p className="mt-0.5 text-[13px] text-muted">
-        The platform&apos;s reachability, its machines and each node, as the hosts&apos; Prometheus reads them.
+        Platform health, from Prometheus
         {o && (
           <span className="font-mono text-[12px] text-subtle">
             {" "}

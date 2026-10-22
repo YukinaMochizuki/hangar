@@ -51,11 +51,6 @@ function NetworkForm({ crumbs, project }: { crumbs: ReactNode[]; project: string
     <FormPage
       crumbs={crumbs}
       title="New network"
-      description={
-        <>
-          Created in <span className="font-mono text-foreground">{project}</span>. A machine names its networks in its interfaces.
-        </>
-      }
       onSubmit={send}
       side={
         <>
@@ -81,12 +76,10 @@ function NetworkForm({ crumbs, project }: { crumbs: ReactNode[]; project: string
       <FormSection n={1} title="IPv4 range">
         <div className="max-w-xl">
           <Input value={cidr} onChange={(e) => setCidr(e.target.value)} aria-label="IPv4 range" spellCheck={false} className="w-56" />
-          <p className="mt-1.5 text-[12px] text-subtle">
-            A private (RFC 1918) range from /16 to /28. It may overlap other networks' ranges and cannot be changed later.
-          </p>
+          <p className="mt-1.5 text-[12px] text-subtle">Private (RFC 1918), /16 to /28. Cannot be changed later.</p>
         </div>
       </FormSection>
-      <FormSection n={2} title="Network name" hint="Unique among this project's networks">
+      <FormSection n={2} title="Network name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Network name" spellCheck={false} />
         </div>

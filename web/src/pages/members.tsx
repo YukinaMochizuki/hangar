@@ -61,7 +61,7 @@ function AddMemberDialog({ scope, where, open, onClose }: { scope: Scope; where:
           add.mutate({ email: address, role }, { onSuccess: close });
         }}
       >
-        <FormField label="Email" hint={ascii ? undefined : "Hangar takes only ASCII email addresses."}>
+        <FormField label="Email" hint={ascii ? undefined : "ASCII email addresses only."}>
           <Input type="text" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} autoFocus spellCheck={false} placeholder="name@example.com" className="font-sans" />
         </FormField>
         <fieldset className="mt-4">
@@ -156,7 +156,7 @@ function MemberLine({ scope, where, row, you, may }: { scope: Scope; where: stri
               {row.platformMember ? (
                 <span className="block truncate font-mono text-[11.5px] text-subtle">{row.username}</span>
               ) : (
-                <span className="block text-[11.5px] text-subtle">Not a platform member yet; the role takes effect once they are.</span>
+                <span className="block text-[11.5px] text-subtle">Not signed up yet</span>
               )}
             </span>
           </span>
@@ -283,7 +283,7 @@ function MembersPage({
             <p className="px-4 py-6 text-[13px] text-muted">This account's roles do not include listing the members here.</p>
           </Card>
         ) : (
-          <ListFrame state={{ loading, error, refetch: () => void refetch(), count: rows.length }} noun="members" empty={{ title: "No one holds a role here." }}>
+          <ListFrame state={{ loading, error, refetch: () => void refetch(), count: rows.length }} noun="members" empty={{ title: "No members" }}>
             <NameFilter value={query} onChange={setQuery} placeholder="Email or username" label="Filter by email or username" />
             <Card className="overflow-x-auto">
               <table className="w-full text-[13px]">
@@ -321,7 +321,7 @@ export function ProjectMembers(props: NewProps) {
     <MembersPage
       scope={{ level: "project", name: project }}
       where={projectLabel(p, project)}
-      description="The people who hold a role in this project."
+      description="People with a role in this project"
       newProps={props}
     >
       {tenant && <ThroughTheTenant tenant={tenant} label={tenantName(tenant)} />}
@@ -336,7 +336,7 @@ export function TenantMembers() {
     <MembersPage
       scope={{ level: "tenant", name: tenant }}
       where={tenantName(tenant)}
-      description="The people who hold a role in the tenant. A tenant role holds in every project of it."
+      description="Roles here hold in every project"
     />
   );
 }

@@ -63,9 +63,7 @@ export function EditLabelsDialog<K extends LabelKind>({ kind, object, onClose }:
   const blocked = problems.size > 0 || changes.none || stale || apply.isPending;
   return (
     <Dialog open onClose={onClose} title={`Edit labels of ${name}`} wide>
-      <p>
-        The {info.noun}'s own key=value pairs, which <span className="font-mono text-[12px]">hangar get -l</span> selects by. Changing them restarts nothing.
-      </p>
+      <p>Changing them restarts nothing.</p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -134,7 +132,7 @@ export function EditLabelsDialog<K extends LabelKind>({ kind, object, onClose }:
           </Button>
           {rows.some((r) => r.system) && (
             <span className="inline-flex items-center gap-1.5 text-[12px] text-subtle">
-              <Lock className="size-3" /> Under {systemDomain}/: the system's, kept as they are.
+              <Lock className="size-3" /> Under {systemDomain}/: read-only.
             </span>
           )}
         </div>

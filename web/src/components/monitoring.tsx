@@ -102,7 +102,7 @@ function MachineCounts({ m }: { m: NonNullable<Layer["machines"]> }) {
         <CheckRow name="In a crash loop" health="info" value={String(m.crashLooping)} />
       </ul>
       <div className="border-t px-4 py-2 text-[11.5px] text-subtle">
-        Counted, never named. A program&apos;s own failures and crash loops alert no one.
+        A program&apos;s own failures alert no one.
         <div className="mt-1 flex items-center justify-between gap-2 rounded-md bg-surface-2 py-0.5 pl-2.5 pr-1 font-mono text-[11.5px] text-muted">
           <span className="truncate">sudo hangar --context local get machines</span>
           <CopyButton text="sudo hangar --context local get machines" />
@@ -179,7 +179,7 @@ export function AlertList({ node }: { node?: string }) {
             {data && <span className="font-mono text-[11px] text-subtle tabular">{alerts.length}</span>}
           </span>
         }
-        action={<span className="hidden text-[11.5px] text-subtle sm:block">Critical goes to Telegram at once; warnings once a day.</span>}
+        action={<span className="hidden text-[11.5px] text-subtle sm:block">Critical: Telegram at once; warnings daily</span>}
       />
       {loading ? (
         <SkeletonRows rows={1} />
@@ -193,7 +193,7 @@ export function AlertList({ node }: { node?: string }) {
         )
       ) : alerts.length === 0 ? (
         <AlertLine tone="ok">
-          {node === undefined ? "No alerts are firing — every rule reads within its limits." : `No alert is firing on ${node}.`}
+          {node === undefined ? "No alerts firing." : `No alerts firing on ${node}.`}
         </AlertLine>
       ) : (
         <ul className="divide-y">

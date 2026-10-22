@@ -144,7 +144,7 @@ function NodeListBody({ may }: { may: May }) {
   const machines = useMachinesPerNode(may.monitoring);
   return (
     <>
-      <PageHead title="Nodes" description="The hosts that run machines: what each is, how it stands, and what it has free." />
+      <PageHead title="Nodes" description="Hosts that run machines" />
       <div className="px-4 pb-8 md:px-8">
         {nodes.loading ? (
           <LoadingTable />
@@ -154,7 +154,7 @@ function NodeListBody({ may }: { may: May }) {
           </Card>
         ) : nodes.items.length === 0 ? (
           <Card>
-            <EmptyState title="No node yet">A node appears once the apiserver accepts its agent.</EmptyState>
+            <EmptyState title="No nodes yet" />
           </Card>
         ) : (
           <Card className="overflow-x-auto">
@@ -254,7 +254,7 @@ function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may:
             <Readiness n={n} />
             {n.cordoned && (
               <span className="flex items-center gap-2">
-                <Cordoned /> <span className="text-[12px]">The scheduler places no new machine here.</span>
+                <Cordoned /> <span className="text-[12px]">No new machines are placed here.</span>
               </span>
             )}
             {machines !== undefined && <span className="tabular">{machines === 1 ? "1 machine" : `${machines} machines`}</span>}
@@ -274,7 +274,7 @@ function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may:
         <div className="min-w-0 space-y-5">
           <HostCard n={n} />
           <Card>
-            <CardHeader title="Resources" action={<span className="text-[11.5px] text-subtle">as the scheduler counts them</span>} />
+            <CardHeader title="Resources" />
             <ul className="divide-y">
               {capacities(n, perNode.held(n.name)).map((c) => (
                 <li key={c.kind} className="grid grid-cols-[64px_1fr] items-start gap-3 px-4 py-3 text-[13px]">

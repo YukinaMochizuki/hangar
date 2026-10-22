@@ -9,13 +9,13 @@ import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/st
 import { Card, Kbd } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
-/** A list page's title, what the kind is, and its create button. */
-export function PageHead({ title, description, action }: { title: string; description: ReactNode; action?: ReactNode }) {
+/** A list page's title, what the kind is in a few words, and its create button. */
+export function PageHead({ title, description, action }: { title: string; description?: ReactNode; action?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 px-4 pb-4 pt-6 md:px-8">
       <div>
         <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
-        <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>
+        {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}
       </div>
       {action}
     </div>

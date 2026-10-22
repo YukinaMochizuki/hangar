@@ -72,7 +72,7 @@ function Summary({ d, set }: { d: Disk; set: ActionSet }) {
               <Link to="/projects/$project/vms/$name" params={{ project, name: owner }} className="font-mono text-[12.5px] text-accent hover:underline">
                 {owner}
               </Link>
-              <span className="text-muted">, as its root disk; deleted with it</span>
+              <span className="text-muted">, root disk; deleted with it</span>
             </span>
           </Field>
         )}
@@ -143,9 +143,7 @@ function Loaded({ d, crumbs, can }: { d: Disk; crumbs: string[]; can: Can }) {
     <>
       <Topbar crumbs={crumbs} />
       {d.metadata?.deleteTime && (
-        <PageBanner tone="warning" title={`${name} is being deleted`}>
-          It goes once no machine lists it and its node has released it.
-        </PageBanner>
+        <PageBanner tone="warning" title={`${name} is being deleted`} />
       )}
       {blocked && (
         <PageBanner tone="error" title={`${name} is not growing: ${blocked.reason}`}>

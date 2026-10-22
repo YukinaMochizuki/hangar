@@ -65,7 +65,6 @@ describe("a security group's page", () => {
     expect(screen.getByText("Lets in ICMP from any IPv6 address.")).toBeTruthy();
     expect(screen.getByText("Lets in everything from members of web.")).toBeTruthy();
     expect(screen.getByText("Lets out UDP port 53 to 192.0.2.53/32.")).toBeTruthy();
-    expect(screen.getByText("A member sends only what some outbound rule of its groups lets out.")).toBeTruthy();
   });
 
   it("opens the edit page from Edit rules", async () => {
@@ -252,7 +251,7 @@ describe("the edit rules page", () => {
     expect(screen.queryByText(/Outbound rules restrict/)).toBeNull();
     click("Rule", 1);
     expect(await screen.findByText("Outbound rules restrict 1 interface")).toBeTruthy();
-    expect(screen.getByText(/api on network default then send only what an outbound rule/)).toBeTruthy();
+    expect(screen.getByText(/api on default\./)).toBeTruthy();
   });
 
   it("does not overwrite a newer group: says the rules changed, and reloads from it", async () => {

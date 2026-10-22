@@ -130,7 +130,7 @@ const details: DetailCase[] = [
     present: "default",
     failed: "The network did not load",
     missing: "No such network",
-    full: ["10.0.0.1", "Built in. Lets in its own members and lets everything out.", "10.0.0.2"],
+    full: ["10.0.0.1", "Built in · its own members in, everything out", "10.0.0.2"],
   },
   {
     name: "security group",
@@ -142,7 +142,6 @@ const details: DetailCase[] = [
     full: [
       "Lets in TCP ports 80 and 443 from any IPv6 address.",
       "Lets out UDP port 53 to 192.0.2.53/32.",
-      "A member sends only what some outbound rule of its groups lets out.",
       "Members",
     ],
   },
@@ -162,7 +161,7 @@ const details: DetailCase[] = [
     present: "docs",
     failed: "The public endpoint did not load",
     missing: "No such public endpoint",
-    full: ["docs-demo.example.com", "plain HTTP on its first interface, eth0"],
+    full: ["docs-demo.example.com", "plain HTTP, on eth0"],
   },
   {
     name: "port forward",

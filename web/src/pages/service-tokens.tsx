@@ -119,14 +119,14 @@ export function DurationSelect({ value, onChange }: { value: string; onChange: (
 export function SecretOnce({ title, secret, onClose }: { title: string; secret: string; onClose: () => void }) {
   return (
     <Dialog open onClose={onClose} title={title} locked>
-      <p>This secret is shown once. Hangar keeps only its hash, so no page, command or answer of the API shows it again.</p>
+      <p>Shown once; it cannot be read again.</p>
       <div className="mt-4 flex items-center gap-2 rounded-md border border-border-strong bg-surface-2 py-2 pl-3 pr-1.5">
         <code aria-label="Secret" className="min-w-0 flex-1 break-all font-mono text-[12.5px] text-foreground">
           {secret}
         </code>
         <CopyButton text={secret} className="shrink-0" />
       </div>
-      <p className="mt-3 text-[12px]">An agent sends it as HANGAR_TOKEN, or as Authorization: Bearer.</p>
+      <p className="mt-3 text-[12px]">Sent as HANGAR_TOKEN or Authorization: Bearer.</p>
       <div className="mt-5 flex justify-end">
         <Button variant="primary" onClick={onClose}>
           Close
@@ -154,7 +154,7 @@ function RotateDialog({ t, open, onClose }: { t: ServiceToken; open: boolean; on
     <Dialog open onClose={close} title={`Rotate ${name}`}>
       {t.status?.secretPrefix ? (
         <p>
-          The secret starting <span className="font-mono text-foreground">{t.status.secretPrefix}</span> stops working the moment the new one is stored.
+          The secret starting <span className="font-mono text-foreground">{t.status.secretPrefix}</span> stops working at once.
         </p>
       ) : (
         <p>{name} has no secret yet; this issues its first.</p>
@@ -256,7 +256,7 @@ export function ServiceTokenList() {
       {loaded && error ? <StaleBanner what="service tokens" error={error} onRetry={refetch} /> : null}
       <PageHead
         title="Service tokens"
-        description="Credentials agents use. A token holds the roles bound to it here; its secret is shown once, when issued."
+        description="Credentials for agents"
         action={canCreate && newButton}
       />
       <div className="px-4 pb-10 md:px-8">
@@ -265,7 +265,6 @@ export function ServiceTokenList() {
           noun="service tokens"
           empty={{
             title: "No service tokens",
-            text: "An agent authenticates with a token's secret, and holds what its roles grant.",
             action: canCreate ? newButton : undefined,
           }}
         >
@@ -455,10 +454,7 @@ function Loaded({
                 {tokenPrincipal(t)}
               </Field>
               <Field label="Secret">
-                <span>
-                  <Prefix t={t} />
-                  {t.status?.secretPrefix && <span className="text-muted">, its first characters</span>}
-                </span>
+                <Prefix t={t} />
               </Field>
               <Field label="Issued">{t.status?.issueTime ? `${day(t.status.issueTime)} UTC` : <span className="text-subtle">Never</span>}</Field>
               <Field label="Expires">
@@ -481,7 +477,7 @@ function Loaded({
             ) : held.error ? (
               <ErrorNotice error={held.error} title="The role bindings did not load" />
             ) : !tokenRoles?.length ? (
-              <p className="px-4 py-4 text-[13px] text-muted">No binding names this token, so it holds nothing.</p>
+              <p className="px-4 py-4 text-[13px] text-muted">No roles.</p>
             ) : (
               <ul className="divide-y">
                 {tokenRoles.map((r) => (

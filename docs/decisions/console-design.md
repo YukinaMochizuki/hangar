@@ -113,6 +113,14 @@ the front door (`front-door.md`) from the same release as the binaries.
   endpoint, which a form would have to say plainly before it offers them.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
+- **Copy says only what the screen cannot.** A page head says what the
+  kind is in a few words, or nothing; an empty list is its title and its
+  create button; a field or section hint states a constraint the field
+  cannot show, in one short sentence. What a design shows (a range on a
+  ruler, a lock on a field, a value no one can choose) is not also
+  written, and nothing explains how Hangar works or what other features
+  exist. A fact the person needs before acting stays: what a delete takes
+  with it, that growing restarts a machine.
 - **Copy describes what people can see and do, not how Hangar is built.**
   It says what a container or a virtual machine is to its user (an image
   from a registry, a full operating system, exec and logs, SSH) and never
@@ -216,7 +224,7 @@ joining it when its page does.
   the other lists: the person with their username under their email, their
   role and their menu, three columns that fit a phone, filtered by email or
   username. A person who is not a platform member
-  yet is shown with that alone ("the role takes effect once they are"),
+  yet is shown with that alone ("Not signed up yet"),
   never with whether they were invited (`tenancy-and-iam.md`).
 - Roles are changed in the row, added in a dialog with what each role
   holds, and removed after the dialog says what ends and what stays (a
@@ -412,10 +420,10 @@ Settled with the owner on screenshots before the dialogs sent anything.
   booted again (a later boot is in the log), or, for the last, what the
   restart policy does next. A container whose boots ended three times in
   ten minutes gets a warning above the log that it keeps starting over,
-  and why that usually is: a process that ends at once, under restart
-  always. The count is the console's, from the log it holds; the API keeps
-  no restart count. The log is coloured as a terminal would colour it, from
-  its ANSI SGR codes (`web/src/lib/ansi.ts`), in a palette toned for each
+  and that a command that exits at once does this. The count is the
+  console's, from the log it holds; the API keeps no restart count. The
+  log is coloured as a terminal would colour it, from its ANSI SGR codes
+  (`web/src/lib/ansi.ts`), in a palette toned for each
   theme (`--ansi-0` to `--ansi-15`); every other escape sequence and
   control character is dropped. It opens at its end and, while scrolled to
   its end, stays there as lines come; scrolled up, it stays where it is
@@ -450,7 +458,7 @@ Settled with the owner on screenshots before the dialogs sent anything.
   user and opens its login shell (`vm-ssh.md`). It is shown when
   TestPermissions holds `compute.machines.ssh`, not exec's, as logging in
   to a VM is, and the page says that it logs in as the image's default
-  user and that SSH answers a few seconds after the VM's first boot ends.
+  user, a few seconds after the VM's first boot.
   Its CLI line is `hangar ssh`. The VM's page shows the host key the
   apiserver recorded on its first login, as `ssh-keygen -l` writes its
   fingerprint, and when; Forget host key, behind a dialog that says the
@@ -524,13 +532,12 @@ Settled with the owner on the screens, before they read the API.
   - New disk is a page (`web/src/pages/create-disk.tsx`) whose first
     section is the disk's type: a **Boot disk**, a copy of an image chosen
     among the usable ones, each with its smallest disk, the size held to
-    that image's floor; or a **Data disk**, blank, the default, its size's
-    hint saying it has no filesystem and is formatted in the VM. The type
-    sets how the disk is made, and is written as the label
-    `hangar/intended-use: boot` or `data`, settled with the storage
-    workstream: a user-space label recording intent alone, which
-    restricts nothing, so any disk is attached either way later. The
-    manifest shows it.
+    that image's floor; or a **Data disk**, blank, the default. Under the
+    size, "Can grow later, never shrink." The type sets how the disk is
+    made, and is written as the label `hangar/intended-use: boot` or
+    `data`, settled with the storage workstream: a user-space label
+    recording intent alone, which restricts nothing, so any disk is
+    attached either way later. The manifest shows it.
   - New disk never replaces a disk, as machine creation does not
     (`web/src/lib/create.ts`): nothing is sent until the project's disks are
     known and the name is not among them, and the one apply it sends is
@@ -549,10 +556,10 @@ Settled with the owner on the screens, before they read the API.
     what happens (`machine-model.md`, `storage-zfs.md`); for a disk
     attached to none it says nothing of restarts.
   - Delete asks for the name to be typed and says what goes with the disk.
-    On a disk attached to a live machine it says the API refuses, and
-    shows the refusal when it comes; when that machine is being deleted,
-    the API does not refuse, and the dialog says the data goes once the
-    machine is gone.
+    On a disk attached to a live machine it names that machine, and
+    shows the API's refusal when it comes; when that machine is being
+    deleted, the API does not refuse, and the dialog says the data goes
+    once the machine is gone.
 - **Of an image, the console changes only its labels**, and only for
   whoever holds `storage.images.apply` at the platform, which normally only
   platform administrators do; they write images (`vm-images.md`). An
@@ -630,13 +637,10 @@ Settled with the owner on screenshots before the pages read the API.
   and says what it lets through as a sentence, "Lets in TCP port 443 from
   any IPv6 address"; the group's page states its rules the same way,
   inbound and outbound. Inbound offers presets (SSH, HTTP/HTTPS, ICMP,
-  this group). Beside the rules the page states how groups work:
-  inbound is denied unless a rule of one of the interface's groups lets it
-  in, replies always come back, and outbound is open until one of the
-  interface's groups has outbound rules. Adding a group's first outbound
-  rule names, above the button, the interfaces it then restricts: those
-  in the group none of whose other groups has outbound rules, read from
-  the project's machines (`web/src/lib/security-group-rules.ts`). Ports
+  this group). Adding a group's first outbound rule names, above the
+  button, the interfaces it then restricts: those in the group none of
+  whose other groups has outbound rules, read from the project's machines
+  (`web/src/lib/security-group-rules.ts`). Ports
   and ranges are checked as written before anything is sent; the API's
   refusal of anything else is shown as it comes.
 - **No hostname is guessed.** The endpoint domain is the apiserver's, so
@@ -806,11 +810,11 @@ Settled with the owner on screenshots before the pages read the API.
 - **Replace value** takes a secret's whole value again, in New secret's
   fields (`web/src/components/secret-values.tsx`): its values are
   write-only, so nothing of the old one is shown or kept. The dialog says
-  that the old value is gone once applied, which registries' logins the
-  new one replaces, and, as `secrets.md` says, that containers naming the
-  secret keep running and the new value counts at each one's next image
-  pull. It applies the secret as read with `spec.data` the whole new value,
-  every key of its type (a registry login's one, `.dockerconfigjson`),
+  that the old value, and the registries it holds a login for, is gone once
+  applied, and which containers name the secret, the new value counting
+  from their next image pull (`secrets.md`). It applies the secret as
+  read with `spec.data` the whole new value, every key of its type (a
+  registry login's one, `.dockerconfigjson`),
   since apply replaces `spec.data` whole; at the resource version read, so
   a newer secret is refused, said, and moved onto with Reload, as Edit
   labels does. The values go to the call through a ref, as New secret's do,

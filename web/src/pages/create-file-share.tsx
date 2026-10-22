@@ -135,9 +135,6 @@ function NetworkPicker({ project, value, onChange }: { project: string; value: s
                 "; no machine is on them now."
               )}
             </span>
-            <span className="block text-muted">
-              It gets an address on each. Networks can be added or removed later; its mounts pause for a few seconds when they are.
-            </span>
           </span>
         )}
       </div>
@@ -190,11 +187,6 @@ function ShareForm({ crumbs, project, initialNetworks }: { crumbs: ReactNode[]; 
     <FormPage
       crumbs={crumbs}
       title="New file share"
-      description={
-        <>
-          Created in <span className="font-mono text-foreground">{project}</span>.
-        </>
-      }
       onSubmit={submit}
       side={
         <>
@@ -229,13 +221,13 @@ function ShareForm({ crumbs, project, initialNetworks }: { crumbs: ReactNode[]; 
         </>
       }
     >
-      <FormSection n={1} title="File share name" hint="Unique among this project's file shares">
+      <FormSection n={1} title="File share name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="File share name" spellCheck={false} placeholder="assets" />
         </div>
       </FormSection>
 
-      <FormSection n={2} title="Networks" hint="The networks the share is reachable from, one or more">
+      <FormSection n={2} title="Networks">
         <NetworkPicker project={project} value={networks} onChange={setNetworks} />
       </FormSection>
 
@@ -256,11 +248,11 @@ function ShareForm({ crumbs, project, initialNetworks }: { crumbs: ReactNode[]; 
             <span className="text-[13px] text-muted">GiB</span>
           </div>
           {sizeProblem && <p className="mt-1.5 text-[12px] text-fail">{sizeProblem}</p>}
-          <p className="mt-1.5 text-[12px] text-subtle">A file share can grow later but never shrink. Its size counts toward the project's disk limit.</p>
+          <p className="mt-1.5 text-[12px] text-subtle">Can grow later, never shrink.</p>
         </div>
       </FormSection>
 
-      <FormSection n={4} title="Access" hint="Which user a machine's files belong to on the share">
+      <FormSection n={4} title="Access">
         <div role="radiogroup" aria-label="Squash" className="grid max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
           {(["None", "Root", "All"] as const).map((q) => (
             <Choice key={q} selected={squash === q} onClick={() => setSquash(q)} label={`Squash ${q}`} className="p-3.5">

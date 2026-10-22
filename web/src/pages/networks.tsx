@@ -64,7 +64,7 @@ export function useNetworkActions(n: Network, can: Can, after?: () => void): Act
             after={after}
             consequence={
               name === "default"
-                ? "The project's default network is made again, with the range 10.0.0.0/24, shortly after it goes."
+                ? "It is made again as 10.0.0.0/24 shortly after."
                 : "Security groups of the network stay until deleted."
             }
             blocked={
@@ -117,14 +117,14 @@ export function NetworkList() {
       <Topbar crumbs={["Networks"]} />
       <PageHead
         title="Networks"
-        description="Private networks, each with its own IPv4 range. A machine names its networks in its interfaces."
+        description="Private IPv4 networks"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ ...nets, count: nets.items.length }}
           noun="networks"
-          empty={{ title: "No networks", text: "The project's default network is made again shortly after it is deleted.", action: newButton }}
+          empty={{ title: "No networks", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <MachinesNotice state={att} />
@@ -345,7 +345,7 @@ function Loaded({ n, can }: { n: Network; can: Can }) {
               <ul className="divide-y">
                 <li className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
                   <span className="w-32 shrink-0 font-medium">default</span>
-                  <span className="text-muted">Built in. Lets in its own members and lets everything out.</span>
+                  <span className="text-muted">Built in · its own members in, everything out</span>
                 </li>
                 {groups.items
                   .filter((g) => g.spec?.network === name)
