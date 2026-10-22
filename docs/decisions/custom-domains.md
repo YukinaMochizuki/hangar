@@ -47,13 +47,30 @@ otherwise a stale record pointing at the host would let anyone take it.
   challenge target, `<label>.acme.<endpoint domain>`, whose label is made
   from the CustomDomain's uid. The tenant makes
   `_acme-challenge.<domain>` a CNAME of it. The apiserver looks for that
-  CNAME (asking for the CNAME itself, at `--custom-domain-resolver` or the
-  system's servers) when the domain changes and every minute until it
-  finds it, then sets `Verified`, which stays true. The same CNAME
-  delegates the domain's DNS-01 challenges into the endpoint domain's zone,
-  which the edge's Cloudflare token already writes: no new credential, and
-  :80 still serves no ACME. A target is one CustomDomain's alone, so a
-  CNAME left behind by a deleted one proves nothing for the next.
+  CNAME when the domain changes and every minute until it finds it, then
+  sets `Verified`, which stays true. The same CNAME delegates the domain's
+  DNS-01 challenges into the endpoint domain's zone, which the edge's
+  Cloudflare token already writes: no new credential, and :80 still serves
+  no ACME. A target is one CustomDomain's alone, so a CNAME left behind by
+  a deleted one proves nothing for the next.
+- **It asks the domain's own nameservers** (`internal/dnscheck`), found
+  through `--custom-domain-resolver` or the system's resolvers, without
+  recursion, following delegations below the zone; only when none of them
+  answers does it take a resolver's answer, and the status says whose it
+  was. A resolver keeps "no such record" for the zone's negative TTL, often
+  half an hour, and a tenant usually adds the record after making the
+  domain, so a resolver's answer would hold the domain back that long: it
+  did on the first production domain, whose host's resolver and OVH's
+  behind it both remembered the record missing.
+- **Checking now.** `CustomDomainCheckService.CheckCustomDomain` (a
+  service of its own, as the token issuer is) does one such check at once,
+  writes the status and returns the domain; a verified one is returned as
+  it is, nothing looked up. It takes `network.customdomains.apply` at the
+  tenant, as changing the domain does: it writes the status and makes the
+  apiserver ask the domain's nameservers, so a domain's readers in its
+  projects may not. `hangar check customdomain NAME` calls it, exiting 1
+  while not verified, and `--wait` asks again every 10 seconds; the
+  console's domain page has Check now.
 - **What is served.** A verified domain gets two certificates, the
   domain's and its wildcard's, kept by the front door like its own
   (`internal/edge/front/certs.go`: one certmagic config per domain,

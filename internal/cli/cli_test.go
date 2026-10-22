@@ -79,7 +79,7 @@ func (allFree) CheckName(context.Context, *connect.Request[tenancyv1alpha1.Check
 	return connect.NewResponse(&tenancyv1alpha1.CheckNameResponse{Available: true}), nil
 }
 
-func newWorld(t *testing.T) *world {
+func newWorld(t *testing.T, configure ...func(*apiserver.Config)) *world {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
@@ -91,8 +91,12 @@ func newWorld(t *testing.T) *world {
 		t.Fatal(err)
 	}
 	// Tests size machines and open tenants freely, past any quota.
-	srv := apiserver.New(apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys,
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st})
+	cfg := apiserver.Config{Store: st, BootstrapAdmin: "root@example.com", Nodes: []string{testNode}, Secrets: keys,
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000, Credentials: st}
+	for _, c := range configure {
+		c(&cfg)
+	}
+	srv := apiserver.New(cfg)
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 	tokens, _ := srv.ServiceTokens()
