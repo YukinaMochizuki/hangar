@@ -116,20 +116,53 @@ func markNetworkRule() ruleSpec {
 	}
 }
 
+// SharedPortsFrom is the first port a network's TCP and UDP leave the
+// shared address from (Config.SharedIPv4); the ports below it there are
+// left to port forwards, so a port at the shared address is either a
+// machine's connection out or a forward into one, never both.
+const SharedPortsFrom = 32768
+
+// natRules are the root postrouting chain's: the transit range leaving the
+// uplink is masqueraded with no address set, SNATed to public with one,
+// and to shared with one of those, TCP and UDP from its ports at and above
+// SharedPortsFrom.
+func natRules(uplink string, public, shared netip.Addr) []ruleSpec {
+	transit := netip.MustParsePrefix(transitRange)
+	out := slices.Concat(matchSaddr(transit), matchIfname(expr.MetaKeyOIFNAME, uplink))
+	switch {
+	case shared.IsValid():
+		var rules []ruleSpec
+		for _, p := range []struct {
+			name  string
+			proto byte
+		}{{"TCP", unix.IPPROTO_TCP}, {"UDP", unix.IPPROTO_UDP}} {
+			rules = append(rules, ruleSpec{
+				says:  fmt.Sprintf("%s %s out of %s as %s, ports %d-65535", p.name, transit, uplink, shared, SharedPortsFrom),
+				exprs: slices.Concat(out, matchL4(p.proto), snatPorts(shared, SharedPortsFrom, 65535)),
+			})
+		}
+		return append(rules, ruleSpec{
+			says:  fmt.Sprintf("%s out of %s as %s", transit, uplink, shared),
+			exprs: slices.Concat(out, snat(shared)),
+		})
+	case public.IsValid():
+		return []ruleSpec{{
+			says:  fmt.Sprintf("%s out of %s as %s", transit, uplink, public),
+			exprs: slices.Concat(out, snat(public)),
+		}}
+	default:
+		return []ruleSpec{{
+			says:  fmt.Sprintf("%s out of %s masquerades", transit, uplink),
+			exprs: append(out, &expr.Masq{}),
+		}}
+	}
+}
+
 // rootChains is the root namespace's table, whose size does not depend on
 // how many networks there are; docs/decisions/networking.md lists its rules.
-func rootChains(uplink string, public netip.Addr) []chainSpec {
-	transit := netip.MustParsePrefix(transitRange)
-	nat := ruleSpec{
-		says:  fmt.Sprintf("%s out of %s masquerades", transit, uplink),
-		exprs: append(matchSaddr(transit), append(matchIfname(expr.MetaKeyOIFNAME, uplink), &expr.Masq{})...),
-	}
-	if public.IsValid() {
-		nat = ruleSpec{
-			says:  fmt.Sprintf("%s out of %s as %s", transit, uplink, public),
-			exprs: append(matchSaddr(transit), append(matchIfname(expr.MetaKeyOIFNAME, uplink), snat(public)...)...),
-		}
-	}
+// public is the host's own address, where the networks reach the front
+// door; shared, when set, is the one their traffic leaves as instead.
+func rootChains(uplink string, public, shared netip.Addr) []chainSpec {
 	return []chainSpec{
 		{
 			name: "prerouting", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookPrerouting, prio: *nftables.ChainPriorityRaw,
@@ -140,7 +173,7 @@ func rootChains(uplink string, public netip.Addr) []chainSpec {
 		},
 		{
 			name: "postrouting", typ: nftables.ChainTypeNAT, hook: *nftables.ChainHookPostrouting, prio: *nftables.ChainPriorityNATSource,
-			rules: []ruleSpec{nat},
+			rules: natRules(uplink, public, shared),
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
@@ -277,6 +310,17 @@ func snat(to netip.Addr) []expr.Any {
 	return []expr.Any{
 		&expr.Immediate{Register: 1, Data: to.AsSlice()},
 		&expr.NAT{Type: expr.NATTypeSourceNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1},
+	}
+}
+
+// snatPorts is snat from a source port from through to, as nft's "snat to
+// addr:from-to"; the protocol is matched before it.
+func snatPorts(to netip.Addr, from, through uint16) []expr.Any {
+	return []expr.Any{
+		&expr.Immediate{Register: 1, Data: to.AsSlice()},
+		&expr.Immediate{Register: 2, Data: binaryutil.BigEndian.PutUint16(from)},
+		&expr.Immediate{Register: 3, Data: binaryutil.BigEndian.PutUint16(through)},
+		&expr.NAT{Type: expr.NATTypeSourceNAT, Family: unix.NFPROTO_IPV4, RegAddrMin: 1, RegProtoMin: 2, RegProtoMax: 3, Specified: true},
 	}
 }
 

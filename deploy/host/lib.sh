@@ -276,6 +276,15 @@ load_env() {
 		[[ " $HANGAR_SSH_USERS " != *" root "* ]] ||
 			die "HANGAR_SSH_USERS must not list root: sshd keeps root out"
 	fi
+	# Optional: a second IPv4 address routed to the host, which the guests'
+	# traffic leaves as instead of HANGAR_PUBLIC_IPV4 (the network step puts
+	# it on the uplink, the firewall keeps the host off it).
+	if [ -n "${HANGAR_SHARED_IPV4:-}" ]; then
+		python3 -c 'import ipaddress, sys; sys.exit(0 if str(ipaddress.IPv4Address(sys.argv[1])) == sys.argv[1] else 1)' "$HANGAR_SHARED_IPV4" 2>/dev/null ||
+			die "HANGAR_SHARED_IPV4 must be an IPv4 address, such as 203.0.113.20, not $HANGAR_SHARED_IPV4"
+		[ "$HANGAR_SHARED_IPV4" != "$HANGAR_PUBLIC_IPV4" ] ||
+			die "HANGAR_SHARED_IPV4 must be another address than HANGAR_PUBLIC_IPV4"
+	fi
 	# Overrides the sshd step's lockout guard for one run; kept in the file
 	# it would override it on every run.
 	! grep -Eq '^[[:space:]]*(export[[:space:]]+)?HANGAR_SSH_DROP_USERS=' "$env_file" ||

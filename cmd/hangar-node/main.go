@@ -55,6 +55,7 @@ const defaultCmdline = "console=ttyS0 root=/dev/vda rw quiet spectre_bhi=on"
 // hostFlags are what the host drivers are built with.
 type hostFlags struct {
 	network, uplink, publicIPv4     string
+	sharedIPv4                      string
 	publicIPv6                      string
 	ipv6Prefix                      string
 	dataset, imageDir               string
@@ -273,6 +274,13 @@ func network(hf hostFlags) (*hostnet.Driver, error) {
 			return nil, fmt.Errorf("--public-ipv4: %w", err)
 		}
 	}
+	var shared netip.Addr
+	if hf.sharedIPv4 != "" {
+		var err error
+		if shared, err = netip.ParseAddr(hf.sharedIPv4); err != nil {
+			return nil, fmt.Errorf("--shared-ipv4: %w", err)
+		}
+	}
 	prefix, err := hf.prefix()
 	if err != nil {
 		return nil, err
@@ -283,7 +291,7 @@ func network(hf hostFlags) (*hostnet.Driver, error) {
 			return nil, fmt.Errorf("--public-ipv6: %w", err)
 		}
 	}
-	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public, IPv6Prefix: prefix, PublicIPv6: public6})
+	n, err := hostnet.New(hostnet.Config{Uplink: hf.uplink, PublicIPv4: public, SharedIPv4: shared, IPv6Prefix: prefix, PublicIPv6: public6})
 	if err != nil {
 		return nil, fmt.Errorf("network driver: %w", err)
 	}
@@ -295,7 +303,8 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.Int64Var(&hf.maxUnpackWork, "max-unpack-work", ocilayer.DefaultMaxWork, "steps of work unpacking one image may take, about a million for 45,000 files; past it the image is too large")
 	fs.StringVar(&hf.network, "network-driver", "fake", "with --drivers=fake, the network driver: fake, or host for this host's (needs --uplink)")
 	fs.StringVar(&hf.uplink, "uplink", "", "with this host's network driver, the link the host reaches the internet through")
-	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the address networks' traffic leaves the uplink as; empty for the uplink's own")
+	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the host's own IPv4 address, where machines reach the front door (:80 and :443), and without --shared-ipv4 the address networks' traffic leaves the uplink as; empty, they reach nothing of the host's over IPv4 and leave as the uplink's own")
+	fs.StringVar(&hf.sharedIPv4, "shared-ipv4", "", "with this host's network driver, another IPv4 address of the uplink's, which networks' traffic leaves as instead of --public-ipv4, TCP and UDP from its ports 32768 and up; empty, they leave as --public-ipv4")
 	fs.StringVar(&hf.publicIPv6, "public-ipv6", "", "with this host's network driver, the host's own public IPv6 address, where machines reach the front door (:80 and :443) as they do at --public-ipv4; empty, they reach nothing of the host's over IPv6")
 	fs.StringVar(&hf.ipv6Prefix, "public-ipv6-prefix", "", "the host's public IPv6 /64, such as 2001:db8:0:1::/64, on the uplink's link, from which each machine interface gets an address; empty for no IPv6 in the networks")
 	fs.StringVar(&hf.dataset, "zfs-dataset", "hangar", "for --drivers=host, the dataset root disks and image bases go under")

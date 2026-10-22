@@ -4,7 +4,11 @@
 # does not accept, IPv4 and IPv6 alike, on every interface but loopback. It
 # accepts the replies to what the host sent, ICMP and ICMPv6 (neighbour
 # discovery, the proxy NDP that gives guests their IPv6, path MTU), and the
-# uplink's DHCPv4 replies. Forwarded traffic, the guests', is the node
+# uplink's DHCPv4 replies. Nothing at all reaches the host at
+# HANGAR_SHARED_IPV4, the guests' address, if set: it is theirs alone, so
+# a scan or a flood of it never meets the host's SSH or front door. The
+# guests' replies and forwards to them are forwarded, never input, so
+# dropping it here takes none of them. Forwarded traffic, the guests', is the node
 # agent's tables' alone (docs/decisions/networking.md); this table has no
 # forward chain. It is loaded by a unit of its own before the network comes
 # up, never by nftables.service, whose stock config flushes every table,
@@ -20,6 +24,13 @@ FIREWALL_LIVE=$STATE_DIR/firewall.live
 # The TCP ports anyone may reach: the operator's SSH, and the front door.
 FIREWALL_TCP_PORTS="22, 80, 443"
 
+# firewall_shared_rule prints the input rule dropping all for the shared
+# address, or nothing without one.
+firewall_shared_rule() {
+	[ -n "${HANGAR_SHARED_IPV4:-}" ] || return 0
+	printf '\n\t\tip daddr %s drop' "$HANGAR_SHARED_IPV4"
+}
+
 firewall_rules() {
 	cat <<EOF
 #!/usr/sbin/nft -f
@@ -30,7 +41,7 @@ delete table inet $FIREWALL_TABLE
 table inet $FIREWALL_TABLE {
 	chain input {
 		type filter hook input priority filter; policy drop;
-		iif "lo" accept
+		iif "lo" accept$(firewall_shared_rule)
 		ct state established,related accept
 		ct state invalid drop
 		meta l4proto icmp accept

@@ -1,5 +1,7 @@
 # Takes the uplink's netplan config over from the installer and moves the host's
-# IPv6 address to HANGAR_IPV6_ADDR. IPv4 stays on plain DHCP; the step refuses
+# IPv6 address to HANGAR_IPV6_ADDR. IPv4 stays on plain DHCP, beside
+# HANGAR_SHARED_IPV4 if set, a /32 with a preferred lifetime of 0, so the
+# host takes it in and never picks it to send from; the step refuses
 # when the installer configured anything it would not carry over. A timer rolls
 # netplan back unless the new config proves itself.
 
@@ -48,12 +50,50 @@ $match
       dhcp6: false
       accept-ra: false
       addresses:
-        - "$HANGAR_IPV6_ADDR"
+        - "$HANGAR_IPV6_ADDR"$(network_shared_address)
       routes:
         - to: "::/0"
           via: "$HANGAR_IPV6_GATEWAY"
           on-link: true
 EOF
+}
+
+# network_shared_address prints the netplan address entry of
+# HANGAR_SHARED_IPV4, after the IPv6 one, or nothing without it.
+network_shared_address() {
+	[ -n "${HANGAR_SHARED_IPV4:-}" ] || return 0
+	printf '\n        - "%s/32":\n            lifetime: 0' "$HANGAR_SHARED_IPV4"
+}
+
+# network_shared_ok holds without HANGAR_SHARED_IPV4, and with it when the
+# uplink holds it as a /32 the host does not send from.
+network_shared_ok() {
+	[ -n "${HANGAR_SHARED_IPV4:-}" ] || return 0
+	local addrs
+	addrs=$(ip -4 -o addr show dev "$HANGAR_UPLINK")
+	grep -qE " inet ${HANGAR_SHARED_IPV4//./\\.}/32 .*deprecated" <<<"$addrs"
+}
+
+# network_stale_shared prints the uplink's IPv4 /32s the host never sends
+# from, as the shared address is held, other than HANGAR_SHARED_IPV4: one
+# left by an earlier value, or by none now. networkd need not remove an
+# address that leaves its config, and one left keeps answering for the host.
+network_stale_shared() {
+	ip -4 -o addr show dev "$HANGAR_UPLINK" scope global | awk '/ deprecated / {print $4}' |
+		grep '/32$' | grep -vx "${HANGAR_SHARED_IPV4:-none}/32" || true
+}
+
+# network_shared_firewall_first loads the firewall step's rules before the
+# shared address reaches the uplink, so the host's SSH and front door never
+# answer there, even if this run stops before the firewall step: the
+# firewall loaded until then accepts their ports at every address.
+network_shared_firewall_first() {
+	[ -n "${HANGAR_SHARED_IPV4:-}" ] || return 0
+	# shellcheck source=deploy/host/steps/45-firewall.sh
+	. "$(dirname "${BASH_SOURCE[0]}")/45-firewall.sh"
+	firewall_loaded && generated_is "$FIREWALL_FILE" firewall_rules && return 0
+	log "the firewall drops input to the shared address before it is put on $HANGAR_UPLINK"
+	firewall_apply
 }
 
 # network_conflicts prints the other netplan files that configure the uplink,
@@ -115,8 +155,9 @@ network_ipv6_ok() {
 		ping -6 -c 1 -W 2 -I "$HANGAR_UPLINK" "$HANGAR_IPV6_GATEWAY" >/dev/null 2>&1
 }
 
+# The DHCP address, that is, one other than the shared address.
 network_ipv4_ok() {
-	ip -4 -o addr show dev "$HANGAR_UPLINK" scope global | grep -q . &&
+	ip -4 -o addr show dev "$HANGAR_UPLINK" scope global | grep -vF " inet ${HANGAR_SHARED_IPV4:-none}/32 " | grep -q . &&
 		ip -4 route show default | grep -q .
 }
 
@@ -175,7 +216,7 @@ EOF
 
 	for i in $(seq 1 "$PROBE_ATTEMPTS"); do
 		for f in $(network_stale_ipv6); do ip -6 addr del "$f" dev "$HANGAR_UPLINK" || true; done
-		if network_ipv6_ok && network_ipv4_ok; then
+		if network_ipv6_ok && network_ipv4_ok && network_shared_ok; then
 			rollback_pending || die "the rollback timer already fired; inspect the host by hand"
 			systemctl stop "$ROLLBACK_UNIT.timer"
 			log "new netplan config confirmed after ${i} attempt(s); rollback cancelled"
@@ -183,7 +224,7 @@ EOF
 		fi
 		sleep 2
 	done
-	log "the new config did not bring up IPv6 and IPv4; rolling back now"
+	log "the new config did not bring up IPv6, IPv4 and the shared IPv4; rolling back now"
 	systemctl stop "$ROLLBACK_UNIT.timer"
 	"$backup/rollback.sh"
 	die "netplan rolled back to $backup"
@@ -201,6 +242,7 @@ network_apply() {
 	# Written before any switch, so the netplan apply below picks it up under
 	# the rollback timer.
 	put_file "$(network_dropin)" 644 "$(network_dropin_conf)"
+	network_shared_firewall_first
 
 	if ! network_owned; then
 		conflicts=$(network_conflicts) || die "refusing to take over the uplink's netplan config"
@@ -221,6 +263,9 @@ network_apply() {
 
 	for f in $(network_stale_ipv6); do
 		run "remove stale address $f from $HANGAR_UPLINK" ip -6 addr del "$f" dev "$HANGAR_UPLINK"
+	done
+	for f in $(network_stale_shared); do
+		run "remove stale shared address $f from $HANGAR_UPLINK" ip -4 addr del "$f" dev "$HANGAR_UPLINK"
 	done
 	network_proxy_ndp_live ||
 		run "reconfigure $HANGAR_UPLINK for proxy NDP" network_reconfigure_proxy_ndp
@@ -259,6 +304,8 @@ network_verify() {
 	check "uplink IPv6 is $HANGAR_IPV6_ADDR and the gateway answers" network_ipv6_ok
 	check "no other global IPv6 address on $HANGAR_UPLINK" test -z "$(network_stale_ipv6)"
 	check "IPv4 address on $HANGAR_UPLINK and a default route" network_ipv4_ok
+	check "shared IPv4 ${HANGAR_SHARED_IPV4:-(none)} on $HANGAR_UPLINK, never sent from" network_shared_ok
+	check "no other shared IPv4 left on $HANGAR_UPLINK" test -z "$(network_stale_shared)"
 	check "proxy NDP on $HANGAR_UPLINK, live and owned by networkd" network_proxy_ndp_ok
 	check "no netplan rollback pending" network_no_rollback_pending
 }

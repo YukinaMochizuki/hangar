@@ -263,7 +263,9 @@ with `--release DIR`. `--only <step>` runs a single step
     HANGAR_UPLINK --public-ipv4 HANGAR_PUBLIC_IPV4 --public-ipv6` the
     address of `HANGAR_IPV6_ADDR` (the host's two public addresses, where
     machines may reach the front door's :80 and :443 and nothing else of
-    the host; `docs/decisions/networking.md`), `--public-ipv6-prefix` its
+    the host; `docs/decisions/networking.md`), `--shared-ipv4
+    HANGAR_SHARED_IPV4` when it is set ("Giving the guests an IPv4 of
+    their own" below), `--public-ipv6-prefix` its
     /64, from which every machine interface gets its public IPv6 address,
     `--image-cache-high 20Gi` (what the container images no machine uses
     may keep, `docs/decisions/node-agent.md`), `--reserved-disk` the sum
@@ -1227,9 +1229,40 @@ offered by the console, and applying it again is refused. Check them with
 `hangar get machinesizes`, and apply each again within the rules, or delete
 it, as root.
 
+## Giving the guests an IPv4 of their own
+
+Without `HANGAR_SHARED_IPV4` every machine's IPv4 leaves as the host's own
+address, so a machine's abuse, a blocklisting or OVH's mitigation of a flood
+reaches SSH and the front door too. With it, they leave as an address of
+their own, and the host serves nothing there
+(`docs/decisions/networking.md`, "The shared IPv4 address"). To move them:
+
+1. Order one Additional IP in the OVH control panel, in the host's
+   location, and route it to the server (no virtual MAC: the host routes
+   it, nothing is bridged). It counts as in use once routed, so OVH does
+   not take it back.
+2. Add `HANGAR_SHARED_IPV4=<address>` to `/etc/hangar/host.env` and run
+   `bootstrap.sh`. The network step changes the netplan config under its
+   rollback timer (the address as a /32 with `lifetime: 0`, so the host
+   never sends from it), the firewall step drops all input to it, and the
+   services step restarts the agent with `--shared-ipv4`, which rewrites
+   table `ip hangar`.
+3. The machines' connections open at that moment were NATed to the old
+   address and break; new ones leave as the shared one. Anyone who allowed
+   a machine's traffic in by the host's address must allow the new one.
+4. Check from a machine: `curl -4 https://ifconfig.me` prints the shared
+   address, and `curl -4 https://api.hangarlab.cloud` still answers (the
+   front door stays at the host's own address). From outside, nothing
+   answers at the shared address, `ssh` included.
+
+Removing the variable and running `bootstrap.sh` again moves them back.
+The NAT log names a connection by the public address it left as, so after
+the move a report names the shared address, and before it the host's.
+
 ## Finding the machine behind an abuse report
 
-An abuse report about the host's IPv4 address names a source port and a
+An abuse report about the machines' IPv4 address (the shared one, or the
+host's without it) names a source port and a
 time. Every machine leaves as that address, so only the NAT log tells which
 one it was (`docs/decisions/networking.md`, "Abuse protection"). As root:
 
