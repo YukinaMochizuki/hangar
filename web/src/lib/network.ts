@@ -4,6 +4,7 @@
 import { toJson, type DescMessage, type JsonValue, type MessageShape } from "@bufbuild/protobuf";
 import { ConditionStatus, type Condition, type ObjectMeta } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { AddressSchema, type Address, type AddressTarget } from "@hangar/api/hangar/network/v1alpha1/address_pb";
+import { CustomDomainSchema, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import {
   PublicEndpointAccess,
@@ -169,3 +170,4 @@ export const networkYaml = (n: Network) => manifest(NetworkSchema, n, "Network")
 export const securityGroupYaml = (g: SecurityGroup) => manifest(SecurityGroupSchema, g, "SecurityGroup");
 export const addressYaml = (a: Address) => manifest(AddressSchema, a, "Address");
 export const endpointYaml = (e: PublicEndpoint) => manifest(PublicEndpointSchema, e, "PublicEndpoint");
+export const customDomainYaml = (d: CustomDomain) => manifest(CustomDomainSchema, d, "CustomDomain");

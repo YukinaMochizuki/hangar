@@ -85,7 +85,8 @@ the front door (`front-door.md`) from the same release as the binaries.
   kind's page is at `/projects/<project>/new/<kind>` (`disk`, `network`,
   `address`, `public-endpoint`, `secret`, `service-token`,
   `security-group`; machines at
-  `/new`), not `/<plural>/new`, where an object named `new` has its own
+  `/new`; a tenant's custom domains at `/tenants/<tenant>/new/custom-domain`),
+  not `/<plural>/new`, where an object named `new` has its own
   page. Creating opens the new object in the create page's place in
   history; Cancel goes back to the list. The list's "New …" button and
   its empty state link to the page, and the list's old `?new=1` redirects
@@ -148,16 +149,19 @@ joining it when its page does.
   page of it), the people bound at the current project or tenant (by
   username or email, opening Members), the projects and tenants the picker
   lists, and the console's pages. On a tenant's pages it finds the
-  tenant's members, the projects, tenants and pages. It searches nothing
+  tenant's custom domains (by domain or name), its members, the projects,
+  tenants and pages. It searches nothing
   on the server and no other project's objects. An exact name ranks above
   a prefix, a prefix above a match inside; the section holding the best
   match comes first. Choosing a result opens it.
 - **With nothing typed it offers actions and pages.** The actions are the
   "New …" flows (each opens its create page), Add
   member (Members with `?new=1`, which opens the Add member dialog), New
-  project, and Switch project, which opens the picker. Each "New …" and
+  project, and Switch project, which opens the picker; on a tenant's
+  pages, New custom domain. Each "New …" and
   Add member shows only when TestPermissions holds its permission at the
-  project, and New project where the caller may create one in some
+  project, New custom domain `network.customdomains.apply` at the tenant,
+  and New project where the caller may create one in some
   tenant, as on the pages: hidden while unknown or failed, with nothing
   said. Closing a dialog opened by
   `?new=1` takes the parameter away, so going back or reloading does not
@@ -177,7 +181,7 @@ joining it when its page does.
 - **A tenant has pages of its own, apart from any project's**, at
   `/tenants/<tenant>/…`, with a sidebar of their own: an Overview (its plan,
   what all its projects hold against the plan's limits, and each project
-  with what it holds) and its Members. Tenant settings stay out of a
+  with what it holds), its Domains and its Members. Tenant settings stay out of a
   project's pages, so a project's Members lists the project's people
   alone. Someone whose roles do not include reading the tenant sees that
   stated, and the tenant's projects they hold a role in.
@@ -622,11 +626,68 @@ Settled with the owner on screenshots before the pages read the API.
 - **No hostname is guessed.** The endpoint domain is the apiserver's, so
   the create form shows no hostname; an endpoint's page shows the URL its
   status gives.
+- **A public endpoint's custom hostnames** are rows of a label and a
+  custom domain (`web/src/components/hostnames.tsx`), on New public
+  endpoint while Access is Public and in Edit hostnames: an empty label
+  is the domain itself, and a hostname is the domain or one label below
+  it, as the API takes them. The domains offered are those of the
+  project's tenant that let the project, from the one list of custom
+  domains the caller may read; one not verified is marked so in its
+  option and stated under its row, as its hostname does not serve until
+  it is. While Access is Private the section states that only public
+  endpoints serve at custom hostnames, and the manifest holds none.
+  An endpoint's page has a Hostnames card: its own URL, then each custom
+  hostname with its URL when `status.hostnameUrls` lists it, or that it
+  waits for its domain to be verified. Edit hostnames applies at the
+  version the dialog opened on, as Edit labels does. Make private is
+  off, with the fact above its button, while the endpoint has custom
+  hostnames: the API refuses them on a private endpoint.
 - **Controls show only when the caller may use them**, as "What a control
   is shown for" above says. Each page asks once, at its project, for what
   its controls need: `network.<plural>.apply` for create, edit rules,
-  bind, move, unbind and make public or private,
+  bind, move, unbind, make public or private and edit hostnames,
   `network.<plural>.delete` for delete.
+
+### Custom domains
+
+Settled with the owner on screenshots before the pages read the API
+(`custom-domains.md`).
+
+- **A tenant's Domains** sit in its sidebar's Network group: a list, a
+  domain's page and New custom domain (`web/src/pages/custom-domains.tsx`,
+  `create-custom-domain.tsx`, `web/src/lib/custom-domains.ts`). The
+  object is a "custom domain" wherever it is named. A domain shows its
+  verification as Verified, Waiting for DNS, Lookup failed (both in the
+  pending colour: the apiserver looks again every minute) or Held by
+  another tenant (failed), from its `Verified` condition, with the
+  reason and message on its page; the DNS records its status lists, each
+  name and value copyable; the projects it lets ("All projects" when
+  `spec.projects` is empty); and the endpoints with hostnames under it,
+  each serving or waiting.
+- **Lists are read whole.** Custom domains are global and the endpoints
+  under them are every project's, so each is one List with no project,
+  read page by page to the end: the API cuts such a list into pages
+  before it leaves out what the caller may not read, so a page may come
+  back short or empty with more after it. A domain's endpoints are those
+  of the tenant's projects among them.
+- **New custom domain** suggests the object's name from the domain, its
+  dots made dashes, until the name is edited, and lets every project or
+  those chosen. Names are unique across tenants and `NameService` checks
+  none of this kind, so a name another tenant holds is known only from
+  the create-only apply's refusal, which the form states.
+- **Edit projects** is a dialog that applies at the version it opened
+  on, as Edit labels does, and says what applying lets and stops
+  letting. Leaving out a project an endpoint of which serves under the
+  domain is refused by the API, so the dialog names the endpoint and
+  Apply is off. **Delete** asks for the name typed and is off, with the
+  fact above its button, while an endpoint has hostnames under the
+  domain, and while the endpoints have not loaded.
+- **Controls are gated at the tenant**: one TestPermissions answer for a
+  list or a page, `network.customdomains.apply` for New, Edit projects
+  and Edit labels, `network.customdomains.delete` for Delete. A
+  project's people read the domains that let their project, with no
+  control; their reads are per domain, which TestPermissions cannot say,
+  so the endpoint form's domains are the list as the API answers it.
 
 ### Secrets and service tokens
 

@@ -13,6 +13,7 @@ import { RoleBindingService } from "@hangar/api/hangar/iam/v1alpha1/role_binding
 import { ServiceTokenService } from "@hangar/api/hangar/iam/v1alpha1/service_token_pb";
 import { ServiceTokenIssuerService } from "@hangar/api/hangar/iam/v1alpha1/service_token_issuer_pb";
 import { AddressService } from "@hangar/api/hangar/network/v1alpha1/address_pb";
+import { CustomDomainService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
@@ -65,6 +66,12 @@ export const lists = {
       { metadata: { name: "demo" }, spec: { tenant: "acme", displayName: "Demo" } },
       { metadata: { name: "web-staging" }, spec: { tenant: "acme", displayName: "Staging" } },
       { metadata: { name: "lab-1" }, spec: { tenant: "zeta", displayName: "Edge lab" } },
+    ],
+  }),
+  listCustomDomains: () => ({
+    items: [
+      { metadata: { name: "example-com" }, spec: { tenant: "acme", domain: "example.com" }, status: { conditions: [{ type: "Verified", status: 1 }] } },
+      { metadata: { name: "zeta-example" }, spec: { tenant: "zeta", domain: "zeta.example" } },
     ],
   }),
   listTenants: () => ({ items: [{ metadata: { name: "acme" }, spec: { displayName: "Acme" } }, { metadata: { name: "zeta" }, spec: { displayName: "Zeta Research" } }] }),
@@ -132,6 +139,7 @@ export function paletteApi(f: PaletteFake = {}) {
       getProject: async (req) => ({ project: (await l("listProjects")()).items.find((p) => p.metadata.name === req.name) }),
     });
     r.service(TenantService, { listTenants: () => l("listTenants")() });
+    r.service(CustomDomainService, { listCustomDomains: () => l("listCustomDomains")() });
     r.service(NameService, { checkName: () => ({ available: true }) });
   });
 }
