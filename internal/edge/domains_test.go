@@ -2,6 +2,7 @@ package edge_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -282,14 +283,22 @@ func TestACustomHostnameServesOnlyUnderItsOwnTenantsDomain(t *testing.T) {
 	w.publicAt(customHost)
 	ctx := context.Background()
 	// Straight from the store, as the cascade's delete is, past the
-	// refusal that keeps a domain in use.
+	// refusal that keeps a domain in use; read again when the controller
+	// wrote the domain's status in between.
 	key := store.Key{Kind: registry.CustomDomain.Kind, Name: "example"}
-	o, err := w.env.Store.Get(ctx, key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := w.env.Store.Delete(ctx, key, o.Revision); err != nil {
-		t.Fatal(err)
+	for {
+		o, err := w.env.Store.Get(ctx, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, err = w.env.Store.Delete(ctx, key, o.Revision)
+		if errors.Is(err, store.ErrConflict) {
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		break
 	}
 	if _, err := w.root.Apply(ctx, registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
 		t.Fatal(err)
