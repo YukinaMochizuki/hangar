@@ -22,7 +22,7 @@ network_dropin_conf() {
 
 network_proxy_ndp_live() { [ "$(sysctl -n "net.ipv6.conf.$HANGAR_UPLINK.proxy_ndp")" = 1 ]; }
 
-network_dropin_ok() { network_dropin_conf | cmp -s - "$(network_dropin)"; }
+network_dropin_ok() { generated_is "$(network_dropin)" network_dropin_conf; }
 
 network_proxy_ndp_ok() { network_dropin_ok && network_proxy_ndp_live; }
 
@@ -123,7 +123,7 @@ network_ipv4_ok() {
 network_owned() {
 	local conflicts
 	conflicts=$(network_conflicts) || return 1
-	[ -z "$conflicts" ] && network_netplan | cmp -s - "$NETPLAN_FILE"
+	[ -z "$conflicts" ] && generated_is "$NETPLAN_FILE" network_netplan
 }
 
 # network_stale_ipv6 prints global uplink addresses other than the wanted one.
@@ -132,19 +132,23 @@ network_stale_ipv6() { uplink_global_ipv6 | grep -vx "$HANGAR_IPV6_ADDR" || true
 # network_validate renders the would-be /etc/netplan in a scratch root, so a
 # config netplan rejects never reaches the live system.
 network_validate() {
-	local root f
+	local root f conf
 	root=$(mktemp -d)
 	mkdir -p "$root/etc/netplan"
 	cp -a /etc/netplan/. "$root/etc/netplan/"
 	for f in "$@"; do mv "$root$f" "$root$f.hangar-disabled"; done
-	network_netplan >"$root$NETPLAN_FILE"
+	# As put_file writes, so network_owned, which compares as put_file does,
+	# holds for what is installed; captured first, so a failing generator
+	# stops the run.
+	conf=$(network_netplan)
+	printf '%s\n' "$conf" >"$root$NETPLAN_FILE"
 	chmod 600 "$root$NETPLAN_FILE"
 	netplan generate --root-dir "$root" || { rm -rf "$root"; return 1; }
 	rm -rf "$root"
 }
 
 network_switch() {
-	local backup f i
+	local backup f i conf
 	backup=$STATE_DIR/netplan-$(date +%Y%m%dT%H%M%S)
 	mkdir -p "$backup"
 	cp -a /etc/netplan/. "$backup/"
@@ -163,7 +167,8 @@ EOF
 		--timer-property=AccuracySec=1s "$backup/rollback.sh"
 
 	for f in "$@"; do mv "$f" "$f.hangar-disabled"; done
-	network_netplan >"$NETPLAN_FILE.hangar-new"
+	conf=$(network_netplan)
+	printf '%s\n' "$conf" >"$NETPLAN_FILE.hangar-new"
 	chmod 600 "$NETPLAN_FILE.hangar-new"
 	mv -f "$NETPLAN_FILE.hangar-new" "$NETPLAN_FILE"
 	netplan apply

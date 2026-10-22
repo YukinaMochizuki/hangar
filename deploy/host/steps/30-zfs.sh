@@ -22,7 +22,7 @@ zfs_udev_nowatch() {
 }
 
 zfs_udev_persisted() {
-	zfs_udev_noprobe | cmp -s - "$ZFS_UDEV_NOPROBE" && zfs_udev_nowatch | cmp -s - "$ZFS_UDEV_NOWATCH" &&
+	generated_is "$ZFS_UDEV_NOPROBE" zfs_udev_noprobe && generated_is "$ZFS_UDEV_NOWATCH" zfs_udev_nowatch &&
 		[ "$(stat -c %a "$ZFS_UDEV_NOPROBE")" = 644 ] && [ "$(stat -c %a "$ZFS_UDEV_NOWATCH")" = 644 ]
 }
 

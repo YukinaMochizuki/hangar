@@ -1017,7 +1017,9 @@ The rules are `deploy/host/monitoring/rules/host.yml`, the host's, and
 `deploy/host/monitoring/tests/`; `make test-monitoring` (part of `make
 check` and CI) runs `promtool check rules` and `promtool test rules` on
 them and checks the configurations the step writes, with the same
-versions. The step installs both, and removes any other file in
+versions, with a Telegram chat set and with none, and that `verify.sh`'s
+check of them passes on them as the step writes them. The step installs the
+two rules files, and removes any other file in
 `/etc/hangar/monitoring/rules`. Each alert is `critical` or `warning`:
 
 - critical, sent at once (one message an alert name, again every 4 hours
