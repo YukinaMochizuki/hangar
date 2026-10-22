@@ -11,7 +11,7 @@ import { errorMessage } from "@/lib/api";
  */
 export function StaleBanner({ what, error, onRetry }: { what: string; error: unknown; onRetry: () => void }) {
   return (
-    <PageBanner tone="warning" title={`The ${what} did not load again; this page shows the last answer.`}>
+    <PageBanner tone="warning" title={`The ${what} did not reload; showing the last answer.`}>
       <span className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-mono text-[12px]">{errorMessage(error)}</span>
         <Button size="sm" onClick={onRetry}>

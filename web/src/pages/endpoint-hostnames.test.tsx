@@ -88,7 +88,7 @@ describe("New public endpoint's custom hostnames", () => {
     const api = show(<CreatePublicEndpoint />);
     await fill();
     expect(within(screen.getByLabelText("Hostname 2 domain")).getByRole("option", { name: "shop.example.net (not verified)" })).toBeTruthy();
-    expect(screen.getByText("shop.example.net is not verified, so shop.example.net does not serve until it is.")).toBeTruthy();
+    expect(screen.getByText("shop.example.net is not verified; shop.example.net serves once it is.")).toBeTruthy();
     // A domain the project may not use is not offered.
     expect(screen.queryByRole("option", { name: /example\.org/ })).toBeNull();
     click("Create public endpoint");
@@ -101,7 +101,7 @@ describe("New public endpoint's custom hostnames", () => {
     const api = show(<CreatePublicEndpoint />);
     await fill();
     fireEvent.click(screen.getByRole("radio", { name: "Private" }));
-    expect(screen.getByText("Only public endpoints serve at custom hostnames.")).toBeTruthy();
+    expect(screen.getByText("Public endpoints only.")).toBeTruthy();
     click("Create public endpoint");
     await waitFor(() => expect(applies(api)).toHaveLength(1));
     expect(applies(api)[0].publicEndpoint?.spec?.hostnames).toEqual([]);

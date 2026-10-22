@@ -11,11 +11,14 @@ import {
   type VirtualMachine,
 } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardService, Protocol, type ApplyPortForwardRequest, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { DiskSchema, DiskService, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import { FileShareSchema, FileShareService, type FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createdKey, isJustCreated } from "@/lib/just-created";
@@ -63,6 +66,12 @@ type Fake = {
   quota?: { limits: { cpu?: string; memory?: string; disk?: string }; usage: { cpu?: string; memory?: string; disk?: string } };
   /** The platform's images; debian-13, of no stated smallest disk, unless set. */
   images?: Image[];
+  /** The project's disks, file shares and port forwards; none unless set. */
+  disks?: Disk[];
+  shares?: FileShare[];
+  forwards?: PortForward[];
+  /** What a port forward's apply fails with, when set. */
+  forwardFail?: ConnectError;
 };
 
 const catalogImage = (name: string, os: string, minDiskSize = "") => create(ImageSchema, { metadata: { name }, spec: { os, version: "13", minDiskSize } });
@@ -109,6 +118,16 @@ function api(f: Fake) {
     r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [] }) });
     r.service(ImageService, { listImages: () => ({ items: f.images ?? [catalogImage("debian-13", "debian")] }) });
+    r.service(DiskService, { listDisks: () => ({ items: f.disks ?? [] }) });
+    r.service(FileShareService, { listFileShares: () => ({ items: f.shares ?? [] }) });
+    r.service(PortForwardService, {
+      listPortForwards: () => ({ items: f.forwards ?? [] }),
+      applyPortForward: (req) => {
+        if (f.forwardFail) throw f.forwardFail;
+        return { portForward: req.portForward, created: true };
+      },
+      deletePortForward: () => ({}),
+    });
   });
 }
 
@@ -366,7 +385,10 @@ describe("CreateMachine", () => {
 
 const diskField = () => screen.getByLabelText("Disk, GiB") as HTMLInputElement;
 const memoryField = () => screen.getByLabelText("Memory, GiB") as HTMLInputElement;
-const cpuField = () => screen.getByLabelText("vCPUs") as HTMLInputElement;
+const cpuField = () => screen.getByLabelText("vCPUs, number") as HTMLInputElement;
+/** The rulers, which a person drags. */
+const memoryRuler = () => screen.getByRole("slider", { name: "Memory" }) as HTMLInputElement;
+const cpuRuler = () => screen.getByRole("slider", { name: "vCPUs" }) as HTMLInputElement;
 const typeMemory = (v: string) => fireEvent.change(memoryField(), { target: { value: v } });
 const typeCPU = (v: string) => fireEvent.change(cpuField(), { target: { value: v } });
 
@@ -383,30 +405,40 @@ describe("CreateMachine's custom size", () => {
     expect(cpuField().value).toBe("2");
     typeMemory("1.5");
     typeCPU("3");
-    expect(screen.getByText("1.5 GiB of memory goes with 1 to 3 vCPUs.")).toBeTruthy();
+    // 1.5 GiB allows 1 to 3 vCPUs: the ruler says the rest need more memory.
+    expect(screen.getByText(/^4\+ need more memory$/)).toBeTruthy();
+    expect(within(screen.getByRole("radio", { name: "Size Custom" })).getByText("1.5")).toBeTruthy();
     expect(manifest()).toContain("memory: 1536Mi");
     await createAllowed(a, "api");
     expect(sentResources(a)).toMatchObject({ cpu: "3", memory: "1536Mi", disk: "20Gi" });
   });
 
-  it("refuses a shape outside the rules in place, and sends nothing", async () => {
+  it("takes only a shape inside the rules: a value typed outside them is marked and not taken", async () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
     fireEvent.click(await screen.findByRole("radio", { name: "Size Custom" }));
     fill("api");
-    for (const [mem, cpu, why] of [
-      ["1", "8", "1 GiB of memory goes with 1 to 2 vCPUs, not 8."],
-      ["32", "1", "32 GiB of memory goes with 4 to 64 vCPUs, not 1."],
-      ["0.3", "1", "Memory is a whole number of 256 MiB steps, at least one."],
-      ["1", "", "The vCPUs are a whole number, at least 1."],
-    ]) {
-      typeMemory(mem!);
-      typeCPU(cpu!);
-      await screen.findAllByText(why!);
-      await waitFor(() => expect(existingLoaded()).toBe(true));
-      expect(submitButton().disabled).toBe(true);
-      submit();
-    }
+    // 2 GiB allows 1 to 4 vCPUs.
+    typeCPU("8");
+    expect(cpuField().getAttribute("aria-invalid")).toBe("true");
+    expect(manifest()).toContain('cpu: "1"');
+    typeMemory("0.3");
+    expect(memoryField().getAttribute("aria-invalid")).toBe("true");
+    expect(manifest()).toContain("memory: 2Gi");
+    // Leaving a field shows the shape's value again.
+    fireEvent.blur(memoryField());
+    expect(memoryField().value).toBe("2");
+    expect(memoryField().getAttribute("aria-invalid")).toBe("false");
+    // The ruler cannot reach what the memory does not allow, and less memory takes the vCPUs down with it.
+    typeCPU("4");
+    fireEvent.change(cpuRuler(), { target: { value: "9" } });
+    expect(cpuRuler().value).toBe("4");
+    fireEvent.change(memoryRuler(), { target: { value: "2" } });
+    expect(memoryField().value).toBe("1");
+    expect(cpuField().value).toBe("2");
+    // A memory off the stops is typed, and becomes a stop of its own.
+    typeMemory("1.25");
+    expect(memoryRuler().value).toBe("3");
     typeMemory("0.25");
     typeCPU("1");
     await createAllowed(a, "api");
@@ -449,7 +481,7 @@ describe("CreateMachine's disk", () => {
     render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
     await waitFor(() => expect(diskField().value).toBe("20"));
     // A size's disk is where the field starts; the least is the rules'.
-    expect(screen.getByText("At least 2 GiB")).toBeTruthy();
+    expect(screen.getByText("≥ 2 GiB")).toBeTruthy();
     fireEvent.click(screen.getByRole("radio", { name: "Size L" }));
     expect(diskField().value).toBe("40");
     typeDisk("50");
@@ -526,7 +558,7 @@ describe("CreateMachine's disk", () => {
     render(<CreateMachine kind="vm" size="m" />, { wrapper: withApi(a) });
     await chooseImage("ubuntu");
     await waitFor(() => expect(diskField().value).toBe("30"));
-    expect(screen.getByText("The image ubuntu-24 needs at least 30 GiB")).toBeTruthy();
+    expect(screen.getByText("≥ 30 GiB for ubuntu-24")).toBeTruthy();
     typeDisk("25");
     fill("box", false);
     await screen.findAllByText("The image ubuntu-24 needs a disk of at least 30 GiB; 25 GiB is less.");
@@ -536,7 +568,7 @@ describe("CreateMachine's disk", () => {
     submit();
     // Of an image with no floor above it, the rules' holds.
     await chooseImage("debian");
-    expect(screen.getByText("At least 2 GiB")).toBeTruthy();
+    expect(screen.getByText("≥ 2 GiB")).toBeTruthy();
     await chooseImage("ubuntu");
     typeDisk("30");
     await waitFor(() => expect(submitButton().disabled).toBe(false));
@@ -544,12 +576,6 @@ describe("CreateMachine's disk", () => {
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(writes(a)).toEqual([{ method: "ApplyVirtualMachine", project: "demo", name: "box", createOnly: true }]);
     expect(sentResources(a)).toMatchObject({ disk: "30Gi" });
-  });
-
-  it("says by the field that a disk grows later, and that growing restarts the machine", async () => {
-    const a = api({ containers: async () => ({ items: [] }) });
-    render(<CreateMachine kind="container" size="m" />, { wrapper: withApi(a) });
-    await screen.findByText(/A disk can grow later; growing restarts the machine\./);
   });
 
   it("states no disk on the size cards", async () => {
@@ -571,7 +597,7 @@ describe("CreateMachine's disk", () => {
     typeDisk("41");
     await screen.findByText("Over the project's disk limit");
     expect(screen.getAllByText((_, el) => el?.textContent === "The disk needs 41 GiB; 40 GiB of 50 GiB is left.").length).toBeGreaterThan(0);
-    expect(screen.getByText("Over quota: 40 GiB of the project's 50 GiB of disk is left.")).toBeTruthy();
+    expect(screen.getByText("Over quota: 40 of 50 GiB left.")).toBeTruthy();
     for (const c of screen.getAllByRole("radio", { name: /^Size / })) expect(c.textContent).not.toContain("Over quota");
     expect(submitButton().disabled).toBe(true);
     submit();
@@ -663,5 +689,111 @@ describe("CreateMachine's advanced section", () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
     expect(screen.queryByRole("button", { name: /Entrypoint, command, restart, environment/ })).toBeNull();
+  });
+});
+
+describe("CreateMachine's VM fields and port forwards", () => {
+  const pg = create(DiskSchema, { metadata: { name: "pg-data", project: "demo" }, spec: { size: "5Gi" } });
+  const media = create(FileShareSchema, { metadata: { name: "media", project: "demo" }, spec: { size: "5Gi", networks: ["default"] } });
+  /** The calls of the create that write, in order. */
+  const sent = (a: ReturnType<typeof api>) => a.requests.filter((c) => /^(Apply|Delete)/.test(c.method)).map((c) => c.method);
+  const lastVM = (a: ReturnType<typeof api>) => (a.requests.find((c) => c.method === "ApplyVirtualMachine")!.request as { virtualMachine: VirtualMachine }).virtualMachine;
+
+  it("sends a VM's data disks, file shares, SSH keys and user data", async () => {
+    const a = api({ containers: async () => ({ items: [] }), disks: [pg], shares: [media] });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Attach disk/ }));
+    await screen.findByRole("option", { name: /^pg-data/ });
+    fireEvent.change(screen.getByRole("combobox", { name: "Data disk 1" }), { target: { value: "pg-data" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add file share/ }));
+    fireEvent.click(screen.getByRole("button", { name: "File share 1" }));
+    fireEvent.click(await screen.findByRole("option", { name: /^media/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Read-only" }));
+    // Folded until opened.
+    expect(screen.queryByLabelText("SSH keys")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /SSH keys, user data/ }));
+    fireEvent.change(screen.getByLabelText("SSH keys"), { target: { value: "ssh-ed25519 AAAA me\n\n  ssh-ed25519 BBBB you  " } });
+    fireEvent.change(screen.getByLabelText("User data"), { target: { value: "#cloud-config\n" } });
+    fill("db", false);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    const spec = lastVM(a).spec!;
+    expect(spec.disks.map((d) => d.disk)).toEqual(["pg-data"]);
+    expect(spec.fileShares.map((x) => [x.name, x.readOnly])).toEqual([["media", true]]);
+    expect(spec.sshAuthorizedKeys).toEqual(["ssh-ed25519 AAAA me", "ssh-ed25519 BBBB you"]);
+    expect(spec.userData).toBe("#cloud-config\n");
+  });
+
+  it("refuses user data over 16 KiB, and a data disk row with no disk", async () => {
+    const a = api({ containers: async () => ({ items: [] }), disks: [pg] });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Attach disk/ }));
+    fireEvent.click(screen.getByRole("button", { name: /SSH keys, user data/ }));
+    fireEvent.change(screen.getByLabelText("User data"), { target: { value: "x".repeat(16 * 1024 + 1) } });
+    fill("db", false);
+    expect(await screen.findByText(/User data is 16385 bytes, at most 16384\./)).toBeTruthy();
+    expect(screen.getByText(/Data disk 1 has no disk\./)).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
+    submit();
+    expect(sent(a)).toEqual([]);
+  });
+
+  it("makes the port forwards first, each named from the machine and port, then the machine", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Add port forward/ }));
+    fireEvent.change(screen.getByLabelText("Port of port forward 1"), { target: { value: "22" } });
+    fireEvent.click(screen.getByRole("button", { name: /Add port forward/ }));
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Protocol of port forward 2" })).getByRole("radio", { name: "UDP" }));
+    fireEvent.change(screen.getByLabelText("Port of port forward 2"), { target: { value: "53" } });
+    fill("web");
+    expect(manifest()).toContain("name: web-53-udp");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(sent(a)).toEqual(["ApplyPortForward", "ApplyPortForward", "ApplyContainer"]);
+    const forwards = a.requests.filter((c) => c.method === "ApplyPortForward").map((c) => (c.request as ApplyPortForwardRequest));
+    expect(forwards.every((r) => r.createOnly)).toBe(true);
+    expect(forwards.map((r) => [r.portForward!.metadata!.name, r.portForward!.spec!.protocol, r.portForward!.spec!.targetPort, r.portForward!.spec!.target!.object.value])).toEqual([
+      ["web-22", Protocol.TCP, 22, "web"],
+      ["web-53-udp", Protocol.UDP, 53, "web"],
+    ]);
+  });
+
+  it("deletes the forwards it made when the machine is then refused", async () => {
+    const a = api({ containers: async () => ({ items: [] }), fail: new ConnectError("quota exceeded", Code.ResourceExhausted) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Add port forward/ }));
+    fireEvent.change(screen.getByLabelText("Port of port forward 1"), { target: { value: "22" } });
+    fill("web");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await screen.findByText(/quota exceeded/);
+    expect(sent(a)).toEqual(["ApplyPortForward", "ApplyContainer", "DeletePortForward"]);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("makes no machine when a forward is refused, and leaves none of its forwards", async () => {
+    const a = api({ containers: async () => ({ items: [] }), forwardFail: new ConnectError("plan allows 5 port forwards", Code.ResourceExhausted) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Add port forward/ }));
+    fireEvent.change(screen.getByLabelText("Port of port forward 1"), { target: { value: "22" } });
+    fill("web");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await screen.findByText(/Creating port forward web-22 failed: .*plan allows 5 port forwards/);
+    expect(sent(a)).toEqual(["ApplyPortForward"]);
+  });
+
+  it("refuses a row whose port is not one", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /Add port forward/ }));
+    fireEvent.change(screen.getByLabelText("Port of port forward 1"), { target: { value: "70000" } });
+    fill("web");
+    expect(await screen.findByText(/Port forward 1: 70000 is not a port/)).toBeTruthy();
+    expect(submitButton().disabled).toBe(true);
+    void a;
   });
 });

@@ -21,7 +21,7 @@ import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { buttonVariants, Card, CardHeader, CopyButton, Led, phaseLabel } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { machinePath, useMachines, type MachineView } from "@/lib/machines";
-import { kindNoun, nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
+import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
 import { isStale, permission, useApplyAt, useNetworkCan, useReload } from "@/lib/network-actions";
 import {
   inboundOf,
@@ -35,7 +35,7 @@ import {
   type Inbound,
 } from "@/lib/port-forwards";
 import { ruleSentence } from "@/lib/security-group-rules";
-import { InterfaceField, pickOf, pickProblem, pickTarget, type InterfacePick } from "@/pages/addresses";
+import { InterfaceField, pickTarget, type InterfacePick } from "@/components/interface-field";
 
 /** A pick of the interface field as a forward's target, as the API takes it; undefined for none. */
 export function forwardTargetOfPick(p: InterfacePick) {
@@ -45,7 +45,7 @@ export function forwardTargetOfPick(p: InterfacePick) {
 
 const pickOfForward = (pf: PortForward) => {
   const t = specOf(pf).target;
-  return pickOf(t ? `${t.kind}/${t.name}/${t.iface}` : "");
+  return t ? `${t.kind}/${t.name}/${t.iface}` : "";
 };
 
 /**
@@ -117,10 +117,8 @@ function RetargetDialog({ onClose, forward }: { onClose: () => void; forward: Po
   obj.spec ??= create(PortForwardSpecSchema);
   obj.spec.target = target;
   const problems: string[] = [];
-  if (!target) problems.push("No interface is chosen.");
-  const typedProblem = pickProblem(pick);
-  if (typedProblem) problems.push(typedProblem);
-  if (target && pick.choice === current) problems.push("It leads there already.");
+  if (!target) problems.push("No machine is chosen.");
+  if (target && pick === current) problems.push("It leads there already.");
   const close = () => {
     applyAt.reset();
     onClose();
@@ -136,16 +134,7 @@ function RetargetDialog({ onClose, forward }: { onClose: () => void; forward: Po
   const port = base.status?.port;
   return (
     <Dialog open onClose={close} title={`Retarget ${name}`}>
-      <div className="text-[12.5px] text-foreground">Interface</div>
-      <div className="mt-1.5">
-        <InterfaceField
-          pick={pick}
-          onChange={setPick}
-          none="Choose an interface"
-          current={was ? { value: current, label: `${was.name} · ${was.iface} (${kindNoun(was.kind)})` } : undefined}
-          hint={`${port ? `Port ${port}` : "The public port"} stays as it is; only where it leads changes. No machine restarts.`}
-        />
-      </div>
+      <InterfaceField value={pick} onChange={setPick} current={current} hint={port ? `Port ${port} stays.` : undefined} />
       <FormEquivalent yaml={portForwardYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />
       {stale && (
         <StaleNotice title="The port forward changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
@@ -302,7 +291,7 @@ export function InboundNotice({ t, protocol, port, inbound }: { t: ForwardTarget
   if (!inbound.known) {
     return (
       <Notice tone="info" title={`${iface} does not exist yet`}>
-        Its security groups are known once the {kindNoun(t.kind)} is made; until one of them lets in {what(protocol, port)}, the forward reaches nothing.
+        Nothing gets through until one of its security groups lets in {what(protocol, port)}.
       </Notice>
     );
   }
@@ -331,16 +320,14 @@ export function InboundNotice({ t, protocol, port, inbound }: { t: ForwardTarget
     const from = [...new Set(inbound.admitting.map((a) => a.from))];
     return (
       <Notice tone="info" title={`Let in from ${from.join(", ")} only`}>
-        {joined([...new Set(inbound.admitting.map((a) => a.group))])} {inbound.admitting.length === 1 ? "lets" : "let"} in {what(protocol, port)} from{" "}
-        {from.join(", ")}; from any other address, the forward reaches nothing.
+        {joined([...new Set(inbound.admitting.map((a) => a.group))])} {inbound.admitting.length === 1 ? "lets" : "let"} it in.
         {edits}
       </Notice>
     );
   }
   return (
-    <Notice tone="warning" title={`No security group of ${iface} lets in ${what(protocol, port)}`}>
-      Inbound traffic is denied unless a rule of one of the interface's groups lets it in, so the forward is in place and nothing reaches the{" "}
-      {kindNoun(t.kind)}. {iface} is in {inbound.groups.length > 0 ? joined(inbound.groups) : "no group"}.{edits}
+    <Notice tone="warning" title={`No security group lets in ${what(protocol, port)}`}>
+      {iface} is in {inbound.groups.length > 0 ? joined(inbound.groups) : "no group"}.{edits}
     </Notice>
   );
 }
@@ -415,7 +402,7 @@ export function MachinePortForwards({ m }: { m: MachineView }) {
         <ErrorNotice error={forwards.error} title="The port forwards did not load" onRetry={forwards.refetch} />
       ) : mine.length === 0 ? (
         <div className="px-4 py-3 text-[13px] text-muted">
-          No port forwards. A port forward opens one port of this {kindNoun(m.kind)} to the internet, on a port of its node's shared IPv4 address.
+          No port forwards.
         </div>
       ) : (
         <ul className="divide-y">

@@ -113,6 +113,15 @@ the front door (`front-door.md`) from the same release as the binaries.
   endpoint, which a form would have to say plainly before it offers them.
 - **Copy states facts.** No "next step", no imperative sentences: "Q7 needs
   3 vCPU; 1 vCPU of 5 vCPU is left." Buttons are named for what they do.
+- **Copy says only what the screen cannot.** A page head says what the
+  kind is in a few words, or nothing; an empty list is its title, one or
+  two sentences on what the kind is and does, and its create button; a
+  field or section hint states a constraint the field
+  cannot show, in one short sentence. What a design shows (a range on a
+  ruler, a lock on a field, a value no one can choose) is not also
+  written, and nothing explains how Hangar works or what other features
+  exist. A fact the person needs before acting stays: what a delete takes
+  with it, that growing restarts a machine.
 - **Copy describes what people can see and do, not how Hangar is built.**
   It says what a container or a virtual machine is to its user (an image
   from a registry, a full operating system, exec and logs, SSH) and never
@@ -137,7 +146,12 @@ Every page is behind `AccountService.WhoAmI`:
 The project is in the path, `/projects/<project>/…`, so a link names its
 project; `/` opens the project used last, or the first one. The console
 shows only what works. The sidebar lists only pages that exist, a kind
-joining it when its page does.
+joining it when its page does. Beside each of a project's kinds it counts
+what the project holds, from the kind's own list; none, or a list not
+loaded or not the caller's to read, shows no number. Images (the
+platform's) and Members (whose list holds only the project's own
+bindings) are not counted. The Overview counts nothing the sidebar does:
+it shows the project's usage against its limits.
 
 ### The command palette
 
@@ -216,7 +230,7 @@ joining it when its page does.
   the other lists: the person with their username under their email, their
   role and their menu, three columns that fit a phone, filtered by email or
   username. A person who is not a platform member
-  yet is shown with that alone ("the role takes effect once they are"),
+  yet is shown with that alone ("Not signed up yet"),
   never with whether they were invited (`tenancy-and-iam.md`).
 - Roles are changed in the row, added in a dialog with what each role
   holds, and removed after the dialog says what ends and what stays (a
@@ -314,10 +328,9 @@ Settled with the owner on screenshots before the dialogs sent anything.
 - **A machine is edited on the create form, opened on it**, at
   `/projects/<project>/containers/<name>/edit` and `/vms/<name>/edit`
   (`web/src/pages/edit-machine.tsx`), from Edit in the machine's head and
-  in its row's menu. Every field is prefilled from the spec. Kind and Name
-  are each one locked line, and a VM's image is locked, saying that a VM's
-  root disk is made from its image once and its source does not change; a
-  VM's root disk size is locked too, as it grows on its disk's page. Only
+  in its row's menu. Every field is prefilled from the spec. Kind, Name
+  and a VM's image are each one locked line, "Does not change."; a VM's
+  boot disk size is stated with a link to its disk, where it grows. Only
   the parts of the spec the person changed are written back over the
   object as read (`web/src/lib/machine-edit.ts`), so labels, the run state
   and every field the form does not show stay as they were. The apply is
@@ -334,13 +347,14 @@ Settled with the owner on screenshots before the dialogs sent anything.
   from the Machine the container and VM controllers write) changes that
   spec's hash, and the node stops and starts the machine (`ensureVM`):
   interfaces, a container's volumes, entrypoint, command, environment and
-  restart policy, cpu, memory and a container's disk. A container's image
-  rebuilds the root disk when the reference names another image. Image
-  pull secrets, read only when an image is pulled, a VM's file shares,
-  which change its shares' exports, and user data, which the metadata
-  service hands to cloud-init on the first boot, reach no VMSpec and
-  restart nothing. With nothing changed it says "No change" and Apply is
-  off.
+  restart policy, cpu, memory, a container's disk and a VM's data disks. A
+  container's image rebuilds the root disk when the reference names
+  another image. Image pull secrets, read only when an image is pulled, a
+  VM's file shares, which change its shares' exports, and its SSH keys and
+  user data, which the metadata service hands to cloud-init on the first
+  boot, reach no VMSpec and restart nothing; nor do the port forwards made
+  or deleted beside the machine. With nothing changed it says "No change"
+  and Apply is off.
 - **An edit keeps the machine's own size** until another is chosen: the
   listed size its cpu and memory match is marked Current; a spec matching
   none shows a card of its own first, Current, with its cpu and memory,
@@ -352,40 +366,47 @@ Settled with the owner on screenshots before the dialogs sent anything.
   in whole GiB rounded up. A stored disk that is not whole GiB, such as
   `10G`, is sent back as it is, and checked only once the person changes
   it.
-- **Resize is a dialog on the machine's page** for the size alone: the
-  platform's sizes, the current one marked (a card of its own, Current,
-  when no listed size matches), and that resizing restarts the machine,
-  or for a stopped one that the new size counts once it starts; the disk
-  stays as it is. It applies cpu and memory alone, at the version of the
-  object the dialog opened on, and says so when the object changed since,
-  as the edit page does.
-- **Edit, Resize, Start and Stop show only when TestPermissions holds the
+- **A machine is resized on its edit page.** Its head and its row's menu
+  offer Edit, Start or Stop, Edit labels and Delete, and no Resize: one
+  place changes a machine's shape, with what applying does beside it.
+- **Edit, Start and Stop show only when TestPermissions holds the
   kind's apply permission** (`compute.containers.apply`,
   `compute.virtualmachines.apply`), and Delete only its delete permission,
   as "What a control is shown for" says; the edit page states the refusal
-  once the answer gives one. Edit and Resize are not offered for a
-  machine being deleted, whose edit page says so and holds no form.
+  once the answer gives one. Edit is not offered for a machine being
+  deleted, whose edit page says so and holds no form.
 - **The sizes are the platform's presets**, read from the API
   (`MachineSizeService.ListMachineSizes`, `web/src/lib/machine-sizes.ts`,
   `machine-sizes.md`); the console holds none of its own. The create form
   shows them by their `order` and fills the machine's cpu and memory from
   the chosen one; `?size=` takes a size's name, and a name the platform
   does not list chooses the first. A size's card states its cpu and
-  memory, not its disk. A size the shape rules refuse, stored before
-  them, is not offered, in the form or in Resize, since a machine of it
+  memory, not its disk. The cards are one row on a wide screen, whatever
+  their number, Custom last, their lines level across the row. A size the
+  shape rules refuse, stored before them, is not offered, since a machine of it
   would be refused; lists still name machines by it. A list's size badge
   is the listed size whose cpu and memory the machine has, and none when
   no size matches.
-- **Custom, after the sizes, is a shape of the person's own.** Chosen, it
-  opens Memory (GiB, in steps of 0.25) and vCPUs fields, starting from the
-  shape chosen before, and says the vCPUs the memory allows; a shape the
-  rules refuse (`shapeProblem`, the apiserver's rules) is stated under the
-  fields and above the submit button, and the form sends nothing. Memory
+- **Custom, after the sizes, is a shape of the person's own**, set on two
+  rulers so that a shape the rules refuse (`shapeProblem`, the apiserver's
+  rules) cannot be set (`web/src/components/size-sliders.tsx`). The card
+  states the shape as the other cards do, and the rule in small print,
+  "0.5–8 GiB per vCPU". Chosen, a panel as wide as the cards' row opens
+  under them, starting from the shape chosen before: a memory ruler that
+  stops at the common shapes (0.25, 0.5, 1, 1.5, 2, 3, 4, 6, 8, 12, 16,
+  24, 32 GiB and on) up to twice the platform's largest size, and a vCPU
+  ruler up to twice its largest vCPUs. The vCPUs the memory does not allow
+  are a hatched stretch with no ticks, which the pointer cannot reach,
+  with a note under it ("5+ need more memory", "1 needs less memory");
+  moving the memory moves the vCPUs into its range. Ticks are short and
+  thin, the pointer a small bar: the panel is a control, not a feature of
+  the page. Beside each ruler a field takes a value typed: memory any
+  whole number of 256 MiB steps, which becomes a stop of its own, vCPUs
+  any the memory allows; a value refused is marked and not taken. Memory
   goes out as whole Gi, or as Mi when it is not. With no size defined,
   Custom is the only card and is chosen. An edited machine whose shape is
-  no listed size shows it as a card of its own, Current, beside Custom. The
-  Resize dialog offers the sizes alone; a shape of one's own is the edit
-  page's.
+  no listed size shows it as a card of its own, Current, beside Custom, and
+  its shape is a stop of the rulers.
 - **The disk is chosen apart from the size**, as GCP and AWS choose a boot
   disk apart from the machine type. The create form's Disk field takes
   whole GiB, at least the minimum its heading states: 2 GiB, or for a VM
@@ -396,8 +417,36 @@ Settled with the owner on screenshots before the dialogs sent anything.
   minimum, or not a whole number, the field states the fact and the form
   sends nothing. The manifest and the summary
   show the value typed, refused or not. It goes to a container's
-  `resources.disk` and a VM's `rootDisk.fromImage.size`. By the field: "A
-  disk can grow later; growing restarts the machine. It never shrinks."
+  `resources.disk` and a VM's `rootDisk.fromImage.size`. Beside the
+  field its minimum: "≥ 2 GiB", "≥ 30 GiB for ubuntu-24", or on an edit
+  "≥ 20 GiB, never shrinks".
+- **A VM's Disks are its boot disk and its data disks**, one section
+  (`web/src/components/vm-disks.tsx`): the boot disk's size, then the
+  project's disks attached after it in order (`spec.disks`), each chosen
+  from a list where a root disk or a disk another machine holds is shown
+  and cannot be chosen. A disk is made on New disk, not here.
+- **A VM declares file shares as a container mounts them**, with the same
+  picker (`web/src/components/volume-picker.tsx`, `vm`): file shares
+  alone, no target, as the VM mounts a share itself, each read-only or
+  not, and a share on none of its networks offered with the two ways to
+  reach it. Switching Kind on New machine drops the interfaces and share
+  changes made for the other kind's shares.
+- **A machine's Advanced section is folded.** A container's holds its
+  process; a VM's its SSH keys, one a line, and its user data with its
+  size against the 16 KiB the API takes (`web/src/components/vm-advanced.tsx`).
+  Neither is needed to reach a VM: `hangar ssh` signs in without a key.
+- **Port forwards are made with the machine**, on New and Edit, both kinds
+  (`web/src/components/machine-port-forwards.tsx`, `forwardPlan` in
+  `web/src/lib/port-forwards.ts`): rows of protocol, port and, for a
+  machine of several, interface, each leading to a random public port. An
+  edit lists the forwards that lead to the machine with their address.
+  Each new row is a PortForward named from the machine and port, never a
+  name the project holds; a row removed is deleted. On create the forwards
+  are applied first, each waiting for its machine, so a plan's limit
+  stops the create before the machine is made; a machine then refused
+  takes them back. On an edit the machine is applied first, when it
+  changed, then the forwards. A port no security group of the row's
+  interface lets in is said under the row.
 - **A size's card is over quota by the disk it starts at**, with its cpu
   and memory: the larger of its disk and the floor, never the disk typed.
   A raised disk past the project's disk limit is stated under the Disk
@@ -412,10 +461,10 @@ Settled with the owner on screenshots before the dialogs sent anything.
   booted again (a later boot is in the log), or, for the last, what the
   restart policy does next. A container whose boots ended three times in
   ten minutes gets a warning above the log that it keeps starting over,
-  and why that usually is: a process that ends at once, under restart
-  always. The count is the console's, from the log it holds; the API keeps
-  no restart count. The log is coloured as a terminal would colour it, from
-  its ANSI SGR codes (`web/src/lib/ansi.ts`), in a palette toned for each
+  and that a command that exits at once does this. The count is the
+  console's, from the log it holds; the API keeps no restart count. The
+  log is coloured as a terminal would colour it, from its ANSI SGR codes
+  (`web/src/lib/ansi.ts`), in a palette toned for each
   theme (`--ansi-0` to `--ansi-15`); every other escape sequence and
   control character is dropped. It opens at its end and, while scrolled to
   its end, stays there as lines come; scrolled up, it stays where it is
@@ -450,7 +499,7 @@ Settled with the owner on screenshots before the dialogs sent anything.
   user and opens its login shell (`vm-ssh.md`). It is shown when
   TestPermissions holds `compute.machines.ssh`, not exec's, as logging in
   to a VM is, and the page says that it logs in as the image's default
-  user and that SSH answers a few seconds after the VM's first boot ends.
+  user, a few seconds after the VM's first boot.
   Its CLI line is `hangar ssh`. The VM's page shows the host key the
   apiserver recorded on its first login, as `ssh-keygen -l` writes its
   fingerprint, and when; Forget host key, behind a dialog that says the
@@ -524,13 +573,12 @@ Settled with the owner on the screens, before they read the API.
   - New disk is a page (`web/src/pages/create-disk.tsx`) whose first
     section is the disk's type: a **Boot disk**, a copy of an image chosen
     among the usable ones, each with its smallest disk, the size held to
-    that image's floor; or a **Data disk**, blank, the default, its size's
-    hint saying it has no filesystem and is formatted in the VM. The type
-    sets how the disk is made, and is written as the label
-    `hangar/intended-use: boot` or `data`, settled with the storage
-    workstream: a user-space label recording intent alone, which
-    restricts nothing, so any disk is attached either way later. The
-    manifest shows it.
+    that image's floor; or a **Data disk**, blank, the default. Under the
+    size, "Can grow later, never shrink." The type sets how the disk is
+    made, and is written as the label `hangar/intended-use: boot` or
+    `data`, settled with the storage workstream: a user-space label
+    recording intent alone, which restricts nothing, so any disk is
+    attached either way later. The manifest shows it.
   - New disk never replaces a disk, as machine creation does not
     (`web/src/lib/create.ts`): nothing is sent until the project's disks are
     known and the name is not among them, and the one apply it sends is
@@ -549,10 +597,10 @@ Settled with the owner on the screens, before they read the API.
     what happens (`machine-model.md`, `storage-zfs.md`); for a disk
     attached to none it says nothing of restarts.
   - Delete asks for the name to be typed and says what goes with the disk.
-    On a disk attached to a live machine it says the API refuses, and
-    shows the refusal when it comes; when that machine is being deleted,
-    the API does not refuse, and the dialog says the data goes once the
-    machine is gone.
+    On a disk attached to a live machine it names that machine, and
+    shows the API's refusal when it comes; when that machine is being
+    deleted, the API does not refuse, and the dialog says the data goes
+    once the machine is gone.
 - **Of an image, the console changes only its labels**, and only for
   whoever holds `storage.images.apply` at the platform, which normally only
   platform administrators do; they write images (`vm-images.md`). An
@@ -630,13 +678,10 @@ Settled with the owner on screenshots before the pages read the API.
   and says what it lets through as a sentence, "Lets in TCP port 443 from
   any IPv6 address"; the group's page states its rules the same way,
   inbound and outbound. Inbound offers presets (SSH, HTTP/HTTPS, ICMP,
-  this group). Beside the rules the page states how groups work:
-  inbound is denied unless a rule of one of the interface's groups lets it
-  in, replies always come back, and outbound is open until one of the
-  interface's groups has outbound rules. Adding a group's first outbound
-  rule names, above the button, the interfaces it then restricts: those
-  in the group none of whose other groups has outbound rules, read from
-  the project's machines (`web/src/lib/security-group-rules.ts`). Ports
+  this group). Adding a group's first outbound rule names, above the
+  button, the interfaces it then restricts: those in the group none of
+  whose other groups has outbound rules, read from the project's machines
+  (`web/src/lib/security-group-rules.ts`). Ports
   and ranges are checked as written before anything is sent; the API's
   refusal of anything else is shown as it comes.
 - **No hostname is guessed.** The endpoint domain is the apiserver's, so
@@ -675,9 +720,13 @@ pages read the API (`networking.md`, "Port forwards").
   last in the sidebar's Network group, and a Port forwards card on a
   container's or VM's page listing the forwards that lead to it, with New
   port forward opening the create page on its first interface
-  (`?target=Kind/machine/interface`). The empty list says what a forward
-  is beside a public endpoint (HTTPS, at a hostname) and an interface's
-  own public IPv6.
+  (`?target=Kind/machine/interface`).
+- **A target is a machine, then an interface** (`web/src/components/interface-field.tsx`,
+  also New address and Bind or Move): the project's machines grouped as
+  Containers and Virtual machines, and an interface select, each named
+  with its network ("eth1 · storage"), only for a machine of several.
+  A machine not made yet is not offered; its forwards and addresses are
+  made by `hangar apply`, which waits for it.
 - **Its address is `status.ipv4:status.port`**, in the monospace face with
   a copy button: the port is drawn when the forward is made, the address
   is the shared IPv4 of the node the target runs on, so until it is placed
@@ -686,14 +735,12 @@ pages read the API (`networking.md`, "Port forwards").
   `ssh -p PORT user@IPV4` for TCP port 22, `nc -u IPV4 PORT` for UDP, and
   the address itself for any other port, each copyable, and that machines
   on the same host do not reach it there.
-- **The public port is never asked for.** New port forward has a Public
-  port section that says it is drawn at random from 10000–32767 and kept
-  until the forward is deleted, retargeting included; the manifest holds
-  no port. Protocol is a two-option segmented control as tall as the
-  target port beside it, its highlight sliding across in 200 ms (none
-  under reduced motion); presets fill SSH, RDP and WireGuard. The name is
-  suggested from the machine and port (`web-22`, `game-19132-udp`) until
-  edited.
+- **The public port is never asked for, nor explained.** The summary says
+  "shared IPv4 : random port →" the target; the manifest holds no port.
+  Protocol is a two-option segmented control as tall as the target port
+  beside it, its highlight sliding across in 200 ms (none under reduced
+  motion). The name is suggested from the machine and port (`web-22`,
+  `game-19132-udp`), never one the project holds, until edited.
 - **Whether its traffic gets in is said on every screen**, read from the
   project's Machines and security groups: the client's own address reaches
   the machine, so a forward is let in only by an inbound rule of one of the
@@ -806,11 +853,11 @@ Settled with the owner on screenshots before the pages read the API.
 - **Replace value** takes a secret's whole value again, in New secret's
   fields (`web/src/components/secret-values.tsx`): its values are
   write-only, so nothing of the old one is shown or kept. The dialog says
-  that the old value is gone once applied, which registries' logins the
-  new one replaces, and, as `secrets.md` says, that containers naming the
-  secret keep running and the new value counts at each one's next image
-  pull. It applies the secret as read with `spec.data` the whole new value,
-  every key of its type (a registry login's one, `.dockerconfigjson`),
+  that the old value, and the registries it holds a login for, is gone once
+  applied, and which containers name the secret, the new value counting
+  from their next image pull (`secrets.md`). It applies the secret as
+  read with `spec.data` the whole new value, every key of its type (a
+  registry login's one, `.dockerconfigjson`),
   since apply replaces `spec.data` whole; at the resource version read, so
   a newer secret is refused, said, and moved onto with Reload, as Edit
   labels does. The values go to the call through a ref, as New secret's do,

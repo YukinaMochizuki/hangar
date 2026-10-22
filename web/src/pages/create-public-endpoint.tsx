@@ -25,8 +25,8 @@ import { useCan } from "@/lib/permissions";
 const applyPerm = permission("publicEndpoint", "apply");
 
 const accesses = [
-  { id: PublicEndpointAccess.PRIVATE, icon: Lock, label: "Private", text: "Those who may use this project's endpoints, signed in." },
-  { id: PublicEndpointAccess.PUBLIC, icon: Globe, label: "Public", text: "Anyone on the internet, with no sign-in." },
+  { id: PublicEndpointAccess.PRIVATE, icon: Lock, label: "Private", text: "Sign-in required." },
+  { id: PublicEndpointAccess.PUBLIC, icon: Globe, label: "Public", text: "Anyone, no sign-in." },
 ];
 
 /** CreatePublicEndpoint is the New public endpoint page. */
@@ -87,11 +87,6 @@ function EndpointForm({ crumbs, project }: { crumbs: ReactNode[]; project: strin
     <FormPage
       crumbs={crumbs}
       title="New public endpoint"
-      description={
-        <>
-          One TCP port of a machine in <span className="font-mono text-foreground">{project}</span>, served over HTTPS at a hostname of its own.
-        </>
-      }
       onSubmit={send}
       side={
         <>
@@ -141,7 +136,7 @@ function EndpointForm({ crumbs, project }: { crumbs: ReactNode[]; project: strin
           <FormField label="Port" className="mt-0">
             <Input value={port} onChange={(ev) => setPort(ev.target.value.replace(/\D/g, ""))} inputMode="numeric" />
           </FormField>
-          <span className="col-span-2 text-[11.5px] text-subtle">The TCP port the machine serves plain HTTP on, on eth0.</span>
+          <span className="col-span-2 text-[11.5px] text-subtle">Plain HTTP, on eth0.</span>
         </div>
       </FormSection>
       <FormSection n={2} title="Access">
@@ -155,22 +150,20 @@ function EndpointForm({ crumbs, project }: { crumbs: ReactNode[]; project: strin
           ))}
         </div>
       </FormSection>
-      <FormSection n={3} title="Endpoint name" hint="Unique among this project's public endpoints">
+      <FormSection n={3} title="Endpoint name">
         <div className="max-w-xl">
           <Input value={name} onChange={(ev) => setName(ev.target.value.toLowerCase())} aria-label="Endpoint name" spellCheck={false} />
-          <p className="mt-1.5 text-[12px] text-subtle">The endpoint's hostname is made from its name and the project's, and is claimed for good.</p>
+          <p className="mt-1.5 text-[12px] text-subtle">Sets the hostname, which is claimed for good.</p>
         </div>
       </FormSection>
       <FormSection n={4} title="Custom hostnames" hint="Optional">
         {isPublic ? (
           <>
-            <p className="mb-3 max-w-xl text-[12.5px] text-muted">
-              Besides its own hostname, the endpoint serves at these, each a custom domain of the tenant or one label below one.
-            </p>
+            <p className="mb-3 max-w-xl text-[12.5px] text-muted">Each a custom domain of the tenant or one label below one.</p>
             <HostnameRows rows={rows} onChange={setRows} domains={domains} />
           </>
         ) : (
-          <p className="max-w-xl text-[12.5px] text-muted">Only public endpoints serve at custom hostnames.</p>
+          <p className="max-w-xl text-[12.5px] text-muted">Public endpoints only.</p>
         )}
       </FormSection>
     </FormPage>

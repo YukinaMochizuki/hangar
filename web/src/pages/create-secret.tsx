@@ -66,7 +66,6 @@ function SecretForm({ crumbs, project }: { crumbs: ReactNode[]; project: string 
     <FormPage
       crumbs={crumbs}
       title="New secret"
-      description="A registry login the platform pulls this project's images with. Its values are write-only: once created, no page and no answer of the API holds them."
       onSubmit={send}
       side={
         <>
@@ -96,7 +95,7 @@ function SecretForm({ crumbs, project }: { crumbs: ReactNode[]; project: string 
           <SecretValuesFields form={form} />
         </div>
       </FormSection>
-      <FormSection n={2} title="Secret name" hint="Unique among this project's secrets">
+      <FormSection n={2} title="Secret name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Secret name" spellCheck={false} placeholder="registry-login" />
         </div>

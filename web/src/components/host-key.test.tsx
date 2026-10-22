@@ -89,7 +89,7 @@ describe("HostKeys", () => {
       { wrapper: withApi(a) },
     );
     fireEvent.click(await screen.findByRole("button", { name: "Forget host key" }));
-    expect(screen.getByText(/The next terminal login trusts/).closest("dd")).toBeNull();
+    expect(screen.getByText(/The next login trusts/).closest("dd")).toBeNull();
   });
 
   it("offers Forget only to a caller who may change the VM", async () => {
@@ -104,7 +104,7 @@ describe("HostKeys", () => {
     const { a, forgets } = api([forgetPermission]);
     render(<HostKeys vm={vm([key])} project="demo" />, { wrapper: withApi(a) });
     fireEvent.click(await screen.findByRole("button", { name: "Forget host key" }));
-    expect(screen.getByText(/The next terminal login trusts whatever key the VM then shows/)).toBeTruthy();
+    expect(screen.getByText(/The next login trusts whatever key the VM shows/)).toBeTruthy();
     expect(forgets).toEqual([]);
     const buttons = screen.getAllByRole("button", { name: "Forget host key" });
     fireEvent.click(buttons.at(-1)!);

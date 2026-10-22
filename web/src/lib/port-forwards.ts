@@ -174,6 +174,62 @@ export const suggestName = (machine: string, protocol: ForwardProtocol, port: nu
   machine && port ? `${machine}-${port}${protocol === "UDP" ? "-udp" : ""}` : "";
 
 /**
+ * A row of the machine form's Port forwards: one the machine has (existing
+ * names it, and it is shown, not edited) or one to make.
+ */
+export type ForwardRow = { existing?: string; protocol: ForwardProtocol; port: string; iface: string };
+
+/** The forwards that lead to a machine, as the form's rows. */
+export function forwardRowsOf(forwards: PortForward[], kind: MachineKind, machine: string): ForwardRow[] {
+  return forwards.flatMap((pf) => {
+    const { target, protocol, targetPort } = specOf(pf);
+    return target && target.kind === kind && target.name === machine ? [{ existing: pf.metadata?.name ?? "", protocol, port: String(targetPort), iface: target.iface }] : [];
+  });
+}
+
+/** name, or name-2, name-3… whichever is not taken. */
+export function freeName(name: string, taken: Set<string>): string {
+  if (!name || !taken.has(name)) return name;
+  let i = 2;
+  while (taken.has(`${name}-${i}`)) i++;
+  return `${name}-${i}`;
+}
+
+/**
+ * What the machine form does to the forwards when it is applied: the
+ * existing forwards its rows no longer hold are deleted, and each new row
+ * is made, named from the machine and port, never a name the project has.
+ */
+export function forwardPlan(
+  machine: { kind: MachineKind; name: string },
+  rows: ForwardRow[],
+  had: ForwardRow[],
+  projectNames: string[],
+): { make: { name: string; protocol: ForwardProtocol; port: number; iface: string }[]; remove: string[]; problems: string[] } {
+  const kept = new Set(rows.flatMap((r) => (r.existing ? [r.existing] : [])));
+  const remove = had.flatMap((r) => (r.existing && !kept.has(r.existing) ? [r.existing] : []));
+  const taken = new Set(projectNames);
+  const problems: string[] = [];
+  const make: { name: string; protocol: ForwardProtocol; port: number; iface: string }[] = [];
+  const seen = new Set<string>();
+  rows.forEach((r, i) => {
+    const bad = r.existing ? undefined : portProblem(r.port);
+    if (bad) {
+      problems.push(`Port forward ${i + 1}: ${bad}`);
+      return;
+    }
+    const key = `${r.iface}/${r.protocol}/${Number(r.port)}`;
+    if (seen.has(key)) problems.push(`Port forward ${i + 1} repeats ${portLabel(Number(r.port), r.protocol)} on ${r.iface}.`);
+    seen.add(key);
+    if (r.existing) return;
+    const name = freeName(suggestName(machine.name, r.protocol, Number(r.port)), taken);
+    taken.add(name);
+    make.push({ name, protocol: r.protocol, port: Number(r.port), iface: r.iface });
+  });
+  return { make, remove, problems };
+}
+
+/**
  * How many port forwards the project holds against its plan's limit, from
  * the project's status as the new-machine form reads it (lib/over-quota.ts);
  * limit is undefined when there is none, or while it is not known.

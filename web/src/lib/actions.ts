@@ -102,16 +102,6 @@ export async function applyMachineAt(transport: Transport, o: MachineObject): Pr
   else await createClient(VirtualMachineService, transport).applyVirtualMachine({ virtualMachine: o as VirtualMachine });
 }
 
-/** applyMachineAt as a mutation, the lists asked again once it settles. */
-export function useApplyMachineAt() {
-  const transport = useTransport();
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (o: MachineObject) => applyMachineAt(transport, o),
-    onSettled: () => queryClient.invalidateQueries(),
-  });
-}
-
 /** Reads a container or VM as it is now, for a form to start again from. */
 export function useReadMachine(kind: MachineKind, project: string, name: string) {
   const transport = useTransport();

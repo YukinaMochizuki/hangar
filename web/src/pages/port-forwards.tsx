@@ -69,7 +69,7 @@ export function PortForwardList() {
       <Topbar crumbs={["Port forwards"]} />
       <PageHead
         title="Port forwards"
-        description="Ports drawn at random on the shared IPv4 address of a machine's node, each kept until deleted and leading to a port of one interface. The interface's security groups still decide what gets in."
+        description="A machine's port on a public IPv4 address"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
@@ -78,12 +78,7 @@ export function PortForwardList() {
           noun="port forwards"
           empty={{
             title: "No port forwards",
-            text: (
-              <>
-                A port forward opens one TCP or UDP port of a machine to the internet over IPv4, on a port drawn at random on its node's shared address. A
-                website over HTTPS is served by a public endpoint, at a hostname; and every interface has a public IPv6 address of its own.
-              </>
-            ),
+            text: "A port forward opens one TCP or UDP port of a machine on a public IPv4 address.",
             action: newButton,
           }}
         >

@@ -47,7 +47,7 @@ const kinds: Record<
     list: "Virtual machines",
     noun: "virtual machine",
     cli: (m) => `hangar ssh vm ${m.name} -p ${m.project}`,
-    note: "Logs in over SSH as the image's default user. SSH answers a few seconds after the VM's first boot ends.",
+    note: "Logs in as the image's default user, a few seconds after first boot.",
   },
 };
 
@@ -119,14 +119,14 @@ function EndNote({ state, cli, className }: { state: TerminalState; cli: string;
   if (state.kind === "unsupported") {
     return (
       <p className={cn("border-t px-4 py-2.5 text-[12.5px] text-muted", className)}>
-        The terminal draws with WebGL, which this browser does not give it. <span className="font-mono">{cli}</span> opens the same shell.
+        This browser has no WebGL. <span className="font-mono">{cli}</span> opens the same shell.
       </p>
     );
   }
   if (state.kind !== "ended" || state.end.kind !== "unreachable") return null;
   return (
     <p className={cn("border-t px-4 py-2.5 text-[12.5px] text-muted", className)}>
-      The API refused the connection or could not be reached; a browser is not told why. <span className="font-mono">{cli}</span> says.
+      The connection was refused or failed. <span className="font-mono">{cli}</span> shows why.
     </p>
   );
 }

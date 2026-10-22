@@ -31,7 +31,7 @@ import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { NetworkDetail } from "@/pages/networks";
 import { PublicEndpointDetail } from "@/pages/public-endpoints";
 import { never, polyfillDialog, withApi } from "@/test/harness";
-import { addresses, endpoints, networkApi, portForwards, type NetworkApi, type Overrides } from "@/test/network-api";
+import { addresses, endpoints, networkApi, portForwards, twoMachines, type NetworkApi, type Overrides } from "@/test/network-api";
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
@@ -260,9 +260,11 @@ describe("addresses", () => {
 
   it("reserves an address bound to the interface chosen", async () => {
     const api = show(<CreateAddress />);
-    await screen.findByRole("option", { name: /api · eth0/ });
+    await screen.findByRole("option", { name: "api" });
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/api" } });
+    // A machine of one interface asks for no interface.
+    expect(screen.queryByRole("combobox", { name: "Interface" })).toBeNull();
     type("Address name", "edge");
     click("Reserve address");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
@@ -277,8 +279,8 @@ describe("addresses", () => {
     const api = show(<AddressDetail name="spare" />);
     await screen.findByText("Summary");
     click("Bind");
-    await screen.findByRole("option", { name: /api · eth0/ });
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    await screen.findByRole("option", { name: "api" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/api" } });
     expect(within(screen.getByRole("dialog")).getByText(/^hangar apply -p demo -f spare\.yaml$/)).toBeTruthy();
     click("Bind");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
@@ -287,45 +289,33 @@ describe("addresses", () => {
     expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
   });
 
-  it("binds to a machine typed by name, which need not exist yet", async () => {
-    const api = show(<AddressDetail name="spare" />);
+  it("binds to another interface of a machine of several, each named with its network", async () => {
+    const api = show(<AddressDetail name="spare" />, twoMachines);
     await screen.findByText("Summary");
     click("Bind");
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
-    expect(screen.getByText(/A machine that does not exist yet is waited for/)).toBeTruthy();
-    expect(screen.getByText(/The machine's name is empty\./)).toBeTruthy();
+    await screen.findByRole("option", { name: "worker" });
     expect(button("Bind").disabled).toBe(true);
-    type("Kind", "VirtualMachine");
-    type("Machine", " builder ");
-    type("On", "eth1");
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/worker" } });
+    // Choosing the machine chooses its first interface.
+    expect((screen.getByRole("combobox", { name: "Interface" }) as HTMLSelectElement).value).toBe("eth0");
+    expect(screen.getByRole("option", { name: "eth1 · sandbox" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "eth1" } });
     click("Bind");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
     const want = clone(AddressSchema, addresses()[1]);
-    want.spec!.target = create(AddressTargetSchema, { object: { case: "virtualMachine", value: "builder" }, interface: "eth1" });
+    want.spec!.target = create(AddressTargetSchema, { object: { case: "container", value: "worker" }, interface: "eth1" });
     expect(equals(AddressSchema, lastApply<ApplyAddressRequest>(api).address!, want)).toBe(true);
-  });
-
-  it("binds a typed machine's eth0 when no interface is given", async () => {
-    const api = show(<AddressDetail name="spare" />);
-    await screen.findByText("Summary");
-    click("Bind");
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
-    type("Machine", "builder");
-    type("On", "");
-    click("Bind");
-    await waitFor(() => expect(methods(api)).toEqual(["ApplyAddress"]));
-    expect(lastApply<ApplyAddressRequest>(api).address!.spec!.target!.interface).toBe("eth0");
   });
 
   it("does not move an address that moved since the dialog opened: says so, and reloads", async () => {
     const moved = clone(AddressSchema, addresses()[0]);
     moved.metadata!.resourceVersion = 25n;
     moved.spec!.target = create(AddressTargetSchema, { object: { case: "virtualMachine", value: "builder" }, interface: "eth0" });
-    const api = show(<AddressDetail name="api" />, { server: { addresses: [moved, addresses()[1]] } });
+    const api = show(<AddressDetail name="api" />, { server: { addresses: [moved, addresses()[1]] }, ...twoMachines });
     await screen.findByText("Summary");
     click("Move");
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
-    type("Machine", "worker");
+    await screen.findByRole("option", { name: "worker" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/worker" } });
     click("Move");
     expect(await screen.findByText("The address changed after this dialog opened.")).toBeTruthy();
     expect(button("Move").disabled).toBe(true);
@@ -333,7 +323,7 @@ describe("addresses", () => {
 
     click("Reload");
     await waitFor(() => expect(screen.queryByText("The address changed after this dialog opened.")).toBeNull());
-    expect((screen.getByRole("combobox", { name: "Interface" }) as HTMLSelectElement).value).toBe("VirtualMachine/builder/eth0");
+    expect((screen.getByRole("combobox", { name: "Machine" }) as HTMLSelectElement).value).toBe("VirtualMachine/builder");
     expect(methods(api)).toEqual(["ApplyAddress", "GetAddress"]);
   });
 
@@ -367,9 +357,9 @@ describe("addresses", () => {
 describe("port forwards", () => {
   it("creates a port forward with one create-only Apply of exactly the form's object, then opens it", async () => {
     const api = show(<CreatePortForward />);
-    await screen.findByRole("option", { name: /api · eth0/ });
+    await screen.findByRole("option", { name: "api" });
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/api" } });
     fireEvent.click(screen.getByRole("radio", { name: "UDP" }));
     type("Target port", "51820");
     expect((screen.getByLabelText("Port forward name") as HTMLInputElement).value).toBe("api-51820-udp");
@@ -384,9 +374,9 @@ describe("port forwards", () => {
     expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/port-forwards/$name", params: { project: "demo", name: "api-51820-udp" }, replace: true });
   });
 
-  it("warns above the button when no group lets the port in, and still creates", async () => {
+  it("warns by the port when no group lets it in, and still creates", async () => {
     const api = show(<CreatePortForward target="Container/api/eth0" />);
-    expect(await screen.findByText("Nothing will get through yet")).toBeTruthy();
+    expect(await screen.findByText("No security group lets in TCP port 22")).toBeTruthy();
     await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
     click("Create port forward");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyPortForward"]));
@@ -411,17 +401,18 @@ describe("port forwards", () => {
   });
 
   it("retargets at the version the dialog opened from, the rest untouched", async () => {
-    const api = show(<PortForwardDetail name="api-ssh" />);
+    const api = show(<PortForwardDetail name="api-ssh" />, twoMachines);
     await screen.findByText("Summary");
     click("Retarget");
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
-    type("Kind", "VirtualMachine");
-    type("Machine", "builder");
-    expect(within(screen.getByRole("dialog")).getByText(/Port 23817 stays as it is/)).toBeTruthy();
+    await screen.findByRole("option", { name: "worker" });
+    expect(within(screen.getByRole("dialog")).getByText("It leads there already.")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/worker" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "eth1" } });
+    expect(within(screen.getByRole("dialog")).getByText("Port 23817 stays.")).toBeTruthy();
     click("Retarget");
     await waitFor(() => expect(methods(api)).toEqual(["ApplyPortForward"]));
     const want = clone(PortForwardSchema, portForwards()[0]);
-    want.spec!.target = create(PortForwardTargetSchema, { object: { case: "virtualMachine", value: "builder" }, interface: "eth0" });
+    want.spec!.target = create(PortForwardTargetSchema, { object: { case: "container", value: "worker" }, interface: "eth1" });
     expect(equals(PortForwardSchema, lastApply<ApplyPortForwardRequest>(api).portForward!, want)).toBe(true);
     expect(lastApply<ApplyPortForwardRequest>(api).createOnly).toBe(false);
   });
@@ -429,11 +420,11 @@ describe("port forwards", () => {
   it("does not retarget a forward changed since the dialog opened: says so, and reloads", async () => {
     const newer = clone(PortForwardSchema, portForwards()[0]);
     newer.metadata!.resourceVersion = 50n;
-    const api = show(<PortForwardDetail name="api-ssh" />, { server: { forwards: [newer] } });
+    const api = show(<PortForwardDetail name="api-ssh" />, { server: { forwards: [newer] }, ...twoMachines });
     await screen.findByText("Summary");
     click("Retarget");
-    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
-    type("Machine", "worker");
+    await screen.findByRole("option", { name: "worker" });
+    fireEvent.change(screen.getByRole("combobox", { name: "Machine" }), { target: { value: "Container/worker" } });
     click("Retarget");
     expect(await screen.findByText("The port forward changed after this dialog opened.")).toBeTruthy();
     expect(equals(PortForwardSchema, api.server.forwards[0], newer)).toBe(true);

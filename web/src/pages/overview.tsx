@@ -89,12 +89,7 @@ function MachineTable({ project }: { project: string }) {
       ) : error ? (
         <ErrorNotice error={error} title="The machines did not load" onRetry={refetch} />
       ) : items.length === 0 ? (
-        <EmptyState
-          title="No machines"
-          action={<NewMachineLink project={project} />}
-        >
-          This project runs no containers and no virtual machines.
-        </EmptyState>
+        <EmptyState title="No machines" action={<NewMachineLink project={project} />} />
       ) : (
         <ul className="divide-y">
           {items.map((m) => (
@@ -217,11 +212,10 @@ function FromTheCli({ project }: { project: string }) {
       <CardHeader title="From the CLI" action={<CopyButton text={lines.join("\n")} />} />
       {releasesUrl && (
         <p className="px-4 pt-3 text-[12px] text-muted">
-          Get the CLI for Linux or macOS from the{" "}
+          Linux and macOS builds:{" "}
           <a className="text-accent underline" href={releasesUrl} target="_blank" rel="noreferrer">
             releases
           </a>
-          , then:
         </p>
       )}
       <pre className="overflow-x-auto px-4 pt-3 font-mono text-[12px] leading-6">
@@ -233,8 +227,7 @@ function FromTheCli({ project }: { project: string }) {
         ))}
       </pre>
       <p className="px-4 pb-3 text-[12px] text-muted">
-        The installer puts <code className="font-mono">hangar</code> in ~/.local/bin; if your shell does not find it,
-        add that to your PATH.
+        Installs <code className="font-mono">hangar</code> in ~/.local/bin.
       </p>
     </Card>
   );
@@ -259,8 +252,7 @@ function SilentHosts({ project }: { project: string }) {
     <>
       {[...silent.entries()].map(([node, s]) => (
         <PageBanner key={node} tone="warning" title={`${node} stopped reporting${s.since ? ` ${ago(s.since)} ago` : ""}`}>
-          {s.count === 1 ? "The machine" : `The ${s.count} machines`} of this project on it may still run, but
-          {s.count === 1 ? " its" : " their"} status is not current.
+          The status shown for {s.count === 1 ? "1 machine" : `${s.count} machines`} on it is not current.
         </PageBanner>
       ))}
     </>
@@ -289,7 +281,7 @@ export function Overview() {
       <Topbar crumbs={["Overview"]} />
       {p?.metadata?.deleteTime && (
         <PageBanner tone="warning" title="This project is being deleted">
-          Everything in it is deleted with it; the project goes once it is empty.
+          Everything in it is deleted with it.
         </PageBanner>
       )}
       <SilentHosts project={project} />

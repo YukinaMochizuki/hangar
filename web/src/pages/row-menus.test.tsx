@@ -173,7 +173,7 @@ const cases: Case[] = [
     list: () => <MachineList kind="VirtualMachine" />,
     page: () => <MachineDetail kind="VirtualMachine" name="db" />,
     row: "db",
-    partial: { held: only("compute.virtualmachines.delete"), hidden: ["Edit", "Resize", "Start", "Edit labels"] },
+    partial: { held: only("compute.virtualmachines.delete"), hidden: ["Edit", "Start", "Edit labels"] },
   },
   {
     kind: "images",

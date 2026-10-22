@@ -39,8 +39,9 @@ export function quantityCPU(q: string | undefined): number {
   return parseQuantity(q);
 }
 
-/** A number for display: integers as they are, others to one decimal. */
+/** A number for display: integers as they are, others to two decimals at most. */
 export function formatNumber(n: number): string {
   if (!Number.isFinite(n)) return "–";
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+  // Two places at most, so a 256 MiB step such as 2.75 GiB reads as it is.
+  return String(+n.toFixed(2));
 }

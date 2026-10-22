@@ -75,7 +75,7 @@ function Projects({ tenant }: { tenant: string }) {
             {!loading && own.length === 0 && (
               <tr>
                 <td colSpan={5} className="px-4 py-8 text-center text-muted">
-                  This account sees no project of the tenant.
+                  No projects
                 </td>
               </tr>
             )}
@@ -119,8 +119,7 @@ export function TenantOverview() {
           </p>
         ) : denied ? (
           <p className="text-[13px] text-muted">
-            This account's roles do not include reading the tenant, so its plan and limits are not shown. The projects below are the
-            tenant's projects this account sees.
+            This account's roles do not include reading the tenant's plan and limits.
           </p>
         ) : q.error ? (
           <ErrorNotice error={q.error} title="The tenant did not load" onRetry={() => void q.refetch()} className="p-0" />

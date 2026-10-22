@@ -80,12 +80,6 @@ function DomainForm({ crumbs, tenant }: { crumbs: ReactNode[]; tenant: string })
     <FormPage
       crumbs={crumbs}
       title="New custom domain"
-      description={
-        <>
-          A domain of <span className="font-mono text-foreground">{tenant}</span>'s own, at whose hostnames the tenant's public endpoints may serve once its DNS
-          proves it is the tenant's.
-        </>
-      }
       onSubmit={() => {
         if (problems.length > 0) return;
         submit.mutate(obj, { onSuccess: () => void navigate({ to: "/tenants/$tenant/domains/$name", params: { tenant, name }, replace: true }) });
@@ -97,7 +91,6 @@ function DomainForm({ crumbs, tenant }: { crumbs: ReactNode[]; tenant: string })
               <>
                 <div className="truncate font-mono text-[13px] font-medium">{domain || <span className="font-sans font-normal text-muted">No domain</span>}</div>
                 <div className="mt-0.5 text-[12px] text-muted">{all ? "All projects" : spec.projects.length ? spec.projects.map(label).join(", ") : "No project"}</div>
-                <p className="mt-2 text-[12px] text-subtle">Its page lists the DNS records it needs; it is verified once the first of them is in place.</p>
               </>
             }
             problems={problems}
@@ -115,28 +108,26 @@ function DomainForm({ crumbs, tenant }: { crumbs: ReactNode[]; tenant: string })
       <FormSection n={1} title="Domain">
         <div className="max-w-xl">
           <Input value={domain} onChange={(e) => setDomain(e.target.value.trim().toLowerCase())} placeholder="example.com" aria-label="Domain" spellCheck={false} />
-          <p className="mt-1.5 text-[12px] text-subtle">
-            Endpoints serve at the domain itself and one label below it, such as www.example.com. It cannot be changed once made.
-          </p>
+          <p className="mt-1.5 text-[12px] text-subtle">Serves at the domain and one label below it. Cannot be changed later.</p>
         </div>
       </FormSection>
-      <FormSection n={2} title="Custom domain name" hint="Suggested from the domain">
+      <FormSection n={2} title="Custom domain name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setTypedName(e.target.value.toLowerCase())} aria-label="Custom domain name" spellCheck={false} />
-          <p className="mt-1.5 text-[12px] text-subtle">The object's name, a DNS label; names are unique on the platform, across every tenant.</p>
+          <p className="mt-1.5 text-[12px] text-subtle">Unique across all tenants.</p>
         </div>
       </FormSection>
-      <FormSection n={3} title="Projects" hint="Whose endpoints may serve under it">
+      <FormSection n={3} title="Projects">
         <div role="radiogroup" aria-label="Projects" className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
           <Choice selected={all} onClick={() => setAll(true)} label="All projects">
             <LayoutGrid className="size-4 text-muted" strokeWidth={1.75} />
             <div className="mt-2 text-[13.5px] font-medium">All projects</div>
-            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">Every project of the tenant, and those made later.</div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">Including projects made later.</div>
           </Choice>
           <Choice selected={!all} onClick={() => setAll(false)} label="Chosen projects">
             <Folders className="size-4 text-muted" strokeWidth={1.75} />
             <div className="mt-2 text-[13.5px] font-medium">Chosen projects</div>
-            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">Only those chosen here; others can be let later.</div>
+            <div className="mt-0.5 text-[12.5px] leading-snug text-muted">Can be changed later.</div>
           </Choice>
         </div>
         {!all && <ProjectChecklist projects={names} label={label} chosen={chosen} onChange={setChosen} className="mt-3 max-w-xl" />}

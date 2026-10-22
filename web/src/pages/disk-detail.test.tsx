@@ -78,7 +78,7 @@ describe("DiskDetail", () => {
   it("names the VM a root disk was made for, and links its image", async () => {
     const root = disk("postgres-root", { phase: DiskPhase.IN_USE, machine: "vm-postgres", rootOf: "postgres", image: "debian-13" });
     render(<DiskDetail name="postgres-root" />, { wrapper: withApi(api([root])) });
-    await screen.findByText(", as its root disk; deleted with it");
+    await screen.findByText(", root disk; deleted with it");
     expect(screen.getByRole("link", { name: "debian-13" }).getAttribute("href")).toBe("/projects/demo/images/debian-13");
   });
 
@@ -158,7 +158,7 @@ describe("Grow", () => {
     render(<DiskDetail name="pg-data" />, { wrapper: withApi(api([attached])) });
     await waitFor(() => expect(screen.getAllByRole("link", { name: "postgres" }).length).toBeGreaterThan(0));
     const d = await open();
-    expect(within(d).getByText("Growing it restarts postgres, which it is attached to.")).toBeTruthy();
+    expect(within(d).getByText("Growing it restarts postgres.")).toBeTruthy();
     expect(within(d).getByText("Its node holds 20 GiB.")).toBeTruthy();
   });
 
@@ -265,7 +265,7 @@ describe("Delete", () => {
     const a = api([free], { del: (req) => void deleted.push(req) });
     render(<DiskDetail name="scratch" />, { wrapper: withApi(a) });
     const d = await open();
-    expect(within(d).getByText("Its data is deleted with it, on its node, and cannot be read again.")).toBeTruthy();
+    expect(within(d).getByText("Its data is deleted with it.")).toBeTruthy();
     const button = within(d).getByRole("button", { name: "Delete" }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     fireEvent.change(within(d).getByRole("textbox"), { target: { value: "scratch" } });
@@ -305,7 +305,7 @@ describe("Delete", () => {
     render(<DiskDetail name="pg-data" />, { wrapper: withApi(a) });
     await waitFor(() => expect(screen.getAllByRole("link", { name: "postgres" }).length).toBeGreaterThan(0));
     const d = await open();
-    expect(within(d).getByText("pg-data is attached to postgres; the API refuses to delete a disk a live machine has.")).toBeTruthy();
+    expect(within(d).getByText("pg-data is attached to postgres, which is not being deleted.")).toBeTruthy();
     fireEvent.change(within(d).getByRole("textbox"), { target: { value: "pg-data" } });
     fireEvent.click(within(d).getByRole("button", { name: "Delete" }));
     await within(d).findByText("Deleting failed");

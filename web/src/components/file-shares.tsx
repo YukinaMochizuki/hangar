@@ -306,7 +306,7 @@ export function GrowShareDialog({
   return (
     <Dialog open={open} onClose={close} title={`Grow ${name}`}>
       <p>
-        <Mono>{name}</Mono> has <Mono>{formatNumber(shareGiB(s))} GiB</Mono>. A file share never shrinks.
+        <Mono>{name}</Mono> has <Mono>{formatNumber(shareGiB(s))} GiB</Mono> and cannot shrink.
         {usesKnown && uses.length > 0 && (
           <>
             {" "}
@@ -328,9 +328,7 @@ export function GrowShareDialog({
           </span>
         </label>
         {problem && <p className="mt-1.5 text-[12px] text-fail">{problem}</p>}
-        <p className="mt-2 text-[12px] text-subtle">
-          Its mounts pause for a few seconds while it grows. The growth counts toward the project's disk limit.
-        </p>
+        <p className="mt-2 text-[12px] text-subtle">Mounts pause for a few seconds while it grows.</p>
         <CommandLine command={`hangar apply -p ${project} -f ${name}.yaml`} />
         {grow.error != null && (
           <Notice tone="error" title="Growing the file share failed" className="mt-3">
@@ -420,11 +418,8 @@ export function EditNetworksDialog({
     });
   return (
     <Dialog open onClose={close} title={`Networks of ${name}`} wide>
-      <p>
-        Machines with an interface on one of these networks can use <Mono>{name}</Mono>, each from its address on its own network.
-      </p>
       {nets.error != null && <ErrorNotice error={nets.error} title="The networks did not load" onRetry={nets.refetch} className="p-0 pt-3" />}
-      <ul className="mt-4 divide-y rounded-md border">
+      <ul className="mt-1 divide-y rounded-md border">
         {names.map((n) => {
           const checked = value.includes(n);
           const via = usesVia(uses, n);
@@ -537,7 +532,7 @@ export function EditNetworksDialog({
               Its address on <OrNames names={removed} and /> goes.{" "}
             </>
           )}
-          Its mounts pause for a few seconds while it changes.
+          Mounts pause for a few seconds.
         </p>
       ) : null}
       {stale && <StaleNotice title="The file share changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />}
@@ -587,7 +582,7 @@ export function DeleteShareDialog({
       name={name}
       consequence={
         <>
-          The share and every file on it go. Its <Mono>{formatNumber(shareGiB(s))} GiB</Mono> no longer count toward the project's disk limit.
+          The share and every file on it are deleted.
           {live.length === 0 && leaving.length > 0 && (
             <>
               {" "}
@@ -601,7 +596,7 @@ export function DeleteShareDialog({
       blocked={
         live.length > 0 ? (
           <>
-            The API refuses while any live machine declares this share. {count(live.length, "machine")} {live.length === 1 ? "does" : "do"}:{" "}
+            {count(live.length, "machine")} still {live.length === 1 ? "declares" : "declare"} it:{" "}
             <CappedNames machines={live} title={<>Using <Mono>{name}</Mono></>} />
           </>
         ) : !usesKnown ? (
@@ -641,7 +636,7 @@ export function NetworkFileSharesCard({ network, canApply }: { network: string; 
       ) : shares.error ? (
         <ErrorNotice error={shares.error} title="The file shares did not load" onRetry={shares.refetch} />
       ) : on.length === 0 ? (
-        <div className="px-4 py-3 text-[13px] text-muted">No file share is on this network.</div>
+        <div className="px-4 py-3 text-[13px] text-muted">No file shares.</div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
@@ -715,9 +710,6 @@ export function NetworkFileSharesCard({ network, canApply }: { network: string; 
       {on.length > 0 && decls.error != null && (
         <ErrorNotice error={decls.error} title="The project's machines did not load" onRetry={decls.refetch} className="border-t" />
       )}
-      <div className="border-t px-4 py-2.5 text-[12px] text-subtle">
-        Machines on <span className="font-mono">{network}</span> can use these shares once they declare them, from the address here.
-      </div>
     </Card>
   );
 }
@@ -731,7 +723,7 @@ export function VmFileSharesCard({ m }: { m: MachineView }) {
     return (
       <Card>
         <CardHeader title="File shares" />
-        <div className="px-4 py-3 text-[13px] text-muted">This VM declares no file share.</div>
+        <div className="px-4 py-3 text-[13px] text-muted">No file shares.</div>
       </Card>
     );
   }
@@ -783,9 +775,6 @@ export function VmFileSharesCard({ m }: { m: MachineView }) {
           );
         })}
       </ul>
-      <div className="border-t px-4 py-2.5 text-[12px] text-subtle">
-        The VM mounts each share itself, from the share's address on the VM's own network, its client identity set to its own ID first.
-      </div>
     </Card>
   );
 }

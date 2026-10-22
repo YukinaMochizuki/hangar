@@ -60,13 +60,12 @@ describe("Replace value", () => {
   it("says what replacing does: the old value gone, every registry's login replaced, and when containers naming it see the new one", async () => {
     await open();
     const d = screen.getByRole("dialog");
-    expect(within(d).getByText(/Once applied, the old value is gone/)).toBeTruthy();
-    expect(within(d).getByText(/a login for index\.docker\.io and registry\.example\.com; the new value replaces all of them\./)).toBeTruthy();
-    expect(await within(d).findByText(/web-1 names it\. What runs keeps running; the new value counts at each one's next image pull\./)).toBeTruthy();
+    expect(within(d).getByText(/The old value, a login for index\.docker\.io and registry\.example\.com, is gone once applied\./)).toBeTruthy();
+    expect(await within(d).findByText(/web-1 names it; the new value counts from the next image pull\./)).toBeTruthy();
     expect(within(d).getByText(/^hangar create secret registry hub --from-docker-config FILE -p demo$/)).toBeTruthy();
     // The command carries neither the labels nor the version, and the dialog says so beside it.
     expect(
-      within(d).getByText("Unlike this dialog, the command sets no labels, so it drops hub's, and it replaces the secret whatever changed since it was read."),
+      within(d).getByText("The command sets no labels, dropping hub's, and overwrites any change since it was read."),
     ).toBeTruthy();
   });
 

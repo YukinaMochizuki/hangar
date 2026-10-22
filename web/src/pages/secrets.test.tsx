@@ -324,7 +324,7 @@ describe("a list that fails to load again", () => {
     await within(await screen.findByRole("table")).findByText("login");
     fail = true;
     await a.client.refetchQueries();
-    await screen.findByText("The secrets did not load again; this page shows the last answer.");
+    await screen.findByText("The secrets did not reload; showing the last answer.");
     expect(within(screen.getByRole("table")).getByText("login")).toBeTruthy();
     expect(screen.queryByText("The secrets did not load")).toBeNull();
   });
@@ -355,7 +355,7 @@ describe("SecretDetail", () => {
     });
     render(<SecretDetail name="login" />, { wrapper: withApi(a) });
     await screen.findByRole("heading", { name: "login" });
-    expect(screen.getByText("Write-only; no answer of the API holds them.")).toBeTruthy();
+    expect(screen.getByText("Write-only")).toBeTruthy();
     await screen.findByText("Named by 1 container");
     expect(document.body.innerHTML).not.toContain(password);
     expect(document.body.innerHTML).not.toContain("EXAMPLE-ciphertext");

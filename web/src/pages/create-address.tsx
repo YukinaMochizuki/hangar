@@ -14,7 +14,7 @@ import { checkName } from "@/lib/create";
 import { kindNoun, nameOf, addressYaml, targetOf, useAddresses } from "@/lib/network";
 import { permission, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
-import { InterfaceField, pickOf, pickProblem, pickTarget } from "@/pages/addresses";
+import { InterfaceField, pickTarget } from "@/components/interface-field";
 
 const applyPerm = permission("address", "apply");
 
@@ -40,14 +40,12 @@ function AddressForm({ crumbs, project }: { crumbs: ReactNode[]; project: string
   const addrs = useAddresses(project);
   const reserve = useCreate("address", project);
   const [name, setName] = useState("");
-  const [pick, setPick] = useState(pickOf(""));
+  const [pick, setPick] = useState("");
   const target = pickTarget(pick);
   const obj = create(AddressSchema, { metadata: { name }, spec: { target } });
   const check = checkName(name, "address", { loading: addrs.loading, error: addrs.error, names: addrs.items.map(nameOf) });
   const problems: string[] = [];
   if (!check.ok) problems.push(check.reason);
-  const typedProblem = pickProblem(pick);
-  if (typedProblem) problems.push(typedProblem);
   const send = () => {
     if (problems.length > 0) return;
     reserve.mutate(obj, { onSuccess: () => void navigate({ to: "/projects/$project/addresses/$name", params: { project, name }, replace: true }) });
@@ -57,12 +55,6 @@ function AddressForm({ crumbs, project }: { crumbs: ReactNode[]; project: string
     <FormPage
       crumbs={crumbs}
       title="Reserve address"
-      description={
-        <>
-          A public IPv6 address of <span className="font-mono text-foreground">{project}</span>, kept until deleted. Bound to an interface, it replaces
-          the interface's automatic one; moving it restarts no machine.
-        </>
-      }
       onSubmit={send}
       side={
         <>
@@ -90,17 +82,12 @@ function AddressForm({ crumbs, project }: { crumbs: ReactNode[]; project: string
         </>
       }
     >
-      <FormSection n={1} title="Interface" hint="Optional">
+      <FormSection n={1} title="Bind to" hint="Optional">
         <div className="max-w-xl">
-          <InterfaceField
-            pick={pick}
-            onChange={setPick}
-            none="No interface: reserved, unbound"
-            hint="Bound, the address replaces the interface's automatic one. No machine restarts."
-          />
+          <InterfaceField value={pick} onChange={setPick} none="Not bound" />
         </div>
       </FormSection>
-      <FormSection n={2} title="Address name" hint="Unique among this project's addresses">
+      <FormSection n={2} title="Name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Address name" spellCheck={false} />
         </div>

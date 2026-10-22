@@ -26,7 +26,6 @@ import { errorMessage } from "@/lib/api";
 import {
   commands,
   day,
-  dockerConfigKey,
   perms,
   secretFault,
   secretTypeLabel,
@@ -106,8 +105,7 @@ function DeleteSecretDialog({ s, use, open, onClose, after }: { s: Secret; use: 
           "The project's containers did not load, so which of them name it is not known."
         ) : usedBy.length > 0 ? (
           <>
-            {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Running ones keep running; one
-            that pulls its image again without it is Ready=False ImagePullSecretNotFound.
+            {usedBy.length === 1 ? "1 container names it" : `${usedBy.length} containers name it`}: {usedBy.join(", ")}. Their next image pull fails.
           </>
         ) : (
           "No container names it."
@@ -166,8 +164,7 @@ function ReplaceValueDialog({ s, use, onClose }: { s: Secret; use: Use; onClose:
   return (
     <Dialog open onClose={onClose} title={`Replace the value of ${name}`} wide>
       <p>
-        The whole value is given again. Once applied, the old value is gone: no page and no answer of the API holds it.
-        {registries.length > 0 && <> It now holds a login for {listed(registries)}; the new value replaces {registries.length === 1 ? "it" : "all of them"}.</>}
+        The old value{registries.length > 0 && <>, a login for {listed(registries)},</>} is gone once applied.
       </p>
       <p className="mt-2">
         {use.loading
@@ -176,7 +173,7 @@ function ReplaceValueDialog({ s, use, onClose }: { s: Secret; use: Use; onClose:
             ? "The project's containers did not load, so which of them name it is not known."
             : usedBy.length === 0
               ? "No container names it."
-              : `${listed(usedBy)} ${usedBy.length === 1 ? "names" : "name"} it. What runs keeps running; the new value counts at each one's next image pull.`}
+              : `${listed(usedBy)} ${usedBy.length === 1 ? "names" : "name"} it; the new value counts from the next image pull.`}
       </p>
       <form
         onSubmit={(e) => {
@@ -187,15 +184,10 @@ function ReplaceValueDialog({ s, use, onClose }: { s: Secret; use: Use; onClose:
         <div className="mt-4 text-foreground">
           <SecretValuesFields form={form} />
         </div>
-        <p className="mt-3 text-[12px] text-subtle">
-          Applying replaces spec.data whole, so it sends every key: <span className="font-mono">{dockerConfigKey}</span>.
-        </p>
         <FormEquivalent cli={[commands.replaceSecret(project, name)]} />
         {/* The command builds the secret afresh (internal/cli/secret.go): no labels, no version to apply at. */}
         <p className="mt-1.5 text-[12px] text-subtle">
-          Unlike this dialog, the command sets no labels
-          {Object.keys(base.metadata?.labels ?? {}).length > 0 ? `, so it drops ${name}'s` : ""}, and it replaces the secret whatever changed since it
-          was read.
+          The command sets no labels{Object.keys(base.metadata?.labels ?? {}).length > 0 ? `, dropping ${name}'s,` : ""} and overwrites any change since it was read.
         </p>
         {stale ? (
           <StaleNotice title={`${name} changed since this dialog opened.`} reloading={reload.isPending} error={reload.error} onReload={startAgain} />
@@ -267,14 +259,14 @@ export function SecretList() {
       {loaded && error ? <StaleBanner what="secrets" error={error} onRetry={refetch} /> : null}
       <PageHead
         title="Secrets"
-        description="Registry logins the platform pulls this project's images with. Their values are write-only."
+        description="Write-only registry logins"
         action={canCreate && newButton}
       />
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ loading, error: loaded ? undefined : error, refetch, count: items.length }}
           noun="secrets"
-          empty={{ title: "No secrets", text: "A container names a secret to pull a private image with it.", action: canCreate ? newButton : undefined }}
+          empty={{ title: "No secrets", text: "A secret holds values the project's containers use, such as a registry login, out of their spec.", action: canCreate ? newButton : undefined }}
         >
           <Card className="md:hidden">
             <ul className="divide-y">
@@ -445,7 +437,7 @@ function Loaded({ s, crumbs, use, stale, refetch, can }: { s: Secret; crumbs: Re
               </Field>
               <Field label="Values">
                 <span className="inline-flex items-center gap-1.5 text-muted">
-                  <KeyRound className="size-3.5" /> Write-only; no answer of the API holds them.
+                  <KeyRound className="size-3.5" /> Write-only
                 </span>
               </Field>
               <Field label="Used by">

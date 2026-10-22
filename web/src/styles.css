@@ -234,3 +234,26 @@
 [data-still] .animate-pulse, [data-still] .animate-spin { animation: none; }
 /* The sweep held mid-way across. */
 [data-still] .runs-on-sweep { animation: none; transform: none; }
+
+/*
+ * A Custom size's slider (web/src/components/size-sliders.tsx): the input
+ * takes the pointer and the keys, and draws nothing; the ruler after it
+ * draws the ticks and the pointer, which shows the input's focus.
+ */
+.size-range {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 1;
+  height: 20px;
+  width: 100%;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+.size-range:focus { outline: none; }
+.size-range::-webkit-slider-runnable-track { height: 20px; background: transparent; }
+.size-range::-moz-range-track { height: 20px; background: transparent; }
+.size-range::-webkit-slider-thumb { appearance: none; width: 16px; height: 20px; background: transparent; border: 0; }
+.size-range::-moz-range-thumb { width: 16px; height: 20px; background: transparent; border: 0; }
+.size-range:focus-visible + .size-ruler .size-pointer { outline: 2px solid var(--ring); outline-offset: 2px; }

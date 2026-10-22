@@ -112,9 +112,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
               <Mono>{name}</Mono> is being deleted
             </>
           }
-        >
-          It goes once its data is released.
-        </PageBanner>
+        />
       )}
       <DetailHead
         name={name}
@@ -160,9 +158,6 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
                           )}
                         </Fragment>
                       ))}
-                    </span>
-                    <span className="mt-1 block break-normal text-[12px] text-muted">
-                      Machines with an interface on <OrNames names={networks} /> can use it, each from the address on its own network.
                     </span>
                   </span>
                 </Field>
@@ -213,7 +208,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
               {decls.loading && uses.length === 0 ? (
                 <SkeletonRows rows={2} />
               ) : decls.error != null && uses.length === 0 ? null : uses.length === 0 ? (
-                <div className="px-4 py-3 text-[13px] text-muted">No machine declares this share.</div>
+                <div className="px-4 py-3 text-[13px] text-muted">No machines.</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-[13px]">
@@ -278,7 +273,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
                       </>
                     ) : (
                       <>
-                        On <OrNames names={networks} />, so able to use <Mono>{name}</Mono> once they declare it:
+                        On <OrNames names={networks} />, not using <Mono>{name}</Mono>:
                       </>
                     )}
                   </div>
@@ -326,8 +321,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
                     ) : (
                       <>
                         <div>
-                          {count(outside.length, "machine")} in this project {outside.length === 1 ? "has" : "have"} no interface on <OrNames names={networks} />{" "}
-                          and cannot use <Mono>{name}</Mono>:
+                          {count(outside.length, "machine")} not on <OrNames names={networks} />:
                         </div>
                         <ul className="mt-2.5 space-y-2">
                           {[...outsideBy.entries()].map(([net, ms]) => (
@@ -363,8 +357,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
               <div className="space-y-4 px-4 py-3.5">
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-1.5 text-[12px] text-muted">
-                    <Server className="size-3.5" strokeWidth={1.75} /> A virtual machine mounts the share itself, from the address on its own network,
-                    such as with:
+                    <Server className="size-3.5" strokeWidth={1.75} /> In a virtual machine:
                   </div>
                   {served.length === 0 && <p className="text-[12.5px] text-subtle">{notServed}: the share has no address on any network.</p>}
                   {served.map((n) => (
@@ -381,25 +374,22 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
                   ))}
                   {served.length > 0 && (
                     <p className="text-[12px] text-subtle">
-                      Each VM is an NFS client of its own: <Mono>{machineIdPlaceholder}</Mono> is its machine's ID, which the VM's page fills in.
+                      <Mono>{machineIdPlaceholder}</Mono> is the machine's ID; the VM's page fills it in.
                     </p>
                   )}
                 </div>
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <CopyBlock label="A virtual machine declares it in spec.fileShares:" text={vmSnippet(name)} />
+                  <CopyBlock label="In a VM's spec.fileShares:" text={vmSnippet(name)} />
                   <CopyBlock
                     label={
                       <span className="flex items-center gap-1.5">
-                        <Box className="size-3.5" strokeWidth={1.75} /> A container declares a volume, mounted at its target:
+                        <Box className="size-3.5" strokeWidth={1.75} /> In a container's spec.volumes:
                       </span>
                     }
                     text={volumeSnippet(name)}
                   />
                 </div>
-                <p className="text-[12px] text-subtle">
-                  A container's mount is from the address on its own network, always nosuid,nodev, and the image's files at the target are not copied
-                  onto the share. A container declaring a share that is on no node yet is held back until it is.
-                </p>
+                <p className="text-[12px] text-subtle">A container mounts it nosuid,nodev; the image's files at the target are not copied onto it.</p>
               </div>
             </Card>
           </>

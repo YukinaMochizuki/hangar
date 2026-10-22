@@ -70,7 +70,7 @@ export function useEndpointActions(e: PublicEndpoint, can: Can, after?: () => vo
             open
             onClose={close}
             after={after}
-            consequence={`Its connections close. Its hostname stays claimed by this project: an endpoint named ${name} made here again takes it back, and no other ever does.`}
+            consequence={`Its connections close. Its hostname stays reserved for an endpoint named ${name} in this project.`}
           />
         )}
       </>
@@ -148,14 +148,14 @@ export function PublicEndpointList() {
       <Topbar crumbs={["Public endpoints"]} />
       <PageHead
         title="Public endpoints"
-        description="One TCP port of a machine, served over HTTPS at a hostname of its own. Private endpoints take only those who may use the project's endpoints."
+        description="A machine's port, over HTTPS"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ ...eps, count: eps.items.length }}
           noun="public endpoints"
-          empty={{ title: "No public endpoints", text: "A container port marked public makes one; a virtual machine's are made here or with apply.", action: newButton }}
+          empty={{ title: "No public endpoints", text: "A public endpoint serves a machine's HTTP port over HTTPS, at a hostname.", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <Card className="md:hidden">
@@ -287,24 +287,17 @@ function Loaded({ e, can }: { e: PublicEndpoint; can: Can }) {
                 </Field>
                 <Field label="Reaches">
                   <TargetText e={e} />
-                  <span className="block text-[12px] text-subtle">plain HTTP on its first interface, eth0</span>
+                  <span className="block text-[12px] text-subtle">plain HTTP, on eth0</span>
                 </Field>
                 <Field label="Access">
                   <AccessBadge access={e.spec?.access ?? 0} />
-                  <span className="block text-[12px] text-muted">
-                    {e.spec?.access === PublicEndpointAccess.PUBLIC
-                      ? "Anyone on the internet, with no sign-in."
-                      : "Only those who may use this project's endpoints, signed in through Hangar or holding a Hangar token."}
-                  </span>
                 </Field>
                 {owner && (
                   <Field label="Made by">
                     <Link to="/projects/$project/containers/$name" params={{ project, name: owner }} className="text-accent hover:underline">
                       {owner}
                     </Link>
-                    <span className="block text-[12px] text-muted">
-                      A public port of the container. The endpoint follows that port and goes with it.
-                    </span>
+                    <span className="block text-[12px] text-muted">Goes with the container's port.</span>
                   </Field>
                 )}
                 <Field label="Machine" mono>
@@ -369,13 +362,13 @@ function AccessDialog({ open, onClose, endpoint }: { open: boolean; onClose: () 
     <Dialog open={open} onClose={close} title={toPublic ? `Make ${nameOf(endpoint)} public` : `Make ${nameOf(endpoint)} private`}>
       <p>
         {toPublic
-          ? "Anyone on the internet reaches it, with no sign-in. Its open connections close."
-          : "Only those who may use this project's endpoints reach it. Its open connections close."}
+          ? "Anyone reaches it, with no sign-in. Open connections close."
+          : "Sign-in is required. Open connections close."}
       </p>
       <FormEquivalent yaml={endpointYaml(obj)} cli={[`hangar apply -p ${project} -f ${nameOf(endpoint)}.yaml`]} />
       {held && (
         <Notice tone="warning" className="mt-3" title={`${nameOf(endpoint)} serves at ${hostnames.length === 1 ? "a custom hostname" : `${hostnames.length} custom hostnames`}: ${hostnames.join(", ")}.`}>
-          Only a public endpoint serves at custom hostnames; Edit hostnames takes them out.
+          Only a public endpoint serves at custom hostnames.
         </Notice>
       )}
       <FormFooter
@@ -487,11 +480,7 @@ function HostnamesCard({ e, edit }: { e: PublicEndpoint; edit?: () => void }) {
       </ul>
       {hostnames.length === 0 && (
         <p className="border-t px-4 py-2.5 text-[12.5px] text-muted">
-          {ownerOf(e)
-            ? "An endpoint a container's port made serves at its own hostname alone."
-            : isPublic
-              ? "No custom hostname."
-              : "Only public endpoints serve at custom hostnames."}
+          {ownerOf(e) || isPublic ? "No custom hostname." : "Public endpoints only."}
         </p>
       )}
     </Card>
@@ -554,10 +543,7 @@ function HostnamesForm({ endpoint, domains, onClose }: { endpoint: PublicEndpoin
     });
   return (
     <>
-      <p className="mb-4">
-        Besides <span className="font-mono text-foreground">{base.status?.hostname}</span>, the endpoint serves at these, each a custom domain of the
-        tenant or one label below one. Open connections at a hostname taken out close.
-      </p>
+      <p className="mb-4">Each a custom domain of the tenant or one label below one. Connections at a hostname taken out close.</p>
       <HostnameRows rows={rows} onChange={setRows} domains={domains} />
       <div className="mt-4 text-[12.5px] text-foreground">{change || "No change"}</div>
       <FormEquivalent yaml={endpointYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />

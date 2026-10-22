@@ -85,7 +85,7 @@ describe("a container's terminal on its page", () => {
     });
     await waitFor(() => expect(card()).toBeTruthy());
     await api.client.refetchQueries();
-    expect(await screen.findByText(/did not load again; this page shows the last answer/)).toBeTruthy();
+    expect(await screen.findByText(/did not reload; showing the last answer/)).toBeTruthy();
     expect(card()).toBeTruthy();
     expect(screen.queryByText("The container did not load")).toBeNull();
   });

@@ -37,13 +37,13 @@ export function ImageList() {
   return (
     <>
       <Topbar crumbs={["Images"]} />
-      <PageHead title="Images" description="The platform's disk images, which disks and virtual machines are made from." />
+      <PageHead title="Images" description="Operating systems to boot disks from" />
 
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ loading, error, refetch, count: items.length }}
           noun="images"
-          empty={{ title: "No images", text: "The platform's catalogue holds no image." }}
+          empty={{ title: "No images", text: "The platform's operating system images, from which virtual machines and boot disks are made." }}
         >
           <div className="mb-3">
             <label className="flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-[13px] focus-within:border-border-strong sm:w-64">

@@ -1,5 +1,6 @@
-// A new container's volumes, each a disk or a file share. A share on none of
-// the container's networks is shown off with the two ways to reach it, in the
+// A machine's volumes: a container's, each a disk or a file share at a
+// target, or a VM's file shares, which it mounts itself. A share on none of
+// the machine's networks is shown off with the two ways to reach it, in the
 // order docs/decisions/file-shares.md ("Console") gives.
 
 import { AlertTriangle, Check, ChevronDown, Folders, HardDrive, Info, Plus, Undo2, X } from "lucide-react";
@@ -86,20 +87,6 @@ function Option({
   );
 }
 
-/** Names in the monospace face, joined as a sentence joins them. */
-function Names({ names, or }: { names: string[]; or?: boolean }) {
-  return (
-    <>
-      {names.map((n, k) => (
-        <span key={n}>
-          {k > 0 && (k === names.length - 1 ? (or ? " or " : " and ") : ", ")}
-          <span className="font-mono">{n}</span>
-        </span>
-      ))}
-    </>
-  );
-}
-
 /**
  * One way to use a share the container cannot reach yet: a link-style
  * button named for the action, in the left column of the ways' grid, and
@@ -137,7 +124,10 @@ export function VolumePicker({
   onShareAdds,
   applied,
   mayApplyShares,
+  vm = false,
 }: {
+  /** A VM's file shares: no disks, and no target, as the VM mounts a share itself. */
+  vm?: boolean;
   project: string;
   rows: VolumeRow[];
   onChange: (rows: VolumeRow[]) => void;
@@ -159,9 +149,9 @@ export function VolumePicker({
   const decls = useDeclarations(project);
   const set = (i: number, r: Partial<VolumeRow>) => onChange(rows.map((x, j) => (j === i ? { ...x, ...r } : x)));
   const own = networks[0] ?? "default";
+  const noun = vm ? "virtual machine" : "container";
   return (
     <div className="max-w-2xl space-y-3">
-      {rows.length === 0 && <p className="text-[12.5px] text-muted">No volume: the container has its root disk alone, rebuilt when its image changes.</p>}
       {rows.map((r, i) => {
         const share = r.kind === "FileShare" ? shares.items.find((s) => shareName(s) === r.source) : undefined;
         // The machine's networks in order, as the apiserver picks the one it mounts from.
@@ -173,11 +163,11 @@ export function VolumePicker({
           <div key={i} className="rounded-lg border bg-surface">
             <div className="flex flex-wrap items-end gap-3 px-3 py-3">
               <div className="block min-w-0 flex-1">
-                <span className="text-[12px] text-muted">Source</span>
+                <span className="text-[12px] text-muted">{vm ? "File share" : "Source"}</span>
                 <button
                   type="button"
                   aria-expanded={open === i}
-                  aria-label={`Source of volume ${i + 1}`}
+                  aria-label={vm ? `File share ${i + 1}` : `Source of volume ${i + 1}`}
                   onClick={() => onOpen(open === i ? null : i)}
                   className={cn(
                     "mt-1 flex h-8 w-full items-center gap-2 rounded-md border bg-surface px-2.5 text-left text-[13px]",
@@ -191,27 +181,29 @@ export function VolumePicker({
                       <span className="text-[12px] text-subtle">{r.kind === "Disk" ? "disk" : via ? `file share, from ${via}` : "file share"}</span>
                     </>
                   ) : (
-                    <span className="text-subtle">A disk or a file share</span>
+                    <span className="text-subtle">{vm ? "Choose a file share" : "A disk or a file share"}</span>
                   )}
                   <ChevronDown className="ml-auto size-3.5 text-subtle" />
                 </button>
               </div>
-              <label className="block w-40">
-                <span className="text-[12px] text-muted">Target</span>
-                <Input value={r.target} onChange={(e) => set(i, { target: e.target.value })} aria-label="Target" placeholder="/data" className="mt-1 font-mono text-[12.5px]" spellCheck={false} />
-              </label>
+              {!vm && (
+                <label className="block w-40">
+                  <span className="text-[12px] text-muted">Target</span>
+                  <Input value={r.target} onChange={(e) => set(i, { target: e.target.value })} aria-label="Target" placeholder="/data" className="mt-1 font-mono text-[12.5px]" spellCheck={false} />
+                </label>
+              )}
               <label className="flex h-8 items-center gap-1.5 text-[12.5px] text-muted">
                 <input type="checkbox" checked={r.readOnly} onChange={(e) => set(i, { readOnly: e.target.checked })} className="accent-[var(--accent)]" />
                 Read-only
               </label>
-              <Button type="button" variant="ghost" size="icon" aria-label="Remove volume" onClick={() => onChange(rows.filter((_, j) => j !== i))}>
+              <Button type="button" variant="ghost" size="icon" aria-label={vm ? "Remove file share" : "Remove volume"} onClick={() => onChange(rows.filter((_, j) => j !== i))}>
                 <X />
               </Button>
             </div>
             {open === i && (
               <div role="listbox" aria-label="Source" className="mx-3 mb-3 rounded-md border">
-                <Group label="Disks" icon={HardDrive} />
-                {disks.loading ? (
+                {!vm && <Group label="Disks" icon={HardDrive} />}
+                {vm ? null : disks.loading ? (
                   <div className="border-b px-3 py-2.5">
                     <Skeleton className="h-3 w-40" />
                   </div>
@@ -249,7 +241,7 @@ export function VolumePicker({
                     );
                   })
                 )}
-                <Group label="File shares" icon={Folders} />
+                {!vm && <Group label="File shares" icon={Folders} />}
                 {shares.loading ? (
                   <div className="px-3 py-2.5">
                     <Skeleton className="h-3 w-40" />
@@ -305,8 +297,7 @@ export function VolumePicker({
                             <div className="flex items-center gap-1.5 text-[12px] leading-[18px] text-pending">
                               <AlertTriangle className="size-3.5 shrink-0" strokeWidth={2} />
                               <span>
-                                On {on.length === 1 ? "network" : "networks"} <Names names={on} or />; this container has no interface on{" "}
-                                {on.length === 1 ? <span className="font-mono">{on[0]}</span> : "any of them"}.
+                                Not on this {noun}'s networks.
                               </span>
                             </div>
                             <div role="group" aria-label="Ways to use it" className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-5 gap-y-1">
@@ -321,7 +312,7 @@ export function VolumePicker({
                                     set(i, { kind: "FileShare", source: sname });
                                   }}
                                 >
-                                  Changes <span className="font-mono">{sname}</span>; its mounts pause a few seconds.
+                                  Its mounts pause a few seconds.
                                   {uses.length > 0 && (
                                     <>
                                       {" "}
@@ -337,7 +328,7 @@ export function VolumePicker({
                                   set(i, { kind: "FileShare", source: sname });
                                 }}
                               >
-                                Changes this container only: a second interface, on <span className="font-mono">{on[0]}</span>.
+                                A second interface on this {noun}.
                               </Way>
                             </div>
                           </div>
@@ -346,16 +337,14 @@ export function VolumePicker({
                           <div className="mx-3 mb-3 grid grid-cols-[16px_minmax(0,1fr)] items-center gap-x-2 rounded-md border border-pending/50 bg-surface p-3 text-[12.5px]">
                             <Info className="size-4 text-pending" strokeWidth={1.9} />
                             <span className="text-foreground">
-                              <span className="font-mono">{sname}</span> has network <span className="font-mono">{added.join(", ")}</span> now, added for this
-                              container, which is not created yet.
+                              <span className="font-mono">{sname}</span> has network <span className="font-mono">{added.join(", ")}</span> now.
                             </span>
                           </div>
                         ) : added ? (
                           <div className="mx-3 mb-3 grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-2 rounded-md border border-accent/40 bg-surface p-3 text-[12.5px]">
                             <Info className="size-4 text-accent" strokeWidth={1.9} />
                             <span className="text-foreground">
-                              <span className="font-mono">{sname}</span> will be updated with network <span className="font-mono">{added.join(", ")}</span> when
-                              this container is created; its mounts pause a few seconds.
+                              <span className="font-mono">{added.join(", ")}</span> is added to <span className="font-mono">{sname}</span> on {noun === "container" ? "create" : "apply"}.
                             </span>
                             <Button
                               type="button"
@@ -378,12 +367,12 @@ export function VolumePicker({
             )}
             {share && open !== i && !via && (
               <div className="border-t px-3 py-2 text-[12px] text-pending">
-                <span className="font-mono">{shareName(share)}</span> is on none of this container's networks.
+                <span className="font-mono">{shareName(share)}</span> is on none of this {noun}'s networks.
               </div>
             )}
             {share && open !== i && via && (
               <div className="border-t px-3 py-2 text-[12px] text-subtle">
-                Mounted at <span className="font-mono">{r.target || "TARGET"}</span> from{" "}
+                {vm ? "From" : <>At <span className="font-mono">{r.target || "TARGET"}</span>, from</>}{" "}
                 {viaAddress ? (
                   <>
                     <span className="font-mono">{viaAddress}</span> (<span className="font-mono">{via}</span>)
@@ -393,17 +382,17 @@ export function VolumePicker({
                     its {pendingAdd?.includes(via) ? "new " : ""}address on <span className="font-mono">{via}</span>
                   </>
                 )}
-                , nosuid,nodev; the image's files there are not copied onto the share.
+                .{!vm && " The image's files there are not copied onto it."}
                 {!viaAddress && !pendingAdd && (
                   <>
                     {" "}
-                    <span className="font-mono">{shareName(share)}</span> has no address on <span className="font-mono">{via}</span> yet.
+                    No address yet.
                   </>
                 )}
                 {pendingAdd && (
                   <>
                     {" "}
-                    <span className="font-mono">{shareName(share)}</span> is updated with network <span className="font-mono">{pendingAdd.join(", ")}</span> on create.
+                    <span className="font-mono">{pendingAdd.join(", ")}</span> is added to it first.
                   </>
                 )}
               </div>
@@ -411,8 +400,8 @@ export function VolumePicker({
           </div>
         );
       })}
-      <Button type="button" size="sm" onClick={() => onChange([...rows, { source: "", kind: "Disk", target: "", readOnly: false }])}>
-        <Plus /> Add volume
+      <Button type="button" size="sm" onClick={() => onChange([...rows, { source: "", kind: vm ? "FileShare" : "Disk", target: "", readOnly: false }])}>
+        <Plus /> {vm ? "Add file share" : "Add volume"}
       </Button>
     </div>
   );

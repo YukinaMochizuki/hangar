@@ -19,10 +19,13 @@ import {
 } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { NetworkInterfaceSchema, type NetworkInterface } from "@hangar/api/hangar/compute/v1alpha1/interface_pb";
 import {
+  VirtualMachineDiskSchema,
+  VirtualMachineFileShareSchema,
   VirtualMachineResourcesSchema,
   VirtualMachineSchema,
   VirtualMachineSpecSchema,
   type VirtualMachine,
+  type VirtualMachineFileShare,
 } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import type { Advanced, Restart } from "@/components/container-advanced";
 import type { VolumeRow } from "@/components/volume-picker";
@@ -91,6 +94,16 @@ export function volumeRowsOf(c: Container): VolumeRow[] {
   }));
 }
 
+/** A VM's file shares as the volume picker holds them, with no target. */
+export function vmShareRowsOf(v: VirtualMachine): VolumeRow[] {
+  return (v.spec?.fileShares ?? []).map((s) => ({ source: s.name, kind: "FileShare", target: "", readOnly: s.readOnly }));
+}
+
+/** The file shares a VM's rows amount to. */
+export function vmSharesOf(rows: VolumeRow[]): VirtualMachineFileShare[] {
+  return rows.map((r) => create(VirtualMachineFileShareSchema, { name: r.source, readOnly: r.readOnly }));
+}
+
 /**
  * The volumes the rows amount to on top of the ones a container had: a row
  * of the same source and kind keeps that volume's type and options, which the
@@ -121,6 +134,12 @@ export type FormSpec = {
   cpu?: string;
   memory?: string;
   disk?: string;
+  /** A VM's data disks, by name. */
+  disks?: string[];
+  /** A VM's file shares. */
+  fileShares?: VolumeRow[];
+  sshAuthorizedKeys?: string[];
+  userData?: string;
 };
 
 /**
@@ -151,6 +170,10 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
   const o = clone(VirtualMachineSchema, base as VirtualMachine);
   const s = (o.spec ??= create(VirtualMachineSpecSchema));
   if (changed.interfaces !== undefined) s.interfaces = changed.interfaces;
+  if (changed.disks !== undefined) s.disks = changed.disks.map((disk) => create(VirtualMachineDiskSchema, { disk }));
+  if (changed.fileShares !== undefined) s.fileShares = vmSharesOf(changed.fileShares);
+  if (changed.sshAuthorizedKeys !== undefined) s.sshAuthorizedKeys = changed.sshAuthorizedKeys;
+  if (changed.userData !== undefined) s.userData = changed.userData;
   if (changed.cpu !== undefined || changed.memory !== undefined) {
     s.resources = create(VirtualMachineResourcesSchema, {
       cpu: changed.cpu ?? s.resources?.cpu ?? "",
@@ -255,7 +278,9 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
       out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(String(ra.cpu || d.cpu), String(ra.memory || d.memory))} → ${sizeText(String(rb.cpu || d.cpu), String(rb.memory || d.memory))}` });
     }
     add("interfaces", "Interfaces", "restart", `${nicsText(a.interfaces)} → ${nicsText(b.interfaces)}`);
+    add("disks", "Data disks", "restart", listDetail(a.disks, b.disks, (d) => String(d.disk ?? "")));
     add("fileShares", "File shares", "nothing", listDetail(a.fileShares, b.fileShares, (s) => String(s.name ?? "")));
+    add("sshAuthorizedKeys", "SSH keys", "nothing", "changed; cloud-init reads them on the first boot only");
     add("userData", "User data", "nothing", "changed; cloud-init runs it on the first boot only");
   }
   return out;

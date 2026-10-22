@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { FormField, Input, Textarea } from "@/components/form";
 import { cn } from "@/lib/cn";
-import { dockerConfigKey, type SecretValues } from "@/lib/credentials";
+import { type SecretValues } from "@/lib/credentials";
 
 /** The value fields' state, what stops it being sent, and the values it makes. */
 export function useSecretValuesForm() {
@@ -52,7 +52,7 @@ export function SecretValuesFields({ form }: { form: SecretValuesForm }) {
       </div>
       {form.mode === "login" ? (
         <div className="mt-4">
-          <FormField label="Registry" hint="Its host. Docker Hub is index.docker.io.">
+          <FormField label="Registry" hint="Docker Hub is index.docker.io.">
             <Input value={form.registry} onChange={(e) => form.setRegistry(e.target.value)} spellCheck={false} placeholder="registry.example.com" />
           </FormField>
           <FormField label="Username">
@@ -64,7 +64,7 @@ export function SecretValuesFields({ form }: { form: SecretValuesForm }) {
           </FormField>
         </div>
       ) : (
-        <FormField label="Docker config" hint={`As docker login writes it, ~/.docker/config.json. It is stored as ${dockerConfigKey}.`} className="mt-4">
+        <FormField label="Docker config" hint="~/.docker/config.json, as docker login writes it." className="mt-4">
           <Textarea
             value={form.config}
             onChange={(e) => form.setConfig(e.target.value)}

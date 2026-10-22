@@ -105,7 +105,7 @@ describe("a virtual machine's terminal", () => {
     render(<TerminalPage kind="VirtualMachine" name="postgres" />, { wrapper: withApi(paletteApi()) });
     await waitFor(() => expect(terminal.connects).toBe(1));
     expect(terminal.target).toEqual({ project: "demo", plural: "virtualmachines", name: "postgres", command: [] });
-    expect(screen.getByText(/Logs in over SSH as the image's default user/)).toBeTruthy();
+    expect(screen.getByText(/Logs in as the image's default user/)).toBeTruthy();
     expect(screen.getByText(/hangar ssh vm postgres -p demo/)).toBeTruthy();
   });
 

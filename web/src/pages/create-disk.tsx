@@ -23,8 +23,8 @@ const applyPerm = "storage.disks.apply";
 const defaultSizeGi = 20;
 
 const types: { id: DiskUse; icon: typeof Power; label: string; text: string }[] = [
-  { id: "boot", icon: Power, label: "Boot disk", text: "A copy of an image, with its operating system. A virtual machine boots from it." },
-  { id: "data", icon: HardDrive, label: "Data disk", text: "Blank, for a virtual machine's data, attached after its boot disk." },
+  { id: "boot", icon: Power, label: "Boot disk", text: "A copy of an image." },
+  { id: "data", icon: HardDrive, label: "Data disk", text: "Blank." },
 ];
 
 /** CreateDisk is the New disk page; image opens it on a boot disk of that image. */
@@ -99,11 +99,6 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
     <FormPage
       crumbs={crumbs}
       title="New disk"
-      description={
-        <>
-          Created in <span className="font-mono text-foreground">{project}</span>.
-        </>
-      }
       onSubmit={submit}
       side={
         <>
@@ -147,14 +142,10 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
             </Choice>
           ))}
         </div>
-        <p className="mt-3 max-w-xl text-[12px] text-subtle">
-          The type sets how the disk is made. Any disk can be attached either way later, such as a boot disk attached as a data disk to another VM
-          to repair it.
-        </p>
       </FormSection>
 
       {use === "boot" && (
-        <FormSection n={2} title="Image" hint="The platform's catalogue">
+        <FormSection n={2} title="Image">
           {images.loading ? (
             <div className="grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-3">
               {[0, 1].map((i) => (
@@ -182,7 +173,7 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
         </FormSection>
       )}
 
-      <FormSection n={2 + after} title="Size" hint={chosen ? `${chosen} needs at least ${floor} GiB` : undefined}>
+      <FormSection n={2 + after} title="Size" hint={chosen ? `At least ${floor} GiB` : undefined}>
         <div className="max-w-xl">
           <div className="flex items-center gap-2">
             <Input
@@ -199,14 +190,11 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
             <span className="text-[13px] text-muted">GiB</span>
           </div>
           {sizeProblem && <p className="mt-1.5 text-[12px] text-fail">{sizeProblem}</p>}
-          <p className="mt-1.5 text-[12px] text-subtle">
-            A disk can grow later but never shrink.
-            {use === "data" && " It is blank, with no filesystem: format and mount it in the VM, such as with mkfs.ext4 /dev/vdb."}
-          </p>
+          <p className="mt-1.5 text-[12px] text-subtle">Can grow later, never shrink.</p>
         </div>
       </FormSection>
 
-      <FormSection n={3 + after} title="Disk name" hint="Unique among this project's disks">
+      <FormSection n={3 + after} title="Disk name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setName(e.target.value)} aria-label="Disk name" spellCheck={false} placeholder="data" />
         </div>

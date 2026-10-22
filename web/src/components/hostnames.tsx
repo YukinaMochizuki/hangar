@@ -59,7 +59,7 @@ export function HostnameRows({ rows, onChange, domains }: { rows: HostnameRow[];
                 {d && !isVerified(d) && (
                   <div className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-muted">
                     <Led tone="pending" className="size-1.5" />
-                    {r.domain} is not verified, so {hostnameOf(r)} does not serve until it is.
+                    {r.domain} is not verified; {hostnameOf(r)} serves once it is.
                   </div>
                 )}
               </li>
