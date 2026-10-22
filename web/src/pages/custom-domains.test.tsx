@@ -122,6 +122,11 @@ describe("a custom domain's page", () => {
     expect(await screen.findByText("shop.example.org")).toBeTruthy();
   });
 
+  it("says the records are DNS only, as a proxy in front would hide the challenge record", async () => {
+    show(<CustomDomainDetail name="example-org" />);
+    expect(await screen.findByText(/Each record is DNS only, with no proxy in front \(in Cloudflare, the grey cloud\)/)).toBeTruthy();
+  });
+
   it("offers no change to someone whose roles hold no write at the tenant", async () => {
     const api = show(<CustomDomainDetail name="example-com" />, { permissions: none });
     await screen.findAllByText("Verified");

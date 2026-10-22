@@ -409,11 +409,14 @@ func (s *Server) reconcileCustomDomain(ctx context.Context, k controller.Key) er
 	traffic := trafficLabel + "." + s.endpointDomain()
 	status.Records = []*networkv1alpha1.CustomDomainRecord{
 		{Name: customdomain.ChallengeName(domain), Type: "CNAME", Value: status.ChallengeTarget,
-			Purpose: "proves the domain is the tenant's, and lets Hangar get its certificates; keep it"},
+			Purpose: "required, and kept for as long as the domain is used: proves the domain is the tenant's, and lets Hangar get its certificates"},
 		{Name: "*." + domain, Type: "CNAME", Value: traffic,
-			Purpose: "brings the traffic of hostnames one label below the domain to Hangar; or a CNAME for each hostname"},
-		{Name: domain, Type: "ALIAS", Value: traffic,
-			Purpose: "brings the traffic of the domain itself to Hangar: an ALIAS, ANAME or flattened CNAME, or the A and AAAA records of " + traffic},
+			Purpose: "only to serve hostnames one label below the domain: brings their traffic to Hangar; or a CNAME for each hostname instead"},
+		// Not ALIAS or ANAME: those are some providers' names alone, and a CNAME
+		// at the apex is what the most common one, Cloudflare, takes.
+		{Name: domain, Type: "CNAME", Value: traffic,
+			Purpose: "only to serve the domain itself: brings its traffic to Hangar. Where a CNAME is refused at the domain itself, " +
+				"Route 53 calls it an Alias and others an ALIAS or ANAME; or use the A and AAAA records of " + traffic},
 	}
 	if !isVerified(d) {
 		cond := &metav1.Condition{Type: CustomDomainVerified, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, ObservedGeneration: gen}

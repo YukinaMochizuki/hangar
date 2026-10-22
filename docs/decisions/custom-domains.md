@@ -84,12 +84,19 @@ otherwise a stale record pointing at the host would let anyone take it.
   is not deleted, nor made or changed to leave out a project, while an
   endpoint of it serves under it (refused, saying which). A tenant going
   takes its domains with it.
-- **What the tenant's DNS needs**, which the status lists: the challenge
-  CNAME, kept for renewals; `*.<domain>` or each hostname a CNAME of
-  `cname.<endpoint domain>`; and the domain itself an ALIAS (or ANAME, or
-  a flattened CNAME) of it, or its A and AAAA records. `cname.` resolves
-  through the endpoint domain's wildcard record; it has no `-`, so no
-  endpoint's label is it.
+- **What the tenant's DNS needs**, which the status lists, each record
+  saying whether it is required: the challenge CNAME, always, kept for
+  renewals; to serve hostnames below the domain, `*.<domain>` or each
+  hostname a CNAME of `cname.<endpoint domain>`; and to serve the domain
+  itself, a CNAME of it at the domain. Its type is given as CNAME, not
+  ALIAS or ANAME, which are some providers' names alone: Cloudflare takes
+  a CNAME there and flattens it, and the record's text names Route 53's
+  Alias, ALIAS, ANAME and the A and AAAA records of `cname.` for providers
+  that refuse it. Every record is DNS only: behind a proxy (Cloudflare's
+  orange cloud) the challenge CNAME is not seen and traffic does not come
+  straight to the host, and the console says so above the records.
+  `cname.` resolves through the endpoint domain's wildcard record; it has
+  no `-`, so no endpoint's label is it.
 - **Cookies.** At a custom hostname the edge keeps an endpoint's
   `Set-Cookie` `Domain` attribute when it is the custom domain the
   hostname is under, or under it: that reaches only the tenant's own

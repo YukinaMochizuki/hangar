@@ -382,6 +382,10 @@ function RecordsCard({ d }: { d: CustomDomain }) {
         <p className="px-4 py-3 text-[13px] text-muted">Not given yet.</p>
       ) : (
         <>
+          <p className="border-b px-4 py-2.5 text-[12.5px] text-muted">
+            Each record is DNS only, with no proxy in front (in Cloudflare, the grey cloud). Behind a proxy, the challenge record is not seen and no
+            certificate is got, and traffic does not reach Hangar directly.
+          </p>
           <ul className="divide-y md:hidden">
             {records.map((r) => (
               <li key={r.name + r.type} className="px-4 py-2.5 text-[13px]">
