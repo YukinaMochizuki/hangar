@@ -173,6 +173,14 @@ export function portProblem(port: string): string | undefined {
 export const suggestName = (machine: string, protocol: ForwardProtocol, port: number) =>
   machine && port ? `${machine}-${port}${protocol === "UDP" ? "-udp" : ""}` : "";
 
+/** name, or name-2, name-3… whichever is not taken. */
+export function freeName(name: string, taken: Set<string>): string {
+  if (!name || !taken.has(name)) return name;
+  let i = 2;
+  while (taken.has(`${name}-${i}`)) i++;
+  return `${name}-${i}`;
+}
+
 /**
  * How many port forwards the project holds against its plan's limit, from
  * the project's status as the new-machine form reads it (lib/over-quota.ts);

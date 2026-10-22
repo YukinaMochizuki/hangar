@@ -4,17 +4,13 @@
 
 import { clone, create } from "@bufbuild/protobuf";
 import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  AddressSchema,
-  AddressSpecSchema,
-  AddressTargetSchema,
-  type Address,
-} from "@hangar/api/hangar/network/v1alpha1/address_pb";
+import { AddressSchema, AddressSpecSchema, type Address } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { Link2, Link2Off, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
-import { FormEquivalent, FormField, Input, Select } from "@/components/form";
+import { FormEquivalent } from "@/components/form";
+import { InterfaceField, pickTarget } from "@/components/interface-field";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
@@ -22,9 +18,9 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
-import { date, machinePath, type MachineKind } from "@/lib/machines";
+import { date, machinePath } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
-import { addressYaml, conditionOf, kindNoun, nameOf, targetOf, useAddresses, useAttachments } from "@/lib/network";
+import { addressYaml, conditionOf, nameOf, targetOf, useAddresses } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
 
 /**
@@ -61,7 +57,7 @@ export function useAddressActions(a: Address, can: Can, after?: () => void): Act
             after={after}
             consequence={
               bound
-                ? "The address is released once its interface lets go of it; the interface then draws a new automatic address."
+                ? "The address is released; its interface gets a new automatic one."
                 : "The address is released."
             }
           />
@@ -129,14 +125,14 @@ export function AddressList() {
       <Topbar crumbs={["Addresses"]} />
       <PageHead
         title="Addresses"
-        description="Public IPv6 addresses, each kept until deleted. Bound to an interface, one replaces its automatic address; moving it restarts no machine."
+        description="Reserved public IPv6 addresses"
         action={newButton}
       />
       <div className="px-4 pb-10 md:px-8">
         <ListFrame
           state={{ ...addrs, count: addrs.items.length }}
           noun="addresses"
-          empty={{ title: "No addresses", text: "Every interface has an automatic public IPv6 address, given up when its machine goes.", action: newButton }}
+          empty={{ title: "No addresses", action: newButton }}
         >
           <NameFilter value={query} onChange={setQuery} />
           <Card className="md:hidden">
@@ -294,92 +290,6 @@ function Loaded({ a, can }: { a: Address; can: Can }) {
   );
 }
 
-// The interface list's entry for a target typed by hand.
-const typed = "typed";
-
-/**
- * InterfacePick is an interface chosen for an address: a listed one as
- * kind/machine/interface, the typed one, or none (""); own is what is typed.
- */
-export type InterfacePick = { choice: string; own: { kind: MachineKind; machine: string; iface: string } };
-
-/** pickOf is a pick of the choice given, with nothing typed. */
-export const pickOf = (choice: string): InterfacePick => ({ choice, own: { kind: "Container", machine: "", iface: "eth0" } });
-
-/** pickTarget is the target a pick stands for, as the API takes it; undefined for none. */
-export function pickTarget({ choice, own }: InterfacePick) {
-  const c = choice === typed ? `${own.kind}/${own.machine.trim()}/${own.iface.trim()}` : choice;
-  if (!c) return undefined;
-  const [kind, machine, iface] = c.split("/") as [MachineKind, string, string];
-  if (!machine) return undefined;
-  return create(AddressTargetSchema, {
-    object: { case: kind === "Container" ? "container" : "virtualMachine", value: machine },
-    interface: iface || "eth0",
-  });
-}
-
-/** pickProblem says why a pick cannot be sent, if it cannot. */
-export const pickProblem = (p: InterfacePick) => (p.choice === typed && !p.own.machine.trim() ? "The machine's name is empty." : undefined);
-
-/**
- * InterfaceField chooses an address's interface among the project's
- * machines' interfaces, or a machine typed by name. current is the
- * interface the address is bound to, listed even when no machine has it.
- */
-export function InterfaceField({
-  pick,
-  onChange,
-  none,
-  hint,
-  current,
-}: {
-  pick: InterfacePick;
-  onChange: (p: InterfacePick) => void;
-  /** The label of no interface. */
-  none: string;
-  hint: string;
-  current?: { value: string; label: string };
-}) {
-  const project = useProjectName();
-  const att = useAttachments(project);
-  const listed = att.items.map((x) => `${x.kind}/${x.name}/${x.iface}`);
-  const { own } = pick;
-  return (
-    <>
-      <Select aria-label="Interface" value={pick.choice} onChange={(e) => onChange({ ...pick, choice: e.target.value })}>
-        <option value="">{none}</option>
-        {current && !listed.includes(current.value) && <option value={current.value}>{current.label}</option>}
-        {att.items.map((x) => (
-          <option key={`${x.kind}/${x.name}/${x.iface}`} value={`${x.kind}/${x.name}/${x.iface}`}>
-            {x.name} · {x.iface} ({kindNoun(x.kind)})
-          </option>
-        ))}
-        <option value={typed}>A machine by name</option>
-      </Select>
-      <span className="mt-1 block text-[11.5px] text-subtle">{hint}</span>
-      {pick.choice === typed && (
-        <div className="mt-4 grid grid-cols-[1fr_1.4fr_72px] gap-2">
-          <FormField label="Kind" className="mt-0">
-            <Select value={own.kind} onChange={(e) => onChange({ ...pick, own: { ...own, kind: e.target.value as MachineKind } })}>
-              <option value="Container">Container</option>
-              <option value="VirtualMachine">Virtual machine</option>
-            </Select>
-          </FormField>
-          <FormField label="Machine" className="mt-0">
-            <Input value={own.machine} onChange={(e) => onChange({ ...pick, own: { ...own, machine: e.target.value.toLowerCase() } })} spellCheck={false} />
-          </FormField>
-          <FormField label="On" className="mt-0">
-            <Input value={own.iface} onChange={(e) => onChange({ ...pick, own: { ...own, iface: e.target.value } })} spellCheck={false} />
-          </FormField>
-          <span className="col-span-3 -mt-1 text-[11.5px] text-subtle">
-            A machine that does not exist yet is waited for: the address binds once it is made.
-          </span>
-        </div>
-      )}
-    </>
-  );
-}
-
 /**
  * Bind or move an address. Both apply at the version the dialog opened
  * from: the interface chosen depends on where the address was then, so a
@@ -393,7 +303,7 @@ function BindDialog({ open, onClose, address }: { open: boolean; onClose: () => 
   const [base, setBase] = useState(address);
   const t = targetOf(base.spec?.target);
   const current = t ? `${t.kind}/${t.name}/${base.spec?.target?.interface || "eth0"}` : "";
-  const [pick, setPick] = useState(pickOf(current));
+  const [pick, setPick] = useState(current);
   const applyAt = useApplyAt("address");
   const reload = useReload("address", project, name);
   const stale = isStale(applyAt.error);
@@ -404,9 +314,7 @@ function BindDialog({ open, onClose, address }: { open: boolean; onClose: () => 
   obj.spec ??= create(AddressSpecSchema);
   obj.spec.target = target;
   const problems: string[] = [];
-  if (!target) problems.push("No interface is chosen.");
-  const typedProblem = pickProblem(pick);
-  if (typedProblem) problems.push(typedProblem);
+  if (!target) problems.push("No machine is chosen.");
   const close = () => {
     applyAt.reset();
     onClose();
@@ -416,27 +324,14 @@ function BindDialog({ open, onClose, address }: { open: boolean; onClose: () => 
       onSuccess: (fresh) => {
         setBase(fresh);
         const ft = targetOf(fresh.spec?.target);
-        setPick(pickOf(ft ? `${ft.kind}/${ft.name}/${fresh.spec?.target?.interface || "eth0"}` : ""));
+        setPick(ft ? `${ft.kind}/${ft.name}/${fresh.spec?.target?.interface || "eth0"}` : "");
         applyAt.reset();
       },
     });
   const verb = t ? "Move" : "Bind";
   return (
     <Dialog open={open} onClose={close} title={`${verb} ${name}`}>
-      <div className="text-[12.5px] text-foreground">Interface</div>
-      <div className="mt-1.5">
-        <InterfaceField
-          pick={pick}
-          onChange={setPick}
-          none="No interface"
-          current={t ? { value: current, label: `${t.name} · ${base.spec?.target?.interface || "eth0"} (${kindNoun(t.kind)})` } : undefined}
-          hint={
-            t
-              ? "The interface it leaves draws a new automatic address. Neither machine restarts; the move waits until the old interface lets go."
-              : "Bound, the address replaces the interface's automatic one. No machine restarts."
-          }
-        />
-      </div>
+      <InterfaceField value={pick} onChange={setPick} current={current} hint="No machine restarts." />
       <FormEquivalent yaml={addressYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />
       {stale && (
         <StaleNotice title="The address changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
@@ -472,8 +367,7 @@ function UnbindDialog({ open, onClose, address }: { open: boolean; onClose: () =
   return (
     <Dialog open={open} onClose={close} title={`Unbind ${nameOf(address)}`}>
       <p>
-        {t ? `${t.name}'s ${address.spec?.target?.interface || "eth0"}` : "Its interface"} gives the address up and draws a new automatic
-        one. The address stays reserved.
+        {t ? `${t.name}'s ${address.spec?.target?.interface || "eth0"}` : "Its interface"} gets a new automatic address. This one stays reserved.
       </p>
       <FormEquivalent yaml={addressYaml(obj)} cli={[`hangar apply -p ${project} -f ${nameOf(address)}.yaml`]} />
       <FormFooter

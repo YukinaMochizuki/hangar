@@ -7,40 +7,33 @@
 import { create } from "@bufbuild/protobuf";
 import { PortForwardSchema } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight, Shuffle } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FormField, Input } from "@/components/form";
 import { CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
 import { Notice } from "@/components/notice";
 import { forwardTargetOfPick, InboundNotice, useInbound } from "@/components/port-forwards";
+import { InterfaceField } from "@/components/interface-field";
 import { useProjectName } from "@/components/shell";
-import { Button } from "@/components/ui";
 import { checkName } from "@/lib/create";
 import { cn } from "@/lib/cn";
-import { kindNoun, nameOf, portForwardYaml, targetOf, usePortForwards } from "@/lib/network";
+import { nameOf, portForwardYaml, targetOf, usePortForwards } from "@/lib/network";
 import { permission, useCreate } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import {
   portLabel,
   portProblem,
+  freeName,
   protocolEnum,
-  publicPorts,
   suggestName,
   usePortForwardQuota,
   type ForwardProtocol,
   type ForwardTarget,
 } from "@/lib/port-forwards";
-import { InterfaceField, pickOf, pickProblem } from "@/pages/addresses";
 
 const applyPerm = permission("portForward", "apply");
 
 const protocols: ForwardProtocol[] = ["TCP", "UDP"];
-
-const presets: { label: string; protocol: ForwardProtocol; port: number }[] = [
-  { label: "SSH", protocol: "TCP", port: 22 },
-  { label: "RDP", protocol: "TCP", port: 3389 },
-  { label: "WireGuard", protocol: "UDP", port: 51820 },
-];
 
 /**
  * CreatePortForward is the New port forward page; target, as
@@ -68,7 +61,7 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
   const forwards = usePortForwards(project);
   const quota = usePortForwardQuota(project);
   const make = useCreate("portForward", project);
-  const [pick, setPick] = useState(pickOf(start));
+  const [pick, setPick] = useState(start);
   const [protocol, setProtocol] = useState<ForwardProtocol>("TCP");
   const [port, setPort] = useState("22");
   const [typedName, setTypedName] = useState<string | undefined>(undefined);
@@ -77,15 +70,13 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
   const t: ForwardTarget | undefined = picked && { ...picked, iface: apiTarget?.interface || "eth0" };
   const portBad = portProblem(port);
   const portN = portBad ? 0 : Number(port);
-  const name = typedName ?? suggestName(t?.name ?? "", protocol, portN);
+  const name = typedName ?? freeName(suggestName(t?.name ?? "", protocol, portN), new Set(forwards.items.map(nameOf)));
   const inbound = useInbound(project, t, protocol, portN);
   const shownInbound = t && !portBad ? inbound : undefined;
 
   const problems: string[] = [];
   const full = quota.limit !== undefined && quota.used >= quota.limit;
-  if (!t) problems.push("No interface is chosen.");
-  const typedProblem = pickProblem(pick);
-  if (typedProblem) problems.push(typedProblem);
+  if (!t) problems.push("No machine is chosen.");
   if (portBad) problems.push(portBad);
   const check = checkName(name, "port forward", { loading: forwards.loading, error: forwards.error, names: forwards.items.map(nameOf) });
   if (!check.ok) problems.push(check.reason);
@@ -97,13 +88,7 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
 
   const quotaNotice = full && (
     <Notice tone="warning" title="The plan's limit is reached">
-      This project holds {quota.used} port forwards, as many as its plan allows.
-    </Notice>
-  );
-  const inboundNotice = shownInbound && shownInbound.known && shownInbound.verdict === "none" && t && (
-    <Notice tone="warning" title="Nothing will get through yet">
-      No security group of {t.name} · {t.iface} lets in {protocol} port {portN}. The forward is made, and reaches the {kindNoun(t.kind)} once a group
-      lets it in.
+      {quota.used} of {quota.limit} port forwards are used.
     </Notice>
   );
 
@@ -111,12 +96,6 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
     <FormPage
       crumbs={crumbs}
       title="New port forward"
-      description={
-        <>
-          A port of the shared IPv4 address of a machine's node, leading to a port of one of its interfaces, in{" "}
-          <span className="font-mono text-foreground">{project}</span>. The public port is drawn at random and kept until the forward is deleted.
-        </>
-      }
       onSubmit={send}
       side={
         <>
@@ -124,24 +103,19 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
             summary={
               <div className="space-y-1 text-[13px]">
                 <div className="flex flex-wrap items-center gap-x-2 font-mono text-[12.5px]">
-                  <span className="text-muted">shared IPv4 : drawn port</span>
+                  <span className="text-muted">shared IPv4 : random port</span>
                   <ArrowRight className="size-3.5 text-subtle" />
                   {t ? (
                     <span>
                       {t.name} · {t.iface} · {portN ? portLabel(portN, protocol) : "?"}
                     </span>
                   ) : (
-                    <span className="font-sans text-subtle">no interface</span>
+                    <span className="font-sans text-subtle">no machine</span>
                   )}
                 </div>
               </div>
             }
-            notices={
-              <>
-                {quotaNotice}
-                {inboundNotice}
-              </>
-            }
+            notices={quotaNotice}
             problems={problems}
             blocked={full}
             error={make.error}
@@ -155,34 +129,13 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
         </>
       }
     >
-      <FormSection n={1} title="Target" hint="An interface of a container or virtual machine">
+      <FormSection n={1} title="Target">
         <div className="max-w-xl">
-          <InterfaceField
-            pick={pick}
-            onChange={setPick}
-            none="Choose an interface"
-            hint="Traffic arrives at this interface's private address, from the client's own address. A machine that does not exist yet is waited for."
-          />
+          <InterfaceField value={pick} onChange={setPick} />
         </div>
       </FormSection>
       <FormSection n={2} title="Protocol and port" hint="What the machine listens on">
         <div className="max-w-xl">
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-subtle">Presets</span>
-            {presets.map((p) => (
-              <Button
-                key={p.label}
-                type="button"
-                size="sm"
-                onClick={() => {
-                  setProtocol(p.protocol);
-                  setPort(String(p.port));
-                }}
-              >
-                {p.label} <span className="font-mono text-[11.5px] text-muted">{portLabel(p.port, p.protocol)}</span>
-              </Button>
-            ))}
-          </div>
           {/* One row of two controls at the input's height, each labelled
               above; stacked on a phone. The protocol is the segmented
               control New secret uses for its two forms, its highlight one
@@ -233,27 +186,9 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
           )}
         </div>
       </FormSection>
-      <FormSection n={3} title="Public port" hint="Assigned automatically">
-        <div className="max-w-xl rounded-lg border border-dashed bg-surface-2/50 px-4 py-3">
-          <div className="flex items-center gap-2 font-mono text-[13px]">
-            <Shuffle className="size-3.5 text-subtle" />
-            <span>shared IPv4</span>
-            <span className="text-subtle">:</span>
-            <span className="rounded bg-surface px-1.5 text-muted">
-              {publicPorts.min}–{publicPorts.max}
-            </span>
-          </div>
-          <p className="mt-2 text-[12.5px] text-muted">
-            Drawn at random by Hangar from the free ports {publicPorts.min}–{publicPorts.max} when the forward is made, and shown on its page; it is
-            open at the shared IPv4 address of the node the target runs on. It cannot be chosen. It is kept until the forward is deleted;
-            retargeting the forward keeps it.
-          </p>
-        </div>
-      </FormSection>
-      <FormSection n={4} title="Port forward name" hint="Unique among this project's port forwards">
+      <FormSection n={3} title="Name">
         <div className="max-w-xl">
           <Input value={name} onChange={(e) => setTypedName(e.target.value.toLowerCase())} aria-label="Port forward name" spellCheck={false} />
-          {typedName === undefined && name && <span className="mt-1 block text-[11.5px] text-subtle">Suggested from the target and the port.</span>}
         </div>
       </FormSection>
     </FormPage>

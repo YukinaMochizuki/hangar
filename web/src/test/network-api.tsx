@@ -140,6 +140,20 @@ export function machineOf(container: string, network: string, groups: string[]) 
 /** Containers, by name, for machineOf's Machines; listContainers answers with them. */
 export const containersNamed = (...names: string[]) => names.map((name) => create(ContainerSchema, { metadata: { name, project: "demo" }, spec: { image: "nginx:1" } }));
 
+/**
+ * Overrides for two containers: api, its eth0 on default, and worker, its
+ * eth0 on default and eth1 on sandbox, for a machine of several interfaces.
+ */
+export const twoMachines = {
+  listContainers: () => ({ items: containersNamed("api", "worker") }),
+  listMachines: () => {
+    const worker = machineOf("worker", "default", ["default"]);
+    worker.spec!.interfaces.push(clone(MachineSchema, worker).spec!.interfaces[0]);
+    Object.assign(worker.spec!.interfaces[1], { name: "eth1", network: "sandbox", ipv4: "10.1.0.2/24", ipv6: "2001:db8::88/128" });
+    return { items: [machineOf("api", "default", ["default", "web"]), worker] };
+  },
+};
+
 const container = containersNamed("api")[0];
 const machine = machineOf("api", "default", ["default", "web"]);
 

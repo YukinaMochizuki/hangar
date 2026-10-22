@@ -272,7 +272,7 @@ describe("a group whose network the project lacks", () => {
 describe("a port forward's page", () => {
   it("warns when no group of the target's interface lets its traffic in, naming the groups to edit", async () => {
     show(<PortForwardDetail name="api-dns" />);
-    expect(await screen.findByText("No security group of api · eth0 lets in UDP port 53")).toBeTruthy();
+    expect(await screen.findByText("No security group lets in UDP port 53")).toBeTruthy();
     expect(screen.getByText("Edit rules of web")).toBeTruthy();
     expect(screen.getAllByText("No security group lets it in").length).toBeGreaterThan(0);
     expect(screen.getByText("nc -u 198.51.100.3 29405")).toBeTruthy();

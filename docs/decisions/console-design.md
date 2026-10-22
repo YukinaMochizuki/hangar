@@ -679,9 +679,13 @@ pages read the API (`networking.md`, "Port forwards").
   last in the sidebar's Network group, and a Port forwards card on a
   container's or VM's page listing the forwards that lead to it, with New
   port forward opening the create page on its first interface
-  (`?target=Kind/machine/interface`). The empty list says what a forward
-  is beside a public endpoint (HTTPS, at a hostname) and an interface's
-  own public IPv6.
+  (`?target=Kind/machine/interface`).
+- **A target is a machine, then an interface** (`web/src/components/interface-field.tsx`,
+  also New address and Bind or Move): the project's machines grouped as
+  Containers and Virtual machines, and an interface select, each named
+  with its network ("eth1 · storage"), only for a machine of several.
+  A machine not made yet is not offered; its forwards and addresses are
+  made by `hangar apply`, which waits for it.
 - **Its address is `status.ipv4:status.port`**, in the monospace face with
   a copy button: the port is drawn when the forward is made, the address
   is the shared IPv4 of the node the target runs on, so until it is placed
@@ -690,14 +694,12 @@ pages read the API (`networking.md`, "Port forwards").
   `ssh -p PORT user@IPV4` for TCP port 22, `nc -u IPV4 PORT` for UDP, and
   the address itself for any other port, each copyable, and that machines
   on the same host do not reach it there.
-- **The public port is never asked for.** New port forward has a Public
-  port section that says it is drawn at random from 10000–32767 and kept
-  until the forward is deleted, retargeting included; the manifest holds
-  no port. Protocol is a two-option segmented control as tall as the
-  target port beside it, its highlight sliding across in 200 ms (none
-  under reduced motion); presets fill SSH, RDP and WireGuard. The name is
-  suggested from the machine and port (`web-22`, `game-19132-udp`) until
-  edited.
+- **The public port is never asked for, nor explained.** The summary says
+  "shared IPv4 : random port →" the target; the manifest holds no port.
+  Protocol is a two-option segmented control as tall as the target port
+  beside it, its highlight sliding across in 200 ms (none under reduced
+  motion). The name is suggested from the machine and port (`web-22`,
+  `game-19132-udp`), never one the project holds, until edited.
 - **Whether its traffic gets in is said on every screen**, read from the
   project's Machines and security groups: the client's own address reaches
   the machine, so a forward is let in only by an inbound rule of one of the
