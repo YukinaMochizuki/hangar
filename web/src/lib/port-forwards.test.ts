@@ -3,7 +3,8 @@ import { ConditionSchema, ConditionStatus } from "@hangar/api/hangar/meta/v1/met
 import { SecurityGroupProtocol, SecurityGroupSchema } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { describe, expect, it } from "vitest";
 import type { Attachment } from "@/lib/network";
-import { examplesOf, inboundOf, portForwardYaml, portProblem, portsHold, stateOf, suggestName, type PortForward } from "@/lib/port-forwards";
+import { examplesOf, inboundOf, portForwardYaml, portProblem, portsHold, publicPorts, stateOf, suggestName, type PortForward } from "@/lib/port-forwards";
+import { fixtureItems } from "@/lib/port-forwards.fixture";
 
 const web = { kind: "Container" as const, name: "web", iface: "eth0" };
 
@@ -86,12 +87,23 @@ describe("a forward's connection examples", () => {
   });
 
   it("is nc -u for UDP", () => {
-    expect(examplesOf(forward({ protocol: "UDP", targetPort: 19132, port: 50188 }))[0]!.command).toBe("nc -u 203.0.113.20 50188");
+    expect(examplesOf(forward({ protocol: "UDP", targetPort: 19132, port: 29405 }))[0]!.command).toBe("nc -u 203.0.113.20 29405");
   });
 
   it("is the address for any other TCP port, and nothing before the port is drawn", () => {
     expect(examplesOf(forward({ targetPort: 5432, port: 27640 }))[0]!.command).toBe("203.0.113.20:27640");
     expect(examplesOf(forward({ port: 0 }))).toEqual([]);
+  });
+});
+
+describe("the placeholder data", () => {
+  it("draws every public port from the shared address's range", () => {
+    const drawn = fixtureItems("demo").map((f) => f.status.port).filter(Boolean);
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const p of drawn) {
+      expect(p).toBeGreaterThanOrEqual(publicPorts.min);
+      expect(p).toBeLessThanOrEqual(publicPorts.max);
+    }
   });
 });
 

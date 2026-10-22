@@ -52,9 +52,9 @@ const items = (project: string): PortForward[] => [
   // SSH into a VM, let in only from one range.
   forward(project, "builder-22", vm("builder"), "TCP", 22, 31544, 12),
   // A game's TCP port, which its group lets in.
-  forward(project, "game-25565", ct("game"), "TCP", 25565, 41022, 3),
+  forward(project, "game-25565", ct("game"), "TCP", 25565, 18466, 3),
   // The same game's UDP port, which no group lets in: the forward exists, and nothing gets through.
-  forward(project, "game-19132-udp", ct("game"), "UDP", 19132, 50188, 3),
+  forward(project, "game-19132-udp", ct("game"), "UDP", 19132, 29405, 3),
   // A machine that does not exist yet.
   forward(project, "db-5432", ct("db"), "TCP", 5432, 27640, 1, [notReady("TargetNotFound", "Container db does not exist in this project.")]),
   // Just made: the apiserver has not drawn its port yet.
@@ -68,6 +68,9 @@ const list = <T>(get: () => T[]): ListState<T> => {
   if (s === "error") return { items: [], loading: false, error: new Error("unavailable: the apiserver did not answer"), refetch: () => {} };
   return { items: s === "empty" ? [] : get(), loading: false, error: null, refetch: () => {} };
 };
+
+/** Every fixture forward, for the test that holds their ports to the public range. */
+export const fixtureItems = items;
 
 export function fixtureForwards(project: string): ListState<PortForward> {
   return list(() => items(project).sort((a, b) => a.metadata.name.localeCompare(b.metadata.name)));

@@ -7,18 +7,20 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Shuffle } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { FormField, Input } from "@/components/form";
-import { Choice, CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
+import { CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
 import { Notice } from "@/components/notice";
 import { InboundNotice, useInbound } from "@/components/port-forwards";
 import { useProjectName } from "@/components/shell";
 import { Button } from "@/components/ui";
 import { checkName } from "@/lib/create";
+import { cn } from "@/lib/cn";
 import { kindNoun } from "@/lib/network";
 import {
   portForwardPerms,
   portForwardYaml,
   portLabel,
   portProblem,
+  publicPorts,
   suggestName,
   useForwardTargets,
   usePortForwardCan,
@@ -28,6 +30,8 @@ import {
   type ForwardTarget,
 } from "@/lib/port-forwards";
 import { InterfaceField, pickOf, pickProblem, pickTarget, type InterfacePick } from "@/pages/addresses";
+
+const protocols: ForwardProtocol[] = ["TCP", "UDP"];
 
 const presets: { label: string; protocol: ForwardProtocol; port: number }[] = [
   { label: "SSH", protocol: "TCP", port: 22 },
@@ -181,13 +185,33 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
               </Button>
             ))}
           </div>
-          <div className="grid grid-cols-[1fr_1fr_140px] gap-3 max-sm:grid-cols-2">
-            {(["TCP", "UDP"] as const).map((p) => (
-              <Choice key={p} selected={protocol === p} onClick={() => setProtocol(p)} label={p} className="py-3">
-                <span className="font-mono text-[13px] font-medium">{p}</span>
-              </Choice>
-            ))}
-            <FormField label="Target port" className="mt-0 max-sm:col-span-2">
+          {/* One row of two controls at the input's height, each labelled
+              above; stacked on a phone. The protocol is the segmented
+              control New secret uses for its two forms. */}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[220px_140px]">
+            <div>
+              <span id="pf-protocol" className="text-[12.5px] text-foreground">
+                Protocol
+              </span>
+              <div role="radiogroup" aria-labelledby="pf-protocol" className="mt-1.5 grid h-9 grid-cols-2 items-stretch rounded-md border border-border-strong bg-surface p-0.5">
+                {protocols.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={protocol === p}
+                    onClick={() => setProtocol(p)}
+                    className={cn(
+                      "rounded font-mono text-[13px]",
+                      protocol === p ? "bg-accent-soft font-medium text-foreground ring-1 ring-accent" : "text-muted hover:text-foreground",
+                    )}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <FormField label="Target port" className="mt-0">
               <Input value={port} onChange={(e) => setPort(e.target.value.trim())} inputMode="numeric" aria-label="Target port" spellCheck={false} />
             </FormField>
           </div>
@@ -204,11 +228,13 @@ function PortForwardForm({ crumbs, project, start }: { crumbs: ReactNode[]; proj
             <Shuffle className="size-3.5 text-subtle" />
             <span>shared IPv4</span>
             <span className="text-subtle">:</span>
-            <span className="rounded bg-surface px-1.5 text-muted">random port</span>
+            <span className="rounded bg-surface px-1.5 text-muted">
+              {publicPorts.min}–{publicPorts.max}
+            </span>
           </div>
           <p className="mt-2 text-[12.5px] text-muted">
-            Drawn by Hangar among the free ports of the platform's shared IPv4 address when the forward is made, and shown on its page. It cannot be
-            chosen. It is kept until the forward is deleted; retargeting the forward keeps it.
+            Drawn at random by Hangar from the free ports {publicPorts.min}–{publicPorts.max} of the platform's shared IPv4 address when the forward is
+            made, and shown on its page. It cannot be chosen. It is kept until the forward is deleted; retargeting the forward keeps it.
           </p>
         </div>
       </FormSection>

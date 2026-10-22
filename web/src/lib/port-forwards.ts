@@ -19,6 +19,9 @@ import { fixtureCan, fixtureForwards, fixtureQuota, fixtureTargets } from "@/lib
 
 export type ForwardProtocol = "TCP" | "UDP";
 
+/** The ports of the shared IPv4 address forwards are drawn from; egress uses those above. */
+export const publicPorts = { min: 10000, max: 32767 } as const;
+
 /** The interface a forward sends to; iface is eth0 when the API leaves it unset. */
 export type ForwardTarget = { kind: MachineKind; name: string; iface: string };
 
