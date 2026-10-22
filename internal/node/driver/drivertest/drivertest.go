@@ -87,6 +87,10 @@ type Host struct {
 	// IPv6Prefix is the prefix the network driver was given, invalid for
 	// none; the suite's IPv6 part runs only with one.
 	IPv6Prefix netip.Prefix
+	// SharedIPv4 is the shared address the network driver was given,
+	// invalid for none; the port forwards part runs only with one, and the
+	// part without them only without.
+	SharedIPv4 netip.Addr
 	// ServeGuest has a guest on the interface echo what each TCP connection
 	// to its address on the ports sends, until the test ends.
 	ServeGuest func(t *testing.T, nic driver.Interface, ports ...uint16)
@@ -150,6 +154,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 		_, ok := h.Network.(driver.NATFlows)
 		return ok && h.Connect != nil
 	})
+	part("port forwards", portForwards, func(h Host) bool { return nets(h) && h.SharedIPv4.IsValid() })
+	part("no port forwards", noPortForwards, func(h Host) bool { return nets(h) && !h.SharedIPv4.IsValid() })
 	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
 	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })
 	part("hypervisor", hypervisor, vms)

@@ -122,6 +122,12 @@ type Host struct {
 	// invalid for none. packetConns are every packet socket handed out.
 	ipv6Prefix  netip.Prefix
 	packetConns []*packetConn
+	// sharedIPv4 is the host's shared address, invalid for none; forwards
+	// are those in force, by protocol and port, which forwardWrites counts
+	// the changes of.
+	sharedIPv4    netip.Addr
+	forwards      []driver.Forward
+	forwardWrites int
 	// natFollowers are the FollowNATs under way; natPort the last public
 	// port handed out.
 	natFollowers map[*natFollower]bool

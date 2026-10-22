@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"regexp"
 	"slices"
 	"strings"
 	"syscall"
@@ -433,6 +434,89 @@ type Network interface {
 	// "uid/eth0": what each interface was given of an InterfacePolicy's
 	// ShareClients and Shares, as its rules now stand.
 	ShareRules(ctx context.Context, networkUID string) (map[string]ShareRules, error)
+
+	// EnsureForwards makes the host forward exactly these ports of its
+	// shared IPv4 address, from the internet, to machines, replacing the
+	// whole set at once; a table already as wanted is not written. Forwards
+	// of a network not on the host are ignored. A set holding a forward that
+	// is not of TCP or UDP, of port 0 or SharedPortsFrom and above, to no
+	// IPv4 address and port, of a network uid no network can have, or a
+	// port of a protocol twice, is refused whole, and what the host forwards
+	// is left as it was. A host without a shared address refuses any
+	// forward, and takes an empty set. By the time it returns, no flow a
+	// removed forward, or one whose target changed, let in still reaches
+	// the machine it led to.
+	EnsureForwards(ctx context.Context, forwards []Forward) error
+	// Forwards reads back from the host the forwards in force, by protocol
+	// and port.
+	Forwards(ctx context.Context) ([]Forward, error)
+}
+
+// SharedPortsFrom is the first port a network's TCP and UDP leave the
+// shared address from; Forward.Port is below it, so a port at the shared
+// address is either a machine's connection out or a forward into one,
+// never both.
+const SharedPortsFrom = 32768
+
+// ForwardProtocol is the transport a Forward forwards.
+type ForwardProtocol int
+
+const (
+	TCP ForwardProtocol = iota + 1
+	UDP
+)
+
+func (p ForwardProtocol) String() string {
+	switch p {
+	case TCP:
+		return "TCP"
+	case UDP:
+		return "UDP"
+	}
+	return fmt.Sprintf("protocol %d", int(p))
+}
+
+// Forward is one port of the host's shared IPv4 address forwarded to a
+// machine interface (docs/decisions/networking.md, "Port forwards").
+type Forward struct {
+	Protocol ForwardProtocol
+	// Port is the port at the shared address, which no two forwards of one
+	// protocol share.
+	Port uint16
+	// NetworkUID is the network of the interface.
+	NetworkUID string
+	// To is the interface's IPv4 address and the port it is reached at.
+	To netip.AddrPort
+}
+
+// NetworkUIDPattern is what a network uid may be: what can name a file,
+// such as a network's namespace on the host.
+var NetworkUIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+
+// CheckForwards refuses a set of forwards no host holds, as
+// Network.EnsureForwards says.
+func CheckForwards(fs []Forward) error {
+	seen := map[[2]int]bool{}
+	for _, f := range fs {
+		if f.Protocol != TCP && f.Protocol != UDP {
+			return fmt.Errorf("forward of port %d: %s is neither TCP nor UDP", f.Port, f.Protocol)
+		}
+		if f.Port == 0 || f.Port >= SharedPortsFrom {
+			return fmt.Errorf("%s port %d is not below %d, where the networks' connections leave from", f.Protocol, f.Port, SharedPortsFrom)
+		}
+		if !f.To.Addr().Is4() || f.To.Port() == 0 {
+			return fmt.Errorf("%s port %d: %s is not an IPv4 address and port", f.Protocol, f.Port, f.To)
+		}
+		if !NetworkUIDPattern.MatchString(f.NetworkUID) {
+			return fmt.Errorf("%s port %d: network uid %q is no network's", f.Protocol, f.Port, f.NetworkUID)
+		}
+		k := [2]int{int(f.Protocol), int(f.Port)}
+		if seen[k] {
+			return fmt.Errorf("%s port %d is forwarded twice", f.Protocol, f.Port)
+		}
+		seen[k] = true
+	}
+	return nil
 }
 
 // ShareRules are an interface's file share rules in force: of a server's,

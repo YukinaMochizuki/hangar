@@ -14,6 +14,8 @@ import (
 	"github.com/google/nftables/expr"
 	"github.com/google/nftables/userdata"
 	"golang.org/x/sys/unix"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 // chainSpec is a base chain of the driver's table as it should be.
@@ -117,10 +119,8 @@ func markNetworkRule() ruleSpec {
 }
 
 // SharedPortsFrom is the first port a network's TCP and UDP leave the
-// shared address from (Config.SharedIPv4); the ports below it there are
-// left to port forwards, so a port at the shared address is either a
-// machine's connection out or a forward into one, never both.
-const SharedPortsFrom = 32768
+// shared address from (Config.SharedIPv4), driver.SharedPortsFrom.
+const SharedPortsFrom = driver.SharedPortsFrom
 
 // natRules are the root postrouting chain's: the transit range leaving the
 // uplink is masqueraded with no address set, SNATed to public with one,
@@ -158,6 +158,17 @@ func natRules(uplink string, public, shared netip.Addr) []ruleSpec {
 	}
 }
 
+// forwardInRules open the forward chain: the abuse rules, then, with a
+// shared address, the way in for its port forwards, before "only replies
+// into a network" turns every other new connection away.
+func forwardInRules(uplink string, shared netip.Addr) []ruleSpec {
+	rules := abuseRules()
+	if shared.IsValid() {
+		rules = append(rules, forwardedInRule(uplink))
+	}
+	return rules
+}
+
 // rootChains is the root namespace's table, whose size does not depend on
 // how many networks there are; docs/decisions/networking.md lists its rules.
 // public is the host's own address, where the networks reach the front
@@ -177,7 +188,7 @@ func rootChains(uplink string, public, shared netip.Addr) []chainSpec {
 		},
 		{
 			name: "forward", typ: nftables.ChainTypeFilter, hook: *nftables.ChainHookForward, prio: *nftables.ChainPriorityFilter,
-			rules: append(abuseRules(), ruleSpec{
+			rules: append(forwardInRules(uplink, shared), ruleSpec{
 				says:  "only replies into a network",
 				exprs: append(matchIfnamePrefix(expr.MetaKeyOIFNAME, vethPrefix), dropUnlessReply()...),
 			}, ruleSpec{
@@ -477,5 +488,5 @@ func isOurs(data any) bool {
 	case *nftables.Rule:
 		t = v.Table
 	}
-	return t != nil && isOursFamily(t.Family) && (t.Name == Table || t.Name == FirewallTable)
+	return t != nil && isOursFamily(t.Family) && (t.Name == Table || t.Name == FirewallTable || t.Name == ForwardTable)
 }

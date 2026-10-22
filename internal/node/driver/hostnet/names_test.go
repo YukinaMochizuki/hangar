@@ -173,7 +173,16 @@ func TestChains(t *testing.T) {
 	if len(masq) != 9 {
 		t.Fatalf("%d root rules, want 9: %q", len(masq), masq)
 	}
-	// docs/decisions/networking.md counts them.
+	// docs/decisions/networking.md counts them: two more for the front door
+	// at a public address, and three more again with a shared one, for its
+	// two more NAT rules and the way in for port forwards.
+	public, shared := netip.MustParseAddr("192.0.2.1"), netip.MustParseAddr("192.0.2.2")
+	if n := len(comments(t, rootChains("eth0", public, netip.Addr{}))); n != 11 {
+		t.Errorf("%d root rules with a public address, want 11", n)
+	}
+	if n := len(comments(t, rootChains("eth0", public, shared))); n != 14 {
+		t.Errorf("%d root rules with a shared address, want 14", n)
+	}
 	if n := len(comments(t, rootChains6("eth0", netip.MustParsePrefix("2001:db8:0:1::/64"), netip.Addr{}))); n != 10 {
 		t.Errorf("%d root IPv6 rules, want 10", n)
 	}

@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
-	"regexp"
 	"strings"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -41,6 +40,10 @@ const (
 	// LimitTable is the inet-family table in each network's namespace
 	// limiting the new connections its machines open, of both families.
 	LimitTable = "hangar_limit"
+	// ForwardTable is the ip-family table, in the root namespace and in
+	// each network's with port forwards, of the forwards from the shared
+	// address; apart from Table, so that one keeps its bounded size.
+	ForwardTable = "hangar_forward"
 	// nameLen is the longest a link's name is: the prefix, then hex digits
 	// of the hash, 12 after a three-character prefix.
 	nameLen = 15
@@ -55,7 +58,7 @@ const (
 )
 
 // uidPattern is what a network uid may be to name a namespace file.
-var uidPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+var uidPattern = driver.NetworkUIDPattern
 
 // NamespaceOf returns the name of a network's namespace under /run/netns.
 func NamespaceOf(networkUID string) string { return nsPrefix + networkUID }

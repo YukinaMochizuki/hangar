@@ -33,9 +33,17 @@ func TestConformanceWithIPv6(t *testing.T) {
 }
 
 // TestConformance holds the fake to the drivers' contract, which the real
-// drivers are held to on the testbed.
+// drivers are held to on the testbed, on a host with a shared address; the
+// run with IPv6 has none.
 func TestConformance(t *testing.T) {
-	drivertest.Run(t, func(t *testing.T) drivertest.Host { return host(fake.New()) })
+	shared := netip.MustParseAddr("198.51.100.3")
+	drivertest.Run(t, func(t *testing.T) drivertest.Host {
+		h := fake.New()
+		h.SetSharedIPv4(shared)
+		d := host(h)
+		d.SharedIPv4 = shared
+		return d
+	})
 }
 
 // host is the suite's view of h.
