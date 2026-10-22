@@ -230,7 +230,7 @@ release_modes_ok() {
 }
 
 release_fetch_ok() {
-	[ "$(stat -c '%a %U' "$RELEASE_FETCH")" = "755 root" ] && cmp -s "$RELEASE_FETCH_SRC" "$RELEASE_FETCH"
+	[ "$(stat -c '%a %U' "$RELEASE_FETCH")" = "755 root" ] && generated_is "$RELEASE_FETCH" cat "$RELEASE_FETCH_SRC"
 }
 
 release_verify() {

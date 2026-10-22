@@ -67,10 +67,10 @@ upgrades_timer_live() {
 
 upgrades_files_ok() {
 	local entry
-	upgrades_conf | cmp -s - "$UPGRADES_CONF" && upgrades_periodic | cmp -s - "$UPGRADES_PERIODIC" &&
-		upgrades_needrestart | cmp -s - "$UPGRADES_NEEDRESTART" || return 1
+	generated_is "$UPGRADES_CONF" upgrades_conf && generated_is "$UPGRADES_PERIODIC" upgrades_periodic &&
+		generated_is "$UPGRADES_NEEDRESTART" upgrades_needrestart || return 1
 	for entry in $UPGRADES_TIMERS; do
-		upgrades_timer_conf "${entry#*:}" | cmp -s - "$(upgrades_dropin "${entry%%:*}")" || return 1
+		generated_is "$(upgrades_dropin "${entry%%:*}")" upgrades_timer_conf "${entry#*:}" || return 1
 	done
 }
 

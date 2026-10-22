@@ -287,10 +287,10 @@ edge_cert_ok() {
 
 edge_units_ok() {
 	local s
-	edge_unit | cmp -s - "$(edge_unit_path)" || return 1
+	generated_is "$(edge_unit_path)" edge_unit || return 1
 	[ "$(systemctl show -p NeedDaemonReload --value "$EDGE_UNIT.service")" = no ] || return 1
 	for s in $(edge_sockets); do
-		edge_socket "$s" | cmp -s - "$(services_socket_path "$s")" || return 1
+		generated_is "$(services_socket_path "$s")" edge_socket "$s" || return 1
 		[ "$(systemctl show -p NeedDaemonReload --value "$s.socket")" = no ] || return 1
 	done
 	for s in $EDGE_SOCKETS; do

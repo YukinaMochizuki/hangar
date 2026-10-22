@@ -84,6 +84,18 @@ put_file() {
 	rm -f "$tmp"
 }
 
+# generated_is PATH CMD [ARG...] holds when PATH holds what put_file writes for
+# CMD's output: that output with its trailing newlines dropped, as $(...) drops
+# them, and one newline. Every "as generated" check compares this way, so
+# verify and the step that wrote the file agree on a generator whose output
+# ends in a blank line, or in no newline. A failing CMD fails the check.
+generated_is() {
+	local path=$1 content
+	shift
+	content=$("$@") || return 1
+	[ -f "$path" ] && printf '%s\n' "$content" | cmp -s - "$path"
+}
+
 pkg_installed() {
 	dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'
 }

@@ -398,7 +398,7 @@ services_vm_ids_file() {
 services_vm_ids_kept() {
 	local f
 	for f in /etc/subuid /etc/subgid; do
-		services_vm_ids_file "$f" | cmp -s - "$f" || return 1
+		generated_is "$f" services_vm_ids_file "$f" || return 1
 	done
 }
 
@@ -712,14 +712,14 @@ services_stale() {
 services_units_ok() {
 	local u
 	for u in $(services_units); do
-		services_unit "$u" | cmp -s - "$(services_unit_path "$u")" || return 1
+		generated_is "$(services_unit_path "$u")" services_unit "$u" || return 1
 		[ "$(systemctl show -p NeedDaemonReload --value "$u.service")" = no ] || return 1
 	done
 	for u in $(services_sockets); do
-		services_socket "$u" | cmp -s - "$(services_socket_path "$u")" || return 1
+		generated_is "$(services_socket_path "$u")" services_socket "$u" || return 1
 		[ "$(systemctl show -p NeedDaemonReload --value "$u.socket")" = no ] || return 1
 	done
-	services_tmpfiles | cmp -s - "$SERVICES_TMPFILES"
+	generated_is "$SERVICES_TMPFILES" services_tmpfiles
 }
 
 services_run_ok() {

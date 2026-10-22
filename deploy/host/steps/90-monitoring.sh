@@ -267,16 +267,19 @@ EOF
 EOF
 }
 
-# mon_telegram SEND_RESOLVED prints a receiver's telegram_configs, nothing
-# while the host env file names no chat: then alerts reach no one.
-mon_telegram() {
+# mon_receiver NAME SEND_RESOLVED prints the receiver NAME, with its
+# telegram_configs while the host env file names a chat; without one, the
+# receiver alone, so alerts reach no one, and no blank line is left where the
+# configs would be.
+mon_receiver() {
+	printf '  - name: %s\n' "$1"
 	[ -n "${HANGAR_ALERTS_TELEGRAM_CHAT_ID:-}" ] || return 0
 	cat <<EOF
     telegram_configs:
       - api_url: $MON_TELEGRAM_API_URL
         bot_token_file: $MON_TELEGRAM_TOKEN
         chat_id: $HANGAR_ALERTS_TELEGRAM_CHAT_ID
-        send_resolved: $1
+        send_resolved: $2
 EOF
 }
 
@@ -316,10 +319,8 @@ time_intervals:
 
 receivers:
   - name: watchdog
-  - name: critical
-$(mon_telegram true)
-  - name: warning
-$(mon_telegram false)
+$(mon_receiver critical true)
+$(mon_receiver warning false)
 EOF
 }
 
@@ -644,14 +645,14 @@ mon_key_of() {
 mon_files_ok() {
 	local path mode gen
 	while read -r path mode gen; do
-		"$gen" | cmp -s - "$path" && [ "$(stat -c '%a %U %G' "$path")" = "$mode root root" ] || return 1
+		generated_is "$path" "$gen" && [ "$(stat -c '%a %U %G' "$path")" = "$mode root root" ] || return 1
 	done < <(mon_files)
 }
 
 mon_units_ok() {
 	local path gen
 	while read -r path gen; do
-		"$gen" | cmp -s - "$path" || return 1
+		generated_is "$path" "$gen" || return 1
 		[ "$(systemctl show -p NeedDaemonReload --value "$(basename "$path")")" = no ] || return 1
 	done < <(mon_unit_files)
 }

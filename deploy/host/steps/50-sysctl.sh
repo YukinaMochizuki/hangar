@@ -30,9 +30,9 @@ sysctl_modules_loaded() {
 }
 
 # shellcheck disable=SC2086
-sysctl_modules_persisted() { printf '%s\n' $MODULES | cmp -s - "$MODULES_FILE"; }
+sysctl_modules_persisted() { generated_is "$MODULES_FILE" printf '%s\n' $MODULES; }
 
-sysctl_persisted() { sysctl_conf | cmp -s - "$SYSCTL_FILE"; }
+sysctl_persisted() { generated_is "$SYSCTL_FILE" sysctl_conf; }
 
 sysctl_no_subnet_router() { ! uplink_holds_subnet_router; }
 

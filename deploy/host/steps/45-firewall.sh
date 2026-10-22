@@ -94,7 +94,7 @@ firewall_closed_listeners() {
 }
 
 firewall_unit_ok() {
-	firewall_unit | cmp -s - "$FIREWALL_UNIT_PATH" &&
+	generated_is "$FIREWALL_UNIT_PATH" firewall_unit &&
 		[ "$(systemctl show -p NeedDaemonReload --value "$FIREWALL_UNIT.service")" = no ] &&
 		[ -z "$(systemctl show -p DropInPaths --value "$FIREWALL_UNIT.service")" ]
 }
@@ -123,7 +123,7 @@ firewall_apply() {
 firewall_verify() {
 	check "firewall rules $FIREWALL_FILE, root's, 600, as generated" \
 		sh -c "[ \"\$(stat -c '%U %a' '$FIREWALL_FILE')\" = 'root 600' ]"
-	check "firewall rules $FIREWALL_FILE as generated" cmp -s "$FIREWALL_FILE" <(firewall_rules)
+	check "firewall rules $FIREWALL_FILE as generated" generated_is "$FIREWALL_FILE" firewall_rules
 	check "unit $FIREWALL_UNIT as generated and loaded, no drop-ins" firewall_unit_ok
 	check "unit $FIREWALL_UNIT enabled and active" sh -c "systemctl is-enabled --quiet $FIREWALL_UNIT.service && systemctl is-active --quiet $FIREWALL_UNIT.service"
 	check "table inet $FIREWALL_TABLE as loaded: input dropped but TCP $FIREWALL_TCP_PORTS" firewall_loaded

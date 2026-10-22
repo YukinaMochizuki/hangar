@@ -345,7 +345,7 @@ sshd_verify() {
 	local line u
 	check "sshd drop-in $SSHD_FILE, root's, 644" \
 		sh -c "[ \"\$(stat -c '%U %a' '$SSHD_FILE')\" = 'root 644' ]"
-	check "sshd drop-in $SSHD_FILE as generated" cmp -s "$SSHD_FILE" <(sshd_conf)
+	check "sshd drop-in $SSHD_FILE as generated" generated_is "$SSHD_FILE" sshd_conf
 	check "sshd reloaded since $SSHD_FILE changed" sshd_loaded
 	check "no Match block in $SSHD_DIR/sshd_config or sshd_config.d" test -z "$(sshd_matches)"
 	if ! sshd_rundir_ok; then
