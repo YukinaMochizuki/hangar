@@ -305,7 +305,8 @@ func TestCustomDomainVerification(t *testing.T) {
 	// Another Domain's target, as a CNAME a deleted one left behind, proves
 	// nothing.
 	dns.SetCNAME("_acme-challenge.example.com", customdomain.ChallengeTarget("another-uid", "acme.hangarlab.dev"))
-	if c := verified(reconcile()); c.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE || !strings.Contains(c.GetMessage(), "another") && !strings.Contains(c.GetMessage(), "not ") {
+	other := customdomain.ChallengeTarget("another-uid", "acme.hangarlab.dev")
+	if c := verified(reconcile()); c.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE || !strings.Contains(c.GetMessage(), "answers it is one of "+other) {
 		t.Errorf("with another domain's target: %v", c)
 	}
 	dns.SetCNAME("_acme-challenge.example.com", target)

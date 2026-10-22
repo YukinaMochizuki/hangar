@@ -88,7 +88,7 @@ func main() {
 	flag.StringVar(&f.publicSocket, "public-socket", "", "unix socket hangar-edge forwards the public API to, from :443, with each client's address; empty disables it")
 	flag.UintVar(&f.edgeUID, "edge-uid", 0, "uid accepted as hangar-edge on the edge and public sockets; required with either")
 	flag.StringVar(&f.endpointDomain, "endpoint-domain", apiserver.DefaultEndpointDomain, "the domain public endpoints' hostnames are in")
-	flag.Func("custom-domain-resolver", "a DNS server, as host:port, that custom domains' challenge CNAMEs are looked up at; repeatable; none is the system's", func(s string) error {
+	flag.Func("custom-domain-resolver", "a recursive DNS server, as host:port, that finds the nameservers custom domains' challenge CNAMEs are looked up at, and is asked itself when none of those answers; repeatable; none is the system's", func(s string) error {
 		f.domainResolvers = append(f.domainResolvers, s)
 		return nil
 	})

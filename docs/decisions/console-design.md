@@ -682,9 +682,19 @@ Settled with the owner on screenshots before the pages read the API
   Apply is off. **Delete** asks for the name typed and is off, with the
   fact above its button, while an endpoint has hostnames under the
   domain, and while the endpoints have not loaded.
+- **Check now** is on the card that says why a domain is not verified,
+  while it waits for DNS or its last lookup failed; never for one another
+  tenant holds, which no lookup changes, nor once it is verified. It is
+  `CustomDomainCheckService.CheckCustomDomain`, which looks at the
+  domain's own nameservers at once, writes the status and answers with
+  the domain; the console puts that answer in the list it reads, so the
+  page shows it without waiting for the next read: verified, or the
+  card's message saying what the lookup found. It says it is checking and
+  is off while the call runs, and its error stands on the card. The CLI
+  card lists `hangar check customdomain NAME` where Check now is drawn.
 - **Controls are gated at the tenant**: one TestPermissions answer for a
-  list or a page, `network.customdomains.apply` for New, Edit projects
-  and Edit labels, `network.customdomains.delete` for Delete. A
+  list or a page, `network.customdomains.apply` for New, Edit projects,
+  Check now and Edit labels, `network.customdomains.delete` for Delete. A
   project's people read the domains that let their project, with no
   control; their reads are per domain, which TestPermissions cannot say,
   so the endpoint form's domains are the list as the API answers it.

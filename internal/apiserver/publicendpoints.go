@@ -3,8 +3,10 @@ package apiserver
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -35,9 +37,16 @@ type PublicEndpointsConfig struct {
 	// ControlPlaneDomain is the console's and the API's; with Domain, no
 	// CustomDomain may be in its site.
 	ControlPlaneDomain string
-	// Resolvers are the DNS servers a CustomDomain's challenge CNAME is
-	// looked up at, as host:port; empty is the system's.
+	// Resolvers are the recursive DNS servers, as host:port, that find the
+	// nameservers a CustomDomain's challenge CNAME is looked up at, and are
+	// asked themselves when none of those answers; empty is the system's.
 	Resolvers []string
+	// Nameserver, if set, is where a nameserver of the given name and
+	// address is asked, as host:port; nil is its port 53. For tests.
+	Nameserver func(host string, addr netip.Addr) string
+	// CheckInterval is how soon CheckCustomDomain checks a domain again;
+	// zero is five seconds. For tests, which check one again at once.
+	CheckInterval time.Duration
 }
 
 // PublicEndpoint condition types and reasons, the public endpoint

@@ -3,13 +3,11 @@ package apiserver
 import (
 	"context"
 	"fmt"
-	"net"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
 	"google.golang.org/protobuf/proto"
 
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
@@ -22,6 +20,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/customdomain"
+	"github.com/YukinaMochizuki/hangar/internal/dnscheck"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
@@ -365,26 +364,37 @@ func (s *Server) checkEndpointHostnames(ctx context.Context, ep *networkv1alpha1
 	return nil
 }
 
-// reconcileCustomDomain writes what a CustomDomain's DNS needs, and
-// whether its challenge CNAME is in place. The first tenant to verify a
-// name has it: another tenant's domain that is it, under it or above it is
-// never verified after. One verified stays so: a domain that later drops
-// the record loses its certificates' renewal, not its endpoints.
+// reconcileCustomDomain keeps a CustomDomain's status, as checkCustomDomain
+// writes it.
 func (s *Server) reconcileCustomDomain(ctx context.Context, k controller.Key) error {
-	key := resource.Key{Name: k.Name}
+	_, err := s.checkCustomDomain(ctx, k.Name)
+	return err
+}
+
+// checkCustomDomain writes what a CustomDomain's DNS needs, and whether its
+// challenge CNAME is in place, as the domain's own nameservers answer
+// (lookupChallenge), and returns the domain as it is then; nil when there is
+// none. The first tenant to verify a name has it: another tenant's domain
+// that is it, under it or above it is never verified after. One verified
+// stays so, and is looked up no more: a domain that later drops the record
+// loses its certificates' renewal, not its endpoints.
+func (s *Server) checkCustomDomain(ctx context.Context, name string) (*networkv1alpha1.CustomDomain, error) {
+	key := resource.Key{Name: name}
 	obj, err := s.get(ctx, registry.CustomDomain, key)
 	if err != nil || obj == nil {
-		return err
+		return nil, err
 	}
 	d := obj.(*networkv1alpha1.CustomDomain)
 	if d.GetMetadata().GetDeleteTime() != nil {
-		return nil
+		return d, nil
 	}
-	var found string
+	var found dnscheck.Answer
 	var lookupErr error
-	if !isVerified(d) {
+	looked := !isVerified(d)
+	lookedUID, lookedDomain := d.GetMetadata().GetUid(), d.GetSpec().GetDomain()
+	if looked {
 		// Asked outside the lock, which DNS could otherwise hold for seconds.
-		found, lookupErr = s.lookupCNAME(ctx, customdomain.ChallengeName(d.GetSpec().GetDomain()))
+		found, lookupErr = s.lookupChallenge(ctx, customdomain.ChallengeName(lookedDomain))
 	}
 	// Whether another tenant verified the name first, and this status
 	// written, under the lock every write of a domain holds, so two tenants
@@ -392,11 +402,18 @@ func (s *Server) reconcileCustomDomain(ctx context.Context, k controller.Key) er
 	s.customDomains.Lock()
 	defer s.customDomains.Unlock()
 	if obj, err = s.get(ctx, registry.CustomDomain, key); err != nil || obj == nil {
-		return err
+		return nil, err
 	}
 	d = obj.(*networkv1alpha1.CustomDomain)
 	if d.GetMetadata().GetDeleteTime() != nil {
-		return nil
+		return d, nil
+	}
+	// What was looked up is this domain's challenge only if the domain is
+	// still the one it was: deleted and made again under the name, its UID
+	// and so its challenge target differ, and with another spec.domain the
+	// record is another name's. Its own lookup, from the change, follows.
+	if looked && !isVerified(d) && (d.GetMetadata().GetUid() != lookedUID || d.GetSpec().GetDomain() != lookedDomain) {
+		return d, nil
 	}
 	gen := d.GetMetadata().GetGeneration()
 	status := &networkv1alpha1.CustomDomainStatus{}
@@ -422,7 +439,7 @@ func (s *Server) reconcileCustomDomain(ctx context.Context, k controller.Key) er
 		cond := &metav1.Condition{Type: CustomDomainVerified, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, ObservedGeneration: gen}
 		all, err := s.allCustomDomains(ctx)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		switch o := verifiedOverlap(all, d.GetSpec().GetTenant(), domain); {
 		case o != nil:
@@ -430,70 +447,39 @@ func (s *Server) reconcileCustomDomain(ctx context.Context, k controller.Key) er
 			cond.Message = fmt.Sprintf("another tenant has verified %s first; it is theirs while their custom domain is", o.GetSpec().GetDomain())
 		case lookupErr != nil:
 			cond.Reason, cond.Message = ReasonLookupFailed, fmt.Sprintf("looking up %s failed: %v", customdomain.ChallengeName(domain), lookupErr)
-		case found != status.ChallengeTarget:
+		case found.Target != status.ChallengeTarget:
 			cond.Reason = ReasonChallengeMissing
 			cond.Message = fmt.Sprintf("%s must be a CNAME of %s", customdomain.ChallengeName(domain), status.ChallengeTarget)
-			if found != "" {
-				cond.Message += ", not " + found
+			if found.Target != "" {
+				cond.Message += fmt.Sprintf("; %s answers it is one of %s", found.From, found.Target)
+			} else {
+				cond.Message += fmt.Sprintf("; %s answers it is none", found.From)
 			}
 		default:
 			cond.Status, cond.Reason = metav1.ConditionStatus_CONDITION_STATUS_TRUE, ReasonDomainVerified
-			cond.Message = "the challenge CNAME is in place"
+			cond.Message = "the challenge CNAME is in place, as " + found.From + " answers"
 		}
 		status.Conditions = conditions.Set(status.GetConditions(), cond, s.clock.Now())
 	}
-	if !proto.Equal(status, d.GetStatus()) {
-		rv := d.GetMetadata().GetResourceVersion()
-		if _, err := s.backend(registry.CustomDomain).UpdateStatus(s.system(ctx), key, status, &rv); err != nil {
-			return err
-		}
+	if proto.Equal(status, d.GetStatus()) {
+		return d, nil
 	}
-	return nil
+	rv := d.GetMetadata().GetResourceVersion()
+	updated, err := s.backend(registry.CustomDomain).UpdateStatus(s.system(ctx), key, status, &rv)
+	if err != nil {
+		return nil, err
+	}
+	return updated.(*networkv1alpha1.CustomDomain), nil
 }
 
-// lookupTimeout bounds one lookup of a challenge CNAME.
-const lookupTimeout = 5 * time.Second
-
-// lookupCNAME is the target of name's CNAME, without the trailing dot, or
-// "" when it has none. It asks the configured resolvers, else the
-// system's, for the CNAME itself: following it to addresses would fail,
-// since a challenge target has records only while a challenge is answered.
-func (s *Server) lookupCNAME(ctx context.Context, name string) (string, error) {
-	servers := s.cfg.PublicEndpoints.Resolvers
-	if len(servers) == 0 {
-		cc, err := dns.ClientConfigFromFile("/etc/resolv.conf")
-		if err != nil {
-			return "", err
-		}
-		for _, srv := range cc.Servers {
-			servers = append(servers, net.JoinHostPort(srv, cc.Port))
-		}
-	}
-	q := new(dns.Msg)
-	q.SetQuestion(dns.Fqdn(name), dns.TypeCNAME)
-	c := &dns.Client{Timeout: lookupTimeout}
-	var lastErr error
-	for _, srv := range servers {
-		in, _, err := c.ExchangeContext(ctx, q, srv)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		if in.Rcode != dns.RcodeSuccess && in.Rcode != dns.RcodeNameError {
-			lastErr = fmt.Errorf("%s answered %s", srv, dns.RcodeToString[in.Rcode])
-			continue
-		}
-		for _, rr := range in.Answer {
-			if cname, ok := rr.(*dns.CNAME); ok && strings.EqualFold(cname.Hdr.Name, dns.Fqdn(name)) {
-				return strings.ToLower(strings.TrimSuffix(cname.Target, ".")), nil
-			}
-		}
-		return "", nil
-	}
-	if lastErr == nil {
-		lastErr = fmt.Errorf("no DNS server to ask")
-	}
-	return "", lastErr
+// lookupChallenge looks up what name, a challenge name, is a CNAME of, at
+// the nameservers of its zone, found through the configured resolvers or
+// the system's: a resolver remembers a record missing for as long as the
+// zone's negative TTL, often half an hour, and a tenant adds the record
+// after making the domain (internal/dnscheck).
+func (s *Server) lookupChallenge(ctx context.Context, name string) (dnscheck.Answer, error) {
+	r := dnscheck.Resolver{Recursive: s.cfg.PublicEndpoints.Resolvers, Nameserver: s.cfg.PublicEndpoints.Nameserver}
+	return r.CNAME(ctx, name)
 }
 
 // customDomainController keeps CustomDomains' status. Its resync, every

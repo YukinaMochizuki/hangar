@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/network/v1alpha1/custom_domain.proto";
+
+// CustomDomainCheckService looks for a CustomDomain's challenge CNAME now,
+// rather than at the next of the apiserver's minutely checks, asking the
+// domain's own nameservers so no resolver's cache hides a record just
+// added. It needs network.customdomains.apply at the domain's tenant, as
+// changing the domain does. It is not a resource's service, so it is
+// written by hand rather than generated. See
+// docs/decisions/custom-domains.md.
+service CustomDomainCheckService {
+  // CheckCustomDomain looks for the domain's challenge CNAME once, writes
+  // what it found into the domain's status, and returns the domain. A
+  // domain already verified is returned as it is, nothing looked up.
+  rpc CheckCustomDomain(CheckCustomDomainRequest) returns (CheckCustomDomainResponse);
+}
+
+message CheckCustomDomainRequest {
+  // Names the CustomDomain.
+  string name = 1;
+}
+
+message CheckCustomDomainResponse {
+  CustomDomain custom_domain = 1;
+}

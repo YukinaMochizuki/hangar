@@ -289,6 +289,11 @@ type wsResult struct {
 	err error
 }
 
+// String is the result as a failure prints it, the error by its text.
+func (r wsResult) String() string {
+	return fmt.Sprintf("{stdout:%q stderr:%q exit:%v err:%v}", r.stdout, r.stderr, r.exit, r.err)
+}
+
 // readAll reads an exec to its close, within 10 s.
 func readAll(t *testing.T, c *websocket.Conn) (r wsResult) {
 	t.Helper()

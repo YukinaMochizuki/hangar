@@ -24,6 +24,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1/iamv1alpha1connect"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/monitoring/v1alpha1/monitoringv1alpha1connect"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/network/v1alpha1/networkv1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1/nodev1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
@@ -150,6 +151,8 @@ type Server struct {
 	// tenants' domains overlap, no two endpoints hold one hostname, and no
 	// domain goes while an endpoint serves under it.
 	customDomains sync.Mutex
+	// domainChecks bounds CheckCustomDomain's lookups.
+	domainChecks checkLimiter
 	// addressBinding serializes every apply and delete of an Address, so
 	// no two bind one interface.
 	addressBinding sync.Mutex
@@ -297,6 +300,7 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 	mux.Handle(iamv1alpha1connect.NewAccountServiceHandler(account{s}, s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewMemberServiceHandler(members{s}, s.interceptors(chain)))
 	mux.Handle(iamv1alpha1connect.NewServiceTokenIssuerServiceHandler(tokenIssuer{s}, s.interceptors(chain)))
+	mux.Handle(networkv1alpha1connect.NewCustomDomainCheckServiceHandler(customDomainCheck{s}, s.interceptors(chain)))
 	mux.Handle(monitoringv1alpha1connect.NewMonitoringServiceHandler(monitoring{s}, s.interceptors(chain)))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok\n"))
