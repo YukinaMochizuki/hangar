@@ -166,7 +166,12 @@ type PublicEndpointSpec struct {
 	// The TCP port the target serves plain HTTP on, 1 to 65535.
 	Port int32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
 	// Who may use the endpoint; unset is PRIVATE.
-	Access        PublicEndpointAccess `protobuf:"varint,3,opt,name=access,proto3,enum=hangar.network.v1alpha1.PublicEndpointAccess" json:"access,omitempty"`
+	Access PublicEndpointAccess `protobuf:"varint,3,opt,name=access,proto3,enum=hangar.network.v1alpha1.PublicEndpointAccess" json:"access,omitempty"`
+	// More hostnames the endpoint serves at, besides its own, each a CustomDomain
+	// of the project's tenant or one label below one, such as
+	// "app.example.com". Only a PUBLIC endpoint may have them, and no other
+	// endpoint may hold one. See docs/decisions/custom-domains.md.
+	Hostnames     []string `protobuf:"bytes,4,rep,name=hostnames,proto3" json:"hostnames,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -220,6 +225,13 @@ func (x *PublicEndpointSpec) GetAccess() PublicEndpointAccess {
 		return x.Access
 	}
 	return PublicEndpointAccess_PUBLIC_ENDPOINT_ACCESS_UNSPECIFIED
+}
+
+func (x *PublicEndpointSpec) GetHostnames() []string {
+	if x != nil {
+		return x.Hostnames
+	}
+	return nil
 }
 
 // PublicEndpointTarget is a VirtualMachine or Container in the endpoint's
@@ -320,7 +332,10 @@ type PublicEndpointStatus struct {
 	// The Machine the endpoint reaches; empty while its target has none.
 	Machine string `protobuf:"bytes,5,opt,name=machine,proto3" json:"machine,omitempty"`
 	// The Node that machine runs on; empty while it is not placed.
-	Node          string `protobuf:"bytes,6,opt,name=node,proto3" json:"node,omitempty"`
+	Node string `protobuf:"bytes,6,opt,name=node,proto3" json:"node,omitempty"`
+	// The URLs of spec.hostnames that serve: those whose CustomDomain is
+	// verified. The Hostnames condition says why any other does not.
+	HostnameUrls  []string `protobuf:"bytes,8,rep,name=hostname_urls,json=hostnameUrls,proto3" json:"hostname_urls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -395,6 +410,13 @@ func (x *PublicEndpointStatus) GetNode() string {
 		return x.Node
 	}
 	return ""
+}
+
+func (x *PublicEndpointStatus) GetHostnameUrls() []string {
+	if x != nil {
+		return x.HostnameUrls
+	}
+	return nil
 }
 
 type GetPublicEndpointRequest struct {
@@ -1084,15 +1106,16 @@ const file_hangar_network_v1alpha1_public_endpoint_proto_rawDesc = "" +
 	"\bmetadata\x18\x03 \x01(\v2\x1a.hangar.meta.v1.ObjectMetaR\bmetadata\x12?\n" +
 	"\x04spec\x18\x04 \x01(\v2+.hangar.network.v1alpha1.PublicEndpointSpecR\x04spec\x12E\n" +
 	"\x06status\x18\x05 \x01(\v2-.hangar.network.v1alpha1.PublicEndpointStatusR\x06status:+\x8a\xb5\x18'\n" +
-	"\x0ePublicEndpoint\x12\x0fpublicendpoints\x1a\x02ep \x01\"\xb6\x01\n" +
+	"\x0ePublicEndpoint\x12\x0fpublicendpoints\x1a\x02ep \x01\"\xd4\x01\n" +
 	"\x12PublicEndpointSpec\x12E\n" +
 	"\x06target\x18\x01 \x01(\v2-.hangar.network.v1alpha1.PublicEndpointTargetR\x06target\x12\x12\n" +
 	"\x04port\x18\x02 \x01(\x05R\x04port\x12E\n" +
-	"\x06access\x18\x03 \x01(\x0e2-.hangar.network.v1alpha1.PublicEndpointAccessR\x06access\"k\n" +
+	"\x06access\x18\x03 \x01(\x0e2-.hangar.network.v1alpha1.PublicEndpointAccessR\x06access\x12\x1c\n" +
+	"\thostnames\x18\x04 \x03(\tR\thostnames\"k\n" +
 	"\x14PublicEndpointTarget\x12)\n" +
 	"\x0fvirtual_machine\x18\x01 \x01(\tH\x00R\x0evirtualMachine\x12\x1e\n" +
 	"\tcontainer\x18\x02 \x01(\tH\x00R\tcontainerB\b\n" +
-	"\x06object\"\xfb\x01\n" +
+	"\x06object\"\xa0\x02\n" +
 	"\x14PublicEndpointStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1101,7 +1124,8 @@ const file_hangar_network_v1alpha1_public_endpoint_proto_rawDesc = "" +
 	"\bhostname\x18\x03 \x01(\tR\bhostname\x12\x10\n" +
 	"\x03url\x18\x04 \x01(\tR\x03url\x12\x18\n" +
 	"\amachine\x18\x05 \x01(\tR\amachine\x12\x12\n" +
-	"\x04node\x18\x06 \x01(\tR\x04nodeJ\x04\b\a\x10\bR\x15access_application_id\"H\n" +
+	"\x04node\x18\x06 \x01(\tR\x04node\x12#\n" +
+	"\rhostname_urls\x18\b \x03(\tR\fhostnameUrlsJ\x04\b\a\x10\bR\x15access_application_id\"H\n" +
 	"\x18GetPublicEndpointRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"m\n" +

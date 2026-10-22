@@ -1,0 +1,252 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.CustomDomainRecord": {
+      "additionalProperties": false,
+      "description": "CustomDomainRecord is one DNS record a CustomDomain needs.",
+      "properties": {
+        "name": {
+          "description": "The record's name, such as \"_acme-challenge.example.com\" or \"*.example.com\".",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What the record is for.",
+          "type": "string"
+        },
+        "type": {
+          "description": "The record's type, such as \"CNAME\".",
+          "type": "string"
+        },
+        "value": {
+          "description": "The record's value.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.CustomDomainSpec": {
+      "additionalProperties": false,
+      "description": "CustomDomainSpec is the domain and who may use it.",
+      "properties": {
+        "domain": {
+          "description": "The domain, in lower case without a trailing dot, such as \"example.com\". No other tenant's domain may be it, under it or above it.",
+          "type": "string"
+        },
+        "projects": {
+          "description": "Names the Projects of the tenant whose endpoints may serve under the domain; empty lets every project of the tenant.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tenant": {
+          "description": "Name of the Tenant the domain belongs to.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.CustomDomainStatus": {
+      "additionalProperties": false,
+      "description": "CustomDomainStatus is what the tenant must put in the domain's DNS, and whether it has.",
+      "properties": {
+        "challengeTarget": {
+          "description": "The name _acme-challenge.<domain> must be a CNAME of, such as \"k3x9a.acme.hangarlab.dev\". It is this CustomDomain's alone, made from its uid, and proves the tenant holds the domain.",
+          "type": "string"
+        },
+        "conditions": {
+          "description": "Verified says whether the challenge record is in the domain's DNS; once true it stays true.",
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "records": {
+          "description": "The records the domain's DNS needs: the challenge's, and those that bring an endpoint's traffic to Hangar.",
+          "items": {
+            "$ref": "#/$defs/hangar.network.v1alpha1.CustomDomainRecord"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "CustomDomain is a tenant's own DNS domain, such as \"example.com\", which the public endpoints of the tenant's projects may serve under: at the domain itself and one label below it. The tenant proves it holds the domain by the CNAME its status names, which also lets Hangar get the domain's certificates. Only PUBLIC endpoints serve under a CustomDomain. See docs/decisions/custom-domains.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "network.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "CustomDomain",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.CustomDomainSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.CustomDomainStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "CustomDomain",
+  "type": "object"
+}

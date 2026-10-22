@@ -40,6 +40,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(iamv1alpha1connect.NewServiceTokenServiceHandler(&serviceTokenService{b: backends(registry.ServiceToken)}, opts...))
 	mux.Handle(iamv1alpha1connect.NewUserServiceHandler(&userService{b: backends(registry.User)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
+	mux.Handle(networkv1alpha1connect.NewCustomDomainServiceHandler(&customDomainService{b: backends(registry.CustomDomain)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewPublicEndpointServiceHandler(&publicEndpointService{b: backends(registry.PublicEndpoint)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
@@ -720,6 +721,73 @@ func (s *addressService) UpdateAddressStatus(ctx context.Context, req *connect.R
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha12.UpdateAddressStatusResponse{Address: obj.(*v1alpha12.Address)}), nil
+}
+
+type customDomainService struct {
+	b resource.Backend
+}
+
+func (s *customDomainService) GetCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.GetCustomDomainRequest]) (*connect.Response[v1alpha12.GetCustomDomainResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.GetCustomDomainResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
+}
+
+func (s *customDomainService) ListCustomDomains(ctx context.Context, req *connect.Request[v1alpha12.ListCustomDomainsRequest]) (*connect.Response[v1alpha12.ListCustomDomainsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha12.ListCustomDomainsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha12.CustomDomain))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *customDomainService) WatchCustomDomains(ctx context.Context, req *connect.Request[v1alpha12.WatchCustomDomainsRequest], stream *connect.ServerStream[v1alpha12.WatchCustomDomainsResponse]) error {
+	opts := resource.WatchOptions{LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha12.WatchCustomDomainsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.CustomDomain = ev.Object.(*v1alpha12.CustomDomain)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *customDomainService) ApplyCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.ApplyCustomDomainRequest]) (*connect.Response[v1alpha12.ApplyCustomDomainResponse], error) {
+	in := req.Msg.GetCustomDomain()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("custom_domain is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.ApplyCustomDomainResponse{CustomDomain: res.Object.(*v1alpha12.CustomDomain), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *customDomainService) DeleteCustomDomain(ctx context.Context, req *connect.Request[v1alpha12.DeleteCustomDomainRequest]) (*connect.Response[v1alpha12.DeleteCustomDomainResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.DeleteCustomDomainResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
+}
+
+func (s *customDomainService) UpdateCustomDomainStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateCustomDomainStatusRequest]) (*connect.Response[v1alpha12.UpdateCustomDomainStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.UpdateCustomDomainStatusResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
 }
 
 type networkService struct {

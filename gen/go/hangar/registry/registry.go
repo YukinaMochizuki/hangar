@@ -141,6 +141,16 @@ var (
 		Message:    (*v1alpha12.Address)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.AddressService",
 	}
+	CustomDomain = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "CustomDomain",
+		Plural:     "customdomains",
+		ShortNames: []string{"cdom"},
+		Scope:      v1.Scope_SCOPE_GLOBAL,
+		Message:    (*v1alpha12.CustomDomain)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.CustomDomainService",
+	}
 	Network = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -255,6 +265,7 @@ var All = []Resource{
 	ServiceToken,
 	User,
 	Address,
+	CustomDomain,
 	Network,
 	PublicEndpoint,
 	SecurityGroup,
