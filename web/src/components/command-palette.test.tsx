@@ -393,6 +393,31 @@ describe("CommandPalette", () => {
     expect(navigate).toHaveBeenCalledWith({ to: "/tenants/acme/members" });
     expect(api.calls.filter((c) => ["ListDisks", "ListContainers", "ListSecrets"].includes(c))).toEqual([]);
   });
+
+  it("in a tenant, finds its custom domains by domain or name, and no other tenant's", async () => {
+    const acme: Place = { kind: "tenant", name: "acme" };
+    setup({}, acme);
+    await findOption("Members");
+    type("example");
+    fireEvent.click(await findOption("example.com"));
+    expect(navigate).toHaveBeenCalledWith({ to: "/tenants/acme/domains/example-com" });
+    fireEvent.click(screen.getByRole("button", { name: "Open palette" }));
+    type("zeta");
+    await findOption("Zeta Research");
+    expect(titles()).not.toContain("zeta.example");
+  });
+
+  it("offers New custom domain only where the tenant's answer holds its permission, and opens its page", async () => {
+    const acme: Place = { kind: "tenant", name: "acme" };
+    setup({ perms: (scope) => (scope === "tenant:acme" ? ["network.customdomains.apply"] : []) }, acme);
+    fireEvent.click(await findOption("New custom domain"));
+    expect(navigate).toHaveBeenCalledWith({ to: "/tenants/acme/new/custom-domain" });
+    cleanup();
+    // New project comes with the tenant's other answer, so by then both are known.
+    setup({ perms: (scope) => (scope === "tenant:acme" ? ["tenancy.projects.apply"] : []) }, acme);
+    await findOption("New project");
+    expect(titles()).not.toContain("New custom domain");
+  });
 });
 
 describe("Topbar", () => {
