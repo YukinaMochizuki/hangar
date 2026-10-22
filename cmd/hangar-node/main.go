@@ -112,6 +112,11 @@ func main() {
 		log.Error("node agent stopped", "error", err)
 		os.Exit(1)
 	}
+	shared, err := hf.shared()
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	var metricsLn net.Listener
 	if *metricsListen != "" {
 		if metricsLn, err = metrics.Listen(ctx, *metricsListen); err != nil {
@@ -154,6 +159,7 @@ func main() {
 		Drivers:        d,
 		DNSUpstreams:   upstreams,
 		IPv6Prefix:     prefix,
+		SharedIPv4:     shared,
 		EdgeDial:       edgeDial,
 		EdgeUIDs:       edgeUIDs,
 		NATLog:         *natLog,
@@ -250,6 +256,11 @@ func fakeDrivers(hf hostFlags) (*node.Drivers, func(), error) {
 		return nil, none, err
 	}
 	h.SetIPv6Prefix(prefix)
+	shared, err := hf.shared()
+	if err != nil {
+		return nil, none, err
+	}
+	h.SetSharedIPv4(shared)
 	d := &node.Drivers{Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
 	switch hf.network {
 	case "fake":
@@ -274,12 +285,9 @@ func network(hf hostFlags) (*hostnet.Driver, error) {
 			return nil, fmt.Errorf("--public-ipv4: %w", err)
 		}
 	}
-	var shared netip.Addr
-	if hf.sharedIPv4 != "" {
-		var err error
-		if shared, err = netip.ParseAddr(hf.sharedIPv4); err != nil {
-			return nil, fmt.Errorf("--shared-ipv4: %w", err)
-		}
+	shared, err := hf.shared()
+	if err != nil {
+		return nil, err
 	}
 	prefix, err := hf.prefix()
 	if err != nil {
@@ -304,7 +312,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.network, "network-driver", "fake", "with --drivers=fake, the network driver: fake, or host for this host's (needs --uplink)")
 	fs.StringVar(&hf.uplink, "uplink", "", "with this host's network driver, the link the host reaches the internet through")
 	fs.StringVar(&hf.publicIPv4, "public-ipv4", "", "with this host's network driver, the host's own IPv4 address, where machines reach the front door (:80 and :443), and without --shared-ipv4 the address networks' traffic leaves the uplink as; empty, they reach nothing of the host's over IPv4 and leave as the uplink's own")
-	fs.StringVar(&hf.sharedIPv4, "shared-ipv4", "", "with this host's network driver, another IPv4 address of the uplink's, which networks' traffic leaves as instead of --public-ipv4, TCP and UDP from its ports 32768 and up; empty, they leave as --public-ipv4")
+	fs.StringVar(&hf.sharedIPv4, "shared-ipv4", "", "with this host's network driver, another IPv4 address of the uplink's, which networks' traffic leaves as instead of --public-ipv4, TCP and UDP from its ports 32768 and up, and where PortForwards open ports below them; empty, they leave as --public-ipv4, and no port is forwarded")
 	fs.StringVar(&hf.publicIPv6, "public-ipv6", "", "with this host's network driver, the host's own public IPv6 address, where machines reach the front door (:80 and :443) as they do at --public-ipv4; empty, they reach nothing of the host's over IPv6")
 	fs.StringVar(&hf.ipv6Prefix, "public-ipv6-prefix", "", "the host's public IPv6 /64, such as 2001:db8:0:1::/64, on the uplink's link, from which each machine interface gets an address; empty for no IPv6 in the networks")
 	fs.StringVar(&hf.dataset, "zfs-dataset", "hangar", "for --drivers=host, the dataset root disks and image bases go under")
@@ -315,6 +323,18 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
+}
+
+// shared reads --shared-ipv4; invalid when it is empty.
+func (hf hostFlags) shared() (netip.Addr, error) {
+	if hf.sharedIPv4 == "" {
+		return netip.Addr{}, nil
+	}
+	a, err := netip.ParseAddr(hf.sharedIPv4)
+	if err != nil || !a.Is4() {
+		return netip.Addr{}, fmt.Errorf("--shared-ipv4: %q is not an IPv4 address", hf.sharedIPv4)
+	}
+	return a, nil
 }
 
 // prefix reads --public-ipv6-prefix; invalid when it is empty.

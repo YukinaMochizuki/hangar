@@ -83,7 +83,7 @@ the front door (`front-door.md`) from the same release as the binaries.
   button and Cancel, then the manifest it amounts to and its command. Its
   name field is named for the kind ("Disk name", "Network name"). Each
   kind's page is at `/projects/<project>/new/<kind>` (`disk`, `network`,
-  `address`, `public-endpoint`, `secret`, `service-token`,
+  `address`, `public-endpoint`, `port-forward`, `secret`, `service-token`,
   `security-group`; machines at
   `/new`; a tenant's custom domains at `/tenants/<tenant>/new/custom-domain`),
   not `/<plural>/new`, where an object named `new` has its own
@@ -577,7 +577,8 @@ Settled with the owner on the screens, before they read the API.
 
 Settled with the owner on screenshots before the pages read the API.
 
-- **The "Network" group** in the sidebar lists the four kinds, each with a
+- **The "Network" group** in the sidebar lists the four kinds, and Port
+  forwards (below), each with a
   list page and an object's page (`web/src/pages/networks.tsx`,
   `security-groups.tsx`, `addresses.tsx`, `public-endpoints.tsx`). The
   pages read the lists the API serves; which interfaces a network or group
@@ -662,6 +663,64 @@ Settled with the owner on screenshots before the pages read the API.
   its controls need: `network.<plural>.apply` for create, edit rules,
   bind, move, unbind, make public or private and edit hostnames,
   `network.<plural>.delete` for delete.
+
+### Port forwards
+
+Settled with the owner on screenshots of placeholder data before the
+pages read the API (`networking.md`, "Port forwards").
+
+- **A port forward has a list, a page and New port forward**
+  (`web/src/pages/port-forwards.tsx`, `create-port-forward.tsx`,
+  `web/src/components/port-forwards.tsx`, `web/src/lib/port-forwards.ts`),
+  last in the sidebar's Network group, and a Port forwards card on a
+  container's or VM's page listing the forwards that lead to it, with New
+  port forward opening the create page on its first interface
+  (`?target=Kind/machine/interface`). The empty list says what a forward
+  is beside a public endpoint (HTTPS, at a hostname) and an interface's
+  own public IPv6.
+- **Its address is `status.ipv4:status.port`**, in the monospace face with
+  a copy button: the port is drawn when the forward is made, the address
+  is the shared IPv4 of the node the target runs on, so until it is placed
+  on one that has one the page shows the port alone ("port 23817, no
+  address yet"). Its page leads with a Connect card: the address, then
+  `ssh -p PORT user@IPV4` for TCP port 22, `nc -u IPV4 PORT` for UDP, and
+  the address itself for any other port, each copyable, and that machines
+  on the same host do not reach it there.
+- **The public port is never asked for.** New port forward has a Public
+  port section that says it is drawn at random from 10000–32767 and kept
+  until the forward is deleted, retargeting included; the manifest holds
+  no port. Protocol is a two-option segmented control as tall as the
+  target port beside it, its highlight sliding across in 200 ms (none
+  under reduced motion); presets fill SSH, RDP and WireGuard. The name is
+  suggested from the machine and port (`web-22`, `game-19132-udp`) until
+  edited.
+- **Whether its traffic gets in is said on every screen**, read from the
+  project's Machines and security groups: the client's own address reaches
+  the machine, so a forward is let in only by an inbound rule of one of the
+  target interface's groups for its protocol and port from an IPv4 range.
+  From `0.0.0.0/0` it is a line naming the rule; from narrower ranges a
+  notice; from none (the built-in `default` lets in its own members only)
+  a warning, "No security group of web · eth0 lets in UDP port 53", with
+  Edit rules of each group. The list's and the card's rows say "No
+  security group lets it in" under the state, the page's head says it
+  beside the state, and New port forward says it beside the port and above
+  the button without stopping the create.
+- **Its state is the apiserver's `Ready` condition**: Ready (`Forwarding`);
+  Pending (`PortPending`, or no condition yet); Waiting (`TargetNotFound`,
+  `InterfaceNotFound`, with the API's message, and `NoSharedIPv4`, said as
+  the node having no shared IPv4 address yet); and Deleting, whose page
+  has a banner that the port is released once its node has closed it.
+- **The actions are Retarget, Edit labels and Delete**, in the head and
+  the row's menu as "An object's actions" says. Retarget applies the
+  forward at the version the dialog opened on with only `spec.target`
+  changed, as Move does for an address, and says the port stays; the
+  protocol cannot change. Delete asks for the name typed and says the port
+  closes. The CLI name is `pf`.
+- **Creating never replaces**, as for the other network kinds, and is off,
+  with the fact above the button, once the project holds as many forwards
+  as its plan's `port_forwards` allows, read from the project's status as
+  the new-machine form reads its limits; the list states the limit under
+  its count. Controls need `network.portforwards.apply` and `.delete`.
 
 ### Custom domains
 

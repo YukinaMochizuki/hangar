@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AddressDetail, AddressList } from "@/pages/addresses";
 import { NetworkDetail, NetworkList } from "@/pages/networks";
+import { PortForwardDetail, PortForwardList } from "@/pages/port-forwards";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
 import { never, polyfillDialog, withApi } from "@/test/harness";
@@ -92,6 +93,18 @@ const cases: Case[] = [
     page: () => <PublicEndpointDetail name="docs" />,
     ready: "Summary",
     controls: { "network.publicendpoints.apply": ["Make public", "Edit labels"], "network.publicendpoints.delete": ["Delete"] },
+  },
+  {
+    name: "port forwards list",
+    page: () => <PortForwardList />,
+    ready: "api-ssh",
+    controls: { "network.portforwards.apply": ["New port forward"], "network.portforwards.delete": [] },
+  },
+  {
+    name: "port forward page",
+    page: () => <PortForwardDetail name="api-ssh" />,
+    ready: "Summary",
+    controls: { "network.portforwards.apply": ["Retarget", "Edit labels"], "network.portforwards.delete": ["Delete"] },
   },
 ];
 

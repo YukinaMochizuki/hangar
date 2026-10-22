@@ -61,6 +61,8 @@ type world struct {
 	metadata *metadata.Server
 	// ipv6Prefix, if set before the agent starts, is the host's.
 	ipv6Prefix netip.Prefix
+	// sharedIPv4, if set before the agent starts, is the host's.
+	sharedIPv4 netip.Addr
 	// edgeDial, if set before the agent starts, is where it takes
 	// hangar-edge's dials, from this process.
 	edgeDial net.Listener
@@ -160,6 +162,7 @@ func newIdleWorldWith(t *testing.T, configure func(*apiserver.Config)) *world {
 func (w *world) startAgent() {
 	w.t.Helper()
 	w.host.SetIPv6Prefix(w.ipv6Prefix)
+	w.host.SetSharedIPv4(w.sharedIPv4)
 	hc := client.UnixSocket(w.env.Socket)
 	if w.wrap != nil {
 		hc.Transport = w.wrap(hc.Transport)
@@ -181,6 +184,7 @@ func (w *world) startAgent() {
 		DNSUpstreams:      w.dnsUpstreams,
 		Metadata:          w.metadata,
 		IPv6Prefix:        w.ipv6Prefix,
+		SharedIPv4:        w.sharedIPv4,
 		EdgeDial:          w.edgeDial,
 		EdgeUIDs:          []uint32{uint32(os.Getuid())},
 		ImageCacheHigh:    w.imageCacheHigh,

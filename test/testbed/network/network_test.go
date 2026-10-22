@@ -67,7 +67,8 @@ func wipe(t *testing.T) {
 	}
 }
 
-// TestConformance runs the suite's network parts; the rest it skips.
+// TestConformance runs the suite's network parts, on a host with a shared
+// address, so its port forwards too; the rest it skips.
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) drivertest.Host {
 		guests := map[string]*guest{}
@@ -81,8 +82,10 @@ func TestConformance(t *testing.T) {
 			serving[nic.MachineUID+"/"+nic.Name] = g
 			return g
 		}
+		holdSharedAddr(t)
 		return drivertest.Host{
-			Network: newDriver(t, hostnet.Config{Uplink: upstreamLink}),
+			SharedIPv4: netip.MustParseAddr(sharedAddr),
+			Network:    newDriver(t, hostnet.Config{Uplink: upstreamLink, SharedIPv4: netip.MustParseAddr(sharedAddr)}),
 			ServeGuest: func(t *testing.T, nic driver.Interface, ports ...uint16) {
 				ints := make([]int, len(ports))
 				for i, p := range ports {

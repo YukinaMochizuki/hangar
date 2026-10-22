@@ -37,6 +37,7 @@ import { formatNumber } from "@/lib/quantity";
 import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
 import { VmFileSharesCard } from "@/components/file-shares";
+import { MachinePortForwards } from "@/components/port-forwards";
 
 const restartPolicies: Record<number, string> = {
   [RestartPolicy.UNSPECIFIED]: "Always (default)",
@@ -778,6 +779,7 @@ function Loaded({
           {terminal && <TerminalCard m={m} />}
           <Summary m={m} onEditLabels={set.editLabels?.onSelect} />
           <Networking m={m} />
+          <MachinePortForwards m={m} />
           {m.kind === "VirtualMachine" && <VmFileSharesCard m={m} />}
           <Conditions m={m} />
           <Logs m={m} />

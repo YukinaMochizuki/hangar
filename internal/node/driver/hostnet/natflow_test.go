@@ -96,8 +96,13 @@ func TestNATFlowOfSkips(t *testing.T) {
 	frontDoor.Status = conntrack.StatusConfirmed
 	v6 := hostEntry(unix.IPPROTO_TCP, "2001:db8::2", 5000, "2001:db8:1::7", 443, "2001:db8::2", 5000)
 	outside := hostEntry(unix.IPPROTO_TCP, "100.128.0.1", 5000, "198.51.100.7", 443, "192.0.2.1", 5000)
+	// A port forward's mark is not the NAT log's tag, whatever else the
+	// entry looks like.
+	forwarded := hostEntry(unix.IPPROTO_TCP, "100.64.0.1", 5000, "198.51.100.7", 443, "192.0.2.1", 5000)
+	forwarded.Mark = forwardMark
 	for name, e := range map[string]conntrack.Flow{
 		"an unmarked": unmarked, "a network's to the front door": frontDoor, "IPv6": v6, "outside the transit range": outside,
+		"a port forward's": forwarded,
 	} {
 		if f, _, _, ok := natFlowOf(e, time.Now()); ok {
 			t.Errorf("%s connection is taken: %+v", name, f)
@@ -157,7 +162,8 @@ func eventAttrs(mark *uint32, padding int) []netfilter.Attribute {
 
 // TestTheEventFilterPassesMarkedEvents: the socket filter passes an event
 // whose mark has the tag, wherever the mark is among its attributes, and
-// drops one without the tag, without a mark, or cut short.
+// drops one without the tag, a port forward's among them, without a mark,
+// or cut short.
 func TestTheEventFilterPassesMarkedEvents(t *testing.T) {
 	prog, err := markProgram()
 	if err != nil {
@@ -167,7 +173,7 @@ func TestTheEventFilterPassesMarkedEvents(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tagged, untagged := uint32(natMarkTag|vethIndex), uint32(vethIndex)
+	tagged, untagged, forwarded := uint32(natMarkTag|vethIndex), uint32(vethIndex), uint32(forwardMark)
 	for _, c := range []struct {
 		name    string
 		mark    *uint32
@@ -178,6 +184,7 @@ func TestTheEventFilterPassesMarkedEvents(t *testing.T) {
 		{"tagged", &tagged, 0, 0, true},
 		{"tagged after many attributes", &tagged, 20, 0, true},
 		{"untagged", &untagged, 0, 0, false},
+		{"a port forward's", &forwarded, 0, 0, false},
 		{"without a mark", nil, 3, 0, false},
 		{"cut in the mark", &tagged, 0, 2, false},
 	} {

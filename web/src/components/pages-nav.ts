@@ -2,7 +2,7 @@
 // groups. The sidebar and the command palette both list them from here, so
 // a page joins both when it is added.
 
-import { AtSign, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
+import { ArrowRightLeft, AtSign, Box, Disc3, Folders, Globe, HardDrive, KeyRound, LayoutGrid, Network, Server, ShieldCheck, Terminal, Users, Waypoints, type LucideIcon } from "lucide-react";
 
 export type PageLink = { label: string; icon: LucideIcon; to: string };
 
@@ -35,6 +35,7 @@ export function projectPages(project: string): PageSection[] {
         { label: "Security groups", icon: ShieldCheck, to: `${base}/security-groups` },
         { label: "Addresses", icon: Globe, to: `${base}/addresses` },
         { label: "Public endpoints", icon: Waypoints, to: `${base}/public-endpoints` },
+        { label: "Port forwards", icon: ArrowRightLeft, to: `${base}/port-forwards` },
       ],
     },
     {

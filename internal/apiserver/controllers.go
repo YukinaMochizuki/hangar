@@ -107,6 +107,18 @@ func (s *Server) newControllers() []*controller.Controller {
 			},
 		},
 		{
+			Name: "portforward", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcilePortForward),
+			Watches: []controller.Watch{
+				{Kind: registry.PortForward.Kind, Map: controller.Self},
+				// Its target's machine coming, going, moving or given its
+				// address.
+				{Kind: registry.Machine.Kind, Map: s.portForwardsOfMachine, SkipResync: true},
+				// A node's shared address is where its ports open.
+				{Kind: registry.Node.Kind, Map: s.portForwardsOnNode, SkipResync: true},
+			},
+		},
+		{
 			Name: "publicendpoint", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcilePublicEndpoint),
 			Watches: []controller.Watch{

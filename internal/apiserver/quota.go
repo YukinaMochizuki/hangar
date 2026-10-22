@@ -55,6 +55,7 @@ func DefaultLimits() *tenancyv1alpha1.Limits {
 		ServiceTokens:   proto.Int32(10),
 		FileShares:      proto.Int32(3),
 		Domains:         proto.Int32(3),
+		PortForwards:    proto.Int32(5),
 	}
 }
 
@@ -76,11 +77,12 @@ const (
 	dimFileShares
 	// dimDomains counts a tenant's CustomDomains, which belong to no project.
 	dimDomains
+	dimPortForwards
 	numDims
 )
 
 // dimNames are the dimensions as Limits and Usage name them.
-var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains"}
+var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains", "port_forwards"}
 
 // amounts are what something holds, by dimension.
 type amounts [numDims]int64
@@ -133,7 +135,7 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 	}{
 		{dimMachines, l.Machines}, {dimProjects, l.Projects}, {dimNetworks, l.Networks}, {dimAddresses, l.Addresses},
 		{dimPublicEndpoints, l.PublicEndpoints}, {dimServiceTokens, l.ServiceTokens}, {dimFileShares, l.FileShares},
-		{dimDomains, l.Domains},
+		{dimDomains, l.Domains}, {dimPortForwards, l.PortForwards},
 	} {
 		if c.v == nil {
 			continue
@@ -213,7 +215,7 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	l.Cpu, l.Memory, l.Disk = str(dimCPU), str(dimMemory), str(dimDisk)
 	l.Machines, l.Projects, l.Networks, l.Addresses = count(dimMachines), count(dimProjects), count(dimNetworks), count(dimAddresses)
 	l.PublicEndpoints, l.ServiceTokens, l.FileShares = count(dimPublicEndpoints), count(dimServiceTokens), count(dimFileShares)
-	l.Domains = count(dimDomains)
+	l.Domains, l.PortForwards = count(dimDomains), count(dimPortForwards)
 	return l
 }
 
@@ -231,6 +233,7 @@ func (a amounts) usage() *tenancyv1alpha1.Usage {
 		ServiceTokens:   int32(a[dimServiceTokens]),
 		FileShares:      int32(a[dimFileShares]),
 		Domains:         int32(a[dimDomains]),
+		PortForwards:    int32(a[dimPortForwards]),
 	}
 }
 
@@ -252,6 +255,7 @@ var quotaCounters = map[string]func(obj proto.Message, in projectObjects) amount
 	registry.Address.Kind:        countsOne(dimAddresses),
 	registry.PublicEndpoint.Kind: endpointAmounts,
 	registry.FileShare.Kind:      fileShareAmounts,
+	registry.PortForward.Kind:    countsOne(dimPortForwards),
 }
 
 func countsOne(d dim) func(proto.Message, projectObjects) amounts {

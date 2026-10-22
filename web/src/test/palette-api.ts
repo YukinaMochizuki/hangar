@@ -15,6 +15,7 @@ import { ServiceTokenIssuerService } from "@hangar/api/hangar/iam/v1alpha1/servi
 import { AddressService } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { CustomDomainService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardService } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { SecretService } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
@@ -52,6 +53,7 @@ export const lists = {
   listSecurityGroups: () => ({ items: [{ metadata: meta("ssh-admin"), spec: { network: "backend", ingress: [{}, {}], egress: [{}] } }] }),
   listAddresses: () => ({ items: [{ metadata: meta("front-v6"), status: { ipv6: "2001:db8::10" } }] }),
   listPublicEndpoints: () => ({ items: [{ metadata: meta("site-https"), status: { hostname: "site.example.com" } }] }),
+  listPortForwards: () => ({ items: [{ metadata: meta("postgres-ssh"), status: { ipv4: "198.51.100.3", port: 23817 } }] }),
   listSecrets: () => ({ items: [{ metadata: meta("registry-login"), status: { keys: [".dockerconfigjson"] } }] }),
   listServiceTokens: () => ({ items: [{ metadata: meta("ci-deploy") }] }),
   listRoleBindings: () => ({
@@ -126,6 +128,10 @@ export function paletteApi(f: PaletteFake = {}) {
     r.service(PublicEndpointService, {
       listPublicEndpoints: () => l("listPublicEndpoints")(),
       applyPublicEndpoint: (req) => ({ publicEndpoint: req.publicEndpoint, created: true }),
+    });
+    r.service(PortForwardService, {
+      listPortForwards: () => l("listPortForwards")(),
+      applyPortForward: (req) => ({ portForward: req.portForward, created: true }),
     });
     r.service(SecretService, { listSecrets: () => l("listSecrets")(), applySecret: (req) => ({ secret: req.secret, created: true }) });
     r.service(ServiceTokenService, { listServiceTokens: () => l("listServiceTokens")() });

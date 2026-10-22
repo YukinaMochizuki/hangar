@@ -12,6 +12,7 @@ import { useTransport } from "@connectrpc/connect-query";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AddressService, type Address } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { NetworkService, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardService, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupService, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { readModifyWrite } from "@/lib/actions";
@@ -24,6 +25,7 @@ type Objects = {
   securityGroup: SecurityGroup;
   address: Address;
   publicEndpoint: PublicEndpoint;
+  portForward: PortForward;
 };
 export type NetworkKind = keyof Objects;
 
@@ -32,6 +34,7 @@ export const nouns: Record<NetworkKind, string> = {
   securityGroup: "security group",
   address: "address",
   publicEndpoint: "public endpoint",
+  portForward: "port forward",
 };
 
 const plurals: Record<NetworkKind, string> = {
@@ -39,6 +42,7 @@ const plurals: Record<NetworkKind, string> = {
   securityGroup: "securitygroups",
   address: "addresses",
   publicEndpoint: "publicendpoints",
+  portForward: "portforwards",
 };
 
 /** The permission a verb on a kind needs at the project, as TestPermissions names it. */
@@ -68,7 +72,7 @@ type Calls<T> = {
 
 const gone = (name: string) => new Error(`${name} is gone.`);
 
-/** The four kinds' Get, Apply and Delete, alike. */
+/** The kinds' Get, Apply and Delete, alike. */
 function callsOf<K extends NetworkKind>(kind: K, t: Transport): Calls<Objects[K]> {
   switch (kind) {
     case "network": {
@@ -93,6 +97,14 @@ function callsOf<K extends NetworkKind>(kind: K, t: Transport): Calls<Objects[K]
         get: async (project, name) => (await c.getAddress({ project, name })).address ?? Promise.reject(gone(name)),
         apply: (o, createOnly = false) => c.applyAddress({ address: o as Address, createOnly }),
         del: (project, name) => c.deleteAddress({ project, name }),
+      } as Calls<Objects[K]>;
+    }
+    case "portForward": {
+      const c = createClient(PortForwardService, t);
+      return {
+        get: async (project, name) => (await c.getPortForward({ project, name })).portForward ?? Promise.reject(gone(name)),
+        apply: (o, createOnly = false) => c.applyPortForward({ portForward: o as PortForward, createOnly }),
+        del: (project, name) => c.deletePortForward({ project, name }),
       } as Calls<Objects[K]>;
     }
     default: {

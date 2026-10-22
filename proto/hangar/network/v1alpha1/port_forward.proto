@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// PortForward opens one TCP or UDP port of the node's shared IPv4 address to
+// one interface and port of a VirtualMachine or Container. The public port
+// is drawn at random from 10000 to 32767 when the PortForward is made, and
+// kept until it is deleted; moving it to another target changes only where
+// the port leads. The client's own address reaches the machine, so the
+// interface's SecurityGroups decide what passes, as for its public IPv6.
+// Machines on the same host do not reach a forward at the shared address.
+// See docs/decisions/networking.md.
+message PortForward {
+  option (hangar.meta.v1.resource) = {
+    kind: "PortForward"
+    plural: "portforwards"
+    short_names: ["pf"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  PortForwardSpec spec = 4;
+  PortForwardStatus status = 5;
+}
+
+// PortForwardSpec is what the public port leads to.
+message PortForwardSpec {
+  // The interface the port leads to. A target that does not exist yet is
+  // waited for.
+  PortForwardTarget target = 1;
+  // The transport the port forwards; it cannot change once the PortForward
+  // is made.
+  Protocol protocol = 2 [(hangar.meta.v1.field).immutable = true];
+  // The port the target listens on, 1 to 65535. The public port is
+  // status.port.
+  int32 target_port = 3;
+}
+
+// PortForwardTarget is one interface of a VirtualMachine or Container in the
+// PortForward's project.
+message PortForwardTarget {
+  oneof object {
+    // Names a VirtualMachine.
+    string virtual_machine = 1;
+    // Names a Container.
+    string container = 2;
+  }
+  // The interface's name, such as "eth0"; empty is "eth0".
+  string interface = 3;
+}
+
+// Protocol is a transport protocol.
+enum Protocol {
+  // Refused: a PortForward names TCP or UDP.
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_TCP = 1;
+  PROTOCOL_UDP = 2;
+}
+
+// PortForwardStatus is where the port is open.
+message PortForwardStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The shared IPv4 address of the target's node, such as "198.51.100.3",
+  // where the port is open; empty until the target is on a node that has
+  // one.
+  string ipv4 = 3;
+  // The public port, drawn from 10000 to 32767 when the PortForward is made
+  // and unique among every PortForward of its protocol.
+  int32 port = 4;
+  // The Machine whose interface the port leads to; empty while the target
+  // has none.
+  string machine = 5;
+  // The Node that opens the port: that of the target's machine, kept when
+  // the machine goes; empty while the target has never been placed. A
+  // deleted PortForward keeps its port until that node has closed it.
+  string node = 6;
+}
+
+// PortForwardService manages port forwards.
+service PortForwardService {
+  rpc GetPortForward(GetPortForwardRequest) returns (GetPortForwardResponse);
+  rpc ListPortForwards(ListPortForwardsRequest) returns (ListPortForwardsResponse);
+  rpc WatchPortForwards(WatchPortForwardsRequest) returns (stream WatchPortForwardsResponse);
+  rpc ApplyPortForward(ApplyPortForwardRequest) returns (ApplyPortForwardResponse);
+  rpc DeletePortForward(DeletePortForwardRequest) returns (DeletePortForwardResponse);
+  rpc UpdatePortForwardStatus(UpdatePortForwardStatusRequest) returns (UpdatePortForwardStatusResponse);
+}
+
+message GetPortForwardRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetPortForwardResponse {
+  PortForward port_forward = 1;
+}
+
+message ListPortForwardsRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListPortForwardsResponse {
+  repeated PortForward items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchPortForwardsRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchPortForwardsResponse {
+  hangar.meta.v1.EventType type = 1;
+  PortForward port_forward = 2;
+  int64 revision = 3;
+}
+
+message ApplyPortForwardRequest {
+  PortForward port_forward = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyPortForwardResponse {
+  PortForward port_forward = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeletePortForwardRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeletePortForwardResponse {
+  PortForward port_forward = 1;
+}
+
+message UpdatePortForwardStatusRequest {
+  string project = 1;
+  string name = 2;
+  PortForwardStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdatePortForwardStatusResponse {
+  PortForward port_forward = 1;
+}

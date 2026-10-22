@@ -76,7 +76,10 @@ exposes one port of a container or VM over HTTPS at
 unless made public; a container's port marked `public` gets one. A
 public one may also serve at hostnames under a `CustomDomain`, a domain of
 the tenant's own that it proves with a CNAME, which also lets the edge get
-its certificates (`decisions/custom-domains.md`). A
+its certificates (`decisions/custom-domains.md`). A `PortForward` opens a
+TCP or UDP port of its node's shared IPv4 address, which the apiserver
+draws, to one interface and port of a container or VM
+(`decisions/networking.md`). A
 `Secret` holds a project's credentials, such as registry logins that a
 container names to pull its image with: its values are write-only and
 stored sealed under a key outside the database, and a node gets a login
@@ -124,7 +127,10 @@ endpoint's traffic never passes the apiserver: `hangar-edge` takes it on
 :443, reads only endpoints and who may use them from the API, and asks the
 node agent, over a socket of its own, for a connection to the endpoint's
 port
-(`decisions/public-endpoints.md`).
+(`decisions/public-endpoints.md`). A port forward's traffic passes
+neither: the host DNATs its port of the shared address to the machine,
+whose security groups judge the client, and the node agent only writes the
+forwards of the PortForwards it reads (`decisions/networking.md`).
 
 ## Metrics
 

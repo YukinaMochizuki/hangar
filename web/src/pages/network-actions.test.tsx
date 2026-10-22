@@ -13,6 +13,7 @@ import { clone, create, equals } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { AddressSchema, AddressTargetSchema, type ApplyAddressRequest } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { NetworkSchema, type ApplyNetworkRequest } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardSchema, PortForwardTargetSchema, Protocol, type ApplyPortForwardRequest } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import {
   PublicEndpointAccess,
   PublicEndpointSchema,
@@ -24,11 +25,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { AddressDetail } from "@/pages/addresses";
 import { CreateAddress } from "@/pages/create-address";
 import { CreateNetwork } from "@/pages/create-network";
+import { CreatePortForward } from "@/pages/create-port-forward";
+import { PortForwardDetail } from "@/pages/port-forwards";
 import { CreatePublicEndpoint } from "@/pages/create-public-endpoint";
 import { NetworkDetail } from "@/pages/networks";
 import { PublicEndpointDetail } from "@/pages/public-endpoints";
 import { never, polyfillDialog, withApi } from "@/test/harness";
-import { addresses, endpoints, networkApi, type NetworkApi, type Overrides } from "@/test/network-api";
+import { addresses, endpoints, networkApi, portForwards, type NetworkApi, type Overrides } from "@/test/network-api";
 
 const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
@@ -50,8 +53,8 @@ function show(page: ReactNode, o: Overrides = {}): NetworkApi {
 const type = (label: string | RegExp, value: string) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
 const click = (name: string | RegExp) => fireEvent.click(screen.getAllByRole("button", { name }).at(-1)!);
 const button = (name: string | RegExp) => screen.getAllByRole("button", { name }).at(-1) as HTMLButtonElement;
-/** The writes sent, in order: everything but the lists and the permission check. */
-const writes = (api: NetworkApi) => api.requests.filter((r) => !r.method.startsWith("List") && r.method !== "TestPermissions");
+/** The writes sent, in order: everything but the lists, the permission check and the project's limits. */
+const writes = (api: NetworkApi) => api.requests.filter((r) => !r.method.startsWith("List") && r.method !== "TestPermissions" && r.method !== "GetProject");
 const methods = (api: NetworkApi) => writes(api).map((w) => w.method);
 const lastApply = <T,>(api: NetworkApi) => writes(api).filter((w) => w.method.startsWith("Apply")).at(-1)!.request as T;
 const refuse = (code: Code, msg: string) => () => {
@@ -88,6 +91,14 @@ const creates: CreateCase[] = [
     taken: "docs",
     hide: "listPublicEndpoints",
     fill: async () => void (await screen.findByRole("option", { name: "api (container)" })),
+  },
+  {
+    noun: "port forward",
+    page: () => <CreatePortForward target="Container/api/eth0" />,
+    name: "Port forward name",
+    submit: "Create port forward",
+    taken: "api-ssh",
+    hide: "listPortForwards",
   },
 ];
 
@@ -349,6 +360,98 @@ describe("addresses", () => {
     await confirmDelete("spare");
     await waitFor(() =>
       expect(writes(api)).toEqual([{ method: "DeleteAddress", request: expect.objectContaining({ project: "demo", name: "spare" }) }]),
+    );
+  });
+});
+
+describe("port forwards", () => {
+  it("creates a port forward with one create-only Apply of exactly the form's object, then opens it", async () => {
+    const api = show(<CreatePortForward />);
+    await screen.findByRole("option", { name: /api · eth0/ });
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "Container/api/eth0" } });
+    fireEvent.click(screen.getByRole("radio", { name: "UDP" }));
+    type("Target port", "51820");
+    expect((screen.getByLabelText("Port forward name") as HTMLInputElement).value).toBe("api-51820-udp");
+    click("Create port forward");
+    await waitFor(() => expect(methods(api)).toEqual(["ApplyPortForward"]));
+    expect(lastApply<ApplyPortForwardRequest>(api).createOnly).toBe(true);
+    const want = create(PortForwardSchema, {
+      metadata: { name: "api-51820-udp", project: "demo" },
+      spec: { target: { object: { case: "container", value: "api" }, interface: "eth0" }, protocol: Protocol.UDP, targetPort: 51820 },
+    });
+    expect(equals(PortForwardSchema, lastApply<ApplyPortForwardRequest>(api).portForward!, want)).toBe(true);
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/port-forwards/$name", params: { project: "demo", name: "api-51820-udp" }, replace: true });
+  });
+
+  it("warns above the button when no group lets the port in, and still creates", async () => {
+    const api = show(<CreatePortForward target="Container/api/eth0" />);
+    expect(await screen.findByText("Nothing will get through yet")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/still loading/)).toBeNull());
+    click("Create port forward");
+    await waitFor(() => expect(methods(api)).toEqual(["ApplyPortForward"]));
+  });
+
+  it("sends nothing once the project holds as many as its plan allows", async () => {
+    const api = show(<CreatePortForward target="Container/api/eth0" />, {
+      getProject: () => ({ project: { metadata: { name: "demo" }, status: { limits: { portForwards: 4 }, usage: { portForwards: 4 } } } }),
+    });
+    expect(await screen.findByText("The plan's limit is reached")).toBeTruthy();
+    expect(button("Create port forward").disabled).toBe(true);
+    fireEvent.submit(button("Create port forward").closest("form")!);
+    expect(methods(api)).toEqual([]);
+  });
+
+  it("refuses a target port outside 1 to 65535", async () => {
+    show(<CreatePortForward target="Container/api/eth0" />);
+    await screen.findByLabelText("Target port");
+    type("Target port", "70000");
+    expect(screen.getByText(/70000 is not a port/)).toBeTruthy();
+    expect(button("Create port forward").disabled).toBe(true);
+  });
+
+  it("retargets at the version the dialog opened from, the rest untouched", async () => {
+    const api = show(<PortForwardDetail name="api-ssh" />);
+    await screen.findByText("Summary");
+    click("Retarget");
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
+    type("Kind", "VirtualMachine");
+    type("Machine", "builder");
+    expect(within(screen.getByRole("dialog")).getByText(/Port 23817 stays as it is/)).toBeTruthy();
+    click("Retarget");
+    await waitFor(() => expect(methods(api)).toEqual(["ApplyPortForward"]));
+    const want = clone(PortForwardSchema, portForwards()[0]);
+    want.spec!.target = create(PortForwardTargetSchema, { object: { case: "virtualMachine", value: "builder" }, interface: "eth0" });
+    expect(equals(PortForwardSchema, lastApply<ApplyPortForwardRequest>(api).portForward!, want)).toBe(true);
+    expect(lastApply<ApplyPortForwardRequest>(api).createOnly).toBe(false);
+  });
+
+  it("does not retarget a forward changed since the dialog opened: says so, and reloads", async () => {
+    const newer = clone(PortForwardSchema, portForwards()[0]);
+    newer.metadata!.resourceVersion = 50n;
+    const api = show(<PortForwardDetail name="api-ssh" />, { server: { forwards: [newer] } });
+    await screen.findByText("Summary");
+    click("Retarget");
+    fireEvent.change(screen.getByRole("combobox", { name: "Interface" }), { target: { value: "typed" } });
+    type("Machine", "worker");
+    click("Retarget");
+    expect(await screen.findByText("The port forward changed after this dialog opened.")).toBeTruthy();
+    expect(equals(PortForwardSchema, api.server.forwards[0], newer)).toBe(true);
+    click("Reload");
+    await waitFor(() => expect(screen.queryByText("The port forward changed after this dialog opened.")).toBeNull());
+    expect(methods(api)).toEqual(["ApplyPortForward", "GetPortForward"]);
+  });
+
+  it("deletes a port forward once its name is typed, saying the port closes", async () => {
+    const api = show(<PortForwardDetail name="api-ssh" />);
+    await screen.findByText("Summary");
+    click("Delete");
+    expect(screen.getByText(/Port 23817 closes/)).toBeTruthy();
+    expect(within(screen.getByRole("dialog")).getByText("hangar delete pf api-ssh -p demo")).toBeTruthy();
+    type("Name, to confirm", "api-ssh");
+    click("Delete");
+    await waitFor(() =>
+      expect(writes(api)).toEqual([{ method: "DeletePortForward", request: expect.objectContaining({ project: "demo", name: "api-ssh" }) }]),
     );
   });
 });

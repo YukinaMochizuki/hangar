@@ -61,6 +61,14 @@ what it cannot.
       them, `hooksFor` sets `readableBy`, which widens get, list and watch
       alone; tests show those readers can write nothing, and lose the read
       when the object stops naming their place.
+- [ ] If the apiserver draws something for a new object among the
+      others of its kind, as a PortForward's public port, `hooksFor` sets
+      `drawStatus`, which runs under the kind's `writeLocks`; a test races
+      creators (some as the system, whose writes the quota does not
+      serialize) and shows none draws what another holds.
+- [ ] If a node agent may read only the objects it acts on, as a
+      PortForward its `status.node` names, `hooksFor` sets `nodeReads`;
+      tests read the object as that node and another, which is refused.
 - [ ] If a new object claims something global besides its name, which no
       other object may ever hold, as an endpoint's hostname does,
       `hooksFor` sets `claim`, and a test races creators of it.

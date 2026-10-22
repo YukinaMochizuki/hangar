@@ -96,6 +96,11 @@ type Config struct {
 	// its machines' public addresses come from; invalid for none, and the
 	// node's machines then have no IPv6.
 	IPv6Prefix netip.Prefix
+	// SharedIPv4 is the host's shared IPv4 address, which the agent reports
+	// and its PortForwards open ports of; invalid for none, and the node
+	// then forwards no port (docs/decisions/networking.md, "Port
+	// forwards").
+	SharedIPv4 netip.Addr
 	// EdgeDial, if set, is the listener hangar-edge asks for connections to
 	// public endpoints' ports on (internal/edgedial), from the peer uids
 	// EdgeUIDs alone; without it no endpoint is reached on this node.
@@ -133,8 +138,10 @@ type Agent struct {
 	nodes    computev1alpha1connect.NodeServiceClient
 	machines computev1alpha1connect.MachineServiceClient
 	networks networkv1alpha1connect.NetworkServiceClient
-	disks    storagev1alpha1connect.DiskServiceClient
-	shares   storagev1alpha1connect.FileShareServiceClient
+	// portForwards reports on PortForwards.
+	portForwards networkv1alpha1connect.PortForwardServiceClient
+	disks        storagev1alpha1connect.DiskServiceClient
+	shares       storagev1alpha1connect.FileShareServiceClient
 	// imagesAPI reaches Images; images makes disk images' bases.
 	imagesAPI storagev1alpha1connect.ImageServiceClient
 	// pullCreds gives the logins machines' images are pulled with.
@@ -179,9 +186,11 @@ type Agent struct {
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
 	netTrigger chan struct{}
-	// machinesCtl, networksCtl, disksCtl and sharesCtl are the controllers
-	// Run runs with drivers.
-	machinesCtl, networksCtl, disksCtl, sharesCtl *controller.Controller
+	// forwardTrigger has the host's port forwards ensured again.
+	forwardTrigger chan struct{}
+	// machinesCtl, networksCtl, disksCtl, sharesCtl and forwardsCtl are
+	// the controllers Run runs with drivers.
+	machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
 	// cpuRead is how the last read of the host's CPU went; only report
@@ -203,6 +212,9 @@ func New(cfg Config) (*Agent, error) {
 		if _, err := computeapi.ParseIPv6Prefix(cfg.IPv6Prefix.String()); err != nil {
 			return nil, fmt.Errorf("the host's IPv6 prefix: %w", err)
 		}
+	}
+	if cfg.SharedIPv4.IsValid() && !cfg.SharedIPv4.Is4() {
+		return nil, fmt.Errorf("the host's shared address %s is not IPv4", cfg.SharedIPv4)
 	}
 	if cfg.Host == nil {
 		cfg.Host = hostResources
@@ -271,6 +283,7 @@ func New(cfg Config) (*Agent, error) {
 		nodes:        computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
 		machines:     computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
 		networks:     networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
+		portForwards: networkv1alpha1connect.NewPortForwardServiceClient(cfg.HTTP, cfg.BaseURL),
 		disks:        storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
 		shares:       storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
 		imagesAPI:    storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
@@ -290,10 +303,11 @@ func New(cfg Config) (*Agent, error) {
 		netsvc:       netsvc,
 		netTrigger:   make(chan struct{}, 1),
 	}
+	a.forwardTrigger = make(chan struct{}, 1)
 	a.diskTrigger = make(chan struct{}, 1)
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
-		a.sharesCtl = a.shareController()
+		a.sharesCtl, a.forwardsCtl = a.shareController(), a.forwardController()
 		a.requeue = a.machinesCtl.Enqueue
 		a.requeueNetworks = a.networksCtl.Enqueue
 		puller.makeRoom = a.makeRoom
@@ -320,7 +334,7 @@ func (a *Agent) Activity() Activity {
 // without drivers it runs none.
 func (a *Agent) ControllerStatus() []controller.Status {
 	var st []controller.Status
-	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl} {
+	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl} {
 		if c != nil {
 			st = append(st, c.Status())
 		}
@@ -376,6 +390,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			a.sweepLoop(ctx)
 		}()
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
+		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
 		if a.cfg.EdgeDial != nil {
 			wg.Go(func() { a.serveEdgeDial(ctx) })
 		}
@@ -431,6 +446,7 @@ func (a *Agent) followHost(ctx context.Context) {
 	go forward(a.cfg.Drivers.Network.Changes(), func() {
 		a.netEpoch.Add(1)
 		notify(a.netTrigger)
+		notify(a.forwardTrigger)
 	})
 	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
 	// An image made ready is looked at as soon as it is.
@@ -531,6 +547,10 @@ func (a *Agent) report(ctx context.Context) error {
 	status.Ipv6Prefix = ""
 	if a.cfg.IPv6Prefix.IsValid() {
 		status.Ipv6Prefix = a.cfg.IPv6Prefix.String()
+	}
+	status.SharedIpv4 = ""
+	if a.cfg.SharedIPv4.IsValid() {
+		status.SharedIpv4 = a.cfg.SharedIPv4.String()
 	}
 	status.Placement = placement(a.hardware(n.GetStatus().GetPlacement()), a.cfg.Placement)
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{

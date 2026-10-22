@@ -3,7 +3,7 @@
 // docs/decisions/console-design.md says what it does.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeftRight, AtSign, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
+import { ArrowLeftRight, ArrowRightLeft, AtSign, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NewProjectDialog, ProjectPicker, createProject } from "@/components/project-picker";
 import { platformPages, projectPages, tenantPages, type PageSection } from "@/components/pages-nav";
@@ -15,7 +15,8 @@ import { domainOf, domainPerms, domainState, useCustomDomains } from "@/lib/cust
 import { perms as credentialPerms, useSecrets, useServiceTokens, useTokenRoles } from "@/lib/credentials";
 import { useMachines, type ListOpts } from "@/lib/machines";
 import { roleLabel, useMembers, type Scope } from "@/lib/members";
-import { nameOf, useAddresses, useNetworks, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
+import { nameOf, useAddresses, useNetworks, usePortForwards, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
+import { publicAddress } from "@/lib/port-forwards";
 import { permission } from "@/lib/network-actions";
 import { matchSections } from "@/lib/palette";
 import { machinePerms, useCan, useMayReadMonitoring, useTenantsWhere } from "@/lib/permissions";
@@ -34,6 +35,7 @@ export const actionPerms = {
   securityGroup: permission("securityGroup", "apply"),
   address: permission("address", "apply"),
   publicEndpoint: permission("publicEndpoint", "apply"),
+  portForward: permission("portForward", "apply"),
   secret: credentialPerms.secretApply,
   token: credentialPerms.tokenApply,
   member: "iam.rolebindings.apply",
@@ -171,6 +173,7 @@ function useProjectModel(project: string, hands: Hands): Model {
   const groups = useSecurityGroups(project, cached);
   const addresses = useAddresses(project, cached);
   const endpoints = usePublicEndpoints(project, cached);
+  const forwards = usePortForwards(project, cached);
   const secrets = useSecrets(project, cached);
   const tokens = useServiceTokens(project, cached);
   // Only shown beside a token: nothing until the bindings come, and the last answer after a failed refetch.
@@ -194,6 +197,7 @@ function useProjectModel(project: string, hands: Hands): Model {
     [actionPerms.securityGroup, "New security group", newPage("security-group")],
     [actionPerms.address, "Reserve address", newPage("address")],
     [actionPerms.publicEndpoint, "New public endpoint", newPage("public-endpoint")],
+    [actionPerms.portForward, "New port forward", newPage("port-forward")],
     [actionPerms.secret, "New secret", newPage("secret")],
     [actionPerms.token, "New service token", newPage("service-token")],
     [actionPerms.member, "Add member", newIn(`/projects/${project}/members`)],
@@ -257,6 +261,12 @@ function useProjectModel(project: string, hands: Hands): Model {
       Waypoints,
       endpoints.items.map((e) => ({ name: nameOf(e), detail: e.status?.hostname || undefined, to: `${base}/public-endpoints/${nameOf(e)}` })),
     ),
+    obj(
+      "port-forwards",
+      "Port forwards",
+      ArrowRightLeft,
+      forwards.items.map((f) => ({ name: nameOf(f), detail: publicAddress(f), to: `${base}/port-forwards/${nameOf(f)}` })),
+    ),
     obj("secrets", "Secrets", KeyRound, secrets.items.map((s) => ({ name: nameOf(s), detail: plural(s.status?.keys.length ?? 0, "key"), to: `${base}/secrets/${nameOf(s)}` }))),
     obj(
       "service-tokens",
@@ -287,6 +297,7 @@ function useProjectModel(project: string, hands: Hands): Model {
       ...sourceOf("security-groups", "security groups", { ...groups, held: groups.items.length > 0 }),
       ...sourceOf("addresses", "addresses", { ...addresses, held: addresses.items.length > 0 }),
       ...sourceOf("public-endpoints", "public endpoints", { ...endpoints, held: endpoints.items.length > 0 }),
+      ...sourceOf("port-forwards", "port forwards", { ...forwards, held: forwards.items.length > 0 }),
       ...sourceOf("secrets", "secrets", { ...secrets, held: secrets.loaded }),
       ...sourceOf("service-tokens", "service tokens", { ...tokens, held: tokens.loaded }),
       ...members.source,

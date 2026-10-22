@@ -9,8 +9,10 @@ import type { ReactNode } from "react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { AddressDetail, AddressList } from "@/pages/addresses";
 import { NetworkDetail, NetworkList } from "@/pages/networks";
+import { PortForwardDetail, PortForwardList } from "@/pages/port-forwards";
 import { PublicEndpointDetail, PublicEndpointList } from "@/pages/public-endpoints";
 import { SecurityGroupDetail, SecurityGroupList } from "@/pages/security-groups";
+import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { never, polyfillDialog, withApi } from "@/test/harness";
 import { containersNamed, machineOf, networkApi, type Overrides } from "@/test/network-api";
 
@@ -36,7 +38,7 @@ function show(page: ReactNode, o: Overrides = {}) {
 type ListCase = {
   name: string;
   page: () => ReactNode;
-  list: "listNetworks" | "listSecurityGroups" | "listAddresses" | "listPublicEndpoints";
+  list: "listNetworks" | "listSecurityGroups" | "listAddresses" | "listPublicEndpoints" | "listPortForwards";
   failed: string;
   empty: string;
   full: string[];
@@ -63,6 +65,14 @@ const lists: ListCase[] = [
     failed: "The public endpoints did not load",
     empty: "No public endpoints",
     full: ["docs", "port of api"],
+  },
+  {
+    name: "port forwards",
+    page: () => <PortForwardList />,
+    list: "listPortForwards",
+    failed: "The port forwards did not load",
+    empty: "No port forwards",
+    full: ["api-ssh", "198.51.100.3:23817", "port 18466, no address yet", "NoSharedIPv4", "Deleting"],
   },
 ];
 
@@ -153,6 +163,15 @@ const details: DetailCase[] = [
     failed: "The public endpoint did not load",
     missing: "No such public endpoint",
     full: ["docs-demo.example.com", "plain HTTP on its first interface, eth0"],
+  },
+  {
+    name: "port forward",
+    page: (n) => <PortForwardDetail name={n} />,
+    list: "listPortForwards",
+    present: "api-ssh",
+    failed: "The port forward did not load",
+    missing: "No such port forward",
+    full: ["198.51.100.3:23817", "ssh -p 23817 user@198.51.100.3", "node-1", "hangar get pf api-ssh -p demo"],
   },
 ];
 
@@ -248,6 +267,56 @@ describe("a group whose network the project lacks", () => {
       listSecurityGroups: () => ({ items: [{ metadata: { name: "orphan" }, spec: { network: "gone" } }] }),
     });
     expect(await screen.findByText("network gone does not exist")).toBeTruthy();
+  });
+});
+
+describe("a port forward's page", () => {
+  it("warns when no group of the target's interface lets its traffic in, naming the groups to edit", async () => {
+    show(<PortForwardDetail name="api-dns" />);
+    expect(await screen.findByText("No security group of api · eth0 lets in UDP port 53")).toBeTruthy();
+    expect(screen.getByText("Edit rules of web")).toBeTruthy();
+    expect(screen.getAllByText("No security group lets it in").length).toBeGreaterThan(0);
+    expect(screen.getByText("nc -u 198.51.100.3 29405")).toBeTruthy();
+  });
+
+  it("says a node has no shared IPv4 address yet, with the port drawn and no command", async () => {
+    show(<PortForwardDetail name="api-nossh" />);
+    expect((await screen.findAllByText(/^Node node-2 has no shared IPv4 address yet/)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("port 18466, no address yet").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/^ssh /)).toBeNull();
+  });
+
+  it("says a forward being deleted waits for its node to close the port, and offers no change", async () => {
+    show(<PortForwardDetail name="old" />);
+    expect(await screen.findByText("old is being deleted")).toBeTruthy();
+    expect(screen.getAllByText("Its port is released once node node-1 has closed it.").length).toBeGreaterThan(0);
+    for (const b of screen.getAllByRole("button", { name: /Retarget|Delete/ })) expect((b as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByText("No security group lets it in")).toBeNull();
+  });
+
+  it("says a Ready forward's machine is not running, with its state, and leaves the light as it is", async () => {
+    const starting = machineOf("api", "default", ["default", "web"]);
+    starting.status!.phase = MachinePhase.CREATING;
+    show(<PortForwardDetail name="api-ssh" />, { listMachines: () => ({ items: [starting] }) });
+    // The head and the Connect card.
+    expect(await screen.findAllByText(/is not running · Starting/)).toHaveLength(2);
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+    cleanup();
+    show(<PortForwardList />, { listMachines: () => ({ items: [starting] }) });
+    // api-ssh and api-dns are Ready, each on the phone list and the table; api-nossh is not Ready and old is being deleted.
+    expect(await screen.findAllByText(/is not running · Starting/)).toHaveLength(4);
+  });
+
+  it("says nothing of the machine while it runs", async () => {
+    show(<PortForwardDetail name="api-ssh" />);
+    await screen.findByText("Summary");
+    await screen.findAllByText("api-x1");
+    expect(screen.queryByText(/is not running/)).toBeNull();
+  });
+
+  it("states the plan's limit under the list once it is reached", async () => {
+    show(<PortForwardList />, { getProject: () => ({ project: { metadata: { name: "demo" }, status: { limits: { portForwards: 4 }, usage: { portForwards: 4 } } } }) });
+    expect(await screen.findByText(/as many as the plan allows, 4/)).toBeTruthy();
   });
 });
 

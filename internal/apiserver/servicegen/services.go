@@ -42,6 +42,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewCustomDomainServiceHandler(&customDomainService{b: backends(registry.CustomDomain)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
+	mux.Handle(networkv1alpha1connect.NewPortForwardServiceHandler(&portForwardService{b: backends(registry.PortForward)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewPublicEndpointServiceHandler(&publicEndpointService{b: backends(registry.PublicEndpoint)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
 	mux.Handle(secretsv1alpha1connect.NewSecretServiceHandler(&secretService{b: backends(registry.Secret)}, opts...))
@@ -855,6 +856,73 @@ func (s *networkService) UpdateNetworkStatus(ctx context.Context, req *connect.R
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha12.UpdateNetworkStatusResponse{Network: obj.(*v1alpha12.Network)}), nil
+}
+
+type portForwardService struct {
+	b resource.Backend
+}
+
+func (s *portForwardService) GetPortForward(ctx context.Context, req *connect.Request[v1alpha12.GetPortForwardRequest]) (*connect.Response[v1alpha12.GetPortForwardResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.GetPortForwardResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
+}
+
+func (s *portForwardService) ListPortForwards(ctx context.Context, req *connect.Request[v1alpha12.ListPortForwardsRequest]) (*connect.Response[v1alpha12.ListPortForwardsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha12.ListPortForwardsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha12.PortForward))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *portForwardService) WatchPortForwards(ctx context.Context, req *connect.Request[v1alpha12.WatchPortForwardsRequest], stream *connect.ServerStream[v1alpha12.WatchPortForwardsResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha12.WatchPortForwardsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.PortForward = ev.Object.(*v1alpha12.PortForward)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *portForwardService) ApplyPortForward(ctx context.Context, req *connect.Request[v1alpha12.ApplyPortForwardRequest]) (*connect.Response[v1alpha12.ApplyPortForwardResponse], error) {
+	in := req.Msg.GetPortForward()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("port_forward is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.ApplyPortForwardResponse{PortForward: res.Object.(*v1alpha12.PortForward), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *portForwardService) DeletePortForward(ctx context.Context, req *connect.Request[v1alpha12.DeletePortForwardRequest]) (*connect.Response[v1alpha12.DeletePortForwardResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.DeletePortForwardResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
+}
+
+func (s *portForwardService) UpdatePortForwardStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdatePortForwardStatusRequest]) (*connect.Response[v1alpha12.UpdatePortForwardStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.UpdatePortForwardStatusResponse{PortForward: obj.(*v1alpha12.PortForward)}), nil
 }
 
 type publicEndpointService struct {

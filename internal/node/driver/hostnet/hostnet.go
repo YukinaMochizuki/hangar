@@ -568,6 +568,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 				if err := deleteNamedTable(conn, nftables.TableFamilyINet, LimitTable); err != nil {
 					return err
 				}
+				if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, ForwardTable); err != nil {
+					return err
+				}
 				if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
 					return err
 				}
@@ -608,6 +611,9 @@ func (d *Driver) deleteRootIfUnused() error {
 		return err
 	}
 	if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
+		return err
+	}
+	if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, ForwardTable); err != nil {
 		return err
 	}
 	return deleteTable(conn, nftables.TableFamilyIPv4)

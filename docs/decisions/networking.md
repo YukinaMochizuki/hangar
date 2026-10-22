@@ -100,7 +100,8 @@ address.
   - **Default deny around the networks**: a
     network's traffic leaves only as an address of its range, NATed, and only
     to the internet; nothing reaches a network or the host from one but
-    replies. The one exception is public IPv6: a new connection to a live /128 of one network from the
+    replies. The exceptions are port forwards at the shared IPv4 address
+    ("Port forwards", below), and public IPv6: a new connection to a live /128 of one network from the
     internet or from another network on the host passes the host, and the
     receiving interface's security groups decide, as they would for the
     same packet from anywhere; a public address is no more trusted from a
@@ -109,7 +110,7 @@ address.
     stays blocked, the host stays unreachable but for the front door's
     ports at its public addresses, which anyone reaches, and a network sends only from its own /128s. Table
     `ip hangar` in the root namespace has nine rules, eleven with a public
-    address set and thirteen with a shared one too, however many networks
+    address set and fourteen with a shared one too, however many networks
     there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
@@ -118,9 +119,13 @@ address.
       shared address, TCP and UDP from its ports 32768 to 65535 (two
       rules) and anything else as it is (a third); without one, to the
       configured public address (masqueraded if none is set);
-    - forward, six: from `hnv*`, drop TCP to ports 25 and 465, and what
-      conntrack finds invalid (the abuse protection below); into `hnv*`,
-      drop all but replies, which isolates networks from each other; from
+    - forward, six, seven with a shared address: from `hnv*`, drop TCP to
+      ports 25 and 465, and what conntrack finds invalid (the abuse
+      protection below); with a shared address, from the uplink into
+      `hnv*`, accept what the forward table DNATed and marked as a
+      forward's (`ct status dnat ct mark & 0x40000000 == 0x40000000`),
+      the port forwards' way in; into `hnv*`, drop all but
+      replies, which isolates networks from each other; from
       `hnv*`, drop what leaves by any link but the uplink, so docker
       bridges, VPNs and the like, and the host's DNAT into them, stay out
       of reach. With the rule before, no connection into a network exists
@@ -170,6 +175,10 @@ address.
     exists in a namespace. A guest taking an address of the
     namespace's own, its transit address or the gateway, is dropped by the
     kernel as a martian.
+  - Tables `ip hangar_forward`, in the root namespace and in each
+    namespace with a port forward, hold the forwards' DNAT, one rule a
+    forward, apart from `ip hangar` so that one keeps its bounded size
+    ("Port forwards", below). With no forward they are not there.
   - Table `inet hangar_limit` in each namespace has one rule, in forward:
     a new connection from `hn-br` out of `hn-up` past the network's rate is
     dropped (the abuse protection below). It is written, read back and
@@ -472,7 +481,78 @@ address.
   - Networks still reach the front door at the host's own address only,
     which is where the platform's public names resolve.
   - Without one, the machines leave as the host's own address, as before
-    there was one.
+    there was one, and no port is forwarded.
+- **Port forwards**: a `PortForward` opens one TCP or UDP port of the
+  shared IPv4 address to one interface and port of a VirtualMachine or
+  Container of its project (`spec.target`, `spec.protocol`,
+  `spec.targetPort`), the IPv4 counterpart of what public IPv6 gives every
+  interface.
+  - The public port is the apiserver's, drawn at random from 10000 to
+    32767 when the PortForward is made, unique per protocol among every
+    PortForward on the platform, and kept until it is deleted: moving it
+    to another target, or any other apply, changes only where it leads.
+    The draw holds the kind's write lock from the read of the others to
+    the write; none left is a ResourceExhausted. The protocol is
+    immutable. Ports from 32768 are the machines' own connections'
+    ("The shared IPv4 address", above), so a port of the shared address
+    is either one or the other, and the abuse report naming a port finds
+    either a connection in the NAT log or a PortForward.
+  - Two DNATs, the egress NATs reversed: in the root namespace, a port of
+    the shared address coming in by the uplink goes to the namespace end
+    of its network's transit link, on the same port; in the network's
+    namespace, that port coming in by `hn-up` goes to the machine's
+    address and target port. Overlapping tenant ranges never meet, as
+    for egress. Both DNATs mark the connection as a forward's, bit 30 of
+    its `ct mark`, apart from the NAT log's tag, bit 31, so the NAT log
+    leaves forwards' connections out. The root forward chain lets in,
+    before "only replies into a network", what came by the uplink with
+    that mark and DNATed, which no connection a network opens is, and
+    nothing else from the uplink. It reads the mark, not
+    conntrack's original destination (`ct original ip daddr`):
+    google/nftables cannot read back a rule loading a conntrack key with a
+    direction, so the table could not be compared, and no rule of the
+    driver's loads one.
+  - The client's own address reaches the machine: nothing is SNATed on
+    the way in, so the interface's security groups decide exactly as for
+    public IPv6, from the client's address; a group that does not admit
+    the port, or the client, keeps it out. There is no bypass.
+  - The agent hands the driver the whole set of its node's forwards at
+    once (`EnsureForwards`), on changes to PortForwards, machines and
+    networks and on the driver's change signals; the tables are written
+    only when they differ, as the driver's others are. A set the host
+    cannot hold is refused whole. Conntrack would keep an open flow, a
+    TCP connection or a UDP socket's, on the NAT it was given, past any
+    change of the tables, and "only replies into a network" lets its
+    packets through: so the driver then deletes, in the root namespace
+    and in each network's, the entries a forward let in (the mark) whose
+    forward is gone or leads elsewhere now, before it returns. The flow's
+    next packet is a new connection, which the tables as they now stand
+    decide. `Forwards` reads the forwards in force back from the tables.
+  - A node reads only the PortForwards it opens: those whose
+    `status.node` names it, which the apiserver sets to the target's
+    machine's node and keeps when the machine goes. A deleted
+    PortForward keeps its port until that node reports it closed (its
+    `Released` condition), which it does once its forwards are ensured
+    without it, its open flows ended with it, as a deleted machine waits
+    for its node; so the port reaches no other machine meanwhile. A
+    target moving to another node moves `status.node` at once; the node
+    it leaves closes the port as it next reads its forwards (at most its
+    controllers' resync later), and until then the port, still this
+    PortForward's, leads to the old target at that node's own shared
+    address, and nowhere else. On more than one node, a move followed by
+    a delete can therefore free the port, on the new node's word, while
+    the old node still forwards it until that resync; with one node, as
+    now, it cannot happen.
+  - Its status says where the port is open: `ipv4`, `port`, `machine`
+    and `Ready`, with the reasons `TargetNotFound` (waited for),
+    `InterfaceNotFound`, `PortPending` (the target is not on a node yet,
+    or its interface has no address yet) and `NoSharedIPv4`.
+  - Machines on the host itself do not reach a forward at the shared
+    address: the root DNAT takes only what comes in by the uplink, and
+    nothing hairpins back into a network. They reach each other on their
+    networks, or at public IPv6.
+  - Plans limit them (`limits.port_forwards`), counted per project and
+    tenant as `addresses` are.
 - **Public IPv6**: every machine interface has a public /128 of its host's
   /64 (above), its identity both ways, with no NAT, so one machine's abuse
   does not taint the shared IPv4. It is routed to the machine with proxy
@@ -560,7 +640,7 @@ address.
     only before the namespace's, so the log joins the two layers
     (`hostnet` `FollowNAT`). The root table marks each new IPv4
     connection from a network with the index of its veth and a tag bit
-    (`ct mark`). The agent listens to the host's conntrack events for new
+    (`ct mark`, bit 31; a port forward's mark, bit 30, is not it). The agent listens to the host's conntrack events for new
     connections through a socket filter that passes only tagged ones, so
     the host's own traffic never reaches it: ti-mo/conntrack has no filter
     for events, and the kernel none but a socket's (classic BPF, as

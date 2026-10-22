@@ -16,6 +16,7 @@ import type { ObjectMeta } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { AddressSchema, AddressService, type Address } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { CustomDomainSchema, CustomDomainService, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, NetworkService, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardSchema, PortForwardService, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointSchema, PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupSchema, SecurityGroupService, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { DiskSchema, DiskService, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
@@ -32,6 +33,7 @@ type Objects = {
   securityGroup: SecurityGroup;
   address: Address;
   publicEndpoint: PublicEndpoint;
+  portForward: PortForward;
   customDomain: CustomDomain;
   serviceToken: ServiceToken;
   image: Image;
@@ -127,6 +129,15 @@ export const labelKinds: { [K in LabelKind]: KindInfo<K> } = {
     cli: "ep",
     get: async (t, project, name) => (await createClient(PublicEndpointService, t).getPublicEndpoint({ project, name })).publicEndpoint,
     apply: (t, o) => createClient(PublicEndpointService, t).applyPublicEndpoint({ publicEndpoint: o }),
+  },
+  portForward: {
+    schema: PortForwardSchema,
+    group: "network",
+    kind: "PortForward",
+    noun: "port forward",
+    cli: "pf",
+    get: async (t, project, name) => (await createClient(PortForwardService, t).getPortForward({ project, name })).portForward,
+    apply: (t, o) => createClient(PortForwardService, t).applyPortForward({ portForward: o }),
   },
   customDomain: {
     schema: CustomDomainSchema,

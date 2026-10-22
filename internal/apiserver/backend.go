@@ -130,6 +130,9 @@ func (b *backend) allowed(p auth.Principal, verb authz.Verb, t authz.Target) boo
 // has it at obj's target, and, for get, list and watch alone, also where
 // the kind's readableBy says p may read it.
 func (b *backend) mayRead(p auth.Principal, verb authz.Verb, key resource.Key, obj proto.Message) bool {
+	if p.Type == auth.Node && b.hooks.nodeReads != nil && !b.hooks.nodeReads(p.ID, obj) {
+		return false
+	}
 	if b.allowed(p, verb, b.target(key, obj)) {
 		return true
 	}
@@ -622,6 +625,13 @@ func (b *backend) create(ctx context.Context, p auth.Principal, key resource.Key
 	object.SetStatus(in, nil)
 	if b.hooks.initialStatus != nil {
 		object.SetStatus(in, b.hooks.initialStatus())
+	}
+	if b.hooks.drawStatus != nil {
+		status, err := b.hooks.drawStatus(ctx, b.s, in)
+		if err != nil {
+			return resource.ApplyResult{}, err
+		}
+		object.SetStatus(in, status)
 	}
 	if b.hooks.seal != nil {
 		if err := b.hooks.seal(b.s, nil, in); err != nil {
