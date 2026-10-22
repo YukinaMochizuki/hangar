@@ -1,11 +1,13 @@
-// Networks, security groups, addresses and public endpoints as the console
-// shows them (docs/decisions/networking.md, public-endpoints.md).
+// Networks, security groups, addresses, public endpoints and port forwards
+// as the console shows them (docs/decisions/networking.md,
+// public-endpoints.md).
 
 import { toJson, type DescMessage, type JsonValue, type MessageShape } from "@bufbuild/protobuf";
 import { ConditionStatus, type Condition, type ObjectMeta } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { AddressSchema, type Address, type AddressTarget } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { CustomDomainSchema, type CustomDomain } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardSchema, PortForwardService, type PortForward, type PortForwardTarget } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import {
   PublicEndpointAccess,
   PublicEndpointSchema,
@@ -62,6 +64,9 @@ export function useAddresses(project: string, opts: ListOpts = {}): ListState<Ad
 }
 export function usePublicEndpoints(project: string, opts: ListOpts = {}): ListState<PublicEndpoint> {
   return byName(listState(useQuery(PublicEndpointService.method.listPublicEndpoints, { project, pageSize }, { refetchInterval, ...opts })));
+}
+export function usePortForwards(project: string, opts: ListOpts = {}): ListState<PortForward> {
+  return byName(listState(useQuery(PortForwardService.method.listPortForwards, { project, pageSize }, { refetchInterval, ...opts })));
 }
 
 /**
@@ -136,8 +141,8 @@ export function peerLabel(p: SecurityGroupPeer | undefined): { text: string; gro
   return { text: "–", group: false };
 }
 
-/** The machine an Address or PublicEndpoint names. */
-export function targetOf(t: AddressTarget | PublicEndpointTarget | undefined): { kind: MachineKind; name: string } | undefined {
+/** The machine an Address, PublicEndpoint or PortForward names. */
+export function targetOf(t: AddressTarget | PublicEndpointTarget | PortForwardTarget | undefined): { kind: MachineKind; name: string } | undefined {
   if (t?.object.case === "container") return { kind: "Container", name: t.object.value };
   if (t?.object.case === "virtualMachine") return { kind: "VirtualMachine", name: t.object.value };
   return undefined;
@@ -170,4 +175,5 @@ export const networkYaml = (n: Network) => manifest(NetworkSchema, n, "Network")
 export const securityGroupYaml = (g: SecurityGroup) => manifest(SecurityGroupSchema, g, "SecurityGroup");
 export const addressYaml = (a: Address) => manifest(AddressSchema, a, "Address");
 export const endpointYaml = (e: PublicEndpoint) => manifest(PublicEndpointSchema, e, "PublicEndpoint");
+export const portForwardYaml = (f: PortForward) => manifest(PortForwardSchema, f, "PortForward");
 export const customDomainYaml = (d: CustomDomain) => manifest(CustomDomainSchema, d, "CustomDomain");

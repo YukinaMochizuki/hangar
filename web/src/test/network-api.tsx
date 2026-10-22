@@ -1,7 +1,8 @@
 // An in-memory API for the network pages' tests: two networks, a security
-// group, two addresses, two public endpoints (one a container's), and a
-// container whose Machine is on the default network. Gets and Applies
-// answer from a server copy of the objects, which a test may make newer
+// group, two addresses, two public endpoints (one a container's), four port
+// forwards (ready, let in by no rule, waiting for a node's shared IPv4, and
+// being deleted), and a container whose Machine is on the default network.
+// Gets and Applies answer from a server copy of the objects, which a test may make newer
 // than the lists; an Apply carrying another resource version than the
 // server's is refused with Aborted, as the apiserver does. A test replaces
 // any method by passing its own handler. Documentation addresses only.
@@ -14,6 +15,7 @@ import { VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtu
 import { ConditionStatus, type ObjectMeta } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { AddressSchema, AddressService, type Address } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { NetworkSchema, NetworkService, type Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardSchema, PortForwardService, Protocol, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import {
   PublicEndpointAccess,
   PublicEndpointSchema,
@@ -94,6 +96,38 @@ export const endpoints = (): PublicEndpoint[] => [
   }),
 ];
 
+const api22 = { target: { object: { case: "container" as const, value: "api" }, interface: "eth0" } };
+
+// The group web lets in TCP 80 and 443 from any IPv6 address alone, so no
+// rule lets any of these in over IPv4.
+export const portForwards = (): PortForward[] => [
+  create(PortForwardSchema, {
+    metadata: { name: "api-ssh", project: "demo", uid: "f-1", resourceVersion: 41n, labels: { team: "a" } },
+    spec: { ...api22, protocol: Protocol.TCP, targetPort: 22 },
+    status: { ipv4: "198.51.100.3", port: 23817, machine: "api-x1", node: "node-1", conditions: [ready("Ready", true, "Forwarding")] },
+  }),
+  create(PortForwardSchema, {
+    metadata: { name: "api-dns", project: "demo", uid: "f-2", resourceVersion: 42n },
+    spec: { ...api22, protocol: Protocol.UDP, targetPort: 53 },
+    status: { ipv4: "198.51.100.3", port: 29405, machine: "api-x1", node: "node-1", conditions: [ready("Ready", true, "Forwarding")] },
+  }),
+  create(PortForwardSchema, {
+    metadata: { name: "api-nossh", project: "demo", uid: "f-3", resourceVersion: 43n },
+    spec: { ...api22, protocol: Protocol.TCP, targetPort: 2222 },
+    status: {
+      port: 18466,
+      machine: "api-x1",
+      node: "node-2",
+      conditions: [{ ...ready("Ready", false, "NoSharedIPv4"), message: "node node-2 has no shared IPv4 address to open the port at" }],
+    },
+  }),
+  create(PortForwardSchema, {
+    metadata: { name: "old", project: "demo", uid: "f-4", resourceVersion: 44n, deleteTime: { seconds: 1n } },
+    spec: { ...api22, protocol: Protocol.TCP, targetPort: 8080 },
+    status: { ipv4: "198.51.100.3", port: 31544, node: "node-1", conditions: [ready("Ready", true, "Forwarding")] },
+  }),
+];
+
 /** A container's Machine, its eth0 on a network in the groups named. */
 export function machineOf(container: string, network: string, groups: string[]) {
   return create(MachineSchema, {
@@ -110,7 +144,7 @@ const container = containersNamed("api")[0];
 const machine = machineOf("api", "default", ["default", "web"]);
 
 /** The objects the server holds, by kind. */
-export type Server = { networks: Network[]; groups: SecurityGroup[]; addresses: Address[]; endpoints: PublicEndpoint[] };
+export type Server = { networks: Network[]; groups: SecurityGroup[]; addresses: Address[]; endpoints: PublicEndpoint[]; forwards: PortForward[] };
 
 /** Handlers a test replaces, by method name. */
 export type Overrides = Partial<{
@@ -118,6 +152,9 @@ export type Overrides = Partial<{
   listSecurityGroups: () => unknown;
   listAddresses: () => unknown;
   listPublicEndpoints: () => unknown;
+  listPortForwards: () => unknown;
+  /** The project, whose status holds its limits and usage. */
+  getProject: () => unknown;
   listMachines: () => unknown;
   listContainers: () => unknown;
   /** The project's file shares; none unless set. */
@@ -172,7 +209,9 @@ export function networkApi(o: Overrides = {}): NetworkApi {
     groups: o.server?.groups ?? groups(),
     addresses: o.server?.addresses ?? addresses(),
     endpoints: o.server?.endpoints ?? endpoints(),
+    forwards: o.server?.forwards ?? portForwards(),
   };
+  const pfs = kindOn(PortForwardSchema, server.forwards);
   const nets = kindOn(NetworkSchema, server.networks);
   const sgs = kindOn(SecurityGroupSchema, server.groups);
   const addrs = kindOn(AddressSchema, server.addresses);
@@ -220,10 +259,23 @@ export function networkApi(o: Overrides = {}): NetworkApi {
       }) as never,
       deletePublicEndpoint: deleted as never,
     });
+    r.service(PortForwardService, {
+      listPortForwards: (() => (o.listPortForwards ? o.listPortForwards() : { items: portForwards() })) as never,
+      getPortForward: (req) => ({ portForward: pfs.get(req.name) }),
+      applyPortForward: ((req: { portForward: PortForward; createOnly: boolean }) => {
+        if (o.apply) return o.apply(req);
+        const { stored, created } = pfs.apply(req.portForward, req.createOnly);
+        return { portForward: stored, created };
+      }) as never,
+      deletePortForward: deleted as never,
+    });
     r.service(ContainerService, { listContainers: (() => (o.listContainers ? o.listContainers() : { items: [container] })) as never });
     r.service(VirtualMachineService, { listVirtualMachines: () => ({ items: [] }) });
     r.service(MachineService, { listMachines: (() => (o.listMachines ? o.listMachines() : { items: [machine] })) as never });
-    r.service(ProjectService, { listProjects: () => ({ items: [] }) });
+    r.service(ProjectService, {
+      listProjects: () => ({ items: [] }),
+      getProject: (() => (o.getProject ? o.getProject() : { project: { metadata: { name: "demo" }, status: { limits: { portForwards: 5 }, usage: { portForwards: 4 } } } })) as never,
+    });
     r.service(TenantService, { listTenants: () => ({ items: [] }) });
     r.service(AccountService, {
       testPermissions: ((req: { permissions: string[] }) =>

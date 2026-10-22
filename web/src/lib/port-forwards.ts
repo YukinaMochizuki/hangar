@@ -1,41 +1,46 @@
-// Port forwards as the console shows them: one public port on the
-// platform's shared IPv4 address, drawn at random by the apiserver and kept
-// until the object is deleted, forwarded to a port of one interface of a
-// container or virtual machine. Inbound traffic still passes that
-// interface's security groups, so a forward no group rule lets in reaches
-// nothing; inboundOf says which case a forward is in.
-//
-// The API kind does not exist yet. PortForward below is the agreed shape,
-// and the hooks at the end of this file read port-forwards.fixture.ts: they
-// are the one seam where the generated client replaces the fixture.
+// Port forwards as the console shows them (docs/decisions/networking.md,
+// "Port forwards"): one public port, drawn at random from 10000 to 32767
+// when the PortForward is made and kept until it is deleted, open at the
+// shared IPv4 address of the node the target runs on and leading to a port
+// of one interface of a container or virtual machine. Inbound traffic still
+// passes that interface's security groups, so a forward no group rule lets
+// in reaches nothing; inboundOf says which case a forward is in.
 
-import { ConditionStatus, type Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { useQuery } from "@connectrpc/connect-query";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { Protocol, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { SecurityGroupProtocol, type IngressRule, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
-import type { JsonValue } from "@bufbuild/protobuf";
-import { toYaml } from "@/lib/manifest";
+import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import type { MachineKind } from "@/lib/machines";
-import type { Attachment, ListState } from "@/lib/network";
-import { fixtureCan, fixtureForwards, fixtureQuota, fixtureTargets } from "@/lib/port-forwards.fixture";
+import { targetOf, useAttachments, useSecurityGroups, type Attachment, type ListState } from "@/lib/network";
 
 export type ForwardProtocol = "TCP" | "UDP";
 
-/** The ports of the shared IPv4 address forwards are drawn from; egress uses those above. */
+/** The ports of a node's shared IPv4 address forwards are drawn from; the machines' own connections leave from those above. */
 export const publicPorts = { min: 10000, max: 32767 } as const;
 
-/** The interface a forward sends to; iface is eth0 when the API leaves it unset. */
+/** The interface a forward leads to; iface is eth0 when the API leaves it unset. */
 export type ForwardTarget = { kind: MachineKind; name: string; iface: string };
 
-/** A PortForward as the agreed API shape has it. */
-export type PortForward = {
-  metadata: { name: string; project: string; uid: string; labels: Record<string, string>; createTime?: Date; deleteTime?: Date };
-  spec: { target: ForwardTarget; protocol: ForwardProtocol; targetPort: number };
-  /** ipv4 and port are empty until the apiserver has drawn the port. */
-  status: { ipv4: string; port: number; machine: string; conditions: Condition[] };
-};
+/** The interface a forward names, or undefined when it names none. */
+export function forwardTargetOf(pf: PortForward): ForwardTarget | undefined {
+  const t = targetOf(pf.spec?.target);
+  return t && { ...t, iface: pf.spec?.target?.interface || "eth0" };
+}
 
-/** The address a forward is reached at, such as 203.0.113.20:23817; undefined until its port is drawn. */
+/** The API's protocol in the console's words; UDP only when it says UDP. */
+export const protocolOf = (p: Protocol | undefined): ForwardProtocol => (p === Protocol.UDP ? "UDP" : "TCP");
+export const protocolEnum = (p: ForwardProtocol): Protocol => (p === "UDP" ? Protocol.UDP : Protocol.TCP);
+
+/** A forward's spec in the console's words, for the pieces that show where it leads. */
+export function specOf(pf: PortForward): { target?: ForwardTarget; protocol: ForwardProtocol; targetPort: number } {
+  return { target: forwardTargetOf(pf), protocol: protocolOf(pf.spec?.protocol), targetPort: pf.spec?.targetPort ?? 0 };
+}
+
+/** The address a forward is reached at, such as 198.51.100.3:23817; undefined until it has both. */
 export function publicAddress(pf: PortForward): string | undefined {
-  return pf.status.ipv4 && pf.status.port ? `${pf.status.ipv4}:${pf.status.port}` : undefined;
+  const s = pf.status;
+  return s?.ipv4 && s.port ? `${s.ipv4}:${s.port}` : undefined;
 }
 
 /** "22/tcp", "19132/udp". */
@@ -45,21 +50,45 @@ export type ForwardState = {
   label: string;
   light: "ok" | "pending" | "off";
   pulse?: boolean;
-  /** True while the apiserver has not drawn the public port. */
-  unassigned?: boolean;
   reason?: string;
+  /** What the API says, or the console's sentence for a reason it explains. */
   message?: string;
 };
 
-/** Where a forward stands: its Ready condition, and whether its port is drawn yet. */
+/**
+ * Where a forward stands, from its Ready condition (the apiserver's
+ * Forwarding, TargetNotFound, InterfaceNotFound, PortPending and
+ * NoSharedIPv4): Ready, Pending while the target is on its way to a node
+ * or no condition is written yet, Waiting while a target, an interface or
+ * the node's shared address is missing, and Deleting until the node that
+ * held the port has closed it.
+ */
 export function stateOf(pf: PortForward): ForwardState {
-  if (pf.metadata.deleteTime) return { label: "Deleting", light: "off" };
-  const ready = pf.status.conditions.find((c) => c.type === "Ready");
-  if (!publicAddress(pf)) {
-    return { label: "Pending", light: "pending", pulse: true, unassigned: true, reason: ready?.reason, message: ready?.message };
+  const node = pf.status?.node;
+  if (pf.metadata?.deleteTime) {
+    return {
+      label: "Deleting",
+      light: "off",
+      message: node ? `Its port is released once node ${node} has closed it.` : "Its port is released.",
+    };
   }
-  if (ready?.status === ConditionStatus.TRUE) return { label: "Ready", light: "ok" };
-  return { label: "Waiting", light: "pending", reason: ready?.reason, message: ready?.message };
+  const ready = pf.status?.conditions.find((c) => c.type === "Ready");
+  if (!ready) return { label: "Pending", light: "pending", pulse: true };
+  if (ready.status === ConditionStatus.TRUE) return { label: "Ready", light: "ok" };
+  const base = { reason: ready.reason, message: ready.message };
+  switch (ready.reason) {
+    case "PortPending":
+      return { label: "Pending", light: "pending", pulse: true, ...base };
+    case "NoSharedIPv4":
+      return {
+        label: "Waiting",
+        light: "pending",
+        ...base,
+        message: `Node ${node || "of the target"} has no shared IPv4 address yet, so the port is open nowhere. It opens once the platform gives that node one.`,
+      };
+    default:
+      return { label: "Waiting", light: "pending", ...base };
+  }
 }
 
 /** A command that reaches the forward, and what it is. */
@@ -73,9 +102,10 @@ export type Example = { label: string; command: string };
 export function examplesOf(pf: PortForward, user = "user"): Example[] {
   const addr = publicAddress(pf);
   if (!addr) return [];
-  const { ipv4, port } = pf.status;
-  if (pf.spec.protocol === "TCP" && pf.spec.targetPort === 22) return [{ label: "SSH", command: `ssh -p ${port} ${user}@${ipv4}` }];
-  if (pf.spec.protocol === "UDP") return [{ label: "UDP, with netcat", command: `nc -u ${ipv4} ${port}` }];
+  const { ipv4, port } = pf.status!;
+  const { protocol, targetPort } = specOf(pf);
+  if (protocol === "TCP" && targetPort === 22) return [{ label: "SSH", command: `ssh -p ${port} ${user}@${ipv4}` }];
+  if (protocol === "UDP") return [{ label: "UDP, with netcat", command: `nc -u ${ipv4} ${port}` }];
   return [{ label: "Address", command: addr }];
 }
 
@@ -84,10 +114,11 @@ export type Admitting = { group: string; rule: IngressRule; from: string };
 
 /**
  * Whether the target interface's security groups let the forward's traffic
- * in from the internet over IPv4: from any address (open), from some ranges
- * only (some), or not at all (none). The built-in default group lets in only
- * its own members, so it never admits a forward; a group the project lacks
- * lets nothing in.
+ * in from the internet over IPv4: the client's own address reaches the
+ * machine, so a rule from any address (open), from some ranges only
+ * (some), or none (none). The built-in default group lets in only its own
+ * members, so it never admits a forward; a group the project lacks lets
+ * nothing in.
  */
 export type Inbound = {
   verdict: "open" | "some" | "none";
@@ -109,7 +140,7 @@ export function portsHold(ports: string, port: number): boolean {
   });
 }
 
-const protocolOf: Record<ForwardProtocol, SecurityGroupProtocol> = { TCP: SecurityGroupProtocol.TCP, UDP: SecurityGroupProtocol.UDP };
+const groupProtocol: Record<ForwardProtocol, SecurityGroupProtocol> = { TCP: SecurityGroupProtocol.TCP, UDP: SecurityGroupProtocol.UDP };
 
 export function inboundOf(target: ForwardTarget, protocol: ForwardProtocol, port: number, attachments: Attachment[], groups: SecurityGroup[]): Inbound {
   const att = attachments.find((a) => a.kind === target.kind && a.name === target.name && a.iface === target.iface);
@@ -118,7 +149,7 @@ export function inboundOf(target: ForwardTarget, protocol: ForwardProtocol, port
   for (const name of names) {
     const g = groups.find((x) => x.metadata?.name === name && x.spec?.network === att?.network);
     for (const rule of g?.spec?.ingress ?? []) {
-      if (rule.protocol !== SecurityGroupProtocol.ALL && rule.protocol !== protocolOf[protocol]) continue;
+      if (rule.protocol !== SecurityGroupProtocol.ALL && rule.protocol !== groupProtocol[protocol]) continue;
       if (!portsHold(rule.ports, port)) continue;
       const peer = rule.from?.peer;
       if (peer?.case !== "cidr" || !v4.test(peer.value)) continue;
@@ -142,44 +173,18 @@ export function portProblem(port: string): string | undefined {
 export const suggestName = (machine: string, protocol: ForwardProtocol, port: number) =>
   machine && port ? `${machine}-${port}${protocol === "UDP" ? "-udp" : ""}` : "";
 
-/** What a person writes of a forward, as `hangar apply -f` takes it. */
-export function portForwardYaml(pf: Pick<PortForward, "spec"> & { metadata: { name: string; labels?: Record<string, string> } }): string {
-  const t = pf.spec.target;
-  const metadata: { [k: string]: JsonValue } = { name: pf.metadata.name };
-  const labels = Object.entries(pf.metadata.labels ?? {}).filter(([k]) => !/\.hangarlab\.cloud\//.test(k));
-  if (labels.length) metadata.labels = Object.fromEntries(labels);
-  const target: Record<string, string> = { [t.kind === "Container" ? "container" : "virtualMachine"]: t.name };
-  if (t.iface && t.iface !== "eth0") target.interface = t.iface;
-  return toYaml({
-    apiVersion: "network.hangarlab.cloud/v1alpha1",
-    kind: "PortForward",
-    metadata,
-    spec: { target, protocol: pf.spec.protocol, targetPort: pf.spec.targetPort },
-  });
-}
-
-// The seam. Each hook reads the fixture today; wiring the API replaces its
-// body with the generated client (a list, the project's quota, and
-// useAttachments with useSecurityGroups) and leaves its callers as they are.
-
-/** The project's port forwards, by name. */
-export function usePortForwards(project: string): ListState<PortForward> {
-  return fixtureForwards(project);
-}
-
-/** How many port forwards the project holds, against its plan's portForwards limit (undefined: no limit). */
+/**
+ * How many port forwards the project holds against its plan's limit, from
+ * the project's status as the new-machine form reads it (lib/over-quota.ts);
+ * limit is undefined when there is none, or while it is not known.
+ */
 export function usePortForwardQuota(project: string): { used: number; limit?: number; loading: boolean } {
-  return fixtureQuota(project);
+  const q = useQuery(ProjectService.method.getProject, { name: project }, { retry: false });
+  const st = q.data?.project?.status;
+  return { used: st?.usage?.portForwards ?? 0, limit: st?.limits?.portForwards, loading: q.isPending };
 }
 
 /** The project's interfaces and security groups, which say whether a forward's traffic gets in. */
 export function useForwardTargets(project: string): { attachments: ListState<Attachment>; groups: ListState<SecurityGroup> } {
-  return fixtureTargets(project);
+  return { attachments: useAttachments(project), groups: useSecurityGroups(project) };
 }
-
-/** What the caller may do to port forwards in the project, as useNetworkCan answers for the other kinds. */
-export function usePortForwardCan(project: string): { can: (permission: string) => boolean } {
-  return fixtureCan(project);
-}
-
-export const portForwardPerms = { apply: "network.portforwards.apply", delete: "network.portforwards.delete" } as const;

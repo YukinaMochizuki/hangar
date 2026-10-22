@@ -1,44 +1,169 @@
 // The pieces the port forward pages and a machine's page share: a forward's
-// state, where it sends, whether its target's security groups let its
-// traffic in, its actions, and the Port forwards card of a machine's page.
+// actions and its Retarget dialog, its state, where it leads, whether its
+// target's security groups let its traffic in, and the Port forwards card of
+// a machine's page.
 
+import { clone, create } from "@bufbuild/protobuf";
+import { PortForwardSchema, PortForwardSpecSchema, PortForwardTargetSchema, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { Link } from "@tanstack/react-router";
 import { Crosshair, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Dialog } from "@/components/dialog";
+import { FormEquivalent } from "@/components/form";
+import { EditLabelsDialog } from "@/components/labels-dialog";
 import { Notice } from "@/components/notice";
-import { editLabelsAction, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
+import { editLabelsAction, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
+import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
 import { buttonVariants, Card, CardHeader, CopyButton, Led } from "@/components/ui";
 import { machinePath, type MachineView } from "@/lib/machines";
-import { kindNoun } from "@/lib/network";
+import { kindNoun, nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
+import { isStale, permission, useApplyAt, useNetworkCan, useReload } from "@/lib/network-actions";
 import {
   inboundOf,
-  portForwardPerms,
   portLabel,
   publicAddress,
+  specOf,
   stateOf,
   useForwardTargets,
-  usePortForwardCan,
-  usePortForwards,
   type ForwardProtocol,
   type ForwardTarget,
   type Inbound,
-  type PortForward,
 } from "@/lib/port-forwards";
 import { ruleSentence } from "@/lib/security-group-rules";
+import { InterfaceField, pickOf, pickProblem, pickTarget, type InterfacePick } from "@/pages/addresses";
+
+/** A pick of the interface field as a forward's target, as the API takes it; undefined for none. */
+export function forwardTargetOfPick(p: InterfacePick) {
+  const t = pickTarget(p);
+  return t && create(PortForwardTargetSchema, { object: t.object, interface: t.interface });
+}
+
+const pickOfForward = (pf: PortForward) => {
+  const t = specOf(pf).target;
+  return pickOf(t ? `${t.kind}/${t.name}/${t.iface}` : "");
+};
 
 /**
  * A forward's actions, on its page and in its row's menu: Retarget, Edit
- * labels and Delete, each shown once the caller may.
+ * labels and Delete, each shown once TestPermissions holds its permission;
+ * `after` follows a delete the API took.
  */
-// Screens only: the dialogs these open come with the API.
-export function usePortForwardActions(pf: PortForward, can: Can): ActionSet {
-  const deleting = !!pf.metadata.deleteTime;
+export function usePortForwardActions(pf: PortForward, can: Can, after?: () => void): ActionSet {
+  const name = nameOf(pf);
+  const [open, setOpen] = useState<"retarget" | "delete" | "labels" | null>(null);
+  const deleting = !!pf.metadata?.deleteTime;
+  const mayApply = can(permission("portForward", "apply"));
   const actions: ObjectAction[] = [];
-  const none = () => {};
-  if (can(portForwardPerms.apply)) actions.push({ label: "Retarget", icon: Crosshair, onSelect: none });
-  if (can(portForwardPerms.delete)) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: none });
-  return { actions, editLabels: editLabelsAction(can(portForwardPerms.apply), deleting, none), deleting, dialogs: null };
+  if (mayApply) actions.push({ label: "Retarget", icon: Crosshair, onSelect: () => setOpen("retarget") });
+  if (can(permission("portForward", "delete"))) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  const port = pf.status?.port;
+  return {
+    actions,
+    editLabels: editLabelsAction(mayApply, deleting, () => setOpen("labels")),
+    deleting,
+    dialogs: (
+      <>
+        {open === "retarget" && <RetargetDialog onClose={close} forward={pf} />}
+        {open === "labels" && <EditLabelsDialog kind="portForward" object={pf} onClose={close} />}
+        {open === "delete" && (
+          <DeleteDialog
+            kind="portForward"
+            name={name}
+            open
+            onClose={close}
+            after={after}
+            consequence={
+              port
+                ? `Port ${port} closes, and is free to be drawn again once the node that opened it has closed it.`
+                : "The port forward is deleted."
+            }
+          />
+        )}
+      </>
+    ),
+  };
+}
+
+/** A forward's row menu: the actions of its page. */
+export function ForwardRowMenu({ pf, can }: { pf: PortForward; can: Can }) {
+  return <ObjectRowMenu name={nameOf(pf)} set={usePortForwardActions(pf, can)} />;
+}
+
+/**
+ * Retarget a forward: another interface, at the version the dialog opened
+ * on, so a newer forward is not written over; the API then refuses it, and
+ * the dialog says so and can start again from the forward as it is. The
+ * public port and the protocol stay.
+ */
+function RetargetDialog({ onClose, forward }: { onClose: () => void; forward: PortForward }) {
+  const project = useProjectName();
+  const name = nameOf(forward);
+  const [base, setBase] = useState(forward);
+  const [pick, setPick] = useState(pickOfForward(forward));
+  const applyAt = useApplyAt("portForward");
+  const reload = useReload("portForward", project, name);
+  const stale = isStale(applyAt.error);
+  const target = forwardTargetOfPick(pick);
+  const was = specOf(base).target;
+  const current = was ? `${was.kind}/${was.name}/${was.iface}` : "";
+
+  const obj = clone(PortForwardSchema, base);
+  obj.spec ??= create(PortForwardSpecSchema);
+  obj.spec.target = target;
+  const problems: string[] = [];
+  if (!target) problems.push("No interface is chosen.");
+  const typedProblem = pickProblem(pick);
+  if (typedProblem) problems.push(typedProblem);
+  if (target && pick.choice === current) problems.push("It leads there already.");
+  const close = () => {
+    applyAt.reset();
+    onClose();
+  };
+  const startAgain = () =>
+    reload.mutate(undefined, {
+      onSuccess: (fresh) => {
+        setBase(fresh);
+        setPick(pickOfForward(fresh));
+        applyAt.reset();
+      },
+    });
+  const port = base.status?.port;
+  return (
+    <Dialog open onClose={close} title={`Retarget ${name}`}>
+      <div className="text-[12.5px] text-foreground">Interface</div>
+      <div className="mt-1.5">
+        <InterfaceField
+          pick={pick}
+          onChange={setPick}
+          none="Choose an interface"
+          current={was ? { value: current, label: `${was.name} · ${was.iface} (${kindNoun(was.kind)})` } : undefined}
+          hint={`${port ? `Port ${port}` : "The public port"} stays as it is; only where it leads changes. No machine restarts.`}
+        />
+      </div>
+      <FormEquivalent yaml={portForwardYaml(obj)} cli={[`hangar apply -p ${project} -f ${name}.yaml`]} />
+      {stale && (
+        <StaleNotice title="The port forward changed after this dialog opened." reloading={reload.isPending} error={reload.error} onReload={startAgain} />
+      )}
+      <FormFooter
+        problems={problems}
+        blocked={stale}
+        error={stale ? null : applyAt.error}
+        failed="Retargeting the port forward failed"
+        pending={applyAt.isPending}
+        pendingLabel="Retargeting…"
+        label={
+          <>
+            <Crosshair /> Retarget
+          </>
+        }
+        onCancel={close}
+        onSubmit={() => applyAt.mutate(obj, { onSuccess: close })}
+      />
+    </Dialog>
+  );
 }
 
 /** A forward's state, with its reason under it. */
@@ -55,9 +180,10 @@ export function ForwardStateCell({ pf }: { pf: PortForward }) {
   );
 }
 
-/** Where a forward sends: its machine, linked, the interface, and the port. */
-export function ForwardTargetText({ t, protocol, port }: { t: ForwardTarget; protocol: ForwardProtocol; port: number }) {
+/** Where a forward leads: its machine, linked, the interface, and the port; or that it names none. */
+export function ForwardTargetText({ t, protocol, port }: { t?: ForwardTarget; protocol: ForwardProtocol; port: number }) {
   const project = useProjectName();
+  if (!t) return <span className="text-subtle">no target</span>;
   return (
     <span>
       <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
@@ -72,10 +198,13 @@ export function ForwardTargetText({ t, protocol, port }: { t: ForwardTarget; pro
   );
 }
 
-/** The public address in the monospace face with its copy button, or that the port is not drawn yet. */
+/** What stands in for the address before it is known: the port alone, or nothing yet. */
+export const noAddress = (pf: PortForward) => (pf.status?.port ? `port ${pf.status.port}, no address yet` : "no port yet");
+
+/** The public address in the monospace face with its copy button, or what is known of it so far. */
 export function AddressCell({ pf }: { pf: PortForward }) {
   const addr = publicAddress(pf);
-  if (!addr) return <span className="font-sans text-[12.5px] text-subtle">port not drawn yet</span>;
+  if (!addr) return <span className="font-sans text-[12.5px] text-subtle">{noAddress(pf)}</span>;
   return (
     <span className="inline-flex items-center gap-1 font-mono text-[12px]">
       {addr}
@@ -84,11 +213,17 @@ export function AddressCell({ pf }: { pf: PortForward }) {
   );
 }
 
-/** Whether the forward's traffic gets in, from the project's interfaces and groups. */
-export function useInbound(project: string, t: ForwardTarget, protocol: ForwardProtocol, port: number): Inbound | undefined {
+/** Whether the forward's traffic gets in, from the project's interfaces and groups; undefined while they load or when they failed. */
+export function useInbound(project: string, t: ForwardTarget | undefined, protocol: ForwardProtocol, port: number): Inbound | undefined {
   const { attachments, groups } = useForwardTargets(project);
-  if (attachments.loading || groups.loading || attachments.error || groups.error) return undefined;
+  if (!t || attachments.loading || groups.loading || attachments.error || groups.error) return undefined;
   return inboundOf(t, protocol, port, attachments.items, groups.items);
+}
+
+/** useInbound for a forward as the API has it. */
+export function useForwardInbound(pf: PortForward): Inbound | undefined {
+  const { target, protocol, targetPort } = specOf(pf);
+  return useInbound(pf.metadata?.project ?? "", target, protocol, targetPort);
 }
 
 const what = (protocol: ForwardProtocol, port: number) => `${protocol} port ${port}`;
@@ -162,7 +297,7 @@ export function InboundNotice({ t, protocol, port, inbound }: { t: ForwardTarget
   return (
     <Notice tone="warning" title={`No security group of ${iface} lets in ${what(protocol, port)}`}>
       Inbound traffic is denied unless a rule of one of the interface's groups lets it in, so the forward is in place and nothing reaches the{" "}
-      {kindNoun(t.kind)}. {iface} is in {joined(inbound.groups)}.{edits}
+      {kindNoun(t.kind)}. {iface} is in {inbound.groups.length > 0 ? joined(inbound.groups) : "no group"}.{edits}
     </Notice>
   );
 }
@@ -178,36 +313,39 @@ export function InboundBrief({ inbound }: { inbound: Inbound | undefined }) {
 }
 
 function MachineForwardRow({ pf, project }: { pf: PortForward; project: string }) {
-  const { target, protocol, targetPort } = pf.spec;
-  const inbound = useInbound(project, target, protocol, targetPort);
+  const { target, protocol, targetPort } = specOf(pf);
+  const inbound = useForwardInbound(pf);
   const s = stateOf(pf);
   return (
     <li className="px-4 py-2.5 text-[13px]">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <Link to="/projects/$project/port-forwards/$name" params={{ project, name: pf.metadata.name }} className="min-w-0 font-medium text-accent hover:underline">
-          {pf.metadata.name}
+        <Link to="/projects/$project/port-forwards/$name" params={{ project, name: nameOf(pf) }} className="min-w-0 font-medium text-accent hover:underline">
+          {nameOf(pf)}
         </Link>
         <AddressCell pf={pf} />
         <span className="font-mono text-[12px] text-muted">
-          → {target.iface} · {portLabel(targetPort, protocol)}
+          → {target?.iface ?? "eth0"} · {portLabel(targetPort, protocol)}
         </span>
         <span className="ml-auto inline-flex items-center gap-2 text-[12.5px]">
           <Led tone={s.light} pulse={s.pulse} />
           {s.label}
         </span>
       </div>
-      <InboundBrief inbound={inbound} />
+      {!pf.metadata?.deleteTime && <InboundBrief inbound={inbound} />}
     </li>
   );
 }
 
-/** A machine's page's Port forwards card: the forwards that send to it, and New port forward for it. */
+/** A machine's page's Port forwards card: the forwards that lead to it, and New port forward for it. */
 export function MachinePortForwards({ m }: { m: MachineView }) {
   const forwards = usePortForwards(m.project);
-  const { can } = usePortForwardCan(m.project);
-  const mine = forwards.items.filter((f) => f.spec.target.kind === m.kind && f.spec.target.name === m.name);
+  const { can } = useNetworkCan("portForward", m.project);
+  const mine = forwards.items.filter((f) => {
+    const t = specOf(f).target;
+    return t?.kind === m.kind && t.name === m.name;
+  });
   const iface = m.interfaces[0]?.name ?? "eth0";
-  const action = can(portForwardPerms.apply) ? (
+  const action = can(permission("portForward", "apply")) ? (
     <Link
       to="/projects/$project/new/port-forward"
       params={{ project: m.project }}
@@ -233,12 +371,12 @@ export function MachinePortForwards({ m }: { m: MachineView }) {
         <ErrorNotice error={forwards.error} title="The port forwards did not load" onRetry={forwards.refetch} />
       ) : mine.length === 0 ? (
         <div className="px-4 py-3 text-[13px] text-muted">
-          No port forwards. A port forward opens one port of this {kindNoun(m.kind)} to the internet, on a port of the platform's shared IPv4 address.
+          No port forwards. A port forward opens one port of this {kindNoun(m.kind)} to the internet, on a port of its node's shared IPv4 address.
         </div>
       ) : (
         <ul className="divide-y">
           {mine.map((pf) => (
-            <MachineForwardRow key={pf.metadata.name} pf={pf} project={m.project} />
+            <MachineForwardRow key={nameOf(pf)} pf={pf} project={m.project} />
           ))}
         </ul>
       )}

@@ -1,25 +1,37 @@
 import { create } from "@bufbuild/protobuf";
-import { ConditionSchema, ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { PortForwardSchema, Protocol, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { SecurityGroupProtocol, SecurityGroupSchema } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { describe, expect, it } from "vitest";
-import type { Attachment } from "@/lib/network";
-import { examplesOf, inboundOf, portForwardYaml, portProblem, portsHold, publicPorts, stateOf, suggestName, type PortForward } from "@/lib/port-forwards";
-import { fixtureItems } from "@/lib/port-forwards.fixture";
+import { portForwardYaml, type Attachment } from "@/lib/network";
+import { examplesOf, forwardTargetOf, inboundOf, portProblem, portsHold, stateOf, suggestName } from "@/lib/port-forwards";
 
 const web = { kind: "Container" as const, name: "web", iface: "eth0" };
 
-function forward(o: { protocol?: "TCP" | "UDP"; targetPort?: number; port?: number; ready?: boolean }): PortForward {
-  const port = o.port ?? 23817;
-  return {
-    metadata: { name: "web-22", project: "demo", uid: "u", labels: {} },
-    spec: { target: web, protocol: o.protocol ?? "TCP", targetPort: o.targetPort ?? 22 },
+function forward(o: {
+  protocol?: Protocol;
+  targetPort?: number;
+  port?: number;
+  ipv4?: string;
+  reason?: string;
+  message?: string;
+  node?: string;
+  deleting?: boolean;
+  noCondition?: boolean;
+}): PortForward {
+  const ok = !o.reason || o.reason === "Forwarding";
+  return create(PortForwardSchema, {
+    metadata: { name: "web-22", project: "demo", deleteTime: o.deleting ? { seconds: 1n } : undefined },
+    spec: { target: { object: { case: "container", value: "web" } }, protocol: o.protocol ?? Protocol.TCP, targetPort: o.targetPort ?? 22 },
     status: {
-      ipv4: port ? "203.0.113.20" : "",
-      port,
-      machine: "",
-      conditions: [create(ConditionSchema, { type: "Ready", status: o.ready === false ? ConditionStatus.FALSE : ConditionStatus.TRUE, reason: o.ready === false ? "TargetNotFound" : "" })],
+      ipv4: o.ipv4 ?? "198.51.100.3",
+      port: o.port ?? 23817,
+      node: o.node ?? "node-1",
+      conditions: o.noCondition
+        ? []
+        : [{ type: "Ready", status: ok ? ConditionStatus.TRUE : ConditionStatus.FALSE, reason: o.reason ?? "Forwarding", message: o.message ?? "" }],
     },
-  };
+  });
 }
 
 const att = (groups: string[]): Attachment => ({ kind: "Container", name: "web", iface: "eth0", network: "default", ipv4: "10.0.0.2", ipv6: "", securityGroups: groups });
@@ -83,35 +95,55 @@ describe("ports as a rule writes them", () => {
 
 describe("a forward's connection examples", () => {
   it("is ssh for TCP port 22, with the drawn port", () => {
-    expect(examplesOf(forward({}))).toEqual([{ label: "SSH", command: "ssh -p 23817 user@203.0.113.20" }]);
+    expect(examplesOf(forward({}))).toEqual([{ label: "SSH", command: "ssh -p 23817 user@198.51.100.3" }]);
   });
 
   it("is nc -u for UDP", () => {
-    expect(examplesOf(forward({ protocol: "UDP", targetPort: 19132, port: 29405 }))[0]!.command).toBe("nc -u 203.0.113.20 29405");
+    expect(examplesOf(forward({ protocol: Protocol.UDP, targetPort: 19132, port: 29405 }))[0]!.command).toBe("nc -u 198.51.100.3 29405");
   });
 
-  it("is the address for any other TCP port, and nothing before the port is drawn", () => {
-    expect(examplesOf(forward({ targetPort: 5432, port: 27640 }))[0]!.command).toBe("203.0.113.20:27640");
-    expect(examplesOf(forward({ port: 0 }))).toEqual([]);
-  });
-});
-
-describe("the placeholder data", () => {
-  it("draws every public port from the shared address's range", () => {
-    const drawn = fixtureItems("demo").map((f) => f.status.port).filter(Boolean);
-    expect(drawn.length).toBeGreaterThan(0);
-    for (const p of drawn) {
-      expect(p).toBeGreaterThanOrEqual(publicPorts.min);
-      expect(p).toBeLessThanOrEqual(publicPorts.max);
-    }
+  it("is the address for any other TCP port, and nothing before the address is known", () => {
+    expect(examplesOf(forward({ targetPort: 5432, port: 27640 }))[0]!.command).toBe("198.51.100.3:27640");
+    expect(examplesOf(forward({ ipv4: "" }))).toEqual([]);
   });
 });
 
-describe("a forward's state", () => {
-  it("is Pending until the port is drawn, Waiting when not ready, else Ready", () => {
-    expect(stateOf(forward({ port: 0 }))).toMatchObject({ label: "Pending", unassigned: true });
-    expect(stateOf(forward({ ready: false }))).toMatchObject({ label: "Waiting", reason: "TargetNotFound" });
+describe("a forward's state, from the apiserver's reasons", () => {
+  it("is Ready when forwarding", () => {
     expect(stateOf(forward({}))).toMatchObject({ label: "Ready", light: "ok" });
+  });
+
+  it("is Pending while the target is on its way to a node, or nothing is written yet", () => {
+    expect(stateOf(forward({ reason: "PortPending", ipv4: "", message: "Container web is not on a node yet" }))).toMatchObject({
+      label: "Pending",
+      reason: "PortPending",
+      message: "Container web is not on a node yet",
+    });
+    expect(stateOf(forward({ noCondition: true }))).toMatchObject({ label: "Pending", pulse: true });
+  });
+
+  it("is Waiting for a missing target or interface, with the API's message", () => {
+    expect(stateOf(forward({ reason: "TargetNotFound", message: "Container db does not exist, or has no machine yet" }))).toMatchObject({
+      label: "Waiting",
+      reason: "TargetNotFound",
+      message: "Container db does not exist, or has no machine yet",
+    });
+    expect(stateOf(forward({ reason: "InterfaceNotFound" }))).toMatchObject({ label: "Waiting", reason: "InterfaceNotFound" });
+  });
+
+  it("explains a node with no shared IPv4 address", () => {
+    const s = stateOf(forward({ reason: "NoSharedIPv4", ipv4: "", node: "node-2" }));
+    expect(s).toMatchObject({ label: "Waiting", reason: "NoSharedIPv4" });
+    expect(s.message).toMatch(/^Node node-2 has no shared IPv4 address yet/);
+  });
+
+  it("is Deleting until the node that held the port has closed it", () => {
+    expect(stateOf(forward({ deleting: true }))).toMatchObject({ label: "Deleting", message: "Its port is released once node node-1 has closed it." });
+    expect(stateOf(forward({ deleting: true, node: "" })).message).toBe("Its port is released.");
+  });
+
+  it("reads the target's interface as eth0 when unset", () => {
+    expect(forwardTargetOf(forward({}))).toEqual(web);
   });
 });
 
@@ -130,12 +162,12 @@ describe("the create form", () => {
     expect(portProblem("2x")).toMatch(/not a port/);
   });
 
-  it("writes the manifest without the public port, which is not the person's to choose", () => {
-    const yaml = portForwardYaml({ metadata: { name: "web-22" }, spec: { target: web, protocol: "TCP", targetPort: 22 } });
+  it("writes the manifest with its spec alone: the public port is not the person's to choose", () => {
+    const yaml = portForwardYaml(forward({}));
     expect(yaml).toContain("kind: PortForward");
     expect(yaml).toContain("container: web");
-    expect(yaml).not.toContain("interface:");
     expect(yaml).toContain("targetPort: 22");
-    expect(yaml).not.toMatch(/\bport:/);
+    expect(yaml).toContain("PROTOCOL_TCP");
+    expect(yaml).not.toContain("23817");
   });
 });

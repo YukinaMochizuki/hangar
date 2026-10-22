@@ -8,7 +8,7 @@ import { CommandPalette } from "@/components/command-palette";
 import { Topbar, type Place } from "@/components/shell";
 import { useSecrets, useServiceTokens, useTokenRoles } from "@/lib/credentials";
 import { useMachines } from "@/lib/machines";
-import { useAddresses, useNetworks, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
+import { useAddresses, useNetworks, usePortForwards, usePublicEndpoints, useSecurityGroups } from "@/lib/network";
 import { useProjects } from "@/lib/projects";
 import { useDisks, useImages } from "@/lib/storage";
 import { useFileShares } from "@/lib/file-shares";
@@ -357,6 +357,7 @@ describe("CommandPalette", () => {
       useSecurityGroups("demo");
       useAddresses("demo");
       usePublicEndpoints("demo");
+      usePortForwards("demo");
       useSecrets("demo");
       useServiceTokens("demo");
       useTokenRoles("demo");

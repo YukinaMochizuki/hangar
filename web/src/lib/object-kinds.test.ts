@@ -11,6 +11,7 @@ import { ServiceTokenSchema, ServiceTokenService } from "@hangar/api/hangar/iam/
 import { AddressSchema, AddressService } from "@hangar/api/hangar/network/v1alpha1/address_pb";
 import { CustomDomainSchema, CustomDomainService } from "@hangar/api/hangar/network/v1alpha1/custom_domain_pb";
 import { NetworkSchema, NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
+import { PortForwardSchema, PortForwardService, Protocol } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointAccess, PublicEndpointSchema, PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { DiskSchema, DiskService } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
@@ -59,6 +60,12 @@ const read: { [K in LabelKind]: () => LabelObject<K> } = {
       spec: { target: { object: { case: "container", value: "web" } }, port: 3000, access: PublicEndpointAccess.PRIVATE },
       status: { url: "https://docs-demo.example.com" },
     }),
+  portForward: () =>
+    create(PortForwardSchema, {
+      metadata: meta("web-ssh"),
+      spec: { target: { object: { case: "container", value: "web" }, interface: "eth0" }, protocol: Protocol.TCP, targetPort: 22 },
+      status: { ipv4: "198.51.100.3", port: 23817, machine: "web-x1", node: "node-a" },
+    }),
   customDomain: () =>
     create(CustomDomainSchema, {
       metadata: meta("example-com", true),
@@ -79,6 +86,7 @@ const schemas: { [K in LabelKind]: DescMessage } = {
   securityGroup: SecurityGroupSchema,
   address: AddressSchema,
   publicEndpoint: PublicEndpointSchema,
+  portForward: PortForwardSchema,
   customDomain: CustomDomainSchema,
   serviceToken: ServiceTokenSchema,
   image: ImageSchema,
@@ -97,6 +105,7 @@ function recording() {
     r.service(SecurityGroupService, { applySecurityGroup: (q) => keep(q.securityGroup) });
     r.service(AddressService, { applyAddress: (q) => keep(q.address) });
     r.service(PublicEndpointService, { applyPublicEndpoint: (q) => keep(q.publicEndpoint) });
+    r.service(PortForwardService, { applyPortForward: (q) => keep(q.portForward) });
     r.service(CustomDomainService, { applyCustomDomain: (q) => keep(q.customDomain) });
     r.service(ServiceTokenService, { applyServiceToken: (q) => keep(q.serviceToken) });
     r.service(ImageService, { applyImage: (q) => keep(q.image) });

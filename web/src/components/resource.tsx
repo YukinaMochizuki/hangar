@@ -47,7 +47,7 @@ export function usageBlock(state: MachinesState, inUse: string | undefined): str
 }
 
 /** The CLI's name for each kind. */
-export const cliKinds: Record<NetworkKind, string> = { network: "network", securityGroup: "sg", address: "addr", publicEndpoint: "ep" };
+export const cliKinds: Record<NetworkKind, string> = { network: "network", securityGroup: "sg", address: "addr", publicEndpoint: "ep", portForward: "pf" };
 
 /** Delete a network object, as DeleteX, confirmed by its name typed. */
 export function DeleteDialog({
