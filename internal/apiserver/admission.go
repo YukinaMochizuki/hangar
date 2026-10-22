@@ -152,6 +152,10 @@ type kindHooks struct {
 	// They are taken in order; whoever takes users and plans takes users
 	// first.
 	writeLocks func(s *Server) []*sync.Mutex
+	// applyLocks, if set, are held by an apply of obj as writeLocks are,
+	// after them: for rules that only some objects of a kind take part in,
+	// so the others are not serialized for nothing.
+	applyLocks func(s *Server, obj proto.Message) []*sync.Mutex
 	// othersWriteLock, if set, is held as writeLocks are, after them, by
 	// every apply and delete of the kind but the apiserver's own.
 	othersWriteLock func(s *Server) *sync.Mutex
@@ -416,12 +420,27 @@ func hooksFor(r registry.Resource) kindHooks {
 			finalizers: []string{AddressUnbindFinalizer},
 		}
 	case registry.PublicEndpoint.Kind:
-		// Its hostname is claimed for good when it is made.
+		// Its hostname is claimed for good when it is made. An apply with
+		// spec.hostnames holds customDomains: they are checked against the
+		// domains and the other endpoints. One without holds nothing of
+		// another's, and a delete only lets go.
 		return kindHooks{
-			target:   projectTarget,
-			owner:    endpointOwner,
-			validate: validatePublicEndpoint,
-			claim:    endpointClaim,
+			target:     projectTarget,
+			owner:      endpointOwner,
+			validate:   validatePublicEndpoint,
+			claim:      endpointClaim,
+			applyLocks: endpointHostnamesLock,
+		}
+	case registry.CustomDomain.Kind:
+		// A tenant's, as a Project is; its writes hold customDomains, shared
+		// with PublicEndpoint (docs/decisions/custom-domains.md).
+		return kindHooks{
+			target:            customDomainTarget,
+			targetNeedsObject: true,
+			owner:             customDomainOwner,
+			validate:          validateCustomDomain,
+			beforeDelete:      refuseDeletingDomainInUse,
+			writeLocks:        only(customDomainsLock),
 		}
 	case registry.Network.Kind:
 		// Its writes hold attach: whether a share is on it, and as it is

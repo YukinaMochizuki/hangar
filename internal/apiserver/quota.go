@@ -54,6 +54,7 @@ func DefaultLimits() *tenancyv1alpha1.Limits {
 		PublicEndpoints: proto.Int32(10),
 		ServiceTokens:   proto.Int32(10),
 		FileShares:      proto.Int32(3),
+		Domains:         proto.Int32(3),
 	}
 }
 
@@ -73,11 +74,13 @@ const (
 	dimPublicEndpoints
 	dimServiceTokens
 	dimFileShares
+	// dimDomains counts a tenant's CustomDomains, which belong to no project.
+	dimDomains
 	numDims
 )
 
 // dimNames are the dimensions as Limits and Usage name them.
-var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares"}
+var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains"}
 
 // amounts are what something holds, by dimension.
 type amounts [numDims]int64
@@ -130,6 +133,7 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 	}{
 		{dimMachines, l.Machines}, {dimProjects, l.Projects}, {dimNetworks, l.Networks}, {dimAddresses, l.Addresses},
 		{dimPublicEndpoints, l.PublicEndpoints}, {dimServiceTokens, l.ServiceTokens}, {dimFileShares, l.FileShares},
+		{dimDomains, l.Domains},
 	} {
 		if c.v == nil {
 			continue
@@ -209,6 +213,7 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	l.Cpu, l.Memory, l.Disk = str(dimCPU), str(dimMemory), str(dimDisk)
 	l.Machines, l.Projects, l.Networks, l.Addresses = count(dimMachines), count(dimProjects), count(dimNetworks), count(dimAddresses)
 	l.PublicEndpoints, l.ServiceTokens, l.FileShares = count(dimPublicEndpoints), count(dimServiceTokens), count(dimFileShares)
+	l.Domains = count(dimDomains)
 	return l
 }
 
@@ -225,6 +230,7 @@ func (a amounts) usage() *tenancyv1alpha1.Usage {
 		PublicEndpoints: int32(a[dimPublicEndpoints]),
 		ServiceTokens:   int32(a[dimServiceTokens]),
 		FileShares:      int32(a[dimFileShares]),
+		Domains:         int32(a[dimDomains]),
 	}
 }
 
@@ -392,7 +398,7 @@ func wholeMi(bytes uint64) uint64 {
 // countsTowardQuota says whether a write of the kind can raise a tenant's
 // usage, and so holds Server.quota.
 func countsTowardQuota(kind string) bool {
-	if kind == registry.Tenant.Kind || kind == registry.Project.Kind {
+	if kind == registry.Tenant.Kind || kind == registry.Project.Kind || kind == registry.CustomDomain.Kind {
 		return true
 	}
 	_, ok := quotaCounters[kind]
@@ -458,6 +464,15 @@ func (s *Server) tally(ctx context.Context, tenant string, over *override) (tall
 		}
 		t.projects[name] = a
 		t.tenant.add(a)
+	}
+	domains, err := s.listWith(ctx, registry.CustomDomain, "", over)
+	if err != nil {
+		return tally{}, err
+	}
+	for _, obj := range domains {
+		if obj.(*networkv1alpha1.CustomDomain).GetSpec().GetTenant() == tenant {
+			t.tenant[dimDomains]++
+		}
 	}
 	return t, nil
 }
@@ -539,6 +554,8 @@ func (s *Server) checkQuota(ctx context.Context, r registry.Resource, p auth.Pri
 		return s.checkOwnedTenants(ctx, p)
 	case registry.Project.Kind:
 		tenantName = obj.(*tenancyv1alpha1.Project).GetSpec().GetTenant()
+	case registry.CustomDomain.Kind:
+		tenantName = obj.(*networkv1alpha1.CustomDomain).GetSpec().GetTenant()
 	default:
 		proj, err := s.get(ctx, registry.Project, resource.Key{Name: meta.GetProject()})
 		if err != nil {
@@ -572,7 +589,7 @@ func (s *Server) checkQuota(ctx context.Context, r registry.Resource, p auth.Pri
 				tenantName, dimNames[d], formatAmount(d, planLimits.val[d]), planName, formatAmount(d, before.tenant[d]), formatAmount(d, after.tenant[d])))
 		}
 	}
-	if r.Kind == registry.Project.Kind {
+	if r.Kind == registry.Project.Kind || r.Kind == registry.CustomDomain.Kind {
 		return nil
 	}
 	proj := after.objects[meta.GetProject()]
@@ -748,6 +765,9 @@ func (s *Server) validateProjectLimits(ctx context.Context, p auth.Principal, ol
 	if ls.set[dimProjects] {
 		return invalid("spec.limits.projects is not a project's to set; the tenant's plan limits projects")
 	}
+	if ls.set[dimDomains] {
+		return invalid("spec.limits.domains is not a project's to set; the tenant's plan limits domains")
+	}
 	tenantName := proj.GetSpec().GetTenant()
 	if !s.authz.Allowed(p, authz.Permission(registry.Project, authz.Apply), authz.Target{Tenant: tenantName}) {
 		return denied("%s may not change spec.limits of project %q: that needs apply on projects at tenant %q", p, proj.GetMetadata().GetName(), tenantName)
@@ -793,6 +813,7 @@ func (s *Server) usageController() *controller.Controller {
 		{Kind: registry.Tenant.Kind, Map: controller.Self},
 		{Kind: registry.Project.Kind, Map: s.tenantOfProject},
 		{Kind: registry.Plan.Kind, Map: s.tenantsOfPlan, SkipResync: true},
+		{Kind: registry.CustomDomain.Kind, Map: tenantOfDomain, SkipResync: true},
 	}
 	for kind := range quotaCounters {
 		watches = append(watches, controller.Watch{Kind: kind, Map: s.tenantOfObject, SkipResync: true})
@@ -810,6 +831,14 @@ func (s *Server) tenantOfProject(_ context.Context, o store.Object) []controller
 		return nil
 	}
 	return []controller.Key{{Name: p.GetSpec().GetTenant()}}
+}
+
+func tenantOfDomain(_ context.Context, o store.Object) []controller.Key {
+	var d networkv1alpha1.CustomDomain
+	if proto.Unmarshal(o.Data, &d) != nil || d.GetSpec().GetTenant() == "" {
+		return nil
+	}
+	return []controller.Key{{Name: d.GetSpec().GetTenant()}}
 }
 
 func (s *Server) tenantOfObject(ctx context.Context, o store.Object) []controller.Key {
