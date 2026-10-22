@@ -1,7 +1,7 @@
-// Start, stop, edit, resize and delete, on a machine's page and in a list's
-// row menu.
+// Edit, resize, start, stop, edit labels and delete, on a machine's page and
+// in a list's row menu.
 
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { VirtualMachineDeletePolicy } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { Maximize2, Pencil, Play, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
@@ -9,10 +9,12 @@ import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { FormEquivalent } from "@/components/form";
 import { Choice } from "@/components/form-page";
-import { AnchoredLayer, RowMenu } from "@/components/menu";
+import { EditLabelsDialog } from "@/components/labels-dialog";
+import { AnchoredLayer } from "@/components/menu";
 import { Notice } from "@/components/notice";
+import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { Skeleton, ErrorNotice } from "@/components/states";
-import { Button, buttonVariants } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { StaleNotice } from "@/components/resource";
 import { ContainerSchema } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { useApplyMachineAt, useDeleteMachine, useReadMachine, useSetRunState, type RunState } from "@/lib/actions";
@@ -24,7 +26,7 @@ import { sizeOf, useMachineSizes, type Size } from "@/lib/machine-sizes";
 import type { MachineView } from "@/lib/machines";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { useOverQuota } from "@/lib/over-quota";
-import { useMayApplyMachine } from "@/lib/permissions";
+import { machineDeletePerms, machinePermKey, machinePerms } from "@/lib/permissions";
 import { formatNumber, quantityCPU, quantityGiB } from "@/lib/quantity";
 
 /** The title of a run-state error: the action asked for, whatever the state now. */
@@ -197,74 +199,76 @@ export function ResizeDialog({ m, onClose }: { m: MachineView; onClose: () => vo
   );
 }
 
-/** The run-state button, edit, resize and delete, as on a machine's page. */
-export function MachineActions({ m }: { m: MachineView }) {
+/**
+ * A machine's actions, on its page and in its row's menu: Edit and Resize
+ * (not offered while it is being deleted), Start or Stop, Edit labels and
+ * Delete, by `can`, the answer of useMachineCan its list or page asked: the
+ * kind's apply for all but Delete, which needs its delete. `after` follows a
+ * delete the API took. The run state's call is given too, for where its
+ * error is shown.
+ */
+export function useMachineActions(m: MachineView, can: Can, after?: () => void): ActionSet & { run: ReturnType<typeof useSetRunState> } {
   const run = useSetRunState(m.kind, m.project, m.name);
-  const [deleting, setDeleting] = useState(false);
-  const [resizing, setResizing] = useState(false);
   const navigate = useNavigate();
-  const { may: mayApply } = useMayApplyMachine(m.project, m.kind);
-  const list = m.kind === "Container" ? "/projects/$project/containers" : "/projects/$project/vms";
+  const [open, setOpen] = useState<"resize" | "delete" | "labels" | null>(null);
+  const mayApply = can(machinePerms[machinePermKey(m.kind)]);
+  const mayDelete = can(machineDeletePerms[machinePermKey(m.kind)]);
+  const object = m.container ?? m.vm;
+  const actions: ObjectAction[] = [];
+  if (mayApply && !m.deleting) {
+    const link = { to: editPath(m), params: { project: m.project, name: m.name } };
+    actions.push({ label: "Edit", icon: Pencil, link, onSelect: () => void navigate(link) });
+    actions.push({ label: "Resize", icon: Maximize2, onSelect: () => setOpen("resize") });
+  }
+  if (mayApply) {
+    actions.push(
+      m.stopped
+        ? { label: "Start", icon: Play, primary: true, pending: run.isPending ? "Starting…" : undefined, onSelect: () => run.mutate("running") }
+        : { label: "Stop", icon: Square, pending: run.isPending ? "Stopping…" : undefined, onSelect: () => run.mutate("stopped") },
+    );
+  }
+  if (mayDelete) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    run,
+    actions,
+    editLabels: editLabelsAction(mayApply && !!object, m.deleting, () => setOpen("labels")),
+    deleting: m.deleting,
+    dialogs: (
+      <>
+        {open === "resize" && <ResizeDialog m={m} onClose={close} />}
+        <DeleteDialog m={m} open={open === "delete"} onClose={close} after={after} />
+        {open === "labels" && m.container && <EditLabelsDialog kind="container" object={m.container} onClose={close} />}
+        {open === "labels" && m.vm && <EditLabelsDialog kind="vm" object={m.vm} onClose={close} />}
+      </>
+    ),
+  };
+}
+
+/** The machine's actions as its page's head draws them, with the run state's error under them. */
+export function MachineActions({ set }: { set: ReturnType<typeof useMachineActions> }) {
+  const run = set.run;
   return (
     <div className="flex flex-col items-stretch gap-2 md:items-end">
       <div className="flex flex-wrap items-center gap-2">
-        {mayApply && !m.deleting && (
-          <>
-            <Link to={editPath(m)} params={{ project: m.project, name: m.name }} className={buttonVariants()}>
-              <Pencil /> Edit
-            </Link>
-            <Button onClick={() => setResizing(true)}>
-              <Maximize2 /> Resize
-            </Button>
-          </>
-        )}
-        {m.stopped ? (
-          <Button variant="primary" disabled={run.isPending || m.deleting} onClick={() => run.mutate("running")}>
-            <Play /> {run.isPending ? "Starting…" : "Start"}
-          </Button>
-        ) : (
-          <Button disabled={run.isPending || m.deleting} onClick={() => run.mutate("stopped")}>
-            <Square /> {run.isPending ? "Stopping…" : "Stop"}
-          </Button>
-        )}
-        <Button variant="danger" disabled={m.deleting} onClick={() => setDeleting(true)}>
-          <Trash2 /> Delete
-        </Button>
+        <HeadActions set={set} />
       </div>
       {run.error && (
         <Notice tone="error" title={runErrorTitle(run.variables)} className="max-w-md">
           {errorMessage(run.error)}
         </Notice>
       )}
-      <DeleteDialog
-        m={m}
-        open={deleting}
-        onClose={() => setDeleting(false)}
-        after={() => void navigate({ to: list, params: { project: m.project } })}
-      />
-      {mayApply && resizing && <ResizeDialog m={m} onClose={() => setResizing(false)} />}
+      {set.dialogs}
     </div>
   );
 }
 
-/** The same actions in a row's menu, Edit among them where the caller may apply the kind. */
-export function MachineRowMenu({ m, mayEdit }: { m: MachineView; mayEdit?: boolean }) {
-  const run = useSetRunState(m.kind, m.project, m.name);
-  const [deleting, setDeleting] = useState(false);
-  const navigate = useNavigate();
+/** The same actions in a row's menu, with the run state's error beside it. */
+export function MachineRowMenu({ m, can }: { m: MachineView; can: Can }) {
+  const set = useMachineActions(m, can);
+  const run = set.run;
   return (
-    <RowMenu
-      label={`Actions for ${m.name}`}
-      actions={[
-        m.stopped
-          ? { label: "Start", icon: Play, disabled: m.deleting, onSelect: () => run.mutate("running") }
-          : { label: "Stop", icon: Square, disabled: m.deleting, onSelect: () => run.mutate("stopped") },
-        ...(mayEdit && !m.deleting
-          ? [{ label: "Edit", icon: Pencil, onSelect: () => void navigate({ to: editPath(m), params: { project: m.project, name: m.name } }) }]
-          : []),
-        { label: "Delete", icon: Trash2, danger: true, disabled: m.deleting, onSelect: () => setDeleting(true) },
-      ]}
-    >
+    <ObjectRowMenu name={m.name} set={set}>
       {(anchor) => (
         <>
           {run.error && (
@@ -281,9 +285,8 @@ export function MachineRowMenu({ m, mayEdit }: { m: MachineView; mayEdit?: boole
               </button>
             </AnchoredLayer>
           )}
-          <DeleteDialog m={m} open={deleting} onClose={() => setDeleting(false)} />
         </>
       )}
-    </RowMenu>
+    </ObjectRowMenu>
   );
 }

@@ -4,6 +4,9 @@
 import { Link } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useState } from "react";
+import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { useImageActions, useImageCan } from "@/components/image-actions";
+import { ObjectRowMenu, type Can } from "@/components/object-actions";
 import { ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ImageStateCell } from "@/components/storage";
@@ -17,10 +20,17 @@ export function osLabel(os: string, version: string): string {
   return [name, version].filter(Boolean).join(" ") || "–";
 }
 
+/** An image's row menu: the actions of its page. */
+function ImageRowMenu({ img, project, can }: { img: Image; project: string; can: Can }) {
+  return <ObjectRowMenu name={img.metadata?.name ?? ""} set={useImageActions(img, project, can)} />;
+}
+
 /** ImageList is the platform's catalogue of images, read-only. */
 export function ImageList() {
   const project = useProjectName();
   const { items, loading, error, refetch } = useImages();
+  // One answer for every row's menu.
+  const can = useImageCan(project);
   const [query, setQuery] = useState("");
   const rows = items.filter((i) => !query || i.metadata?.name.includes(query) || i.spec?.os.includes(query));
 
@@ -64,6 +74,7 @@ export function ImageList() {
                     <span className="shrink-0 text-right">
                       <ImageStateCell s={imageState(i)} />
                     </span>
+                    <ImageRowMenu img={i} project={project} can={can} />
                   </li>
                 );
               })}
@@ -80,6 +91,7 @@ export function ImageList() {
                   <Th>Smallest disk</Th>
                   <Th>Default user</Th>
                   <Th>Arch</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -104,10 +116,13 @@ export function ImageList() {
                         {i.spec?.defaultUser || <span className="font-sans text-subtle">none</span>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{i.spec?.arch || "amd64"}</td>
+                      <td className="px-2 py-2.5">
+                        <ImageRowMenu img={i} project={project} can={can} />
+                      </td>
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <NoMatch noun="image" colSpan={6} />}
+                {rows.length === 0 && <NoMatch noun="image" colSpan={7} />}
               </tbody>
             </table>
           </Card>

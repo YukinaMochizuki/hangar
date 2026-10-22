@@ -100,10 +100,13 @@ export type MenuAction = {
 export function RowMenu({
   label,
   actions,
+  empty,
   children,
 }: {
   label: string;
   actions: MenuAction[];
+  /** What the menu says when it holds no action. */
+  empty?: string;
   children?: (anchor: HTMLElement | null) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -115,7 +118,8 @@ export function RowMenu({
         <MoreHorizontal />
       </Button>
       {open && (
-        <AnchoredLayer anchor={anchor} onAway={close} role="menu" aria-label={label} className="w-40 rounded-md border bg-surface p-1 shadow-lg">
+        <AnchoredLayer anchor={anchor} onAway={close} role="menu" aria-label={label} className="w-44 rounded-md border bg-surface p-1 shadow-lg">
+          {actions.length === 0 && empty && <div className="px-2 py-1.5 text-[12.5px] text-subtle">{empty}</div>}
           {actions.map((a) => {
             const Icon = a.icon;
             return (

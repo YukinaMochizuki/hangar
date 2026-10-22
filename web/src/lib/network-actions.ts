@@ -16,6 +16,8 @@ import { PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/n
 import { SecurityGroupService, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { readModifyWrite } from "@/lib/actions";
 import { createError } from "@/lib/create";
+import { sharePerms } from "@/lib/file-shares";
+import { useCan } from "@/lib/permissions";
 
 type Objects = {
   network: Network;
@@ -41,6 +43,21 @@ const plurals: Record<NetworkKind, string> = {
 
 /** The permission a verb on a kind needs at the project, as TestPermissions names it. */
 export const permission = (kind: NetworkKind, verb: "apply" | "delete") => `network.${plurals[kind]}.${verb}`;
+
+/**
+ * What a kind's controls need at the project, asked as one answer by its
+ * list, its page and its rows alike. A network's page also offers New file
+ * share, so the network kind asks for that too.
+ */
+export function kindPerms(kind: NetworkKind): string[] {
+  const own = [permission(kind, "apply"), permission(kind, "delete")];
+  return kind === "network" ? [...own, sharePerms.apply] : own;
+}
+
+/** kindPerms, asked of TestPermissions at the project. */
+export function useNetworkCan(kind: NetworkKind, project: string) {
+  return useCan({ level: "project", name: project }, kindPerms(kind));
+}
 
 type Calls<T> = {
   get: (project: string, name: string) => Promise<T>;

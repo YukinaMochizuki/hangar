@@ -8,16 +8,18 @@ import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowDown, ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
 import { HostKeys } from "@/components/host-key";
 import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseAnsi, type AnsiColor, type AnsiSpan, type AnsiStyle } from "@/lib/ansi";
 import { artStatus } from "@/components/chassis-art";
-import { MachineActions } from "@/components/machine-actions";
-import { ConditionRow, ConditionsFold, EquivalentCard, Labels } from "@/components/object";
+import { MachineActions, useMachineActions } from "@/components/machine-actions";
+import { useMachineCan } from "@/lib/permissions";
+import type { Can } from "@/components/object-actions";
+import { ConditionRow, ConditionsFold, EquivalentCard, LabelsField } from "@/components/object";
 import { Notice, PageBanner } from "@/components/notice";
 import { RunsOnPanel } from "@/components/runs-on-panel";
 import { createdKey, useJustCreated } from "@/lib/just-created";
@@ -52,7 +54,7 @@ function sizeText(m: MachineView) {
   return `${formatNumber(m.cpu)} vCPU · ${formatNumber(m.memoryGi)} GiB${Number.isFinite(m.diskGi) ? ` · ${formatNumber(m.diskGi)} GiB disk` : ""}`;
 }
 
-function Header({ m, terminal }: { m: MachineView; terminal: boolean }) {
+function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: ReturnType<typeof useMachineActions> }) {
   const { sizes } = useMachineSizes();
   const size = sizeOf(m, sizes);
   const nic = m.interfaces[0];
@@ -84,7 +86,7 @@ function Header({ m, terminal }: { m: MachineView; terminal: boolean }) {
               <TerminalSquare /> Terminal
             </Link>
           )}
-          <MachineActions m={m} />
+          <MachineActions set={set} />
         </span>
       </div>
     </div>
@@ -203,7 +205,7 @@ function Lifecycle({ m }: { m: MachineView }) {
   );
 }
 
-function Summary({ m }: { m: MachineView }) {
+function Summary({ m, onEditLabels }: { m: MachineView; onEditLabels?: () => void }) {
   const { sizes } = useMachineSizes();
   const size = sizeOf(m, sizes);
   const root = m.vm?.spec?.rootDisk?.source;
@@ -234,9 +236,7 @@ function Summary({ m }: { m: MachineView }) {
           </Field>
         )}
         <Field label="Run state">{m.stopped ? "Stopped" : "Running"}</Field>
-        <Field label="Labels">
-          <Labels labels={m.labels} />
-        </Field>
+        <LabelsField labels={m.labels} onEdit={onEditLabels} />
         <Field label="Created">{m.created?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
         <Field label="UID" mono>
           <span className="text-muted">{m.uid}</span>
@@ -689,6 +689,8 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
   const project = useProjectName();
   const { held, loading, error, refetch } = useMachines(project, kind);
   const mayTerminal = useMayTerminal(project);
+  // Asked with the list, so the page's controls come with it, and once.
+  const { can } = useMachineCan(project);
   // Asking again failing keeps the page on its last answer, so a terminal open on it is not ended.
   const m = held.find((x) => x.name === name);
   const list = kind === "Container" ? "Containers" : "Virtual machines";
@@ -731,12 +733,34 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
       </>
     );
   }
+  return <Loaded m={m} crumbs={crumbs} stale={error} refetch={refetch} terminal={mayTerminal[m.kind]} can={can} />;
+}
+
+/** The page of a machine that has loaded, its actions made once for its head and its labels. */
+function Loaded({
+  m,
+  crumbs,
+  stale,
+  refetch,
+  terminal,
+  can,
+}: {
+  m: MachineView;
+  crumbs: ReactNode[];
+  stale: unknown;
+  refetch: () => void;
+  terminal: boolean;
+  can: Can;
+}) {
+  const navigate = useNavigate();
+  const noun = m.kind === "Container" ? "container" : "virtual machine";
+  const list = m.kind === "Container" ? "/projects/$project/containers" : "/projects/$project/vms";
+  const set = useMachineActions(m, can, () => void navigate({ to: list, params: { project: m.project } }));
   const ready = readyOf(m);
-  const terminal = mayTerminal[m.kind];
   return (
     <>
       <Topbar crumbs={crumbs} />
-      {error ? <StaleBanner what={`${noun}s`} error={error} onRetry={refetch} /> : null}
+      {stale ? <StaleBanner what={`${noun}s`} error={stale} onRetry={refetch} /> : null}
       {m.deleting && (
         <PageBanner tone="warning" title={`${m.name} is being deleted`}>
           It goes once its machine and disks are gone.
@@ -747,12 +771,12 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
           {ready.message}
         </PageBanner>
       )}
-      <Header m={m} terminal={terminal} />
+      <Header m={m} terminal={terminal} set={set} />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Lifecycle m={m} />
           {terminal && <TerminalCard m={m} />}
-          <Summary m={m} />
+          <Summary m={m} onEditLabels={set.editLabels?.onSelect} />
           <Networking m={m} />
           {m.kind === "VirtualMachine" && <VmFileSharesCard m={m} />}
           <Conditions m={m} />

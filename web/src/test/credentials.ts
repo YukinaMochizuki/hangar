@@ -29,10 +29,13 @@ const day = 86400_000;
 const at = (offset: number) => timestampFromDate(new Date(Date.now() + offset));
 
 /** secret is a Secret of the project as the API answers it: no values. */
-export function secret(name: string, o: Partial<{ registries: string[]; ready: [ConditionStatus, string, string] | null }> = {}): Secret {
+export function secret(
+  name: string,
+  o: Partial<{ registries: string[]; ready: [ConditionStatus, string, string] | null; version: bigint; labels: Record<string, string> }> = {},
+): Secret {
   const ready = o.ready === undefined ? ([ConditionStatus.TRUE, "Sealed", ""] as const) : o.ready;
   return create(SecretSchema, {
-    metadata: { name, project, uid: `uid-${name}`, createTime: at(-3 * day) },
+    metadata: { name, project, uid: `uid-${name}`, createTime: at(-3 * day), resourceVersion: o.version ?? 5n, labels: o.labels ?? {} },
     spec: { type: SecretType.REGISTRY_AUTH },
     status: {
       keys: [".dockerconfigjson"],
@@ -77,11 +80,14 @@ export const issued = ["hgr_EXAMPLEfirstEXAMPLEfirstEXAMPLEfirst00000", "hgr_EXA
 
 export type Fake = {
   secrets?: () => Promise<{ items: Secret[] }>;
+  /** What GetSecret answers; unset, the secret of the name in secrets, or NotFound. */
+  getSecret?: (name: string) => Secret | undefined;
   tokens?: () => Promise<{ items: ServiceToken[] }>;
   bindings?: () => Promise<{ items: RoleBinding[] }>;
   containers?: () => Promise<{ items: Container[] }>;
   /** What TestPermissions answers the caller holds; unset, every permission asked. */
   perms?: () => Promise<string[]>;
+  /** Sees each ApplySecret; what it throws is the API's answer. */
   applySecret?: (req: ApplySecretRequest) => void;
   deleteSecret?: (req: DeleteSecretRequest) => void;
   createToken?: (req: CreateServiceTokenRequest) => void;
@@ -101,6 +107,11 @@ export function credentialsApi(f: Fake) {
   return fakeApi((r) => {
     r.service(SecretService, {
       listSecrets: () => (f.secrets ? f.secrets() : { items: [] }),
+      getSecret: async (req) => {
+        const s = f.getSecret ? f.getSecret(req.name) : (f.secrets ? (await f.secrets()).items : []).find((x) => x.metadata?.name === req.name);
+        if (!s) throw new ConnectError(`secret ${req.name} not found`, Code.NotFound);
+        return { secret: s };
+      },
       applySecret: async (req) => {
         if (req.createOnly && (await names(f.secrets)).includes(req.secret?.metadata?.name ?? "")) {
           throw new ConnectError(`secret ${req.secret?.metadata?.name} already exists`, Code.AlreadyExists);

@@ -12,14 +12,16 @@ import { DeleteDialog, MachinesNotice, MemberCount, StaleNotice, usageBlock } fr
 import { Input, Select } from "@/components/form";
 import { CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
 import { Notice } from "@/components/notice";
-import { ConditionsCard, EquivalentCard, Labels } from "@/components/object";
+import { EditLabelsDialog } from "@/components/labels-dialog";
+import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
+import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState } from "@/components/states";
 import { Badge, Button, buttonVariants, Card, CardHeader, Field } from "@/components/ui";
 import { checkName } from "@/lib/create";
-import { isStale, permission, useApplyAt, useCreate, useReload } from "@/lib/network-actions";
+import { isStale, permission, useApplyAt, useCreate, useReload, useNetworkCan } from "@/lib/network-actions";
 import { useCan } from "@/lib/permissions";
 import { date } from "@/lib/machines";
 import { count, nameOf, portsLabel, protocolLabel, securityGroupYaml, useAttachments, useNetworks, useSecurityGroups } from "@/lib/network";
@@ -46,6 +48,54 @@ function egressText(g: SecurityGroup): string {
   return n === 0 ? "open" : `${n} ${n === 1 ? "rule" : "rules"}`;
 }
 
+/**
+ * A group's actions, on its page and in its row's menu: Edit rules, Edit
+ * labels and Delete, each shown once TestPermissions holds its permission;
+ * `after` follows a delete the API took.
+ */
+export function useSecurityGroupActions(g: SecurityGroup, can: Can, after?: () => void): ActionSet {
+  const name = nameOf(g);
+  const project = g.metadata?.project ?? "";
+  const navigate = useNavigate();
+  const [open, setOpen] = useState<"delete" | "labels" | null>(null);
+  const att = useAttachments(project);
+  const net = g.spec?.network ?? "";
+  const members = att.items.filter((a) => a.network === net && a.securityGroups.includes(name)).length;
+  const actions: ObjectAction[] = [];
+  if (can(permission("securityGroup", "apply"))) {
+    const link = { to: "/projects/$project/security-groups/$name/edit", params: { project, name } };
+    actions.push({ label: "Edit rules", icon: Pencil, link, onSelect: () => void navigate(link) });
+  }
+  if (can(permission("securityGroup", "delete"))) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
+  const close = () => setOpen(null);
+  return {
+    actions,
+    editLabels: editLabelsAction(can(permission("securityGroup", "apply")), !!g.metadata?.deleteTime, () => setOpen("labels")),
+    deleting: !!g.metadata?.deleteTime,
+    dialogs: (
+      <>
+        {open === "labels" && <EditLabelsDialog kind="securityGroup" object={g} onClose={close} />}
+        {open === "delete" && (
+          <DeleteDialog
+            kind="securityGroup"
+            name={name}
+            open
+            onClose={close}
+            after={after}
+            consequence="Rules of other groups that name it then allow nothing."
+            blocked={usageBlock(att, members > 0 ? `${members} ${members === 1 ? "interface is" : "interfaces are"} in this group.` : undefined)}
+          />
+        )}
+      </>
+    ),
+  };
+}
+
+/** A group's row menu: the actions of its page. */
+function SecurityGroupRowMenu({ g, can }: { g: SecurityGroup; can: Can }) {
+  return <ObjectRowMenu name={nameOf(g)} set={useSecurityGroupActions(g, can)} />;
+}
+
 /** A network as a group names it, stated as missing when the project has none of the name. */
 function NetworkName({ net, exists }: { net: string; exists: boolean }) {
   return exists ? <>{net}</> : <span className="text-pending">network {net} does not exist</span>;
@@ -64,7 +114,7 @@ export function SecurityGroupList() {
   const rows = groups.items.filter((g) => !query || nameOf(g).includes(query));
   const showDefault = !query || "default".includes(query);
   const members = (net: string, group: string, word?: string) => <MemberCount state={att} n={membersOf(net, group)} word={word} />;
-  const { can: may } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply")]);
+  const { can: may } = useNetworkCan("securityGroup", project);
   const newButton = may(permission("securityGroup", "apply")) ? (
     <Link to="/projects/$project/new/security-group" params={{ project }} className={buttonVariants({ variant: "primary" })}>
       <Plus /> New security group
@@ -99,16 +149,17 @@ export function SecurityGroupList() {
                         <span className="block text-[11.5px] text-subtle">{net} · lets in its own members, lets everything out</span>
                       </span>
                       <span className="shrink-0 text-muted">{members(net, "default", "member")}</span>
+                      <span className="block size-8 shrink-0" />
                     </li>
                   )}
                   {rows
                     .filter((g) => (g.spec?.network ?? "") === net)
                     .map((g) => (
-                      <li key={nameOf(g)}>
+                      <li key={nameOf(g)} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
                         <Link
                           to="/projects/$project/security-groups/$name"
                           params={{ project, name: nameOf(g) }}
-                          className="flex items-center gap-3 px-4 py-2.5 text-[13px]"
+                          className="flex min-w-0 flex-1 items-center gap-3"
                         >
                           <span className="min-w-0 flex-1">
                             <span className="block truncate font-medium">{nameOf(g)}</span>
@@ -118,6 +169,7 @@ export function SecurityGroupList() {
                           </span>
                           <span className="shrink-0 text-muted">{members(net, nameOf(g), "member")}</span>
                         </Link>
+                        <SecurityGroupRowMenu g={g} can={may} />
                       </li>
                     ))}
                 </Fragment>
@@ -135,6 +187,7 @@ export function SecurityGroupList() {
                   <Th>Outbound</Th>
                   <Th>Members</Th>
                   <Th>Created</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -152,6 +205,7 @@ export function SecurityGroupList() {
                         <td className="px-4 py-2.5 text-muted">open</td>
                         <td className="px-4 py-2.5 tabular">{members(net, "default")}</td>
                         <td className="px-4 py-2.5 text-subtle">–</td>
+                        <td />
                       </tr>
                     )}
                     {rows
@@ -176,11 +230,14 @@ export function SecurityGroupList() {
                           <td className="px-4 py-2.5 tabular">{egressText(g)}</td>
                           <td className="px-4 py-2.5 tabular">{members(net, nameOf(g))}</td>
                           <td className="whitespace-nowrap px-4 py-2.5 text-muted">{date(g.metadata?.createTime)?.toISOString().slice(0, 10)}</td>
+                          <td className="px-2 py-2.5">
+                            <SecurityGroupRowMenu g={g} can={may} />
+                          </td>
                         </tr>
                       ))}
                   </Fragment>
                 ))}
-                {!showDefault && rows.length === 0 && <NoMatch noun="security group" colSpan={6} />}
+                {!showDefault && rows.length === 0 && <NoMatch noun="security group" colSpan={7} />}
               </tbody>
             </table>
           </Card>
@@ -223,107 +280,85 @@ function RulesView({ title, dir, rules, empty, foot }: { title: string; dir: Dir
 export function SecurityGroupDetail({ name }: { name: string }) {
   const project = useProjectName();
   const groups = useSecurityGroups(project);
-  const nets = useNetworks(project);
-  const att = useAttachments(project);
-  const [deleting, setDeleting] = useState(false);
-  const navigate = useNavigate();
-  const { can } = useCan({ level: "project", name: project }, [permission("securityGroup", "apply"), permission("securityGroup", "delete")]);
-  const mayApply = can(permission("securityGroup", "apply"));
-  const mayDelete = can(permission("securityGroup", "delete"));
+  // Asked with the list, so the page's controls come with it, and once.
+  const { can } = useNetworkCan("securityGroup", project);
   const g = groups.items.find((x) => nameOf(x) === name);
-  const net = g?.spec?.network ?? "";
-  const members = att.items.filter((a) => a.network === net && a.securityGroups.includes(name));
   return (
     <DetailFrame crumbs={["Security groups", name]} state={groups} found={!!g} noun="security group" name={name}>
-      {g && (
-        <>
-          <DetailHead
-            name={name}
-            kind="Security group"
-            facts={
-              <>
-                <span>
-                  on{" "}
-                  {nets.loading || nets.error || nets.items.some((n) => nameOf(n) === net) ? (
-                    <Link to="/projects/$project/networks/$name" params={{ project, name: net }} className="text-accent hover:underline">
-                      {net}
-                    </Link>
-                  ) : (
-                    <NetworkName net={net} exists={false} />
-                  )}
-                </span>
-                <span className="tabular">{count(g.spec?.ingress.length ?? 0, "inbound rule")}</span>
-                <span className="tabular">outbound {egressText(g)}</span>
-                <MemberCount state={att} n={members.length} word="member" />
-              </>
-            }
-            actions={
-              mayApply || mayDelete ? (
-                <>
-                  {mayApply && (
-                    <Link to="/projects/$project/security-groups/$name/edit" params={{ project, name }} className={buttonVariants()}>
-                      <Pencil /> Edit rules
-                    </Link>
-                  )}
-                  {mayDelete && (
-                    <Button variant="danger" onClick={() => setDeleting(true)}>
-                      <Trash2 /> Delete
-                    </Button>
-                  )}
-                </>
-              ) : undefined
-            }
-          />
-          <DetailBody
-            main={
-              <>
-                <RulesView title="Inbound" dir="in" rules={g.spec?.ingress ?? []} empty="No inbound rules: this group lets nothing in." />
-                <RulesView
-                  title="Outbound"
-                  dir="out"
-                  rules={g.spec?.egress ?? []}
-                  empty="No outbound rules: this group restricts nothing its members send."
-                  foot={(g.spec?.egress.length ?? 0) > 0 ? "A member sends only what some outbound rule of its groups lets out." : undefined}
-                />
-                <AttachmentsCard title="Members" items={members} state={att} empty="No interface names this group." />
-                <Card>
-                  <CardHeader title="Summary" />
-                  <dl className="divide-y px-4">
-                    <Field label="Network">{net}</Field>
-                    <Field label="Labels">
-                      <Labels labels={g.metadata?.labels ?? {}} />
-                    </Field>
-                    <Field label="Created">{date(g.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
-                    <Field label="UID" mono>
-                      <span className="text-muted">{g.metadata?.uid}</span>
-                    </Field>
-                  </dl>
-                </Card>
-                <ConditionsCard conditions={g.status?.conditions ?? []} />
-              </>
-            }
-            side={
-              <EquivalentCard
-                cli={[`hangar get sg ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete sg ${name} -p ${project}`]}
-                yaml={securityGroupYaml(g)}
-              />
-            }
-          />
-          <DeleteDialog
-            kind="securityGroup"
-            name={name}
-            open={deleting}
-            onClose={() => setDeleting(false)}
-            after={() => void navigate({ to: "/projects/$project/security-groups", params: { project } })}
-            consequence="Rules of other groups that name it then allow nothing."
-            blocked={usageBlock(
-              att,
-              members.length > 0 ? `${members.length} ${members.length === 1 ? "interface is" : "interfaces are"} in this group.` : undefined,
-            )}
-          />
-        </>
-      )}
+      {g && <Loaded g={g} can={can} />}
     </DetailFrame>
+  );
+}
+
+/** The page of a group that has loaded, its actions made once for its head and its labels. */
+function Loaded({ g, can }: { g: SecurityGroup; can: Can }) {
+  const name = nameOf(g);
+  const project = g.metadata?.project ?? "";
+  const nets = useNetworks(project);
+  const att = useAttachments(project);
+  const navigate = useNavigate();
+  const set = useSecurityGroupActions(g, can, () => void navigate({ to: "/projects/$project/security-groups", params: { project } }));
+  const net = g.spec?.network ?? "";
+  const members = att.items.filter((a) => a.network === net && a.securityGroups.includes(name));
+  return (
+    <>
+      <DetailHead
+        name={name}
+        kind="Security group"
+        facts={
+          <>
+            <span>
+              on{" "}
+              {nets.loading || nets.error || nets.items.some((n) => nameOf(n) === net) ? (
+                <Link to="/projects/$project/networks/$name" params={{ project, name: net }} className="text-accent hover:underline">
+                  {net}
+                </Link>
+              ) : (
+                <NetworkName net={net} exists={false} />
+              )}
+            </span>
+            <span className="tabular">{count(g.spec?.ingress.length ?? 0, "inbound rule")}</span>
+            <span className="tabular">outbound {egressText(g)}</span>
+            <MemberCount state={att} n={members.length} word="member" />
+          </>
+        }
+        actions={set.actions.length > 0 && <HeadActions set={set} />}
+      />
+      <DetailBody
+        main={
+          <>
+            <RulesView title="Inbound" dir="in" rules={g.spec?.ingress ?? []} empty="No inbound rules: this group lets nothing in." />
+            <RulesView
+              title="Outbound"
+              dir="out"
+              rules={g.spec?.egress ?? []}
+              empty="No outbound rules: this group restricts nothing its members send."
+              foot={(g.spec?.egress.length ?? 0) > 0 ? "A member sends only what some outbound rule of its groups lets out." : undefined}
+            />
+            <AttachmentsCard title="Members" items={members} state={att} empty="No interface names this group." />
+            <Card>
+              <CardHeader title="Summary" />
+              <dl className="divide-y px-4">
+                <Field label="Network">{net}</Field>
+                <LabelsField labels={g.metadata?.labels ?? {}} onEdit={set.editLabels?.onSelect} />
+                <Field label="Created">{date(g.metadata?.createTime)?.toISOString().replace("T", " ").slice(0, 16)} UTC</Field>
+                <Field label="UID" mono>
+                  <span className="text-muted">{g.metadata?.uid}</span>
+                </Field>
+              </dl>
+            </Card>
+            <ConditionsCard conditions={g.status?.conditions ?? []} />
+          </>
+        }
+        side={
+          <EquivalentCard
+            cli={[`hangar get sg ${name} -p ${project}`, `hangar apply -p ${project} -f ${name}.yaml`, `hangar delete sg ${name} -p ${project}`]}
+            yaml={securityGroupYaml(g)}
+          />
+        }
+      />
+      {set.dialogs}
+    </>
   );
 }
 

@@ -5,6 +5,8 @@ import { Link } from "@tanstack/react-router";
 import { DiskPhase, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { Plus, Search } from "lucide-react";
 import { useState } from "react";
+import { useDiskActions, useDiskCan } from "@/components/disk-actions";
+import { ObjectRowMenu, type Can } from "@/components/object-actions";
 import { ListCount, ListFrame, PageHead } from "@/components/page";
 import { Topbar, useProjectName } from "@/components/shell";
 import { DiskSource, DiskState, UsedAs, usedAsText } from "@/components/storage";
@@ -12,7 +14,6 @@ import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { buttonVariants, Card } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { date } from "@/lib/machines";
-import { useCan } from "@/lib/permissions";
 import { gib, growingTo, growthBlocked, useDisks } from "@/lib/storage";
 
 type Filter = "all" | "in-use" | "available" | "pending";
@@ -44,6 +45,11 @@ export function DiskSize({ d }: { d: Disk }) {
   );
 }
 
+/** A disk's row menu: the actions of its page. */
+function DiskRowMenu({ d, can }: { d: Disk; can: Can }) {
+  return <ObjectRowMenu name={d.metadata?.name ?? ""} set={useDiskActions(d, can)} />;
+}
+
 /** DiskList is the project's disks, with New disk. */
 export function DiskList() {
   const project = useProjectName();
@@ -51,8 +57,8 @@ export function DiskList() {
   const disks = { items, loading, error, refetch };
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
-  // New disk shows only once the caller is known to hold storage.disks.apply.
-  const createPerm = useCan({ level: "project", name: project }, ["storage.disks.apply"]);
+  // One answer for New disk and every row's menu; New disk shows only once storage.disks.apply is known to be held.
+  const createPerm = useDiskCan(project);
   const canCreate = createPerm.can("storage.disks.apply");
   const rows = items.filter((d) => filters.find((f) => f.id === filter)!.match(d) && (!query || d.metadata?.name.includes(query)));
 
@@ -120,6 +126,7 @@ export function DiskList() {
                     <span className="shrink-0 text-right">
                       <DiskState d={d} />
                     </span>
+                    <DiskRowMenu d={d} can={createPerm.can} />
                   </li>
                 );
               })}
@@ -136,6 +143,7 @@ export function DiskList() {
                   <Th>Used as</Th>
                   <Th>Node</Th>
                   <Th>Created</Th>
+                  <Th className="w-10 px-0" />
                 </tr>
               </thead>
               <tbody>
@@ -164,10 +172,13 @@ export function DiskList() {
                         {d.status?.node || <span className="font-sans text-subtle">not placed yet</span>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">{date(d.metadata?.createTime)?.toISOString().slice(0, 10)}</td>
+                      <td className="px-2 py-2.5">
+                        <DiskRowMenu d={d} can={createPerm.can} />
+                      </td>
                     </tr>
                   );
                 })}
-                {rows.length === 0 && <NoMatch noun="disk" colSpan={6} />}
+                {rows.length === 0 && <NoMatch noun="disk" colSpan={7} />}
               </tbody>
             </table>
           </Card>

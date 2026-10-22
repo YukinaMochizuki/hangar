@@ -15,8 +15,9 @@ import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { MachineActions, MachineRowMenu } from "@/components/machine-actions";
-import { containerView } from "@/lib/machines";
+import { MachineActions, MachineRowMenu, useMachineActions } from "@/components/machine-actions";
+import { containerView, type MachineView } from "@/lib/machines";
+import { useMachineCan } from "@/lib/permissions";
 import { EditMachine } from "@/pages/edit-machine";
 import { fakeApi, never, polyfillDialog, withApi } from "@/test/harness";
 
@@ -113,6 +114,16 @@ function api(f: Fake = {}) {
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [{ metadata: { name: "web" }, spec: { network: "default" } }] }) });
     r.service(ImageService, { listImages: () => ({ items: [create(ImageSchema, { metadata: { name: "ubuntu-24.04" }, spec: { os: "ubuntu", version: "24.04" } })] }) });
   });
+}
+
+/** A machine's page head: its actions as the page makes them, by the answer the page asks. */
+function Head({ m }: { m: MachineView }) {
+  return <MachineActions set={useMachineActions(m, useMachineCan("demo").can)} />;
+}
+
+/** A machine's row menu, by the answer its list asks. */
+function Row({ m }: { m: MachineView }) {
+  return <MachineRowMenu m={m} can={useMachineCan("demo").can} />;
 }
 
 const applyButton = () => screen.getByRole("button", { name: /Apply changes|No change|Applying/ }) as HTMLButtonElement;
@@ -350,9 +361,8 @@ describe("Edit and Resize on the machine's page and its row", () => {
 
   it("show Edit and Resize only when the kind's apply permission is held", async () => {
     const a = api({ perms: () => ["compute.virtualmachines.apply"] });
-    render(<MachineActions m={m()} />, { wrapper: withApi(a) });
+    render(<Head m={m()} />, { wrapper: withApi(a) });
     await waitFor(() => expect(a.calls).toContain("TestPermissions"));
-    await screen.findByRole("button", { name: /Start/ });
     // The answer came, and named only the VM's permission.
     await waitFor(() =>
       expect(
@@ -364,33 +374,35 @@ describe("Edit and Resize on the machine's page and its row", () => {
     );
     expect(screen.queryByRole("link", { name: /Edit/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /Resize/ })).toBeNull();
+    // Start applies the container too, so it goes with them.
+    expect(screen.queryByRole("button", { name: /Start/ })).toBeNull();
     cleanup();
-    render(<MachineActions m={m()} />, { wrapper: withApi(api()) });
+    render(<Head m={m()} />, { wrapper: withApi(api()) });
     expect((await screen.findByRole("link", { name: /Edit/ })).getAttribute("href")).toBe("/projects/demo/containers/web/edit");
     expect(screen.getByRole("button", { name: /Resize/ })).toBeTruthy();
   });
 
-  it("put Edit in the row's menu only where it may be used", () => {
-    render(<MachineRowMenu m={m()} />, { wrapper: withApi(api()) });
-    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
-    expect(screen.queryByRole("menuitem", { name: /Edit/ })).toBeNull();
+  it("put Edit in the row's menu only where it may be used, and nothing that changes a machine being deleted", async () => {
+    render(<Row m={m()} />, { wrapper: withApi(api({ perms: () => ["compute.virtualmachines.apply"] })) });
+    // With no permission of its kind held, the row has no menu at all.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Actions for web" })).toBeNull());
     cleanup();
-    render(<MachineRowMenu m={m()} mayEdit />, { wrapper: withApi(api()) });
-    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Edit/ }));
+    render(<Row m={m()} />, { wrapper: withApi(api()) });
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for web" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Edit$/ }));
     expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/containers/$name/edit", params: { project: "demo", name: "web" } });
     cleanup();
-    render(<MachineRowMenu m={{ ...m(), deleting: true }} mayEdit />, { wrapper: withApi(api()) });
-    fireEvent.click(screen.getByRole("button", { name: "Actions for web" }));
-    expect(screen.getByRole("menuitem", { name: /Delete/ })).toBeTruthy();
-    expect(screen.queryByRole("menuitem", { name: /Edit/ })).toBeNull();
+    render(<Row m={{ ...m(), deleting: true }} />, { wrapper: withApi(api({ perms: () => [...applyPerms, "compute.containers.delete"] })) });
+    fireEvent.click(await screen.findByRole("button", { name: "Actions for web" }));
+    expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
+    expect(screen.getByText("Being deleted: nothing to change.")).toBeTruthy();
   });
 });
 
 describe("Resize", () => {
   async function openResize(f: Fake = {}) {
     const a = api(f);
-    render(<MachineActions m={containerView(web(), undefined)} />, { wrapper: withApi(a) });
+    render(<Head m={containerView(web(), undefined)} />, { wrapper: withApi(a) });
     fireEvent.click(await screen.findByRole("button", { name: /Resize/ }));
     await screen.findByRole("radio", { name: "Size S" });
     return a;
@@ -416,7 +428,7 @@ describe("Resize", () => {
   it("says a running container restarts", async () => {
     const running = web();
     running.spec!.runState = ContainerRunState.RUNNING;
-    render(<MachineActions m={containerView(running, undefined)} />, { wrapper: withApi(api()) });
+    render(<Head m={containerView(running, undefined)} />, { wrapper: withApi(api()) });
     fireEvent.click(await screen.findByRole("button", { name: /Resize/ }));
     expect(await screen.findByText(/Resizing restarts the container\./)).toBeTruthy();
   });

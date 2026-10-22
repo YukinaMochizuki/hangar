@@ -54,9 +54,14 @@ export function useDeclarations(project: string): { items: Declaration[]; machin
   return { items: m.items.flatMap(declarationsOf), machines: m.items, loading: m.loading, error: m.error, refetch: m.refetch };
 }
 
+/** The share controls' permissions, asked of TestPermissions at the project as one question. */
+export function useShareCan(project: string) {
+  return useCan({ level: "project", name: project }, [sharePerms.apply, sharePerms.delete]);
+}
+
 /** Which share controls the caller may use in the project; none while the answer is unknown or failed. */
 export function useSharePerms(project: string) {
-  const perm = useCan({ level: "project", name: project }, [sharePerms.apply, sharePerms.delete]);
+  const perm = useShareCan(project);
   return { canApply: perm.can(sharePerms.apply), canDelete: perm.can(sharePerms.delete), known: perm.known };
 }
 

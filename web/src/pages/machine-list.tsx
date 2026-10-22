@@ -13,7 +13,7 @@ import { buttonVariants, Card, SizeBadge, StatusDot, phaseLabel } from "@/compon
 import { cn } from "@/lib/cn";
 import { machinePath, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
-import { useMayCreateMachines } from "@/lib/permissions";
+import { machinePermKey, machinePerms, useMachineCan } from "@/lib/permissions";
 import { formatNumber } from "@/lib/quantity";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
@@ -62,9 +62,9 @@ export function MachineList({ kind }: { kind: MachineKind }) {
   const noun = kind === "Container" ? "container" : "virtual machine";
   const rows = items.filter((m) => filters.find((f) => f.id === filter)!.match(m) && (!query || m.name.includes(query)));
 
-  // New, and a row's Edit, show only once the caller is known to hold the kind's apply permission.
-  const may = useMayCreateMachines(project);
-  const mayApply = may[kind === "Container" ? "container" : "vm"];
+  // One answer for New and every row's menu; New shows only once the kind's apply permission is known to be held.
+  const { can } = useMachineCan(project);
+  const mayApply = can(machinePerms[machinePermKey(kind)]);
   const newLink = mayApply && (
     <Link
       to="/projects/$project/new"
@@ -131,7 +131,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                   <span className="shrink-0 text-right">
                     <MachineStatusCell m={m} />
                   </span>
-                  <MachineRowMenu m={m} mayEdit={mayApply} />
+                  <MachineRowMenu m={m} can={can} />
                 </li>
               ))}
               {rows.length === 0 && <NoMatch noun={noun} />}
@@ -182,7 +182,7 @@ export function MachineList({ kind }: { kind: MachineKind }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">{m.created?.toISOString().slice(0, 10)}</td>
                       <td className="px-2 py-2.5">
-                        <MachineRowMenu m={m} mayEdit={mayApply} />
+                        <MachineRowMenu m={m} can={can} />
                       </td>
                     </tr>
                   );
