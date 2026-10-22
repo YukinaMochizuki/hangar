@@ -3,7 +3,7 @@
 // docs/decisions/console-design.md says what it does.
 
 import { useNavigate } from "@tanstack/react-router";
-import { ArrowLeftRight, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
+import { ArrowLeftRight, AtSign, Box, Building2, Disc3, FolderKanban, Folders, Globe, HardDrive, KeyRound, Network, Plus, Server, ShieldCheck, Terminal, User, Waypoints } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { NewProjectDialog, ProjectPicker, createProject } from "@/components/project-picker";
 import { platformPages, projectPages, tenantPages, type PageSection } from "@/components/pages-nav";
@@ -11,6 +11,7 @@ import { PaletteView, type Entry, type Section, type SourceState } from "@/compo
 import type { Place } from "@/components/shell";
 import { phaseLabel } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
+import { domainOf, domainPerms, domainState, useCustomDomains } from "@/lib/custom-domains";
 import { perms as credentialPerms, useSecrets, useServiceTokens, useTokenRoles } from "@/lib/credentials";
 import { useMachines, type ListOpts } from "@/lib/machines";
 import { roleLabel, useMembers, type Scope } from "@/lib/members";
@@ -304,12 +305,29 @@ function useTenantModel(tenant: string, hands: Hands): Model {
   const members = useMemberSection({ level: "tenant", name: tenant }, () => go(`/tenants/${tenant}/members`));
   const common = useCommonActions(places.tenantNames, hands);
   const { tenantName } = useProjects(cached);
+  const domains = useCustomDomains(tenant, cached);
+  const { can } = useCan({ level: "tenant", name: tenant }, [domainPerms.apply]);
+  const newDomain: Entry[] = can(domainPerms.apply)
+    ? [{ id: "new:custom domain", icon: Plus, title: "New custom domain", run: () => go(`/tenants/${tenant}/new/custom-domain`) }]
+    : [];
+  const domainSection: Section = {
+    key: "custom-domains",
+    title: "Custom domains",
+    entries: domains.items.map((d) => ({
+      id: `custom-domain:${nameOf(d)}`,
+      icon: AtSign,
+      title: domainOf(d),
+      id2: nameOf(d),
+      detail: domainState(d).label,
+      run: () => go(`/tenants/${tenant}/domains/${nameOf(d)}`),
+    })),
+  };
   return {
-    always: [{ key: "actions", title: "Actions", entries: common }, pageEntries(tenantPages(tenant), go, platform)],
-    searched: [members.section, ...places.sections],
-    sources: [...members.source, ...places.source],
-    noMatch: `${tenantName(tenant)}'s members, the projects and tenants, or the pages`,
-    scopeNote: `Members of ${tenantName(tenant)}, projects, tenants and pages`,
+    always: [{ key: "actions", title: "Actions", entries: [...newDomain, ...common] }, pageEntries(tenantPages(tenant), go, platform)],
+    searched: [domainSection, members.section, ...places.sections],
+    sources: [...sourceOf("custom-domains", "custom domains", { ...domains, held: domains.items.length > 0 }), ...members.source, ...places.source],
+    noMatch: `${tenantName(tenant)}'s custom domains and members, the projects and tenants, or the pages`,
+    scopeNote: `Custom domains and members of ${tenantName(tenant)}, projects, tenants and pages`,
   };
 }
 
