@@ -145,7 +145,12 @@ Every page is behind `AccountService.WhoAmI`:
 The project is in the path, `/projects/<project>/…`, so a link names its
 project; `/` opens the project used last, or the first one. The console
 shows only what works. The sidebar lists only pages that exist, a kind
-joining it when its page does.
+joining it when its page does. Beside each of a project's kinds it counts
+what the project holds, from the kind's own list; none, or a list not
+loaded or not the caller's to read, shows no number. Images (the
+platform's) and Members (whose list holds only the project's own
+bindings) are not counted. The Overview counts nothing the sidebar does:
+it shows the project's usage against its limits.
 
 ### The command palette
 

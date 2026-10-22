@@ -13,11 +13,10 @@ import { Notice } from "@/components/notice";
 import { Skeleton } from "@/components/states";
 import { errorMessage, signOut } from "@/lib/api";
 import { cn } from "@/lib/cn";
-import { useMachines } from "@/lib/machines";
 import { usePrefs, type ThemePref } from "@/lib/prefs";
+import { useProjectCounts } from "@/lib/project-counts";
 import { projectLabel, rememberProject, useProjects } from "@/lib/projects";
 import { useMember } from "@/lib/session";
-import { useDisks } from "@/lib/storage";
 
 type NavItem = { label: string; icon: LucideIcon; to: string; count?: number };
 
@@ -178,14 +177,12 @@ export function MemberFooter() {
 }
 
 function ProjectSidebar({ project }: { project: string }) {
-  const containers = useMachines(project, "Container");
-  const vms = useMachines(project, "VirtualMachine");
-  const disks = useDisks(project);
+  const counts = useProjectCounts(project);
   const base = `/projects/${project}`;
-  const count = (l: { loading: boolean; error: unknown; items: unknown[] }) => (l.loading || l.error ? undefined : l.items.length);
-  const counts: Record<string, number | undefined> = { Containers: count(containers), "Virtual machines": count(vms), Disks: count(disks) };
-  // Only pages that exist are listed; a kind joins when its page does.
-  const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] })) }));
+  // Only pages that exist are listed; a kind joins when its page does. A
+  // kind with none shows no count, so the numbers that stand out are the
+  // kinds the project holds.
+  const nav: NavSection[] = projectPages(project).map((s) => ({ ...s, items: s.items.map((i) => ({ ...i, count: counts[i.label] || undefined })) }));
   return <SidebarFrame place={{ kind: "project", name: project }} base={base} nav={nav} />;
 }
 
