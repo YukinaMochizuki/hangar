@@ -19,6 +19,9 @@ import (
 type systemd interface {
 	// start starts a transient service and waits for its job.
 	start(ctx context.Context, name string, props []sd.Property) error
+	// slice makes a transient slice with a description and props, or sets
+	// props on the one loaded already.
+	slice(ctx context.Context, name, description string, props []sd.Property) error
 	// stop stops a unit and waits for its job; stopping what is not
 	// loaded is not an error.
 	stop(ctx context.Context, name string) error
@@ -69,6 +72,9 @@ func baseProps(spec driver.VMSpec, argv []string, restart string, stopTimeout ti
 		// Restart=on-failure would never restart.
 		sd.PropExecStart(argv, false),
 		sd.PropType("exec"),
+		// The VMs share their slice's CPUs by memory.
+		sd.PropSlice(machinesSlice),
+		property("CPUWeight", cpuWeight(spec)),
 		property("Restart", restart),
 		property("RestartUSec", usec(restartFirst)),
 		property("RestartSteps", uint32(restartSteps)),
@@ -401,6 +407,25 @@ func (s *dbusSystemd) start(ctx context.Context, name string, props []sd.Propert
 	}
 	results := make(chan string, 1)
 	if _, err := c.StartTransientUnitContext(ctx, name, "fail", props, results); err != nil {
+		return err
+	}
+	return job(ctx, name, results)
+}
+
+func (s *dbusSystemd) slice(ctx context.Context, name, description string, props []sd.Property) error {
+	c, err := s.connect(ctx)
+	if err != nil {
+		return err
+	}
+	results := make(chan string, 1)
+	_, err = c.StartTransientUnitContext(ctx, name, "fail", append([]sd.Property{sd.PropDescription(description)}, props...), results)
+	var e dbus.Error
+	if errors.As(err, &e) && e.Name == "org.freedesktop.systemd1.UnitExists" {
+		// From an earlier run of the agent: its properties may have
+		// changed since, as when the CPUs kept for the host have.
+		return c.SetUnitPropertiesContext(ctx, name, true, props...)
+	}
+	if err != nil {
 		return err
 	}
 	return job(ctx, name, results)

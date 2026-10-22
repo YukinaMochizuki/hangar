@@ -280,6 +280,13 @@ func newHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 // openHypervisor is newHypervisor, for the caller to close.
 func openHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 	t.Helper()
+	return openHypervisorOn(t, grace, nil)
+}
+
+// openHypervisorOn is openHypervisor with the VMs kept to cpus, every CPU
+// when it is empty.
+func openHypervisorOn(t *testing.T, grace time.Duration, cpus []int) *chvm.Hypervisor {
+	t.Helper()
 	in := vmtest.Artifacts()
 	ch, err := exec.LookPath("cloud-hypervisor")
 	if err != nil {
@@ -292,6 +299,7 @@ func openHypervisor(t *testing.T, grace time.Duration) *chvm.Hypervisor {
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
 		Firmware: diskimgtest.Firmware(t), FirmwareStopGrace: grace,
+		MachineCPUs: cpus,
 	})
 	if err != nil {
 		t.Fatal(err)

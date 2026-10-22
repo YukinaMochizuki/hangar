@@ -157,6 +157,14 @@ services_reserved_disk() {
 	printf '%dGi\n' $(($(gib_of "$HANGAR_IMAGES_QUOTA") + $(gib_of "$HANGAR_VMS_QUOTA") + $(gib_of "$MON_TSDB_QUOTA") + SERVICES_IMAGE_CACHE_HIGH))
 }
 
+# services_reserved_cpu_flag is the agent's --reserved-cpu, when the host env
+# file sets HANGAR_RESERVED_CPU, which lib.sh checked is a whole number.
+services_reserved_cpu_flag() {
+	if [ -n "${HANGAR_RESERVED_CPU:-}" ]; then
+		printf -- ' --reserved-cpu %s' "$HANGAR_RESERVED_CPU"
+	fi
+}
+
 # services_placement_args sets SERVICES_PLACEMENT to the agent's placement
 # flags for what the host env file sets, each only when it is set
 # (docs/decisions/machine-placement.md).
@@ -592,7 +600,7 @@ ExecStartPre=/usr/bin/mountpoint -q /var/lib/hangar/vms
 ExecStartPre=/usr/bin/mountpoint -q /var/log/hangar/nat
 # The default paths: Cloud Hypervisor, the guest kernel and initramfs under
 # /usr/local, the pool's hangar dataset, /var/lib/hangar/images and vms.
-ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --image-cache-high ${SERVICES_IMAGE_CACHE_HIGH}Gi --reserved-memory $HANGAR_RESERVED_MEMORY --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)$(services_metrics_flag hangar-node "$SERVICES_NODE_METRICS")
+ExecStart=/usr/local/bin/hangar-node --drivers=host --name $HANGAR_NODE_NAME --uplink $HANGAR_UPLINK --public-ipv4 $HANGAR_PUBLIC_IPV4 --public-ipv6 ${HANGAR_IPV6_ADDR%/*} --public-ipv6-prefix $(ipv6_prefix "$HANGAR_IPV6_ADDR") --reserved-disk $(services_reserved_disk) --image-cache-high ${SERVICES_IMAGE_CACHE_HIGH}Gi --reserved-memory $HANGAR_RESERVED_MEMORY$(services_reserved_cpu_flag) --edge-dial-socket $SERVICES_EDGE_DIAL --edge-user $SERVICES_EDGE_USER --nat-log-dir /var/log/hangar/nat$(services_placement_flags)$(services_metrics_flag hangar-node "$SERVICES_NODE_METRICS")
 Restart=always
 RestartSec=2
 # Each VM is a transient unit of its own (hangar-vm-*.service), outside this

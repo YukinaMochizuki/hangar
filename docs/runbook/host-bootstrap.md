@@ -270,7 +270,10 @@ with `--release DIR`. `--only <step>` runs a single step
     of both quotas, Prometheus's dataset's quota (`MON_TSDB_QUOTA` in
     `deploy/host/lib.sh`) and those 20 GiB, the bases of those images being on
     the pool, `--reserved-memory HANGAR_RESERVED_MEMORY` (the ARC cap
-    plus the host's own overhead), `--edge-dial-socket
+    plus the host's own overhead), `--reserved-cpu HANGAR_RESERVED_CPU`
+    only when the host env file sets it (CPUs no VM runs on, kept for the
+    host's services, whole cores first; the agent gives the VMs' slice,
+    `hangar.slice`, the others, `docs/decisions/node-agent.md`), `--edge-dial-socket
     /run/hangar/edge-dial.sock --edge-user hangar-edge` (the agent makes
     that socket, root's and group `hangar-edge`'s, 0660, and takes
     `hangar-edge`'s dials alone), `--region`, `--site`, `--chassis`,
@@ -1197,6 +1200,32 @@ The hypervisor driver (`internal/node/driver/chvm`,
 - The binary `hangar-node` stays where it was when VMs were started: their
   units run it as their launcher, by the path the agent ran from. Replacing
   it in place upgrades every VM's launcher at its next start.
+- cgroup v2 with the `cpu` and `cpuset` controllers, as Ubuntu 24.04 has:
+  the agent makes `hangar.slice` for the VMs, weighted against
+  `system.slice` and kept off the `--reserved-cpu` CPUs, and runs each VM
+  in it at a weight of its memory (`docs/decisions/node-agent.md`).
+
+### Upgrading to a hangar with `hangar.slice`
+
+VMs started by an older agent keep running in `system.slice` after the
+upgrade: there they share the host services' weight, rather than one of
+their memory, and may run on the reserved CPUs. Each moves into
+`hangar.slice` when it is next started. List those left behind:
+
+```sh
+systemctl list-units --plain --no-legend 'hangar-vm-*.service' |
+  awk '{ print $1 }' | xargs -r -n1 systemctl show -P Id,Slice
+```
+
+and restart each at a time its tenant can take: `hangar stop` then
+`hangar start` on its container or VM (a restart under its policy keeps the
+unit, and so its slice).
+
+The same upgrade holds machines to shape rules (`docs/decisions/machine-sizes.md`),
+and sizes to them too: a size stored before that breaks them is no longer
+offered by the console, and applying it again is refused. Check them with
+`hangar get machinesizes`, and apply each again within the rules, or delete
+it, as root.
 
 ## Finding the machine behind an abuse report
 

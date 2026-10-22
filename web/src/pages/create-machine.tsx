@@ -55,7 +55,7 @@ import {
 } from "@/lib/machine-edit";
 import { manifestOf, toYaml } from "@/lib/manifest";
 import { useMachines } from "@/lib/machines";
-import { sizeOf, useMachineSizes, type Size } from "@/lib/machine-sizes";
+import { cpuRange, memoryLabel, memoryQuantity, minDiskGi, shapeProblem, sizeOf, useMachineSizes, withinRules, type Size } from "@/lib/machine-sizes";
 import { isStale } from "@/lib/network-actions";
 import { useOverQuota } from "@/lib/over-quota";
 import { formatNumber, quantityCPU, quantityGiB, wholeGiB } from "@/lib/quantity";
@@ -193,6 +193,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const [image, setImage] = useState(initial.image);
   const [vmImage, setVmImage] = useState(baseRoot?.case === "fromImage" ? (baseRoot.value.image?.name ?? "") : "");
   const [size, setSize] = useState(initialSize);
+  // A shape of the person's own, as typed, once Custom is chosen; null while
+  // a size is.
+  const [custom, setCustom] = useState<{ cpu: string; memGi: string } | null>(null);
   const [network, setNetwork] = useState(initial.net.network);
   const [groups, setGroups] = useState<string[]>(initial.net.groups);
   // Interfaces after the first: an edited machine's own, and each added for a file share on its network, in the network's default group.
@@ -223,43 +226,78 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const existing = useMachines(project, kind === "container" ? "Container" : "VirtualMachine");
   const overQuota = useOverQuota(project);
   const machineSizes = useMachineSizes();
+  // The sizes offered: those a machine may have under the shape rules.
+  const offered = machineSizes.sizes.filter(withinRules);
   const shares = useFileShares(project);
   const sharePerm = useCan({ level: "project", name: project }, [sharePerms.apply]);
   const mayApplyShares = sharePerm.known ? sharePerm.can(sharePerms.apply) : undefined;
 
   const chosenImage = vmImage || images.data?.items[0]?.metadata?.name || "";
 
-  // An edited machine's own size: the listed size it matches, or Custom,
+  // An edited machine's own size: the listed size it matches, or Current,
   // with its quantities as written, so it is kept unless another is chosen.
   const res = baseC?.spec?.resources ?? baseV?.spec?.resources;
   const defaults = baseC ? containerDefaults : vmDefaults;
-  const currentMatch = edit ? sizeOf({ cpu: quantityCPU(res?.cpu || defaults.cpu), memoryGi: quantityGiB(res?.memory || defaults.memory) }, machineSizes.sizes) : undefined;
+  const currentMatch = edit ? sizeOf({ cpu: quantityCPU(res?.cpu || defaults.cpu), memoryGi: quantityGiB(res?.memory || defaults.memory) }, offered) : undefined;
   const current: Size | undefined = edit && {
     name: currentMatch?.name ?? "",
-    label: currentMatch?.label ?? "Custom",
+    label: currentMatch?.label ?? "Current",
     order: -1,
     cpu: quantityCPU(res?.cpu || defaults.cpu),
     memoryGi: quantityGiB(res?.memory || defaults.memory),
     diskGi: 0,
     resources: { cpu: res?.cpu ?? "", memory: res?.memory ?? "", disk: "" },
   };
-  const chosen = machineSizes.sizes.find((z) => z.name === size);
+  const chosen = offered.find((z) => z.name === size);
   // The size asked for, if the platform lists it, or else its first; an
   // edit's own until another is chosen.
-  const s: Size | undefined = edit ? (chosen && chosen.name !== currentMatch?.name ? chosen : current) : (chosen ?? machineSizes.sizes[0]);
+  const picked: Size | undefined = edit ? (chosen && chosen.name !== currentMatch?.name ? chosen : current) : (chosen ?? offered[0]);
   const isCurrent = (z: Size) => !!edit && z.name === currentMatch?.name;
+  // With no size to pick, a new machine's shape is the person's own.
+  const noSizes = !machineSizes.loading && !machineSizes.error && offered.length === 0 && !current;
+  const customFields = custom ?? (noSizes ? { cpu: "1", memGi: "1" } : null);
+  const customCPU = Number(customFields?.cpu.trim() || NaN);
+  const customMiB = Number(customFields?.memGi.trim() || NaN) * 1024;
+  const customProblem = customFields ? shapeProblem(customCPU, customMiB) : undefined;
+  const customSize: Size | undefined = customFields
+    ? {
+        name: "",
+        label: "Custom",
+        order: -2,
+        cpu: customCPU,
+        memoryGi: customMiB / 1024,
+        // The disk follows the size chosen before, as the fields start from it.
+        diskGi: picked?.diskGi ?? 0,
+        resources: { cpu: customFields.cpu.trim(), memory: Number.isFinite(customMiB) ? memoryQuantity(customMiB) : "", disk: "" },
+      }
+    : undefined;
+  const s = customSize ?? picked;
+  const customRange = Number.isInteger(customMiB) && customMiB > 0 ? cpuRange(customMiB) : undefined;
+  // Custom starts from the shape chosen before it.
+  const pickCustom = () => {
+    if (custom) return;
+    setCustom({ cpu: String(picked?.cpu ?? 1), memGi: String(picked?.memoryGi ?? 1) });
+  };
+  const pickSize = (name: string | undefined) => {
+    setCustom(null);
+    setSize(name);
+  };
 
-  // The smallest disk: on create, the size's, and for a VM its image's if
-  // larger; on an edit, the disk the placed machine holds, or before it is
-  // placed the disk the spec asks for, in whole GiB rounded up.
+  // The smallest disk: on create, 2 GiB, or for a VM its image's if larger;
+  // on an edit, the disk the placed machine holds, or before it is placed
+  // the disk the spec asks for, in whole GiB rounded up. A size's disk is
+  // where the field starts, never a minimum.
   const imageFloor = kind === "vm" ? imageFloorGiB(images.data?.items.find((i) => i.metadata?.name === chosenImage)) : 1;
-  const floorOf = (z: Size) => Math.max(Math.ceil(z.diskGi), imageFloor);
+  const floor = Math.max(minDiskGi, imageFloor);
+  const kindDefaults = kind === "container" ? containerDefaults : vmDefaults;
+  const startOf = (z: Size) => Math.max(z.diskGi > 0 ? Math.ceil(z.diskGi) : wholeGiB(kindDefaults.disk), floor);
   const editFloor = initial.diskWholeGi !== undefined ? (edit?.placedDiskGi ?? initial.diskWholeGi) : undefined;
-  const minDisk = editFloor ?? (s ? floorOf(s) : imageFloor);
-  const minBy = s && imageFloor > Math.ceil(s.diskGi) ? `The image ${chosenImage}` : `Size ${s?.label ?? ""}`;
+  const minDisk = editFloor ?? floor;
+  const diskStart = editFloor ?? (s ? startOf(s) : floor);
+  const byImage = imageFloor > minDiskGi;
   // What the field holds, typed or followed; the manifest shows it as it
   // is, refused or not.
-  const diskTyped = (diskText ?? String(minDisk)).trim();
+  const diskTyped = (diskText ?? String(diskStart)).trim();
   const diskGi = diskTyped === "" ? NaN : Number(diskTyped);
   // An edit's disk is checked only once the person changes it: the stored
   // one, whole GiB or not, the API took, and it is sent back as it is.
@@ -271,7 +309,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     : diskGi < minDisk
       ? editFloor !== undefined
         ? `The disk is ${minDisk} GiB and never shrinks; ${diskGi} GiB is less.`
-        : `${minBy} needs a disk of at least ${minDisk} GiB; ${diskGi} GiB is less.`
+        : byImage
+          ? `The image ${chosenImage} needs a disk of at least ${minDisk} GiB; ${diskGi} GiB is less.`
+          : `A disk is at least ${minDisk} GiB; ${diskGi} GiB is less.`
       : undefined;
   const diskQuantity = diskTyped === "" ? "" : `${diskTyped}Gi`;
   const groupsHere = (securityGroups.data?.items ?? []).filter((g) => g.spec?.network === network).map((g) => g.metadata?.name ?? "");
@@ -347,9 +387,10 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   }
   const changes = edit ? changesOf(edit.base, obj) : [];
 
-  // A size's card is checked with its own smallest disk, never the one
-  // typed: a raised disk's overage is the Disk field's to state. An edit
-  // is checked on what it adds to the machine, never its whole size.
+  // A size's card is checked with the disk the field starts at for it,
+  // never the one typed: a raised disk's overage is the Disk field's to
+  // state. An edit is checked on what it adds to the machine, never its
+  // whole size.
   const delta = edit ? quotaDelta(edit.base, obj) : undefined;
   const over = delta
     ? overQuota({ machines: 0, cpu: delta.cpu, memoryGi: delta.memoryGi, diskGi: diskProblem ? 0 : delta.diskGi })
@@ -357,7 +398,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       ? overQuota({ machines: 1, cpu: s.cpu, memoryGi: s.memoryGi, diskGi: diskProblem ? minDisk : diskGi })
       : [];
   const cardOver = (z: Size) =>
-    current ? overQuota({ machines: 0, cpu: z.cpu - current.cpu, memoryGi: z.memoryGi - current.memoryGi, diskGi: 0 }) : overQuota({ machines: 1, cpu: z.cpu, memoryGi: z.memoryGi, diskGi: floorOf(z) });
+    current ? overQuota({ machines: 0, cpu: z.cpu - current.cpu, memoryGi: z.memoryGi - current.memoryGi, diskGi: 0 }) : overQuota({ machines: 1, cpu: z.cpu, memoryGi: z.memoryGi, diskGi: startOf(z) });
   const diskOver = over.find((o) => o.key === "disk");
 
   const machineYaml = toYaml(manifestOf(obj, kind === "container" ? "Container" : "VirtualMachine"));
@@ -391,6 +432,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   }
   if (!edit && kind === "vm" && !chosenImage) problems.push("No image is chosen.");
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
+  if (customProblem) problems.push(customProblem);
   if (s && diskProblem && !baseV) problems.push(diskProblem);
   const nameProblem = !edit && !nameCheck.ok && name !== "" && !existing.loading && !existing.error ? nameCheck.reason : undefined;
 
@@ -554,7 +596,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             )}
           </Section>
 
-          <Section n={3} title="Size" hint="Defined by the platform">
+          <Section n={3} title="Size" hint="A preset of the platform's, or your own">
             {machineSizes.loading ? (
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 {[0, 1, 2, 3].map((i) => (
@@ -563,20 +605,19 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               </div>
             ) : machineSizes.error ? (
               <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
-            ) : machineSizes.sizes.length === 0 && !current ? (
-              <p className="text-[13px] text-muted">No machine sizes are defined on this platform.</p>
             ) : (
+              <>
               <div role="radiogroup" aria-label="Size" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[...(current && !currentMatch ? [current] : []), ...machineSizes.sizes].map((z) => {
+                {[...(current && !currentMatch ? [current] : []), ...offered].map((z) => {
                   const tooBig = cardOver(z).length > 0;
-                  const selected = z === current ? s === current : s === current ? isCurrent(z) : s?.name === z.name;
+                  const selected = !customFields && (z === current ? s === current : s === current ? isCurrent(z) : s?.name === z.name);
                   const own = z === current || isCurrent(z);
                   return (
                     <Choice
                       key={z === current ? "(current)" : z.name}
                       label={`Size ${z.label}`}
                       selected={selected}
-                      onClick={() => setSize(own ? undefined : z.name)}
+                      onClick={() => pickSize(own ? undefined : z.name)}
                       className={cn("p-4", tooBig && (selected ? "border-fail ring-fail [&>span:first-child]:bg-fail" : "opacity-60"))}
                     >
                       <div
@@ -600,14 +641,71 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                     </Choice>
                   );
                 })}
+                <Choice key="(custom)" label="Size Custom" selected={!!customFields} onClick={pickCustom} className="p-4">
+                  <div className="pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
+                  <div className="mt-4 text-[12.5px] text-muted">Your own vCPUs and memory</div>
+                </Choice>
               </div>
+              {customFields && (
+                <div className="mt-3 max-w-xl rounded-lg border bg-surface px-4 py-3">
+                  <div className="flex flex-wrap items-end gap-4">
+                    <label className="text-[13px] font-medium">
+                      Memory
+                      <span className="mt-1.5 flex items-center gap-2 font-normal">
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          min={0.25}
+                          step={0.25}
+                          value={customFields.memGi}
+                          onChange={(e) => setCustom({ ...customFields, memGi: e.target.value })}
+                          aria-label="Memory, GiB"
+                          aria-invalid={!!customProblem && customProblem.startsWith("Memory")}
+                          className="w-28 tabular"
+                        />
+                        <span className="text-[13px] text-muted">GiB</span>
+                      </span>
+                    </label>
+                    <label className="text-[13px] font-medium">
+                      vCPUs
+                      <span className="mt-1.5 flex items-center gap-2 font-normal">
+                        <Input
+                          type="number"
+                          inputMode="numeric"
+                          min={customRange?.lo ?? 1}
+                          max={customRange?.hi}
+                          step={1}
+                          value={customFields.cpu}
+                          onChange={(e) => setCustom({ ...customFields, cpu: e.target.value })}
+                          aria-label="vCPUs"
+                          aria-invalid={!!customProblem && !customProblem.startsWith("Memory")}
+                          className="w-24 tabular"
+                        />
+                      </span>
+                    </label>
+                  </div>
+                  {customProblem ? (
+                    <p className="mt-2 text-[12px] text-fail">{customProblem}</p>
+                  ) : customRange ? (
+                    <p className="mt-2 text-[12px] text-muted">
+                      {memoryLabel(customMiB)} of memory goes with{" "}
+                      {customRange.lo === customRange.hi ? `${customRange.lo} vCPU${customRange.lo === 1 ? "" : "s"}` : `${customRange.lo} to ${customRange.hi} vCPUs`}.
+                    </p>
+                  ) : null}
+                  {over.length > 0 && !customProblem && <p className="mt-1 text-[12px] font-medium text-fail">Over quota</p>}
+                  <p className="mt-1.5 text-[12px] text-subtle">
+                    Memory comes in steps of 256 MiB. Each vCPU goes with 512 MiB to 8 GiB of memory; one vCPU goes with any. Under load, a machine's share of the host's CPUs follows its memory.
+                  </p>
+                </div>
+              )}
+              </>
             )}
           </Section>
 
           <Section
             n={4}
             title="Disk"
-            hint={baseV ? undefined : editFloor !== undefined ? `At least ${editFloor} GiB; it never shrinks` : s ? `${minBy} needs at least ${minDisk} GiB` : undefined}
+            hint={baseV ? undefined : editFloor !== undefined ? `At least ${editFloor} GiB; it never shrinks` : byImage ? `The image ${chosenImage} needs at least ${minDisk} GiB` : `At least ${minDisk} GiB`}
           >
             {baseV ? (
               <Locked
@@ -640,7 +738,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                     inputMode="numeric"
                     min={minDisk}
                     step={1}
-                    value={diskText ?? String(minDisk)}
+                    value={diskText ?? String(diskStart)}
                     onChange={(e) => setDiskText(e.target.value)}
                     aria-label="Disk, GiB"
                     aria-invalid={!!diskProblem || !!diskOver}

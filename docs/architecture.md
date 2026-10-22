@@ -65,10 +65,12 @@ volume, binding the share to that node; the node runs the server on a
 zvol of the share's, keeps its export to the declaring machines'
 addresses, and lets nothing but their NFS reach it
 (`decisions/file-shares.md`). A global
-`MachineSize`, also the administrators' and read by all, is a template of
-cpu, memory and disk that clients fill a new machine's from, and that
-admission holds tenants' machines to; a machine does not record its size
-(`decisions/machine-sizes.md`). A `PublicEndpoint`
+`MachineSize`, also the administrators' and read by all, is a preset of
+cpu, memory and disk that clients fill a new machine's from; admission
+holds tenants' machines to shape rules, not to the presets, and a machine
+does not record its size (`decisions/machine-sizes.md`). Each VM's share
+of the host's CPUs under load follows its memory
+(`decisions/node-agent.md`). A `PublicEndpoint`
 exposes one port of a container or VM over HTTPS at
 `<endpoint>-<project>.hangarlab.dev`, private to those its tenant allows
 unless made public; a container's port marked `public` gets one. A

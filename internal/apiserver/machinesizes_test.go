@@ -152,7 +152,7 @@ func TestMachineSizeAdmission(t *testing.T) {
 		}
 	}
 	for name, ms := range map[string]*computev1alpha1.MachineSize{
-		"the smallest":          machineSize("tiny", "Tiny", "1", "128Mi", "1Gi", 0),
+		"the smallest":          machineSize("tiny", "Tiny", "1", "256Mi", "2Gi", 0),
 		"cpu in millicores":     machineSize("two", "Two", "2000m", "2Gi", "10Gi", 5),
 		"disk in a larger unit": machineSize("big", "Big", "16", "64Gi", "1Ti", 90),
 	} {

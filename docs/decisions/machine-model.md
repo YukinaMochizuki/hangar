@@ -96,12 +96,13 @@ Hypervisor directly, without Kata or Kubernetes.
   allows after a failed volume expansion. An unplaced machine has no disk
   yet, so its size can still go down. Sizes are capped at 8192 vCPUs (Cloud
   Hypervisor's limit), 4Ti of memory and 64Ti of disk.
-- Once the platform defines a `MachineSize`, a container's or VM's cpu and
-  memory must be those of one, and its disk (a container's `disk`, a VM's
-  `root_disk.from_image.size`, each 10Gi when empty) at least that size's;
-  a VM booting a Disk it names is checked for cpu and memory only. Only a
-  create, or an update that changes cpu, memory or disk, is checked, and not
-  for whoever may define sizes (`docs/decisions/machine-sizes.md`).
+- A container's or VM's shape keeps to the platform's rules: memory in
+  256Mi steps, 512Mi to 8Gi of it per vCPU (one vCPU always allowed), and
+  a disk (a container's `disk`, a VM's `root_disk.from_image.size`, each
+  10Gi when empty) of at least 2Gi; a VM booting a Disk it names is checked
+  for cpu and memory only. Only a create, or an update that changes cpu,
+  memory or disk, is checked, and not for whoever may define sizes
+  (`docs/decisions/machine-sizes.md`).
 - A scheduler in the apiserver places each machine on a ready, uncordoned node
   with room for its memory and its disk, preferring the most free memory.
   Memory and disk are the resources it reserves; vCPUs are shared. Root disks

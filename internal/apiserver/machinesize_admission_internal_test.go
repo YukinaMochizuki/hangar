@@ -11,14 +11,11 @@ import (
 	iamv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/iam/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 )
 
-// sizeList is how a refusal lists the sizes defineSizes makes.
-const sizeList = "small: 1 / 2Gi / 20Gi, large: 2 / 4Gi / 40Gi"
-
-// defineSizes makes two made-up sizes, as the system. The larger is applied
-// first, so the refusal's order is the sizes' own.
+// defineSizes makes two made-up sizes, as the system.
 func defineSizes(t *testing.T, s *Server, system context.Context) {
 	t.Helper()
 	for _, ms := range []*computev1alpha1.MachineSize{
@@ -44,161 +41,172 @@ func sizedVM(name, cpu, memory, rootSize string) *computev1alpha1.VirtualMachine
 	return vm
 }
 
-// wantSizeRefused checks err is the refusal of a machine of no size, which
-// lists the sizes, and holds want.
-func wantSizeRefused(t *testing.T, err error, want, what string) {
+// wantShapeRefused checks err is InvalidArgument holding want.
+func wantShapeRefused(t *testing.T, err error, want, what string) {
 	t.Helper()
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), sizeList) || !strings.Contains(err.Error(), want) {
-		t.Errorf("%s: got %v, want InvalidArgument with %q listing %q", what, err, want, sizeList)
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), want) {
+		t.Errorf("%s: got %v, want InvalidArgument with %q", what, err, want)
 	}
 }
 
-// TestNoMachineSizeRefusesNothing: until the platform defines a size, a
-// machine may have any resources.
-func TestNoMachineSizeRefusesNothing(t *testing.T) {
-	s, system, user := running(t)
-	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.backend(registry.Container).Apply(user, sizedCtr("odd", "8", "1Gi", "")); err != nil {
-		t.Errorf("a container of 8 vCPUs and 1Gi with no size defined: %v", err)
-	}
-	if _, err := s.backend(registry.VirtualMachine).Apply(user, sizedVM("odd", "8", "1Gi", "")); err != nil {
-		t.Errorf("a VM of 8 vCPUs and 1Gi with no size defined: %v", err)
-	}
-}
-
-// TestAMachineMustMatchASize: a tenant's machine has the cpu and memory of
-// a size, compared by value, and at least its disk.
-func TestAMachineMustMatchASize(t *testing.T) {
-	s, system, user := running(t)
-	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
-		t.Fatal(err)
-	}
-	defineSizes(t, s, system)
-	ctrs := s.backend(registry.Container)
-	for name, c := range map[string]*computev1alpha1.Container{
-		"cpu of no size":                      sizedCtr("c", "3", "4Gi", "40Gi"),
-		"memory of no size":                   sizedCtr("c", "2", "3Gi", "40Gi"),
-		"a lopsided ratio":                    sizedCtr("c", "8", "1Gi", "40Gi"),
-		"one size's cpu and another's memory": sizedCtr("c", "2", "2Gi", "40Gi"),
-		"the defaults":                        ctr("c"),
+func TestCPURange(t *testing.T) {
+	for _, c := range []struct {
+		memory uint64
+		lo, hi uint64
+	}{
+		{256 * quantity.MiB, 1, 1},
+		{512 * quantity.MiB, 1, 1},
+		{768 * quantity.MiB, 1, 1},
+		{1 * quantity.GiB, 1, 2},
+		{4 * quantity.GiB, 1, 8},
+		{8 * quantity.GiB, 1, 16},
+		{8*quantity.GiB + 256*quantity.MiB, 2, 16},
+		{12 * quantity.GiB, 2, 24},
+		{32 * quantity.GiB, 4, 64},
 	} {
-		_, err := ctrs.Apply(user, c)
-		wantSizeRefused(t, err, "are those of no machine size", "a container of "+name)
-	}
-	_, err := ctrs.Apply(user, sizedCtr("c", "1", "2Gi", ""))
-	wantSizeRefused(t, err, `spec.resources.disk 10Gi is below the 20Gi of machine size "small"`, "a small container on the default disk")
-	_, err = ctrs.Apply(user, sizedCtr("c", "1", "2Gi", "19Gi"))
-	wantSizeRefused(t, err, `spec.resources.disk 19Gi is below the 20Gi of machine size "small"`, "a small container on 19Gi")
-	for name, c := range map[string]*computev1alpha1.Container{
-		"a size as written":         sizedCtr("exact", "1", "2Gi", "20Gi"),
-		"a size in other units":     sizedCtr("units", "2000m", "4096Mi", "40960Mi"),
-		"a size with a larger disk": sizedCtr("roomy", "1", "2Gi", "30Gi"),
-		"a size's memory in bytes":  sizedCtr("bytes", "1", "2147483648", "20Gi"),
-	} {
-		if _, err := ctrs.Apply(user, c); err != nil {
-			t.Errorf("a container of %s: %v", name, err)
+		if lo, hi := cpuRange(c.memory); lo != c.lo || hi != c.hi {
+			t.Errorf("cpuRange(%s) = %d, %d, want %d, %d", quantity.FormatMemory(c.memory), lo, hi, c.lo, c.hi)
 		}
 	}
-
-	vms := s.backend(registry.VirtualMachine)
-	_, err = vms.Apply(user, sizedVM("v", "8", "1Gi", "40Gi"))
-	wantSizeRefused(t, err, "are those of no machine size", "a VM of a lopsided ratio")
-	_, err = vms.Apply(user, sizedVM("v", "", "", "40Gi"))
-	wantSizeRefused(t, err, "cpu 1 and memory 1024Mi are those of no machine size", "a VM of the defaults")
-	// An unstated root size is its default, 10Gi, and checked as one.
-	_, err = vms.Apply(user, sizedVM("v", "1", "2Gi", ""))
-	wantSizeRefused(t, err, `spec.root_disk.from_image.size 10Gi is below the 20Gi of machine size "small"`, "a small VM with no root size")
-	_, err = vms.Apply(user, sizedVM("v", "2", "4Gi", "39Gi"))
-	wantSizeRefused(t, err, `spec.root_disk.from_image.size 39Gi is below the 40Gi of machine size "large"`, "a large VM on 39Gi")
-	if _, err := vms.Apply(user, sizedVM("v", "2", "4096Mi", "40Gi")); err != nil {
-		t.Errorf("a VM of a size in other units: %v", err)
-	}
-	// A VM booting a Disk it names has that Disk's size, which is not
-	// checked; its cpu and memory are.
-	of := vmOfDisk("of-disk", "boot")
-	of.Spec.Resources = &computev1alpha1.VirtualMachineResources{Cpu: "1", Memory: "2Gi"}
-	if _, err := vms.Apply(user, of); err != nil {
-		t.Errorf("a small VM of a named disk: %v", err)
-	}
-	of.Spec.Resources.Cpu = "3"
-	_, err = vms.Apply(user, of)
-	wantSizeRefused(t, err, "are those of no machine size", "a VM of a named disk resized to 3 vCPUs")
 }
 
-// TestADiskRefusalNamesTheSmallestDisk: of the sizes whose cpu and memory a
-// machine has, the refusal names the one of the smallest disk, whatever the
-// order the sizes are listed in.
-func TestADiskRefusalNamesTheSmallestDisk(t *testing.T) {
-	s, system, user := running(t)
-	for _, ms := range []*computev1alpha1.MachineSize{
-		{Metadata: &metav1.ObjectMeta{Name: "a"}, Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "A", Cpu: "1", Memory: "2Gi", Disk: "40Gi", Order: 1}},
-		{Metadata: &metav1.ObjectMeta{Name: "b"}, Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "B", Cpu: "1", Memory: "2Gi", Disk: "20Gi", Order: 2}},
-	} {
-		if _, err := s.backend(registry.MachineSize).Apply(system, ms); err != nil {
+// TestAMachineKeepsToTheShapeRules: a tenant's machine has memory in 256Mi
+// steps, 512Mi to 8Gi of it per vCPU or one vCPU, and a root disk of at
+// least 2Gi, whether or not the platform defines any size, and whatever
+// disk a size has.
+func TestAMachineKeepsToTheShapeRules(t *testing.T) {
+	for _, withSizes := range []bool{false, true} {
+		s, system, user := running(t)
+		if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 			t.Fatal(err)
 		}
+		if withSizes {
+			defineSizes(t, s, system)
+		}
+		ctrs := s.backend(registry.Container)
+		for name, c := range map[string]struct {
+			ctr  *computev1alpha1.Container
+			want string
+		}{
+			"memory off the step":      {sizedCtr("c", "1", "300Mi", ""), "spec.resources.memory 300Mi is not a whole number of 256Mi steps"},
+			"memory below one step":    {sizedCtr("c", "1", "128Mi", ""), "spec.resources.memory 128Mi is not a whole number of 256Mi steps"},
+			"memory in bytes off step": {sizedCtr("c", "1", "1073741825", ""), "is not a whole number of 256Mi steps"},
+			"too many vCPUs":           {sizedCtr("c", "8", "1Gi", ""), "a machine of 1Gi of memory has 1 to 2 vCPUs, not 8"},
+			"two vCPUs on 768Mi":       {sizedCtr("c", "2", "768Mi", ""), "a machine of 768Mi of memory has 1 vCPU, not 2"},
+			"8 vCPUs on 256Mi":         {sizedCtr("c", "8", "256Mi", ""), "has 1 vCPU, not 8"},
+			"too few vCPUs":            {sizedCtr("c", "1", "32Gi", ""), "a machine of 32Gi of memory has 4 to 64 vCPUs, not 1"},
+			"a disk below 2Gi":         {sizedCtr("c", "1", "1Gi", "1Gi"), "spec.resources.disk 1Gi is below the minimum of 2Gi"},
+		} {
+			_, err := ctrs.Apply(user, c.ctr)
+			wantShapeRefused(t, err, c.want, "a container of "+name)
+		}
+		for name, c := range map[string]*computev1alpha1.Container{
+			"the defaults":                 ctr("defaults"),
+			"the smallest":                 sizedCtr("smallest", "1", "256Mi", "2Gi"),
+			"two vCPUs on 1Gi":             sizedCtr("two", "2", "1Gi", ""),
+			"8 vCPUs on 4Gi":               sizedCtr("eight", "8", "4Gi", ""),
+			"2 vCPUs on 16Gi":              sizedCtr("wide", "2", "16Gi", ""),
+			"other units":                  sizedCtr("units", "2000m", "1536Mi", "2048Mi"),
+			"a size's shape":               sizedCtr("preset", "1", "2Gi", "20Gi"),
+			"a size's cpu, a smaller disk": sizedCtr("preset-small", "1", "2Gi", "5Gi"),
+		} {
+			if _, err := ctrs.Apply(user, c); err != nil {
+				t.Errorf("sizes %v: a container of %s: %v", withSizes, name, err)
+			}
+		}
+
+		vms := s.backend(registry.VirtualMachine)
+		_, err := vms.Apply(user, sizedVM("v", "8", "1Gi", ""))
+		wantShapeRefused(t, err, "a machine of 1Gi of memory has 1 to 2 vCPUs, not 8", "a VM of 8 vCPUs and 1Gi")
+		if _, err := vms.Apply(user, sizedVM("v", "", "", "")); err != nil {
+			t.Errorf("sizes %v: a VM of the defaults: %v", withSizes, err)
+		}
+		// A VM booting a Disk it names has that Disk's size, which is not
+		// checked; its cpu and memory are.
+		of := vmOfDisk("of-disk", "boot")
+		of.Spec.Resources = &computev1alpha1.VirtualMachineResources{Cpu: "1", Memory: "2Gi"}
+		if _, err := vms.Apply(user, of); err != nil {
+			t.Errorf("sizes %v: a VM of a named disk: %v", withSizes, err)
+		}
+		of.Spec.Resources.Cpu = "5"
+		_, err = vms.Apply(user, of)
+		wantShapeRefused(t, err, "has 1 to 4 vCPUs, not 5", "a VM of a named disk resized to 5 vCPUs")
 	}
-	_, err := s.backend(registry.Container).Apply(user, sizedCtr("c", "1", "2Gi", "10Gi"))
-	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), `spec.resources.disk 10Gi is below the 20Gi of machine size "b"`) {
-		t.Errorf("a 10Gi container between sizes of 40Gi and 20Gi: got %v, want the refusal naming b", err)
+}
+
+// TestASizeKeepsToTheShapeRules: a size is a preset of a shape a tenant may
+// have.
+func TestASizeKeepsToTheShapeRules(t *testing.T) {
+	s, system, _ := running(t)
+	sizes := s.backend(registry.MachineSize)
+	for name, c := range map[string]struct {
+		spec *computev1alpha1.MachineSizeSpec
+		want string
+	}{
+		"lopsided":   {&computev1alpha1.MachineSizeSpec{DisplayName: "X", Cpu: "8", Memory: "1Gi", Disk: "10Gi"}, "spec: a machine of 1Gi of memory has 1 to 2 vCPUs, not 8"},
+		"off step":   {&computev1alpha1.MachineSizeSpec{DisplayName: "X", Cpu: "1", Memory: "300Mi", Disk: "10Gi"}, "spec.memory 300Mi is not a whole number of 256Mi steps"},
+		"a 1Gi disk": {&computev1alpha1.MachineSizeSpec{DisplayName: "X", Cpu: "1", Memory: "1Gi", Disk: "1Gi"}, "spec.disk 1Gi is below the minimum of 2Gi"},
+	} {
+		_, err := sizes.Apply(system, &computev1alpha1.MachineSize{Metadata: &metav1.ObjectMeta{Name: "x"}, Spec: c.spec})
+		wantShapeRefused(t, err, c.want, "a size "+name)
+	}
+	if _, err := sizes.Apply(system, &computev1alpha1.MachineSize{Metadata: &metav1.ObjectMeta{Name: "nano"},
+		Spec: &computev1alpha1.MachineSizeSpec{DisplayName: "Nano", Cpu: "1", Memory: "256Mi", Disk: "2Gi"}}); err != nil {
+		t.Errorf("the smallest size: %v", err)
 	}
 }
 
 // TestAnUnchangedMachineKeepsItsResources: an update is checked only when
-// it changes cpu, memory or disk, so a machine of no size, made before the
-// sizes or by someone exempt, still starts, stops and takes labels.
+// it changes cpu, memory or disk, so a machine outside the rules, made
+// before them or by someone exempt, still starts, stops and takes labels.
 func TestAnUnchangedMachineKeepsItsResources(t *testing.T) {
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
 	}
-	defineSizes(t, s, system)
 	ctrs := s.backend(registry.Container)
 	// The system writes what it likes.
-	if _, err := ctrs.Apply(system, sizedCtr("odd", "8", "1Gi", "10Gi")); err != nil {
-		t.Fatalf("the system making a container of no size: %v", err)
+	if _, err := ctrs.Apply(system, sizedCtr("odd", "8", "1Gi", "1Gi")); err != nil {
+		t.Fatalf("the system making a container outside the rules: %v", err)
 	}
-	same := sizedCtr("odd", "8", "1Gi", "10Gi")
+	same := sizedCtr("odd", "8", "1Gi", "1Gi")
 	same.Metadata.Labels = map[string]string{"team": "web"}
 	same.Spec.RunState = computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED
 	if _, err := ctrs.Apply(user, same); err != nil {
-		t.Errorf("stopping and labelling a container of no size: %v", err)
+		t.Errorf("stopping and labelling a container outside the rules: %v", err)
 	}
 	// The same values in other units are no change.
-	if _, err := ctrs.Apply(user, sizedCtr("odd", "8000m", "1024Mi", "10240Mi")); err != nil {
+	if _, err := ctrs.Apply(user, sizedCtr("odd", "8000m", "1024Mi", "1024Mi")); err != nil {
 		t.Errorf("restating a container's resources in other units: %v", err)
 	}
 	for name, c := range map[string]*computev1alpha1.Container{
-		"cpu":    sizedCtr("odd", "7", "1Gi", "10Gi"),
-		"memory": sizedCtr("odd", "8", "2Gi", "10Gi"),
-		"disk":   sizedCtr("odd", "8", "1Gi", "20Gi"),
+		"cpu":    sizedCtr("odd", "7", "1Gi", "1Gi"),
+		"memory": sizedCtr("odd", "8", "2Gi", "1Gi"),
 	} {
 		_, err := ctrs.Apply(user, c)
-		wantSizeRefused(t, err, "are those of no machine size", "changing the "+name+" of a container of no size")
+		wantShapeRefused(t, err, "vCPUs, not", "changing the "+name+" of a container outside the rules")
 	}
-	if _, err := ctrs.Apply(user, sizedCtr("odd", "1", "2Gi", "20Gi")); err != nil {
-		t.Errorf("resizing a container of no size to a size: %v", err)
+	_, err := ctrs.Apply(user, sizedCtr("odd", "2", "1Gi", "1Gi"))
+	wantShapeRefused(t, err, "below the minimum of 2Gi", "fixing the cpu but keeping a 1Gi disk")
+	if _, err := ctrs.Apply(user, sizedCtr("odd", "2", "1Gi", "2Gi")); err != nil {
+		t.Errorf("bringing a container within the rules: %v", err)
 	}
-	_, err := ctrs.Apply(user, sizedCtr("odd", "8", "1Gi", "20Gi"))
-	wantSizeRefused(t, err, "are those of no machine size", "resizing a container back to no size")
 
 	vms := s.backend(registry.VirtualMachine)
 	if _, err := vms.Apply(system, sizedVM("odd", "8", "1Gi", "")); err != nil {
-		t.Fatalf("the system making a VM of no size: %v", err)
+		t.Fatalf("the system making a VM outside the rules: %v", err)
 	}
 	stopped := sizedVM("odd", "8", "1Gi", "")
 	stopped.Spec.RunState = computev1alpha1.VirtualMachineRunState_VIRTUAL_MACHINE_RUN_STATE_STOPPED
 	if _, err := vms.Apply(user, stopped); err != nil {
-		t.Errorf("stopping a VM of no size: %v", err)
+		t.Errorf("stopping a VM outside the rules: %v", err)
 	}
 	// Stating the default root size is no change.
 	if _, err := vms.Apply(user, sizedVM("odd", "8", "1Gi", "10Gi")); err != nil {
 		t.Errorf("stating a VM's default root size: %v", err)
 	}
 	_, err = vms.Apply(user, sizedVM("odd", "8", "1Gi", "20Gi"))
-	wantSizeRefused(t, err, "are those of no machine size", "growing the root disk of a VM of no size")
+	wantShapeRefused(t, err, "has 1 to 2 vCPUs, not 8", "growing the root disk of a VM outside the rules")
 }
 
 // TestWhoMayDefineSizesIsNotChecked: the exemption follows the permission
@@ -207,7 +215,6 @@ func TestAnUnchangedMachineKeepsItsResources(t *testing.T) {
 // project owner are checked.
 func TestWhoMayDefineSizesIsNotChecked(t *testing.T) {
 	s, system, user := running(t)
-	defineSizes(t, s, system)
 	invite(t, s, "root@example.com", "platform.root")
 	signUp(t, s, "root@example.com")
 	root := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.User, ID: "root@example.com"})
@@ -233,7 +240,7 @@ func TestWhoMayDefineSizesIsNotChecked(t *testing.T) {
 	ctrs := s.backend(registry.Container)
 	for who, ctx := range map[string]context.Context{"a tenant owner": user, "a project owner's service token": owner} {
 		_, err := ctrs.Apply(ctx, sizedCtr("odd", "8", "1Gi", ""))
-		wantSizeRefused(t, err, "are those of no machine size", who+" making a container of no size")
+		wantShapeRefused(t, err, "has 1 to 2 vCPUs, not 8", who+" making a container outside the rules")
 	}
 	for _, w := range []struct {
 		who, name string
@@ -244,7 +251,7 @@ func TestWhoMayDefineSizesIsNotChecked(t *testing.T) {
 		{"the system", "by-system", system},
 	} {
 		if _, err := ctrs.Apply(w.ctx, sizedCtr(w.name, "8", "1Gi", "")); err != nil {
-			t.Errorf("%s making a container of no size: %v", w.who, err)
+			t.Errorf("%s making a container outside the rules: %v", w.who, err)
 		}
 	}
 }

@@ -53,6 +53,13 @@ func (f *fakeSystemd) start(_ context.Context, name string, props []sd.Property)
 	return nil
 }
 
+func (f *fakeSystemd) slice(_ context.Context, name, _ string, props []sd.Property) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.props[name] = props
+	return nil
+}
+
 func (f *fakeSystemd) stop(_ context.Context, name string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

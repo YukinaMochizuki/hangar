@@ -1,7 +1,8 @@
 // The sizes machines are offered in. The platform's administrator defines
 // them as MachineSize objects; the console only reads them, and has none of
-// its own (docs/decisions/machine-sizes.md). A size is a template: a machine
-// states its own cpu, memory and disk, and records no size.
+// its own (docs/decisions/machine-sizes.md). A size is a preset: a machine
+// states its own cpu, memory and disk, records no size, and may have any
+// shape the shape rules below allow.
 
 import { useQuery } from "@connectrpc/connect-query";
 import { MachineSizeService, type MachineSize } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
@@ -54,6 +55,53 @@ export function useMachineSizes() {
     error: q.error,
     refetch: () => void q.refetch(),
   };
+}
+
+// The shape rules, as the apiserver checks them (checkShape in
+// internal/apiserver/machinesizes.go): memory in 256 MiB steps, 512 MiB to
+// 8 GiB of it per vCPU though one vCPU is always allowed, and a root disk of
+// at least 2 GiB.
+export const memoryStepMiB = 256;
+export const minDiskGi = 2;
+const minMiBPerCPU = 512;
+const maxMiBPerCPU = 8192;
+
+/** The fewest and most vCPUs a machine of memMiB may have. */
+export function cpuRange(memMiB: number): { lo: number; hi: number } {
+  return { lo: Math.max(1, Math.ceil(memMiB / maxMiBPerCPU)), hi: Math.max(1, Math.floor(memMiB / minMiBPerCPU)) };
+}
+
+/** Memory as a person reads it, in GiB as the form takes it: 0.25 GiB, 1.5 GiB. */
+export function memoryLabel(memMiB: number): string {
+  return `${+(memMiB / 1024).toFixed(2)} GiB`;
+}
+
+/** Memory as a machine is sent it: whole Gi in Gi, else Mi. */
+export function memoryQuantity(memMiB: number): string {
+  return memMiB % 1024 === 0 ? `${memMiB / 1024}Gi` : `${memMiB}Mi`;
+}
+
+/** Why cpu vCPUs and memMiB of memory break the shape rules, or undefined. */
+export function shapeProblem(cpu: number, memMiB: number): string | undefined {
+  if (!Number.isInteger(memMiB) || memMiB < memoryStepMiB || memMiB % memoryStepMiB !== 0) {
+    return `Memory is a whole number of ${memoryStepMiB} MiB steps, at least one.`;
+  }
+  if (!Number.isInteger(cpu) || cpu < 1) return "The vCPUs are a whole number, at least 1.";
+  const { lo, hi } = cpuRange(memMiB);
+  if (cpu < lo || cpu > hi) {
+    const span = lo === hi ? `${lo} vCPU${lo === 1 ? "" : "s"}` : `${lo} to ${hi} vCPUs`;
+    return `${memoryLabel(memMiB)} of memory goes with ${span}, not ${cpu}.`;
+  }
+  return undefined;
+}
+
+/**
+ * Whether a size keeps to the shape rules. The apiserver refuses a size that
+ * does not, but one stored before the rules may: it is not offered, as a
+ * machine of it would be refused, though lists still name machines by it.
+ */
+export function withinRules(z: Size): boolean {
+  return shapeProblem(z.cpu, z.memoryGi * 1024) === undefined && z.diskGi >= minDiskGi;
 }
 
 /** The listed size whose cpu and memory a machine has, if any. */

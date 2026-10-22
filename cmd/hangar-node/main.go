@@ -63,6 +63,8 @@ type hostFlags struct {
 	cmdline, vmDir                  string
 	// firmware is what VirtualMachines boot through.
 	firmware string
+	// reservedCPU is --reserved-cpu: the CPUs no VM may use.
+	reservedCPU string
 }
 
 func main() {
@@ -83,7 +85,7 @@ func main() {
 		name           = flag.String("name", "", "the Node this agent reports as; the apiserver's --node-name")
 		socket         = flag.String("socket", "/run/hangar/node.sock", "the apiserver's node socket")
 		reservedMemory = flag.String("reserved-memory", "", "memory kept back for the host, including the ZFS ARC, as a quantity such as 4Gi")
-		reservedCPU    = flag.String("reserved-cpu", "", "CPUs kept back for the host, as a whole number")
+		reservedCPU    = flag.String("reserved-cpu", "", "CPUs kept back for the host, as a whole number: with the host drivers, no VM runs on them, taken whole cores first")
 		maxPulls       = flag.Int("max-pulls", node.DefaultMaxPulls, "images unpacked at once; fetching them takes no turn")
 		reservedDisk   = flag.String("reserved-disk", "", "storage kept back from root disks, such as for the image cache, as a quantity such as 50Gi")
 		hostDrivers    = flag.String("drivers", "none", "the host drivers: none, to report the node only; fake, a simulated host; or host, this host's")
@@ -99,6 +101,7 @@ func main() {
 	hf.bind(flag.CommandLine)
 	flag.Usage = func() { usage(flag.CommandLine) }
 	flag.Parse()
+	hf.reservedCPU = *reservedCPU
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -358,6 +361,33 @@ func registryConfig(hf hostFlags) registry.Config {
 	}
 }
 
+// machineCPUs are the CPUs the VMs may use once --reserved-cpu are kept for
+// the host, whole cores first, reading the host's topology under sysfs.
+func machineCPUs(sysfs, reserved string) ([]int, error) {
+	n, err := reservedCount(reserved)
+	if err != nil {
+		return nil, err
+	}
+	cpus, err := chvm.MachineCPUs(sysfs, n)
+	if err != nil {
+		return nil, fmt.Errorf("--reserved-cpu: %w", err)
+	}
+	return cpus, nil
+}
+
+// reservedCount reads --reserved-cpu as the node reads it for its
+// allocatable cpu: any quantity of whole CPUs, 2 or 2000m, none when empty.
+func reservedCount(reserved string) (int, error) {
+	if reserved == "" {
+		return 0, nil
+	}
+	v, err := quantity.Parse(reserved)
+	if err != nil || !v.IsInt() || v.Sign() < 0 || !v.Num().IsInt64() || v.Num().Int64() > 1<<20 {
+		return 0, fmt.Errorf("--reserved-cpu %q is not a whole number of CPUs", reserved)
+	}
+	return int(v.Num().Int64()), nil
+}
+
 // hostDrivers are this host's: images from registries into a cache, disks
 // on ZFS, networks in namespaces, VMs under Cloud Hypervisor as systemd
 // units.
@@ -384,9 +414,14 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		slog.Warn("no firmware: virtual machines are refused on this host", "vm_firmware", firmware)
 		firmware = ""
 	}
+	cpus, err := machineCPUs("/sys", hf.reservedCPU)
+	if err != nil {
+		return nil, none, err
+	}
 	vms, err := chvm.New(ctx, chvm.Config{
-		Firmware: firmware,
-		Dir:      hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
+		Firmware:    firmware,
+		MachineCPUs: cpus,
+		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
 		Launcher: []string{exe, "vmm"},
 	})
 	if err != nil {

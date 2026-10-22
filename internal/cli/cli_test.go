@@ -343,7 +343,7 @@ spec:
     port: 80
   resources:
     cpu: 2
-    memory: 512Mi
+    memory: 1Gi
     disk: 20Gi
 `
 
@@ -408,7 +408,7 @@ func TestApplyGetDelete(t *testing.T) {
 	}
 	if one.APIVersion != "compute.hangarlab.cloud/v1alpha1" || one.Metadata.Name != "api" || one.Metadata.Project != "web" ||
 		one.Spec.Image != "nginx:1" || one.Metadata.Labels["tier"] != "front" || one.Metadata.ResourceVersion == "" ||
-		one.Spec.Resources["cpu"] != "2" || one.Spec.Resources["memory"] != "512Mi" || one.Spec.Resources["disk"] != "20Gi" {
+		one.Spec.Resources["cpu"] != "2" || one.Spec.Resources["memory"] != "1Gi" || one.Spec.Resources["disk"] != "20Gi" {
 		t.Errorf("get -o json returned %+v", one)
 	}
 
@@ -471,7 +471,7 @@ spec:
     port: 80
   resources:
     cpu: 2000m
-    memory: 1e9
+    memory: 2.147483648e9
     disk: 20Gi
 `, "apply", "-f", "-")
 
@@ -505,7 +505,7 @@ spec:
 	if len(got.Spec.Ports) != 1 || got.Spec.Ports[0].Port != 80 {
 		t.Errorf("ports %+v", got.Spec.Ports)
 	}
-	if r := got.Spec.Resources; r["cpu"] != "2000m" || r["memory"] != "1e9" || r["disk"] != "20Gi" {
+	if r := got.Spec.Resources; r["cpu"] != "2000m" || r["memory"] != "2.147483648e9" || r["disk"] != "20Gi" {
 		t.Errorf("resources %v", r)
 	}
 
@@ -533,7 +533,7 @@ spec:
 			t.Errorf("a number through an alias: exit %d (%s)", r.code, r.err)
 		}
 	}
-	w.must("apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n", "apply", "-f", "-")
+	w.must("apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec:\n  image: x\n  resources:\n    <<: &r {cpu: \"2\"}\n    memory: 1Gi\n", "apply", "-f", "-")
 	// The server, not the CLI, says a fraction of a vCPU is refused.
 	frac := "apiVersion: compute.hangarlab.cloud/v1alpha1\nkind: Container\nmetadata: {name: anchors}\nspec: {image: x, resources: {cpu: 1.5}}\n"
 	if r := w.run(frac, "apply", "-f", "-"); r.code != cli.ExitError || !strings.Contains(r.err, "vCPUs are whole") {
