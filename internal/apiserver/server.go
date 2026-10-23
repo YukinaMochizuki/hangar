@@ -112,7 +112,14 @@ type Config struct {
 	// Monitoring is where MonitoringService asks; unset, its calls fail
 	// with Unavailable.
 	Monitoring MonitoringConfig
+	// MaxUploadSize is the most bytes a file uploaded for a CustomImage
+	// holds; zero means DefaultMaxUploadSize.
+	MaxUploadSize int64
 }
+
+// DefaultMaxUploadSize bounds a file uploaded for a CustomImage, as
+// diskimage.DefaultMaxFileSize bounds an Image's.
+const DefaultMaxUploadSize = 16 << 30
 
 // Server is the API server. Create it with New, start its background work
 // with Run, and serve Handler on each listener.

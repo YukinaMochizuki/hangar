@@ -1,0 +1,177 @@
+package apiserver
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
+
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+)
+
+// uploadImage is a custom image uploaded from a file of size bytes.
+func uploadImage(name string, size int64, sha string) *storagev1alpha1.CustomImage {
+	return &storagev1alpha1.CustomImage{
+		Metadata: &metav1.ObjectMeta{Project: "web", Name: name},
+		Spec: &storagev1alpha1.CustomImageSpec{
+			Source: &storagev1alpha1.CustomImageSource{Source: &storagev1alpha1.CustomImageSource_Upload{
+				Upload: &storagev1alpha1.CustomImageUploadSource{Size: size, Sha256: sha},
+			}},
+			Os: "nixos", DefaultUser: "root",
+		},
+	}
+}
+
+// withNode1 runs the server with node n1 registered, not yet reporting.
+func withNode1(t *testing.T, configure func(*Config)) (*Server, context.Context, context.Context) {
+	t.Helper()
+	s, system, user := runningWith(t, func(c *Config) {
+		c.Nodes = []string{"n1"}
+		configure(c)
+	})
+	waitNode(t, s, "n1")
+	return s, system, user
+}
+
+func uploadFailed(reason string) *metav1.Condition {
+	return &metav1.Condition{Type: CustomImageReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reason}
+}
+
+func TestCustomImageUploadAdmission(t *testing.T) {
+	s, system, user := withNode1(t, func(c *Config) { c.MaxUploadSize = 4 << 30 })
+	b := s.backend(registry.CustomImage)
+	sha := strings.Repeat("ab", 32)
+
+	_, err := b.Apply(user, uploadImage("img", 1<<20, sha))
+	wantCodeOf(t, err, connect.CodeFailedPrecondition, "an upload with no node ready to take it")
+
+	nodeWithRoom(t, s, system, "n1", 8192)
+	for name, ci := range map[string]*storagev1alpha1.CustomImage{
+		"no size":                  uploadImage("bad", 0, sha),
+		"a negative size":          uploadImage("bad", -1, sha),
+		"a size past the bound":    uploadImage("bad", 4<<30+1, sha),
+		"a sha256 in upper case":   uploadImage("bad", 1<<20, strings.ToUpper(sha)),
+		"a sha256 short of digits": uploadImage("bad", 1<<20, sha[:63]),
+	} {
+		_, err := b.Apply(user, ci)
+		wantCodeOf(t, err, connect.CodeInvalidArgument, name)
+	}
+	both := uploadImage("bad", 1<<20, "")
+	both.Spec.Source = &storagev1alpha1.CustomImageSource{}
+	_, err = b.Apply(user, both)
+	wantCodeOf(t, err, connect.CodeInvalidArgument, "a source that is neither")
+
+	res, err := b.Apply(user, uploadImage("img", 4<<30, sha))
+	if err != nil {
+		t.Fatalf("an upload of the bound's size: %v", err)
+	}
+	if st := res.Object.(*storagev1alpha1.CustomImage).GetStatus(); st.GetNode() != "n1" || st.GetDiskSize() != "" {
+		t.Errorf("status %v, want node n1 and no disk_size until it is converted", st)
+	}
+	if _, err := b.Apply(user, uploadImage("nosum", 1<<20, "")); err != nil {
+		t.Errorf("an upload with no sha256: %v", err)
+	}
+	changed := uploadImage("img", 4<<30, "")
+	_, err = b.Apply(user, changed)
+	wantCodeOf(t, err, connect.CodeInvalidArgument, "changing an upload's sha256")
+	changed = uploadImage("img", 4<<30, sha)
+	changed.Spec.Version = "25.05"
+	if _, err := b.Apply(user, changed); err != nil {
+		t.Errorf("changing an upload's version: %v", err)
+	}
+
+	// An upload holds no disk.
+	if held, err := s.heldSources(system, "web"); err != nil || len(held) != 0 {
+		t.Errorf("disks held by uploads: %v %v", held, err)
+	}
+}
+
+// TestAnUploadsNodeSetsItsDiskSizeOnce: the node reports what the apiserver
+// cannot know of an upload, its disk size among it, and never moves the
+// image to another node.
+func TestAnUploadsNodeSetsItsDiskSizeOnce(t *testing.T) {
+	s, system, user := withNode1(t, func(*Config) {})
+	nodeWithRoom(t, s, system, "n1", 8192)
+	if _, err := s.backend(registry.CustomImage).Apply(user, uploadImage("img", 3<<30, "")); err != nil {
+		t.Fatal(err)
+	}
+	key := resource.Key{Project: "web", Name: "img"}
+	report := func(st *storagev1alpha1.CustomImageStatus) *storagev1alpha1.CustomImageStatus {
+		t.Helper()
+		res, err := s.backend(registry.CustomImage).UpdateStatus(asNode(system, "n1"), key, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.(*storagev1alpha1.CustomImage).GetStatus()
+	}
+	expires := timestamppb.New(s.clock.Now().Add(24 * time.Hour))
+	got := report(&storagev1alpha1.CustomImageStatus{
+		Node: "n2", ReceivedBytes: 1 << 30, Sha256: strings.Repeat("0", 64), UploadExpires: expires, DiskSize: "10Gi", UsedSize: "2Gi",
+	})
+	if got.GetNode() != "n1" || got.GetReceivedBytes() != 1<<30 || got.GetSha256() == "" || !proto.Equal(got.GetUploadExpires(), expires) || got.GetDiskSize() != "10Gi" {
+		t.Errorf("stored %v, want the node's report on node n1", got)
+	}
+	if got := report(&storagev1alpha1.CustomImageStatus{DiskSize: "20Gi"}); got.GetDiskSize() != "10Gi" {
+		t.Errorf("disk_size %s once set, want it kept at 10Gi", got.GetDiskSize())
+	}
+}
+
+func TestCustomImageUploadQuota(t *testing.T) {
+	s, system, user := withNode1(t, func(*Config) {})
+	nodeWithRoom(t, s, system, "n1", 8192)
+	images := s.backend(registry.CustomImage)
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi"), CustomImages: proto.Int32(2)})
+	used := func(what string, disk, count int64) {
+		t.Helper()
+		got, err := s.tally(system, "acme", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.tenant[dimDisk] != disk*int64(quantity.GiB) || got.tenant[dimCustomImages] != count {
+			t.Errorf("%s: %s of disk and %d images, want %dGi and %d", what,
+				formatAmount(dimDisk, got.tenant[dimDisk]), got.tenant[dimCustomImages], disk, count)
+		}
+	}
+	if _, err := images.Apply(user, uploadImage("a", 6<<30+1, "")); err != nil {
+		t.Fatal(err)
+	}
+	used("an upload, reserving its size in whole Gi", 7, 1)
+	_, err := images.Apply(user, uploadImage("b", 4<<30, ""))
+	wantExhausted(t, err, "disk limit", "a second upload past the disk limit")
+
+	settle := func(name string, st *storagev1alpha1.CustomImageStatus) {
+		t.Helper()
+		ci := getCustomImage(t, s, system, name)
+		st.Node = ci.GetStatus().GetNode()
+		if _, err := images.UpdateStatus(asNode(system, "n1"), resource.Key{Project: "web", Name: name}, st, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	settle("a", &storagev1alpha1.CustomImageStatus{DiskSize: "20Gi", UsedSize: "1Gi", Conditions: []*metav1.Condition{imageReady()}})
+	used("the upload Ready, settled at what it holds, not its disk", 1, 1)
+	if _, err := images.Apply(user, uploadImage("b", 4<<30, "")); err != nil {
+		t.Fatalf("a second upload once the first settled: %v", err)
+	}
+	used("two images", 5, 2)
+	_, err = images.Apply(user, uploadImage("c", 1, ""))
+	wantExhausted(t, err, "custom_images limit", "a third image past the count limit")
+	for _, reason := range []string{
+		computeapi.ReasonUploadExpired, computeapi.ReasonDigestMismatch, computeapi.ReasonInvalidImage,
+		computeapi.ReasonImageTooLarge, computeapi.ReasonConvertFailed,
+	} {
+		settle("b", &storagev1alpha1.CustomImageStatus{Conditions: []*metav1.Condition{uploadFailed(reason)}})
+		used("an upload failed as "+reason+", released", 1, 1)
+	}
+	settle("b", &storagev1alpha1.CustomImageStatus{Conditions: []*metav1.Condition{uploadFailed(computeapi.ReasonConverting)}})
+	used("an upload converting", 5, 2)
+}
