@@ -27,7 +27,7 @@ import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can,
 import { DetailBody, DetailFrame, DetailHead, ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { domainFor, domainOf, hostnameOf, isVerified, rowProblems, rowsOf, useProjectDomains, type HostnameRow } from "@/lib/custom-domains";
 import { date, machinePath } from "@/lib/machines";
@@ -96,15 +96,7 @@ function AccessBadge({ access }: { access: PublicEndpointAccess }) {
 
 function ReadyCell({ e }: { e: PublicEndpoint }) {
   const c = conditionOf(e.status?.conditions, "Ready");
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={lightOf(c)} />
-        {c?.status === 1 ? "Ready" : "Not ready"}
-      </span>
-      {c?.status !== 1 && c?.reason && <span className="block font-mono text-[11.5px] text-subtle">{c.reason}</span>}
-    </>
-  );
+  return <StateText tone={lightOf(c)} label={c?.status === 1 ? "Ready" : "Not ready"} reason={c?.status !== 1 && c?.reason} />;
 }
 
 function UrlLink({ e, className }: { e: PublicEndpoint; className?: string }) {
@@ -259,10 +251,7 @@ function Loaded({ e, can }: { e: PublicEndpoint; can: Can }) {
         kind="Public endpoint"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={lightOf(ready)} />
-              {ready?.status === 1 ? "Ready" : "Not ready"}
-            </span>
+            <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Not ready"} />
             <AccessBadge access={e.spec?.access ?? 0} />
             <UrlLink e={e} />
           </>

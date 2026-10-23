@@ -25,7 +25,7 @@ import { tbodyRow, Th, theadRow } from "@/components/table";
 import { EditLabelsDialog } from "@/components/labels-dialog";
 import { EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
-import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
@@ -46,12 +46,7 @@ import { useCan } from "@/lib/permissions";
 
 function TokenState({ t }: { t: ServiceToken }) {
   const s = tokenState(t);
-  return (
-    <span className="inline-flex items-center gap-2">
-      <Led tone={s.tone} />
-      {s.label}
-    </span>
-  );
+  return <StateText tone={s.tone} label={s.label} />;
 }
 
 /** The secret's first characters, which tell which secret someone holds. */

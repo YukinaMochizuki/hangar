@@ -17,7 +17,7 @@ import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can,
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { date, machinePath } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
 import { addressYaml, conditionOf, nameOf, targetOf, useAddresses } from "@/lib/network";
@@ -82,15 +82,7 @@ function stateOf(a: Address): { label: string; light: "ok" | "pending" | "off"; 
 
 function StateCell({ a }: { a: Address }) {
   const s = stateOf(a);
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={s.light} />
-        {s.label}
-      </span>
-      {s.reason && <span className="block font-mono text-[11.5px] text-subtle">{s.reason}</span>}
-    </>
-  );
+  return <StateText tone={s.light} label={s.label} reason={s.reason} />;
 }
 
 function TargetText({ a }: { a: Address }) {
@@ -229,10 +221,7 @@ function Loaded({ a, can }: { a: Address; can: Can }) {
         kind="Address"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={s.light} />
-              {s.label}
-            </span>
+            <StateText tone={s.light} label={s.label} />
             {a.status?.ipv6 && <span className="font-mono text-[12px]">{bare(a.status.ipv6)}</span>}
           </>
         }
@@ -258,11 +247,7 @@ function Loaded({ a, can }: { a: Address; can: Can }) {
                   <TargetText a={a} />
                 </Field>
                 <Field label="State">
-                  <span className="inline-flex items-center gap-2">
-                    <Led tone={s.light} />
-                    {s.label}
-                    {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
-                  </span>
+                  <StateText tone={s.light} label={s.label} reason={s.reason} reasonAt="beside" />
                   {s.message && <span className="block text-[12.5px] text-muted">{s.message}</span>}
                 </Field>
                 <Field label="Held by" mono>

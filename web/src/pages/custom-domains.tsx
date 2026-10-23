@@ -22,7 +22,7 @@ import { FormFooter, StaleNotice } from "@/components/resource";
 import { Topbar, useTenantName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { domainOf, domainPerms, domainState, useCheckDomain, useCustomDomains, useDeleteDomain, useDomainCan, usesOf, useTenantEndpoints, type DomainUse } from "@/lib/custom-domains";
 import { errorMessage } from "@/lib/api";
 import { date } from "@/lib/machines";
@@ -57,12 +57,7 @@ function ProjectsText({ d, tenant }: { d: CustomDomain; tenant: string }) {
 
 function StateCell({ d }: { d: CustomDomain }) {
   const s = domainState(d);
-  return (
-    <span className="inline-flex items-center gap-2 whitespace-nowrap">
-      <Led tone={s.tone} />
-      {s.label}
-    </span>
-  );
+  return <StateText tone={s.tone} label={s.label} className="whitespace-nowrap" />;
 }
 
 /**
@@ -288,10 +283,7 @@ function Loaded({ d, all, can }: { d: CustomDomain; all: CustomDomain[]; can: Ca
         kind="Custom domain"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={state.tone} />
-              {state.label}
-            </span>
+            <StateText tone={state.tone} label={state.label} />
             <span className="font-mono text-[12.5px]">{name}</span>
             <span>
               <span className="text-subtle">Projects</span> <ProjectsText d={d} tenant={tenant} />

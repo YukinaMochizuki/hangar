@@ -13,7 +13,7 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { permission, useNetworkCan } from "@/lib/network-actions";
 import { date, machinePath } from "@/lib/machines";
 import {
@@ -91,12 +91,7 @@ function NetworkRowMenu({ n, can }: { n: Network; can: Can }) {
 
 function ReadyCell({ n }: { n: Network }) {
   const ready = conditionOf(n.status?.conditions, "Ready");
-  return (
-    <span className="inline-flex items-center gap-2">
-      <Led tone={lightOf(ready)} />
-      {ready?.status === 1 ? "Ready" : "Pending"}
-    </span>
-  );
+  return <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Pending"} />;
 }
 
 export function NetworkList() {
@@ -300,10 +295,7 @@ function Loaded({ n, can }: { n: Network; can: Can }) {
         kind="Network"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={lightOf(ready)} />
-              {ready?.status === 1 ? "Ready" : "Pending"}
-            </span>
+            <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Pending"} />
             <span className="font-mono text-[12px]">{cidr}</span>
             <MemberCount state={att} n={machines} word="machine" />
           </>

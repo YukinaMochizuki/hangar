@@ -12,7 +12,7 @@ import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { FormEquivalent, FormField, Input } from "@/components/form";
 import { Notice } from "@/components/notice";
-import { Button, Led, type Tone } from "@/components/ui";
+import { Button, StateText, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
@@ -48,28 +48,12 @@ export function diskPhaseLabel(d: Disk): string {
 export function DiskState({ d, reason = true }: { d: Disk; reason?: boolean }) {
   const fault = diskFault(d);
   const p = fault ? { tone: "fail" as Tone } : (diskPhases[d.status?.phase ?? 0] ?? { tone: "off" as Tone });
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={p.tone} pulse={"pulse" in p && p.pulse} />
-        {diskPhaseLabel(d)}
-      </span>
-      {reason && fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
-    </>
-  );
+  return <StateText tone={p.tone} pulse={"pulse" in p && p.pulse} label={diskPhaseLabel(d)} reason={reason && fault?.reason} fault />;
 }
 
 /** ImageStateCell shows an image's state, and the reason when it is at fault. */
 export function ImageStateCell({ s }: { s: ImageState }) {
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={s.tone} />
-        {s.label}
-      </span>
-      {s.reason && <span className="block text-[11.5px] text-fail">{s.reason}</span>}
-    </>
-  );
+  return <StateText tone={s.tone} label={s.label} reason={s.reason} fault />;
 }
 
 /**

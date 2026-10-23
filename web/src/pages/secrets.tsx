@@ -21,7 +21,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
-import { Badge, Button, buttonVariants, Card, CardHeader, Field, Led } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardHeader, Field, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import {
   commands,
@@ -49,15 +49,7 @@ function SecretState({ s }: { s: Secret }) {
       : ready
         ? (["ok", "Ready"] as const)
         : (["pending", "Not checked yet"] as const);
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={tone} />
-        {label}
-      </span>
-      {fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
-    </>
-  );
+  return <StateText tone={tone} label={label} reason={fault?.reason} fault />;
 }
 
 function Registries({ s }: { s: Secret }) {

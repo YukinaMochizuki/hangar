@@ -15,7 +15,7 @@ import { StaleNotice } from "@/components/resource";
 import { useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { Th } from "@/components/table";
-import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, Led } from "@/components/ui";
+import { Badge, Button, buttonVariants, Card, CardHeader, CopyButton, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import {
@@ -123,12 +123,7 @@ export function MachineChip({ m }: { m: { kind: MachineKind; name: string } }) {
 /** A share's phase, with its light; Deleting once it is being deleted. */
 export function ShareState({ s }: { s: FileShare }) {
   const p = s.metadata?.deleteTime ? { label: "Deleting", tone: "pending" as const, pulse: true } : phaseWords(s);
-  return (
-    <span className="inline-flex items-center gap-2">
-      <Led tone={p.tone} pulse={p.pulse} />
-      {p.label}
-    </span>
-  );
+  return <StateText tone={p.tone} pulse={p.pulse} label={p.label} />;
 }
 
 /** A network's name, linked to its page. */
