@@ -7,7 +7,7 @@ import { create } from "@bufbuild/protobuf";
 import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import { ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import {
   VirtualMachineSchema,
@@ -28,7 +28,7 @@ import { useCan } from "@/lib/permissions";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Input, Select } from "@/components/form";
 import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/components/container-advanced";
-import { Choice, FormSection as Section } from "@/components/form-page";
+import { Choice, FormManifest, FormPage, FormSection as Section, FormSummary } from "@/components/form-page";
 import { gibText, SizeSliders } from "@/components/size-sliders";
 import { MachinePortForwards } from "@/components/machine-port-forwards";
 import { noVmAdvanced, sshKeysOf, VmAdvancedFields, vmAdvancedProblems, type VmAdvanced } from "@/components/vm-advanced";
@@ -38,9 +38,9 @@ import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
 import { forwardPlan, forwardRowsOf, protocolEnum, usePortForwardQuota, type ForwardRow } from "@/lib/port-forwards";
 import { Notice } from "@/components/notice";
 import { StaleNotice } from "@/components/resource";
-import { Topbar, useProjectName } from "@/components/shell";
+import { useProjectName } from "@/components/shell";
 import { ErrorNotice, Skeleton } from "@/components/states";
-import { Button, buttonVariants, Card, CopyButton } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { checkName, createError } from "@/lib/create";
@@ -608,537 +608,491 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   });
   const stale = !!edit && isStale(submit.error);
   const blocked = problems.length > 0 || over.length > 0 || submit.isPending || (!!edit && (changes.length === 0 || stale));
-  const machinePage = kind === "container" ? "/projects/$project/containers/$name" : "/projects/$project/vms/$name";
+  const listPath = `/projects/${project}/${kind === "container" ? "containers" : "vms"}`;
+
+  const side = (
+    <>
+      <FormSummary
+        summary={
+          <>
+            {s ? (
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[20px] font-semibold">{s.label}</span>
+                <span className="text-[13px] text-muted tabular">
+                  {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB
+                  {baseV ? "" : ` · ${diskTyped || "–"} GiB disk`}
+                </span>
+              </div>
+            ) : (
+              <div className="text-[13px] text-muted">No size</div>
+            )}
+            <div className="mt-0.5 truncate font-mono text-[12px] text-muted">{(kind === "container" ? image : chosenImage) || "no image"}</div>
+          </>
+        }
+        applying={edit && <WhatApplyingDoes changes={changes} noun={shortNoun} />}
+        notices={
+          <>
+            {over.length > 0 && (
+              <Notice tone="error" title={`Over the project's ${over.map((o) => o.label).join(" and ")} limit`}>
+                {over.map((o) => (
+                  <div key={o.key}>
+                    {edit ? "The change adds" : `${o.key === "disk" ? "The disk" : s?.label} needs`} {formatNumber(o.need)}
+                    {o.unit}; {formatNumber(o.left)}
+                    {o.unit} of {formatNumber(o.limit)}
+                    {o.unit} is left.
+                  </div>
+                ))}
+              </Notice>
+            )}
+            {!edit && existing.error ? (
+              <Notice tone="error" title={`The list of the project's ${noun}s did not load`}>
+                <div>Which names are taken is not known, so nothing is created.</div>
+                <div className="mt-1 font-mono text-[11.5px]">{errorMessage(existing.error)}</div>
+              </Notice>
+            ) : null}
+            {stale && (
+              <StaleNotice title={`${name} changed since you opened it.`} reloading={edit.reload.pending} error={edit.reload.error} onReload={edit.reload.run} />
+            )}
+            {applied.length > 0 && !submit.isPending && (
+              <SharesChanged
+                project={project}
+                applied={applied}
+                onUndone={(n) => {
+                  setApplied((was) => was.filter((a) => a.share !== n));
+                  const next = { ...shareAdds };
+                  delete next[n];
+                  setShareAdds(next);
+                }}
+              />
+            )}
+          </>
+        }
+        error={stale ? null : submit.error}
+        failed={edit ? `Applying the ${noun} failed` : `Creating the ${noun} failed`}
+        // A new machine's problems wait for a name, and for the names taken to be known.
+        problems={edit || (name !== "" && !existing.error) ? problems : []}
+        blocked={blocked}
+        pending={submit.isPending}
+        pendingLabel={edit ? "Applying…" : "Creating…"}
+        label={edit ? (changes.length === 0 ? "No change" : "Apply changes") : existing.loading ? "Loading names…" : `Create ${noun}`}
+        cancelTo={edit ? `${listPath}/${name}` : listPath}
+      />
+      <FormManifest yaml={yaml} cli={cli} />
+    </>
+  );
 
   return (
-    <>
-      {/* An edit sits in its page's frame, which draws the top bar. */}
-      {!edit && <Topbar crumbs={["New machine"]} />}
-      {/* The form states its own problems; the browser's checks would hold back a stored disk such as 10G, sent back as it is. */}
-      <form
-        noValidate
-        className="grid grid-cols-1 gap-8 px-4 pb-12 pt-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (!blocked) submit.mutate();
-        }}
-      >
-        <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight">{edit ? `Edit ${name}` : "New machine"}</h1>
+    <FormPage
+      crumbs={edit ? undefined : ["New machine"]}
+      title={edit ? `Edit ${name}` : "New machine"}
+      // The browser's checks would hold back a stored disk such as 10G, sent back as it is.
+      noValidate
+      onSubmit={() => !blocked && submit.mutate()}
+      side={side}
+    >
+      <Section n={1} title="Kind">
+        {edit ? (
+          <Locked why="Does not change.">
+            <span className="flex items-center gap-2">
+              {kind === "container" ? <Box className="size-4 text-muted" strokeWidth={1.75} /> : <Server className="size-4 text-muted" strokeWidth={1.75} />}
+              {kind === "container" ? "Container" : "Virtual machine"}
+            </span>
+          </Locked>
+        ) : (
+          <div role="radiogroup" aria-label="Kind" className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
+            {(
+              [
+                ["container", Box, "Container", "A container image. Starts in seconds."],
+                ["vm", Server, "Virtual machine", "A full operating system."],
+              ] as const
+            ).map(([id, Icon, label, text]) => (
+              <Choice
+                key={id}
+                selected={kind === id}
+                onClick={() => {
+                  if (id === kind) return;
+                  // A kind's file shares are its own, so the interfaces and share changes made for them go with them.
+                  setKind(id);
+                  setExtraNets([]);
+                  setShareAdds({});
+                  setJustAdded(null);
+                  setPickerOpen(null);
+                }}
+                className="p-4"
+              >
+                <Icon className="size-4 text-muted" strokeWidth={1.75} />
+                <div className="mt-2 text-[13.5px] font-medium">{label}</div>
+                <div className="mt-0.5 text-[12.5px] leading-snug text-muted">{text}</div>
+              </Choice>
+            ))}
+          </div>
+        )}
+      </Section>
 
-          <Section n={1} title="Kind">
-            {edit ? (
-              <Locked why="Does not change.">
-                <span className="flex items-center gap-2">
-                  {kind === "container" ? <Box className="size-4 text-muted" strokeWidth={1.75} /> : <Server className="size-4 text-muted" strokeWidth={1.75} />}
-                  {kind === "container" ? "Container" : "Virtual machine"}
-                </span>
-              </Locked>
+      <Section n={2} title="Image" hint={kind === "container" ? "Any OCI reference" : readyCustom.length > 0 ? "This project's or the platform's" : "The platform's catalogue"}>
+        {kind === "container" ? (
+          <div className="max-w-xl">
+            <Input
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="ghcr.io/owner/app:1.0"
+              aria-label="Image"
+              spellCheck={false}
+            />
+            {edit && <p className="mt-1.5 text-[12px] text-subtle">Changing it rebuilds the root disk.</p>}
+          </div>
+        ) : edit ? (
+          <Locked why="Does not change.">
+            {baseRoot?.case === "disk" ? (
+              <>
+                Boots from disk <span className="font-mono">{baseRoot.value}</span>
+              </>
+            ) : chosenCustom ? (
+              <>
+                Custom image <span className="font-mono">{chosenImage}</span>
+              </>
             ) : (
-              <div role="radiogroup" aria-label="Kind" className="grid max-w-xl grid-cols-1 gap-3 sm:grid-cols-2">
-                {(
-                  [
-                    ["container", Box, "Container", "A container image. Starts in seconds."],
-                    ["vm", Server, "Virtual machine", "A full operating system."],
-                  ] as const
-                ).map(([id, Icon, label, text]) => (
-                  <Choice
-                    key={id}
-                    selected={kind === id}
-                    onClick={() => {
-                      if (id === kind) return;
-                      // A kind's file shares are its own, so the interfaces and share changes made for them go with them.
-                      setKind(id);
-                      setExtraNets([]);
-                      setShareAdds({});
-                      setJustAdded(null);
-                      setPickerOpen(null);
-                    }}
-                    className="p-4"
-                  >
-                    <Icon className="size-4 text-muted" strokeWidth={1.75} />
-                    <div className="mt-2 text-[13.5px] font-medium">{label}</div>
-                    <div className="mt-0.5 text-[12.5px] leading-snug text-muted">{text}</div>
-                  </Choice>
-                ))}
-              </div>
+              (() => {
+                const img = images.data?.items.find((i) => i.metadata?.name === chosenImage);
+                return (
+                  <>
+                    <span className="font-medium capitalize">{img?.spec?.os || chosenImage}</span>{" "}
+                    <span className="font-mono text-[12px] text-muted">{img ? img.spec?.version : ""}</span>{" "}
+                    {img && <span className="font-mono text-[12px] text-subtle">· {chosenImage}</span>}
+                  </>
+                );
+              })()
             )}
-          </Section>
-
-          <Section n={2} title="Image" hint={kind === "container" ? "Any OCI reference" : readyCustom.length > 0 ? "This project's or the platform's" : "The platform's catalogue"}>
-            {kind === "container" ? (
-              <div className="max-w-xl">
-                <Input
-                  value={image}
-                  onChange={(e) => setImage(e.target.value)}
-                  placeholder="ghcr.io/owner/app:1.0"
-                  aria-label="Image"
-                  spellCheck={false}
-                />
-                {edit && <p className="mt-1.5 text-[12px] text-subtle">Changing it rebuilds the root disk.</p>}
-              </div>
-            ) : edit ? (
-              <Locked why="Does not change.">
-                {baseRoot?.case === "disk" ? (
-                  <>
-                    Boots from disk <span className="font-mono">{baseRoot.value}</span>
-                  </>
-                ) : chosenCustom ? (
-                  <>
-                    Custom image <span className="font-mono">{chosenImage}</span>
-                  </>
-                ) : (
-                  (() => {
-                    const img = images.data?.items.find((i) => i.metadata?.name === chosenImage);
+          </Locked>
+        ) : images.isPending ? (
+          <div className="grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-4">
+            {[0, 1].map((i) => (
+              <Skeleton key={i} className="h-14 rounded-lg" />
+            ))}
+          </div>
+        ) : images.error ? (
+          <ErrorNotice error={images.error} title="The images did not load" onRetry={() => void images.refetch()} className="max-w-xl p-0" />
+        ) : images.data.items.length === 0 ? (
+          <p className="text-[13px] text-muted">The platform's catalogue holds no image.</p>
+        ) : (
+          <div className="max-w-xl space-y-4">
+            {readyCustom.length > 0 && (
+              <div>
+                <div className="mb-2 text-[12px] font-medium text-muted">This project's images</div>
+                <div role="radiogroup" aria-label="This project's images" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {readyCustom.map((c) => {
+                    const id = c.metadata?.name ?? "";
                     return (
-                      <>
-                        <span className="font-medium capitalize">{img?.spec?.os || chosenImage}</span>{" "}
-                        <span className="font-mono text-[12px] text-muted">{img ? img.spec?.version : ""}</span>{" "}
-                        {img && <span className="font-mono text-[12px] text-subtle">· {chosenImage}</span>}
-                      </>
+                      <Choice key={id} selected={chosenCustom && chosenImage === id} onClick={() => chooseImage(id, true)} className="p-3">
+                        <div className="truncate font-mono text-[12.5px] font-medium">{id}</div>
+                        <div className="truncate text-[11.5px] capitalize text-muted">{[c.spec?.os, c.spec?.version].filter(Boolean).join(" ") || "custom"}</div>
+                      </Choice>
                     );
-                  })()
-                )}
-              </Locked>
-            ) : images.isPending ? (
-              <div className="grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-4">
-                {[0, 1].map((i) => (
-                  <Skeleton key={i} className="h-14 rounded-lg" />
-                ))}
-              </div>
-            ) : images.error ? (
-              <ErrorNotice error={images.error} title="The images did not load" onRetry={() => void images.refetch()} className="max-w-xl p-0" />
-            ) : images.data.items.length === 0 ? (
-              <p className="text-[13px] text-muted">The platform's catalogue holds no image.</p>
-            ) : (
-              <div className="max-w-xl space-y-4">
-                {readyCustom.length > 0 && (
-                  <div>
-                    <div className="mb-2 text-[12px] font-medium text-muted">This project's images</div>
-                    <div role="radiogroup" aria-label="This project's images" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                      {readyCustom.map((c) => {
-                        const id = c.metadata?.name ?? "";
-                        return (
-                          <Choice key={id} selected={chosenCustom && chosenImage === id} onClick={() => chooseImage(id, true)} className="p-3">
-                            <div className="truncate font-mono text-[12.5px] font-medium">{id}</div>
-                            <div className="truncate text-[11.5px] capitalize text-muted">{[c.spec?.os, c.spec?.version].filter(Boolean).join(" ") || "custom"}</div>
-                          </Choice>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                <div>
-                  {readyCustom.length > 0 && <div className="mb-2 text-[12px] font-medium text-muted">Platform images</div>}
-                  <div role="radiogroup" aria-label="Image" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    {images.data.items.map((img) => {
-                      const id = img.metadata?.name ?? "";
-                      return (
-                        <Choice key={id} selected={!chosenCustom && chosenImage === id} onClick={() => chooseImage(id, false)} className="p-3">
-                          <div className="text-[13px] font-medium capitalize">{img.spec?.os || id}</div>
-                          <div className="font-mono text-[11.5px] text-muted">{img.spec?.version || id}</div>
-                        </Choice>
-                      );
-                    })}
-                  </div>
+                  })}
                 </div>
               </div>
             )}
-          </Section>
-
-          <Section n={3} title="Size">
-            {machineSizes.loading ? (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                {[0, 1, 2, 3].map((i) => (
-                  <Skeleton key={i} className="h-[118px] rounded-lg" />
-                ))}
-              </div>
-            ) : machineSizes.error ? (
-              <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
-            ) : (
-              <>
-              {/* One row on a wide screen, whatever the number of sizes; Custom last. */}
-              <div
-                role="radiogroup"
-                aria-label="Size"
-                className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(var(--cards),minmax(0,1fr))]"
-                style={{ "--cards": cards.length + 1 } as CSSProperties}
-              >
-                {cards.map((z) => {
-                  const tooBig = cardOver(z).length > 0;
-                  const selected = !customFields && (z === current ? s === current : s === current ? isCurrent(z) : s?.name === z.name);
-                  const own = z === current || isCurrent(z);
+            <div>
+              {readyCustom.length > 0 && <div className="mb-2 text-[12px] font-medium text-muted">Platform images</div>}
+              <div role="radiogroup" aria-label="Image" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {images.data.items.map((img) => {
+                  const id = img.metadata?.name ?? "";
                   return (
-                    <Choice
-                      key={z === current ? "(current)" : z.name}
-                      label={`Size ${z.label}`}
-                      selected={selected}
-                      onClick={() => pickSize(own ? undefined : z.name)}
-                      className={cn("p-4", tooBig && (selected ? "border-fail ring-fail [&>span:first-child]:bg-fail" : "opacity-60"))}
-                    >
-                      <div
-                        className={cn(
-                          "flex min-h-[26px] items-center break-words pr-5 font-mono font-semibold tracking-tight",
-                          z.label.length > 4 ? "text-[17px] leading-tight" : "text-[26px] leading-none",
-                        )}
-                      >
-                        {z.label}
-                      </div>
-                      <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
-                        <div>
-                          {formatNumber(z.cpu)} <span className="text-muted">vCPU</span>
-                        </div>
-                        <div>
-                          {formatNumber(z.memoryGi)} <span className="text-muted">GiB memory</span>
-                        </div>
-                      </div>
-                      {own && <div className="mt-2 text-[11.5px] font-medium text-muted">{z === current ? "Current, no listed size" : "Current"}</div>}
-                      {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
+                    <Choice key={id} selected={!chosenCustom && chosenImage === id} onClick={() => chooseImage(id, false)} className="p-3">
+                      <div className="text-[13px] font-medium capitalize">{img.spec?.os || id}</div>
+                      <div className="font-mono text-[11.5px] text-muted">{img.spec?.version || id}</div>
                     </Choice>
                   );
                 })}
-                <Choice key="(custom)" label="Size Custom" selected={!!customFields} onClick={pickCustom} className="p-4">
-                  <div className="flex min-h-[26px] items-center pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
-                  <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
-                    {customFields ? (
-                      <>
-                        <div>
-                          {customCPU} <span className="text-muted">vCPU</span>
-                        </div>
-                        <div>
-                          {gibText(customMiB)} <span className="text-muted">GiB memory</span>
-                        </div>
-                      </>
-                    ) : (
-                      <SlidersHorizontal className="size-5 text-subtle" strokeWidth={1.5} />
+              </div>
+            </div>
+          </div>
+        )}
+      </Section>
+
+      <Section n={3} title="Size">
+        {machineSizes.loading ? (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-[118px] rounded-lg" />
+            ))}
+          </div>
+        ) : machineSizes.error ? (
+          <ErrorNotice error={machineSizes.error} title="The machine sizes did not load" onRetry={machineSizes.refetch} className="max-w-xl p-0" />
+        ) : (
+          <>
+          {/* One row on a wide screen, whatever the number of sizes; Custom last. */}
+          <div
+            role="radiogroup"
+            aria-label="Size"
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-[repeat(var(--cards),minmax(0,1fr))]"
+            style={{ "--cards": cards.length + 1 } as CSSProperties}
+          >
+            {cards.map((z) => {
+              const tooBig = cardOver(z).length > 0;
+              const selected = !customFields && (z === current ? s === current : s === current ? isCurrent(z) : s?.name === z.name);
+              const own = z === current || isCurrent(z);
+              return (
+                <Choice
+                  key={z === current ? "(current)" : z.name}
+                  label={`Size ${z.label}`}
+                  selected={selected}
+                  onClick={() => pickSize(own ? undefined : z.name)}
+                  className={cn("p-4", tooBig && (selected ? "border-fail ring-fail [&>span:first-child]:bg-fail" : "opacity-60"))}
+                >
+                  <div
+                    className={cn(
+                      "flex min-h-[26px] items-center break-words pr-5 font-mono font-semibold tracking-tight",
+                      z.label.length > 4 ? "text-[17px] leading-tight" : "text-[26px] leading-none",
                     )}
-                    {/* The shape rule the rulers keep to, under the memory it is about. */}
-                    <div className="whitespace-nowrap font-sans text-[11px] text-subtle">
-                      {formatNumber(minMiBPerCPU / 1024)}–{formatNumber(maxMiBPerCPU / 1024)} GiB per vCPU
+                  >
+                    {z.label}
+                  </div>
+                  <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
+                    <div>
+                      {formatNumber(z.cpu)} <span className="text-muted">vCPU</span>
+                    </div>
+                    <div>
+                      {formatNumber(z.memoryGi)} <span className="text-muted">GiB memory</span>
                     </div>
                   </div>
-                  {customFields && over.length > 0 && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
+                  {own && <div className="mt-2 text-[11.5px] font-medium text-muted">{z === current ? "Current, no listed size" : "Current"}</div>}
+                  {tooBig && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
                 </Choice>
-              </div>
-              {customFields && (
-                <div className="mt-3">
-                  <SizeSliders
-                    memMiB={customMiB}
-                    cpu={customCPU}
-                    stops={stops}
-                    cpuMax={limits.cpu}
-                    over={over.length > 0}
-                    onChange={(shape) => setCustom(shape)}
-                  />
-                  {customProblem && <p className="mt-2 text-[12px] text-fail">{customProblem}</p>}
-                </div>
-              )}
-              </>
-            )}
-          </Section>
-
-          <Section n={4} title={kind === "vm" ? "Disks" : "Disk"}>
-            <div className="max-w-xl divide-y rounded-lg border bg-surface">
-              <div className="px-4 py-3">
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <span className="flex w-24 shrink-0 items-center gap-2 text-[13px] font-medium">
-                    <HardDrive className="size-4 text-muted" strokeWidth={1.75} />
-                    {kind === "vm" ? "Boot" : "Root"}
-                  </span>
-                  {baseV ? (
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px]">
-                      <span className="font-mono tabular">
-                        {baseRoot?.case === "fromImage" ? `${formatNumber(quantityGiB(baseRoot.value.size || vmDefaults.disk))} GiB` : "its own size"}
-                      </span>
-                      {baseV.status?.rootDisk && (
-                        <DiskLink name={baseV.status.rootDisk} />
-                      )}
-                      <span className="text-[12px] text-subtle">grows on its disk's page</span>
-                    </span>
-                  ) : (
-                    <>
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min={minDisk}
-                        step={1}
-                        value={diskText ?? String(diskStart)}
-                        onChange={(e) => setDiskText(e.target.value)}
-                        aria-label="Disk, GiB"
-                        aria-invalid={!!diskProblem || !!diskOver}
-                        disabled={!s}
-                        className={cn("h-8 w-24 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
-                      />
-                      <span className="text-[13px] text-muted">GiB</span>
-                      <span className="text-[12px] text-subtle">
-                        {editFloor !== undefined ? `≥ ${editFloor} GiB, never shrinks` : byImage ? `≥ ${minDisk} GiB for ${chosenImage}` : `≥ ${minDisk} GiB`}
-                      </span>
-                    </>
-                  )}
-                </div>
-                {!baseV && s && diskProblem ? (
-                  <p className="mt-1.5 text-[12px] text-fail">{diskProblem}</p>
-                ) : !baseV && diskOver ? (
-                  <p className="mt-1.5 text-[12px] text-fail">
-                    Over quota: {formatNumber(diskOver.left)} of {formatNumber(diskOver.limit)} GiB left.
-                  </p>
-                ) : null}
-              </div>
-              {kind === "vm" && (
-                <div className="px-4 py-3">
-                  <div className="mb-2 text-[13px] font-medium">Data</div>
-                  <VmDisks project={project} rows={dataDisks} onChange={setDataDisks} vm={edit ? name : undefined} />
-                </div>
-              )}
-            </div>
-          </Section>
-
-          <Section n={5} title="Network">
-            <div className="max-w-xl space-y-3">
-              {networks.error ? (
-                <ErrorNotice error={networks.error} title="The networks did not load" onRetry={() => void networks.refetch()} className="p-0" />
-              ) : (
-                <div className="rounded-lg border bg-surface px-4 py-3">
-                  <label className="text-[13px] font-medium" htmlFor="network">
-                    {extra.length > 0 && <span className="mr-2 font-mono text-[12px] font-normal text-subtle">eth0</span>}
-                    Network
-                  </label>
-                  <Select
-                    id="network"
-                    value={network}
-                    onChange={(e) => {
-                      setNetwork(e.target.value);
-                      setGroups(["default"]);
-                    }}
-                    className="mt-2"
-                  >
-                    {(networks.data?.items ?? [{ metadata: { name: network }, spec: { ipv4Cidr: "" } }]).map((n) => (
-                      <option key={n.metadata?.name} value={n.metadata?.name}>
-                        {n.metadata?.name} {n.spec?.ipv4Cidr && `· ${n.spec.ipv4Cidr}`}
-                      </option>
-                    ))}
-                  </Select>
-                  <div className="mt-3 text-[13px] font-medium">Security groups</div>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {["default", ...groupsHere.filter((g) => g !== "default"), ...groups.filter((g) => g !== "default" && !groupsHere.includes(g))].map((g) => {
-                      const on = groups.includes(g);
-                      return (
-                        <button
-                          key={g}
-                          type="button"
-                          aria-pressed={on}
-                          onClick={() => setGroups(on ? groups.filter((x) => x !== g) : [...groups, g])}
-                          className={cn(
-                            "flex h-6 items-center gap-1 rounded border px-2 font-mono text-[11.5px]",
-                            on ? "border-accent bg-accent-soft text-foreground" : "text-muted hover:border-border-strong",
-                          )}
-                        >
-                          {on && <Check className="size-3 text-accent" />}
-                          {g}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-              {extra.map((x, i) => (
-                <div
-                  key={x.network}
-                  className={cn(
-                    "flex items-center gap-3 rounded-lg border bg-surface px-4 py-2.5 text-[13px]",
-                    justAdded?.network === x.network && "border-accent ring-1 ring-accent",
-                  )}
-                >
-                  <span className="font-mono text-[12px] text-subtle">eth{i + 1}</span>
-                  <span className="font-mono font-medium">{x.network}</span>
-                  <span className="font-mono text-[11.5px] text-muted">{networks.data?.items.find((n) => n.metadata?.name === x.network)?.spec?.ipv4Cidr}</span>
-                  {x.groups.map((g) => (
-                    <span key={g} className="flex h-6 items-center gap-1 rounded border border-accent bg-accent-soft px-2 font-mono text-[11.5px]">
-                      <Check className="size-3 text-accent" />
-                      {g}
-                    </span>
-                  ))}
-                  {justAdded?.network === x.network && (
-                    <span className="text-[12px] text-muted">
-                      Added for file share <span className="font-mono">{justAdded.share}</span>
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    aria-label={`Remove interface on ${x.network}`}
-                    onClick={() => setExtraNets(extraNets.filter((y) => y.network !== x.network))}
-                    className="ml-auto rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
-                  >
-                    <X className="size-3.5" />
-                  </button>
-                </div>
-              ))}
-              <p className="flex items-start gap-2 text-[12px] text-muted">
-                <Globe className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
-                Each interface gets a public IPv6 address; its security groups decide what gets in.
-              </p>
-            </div>
-          </Section>
-
-          <Section n={6} title={kind === "container" ? "Volumes" : "File shares"}>
-            <VolumePicker
-              vm={kind === "vm"}
-              project={project}
-              rows={kind === "container" ? volumes : vmShares}
-              onChange={kind === "container" ? setVolumes : setVmShares}
-              open={pickerOpen}
-              onOpen={setPickerOpen}
-              networks={onNetworks}
-              onAddInterface={addInterface}
-              shareAdds={shareAdds}
-              onShareAdds={setShareAdds}
-              applied={applied.map((a) => a.share)}
-              mayApplyShares={mayApplyShares}
-            />
-          </Section>
-
-          <Section n={7} title="Port forwards">
-            <MachinePortForwards
-              kind={kind === "container" ? "Container" : "VirtualMachine"}
-              machine={name}
-              rows={forwardRows}
-              onChange={setForwardEdits}
-              nics={[{ network, groups }, ...extra]}
-              forwards={forwards.items}
-              groups={securityGroups.data?.items ?? []}
-            />
-          </Section>
-
-          <Section n={8} title="Advanced" hint="Optional">
-            {kind === "container" ? (
-              <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
-            ) : (
-              <VmAdvancedFields value={vmAdvanced} onChange={setVmAdvanced} open={vmAdvancedOpen} onToggle={() => setVmAdvancedOpen(!vmAdvancedOpen)} />
-            )}
-          </Section>
-
-          <Section n={9} title="Name">
-            {edit ? (
-              <Locked why="Does not change.">
-                <span className="font-mono">{name}</span>
-              </Locked>
-            ) : (
-              <div className="max-w-xl">
-                <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Name" spellCheck={false} />
-                {nameProblem && <p className="mt-1.5 text-[12px] text-fail">{nameProblem}</p>}
-              </div>
-            )}
-          </Section>
-        </div>
-
-        <aside className="xl:pt-14">
-          <div className="sticky top-20 space-y-4">
-            <Card>
-              <div className="border-b px-4 py-3">
-                <div className="text-[11.5px] text-subtle">Summary</div>
-                {s ? (
-                  <div className="mt-1 flex items-baseline gap-2">
-                    <span className="font-mono text-[20px] font-semibold">{s.label}</span>
-                    <span className="text-[13px] text-muted tabular">
-                      {formatNumber(s.cpu)} vCPU · {formatNumber(s.memoryGi)} GiB
-                      {baseV ? "" : ` · ${diskTyped || "–"} GiB disk`}
-                    </span>
-                  </div>
+              );
+            })}
+            <Choice key="(custom)" label="Size Custom" selected={!!customFields} onClick={pickCustom} className="p-4">
+              <div className="flex min-h-[26px] items-center pr-5 font-mono text-[17px] font-semibold leading-tight tracking-tight">Custom</div>
+              <div className="mt-3 space-y-1 font-mono text-[12.5px] tabular">
+                {customFields ? (
+                  <>
+                    <div>
+                      {customCPU} <span className="text-muted">vCPU</span>
+                    </div>
+                    <div>
+                      {gibText(customMiB)} <span className="text-muted">GiB memory</span>
+                    </div>
+                  </>
                 ) : (
-                  <div className="mt-1 text-[13px] text-muted">No size</div>
+                  <SlidersHorizontal className="size-5 text-subtle" strokeWidth={1.5} />
                 )}
-                <div className="mt-0.5 truncate font-mono text-[12px] text-muted">{(kind === "container" ? image : chosenImage) || "no image"}</div>
-              </div>
-              {edit ? (
-                <div className="border-b">
-                  <div className="px-4 pt-3 text-[11.5px] text-subtle">What applying does</div>
-                  <WhatApplyingDoes changes={changes} noun={shortNoun} />
+                {/* The shape rule the rulers keep to, under the memory it is about. */}
+                <div className="whitespace-nowrap font-sans text-[11px] text-subtle">
+                  {formatNumber(minMiBPerCPU / 1024)}–{formatNumber(maxMiBPerCPU / 1024)} GiB per vCPU
                 </div>
-              ) : null}
-              <div className="space-y-3 px-4 py-3">
-                {over.length > 0 && (
-                  <Notice tone="error" title={`Over the project's ${over.map((o) => o.label).join(" and ")} limit`}>
-                    {over.map((o) => (
-                      <div key={o.key}>
-                        {edit ? "The change adds" : `${o.key === "disk" ? "The disk" : s?.label} needs`} {formatNumber(o.need)}
-                        {o.unit}; {formatNumber(o.left)}
-                        {o.unit} of {formatNumber(o.limit)}
-                        {o.unit} is left.
-                      </div>
-                    ))}
-                  </Notice>
-                )}
-                {!edit && existing.error ? (
-                  <Notice tone="error" title={`The list of the project's ${noun}s did not load`}>
-                    <div>Which names are taken is not known, so nothing is created.</div>
-                    <div className="mt-1 font-mono text-[11.5px]">{errorMessage(existing.error)}</div>
-                  </Notice>
-                ) : null}
-                {stale ? (
-                  <StaleNotice
-                    title={`${name} changed since you opened it.`}
-                    reloading={edit.reload.pending}
-                    error={edit.reload.error}
-                    onReload={edit.reload.run}
-                  />
-                ) : (
-                  submit.error && (
-                    <Notice tone="error" title={edit ? `Applying the ${noun} failed` : `Creating the ${noun} failed`}>
-                      {errorMessage(submit.error)}
-                    </Notice>
-                  )
-                )}
-                {applied.length > 0 && !submit.isPending && (
-                  <SharesChanged
-                    project={project}
-                    applied={applied}
-                    onUndone={(n) => {
-                      setApplied((was) => was.filter((a) => a.share !== n));
-                      const next = { ...shareAdds };
-                      delete next[n];
-                      setShareAdds(next);
-                    }}
-                  />
-                )}
-                {edit ? (
-                  <div className="flex gap-2">
-                    {submit.isPending ? (
-                      <Button type="button" disabled>
-                        Cancel
-                      </Button>
-                    ) : (
-                      <Link to={machinePage} params={{ project, name }} className={buttonVariants()}>
-                        Cancel
-                      </Link>
-                    )}
-                    <Button type="submit" variant="primary" className="min-w-0 flex-1" disabled={blocked}>
-                      {submit.isPending ? "Applying…" : changes.length === 0 ? "No change" : "Apply changes"}
-                    </Button>
-                  </div>
-                ) : (
-                  <Button type="submit" variant="primary" className="w-full" disabled={blocked}>
-                    {submit.isPending ? "Creating…" : existing.loading ? "Loading names…" : `Create ${noun}`}
-                  </Button>
-                )}
-                {problems.length > 0 && (edit || (name !== "" && !existing.error)) && <div className="text-[12px] text-subtle">{problems.join(" ")}</div>}
               </div>
-            </Card>
-            <Card className="overflow-hidden">
-              <div className="flex h-10 items-center justify-between border-b px-4">
-                <span className="text-[12px] font-medium">Equivalent manifest</span>
-                <CopyButton text={yaml} />
-              </div>
-              <pre className="overflow-x-auto px-4 py-3 font-mono text-[11.5px] leading-5 text-muted">{yaml}</pre>
-              {cli.map((line, i) => (
-                <div key={line} className={cn("px-4 py-2.5 font-mono text-[11.5px]", i === 0 ? "border-t" : "-mt-2 pt-0")}>
-                  <span className="select-none text-accent">$ </span>
-                  {line}
-                </div>
-              ))}
-            </Card>
+              {customFields && over.length > 0 && <div className="mt-2 text-[11.5px] font-medium text-fail">Over quota</div>}
+            </Choice>
           </div>
-        </aside>
-      </form>
-    </>
+          {customFields && (
+            <div className="mt-3">
+              <SizeSliders
+                memMiB={customMiB}
+                cpu={customCPU}
+                stops={stops}
+                cpuMax={limits.cpu}
+                over={over.length > 0}
+                onChange={(shape) => setCustom(shape)}
+              />
+              {customProblem && <p className="mt-2 text-[12px] text-fail">{customProblem}</p>}
+            </div>
+          )}
+          </>
+        )}
+      </Section>
+
+      <Section n={4} title={kind === "vm" ? "Disks" : "Disk"}>
+        <div className="max-w-xl divide-y rounded-lg border bg-surface">
+          <div className="px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="flex w-24 shrink-0 items-center gap-2 text-[13px] font-medium">
+                <HardDrive className="size-4 text-muted" strokeWidth={1.75} />
+                {kind === "vm" ? "Boot" : "Root"}
+              </span>
+              {baseV ? (
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 text-[13px]">
+                  <span className="font-mono tabular">
+                    {baseRoot?.case === "fromImage" ? `${formatNumber(quantityGiB(baseRoot.value.size || vmDefaults.disk))} GiB` : "its own size"}
+                  </span>
+                  {baseV.status?.rootDisk && (
+                    <DiskLink name={baseV.status.rootDisk} />
+                  )}
+                  <span className="text-[12px] text-subtle">grows on its disk's page</span>
+                </span>
+              ) : (
+                <>
+                  <Input
+                    type="number"
+                    inputMode="numeric"
+                    min={minDisk}
+                    step={1}
+                    value={diskText ?? String(diskStart)}
+                    onChange={(e) => setDiskText(e.target.value)}
+                    aria-label="Disk, GiB"
+                    aria-invalid={!!diskProblem || !!diskOver}
+                    disabled={!s}
+                    className={cn("h-8 w-24 tabular", (diskProblem || diskOver) && "border-fail focus:border-fail")}
+                  />
+                  <span className="text-[13px] text-muted">GiB</span>
+                  <span className="text-[12px] text-subtle">
+                    {editFloor !== undefined ? `≥ ${editFloor} GiB, never shrinks` : byImage ? `≥ ${minDisk} GiB for ${chosenImage}` : `≥ ${minDisk} GiB`}
+                  </span>
+                </>
+              )}
+            </div>
+            {!baseV && s && diskProblem ? (
+              <p className="mt-1.5 text-[12px] text-fail">{diskProblem}</p>
+            ) : !baseV && diskOver ? (
+              <p className="mt-1.5 text-[12px] text-fail">
+                Over quota: {formatNumber(diskOver.left)} of {formatNumber(diskOver.limit)} GiB left.
+              </p>
+            ) : null}
+          </div>
+          {kind === "vm" && (
+            <div className="px-4 py-3">
+              <div className="mb-2 text-[13px] font-medium">Data</div>
+              <VmDisks project={project} rows={dataDisks} onChange={setDataDisks} vm={edit ? name : undefined} />
+            </div>
+          )}
+        </div>
+      </Section>
+
+      <Section n={5} title="Network">
+        <div className="max-w-xl space-y-3">
+          {networks.error ? (
+            <ErrorNotice error={networks.error} title="The networks did not load" onRetry={() => void networks.refetch()} className="p-0" />
+          ) : (
+            <div className="rounded-lg border bg-surface px-4 py-3">
+              <label className="text-[13px] font-medium" htmlFor="network">
+                {extra.length > 0 && <span className="mr-2 font-mono text-[12px] font-normal text-subtle">eth0</span>}
+                Network
+              </label>
+              <Select
+                id="network"
+                value={network}
+                onChange={(e) => {
+                  setNetwork(e.target.value);
+                  setGroups(["default"]);
+                }}
+                className="mt-2"
+              >
+                {(networks.data?.items ?? [{ metadata: { name: network }, spec: { ipv4Cidr: "" } }]).map((n) => (
+                  <option key={n.metadata?.name} value={n.metadata?.name}>
+                    {n.metadata?.name} {n.spec?.ipv4Cidr && `· ${n.spec.ipv4Cidr}`}
+                  </option>
+                ))}
+              </Select>
+              <div className="mt-3 text-[13px] font-medium">Security groups</div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {["default", ...groupsHere.filter((g) => g !== "default"), ...groups.filter((g) => g !== "default" && !groupsHere.includes(g))].map((g) => {
+                  const on = groups.includes(g);
+                  return (
+                    <button
+                      key={g}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => setGroups(on ? groups.filter((x) => x !== g) : [...groups, g])}
+                      className={cn(
+                        "flex h-6 items-center gap-1 rounded border px-2 font-mono text-[11.5px]",
+                        on ? "border-accent bg-accent-soft text-foreground" : "text-muted hover:border-border-strong",
+                      )}
+                    >
+                      {on && <Check className="size-3 text-accent" />}
+                      {g}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {extra.map((x, i) => (
+            <div
+              key={x.network}
+              className={cn(
+                "flex items-center gap-3 rounded-lg border bg-surface px-4 py-2.5 text-[13px]",
+                justAdded?.network === x.network && "border-accent ring-1 ring-accent",
+              )}
+            >
+              <span className="font-mono text-[12px] text-subtle">eth{i + 1}</span>
+              <span className="font-mono font-medium">{x.network}</span>
+              <span className="font-mono text-[11.5px] text-muted">{networks.data?.items.find((n) => n.metadata?.name === x.network)?.spec?.ipv4Cidr}</span>
+              {x.groups.map((g) => (
+                <span key={g} className="flex h-6 items-center gap-1 rounded border border-accent bg-accent-soft px-2 font-mono text-[11.5px]">
+                  <Check className="size-3 text-accent" />
+                  {g}
+                </span>
+              ))}
+              {justAdded?.network === x.network && (
+                <span className="text-[12px] text-muted">
+                  Added for file share <span className="font-mono">{justAdded.share}</span>
+                </span>
+              )}
+              <button
+                type="button"
+                aria-label={`Remove interface on ${x.network}`}
+                onClick={() => setExtraNets(extraNets.filter((y) => y.network !== x.network))}
+                className="ml-auto rounded p-1 text-subtle hover:bg-surface-2 hover:text-foreground"
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ))}
+          <p className="flex items-start gap-2 text-[12px] text-muted">
+            <Globe className="mt-0.5 size-3.5 shrink-0" strokeWidth={1.75} />
+            Each interface gets a public IPv6 address; its security groups decide what gets in.
+          </p>
+        </div>
+      </Section>
+
+      <Section n={6} title={kind === "container" ? "Volumes" : "File shares"}>
+        <VolumePicker
+          vm={kind === "vm"}
+          project={project}
+          rows={kind === "container" ? volumes : vmShares}
+          onChange={kind === "container" ? setVolumes : setVmShares}
+          open={pickerOpen}
+          onOpen={setPickerOpen}
+          networks={onNetworks}
+          onAddInterface={addInterface}
+          shareAdds={shareAdds}
+          onShareAdds={setShareAdds}
+          applied={applied.map((a) => a.share)}
+          mayApplyShares={mayApplyShares}
+        />
+      </Section>
+
+      <Section n={7} title="Port forwards">
+        <MachinePortForwards
+          kind={kind === "container" ? "Container" : "VirtualMachine"}
+          machine={name}
+          rows={forwardRows}
+          onChange={setForwardEdits}
+          nics={[{ network, groups }, ...extra]}
+          forwards={forwards.items}
+          groups={securityGroups.data?.items ?? []}
+        />
+      </Section>
+
+      <Section n={8} title="Advanced" hint="Optional">
+        {kind === "container" ? (
+          <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
+        ) : (
+          <VmAdvancedFields value={vmAdvanced} onChange={setVmAdvanced} open={vmAdvancedOpen} onToggle={() => setVmAdvancedOpen(!vmAdvancedOpen)} />
+        )}
+      </Section>
+
+      <Section n={9} title="Name">
+        {edit ? (
+          <Locked why="Does not change.">
+            <span className="font-mono">{name}</span>
+          </Locked>
+        ) : (
+          <div className="max-w-xl">
+            <Input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} aria-label="Name" spellCheck={false} />
+            {nameProblem && <p className="mt-1.5 text-[12px] text-fail">{nameProblem}</p>}
+          </div>
+        )}
+      </Section>
+    </FormPage>
   );
 }
