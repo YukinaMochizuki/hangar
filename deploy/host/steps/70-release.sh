@@ -253,9 +253,14 @@ release_verify() {
 }
 
 # release_converter_ok holds when the installed converter initramfs says it
-# carries the qemu-img versions.env pins (guest/converter/build.sh).
+# carries the qemu-img versions.env pins (guest/converter/build.sh): its one
+# marker, taken out of the archive, is that version's. The marker is a
+# file's content in the cpio, right after that file's header and name with
+# no newline before it, so it is matched alone (grep -o), never as a line.
 release_converter_ok() {
-	grep -aqx "hangar-converter qemu-img-$HANGAR_CONVERTER_QEMU_IMG" "$RELEASE_CONVERTER"
+	local marker
+	marker=$(LC_ALL=C grep -ao 'hangar-converter qemu-img-[^[:space:]]*' "$RELEASE_CONVERTER") &&
+		[ "$marker" = "hangar-converter qemu-img-$HANGAR_CONVERTER_QEMU_IMG" ]
 }
 
 release_console_installed_ok() {
