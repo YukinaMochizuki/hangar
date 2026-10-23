@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
@@ -98,10 +99,15 @@ func (s *Store) DeleteCapture(ctx context.Context, imageUID string) error {
 }
 
 // imageBase reads the finished base b of a CustomImage; ok is false if it
-// is not there or not finished.
+// is not there or not finished: its @base without b's property set on
+// itself, which it would otherwise inherit from its volume.
 func imageBase(ctx context.Context, b vmBase) (driver.ImageBase, bool, error) {
-	p, ok, err := props(ctx, b.snapshot(), b.prop, "volsize", "logicalreferenced")
-	if err != nil || !ok || p[b.prop] != b.value {
+	mark, ok, err := localProps(ctx, b.snapshot(), b.prop)
+	if err != nil || !ok || mark[b.prop] != b.value {
+		return driver.ImageBase{}, false, err
+	}
+	p, ok, err := props(ctx, b.snapshot(), "volsize", "logicalreferenced")
+	if err != nil || !ok {
 		return driver.ImageBase{}, false, err
 	}
 	size, err1 := strconv.ParseInt(p["volsize"], 10, 64)
@@ -123,7 +129,7 @@ func (s *Store) CaptureImageBase(ctx context.Context, imageUID string) (driver.I
 	}
 	// An unfinished base of ours is made again; anything else at its name
 	// is left alone.
-	if p, ok, err := props(ctx, b.vol, b.prop); err != nil {
+	if p, ok, err := localProps(ctx, b.vol, b.prop); err != nil {
 		return driver.ImageBase{}, err
 	} else if ok {
 		if p[b.prop] != b.value {
@@ -156,8 +162,9 @@ func (s *Store) CaptureImageBase(ctx context.Context, imageUID string) (driver.I
 		return driver.ImageBase{}, &driver.NoSpaceError{What: "the base of custom image " + imageUID, Room: driver.StorageRoom, Need: need, Free: c.Free}
 	}
 	finish := func() error {
-		// Received with its snapshot, @base, and its volume's property;
-		// the snapshot's property, set last, says it is finished.
+		// Received with its snapshot, @base, and its volume's property,
+		// which @base only inherits; the same property set on @base itself,
+		// last, says it is finished.
 		if err := sendReceive(ctx, snap, b.snapshot(), b.prop+"="+b.value); err != nil {
 			return fmt.Errorf("copying %s into the base of custom image %s: %w", snap, imageUID, err)
 		}
@@ -168,9 +175,9 @@ func (s *Store) CaptureImageBase(ctx context.Context, imageUID string) (driver.I
 		return err
 	}
 	if err := finish(); err != nil {
-		// Without its snapshot's property it is unfinished: nothing can use
-		// it.
-		if p, ok, perr := props(context.WithoutCancel(ctx), b.vol, b.prop); perr == nil && ok && p[b.prop] == b.value {
+		// Unfinished, nothing can use it. Only a volume of ours, received
+		// with its property, is destroyed.
+		if p, ok, perr := localProps(context.WithoutCancel(ctx), b.vol, b.prop); perr == nil && ok && p[b.prop] == b.value {
 			_ = destroyBase(context.WithoutCancel(ctx), b)
 		}
 		return driver.ImageBase{}, err
@@ -187,7 +194,10 @@ func (s *Store) CaptureImageBase(ctx context.Context, imageUID string) (driver.I
 
 // sendReceive copies the snapshot snap whole into target, a snapshot of a
 // volume that does not exist, made with the user property prop: zfs send,
-// without its properties, piped into zfs receive.
+// without its properties, piped into zfs receive. The pipe's ends are the
+// two commands' alone, so either ending ends the other: a receive that
+// fails breaks the send's pipe. A send that fails is the cause of the
+// receive's failing on the short stream, and is reported as it.
 func sendReceive(ctx context.Context, snap, target, prop string) error {
 	var sendErr, recvErr bytes.Buffer
 	send := exec.CommandContext(ctx, "zfs", "send", snap)
@@ -196,27 +206,55 @@ func sendReceive(ctx context.Context, snap, target, prop string) error {
 		cmd.Env = append(os.Environ(), "LC_ALL=C")
 	}
 	send.Stderr, recv.Stderr = &sendErr, &recvErr
-	pipe, err := send.StdoutPipe()
+	r, w, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	recv.Stdin = pipe
-	if err := recv.Start(); err != nil {
+	recv.Stdin, send.Stdout = r, w
+	err = recv.Start()
+	_ = r.Close()
+	if err != nil {
+		_ = w.Close()
 		return err
 	}
-	if err := send.Start(); err != nil {
+	err = send.Start()
+	_ = w.Close()
+	if err != nil {
 		_ = recv.Process.Kill()
 		_ = recv.Wait()
 		return err
 	}
-	errSend, errRecv := send.Wait(), recv.Wait()
-	switch msg := strings.TrimSpace(recvErr.String()); {
-	case errRecv != nil && (strings.Contains(msg, "out of space") || strings.Contains(msg, "No space left")):
-		return fmt.Errorf("zfs receive %s: %s: %w", target, msg, driver.ErrNoSpace)
+	errRecv := recv.Wait()
+	errSend := send.Wait()
+	sendMsg, recvMsg := strings.TrimSpace(sendErr.String()), strings.TrimSpace(recvErr.String())
+	noSpace := func(msg string) bool {
+		return strings.Contains(msg, "out of space") || strings.Contains(msg, "No space left")
+	}
+	switch {
+	case errSend != nil && !brokenPipe(errSend, sendMsg):
+		err := fmt.Errorf("zfs send %s: %w: %s", snap, errSend, sendMsg)
+		if noSpace(sendMsg) {
+			err = fmt.Errorf("%w: %w", err, driver.ErrNoSpace)
+		}
+		return err
+	case errRecv != nil && noSpace(recvMsg):
+		return fmt.Errorf("zfs receive %s: %s: %w", target, recvMsg, driver.ErrNoSpace)
 	case errRecv != nil:
-		return fmt.Errorf("zfs receive %s: %w: %s", target, errRecv, msg)
+		return fmt.Errorf("zfs receive %s: %w: %s", target, errRecv, recvMsg)
 	case errSend != nil:
-		return fmt.Errorf("zfs send %s: %w: %s", snap, errSend, strings.TrimSpace(sendErr.String()))
+		return fmt.Errorf("zfs send %s: %w: %s", snap, errSend, sendMsg)
 	}
 	return nil
+}
+
+// brokenPipe says a send ended because what it wrote to was gone: killed
+// by SIGPIPE, or saying so.
+func brokenPipe(err error, msg string) bool {
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		if ws, ok := ee.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGPIPE {
+			return true
+		}
+	}
+	return strings.Contains(msg, "Broken pipe")
 }

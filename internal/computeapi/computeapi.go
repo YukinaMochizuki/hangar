@@ -1,8 +1,7 @@
 // Package computeapi is what the apiserver and the node agent must read
 // alike in Machines, Nodes, Disks, FileShares and CustomImages: what their
-// status says,
-// of which each writes a part and reads the other's, which Disks a
-// Machine's spec names, and which networks a FileShare is on.
+// status says, of which each writes a part and reads the other's, which
+// Disks a Machine's spec names, and which networks a FileShare is on.
 package computeapi
 
 import (

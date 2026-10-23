@@ -133,13 +133,16 @@ unreliable on virtio-fs.
   volume it is captured from is snapshotted as
   `hangar/disks/<disk uid>@customimage-<uid>`; that snapshot is sent
   whole (`zfs send | zfs receive`, no properties) into the base, received
-  as its `@base`, which is set read-only and then marked finished, and the
-  source's snapshot is destroyed. The base holds nothing of the volume, so
-  the volume can go; until its snapshot is destroyed, ZFS keeps the volume
-  from going. A base that failed is destroyed, with the snapshot, and an
-  unfinished one is destroyed as the driver starts. It goes once no volume
-  is cloned from it and its CustomImage is gone
-  (`docs/decisions/custom-images.md`).
+  as its `@base` with `hangar:customimage` set on the volume, which `@base`
+  then inherits; `@base` is set read-only, and only `hangar:customimage`
+  set on `@base` itself (`zfs get -s local`), last, marks it finished. The
+  source's snapshot is then destroyed. The base holds nothing of the
+  volume, so the volume can go; until its snapshot is destroyed, ZFS keeps
+  the volume from going. A base whose capture failed is destroyed, and an
+  unfinished one is destroyed as the driver starts; the snapshot stays for
+  the agent, which removes it once the capture failed for good, and keeps
+  it for a capture cut short. It goes once no volume is cloned from it and
+  its CustomImage is gone (`docs/decisions/custom-images.md`).
 - **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk
@@ -191,7 +194,9 @@ unreliable on virtio-fs.
   whatever it is called. It
   never destroys recursively; ZFS itself refuses to destroy a base with
   clones or a root disk that is open. A base without its snapshot is
-  unfinished and is made again.
+  unfinished and is made again; so is a disk image's whose snapshot lacks
+  its property set on itself, as a received one inherits it from its
+  volume.
 - **A zvol's `/dev/zvol` link is trusted only once the device it leads to
   names that zvol** (ZFS's `BLKZNAME`, as udev's `zvol_id` asks). udev makes
   links after `zfs` returns, so for a moment the link of a destroyed zvol of

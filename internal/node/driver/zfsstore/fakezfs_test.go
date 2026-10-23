@@ -10,27 +10,84 @@ import (
 	"testing"
 )
 
-// fakeZFSScript is a zfs command for the calls New, EnsureRoot,
-// DeleteRoot, EnsureVolume and the share volumes' make: list (of a name,
-// or of a parent's children, which it has none of), get, create (a
-// volume's -s and -V too), clone, set and destroy.
-// Each dataset is a file of
-// property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %;
-// every call is logged to $FAKEZFS/log. $FAKEZFS/set-fails makes set fail
-// before its change, and $FAKEZFS/set-killed SIGKILLs set once its change
-// is made, as an oops in the kernel does.
+// fakeZFSScript is a zfs command for the calls the driver makes: list (of
+// a name, or -r of a parent's volumes or snapshots), get (with -s local,
+// only what is set on the dataset itself), create (a volume's -s and -V
+// too), clone, snapshot, set, destroy (refused for a volume with
+// snapshots), and send piped into receive. Each dataset is a file of
+// property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %; a
+// snapshot, name@snap, inherits what its volume has and it has not, as
+// ZFS's user properties are inherited. A send writes its snapshot's
+// volsize and logicalreferenced, which a receive makes its volume and
+// snapshot of. Every call is logged to $FAKEZFS/log. Switches, files in
+// $FAKEZFS: set-fails makes set fail before its change, and set-killed
+// SIGKILLs set once its change is made, as an oops in the kernel does;
+// send-forever makes send write without end; send-fails makes it fail
+// with an I/O error after a little; recv-fails makes receive fail at once,
+// reading nothing; recv-late makes it fail once it has made the volume;
+// recv-nospace makes it fail out of space; recv-hangs makes it never end.
 const fakeZFSScript = `#!/bin/sh
 echo "$*" >>"$FAKEZFS/log"
 file() { echo "$FAKEZFS/ds/$(echo "$1" | tr / %)"; }
 put() { # put FILE PROP VALUE
 	{ grep -v "^$2	" "$1" 2>/dev/null; printf '%s\t%s\n' "$2" "$3"; } >"$1.new" && mv "$1.new" "$1"
 }
+getp() { # getp NAME PROP [local]: its value, inherited unless local
+	v=$(grep "^$2	" "$(file "$1")" 2>/dev/null | cut -f2)
+	if [ -z "$v" ] && [ -z "$3" ]; then
+		case $1 in *@*) v=$(grep "^$2	" "$(file "${1%@*}")" 2>/dev/null | cut -f2) ;; esac
+	fi
+	printf '%s' "$v"
+}
 cmd=$1; shift
 case $cmd in
 list)
-	[ "$1" = -Hp ] && exit 0
+	if [ "$1" = -Hp ]; then # list -Hp -r -t TYPE -o COLUMNS PARENT
+		type=$4; cols=$6; parent=$7
+		for f in "$FAKEZFS"/ds/*; do
+			[ -f "$f" ] || continue
+			name=$(basename "$f" | tr % /)
+			case $name in "$parent"/*) ;; *) continue ;; esac
+			case $name in
+			*@*) t=snapshot ;;
+			*) if grep -q "^volsize	" "$f"; then t=volume; else t=filesystem; fi ;;
+			esac
+			[ "$t" = "$type" ] || continue
+			row=
+			for c in $(echo "$cols" | tr , ' '); do
+				if [ "$c" = name ]; then v=$name; else v=$(getp "$name" "$c"); fi
+				row="$row${row:+	}${v:--}"
+			done
+			printf '%s\n' "$row"
+		done
+		exit 0
+	fi
 	[ -f "$(file "$4")" ] || { echo "cannot open '$4': dataset does not exist" >&2; exit 1; }
 	echo "$4" ;;
+snapshot)
+	opts=
+	while [ "$1" = -o ]; do opts="$opts $2"; shift 2; done
+	[ -f "$(file "${1%@*}")" ] || { echo "cannot open '${1%@*}': dataset does not exist" >&2; exit 1; }
+	f=$(file "$1"); : >"$f"
+	for o in $opts; do put "$f" "${o%%=*}" "${o#*=}"; done ;;
+send)
+	[ -f "$(file "$1")" ] || { echo "cannot open '$1': dataset does not exist" >&2; exit 1; }
+	if [ -e "$FAKEZFS/send-forever" ]; then exec yes stream; fi
+	if [ -e "$FAKEZFS/send-fails" ]; then echo partial; echo "warning: cannot send '$1': Input/output error" >&2; exit 1; fi
+	printf 'volsize\t%s\nlogicalreferenced\t%s\n' "$(getp "$1" volsize)" "$(getp "$1" logicalreferenced)" ;;
+receive)
+	[ -e "$FAKEZFS/recv-fails" ] && { echo "cannot receive new filesystem stream: destination '$(echo "$*" | awk '{print $NF}')' exists" >&2; exit 1; }
+	[ -e "$FAKEZFS/recv-hangs" ] && exec sleep 1000
+	opts=
+	while [ "$1" = -o ]; do opts="$opts $2"; shift 2; done
+	stream=$(cat)
+	[ -e "$FAKEZFS/recv-nospace" ] && { echo "cannot receive new filesystem stream: out of space" >&2; exit 1; }
+	echo "$stream" | grep -q "^volsize	" || { echo "cannot receive: failed to read from stream" >&2; exit 1; }
+	vol=$(file "${1%@*}"); snap=$(file "$1")
+	echo "$stream" | grep "^volsize	" >"$vol"
+	for o in $opts; do put "$vol" "${o%%=*}" "${o#*=}"; done
+	[ -e "$FAKEZFS/recv-late" ] && { echo "cannot receive new filesystem stream: checksum mismatch" >&2; exit 1; }
+	echo "$stream" >"$snap" ;;
 create)
 	opts=
 	while :; do
@@ -44,13 +101,19 @@ create)
 	f=$(file "$1"); : >"$f"
 	for o in $opts; do put "$f" "${o%%=*}" "${o#*=}"; done ;;
 get)
+	loc=
+	if [ "$2 $3" = "-s local" ]; then loc=1; a=$1; shift 3; set -- "$a" "$@"; fi
 	[ "$1 $2 $3" = "-Hp -o property,value" ] || { echo "fake zfs: get $*" >&2; exit 2; }
-	f=$(file "$5")
-	[ -f "$f" ] || { echo "cannot open '$5': dataset does not exist" >&2; exit 1; }
+	[ -f "$(file "$5")" ] || { echo "cannot open '$5': dataset does not exist" >&2; exit 1; }
 	for p in $(echo "$4" | tr , ' '); do
-		v=$(grep "^$p	" "$f" | cut -f2)
-		printf '%s\t%s\n' "$p" "${v:--}"
-	done ;;
+		v=$(getp "$5" "$p" $loc)
+		if [ -n "$loc" ]; then
+			[ -n "$v" ] && printf '%s\t%s\n' "$p" "$v"
+		else
+			printf '%s\t%s\n' "$p" "${v:--}"
+		fi
+	done
+	exit 0 ;;
 clone)
 	opts=
 	while [ "$1" = -o ]; do opts="$opts $2"; shift 2; done
@@ -66,6 +129,9 @@ set)
 destroy)
 	f=$(file "$1")
 	[ -f "$f" ] || { echo "cannot open '$1': dataset does not exist" >&2; exit 1; }
+	for s in "$f"@*; do
+		[ -f "$s" ] && { echo "cannot destroy '$1': volume has children" >&2; exit 1; }
+	done
 	rm "$f" ;;
 *)
 	echo "fake zfs: $cmd $*" >&2; exit 2 ;;

@@ -9,9 +9,8 @@
 // and so does each CustomImage, received whole from a snapshot of the
 // volume it is captured from. Each API Disk gets a volume of its own, a
 // sparse zvol the host never reads, blank or cloned from a disk image's
-// base, and each FileShare a
-// blank one its server alone has. Every dataset the
-// driver makes carries a user property naming what it serves,
+// base, and each FileShare a blank one its server alone has. Every dataset
+// the driver makes carries a user property naming what it serves,
 // which is how it is listed and how the driver knows it as its own: a
 // dataset without it is never changed or destroyed. See
 // docs/decisions/storage-zfs.md.
@@ -294,6 +293,25 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 		return nil, fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 	}
 	return stdout.Bytes(), nil
+}
+
+// localProps is props of what is set on ds itself: a property it only
+// inherits, as a snapshot does its volume's user properties, is missing.
+func localProps(ctx context.Context, ds string, names ...string) (map[string]string, bool, error) {
+	out, err := zfs(ctx, "get", "-Hp", "-s", "local", "-o", "property,value", strings.Join(names, ","), ds)
+	if errors.Is(err, errNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	got := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if k, v, ok := strings.Cut(line, "\t"); ok {
+			got[k] = v
+		}
+	}
+	return got, true, nil
 }
 
 // props returns the named properties of a dataset, by name, parsed from
@@ -865,6 +883,9 @@ func (s *Store) EnsureImageBase(ctx context.Context, digest string, size int64, 
 	return nil
 }
 
+// ImageBases lists the bases whose snapshot has its property set on
+// itself, which marks it finished: a custom image's @base inherits its
+// volume's from the moment it is received.
 func (s *Store) ImageBases(ctx context.Context) ([]string, error) {
 	snaps, err := list(ctx, "snapshot", s.vmBases(), "name", propDigest, propCustomImage)
 	if err != nil {
@@ -872,7 +893,15 @@ func (s *Store) ImageBases(ctx context.Context) ([]string, error) {
 	}
 	var out []string
 	for _, row := range snaps {
-		if b, err := s.vmBaseOf(baseKey(row[1], row[2])); err == nil && row[0] == b.snapshot() {
+		b, err := s.vmBaseOf(baseKey(row[1], row[2]))
+		if err != nil || row[0] != b.snapshot() {
+			continue
+		}
+		mark, ok, err := localProps(ctx, row[0], b.prop)
+		if err != nil {
+			return nil, err
+		}
+		if ok && mark[b.prop] == b.value {
 			out = append(out, b.key)
 		}
 	}
@@ -946,12 +975,16 @@ func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64, di
 			return driver.Volume{}, err
 		}
 		snap := b.snapshot()
-		p, found, err := props(ctx, snap, b.prop, "volsize")
+		mark, found, err := localProps(ctx, snap, b.prop)
 		if err != nil {
 			return driver.Volume{}, err
 		}
-		if !found || p[b.prop] != b.value {
+		if !found || mark[b.prop] != b.value {
 			return driver.Volume{}, fmt.Errorf("no base for disk image %s", digest)
+		}
+		p, _, err := props(ctx, snap, "volsize")
+		if err != nil {
+			return driver.Volume{}, err
 		}
 		baseSize, err := strconv.ParseInt(p["volsize"], 10, 64)
 		if err != nil {

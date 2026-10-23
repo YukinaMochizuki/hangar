@@ -139,8 +139,11 @@ spec:
 	if got := zfsGet(base, "readonly,hangar:customimage,origin"); got != "on "+ci.GetMetadata().GetUid()+" -" {
 		t.Errorf("the base %s: readonly, hangar:customimage, origin %q; want a read-only copy of no origin", base, got)
 	}
-	if got := zfsGet(base+"@base", "hangar:customimage"); got != ci.GetMetadata().GetUid() {
-		t.Errorf("the base's snapshot: hangar:customimage %q", got)
+	// Finished is the property set on @base itself, not the one it
+	// inherits from its volume.
+	if out, err := exec.Command("zfs", "get", "-H", "-o", "value,source", "hangar:customimage", base+"@base").CombinedOutput(); err != nil ||
+		strings.Join(strings.Fields(string(out)), " ") != ci.GetMetadata().GetUid()+" local" {
+		t.Errorf("the base's snapshot: hangar:customimage value and source %q %v; want it set locally", out, err)
 	}
 	if out, _ := exec.Command("zfs", "list", "-H", "-t", "snapshot", "-o", "name", "-r", dataset+"/disks").CombinedOutput(); strings.Contains(string(out), "@customimage-") {
 		t.Errorf("the snapshot of the source is still there:\n%s", out)
