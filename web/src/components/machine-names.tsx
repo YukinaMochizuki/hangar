@@ -4,7 +4,8 @@
 
 import { Link } from "@tanstack/react-router";
 import { Box, ChevronDown, Server } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { AnchoredLayer, type LayerAlign } from "@/components/menu";
 import { useProjectName } from "@/components/shell";
 import { cn } from "@/lib/cn";
 import { machinePath, type MachineKind } from "@/lib/machines";
@@ -18,7 +19,8 @@ const KindIcon = ({ kind }: { kind: MachineKind }) =>
 /**
  * MachinesPopover is a trigger that opens a scrollable list of machines,
  * each with its kind's icon and address, for a line that names only the
- * first few. It closes on a click outside or Escape.
+ * first few. The list is an AnchoredLayer, so a card that clips what
+ * overflows it does not cut it off. It closes on a click outside or Escape.
  */
 export function MachinesPopover({
   machines,
@@ -32,25 +34,14 @@ export function MachinesPopover({
   label: ReactNode;
   title: ReactNode;
   defaultOpen?: boolean;
-  align?: "left" | "right";
+  align?: LayerAlign;
   className?: string;
 }) {
   const project = useProjectName();
   const [open, setOpen] = useState(defaultOpen);
-  const ref = useRef<HTMLSpanElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
   return (
-    <span ref={ref} className={cn("relative inline-flex items-center align-baseline", className)}>
+    <span ref={setAnchor} className={cn("relative inline-flex items-center align-baseline", className)}>
       <button
         type="button"
         aria-expanded={open}
@@ -64,31 +55,33 @@ export function MachinesPopover({
         <ChevronDown className={cn("size-3 transition-transform", open && "rotate-180")} />
       </button>
       {open && (
-        <span
+        <AnchoredLayer
+          anchor={anchor}
+          onAway={() => setOpen(false)}
+          align={align}
           role="dialog"
           aria-label="Machines"
-          onClick={(e) => e.stopPropagation()}
-          className={cn(
-            "absolute top-full z-30 mt-1 block w-64 overflow-hidden rounded-md border bg-surface text-left font-sans shadow-xl",
-            align === "right" ? "right-0" : "left-0",
-          )}
+          className="w-64 overflow-hidden rounded-md border bg-surface text-left font-sans shadow-xl"
         >
-          <span className="block border-b px-3 py-2 text-[11.5px] text-subtle">{title}</span>
-          <span className="block max-h-56 overflow-y-auto py-1">
-            {machines.map((m) => (
-              <Link
-                key={`${m.kind}/${m.name}`}
-                to={machinePath(m.kind)}
-                params={{ project, name: m.name }}
-                className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] hover:bg-surface-2"
-              >
-                <KindIcon kind={m.kind} />
-                <span className="min-w-0 flex-1 truncate font-mono text-foreground">{m.name}</span>
-                {m.ipv4 && <span className="font-mono text-[11.5px] text-subtle">{m.ipv4}</span>}
-              </Link>
-            ))}
+          {/* React carries events up its own tree, through the portal: a click here is not the row's. */}
+          <span className="block" onClick={(e) => e.stopPropagation()}>
+            <span className="block border-b px-3 py-2 text-[11.5px] text-subtle">{title}</span>
+            <span className="block max-h-56 overflow-y-auto py-1">
+              {machines.map((m) => (
+                <Link
+                  key={`${m.kind}/${m.name}`}
+                  to={machinePath(m.kind)}
+                  params={{ project, name: m.name }}
+                  className="flex items-center gap-2 px-3 py-1.5 text-[12.5px] hover:bg-surface-2"
+                >
+                  <KindIcon kind={m.kind} />
+                  <span className="min-w-0 flex-1 truncate font-mono text-foreground">{m.name}</span>
+                  {m.ipv4 && <span className="font-mono text-[11.5px] text-subtle">{m.ipv4}</span>}
+                </Link>
+              ))}
+            </span>
           </span>
-        </span>
+        </AnchoredLayer>
       )}
     </span>
   );
@@ -106,7 +99,7 @@ export function CappedNames({
   title: ReactNode;
   max?: number;
   defaultOpen?: boolean;
-  align?: "left" | "right";
+  align?: LayerAlign;
 }) {
   const shown = machines.slice(0, max);
   const rest = machines.length - shown.length;

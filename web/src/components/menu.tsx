@@ -2,7 +2,8 @@
 // layer on the document's body, placed at its control, so a list's card,
 // which scrolls its table sideways and so clips what overflows it, never
 // cuts one off. A layer opens below its control, or above it when the
-// viewport has no room below.
+// viewport has no room below. Inside a modal dialog the layer goes in the
+// dialog instead: the page under a modal is inert and drawn beneath it.
 
 import { MoreHorizontal, type LucideIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
@@ -14,25 +15,38 @@ import { cn } from "@/lib/cn";
 const GAP = 4;
 const EDGE = 8;
 
+/** Which of its control's edges a layer lines up with. */
+export type LayerAlign = "left" | "right";
+
 /**
- * Where a layer of the given height goes beside its control: below it, or
- * above it when it does not fit below and does above. Right edges align.
+ * Where a layer of the given size goes beside its control: below it, or
+ * above it when it does not fit below and does above. Its right edge lines
+ * up with the control's, or its left edge, kept inside the viewport.
  */
-export function placeLayer(anchor: DOMRect, height: number, viewport: { width: number; height: number }) {
+export function placeLayer(
+  anchor: DOMRect,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+  align: LayerAlign = "right",
+): { top: number; right: number } | { top: number; left: number } {
   const below = anchor.bottom + GAP;
-  const above = anchor.top - GAP - height;
-  const top = below + height > viewport.height - EDGE && above >= EDGE ? above : below;
-  return { top, right: viewport.width - anchor.right };
+  const above = anchor.top - GAP - size.height;
+  const top = below + size.height > viewport.height - EDGE && above >= EDGE ? above : below;
+  const inside = (edge: number) => Math.max(EDGE, Math.min(edge, viewport.width - EDGE - size.width));
+  if (align === "right") return { top, right: inside(viewport.width - anchor.right) };
+  return { top, left: inside(anchor.left) };
 }
 
 /**
- * A layer on the body, at its anchor. It follows the anchor while the page
- * scrolls or resizes. A mousedown outside both, or Escape, calls onAway;
- * without it the layer stays until its owner removes it.
+ * A layer at its anchor, on the body or in the modal dialog the anchor sits
+ * in. It follows the anchor while the page scrolls or resizes. A mousedown
+ * outside both, or Escape, calls onAway; without it the layer stays until
+ * its owner removes it.
  */
 export function AnchoredLayer({
   anchor,
   onAway,
+  align = "right",
   className,
   children,
   ...rest
@@ -40,6 +54,7 @@ export function AnchoredLayer({
   /** The control the layer stands beside; nothing is drawn until it is known. */
   anchor: HTMLElement | null;
   onAway?: () => void;
+  align?: LayerAlign;
   className?: string;
   children: ReactNode;
   role?: string;
@@ -52,11 +67,19 @@ export function AnchoredLayer({
     const layer = ref.current;
     if (!anchor || !layer) return;
     const place = () => {
-      const { top, right } = placeLayer(anchor.getBoundingClientRect(), layer.offsetHeight, {
-        width: window.innerWidth,
-        height: window.innerHeight,
+      const at = placeLayer(
+        anchor.getBoundingClientRect(),
+        { width: layer.offsetWidth, height: layer.offsetHeight },
+        // The viewport a fixed layer is placed in, without the page's scrollbar.
+        { width: document.documentElement.clientWidth || window.innerWidth, height: document.documentElement.clientHeight || window.innerHeight },
+        align,
+      );
+      Object.assign(layer.style, {
+        top: `${at.top}px`,
+        left: "left" in at ? `${at.left}px` : "auto",
+        right: "right" in at ? `${at.right}px` : "auto",
+        visibility: "visible",
       });
-      Object.assign(layer.style, { top: `${top}px`, right: `${right}px`, visibility: "visible" });
     };
     place();
     const onDown = (e: MouseEvent) => {
@@ -75,12 +98,12 @@ export function AnchoredLayer({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [anchor, onAway]);
+  }, [anchor, onAway, align]);
   return createPortal(
-    <div ref={ref} {...rest} style={{ position: "fixed", top: 0, right: 0, visibility: "hidden" }} className={cn("z-50", className)}>
+    <div ref={ref} {...rest} style={{ position: "fixed", top: 0, [align]: 0, visibility: "hidden" }} className={cn("z-50", className)}>
       {children}
     </div>,
-    document.body,
+    anchor?.closest("dialog") ?? document.body,
   );
 }
 
