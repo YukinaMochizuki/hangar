@@ -74,7 +74,7 @@ E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3
 # Named by the image's digest, so a new pin makes a new image.
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
-e2e-host: guest-initramfs guest-initramfs-testbed $(E2E_HOST_ROOTFS)
+e2e-host: guest-initramfs guest-initramfs-testbed guest-converter $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
@@ -83,14 +83,14 @@ e2e-host: guest-initramfs guest-initramfs-testbed $(E2E_HOST_ROOTFS)
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
 
 # The real hypervisor driver's tests alone, with every other real driver.
-e2e-host-vms: guest-initramfs $(E2E_HOST_ROOTFS)
+e2e-host-vms: guest-initramfs guest-converter $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/hangar-node ./cmd/hangar-node
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 
 # The full flow alone: the real apiserver, node and CLI on every real driver.
-e2e-host-flow: guest-initramfs guest-initramfs-testbed $(E2E_HOST_ROOTFS)
+e2e-host-flow: guest-initramfs guest-initramfs-testbed guest-converter $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \

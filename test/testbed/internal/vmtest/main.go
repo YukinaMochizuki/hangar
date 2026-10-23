@@ -65,6 +65,9 @@ type Inputs struct {
 	// HANGAR_TESTBED_SERVER_PROBE_INITRAMFS; a package that uses it checks
 	// that it is there.
 	ServerProbeInitramfs string
+	// ConverterInitramfs is the converter initramfs, with qemu-img, which
+	// converter VMs boot (make guest-converter).
+	ConverterInitramfs string
 }
 
 var in Inputs
@@ -254,6 +257,7 @@ func loadInputs() (Inputs, error) {
 		CHProbe:              pick("HANGAR_TESTBED_CHPROBE", "bin/ch-probe"),
 		VsockProbe:           pick("HANGAR_TESTBED_VSOCKPROBE", "bin/vsock-probe"),
 		ServerProbeInitramfs: pick("HANGAR_TESTBED_SERVER_PROBE_INITRAMFS", "bin/guest-testbed/initramfs.cpio"),
+		ConverterInitramfs:   pick("HANGAR_TESTBED_CONVERTER_INITRAMFS", "bin/guest/converter.cpio"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")
