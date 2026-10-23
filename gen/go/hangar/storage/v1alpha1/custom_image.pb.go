@@ -332,8 +332,8 @@ func (x *CustomImageDiskSource) GetName() string {
 type CustomImageUploadSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The file's size in bytes, at most 16Gi unless the platform says
-	// otherwise; it is what the image counts toward the disk quota until it
-	// is Ready.
+	// otherwise; it is what the image counts toward the disk quota until its
+	// virtual size is known.
 	Size int64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
 	// SHA-256 of the whole file, as 64 lowercase hex digits; a file that does
 	// not match fails the image. Empty, the file is not checked as a whole,
@@ -403,7 +403,7 @@ type CustomImageStatus struct {
 	DiskSize string `protobuf:"bytes,4,opt,name=disk_size,json=diskSize,proto3" json:"disk_size,omitempty"`
 	// What the image holds, rounded up to whole Gi, once it is Ready: what it
 	// counts toward the disk quota. Until then it counts as disk_size, or an
-	// upload as its size.
+	// upload as the larger of its size and virtual_size.
 	UsedSize string `protobuf:"bytes,5,opt,name=used_size,json=usedSize,proto3" json:"used_size,omitempty"`
 	// How many bytes of an upload the node holds, every chunk checked: where
 	// the next chunk starts. Reported at most a few times a second; the
@@ -415,6 +415,12 @@ type CustomImageStatus struct {
 	// When an upload not yet whole fails, as UploadExpired: 24 hours after
 	// the image is made, unless the platform says otherwise.
 	UploadExpires *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=upload_expires,json=uploadExpires,proto3" json:"upload_expires,omitempty"`
+	// The size in bytes of the disk an uploaded file describes, as the node
+	// inspected it before converting. The apiserver keeps it only once the
+	// project and tenant have the disk quota for it, rounded up to whole Gi,
+	// and fails the image as QuotaExceeded otherwise; the node converts only
+	// once it is kept. Never changes once set.
+	VirtualSize   int64 `protobuf:"varint,9,opt,name=virtual_size,json=virtualSize,proto3" json:"virtual_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -503,6 +509,13 @@ func (x *CustomImageStatus) GetUploadExpires() *timestamppb.Timestamp {
 		return x.UploadExpires
 	}
 	return nil
+}
+
+func (x *CustomImageStatus) GetVirtualSize() int64 {
+	if x != nil {
+		return x.VirtualSize
+	}
+	return 0
 }
 
 type GetCustomImageRequest struct {
@@ -1207,7 +1220,7 @@ const file_hangar_storage_v1alpha1_custom_image_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"E\n" +
 	"\x17CustomImageUploadSource\x12\x12\n" +
 	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x16\n" +
-	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xcf\x02\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xf2\x02\n" +
 	"\x11CustomImageStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1218,7 +1231,8 @@ const file_hangar_storage_v1alpha1_custom_image_proto_rawDesc = "" +
 	"\tused_size\x18\x05 \x01(\tR\busedSize\x12%\n" +
 	"\x0ereceived_bytes\x18\x06 \x01(\x03R\rreceivedBytes\x12\x16\n" +
 	"\x06sha256\x18\a \x01(\tR\x06sha256\x12A\n" +
-	"\x0eupload_expires\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\ruploadExpires\"E\n" +
+	"\x0eupload_expires\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\ruploadExpires\x12!\n" +
+	"\fvirtual_size\x18\t \x01(\x03R\vvirtualSize\"E\n" +
 	"\x15GetCustomImageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"a\n" +

@@ -237,8 +237,17 @@
           "type": "string"
         },
         "usedSize": {
-          "description": "What the image holds, rounded up to whole Gi, once it is Ready: what it counts toward the disk quota. Until then it counts as disk_size, or an upload as its size.",
+          "description": "What the image holds, rounded up to whole Gi, once it is Ready: what it counts toward the disk quota. Until then it counts as disk_size, or an upload as the larger of its size and virtual_size.",
           "type": "string"
+        },
+        "virtualSize": {
+          "description": "The size in bytes of the disk an uploaded file describes, as the node inspected it before converting. The apiserver keeps it only once the project and tenant have the disk quota for it, rounded up to whole Gi, and fails the image as QuotaExceeded otherwise; the node converts only once it is kept. Never changes once set.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
         }
       },
       "type": "object"
@@ -252,7 +261,7 @@
           "type": "string"
         },
         "size": {
-          "description": "The file's size in bytes, at most 16Gi unless the platform says otherwise; it is what the image counts toward the disk quota until it is Ready.",
+          "description": "The file's size in bytes, at most 16Gi unless the platform says otherwise; it is what the image counts toward the disk quota until its virtual size is known.",
           "format": "int64",
           "pattern": "^-?[0-9]+$",
           "type": [

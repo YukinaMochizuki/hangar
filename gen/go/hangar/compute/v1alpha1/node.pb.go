@@ -175,9 +175,13 @@ type NodeStatus struct {
 	// The host's shared IPv4 address, such as "198.51.100.3", which its
 	// machines' IPv4 leaves as and where PortForwards to them are open; empty
 	// when the host has none, and PortForwards to its machines open nowhere.
-	SharedIpv4    string `protobuf:"bytes,9,opt,name=shared_ipv4,json=sharedIpv4,proto3" json:"shared_ipv4,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SharedIpv4 string `protobuf:"bytes,9,opt,name=shared_ipv4,json=sharedIpv4,proto3" json:"shared_ipv4,omitempty"`
+	// Whether the node takes uploaded files for custom images, which needs a
+	// converter VM and a place to stage them. Uploads are placed only on
+	// nodes that do.
+	CustomImageUploads bool `protobuf:"varint,10,opt,name=custom_image_uploads,json=customImageUploads,proto3" json:"custom_image_uploads,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *NodeStatus) Reset() {
@@ -271,6 +275,13 @@ func (x *NodeStatus) GetSharedIpv4() string {
 		return x.SharedIpv4
 	}
 	return ""
+}
+
+func (x *NodeStatus) GetCustomImageUploads() bool {
+	if x != nil {
+		return x.CustomImageUploads
+	}
+	return false
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in
@@ -982,7 +993,7 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"\x06status\x18\x05 \x01(\v2#.hangar.compute.v1alpha1.NodeStatusR\x06status:\x13\x8a\xb5\x18\x0f\n" +
 	"\x04Node\x12\x05nodes \x02\"0\n" +
 	"\bNodeSpec\x12$\n" +
-	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xfb\x03\n" +
+	"\runschedulable\x18\x01 \x01(\bR\runschedulable\"\xad\x04\n" +
 	"\n" +
 	"NodeStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -997,7 +1008,9 @@ const file_hangar_compute_v1alpha1_node_proto_rawDesc = "" +
 	"ipv6Prefix\x12@\n" +
 	"\tplacement\x18\b \x01(\v2\".hangar.compute.v1alpha1.PlacementR\tplacement\x12\x1f\n" +
 	"\vshared_ipv4\x18\t \x01(\tR\n" +
-	"sharedIpv4\"l\n" +
+	"sharedIpv4\x120\n" +
+	"\x14custom_image_uploads\x18\n" +
+	" \x01(\bR\x12customImageUploads\"l\n" +
 	"\rNodeResources\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +

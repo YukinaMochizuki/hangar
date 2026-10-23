@@ -69,8 +69,8 @@ message CustomImageDiskSource {
 // CustomImageUploadSource is the file an image is uploaded from.
 message CustomImageUploadSource {
   // The file's size in bytes, at most 16Gi unless the platform says
-  // otherwise; it is what the image counts toward the disk quota until it
-  // is Ready.
+  // otherwise; it is what the image counts toward the disk quota until its
+  // virtual size is known.
   int64 size = 1;
   // SHA-256 of the whole file, as 64 lowercase hex digits; a file that does
   // not match fails the image. Empty, the file is not checked as a whole,
@@ -93,7 +93,7 @@ message CustomImageStatus {
   string disk_size = 4;
   // What the image holds, rounded up to whole Gi, once it is Ready: what it
   // counts toward the disk quota. Until then it counts as disk_size, or an
-  // upload as its size.
+  // upload as the larger of its size and virtual_size.
   string used_size = 5;
   // How many bytes of an upload the node holds, every chunk checked: where
   // the next chunk starts. Reported at most a few times a second; the
@@ -105,6 +105,12 @@ message CustomImageStatus {
   // When an upload not yet whole fails, as UploadExpired: 24 hours after
   // the image is made, unless the platform says otherwise.
   google.protobuf.Timestamp upload_expires = 8;
+  // The size in bytes of the disk an uploaded file describes, as the node
+  // inspected it before converting. The apiserver keeps it only once the
+  // project and tenant have the disk quota for it, rounded up to whole Gi,
+  // and fails the image as QuotaExceeded otherwise; the node converts only
+  // once it is kept. Never changes once set.
+  int64 virtual_size = 9;
 }
 
 // CustomImageService manages custom images.
