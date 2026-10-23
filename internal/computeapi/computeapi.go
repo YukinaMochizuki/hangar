@@ -99,18 +99,44 @@ const (
 	// CustomImageSnapshotted is the image's node's: True once the source
 	// disk's volume is snapshotted, after which the disk is free again.
 	CustomImageSnapshotted = "Snapshotted"
+	// CustomImageUploaded is the image's node's, for an upload: True once
+	// the whole file is in and matches its sha256, with status.sha256;
+	// False with ReasonAwaitingUpload until then.
+	CustomImageUploaded = "Uploaded"
 	// CustomImageReady is the image's node's: True once the image's base is
-	// made, with status.used_size; False with ReasonCaptureFailed once the
-	// capture failed for good, and with ReasonCapturing until then.
+	// made, with status.used_size; False with one of CustomImageFailures
+	// once it failed for good, and with ReasonCapturing,
+	// ReasonAwaitingUpload or ReasonConverting until then.
 	CustomImageReady = "Ready"
 )
 
-// Reasons the node gives for CustomImageSnapshotted and CustomImageReady.
+// Reasons the node gives for CustomImageSnapshotted, CustomImageUploaded
+// and CustomImageReady.
 const (
-	ReasonCapturing     = "Capturing"
-	ReasonCaptured      = "Captured"
-	ReasonCaptureFailed = "CaptureFailed"
+	ReasonCapturing      = "Capturing"
+	ReasonCaptured       = "Captured"
+	ReasonCaptureFailed  = "CaptureFailed"
+	ReasonAwaitingUpload = "AwaitingUpload"
+	ReasonUploaded       = "Uploaded"
+	ReasonConverting     = "Converting"
+	ReasonConverted      = "Converted"
+	// ReasonUploadExpired means the file was not whole by
+	// status.upload_expires.
+	ReasonUploadExpired = "UploadExpired"
+	// ReasonDigestMismatch means the whole file does not match the
+	// declared sha256.
+	ReasonDigestMismatch = "DigestMismatch"
+	// ReasonConvertFailed means converting a file the node took failed.
+	ReasonConvertFailed = "ConvertFailed"
 )
+
+// CustomImageFailures are the reasons a CustomImage's Ready is False for
+// good: the image is never tried again. ReasonInvalidImage and
+// ReasonImageTooLarge are an uploaded file the node refuses.
+var CustomImageFailures = []string{
+	ReasonCaptureFailed, ReasonUploadExpired, ReasonDigestMismatch,
+	ReasonInvalidImage, ReasonImageTooLarge, ReasonConvertFailed,
+}
 
 // Reasons an image can never be used, for ImageVerified.
 const (

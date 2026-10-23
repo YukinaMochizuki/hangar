@@ -1,6 +1,8 @@
 package computeapi
 
 import (
+	"slices"
+
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
@@ -13,10 +15,10 @@ import (
 // deleted, and keeps that base until the disk is made.
 const CustomImageOf = registry.Domain + "/custom-image"
 
-// CustomImageFailed says the image's capture failed for good.
+// CustomImageFailed says the image's capture or upload failed for good.
 func CustomImageFailed(ci *storagev1alpha1.CustomImage) bool {
 	c := conditions.Find(ci.GetStatus().GetConditions(), CustomImageReady)
-	return c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE && c.GetReason() == ReasonCaptureFailed
+	return c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE && slices.Contains(CustomImageFailures, c.GetReason())
 }
 
 // CustomImageReadyNow says the image's base is made: disks can be made

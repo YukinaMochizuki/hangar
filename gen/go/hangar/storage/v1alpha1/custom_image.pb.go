@@ -10,6 +10,7 @@ import (
 	v1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -23,13 +24,13 @@ const (
 )
 
 // CustomImage is a disk image of a project's own, captured from one of its
-// Disks, such as a stopped VM's root disk, that the project's disks are
-// then made from as they are from an Image. It is an independent copy: the
-// source disk can be started, changed or deleted once the image is
-// snapshotted. The platform does not change what it holds; run
-// "cloud-init clean --machine-id" in the guest before stopping it, so each
-// VM made from the image is a new instance. See
-// docs/decisions/custom-images.md.
+// Disks, such as a stopped VM's root disk, or uploaded as a raw or qcow2
+// file, that the project's disks are then made from as they are from an
+// Image. It is an independent copy: the source disk can be started,
+// changed or deleted once the image is snapshotted. The platform does not
+// change what it holds; run "cloud-init clean --machine-id" in the guest
+// before stopping it, so each VM made from the image is a new instance.
+// See docs/decisions/custom-images.md.
 type CustomImage struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ApiVersion    string                 `protobuf:"bytes,1,opt,name=api_version,json=apiVersion,proto3" json:"api_version,omitempty"`
@@ -109,8 +110,8 @@ func (x *CustomImage) GetStatus() *CustomImageStatus {
 // CustomImageSpec says where an image comes from and what it is.
 type CustomImageSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// What the image is captured from; it cannot change once the image is
-	// made.
+	// What the image is captured or uploaded from; it cannot change once the
+	// image is made.
 	Source *CustomImageSource `protobuf:"bytes,1,opt,name=source,proto3" json:"source,omitempty"`
 	// What the image holds, for people choosing one, such as "ubuntu" and
 	// "24.04".
@@ -191,12 +192,13 @@ func (x *CustomImageSpec) GetMinDiskSize() string {
 	return ""
 }
 
-// CustomImageSource is what an image is captured from.
+// CustomImageSource is what an image is captured or uploaded from.
 type CustomImageSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Source:
 	//
 	//	*CustomImageSource_Disk
+	//	*CustomImageSource_Upload
 	Source        isCustomImageSource_Source `protobuf_oneof:"source"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -248,6 +250,15 @@ func (x *CustomImageSource) GetDisk() *CustomImageDiskSource {
 	return nil
 }
 
+func (x *CustomImageSource) GetUpload() *CustomImageUploadSource {
+	if x != nil {
+		if x, ok := x.Source.(*CustomImageSource_Upload); ok {
+			return x.Upload
+		}
+	}
+	return nil
+}
+
 type isCustomImageSource_Source interface {
 	isCustomImageSource_Source()
 }
@@ -260,7 +271,16 @@ type CustomImageSource_Disk struct {
 	Disk *CustomImageDiskSource `protobuf:"bytes,1,opt,name=disk,proto3,oneof"`
 }
 
+type CustomImageSource_Upload struct {
+	// A raw or qcow2 file, uploaded in chunks to the image's :upload path
+	// once the image is made, then converted on its node. See
+	// docs/decisions/custom-images.md.
+	Upload *CustomImageUploadSource `protobuf:"bytes,2,opt,name=upload,proto3,oneof"`
+}
+
 func (*CustomImageSource_Disk) isCustomImageSource_Source() {}
+
+func (*CustomImageSource_Upload) isCustomImageSource_Source() {}
 
 // CustomImageDiskSource names the Disk an image is captured from.
 type CustomImageDiskSource struct {
@@ -308,29 +328,100 @@ func (x *CustomImageDiskSource) GetName() string {
 	return ""
 }
 
+// CustomImageUploadSource is the file an image is uploaded from.
+type CustomImageUploadSource struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The file's size in bytes, at most 16Gi unless the platform says
+	// otherwise; it is what the image counts toward the disk quota until it
+	// is Ready.
+	Size int64 `protobuf:"varint,1,opt,name=size,proto3" json:"size,omitempty"`
+	// SHA-256 of the whole file, as 64 lowercase hex digits; a file that does
+	// not match fails the image. Empty, the file is not checked as a whole,
+	// though each chunk is.
+	Sha256        string `protobuf:"bytes,2,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CustomImageUploadSource) Reset() {
+	*x = CustomImageUploadSource{}
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CustomImageUploadSource) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CustomImageUploadSource) ProtoMessage() {}
+
+func (x *CustomImageUploadSource) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CustomImageUploadSource.ProtoReflect.Descriptor instead.
+func (*CustomImageUploadSource) Descriptor() ([]byte, []int) {
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *CustomImageUploadSource) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *CustomImageUploadSource) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
 // CustomImageStatus is what the apiserver and the image's node found. The
-// apiserver writes node and disk_size as the image is made; the node writes
-// the conditions and used_size.
+// apiserver writes node, and disk_size of a captured image, as the image is
+// made; the node writes the rest.
 type CustomImageStatus struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	ObservedGeneration int64                  `protobuf:"varint,1,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
-	// Names the Node the image lives on: its source disk's. Disks made from
+	// Names the Node the image lives on: its source disk's, or for an upload
+	// the node picked as it is made, which takes the file. Disks made from
 	// the image are made there.
 	Node string `protobuf:"bytes,3,opt,name=node,proto3" json:"node,omitempty"`
-	// The source disk's size, in whole Gi: the smallest disk made from the
-	// image.
+	// The smallest disk made from the image, in whole Gi: the source disk's
+	// size, or for an upload the converted image's, set once it is Ready.
 	DiskSize string `protobuf:"bytes,4,opt,name=disk_size,json=diskSize,proto3" json:"disk_size,omitempty"`
 	// What the image holds, rounded up to whole Gi, once it is Ready: what it
-	// counts toward the disk quota. Until then it counts as disk_size.
-	UsedSize      string `protobuf:"bytes,5,opt,name=used_size,json=usedSize,proto3" json:"used_size,omitempty"`
+	// counts toward the disk quota. Until then it counts as disk_size, or an
+	// upload as its size.
+	UsedSize string `protobuf:"bytes,5,opt,name=used_size,json=usedSize,proto3" json:"used_size,omitempty"`
+	// How many bytes of an upload the node holds, every chunk checked: where
+	// the next chunk starts. Reported at most a few times a second; the
+	// :upload path answers the node's own count.
+	ReceivedBytes int64 `protobuf:"varint,6,opt,name=received_bytes,json=receivedBytes,proto3" json:"received_bytes,omitempty"`
+	// SHA-256 of the uploaded file as the node computed it, as 64 lowercase
+	// hex digits, once the whole file is in.
+	Sha256 string `protobuf:"bytes,7,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	// When an upload not yet whole fails, as UploadExpired: 24 hours after
+	// the image is made, unless the platform says otherwise.
+	UploadExpires *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=upload_expires,json=uploadExpires,proto3" json:"upload_expires,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CustomImageStatus) Reset() {
 	*x = CustomImageStatus{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[4]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -342,7 +433,7 @@ func (x *CustomImageStatus) String() string {
 func (*CustomImageStatus) ProtoMessage() {}
 
 func (x *CustomImageStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[4]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -355,7 +446,7 @@ func (x *CustomImageStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CustomImageStatus.ProtoReflect.Descriptor instead.
 func (*CustomImageStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{4}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *CustomImageStatus) GetObservedGeneration() int64 {
@@ -393,6 +484,27 @@ func (x *CustomImageStatus) GetUsedSize() string {
 	return ""
 }
 
+func (x *CustomImageStatus) GetReceivedBytes() int64 {
+	if x != nil {
+		return x.ReceivedBytes
+	}
+	return 0
+}
+
+func (x *CustomImageStatus) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *CustomImageStatus) GetUploadExpires() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UploadExpires
+	}
+	return nil
+}
+
 type GetCustomImageRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Project       string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
@@ -403,7 +515,7 @@ type GetCustomImageRequest struct {
 
 func (x *GetCustomImageRequest) Reset() {
 	*x = GetCustomImageRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[5]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -415,7 +527,7 @@ func (x *GetCustomImageRequest) String() string {
 func (*GetCustomImageRequest) ProtoMessage() {}
 
 func (x *GetCustomImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[5]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -428,7 +540,7 @@ func (x *GetCustomImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCustomImageRequest.ProtoReflect.Descriptor instead.
 func (*GetCustomImageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{5}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetCustomImageRequest) GetProject() string {
@@ -454,7 +566,7 @@ type GetCustomImageResponse struct {
 
 func (x *GetCustomImageResponse) Reset() {
 	*x = GetCustomImageResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[6]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -466,7 +578,7 @@ func (x *GetCustomImageResponse) String() string {
 func (*GetCustomImageResponse) ProtoMessage() {}
 
 func (x *GetCustomImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[6]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -479,7 +591,7 @@ func (x *GetCustomImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCustomImageResponse.ProtoReflect.Descriptor instead.
 func (*GetCustomImageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{6}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GetCustomImageResponse) GetCustomImage() *CustomImage {
@@ -502,7 +614,7 @@ type ListCustomImagesRequest struct {
 
 func (x *ListCustomImagesRequest) Reset() {
 	*x = ListCustomImagesRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[7]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -514,7 +626,7 @@ func (x *ListCustomImagesRequest) String() string {
 func (*ListCustomImagesRequest) ProtoMessage() {}
 
 func (x *ListCustomImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[7]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -527,7 +639,7 @@ func (x *ListCustomImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCustomImagesRequest.ProtoReflect.Descriptor instead.
 func (*ListCustomImagesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{7}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListCustomImagesRequest) GetProject() string {
@@ -569,7 +681,7 @@ type ListCustomImagesResponse struct {
 
 func (x *ListCustomImagesResponse) Reset() {
 	*x = ListCustomImagesResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[8]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -581,7 +693,7 @@ func (x *ListCustomImagesResponse) String() string {
 func (*ListCustomImagesResponse) ProtoMessage() {}
 
 func (x *ListCustomImagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[8]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -594,7 +706,7 @@ func (x *ListCustomImagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListCustomImagesResponse.ProtoReflect.Descriptor instead.
 func (*ListCustomImagesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{8}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListCustomImagesResponse) GetItems() []*CustomImage {
@@ -630,7 +742,7 @@ type WatchCustomImagesRequest struct {
 
 func (x *WatchCustomImagesRequest) Reset() {
 	*x = WatchCustomImagesRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[9]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -642,7 +754,7 @@ func (x *WatchCustomImagesRequest) String() string {
 func (*WatchCustomImagesRequest) ProtoMessage() {}
 
 func (x *WatchCustomImagesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[9]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -655,7 +767,7 @@ func (x *WatchCustomImagesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchCustomImagesRequest.ProtoReflect.Descriptor instead.
 func (*WatchCustomImagesRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{9}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *WatchCustomImagesRequest) GetProject() string {
@@ -690,7 +802,7 @@ type WatchCustomImagesResponse struct {
 
 func (x *WatchCustomImagesResponse) Reset() {
 	*x = WatchCustomImagesResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[10]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -702,7 +814,7 @@ func (x *WatchCustomImagesResponse) String() string {
 func (*WatchCustomImagesResponse) ProtoMessage() {}
 
 func (x *WatchCustomImagesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[10]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -715,7 +827,7 @@ func (x *WatchCustomImagesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchCustomImagesResponse.ProtoReflect.Descriptor instead.
 func (*WatchCustomImagesResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{10}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *WatchCustomImagesResponse) GetType() v1.EventType {
@@ -750,7 +862,7 @@ type ApplyCustomImageRequest struct {
 
 func (x *ApplyCustomImageRequest) Reset() {
 	*x = ApplyCustomImageRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[11]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -762,7 +874,7 @@ func (x *ApplyCustomImageRequest) String() string {
 func (*ApplyCustomImageRequest) ProtoMessage() {}
 
 func (x *ApplyCustomImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[11]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -775,7 +887,7 @@ func (x *ApplyCustomImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyCustomImageRequest.ProtoReflect.Descriptor instead.
 func (*ApplyCustomImageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{11}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ApplyCustomImageRequest) GetCustomImage() *CustomImage {
@@ -803,7 +915,7 @@ type ApplyCustomImageResponse struct {
 
 func (x *ApplyCustomImageResponse) Reset() {
 	*x = ApplyCustomImageResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[12]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -815,7 +927,7 @@ func (x *ApplyCustomImageResponse) String() string {
 func (*ApplyCustomImageResponse) ProtoMessage() {}
 
 func (x *ApplyCustomImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[12]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -828,7 +940,7 @@ func (x *ApplyCustomImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyCustomImageResponse.ProtoReflect.Descriptor instead.
 func (*ApplyCustomImageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{12}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ApplyCustomImageResponse) GetCustomImage() *CustomImage {
@@ -863,7 +975,7 @@ type DeleteCustomImageRequest struct {
 
 func (x *DeleteCustomImageRequest) Reset() {
 	*x = DeleteCustomImageRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[13]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -875,7 +987,7 @@ func (x *DeleteCustomImageRequest) String() string {
 func (*DeleteCustomImageRequest) ProtoMessage() {}
 
 func (x *DeleteCustomImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[13]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -888,7 +1000,7 @@ func (x *DeleteCustomImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCustomImageRequest.ProtoReflect.Descriptor instead.
 func (*DeleteCustomImageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{13}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *DeleteCustomImageRequest) GetProject() string {
@@ -921,7 +1033,7 @@ type DeleteCustomImageResponse struct {
 
 func (x *DeleteCustomImageResponse) Reset() {
 	*x = DeleteCustomImageResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[14]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -933,7 +1045,7 @@ func (x *DeleteCustomImageResponse) String() string {
 func (*DeleteCustomImageResponse) ProtoMessage() {}
 
 func (x *DeleteCustomImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[14]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -946,7 +1058,7 @@ func (x *DeleteCustomImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteCustomImageResponse.ProtoReflect.Descriptor instead.
 func (*DeleteCustomImageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{14}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *DeleteCustomImageResponse) GetCustomImage() *CustomImage {
@@ -968,7 +1080,7 @@ type UpdateCustomImageStatusRequest struct {
 
 func (x *UpdateCustomImageStatusRequest) Reset() {
 	*x = UpdateCustomImageStatusRequest{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[15]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -980,7 +1092,7 @@ func (x *UpdateCustomImageStatusRequest) String() string {
 func (*UpdateCustomImageStatusRequest) ProtoMessage() {}
 
 func (x *UpdateCustomImageStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[15]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -993,7 +1105,7 @@ func (x *UpdateCustomImageStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCustomImageStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateCustomImageStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{15}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateCustomImageStatusRequest) GetProject() string {
@@ -1033,7 +1145,7 @@ type UpdateCustomImageStatusResponse struct {
 
 func (x *UpdateCustomImageStatusResponse) Reset() {
 	*x = UpdateCustomImageStatusResponse{}
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[16]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1045,7 +1157,7 @@ func (x *UpdateCustomImageStatusResponse) String() string {
 func (*UpdateCustomImageStatusResponse) ProtoMessage() {}
 
 func (x *UpdateCustomImageStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[16]
+	mi := &file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1058,7 +1170,7 @@ func (x *UpdateCustomImageStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateCustomImageStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateCustomImageStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{16}
+	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *UpdateCustomImageStatusResponse) GetCustomImage() *CustomImage {
@@ -1072,7 +1184,7 @@ var File_hangar_storage_v1alpha1_custom_image_proto protoreflect.FileDescriptor
 
 const file_hangar_storage_v1alpha1_custom_image_proto_rawDesc = "" +
 	"\n" +
-	"*hangar/storage/v1alpha1/custom_image.proto\x12\x17hangar.storage.v1alpha1\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\xa5\x02\n" +
+	"*hangar/storage/v1alpha1/custom_image.proto\x12\x17hangar.storage.v1alpha1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x19hangar/meta/v1/meta.proto\x1a\x1changar/meta/v1/options.proto\"\xa5\x02\n" +
 	"\vCustomImage\x12\x1f\n" +
 	"\vapi_version\x18\x01 \x01(\tR\n" +
 	"apiVersion\x12\x12\n" +
@@ -1086,12 +1198,16 @@ const file_hangar_storage_v1alpha1_custom_image_proto_rawDesc = "" +
 	"\x02os\x18\x02 \x01(\tR\x02os\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\tR\aversion\x12!\n" +
 	"\fdefault_user\x18\x04 \x01(\tR\vdefaultUser\x12\"\n" +
-	"\rmin_disk_size\x18\x05 \x01(\tR\vminDiskSize\"c\n" +
+	"\rmin_disk_size\x18\x05 \x01(\tR\vminDiskSize\"\xaf\x01\n" +
 	"\x11CustomImageSource\x12D\n" +
-	"\x04disk\x18\x01 \x01(\v2..hangar.storage.v1alpha1.CustomImageDiskSourceH\x00R\x04diskB\b\n" +
+	"\x04disk\x18\x01 \x01(\v2..hangar.storage.v1alpha1.CustomImageDiskSourceH\x00R\x04disk\x12J\n" +
+	"\x06upload\x18\x02 \x01(\v20.hangar.storage.v1alpha1.CustomImageUploadSourceH\x00R\x06uploadB\b\n" +
 	"\x06source\"+\n" +
 	"\x15CustomImageDiskSource\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\xcd\x01\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\"E\n" +
+	"\x17CustomImageUploadSource\x12\x12\n" +
+	"\x04size\x18\x01 \x01(\x03R\x04size\x12\x16\n" +
+	"\x06sha256\x18\x02 \x01(\tR\x06sha256\"\xcf\x02\n" +
 	"\x11CustomImageStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1099,7 +1215,10 @@ const file_hangar_storage_v1alpha1_custom_image_proto_rawDesc = "" +
 	"conditions\x12\x12\n" +
 	"\x04node\x18\x03 \x01(\tR\x04node\x12\x1b\n" +
 	"\tdisk_size\x18\x04 \x01(\tR\bdiskSize\x12\x1b\n" +
-	"\tused_size\x18\x05 \x01(\tR\busedSize\"E\n" +
+	"\tused_size\x18\x05 \x01(\tR\busedSize\x12%\n" +
+	"\x0ereceived_bytes\x18\x06 \x01(\x03R\rreceivedBytes\x12\x16\n" +
+	"\x06sha256\x18\a \x01(\tR\x06sha256\x12A\n" +
+	"\x0eupload_expires\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\ruploadExpires\"E\n" +
 	"\x15GetCustomImageRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"a\n" +
@@ -1167,62 +1286,66 @@ func file_hangar_storage_v1alpha1_custom_image_proto_rawDescGZIP() []byte {
 	return file_hangar_storage_v1alpha1_custom_image_proto_rawDescData
 }
 
-var file_hangar_storage_v1alpha1_custom_image_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_hangar_storage_v1alpha1_custom_image_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
 var file_hangar_storage_v1alpha1_custom_image_proto_goTypes = []any{
 	(*CustomImage)(nil),                     // 0: hangar.storage.v1alpha1.CustomImage
 	(*CustomImageSpec)(nil),                 // 1: hangar.storage.v1alpha1.CustomImageSpec
 	(*CustomImageSource)(nil),               // 2: hangar.storage.v1alpha1.CustomImageSource
 	(*CustomImageDiskSource)(nil),           // 3: hangar.storage.v1alpha1.CustomImageDiskSource
-	(*CustomImageStatus)(nil),               // 4: hangar.storage.v1alpha1.CustomImageStatus
-	(*GetCustomImageRequest)(nil),           // 5: hangar.storage.v1alpha1.GetCustomImageRequest
-	(*GetCustomImageResponse)(nil),          // 6: hangar.storage.v1alpha1.GetCustomImageResponse
-	(*ListCustomImagesRequest)(nil),         // 7: hangar.storage.v1alpha1.ListCustomImagesRequest
-	(*ListCustomImagesResponse)(nil),        // 8: hangar.storage.v1alpha1.ListCustomImagesResponse
-	(*WatchCustomImagesRequest)(nil),        // 9: hangar.storage.v1alpha1.WatchCustomImagesRequest
-	(*WatchCustomImagesResponse)(nil),       // 10: hangar.storage.v1alpha1.WatchCustomImagesResponse
-	(*ApplyCustomImageRequest)(nil),         // 11: hangar.storage.v1alpha1.ApplyCustomImageRequest
-	(*ApplyCustomImageResponse)(nil),        // 12: hangar.storage.v1alpha1.ApplyCustomImageResponse
-	(*DeleteCustomImageRequest)(nil),        // 13: hangar.storage.v1alpha1.DeleteCustomImageRequest
-	(*DeleteCustomImageResponse)(nil),       // 14: hangar.storage.v1alpha1.DeleteCustomImageResponse
-	(*UpdateCustomImageStatusRequest)(nil),  // 15: hangar.storage.v1alpha1.UpdateCustomImageStatusRequest
-	(*UpdateCustomImageStatusResponse)(nil), // 16: hangar.storage.v1alpha1.UpdateCustomImageStatusResponse
-	(*v1.ObjectMeta)(nil),                   // 17: hangar.meta.v1.ObjectMeta
-	(*v1.Condition)(nil),                    // 18: hangar.meta.v1.Condition
-	(v1.EventType)(0),                       // 19: hangar.meta.v1.EventType
+	(*CustomImageUploadSource)(nil),         // 4: hangar.storage.v1alpha1.CustomImageUploadSource
+	(*CustomImageStatus)(nil),               // 5: hangar.storage.v1alpha1.CustomImageStatus
+	(*GetCustomImageRequest)(nil),           // 6: hangar.storage.v1alpha1.GetCustomImageRequest
+	(*GetCustomImageResponse)(nil),          // 7: hangar.storage.v1alpha1.GetCustomImageResponse
+	(*ListCustomImagesRequest)(nil),         // 8: hangar.storage.v1alpha1.ListCustomImagesRequest
+	(*ListCustomImagesResponse)(nil),        // 9: hangar.storage.v1alpha1.ListCustomImagesResponse
+	(*WatchCustomImagesRequest)(nil),        // 10: hangar.storage.v1alpha1.WatchCustomImagesRequest
+	(*WatchCustomImagesResponse)(nil),       // 11: hangar.storage.v1alpha1.WatchCustomImagesResponse
+	(*ApplyCustomImageRequest)(nil),         // 12: hangar.storage.v1alpha1.ApplyCustomImageRequest
+	(*ApplyCustomImageResponse)(nil),        // 13: hangar.storage.v1alpha1.ApplyCustomImageResponse
+	(*DeleteCustomImageRequest)(nil),        // 14: hangar.storage.v1alpha1.DeleteCustomImageRequest
+	(*DeleteCustomImageResponse)(nil),       // 15: hangar.storage.v1alpha1.DeleteCustomImageResponse
+	(*UpdateCustomImageStatusRequest)(nil),  // 16: hangar.storage.v1alpha1.UpdateCustomImageStatusRequest
+	(*UpdateCustomImageStatusResponse)(nil), // 17: hangar.storage.v1alpha1.UpdateCustomImageStatusResponse
+	(*v1.ObjectMeta)(nil),                   // 18: hangar.meta.v1.ObjectMeta
+	(*v1.Condition)(nil),                    // 19: hangar.meta.v1.Condition
+	(*timestamppb.Timestamp)(nil),           // 20: google.protobuf.Timestamp
+	(v1.EventType)(0),                       // 21: hangar.meta.v1.EventType
 }
 var file_hangar_storage_v1alpha1_custom_image_proto_depIdxs = []int32{
-	17, // 0: hangar.storage.v1alpha1.CustomImage.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	18, // 0: hangar.storage.v1alpha1.CustomImage.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	1,  // 1: hangar.storage.v1alpha1.CustomImage.spec:type_name -> hangar.storage.v1alpha1.CustomImageSpec
-	4,  // 2: hangar.storage.v1alpha1.CustomImage.status:type_name -> hangar.storage.v1alpha1.CustomImageStatus
+	5,  // 2: hangar.storage.v1alpha1.CustomImage.status:type_name -> hangar.storage.v1alpha1.CustomImageStatus
 	2,  // 3: hangar.storage.v1alpha1.CustomImageSpec.source:type_name -> hangar.storage.v1alpha1.CustomImageSource
 	3,  // 4: hangar.storage.v1alpha1.CustomImageSource.disk:type_name -> hangar.storage.v1alpha1.CustomImageDiskSource
-	18, // 5: hangar.storage.v1alpha1.CustomImageStatus.conditions:type_name -> hangar.meta.v1.Condition
-	0,  // 6: hangar.storage.v1alpha1.GetCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	0,  // 7: hangar.storage.v1alpha1.ListCustomImagesResponse.items:type_name -> hangar.storage.v1alpha1.CustomImage
-	19, // 8: hangar.storage.v1alpha1.WatchCustomImagesResponse.type:type_name -> hangar.meta.v1.EventType
-	0,  // 9: hangar.storage.v1alpha1.WatchCustomImagesResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	0,  // 10: hangar.storage.v1alpha1.ApplyCustomImageRequest.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	0,  // 11: hangar.storage.v1alpha1.ApplyCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	0,  // 12: hangar.storage.v1alpha1.DeleteCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	4,  // 13: hangar.storage.v1alpha1.UpdateCustomImageStatusRequest.status:type_name -> hangar.storage.v1alpha1.CustomImageStatus
-	0,  // 14: hangar.storage.v1alpha1.UpdateCustomImageStatusResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
-	5,  // 15: hangar.storage.v1alpha1.CustomImageService.GetCustomImage:input_type -> hangar.storage.v1alpha1.GetCustomImageRequest
-	7,  // 16: hangar.storage.v1alpha1.CustomImageService.ListCustomImages:input_type -> hangar.storage.v1alpha1.ListCustomImagesRequest
-	9,  // 17: hangar.storage.v1alpha1.CustomImageService.WatchCustomImages:input_type -> hangar.storage.v1alpha1.WatchCustomImagesRequest
-	11, // 18: hangar.storage.v1alpha1.CustomImageService.ApplyCustomImage:input_type -> hangar.storage.v1alpha1.ApplyCustomImageRequest
-	13, // 19: hangar.storage.v1alpha1.CustomImageService.DeleteCustomImage:input_type -> hangar.storage.v1alpha1.DeleteCustomImageRequest
-	15, // 20: hangar.storage.v1alpha1.CustomImageService.UpdateCustomImageStatus:input_type -> hangar.storage.v1alpha1.UpdateCustomImageStatusRequest
-	6,  // 21: hangar.storage.v1alpha1.CustomImageService.GetCustomImage:output_type -> hangar.storage.v1alpha1.GetCustomImageResponse
-	8,  // 22: hangar.storage.v1alpha1.CustomImageService.ListCustomImages:output_type -> hangar.storage.v1alpha1.ListCustomImagesResponse
-	10, // 23: hangar.storage.v1alpha1.CustomImageService.WatchCustomImages:output_type -> hangar.storage.v1alpha1.WatchCustomImagesResponse
-	12, // 24: hangar.storage.v1alpha1.CustomImageService.ApplyCustomImage:output_type -> hangar.storage.v1alpha1.ApplyCustomImageResponse
-	14, // 25: hangar.storage.v1alpha1.CustomImageService.DeleteCustomImage:output_type -> hangar.storage.v1alpha1.DeleteCustomImageResponse
-	16, // 26: hangar.storage.v1alpha1.CustomImageService.UpdateCustomImageStatus:output_type -> hangar.storage.v1alpha1.UpdateCustomImageStatusResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	4,  // 5: hangar.storage.v1alpha1.CustomImageSource.upload:type_name -> hangar.storage.v1alpha1.CustomImageUploadSource
+	19, // 6: hangar.storage.v1alpha1.CustomImageStatus.conditions:type_name -> hangar.meta.v1.Condition
+	20, // 7: hangar.storage.v1alpha1.CustomImageStatus.upload_expires:type_name -> google.protobuf.Timestamp
+	0,  // 8: hangar.storage.v1alpha1.GetCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	0,  // 9: hangar.storage.v1alpha1.ListCustomImagesResponse.items:type_name -> hangar.storage.v1alpha1.CustomImage
+	21, // 10: hangar.storage.v1alpha1.WatchCustomImagesResponse.type:type_name -> hangar.meta.v1.EventType
+	0,  // 11: hangar.storage.v1alpha1.WatchCustomImagesResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	0,  // 12: hangar.storage.v1alpha1.ApplyCustomImageRequest.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	0,  // 13: hangar.storage.v1alpha1.ApplyCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	0,  // 14: hangar.storage.v1alpha1.DeleteCustomImageResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	5,  // 15: hangar.storage.v1alpha1.UpdateCustomImageStatusRequest.status:type_name -> hangar.storage.v1alpha1.CustomImageStatus
+	0,  // 16: hangar.storage.v1alpha1.UpdateCustomImageStatusResponse.custom_image:type_name -> hangar.storage.v1alpha1.CustomImage
+	6,  // 17: hangar.storage.v1alpha1.CustomImageService.GetCustomImage:input_type -> hangar.storage.v1alpha1.GetCustomImageRequest
+	8,  // 18: hangar.storage.v1alpha1.CustomImageService.ListCustomImages:input_type -> hangar.storage.v1alpha1.ListCustomImagesRequest
+	10, // 19: hangar.storage.v1alpha1.CustomImageService.WatchCustomImages:input_type -> hangar.storage.v1alpha1.WatchCustomImagesRequest
+	12, // 20: hangar.storage.v1alpha1.CustomImageService.ApplyCustomImage:input_type -> hangar.storage.v1alpha1.ApplyCustomImageRequest
+	14, // 21: hangar.storage.v1alpha1.CustomImageService.DeleteCustomImage:input_type -> hangar.storage.v1alpha1.DeleteCustomImageRequest
+	16, // 22: hangar.storage.v1alpha1.CustomImageService.UpdateCustomImageStatus:input_type -> hangar.storage.v1alpha1.UpdateCustomImageStatusRequest
+	7,  // 23: hangar.storage.v1alpha1.CustomImageService.GetCustomImage:output_type -> hangar.storage.v1alpha1.GetCustomImageResponse
+	9,  // 24: hangar.storage.v1alpha1.CustomImageService.ListCustomImages:output_type -> hangar.storage.v1alpha1.ListCustomImagesResponse
+	11, // 25: hangar.storage.v1alpha1.CustomImageService.WatchCustomImages:output_type -> hangar.storage.v1alpha1.WatchCustomImagesResponse
+	13, // 26: hangar.storage.v1alpha1.CustomImageService.ApplyCustomImage:output_type -> hangar.storage.v1alpha1.ApplyCustomImageResponse
+	15, // 27: hangar.storage.v1alpha1.CustomImageService.DeleteCustomImage:output_type -> hangar.storage.v1alpha1.DeleteCustomImageResponse
+	17, // 28: hangar.storage.v1alpha1.CustomImageService.UpdateCustomImageStatus:output_type -> hangar.storage.v1alpha1.UpdateCustomImageStatusResponse
+	23, // [23:29] is the sub-list for method output_type
+	17, // [17:23] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_hangar_storage_v1alpha1_custom_image_proto_init() }
@@ -1232,16 +1355,17 @@ func file_hangar_storage_v1alpha1_custom_image_proto_init() {
 	}
 	file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[2].OneofWrappers = []any{
 		(*CustomImageSource_Disk)(nil),
+		(*CustomImageSource_Upload)(nil),
 	}
-	file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[13].OneofWrappers = []any{}
-	file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[15].OneofWrappers = []any{}
+	file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[14].OneofWrappers = []any{}
+	file_hangar_storage_v1alpha1_custom_image_proto_msgTypes[16].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_storage_v1alpha1_custom_image_proto_rawDesc), len(file_hangar_storage_v1alpha1_custom_image_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   18,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

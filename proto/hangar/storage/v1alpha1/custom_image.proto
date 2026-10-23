@@ -2,17 +2,18 @@ syntax = "proto3";
 
 package hangar.storage.v1alpha1;
 
+import "google/protobuf/timestamp.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
 
 // CustomImage is a disk image of a project's own, captured from one of its
-// Disks, such as a stopped VM's root disk, that the project's disks are
-// then made from as they are from an Image. It is an independent copy: the
-// source disk can be started, changed or deleted once the image is
-// snapshotted. The platform does not change what it holds; run
-// "cloud-init clean --machine-id" in the guest before stopping it, so each
-// VM made from the image is a new instance. See
-// docs/decisions/custom-images.md.
+// Disks, such as a stopped VM's root disk, or uploaded as a raw or qcow2
+// file, that the project's disks are then made from as they are from an
+// Image. It is an independent copy: the source disk can be started,
+// changed or deleted once the image is snapshotted. The platform does not
+// change what it holds; run "cloud-init clean --machine-id" in the guest
+// before stopping it, so each VM made from the image is a new instance.
+// See docs/decisions/custom-images.md.
 message CustomImage {
   option (hangar.meta.v1.resource) = {
     kind: "CustomImage"
@@ -29,8 +30,8 @@ message CustomImage {
 
 // CustomImageSpec says where an image comes from and what it is.
 message CustomImageSpec {
-  // What the image is captured from; it cannot change once the image is
-  // made.
+  // What the image is captured or uploaded from; it cannot change once the
+  // image is made.
   CustomImageSource source = 1 [(hangar.meta.v1.field).immutable = true];
   // What the image holds, for people choosing one, such as "ubuntu" and
   // "24.04".
@@ -44,7 +45,7 @@ message CustomImageSpec {
   string min_disk_size = 5;
 }
 
-// CustomImageSource is what an image is captured from.
+// CustomImageSource is what an image is captured or uploaded from.
 message CustomImageSource {
   oneof source {
     // A Disk in the image's project, captured as it is when the image is
@@ -52,6 +53,10 @@ message CustomImageSource {
     // attached to must be stopped; until the image is snapshotted, none of
     // them can start and no machine can attach it.
     CustomImageDiskSource disk = 1;
+    // A raw or qcow2 file, uploaded in chunks to the image's :upload path
+    // once the image is made, then converted on its node. See
+    // docs/decisions/custom-images.md.
+    CustomImageUploadSource upload = 2;
   }
 }
 
@@ -61,21 +66,45 @@ message CustomImageDiskSource {
   string name = 1;
 }
 
+// CustomImageUploadSource is the file an image is uploaded from.
+message CustomImageUploadSource {
+  // The file's size in bytes, at most 16Gi unless the platform says
+  // otherwise; it is what the image counts toward the disk quota until it
+  // is Ready.
+  int64 size = 1;
+  // SHA-256 of the whole file, as 64 lowercase hex digits; a file that does
+  // not match fails the image. Empty, the file is not checked as a whole,
+  // though each chunk is.
+  string sha256 = 2;
+}
+
 // CustomImageStatus is what the apiserver and the image's node found. The
-// apiserver writes node and disk_size as the image is made; the node writes
-// the conditions and used_size.
+// apiserver writes node, and disk_size of a captured image, as the image is
+// made; the node writes the rest.
 message CustomImageStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
-  // Names the Node the image lives on: its source disk's. Disks made from
+  // Names the Node the image lives on: its source disk's, or for an upload
+  // the node picked as it is made, which takes the file. Disks made from
   // the image are made there.
   string node = 3;
-  // The source disk's size, in whole Gi: the smallest disk made from the
-  // image.
+  // The smallest disk made from the image, in whole Gi: the source disk's
+  // size, or for an upload the converted image's, set once it is Ready.
   string disk_size = 4;
   // What the image holds, rounded up to whole Gi, once it is Ready: what it
-  // counts toward the disk quota. Until then it counts as disk_size.
+  // counts toward the disk quota. Until then it counts as disk_size, or an
+  // upload as its size.
   string used_size = 5;
+  // How many bytes of an upload the node holds, every chunk checked: where
+  // the next chunk starts. Reported at most a few times a second; the
+  // :upload path answers the node's own count.
+  int64 received_bytes = 6;
+  // SHA-256 of the uploaded file as the node computed it, as 64 lowercase
+  // hex digits, once the whole file is in.
+  string sha256 = 7;
+  // When an upload not yet whole fails, as UploadExpired: 24 hours after
+  // the image is made, unless the platform says otherwise.
+  google.protobuf.Timestamp upload_expires = 8;
 }
 
 // CustomImageService manages custom images.

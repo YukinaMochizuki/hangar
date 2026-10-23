@@ -44,6 +44,12 @@ const (
 	NodeServiceExecProcedure = "/hangar.node.v1.NodeService/Exec"
 	// NodeServiceSSHProcedure is the fully-qualified name of the NodeService's SSH RPC.
 	NodeServiceSSHProcedure = "/hangar.node.v1.NodeService/SSH"
+	// NodeServiceUploadCustomImageProcedure is the fully-qualified name of the NodeService's
+	// UploadCustomImage RPC.
+	NodeServiceUploadCustomImageProcedure = "/hangar.node.v1.NodeService/UploadCustomImage"
+	// NodeServiceGetCustomImageUploadProcedure is the fully-qualified name of the NodeService's
+	// GetCustomImageUpload RPC.
+	NodeServiceGetCustomImageUploadProcedure = "/hangar.node.v1.NodeService/GetCustomImageUpload"
 )
 
 // NodeServiceClient is a client for the hangar.node.v1.NodeService service.
@@ -63,6 +69,16 @@ type NodeServiceClient interface {
 	// request names the machine, which must be on this node; the node picks
 	// the address. See docs/decisions/vm-ssh.md.
 	SSH(context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse]
+	// UploadCustomImage writes one chunk of a CustomImage's upload to the
+	// file the node stages it in. The first request says where the chunk
+	// goes; later ones carry its bytes, length bytes in all. The chunk
+	// counts only once its sha256 matches; one that does not is dropped,
+	// INVALID_ARGUMENT, and one not at the node's count is refused before
+	// its bytes are read, ABORTED. The response is the node's new count.
+	UploadCustomImage(context.Context) *connect.ClientStreamForClient[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
+	// GetCustomImageUpload says how many bytes of a CustomImage's upload
+	// the node holds, every chunk checked: where the next chunk starts.
+	GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error)
 }
 
 // NewNodeServiceClient constructs a client for the hangar.node.v1.NodeService service. By default,
@@ -94,14 +110,28 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("SSH")),
 			connect.WithClientOptions(opts...),
 		),
+		uploadCustomImage: connect.NewClient[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse](
+			httpClient,
+			baseURL+NodeServiceUploadCustomImageProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("UploadCustomImage")),
+			connect.WithClientOptions(opts...),
+		),
+		getCustomImageUpload: connect.NewClient[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse](
+			httpClient,
+			baseURL+NodeServiceGetCustomImageUploadProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("GetCustomImageUpload")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // nodeServiceClient implements NodeServiceClient.
 type nodeServiceClient struct {
-	logs *connect.Client[v1.LogsRequest, v1.LogsResponse]
-	exec *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	sSH  *connect.Client[v1.SSHRequest, v1.SSHResponse]
+	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
+	exec                 *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	sSH                  *connect.Client[v1.SSHRequest, v1.SSHResponse]
+	uploadCustomImage    *connect.Client[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
+	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
 }
 
 // Logs calls hangar.node.v1.NodeService.Logs.
@@ -117,6 +147,16 @@ func (c *nodeServiceClient) Exec(ctx context.Context) *connect.BidiStreamForClie
 // SSH calls hangar.node.v1.NodeService.SSH.
 func (c *nodeServiceClient) SSH(ctx context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse] {
 	return c.sSH.CallBidiStream(ctx)
+}
+
+// UploadCustomImage calls hangar.node.v1.NodeService.UploadCustomImage.
+func (c *nodeServiceClient) UploadCustomImage(ctx context.Context) *connect.ClientStreamForClient[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse] {
+	return c.uploadCustomImage.CallClientStream(ctx)
+}
+
+// GetCustomImageUpload calls hangar.node.v1.NodeService.GetCustomImageUpload.
+func (c *nodeServiceClient) GetCustomImageUpload(ctx context.Context, req *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error) {
+	return c.getCustomImageUpload.CallUnary(ctx, req)
 }
 
 // NodeServiceHandler is an implementation of the hangar.node.v1.NodeService service.
@@ -136,6 +176,16 @@ type NodeServiceHandler interface {
 	// request names the machine, which must be on this node; the node picks
 	// the address. See docs/decisions/vm-ssh.md.
 	SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error
+	// UploadCustomImage writes one chunk of a CustomImage's upload to the
+	// file the node stages it in. The first request says where the chunk
+	// goes; later ones carry its bytes, length bytes in all. The chunk
+	// counts only once its sha256 matches; one that does not is dropped,
+	// INVALID_ARGUMENT, and one not at the node's count is refused before
+	// its bytes are read, ABORTED. The response is the node's new count.
+	UploadCustomImage(context.Context, *connect.ClientStream[v1.UploadCustomImageRequest]) (*connect.Response[v1.UploadCustomImageResponse], error)
+	// GetCustomImageUpload says how many bytes of a CustomImage's upload
+	// the node holds, every chunk checked: where the next chunk starts.
+	GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error)
 }
 
 // NewNodeServiceHandler builds an HTTP handler from the service implementation. It returns the path
@@ -163,6 +213,18 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("SSH")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceUploadCustomImageHandler := connect.NewClientStreamHandler(
+		NodeServiceUploadCustomImageProcedure,
+		svc.UploadCustomImage,
+		connect.WithSchema(nodeServiceMethods.ByName("UploadCustomImage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	nodeServiceGetCustomImageUploadHandler := connect.NewUnaryHandler(
+		NodeServiceGetCustomImageUploadProcedure,
+		svc.GetCustomImageUpload,
+		connect.WithSchema(nodeServiceMethods.ByName("GetCustomImageUpload")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.node.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case NodeServiceLogsProcedure:
@@ -171,6 +233,10 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceExecHandler.ServeHTTP(w, r)
 		case NodeServiceSSHProcedure:
 			nodeServiceSSHHandler.ServeHTTP(w, r)
+		case NodeServiceUploadCustomImageProcedure:
+			nodeServiceUploadCustomImageHandler.ServeHTTP(w, r)
+		case NodeServiceGetCustomImageUploadProcedure:
+			nodeServiceGetCustomImageUploadHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -190,4 +256,12 @@ func (UnimplementedNodeServiceHandler) Exec(context.Context, *connect.BidiStream
 
 func (UnimplementedNodeServiceHandler) SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.SSH is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) UploadCustomImage(context.Context, *connect.ClientStream[v1.UploadCustomImageRequest]) (*connect.Response[v1.UploadCustomImageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.UploadCustomImage is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) GetCustomImageUpload(context.Context, *connect.Request[v1.GetCustomImageUploadRequest]) (*connect.Response[v1.GetCustomImageUploadResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.GetCustomImageUpload is not implemented"))
 }
