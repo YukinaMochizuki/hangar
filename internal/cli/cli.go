@@ -59,6 +59,9 @@ type Options struct {
 	// PATH. Self is how ssh runs hangar for ssh-proxy; empty is this
 	// executable.
 	SSH, Self string
+	// UploadBackoff is how long hangar image upload waits before it tries
+	// a chunk again the first time; zero means a second.
+	UploadBackoff time.Duration
 }
 
 // interrupts are the signals that end a command, unless it takes them.
@@ -190,7 +193,7 @@ func (a *app) root() *cobra.Command {
 	root.PersistentFlags().StringVarP(&a.project, "project", "p", "", "project for project-scoped kinds, instead of the context's")
 	root.SetFlagErrorFunc(func(_ *cobra.Command, err error) error { return &exitError{code: ExitUsage, err: err} })
 	root.AddCommand(a.configCmd(), a.loginCmd(), a.logoutCmd(), a.signupCmd(), a.whoamiCmd(), a.applyCmd(), a.createCmd(), a.getCmd(), a.deleteCmd(), a.waitCmd(), a.stopCmd(), a.startCmd(), a.logsCmd(), a.execCmd(), a.sshCmd(), a.sshProxyCmd(), a.tokenCmd(), a.checkCmd(), a.adminCmd())
-	root.AddCommand(a.memberCmd(), a.projectCmd())
+	root.AddCommand(a.memberCmd(), a.projectCmd(), a.imageCmd())
 	root.AddCommand(a.apiResourcesCmd(), a.explainCmd())
 	return root
 }
