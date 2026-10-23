@@ -29,6 +29,8 @@ type Drivers struct {
 	Images     driver.Images
 	DiskImages driver.DiskImages
 	Storage    driver.Storage
+	// Converter converts files uploaded for CustomImages; nil takes none.
+	Converter  driver.Converter
 	Network    driver.Network
 	Hypervisor driver.Hypervisor
 	Guest      driver.Guest

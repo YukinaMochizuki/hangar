@@ -23,54 +23,78 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
-// captureMaker copies CustomImages' snapshots into their bases off the host
-// lock, one job per image, so a copy of many gigabytes holds up no other
-// disk or machine (docs/decisions/custom-images.md).
-type captureMaker struct {
-	storage driver.Storage
-	// timeout bounds one copy, so a stalled one fails rather than leaving
-	// its image capturing.
+// baseMaker makes CustomImages' bases off the host lock, one job per
+// image, so a copy or a conversion of many gigabytes holds up no other
+// disk or machine (docs/decisions/custom-images.md): captures copy a
+// snapshot into the base, conversions an uploaded file.
+type baseMaker struct {
+	// build makes the base of the image of uid. A failure leaves no base;
+	// ctx ending, as the agent stopping or the image going, leaves what
+	// the next build starts again from.
+	build func(ctx context.Context, uid string) (driver.ImageBase, error)
+	// what names a build in errors, such as "the copy".
+	what string
+	// timeout bounds one build, so a stalled one fails rather than leaving
+	// its image waiting for ever.
 	timeout time.Duration
-	// slots bounds the copies made at once.
+	// slots bounds the builds at once.
 	slots   *fifo
 	running sync.WaitGroup
 
 	mu     sync.Mutex
 	ctx    context.Context
 	notify func()
-	jobs   map[string]*captureJob // by image uid
+	jobs   map[string]*baseJob // by image uid
 }
 
-type captureJob struct {
+type baseJob struct {
 	running, done bool
 	cancel        context.CancelFunc
 	base          driver.ImageBase
-	// err is why the capture failed for good, as it is never tried again.
+	// err is why the build failed for good, as it is never tried again.
 	err error
 }
 
-func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *captureMaker {
-	return &captureMaker{storage: storage, timeout: timeout, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*captureJob{}}
+func newBaseMaker(what string, build func(context.Context, string) (driver.ImageBase, error), timeout time.Duration, slots int) *baseMaker {
+	return &baseMaker{what: what, build: build, timeout: timeout, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*baseJob{}}
 }
 
+// newCaptureMaker copies CustomImages' snapshots into their bases. A copy
+// that fails, running out of time among it, takes the snapshot with it.
+func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *baseMaker {
+	return newBaseMaker("the copy", func(ctx context.Context, uid string) (driver.ImageBase, error) {
+		base, err := storage.CaptureImageBase(ctx, uid)
+		if err != nil && context.Cause(ctx) != errBuildCut {
+			if derr := storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
+				err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))
+			}
+		}
+		return base, err
+	}, timeout, slots)
+}
+
+// errBuildCut is the cause of a build's context ending other than by its
+// timeout: the agent stopping or the image going.
+var errBuildCut = errors.New("cut short")
+
 // start runs jobs under ctx from now on and calls notify as each finishes.
-func (m *captureMaker) start(ctx context.Context, notify func()) {
+func (m *baseMaker) start(ctx context.Context, notify func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ctx, m.notify = ctx, notify
 }
 
 // get says whether the base of the CustomImage of uid is made, and what it
-// is; until it is, get starts making it. A capture that failed returns its
+// is; until it is, get starts making it. A build that failed returns its
 // error from then on: the agent never tries it again.
-func (m *captureMaker) get(uid string) (driver.ImageBase, bool, error) {
+func (m *baseMaker) get(uid string) (driver.ImageBase, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	j := m.jobs[uid]
 	switch {
 	case j == nil:
 		ctx, cancel := context.WithCancel(m.ctx)
-		j = &captureJob{running: true, cancel: cancel}
+		j = &baseJob{running: true, cancel: cancel}
 		m.jobs[uid] = j
 		m.running.Add(1)
 		go m.run(ctx, j, uid)
@@ -81,9 +105,9 @@ func (m *captureMaker) get(uid string) (driver.ImageBase, bool, error) {
 	return j.base, j.done, j.err
 }
 
-func (m *captureMaker) run(ctx context.Context, j *captureJob, uid string) {
+func (m *baseMaker) run(ctx context.Context, j *baseJob, uid string) {
 	defer m.running.Done()
-	base, err := m.capture(ctx, uid)
+	base, err := m.make(ctx, uid)
 	cut := ctx.Err() != nil
 	m.mu.Lock()
 	j.cancel()
@@ -104,32 +128,31 @@ func (m *captureMaker) run(ctx context.Context, j *captureJob, uid string) {
 	notify()
 }
 
-// capture copies the image's snapshot into its base, a slot at a time,
-// within m.timeout of starting. A failure, running out of time among
-// them, leaves no base, and takes the snapshot with it; ctx ending, as the
-// agent stopping or the image going, leaves the snapshot.
-func (m *captureMaker) capture(ctx context.Context, uid string) (driver.ImageBase, error) {
+// make builds the image's base, a slot at a time, within m.timeout of
+// starting; past it, the build fails.
+func (m *baseMaker) make(ctx context.Context, uid string) (driver.ImageBase, error) {
 	if err := m.slots.acquire(ctx); err != nil {
 		return driver.ImageBase{}, err
 	}
 	defer m.slots.release()
-	bounded, cancel := context.WithTimeout(ctx, m.timeout)
+	// Ended by ctx only through errBuildCut, so a build tells it from its
+	// timeout.
+	cuttable, cut := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cut(nil)
+	stop := context.AfterFunc(ctx, func() { cut(errBuildCut) })
+	defer stop()
+	bounded, cancel := context.WithTimeout(cuttable, m.timeout)
 	defer cancel()
-	base, err := m.storage.CaptureImageBase(bounded, uid)
+	base, err := m.build(bounded, uid)
 	if err != nil && ctx.Err() == nil && bounded.Err() != nil {
-		err = fmt.Errorf("the copy took longer than %v: %w", m.timeout, err)
-	}
-	if err != nil && ctx.Err() == nil {
-		if derr := m.storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
-			err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))
-		}
+		err = fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, err)
 	}
 	return base, err
 }
 
 // keep ends and drops the jobs of images not in wanted, by uid, and
 // returns the uids of the jobs left that still run.
-func (m *captureMaker) keep(wanted map[string]bool) map[string]bool {
+func (m *baseMaker) keep(wanted map[string]bool) map[string]bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	running := map[string]bool{}
@@ -149,12 +172,14 @@ func (m *captureMaker) keep(wanted map[string]bool) map[string]bool {
 }
 
 // wait returns once every job has ended.
-func (m *captureMaker) wait() { m.running.Wait() }
+func (m *baseMaker) wait() { m.running.Wait() }
 
 // customImageController captures the CustomImages that live on this node:
 // it snapshots the source disk's volume, reports Snapshotted, copies the
 // snapshot into the image's base off the host lock, and reports Ready, or
-// the failure, for good. What a deleted image leaves the sweep removes.
+// the failure, for good. It takes the uploaded ones' files and has them
+// converted (reconcileUpload). What a deleted image leaves the sweep
+// removes.
 func (a *Agent) customImageController() *controller.Controller {
 	return &controller.Controller{
 		Name:       "customimages",
@@ -223,6 +248,9 @@ func (a *Agent) reconcileCustomImage(ctx context.Context, k controller.Key) erro
 	ci, err := a.getCustomImage(ctx, k.Project, k.Name)
 	if err != nil || ci == nil || ci.GetStatus().GetNode() != a.cfg.Name || ci.GetMetadata().GetDeleteTime() != nil {
 		return err
+	}
+	if ci.GetSpec().GetSource().GetUpload() != nil {
+		return a.reconcileUpload(ctx, ci)
 	}
 	if computeapi.CustomImageFailed(ci) || computeapi.CustomImageReadyNow(ci) {
 		// Done, for good or ill: only its generation is followed.
@@ -305,6 +333,14 @@ func (a *Agent) writeCustomImageStatus(ctx context.Context, ci *storagev1alpha1.
 	if ci.GetStatus() != nil {
 		status = proto.Clone(ci.GetStatus()).(*storagev1alpha1.CustomImageStatus)
 	}
+	status.UsedSize = usedSize
+	return a.writeStatusAgainst(ctx, ci, status, conds...)
+}
+
+// writeStatusAgainst writes status, with conds set and every condition at
+// ci's generation, unless that is ci's status already. The write is
+// conditional on ci's resource version.
+func (a *Agent) writeStatusAgainst(ctx context.Context, ci *storagev1alpha1.CustomImage, status *storagev1alpha1.CustomImageStatus, conds ...*metav1.Condition) error {
 	gen := ci.GetMetadata().GetGeneration()
 	for _, c := range conds {
 		c.ObservedGeneration = gen
@@ -313,7 +349,7 @@ func (a *Agent) writeCustomImageStatus(ctx context.Context, ci *storagev1alpha1.
 	for _, c := range status.GetConditions() {
 		c.ObservedGeneration = gen
 	}
-	status.ObservedGeneration, status.UsedSize = gen, usedSize
+	status.ObservedGeneration = gen
 	if proto.Equal(status, ci.GetStatus()) {
 		return nil
 	}
