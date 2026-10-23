@@ -822,6 +822,20 @@ type VMSpec struct {
 	// disk at vda that it never reads, and its share's volume at vdc,
 	// after its boot disk (docs/decisions/file-shares.md).
 	FileShareServer *ShareServer `json:",omitempty"`
+	// Converter boots the VM as a converter VM, from the converter
+	// initramfs: no Root, Disks, Mounts, Run or Interfaces, a blank disk at
+	// vda that it never reads, the file at vdc, read-only, and the target,
+	// if any, at vdd (docs/decisions/custom-images.md).
+	Converter *ConverterSpec `json:",omitempty"`
+}
+
+// ConverterSpec is what a converter VM is booted with.
+type ConverterSpec struct {
+	// File is the uploaded file, a regular file of root's.
+	File string
+	// Target is the block device the file is converted onto, a zvol's
+	// /dev/zvol link; empty for a VM that only inspects the file.
+	Target string `json:",omitempty"`
 }
 
 // ShareServer is what a FileShare's server is booted with.

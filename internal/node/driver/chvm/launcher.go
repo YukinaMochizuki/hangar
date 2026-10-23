@@ -235,8 +235,9 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	}
 	// Held open while the VM runs, O_EXCL: no other zvol can take its
 	// device's number, which the node names. A firmware VM boots its first
-	// volume instead, and a file share's server has a blank file.
-	if !ln.Spec.Firmware && ln.Spec.FileShareServer == nil {
+	// volume instead, and a file share's server and a converter have a
+	// blank file.
+	if !ln.Spec.Firmware && !blankVDA(ln.Spec) {
 		root, err := l.OpenDisk(ln.Spec.Root.Path)
 		if err != nil {
 			return 0, err
@@ -244,6 +245,11 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		defer func() { _ = root.Close() }()
 		if err := l.MakeNode(root, filepath.Join(dir, diskNode), gid); err != nil {
 			return 0, fmt.Errorf("the root disk's node: %w", err)
+		}
+	}
+	if c := ln.Spec.Converter; c != nil {
+		if err := checkConverterFile(c.File, gid); err != nil {
+			return 0, err
 		}
 	}
 	var vols []*os.File
@@ -599,6 +605,20 @@ func prepareDir(dir string, gid int, reads []string) error {
 	return setGroup(f, gid, chMode)
 }
 
+// checkConverterFile refuses a converter's file unless it is a regular
+// file of root's, which the VM's group may read and no one but root write,
+// as the driver left it: Cloud Hypervisor opens it by its path.
+func checkConverterFile(path string, gid int) error {
+	var st unix.Stat_t
+	if err := unix.Lstat(path, &st); err != nil {
+		return fmt.Errorf("the converter's file: %w", err)
+	}
+	if st.Mode&unix.S_IFMT != unix.S_IFREG || int(st.Uid) != os.Geteuid() || int(st.Gid) != gid || st.Mode&0o027 != 0 {
+		return fmt.Errorf("%s is not a file of the launcher's user's, the VM's group's to read alone", path)
+	}
+	return nil
+}
+
 // readableMode is the mode of what Cloud Hypervisor reads in the VM's
 // directory: the group gid's to read, or root's alone for gid 0.
 func readableMode(gid int) os.FileMode {
@@ -713,13 +733,14 @@ func kvmGroups(kvm string) (string, error) {
 const freePageReporting = "size=0,free_page_reporting=on"
 
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
-// or a file share's server's blank file, the boot disk and the volumes, or
-// the server's share, at their nodes in dir, and the taps on fds 3 and on,
-// as the launcher passes them.
+// or a blank file, the boot disk and the volumes, the server's share, or a
+// converter's file, read-only and raw whatever it holds, and its target,
+// at their nodes in dir, and the taps on fds 3 and on, as the launcher
+// passes them.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw"
-	if s.FileShareServer != nil {
+	if blankVDA(s) {
 		vda = "path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on"
 	}
 	args := []string{
@@ -732,6 +753,11 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--disk",
 		vda,
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
+	}
+	if c := s.Converter; c != nil {
+		// The unit binds the file read-only; Cloud Hypervisor parses no
+		// format of it.
+		args = append(args, "path="+c.File+",image_type=raw,readonly=on")
 	}
 	for n := range dataDisks(s) {
 		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw")

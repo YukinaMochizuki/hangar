@@ -25,8 +25,8 @@ const (
 	specFile = "spec.json"
 	// bootFile is the boot disk (internal/guest/bootdisk).
 	bootFile = "boot.img"
-	// blankFile is a file share's server's vda, in place of a root disk:
-	// blank, and never read, but by the kernel probing it.
+	// blankFile is a file share's server's, or a converter's, vda, in place
+	// of a root disk: blank, and never read, but by the kernel probing it.
 	blankFile = "blank.img"
 	// diskNode is a node of the root disk's device, made by the launcher
 	// for Cloud Hypervisor to open, as the jailer makes one in its chroot.
@@ -68,11 +68,17 @@ const (
 func volumeNode(n int) string { return fmt.Sprintf("%s%d", volumeNodePrefix, n+1) }
 
 // dataDisks are the devices of the disks a VM has after its boot disk, vdc
-// on, each with a volumeNode: a file share's server's share, or the spec's
-// volumes.
+// on, each with a volumeNode: a file share's server's share, a converter's
+// target, after its file, or the spec's volumes.
 func dataDisks(s driver.VMSpec) []string {
 	if s.FileShareServer != nil {
 		return []string{s.FileShareServer.Volume.Path}
+	}
+	if s.Converter != nil {
+		if s.Converter.Target == "" {
+			return nil
+		}
+		return []string{s.Converter.Target}
 	}
 	out := make([]string, len(s.Disks))
 	for n, v := range s.Disks {
@@ -86,13 +92,17 @@ func readFiles(s driver.VMSpec) []string {
 	switch {
 	case s.Firmware:
 		return nil
-	case s.FileShareServer != nil:
+	case s.FileShareServer != nil, s.Converter != nil:
 		return []string{bootFile, blankFile}
 	}
 	return []string{bootFile}
 }
 
-// blankSize is the size of a file share's server's blank vda.
+// blankVDA says a VM has a blank file at vda, which it never reads, in
+// place of a root disk.
+func blankVDA(s driver.VMSpec) bool { return s.FileShareServer != nil || s.Converter != nil }
+
+// blankSize is the size of a blank vda.
 const blankSize = 1 << 20
 
 // logFiles are what Stop keeps of a VM's directory.
@@ -143,8 +153,10 @@ type launch struct {
 	Hash            string
 	CloudHypervisor string
 	Kernel          string
-	Initramfs       string
-	Cmdline         string
+	// Initramfs is the platform's, or a converter VM's the converter
+	// initramfs.
+	Initramfs string
+	Cmdline   string
 	// Firmware is what a firmware VM (Spec.Firmware) boots, in place of
 	// the kernel and initramfs.
 	Firmware string `json:",omitempty"`
