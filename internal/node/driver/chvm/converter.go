@@ -49,9 +49,9 @@ func (h *Hypervisor) Converter() driver.Converter { return converter{h} }
 
 type converter struct{ h *Hypervisor }
 
-func (c converter) Inspect(ctx context.Context, imageUID, path string) (driver.ImageInfo, error) {
+func (c converter) Inspect(ctx context.Context, imageUID string, file driver.UploadedFile) (driver.ImageInfo, error) {
 	var info driver.ImageInfo
-	err := c.run(ctx, imageUID, path, "", func(ctx context.Context, cl guestv1connect.ImageConverterServiceClient) error {
+	err := c.run(ctx, imageUID, file, "", func(ctx context.Context, cl guestv1connect.ImageConverterServiceClient) error {
 		res, err := cl.Inspect(ctx, connect.NewRequest(&guestv1.InspectRequest{}))
 		if err != nil {
 			return err
@@ -63,8 +63,8 @@ func (c converter) Inspect(ctx context.Context, imageUID, path string) (driver.I
 	return info, err
 }
 
-func (c converter) Convert(ctx context.Context, imageUID, path, format, dev string) error {
-	return c.run(ctx, imageUID, path, dev, func(ctx context.Context, cl guestv1connect.ImageConverterServiceClient) error {
+func (c converter) Convert(ctx context.Context, imageUID string, file driver.UploadedFile, format, dev string) error {
+	return c.run(ctx, imageUID, file, dev, func(ctx context.Context, cl guestv1connect.ImageConverterServiceClient) error {
 		_, err := cl.Convert(ctx, connect.NewRequest(&guestv1.ConvertRequest{Format: format}))
 		return err
 	})
@@ -73,7 +73,7 @@ func (c converter) Convert(ctx context.Context, imageUID, path, format, dev stri
 // run boots the image's converter VM with the file, and the target if
 // any, does what do asks of its agent, and stops it. A file qemu-img
 // refused is driver.ErrInvalidImage.
-func (c converter) run(ctx context.Context, imageUID, path, target string, do func(context.Context, guestv1connect.ImageConverterServiceClient) error) error {
+func (c converter) run(ctx context.Context, imageUID string, file driver.UploadedFile, target string, do func(context.Context, guestv1connect.ImageConverterServiceClient) error) error {
 	uid := converterPrefix + imageUID
 	if err := checkUID(uid); err != nil {
 		return err
@@ -82,12 +82,12 @@ func (c converter) run(ctx context.Context, imageUID, path, target string, do fu
 	if err := c.end(ctx, uid); err != nil {
 		return err
 	}
-	if err := padToSector(path); err != nil {
+	if err := checkStaged(file); err != nil {
 		return err
 	}
 	if err := c.h.Start(ctx, driver.VMSpec{
 		MachineUID: uid, Machine: "converter/" + imageUID, VCPUs: converterVCPUs, MemoryMiB: converterMemoryMiB,
-		Restart: driver.RestartNever, Converter: &driver.ConverterSpec{File: path, Target: target},
+		Restart: driver.RestartNever, Converter: &driver.ConverterSpec{File: file.Path, FileOffset: file.Offset, FileSize: file.Size, Target: target},
 	}); err != nil {
 		return err
 	}
@@ -188,19 +188,16 @@ func giveFile(path string, gid int) error {
 	return setGroup(f, gid, readableMode(gid))
 }
 
-// padToSector pads the file at path with zeros to whole 512-byte sectors,
-// which is what a disk holds: Cloud Hypervisor drops a partial last
-// sector. Neither a raw image nor a qcow2 one changes by it.
-func padToSector(path string) error {
-	fi, err := os.Lstat(path)
+// checkStaged refuses a staged file a converter VM cannot be given: one
+// not regular, not of whole sectors (Cloud Hypervisor drops a partial last
+// one), or too short for its bytes.
+func checkStaged(file driver.UploadedFile) error {
+	fi, err := os.Lstat(file.Path)
 	if err != nil {
 		return err
 	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file", path)
-	}
-	if r := fi.Size() % 512; r != 0 {
-		return os.Truncate(path, fi.Size()+512-r)
+	if !fi.Mode().IsRegular() || fi.Size()%512 != 0 || file.Offset%512 != 0 || file.Offset < 0 || file.Size <= 0 || fi.Size() < file.Offset+file.Size {
+		return fmt.Errorf("%s, of %d bytes, holds no file of %d at %d in whole sectors", file.Path, fi.Size(), file.Size, file.Offset)
 	}
 	return nil
 }

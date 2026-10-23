@@ -94,7 +94,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 		return failed, fmt.Errorf("reading the boot disk: %w", err)
 	}
 	if cfg.GetImageConverter() != nil {
-		return runConverter(logf, started)
+		return runConverter(cfg.GetImageConverter(), logf, started)
 	}
 	if cfg.GetFileShareServer() != nil {
 		return runServer(cfg, logf, started)

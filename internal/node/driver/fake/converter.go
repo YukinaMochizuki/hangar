@@ -10,7 +10,9 @@ import (
 
 // converter is the fake Converter. No VM boots: Inspect says what
 // SetImageInfo set, or by default that the file is raw and holds a disk of
-// its own size, rounded up to a sector, as qemu-img says of a raw file.
+// its own size in whole sectors, as qemu-img says of a raw file. A staged
+// file that is not whole sectors, or too short for its bytes, is refused,
+// as Cloud Hypervisor would.
 type converter struct{ h *Host }
 
 // SetImageInfo makes Inspect say info of every file from now on; nil
@@ -73,7 +75,7 @@ func (h *Host) Converted(uid string) int {
 	return h.converts[uid]
 }
 
-func (c converter) Inspect(_ context.Context, imageUID, path string) (driver.ImageInfo, error) {
+func (c converter) Inspect(_ context.Context, imageUID string, file driver.UploadedFile) (driver.ImageInfo, error) {
 	c.h.mu.Lock()
 	c.h.inspects[imageUID]++
 	info, err := c.h.imageInfo, c.h.inspectErr
@@ -81,17 +83,28 @@ func (c converter) Inspect(_ context.Context, imageUID, path string) (driver.Ima
 	if err != nil {
 		return driver.ImageInfo{}, err
 	}
+	if err := checkStaged(file); err != nil {
+		return driver.ImageInfo{}, err
+	}
 	if info != nil {
 		return *info, nil
 	}
-	fi, err := os.Stat(path)
-	if err != nil {
-		return driver.ImageInfo{}, err
-	}
-	return driver.ImageInfo{Format: "raw", VirtualSize: (fi.Size() + 511) &^ 511}, nil
+	return driver.ImageInfo{Format: "raw", VirtualSize: (file.Size + 511) &^ 511}, nil
 }
 
-func (c converter) Convert(ctx context.Context, imageUID, path, format, dev string) error {
+// checkStaged refuses a staged file a converter VM could not be given.
+func checkStaged(file driver.UploadedFile) error {
+	fi, err := os.Stat(file.Path)
+	if err != nil {
+		return err
+	}
+	if fi.Size()%512 != 0 || file.Offset%512 != 0 || fi.Size() < file.Offset+file.Size {
+		return fmt.Errorf("%s, of %d bytes, holds no file of %d at %d in whole sectors", file.Path, fi.Size(), file.Size, file.Offset)
+	}
+	return nil
+}
+
+func (c converter) Convert(ctx context.Context, imageUID string, file driver.UploadedFile, format, dev string) error {
 	c.h.mu.Lock()
 	c.h.converts[imageUID]++
 	c.h.converting++
@@ -112,7 +125,7 @@ func (c converter) Convert(ctx context.Context, imageUID, path, format, dev stri
 	if failed != nil {
 		return failed
 	}
-	if _, err := os.Stat(path); err != nil {
+	if err := checkStaged(file); err != nil {
 		return err
 	}
 	if format != "raw" && format != "qcow2" {

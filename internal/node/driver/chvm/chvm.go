@@ -635,9 +635,9 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		cfg.Process = nil
 		cfg.FileShareServer = &guestv1.FileShareServer{Export: chguest.ExportOf(srv.Export)}
 	}
-	if spec.Converter != nil {
+	if c := spec.Converter; c != nil {
 		cfg.Process = nil
-		cfg.ImageConverter = &guestv1.ImageConverter{}
+		cfg.ImageConverter = &guestv1.ImageConverter{FileOffset: c.FileOffset, FileSize: c.FileSize}
 	}
 	for n, i := range spec.Interfaces {
 		// The default route goes by the first interface; the guest takes

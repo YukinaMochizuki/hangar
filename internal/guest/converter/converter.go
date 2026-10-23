@@ -24,7 +24,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 )
 
-// Where a converter VM's disks are, and qemu-img.
+// Where a converter VM's disks are, and qemu-img. Source holds the file
+// between zeros, which MapFile maps alone.
 const (
 	Source  = "/dev/vdc"
 	Target  = "/dev/vdd"
@@ -39,8 +40,8 @@ const (
 
 // Server serves ImageConverterService, one qemu-img at a time.
 type Server struct {
-	// QemuImg, Source and Target are the program and the disks; empty
-	// means the constants of the same names.
+	// QemuImg, Source and Target are the program, the file and the target
+	// disk; empty means the constants of the same names.
 	QemuImg, Source, Target string
 
 	mu sync.Mutex

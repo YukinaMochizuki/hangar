@@ -64,7 +64,7 @@ func newBaseMaker(what string, build func(context.Context, string) (driver.Image
 func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *baseMaker {
 	return newBaseMaker("the copy", func(ctx context.Context, uid string) (driver.ImageBase, error) {
 		base, err := storage.CaptureImageBase(ctx, uid)
-		if err != nil && context.Cause(ctx) != errBuildCut {
+		if err != nil && !errors.Is(context.Cause(ctx), errBuildCut) {
 			if derr := storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
 				err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))
 			}

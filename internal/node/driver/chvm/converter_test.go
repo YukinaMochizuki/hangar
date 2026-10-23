@@ -17,7 +17,7 @@ import (
 func converterSpec(file, target string) driver.VMSpec {
 	return driver.VMSpec{
 		MachineUID: converterPrefix + "img1", Machine: "converter/img1", VCPUs: converterVCPUs, MemoryMiB: converterMemoryMiB,
-		Restart: driver.RestartNever, Converter: &driver.ConverterSpec{File: file, Target: target},
+		Restart: driver.RestartNever, Converter: &driver.ConverterSpec{File: file, FileOffset: driver.UploadOffset, FileSize: 1000, Target: target},
 	}
 }
 
@@ -103,6 +103,9 @@ func TestAConverterVMStarts(t *testing.T) {
 		t.Errorf("no blank vda: %v", err)
 	}
 	cfg := readBootDisk(t, spec)
+	if ic := cfg.GetImageConverter(); ic.GetFileOffset() != driver.UploadOffset || ic.GetFileSize() != 1000 {
+		t.Errorf("the boot disk says the file is %d bytes at %d, want 1000 at %d", ic.GetFileSize(), ic.GetFileOffset(), driver.UploadOffset)
+	}
 	if cfg.GetImageConverter() == nil || cfg.GetProcess() != nil || len(cfg.GetInterfaces()) != 0 || cfg.GetFileShareServer() != nil {
 		t.Errorf("boot disk %v; want a converter, no process and no interface", cfg)
 	}
@@ -182,19 +185,35 @@ func TestTheLauncherTakesOnlyAConvertersOwnFile(t *testing.T) {
 	}
 }
 
-// TestAConvertersFileIsWholeSectors: a file not of whole sectors is padded
-// with zeros to them, as a disk holds; one that is stays as it is.
+// TestAConvertersFileIsWholeSectors: a staged file is given to a
+// converter VM only of whole sectors, holding its bytes at a sector, and
+// long enough for them; a link is not.
 func TestAConvertersFileIsWholeSectors(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "img1")
-	for _, tt := range []struct{ size, want int64 }{{1000, 1024}, {1024, 1024}, {1, 512}} {
-		if err := os.WriteFile(file, make([]byte, tt.size), 0o600); err != nil {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "img1")
+	for _, tt := range []struct {
+		length, offset, size int64
+		ok                   bool
+	}{
+		{driver.UploadedLength(1000), driver.UploadOffset, 1000, true},
+		{driver.UploadedLength(4096), driver.UploadOffset, 4096, true},
+		{4096 + 1000, driver.UploadOffset, 1000, false},
+		{8192, driver.UploadOffset, 8192, false},
+		{8192, 1000, 10, false},
+	} {
+		if err := os.WriteFile(file, make([]byte, tt.length), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := padToSector(file); err != nil {
-			t.Fatal(err)
+		err := checkStaged(driver.UploadedFile{Path: file, Offset: tt.offset, Size: tt.size})
+		if (err == nil) != tt.ok {
+			t.Errorf("a file of %d holding %d at %d: %v, want taken %t", tt.length, tt.size, tt.offset, err, tt.ok)
 		}
-		if fi, err := os.Stat(file); err != nil || fi.Size() != tt.want {
-			t.Errorf("a file of %d bytes padded to %d, want %d", tt.size, fi.Size(), tt.want)
-		}
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(file, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkStaged(driver.UploadedFile{Path: link, Offset: driver.UploadOffset, Size: 1}); err == nil {
+		t.Error("a link taken")
 	}
 }

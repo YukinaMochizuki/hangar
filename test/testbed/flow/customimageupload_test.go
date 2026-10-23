@@ -15,6 +15,7 @@ import (
 	"time"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
@@ -30,7 +31,9 @@ var uploadedFrom = regexp.MustCompile(`uploading [a-z0-9-]+: ([0-9.]+ [KMG]?i?B)
 // qcow2, is killed part-way, and run again goes on from where the node
 // is; the real converter VM converts it, and a VM boots from the image,
 // finishes cloud-init and takes hangar ssh. That VM's disk is captured as
-// a new CustomImage, which becomes Ready. A crafted qcow2 naming a data
+// a new CustomImage, which becomes Ready. Raw files ending in a VHD footer
+// and starting with VHDX's signature are attached as raw, whatever the
+// converter then makes of them. A crafted qcow2 naming a data
 // file, and one holding a disk over the bound, are each refused, leaving
 // no base (minutes, as the cloud image tests).
 func TestACustomImageUploadedFromAQcow2(t *testing.T) {
@@ -51,7 +54,7 @@ func TestACustomImageUploadedFromAQcow2(t *testing.T) {
 		for _, vm := range []string{"uploaded-vm"} {
 			_, _ = c.tryCLI(nil, "delete", "vm", vm)
 		}
-		for _, img := range []string{"noble-up", "noble-again", "datafile", "huge"} {
+		for _, img := range []string{"noble-up", "noble-again", "datafile", "huge", "vhdfooter", "vhdx"} {
 			_, _ = c.tryCLI(nil, "delete", "cimg", img)
 		}
 	}()
@@ -174,12 +177,49 @@ spec:
 	}
 	t.Logf("captured again: %v", image("noble-again").GetStatus())
 
-	// Crafted files, refused, no base left.
+	// Raw files whose ends look like another format's, which Cloud
+	// Hypervisor would take for one were it given them: attached as raw all
+	// the same, the staging's zeros at both ends, and judged by qemu-img in
+	// the converter.
 	dir := t.TempDir()
-	crafted := func(name string, args ...string) string {
+	raw := func(name string, data []byte) string {
+		t.Helper()
+		path := filepath.Join(dir, name+".raw")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	vhdFooter := append(bytes.Repeat([]byte("hangar\n"), 1<<17), []byte("conectix")...)
+	vhdFooter = append(vhdFooter, make([]byte, 504)...)
+	if out, err := c.tryCLIStderr("image", "upload", raw("vhdfooter", vhdFooter), "--name", "vhdfooter"); err != nil {
+		t.Fatalf("uploading a raw file ending in a VHD footer: %v: %s", err, out)
+	}
+	if _, err := c.tryCLI(nil, "wait", "cimg", "vhdfooter", "--for=condition=Ready", "--timeout=10m"); err != nil {
+		t.Errorf("a raw file ending in a VHD footer never Ready: %v: %v", err, image("vhdfooter").GetStatus())
+	} else {
+		t.Logf("a raw file ending in a VHD footer converted as raw: %v", image("vhdfooter").GetStatus())
+	}
+	vhdx := append([]byte("vhdxfile"), bytes.Repeat([]byte{9}, 1<<20)...)
+	if out, err := c.tryCLIStderr("image", "upload", raw("vhdx", vhdx), "--name", "vhdx"); err != nil {
+		t.Fatalf("uploading a raw file starting with VHDX's signature: %v: %s", err, out)
+	}
+	eventually(t, 10*time.Minute, "the VHDX-looking file judged", func() (bool, string) {
+		ci := image("vhdx")
+		return computeapi.CustomImageFailed(ci) || computeapi.CustomImageReadyNow(ci), fmt.Sprint(ci.GetStatus())
+	})
+	vr := conditions.Find(image("vhdx").GetStatus().GetConditions(), computeapi.CustomImageReady)
+	t.Logf("a raw file starting with VHDX's signature: Ready %s %s: %s", vr.GetStatus(), vr.GetReason(), vr.GetMessage())
+	if strings.Contains(vr.GetMessage(), "DiskImageTypeMismatch") || strings.Contains(vr.GetMessage(), "stopped before its agent answered") ||
+		(vr.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_TRUE && vr.GetReason() != computeapi.ReasonInvalidImage) {
+		t.Errorf("a raw file starting with VHDX's signature: %s %s; want it converted, or refused by qemu-img in the converter", vr.GetReason(), vr.GetMessage())
+	}
+
+	// Crafted files, refused, no base left.
+	crafted := func(name, size string, opts ...string) string {
 		t.Helper()
 		path := filepath.Join(dir, name+".qcow2")
-		if out, err := exec.Command("qemu-img", append(append([]string{"create", "-q", "-f", "qcow2"}, args...), path)...).CombinedOutput(); err != nil {
+		if out, err := exec.Command("qemu-img", append(append([]string{"create", "-q", "-f", "qcow2"}, opts...), path, size)...).CombinedOutput(); err != nil {
 			t.Fatalf("qemu-img create: %v: %s", err, out)
 		}
 		return path
@@ -187,7 +227,7 @@ spec:
 	for _, tt := range []struct {
 		name, file, reason string
 	}{
-		{"datafile", crafted("datafile", "-o", "data_file="+filepath.Join(dir, "data.raw"), "64M"), computeapi.ReasonInvalidImage},
+		{"datafile", crafted("datafile", "64M", "-o", "data_file="+filepath.Join(dir, "data.raw")), computeapi.ReasonInvalidImage},
 		{"huge", crafted("huge", "30G"), computeapi.ReasonImageTooLarge},
 	} {
 		out, err := c.tryCLIStderr("image", "upload", tt.file, "--name", tt.name)
@@ -213,7 +253,7 @@ spec:
 
 	c.cli("delete", "vm", "uploaded-vm")
 	c.cli("wait", "vm", "uploaded-vm", "--for=delete", "--timeout=3m")
-	for _, img := range []string{"noble-up", "noble-again", "datafile", "huge"} {
+	for _, img := range []string{"noble-up", "noble-again", "datafile", "huge", "vhdfooter", "vhdx"} {
 		c.cli("delete", "cimg", img)
 	}
 	eventually(t, 5*time.Minute, "the images' bases gone", func() (bool, string) {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -41,13 +40,13 @@ const (
 // node judges, then the file written into the base. A failure is a
 // *stuck naming why, the base removed; the staged file stays, for the
 // controller to remove.
-func newConvertMaker(conv driver.Converter, storage driver.Storage, staged func(uid string) string, maxDisk int64, timeout time.Duration, slots int) *baseMaker {
+func newConvertMaker(conv driver.Converter, storage driver.Storage, staged func(uid string) (driver.UploadedFile, error), maxDisk int64, timeout time.Duration, slots int) *baseMaker {
 	return newBaseMaker("the conversion", func(ctx context.Context, uid string) (driver.ImageBase, error) {
-		path := staged(uid)
-		if _, err := os.Stat(path); err != nil {
-			return driver.ImageBase{}, blocked(computeapi.ReasonConvertFailed, fmt.Errorf("the uploaded file is gone: %w", err))
+		file, err := staged(uid)
+		if err != nil {
+			return driver.ImageBase{}, blocked(computeapi.ReasonConvertFailed, fmt.Errorf("the uploaded file: %w", err))
 		}
-		info, err := conv.Inspect(ctx, uid, path)
+		info, err := conv.Inspect(ctx, uid, file)
 		if errors.Is(err, driver.ErrInvalidImage) {
 			return driver.ImageBase{}, blocked(computeapi.ReasonInvalidImage, err)
 		}
@@ -58,7 +57,7 @@ func newConvertMaker(conv driver.Converter, storage driver.Storage, staged func(
 			return driver.ImageBase{}, err
 		}
 		base, err := storage.FillImageBase(ctx, uid, info.VirtualSize, func(dev string) error {
-			return conv.Convert(ctx, uid, path, info.Format, dev)
+			return conv.Convert(ctx, uid, file, info.Format, dev)
 		})
 		if err != nil {
 			return driver.ImageBase{}, blocked(computeapi.ReasonConvertFailed, err)

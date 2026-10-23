@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/jonboulle/clockwork"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 func hexSum(b []byte) string {
@@ -91,8 +93,22 @@ func TestAnUploadIsStagedChunkByChunk(t *testing.T) {
 	if err != nil || !whole || sum != hexSum(file) {
 		t.Errorf("sum %s %t %v, want the file's %s", sum, whole, err, hexSum(file))
 	}
-	if b, err := os.ReadFile(s.path("img1")); err != nil || !bytes.Equal(b, file) {
-		t.Errorf("the staged file is not the one uploaded: %v", err)
+	// Zeros, the tenant's bytes at UploadOffset, then zeros to the next
+	// 4 KiB and 4 KiB more: the hypervisor reads neither end of theirs.
+	b, err := os.ReadFile(s.path("img1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := driver.UploadOffset + len(file)
+	if len(b) != int(driver.UploadedLength(size)) || len(b)%4096 != 0 || len(b)-end < 4096 {
+		t.Errorf("the staged file is %d bytes, want %d: whole 4 KiB, 4 KiB at least after the file's %d", len(b), driver.UploadedLength(size), len(file))
+	}
+	if !bytes.Equal(b[:driver.UploadOffset], make([]byte, driver.UploadOffset)) || !bytes.Equal(b[driver.UploadOffset:end], file) ||
+		!bytes.Equal(b[end:], make([]byte, len(b)-end)) {
+		t.Error("the staged file is not zeros, the file uploaded, and zeros")
+	}
+	if f, err := s.whole("img1"); err != nil || f.Offset != driver.UploadOffset || f.Size != size || f.Path != s.path("img1") {
+		t.Errorf("the whole file %+v %v", f, err)
 	}
 	if !slices.Equal(*counted, []bool{false}) || !slices.Equal(*counted2, []bool{true}) {
 		t.Errorf("counted %v then %v, want a chunk, then the file whole", *counted, *counted2)

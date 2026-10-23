@@ -373,7 +373,7 @@ func New(cfg Config) (*Agent, error) {
 			return nil, fmt.Errorf("the upload directory: %w", err)
 		}
 		a.stager = st
-		a.converts = newConvertMaker(cfg.Drivers.Converter, cfg.Drivers.Storage, st.path, cfg.MaxImageDiskSize, cfg.ConvertTimeout, cfg.MaxPulls)
+		a.converts = newConvertMaker(cfg.Drivers.Converter, cfg.Drivers.Storage, st.whole, cfg.MaxImageDiskSize, cfg.ConvertTimeout, cfg.MaxPulls)
 	}
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()

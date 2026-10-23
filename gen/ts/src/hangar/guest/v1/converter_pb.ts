@@ -15,17 +15,33 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/guest/v1/converter.proto.
  */
 export const file_hangar_guest_v1_converter: GenFile = /*@__PURE__*/
-  fileDesc("Ch9oYW5nYXIvZ3Vlc3QvdjEvY29udmVydGVyLnByb3RvEg9oYW5nYXIuZ3Vlc3QudjEiEAoOSW1hZ2VDb252ZXJ0ZXIiEAoOSW5zcGVjdFJlcXVlc3QiYAoPSW5zcGVjdFJlc3BvbnNlEg4KBmZvcm1hdBgBIAEoCRIUCgx2aXJ0dWFsX3NpemUYAiABKAMSFAoMYmFja2luZ19maWxlGAMgASgJEhEKCWRhdGFfZmlsZRgEIAEoCSIgCg5Db252ZXJ0UmVxdWVzdBIOCgZmb3JtYXQYASABKAkiEQoPQ29udmVydFJlc3BvbnNlMrMBChVJbWFnZUNvbnZlcnRlclNlcnZpY2USTAoHSW5zcGVjdBIfLmhhbmdhci5ndWVzdC52MS5JbnNwZWN0UmVxdWVzdBogLmhhbmdhci5ndWVzdC52MS5JbnNwZWN0UmVzcG9uc2USTAoHQ29udmVydBIfLmhhbmdhci5ndWVzdC52MS5Db252ZXJ0UmVxdWVzdBogLmhhbmdhci5ndWVzdC52MS5Db252ZXJ0UmVzcG9uc2VCxQEKE2NvbS5oYW5nYXIuZ3Vlc3QudjFCDkNvbnZlcnRlclByb3RvUAFaQGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2d1ZXN0L3YxO2d1ZXN0djGiAgNIR1iqAg9IYW5nYXIuR3Vlc3QuVjHKAg9IYW5nYXJcR3Vlc3RcVjHiAhtIYW5nYXJcR3Vlc3RcVjFcR1BCTWV0YWRhdGHqAhFIYW5nYXI6Okd1ZXN0OjpWMWIGcHJvdG8z");
+  fileDesc("Ch9oYW5nYXIvZ3Vlc3QvdjEvY29udmVydGVyLnByb3RvEg9oYW5nYXIuZ3Vlc3QudjEiOAoOSW1hZ2VDb252ZXJ0ZXISEwoLZmlsZV9vZmZzZXQYASABKAMSEQoJZmlsZV9zaXplGAIgASgDIhAKDkluc3BlY3RSZXF1ZXN0ImAKD0luc3BlY3RSZXNwb25zZRIOCgZmb3JtYXQYASABKAkSFAoMdmlydHVhbF9zaXplGAIgASgDEhQKDGJhY2tpbmdfZmlsZRgDIAEoCRIRCglkYXRhX2ZpbGUYBCABKAkiIAoOQ29udmVydFJlcXVlc3QSDgoGZm9ybWF0GAEgASgJIhEKD0NvbnZlcnRSZXNwb25zZTKzAQoVSW1hZ2VDb252ZXJ0ZXJTZXJ2aWNlEkwKB0luc3BlY3QSHy5oYW5nYXIuZ3Vlc3QudjEuSW5zcGVjdFJlcXVlc3QaIC5oYW5nYXIuZ3Vlc3QudjEuSW5zcGVjdFJlc3BvbnNlEkwKB0NvbnZlcnQSHy5oYW5nYXIuZ3Vlc3QudjEuQ29udmVydFJlcXVlc3QaIC5oYW5nYXIuZ3Vlc3QudjEuQ29udmVydFJlc3BvbnNlQsUBChNjb20uaGFuZ2FyLmd1ZXN0LnYxQg5Db252ZXJ0ZXJQcm90b1ABWkBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ndWVzdC92MTtndWVzdHYxogIDSEdYqgIPSGFuZ2FyLkd1ZXN0LlYxygIPSGFuZ2FyXEd1ZXN0XFYx4gIbSGFuZ2FyXEd1ZXN0XFYxXEdQQk1ldGFkYXRh6gIRSGFuZ2FyOjpHdWVzdDo6VjFiBnByb3RvMw");
 
 /**
- * ImageConverter makes a guest a converter VM. The file is its first data
- * disk (/dev/vdc), read-only, and the target, when it has one, its second
- * (/dev/vdd). It reads its boot disk at vdb as every guest does, and never
- * reads vda. It has no network and runs nothing of the tenant's.
+ * ImageConverter makes a guest a converter VM. Its first data disk
+ * (/dev/vdc), read-only, holds the file at file_offset, file_size bytes of
+ * it, between zeros, which the guest maps alone, read-only, before it runs
+ * anything on it; the target, when it has one, is its second (/dev/vdd).
+ * It reads its boot disk at vdb as every guest does, and never reads vda.
+ * It has no network and runs nothing of the tenant's.
  *
  * @generated from message hangar.guest.v1.ImageConverter
  */
 export type ImageConverter = Message<"hangar.guest.v1.ImageConverter"> & {
+  /**
+   * Where in the disk the file starts, in bytes, a multiple of 512.
+   *
+   * @generated from field: int64 file_offset = 1;
+   */
+  fileOffset: bigint;
+
+  /**
+   * The file's size in bytes. A disk shorter than file_offset and
+   * file_size together is refused.
+   *
+   * @generated from field: int64 file_size = 2;
+   */
+  fileSize: bigint;
 };
 
 /**

@@ -120,10 +120,17 @@ tenant's the platform would parse as a disk image.
   the node's count (`NodeService.GetCustomImageUpload`), then streams the
   body on the client-streaming `NodeService.UploadCustomImage`
   (`docs/decisions/node-tunnel.md`), 256 KiB a message, holding no more.
-  The node writes it at its offset to `<image dir>/uploads/<image uid>`
-  on the images dataset, whose quota bounds it, one chunk of an upload at
-  a time, counted only once its sha256 matches and it is synced. The
-  whole file's sha256 is computed as the chunks come, and the count and
+  The node writes it at its offset in the file, plus 4 KiB, to
+  `<image dir>/uploads/<image uid>` on the images dataset, whose quota
+  bounds it, one chunk of an upload at a time, counted only once its
+  sha256 matches and it is synced. The staged file is 4 KiB of zeros, the
+  tenant's bytes, then zeros to the next 4 KiB boundary and 4 KiB more:
+  Cloud Hypervisor reads a disk's first and last bytes for a format's
+  header (qcow2's and VHDX's at the start, VHD's footer at the end) even
+  when told the disk is raw, refusing a mismatch, so the host never hands
+  it the tenant's bytes at either end. The layout is the node's alone:
+  `received_bytes`, every offset and the sha256 are of the tenant's file.
+  The whole file's sha256 is computed as the chunks come, and the count and
   the hash's state (`encoding.BinaryMarshaler`) are kept beside the file,
   so an upload goes on, its hash right, after the agent restarts. The node
   reports `received_bytes` at most four times a second, and
@@ -139,9 +146,13 @@ tenant's the platform would parse as a disk image.
   stays as it is. It has no network interface, its agent answers CID 2
   alone over vsock, as hangar-init's does, and it is confined as every VM,
   with a VM user of its own, cgroup CPU and memory limits (1 vCPU,
-  512 MiB) and Cloud Hypervisor's confinement, the file bound read-only
-  into its unit and attached read-only as raw, so Cloud Hypervisor parses
-  no format of it. Step one, with the file alone: it reports `qemu-img
+  512 MiB) and Cloud Hypervisor's confinement, the staged file bound
+  read-only into its unit and attached read-only as raw, its ends zeros, so
+  Cloud Hypervisor finds no format in it. The guest maps the tenant's bytes
+  alone, by a read-only loop device at the offset and size its boot disk
+  gives (a size of a partial last sector rounded up to a whole one, the
+  staging's zeros), and refuses a disk too short for them; qemu-img reads
+  that device. Step one, with the file alone: it reports `qemu-img
   info`, and the node refuses anything not raw or qcow2, naming a backing
   or a data file (`InvalidImage`), or holding a disk over `hangar-node
   --max-image-disk-size`, 256Gi (`ImageTooLarge`). Step two: the node

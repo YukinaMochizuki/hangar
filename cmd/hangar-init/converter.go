@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/mdlayher/vsock"
 
+	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1/guestv1connect"
 	"github.com/YukinaMochizuki/hangar/internal/buildinfo"
 	"github.com/YukinaMochizuki/hangar/internal/guest/agent"
@@ -23,10 +24,15 @@ import (
 // has as a disk until the node stops it (docs/decisions/custom-images.md).
 // Only the converter initramfs carries qemu-img; the platform's has none,
 // and its guest fails here.
-func runConverter(logf func(string, ...any), started time.Time) (console.ExitStatus, error) {
+func runConverter(cfg *guestv1.ImageConverter, logf func(string, ...any), started time.Time) (console.ExitStatus, error) {
 	failed := console.ExitStatus{Code: exitBootFailed}
 	if _, err := os.Stat(converter.QemuImg); err != nil {
 		return failed, fmt.Errorf("a converter VM needs the converter initramfs, with qemu-img: %w", err)
+	}
+	// The file alone, read-only, without the zeros around it.
+	file, err := converter.MapFile(converter.Source, cfg.GetFileOffset(), cfg.GetFileSize())
+	if err != nil {
+		return failed, fmt.Errorf("the uploaded file: %w", err)
 	}
 	ln, err := vsock.Listen(agent.Port, nil)
 	if err != nil {
@@ -34,7 +40,7 @@ func runConverter(logf func(string, ...any), started time.Time) (console.ExitSta
 	}
 	stopped := make(chan struct{})
 	var once sync.Once
-	serveConverterAgent(ln, func() { once.Do(func() { close(stopped) }) }, started, logf)
+	serveConverterAgent(ln, &converter.Server{Source: file}, func() { once.Do(func() { close(stopped) }) }, started, logf)
 	<-stopped
 	logf("hangar-init: stopping the converter")
 	return console.ExitStatus{}, nil
@@ -43,7 +49,7 @@ func runConverter(logf func(string, ...any), started time.Time) (console.ExitSta
 // serveConverterAgent serves a converter VM's agent on ln to the host
 // alone: Ping, Stop, which calls stop, and ImageConverterService. It runs
 // nothing else, so Exec is refused, as is SetIPv6. It returns at once.
-func serveConverterAgent(ln net.Listener, stop func(), started time.Time, logf func(string, ...any)) {
+func serveConverterAgent(ln net.Listener, conv *converter.Server, stop func(), started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
 	mux := http.NewServeMux()
 	mux.Handle(guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
@@ -51,6 +57,6 @@ func serveConverterAgent(ln net.Listener, stop func(), started time.Time, logf f
 		OnPanic:  func(r any) { logf("hangar-init: guest agent: %v", r) },
 		StopMain: func(time.Duration) { stop() },
 	}, connect.WithReadMaxBytes(agent.MaxMessage)))
-	mux.Handle(guestv1connect.NewImageConverterServiceHandler(&converter.Server{}, connect.WithReadMaxBytes(agent.MaxMessage)))
+	mux.Handle(guestv1connect.NewImageConverterServiceHandler(conv, connect.WithReadMaxBytes(agent.MaxMessage)))
 	serveHTTP(ln, mux)
 }

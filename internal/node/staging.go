@@ -17,6 +17,8 @@ import (
 	"sync"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 // stager keeps the files tenants upload for CustomImages until they are
@@ -26,7 +28,12 @@ import (
 // hash's state are kept beside it, in dir/<image uid>.state, so an upload
 // goes on, its hash right, after the agent restarts. The host only writes
 // the file and hashes it; it never reads what the file holds
-// (docs/decisions/custom-images.md).
+// (docs/decisions/custom-images.md). The file is laid out as
+// driver.UploadedFile says: the tenant's bytes at driver.UploadOffset,
+// after zeros, and once whole, zeros after them up to
+// driver.UploadedLength, so the converter VM's Cloud Hypervisor, which
+// reads a disk's first and last bytes for a format's header, never sees
+// the tenant's there. Every count is of the tenant's bytes.
 type stager struct {
 	dir string
 	// counted is called with an image's uid each time a chunk of it
@@ -128,6 +135,22 @@ func (s *stager) received(uid string) (int64, error) {
 	return st.Received, err
 }
 
+// whole is uid's file as staged, once it is all in.
+func (s *stager) whole(uid string) (driver.UploadedFile, error) {
+	b, err := os.ReadFile(s.statePath(uid))
+	if err != nil {
+		return driver.UploadedFile{}, err
+	}
+	var st stagedState
+	if err := json.Unmarshal(b, &st); err != nil {
+		return driver.UploadedFile{}, fmt.Errorf("%s: %w", s.statePath(uid), err)
+	}
+	if st.Received != st.Size {
+		return driver.UploadedFile{}, fmt.Errorf("%d of the file's %d bytes are in", st.Received, st.Size)
+	}
+	return driver.UploadedFile{Path: s.path(uid), Offset: driver.UploadOffset, Size: st.Size}, nil
+}
+
 // sum is the sha256 of uid's whole file, in hex, once it is all in.
 func (s *stager) sum(uid string, size int64) (string, bool, error) {
 	st, err := s.state(uid, size)
@@ -179,7 +202,7 @@ func (s *stager) write(ctx context.Context, uid string, offset, length int64, sh
 	}
 	defer func() { _ = f.Close() }()
 	part := sha256.New()
-	n, err := io.Copy(io.MultiWriter(io.NewOffsetWriter(f, offset), part, whole), io.LimitReader(ctxReader{ctx, body}, length))
+	n, err := io.Copy(io.MultiWriter(io.NewOffsetWriter(f, driver.UploadOffset+offset), part, whole), io.LimitReader(ctxReader{ctx, body}, length))
 	switch {
 	case err != nil && (errors.Is(err, unix.ENOSPC) || errors.Is(err, unix.EDQUOT)):
 		return st.Received, fmt.Errorf("%w: %w", errNoRoom, err)
@@ -193,6 +216,15 @@ func (s *stager) write(ctx context.Context, uid string, offset, length int64, sh
 	}
 	if got := hex.EncodeToString(part.Sum(nil)); got != strings.ToLower(sha) {
 		return st.Received, errChunkDigest
+	}
+	if offset+length == size {
+		// Whole: zeros after it, whatever earlier writes left there.
+		if err := f.Truncate(driver.UploadOffset + size); err != nil {
+			return st.Received, err
+		}
+		if err := f.Truncate(driver.UploadedLength(size)); err != nil {
+			return st.Received, err
+		}
 	}
 	if err := f.Sync(); err != nil {
 		return st.Received, err

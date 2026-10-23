@@ -370,12 +370,34 @@ type Storage interface {
 // guest's claim. A file qemu-img refuses is ErrInvalidImage.
 type Converter interface {
 	// Inspect returns what qemu-img info in a converter VM says of the
-	// file at path, attached read-only.
-	Inspect(ctx context.Context, imageUID, path string) (ImageInfo, error)
-	// Convert has qemu-img convert in a converter VM write the file at
-	// path, attached read-only and read as format, onto the block device
-	// dev, all zeros, as raw.
-	Convert(ctx context.Context, imageUID, path, format, dev string) error
+	// file, attached read-only.
+	Inspect(ctx context.Context, imageUID string, file UploadedFile) (ImageInfo, error)
+	// Convert has qemu-img convert in a converter VM write the file,
+	// attached read-only and read as format, onto the block device dev,
+	// all zeros, as raw.
+	Convert(ctx context.Context, imageUID string, file UploadedFile, format, dev string) error
+}
+
+// UploadedFile is a file a tenant uploaded, as the node stages it: Size
+// bytes at Offset of the file at Path, whole sectors of zeros before and
+// after them.
+type UploadedFile struct {
+	Path         string
+	Offset, Size int64
+}
+
+// UploadOffset is where a staged file holds the tenant's bytes: after
+// 4 KiB of zeros. Cloud Hypervisor reads a disk's first and last bytes
+// for a format's header, even when told the disk is raw, and refuses one
+// it takes for qcow2, VHD or VHDX; so it is never handed the tenant's
+// bytes at either end (docs/decisions/custom-images.md).
+const UploadOffset = 4 << 10
+
+// UploadedLength is the length of the staged file of size bytes: the
+// zeros before, the bytes, zeros up to a 4 KiB boundary, and 4 KiB more.
+func UploadedLength(size int64) int64 {
+	end := UploadOffset + size
+	return (end+UploadOffset-1)/UploadOffset*UploadOffset + UploadOffset
 }
 
 // ImageInfo is what qemu-img info says of a file.
@@ -831,8 +853,10 @@ type VMSpec struct {
 
 // ConverterSpec is what a converter VM is booted with.
 type ConverterSpec struct {
-	// File is the uploaded file, a regular file of root's.
-	File string
+	// File is the uploaded file, as staged: a regular file of root's, of
+	// whole sectors, holding FileSize bytes of the tenant's at FileOffset.
+	File                 string
+	FileOffset, FileSize int64
 	// Target is the block device the file is converted onto, a zvol's
 	// /dev/zvol link; empty for a VM that only inspects the file.
 	Target string `json:",omitempty"`

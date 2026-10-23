@@ -17,11 +17,19 @@ service ImageConverterService {
   rpc Convert(ConvertRequest) returns (ConvertResponse);
 }
 
-// ImageConverter makes a guest a converter VM. The file is its first data
-// disk (/dev/vdc), read-only, and the target, when it has one, its second
-// (/dev/vdd). It reads its boot disk at vdb as every guest does, and never
-// reads vda. It has no network and runs nothing of the tenant's.
-message ImageConverter {}
+// ImageConverter makes a guest a converter VM. Its first data disk
+// (/dev/vdc), read-only, holds the file at file_offset, file_size bytes of
+// it, between zeros, which the guest maps alone, read-only, before it runs
+// anything on it; the target, when it has one, is its second (/dev/vdd).
+// It reads its boot disk at vdb as every guest does, and never reads vda.
+// It has no network and runs nothing of the tenant's.
+message ImageConverter {
+  // Where in the disk the file starts, in bytes, a multiple of 512.
+  int64 file_offset = 1;
+  // The file's size in bytes. A disk shorter than file_offset and
+  // file_size together is refused.
+  int64 file_size = 2;
+}
 
 message InspectRequest {}
 

@@ -37,7 +37,7 @@ func filledImages(t *testing.T, h Host) {
 	})
 	must(t, err)
 	if base.Key != key || base.Size < rootSize || base.Used < 0 || base.Used > base.Size {
-		t.Errorf("base %+v, want key %s and size %d", base, key, int64(rootSize))
+		t.Errorf("base %+v, want key %s and size %d", base, key, rootSize)
 	}
 	if again, err := st.FillImageBase(ctx, "up1", rootSize, func(string) error { fills++; return nil }); err != nil || again != base || fills != 1 {
 		t.Errorf("filling again: %+v %v, filled %d times; want the base made once", again, err, fills)
@@ -59,34 +59,70 @@ func filledImages(t *testing.T, h Host) {
 	must(t, st.DeleteImageBase(ctx, key))
 }
 
-// converter holds the converter to its contract on a raw file: what it
-// is, and the file written onto a base's device whole. With ReadVolume it
-// checks what the base holds.
+// stage writes data as the node stages an upload (driver.UploadOffset,
+// driver.UploadedLength), and returns the file.
+func stage(t *testing.T, data []byte) driver.UploadedFile {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "upload")
+	staged := make([]byte, driver.UploadedLength(int64(len(data))))
+	copy(staged[driver.UploadOffset:], data)
+	must(t, os.WriteFile(path, staged, 0o600))
+	return driver.UploadedFile{Path: path, Offset: driver.UploadOffset, Size: int64(len(data))}
+}
+
+// converter holds the converter to its contract on raw files: what they
+// are, and a file written onto a base's device whole, the bytes staged
+// with it never in it. A raw file whose last sector is a VHD footer, or
+// whose first bytes are VHDX's signature, is taken as any other: the
+// hypervisor, which reads a disk's ends for a format's header, sees only
+// the staging's zeros there; what qemu-img in the converter makes of it is
+// its own. With ReadVolume it checks what the base holds.
 func converter(t *testing.T, h Host) {
 	ctx := t.Context()
-	data := bytes.Repeat([]byte("hangar uploads\n"), 1<<16)
-	data = data[:len(data)/512*512]
-	path := filepath.Join(t.TempDir(), "image.raw")
-	must(t, os.WriteFile(path, data, 0o600))
-	info, err := h.Converter.Inspect(ctx, "conv1", path)
-	must(t, err)
-	if info.Format != "raw" || info.VirtualSize != int64(len(data)) || info.BackingFile != "" || info.DataFile != "" {
-		t.Errorf("info %+v, want raw of %d bytes naming no other file", info, len(data))
-	}
-	base, err := h.Storage.FillImageBase(ctx, "conv1", info.VirtualSize, func(dev string) error {
-		return h.Converter.Convert(ctx, "conv1", path, info.Format, dev)
-	})
-	must(t, err)
-	if h.ReadVolume != nil {
-		v, err := h.Storage.EnsureVolume(ctx, "converted", base.Size, base.Key)
+	convert := func(uid string, data []byte) {
+		t.Helper()
+		file := stage(t, data)
+		info, err := h.Converter.Inspect(ctx, uid, file)
 		must(t, err)
-		if got := h.ReadVolume(t, v.Path, 0, len(data)); !bytes.Equal(got, data) {
-			t.Error("the converted base does not hold the file")
+		want := (int64(len(data)) + 511) &^ 511
+		if info.Format != "raw" || info.VirtualSize != want || info.BackingFile != "" || info.DataFile != "" {
+			t.Errorf("%s: info %+v, want raw of %d bytes naming no other file", uid, info, want)
 		}
-		must(t, h.Storage.DeleteVolume(ctx, "converted"))
+		base, err := h.Storage.FillImageBase(ctx, uid, info.VirtualSize, func(dev string) error {
+			return h.Converter.Convert(ctx, uid, file, info.Format, dev)
+		})
+		must(t, err)
+		if h.ReadVolume != nil {
+			v, err := h.Storage.EnsureVolume(ctx, "converted-"+uid, base.Size, base.Key)
+			must(t, err)
+			got := h.ReadVolume(t, v.Path, 0, len(data)+512)
+			if !bytes.Equal(got[:len(data)], data) || !bytes.Equal(got[len(data):], make([]byte, 512)) {
+				t.Errorf("%s: the converted base does not hold the file alone", uid)
+			}
+			must(t, h.Storage.DeleteVolume(ctx, "converted-"+uid))
+		}
+		must(t, h.Storage.DeleteImageBase(ctx, base.Key))
 	}
-	must(t, h.Storage.DeleteImageBase(ctx, base.Key))
-	if _, err := h.Converter.Inspect(ctx, "conv2", filepath.Join(t.TempDir(), "missing")); err == nil {
+	data := bytes.Repeat([]byte("hangar uploads\n"), 1<<16)
+	convert("conv1", data[:len(data)/512*512])
+	convert("conv2", data[:1000])
+	footer := append(bytes.Repeat([]byte{7}, 4096), []byte("conectix")...)
+	footer = append(footer, make([]byte, 504)...)
+	convert("vhdfooter", footer)
+
+	// Whatever the converter makes of VHDX's signature, it is no failure
+	// to boot or attach the file.
+	vhdx := append([]byte("vhdxfile"), bytes.Repeat([]byte{9}, 64<<10)...)
+	if info, err := h.Converter.Inspect(ctx, "vhdx", stage(t, vhdx)); err != nil && !errors.Is(err, driver.ErrInvalidImage) {
+		t.Errorf("a raw file starting with VHDX's signature: %+v %v, want it inspected", info, err)
+	}
+
+	short := stage(t, data[:4096])
+	short.Size = 1 << 20
+	if _, err := h.Converter.Inspect(ctx, "conv3", short); err == nil {
+		t.Error("inspected a file shorter than it says")
+	}
+	if _, err := h.Converter.Inspect(ctx, "conv4", driver.UploadedFile{Path: filepath.Join(t.TempDir(), "missing"), Offset: driver.UploadOffset, Size: 1}); err == nil {
 		t.Error("inspected a file that is not there")
 	}
 }

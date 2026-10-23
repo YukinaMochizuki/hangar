@@ -26,12 +26,19 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-// ImageConverter makes a guest a converter VM. The file is its first data
-// disk (/dev/vdc), read-only, and the target, when it has one, its second
-// (/dev/vdd). It reads its boot disk at vdb as every guest does, and never
-// reads vda. It has no network and runs nothing of the tenant's.
+// ImageConverter makes a guest a converter VM. Its first data disk
+// (/dev/vdc), read-only, holds the file at file_offset, file_size bytes of
+// it, between zeros, which the guest maps alone, read-only, before it runs
+// anything on it; the target, when it has one, is its second (/dev/vdd).
+// It reads its boot disk at vdb as every guest does, and never reads vda.
+// It has no network and runs nothing of the tenant's.
 type ImageConverter struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Where in the disk the file starts, in bytes, a multiple of 512.
+	FileOffset int64 `protobuf:"varint,1,opt,name=file_offset,json=fileOffset,proto3" json:"file_offset,omitempty"`
+	// The file's size in bytes. A disk shorter than file_offset and
+	// file_size together is refused.
+	FileSize      int64 `protobuf:"varint,2,opt,name=file_size,json=fileSize,proto3" json:"file_size,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -64,6 +71,20 @@ func (x *ImageConverter) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ImageConverter.ProtoReflect.Descriptor instead.
 func (*ImageConverter) Descriptor() ([]byte, []int) {
 	return file_hangar_guest_v1_converter_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *ImageConverter) GetFileOffset() int64 {
+	if x != nil {
+		return x.FileOffset
+	}
+	return 0
+}
+
+func (x *ImageConverter) GetFileSize() int64 {
+	if x != nil {
+		return x.FileSize
+	}
+	return 0
 }
 
 type InspectRequest struct {
@@ -258,8 +279,11 @@ var File_hangar_guest_v1_converter_proto protoreflect.FileDescriptor
 
 const file_hangar_guest_v1_converter_proto_rawDesc = "" +
 	"\n" +
-	"\x1fhangar/guest/v1/converter.proto\x12\x0fhangar.guest.v1\"\x10\n" +
-	"\x0eImageConverter\"\x10\n" +
+	"\x1fhangar/guest/v1/converter.proto\x12\x0fhangar.guest.v1\"N\n" +
+	"\x0eImageConverter\x12\x1f\n" +
+	"\vfile_offset\x18\x01 \x01(\x03R\n" +
+	"fileOffset\x12\x1b\n" +
+	"\tfile_size\x18\x02 \x01(\x03R\bfileSize\"\x10\n" +
 	"\x0eInspectRequest\"\x8c\x01\n" +
 	"\x0fInspectResponse\x12\x16\n" +
 	"\x06format\x18\x01 \x01(\tR\x06format\x12!\n" +
