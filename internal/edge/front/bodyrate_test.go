@@ -37,17 +37,23 @@ func tlsDoor(t *testing.T, release <-chan struct{}, endpoints http.Handler) (*pi
 
 // TestASlowBodyIsCut: a body that stops coming is answered 408 within the
 // body timeout, over HTTP/2 and HTTP/1.1, to the API and to the console's
-// API paths; over HTTP/2 its connection is kept.
+// API paths, a chunk of an upload, which may be larger, among them; over
+// HTTP/2 its connection is kept.
 func TestASlowBodyIsCut(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		d, l := tlsDoor(t, nil, nil)
 		for _, h2 := range []bool{true, false} {
 			c := d.newClient(t, h2)
 			dials := d.https.port.Load()
-			for _, url := range []string{"https://" + apiHost + "/", "https://" + consoleHost + "/hangar.x.v1.S/M"} {
+			for _, to := range []struct{ method, url string }{
+				{http.MethodPost, "https://" + apiHost + "/"},
+				{http.MethodPost, "https://" + consoleHost + "/hangar.x.v1.S/M"},
+				{http.MethodPut, "https://" + consoleHost + "/v1/projects/web/customimages/img:upload"},
+			} {
+				url := to.url
 				pr, pw := io.Pipe()
 				go func() { _, _ = pw.Write([]byte("a")) }()
-				req, _ := http.NewRequest(http.MethodPost, url, pr)
+				req, _ := http.NewRequest(to.method, url, pr)
 				start := time.Now()
 				resp, err := c.Do(req)
 				took := time.Since(start)

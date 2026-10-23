@@ -177,6 +177,7 @@ func limitFlags(fs *flag.FlagSet, l *front.Limits) {
 	fs.IntVar(&l.MaxHeaderBytes, "max-header-bytes", d.MaxHeaderBytes, "size of a request's header")
 	fs.Int64Var(&l.APIBodyBytes, "max-api-body-bytes", d.APIBodyBytes, "size of a request's body to the API")
 	fs.Int64Var(&l.EndpointBodyBytes, "max-endpoint-body-bytes", d.EndpointBodyBytes, "size of a request's body to a public endpoint")
+	fs.Int64Var(&l.UploadBodyBytes, "max-upload-body-bytes", d.UploadBodyBytes, "size of a PUT's body to a custom image's :upload path, one chunk of a file; every other API path takes --max-api-body-bytes")
 	fs.Int64Var(&l.MinBodyRate, "min-body-rate", d.MinBodyRate, "bytes a second a request's body must arrive at, over the time spent waiting for it")
 	fs.DurationVar(&l.BodyReadTimeout, "body-read-timeout", d.BodyReadTimeout, "longest wait for any of a request's body")
 	fs.DurationVar(&l.ReadHeaderTimeout, "read-header-timeout", d.ReadHeaderTimeout, "time for a TLS handshake, then for each request's header")
