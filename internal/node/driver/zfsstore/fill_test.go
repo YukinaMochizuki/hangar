@@ -70,6 +70,36 @@ func TestAFilledBaseIsMarkedAsACapturedOne(t *testing.T) {
 	}
 }
 
+// TestFillsUnderWayCountTogether: a sparse volume being filled takes from
+// the pool's room as it is written, so a second fill counts the first at
+// its whole size, until it ends.
+func TestFillsUnderWayCountTogether(t *testing.T) {
+	f := fillHost(t, 3*gib)
+	filling, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		_, err := f.s.FillImageBase(t.Context(), "img1", 2*gib, func(string) error {
+			close(filling)
+			<-release
+			return nil
+		})
+		first <- err
+	}()
+	<-filling
+	_, err := f.s.FillImageBase(t.Context(), "img2", 2*gib, func(string) error { return nil })
+	var ns *driver.NoSpaceError
+	if !errors.As(err, &ns) || ns.Need != 2*gib || ns.Free != gib {
+		t.Errorf("a second 2GiB fill into 3GiB free while one is under way: %v, want a NoSpaceError with 1GiB left", err)
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.FillImageBase(t.Context(), "img2", 2*gib, func(string) error { return nil }); err != nil {
+		t.Errorf("the second fill once the first ended: %v", err)
+	}
+}
+
 // TestAFailedFillLeavesNoBase: a fill that fails, or a pool without room
 // for the whole volume, leaves no base; an unfinished one is made again,
 // and a volume not the driver's is left alone.

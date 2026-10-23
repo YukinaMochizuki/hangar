@@ -111,7 +111,7 @@ const (
 )
 
 // Reasons the node gives for CustomImageSnapshotted, CustomImageUploaded
-// and CustomImageReady.
+// and CustomImageReady, but ReasonQuotaExceeded.
 const (
 	ReasonCapturing      = "Capturing"
 	ReasonCaptured       = "Captured"
@@ -128,6 +128,11 @@ const (
 	ReasonDigestMismatch = "DigestMismatch"
 	// ReasonConvertFailed means converting a file the node took failed.
 	ReasonConvertFailed = "ConvertFailed"
+	// ReasonQuotaExceeded means the disk an uploaded file holds, its
+	// status.virtual_size, does not fit the project's or the tenant's disk
+	// quota. The apiserver, not the node, sets it, in place of the node's
+	// report of the virtual size.
+	ReasonQuotaExceeded = "QuotaExceeded"
 )
 
 // CustomImageFailures are the reasons a CustomImage's Ready is False for
@@ -135,7 +140,7 @@ const (
 // ReasonImageTooLarge are an uploaded file the node refuses.
 var CustomImageFailures = []string{
 	ReasonCaptureFailed, ReasonUploadExpired, ReasonDigestMismatch,
-	ReasonInvalidImage, ReasonImageTooLarge, ReasonConvertFailed,
+	ReasonInvalidImage, ReasonImageTooLarge, ReasonConvertFailed, ReasonQuotaExceeded,
 }
 
 // Reasons an image can never be used, for ImageVerified.

@@ -208,12 +208,15 @@ True with `diskSize`, the disk the file holds, the smallest a disk of it
 can be, and `usedSize`. `Ready` False says why it failed, for good:
 `UploadExpired` (not whole in 24 hours), `DigestMismatch` (not the file
 whose sha256 was sent), `InvalidImage` (not raw or qcow2, or naming a
-backing or data file), `ImageTooLarge` (a disk over 256 GiB), or
+backing or data file), `ImageTooLarge` (a disk over 256 GiB),
+`QuotaExceeded` (the disk the file holds does not fit the disk quota), or
 `ConvertFailed`; delete it and upload again. A file is at most 16 GiB.
 
 The image reserves the file's size toward the disk quota from the moment it
-is made, and counts as `usedSize` once Ready. Make VMs of it as of a
-captured image, with the project beside the name.
+is made; once the node has read the file, the disk it holds if larger,
+`virtualSize`, which must fit the project's and the tenant's disk quota
+before it is converted; and it counts as `usedSize` once Ready. Make VMs
+of it as of a captured image, with the project beside the name.
 
 The upload path is `GET` and `PUT
 /v1/projects/PROJECT/customimages/NAME:upload`, for a client of its own:

@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
@@ -174,4 +176,141 @@ func TestCustomImageUploadQuota(t *testing.T) {
 	}
 	settle("b", &storagev1alpha1.CustomImageStatus{Conditions: []*metav1.Condition{uploadFailed(computeapi.ReasonConverting)}})
 	used("an upload converting", 5, 2)
+}
+
+// TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota: the virtual size the
+// node reports counts toward the disk quota, if more than the file's size,
+// once the apiserver keeps it; one past the tenant's or the project's
+// limit fails the image as QuotaExceeded instead, for good, and releases
+// it. Ready, the image settles at what it holds.
+func TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota(t *testing.T) {
+	s, system, user := withNode1(t, func(*Config) {})
+	nodeWithRoom(t, s, system, "n1", 8192)
+	images := s.backend(registry.CustomImage)
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
+	used := func(what string, disk, count int64) {
+		t.Helper()
+		got, err := s.tally(system, "acme", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.tenant[dimDisk] != disk*int64(quantity.GiB) || got.tenant[dimCustomImages] != count {
+			t.Errorf("%s: %s of disk and %d images, want %dGi and %d", what,
+				formatAmount(dimDisk, got.tenant[dimDisk]), got.tenant[dimCustomImages], disk, count)
+		}
+	}
+	inspected := func(virtual int64) *storagev1alpha1.CustomImageStatus {
+		return &storagev1alpha1.CustomImageStatus{VirtualSize: virtual, Conditions: []*metav1.Condition{
+			{Type: computeapi.CustomImageUploaded, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: computeapi.ReasonUploaded},
+			uploadFailed(computeapi.ReasonConverting),
+		}}
+	}
+	report := func(name string, st *storagev1alpha1.CustomImageStatus) *storagev1alpha1.CustomImageStatus {
+		t.Helper()
+		res, err := images.UpdateStatus(asNode(system, "n1"), resource.Key{Project: "web", Name: name}, st, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.(*storagev1alpha1.CustomImage).GetStatus()
+	}
+	ready := func(st *storagev1alpha1.CustomImageStatus) string {
+		return conditions.Find(st.GetConditions(), CustomImageReady).GetReason()
+	}
+	for _, name := range []string{"a", "b"} {
+		if _, err := images.Apply(user, uploadImage(name, 1<<30, "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	used("two uploads, at their files' sizes", 2, 2)
+
+	if got := report("a", inspected(4<<30-1)); got.GetVirtualSize() != 4<<30-1 || ready(got) != computeapi.ReasonConverting {
+		t.Errorf("a virtual size within the quota: stored %v, want it kept, converting", got)
+	}
+	used("the virtual size kept, in whole Gi", 5, 2)
+	if got := report("a", inspected(9<<30)); got.GetVirtualSize() != 4<<30-1 {
+		t.Errorf("virtual size %d once kept, want it kept at %d", got.GetVirtualSize(), 4<<30-1)
+	}
+	used("a second report of another virtual size", 5, 2)
+
+	got := report("b", inspected(7<<30))
+	if c := conditions.Find(got.GetConditions(), CustomImageReady); c.GetReason() != computeapi.ReasonQuotaExceeded ||
+		c.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE || !strings.Contains(c.GetMessage(), "tenant \"acme\"'s disk limit is 10Gi") {
+		t.Errorf("a virtual size past the tenant's limit: Ready %v, want False QuotaExceeded naming the limit", c)
+	}
+	if !conditions.IsTrue(got.GetConditions(), computeapi.CustomImageUploaded) {
+		t.Errorf("the image over quota: conditions %v, want Uploaded still True", got.GetConditions())
+	}
+	used("the upload over quota, released", 4, 1)
+	if got := report("b", inspected(7<<30)); ready(got) != computeapi.ReasonQuotaExceeded {
+		t.Errorf("the node reporting again over QuotaExceeded: Ready %s, want it kept", ready(got))
+	}
+
+	// The project's own limit holds too.
+	p, err := s.get(system, registry.Project, resource.Key{Name: "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	proj := p.(*tenancyv1alpha1.Project)
+	proj.Spec.Limits = &tenancyv1alpha1.Limits{Disk: proto.String("6Gi")}
+	proj.Metadata.ResourceVersion = 0
+	if _, err := s.backend(registry.Project).Apply(system, proj); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := images.Apply(user, uploadImage("c", 1<<30, "")); err != nil {
+		t.Fatal(err)
+	}
+	got = report("c", inspected(3<<30))
+	if c := conditions.Find(got.GetConditions(), CustomImageReady); c.GetReason() != computeapi.ReasonQuotaExceeded || !strings.Contains(c.GetMessage(), "project \"web\"'s disk limit is 6Gi") {
+		t.Errorf("a virtual size past the project's limit: Ready %v, want QuotaExceeded naming it", c)
+	}
+	used("the second upload over quota, released", 4, 1)
+
+	settled := inspected(0)
+	settled.UsedSize, settled.DiskSize = "1Gi", "4Gi"
+	settled.Conditions[1] = imageReady()
+	report("a", settled)
+	used("the kept upload Ready, settled at what it holds", 1, 1)
+}
+
+// TestUploadsReportedAtOnceAreCountedTogether: two virtual sizes reported
+// at the same time, each of which fits alone, do not both fit.
+func TestUploadsReportedAtOnceAreCountedTogether(t *testing.T) {
+	s, system, user := withNode1(t, func(*Config) {})
+	nodeWithRoom(t, s, system, "n1", 8192)
+	images := s.backend(registry.CustomImage)
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
+	for _, name := range []string{"a", "b"} {
+		if _, err := images.Apply(user, uploadImage(name, 1<<30, "")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 20 {
+		reasons := make(chan string, 2)
+		for _, name := range []string{"a", "b"} {
+			go func() {
+				res, err := images.UpdateStatus(asNode(system, "n1"), resource.Key{Project: "web", Name: name}, &storagev1alpha1.CustomImageStatus{
+					VirtualSize: 6 << 30, Conditions: []*metav1.Condition{uploadFailed(computeapi.ReasonConverting)},
+				}, nil)
+				if err != nil {
+					reasons <- err.Error()
+					return
+				}
+				reasons <- conditions.Find(res.(*storagev1alpha1.CustomImage).GetStatus().GetConditions(), CustomImageReady).GetReason()
+			}()
+		}
+		got := []string{<-reasons, <-reasons}
+		slices.Sort(got)
+		if want := []string{computeapi.ReasonConverting, computeapi.ReasonQuotaExceeded}; !slices.Equal(got, want) {
+			t.Fatalf("two 6Gi virtual sizes within 10Gi reported at once: Ready %v, want %v", got, want)
+		}
+		// Again, from the start.
+		for _, name := range []string{"a", "b"} {
+			if _, err := images.Delete(system, resource.Key{Project: "web", Name: name}, nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := images.Apply(user, uploadImage(name, 1<<30, "")); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
 }

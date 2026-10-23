@@ -37,6 +37,23 @@ func (h *Host) FailConvert(err error) {
 	h.convertErr = err
 }
 
+// HoldInspects keeps every Inspect from ending, from now until release is
+// called, as a converter VM that stalls does.
+func (h *Host) HoldInspects() (release func()) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	hold := make(chan struct{})
+	h.inspectHold = hold
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.inspectHold == hold {
+			h.inspectHold = nil
+		}
+		close(hold)
+	}
+}
+
 // HoldConverts keeps every Convert from ending, from now until release
 // is called, as a long conversion does.
 func (h *Host) HoldConverts() (release func()) {
@@ -75,11 +92,18 @@ func (h *Host) Converted(uid string) int {
 	return h.converts[uid]
 }
 
-func (c converter) Inspect(_ context.Context, imageUID string, file driver.UploadedFile) (driver.ImageInfo, error) {
+func (c converter) Inspect(ctx context.Context, imageUID string, file driver.UploadedFile) (driver.ImageInfo, error) {
 	c.h.mu.Lock()
 	c.h.inspects[imageUID]++
-	info, err := c.h.imageInfo, c.h.inspectErr
+	info, err, hold := c.h.imageInfo, c.h.inspectErr, c.h.inspectHold
 	c.h.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return driver.ImageInfo{}, ctx.Err()
+		}
+	}
 	if err != nil {
 		return driver.ImageInfo{}, err
 	}
@@ -144,12 +168,21 @@ func (d storage) FillImageBase(ctx context.Context, imageUID string, size int64,
 		defer d.h.mu.Unlock()
 		return driver.ImageBase{Key: key, Size: made, Used: d.h.imageUsed[key]}, nil
 	}
-	full := d.h.full || size > d.h.storageSize-d.h.usedLocked()
+	// The fills under way count at their whole size, as the real pool's.
+	full := d.h.full || size > d.h.storageSize-d.h.usedLocked()-d.h.filling
 	used := size * d.h.usedPerMille / 1000
+	if !full {
+		d.h.filling += size
+	}
 	d.h.mu.Unlock()
 	if full {
 		return driver.ImageBase{}, fmt.Errorf("the base of custom image %s: %w", imageUID, driver.ErrNoSpace)
 	}
+	defer func() {
+		d.h.mu.Lock()
+		defer d.h.mu.Unlock()
+		d.h.filling -= size
+	}()
 	if err := fill("/dev/fake/vmbases/" + key); err != nil {
 		return driver.ImageBase{}, fmt.Errorf("filling the base of custom image %s: %w", imageUID, err)
 	}

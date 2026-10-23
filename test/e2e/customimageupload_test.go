@@ -16,11 +16,13 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	tenancyv1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/tenancy/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver/apiservertest"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -338,5 +340,117 @@ func TestAChunkBeforeTheNodeSawItsImage(t *testing.T) {
 	}
 	if n, err := w.putChunk("early", file, 0, 500, ""); err != nil || n != 500 {
 		t.Errorf("a chunk the controller has not seen the image of: %d %v, want it counted", n, err)
+	}
+}
+
+// TestAnUploadPastTheDiskQuotaIsNotConverted: the virtual size the node
+// reads of a file counts toward the disk quota before any base is made;
+// past the project's limit the image fails as QuotaExceeded, is never
+// converted, leaves no base nor staged file, and counts nothing. One that
+// fits is converted, and settles at what it holds.
+func TestAnUploadPastTheDiskQuotaIsNotConverted(t *testing.T) {
+	w := newWorld(t)
+	obj, err := w.root.Get(context.Background(), registry.Project, client.Key{Name: project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := obj.(*tenancyv1alpha1.Project)
+	p.Spec.Limits = &tenancyv1alpha1.Limits{Disk: proto.String("2Gi")}
+	p.Metadata.ResourceVersion = 0
+	if _, err := w.root.Apply(context.Background(), registry.Project, p); err != nil {
+		t.Fatal(err)
+	}
+	file := bytes.Repeat([]byte("q"), 1500)
+
+	w.host.SetImageInfo(&driver.ImageInfo{Format: "qcow2", VirtualSize: 2<<30 + 1})
+	uid := w.uploadImage("big", int64(len(file)), "")
+	if _, err := w.putChunk("big", file, 0, int64(len(file)), ""); err != nil {
+		t.Fatal(err)
+	}
+	ci := w.waitCustomImage("big", "failed", computeapi.CustomImageFailed)
+	if c := imageCondition(ci, computeapi.CustomImageReady); c.GetReason() != computeapi.ReasonQuotaExceeded || !strings.Contains(c.GetMessage(), "disk limit is 2Gi") {
+		t.Errorf("Ready %v, want QuotaExceeded naming the project's limit", c)
+	}
+	if !conditions.IsTrue(ci.GetStatus().GetConditions(), computeapi.CustomImageUploaded) || ci.GetStatus().GetVirtualSize() != 2<<30+1 {
+		t.Errorf("status %v, want Uploaded and the virtual size read", ci.GetStatus())
+	}
+	testutil.Eventually(t, "the staged file gone and nothing counted", func() (bool, string) {
+		s, u := w.staged(), w.projectUsage()
+		return len(s) == 0 && u.GetCustomImages() == 0 && (u.GetDisk() == "" || u.GetDisk() == "0"), fmt.Sprint(s, u)
+	})
+	if w.host.Converted(uid) != 0 || slices.Contains(w.host.Snapshot().ImageBases, driver.CustomImageBase(uid)) {
+		t.Errorf("converted %d times, bases %v: want no base made", w.host.Converted(uid), w.host.Snapshot().ImageBases)
+	}
+
+	w.host.SetImageInfo(&driver.ImageInfo{Format: "qcow2", VirtualSize: 2 << 30})
+	w.uploadImage("fits", int64(len(file)), "")
+	if _, err := w.putChunk("fits", file, 0, int64(len(file)), ""); err != nil {
+		t.Fatal(err)
+	}
+	ci = w.waitCustomImage("fits", "Ready", computeapi.CustomImageReadyNow)
+	testutil.Eventually(t, "the image counted at what it holds", func() (bool, string) {
+		u := w.projectUsage()
+		return u.GetCustomImages() == 1 && u.GetDisk() == ci.GetStatus().GetUsedSize(), fmt.Sprint(u, ci.GetStatus().GetUsedSize())
+	})
+}
+
+// TestAFileReadAgainToAnotherSizeFails: after the agent restarts, the file
+// is read again before it is converted; one found to hold another disk
+// than the virtual size kept fails, rather than filling a base the quota
+// did not count.
+func TestAFileReadAgainToAnotherSizeFails(t *testing.T) {
+	w := newWorld(t)
+	file := bytes.Repeat([]byte("r"), 1500)
+	w.host.SetImageInfo(&driver.ImageInfo{Format: "qcow2", VirtualSize: 1 << 30})
+	release := w.host.HoldConverts()
+	defer release()
+	w.uploadImage("again", int64(len(file)), "")
+	if _, err := w.putChunk("again", file, 0, int64(len(file)), ""); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, "the conversion under way", func() (bool, string) {
+		return w.host.ConvertsUnderWay() == 1, fmt.Sprint(w.host.ConvertsUnderWay())
+	})
+	w.stopAgent()
+	w.host.SetImageInfo(&driver.ImageInfo{Format: "qcow2", VirtualSize: 3 << 30})
+	w.startAgent()
+	ci := w.waitCustomImage("again", "failed", computeapi.CustomImageFailed)
+	if c := imageCondition(ci, computeapi.CustomImageReady); c.GetReason() != computeapi.ReasonConvertFailed || !strings.Contains(c.GetMessage(), "not the 1073741824") {
+		t.Errorf("Ready %v, want ConvertFailed naming the size kept", c)
+	}
+	if ci.GetStatus().GetVirtualSize() != 1<<30 {
+		t.Errorf("virtual_size %d, want the one kept", ci.GetStatus().GetVirtualSize())
+	}
+}
+
+// TestReadingAndConvertingAFileAreBoundedApart: reading what a file is
+// has a bound of its own, --inspect-timeout, and converting it another,
+// --convert-timeout; past either the image fails as ConvertFailed, saying
+// which, and leaves no base.
+func TestReadingAndConvertingAFileAreBoundedApart(t *testing.T) {
+	w := newIdleWorld(t)
+	w.inspectTimeout, w.convertTimeout = time.Second, 2*time.Second
+	w.startAgent()
+	file := bytes.Repeat([]byte("s"), 1500)
+	for _, tt := range []struct {
+		name, says string
+		hold       func() func()
+	}{
+		{"stalls-reading", "reading the file took longer than 1s", w.host.HoldInspects},
+		{"stalls-converting", "the conversion took longer than 2s", w.host.HoldConverts},
+	} {
+		release := tt.hold()
+		uid := w.uploadImage(tt.name, int64(len(file)), "")
+		if _, err := w.putChunk(tt.name, file, 0, int64(len(file)), ""); err != nil {
+			t.Fatal(err)
+		}
+		ci := w.waitCustomImage(tt.name, "failed", computeapi.CustomImageFailed)
+		release()
+		if c := imageCondition(ci, computeapi.CustomImageReady); c.GetReason() != computeapi.ReasonConvertFailed || !strings.Contains(c.GetMessage(), tt.says) {
+			t.Errorf("%s: Ready %v, want ConvertFailed saying %q", tt.name, c, tt.says)
+		}
+		if slices.Contains(w.host.Snapshot().ImageBases, driver.CustomImageBase(uid)) {
+			t.Errorf("%s left its base", tt.name)
+		}
 	}
 }

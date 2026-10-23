@@ -100,8 +100,11 @@ type Config struct {
 	// MaxImageDiskSize bounds the disk an uploaded file holds; zero means
 	// DefaultMaxImageDiskSize.
 	MaxImageDiskSize int64
-	// ConvertTimeout bounds converting one uploaded file, so a conversion
-	// that stalls fails, for good; zero means DefaultConvertTimeout.
+	// InspectTimeout bounds reading what one uploaded file is, and
+	// ConvertTimeout converting it once read, so a converter that stalls
+	// fails the image, for good; zero means DefaultInspectTimeout and
+	// DefaultConvertTimeout.
+	InspectTimeout time.Duration
 	ConvertTimeout time.Duration
 	// DNSUpstreams are the resolvers each network's resolver forwards names
 	// outside its own zone to.
@@ -171,10 +174,11 @@ type Agent struct {
 	customImages   storagev1alpha1connect.CustomImageServiceClient
 	captures       *baseMaker
 	captureTrigger chan struct{}
-	// stager stages files uploaded for CustomImages, converts converts
-	// them, and reported has their controller look again, at most every
-	// reportEvery, as chunks are counted.
+	// stager stages files uploaded for CustomImages, inspects reads what
+	// they are, converts converts them, and reported has their controller
+	// look again, at most every reportEvery, as chunks are counted.
 	stager   *stager
+	inspects *jobs[driver.ImageInfo]
 	converts *baseMaker
 	reported *throttle
 	// wakes are when each upload expires, by image uid, which a timer
@@ -295,6 +299,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.MaxImageDiskSize == 0 {
 		cfg.MaxImageDiskSize = DefaultMaxImageDiskSize
 	}
+	if cfg.InspectTimeout == 0 {
+		cfg.InspectTimeout = DefaultInspectTimeout
+	}
 	if cfg.ConvertTimeout == 0 {
 		cfg.ConvertTimeout = DefaultConvertTimeout
 	}
@@ -373,7 +380,11 @@ func New(cfg Config) (*Agent, error) {
 			return nil, fmt.Errorf("the upload directory: %w", err)
 		}
 		a.stager = st
-		a.converts = newConvertMaker(cfg.Drivers.Converter, cfg.Drivers.Storage, st.whole, cfg.MaxImageDiskSize, cfg.ConvertTimeout, cfg.MaxPulls)
+		// Inspections and conversions share their slots: each runs a
+		// converter VM.
+		slots := newFIFO(cfg.MaxPulls)
+		a.inspects = newInspector(cfg.Drivers.Converter, st.whole, cfg.MaxImageDiskSize, cfg.InspectTimeout, slots)
+		a.converts = newConvertMaker(cfg.Drivers.Converter, cfg.Drivers.Storage, st.whole, a.inspects.done, cfg.ConvertTimeout, slots)
 	}
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
@@ -465,11 +476,13 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Go(func() {
 			a.captures.start(ctx, func() { notify(a.captureTrigger) })
 			if a.converts != nil {
+				a.inspects.start(ctx, func() { notify(a.captureTrigger) })
 				a.converts.start(ctx, func() { notify(a.captureTrigger) })
 			}
 			_ = a.customImagesCtl.Run(ctx)
 			a.captures.wait() // its jobs end with ctx
 			if a.converts != nil {
+				a.inspects.wait()
 				a.converts.wait()
 			}
 		})

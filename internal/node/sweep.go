@@ -181,6 +181,7 @@ func (a *Agent) sweep(ctx context.Context) error {
 					captured[uid] = computeapi.CustomImageReadyNow(ci) || computeapi.CustomImageFailed(ci)
 				}
 				if a.converts != nil {
+					a.inspects.keep(live)
 					a.converts.keep(live)
 				}
 				// A deleted image's upload goes, with any chunk being

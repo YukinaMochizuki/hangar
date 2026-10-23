@@ -185,3 +185,33 @@ func TestConnectDoesNotHoldTheHost(t *testing.T) {
 		t.Fatal("Connect and the follower deadlocked")
 	}
 }
+
+// TestFillsUnderWayCountTogether: the fake's storage counts a base being
+// filled at its whole size, as the pool's does, until it ends.
+func TestFillsUnderWayCountTogether(t *testing.T) {
+	h := fake.New()
+	h.SetStorageSize(3 << 30)
+	st := h.Storage()
+	filling, release := make(chan struct{}), make(chan struct{})
+	first := make(chan error, 1)
+	go func() {
+		_, err := st.FillImageBase(t.Context(), "img1", 2<<30, func(string) error {
+			close(filling)
+			<-release
+			return nil
+		})
+		first <- err
+	}()
+	<-filling
+	if _, err := st.FillImageBase(t.Context(), "img2", 2<<30, func(string) error { return nil }); !errors.Is(err, driver.ErrNoSpace) {
+		t.Errorf("a second 2GiB fill into 3GiB while one is under way: %v, want ErrNoSpace", err)
+	}
+	close(release)
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	h.SetStorageSize(5 << 30)
+	if _, err := st.FillImageBase(t.Context(), "img2", 2<<30, func(string) error { return nil }); err != nil {
+		t.Errorf("the second fill once the first ended, in 3GiB more: %v", err)
+	}
+}

@@ -108,14 +108,18 @@ type Host struct {
 	capturing    int
 	// inspects and converts count the converter's calls, by image uid;
 	// imageInfo, if set, is what Inspect says of every file, and inspectErr
-	// and convertErr fail each call; convertHold keeps conversions from
-	// ending until it is closed, and converting counts those under way.
+	// and convertErr fail each call; inspectHold and convertHold keep
+	// inspections and conversions from ending until each is closed, and
+	// converting counts the conversions under way.
 	inspects, converts map[string]int
 	imageInfo          *driver.ImageInfo
 	inspectErr         error
 	convertErr         error
+	inspectHold        chan struct{}
 	convertHold        chan struct{}
 	converting         int
+	// filling is the bytes of the custom images' bases being filled.
+	filling int64
 	// Unpacked counts how often each digest was unpacked into a base.
 	unpacked map[string]int
 	// unpacks counts the unpacks begun, by reference; unpacking, those

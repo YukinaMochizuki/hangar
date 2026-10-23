@@ -82,6 +82,9 @@ type world struct {
 	uploadDir    string
 	uploadExpiry time.Duration
 	maxImageDisk int64
+	// inspectTimeout and convertTimeout, if set before it starts, bound
+	// the agent's reading and converting of an uploaded file.
+	inspectTimeout, convertTimeout time.Duration
 
 	stop func()
 	// agent is the running node agent; nil while it is stopped.
@@ -203,6 +206,8 @@ func (w *world) startAgent() {
 		UploadDir:         w.uploadDir,
 		UploadExpiry:      w.uploadExpiry,
 		MaxImageDiskSize:  w.maxImageDisk,
+		InspectTimeout:    w.inspectTimeout,
+		ConvertTimeout:    w.convertTimeout,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(), Converter: w.host.Converter(),

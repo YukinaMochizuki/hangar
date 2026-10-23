@@ -30,6 +30,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -95,6 +96,12 @@ type Store struct {
 	// building holds a lock per digest, so a base is made once at a time
 	// and not deleted while it is made.
 	building keylock.Map
+
+	// filling is how many bytes the custom images' bases being filled may
+	// still take from the pool, which a sparse zvol does not take as it is
+	// made; fillMu holds it and a fill's check of the pool's room together.
+	fillMu  sync.Mutex
+	filling int64
 
 	// waitDev is waitDevice; a test replaces it, having no zvol.
 	waitDev func(ctx context.Context, vol string) (string, error)

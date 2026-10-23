@@ -67,10 +67,10 @@ type hostFlags struct {
 	firmware string
 	// reservedCPU is --reserved-cpu: the CPUs no VM may use.
 	reservedCPU string
-	// converterInitrd, uploadDir and convertTimeout are what custom
-	// images' uploads are staged in and converted with.
-	converterInitrd, uploadDir string
-	convertTimeout             time.Duration
+	// converterInitrd, uploadDir, inspectTimeout and convertTimeout are
+	// what custom images' uploads are staged in and converted with.
+	converterInitrd, uploadDir     string
+	inspectTimeout, convertTimeout time.Duration
 }
 
 func main() {
@@ -172,6 +172,7 @@ func main() {
 		UploadDir:        uploadDir(*hostDrivers, hf, d),
 		UploadExpiry:     *uploadExpiry,
 		MaxImageDiskSize: maxDisk,
+		InspectTimeout:   hf.inspectTimeout,
 		ConvertTimeout:   hf.convertTimeout,
 		MaxUnpackWork:    hf.maxUnpackWork,
 		Drivers:          d,
@@ -340,7 +341,8 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
 	fs.StringVar(&hf.converterInitrd, "guest-converter-initramfs", "/usr/local/lib/hangar/converter.cpio", "for --drivers=host, the converter VMs' initramfs, with hangar-init and qemu-img; without the file, custom images are not uploaded")
 	fs.StringVar(&hf.uploadDir, "upload-dir", "", "where files uploaded for custom images are staged, root's alone; empty is --image-dir's uploads with --drivers=host, and none, taking no uploads, with --drivers=fake")
-	fs.DurationVar(&hf.convertTimeout, "convert-timeout", node.DefaultConvertTimeout, "how long converting a file uploaded for a custom image may take, its converter VMs' boots included, before the image fails for good")
+	fs.DurationVar(&hf.inspectTimeout, "inspect-timeout", node.DefaultInspectTimeout, "how long reading what a file uploaded for a custom image is may take, its converter VM's boot included, before the image fails for good")
+	fs.DurationVar(&hf.convertTimeout, "convert-timeout", node.DefaultConvertTimeout, "how long converting a file uploaded for a custom image, once read, may take, its converter VM's boot included, before the image fails for good")
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
@@ -501,7 +503,7 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		Firmware:    firmware,
 		MachineCPUs: cpus,
 		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
-		ConverterInitramfs: converter, ConverterRuntime: hf.convertTimeout,
+		ConverterInitramfs: converter, ConverterRuntime: max(hf.inspectTimeout, hf.convertTimeout),
 		Launcher: []string{exe, "vmm"},
 	})
 	if err != nil {

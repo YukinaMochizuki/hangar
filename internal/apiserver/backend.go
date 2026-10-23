@@ -923,6 +923,42 @@ func (b *backend) afterDelete(ctx context.Context, key resource.Key) error {
 	return nil
 }
 
+// nodeQuota checks a node's status reports of a kind that can raise what
+// an object counts toward quota, which only the node knows, such as the
+// virtual size of an uploaded image's file.
+type nodeQuota struct {
+	// raises says whether obj, as the report would store it over stored,
+	// can count for more than stored. Such a write holds Server.quota from
+	// the check to the store, and is checked as an apply is.
+	raises func(stored, obj proto.Message) bool
+	// refused is the status stored in place of a report of status that
+	// does not fit, as err says.
+	refused func(s *Server, status proto.Message, err error) proto.Message
+}
+
+// writeStatus stores obj, its status just written by p over stored, at
+// rev, checking a node's report the kind's quotaFromNode says can raise
+// what it counts toward quota; one that does not fit is stored as refused
+// turns it.
+func (b *backend) writeStatus(ctx context.Context, p auth.Principal, key resource.Key, rev int64, stored, obj proto.Message) (int64, error) {
+	if q := b.hooks.quotaFromNode; q != nil && p.Type == auth.Node && q.raises(stored, obj) {
+		b.s.quota.Lock()
+		defer b.s.quota.Unlock()
+		err := b.s.checkFits(ctx, b.r, obj)
+		switch {
+		case connect.CodeOf(err) == connect.CodeResourceExhausted:
+			object.SetStatus(obj, q.refused(b.s, object.Status(obj), err))
+		case err != nil:
+			return 0, err
+		}
+	}
+	data, err := encode(obj)
+	if err != nil {
+		return 0, err
+	}
+	return b.s.store.Update(ctx, b.storeKey(key), data, rev)
+}
+
 func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status proto.Message, expected *int64) (proto.Message, error) {
 	p, err := b.begin(ctx)
 	if err != nil {
@@ -957,16 +993,16 @@ func (b *backend) UpdateStatus(ctx context.Context, key resource.Key, status pro
 			return nil, connect.NewError(connect.CodeAborted,
 				fmt.Errorf("%s %s is at resource version %d, not %d", b.r.Kind, key.Name, cur.Revision, *expected))
 		}
+		var stored proto.Message
+		if b.hooks.quotaFromNode != nil {
+			stored = proto.Clone(obj)
+		}
 		if p.Type == auth.Node && b.hooks.fromNode != nil {
 			object.SetStatus(obj, b.hooks.fromNode(object.Status(obj), status))
 		} else {
 			object.SetStatus(obj, status)
 		}
-		data, err := encode(obj)
-		if err != nil {
-			return nil, apiError(err)
-		}
-		rev, err := b.s.store.Update(ctx, b.storeKey(key), data, cur.Revision)
+		rev, err := b.writeStatus(ctx, p, key, cur.Revision, stored, obj)
 		if errors.Is(err, store.ErrConflict) && expected == nil {
 			continue
 		}

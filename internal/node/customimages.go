@@ -23,46 +23,50 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
-// baseMaker makes CustomImages' bases off the host lock, one job per
-// image, so a copy or a conversion of many gigabytes holds up no other
-// disk or machine (docs/decisions/custom-images.md): captures copy a
-// snapshot into the base, conversions an uploaded file.
-type baseMaker struct {
-	// build makes the base of the image of uid. A failure leaves no base;
-	// ctx ending, as the agent stopping or the image going, leaves what
-	// the next build starts again from.
-	build func(ctx context.Context, uid string) (driver.ImageBase, error)
+// jobs run work of CustomImages off the host lock, one job per image, so
+// a copy or a conversion of many gigabytes holds up no other disk or
+// machine (docs/decisions/custom-images.md): captures copy a snapshot into
+// the base, inspections read what an uploaded file is, conversions write
+// it into the base. T is what a job makes.
+type jobs[T any] struct {
+	// build makes what the job of the image of uid makes. A failure leaves
+	// nothing behind; ctx ending, as the agent stopping or the image going,
+	// leaves what the next build starts again from.
+	build func(ctx context.Context, uid string) (T, error)
 	// what names a build in errors, such as "the copy".
 	what string
 	// timeout bounds one build, so a stalled one fails rather than leaving
 	// its image waiting for ever.
 	timeout time.Duration
-	// slots bounds the builds at once.
+	// slots bounds the builds at once, which other jobs may share.
 	slots   *fifo
 	running sync.WaitGroup
 
 	mu     sync.Mutex
 	ctx    context.Context
 	notify func()
-	jobs   map[string]*baseJob // by image uid
+	jobs   map[string]*job[T] // by image uid
 }
 
-type baseJob struct {
+type job[T any] struct {
 	running, done bool
 	cancel        context.CancelFunc
-	base          driver.ImageBase
+	made          T
 	// err is why the build failed for good, as it is never tried again.
 	err error
 }
 
-func newBaseMaker(what string, build func(context.Context, string) (driver.ImageBase, error), timeout time.Duration, slots int) *baseMaker {
-	return &baseMaker{what: what, build: build, timeout: timeout, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*baseJob{}}
+// baseMaker makes CustomImages' bases.
+type baseMaker = jobs[driver.ImageBase]
+
+func newJobs[T any](what string, build func(context.Context, string) (T, error), timeout time.Duration, slots *fifo) *jobs[T] {
+	return &jobs[T]{what: what, build: build, timeout: timeout, slots: slots, ctx: context.Background(), notify: func() {}, jobs: map[string]*job[T]{}}
 }
 
 // newCaptureMaker copies CustomImages' snapshots into their bases. A copy
 // that fails, running out of time among it, takes the snapshot with it.
 func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *baseMaker {
-	return newBaseMaker("the copy", func(ctx context.Context, uid string) (driver.ImageBase, error) {
+	return newJobs("the copy", func(ctx context.Context, uid string) (driver.ImageBase, error) {
 		base, err := storage.CaptureImageBase(ctx, uid)
 		if err != nil && !errors.Is(context.Cause(ctx), errBuildCut) {
 			if derr := storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
@@ -70,7 +74,7 @@ func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *
 			}
 		}
 		return base, err
-	}, timeout, slots)
+	}, timeout, newFIFO(slots))
 }
 
 // errBuildCut is the cause of a build's context ending other than by its
@@ -78,43 +82,55 @@ func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *
 var errBuildCut = errors.New("cut short")
 
 // start runs jobs under ctx from now on and calls notify as each finishes.
-func (m *baseMaker) start(ctx context.Context, notify func()) {
+func (m *jobs[T]) start(ctx context.Context, notify func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ctx, m.notify = ctx, notify
 }
 
-// get says whether the base of the CustomImage of uid is made, and what it
-// is; until it is, get starts making it. A build that failed returns its
-// error from then on: the agent never tries it again.
-func (m *baseMaker) get(uid string) (driver.ImageBase, bool, error) {
+// get says whether the job of the CustomImage of uid is done, and what it
+// made; until it is, get starts it. A build that failed returns its error
+// from then on: the agent never tries it again.
+func (m *jobs[T]) get(uid string) (T, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var none T
 	j := m.jobs[uid]
 	switch {
 	case j == nil:
 		ctx, cancel := context.WithCancel(m.ctx)
-		j = &baseJob{running: true, cancel: cancel}
+		j = &job[T]{running: true, cancel: cancel}
 		m.jobs[uid] = j
 		m.running.Add(1)
 		go m.run(ctx, j, uid)
-		return driver.ImageBase{}, false, nil
+		return none, false, nil
 	case j.running:
-		return driver.ImageBase{}, false, nil
+		return none, false, nil
 	}
-	return j.base, j.done, j.err
+	return j.made, j.done, j.err
 }
 
-func (m *baseMaker) run(ctx context.Context, j *baseJob, uid string) {
+// done returns what the job of uid made, if it is done, and starts none.
+func (m *jobs[T]) done(uid string) (T, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j := m.jobs[uid]; j != nil && j.done {
+		return j.made, true
+	}
+	var none T
+	return none, false
+}
+
+func (m *jobs[T]) run(ctx context.Context, j *job[T], uid string) {
 	defer m.running.Done()
-	base, err := m.make(ctx, uid)
+	made, err := m.make(ctx, uid)
 	cut := ctx.Err() != nil
 	m.mu.Lock()
 	j.cancel()
 	j.running = false
 	switch {
 	case err == nil:
-		j.done, j.base = true, base
+		j.done, j.made = true, made
 	case cut:
 		// Cut short, not failed: the next get starts again.
 		if m.jobs[uid] == j {
@@ -128,11 +144,12 @@ func (m *baseMaker) run(ctx context.Context, j *baseJob, uid string) {
 	notify()
 }
 
-// make builds the image's base, a slot at a time, within m.timeout of
+// make runs the image's build, a slot at a time, within m.timeout of
 // starting; past it, the build fails.
-func (m *baseMaker) make(ctx context.Context, uid string) (driver.ImageBase, error) {
+func (m *jobs[T]) make(ctx context.Context, uid string) (T, error) {
 	if err := m.slots.acquire(ctx); err != nil {
-		return driver.ImageBase{}, err
+		var none T
+		return none, err
 	}
 	defer m.slots.release()
 	// Ended by ctx only through errBuildCut, so a build tells it from its
@@ -143,16 +160,21 @@ func (m *baseMaker) make(ctx context.Context, uid string) (driver.ImageBase, err
 	defer stop()
 	bounded, cancel := context.WithTimeout(cuttable, m.timeout)
 	defer cancel()
-	base, err := m.build(bounded, uid)
+	made, err := m.build(bounded, uid)
 	if err != nil && ctx.Err() == nil && bounded.Err() != nil {
-		err = fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, err)
+		// A *stuck keeps its reason.
+		if s := (*stuck)(nil); errors.As(err, &s) {
+			err = blocked(s.reason, fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, s.err))
+		} else {
+			err = fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, err)
+		}
 	}
-	return base, err
+	return made, err
 }
 
 // keep ends and drops the jobs of images not in wanted, by uid, and
 // returns the uids of the jobs left that still run.
-func (m *baseMaker) keep(wanted map[string]bool) map[string]bool {
+func (m *jobs[T]) keep(wanted map[string]bool) map[string]bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	running := map[string]bool{}
@@ -172,7 +194,7 @@ func (m *baseMaker) keep(wanted map[string]bool) map[string]bool {
 }
 
 // wait returns once every job has ended.
-func (m *baseMaker) wait() { m.running.Wait() }
+func (m *jobs[T]) wait() { m.running.Wait() }
 
 // customImageController captures the CustomImages that live on this node:
 // it snapshots the source disk's volume, reports Snapshotted, copies the

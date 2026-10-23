@@ -91,10 +91,12 @@ tenant's the platform would parse as a disk image.
   immutable, as the rest of `source`. The image is placed as it is made on
   the node a machine would be (on one host, the only node), stored as
   `status.node`; with no node ready it is refused. Toward `disk` it
-  reserves `size`, rounded up to whole Gi, from creation, and settles to
-  `used_size` once Ready, as a capture does; it counts toward
-  `custom_images`. Formats other than raw and qcow2, URLs, sharing and
-  copying between nodes are not offered.
+  reserves `size`, rounded up to whole Gi, from creation; once the node
+  has read the file, the larger of that and the disk the file holds
+  (`status.virtual_size`, below); and it settles to `used_size` once
+  Ready, as a capture does. It counts toward `custom_images`. Formats
+  other than raw and qcow2, URLs, sharing and copying between nodes are
+  not offered.
 - **A file goes up in chunks, in order, resumable.** `GET
   /v1/projects/{project}/customimages/{name}:upload` answers JSON
   `{received_bytes, chunk_size, size}`: where the next chunk starts, as the
@@ -155,20 +157,38 @@ tenant's the platform would parse as a disk image.
   that device. Step one, with the file alone: it reports `qemu-img
   info`, and the node refuses anything not raw or qcow2, naming a backing
   or a data file (`InvalidImage`), or holding a disk over `hangar-node
-  --max-image-disk-size`, 256Gi (`ImageTooLarge`). Step two: the node
-  makes `hangar/vmbases/customimage-<uid>` of that size, and the converter,
+  --max-image-disk-size`, 256Gi (`ImageTooLarge`).
+- **The disk a file holds is kept within the quota before it is made.**
+  A qcow2 of a few megabytes can hold a disk of 256Gi, which the base takes
+  once converted. The node reports the size it read as
+  `status.virtual_size`, with `Ready` still `Converting`; the apiserver,
+  taking that report under the same lock as every apply that counts toward
+  a quota, keeps it only if the project and the tenant have room for it,
+  rounded up to whole Gi, besides everything else they hold. Otherwise it
+  stores `Ready` False `QuotaExceeded` in place of the report, naming the
+  limit, `Uploaded` still True; the image then counts nothing and the node
+  removes the file. The node makes the base only once it reads the
+  virtual size kept; nothing else of the node's can change it, nor undo
+  `QuotaExceeded`. After the agent restarts the file is read again, and
+  one found to hold another size fails as `ConvertFailed`. On the node,
+  the pool's room for a base counts the bases being filled at their whole
+  size, as a sparse volume takes its room only as it is written.
+- **Then the file is converted.** The node makes
+  `hangar/vmbases/customimage-<uid>` of that size, and the converter,
   given the file and the zvol, runs `qemu-img convert -O raw` with the
   format given, never probed. The base is finished and marked exactly as a
   captured one, the property set on `@base` itself, read-only; the node
   reports `Ready` with `used_size` and `disk_size`, the base's size in
-  whole Gi, which only the node knows and it sets once. Both steps are
-  bounded by `hangar-node --convert-timeout` (2h), each VM's unit by
-  `RuntimeMaxSec` too.
+  whole Gi, which only the node knows and it sets once. Reading the file is
+  bounded by `hangar-node --inspect-timeout` (5m) and the conversion alone
+  by `--convert-timeout` (2h), each VM's unit by `RuntimeMaxSec` too; the
+  two share the node's slots for such work.
 - **An upload that fails, fails for good**, as a capture does: `Ready`
   False with `UploadExpired`, `DigestMismatch`, `InvalidImage`,
-  `ImageTooLarge` or `ConvertFailed`; a partial base is destroyed, and the
-  user deletes the image and uploads again. The staged file goes once the
-  image is Ready or failed, and the sweep removes a deleted image's.
+  `ImageTooLarge`, `QuotaExceeded` or `ConvertFailed`; a partial base is
+  destroyed, and the user deletes the image and uploads again. The staged
+  file goes once the image is Ready or failed, and the sweep removes a
+  deleted image's.
 - **The platform never changes what an image holds.** No generalization:
   no machine id, host keys, users or logs are removed. A VM made from one
   is a new instance to cloud-init anyway, as its instance id is the VM's

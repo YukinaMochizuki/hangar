@@ -552,14 +552,23 @@ func (s *Server) checkQuota(ctx context.Context, r registry.Resource, p auth.Pri
 	if p.Type == auth.System || !countsTowardQuota(r.Kind) {
 		return nil
 	}
-	meta := object.Meta(obj)
-	var tenantName string
-	switch r.Kind {
-	case registry.Tenant.Kind:
+	if r.Kind == registry.Tenant.Kind {
 		if old != nil {
 			return nil
 		}
 		return s.checkOwnedTenants(ctx, p)
+	}
+	return s.checkFits(ctx, r, asStored(old, obj))
+}
+
+// checkFits refuses obj, of a kind quotaCounters counts, a Project or a
+// CustomDomain, as it would be stored, where it takes what its tenant or
+// project holds past one of its limits; it checks only what obj raises.
+// The caller holds Server.quota, as checkQuota's does.
+func (s *Server) checkFits(ctx context.Context, r registry.Resource, obj proto.Message) error {
+	meta := object.Meta(obj)
+	var tenantName string
+	switch r.Kind {
 	case registry.Project.Kind:
 		tenantName = obj.(*tenancyv1alpha1.Project).GetSpec().GetTenant()
 	case registry.CustomDomain.Kind:
@@ -586,7 +595,7 @@ func (s *Server) checkQuota(ctx context.Context, r registry.Resource, p auth.Pri
 	if err != nil {
 		return err
 	}
-	after, err := s.tally(ctx, tenantName, &override{kind: r.Kind, project: meta.GetProject(), name: meta.GetName(), obj: asStored(old, obj)})
+	after, err := s.tally(ctx, tenantName, &override{kind: r.Kind, project: meta.GetProject(), name: meta.GetName(), obj: obj})
 	if err != nil {
 		return err
 	}

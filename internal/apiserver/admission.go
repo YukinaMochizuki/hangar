@@ -208,6 +208,9 @@ type kindHooks struct {
 	// fromNode, if set, is the status stored when a node agent writes
 	// reported over stored: what of it the node owns, and stored's rest.
 	fromNode func(stored, reported proto.Message) proto.Message
+	// quotaFromNode, if set, checks a node's status report that can raise
+	// what the object counts toward quota, as an apply is checked.
+	quotaFromNode *nodeQuota
 	// redact, if set, clears in place what no answer may hold, whoever
 	// asks: a Secret's values. It is applied to every object answered, by
 	// every call and event.
@@ -393,16 +396,19 @@ func hooksFor(r registry.Resource) kindHooks {
 		// machine with it runs is checked against the machines, VMs,
 		// containers and disks, and they against it. Its node, its source
 		// disk's, captures it and reports on it, and writes only its own
-		// part of its status (docs/decisions/custom-images.md). It needs
-		// no finalizer: the node's sweep removes its base once it is gone.
+		// part of its status (docs/decisions/custom-images.md); an
+		// upload's virtual size, which it reports, is kept only within
+		// the disk quota. It needs no finalizer: the node's sweep removes
+		// its base once it is gone.
 		return kindHooks{
-			target:     projectTarget,
-			owner:      ownedByProject,
-			validate:   validateCustomImage,
-			writeLocks: only(attachLock),
-			drawStatus: drawCustomImage,
-			nodeOf:     customImageNode,
-			fromNode:   customImageFromNode,
+			target:        projectTarget,
+			owner:         ownedByProject,
+			validate:      validateCustomImage,
+			writeLocks:    only(attachLock),
+			drawStatus:    drawCustomImage,
+			nodeOf:        customImageNode,
+			fromNode:      customImageFromNode,
+			quotaFromNode: &nodeQuota{raises: customImageGrows, refused: customImageOverQuota},
 		}
 	case registry.Image.Kind:
 		// Platform administrators keep the catalogue that every tenant

@@ -2,15 +2,19 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -307,8 +311,9 @@ func drawCustomImage(ctx context.Context, s *Server, obj proto.Message) (proto.M
 
 // customImageFromNode is what a node's status report of a custom image
 // stores: all the node reports but the apiserver's node and disk size,
-// once stored. An upload's disk size is the node's to set, once: the size
-// of the disk the file holds, which only its converter reads.
+// once stored. An upload's disk size and virtual size are the node's to
+// set, once: the size of the disk the file holds, which only its
+// converter reads. The apiserver's QuotaExceeded stays.
 func customImageFromNode(stored, reported proto.Message) proto.Message {
 	out := proto.Clone(reported).(*storagev1alpha1.CustomImageStatus)
 	st, _ := stored.(*storagev1alpha1.CustomImageStatus)
@@ -316,6 +321,41 @@ func customImageFromNode(stored, reported proto.Message) proto.Message {
 	if st.GetDiskSize() != "" {
 		out.DiskSize = st.GetDiskSize()
 	}
+	if st.GetVirtualSize() != 0 {
+		out.VirtualSize = st.GetVirtualSize()
+	}
+	if c := conditions.Find(st.GetConditions(), CustomImageReady); c.GetReason() == computeapi.ReasonQuotaExceeded {
+		out.Conditions = slices.DeleteFunc(out.Conditions, func(o *metav1.Condition) bool { return o.GetType() == CustomImageReady })
+		out.Conditions = append(out.Conditions, c)
+	}
+	return out
+}
+
+// customImageGrows says a node's report on an upload, stored as obj over
+// stored, gives it its virtual size, which it then counts toward the disk
+// quota, rounded up to whole Gi, if more than its file's size.
+func customImageGrows(stored, obj proto.Message) bool {
+	ci := obj.(*storagev1alpha1.CustomImage)
+	return ci.GetSpec().GetSource().GetUpload() != nil &&
+		stored.(*storagev1alpha1.CustomImage).GetStatus().GetVirtualSize() == 0 &&
+		ci.GetStatus().GetVirtualSize() != 0 && !computeapi.CustomImageFailed(ci)
+}
+
+// customImageOverQuota is what a node's report of an upload's virtual
+// size, status, stores when it does not fit the disk quota, as err says:
+// the image failed for good, as QuotaExceeded, its virtual size kept to
+// tell. The node, seeing it, makes no base and removes the file.
+func customImageOverQuota(s *Server, status proto.Message, err error) proto.Message {
+	out := proto.Clone(status).(*storagev1alpha1.CustomImageStatus)
+	msg := err.Error()
+	if ce := new(connect.Error); errors.As(err, &ce) {
+		msg = ce.Message()
+	}
+	out.Conditions = conditions.Set(out.GetConditions(), &metav1.Condition{
+		Type: CustomImageReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: computeapi.ReasonQuotaExceeded,
+		Message:            fmt.Sprintf("the file holds a disk of %s, which the disk quota has no room for: %s", quantity.FormatDisk(wholeGi(uint64(out.GetVirtualSize()))*quantity.GiB), msg),
+		ObservedGeneration: out.GetObservedGeneration(),
+	}, s.clock.Now())
 	return out
 }
 
@@ -339,8 +379,9 @@ func customImageFloor(ci *storagev1alpha1.CustomImage) uint64 {
 
 // customImageAmounts is a custom image and the disk it takes: its source
 // disk's size while it is captured, read from the disk in until the image
-// has its own status, or an upload's size until it is Ready, and what it
-// holds once Ready. One that failed takes nothing.
+// has its own status, or until an upload is Ready the larger of its file's
+// size and its virtual size, once kept, and what it holds once Ready. One
+// that failed takes nothing.
 func customImageAmounts(obj proto.Message, in projectObjects) amounts {
 	ci := obj.(*storagev1alpha1.CustomImage)
 	var a amounts
@@ -354,7 +395,8 @@ func customImageAmounts(obj proto.Message, in projectObjects) amounts {
 	case computeapi.CustomImageReadyNow(ci):
 		size = ci.GetStatus().GetUsedSize()
 	case up != nil:
-		a[dimDisk] = int64(wholeGi(uint64(max(up.GetSize(), 0))) * quantity.GiB)
+		bytes := max(up.GetSize(), ci.GetStatus().GetVirtualSize(), 0)
+		a[dimDisk] = int64(wholeGi(uint64(bytes)) * quantity.GiB)
 		return a
 	case size == "":
 		// As drawCustomImage will store it.

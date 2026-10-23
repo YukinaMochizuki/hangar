@@ -214,15 +214,11 @@ func (s *Store) FillImageBase(ctx context.Context, imageUID string, size int64, 
 		}
 	}
 	size = roundUp(max(size, 1), align)
-	c, err := s.Capacity(ctx)
+	release, err := s.reserveFill(ctx, imageUID, size)
 	if err != nil {
 		return driver.ImageBase{}, err
 	}
-	// The fill writes all but the zeros, so the base may take up to its
-	// size: how much less is not known before.
-	if c.Free < size {
-		return driver.ImageBase{}, &driver.NoSpaceError{What: "the base of custom image " + imageUID, Room: driver.StorageRoom, Need: size, Free: c.Free}
-	}
+	defer release()
 	if _, err := zfs(ctx, "create", "-s", "-V", strconv.FormatInt(size, 10),
 		"-o", "volmode=dev", "-o", b.prop+"="+b.value, b.vol); err != nil {
 		return driver.ImageBase{}, err
@@ -323,4 +319,29 @@ func brokenPipe(err error, msg string) bool {
 		}
 	}
 	return strings.Contains(msg, "Broken pipe")
+}
+
+// reserveFill counts size bytes toward the fills under way, as long as
+// the pool has room for them besides the others, and returns what stops
+// counting them. The fill writes all but the zeros, so a base may take up
+// to its size: how much less is not known before. A fill counts at its
+// whole size until it ends, though part of it is written meanwhile, so a
+// fill may be refused that would have fit, but none is let in that does
+// not.
+func (s *Store) reserveFill(ctx context.Context, imageUID string, size int64) (release func(), err error) {
+	s.fillMu.Lock()
+	defer s.fillMu.Unlock()
+	c, err := s.Capacity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if free := c.Free - s.filling; free < size {
+		return nil, &driver.NoSpaceError{What: "the base of custom image " + imageUID, Room: driver.StorageRoom, Need: size, Free: max(free, 0)}
+	}
+	s.filling += size
+	return func() {
+		s.fillMu.Lock()
+		defer s.fillMu.Unlock()
+		s.filling -= size
+	}, nil
 }
