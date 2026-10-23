@@ -17,6 +17,7 @@ import {
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { customImageFloorGiB, customImageState, useCustomImages } from "@/lib/custom-images";
 import { imageFloorGiB } from "@/lib/storage";
 import { Box, Check, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
@@ -217,6 +218,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const [kind, setKind] = useState<CreateKind>(initialKind);
   const [image, setImage] = useState(initial.image);
   const [vmImage, setVmImage] = useState(baseRoot?.case === "fromImage" ? (baseRoot.value.image?.name ?? "") : "");
+  // Whether vmImage names one of the project's custom images rather than a platform image.
+  const [vmImageCustom, setVmImageCustom] = useState(baseRoot?.case === "fromImage" && !!baseRoot.value.image?.project);
   const [size, setSize] = useState(initialSize);
   // A shape of the person's own, as the sliders set it, once Custom is
   // chosen; null while a size is.
@@ -253,6 +256,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const proc = advancedSpec(advanced);
 
   const images = useQuery(ImageService.method.listImages, { pageSize: 1000 }, { enabled: kind === "vm" });
+  const customImages = useCustomImages(project);
+  const readyCustom = customImages.items.filter((c) => customImageState(c).tone === "ok");
   const networks = useQuery(NetworkService.method.listNetworks, { project, pageSize: 1000 });
   const securityGroups = useQuery(SecurityGroupService.method.listSecurityGroups, { project, pageSize: 1000 });
   const existing = useMachines(project, kind === "container" ? "Container" : "VirtualMachine");
@@ -267,6 +272,11 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   const mayApplyShares = sharePerm.known ? sharePerm.can(sharePerms.apply) : undefined;
 
   const chosenImage = vmImage || images.data?.items[0]?.metadata?.name || "";
+  const chosenCustom = !!vmImage && vmImageCustom;
+  const chooseImage = (name: string, custom: boolean) => {
+    setVmImage(name);
+    setVmImageCustom(custom);
+  };
 
   // An edited machine's own size: the listed size it matches, or Current,
   // with its quantities as written, so it is kept unless another is chosen.
@@ -330,7 +340,12 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // on an edit, the disk the placed machine holds, or before it is placed
   // the disk the spec asks for, in whole GiB rounded up. A size's disk is
   // where the field starts, never a minimum.
-  const imageFloor = kind === "vm" ? imageFloorGiB(images.data?.items.find((i) => i.metadata?.name === chosenImage)) : 1;
+  const imageFloor =
+    kind !== "vm"
+      ? 1
+      : chosenCustom
+        ? customImageFloorGiB(customImages.items.find((c) => c.metadata?.name === chosenImage))
+        : imageFloorGiB(images.data?.items.find((i) => i.metadata?.name === chosenImage));
   const floor = Math.max(minDiskGi, imageFloor);
   const kindDefaults = kind === "container" ? containerDefaults : vmDefaults;
   const startOf = (z: Size) => Math.max(z.diskGi > 0 ? Math.ceil(z.diskGi) : wholeGiB(kindDefaults.disk), floor);
@@ -442,7 +457,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             spec: {
               interfaces,
               resources: s && { cpu: s.resources.cpu, memory: s.resources.memory },
-              rootDisk: { source: { case: "fromImage", value: { image: { name: chosenImage }, size: s ? diskQuantity : "" } } },
+              rootDisk: {
+                source: { case: "fromImage", value: { image: { name: chosenImage, project: chosenCustom ? project : "" }, size: s ? diskQuantity : "" } },
+              },
               disks: dataDisks.filter(Boolean).map((disk) => ({ disk })),
               fileShares: vmSharesOf(vmShares.filter((v) => v.source)),
               sshAuthorizedKeys: sshKeys,
@@ -647,7 +664,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             )}
           </Section>
 
-          <Section n={2} title="Image" hint={kind === "container" ? "Any OCI reference" : "The platform's catalogue"}>
+          <Section n={2} title="Image" hint={kind === "container" ? "Any OCI reference" : readyCustom.length > 0 ? "This project's or the platform's" : "The platform's catalogue"}>
             {kind === "container" ? (
               <div className="max-w-xl">
                 <Input
@@ -664,6 +681,10 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                 {baseRoot?.case === "disk" ? (
                   <>
                     Boots from disk <span className="font-mono">{baseRoot.value}</span>
+                  </>
+                ) : chosenCustom ? (
+                  <>
+                    Custom image <span className="font-mono">{chosenImage}</span>
                   </>
                 ) : (
                   (() => {
@@ -689,16 +710,37 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
             ) : images.data.items.length === 0 ? (
               <p className="text-[13px] text-muted">The platform's catalogue holds no image.</p>
             ) : (
-              <div role="radiogroup" aria-label="Image" className="grid max-w-xl grid-cols-2 gap-3 sm:grid-cols-4">
-                {images.data.items.map((img) => {
-                  const id = img.metadata?.name ?? "";
-                  return (
-                    <Choice key={id} selected={chosenImage === id} onClick={() => setVmImage(id)} className="p-3">
-                      <div className="text-[13px] font-medium capitalize">{img.spec?.os || id}</div>
-                      <div className="font-mono text-[11.5px] text-muted">{img.spec?.version || id}</div>
-                    </Choice>
-                  );
-                })}
+              <div className="max-w-xl space-y-4">
+                {readyCustom.length > 0 && (
+                  <div>
+                    <div className="mb-2 text-[12px] font-medium text-muted">This project's images</div>
+                    <div role="radiogroup" aria-label="This project's images" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                      {readyCustom.map((c) => {
+                        const id = c.metadata?.name ?? "";
+                        return (
+                          <Choice key={id} selected={chosenCustom && chosenImage === id} onClick={() => chooseImage(id, true)} className="p-3">
+                            <div className="truncate font-mono text-[12.5px] font-medium">{id}</div>
+                            <div className="truncate text-[11.5px] capitalize text-muted">{[c.spec?.os, c.spec?.version].filter(Boolean).join(" ") || "custom"}</div>
+                          </Choice>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                <div>
+                  {readyCustom.length > 0 && <div className="mb-2 text-[12px] font-medium text-muted">Platform images</div>}
+                  <div role="radiogroup" aria-label="Image" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {images.data.items.map((img) => {
+                      const id = img.metadata?.name ?? "";
+                      return (
+                        <Choice key={id} selected={!chosenCustom && chosenImage === id} onClick={() => chooseImage(id, false)} className="p-3">
+                          <div className="text-[13px] font-medium capitalize">{img.spec?.os || id}</div>
+                          <div className="font-mono text-[11.5px] text-muted">{img.spec?.version || id}</div>
+                        </Choice>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
           </Section>

@@ -609,6 +609,27 @@ Settled with the owner on the screens, before they read the API.
   from it", the New disk page (`/new/disk?image=<name>`) on a boot disk
   of that image; it is disabled for an image at fault (`Verified` False),
   which the page names in a banner.
+- **A project's custom images sit above the platform's on the Images
+  page** (`docs/decisions/custom-images.md`): their state as the node
+  reports it (Capturing, Ready, or Failed with its message), the disk
+  each was captured from, its smallest disk and the space it takes, which
+  is what counts toward the disk quota. Each has its own page
+  (`/custom-images/<name>`), with "New disk from it" while it is Ready
+  and Delete, which keeps the disks made from it. Wherever a boot disk's
+  image is chosen (New disk, a new VM), the project's Ready images are a
+  group of their own before the platform's, and the disk names its
+  project in `source.image`.
+  - New image (`/new/custom-image`), reached from the Images page, a
+    disk's Create image and a VM's Create image (off until the VM is
+    stopped), chooses its source disk from one filterable list: the disks
+    that can be captured now first, boot disks before data disks; those
+    that cannot are folded behind a count and, shown, each says why (its
+    machine runs, or it was never made on a node). The console only reads
+    this from the disk and its machine; the API decides. The page gives
+    the guest command that clears its identity and the stop command for
+    the disk's machine, since the platform changes nothing in the image,
+    and fills the image's OS, version and default user from the disk's
+    image until they are edited. The one apply is create-only.
 - **Controls are shown as "What a control is shown for" says**: a disk
   list or page asks the project one question, and an image list or page
   asks the project one and the platform one. New disk and "New disk from

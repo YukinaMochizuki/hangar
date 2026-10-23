@@ -1,12 +1,12 @@
 // What the Disks and Images pages' tests share: an in-memory API holding
-// disks, images and the machines a disk can be attached to, and answering
-// which permissions the caller holds.
+// disks, images, custom images and the machines a disk can be attached to,
+// and answering which permissions the caller holds.
 
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { MachineSchema, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
+import { MachinePhase, MachineSchema, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { ContainerService } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
-import { VirtualMachineSchema, VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import { VirtualMachineRunState, VirtualMachineSchema, VirtualMachineService } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import {
@@ -18,6 +18,12 @@ import {
   type Disk,
   type DeleteDiskRequest,
 } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import {
+  CustomImageSchema,
+  CustomImageService,
+  type ApplyCustomImageRequest,
+  type CustomImage,
+} from "@hangar/api/hangar/storage/v1alpha1/custom_image_pb";
 import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
@@ -91,17 +97,60 @@ export function image(name: string, o: Partial<{ size: string; min: string; veri
   });
 }
 
-// VM postgres, which runs as Machine vm-postgres.
-const vms = [create(VirtualMachineSchema, { metadata: { name: "postgres", project }, spec: {} })];
-const machine = (deleting: boolean) =>
-  create(MachineSchema, {
-    metadata: {
-      name: "vm-postgres",
-      project,
-      ownerReferences: [{ kind: "VirtualMachine", name: "postgres", controller: true }],
-      deleteTime: deleting ? { seconds: 1n } : undefined,
+/** CustomImageState is how far a test's custom image is: captured, still capturing, or failed. */
+export type CustomImageState = "ready" | "capturing" | "failed";
+
+/** customImage is a CustomImage of the project captured from disk, as the API returns it. */
+export function customImage(name: string, o: Partial<{ disk: string; state: CustomImageState; size: string; used: string }> = {}): CustomImage {
+  const state = o.state ?? "ready";
+  const ready =
+    state === "ready"
+      ? { type: "Ready", status: ConditionStatus.TRUE, reason: "Captured", message: "" }
+      : state === "failed"
+        ? { type: "Ready", status: ConditionStatus.FALSE, reason: "CaptureFailed", message: "zfs receive: out of space" }
+        : { type: "Ready", status: ConditionStatus.FALSE, reason: "Capturing", message: "copying" };
+  return create(CustomImageSchema, {
+    metadata: { name, project },
+    spec: { source: { source: { case: "disk", value: { name: o.disk ?? "web-root" } } }, os: "ubuntu", version: "24.04", defaultUser: "ubuntu" },
+    status: {
+      node: "node-a",
+      diskSize: state === "ready" ? (o.size ?? "20Gi") : "",
+      usedSize: state === "ready" ? (o.used ?? "2Gi") : "",
+      conditions: [ready],
     },
   });
+}
+
+/** The machines a test's disks can be attached to: VM postgres (Machine vm-postgres), and those a Fake adds by name with whether each is stopped. */
+function vmsAndMachines(deleting: boolean, more: Record<string, boolean>) {
+  const vms = [create(VirtualMachineSchema, { metadata: { name: "postgres", project }, spec: {} })];
+  const machines = [
+    create(MachineSchema, {
+      metadata: {
+        name: "vm-postgres",
+        project,
+        ownerReferences: [{ kind: "VirtualMachine", name: "postgres", controller: true }],
+        deleteTime: deleting ? { seconds: 1n } : undefined,
+      },
+    }),
+  ];
+  for (const [name, stopped] of Object.entries(more)) {
+    vms.push(
+      create(VirtualMachineSchema, {
+        metadata: { name, project },
+        spec: { runState: stopped ? VirtualMachineRunState.STOPPED : VirtualMachineRunState.RUNNING },
+        status: { rootDisk: `${name}-root` },
+      }),
+    );
+    machines.push(
+      create(MachineSchema, {
+        metadata: { name: `vm-${name}`, project, ownerReferences: [{ kind: "VirtualMachine", name, controller: true }] },
+        status: { phase: stopped ? MachinePhase.STOPPED : MachinePhase.RUNNING },
+      }),
+    );
+  }
+  return { vms, machines };
+}
 
 /** Fake is what a test's API answers; unset lists are empty. */
 export type Fake = {
@@ -115,6 +164,10 @@ export type Fake = {
   perms?: () => Promise<string[]>;
   apply?: (req: ApplyDiskRequest) => { disk?: Disk; created: boolean } | Promise<{ disk?: Disk; created: boolean }>;
   del?: (req: DeleteDiskRequest) => void;
+  customImages?: () => Promise<{ items: CustomImage[] }>;
+  applyCustomImage?: (req: ApplyCustomImageRequest) => { customImage?: CustomImage; created: boolean };
+  /** VMs besides postgres, by name, each with whether it is stopped; VM x runs as Machine vm-x with root disk x-root. */
+  vms?: Record<string, boolean>;
 };
 
 /**
@@ -122,6 +175,7 @@ export type Fake = {
  * Machine vm-postgres, and answering which permissions the caller holds.
  */
 export function storageApi(f: Fake) {
+  const { vms, machines } = vmsAndMachines(!!f.machineDeleting, f.vms ?? {});
   return fakeApi((r) => {
     r.service(DiskService, {
       listDisks: () => (f.disks ? f.disks() : { items: [] }),
@@ -149,7 +203,12 @@ export function storageApi(f: Fake) {
       },
     });
     r.service(ImageService, { listImages: () => (f.images ? f.images() : { items: [] }) });
-    r.service(MachineService, { listMachines: () => ({ items: [machine(!!f.machineDeleting)] }) });
+    r.service(CustomImageService, {
+      listCustomImages: () => (f.customImages ? f.customImages() : { items: [] }),
+      applyCustomImage: (req) => (f.applyCustomImage ? f.applyCustomImage(req) : { customImage: req.customImage, created: true }),
+      deleteCustomImage: () => ({}),
+    });
+    r.service(MachineService, { listMachines: () => ({ items: machines }) });
     r.service(VirtualMachineService, { listVirtualMachines: () => ({ items: vms }) });
     r.service(ContainerService, { listContainers: () => ({ items: [] }) });
     r.service(ProjectService, { listProjects: () => ({ items: [] }) });

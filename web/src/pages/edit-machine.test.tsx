@@ -5,10 +5,11 @@ import { Code, ConnectError, type ConnectRouter } from "@connectrpc/connect";
 import { ContainerRunState, ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineSchema, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { MachineSizeSchema, MachineSizeService } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
-import { VirtualMachineSchema, VirtualMachineService, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import { VirtualMachineRunState, VirtualMachineSchema, VirtualMachineService, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { CustomImageService } from "@hangar/api/hangar/storage/v1alpha1/custom_image_pb";
 import { DiskSchema, DiskService } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { FileShareService } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { PortForwardSchema, PortForwardService, Protocol, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
@@ -16,10 +17,9 @@ import { ImageSchema, ImageService } from "@hangar/api/hangar/storage/v1alpha1/i
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { MachineActions, MachineRowMenu, useMachineActions } from "@/components/machine-actions";
-import { containerView, type MachineView } from "@/lib/machines";
+import { containerView, vmView, type MachineView } from "@/lib/machines";
 import { useMachineCan } from "@/lib/permissions";
 import { EditMachine } from "@/pages/edit-machine";
 import { fakeApi, never, polyfillDialog, withApi } from "@/test/harness";
@@ -28,11 +28,7 @@ const navigate = vi.fn();
 vi.mock("@tanstack/react-router", async (orig) => ({
   ...(await orig<typeof import("@tanstack/react-router")>()),
   useNavigate: () => navigate,
-  Link: ({ to, params, children, className }: { to: string; params?: Record<string, string>; children?: ReactNode; className?: string }) => (
-    <a href={Object.entries(params ?? {}).reduce((p, [k, v]) => p.replace(`$${k}`, v), to)} className={className}>
-      {children}
-    </a>
-  ),
+  Link: (await import("@/test/fake-link")).FakeLink,
 }));
 
 beforeAll(polyfillDialog);
@@ -117,6 +113,7 @@ function api(f: Fake = {}) {
     r.service(TenantService, { listTenants: () => ({ items: [] }) });
     r.service(NetworkService, { listNetworks: () => ({ items: [{ metadata: { name: "default" }, spec: { ipv4Cidr: "10.0.0.0/24" } }] }) });
     r.service(SecurityGroupService, { listSecurityGroups: () => ({ items: [{ metadata: { name: "web" }, spec: { network: "default" } }] }) });
+    r.service(CustomImageService, { listCustomImages: () => ({ items: [] }) });
     r.service(ImageService, { listImages: () => ({ items: [create(ImageSchema, { metadata: { name: "ubuntu-24.04" }, spec: { os: "ubuntu", version: "24.04" } })] }) });
     r.service(DiskService, { listDisks: () => ({ items: [create(DiskSchema, { metadata: { name: "pg-data", project: "demo" }, spec: { size: "5Gi" } })] }) });
     r.service(FileShareService, { listFileShares: () => ({ items: [] }) });
@@ -435,6 +432,30 @@ describe("Edit on the machine's page and its row", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Actions for web" }));
     expect(screen.queryAllByRole("menuitem")).toHaveLength(0);
     expect(screen.getByText("Being deleted: nothing to change.")).toBeTruthy();
+  });
+
+  it("offer a VM's Create image, on its root disk, for whoever may capture, and only once it is stopped", async () => {
+    const stopped = () => {
+      const v = db();
+      v.spec!.runState = VirtualMachineRunState.STOPPED;
+      return vmView(v, undefined);
+    };
+    const capturing = () => [...applyPerms, "storage.customimages.apply"];
+    render(<Head m={stopped()} />, { wrapper: withApi(api({ perms: capturing })) });
+    expect((await screen.findByRole("link", { name: /Create image/ })).getAttribute("href")).toBe("/projects/demo/new/custom-image?disk=db-root");
+    cleanup();
+    render(<Head m={vmView(db(), undefined)} />, { wrapper: withApi(api({ perms: capturing })) });
+    expect(((await screen.findByRole("button", { name: /Create image/ })) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+    const a = api({ perms: () => applyPerms });
+    render(<Head m={stopped()} />, { wrapper: withApi(a) });
+    await screen.findByRole("button", { name: /Start/ });
+    expect(screen.queryByRole("link", { name: /Create image/ })).toBeNull();
+    // A container has no root disk to capture.
+    cleanup();
+    render(<Head m={containerView(web(), undefined)} />, { wrapper: withApi(api({ perms: capturing })) });
+    await screen.findByRole("link", { name: /Edit/ });
+    expect(screen.queryByRole("link", { name: /Create image/ })).toBeNull();
   });
 });
 

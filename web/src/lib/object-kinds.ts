@@ -19,6 +19,7 @@ import { NetworkSchema, NetworkService, type Network } from "@hangar/api/hangar/
 import { PortForwardSchema, PortForwardService, type PortForward } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointSchema, PublicEndpointService, type PublicEndpoint } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupSchema, SecurityGroupService, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { CustomImageSchema, CustomImageService, type CustomImage } from "@hangar/api/hangar/storage/v1alpha1/custom_image_pb";
 import { DiskSchema, DiskService, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { FileShareSchema, FileShareService, type FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageSchema, ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
@@ -37,6 +38,7 @@ type Objects = {
   customDomain: CustomDomain;
   serviceToken: ServiceToken;
   image: Image;
+  customImage: CustomImage;
 };
 
 /** A kind whose labels the console edits. */
@@ -167,6 +169,15 @@ export const labelKinds: { [K in LabelKind]: KindInfo<K> } = {
     global: true,
     get: async (t, _project, name) => (await createClient(ImageService, t).getImage({ name })).image,
     apply: (t, o) => createClient(ImageService, t).applyImage({ image: o }),
+  },
+  customImage: {
+    schema: CustomImageSchema,
+    group: "storage",
+    kind: "CustomImage",
+    noun: "image",
+    cli: "customimage",
+    get: async (t, project, name) => (await createClient(CustomImageService, t).getCustomImage({ project, name })).customImage,
+    apply: (t, o) => createClient(CustomImageService, t).applyCustomImage({ customImage: o }),
   },
 };
 
