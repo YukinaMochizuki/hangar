@@ -1,5 +1,6 @@
-# Hangar itself: the binaries, the guest kernel and initramfs, and the
-# console's files, installed from a release directory: one
+# Hangar itself: the binaries, the guest kernel and initramfs, the
+# converter initramfs, and the console's files, installed from a release
+# directory: one
 # hangar-fetch-release downloaded and verified (bootstrap.sh --release DIR),
 # or, on a testbed, one `make release` made. Every file is
 # checked against the release's SHA256SUMS before anything is installed. What
@@ -24,6 +25,7 @@ RELEASE_LIB=/usr/local/lib/hangar
 RELEASE_VERSION=$RELEASE_LIB/VERSION
 RELEASE_SUMS=$RELEASE_LIB/SHA256SUMS
 RELEASE_CONSOLE_TAR=$RELEASE_LIB/console.tar
+RELEASE_CONVERTER=$RELEASE_LIB/converter.cpio
 RELEASE_CONSOLE=/usr/local/share/hangar/console
 RELEASE_CONSOLE_VERSIONS=/usr/local/share/hangar/console.d
 RELEASE_FETCH=/usr/local/sbin/hangar-fetch-release
@@ -38,12 +40,13 @@ release_files() {
 		hangar:/usr/local/bin/hangar:755 \
 		"vmlinux:$RELEASE_LIB/vmlinux:644" \
 		"initramfs.cpio:$RELEASE_LIB/initramfs.cpio:644" \
+		"converter.cpio:$RELEASE_LIB/converter.cpio:644" \
 		"console.tar:$RELEASE_CONSOLE_TAR:644"
 }
 
 # Files a release lists that an installed release may lack, having come
 # before they were part of one: the record of such a release is still whole.
-RELEASE_LATER_FILES="console.tar"
+RELEASE_LATER_FILES="console.tar converter.cpio"
 
 release_later_file() { case " $RELEASE_LATER_FILES " in *" $1 "*) return 0 ;; esac; return 1; }
 
@@ -242,6 +245,17 @@ release_verify() {
 	else
 		skip "the console served is the installed release's" "the installed release carries no console"
 	fi
+	if [ -f "$RELEASE_CONVERTER" ]; then
+		check "the converter initramfs carries qemu-img $HANGAR_CONVERTER_QEMU_IMG" release_converter_ok
+	else
+		skip "the converter initramfs carries qemu-img $HANGAR_CONVERTER_QEMU_IMG" "the installed release carries no converter initramfs"
+	fi
+}
+
+# release_converter_ok holds when the installed converter initramfs says it
+# carries the qemu-img versions.env pins (guest/converter/build.sh).
+release_converter_ok() {
+	grep -aqx "hangar-converter qemu-img-$HANGAR_CONVERTER_QEMU_IMG" "$RELEASE_CONVERTER"
 }
 
 release_console_installed_ok() {

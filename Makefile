@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -173,6 +173,11 @@ guest-initramfs-testbed: guest-e2fsprogs
 # make -j does not build it twice into the same files.
 guest-e2fsprogs:
 	guest/e2fsprogs/build.sh
+
+# The converter initramfs converter VMs boot: hangar-init and qemu-img from
+# pinned Alpine packages (docs/runbook/converter.md). No C toolchain.
+guest-converter:
+	guest/converter/build.sh
 
 tools:
 	@go tool protoc-gen-go --version
