@@ -362,7 +362,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			target:       projectTarget,
 			owner:        ownedByProject,
 			validate:     validateDisk,
-			beforeDelete: refuseDeletingAttachedDisk,
+			beforeDelete: refuseDeletingDiskInUse,
 			finalizers:   []string{DiskInUseFinalizer, NodeCleanupFinalizer},
 			nodeOf:       func(obj proto.Message) string { return obj.(*storagev1alpha1.Disk).GetStatus().GetNode() },
 			writeLocks:   only(attachLock),
@@ -387,6 +387,22 @@ func hooksFor(r registry.Resource) kindHooks {
 			},
 			nodeOf:     func(obj proto.Message) string { return obj.(*storagev1alpha1.FileShare).GetStatus().GetNode() },
 			writeLocks: only(attachLock),
+		}
+	case registry.CustomImage.Kind:
+		// Its writes hold attach: that its source disk is made and no
+		// machine with it runs is checked against the machines, VMs,
+		// containers and disks, and they against it. Its node, its source
+		// disk's, captures it and reports on it, and writes only its own
+		// part of its status (docs/decisions/custom-images.md). It needs
+		// no finalizer: the node's sweep removes its base once it is gone.
+		return kindHooks{
+			target:     projectTarget,
+			owner:      ownedByProject,
+			validate:   validateCustomImage,
+			writeLocks: only(attachLock),
+			drawStatus: drawCustomImage,
+			nodeOf:     customImageNode,
+			fromNode:   customImageFromNode,
 		}
 	case registry.Image.Kind:
 		// Platform administrators keep the catalogue that every tenant
@@ -790,6 +806,15 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	if err := validateContainerVolumes(spec.GetVolumes()); err != nil {
 		return err
 	}
+	var wasDisks []string
+	ran := false
+	if o, ok := old.(*computev1alpha1.Container); ok {
+		wasDisks, ran = containerDisks(o.GetSpec()), containerRuns(o.GetSpec())
+	}
+	if err := s.checkHeldDisks(ctx, meta.GetProject(), "container "+meta.GetName(), containerDisks(spec), wasDisks,
+		containerRuns(spec), ran); err != nil {
+		return err
+	}
 	if err := s.checkShareReach(ctx, meta.GetProject(), "container "+meta.GetName(), interfaceNetworks(spec.GetInterfaces()),
 		containerShares(spec.GetVolumes())); err != nil {
 		return err
@@ -1020,10 +1045,16 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	if old != nil {
 		oldSpec = old.(*computev1alpha1.Machine).GetSpec()
 	}
-	if err := s.checkAttaching(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec); err != nil {
+	meta := obj.(*computev1alpha1.Machine).GetMetadata()
+	if err := s.checkAttaching(ctx, meta, oldSpec, spec); err != nil {
 		return err
 	}
-	return s.checkDeclaring(ctx, obj.(*computev1alpha1.Machine).GetMetadata(), oldSpec, spec)
+	if err := s.checkHeldDisks(ctx, meta.GetProject(), "machine "+meta.GetName(), computeapi.MachineDisks(spec),
+		computeapi.MachineDisks(oldSpec), spec.GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING,
+		oldSpec.GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING); err != nil {
+		return err
+	}
+	return s.checkDeclaring(ctx, meta, oldSpec, spec)
 }
 
 // validateServerBoot checks the machine of a file share's server: it

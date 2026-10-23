@@ -152,8 +152,13 @@
           "description": "vCPUs, a quantity in Kubernetes syntax, such as \"8\" or \"2500m\".",
           "type": "string"
         },
+        "customImages": {
+          "description": "CustomImages; one that failed counts toward no limit.",
+          "format": "int32",
+          "type": "integer"
+        },
         "disk": {
-          "description": "Disk space, a quantity such as \"200Gi\": containers' disks, Disks, the root disks VMs have made from images, and FileShares.",
+          "description": "Disk space, a quantity such as \"200Gi\": containers' disks, Disks, the root disks VMs have made from images, FileShares, and CustomImages, each at its source disk's size while it is captured and at what it holds once Ready.",
           "type": "string"
         },
         "domains": {
@@ -258,6 +263,10 @@
         },
         "cpu": {
           "type": "string"
+        },
+        "customImages": {
+          "format": "int32",
+          "type": "integer"
         },
         "disk": {
           "type": "string"

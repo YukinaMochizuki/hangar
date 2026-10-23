@@ -116,6 +116,10 @@ func newHost(t *testing.T) *host {
 		{h.dataset + "/outside-disk", []string{"hangar:disk=d1"}},
 		// A disk image's base's place, unclaimed.
 		{h.dataset + "/vmbases/" + hexDecoy, nil},
+		// A custom image's base's place, unclaimed, and claimed by another
+		// image.
+		{h.dataset + "/vmbases/customimage-decoy", nil},
+		{h.dataset + "/vmbases/customimage-other", []string{"hangar:customimage=someone-else"}},
 	} {
 		args := []string{"create", "-s", "-V", "8M", "-o", "volmode=dev"}
 		for _, p := range d.props {
@@ -127,6 +131,21 @@ func newHost(t *testing.T) *host {
 	snap := h.dataset + "/bases/" + hexDecoy + "@base"
 	mustRun(t, "zfs", "snapshot", snap)
 	h.decoys[snap] = guid(t, snap)
+	// Custom images' snapshots: a base's, unclaimed and claimed by another
+	// image, and one to capture a decoy disk from, which is not the
+	// driver's.
+	for _, s := range []struct{ name, prop string }{
+		{h.dataset + "/vmbases/customimage-decoy@base", ""},
+		{h.dataset + "/vmbases/customimage-other@base", "hangar:customimage=someone-else"},
+		{h.dataset + "/disks/d-decoy@customimage-decoy", "hangar:customimage=decoy"},
+	} {
+		args := []string{"snapshot"}
+		if s.prop != "" {
+			args = append(args, "-o", s.prop)
+		}
+		mustRun(t, "zfs", append(args, s.name)...)
+		h.decoys[s.name] = guid(t, s.name)
+	}
 	// A finished base in all but its name, which is another digest's.
 	misnamed := h.dataset + "/bases/" + strings.Repeat("ad", 32)
 	mustRun(t, "zfs", "create", "-s", "-V", "8M", "-o", "volmode=dev", "-o", "hangar:digest="+decoyDigest, misnamed)

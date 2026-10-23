@@ -61,7 +61,25 @@ var (
 	// ErrBusy means what was asked waits on work under way; ask again
 	// later.
 	ErrBusy = errors.New("busy with work under way")
+	// ErrNoCapture means a CustomImage has neither its base nor the
+	// snapshot of its source to make one from.
+	ErrNoCapture = errors.New("no snapshot to capture the image from")
 )
+
+// customImagePrefix starts the key of a CustomImage's base, which a
+// sha256 digest, an Image's, never starts with.
+const customImagePrefix = "customimage:"
+
+// CustomImageBase is the key of the base of the CustomImage of uid: what
+// Storage's disk image methods take in place of an Image's digest
+// (docs/decisions/custom-images.md).
+func CustomImageBase(uid string) string { return customImagePrefix + uid }
+
+// CustomImageOf returns the uid of the CustomImage whose base key is key.
+func CustomImageOf(key string) (string, bool) {
+	uid, ok := strings.CutPrefix(key, customImagePrefix)
+	return uid, ok && uid != ""
+}
 
 // Room is where a NoSpaceError found too little room.
 type Room int
@@ -263,7 +281,9 @@ type FetchedImage interface {
 // Storage holds disks: a read-only base per image, OCI or disk image, a root
 // disk per machine cloned from an OCI image's, and a volume per API Disk,
 // blank or cloned from a disk image's, which outlives the machines it is
-// attached to. Deleting what is not there is not an error.
+// attached to. A disk image's base is an Image's, keyed by its sha256
+// digest, or a CustomImage's, keyed by CustomImageBase and captured from a
+// volume. Deleting what is not there is not an error.
 type Storage interface {
 	// EnsureBase makes a digest's base once, filling an empty dir with fill,
 	// unless size (ImageConfig.Size, or zero) exceeds the room left; fill's
@@ -290,19 +310,37 @@ type Storage interface {
 	// volume of size bytes, which fill writes given its device, kept
 	// read-only. fill's error is returned wrapped.
 	EnsureImageBase(ctx context.Context, digest string, size int64, fill func(dev string) error) error
-	// ImageBases lists the digests that have a disk image's base.
+	// ImageBases lists the keys, digests and CustomImageBase keys, that
+	// have a disk image's base.
 	ImageBases(ctx context.Context) ([]string, error)
-	// DeleteImageBase removes a disk image's base. It fails while a volume
-	// cloned from it exists.
-	DeleteImageBase(ctx context.Context, digest string) error
+	// DeleteImageBase removes the disk image's base of key. It fails while
+	// a volume cloned from it exists.
+	DeleteImageBase(ctx context.Context, key string) error
+	// SnapshotVolume takes, once, the snapshot of a Disk's volume that the
+	// CustomImage of imageUID is captured from.
+	SnapshotVolume(ctx context.Context, diskUID, imageUID string) error
+	// CaptureImageBase makes, once, the base of the CustomImage of imageUID
+	// from the snapshot SnapshotVolume took: a copy that holds nothing of
+	// the volume, read-only. It then removes the snapshot, and returns the
+	// base, as it does for one made before. With neither it fails with
+	// ErrNoCapture; a failure leaves no base, and keeps the snapshot.
+	CaptureImageBase(ctx context.Context, imageUID string) (ImageBase, error)
+	// Captures lists the snapshots SnapshotVolume took that are still
+	// there.
+	Captures(ctx context.Context) ([]Capture, error)
+	// DeleteCapture removes the snapshot taken for the CustomImage of
+	// imageUID.
+	DeleteCapture(ctx context.Context, imageUID string) error
 	// EnsureVolume returns a Disk's volume of at least size bytes, grown,
 	// never shrunk. A volume made here is blank if digest is empty, and
-	// otherwise a clone of the base of that disk image, ErrDiskTooSmall
-	// below its size. A volume made from another digest is an error.
+	// otherwise a clone of the disk image's base of that key, a digest or
+	// a CustomImageBase key, ErrDiskTooSmall below its size. A volume made
+	// from another is an error.
 	EnsureVolume(ctx context.Context, diskUID string, size int64, digest string) (Volume, error)
 	// Volumes lists every Disk's volume.
 	Volumes(ctx context.Context) ([]Volume, error)
-	// DeleteVolume removes a Disk's volume. It fails while a VM has it.
+	// DeleteVolume removes a Disk's volume. It fails while a VM has it, and
+	// while a snapshot SnapshotVolume took of it is there.
 	DeleteVolume(ctx context.Context, diskUID string) error
 	// EnsureShareVolume returns a FileShare's volume of at least size
 	// bytes: blank when made, grown, never shrunk. The host never reads it;
@@ -347,8 +385,24 @@ type Volume struct {
 	Path string
 	// Size is the volume's size in bytes, at least what was asked for.
 	Size int64
-	// Digest is the disk image it was cloned from; empty for a blank one.
+	// Digest is the key of the disk image's base it was cloned from, a
+	// digest or a CustomImageBase key; empty for a blank one.
 	Digest string `json:",omitempty"`
+}
+
+// ImageBase is a CustomImage's base.
+type ImageBase struct {
+	// Key is its CustomImageBase key.
+	Key string
+	// Size is the size of the disk it holds, its source volume's, in bytes.
+	Size int64
+	// Used is the bytes of data it holds, as written, before compression.
+	Used int64
+}
+
+// Capture is a snapshot of a Disk's volume taken for a CustomImage.
+type Capture struct {
+	ImageUID, DiskUID string
 }
 
 // ShareVolume is the block device of a FileShare, which only its server

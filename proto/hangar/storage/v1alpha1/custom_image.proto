@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package hangar.storage.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// CustomImage is a disk image of a project's own, captured from one of its
+// Disks, such as a stopped VM's root disk, that the project's disks are
+// then made from as they are from an Image. It is an independent copy: the
+// source disk can be started, changed or deleted once the image is
+// snapshotted. The platform does not change what it holds; run
+// "cloud-init clean --machine-id" in the guest before stopping it, so each
+// VM made from the image is a new instance. See
+// docs/decisions/custom-images.md.
+message CustomImage {
+  option (hangar.meta.v1.resource) = {
+    kind: "CustomImage"
+    plural: "customimages"
+    short_names: ["cimg"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  CustomImageSpec spec = 4;
+  CustomImageStatus status = 5;
+}
+
+// CustomImageSpec says where an image comes from and what it is.
+message CustomImageSpec {
+  // What the image is captured from; it cannot change once the image is
+  // made.
+  CustomImageSource source = 1 [(hangar.meta.v1.field).immutable = true];
+  // What the image holds, for people choosing one, such as "ubuntu" and
+  // "24.04".
+  string os = 2;
+  string version = 3;
+  // The user the image's cloud-init makes, such as "ubuntu", whom hangar ssh
+  // logs in as unless told another; empty, it must be told.
+  string default_user = 4;
+  // The smallest disk made from it, a quantity such as "10Gi"; empty is the
+  // image's own size, status.disk_size.
+  string min_disk_size = 5;
+}
+
+// CustomImageSource is what an image is captured from.
+message CustomImageSource {
+  oneof source {
+    // A Disk in the image's project, captured as it is when the image is
+    // made. The disk must have been made on a node, and every machine it is
+    // attached to must be stopped; until the image is snapshotted, none of
+    // them can start and no machine can attach it.
+    CustomImageDiskSource disk = 1;
+  }
+}
+
+// CustomImageDiskSource names the Disk an image is captured from.
+message CustomImageDiskSource {
+  // Names a Disk in the image's project.
+  string name = 1;
+}
+
+// CustomImageStatus is what the apiserver and the image's node found. The
+// apiserver writes node and disk_size as the image is made; the node writes
+// the conditions and used_size.
+message CustomImageStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // Names the Node the image lives on: its source disk's. Disks made from
+  // the image are made there.
+  string node = 3;
+  // The source disk's size, in whole Gi: the smallest disk made from the
+  // image.
+  string disk_size = 4;
+  // What the image holds, rounded up to whole Gi, once it is Ready: what it
+  // counts toward the disk quota. Until then it counts as disk_size.
+  string used_size = 5;
+}
+
+// CustomImageService manages custom images.
+service CustomImageService {
+  rpc GetCustomImage(GetCustomImageRequest) returns (GetCustomImageResponse);
+  rpc ListCustomImages(ListCustomImagesRequest) returns (ListCustomImagesResponse);
+  rpc WatchCustomImages(WatchCustomImagesRequest) returns (stream WatchCustomImagesResponse);
+  rpc ApplyCustomImage(ApplyCustomImageRequest) returns (ApplyCustomImageResponse);
+  rpc DeleteCustomImage(DeleteCustomImageRequest) returns (DeleteCustomImageResponse);
+  rpc UpdateCustomImageStatus(UpdateCustomImageStatusRequest) returns (UpdateCustomImageStatusResponse);
+}
+
+message GetCustomImageRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetCustomImageResponse {
+  CustomImage custom_image = 1;
+}
+
+message ListCustomImagesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListCustomImagesResponse {
+  repeated CustomImage items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchCustomImagesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchCustomImagesResponse {
+  hangar.meta.v1.EventType type = 1;
+  CustomImage custom_image = 2;
+  int64 revision = 3;
+}
+
+message ApplyCustomImageRequest {
+  CustomImage custom_image = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyCustomImageResponse {
+  CustomImage custom_image = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteCustomImageRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteCustomImageResponse {
+  CustomImage custom_image = 1;
+}
+
+message UpdateCustomImageStatusRequest {
+  string project = 1;
+  string name = 2;
+  CustomImageStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateCustomImageStatusResponse {
+  CustomImage custom_image = 1;
+}

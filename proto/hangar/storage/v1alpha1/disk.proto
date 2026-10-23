@@ -38,16 +38,21 @@ message DiskSpec {
 message DiskSource {
   oneof source {
     // A copy of an image, grown to the disk's size, which must be at least
-    // the image's status.disk_size.
+    // the image's status.disk_size and spec.min_disk_size. A CustomImage
+    // must be Ready.
     ImageSource image = 1;
   }
 }
 
-// ImageSource names the Image a disk is copied from. See
-// docs/decisions/vm-images.md.
+// ImageSource names the image a disk is copied from: a global Image, or,
+// with project set, a CustomImage. See docs/decisions/vm-images.md and
+// docs/decisions/custom-images.md.
 message ImageSource {
-  // Names a global Image.
+  // Names a global Image, or with project a CustomImage in that project.
   string name = 1;
+  // Names the Project of a CustomImage; only the disk's own project, for
+  // now. Empty, name is a global Image's.
+  string project = 2;
 }
 
 // DiskStatus is the observed state of a disk. The apiserver writes its node,

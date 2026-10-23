@@ -114,6 +114,68 @@ To add one, give it a name without dots (`<distribution>-<major>`, as
 file. Admission refuses new disks of it from then on, and disks made of it
 keep working.
 
+## A project's own image: capture a stopped VM's disk
+
+A tenant makes a golden image of a VM it set up as a `CustomImage`
+(`docs/decisions/custom-images.md`): an independent copy of a stopped
+Disk, such as the VM's root disk `NAME-root`, from which the project's
+disks and VMs are then made. The platform copies the disk as it is and
+changes nothing in it, so prepare the guest first. In the VM:
+
+```sh
+sudo cloud-init clean --machine-id --logs
+sudo poweroff
+```
+
+`cloud-init clean` makes each VM of the image a first boot to cloud-init
+(its own hostname, host keys and users), and `--machine-id` empties
+`/etc/machine-id`, so each gets its own, and its own DHCP identity, rather
+than the source's. Each VM of the image also has its own instance id, its
+uid, which cloud-init takes as a new instance even without the clean, but
+the machine id stays the source's then. Remove what else the software in it
+must not share between copies.
+
+Once the VM is stopped (`hangar get vm NAME` says `Stopped`; `hangar stop vm
+NAME` if it is not), capture its disk:
+
+```yaml
+apiVersion: storage.hangarlab.cloud/v1alpha1
+kind: CustomImage
+metadata:
+  project: PROJECT
+  name: golden
+spec:
+  source:
+    disk:
+      name: NAME-root
+  os: ubuntu
+  version: "24.04"
+  defaultUser: ubuntu
+```
+
+`hangar apply -f golden.yaml`, then `hangar get cimg golden -o yaml`.
+`Snapshotted` True says the source disk is free again: the VM can start
+while the copy goes on. `Ready` True, with `usedSize`, says the image can
+be used; `Ready` False with `CaptureFailed` says why it failed, for good:
+delete it and capture again. Make a VM of it as of a catalogue image, with
+the project beside the name:
+
+```yaml
+spec:
+  rootDisk:
+    fromImage:
+      image:
+        name: golden
+        project: PROJECT
+      size: 20Gi
+```
+
+The image counts toward the tenant's `customImages` limit, and toward its
+disk quota at its source's size while it is captured and at `usedSize` once
+Ready. It lives on its source disk's node, and the node keeps it after the
+image is deleted only while disks of it remain, made or still to be made,
+which then count toward no quota of the image's.
+
 ## Distributions and the platform
 
 What the platform needs of an image, and which catalogue image needed what:

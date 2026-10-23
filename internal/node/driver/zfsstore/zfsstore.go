@@ -5,11 +5,12 @@
 // the size asked for; the guest grows its filesystem as it boots. A base's
 // snapshot records when it was last used: made, cloned from, or a root
 // disk cloned from it deleted. Each disk image, such as a distribution's
-// cloud image, gets a base too, written raw onto a zvol and snapshotted.
-// Each API Disk gets a volume of its own, a sparse zvol the host never
-// reads, blank or cloned from a disk image's base, and each FileShare a
-// blank one its server alone has. Every dataset the
-// driver makes carries a user property naming what it serves,
+// cloud image, gets a base too, written raw onto a zvol and snapshotted,
+// and so does each CustomImage, received whole from a snapshot of the
+// volume it is captured from. Each API Disk gets a volume of its own, a
+// sparse zvol the host never reads, blank or cloned from a disk image's
+// base, and each FileShare a blank one its server alone has. Every dataset
+// the driver makes carries a user property naming what it serves,
 // which is how it is listed and how the driver knows it as its own: a
 // dataset without it is never changed or destroyed. See
 // docs/decisions/storage-zfs.md.
@@ -26,6 +27,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -44,6 +46,10 @@ const (
 	propMachine = "hangar:machine"
 	propDisk    = "hangar:disk"
 	propShare   = "hangar:fileshare"
+	// propCustomImage is the CustomImage uid on its base, the base's
+	// snapshot, the volumes cloned from it and the snapshot it is captured
+	// from.
+	propCustomImage = "hangar:customimage"
 	// propUsedAt is when a base was last used, RFC 3339.
 	propUsedAt = "hangar:used-at"
 )
@@ -164,14 +170,46 @@ func (s *Store) baseName(digest string) (string, error) {
 	return s.bases() + "/" + m[1], nil
 }
 
-// vmBaseName returns the volume of a disk image's base, or fails for what
-// is not a sha256 digest.
+// vmBaseName returns the volume of an Image's base, or fails for what is
+// not a sha256 digest.
 func (s *Store) vmBaseName(digest string) (string, error) {
 	m := digestRE.FindStringSubmatch(digest)
 	if m == nil {
 		return "", fmt.Errorf("%q is not a sha256 digest", digest)
 	}
 	return s.vmBases() + "/" + m[1], nil
+}
+
+// vmBase is a disk image's base as its key names it: its volume, and the
+// user property, with its value, that the volume and its snapshot carry.
+type vmBase struct {
+	key, vol, prop, value string
+}
+
+func (b vmBase) snapshot() string { return b.vol + "@" + baseSnapshot }
+
+// vmBaseOf returns the base of key, an Image's sha256 digest or a
+// CustomImage's key, or fails for what is neither.
+func (s *Store) vmBaseOf(key string) (vmBase, error) {
+	if m := digestRE.FindStringSubmatch(key); m != nil {
+		return vmBase{key, s.vmBases() + "/" + m[1], propDigest, key}, nil
+	}
+	if uid, ok := driver.CustomImageOf(key); ok && uidRE.MatchString(uid) {
+		return vmBase{key, s.vmBases() + "/customimage-" + uid, propCustomImage, uid}, nil
+	}
+	return vmBase{}, fmt.Errorf("%q is neither a sha256 digest nor a custom image's key", key)
+}
+
+// baseKey is the key of the disk image's base a dataset's properties name:
+// its digest, or the key of its CustomImage; empty for none.
+func baseKey(digest, customImage string) string {
+	switch {
+	case unset(digest) != "":
+		return digest
+	case unset(customImage) != "":
+		return driver.CustomImageBase(customImage)
+	}
+	return ""
 }
 
 // rootName returns the volume of a machine's root disk, or fails for a uid
@@ -257,6 +295,25 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return stdout.Bytes(), nil
 }
 
+// localProps is props of what is set on ds itself: a property it only
+// inherits, as a snapshot does its volume's user properties, is missing.
+func localProps(ctx context.Context, ds string, names ...string) (map[string]string, bool, error) {
+	out, err := zfs(ctx, "get", "-Hp", "-s", "local", "-o", "property,value", strings.Join(names, ","), ds)
+	if errors.Is(err, errNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	got := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if k, v, ok := strings.Cut(line, "\t"); ok {
+			got[k] = v
+		}
+	}
+	return got, true, nil
+}
+
 // props returns the named properties of a dataset, by name, parsed from
 // zfs get -Hp; ok is false if it does not exist.
 func props(ctx context.Context, ds string, names ...string) (map[string]string, bool, error) {
@@ -315,7 +372,42 @@ func (s *Store) clearUnfinished(ctx context.Context) error {
 	if err := s.clearUnfinishedIn(ctx, s.bases(), s.baseName, bases); err != nil {
 		return err
 	}
-	return s.clearUnfinishedIn(ctx, s.vmBases(), s.vmBaseName, s.ImageBases)
+	return s.clearUnfinishedImageBases(ctx)
+}
+
+// clearUnfinishedImageBases destroys the disk images' bases of the
+// driver's own that never got their snapshot's property, the last thing
+// made: a CustomImage's is received with its snapshot.
+func (s *Store) clearUnfinishedImageBases(ctx context.Context) error {
+	vols, err := list(ctx, "volume", s.vmBases(), "name", propDigest, propCustomImage)
+	if err != nil {
+		return err
+	}
+	done, err := s.ImageBases(ctx)
+	if err != nil {
+		return err
+	}
+	for _, v := range vols {
+		b, err := s.vmBaseOf(baseKey(v[1], v[2]))
+		if err != nil || b.vol != v[0] {
+			continue // not ours
+		}
+		if !slices.Contains(done, b.key) {
+			if err := destroyBase(ctx, b); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// destroyBase destroys a disk image's base of the driver's own, its
+// snapshot first, which fails while a volume is cloned from it.
+func destroyBase(ctx context.Context, b vmBase) error {
+	if err := destroy(ctx, b.snapshot()); err != nil && !errors.Is(err, errNotExist) {
+		return fmt.Errorf("deleting the base of disk image %s: %w", b.key, err)
+	}
+	return destroy(ctx, b.vol)
 }
 
 func (s *Store) clearUnfinishedIn(ctx context.Context, parent string, nameOf func(string) (string, error),
@@ -791,45 +883,53 @@ func (s *Store) EnsureImageBase(ctx context.Context, digest string, size int64, 
 	return nil
 }
 
+// ImageBases lists the bases whose snapshot has its property set on
+// itself, which marks it finished: a custom image's @base inherits its
+// volume's from the moment it is received.
 func (s *Store) ImageBases(ctx context.Context) ([]string, error) {
-	snaps, err := list(ctx, "snapshot", s.vmBases(), "name", propDigest)
+	snaps, err := list(ctx, "snapshot", s.vmBases(), "name", propDigest, propCustomImage)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
 	for _, row := range snaps {
-		name, digest := row[0], row[1]
-		if vol, err := s.vmBaseName(digest); err == nil && name == vol+"@"+baseSnapshot {
-			out = append(out, digest)
+		b, err := s.vmBaseOf(baseKey(row[1], row[2]))
+		if err != nil || row[0] != b.snapshot() {
+			continue
+		}
+		mark, ok, err := localProps(ctx, row[0], b.prop)
+		if err != nil {
+			return nil, err
+		}
+		if ok && mark[b.prop] == b.value {
+			out = append(out, b.key)
 		}
 	}
 	return out, nil
 }
 
-func (s *Store) DeleteImageBase(ctx context.Context, digest string) error {
-	vol, err := s.vmBaseName(digest)
+func (s *Store) DeleteImageBase(ctx context.Context, key string) error {
+	b, err := s.vmBaseOf(key)
 	if err != nil {
 		return err
 	}
-	defer s.lock(digest)()
-	p, ok, err := props(ctx, vol, propDigest)
+	defer s.lock(key)()
+	p, ok, err := props(ctx, b.vol, b.prop)
 	if err != nil || !ok {
 		return err
 	}
-	if p[propDigest] != digest {
-		return fmt.Errorf("%s is not a base of disk image %s; left alone", vol, digest)
+	if p[b.prop] != b.value {
+		return fmt.Errorf("%s is not a base of disk image %s; left alone", b.vol, key)
 	}
 	// The snapshot goes first, and not while a volume is cloned from it.
-	if err := destroy(ctx, vol+"@"+baseSnapshot); err != nil && !errors.Is(err, errNotExist) {
-		return fmt.Errorf("deleting the base of disk image %s: %w", digest, err)
-	}
-	return destroy(ctx, vol)
+	return destroyBase(ctx, b)
 }
 
-// volumeOf returns the Disk a volume serves, the disk image it was cloned
-// from, empty for none, and its size, as its properties say.
-func volumeOf(ctx context.Context, vol string) (disk, digest string, size int64, ok bool, err error) {
-	p, ok, err := props(ctx, vol, propDisk, propDigest, "volsize")
+// volumeOf returns the Disk a volume serves, the key of the disk image's
+// base it was cloned from, empty for none, and its size, as its properties
+// say.
+func volumeOf(ctx context.Context, vol string) (disk, base string, size int64, ok bool, err error) {
+	p, ok, err := props(ctx, vol, propDisk, propDigest, propCustomImage, "volsize")
 	if err != nil || !ok {
 		return "", "", 0, ok, err
 	}
@@ -837,7 +937,7 @@ func volumeOf(ctx context.Context, vol string) (disk, digest string, size int64,
 	if err != nil {
 		return "", "", 0, false, fmt.Errorf("%s: volsize %q", vol, p["volsize"])
 	}
-	return p[propDisk], unset(p[propDigest]), size, true, nil
+	return p[propDisk], baseKey(p[propDigest], p[propCustomImage]), size, true, nil
 }
 
 // unset is a user property's value, empty for one not set, which zfs gives
@@ -870,17 +970,21 @@ func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64, di
 		}
 		have = want
 	case !ok:
-		base, err := s.vmBaseName(digest)
+		b, err := s.vmBaseOf(digest)
 		if err != nil {
 			return driver.Volume{}, err
 		}
-		snap := base + "@" + baseSnapshot
-		p, found, err := props(ctx, snap, propDigest, "volsize")
+		snap := b.snapshot()
+		mark, found, err := localProps(ctx, snap, b.prop)
 		if err != nil {
 			return driver.Volume{}, err
 		}
-		if !found || p[propDigest] != digest {
+		if !found || mark[b.prop] != b.value {
 			return driver.Volume{}, fmt.Errorf("no base for disk image %s", digest)
+		}
+		p, _, err := props(ctx, snap, "volsize")
+		if err != nil {
+			return driver.Volume{}, err
 		}
 		baseSize, err := strconv.ParseInt(p["volsize"], 10, 64)
 		if err != nil {
@@ -889,7 +993,7 @@ func (s *Store) EnsureVolume(ctx context.Context, diskUID string, size int64, di
 		if want < baseSize {
 			return driver.Volume{}, fmt.Errorf("%w: %d bytes asked, disk image %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
 		}
-		if err := clone(ctx, snap, vol, propDisk+"="+diskUID, propDigest+"="+digest); err != nil {
+		if err := clone(ctx, snap, vol, propDisk+"="+diskUID, b.prop+"="+b.value); err != nil {
 			return driver.Volume{}, err
 		}
 		have = baseSize
@@ -941,21 +1045,24 @@ func (s *Store) grow(ctx context.Context, vol string, want int64) error {
 }
 
 func (s *Store) Volumes(ctx context.Context) ([]driver.Volume, error) {
-	rows, err := list(ctx, "volume", s.disks(), "name", propDisk, propDigest, "volsize")
+	rows, err := list(ctx, "volume", s.disks(), "name", propDisk, propDigest, propCustomImage, "volsize")
 	if err != nil {
 		return nil, err
 	}
 	var out []driver.Volume
 	for _, row := range rows {
-		name, disk, digest := row[0], row[1], unset(row[2])
-		if vol, err := s.volumeName(disk); err != nil || vol != name || digest != "" && !digestRE.MatchString(digest) {
+		name, disk, base := row[0], row[1], baseKey(row[2], row[3])
+		if vol, err := s.volumeName(disk); err != nil || vol != name {
 			continue // not ours
 		}
-		size, err := strconv.ParseInt(row[3], 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("%s: volsize %q", name, row[3])
+		if _, err := s.vmBaseOf(base); base != "" && err != nil {
+			continue // not ours
 		}
-		out = append(out, driver.Volume{DiskUID: disk, Path: device(name), Size: size, Digest: digest})
+		size, err := strconv.ParseInt(row[4], 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("%s: volsize %q", name, row[4])
+		}
+		out = append(out, driver.Volume{DiskUID: disk, Path: device(name), Size: size, Digest: base})
 	}
 	return out, nil
 }

@@ -220,7 +220,9 @@ type Limits struct {
 	// Memory, a quantity such as "16Gi".
 	Memory *string `protobuf:"bytes,2,opt,name=memory,proto3,oneof" json:"memory,omitempty"`
 	// Disk space, a quantity such as "200Gi": containers' disks, Disks, the
-	// root disks VMs have made from images, and FileShares.
+	// root disks VMs have made from images, FileShares, and CustomImages,
+	// each at its source disk's size while it is captured and at what it
+	// holds once Ready.
 	Disk *string `protobuf:"bytes,3,opt,name=disk,proto3,oneof" json:"disk,omitempty"`
 	// Containers and virtual machines, together.
 	Machines *int32 `protobuf:"varint,4,opt,name=machines,proto3,oneof" json:"machines,omitempty"`
@@ -237,7 +239,9 @@ type Limits struct {
 	// CustomDomains of the tenant. Only a Plan sets it.
 	Domains *int32 `protobuf:"varint,11,opt,name=domains,proto3,oneof" json:"domains,omitempty"`
 	// PortForwards, each holding a port of the shared IPv4 address.
-	PortForwards  *int32 `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3,oneof" json:"port_forwards,omitempty"`
+	PortForwards *int32 `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3,oneof" json:"port_forwards,omitempty"`
+	// CustomImages; one that failed counts toward no limit.
+	CustomImages  *int32 `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3,oneof" json:"custom_images,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -356,6 +360,13 @@ func (x *Limits) GetPortForwards() int32 {
 	return 0
 }
 
+func (x *Limits) GetCustomImages() int32 {
+	if x != nil && x.CustomImages != nil {
+		return *x.CustomImages
+	}
+	return 0
+}
+
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
 // counts it.
 type Usage struct {
@@ -372,6 +383,7 @@ type Usage struct {
 	FileShares      int32                  `protobuf:"varint,10,opt,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
 	Domains         int32                  `protobuf:"varint,11,opt,name=domains,proto3" json:"domains,omitempty"`
 	PortForwards    int32                  `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3" json:"port_forwards,omitempty"`
+	CustomImages    int32                  `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3" json:"custom_images,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -486,6 +498,13 @@ func (x *Usage) GetDomains() int32 {
 func (x *Usage) GetPortForwards() int32 {
 	if x != nil {
 		return x.PortForwards
+	}
+	return 0
+}
+
+func (x *Usage) GetCustomImages() int32 {
+	if x != nil {
+		return x.CustomImages
 	}
 	return 0
 }
@@ -1144,7 +1163,7 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"\xcd\x04\n" +
+	"conditions\"\x89\x05\n" +
 	"\x06Limits\x12\x15\n" +
 	"\x03cpu\x18\x01 \x01(\tH\x00R\x03cpu\x88\x01\x01\x12\x1b\n" +
 	"\x06memory\x18\x02 \x01(\tH\x01R\x06memory\x88\x01\x01\x12\x17\n" +
@@ -1160,7 +1179,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"fileShares\x88\x01\x01\x12\x1d\n" +
 	"\adomains\x18\v \x01(\x05H\n" +
 	"R\adomains\x88\x01\x01\x12(\n" +
-	"\rport_forwards\x18\f \x01(\x05H\vR\fportForwards\x88\x01\x01B\x06\n" +
+	"\rport_forwards\x18\f \x01(\x05H\vR\fportForwards\x88\x01\x01\x12(\n" +
+	"\rcustom_images\x18\r \x01(\x05H\fR\fcustomImages\x88\x01\x01B\x06\n" +
 	"\x04_cpuB\t\n" +
 	"\a_memoryB\a\n" +
 	"\x05_diskB\v\n" +
@@ -1174,7 +1194,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\f_file_sharesB\n" +
 	"\n" +
 	"\b_domainsB\x10\n" +
-	"\x0e_port_forwards\"\xe9\x02\n" +
+	"\x0e_port_forwardsB\x10\n" +
+	"\x0e_custom_images\"\x8e\x03\n" +
 	"\x05Usage\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +
@@ -1189,7 +1210,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	" \x01(\x05R\n" +
 	"fileShares\x12\x18\n" +
 	"\adomains\x18\v \x01(\x05R\adomains\x12#\n" +
-	"\rport_forwards\x18\f \x01(\x05R\fportForwards\"$\n" +
+	"\rport_forwards\x18\f \x01(\x05R\fportForwards\x12#\n" +
+	"\rcustom_images\x18\r \x01(\x05R\fcustomImages\"$\n" +
 	"\x0eGetPlanRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"D\n" +
 	"\x0fGetPlanResponse\x121\n" +

@@ -185,7 +185,7 @@
       "properties": {
         "image": {
           "$ref": "#/$defs/hangar.storage.v1alpha1.ImageSource",
-          "description": "A copy of an image, grown to the disk's size, which must be at least the image's status.disk_size.\n\nSet at most one of image."
+          "description": "A copy of an image, grown to the disk's size, which must be at least the image's status.disk_size and spec.min_disk_size. A CustomImage must be Ready.\n\nSet at most one of image."
         }
       },
       "type": "object"
@@ -253,10 +253,14 @@
     },
     "hangar.storage.v1alpha1.ImageSource": {
       "additionalProperties": false,
-      "description": "ImageSource names the Image a disk is copied from. See docs/decisions/vm-images.md.",
+      "description": "ImageSource names the image a disk is copied from: a global Image, or, with project set, a CustomImage. See docs/decisions/vm-images.md and docs/decisions/custom-images.md.",
       "properties": {
         "name": {
-          "description": "Names a global Image.",
+          "description": "Names a global Image, or with project a CustomImage in that project.",
+          "type": "string"
+        },
+        "project": {
+          "description": "Names the Project of a CustomImage; only the disk's own project, for now. Empty, name is a global Image's.",
           "type": "string"
         }
       },

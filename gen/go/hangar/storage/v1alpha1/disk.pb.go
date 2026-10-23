@@ -336,18 +336,23 @@ type isDiskSource_Source interface {
 
 type DiskSource_Image struct {
 	// A copy of an image, grown to the disk's size, which must be at least
-	// the image's status.disk_size.
+	// the image's status.disk_size and spec.min_disk_size. A CustomImage
+	// must be Ready.
 	Image *ImageSource `protobuf:"bytes,1,opt,name=image,proto3,oneof"`
 }
 
 func (*DiskSource_Image) isDiskSource_Source() {}
 
-// ImageSource names the Image a disk is copied from. See
-// docs/decisions/vm-images.md.
+// ImageSource names the image a disk is copied from: a global Image, or,
+// with project set, a CustomImage. See docs/decisions/vm-images.md and
+// docs/decisions/custom-images.md.
 type ImageSource struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Names a global Image.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Names a global Image, or with project a CustomImage in that project.
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// Names the Project of a CustomImage; only the disk's own project, for
+	// now. Empty, name is a global Image's.
+	Project       string `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -385,6 +390,13 @@ func (*ImageSource) Descriptor() ([]byte, []int) {
 func (x *ImageSource) GetName() string {
 	if x != nil {
 		return x.Name
+	}
+	return ""
+}
+
+func (x *ImageSource) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -1287,9 +1299,10 @@ const file_hangar_storage_v1alpha1_disk_proto_rawDesc = "" +
 	"\n" +
 	"DiskSource\x12<\n" +
 	"\x05image\x18\x01 \x01(\v2$.hangar.storage.v1alpha1.ImageSourceH\x00R\x05imageB\b\n" +
-	"\x06source\"!\n" +
+	"\x06source\";\n" +
 	"\vImageSource\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\"\xbd\x02\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aproject\x18\x02 \x01(\tR\aproject\"\xbd\x02\n" +
 	"\n" +
 	"DiskStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +

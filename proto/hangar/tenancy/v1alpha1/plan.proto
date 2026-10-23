@@ -45,7 +45,9 @@ message Limits {
   // Memory, a quantity such as "16Gi".
   optional string memory = 2;
   // Disk space, a quantity such as "200Gi": containers' disks, Disks, the
-  // root disks VMs have made from images, and FileShares.
+  // root disks VMs have made from images, FileShares, and CustomImages,
+  // each at its source disk's size while it is captured and at what it
+  // holds once Ready.
   optional string disk = 3;
   // Containers and virtual machines, together.
   optional int32 machines = 4;
@@ -63,6 +65,8 @@ message Limits {
   optional int32 domains = 11;
   // PortForwards, each holding a port of the shared IPv4 address.
   optional int32 port_forwards = 12;
+  // CustomImages; one that failed counts toward no limit.
+  optional int32 custom_images = 13;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
@@ -80,6 +84,7 @@ message Usage {
   int32 file_shares = 10;
   int32 domains = 11;
   int32 port_forwards = 12;
+  int32 custom_images = 13;
 }
 
 // PlanService manages plans.

@@ -411,10 +411,14 @@
     },
     "hangar.storage.v1alpha1.ImageSource": {
       "additionalProperties": false,
-      "description": "ImageSource names the Image a disk is copied from. See docs/decisions/vm-images.md.",
+      "description": "ImageSource names the image a disk is copied from: a global Image, or, with project set, a CustomImage. See docs/decisions/vm-images.md and docs/decisions/custom-images.md.",
       "properties": {
         "name": {
-          "description": "Names a global Image.",
+          "description": "Names a global Image, or with project a CustomImage in that project.",
+          "type": "string"
+        },
+        "project": {
+          "description": "Names the Project of a CustomImage; only the disk's own project, for now. Empty, name is a global Image's.",
           "type": "string"
         }
       },

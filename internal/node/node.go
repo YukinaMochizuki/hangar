@@ -86,6 +86,10 @@ type Config struct {
 	// MaxPulls bounds the images unpacked at once. Zero means
 	// DefaultMaxPulls.
 	MaxPulls int
+	// CaptureTimeout bounds copying one CustomImage's snapshot into its
+	// base, so a copy that stalls fails, for good, rather than leaving the
+	// image capturing. Zero means DefaultCaptureTimeout.
+	CaptureTimeout time.Duration
 	// DNSUpstreams are the resolvers each network's resolver forwards names
 	// outside its own zone to.
 	DNSUpstreams []netip.AddrPort
@@ -127,6 +131,11 @@ type Config struct {
 // pulls and unpacks share the host's disks and CPUs with running machines.
 const DefaultMaxPulls = 2
 
+// DefaultCaptureTimeout bounds copying a CustomImage's snapshot into its
+// base: room for a full 2 TiB disk copied at 100 MB/s, as a pool of
+// spinning disks does.
+const DefaultCaptureTimeout = 6 * time.Hour
+
 // DefaultImageCacheHigh is how much the images no machine uses may take by
 // default (docs/decisions/node-agent.md).
 const DefaultImageCacheHigh = 20 << 30
@@ -144,6 +153,11 @@ type Agent struct {
 	shares       storagev1alpha1connect.FileShareServiceClient
 	// imagesAPI reaches Images; images makes disk images' bases.
 	imagesAPI storagev1alpha1connect.ImageServiceClient
+	// customImages reaches CustomImages; captures makes their bases, and
+	// has their controller look again through captureTrigger.
+	customImages   storagev1alpha1connect.CustomImageServiceClient
+	captures       *captureMaker
+	captureTrigger chan struct{}
 	// pullCreds gives the logins machines' images are pulled with.
 	pullCreds nodev1connect.ImagePullCredentialsServiceClient
 	images    *imageMaker
@@ -188,9 +202,9 @@ type Agent struct {
 	netTrigger chan struct{}
 	// forwardTrigger has the host's port forwards ensured again.
 	forwardTrigger chan struct{}
-	// machinesCtl, networksCtl, disksCtl, sharesCtl and forwardsCtl are
-	// the controllers Run runs with drivers.
-	machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl *controller.Controller
+	// machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl and
+	// customImagesCtl are the controllers Run runs with drivers.
+	machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl, customImagesCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
 	// cpuRead is how the last read of the host's CPU went; only report
@@ -249,6 +263,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
+	if cfg.CaptureTimeout == 0 {
+		cfg.CaptureTimeout = DefaultCaptureTimeout
+	}
 	if cfg.MaxPulls == 0 {
 		cfg.MaxPulls = DefaultMaxPulls
 	}
@@ -272,10 +289,12 @@ func New(cfg Config) (*Agent, error) {
 	var puller *puller
 	var netsvc *netServices
 	var images *imageMaker
+	var captures *captureMaker
 	if cfg.Drivers != nil {
 		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Metadata, cfg.Log)
 		images = newImageMaker(cfg.Drivers.DiskImages, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
+		captures = newCaptureMaker(cfg.Drivers.Storage, cfg.CaptureTimeout, cfg.MaxPulls)
 	}
 	a := &Agent{
 		cfg:          cfg,
@@ -287,6 +306,8 @@ func New(cfg Config) (*Agent, error) {
 		disks:        storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
 		shares:       storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
 		imagesAPI:    storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		customImages: storagev1alpha1connect.NewCustomImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		captures:     captures,
 		pullCreds:    nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
 		images:       images,
 		netChecked:   map[string]int64{},
@@ -305,9 +326,11 @@ func New(cfg Config) (*Agent, error) {
 	}
 	a.forwardTrigger = make(chan struct{}, 1)
 	a.diskTrigger = make(chan struct{}, 1)
+	a.captureTrigger = make(chan struct{}, 1)
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
 		a.sharesCtl, a.forwardsCtl = a.shareController(), a.forwardController()
+		a.customImagesCtl = a.customImageController()
 		a.requeue = a.machinesCtl.Enqueue
 		a.requeueNetworks = a.networksCtl.Enqueue
 		puller.makeRoom = a.makeRoom
@@ -334,7 +357,7 @@ func (a *Agent) Activity() Activity {
 // without drivers it runs none.
 func (a *Agent) ControllerStatus() []controller.Status {
 	var st []controller.Status
-	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl} {
+	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.customImagesCtl} {
 		if c != nil {
 			st = append(st, c.Status())
 		}
@@ -391,6 +414,11 @@ func (a *Agent) Run(ctx context.Context) error {
 		}()
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
+		wg.Go(func() {
+			a.captures.start(ctx, func() { notify(a.captureTrigger) })
+			_ = a.customImagesCtl.Run(ctx)
+			a.captures.wait() // its jobs end with ctx
+		})
 		if a.cfg.EdgeDial != nil {
 			wg.Go(func() { a.serveEdgeDial(ctx) })
 		}

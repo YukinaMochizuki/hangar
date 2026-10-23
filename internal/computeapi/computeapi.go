@@ -1,7 +1,7 @@
 // Package computeapi is what the apiserver and the node agent must read
-// alike in Machines, Nodes, Disks and FileShares: what their status says,
-// of which each writes a part and reads the other's, which Disks a
-// Machine's spec names, and which networks a FileShare is on.
+// alike in Machines, Nodes, Disks, FileShares and CustomImages: what their
+// status says, of which each writes a part and reads the other's, which
+// Disks a Machine's spec names, and which networks a FileShare is on.
 package computeapi
 
 import (
@@ -96,6 +96,20 @@ const (
 	// one of the Image reasons, when the image at that generation can never
 	// be used. Nodes then try it again only once its spec changes.
 	ImageVerified = "Verified"
+	// CustomImageSnapshotted is the image's node's: True once the source
+	// disk's volume is snapshotted, after which the disk is free again.
+	CustomImageSnapshotted = "Snapshotted"
+	// CustomImageReady is the image's node's: True once the image's base is
+	// made, with status.used_size; False with ReasonCaptureFailed once the
+	// capture failed for good, and with ReasonCapturing until then.
+	CustomImageReady = "Ready"
+)
+
+// Reasons the node gives for CustomImageSnapshotted and CustomImageReady.
+const (
+	ReasonCapturing     = "Capturing"
+	ReasonCaptured      = "Captured"
+	ReasonCaptureFailed = "CaptureFailed"
 )
 
 // Reasons an image can never be used, for ImageVerified.
@@ -130,6 +144,9 @@ const (
 	ReasonNetworkNotReady = "NetworkNotReady"
 	// ReasonDiskNotReady means an attached disk is not on the node yet.
 	ReasonDiskNotReady = "DiskNotReady"
+	// ReasonImageNotReady means a disk's CustomImage cannot be made a disk
+	// of here: it is gone, not Ready, or on another node.
+	ReasonImageNotReady = "ImageNotReady"
 	// ReasonExportFailed means a file share's server did not take the
 	// export its node told it, and serves the one it had.
 	ReasonExportFailed = "ExportFailed"
