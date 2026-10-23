@@ -1,6 +1,7 @@
 package chvm
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"connectrpc.com/connect"
 	sd "github.com/coreos/go-systemd/v22/dbus"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -215,5 +217,27 @@ func TestAConvertersFileIsWholeSectors(t *testing.T) {
 	}
 	if err := checkStaged(driver.UploadedFile{Path: link, Offset: driver.UploadOffset, Size: 1}); err == nil {
 		t.Error("a link taken")
+	}
+}
+
+// TestAFileTheConverterRefusesIsInvalid: what the converter's agent
+// refuses as invalid_argument, qemu-img not taking the file, is the
+// image's fault, ErrInvalidImage; anything else it answers, or nothing, is
+// the VM's.
+func TestAFileTheConverterRefusesIsInvalid(t *testing.T) {
+	refused := connect.NewError(connect.CodeInvalidArgument, errors.New("qemu-img info: Image is not in qcow2 format"))
+	if err := converterError(refused); !errors.Is(err, driver.ErrInvalidImage) || !strings.Contains(err.Error(), "not in qcow2 format") {
+		t.Errorf("a file refused: %v, want ErrInvalidImage with qemu-img's words", err)
+	}
+	for _, err := range []error{
+		connect.NewError(connect.CodeInternal, errors.New("qemu-img convert: exit status 1")),
+		connect.NewError(connect.CodeUnavailable, errors.New("dial: no such file")),
+	} {
+		if got := converterError(err); got == nil || errors.Is(got, driver.ErrInvalidImage) || !errors.Is(got, err) {
+			t.Errorf("%v: %v, want the VM's error, not ErrInvalidImage", err, got)
+		}
+	}
+	if err := converterError(nil); err != nil {
+		t.Errorf("no error: %v", err)
 	}
 }

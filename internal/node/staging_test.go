@@ -218,3 +218,43 @@ func TestCountedChunksAreReportedAFewTimesASecond(t *testing.T) {
 		}
 	})
 }
+
+// TestKeptStateThatDoesNotFitItsImageIsRefused: kept state of another
+// size than the image declares, or counting bytes outside the file, or
+// that is no state at all, is refused rather than resumed from; state that
+// fits is resumed from.
+func TestKeptStateThatDoesNotFitItsImageIsRefused(t *testing.T) {
+	dir := t.TempDir()
+	s, _ := stagerFor(t, dir, "img1", 1000)
+	if _, err := s.write(t.Context(), "img1", 0, 400, hexSum(make([]byte, 400)), bytes.NewReader(make([]byte, 400))); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := s.state("img1", 1000); err != nil || st.Received != 400 {
+		t.Fatalf("the state kept: %+v %v", st, err)
+	}
+	if _, err := s.state("img1", 999); err == nil {
+		t.Error("state kept of a file of 1000 bytes, read for one of 999")
+	}
+	kept, err := os.ReadFile(s.statePath("img1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, received := range []string{"-1", "1001"} {
+		bad := bytes.Replace(kept, []byte(`"Received":400`), []byte(`"Received":`+received), 1)
+		if bytes.Equal(bad, kept) {
+			t.Fatalf("no Received in %s", kept)
+		}
+		if err := os.WriteFile(s.statePath("img1"), bad, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.state("img1", 1000); err == nil {
+			t.Errorf("state counting %s of 1000 bytes was taken", received)
+		}
+	}
+	if err := os.WriteFile(s.statePath("img1"), []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.state("img1", 1000); err == nil {
+		t.Error("state that is no JSON was taken")
+	}
+}

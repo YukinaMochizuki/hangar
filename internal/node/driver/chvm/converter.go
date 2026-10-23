@@ -98,7 +98,13 @@ func (c converter) run(ctx context.Context, imageUID string, file driver.Uploade
 	tr := guestTransport(c.h.Socket(uid))
 	defer tr.CloseIdleConnections()
 	cl := guestv1connect.NewImageConverterServiceClient(&http.Client{Transport: tr}, "http://guest", connect.WithReadMaxBytes(agent.MaxMessage))
-	err := do(ctx, cl)
+	return converterError(do(ctx, cl))
+}
+
+// converterError is what the converter VM's agent answered, err: one it
+// refused as invalid_argument, a file qemu-img would not take, is
+// driver.ErrInvalidImage, the image's fault; any other is the VM's.
+func converterError(err error) error {
 	if connect.CodeOf(err) == connect.CodeInvalidArgument {
 		return fmt.Errorf("%w: %w", driver.ErrInvalidImage, err)
 	}
