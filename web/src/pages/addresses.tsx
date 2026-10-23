@@ -8,6 +8,7 @@ import { AddressSchema, AddressSpecSchema, type Address } from "@hangar/api/hang
 import { Link2, Link2Off, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { FormEquivalent } from "@/components/form";
 import { InterfaceField, pickTarget } from "@/components/interface-field";
@@ -17,8 +18,8 @@ import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can,
 import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
-import { date, machinePath } from "@/lib/machines";
+import { buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
+import { date } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
 import { addressYaml, conditionOf, nameOf, targetOf, useAddresses } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
@@ -82,31 +83,11 @@ function stateOf(a: Address): { label: string; light: "ok" | "pending" | "off"; 
 
 function StateCell({ a }: { a: Address }) {
   const s = stateOf(a);
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={s.light} />
-        {s.label}
-      </span>
-      {s.reason && <span className="block font-mono text-[11.5px] text-subtle">{s.reason}</span>}
-    </>
-  );
+  return <StateText tone={s.light} label={s.label} reason={s.reason} />;
 }
 
 function TargetText({ a }: { a: Address }) {
-  const project = useProjectName();
-  const t = targetOf(a.spec?.target);
-  if (!t) return <span className="text-subtle">none</span>;
-  const iface = a.spec?.target?.interface || "eth0";
-  return (
-    <span>
-      <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
-        {t.name}
-      </Link>
-      <span className="font-mono text-[12px] text-muted"> · {iface}</span>
-      <span className="ml-2 text-[11.5px] text-subtle">{t.kind === "Container" ? "container" : "VM"}</span>
-    </span>
-  );
+  return <MachineTargetText t={targetOf(a.spec?.target)} detail={` · ${a.spec?.target?.interface || "eth0"}`} />;
 }
 
 export function AddressList() {
@@ -229,10 +210,7 @@ function Loaded({ a, can }: { a: Address; can: Can }) {
         kind="Address"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={s.light} />
-              {s.label}
-            </span>
+            <StateText tone={s.light} label={s.label} />
             {a.status?.ipv6 && <span className="font-mono text-[12px]">{bare(a.status.ipv6)}</span>}
           </>
         }
@@ -258,11 +236,7 @@ function Loaded({ a, can }: { a: Address; can: Can }) {
                   <TargetText a={a} />
                 </Field>
                 <Field label="State">
-                  <span className="inline-flex items-center gap-2">
-                    <Led tone={s.light} />
-                    {s.label}
-                    {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
-                  </span>
+                  <StateText tone={s.light} label={s.label} reason={s.reason} reasonAt="beside" />
                   {s.message && <span className="block text-[12.5px] text-muted">{s.message}</span>}
                 </Field>
                 <Field label="Held by" mono>

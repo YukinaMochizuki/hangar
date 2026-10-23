@@ -1,8 +1,7 @@
 // The frame of a page that creates or edits an object: its title, numbered
 // sections on the left, and a column on the right that stays in view with
 // the summary, why it cannot be sent yet, the API's error, the submit
-// button and the manifest it amounts to. The new-machine page is laid out
-// the same way (web/src/pages/create-machine.tsx).
+// button and the manifest it amounts to.
 
 import { Link } from "@tanstack/react-router";
 import { Check } from "lucide-react";
@@ -22,6 +21,7 @@ export function FormPage({
   description,
   side,
   onSubmit,
+  noValidate,
   children,
 }: {
   /** The top bar's crumbs; none when the page sits in a frame that draws the top bar, such as DetailFrame. */
@@ -31,6 +31,8 @@ export function FormPage({
   /** The right column: a FormSummary, then a FormManifest. */
   side: ReactNode;
   onSubmit: () => void;
+  /** Leaves the checking to the form, which states its own problems. */
+  noValidate?: boolean;
   children: ReactNode;
 }) {
   const submit = (e: FormEvent) => {
@@ -45,7 +47,7 @@ export function FormPage({
         {description && <p className="mt-1 max-w-2xl text-[13px] text-muted">{description}</p>}
       </div>
       {/* Its fields are never this site's own login. */}
-      <form onSubmit={submit} autoComplete="off" className="grid grid-cols-1 gap-x-8 px-4 pb-10 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <form onSubmit={submit} autoComplete="off" noValidate={noValidate} className="grid grid-cols-1 gap-x-8 px-4 pb-10 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">{children}</div>
         <aside className="xl:pt-6">
           <div className="space-y-4 xl:sticky xl:top-20">{side}</div>
@@ -164,6 +166,7 @@ export function Choice({
  */
 export function FormSummary({
   summary,
+  applying,
   problems,
   notices,
   error,
@@ -175,6 +178,8 @@ export function FormSummary({
   cancelTo,
 }: {
   summary: ReactNode;
+  /** For an edit, what applying it does, under the summary. */
+  applying?: ReactNode;
   /** Why it cannot be sent yet, each a fact; the button is off while there is one. */
   problems: string[];
   /** Notices that stand above the button, such as a list that did not load. */
@@ -196,6 +201,12 @@ export function FormSummary({
         <div className="text-[11.5px] text-subtle">Summary</div>
         <div className="mt-1">{summary}</div>
       </div>
+      {applying && (
+        <div className="border-b">
+          <div className="px-4 pt-3 text-[11.5px] text-subtle">What applying does</div>
+          {applying}
+        </div>
+      )}
       <div className="space-y-3 px-4 py-3">
         {notices}
         {error != null && (

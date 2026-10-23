@@ -16,6 +16,7 @@ import {
 import { ArrowUpRight, AtSign, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { Notice } from "@/components/notice";
 import { ErrorNotice, Skeleton } from "@/components/states";
@@ -27,10 +28,10 @@ import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can,
 import { DetailBody, DetailFrame, DetailHead, ListCount, ListFrame, NameFilter, PageHead } from "@/components/page";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
-import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { domainFor, domainOf, hostnameOf, isVerified, rowProblems, rowsOf, useProjectDomains, type HostnameRow } from "@/lib/custom-domains";
-import { date, machinePath } from "@/lib/machines";
+import { date } from "@/lib/machines";
 import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints, type ListState } from "@/lib/network";
 import { isStale, permission, useChange, useNetworkCan } from "@/lib/network-actions";
 import { useApplyObjectAt, useReadObject } from "@/lib/object-kinds";
@@ -96,15 +97,7 @@ function AccessBadge({ access }: { access: PublicEndpointAccess }) {
 
 function ReadyCell({ e }: { e: PublicEndpoint }) {
   const c = conditionOf(e.status?.conditions, "Ready");
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={lightOf(c)} />
-        {c?.status === 1 ? "Ready" : "Not ready"}
-      </span>
-      {c?.status !== 1 && c?.reason && <span className="block font-mono text-[11.5px] text-subtle">{c.reason}</span>}
-    </>
-  );
+  return <StateText tone={lightOf(c)} label={c?.status === 1 ? "Ready" : "Not ready"} reason={c?.status !== 1 && c?.reason} />;
 }
 
 function UrlLink({ e, className }: { e: PublicEndpoint; className?: string }) {
@@ -118,18 +111,7 @@ function UrlLink({ e, className }: { e: PublicEndpoint; className?: string }) {
 }
 
 function TargetText({ e }: { e: PublicEndpoint }) {
-  const project = useProjectName();
-  const t = targetOf(e.spec?.target);
-  if (!t) return <span className="text-subtle">none</span>;
-  return (
-    <span className="whitespace-nowrap">
-      <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
-        {t.name}
-      </Link>
-      <span className="font-mono text-[12px] text-muted">:{e.spec?.port}</span>
-      <span className="ml-2 text-[11.5px] text-subtle">{t.kind === "Container" ? "container" : "VM"}</span>
-    </span>
-  );
+  return <MachineTargetText t={targetOf(e.spec?.target)} detail={`:${e.spec?.port}`} className="whitespace-nowrap" />;
 }
 
 export function PublicEndpointList() {
@@ -259,10 +241,7 @@ function Loaded({ e, can }: { e: PublicEndpoint; can: Can }) {
         kind="Public endpoint"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={lightOf(ready)} />
-              {ready?.status === 1 ? "Ready" : "Not ready"}
-            </span>
+            <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Not ready"} />
             <AccessBadge access={e.spec?.access ?? 0} />
             <UrlLink e={e} />
           </>

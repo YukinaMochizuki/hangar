@@ -27,7 +27,7 @@ import {
 import { Topbar, useProjectName } from "@/components/shell";
 import { Skeleton } from "@/components/states";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
-import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { date } from "@/lib/machines";
 import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
 import { permission, useNetworkCan } from "@/lib/network-actions";
@@ -269,11 +269,9 @@ function Loaded({ pf, can }: { pf: PortForward; can: Can }) {
         kind="Port forward"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={s.light} pulse={s.pulse} />
-              {s.label}
+            <StateText tone={s.light} pulse={s.pulse} label={s.label}>
               <NotRunningNote pf={pf} className="text-[12px]" />
-            </span>
+            </StateText>
             {addr && <span className="font-mono text-[12px]">{addr}</span>}
             <span className="font-mono text-[12px]">
               → {target?.name ?? "no target"} · {target?.iface ?? "eth0"} · {portLabel(targetPort, protocol)}
@@ -329,11 +327,7 @@ function Loaded({ pf, can }: { pf: PortForward; can: Can }) {
                   )}
                 </Field>
                 <Field label="State">
-                  <span className="inline-flex items-center gap-2">
-                    <Led tone={s.light} pulse={s.pulse} />
-                    {s.label}
-                    {s.reason && <span className="font-mono text-[12px] text-muted">{s.reason}</span>}
-                  </span>
+                  <StateText tone={s.light} pulse={s.pulse} label={s.label} reason={s.reason} reasonAt="beside" />
                   {s.message && <span className="block text-[12.5px] text-muted">{s.message}</span>}
                 </Field>
                 <Field label="Held by" mono>

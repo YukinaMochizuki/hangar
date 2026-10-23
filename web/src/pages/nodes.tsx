@@ -15,7 +15,7 @@ import { DetailHead, DetailSkeleton, LoadingTable, PageHead } from "@/components
 import { Topbar } from "@/components/shell";
 import { EmptyState, ErrorNotice, SkeletonRows } from "@/components/states";
 import { tbodyRow, Th, theadRow } from "@/components/table";
-import { Badge, Card, CardHeader, Field, Led, type Tone } from "@/components/ui";
+import { Badge, Card, CardHeader, Field, StateText, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago } from "@/lib/machines";
@@ -30,11 +30,7 @@ const artStatus: Record<ReadinessKind, ArtStatus> = { ready: "running", notReady
 /** Whether the node reports, and why not when it does not. */
 export function Readiness({ n }: { n: NodeView }) {
   return (
-    <span className="flex items-center gap-2">
-      <Led tone={readyTone[n.readiness]} pulse={n.readiness === "unknown"} />
-      {readyWord[n.readiness]}
-      {n.reason && <span className="font-mono text-[11.5px] text-subtle">{n.reason}</span>}
-    </span>
+    <StateText tone={readyTone[n.readiness]} pulse={n.readiness === "unknown"} label={readyWord[n.readiness]} reason={n.reason} reasonAt="beside" className="flex" />
   );
 }
 

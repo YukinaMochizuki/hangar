@@ -276,7 +276,8 @@ describe("CreateMachine", () => {
     const a = api({ containers: async () => ({ items: [] }) });
     render(<CreateMachine kind="container" size="s" />, { wrapper: withApi(a) });
     fill("api");
-    await screen.findByText((_, el) => el?.textContent === "$ hangar apply --create-only -p demo -f api.yaml");
+    const lines = () => Array.from(document.querySelectorAll("pre > div"), (e) => e.textContent);
+    await waitFor(() => expect(lines()).toContain("$ hangar apply --create-only -p demo -f api.yaml"));
   });
 
   it("says a VM made since the list loaded holds the name, when the API refuses it", async () => {

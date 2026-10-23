@@ -80,6 +80,58 @@ export function Led({ tone, pulse, className }: { tone: Tone; pulse?: boolean; c
   );
 }
 
+/**
+ * StateText is a state's light and word, and what holds it there when
+ * given: on a line of its own below, as a list's cell has it, or beside the
+ * word, as a page's field does. A fault's reason is in the failure colour.
+ * Its children go beside the word, after the reason.
+ */
+export function StateText({
+  tone,
+  pulse,
+  label,
+  reason,
+  reasonAt = "below",
+  fault,
+  className,
+  children,
+}: {
+  tone: Tone;
+  pulse?: boolean;
+  label: ReactNode;
+  reason?: ReactNode;
+  reasonAt?: "below" | "beside";
+  fault?: boolean;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const why = reason ? (
+    <span
+      className={cn(
+        reasonAt === "below" && "block",
+        fault ? "text-[11.5px] text-fail" : reasonAt === "below" ? "font-mono text-[11.5px] text-subtle" : "font-mono text-[12px] text-muted",
+      )}
+    >
+      {reason}
+    </span>
+  ) : null;
+  const line = (
+    <span className={cn("inline-flex items-center gap-2", className)}>
+      <Led tone={tone} pulse={pulse} />
+      {label}
+      {reasonAt === "beside" && why}
+      {children}
+    </span>
+  );
+  if (reasonAt === "beside" || !why) return line;
+  return (
+    <>
+      {line}
+      {why}
+    </>
+  );
+}
+
 const phases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
   [MachinePhase.RUNNING]: { label: "Running", tone: "ok" },
   [MachinePhase.PENDING]: { label: "Pending", tone: "pending", pulse: true },
@@ -100,12 +152,8 @@ export function StatusDot({ phase, className }: { phase: MachinePhase; className
 }
 
 export function Status({ phase }: { phase: MachinePhase }) {
-  return (
-    <span className="inline-flex items-center gap-2 text-[13px]">
-      <StatusDot phase={phase} />
-      {phaseLabel(phase)}
-    </span>
-  );
+  const p: { tone: Tone; pulse?: boolean } = phases[phase] ?? { tone: "off" };
+  return <StateText tone={p.tone} pulse={p.pulse} label={phaseLabel(phase)} className="text-[13px]" />;
 }
 
 /**

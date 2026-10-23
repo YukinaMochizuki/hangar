@@ -71,6 +71,18 @@ describe("FileShareList", () => {
     expect(within(row).getByRole("button", { name: /\+4 more/ })).toBeTruthy();
   });
 
+  // The table's card scrolls sideways, so it would clip a list drawn inside it.
+  it("opens the +N more list outside the table's card, and closes it on Escape", async () => {
+    await show(<FileShareList />, { shares: [cache], containers });
+    const row = (await screen.findByRole("link", { name: "cache" })).closest("tr")!;
+    fireEvent.click(await within(row).findByRole("button", { name: /\+4 more/ }));
+    const list = screen.getByRole("dialog", { name: "Machines" });
+    expect(row.closest("table")!.parentElement!.contains(list)).toBe(false);
+    expect(within(list).getAllByRole("link")).toHaveLength(6);
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Machines" })).toBeNull();
+  });
+
   it("says the machines did not load, never None, when they failed", async () => {
     await show(<FileShareList />, { shares: [cache, scratch], containers, machinesFail: down });
     const row = (await screen.findByRole("link", { name: "scratch" })).closest("tr")!;

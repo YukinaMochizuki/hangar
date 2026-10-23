@@ -11,6 +11,7 @@ import { useState } from "react";
 import { Dialog } from "@/components/dialog";
 import { FormEquivalent } from "@/components/form";
 import { EditLabelsDialog } from "@/components/labels-dialog";
+import { MachineTargetText, SecurityGroupLink } from "@/components/links";
 import { Notice } from "@/components/notice";
 import { editLabelsAction, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
@@ -18,7 +19,7 @@ import { useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
-import { buttonVariants, Card, CardHeader, CopyButton, Led, phaseLabel } from "@/components/ui";
+import { buttonVariants, Card, CardHeader, CopyButton, phaseLabel, StateText } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { nameOf, portForwardYaml, usePortForwards } from "@/lib/network";
@@ -161,33 +162,12 @@ function RetargetDialog({ onClose, forward }: { onClose: () => void; forward: Po
 /** A forward's state, with its reason under it. */
 export function ForwardStateCell({ pf }: { pf: PortForward }) {
   const s = stateOf(pf);
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={s.light} pulse={s.pulse} />
-        {s.label}
-      </span>
-      {s.reason && <span className="block font-mono text-[11.5px] text-subtle">{s.reason}</span>}
-    </>
-  );
+  return <StateText tone={s.light} pulse={s.pulse} label={s.label} reason={s.reason} />;
 }
 
 /** Where a forward leads: its machine, linked, the interface, and the port; or that it names none. */
 export function ForwardTargetText({ t, protocol, port }: { t?: ForwardTarget; protocol: ForwardProtocol; port: number }) {
-  const project = useProjectName();
-  if (!t) return <span className="text-subtle">no target</span>;
-  return (
-    <span>
-      <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
-        {t.name}
-      </Link>
-      <span className="font-mono text-[12px] text-muted">
-        {" "}
-        · {t.iface} · {portLabel(port, protocol)}
-      </span>
-      <span className="ml-2 whitespace-nowrap break-normal text-[11.5px] text-subtle">{t.kind === "Container" ? "container" : "VM"}</span>
-    </span>
-  );
+  return <MachineTargetText t={t} detail={t && ` · ${t.iface} · ${portLabel(port, protocol)}`} empty="no target" />;
 }
 
 /**
@@ -260,22 +240,11 @@ export function useForwardInbound(pf: PortForward): Inbound | undefined {
 
 const what = (protocol: ForwardProtocol, port: number) => `${protocol} port ${port}`;
 
-/** A group's name, linked to its page; the built-in default is no object and has none. */
-function GroupLink({ name }: { name: string }) {
-  const project = useProjectName();
-  if (name === "default") return <span className="font-mono text-[12px] text-foreground">default</span>;
-  return (
-    <Link to="/projects/$project/security-groups/$name" params={{ project, name }} className="font-mono text-[12px] text-accent hover:underline">
-      {name}
-    </Link>
-  );
-}
-
 const joined = (names: string[]) =>
   names.map((g, i) => (
     <span key={g}>
       {i > 0 && (i === names.length - 1 ? " and " : ", ")}
-      <GroupLink name={g} />
+      <SecurityGroupLink name={g} />
     </span>
   ));
 
@@ -301,7 +270,7 @@ export function InboundNotice({ t, protocol, port, inbound }: { t: ForwardTarget
       <p className="flex items-start gap-2 text-[12.5px] text-muted">
         <ShieldCheck className="mt-px size-4 shrink-0 text-ok" strokeWidth={1.9} />
         <span>
-          <GroupLink name={a.group} /> {ruleSentence(a.rule, "in").replace(/^Lets/, "lets")}.
+          <SecurityGroupLink name={a.group} /> {ruleSentence(a.rule, "in").replace(/^Lets/, "lets")}.
         </span>
       </p>
     );
@@ -356,10 +325,7 @@ function MachineForwardRow({ pf, project }: { pf: PortForward; project: string }
         <span className="font-mono text-[12px] text-muted">
           → {target?.iface ?? "eth0"} · {portLabel(targetPort, protocol)}
         </span>
-        <span className="ml-auto inline-flex items-center gap-2 text-[12.5px]">
-          <Led tone={s.light} pulse={s.pulse} />
-          {s.label}
-        </span>
+        <StateText tone={s.light} pulse={s.pulse} label={s.label} className="ml-auto text-[12.5px]" />
       </div>
       <NotRunningNote pf={pf} className="block" />
       {!pf.metadata?.deleteTime && <InboundBrief inbound={inbound} />}

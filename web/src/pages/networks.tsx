@@ -6,6 +6,7 @@ import type { Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { EditLabelsDialog } from "@/components/labels-dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, MachinesNotice, type MachinesState, MemberCount, usageBlock } from "@/components/resource";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
@@ -13,7 +14,7 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
-import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, Led } from "@/components/ui";
+import { Badge, buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
 import { permission, useNetworkCan } from "@/lib/network-actions";
 import { date, machinePath } from "@/lib/machines";
 import {
@@ -91,12 +92,7 @@ function NetworkRowMenu({ n, can }: { n: Network; can: Can }) {
 
 function ReadyCell({ n }: { n: Network }) {
   const ready = conditionOf(n.status?.conditions, "Ready");
-  return (
-    <span className="inline-flex items-center gap-2">
-      <Led tone={lightOf(ready)} />
-      {ready?.status === 1 ? "Ready" : "Pending"}
-    </span>
-  );
+  return <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Pending"} />;
 }
 
 export function NetworkList() {
@@ -240,10 +236,7 @@ export function AttachmentsCard({ title, items, state, empty }: { title: string;
                 {items.map((a) => (
                   <tr key={`${a.kind}/${a.name}/${a.iface}`} className="border-b last:border-0">
                     <td className="px-4 py-2.5">
-                      <Link to={machinePath(a.kind)} params={{ project, name: a.name }} className="font-medium text-accent hover:underline">
-                        {a.name}
-                      </Link>
-                      <span className="ml-2 text-[11.5px] text-subtle">{a.kind === "Container" ? "container" : "VM"}</span>
+                      <MachineTargetText t={a} />
                     </td>
                     <td className="px-4 py-2.5 font-mono text-[12.5px]">{a.iface}</td>
                     <td className="px-4 py-2.5 font-mono text-[12.5px]">{a.ipv4 ? bare(a.ipv4) : <span className="text-subtle">–</span>}</td>
@@ -300,10 +293,7 @@ function Loaded({ n, can }: { n: Network; can: Can }) {
         kind="Network"
         facts={
           <>
-            <span className="inline-flex items-center gap-2">
-              <Led tone={lightOf(ready)} />
-              {ready?.status === 1 ? "Ready" : "Pending"}
-            </span>
+            <StateText tone={lightOf(ready)} label={ready?.status === 1 ? "Ready" : "Pending"} />
             <span className="font-mono text-[12px]">{cidr}</span>
             <MemberCount state={att} n={machines} word="machine" />
           </>

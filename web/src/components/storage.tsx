@@ -3,7 +3,6 @@
 // its error shown where it was asked for.
 
 import { toJson, type JsonValue } from "@bufbuild/protobuf";
-import { Link } from "@tanstack/react-router";
 import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { HardDrive } from "lucide-react";
@@ -11,10 +10,10 @@ import { useState } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { FormEquivalent, FormField, Input } from "@/components/form";
+import { CustomImageLink, ImageLink, MachineLink } from "@/components/links";
 import { Notice } from "@/components/notice";
-import { Button, Led, type Tone } from "@/components/ui";
+import { Button, StateText, type Tone } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
-import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
 import {
@@ -48,42 +47,12 @@ export function diskPhaseLabel(d: Disk): string {
 export function DiskState({ d, reason = true }: { d: Disk; reason?: boolean }) {
   const fault = diskFault(d);
   const p = fault ? { tone: "fail" as Tone } : (diskPhases[d.status?.phase ?? 0] ?? { tone: "off" as Tone });
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={p.tone} pulse={"pulse" in p && p.pulse} />
-        {diskPhaseLabel(d)}
-      </span>
-      {reason && fault && <span className="block text-[11.5px] text-fail">{fault.reason}</span>}
-    </>
-  );
+  return <StateText tone={p.tone} pulse={"pulse" in p && p.pulse} label={diskPhaseLabel(d)} reason={reason && fault?.reason} fault />;
 }
 
 /** ImageStateCell shows an image's state, and the reason when it is at fault. */
 export function ImageStateCell({ s }: { s: ImageState }) {
-  return (
-    <>
-      <span className="inline-flex items-center gap-2">
-        <Led tone={s.tone} />
-        {s.label}
-      </span>
-      {s.reason && <span className="block text-[11.5px] text-fail">{s.reason}</span>}
-    </>
-  );
-}
-
-/**
- * MachineLink shows the machine a disk is attached to as its Container or VM,
- * linked to that page; the Machine's own name while the owner is not known.
- */
-export function MachineLink({ project, machine }: { project: string; machine: string }) {
-  const owner = useMachineOwners(project)(machine);
-  if (!owner) return <span className="font-mono text-[12.5px]">{machine}</span>;
-  return (
-    <Link to={machinePath(owner.kind)} params={{ project, name: owner.name }} className="font-mono text-[12.5px] text-accent hover:underline">
-      {owner.name}
-    </Link>
-  );
+  return <StateText tone={s.tone} label={s.label} reason={s.reason} fault />;
 }
 
 const roleWords = { boot: "Boot disk", data: "Data disk", volume: "Volume" } as const;
@@ -99,7 +68,7 @@ export function usedAsText(d: Disk): string | undefined {
  * boot or data disk, or a container's volume and where it is mounted, linked
  * to the Container's or VM's page.
  */
-export function UsedAs({ d, project }: { d: Disk; project: string }) {
+export function UsedAs({ d }: { d: Disk }) {
   const u = usedAs(d);
   if (!u) return <span className="text-subtle">Not attached</span>;
   return (
@@ -112,9 +81,7 @@ export function UsedAs({ d, project }: { d: Disk; project: string }) {
         </>
       )}{" "}
       of{" "}
-      <Link to={machinePath(u.kind)} params={{ project, name: u.name }} className="font-mono text-[12.5px] text-accent hover:underline">
-        {u.name}
-      </Link>
+      <MachineLink kind={u.kind} name={u.name} />
       {(u.role !== "volume" ? u.device : u.readOnly) && (
         <span className="text-[11.5px] text-subtle"> · {u.role !== "volume" ? u.device : "read-only"}</span>
       )}
@@ -134,7 +101,7 @@ function useMachineName(project: string, machine: string): string {
 }
 
 /** DiskSource is a disk's source: blank, or a copy of an image (the platform's or a custom one), linked. */
-export function DiskSource({ d, project, link = true }: { d: Disk; project: string; link?: boolean }) {
+export function DiskSource({ d, link = true }: { d: Disk; link?: boolean }) {
   const img = diskImage(d);
   const custom = diskCustomImage(d);
   if (custom) {
@@ -142,9 +109,7 @@ export function DiskSource({ d, project, link = true }: { d: Disk; project: stri
       <span>
         <span className="text-muted">Custom image </span>
         {link ? (
-          <Link to="/projects/$project/custom-images/$name" params={{ project, name: custom }} className="font-mono text-[12.5px] text-accent hover:underline">
-            {custom}
-          </Link>
+          <CustomImageLink name={custom} />
         ) : (
           <span className="font-mono">{custom}</span>
         )}
@@ -156,9 +121,7 @@ export function DiskSource({ d, project, link = true }: { d: Disk; project: stri
     <span>
       <span className="text-muted">Image </span>
       {link ? (
-        <Link to="/projects/$project/images/$name" params={{ project, name: img }} className="font-mono text-[12.5px] text-accent hover:underline">
-          {img}
-        </Link>
+        <ImageLink name={img} />
       ) : (
         <span className="font-mono">{img}</span>
       )}

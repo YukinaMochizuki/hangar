@@ -14,7 +14,7 @@ import { PageHead } from "@/components/page";
 import { Topbar } from "@/components/shell";
 import { ErrorNotice, SkeletonRows } from "@/components/states";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
-import { Card, Led } from "@/components/ui";
+import { Card, StateText } from "@/components/ui";
 import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { isUnavailable, useMonitoringAlerts, useMonitoringOverview, type Health, type NodeLayers, type Overview, type SeriesRange } from "@/lib/monitoring";
@@ -25,12 +25,7 @@ import { Cordoned, Readiness } from "@/pages/nodes";
 /** A layer's state as a row's cell: its LED and its word. */
 function HealthCell({ health }: { health?: Health }) {
   if (!health) return <span className="text-subtle">—</span>;
-  return (
-    <span className="flex items-center gap-2">
-      <Led tone={healthTone[health]} />
-      <span className={cn(health === "unknown" && "text-subtle")}>{healthWord[health]}</span>
-    </span>
-  );
+  return <StateText tone={healthTone[health]} label={<span className={cn(health === "unknown" && "text-subtle")}>{healthWord[health]}</span>} className="flex" />;
 }
 
 /**
