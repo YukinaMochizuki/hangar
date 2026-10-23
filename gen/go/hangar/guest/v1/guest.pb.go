@@ -51,8 +51,12 @@ type BootConfig struct {
 	// Set, the guest is this FileShare's server instead of a container: it
 	// has no root disk and no process, and ignores volumes.
 	FileShareServer *FileShareServer `protobuf:"bytes,8,opt,name=file_share_server,json=fileShareServer,proto3" json:"file_share_server,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Set, the guest is a converter VM instead of a container: it has no
+	// root disk, process or network, and ignores volumes. Only the converter
+	// initramfs holds what it runs.
+	ImageConverter *ImageConverter `protobuf:"bytes,9,opt,name=image_converter,json=imageConverter,proto3" json:"image_converter,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *BootConfig) Reset() {
@@ -137,6 +141,13 @@ func (x *BootConfig) GetMachineUid() string {
 func (x *BootConfig) GetFileShareServer() *FileShareServer {
 	if x != nil {
 		return x.FileShareServer
+	}
+	return nil
+}
+
+func (x *BootConfig) GetImageConverter() *ImageConverter {
+	if x != nil {
+		return x.ImageConverter
 	}
 	return nil
 }
@@ -1094,7 +1105,7 @@ var File_hangar_guest_v1_guest_proto protoreflect.FileDescriptor
 
 const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\n" +
-	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a hangar/guest/v1/file_share.proto\"\xf4\x02\n" +
+	"\x1bhangar/guest/v1/guest.proto\x12\x0fhangar.guest.v1\x1a\x1egoogle/protobuf/duration.proto\x1a\x1fhangar/guest/v1/converter.proto\x1a hangar/guest/v1/file_share.proto\"\xbe\x03\n" +
 	"\n" +
 	"BootConfig\x122\n" +
 	"\aprocess\x18\x01 \x01(\v2\x18.hangar.guest.v1.ProcessR\aprocess\x12:\n" +
@@ -1107,7 +1118,8 @@ const file_hangar_guest_v1_guest_proto_rawDesc = "" +
 	"\avolumes\x18\x06 \x03(\v2\x17.hangar.guest.v1.VolumeR\avolumes\x12\x1f\n" +
 	"\vmachine_uid\x18\a \x01(\tR\n" +
 	"machineUid\x12L\n" +
-	"\x11file_share_server\x18\b \x01(\v2 .hangar.guest.v1.FileShareServerR\x0ffileShareServer\"\xdb\x01\n" +
+	"\x11file_share_server\x18\b \x01(\v2 .hangar.guest.v1.FileShareServerR\x0ffileShareServer\x12H\n" +
+	"\x0fimage_converter\x18\t \x01(\v2\x1f.hangar.guest.v1.ImageConverterR\x0eimageConverter\"\xdb\x01\n" +
 	"\x06Volume\x12\x16\n" +
 	"\x06device\x18\x01 \x01(\tR\x06device\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1b\n" +
@@ -1206,37 +1218,39 @@ var file_hangar_guest_v1_guest_proto_goTypes = []any{
 	(*ExecResponse)(nil),        // 14: hangar.guest.v1.ExecResponse
 	(*ExecExit)(nil),            // 15: hangar.guest.v1.ExecExit
 	(*FileShareServer)(nil),     // 16: hangar.guest.v1.FileShareServer
-	(*FileShareMount)(nil),      // 17: hangar.guest.v1.FileShareMount
-	(*durationpb.Duration)(nil), // 18: google.protobuf.Duration
+	(*ImageConverter)(nil),      // 17: hangar.guest.v1.ImageConverter
+	(*FileShareMount)(nil),      // 18: hangar.guest.v1.FileShareMount
+	(*durationpb.Duration)(nil), // 19: google.protobuf.Duration
 }
 var file_hangar_guest_v1_guest_proto_depIdxs = []int32{
 	2,  // 0: hangar.guest.v1.BootConfig.process:type_name -> hangar.guest.v1.Process
 	3,  // 1: hangar.guest.v1.BootConfig.interfaces:type_name -> hangar.guest.v1.Interface
 	1,  // 2: hangar.guest.v1.BootConfig.volumes:type_name -> hangar.guest.v1.Volume
 	16, // 3: hangar.guest.v1.BootConfig.file_share_server:type_name -> hangar.guest.v1.FileShareServer
-	17, // 4: hangar.guest.v1.Volume.file_share:type_name -> hangar.guest.v1.FileShareMount
-	3,  // 5: hangar.guest.v1.SetIPv6Request.interfaces:type_name -> hangar.guest.v1.Interface
-	18, // 6: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
-	18, // 7: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
-	11, // 8: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
-	12, // 9: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
-	13, // 10: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
-	2,  // 11: hangar.guest.v1.ExecStart.process:type_name -> hangar.guest.v1.Process
-	13, // 12: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
-	15, // 13: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
-	8,  // 14: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
-	10, // 15: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
-	6,  // 16: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
-	4,  // 17: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
-	9,  // 18: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
-	14, // 19: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
-	7,  // 20: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
-	5,  // 21: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
-	18, // [18:22] is the sub-list for method output_type
-	14, // [14:18] is the sub-list for method input_type
-	14, // [14:14] is the sub-list for extension type_name
-	14, // [14:14] is the sub-list for extension extendee
-	0,  // [0:14] is the sub-list for field type_name
+	17, // 4: hangar.guest.v1.BootConfig.image_converter:type_name -> hangar.guest.v1.ImageConverter
+	18, // 5: hangar.guest.v1.Volume.file_share:type_name -> hangar.guest.v1.FileShareMount
+	3,  // 6: hangar.guest.v1.SetIPv6Request.interfaces:type_name -> hangar.guest.v1.Interface
+	19, // 7: hangar.guest.v1.StopRequest.grace:type_name -> google.protobuf.Duration
+	19, // 8: hangar.guest.v1.PingResponse.uptime:type_name -> google.protobuf.Duration
+	11, // 9: hangar.guest.v1.ExecRequest.start:type_name -> hangar.guest.v1.ExecStart
+	12, // 10: hangar.guest.v1.ExecRequest.stdin_close:type_name -> hangar.guest.v1.StdinClose
+	13, // 11: hangar.guest.v1.ExecRequest.resize:type_name -> hangar.guest.v1.WindowSize
+	2,  // 12: hangar.guest.v1.ExecStart.process:type_name -> hangar.guest.v1.Process
+	13, // 13: hangar.guest.v1.ExecStart.size:type_name -> hangar.guest.v1.WindowSize
+	15, // 14: hangar.guest.v1.ExecResponse.exit:type_name -> hangar.guest.v1.ExecExit
+	8,  // 15: hangar.guest.v1.GuestAgentService.Ping:input_type -> hangar.guest.v1.PingRequest
+	10, // 16: hangar.guest.v1.GuestAgentService.Exec:input_type -> hangar.guest.v1.ExecRequest
+	6,  // 17: hangar.guest.v1.GuestAgentService.Stop:input_type -> hangar.guest.v1.StopRequest
+	4,  // 18: hangar.guest.v1.GuestAgentService.SetIPv6:input_type -> hangar.guest.v1.SetIPv6Request
+	9,  // 19: hangar.guest.v1.GuestAgentService.Ping:output_type -> hangar.guest.v1.PingResponse
+	14, // 20: hangar.guest.v1.GuestAgentService.Exec:output_type -> hangar.guest.v1.ExecResponse
+	7,  // 21: hangar.guest.v1.GuestAgentService.Stop:output_type -> hangar.guest.v1.StopResponse
+	5,  // 22: hangar.guest.v1.GuestAgentService.SetIPv6:output_type -> hangar.guest.v1.SetIPv6Response
+	19, // [19:23] is the sub-list for method output_type
+	15, // [15:19] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_hangar_guest_v1_guest_proto_init() }
@@ -1244,6 +1258,7 @@ func file_hangar_guest_v1_guest_proto_init() {
 	if File_hangar_guest_v1_guest_proto != nil {
 		return
 	}
+	file_hangar_guest_v1_converter_proto_init()
 	file_hangar_guest_v1_file_share_proto_init()
 	file_hangar_guest_v1_guest_proto_msgTypes[10].OneofWrappers = []any{
 		(*ExecRequest_Start)(nil),

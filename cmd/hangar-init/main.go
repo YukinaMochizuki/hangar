@@ -5,7 +5,9 @@
 // that process ends, it records how on the console and powers the guest off;
 // the host's restart policy decides what comes next. See
 // docs/decisions/guest-agent.md. A boot disk naming a FileShare's server
-// makes the guest that server instead (docs/decisions/file-shares.md).
+// makes the guest that server instead (docs/decisions/file-shares.md), and
+// one naming a converter, booted from the converter initramfs, a converter
+// VM (docs/decisions/custom-images.md).
 package main
 
 import (
@@ -90,6 +92,9 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	cfg, err := boot.ReadConfig()
 	if err != nil {
 		return failed, fmt.Errorf("reading the boot disk: %w", err)
+	}
+	if cfg.GetImageConverter() != nil {
+		return runConverter(logf, started)
 	}
 	if cfg.GetFileShareServer() != nil {
 		return runServer(cfg, logf, started)

@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+// What the node asks of a converter VM: hangar-init, booted with
+// BootConfig.image_converter from the converter initramfs, which holds
+// qemu-img. It reads a file a tenant uploaded for a CustomImage, which the
+// host never parses. See docs/decisions/custom-images.md.
+package hangar.guest.v1;
+
+// ImageConverterService is served by hangar-init in a converter VM,
+// beside GuestAgentService, on the same vsock port and to the host alone.
+service ImageConverterService {
+  // Inspect says what qemu-img info finds the file to be.
+  rpc Inspect(InspectRequest) returns (InspectResponse);
+  // Convert has qemu-img convert write the file, read as the format given
+  // and never probed, onto the target, all zeros, as raw, and answers once
+  // it is written and flushed.
+  rpc Convert(ConvertRequest) returns (ConvertResponse);
+}
+
+// ImageConverter makes a guest a converter VM. The file is its first data
+// disk (/dev/vdc), read-only, and the target, when it has one, its second
+// (/dev/vdd). It reads its boot disk at vdb as every guest does, and never
+// reads vda. It has no network and runs nothing of the tenant's.
+message ImageConverter {}
+
+message InspectRequest {}
+
+message InspectResponse {
+  // The format qemu-img found, such as "raw" or "qcow2".
+  string format = 1;
+  // The size of the disk the file holds, in bytes.
+  int64 virtual_size = 2;
+  // Other files the image would read, as it names them; empty for none.
+  string backing_file = 3;
+  string data_file = 4;
+}
+
+message ConvertRequest {
+  // The format to read the file as: "raw" or "qcow2".
+  string format = 1;
+}
+
+message ConvertResponse {}
