@@ -89,12 +89,15 @@ tenant's the platform would parse as a disk image.
   --max-upload-size` (16Gi); `sha256`, 64 lowercase hex digits, is
   optional: without one each chunk is checked, the whole file not. Both are
   immutable, as the rest of `source`. The image is placed as it is made on
-  the node a machine would be (on one host, the only node), stored as
-  `status.node`; with no node ready it is refused. Toward `disk` it
-  reserves `size`, rounded up to whole Gi, from creation; once the node
-  has read the file, the larger of that and the disk the file holds
-  (`status.virtual_size`, below); and it settles to `used_size` once
-  Ready, as a capture does. It counts toward `custom_images`. Formats
+  the node a machine would be (on one host, the only node), among those
+  that take uploads, stored as `status.node`; with no such node ready it is
+  refused. A node takes uploads, and says so in its status
+  (`custom_image_uploads`), when it has the converter initramfs and a
+  place to stage files; one placed on a node that since takes none still
+  fails at `upload_expires`. Toward `disk` it reserves `size`, rounded up
+  to whole Gi, from creation; once the node has read the file, the larger
+  of that and the disk the file holds (`status.virtual_size`, below); and
+  it settles to `used_size` once Ready, as a capture does. It counts toward `custom_images`. Formats
   other than raw and qcow2, URLs, sharing and copying between nodes are
   not offered.
 - **A file goes up in chunks, in order, resumable.** `GET

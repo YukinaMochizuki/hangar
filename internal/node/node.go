@@ -647,6 +647,8 @@ func (a *Agent) report(ctx context.Context) error {
 	if a.cfg.SharedIPv4.IsValid() {
 		status.SharedIpv4 = a.cfg.SharedIPv4.String()
 	}
+	// Uploads take a place to stage them and a converter.
+	status.CustomImageUploads = a.stager != nil
 	status.Placement = placement(a.hardware(n.GetStatus().GetPlacement()), a.cfg.Placement)
 	status.Conditions = conditions.Set(status.GetConditions(), &metav1.Condition{
 		Type: computeapi.NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",

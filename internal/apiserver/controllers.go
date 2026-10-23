@@ -975,6 +975,16 @@ func (s *Server) resizeFits(ctx context.Context, node string, machine resource.K
 // and disk cannot be overcommitted; vCPUs are shared. If only is not empty,
 // the node of that name is the only one considered. With no fit, it says why.
 func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine, only string, extra uint64) (string, string, error) {
+	if only == "" {
+		return s.pickNodeAmong(ctx, m, nil, "", extra)
+	}
+	return s.pickNodeAmong(ctx, m, func(n *computev1alpha1.Node) bool { return n.GetMetadata().GetName() == only },
+		fmt.Sprintf("its disks or file shares live on node %s, which is not registered", only), extra)
+}
+
+// pickNodeAmong is pickNode among the registered nodes keep keeps, all
+// if nil; none says why there is no fit when it keeps none.
+func (s *Server) pickNodeAmong(ctx context.Context, m *computev1alpha1.Machine, keep func(*computev1alpha1.Node) bool, none string, extra uint64) (string, string, error) {
 	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
 		return "", "", err
@@ -984,10 +994,10 @@ func (s *Server) pickNode(ctx context.Context, m *computev1alpha1.Machine, only 
 		return "", "", fmt.Errorf("machine %s: %w", m.GetMetadata().GetName(), err)
 	}
 	need.disk = add(need.disk, extra)
-	if only != "" {
-		nodes = slices.DeleteFunc(nodes, func(n *computev1alpha1.Node) bool { return n.GetMetadata().GetName() != only })
+	if keep != nil {
+		nodes = slices.DeleteFunc(nodes, func(n *computev1alpha1.Node) bool { return !keep(n) })
 		if len(nodes) == 0 {
-			return "", fmt.Sprintf("its disks or file shares live on node %s, which is not registered", only), nil
+			return "", none, nil
 		}
 	}
 	type candidate struct {

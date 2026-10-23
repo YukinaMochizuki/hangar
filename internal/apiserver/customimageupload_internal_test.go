@@ -171,7 +171,7 @@ func newUploadWorld(t *testing.T, configure func(*Config)) *uploadWorld {
 		&iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Project{Project: "web"}})); err != nil {
 		t.Fatal(err)
 	}
-	nodeWithRoom(t, s, w.system, "n1", 8192)
+	uploadingNode(t, s, w.system, "n1")
 	w.file = bytes.Repeat([]byte("nixos!\n"), uploadFileSize/7+1)[:uploadFileSize]
 	res, err := s.backend(registry.CustomImage).Apply(w.user, uploadImage("img", uploadFileSize, ""))
 	if err != nil {

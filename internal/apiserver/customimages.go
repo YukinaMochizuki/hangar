@@ -280,11 +280,13 @@ func (s *Server) refuseDeletingHeldDisk(ctx context.Context, d *storagev1alpha1.
 // drawCustomImage is the status a new custom image is stored with: its
 // source disk's node, where it is captured, and size, admission having
 // found the disk made, under attach, which the create still holds; or for
-// an upload the node picked to take the file, as a machine's is.
+// an upload the node picked to take the file, as a machine's is, among
+// those that take uploads.
 func drawCustomImage(ctx context.Context, s *Server, obj proto.Message) (proto.Message, error) {
 	ci := obj.(*storagev1alpha1.CustomImage)
 	if ci.GetSpec().GetSource().GetUpload() != nil {
-		node, why, err := s.pickNode(ctx, &computev1alpha1.Machine{}, "", 0)
+		node, why, err := s.pickNodeAmong(ctx, &computev1alpha1.Machine{}, takesUploads,
+			"no node takes uploads: each needs its converter initramfs (docs/runbook/converter.md)", 0)
 		if err != nil {
 			return nil, err
 		}
@@ -308,6 +310,9 @@ func drawCustomImage(ctx context.Context, s *Server, obj proto.Message) (proto.M
 	}
 	return &storagev1alpha1.CustomImageStatus{Node: d.GetStatus().GetNode(), DiskSize: quantity.FormatDisk(wholeGi(size) * quantity.GiB)}, nil
 }
+
+// takesUploads says the node takes files uploaded for custom images.
+func takesUploads(n *computev1alpha1.Node) bool { return n.GetStatus().GetCustomImageUploads() }
 
 // customImageFromNode is what a node's status report of a custom image
 // stores: all the node reports but the apiserver's node and disk size,

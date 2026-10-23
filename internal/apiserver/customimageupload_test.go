@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
@@ -45,6 +46,21 @@ func withNode1(t *testing.T, configure func(*Config)) (*Server, context.Context,
 	return s, system, user
 }
 
+// uploadingNode reports node ready, with room, and taking uploads.
+func uploadingNode(t *testing.T, s *Server, system context.Context, node string) {
+	t.Helper()
+	status := &computev1alpha1.NodeStatus{
+		Capacity:           &computev1alpha1.NodeResources{Cpu: "8", Memory: "8192Mi"},
+		CustomImageUploads: true,
+		Conditions: []*metav1.Condition{{
+			Type: NodeReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
+		}},
+	}
+	if _, err := s.backend(registry.Node).UpdateStatus(asNode(system, node), resource.Key{Name: node}, status, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func uploadFailed(reason string) *metav1.Condition {
 	return &metav1.Condition{Type: CustomImageReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: reason}
 }
@@ -56,8 +72,13 @@ func TestCustomImageUploadAdmission(t *testing.T) {
 
 	_, err := b.Apply(user, uploadImage("img", 1<<20, sha))
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "an upload with no node ready to take it")
-
 	nodeWithRoom(t, s, system, "n1", 8192)
+	_, err = b.Apply(user, uploadImage("img", 1<<20, sha))
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no node takes uploads") {
+		t.Errorf("an upload with no node taking uploads: %v, want failed_precondition saying so", err)
+	}
+
+	uploadingNode(t, s, system, "n1")
 	for name, ci := range map[string]*storagev1alpha1.CustomImage{
 		"no size":                  uploadImage("bad", 0, sha),
 		"a negative size":          uploadImage("bad", -1, sha),
@@ -103,7 +124,7 @@ func TestCustomImageUploadAdmission(t *testing.T) {
 // image to another node.
 func TestAnUploadsNodeSetsItsDiskSizeOnce(t *testing.T) {
 	s, system, user := withNode1(t, func(*Config) {})
-	nodeWithRoom(t, s, system, "n1", 8192)
+	uploadingNode(t, s, system, "n1")
 	if _, err := s.backend(registry.CustomImage).Apply(user, uploadImage("img", 3<<30, "")); err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +151,7 @@ func TestAnUploadsNodeSetsItsDiskSizeOnce(t *testing.T) {
 
 func TestCustomImageUploadQuota(t *testing.T) {
 	s, system, user := withNode1(t, func(*Config) {})
-	nodeWithRoom(t, s, system, "n1", 8192)
+	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi"), CustomImages: proto.Int32(2)})
 	used := func(what string, disk, count int64) {
@@ -185,7 +206,7 @@ func TestCustomImageUploadQuota(t *testing.T) {
 // it. Ready, the image settles at what it holds.
 func TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota(t *testing.T) {
 	s, system, user := withNode1(t, func(*Config) {})
-	nodeWithRoom(t, s, system, "n1", 8192)
+	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
 	used := func(what string, disk, count int64) {
@@ -276,7 +297,7 @@ func TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota(t *testing.T) {
 // at the same time, each of which fits alone, do not both fit.
 func TestUploadsReportedAtOnceAreCountedTogether(t *testing.T) {
 	s, system, user := withNode1(t, func(*Config) {})
-	nodeWithRoom(t, s, system, "n1", 8192)
+	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
 	for _, name := range []string{"a", "b"} {
@@ -312,5 +333,22 @@ func TestUploadsReportedAtOnceAreCountedTogether(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+// TestAnUploadIsPlacedOnANodeThatTakesUploads: of two nodes, the upload
+// goes to the one that takes uploads, though the other has more room.
+func TestAnUploadIsPlacedOnANodeThatTakesUploads(t *testing.T) {
+	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1", "n2"} })
+	waitNode(t, s, "n1")
+	waitNode(t, s, "n2")
+	nodeWithRoom(t, s, system, "n1", 65536)
+	uploadingNode(t, s, system, "n2")
+	res, err := s.backend(registry.CustomImage).Apply(user, uploadImage("img", 1<<20, ""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if node := res.Object.(*storagev1alpha1.CustomImage).GetStatus().GetNode(); node != "n2" {
+		t.Errorf("placed on %s, want n2, the node that takes uploads", node)
 	}
 }

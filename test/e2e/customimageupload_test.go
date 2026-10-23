@@ -454,3 +454,45 @@ func TestReadingAndConvertingAFileAreBoundedApart(t *testing.T) {
 		}
 	}
 }
+
+// TestANodeThatTakesNoUploads: a node without a converter says it takes no
+// uploads, so none is placed on it; one placed there before still expires,
+// rather than wait for ever.
+func TestANodeThatTakesNoUploads(t *testing.T) {
+	w := newIdleWorld(t)
+	w.uploadExpiry = 3 * time.Second
+	w.startAgent()
+	file := bytes.Repeat([]byte("t"), 1500)
+	w.uploadImage("before", int64(len(file)), "")
+	if _, err := w.putChunk("before", file, 0, 500, ""); err != nil {
+		t.Fatal(err)
+	}
+
+	w.stopAgent()
+	w.uploadDir = ""
+	w.startAgent()
+	testutil.Eventually(t, "the node saying it takes no uploads", func() (bool, string) {
+		obj, err := w.root.Get(context.Background(), registry.Node, client.Key{Name: apiservertest.Node})
+		if err != nil {
+			return false, err.Error()
+		}
+		n := obj.(*computev1alpha1.Node)
+		return !n.GetStatus().GetCustomImageUploads() && conditions.IsTrue(n.GetStatus().GetConditions(), "Ready"), fmt.Sprint(n.GetStatus())
+	})
+	_, err := w.root.Create(context.Background(), registry.CustomImage, &storagev1alpha1.CustomImage{
+		Metadata: &metav1.ObjectMeta{Project: project, Name: "after"},
+		Spec: &storagev1alpha1.CustomImageSpec{
+			Source: &storagev1alpha1.CustomImageSource{Source: &storagev1alpha1.CustomImageSource_Upload{
+				Upload: &storagev1alpha1.CustomImageUploadSource{Size: int64(len(file))},
+			}},
+			DefaultUser: "root",
+		},
+	})
+	if connect.CodeOf(err) != connect.CodeFailedPrecondition || !strings.Contains(err.Error(), "no node takes uploads") {
+		t.Errorf("an upload with no node taking uploads: %v, want failed_precondition saying so", err)
+	}
+	ci := w.waitCustomImage("before", "expired", computeapi.CustomImageFailed)
+	if got := readyReason(ci); got != computeapi.ReasonUploadExpired {
+		t.Errorf("the upload placed before failed as %s, want UploadExpired", got)
+	}
+}
