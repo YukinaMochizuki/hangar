@@ -90,11 +90,15 @@ image file is wanted later, as a second way to make one.
 ## Consequences
 
 - **Deleting a CustomImage needs no finalizer.** It is gone at once, and
-  admission refuses new disks of it from then on. Disks already made of it
-  keep working: their volumes are clones of its base, which the node's sweep
-  removes only once the image is gone and no volume on the node is cloned
-  from it. A disk admitted from it but not yet made on its node when it is
-  deleted cannot be made, and says so.
+  admission refuses new disks of it from then on. Disks admitted from it
+  keep working, as disks of a deleted Image do: the apiserver stamps each
+  with the image's uid as it admits it (the reserved annotation
+  `hangarlab.cloud/custom-image`), and its node makes one not made yet from
+  that uid's base, while the base is there. The node's sweep removes the
+  base only once the image is gone, no volume on the node is cloned from
+  it, and no disk admitted from it, bound to the node or to none yet, is
+  still to be made. The deleted image's quota is released at once
+  meanwhile: the platform carries the space a kept base takes.
 - **An image lives on one node**, its source disk's, and disks of it can be
   made only there; nothing copies an image between nodes. With one host,
   that is every disk.

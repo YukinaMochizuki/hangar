@@ -108,7 +108,8 @@ func (a *Agent) sweep(ctx context.Context) error {
 	// goes once no volume is cloned from it, no disk still to be made here
 	// is made from it, and no Image not being deleted names its digest: a
 	// catalogued image stays ready for its next disk. A CustomImage's goes
-	// once no volume is cloned from it and the image is gone; its capture
+	// once no volume is cloned from it, no disk still to be made here was
+	// admitted from it, and the image is gone; its capture
 	// ends with it, and the snapshot it was captured from goes once the
 	// capture no longer needs it.
 	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
@@ -146,9 +147,24 @@ func (a *Agent) sweep(ctx context.Context) error {
 					}
 				}
 				for uid, disk := range bound {
-					if src := disk.GetSpec().GetSource().GetImage(); src.GetName() != "" && src.GetProject() == "" && !made[uid] &&
-						disk.GetMetadata().GetDeleteTime() == nil {
+					src := disk.GetSpec().GetSource().GetImage()
+					if src.GetName() == "" || made[uid] || disk.GetMetadata().GetDeleteTime() != nil {
+						continue
+					}
+					if src.GetProject() == "" {
 						used[digests[src.GetName()]] = true
+					}
+				}
+				// A custom image's base is kept, after the image is gone, for
+				// a disk admitted from it that is still to be made: bound here,
+				// or bound nowhere yet, as a disk of it can be made only on
+				// the node it lives on.
+				for _, o := range disks {
+					disk := o.(*storagev1alpha1.Disk)
+					image := disk.GetMetadata().GetAnnotations()[computeapi.CustomImageOf]
+					if node := disk.GetStatus().GetNode(); image != "" && (node == "" || node == a.cfg.Name) &&
+						!made[disk.GetMetadata().GetUid()] && disk.GetMetadata().GetDeleteTime() == nil {
+						used[driver.CustomImageBase(image)] = true
 					}
 				}
 				for digest := range a.images.keep(used) {

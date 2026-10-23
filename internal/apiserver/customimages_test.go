@@ -451,8 +451,26 @@ func TestADiskFromACustomImage(t *testing.T) {
 	_, err = disks.Apply(user, fromImage("copy", "20Gi", "", "db-img"))
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "a disk of a global image named as the custom one")
 
+	forged := fromImage("copy", "12Gi", "web", "db-img")
+	forged.Metadata.Annotations = map[string]string{computeapi.CustomImageOf: "another-image"}
+	_, err = disks.Apply(user, forged)
+	wantCodeOf(t, err, connect.CodeInvalidArgument, "a disk naming its custom image's uid itself")
 	if _, err := disks.Apply(user, fromImage("copy", "12Gi", "web", "db-img")); err != nil {
 		t.Fatalf("a disk of a Ready custom image: %v", err)
+	}
+	// It carries the image's uid, which names its base even once the
+	// image is gone, and which no apply drops.
+	uid := getCustomImage(t, s, system, "db-img").GetMetadata().GetUid()
+	if got := getDisk(t, s, system, "copy").GetMetadata().GetAnnotations()[computeapi.CustomImageOf]; got != uid {
+		t.Errorf("the disk names custom image %q, want %q", got, uid)
+	}
+	relabelled := fromImage("copy", "12Gi", "web", "db-img")
+	relabelled.Metadata.Labels = map[string]string{"tier": "db"}
+	if _, err := disks.Apply(user, relabelled); err != nil {
+		t.Fatal(err)
+	}
+	if got := getDisk(t, s, system, "copy").GetMetadata().GetAnnotations()[computeapi.CustomImageOf]; got != uid {
+		t.Errorf("an apply without it left the disk naming %q, want %q", got, uid)
 	}
 	vm := vmFromImage("clone", "db-img")
 	vm.Spec.RootDisk.GetFromImage().GetImage().Project = "web"

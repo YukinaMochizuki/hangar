@@ -141,8 +141,9 @@ unreliable on virtio-fs.
   the volume from going. A base whose capture failed is destroyed, and an
   unfinished one is destroyed as the driver starts; the snapshot stays for
   the agent, which removes it once the capture failed for good, and keeps
-  it for a capture cut short. It goes once no volume is cloned from it and
-  its CustomImage is gone (`docs/decisions/custom-images.md`).
+  it for a capture cut short. It goes once no volume is cloned from it, no
+  disk admitted from it is still to be made on the node, and its
+  CustomImage is gone (`docs/decisions/custom-images.md`).
 - **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk

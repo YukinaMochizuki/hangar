@@ -2,9 +2,16 @@ package computeapi
 
 import (
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
+	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 )
+
+// CustomImageOf is the annotation a Disk made from a CustomImage carries:
+// the image's uid, which the apiserver sets as it admits the disk. It names
+// the base the disk is made from on its node even once the image is
+// deleted, and keeps that base until the disk is made.
+const CustomImageOf = registry.Domain + "/custom-image"
 
 // CustomImageFailed says the image's capture failed for good.
 func CustomImageFailed(ci *storagev1alpha1.CustomImage) bool {

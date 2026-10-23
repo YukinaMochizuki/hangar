@@ -270,6 +270,58 @@ func TestACaptureThatStallsFails(t *testing.T) {
 	w.waitHostEmpty()
 }
 
+// TestADiskOfADeletedImageIsMadeFromItsKeptBase: a disk admitted from a
+// Ready image and not made yet keeps the image's base on the node after
+// the image is deleted, sweep after sweep; attached to a machine, it is
+// made from that base and Ready; and the base goes once the disk does.
+func TestADiskOfADeletedImageIsMadeFromItsKeptBase(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	w.applyVM("src", 0)
+	w.waitVMReason("src", "Running")
+	w.applyVM("src", vmStopped)
+	w.waitVMReason("src", computeapi.ReasonStopped)
+	if err := w.captureImage("golden", "src-root"); err != nil {
+		t.Fatal(err)
+	}
+	ci := w.waitCustomImage("golden", "Ready", computeapi.CustomImageReadyNow)
+	key := driver.CustomImageBase(ci.GetMetadata().GetUid())
+	if _, err := w.root.Apply(context.Background(), registry.Disk, &storagev1alpha1.Disk{
+		Metadata: &metav1.ObjectMeta{Project: project, Name: "later"},
+		Spec: &storagev1alpha1.DiskSpec{Size: "12Gi", Source: &storagev1alpha1.DiskSource{Source: &storagev1alpha1.DiskSource_Image{
+			Image: &storagev1alpha1.ImageSource{Name: "golden", Project: project},
+		}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.root.Delete(context.Background(), registry.CustomImage, client.Key{Project: project, Name: "golden"}); err != nil {
+		t.Fatal(err)
+	}
+	w.waitSettled()
+	w.sweeps(3)
+	if bases := w.host.Snapshot().ImageBases; !slices.Contains(bases, key) {
+		t.Fatalf("image bases %v: the base went while a disk is still to be made of it", bases)
+	}
+
+	w.putMachine(diskMachine("vm-later", "later"))
+	d := w.waitDisk("later", "made", func(d *storagev1alpha1.Disk) bool {
+		return conditions.IsTrue(d.GetStatus().GetConditions(), computeapi.DiskReady)
+	})
+	if vol := w.host.Snapshot().Volumes[d.GetMetadata().GetUid()]; vol.Digest != key || vol.Size < 12*gib {
+		t.Errorf("the disk's volume %+v, want a clone of %s", vol, key)
+	}
+
+	w.deleteMachineAndDisk("vm-later", "later")
+	testutil.Eventually(w.t, "the deleted image's base gone with its last disk", func() (bool, string) {
+		bases := w.host.Snapshot().ImageBases
+		return !slices.Contains(bases, key), fmt.Sprint(bases)
+	})
+	w.deleteVM("src")
+	w.deleteImage("noble")
+	w.waitHostEmpty()
+}
+
 // sameVersion says a and b are at the same resource version.
 func sameVersion(a, b *storagev1alpha1.CustomImage) bool {
 	return a.GetMetadata().GetResourceVersion() == b.GetMetadata().GetResourceVersion()

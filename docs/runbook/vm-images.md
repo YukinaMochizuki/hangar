@@ -173,7 +173,8 @@ spec:
 The image counts toward the tenant's `customImages` limit, and toward its
 disk quota at its source's size while it is captured and at `usedSize` once
 Ready. It lives on its source disk's node, and the node keeps it after the
-image is deleted only while disks of it remain.
+image is deleted only while disks of it remain, made or still to be made,
+which then count toward no quota of the image's.
 
 ## Distributions and the platform
 

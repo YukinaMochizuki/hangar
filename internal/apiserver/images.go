@@ -134,6 +134,15 @@ func (s *Server) validateCustomImageSource(ctx context.Context, old, d *storagev
 			}
 			return failedPrecondition("custom image %q is not Ready: %s", src.GetName(), msg)
 		}
+		// Written into the incoming object, which the create stores; the
+		// key is reserved, so only this sets it, and no apply drops it.
+		if d.Metadata == nil {
+			d.Metadata = &metav1.ObjectMeta{}
+		}
+		if d.Metadata.Annotations == nil {
+			d.Metadata.Annotations = map[string]string{}
+		}
+		d.Metadata.Annotations[computeapi.CustomImageOf] = ci.GetMetadata().GetUid()
 	}
 	if old != nil {
 		if was, err := diskBytes(old.GetSpec()); err == nil && wholeGi(was) == wholeGi(size) {

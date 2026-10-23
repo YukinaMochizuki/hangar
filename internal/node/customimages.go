@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -334,16 +335,34 @@ func (a *Agent) getCustomImage(ctx context.Context, project, name string) (*stor
 	return res.Msg.GetCustomImage(), nil
 }
 
-// customImageBase is the key of the base a disk of the custom image src
-// names is cloned from, once the image is Ready on this node.
+// customImageBase is the key of the base a disk of a custom image is
+// cloned from: that of the image it was admitted from (the CustomImageOf
+// annotation), while the base is on this node, even once the image is
+// gone; otherwise its image's, once Ready on this node.
 func (a *Agent) customImageBase(ctx context.Context, d *storagev1alpha1.Disk) (string, error) {
 	src := d.GetSpec().GetSource().GetImage()
+	// The image the disk was admitted from: its base, kept here while the
+	// disk is still to be made, outlives the image.
+	if uid := d.GetMetadata().GetAnnotations()[computeapi.CustomImageOf]; uid != "" {
+		key := driver.CustomImageBase(uid)
+		bases, err := a.cfg.Drivers.Storage.ImageBases(ctx)
+		if err != nil {
+			return "", err
+		}
+		if slices.Contains(bases, key) {
+			return key, nil
+		}
+	}
 	ci, err := a.getCustomImage(ctx, src.GetProject(), src.GetName())
 	switch {
 	case err != nil:
 		return "", err
 	case ci == nil || ci.GetMetadata().GetDeleteTime() != nil:
-		return "", blocked(computeapi.ReasonImageNotReady, fmt.Errorf("custom image %s is gone", src.GetName()))
+		return "", blocked(computeapi.ReasonImageNotReady, fmt.Errorf("custom image %s is gone, and its base with it", src.GetName()))
+	case d.GetMetadata().GetAnnotations()[computeapi.CustomImageOf] != "" &&
+		d.GetMetadata().GetAnnotations()[computeapi.CustomImageOf] != ci.GetMetadata().GetUid():
+		return "", blocked(computeapi.ReasonImageNotReady, fmt.Errorf(
+			"custom image %s is another image of the name than the disk was made from, whose base is gone", src.GetName()))
 	case !computeapi.CustomImageReadyNow(ci):
 		return "", blocked(computeapi.ReasonImageNotReady, fmt.Errorf("custom image %s is not Ready", src.GetName()))
 	case ci.GetStatus().GetNode() != a.cfg.Name:
