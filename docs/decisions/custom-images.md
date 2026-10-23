@@ -108,8 +108,10 @@ tenant's the platform would parse as a disk image.
   the node's count, and `X-Hangar-Chunk-SHA256`, its hex sha256; it
   answers `{received_bytes}`, the new count. Both need
   `storage.customimages.apply` on the project, and nothing of the image is
-  told before. They take every credential; a browser's session counts only
-  on a request whose `Origin` is the console's
+  told before; a `PUT` is held as a stream is
+  (`docs/decisions/authentication.md`), so a revoke ends a chunk under way
+  within 30 seconds. They take every credential; a browser's session
+  counts only on a request whose `Origin` is the console's
   (`docs/decisions/console-design.md`), so a cookie GET without one is
   refused, and the console reads `status.received_bytes` and corrects
   itself from a 409 instead. Refused before any of the body is relayed, as

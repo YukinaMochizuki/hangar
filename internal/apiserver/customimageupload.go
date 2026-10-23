@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -41,6 +42,8 @@ type uploadTarget struct {
 	key       resource.Key
 	ci        *storagev1alpha1.CustomImage
 	call      *nodeCall
+	// release ends the hold on a chunk's credential (auth.Chain.Hold).
+	release func()
 }
 
 // reachUpload authenticates the request, authorizes uploading to the
@@ -48,16 +51,29 @@ type uploadTarget struct {
 // takes no chunks, then begins the call to its node. Nothing about the
 // image is told before the caller is authorized. A browser's session
 // cookie counts only on a request of the console's origin
-// (session.SameOrigin), as everywhere.
-func (s *Server) reachUpload(chain auth.Chain, r *http.Request) (context.Context, *uploadTarget, error) {
+// (session.SameOrigin), as everywhere. A chunk is held as a Connect stream
+// is (auth.Chain.Hold): its credential and its caller's right to apply the
+// image are checked again as it goes, and a refusal ends it, and its call
+// to the node, there.
+func (s *Server) reachUpload(chain auth.Chain, r *http.Request) (_ context.Context, _ *uploadTarget, err error) {
 	name, action, ok := strings.Cut(r.PathValue("nameAction"), ":")
 	if !ok || action != uploadwire.Action {
 		return nil, nil, connect.NewError(connect.CodeNotFound, errors.New("no such path"))
 	}
-	ctx, err := chain.Authenticate(r.Context(), r.Header)
+	ctx, release := r.Context(), func() {}
+	if r.Method == http.MethodPut {
+		ctx, release, err = chain.Hold(ctx, r.Header, s.clock)
+	} else {
+		ctx, err = chain.Authenticate(ctx, r.Header)
+	}
 	if err != nil {
 		return nil, nil, connect.NewError(connect.CodeUnauthenticated, err)
 	}
+	defer func() {
+		if err != nil {
+			release()
+		}
+	}()
 	b := s.backend(registry.CustomImage)
 	p, err := b.begin(ctx)
 	if err != nil {
@@ -67,9 +83,22 @@ func (s *Server) reachUpload(chain auth.Chain, r *http.Request) (context.Context
 	if err := b.checkKey(key); err != nil {
 		return nil, nil, err
 	}
-	if !b.allowed(p, authz.Apply, b.target(key, nil)) {
-		return nil, nil, denied("%s may not upload to %s", p, b.asked(key))
+	mayUpload := func(p auth.Principal) error {
+		if !b.allowed(p, authz.Apply, b.target(key, nil)) {
+			return denied("%s may not upload to %s", p, b.asked(key))
+		}
+		return nil
 	}
+	if err := mayUpload(p); err != nil {
+		return nil, nil, err
+	}
+	auth.Recheck(ctx, func(ctx context.Context) error {
+		p, err := b.begin(ctx)
+		if err != nil {
+			return err
+		}
+		return mayUpload(p)
+	})
 	obj, err := s.get(ctx, registry.CustomImage, key)
 	if err != nil {
 		return nil, nil, err
@@ -93,7 +122,7 @@ func (s *Server) reachUpload(chain auth.Chain, r *http.Request) (context.Context
 	if err != nil {
 		return nil, nil, err
 	}
-	return ctx, &uploadTarget{principal: p, key: key, ci: ci, call: call}, nil
+	return ctx, &uploadTarget{principal: p, key: key, ci: ci, call: call, release: release}, nil
 }
 
 // awaitsUpload refuses an image that takes no chunks: one not uploaded,
@@ -159,10 +188,11 @@ func (s *Server) customImageUpload(chain auth.Chain) http.HandlerFunc {
 			uploadwire.WriteError(w, err)
 			return
 		}
+		defer x.release()
 		defer x.call.release()
 		var state uploadwire.State
 		if r.Method == http.MethodPut {
-			state.ReceivedBytes, err = s.uploadChunk(ctx, r, x)
+			state.ReceivedBytes, err = s.uploadChunk(ctx, w, r, x)
 		} else {
 			state.ReceivedBytes, err = x.received(ctx)
 			state.ChunkSize, state.Size = uploadwire.ChunkSize, x.ci.GetSpec().GetSource().GetUpload().GetSize()
@@ -179,8 +209,14 @@ func (s *Server) customImageUpload(chain auth.Chain) http.HandlerFunc {
 
 // uploadChunk relays the request's body, one chunk, to the image's node,
 // a message at a time, once its range and sha256 say it can count, and
-// returns the bytes the node then holds.
-func (s *Server) uploadChunk(ctx context.Context, r *http.Request, x *uploadTarget) (int64, error) {
+// returns the bytes the node then holds. A recheck that refuses the caller
+// ends it, the body's read and the node's call among it, with the refusal.
+func (s *Server) uploadChunk(ctx context.Context, w http.ResponseWriter, r *http.Request, x *uploadTarget) (received int64, err error) {
+	defer func() {
+		if ended := auth.Ended(ctx); ended != nil && err != nil {
+			received, err = 0, ended
+		}
+	}()
 	size := x.ci.GetSpec().GetSource().GetUpload().GetSize()
 	first, n, total, err := uploadwire.ParseContentRange(r.Header.Get("Content-Range"))
 	switch {
@@ -208,6 +244,13 @@ func (s *Server) uploadChunk(ctx context.Context, r *http.Request, x *uploadTarg
 	// all relayed.
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	// Ended too by a recheck refusing the caller, which also cuts short a
+	// read of a body that comes slowly.
+	defer context.AfterFunc(ctx, func() {
+		if auth.Ended(ctx) != nil {
+			_ = http.NewResponseController(w).SetReadDeadline(time.Now())
+		}
+	})()
 	stream := x.call.nodes.UploadCustomImage(ctx)
 	if err := stream.Send(&nodev1.UploadCustomImageRequest{Message: &nodev1.UploadCustomImageRequest_Chunk{Chunk: &nodev1.UploadChunk{
 		ImageUid: x.ci.GetMetadata().GetUid(), Offset: first, Length: n, Sha256: sum,

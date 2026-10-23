@@ -159,7 +159,9 @@ credentials. The node is a separate root process on the same host.
     when it let the stream in (`auth.Recheck`). For a watch, that is
     platform membership and, for a watch of one project, the right to
     watch there. For an exec, an SSH tunnel or a log followed, it is
-    membership and the machine's capability. That catches the
+    membership and the machine's capability. For a chunk of a custom
+    image's upload, a `PUT` held as a stream is, it is the right to apply
+    the image. That catches the
     RoleBinding that granted access being deleted, and membership
     being taken away. A watch also judges each event as it comes. A
     stream that sends something without registering a decision is
@@ -169,7 +171,9 @@ credentials. The node is a separate root process on the same host.
   `Unauthenticated` for the credential, `PermissionDenied` for a
   decision. A Connect stream ends with that error; a WebSocket closes with
   4000 plus the code, whatever it is doing, even blocked writing to a
-  client that reads nothing. A client can tell either from a dropped
+  client that reads nothing; a chunk is answered 401 or 403, its read of
+  a body that comes slowly cut short and its call to the node ended, so
+  nothing of it counts. A client can tell each from a dropped
   connection. So a revoke ends the stream within 30 seconds.
 
   A round that cannot decide refuses nothing. That is a round where the

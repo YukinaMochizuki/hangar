@@ -613,3 +613,87 @@ func TestUploadsCountAgainstTheCallsToNodes(t *testing.T) {
 		return err == nil
 	})
 }
+
+// TestAChunkEndsWithWhatLetItIn: a chunk is held as a stream is: once its
+// caller's CLI token is revoked, or the binding that let them apply the
+// image deleted, the next recheck ends it, and its call to the node, while
+// the node writes it or while its body comes slowly; nothing of it counts.
+func TestAChunkEndsWithWhatLetItIn(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		slowBody bool
+		revoke   func(*uploadWorld, *testing.T)
+		code     connect.Code
+		status   int
+	}{
+		{"token revoked, the node writing", false, func(w *uploadWorld, t *testing.T) {
+			if _, err := w.s.sessions.RevokePrincipal(t.Context(), bob); err != nil {
+				t.Fatal(err)
+			}
+		}, connect.CodeUnauthenticated, http.StatusUnauthorized},
+		{"binding deleted, the body coming slowly", true, func(w *uploadWorld, t *testing.T) {
+			if _, err := w.s.backend(registry.RoleBinding).Delete(w.system, resource.Key{Name: "bob-web"}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}, connect.CodePermissionDenied, http.StatusForbidden},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := newUploadWorld(t, nil)
+			tokens, err := w.s.sessions.StartCLI(t.Context(), bob)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !tt.slowBody {
+				w.node.mu.Lock()
+				w.node.hold = make(chan struct{})
+				w.node.mu.Unlock()
+			}
+			pr, pw := io.Pipe()
+			defer func() { _ = pw.Close() }()
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, w.url+uploadwire.Path("web", "img"), pr)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.ContentLength = 2000
+			req.Header.Set("Authorization", "Bearer "+tokens.Access.Reveal())
+			req.Header.Set("Content-Range", uploadwire.ContentRange(0, 2000, uploadFileSize))
+			req.Header.Set(uploadwire.ChunkSHA256, chunkSum(w.file[:2000]))
+			type answer struct {
+				status int
+				err    error
+			}
+			done := make(chan answer, 1)
+			go func() {
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					done <- answer{err: err}
+					return
+				}
+				defer func() { _ = resp.Body.Close() }()
+				done <- answer{resp.StatusCode, uploadwire.ReadError(resp)}
+			}()
+			if tt.slowBody {
+				if _, err := pw.Write(w.file[:1000]); err != nil {
+					t.Fatal(err)
+				}
+				// The apiserver reads on for the rest of the piece it relays.
+				testutil.Eventually(t, "the chunk's call to the node", func() bool {
+					streams, _ := w.node.counts()
+					return streams == 1
+				})
+			} else {
+				go func() { _, _ = pw.Write(w.file[:2000]) }()
+				<-w.node.held
+			}
+			tt.revoke(w, t)
+			w.clock.Advance(auth.RecheckInterval)
+			a := <-done
+			if a.status != tt.status || connect.CodeOf(a.err) != tt.code {
+				t.Errorf("the chunk: %d %v, want %d %s", a.status, a.err, tt.status, tt.code)
+			}
+			if got := w.node.file(w.img); len(got) != 0 {
+				t.Errorf("the node holds %d bytes of a chunk ended", len(got))
+			}
+		})
+	}
+}
