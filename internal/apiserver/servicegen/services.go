@@ -46,6 +46,7 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(networkv1alpha1connect.NewPublicEndpointServiceHandler(&publicEndpointService{b: backends(registry.PublicEndpoint)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
 	mux.Handle(secretsv1alpha1connect.NewSecretServiceHandler(&secretService{b: backends(registry.Secret)}, opts...))
+	mux.Handle(storagev1alpha1connect.NewCustomImageServiceHandler(&customImageService{b: backends(registry.CustomImage)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewDiskServiceHandler(&diskService{b: backends(registry.Disk)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewFileShareServiceHandler(&fileShareService{b: backends(registry.FileShare)}, opts...))
 	mux.Handle(storagev1alpha1connect.NewImageServiceHandler(&imageService{b: backends(registry.Image)}, opts...))
@@ -1124,6 +1125,73 @@ func (s *secretService) UpdateSecretStatus(ctx context.Context, req *connect.Req
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha13.UpdateSecretStatusResponse{Secret: obj.(*v1alpha13.Secret)}), nil
+}
+
+type customImageService struct {
+	b resource.Backend
+}
+
+func (s *customImageService) GetCustomImage(ctx context.Context, req *connect.Request[v1alpha14.GetCustomImageRequest]) (*connect.Response[v1alpha14.GetCustomImageResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.GetCustomImageResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
+}
+
+func (s *customImageService) ListCustomImages(ctx context.Context, req *connect.Request[v1alpha14.ListCustomImagesRequest]) (*connect.Response[v1alpha14.ListCustomImagesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha14.ListCustomImagesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha14.CustomImage))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *customImageService) WatchCustomImages(ctx context.Context, req *connect.Request[v1alpha14.WatchCustomImagesRequest], stream *connect.ServerStream[v1alpha14.WatchCustomImagesResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha14.WatchCustomImagesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.CustomImage = ev.Object.(*v1alpha14.CustomImage)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *customImageService) ApplyCustomImage(ctx context.Context, req *connect.Request[v1alpha14.ApplyCustomImageRequest]) (*connect.Response[v1alpha14.ApplyCustomImageResponse], error) {
+	in := req.Msg.GetCustomImage()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("custom_image is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.ApplyCustomImageResponse{CustomImage: res.Object.(*v1alpha14.CustomImage), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *customImageService) DeleteCustomImage(ctx context.Context, req *connect.Request[v1alpha14.DeleteCustomImageRequest]) (*connect.Response[v1alpha14.DeleteCustomImageResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.DeleteCustomImageResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
+}
+
+func (s *customImageService) UpdateCustomImageStatus(ctx context.Context, req *connect.Request[v1alpha14.UpdateCustomImageStatusRequest]) (*connect.Response[v1alpha14.UpdateCustomImageStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha14.UpdateCustomImageStatusResponse{CustomImage: obj.(*v1alpha14.CustomImage)}), nil
 }
 
 type diskService struct {

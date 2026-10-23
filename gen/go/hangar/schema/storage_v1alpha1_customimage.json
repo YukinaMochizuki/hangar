@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.CustomImageDiskSource": {
+      "additionalProperties": false,
+      "description": "CustomImageDiskSource names the Disk an image is captured from.",
+      "properties": {
+        "name": {
+          "description": "Names a Disk in the image's project.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.CustomImageSource": {
+      "additionalProperties": false,
+      "description": "CustomImageSource is what an image is captured from.",
+      "properties": {
+        "disk": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageDiskSource",
+          "description": "A Disk in the image's project, captured as it is when the image is made. The disk must have been made on a node, and every machine it is attached to must be stopped; until the image is snapshotted, none of them can start and no machine can attach it.\n\nSet at most one of disk."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.CustomImageSpec": {
+      "additionalProperties": false,
+      "description": "CustomImageSpec says where an image comes from and what it is.",
+      "properties": {
+        "defaultUser": {
+          "description": "The user the image's cloud-init makes, such as \"ubuntu\", whom hangar ssh logs in as unless told another; empty, it must be told.",
+          "type": "string"
+        },
+        "minDiskSize": {
+          "description": "The smallest disk made from it, a quantity such as \"10Gi\"; empty is the image's own size, status.disk_size.",
+          "type": "string"
+        },
+        "os": {
+          "description": "What the image holds, for people choosing one, such as \"ubuntu\" and \"24.04\".",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageSource",
+          "description": "What the image is captured from; it cannot change once the image is made."
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.CustomImageStatus": {
+      "additionalProperties": false,
+      "description": "CustomImageStatus is what the apiserver and the image's node found. The apiserver writes node and disk_size as the image is made; the node writes the conditions and used_size.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "diskSize": {
+          "description": "The source disk's size, in whole Gi: the smallest disk made from the image.",
+          "type": "string"
+        },
+        "node": {
+          "description": "Names the Node the image lives on: its source disk's. Disks made from the image are made there.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "usedSize": {
+          "description": "What the image holds, rounded up to whole Gi, once it is Ready: what it counts toward the disk quota. Until then it counts as disk_size.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "CustomImage is a disk image of a project's own, captured from one of its Disks, such as a stopped VM's root disk, that the project's disks are then made from as they are from an Image. It is an independent copy: the source disk can be started, changed or deleted once the image is snapshotted. The platform does not change what it holds; run \"cloud-init clean --machine-id\" in the guest before stopping it, so each VM made from the image is a new instance. See docs/decisions/custom-images.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "storage.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "CustomImage",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "CustomImage",
+  "type": "object"
+}

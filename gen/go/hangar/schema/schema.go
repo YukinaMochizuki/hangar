@@ -54,6 +54,9 @@ var networkv1alpha1SecurityGroup []byte
 //go:embed secrets_v1alpha1_secret.json
 var secretsv1alpha1Secret []byte
 
+//go:embed storage_v1alpha1_customimage.json
+var storagev1alpha1CustomImage []byte
+
 //go:embed storage_v1alpha1_disk.json
 var storagev1alpha1Disk []byte
 
@@ -107,6 +110,8 @@ func Get(group, version, kind string) ([]byte, bool) {
 		return networkv1alpha1SecurityGroup, true
 	case "secrets/v1alpha1/Secret":
 		return secretsv1alpha1Secret, true
+	case "storage/v1alpha1/CustomImage":
+		return storagev1alpha1CustomImage, true
 	case "storage/v1alpha1/Disk":
 		return storagev1alpha1Disk, true
 	case "storage/v1alpha1/FileShare":

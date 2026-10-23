@@ -201,6 +201,16 @@ var (
 		Message:    (*v1alpha13.Secret)(nil).ProtoReflect().Type(),
 		Service:    "hangar.secrets.v1alpha1.SecretService",
 	}
+	CustomImage = Resource{
+		Group:      "storage",
+		Version:    "v1alpha1",
+		Kind:       "CustomImage",
+		Plural:     "customimages",
+		ShortNames: []string{"cimg"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha14.CustomImage)(nil).ProtoReflect().Type(),
+		Service:    "hangar.storage.v1alpha1.CustomImageService",
+	}
 	Disk = Resource{
 		Group:      "storage",
 		Version:    "v1alpha1",
@@ -281,6 +291,7 @@ var All = []Resource{
 	PublicEndpoint,
 	SecurityGroup,
 	Secret,
+	CustomImage,
 	Disk,
 	FileShare,
 	Image,
