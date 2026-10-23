@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
@@ -32,10 +34,11 @@ var uploadedFrom = regexp.MustCompile(`uploading [a-z0-9-]+: ([0-9.]+ [KMG]?i?B)
 // is; the real converter VM converts it, and a VM boots from the image,
 // finishes cloud-init and takes hangar ssh. That VM's disk is captured as
 // a new CustomImage, which becomes Ready. Raw files ending in a VHD footer
-// and starting with VHDX's signature are attached as raw, whatever the
-// converter then makes of them. A crafted qcow2 naming a data
-// file, and one holding a disk over the bound, are each refused, leaving
-// no base (minutes, as the cloud image tests).
+// and starting with VHDX's signature are attached as raw: the first is
+// converted as raw, the second refused by qemu-img in the converter. A
+// crafted qcow2 naming a data file, one naming a backing file, a vmdk, and
+// a qcow2 holding a disk over the bound, are each refused, leaving no base
+// (minutes, as the cloud image tests).
 func TestACustomImageUploadedFromAQcow2(t *testing.T) {
 	if installed {
 		t.Skip("the installed agent's converter is the release's, and its bounds the host's")
@@ -54,7 +57,7 @@ func TestACustomImageUploadedFromAQcow2(t *testing.T) {
 		for _, vm := range []string{"uploaded-vm"} {
 			_, _ = c.tryCLI(nil, "delete", "vm", vm)
 		}
-		for _, img := range []string{"noble-up", "noble-again", "datafile", "huge", "vhdfooter", "vhdx"} {
+		for _, img := range []string{"noble-up", "noble-again", "datafile", "backing", "vmdk", "huge", "vhdfooter", "vhdx"} {
 			_, _ = c.tryCLI(nil, "delete", "cimg", img)
 		}
 	}()
@@ -210,25 +213,35 @@ spec:
 	})
 	vr := conditions.Find(image("vhdx").GetStatus().GetConditions(), computeapi.CustomImageReady)
 	t.Logf("a raw file starting with VHDX's signature: Ready %s %s: %s", vr.GetStatus(), vr.GetReason(), vr.GetMessage())
-	if strings.Contains(vr.GetMessage(), "DiskImageTypeMismatch") || strings.Contains(vr.GetMessage(), "stopped before its agent answered") ||
-		(vr.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_TRUE && vr.GetReason() != computeapi.ReasonInvalidImage) {
-		t.Errorf("a raw file starting with VHDX's signature: %s %s; want it converted, or refused by qemu-img in the converter", vr.GetReason(), vr.GetMessage())
+	// qemu-img probes the file as VHDX, and finds no header: not Cloud
+	// Hypervisor, which never sees the signature.
+	if vr.GetStatus() != metav1.ConditionStatus_CONDITION_STATUS_FALSE || vr.GetReason() != computeapi.ReasonInvalidImage ||
+		!strings.Contains(vr.GetMessage(), "No valid VHDX header found") {
+		t.Errorf("a raw file starting with VHDX's signature: %s %s: %s; want InvalidImage, qemu-img finding no VHDX header", vr.GetStatus(), vr.GetReason(), vr.GetMessage())
 	}
 
 	// Crafted files, refused, no base left.
-	crafted := func(name, size string, opts ...string) string {
+	crafted := func(name, format, size string, opts ...string) string {
 		t.Helper()
-		path := filepath.Join(dir, name+".qcow2")
-		if out, err := exec.Command("qemu-img", append(append([]string{"create", "-q", "-f", "qcow2"}, opts...), path, size)...).CombinedOutput(); err != nil {
+		path := filepath.Join(dir, name+"."+format)
+		args := append(append([]string{"create", "-q", "-f", format}, opts...), path)
+		if size != "" {
+			args = append(args, size)
+		}
+		if out, err := exec.Command("qemu-img", args...).CombinedOutput(); err != nil {
 			t.Fatalf("qemu-img create: %v: %s", err, out)
 		}
 		return path
 	}
+	base := crafted("base", "qcow2", "64M")
 	for _, tt := range []struct {
-		name, file, reason string
+		name, file, reason, says string
 	}{
-		{"datafile", crafted("datafile", "64M", "-o", "data_file="+filepath.Join(dir, "data.raw")), computeapi.ReasonInvalidImage},
-		{"huge", crafted("huge", "30G"), computeapi.ReasonImageTooLarge},
+		{"datafile", crafted("datafile", "qcow2", "64M", "-o", "data_file="+filepath.Join(dir, "data.raw")), computeapi.ReasonInvalidImage, "another file"},
+		// Of the backing file's size, which it names by its path here.
+		{"backing", crafted("backing", "qcow2", "", "-b", base, "-F", "qcow2"), computeapi.ReasonInvalidImage, "another file"},
+		{"vmdk", crafted("vmdk", "vmdk", "64M"), computeapi.ReasonInvalidImage, `"vmdk", not raw or qcow2`},
+		{"huge", crafted("huge", "qcow2", "30G"), computeapi.ReasonImageTooLarge, "more than"},
 	} {
 		out, err := c.tryCLIStderr("image", "upload", tt.file, "--name", tt.name)
 		if err != nil {
@@ -239,25 +252,121 @@ spec:
 		})
 		ci := image(tt.name)
 		ready := conditions.Find(ci.GetStatus().GetConditions(), computeapi.CustomImageReady)
-		if ready.GetReason() != tt.reason {
-			t.Errorf("%s: Ready %s (%s), want %s", tt.name, ready.GetReason(), ready.GetMessage(), tt.reason)
+		if ready.GetReason() != tt.reason || !strings.Contains(ready.GetMessage(), tt.says) {
+			t.Errorf("%s: Ready %s (%s), want %s saying %q", tt.name, ready.GetReason(), ready.GetMessage(), tt.reason, tt.says)
 		}
 		t.Logf("%s refused: %s: %s", tt.name, ready.GetReason(), ready.GetMessage())
 		if exists(baseOf(ci)) {
 			t.Errorf("%s left its base %s", tt.name, baseOf(ci))
 		}
 	}
-	if left, _ := os.ReadDir(filepath.Join(imageDir, "uploads")); len(left) != 0 {
-		t.Errorf("staged files left: %v", left)
+
+	// Past a project's disk limit: the disk the file holds counts toward
+	// the quota before any base is made, and the image fails, for good,
+	// leaving nothing.
+	c.applyYAML(fmt.Sprintf(`apiVersion: tenancy.hangarlab.cloud/v1alpha1
+kind: Project
+metadata: {name: quota-test}
+spec: {tenant: %s, limits: {disk: 2Gi}}
+`, tenant))
+	defer func() { _, _ = c.tryCLI(nil, "delete", "project", "quota-test") }()
+	if out, err := c.tryCLIStderr("-p", "quota-test", "image", "upload", crafted("overquota", "qcow2", "4G"), "--name", "overquota"); err != nil {
+		t.Fatalf("uploading a qcow2 of 4G past a 2Gi limit: %v: %s", err, out)
 	}
+	var over *storagev1alpha1.CustomImage
+	eventually(t, 10*time.Minute, "the upload past the quota refused", func() (bool, string) {
+		out, err := c.tryCLI(nil, "-p", "quota-test", "get", "cimg", "overquota", "-o", "json")
+		if err != nil {
+			return false, err.Error()
+		}
+		over = &storagev1alpha1.CustomImage{}
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal([]byte(out), over); err != nil {
+			return false, err.Error()
+		}
+		return computeapi.CustomImageFailed(over), fmt.Sprint(over.GetStatus())
+	})
+	or := conditions.Find(over.GetStatus().GetConditions(), computeapi.CustomImageReady)
+	t.Logf("a qcow2 of 4G past a 2Gi limit: %s: %s; virtual_size %d", or.GetReason(), or.GetMessage(), over.GetStatus().GetVirtualSize())
+	if or.GetReason() != computeapi.ReasonQuotaExceeded || !strings.Contains(or.GetMessage(), `project "quota-test"'s disk limit is 2Gi`) ||
+		over.GetStatus().GetVirtualSize() != 4<<30 {
+		t.Errorf("the upload past the quota: %s %s, virtual_size %d; want QuotaExceeded naming the project's limit, 4 GiB read",
+			or.GetReason(), or.GetMessage(), over.GetStatus().GetVirtualSize())
+	}
+	if exists(baseOf(over)) {
+		t.Errorf("the upload past the quota left its base %s", baseOf(over))
+	}
+	eventually(t, time.Minute, "the upload past the quota's file gone", func() (bool, string) {
+		left, _ := os.ReadDir(filepath.Join(imageDir, "uploads"))
+		return len(left) == 0, fmt.Sprint(left)
+	})
+	c.cli("-p", "quota-test", "delete", "cimg", "overquota")
 
 	c.cli("delete", "vm", "uploaded-vm")
 	c.cli("wait", "vm", "uploaded-vm", "--for=delete", "--timeout=3m")
-	for _, img := range []string{"noble-up", "noble-again", "datafile", "huge", "vhdfooter", "vhdx"} {
+	for _, img := range []string{"noble-up", "noble-again", "datafile", "backing", "vmdk", "huge", "vhdfooter", "vhdx"} {
 		c.cli("delete", "cimg", img)
 	}
 	eventually(t, 5*time.Minute, "the images' bases gone", func() (bool, string) {
 		return !exists(baseOf(ci)), ""
+	})
+}
+
+// TestAnUploadsBoundsOnTheHost: on an agent whose --inspect-timeout is
+// shorter than a converter VM's boot, reading a file fails the image as
+// ConvertFailed, saying so, its converter VM ended with no unit left and
+// no base made; on an agent without the converter initramfs, the node says
+// it takes no uploads, and an upload is refused as it is made.
+func TestAnUploadsBoundsOnTheHost(t *testing.T) {
+	if installed {
+		t.Skip("the installed agent's bounds are the host's")
+	}
+	if _, err := os.Stat(vmtest.Artifacts().ConverterInitramfs); err != nil {
+		t.Fatalf("%v (make guest-converter builds it)", err)
+	}
+	raw := filepath.Join(t.TempDir(), "small.raw")
+	if err := os.WriteFile(raw, bytes.Repeat([]byte("hangar\n"), 1<<16), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Run("inspect timeout", func(t *testing.T) {
+		c := startClusterWith(t, func(c *cluster) { c.nodeArgs = []string{"--inspect-timeout", "1s"} })
+		defer func() { _, _ = c.tryCLI(nil, "delete", "cimg", "slow") }()
+		if out, err := c.tryCLIStderr("image", "upload", raw, "--name", "slow"); err != nil {
+			t.Fatalf("uploading: %v: %s", err, out)
+		}
+		var ci *storagev1alpha1.CustomImage
+		eventually(t, 5*time.Minute, "the image failed", func() (bool, string) {
+			ci, _ = get(c, "cimg", "slow", &storagev1alpha1.CustomImage{})
+			return computeapi.CustomImageFailed(ci), fmt.Sprint(ci.GetStatus())
+		})
+		r := conditions.Find(ci.GetStatus().GetConditions(), computeapi.CustomImageReady)
+		t.Logf("with --inspect-timeout 1s: %s: %s", r.GetReason(), r.GetMessage())
+		if r.GetReason() != computeapi.ReasonConvertFailed || !strings.Contains(r.GetMessage(), "reading the file took longer than 1s") {
+			t.Errorf("Ready %s %s; want ConvertFailed, reading the file past its bound", r.GetReason(), r.GetMessage())
+		}
+		eventually(t, time.Minute, "the converter VM's unit gone", func() (bool, string) {
+			out, _ := exec.Command("systemctl", "list-units", "--all", "--no-legend", "hangar-vm-convert-*").CombinedOutput()
+			return strings.TrimSpace(string(out)) == "", string(out)
+		})
+		if exec.Command("zfs", "list", "-H", dataset+"/vmbases/customimage-"+ci.GetMetadata().GetUid()).Run() == nil {
+			t.Error("the image left a base")
+		}
+	})
+	t.Run("no converter", func(t *testing.T) {
+		c := startClusterWith(t, func(c *cluster) {
+			c.nodeArgs = []string{"--guest-converter-initramfs", filepath.Join(t.TempDir(), "none.cpio")}
+		})
+		n, _ := get(c, "node", nodeName, &computev1alpha1.Node{})
+		if n.GetStatus().GetCustomImageUploads() {
+			t.Errorf("a node without the converter initramfs says it takes uploads: %v", n.GetStatus())
+		}
+		out, err := c.tryCLIStderr("image", "upload", raw, "--name", "nowhere")
+		t.Logf("uploading with no node taking uploads: %v: %s", err, strings.TrimSpace(out))
+		if err == nil || !strings.Contains(out, "no node takes uploads") {
+			t.Errorf("uploading with no node taking uploads: %v: %s; want it refused, saying so", err, out)
+		}
+		if _, found := get(c, "cimg", "nowhere", &storagev1alpha1.CustomImage{}); found {
+			t.Error("the image refused was made")
+		}
 	})
 }
 
