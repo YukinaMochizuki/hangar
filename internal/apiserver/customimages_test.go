@@ -112,6 +112,12 @@ func stoppedVM(t *testing.T, s *Server, system, user context.Context) {
 	reportMachine(t, s, system, m, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, m.GetMetadata().GetGeneration())
 }
 
+// mounting is c with disk mounted as a volume at /data.
+func mounting(c *computev1alpha1.Container, disk string) *computev1alpha1.Container {
+	c.Spec.Volumes = []*computev1alpha1.ContainerVolume{{Type: "volume", Source: disk, Target: "/data"}}
+	return c
+}
+
 func vmWithRunState(vm *computev1alpha1.VirtualMachine, state computev1alpha1.VirtualMachineRunState) *computev1alpha1.VirtualMachine {
 	vm = proto.Clone(vm).(*computev1alpha1.VirtualMachine)
 	vm.Spec.RunState = state
@@ -214,15 +220,33 @@ func TestCustomImageAdmission(t *testing.T) {
 func TestASourceDiskIsHeldUntilSnapshotted(t *testing.T) {
 	s, system, user := running(t)
 	images, vms, machines, disks := s.backend(registry.CustomImage), s.backend(registry.VirtualMachine), s.backend(registry.Machine), s.backend(registry.Disk)
+	containers := s.backend(registry.Container)
 	stoppedVM(t, s, system, user)
 	madeDisk(t, s, system, user, "data", "n1", "4Gi")
-	for _, ci := range []*storagev1alpha1.CustomImage{customImage("db-img", "db-root"), customImage("data-img", "data")} {
+	// A stopped container mounting a disk, captured too.
+	madeDisk(t, s, system, user, "vol", "n1", "4Gi")
+	app := stopped(mounting(ctr("app"), "vol"))
+	if _, err := containers.Apply(user, app); err != nil {
+		t.Fatal(err)
+	}
+	for _, ci := range []*storagev1alpha1.CustomImage{customImage("db-img", "db-root"), customImage("data-img", "data"), customImage("vol-img", "vol")} {
 		if _, err := images.Apply(user, ci); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	_, err := vms.Apply(user, vmWithRunState(getVM(t, s, system, "db"), vmRunning))
+	_, err := containers.Apply(user, mounting(ctr("app"), "vol"))
+	wantCodeOf(t, err, connect.CodeFailedPrecondition, "starting a container mounting a disk being captured")
+	_, err = containers.Apply(user, mounting(ctr("new"), "data"))
+	wantCodeOf(t, err, connect.CodeFailedPrecondition, "a running container attaching a disk being captured")
+	_, err = containers.Apply(user, stopped(mounting(ctr("new"), "data")))
+	wantCodeOf(t, err, connect.CodeFailedPrecondition, "a stopped container attaching a disk being captured")
+	app.Spec.Env = []*computev1alpha1.EnvVar{{Name: "MODE", Value: "golden"}}
+	if _, err := containers.Apply(user, app); err != nil {
+		t.Errorf("changing a stopped container mounting a disk being captured: %v", err)
+	}
+
+	_, err = vms.Apply(user, vmWithRunState(getVM(t, s, system, "db"), vmRunning))
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "starting a VM whose root disk is being captured")
 	_, err = machines.Apply(system, vmMachine("db", "db-root", "n1", computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING))
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "starting a machine whose root disk is being captured")
@@ -257,9 +281,13 @@ func TestASourceDiskIsHeldUntilSnapshotted(t *testing.T) {
 		t.Errorf("the node rewrote the apiserver's part: %v", st)
 	}
 
-	// Snapshotted, the VM starts.
+	// Snapshotted, the VM and the container start.
 	if _, err := vms.Apply(user, vmWithRunState(getVM(t, s, system, "db"), vmRunning)); err != nil {
 		t.Errorf("starting a VM whose root disk is snapshotted: %v", err)
+	}
+	reportCustomImage(t, s, system, "vol-img", "", snapshotted())
+	if _, err := containers.Apply(user, mounting(ctr("app"), "vol")); err != nil {
+		t.Errorf("starting a container mounting a disk snapshotted: %v", err)
 	}
 	if _, err := machines.Apply(system, vmMachine("db", "db-root", "n1", computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING)); err != nil {
 		t.Errorf("starting a machine whose root disk is snapshotted: %v", err)
@@ -379,6 +407,12 @@ func TestCaptureAndStartAreOneDecision(t *testing.T) {
 		raceCaptures(t, s, user, i, "data", "a running machine attaching it",
 			func() error { _, err := machines.Apply(system, withDisks(machine("ct-x", "n1"), "data")); return err },
 			func() { must(machines.Apply(system, machine("ct-x", "n1"))) })
+		raceCaptures(t, s, user, i, "data", "a running container attaching it",
+			func() error {
+				_, err := s.backend(registry.Container).Apply(user, mounting(ctr("app"), "data"))
+				return err
+			},
+			func() { must(s.backend(registry.Container).Apply(user, ctr("app"))) })
 	}
 }
 
