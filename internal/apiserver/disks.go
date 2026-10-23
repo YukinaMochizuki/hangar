@@ -125,10 +125,12 @@ func listsDisk(spec *computev1alpha1.MachineSpec, disk string) bool {
 	return slices.Contains(computeapi.MachineDisks(spec), disk)
 }
 
-// refuseDeletingAttachedDisk keeps users from deleting a disk a live machine
-// has: the machine could not boot without it. A project being deleted takes its
-// disks with it, and they wait for their machines under DiskInUseFinalizer.
-func refuseDeletingAttachedDisk(ctx context.Context, s *Server, obj proto.Message) error {
+// refuseDeletingDiskInUse keeps users from deleting a disk a live machine
+// has, as the machine could not boot without it, or a custom image still
+// holds, as its node has yet to snapshot it. A project being deleted takes
+// its disks with it, and they wait for their machines under
+// DiskInUseFinalizer.
+func refuseDeletingDiskInUse(ctx context.Context, s *Server, obj proto.Message) error {
 	d := obj.(*storagev1alpha1.Disk)
 	project, err := s.get(ctx, registry.Project, resource.Key{Name: d.GetMetadata().GetProject()})
 	if err != nil {
@@ -136,6 +138,9 @@ func refuseDeletingAttachedDisk(ctx context.Context, s *Server, obj proto.Messag
 	}
 	if project == nil || project.(*tenancyv1alpha1.Project).GetMetadata().GetDeleteTime() != nil {
 		return nil
+	}
+	if err := s.refuseDeletingHeldDisk(ctx, d); err != nil {
+		return err
 	}
 	machines, err := s.machinesUsing(ctx, d.GetMetadata().GetProject(), d.GetMetadata().GetName())
 	if err != nil {

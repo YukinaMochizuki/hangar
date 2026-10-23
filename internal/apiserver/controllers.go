@@ -93,6 +93,9 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.FileShare.Kind, Map: s.vmsInProject, SkipResync: true},
 				// An image fixed lets a root disk be made of it.
 				{Kind: registry.Image.Kind, Map: s.vmsOfImage, SkipResync: true},
+				// So does a custom image Ready, and one snapshotted lets the
+				// machine with its source disk start.
+				{Kind: registry.CustomImage.Kind, Map: s.vmsInProject, SkipResync: true},
 				{Kind: registry.Address.Kind, Map: s.targetsOfAddress(registry.VirtualMachine), SkipResync: true},
 			},
 		},

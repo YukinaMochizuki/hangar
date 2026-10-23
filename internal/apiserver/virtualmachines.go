@@ -143,6 +143,15 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 		}
 		seen[d.GetDisk()] = true
 	}
+	var wasDisks []string
+	ran := false
+	if o, ok := old.(*computev1alpha1.VirtualMachine); ok {
+		wasDisks, ran = vmDisks(o), vmRuns(o.GetSpec())
+	}
+	if err := s.checkHeldDisks(ctx, vm.GetMetadata().GetProject(), "virtual machine "+vm.GetMetadata().GetName(), vmDisks(vm), wasDisks,
+		vmRuns(spec), ran); err != nil {
+		return err
+	}
 	// As a container's: each on a network once, in groups of that network.
 	if err := s.validateInterfaces(ctx, vm.GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
 		return err
@@ -620,7 +629,8 @@ func (s *Server) vmsInProject(ctx context.Context, o store.Object) []controller.
 func (s *Server) vmsOfImage(ctx context.Context, o store.Object) []controller.Key {
 	var keys []controller.Key
 	for _, vo := range s.listVMs(ctx, "") {
-		if vm, ok := decodeVM(vo); ok && vm.GetSpec().GetRootDisk().GetFromImage().GetImage().GetName() == o.Name {
+		if vm, ok := decodeVM(vo); ok && vm.GetSpec().GetRootDisk().GetFromImage().GetImage().GetName() == o.Name &&
+			vm.GetSpec().GetRootDisk().GetFromImage().GetImage().GetProject() == "" {
 			keys = append(keys, controller.Key{Project: vo.Project, Name: vo.Name})
 		}
 	}

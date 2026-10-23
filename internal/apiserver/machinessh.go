@@ -83,20 +83,28 @@ func (s *Server) defaultUser(ctx context.Context, obj proto.Message) (string, er
 	if !ok {
 		return "", nil
 	}
-	image := vm.GetSpec().GetRootDisk().GetFromImage().GetImage().GetName()
+	image := vm.GetSpec().GetRootDisk().GetFromImage().GetImage()
 	if name := vm.GetSpec().GetRootDisk().GetDisk(); name != "" {
 		dobj, err := s.get(ctx, registry.Disk, resource.Key{Project: vm.GetMetadata().GetProject(), Name: name})
 		if err != nil {
 			return "", apiError(err)
 		}
 		if d, ok := dobj.(*storagev1alpha1.Disk); ok {
-			image = d.GetSpec().GetSource().GetImage().GetName()
+			image = d.GetSpec().GetSource().GetImage()
 		}
 	}
-	if image == "" {
+	if image.GetName() == "" {
 		return "", nil
 	}
-	iobj, err := s.get(ctx, registry.Image, resource.Key{Name: image})
+	if image.GetProject() != "" {
+		cobj, err := s.get(ctx, registry.CustomImage, resource.Key{Project: image.GetProject(), Name: image.GetName()})
+		if err != nil {
+			return "", apiError(err)
+		}
+		ci, _ := cobj.(*storagev1alpha1.CustomImage)
+		return ci.GetSpec().GetDefaultUser(), nil
+	}
+	iobj, err := s.get(ctx, registry.Image, resource.Key{Name: image.GetName()})
 	if err != nil {
 		return "", apiError(err)
 	}
