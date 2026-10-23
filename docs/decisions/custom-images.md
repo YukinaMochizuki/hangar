@@ -61,7 +61,10 @@ image file is wanted later, as a second way to make one.
 - **A capture that fails, fails for good.** What it made is destroyed, the
   base and the capture snapshot, and the image says `Ready` False with
   reason `CaptureFailed`; it is never tried again (the disk may be running
-  by then), and the user deletes it and captures again. An agent restarted
+  by then), and the user deletes it and captures again. A copy that takes
+  longer than `hangar-node --capture-timeout` (6 hours by default, a full
+  2 TiB disk at 100 MB/s) fails so too, rather than leaving the image
+  capturing for ever behind a stalled `zfs`. An agent restarted
   mid-capture starts the send again from the snapshot, which it keeps
   until the base is made; a snapshot reported taken and since lost fails
   the image.

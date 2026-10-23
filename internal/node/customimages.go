@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
@@ -26,6 +27,9 @@ import (
 // disk or machine (docs/decisions/custom-images.md).
 type captureMaker struct {
 	storage driver.Storage
+	// timeout bounds one copy, so a stalled one fails rather than leaving
+	// its image capturing.
+	timeout time.Duration
 	// slots bounds the copies made at once.
 	slots   *fifo
 	running sync.WaitGroup
@@ -44,8 +48,8 @@ type captureJob struct {
 	err error
 }
 
-func newCaptureMaker(storage driver.Storage, slots int) *captureMaker {
-	return &captureMaker{storage: storage, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*captureJob{}}
+func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *captureMaker {
+	return &captureMaker{storage: storage, timeout: timeout, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*captureJob{}}
 }
 
 // start runs jobs under ctx from now on and calls notify as each finishes.
@@ -99,14 +103,21 @@ func (m *captureMaker) run(ctx context.Context, j *captureJob, uid string) {
 	notify()
 }
 
-// capture copies the image's snapshot into its base, a slot at a time. A
-// failure leaves no base, and takes the snapshot with it.
+// capture copies the image's snapshot into its base, a slot at a time,
+// within m.timeout of starting. A failure, running out of time among
+// them, leaves no base, and takes the snapshot with it; ctx ending, as the
+// agent stopping or the image going, leaves the snapshot.
 func (m *captureMaker) capture(ctx context.Context, uid string) (driver.ImageBase, error) {
 	if err := m.slots.acquire(ctx); err != nil {
 		return driver.ImageBase{}, err
 	}
 	defer m.slots.release()
-	base, err := m.storage.CaptureImageBase(ctx, uid)
+	bounded, cancel := context.WithTimeout(ctx, m.timeout)
+	defer cancel()
+	base, err := m.storage.CaptureImageBase(bounded, uid)
+	if err != nil && ctx.Err() == nil && bounded.Err() != nil {
+		err = fmt.Errorf("the copy took longer than %v: %w", m.timeout, err)
+	}
 	if err != nil && ctx.Err() == nil {
 		if derr := m.storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
 			err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))

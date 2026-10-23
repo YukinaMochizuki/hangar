@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -227,6 +228,40 @@ func TestACaptureThatFails(t *testing.T) {
 	}
 	w.applyVM("src", vmRunning)
 	w.waitVMReason("src", "Running")
+	if _, err := w.root.Delete(context.Background(), registry.CustomImage, client.Key{Project: project, Name: "golden"}); err != nil {
+		t.Fatal(err)
+	}
+	w.deleteVM("src")
+	w.deleteImage("noble")
+	w.waitHostEmpty()
+}
+
+// TestACaptureThatStallsFails: a copy that takes longer than the agent's
+// capture timeout fails for good, saying so, and leaves nothing.
+func TestACaptureThatStallsFails(t *testing.T) {
+	w := newIdleWorld(t)
+	w.captureTimeout = time.Second
+	w.startAgent()
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	w.applyVM("src", 0)
+	w.waitVMReason("src", "Running")
+	w.applyVM("src", vmStopped)
+	w.waitVMReason("src", computeapi.ReasonStopped)
+	release := w.host.HoldCaptures()
+	defer release()
+	if err := w.captureImage("golden", "src-root"); err != nil {
+		t.Fatal(err)
+	}
+	ci := w.waitCustomImage("golden", "failed", computeapi.CustomImageFailed)
+	if msg := imageCondition(ci, computeapi.CustomImageReady).GetMessage(); !strings.Contains(msg, "took longer than 1s") {
+		t.Errorf("the failure does not say the copy took too long: %q", msg)
+	}
+	testutil.Eventually(w.t, "the stalled copy ended and its snapshot gone", func() (bool, string) {
+		s, n := w.host.Snapshot(), w.host.CapturesUnderWay()
+		return n == 0 && len(s.Captures) == 0 && !slices.Contains(s.ImageBases, driver.CustomImageBase(ci.GetMetadata().GetUid())),
+			fmt.Sprintf("%d under way, %v %v", n, s.Captures, s.ImageBases)
+	})
 	if _, err := w.root.Delete(context.Background(), registry.CustomImage, client.Key{Project: project, Name: "golden"}); err != nil {
 		t.Fatal(err)
 	}

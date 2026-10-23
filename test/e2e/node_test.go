@@ -53,6 +53,9 @@ type world struct {
 	// pullTimeout, if set before the agent starts, bounds preparing an
 	// image.
 	pullTimeout time.Duration
+	// captureTimeout, if set before the agent starts, bounds copying a
+	// custom image's snapshot into its base.
+	captureTimeout time.Duration
 	// dnsUpstreams, if set before the agent starts, are what the networks'
 	// resolvers forward to.
 	dnsUpstreams []netip.AddrPort
@@ -181,6 +184,7 @@ func (w *world) startAgent() {
 		HeartbeatInterval: 50 * time.Millisecond,
 		SweepInterval:     cmp.Or(w.sweepInterval, 100*time.Millisecond),
 		PullTimeout:       w.pullTimeout,
+		CaptureTimeout:    w.captureTimeout,
 		DNSUpstreams:      w.dnsUpstreams,
 		Metadata:          w.metadata,
 		IPv6Prefix:        w.ipv6Prefix,

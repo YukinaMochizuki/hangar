@@ -86,6 +86,10 @@ type Config struct {
 	// MaxPulls bounds the images unpacked at once. Zero means
 	// DefaultMaxPulls.
 	MaxPulls int
+	// CaptureTimeout bounds copying one CustomImage's snapshot into its
+	// base, so a copy that stalls fails, for good, rather than leaving the
+	// image capturing. Zero means DefaultCaptureTimeout.
+	CaptureTimeout time.Duration
 	// DNSUpstreams are the resolvers each network's resolver forwards names
 	// outside its own zone to.
 	DNSUpstreams []netip.AddrPort
@@ -126,6 +130,11 @@ type Config struct {
 // DefaultMaxPulls is how many images a node prepares at once by default:
 // pulls and unpacks share the host's disks and CPUs with running machines.
 const DefaultMaxPulls = 2
+
+// DefaultCaptureTimeout bounds copying a CustomImage's snapshot into its
+// base: room for a full 2 TiB disk copied at 100 MB/s, as a pool of
+// spinning disks does.
+const DefaultCaptureTimeout = 6 * time.Hour
 
 // DefaultImageCacheHigh is how much the images no machine uses may take by
 // default (docs/decisions/node-agent.md).
@@ -254,6 +263,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
+	if cfg.CaptureTimeout == 0 {
+		cfg.CaptureTimeout = DefaultCaptureTimeout
+	}
 	if cfg.MaxPulls == 0 {
 		cfg.MaxPulls = DefaultMaxPulls
 	}
@@ -282,7 +294,7 @@ func New(cfg Config) (*Agent, error) {
 		puller = newPuller(cfg.Drivers.Images, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
 		netsvc = newNetServices(cfg.Drivers.Network, cfg.DNSUpstreams, cfg.Metadata, cfg.Log)
 		images = newImageMaker(cfg.Drivers.DiskImages, cfg.Drivers.Storage, cfg.Clock, cfg.PullTimeout, cfg.MaxPulls)
-		captures = newCaptureMaker(cfg.Drivers.Storage, cfg.MaxPulls)
+		captures = newCaptureMaker(cfg.Drivers.Storage, cfg.CaptureTimeout, cfg.MaxPulls)
 	}
 	a := &Agent{
 		cfg:          cfg,

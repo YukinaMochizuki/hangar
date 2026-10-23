@@ -88,6 +88,7 @@ func main() {
 		reservedMemory = flag.String("reserved-memory", "", "memory kept back for the host, including the ZFS ARC, as a quantity such as 4Gi")
 		reservedCPU    = flag.String("reserved-cpu", "", "CPUs kept back for the host, as a whole number: with the host drivers, no VM runs on them, taken whole cores first")
 		maxPulls       = flag.Int("max-pulls", node.DefaultMaxPulls, "images unpacked at once; fetching them takes no turn")
+		captureTimeout = flag.Duration("capture-timeout", node.DefaultCaptureTimeout, "how long copying a custom image's snapshot into its base may take before the capture fails for good")
 		reservedDisk   = flag.String("reserved-disk", "", "storage kept back from root disks, such as for the image cache, as a quantity such as 50Gi")
 		hostDrivers    = flag.String("drivers", "none", "the host drivers: none, to report the node only; fake, a simulated host; or host, this host's")
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
@@ -155,6 +156,7 @@ func main() {
 		Reserved:       &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
 		Placement:      placement,
 		MaxPulls:       *maxPulls,
+		CaptureTimeout: *captureTimeout,
 		MaxUnpackWork:  hf.maxUnpackWork,
 		Drivers:        d,
 		DNSUpstreams:   upstreams,
