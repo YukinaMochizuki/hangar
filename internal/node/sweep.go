@@ -9,6 +9,8 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/client"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
 // sweep removes what no machine on this node accounts for, and volumes no
@@ -105,9 +107,13 @@ func (a *Agent) sweep(ctx context.Context) error {
 	// The disk controller removes a deleted Disk's own. A disk image's base
 	// goes once no volume is cloned from it, no disk still to be made here
 	// is made from it, and no Image not being deleted names its digest: a
-	// catalogued image stays ready for its next disk.
+	// catalogued image stays ready for its next disk. A CustomImage's goes
+	// once no volume is cloned from it and the image is gone; its capture
+	// ends with it, and the snapshot it was captured from goes once the
+	// capture no longer needs it.
 	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
 	images, _, ierr := a.api.ListAll(ctx, registry.Image, client.ListOptions{})
+	customImages, _, cerr := a.api.ListAll(ctx, registry.CustomImage, client.ListOptions{})
 	if keep(err) {
 		bound := map[string]*storagev1alpha1.Disk{}
 		for _, o := range disks {
@@ -124,7 +130,7 @@ func (a *Agent) sweep(ctx context.Context) error {
 				}
 			}
 			// Read again: a volume that would not go still holds its base.
-			if vols, err := d.Storage.Volumes(ctx); keep(err) && keep(ierr) {
+			if vols, err := d.Storage.Volumes(ctx); keep(err) && keep(ierr) && keep(cerr) {
 				made := map[string]bool{}
 				for _, v := range vols {
 					made[v.DiskUID] = true
@@ -140,12 +146,32 @@ func (a *Agent) sweep(ctx context.Context) error {
 					}
 				}
 				for uid, disk := range bound {
-					if name := disk.GetSpec().GetSource().GetImage().GetName(); name != "" && !made[uid] && disk.GetMetadata().GetDeleteTime() == nil {
-						used[digests[name]] = true
+					if src := disk.GetSpec().GetSource().GetImage(); src.GetName() != "" && src.GetProject() == "" && !made[uid] &&
+						disk.GetMetadata().GetDeleteTime() == nil {
+						used[digests[src.GetName()]] = true
 					}
 				}
 				for digest := range a.images.keep(used) {
 					used[digest] = true
+				}
+				live, captured := map[string]bool{}, map[string]bool{}
+				for _, o := range customImages {
+					ci := o.(*storagev1alpha1.CustomImage)
+					if ci.GetMetadata().GetDeleteTime() != nil {
+						continue
+					}
+					uid := ci.GetMetadata().GetUid()
+					live[uid], used[driver.CustomImageBase(uid)] = true, true
+					captured[uid] = computeapi.CustomImageReadyNow(ci) || computeapi.CustomImageFailed(ci)
+				}
+				capturing := a.captures.keep(live)
+				if captures, err := d.Storage.Captures(ctx); keep(err) {
+					for _, c := range captures {
+						if (!live[c.ImageUID] || captured[c.ImageUID]) && !capturing[c.ImageUID] {
+							a.cfg.Log.Info("removing a snapshot no custom image needs", "image_uid", c.ImageUID, "disk_uid", c.DiskUID)
+							keep(d.Storage.DeleteCapture(ctx, c.ImageUID))
+						}
+					}
 				}
 				if bases, err := d.Storage.ImageBases(ctx); keep(err) {
 					for _, b := range bases {

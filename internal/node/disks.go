@@ -35,6 +35,7 @@ func (a *Agent) diskController() *controller.Controller {
 			// An image changing may let its disks be made. On a resync
 			// every disk is queued already.
 			{Kind: registry.Image.Kind, Map: a.disksOfImage, SkipResync: true},
+			{Kind: registry.CustomImage.Kind, Map: a.disksOfCustomImage, SkipResync: true},
 		},
 		// An image's base made is looked at as soon as it is.
 		Trigger: a.diskTrigger,
@@ -61,7 +62,27 @@ func (a *Agent) disksOfImage(ctx context.Context, o store.Object) []controller.K
 	var keys []controller.Key
 	for _, obj := range objs {
 		d := obj.(*storagev1alpha1.Disk)
-		if d.GetStatus().GetNode() == a.cfg.Name && d.GetSpec().GetSource().GetImage().GetName() == o.Name {
+		src := d.GetSpec().GetSource().GetImage()
+		if d.GetStatus().GetNode() == a.cfg.Name && src.GetName() == o.Name && src.GetProject() == "" {
+			keys = append(keys, controller.Key{Project: d.GetMetadata().GetProject(), Name: d.GetMetadata().GetName()})
+		}
+	}
+	return keys
+}
+
+// disksOfCustomImage maps a custom image to the disks bound to this node
+// made from it.
+func (a *Agent) disksOfCustomImage(ctx context.Context, o store.Object) []controller.Key {
+	objs, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{Project: o.Project})
+	if err != nil {
+		a.cfg.Log.Error("listing disks failed", "error", err)
+		return nil
+	}
+	var keys []controller.Key
+	for _, obj := range objs {
+		d := obj.(*storagev1alpha1.Disk)
+		src := d.GetSpec().GetSource().GetImage()
+		if d.GetStatus().GetNode() == a.cfg.Name && src.GetName() == o.Name && src.GetProject() == o.Project {
 			keys = append(keys, controller.Key{Project: d.GetMetadata().GetProject(), Name: d.GetMetadata().GetName()})
 		}
 	}
@@ -158,6 +179,17 @@ func (a *Agent) makeVolume(ctx context.Context, d *storagev1alpha1.Disk) (driver
 	src := d.GetSpec().GetSource().GetImage()
 	if ok || src == nil {
 		return st.EnsureVolume(ctx, uid, size, have.Digest)
+	}
+	if src.GetProject() != "" {
+		key, err := a.customImageBase(ctx, d)
+		if err != nil {
+			return driver.Volume{}, err
+		}
+		v, err := st.EnsureVolume(ctx, uid, size, key)
+		if errors.Is(err, driver.ErrDiskTooSmall) {
+			return driver.Volume{}, blocked(computeapi.ReasonDiskTooSmall, err)
+		}
+		return v, err
 	}
 	img, err := a.getImage(ctx, src.GetName())
 	if err != nil {

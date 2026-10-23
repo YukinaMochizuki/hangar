@@ -145,6 +145,9 @@ const (
 	ReasonNetworkNotReady = "NetworkNotReady"
 	// ReasonDiskNotReady means an attached disk is not on the node yet.
 	ReasonDiskNotReady = "DiskNotReady"
+	// ReasonImageNotReady means a disk's CustomImage cannot be made a disk
+	// of here: it is gone, not Ready, or on another node.
+	ReasonImageNotReady = "ImageNotReady"
 	// ReasonExportFailed means a file share's server did not take the
 	// export its node told it, and serves the one it had.
 	ReasonExportFailed = "ExportFailed"
