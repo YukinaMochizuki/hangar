@@ -46,10 +46,12 @@ breaking:
 		echo "breaking: main has no proto/ yet"; \
 	fi
 
-# test/e2e alone takes about nine minutes under -race, near go test's default
-# ten-minute limit, and longer on CI, where every package runs at once.
+# test/e2e alone takes about nine minutes under -race on a quiet machine, and
+# on CI, where every package runs at once, it reached the twenty minutes it
+# was given (2026-10, with the custom images' tests). Its own time, not the
+# limit, is what to bring down; until then each package is given forty.
 test:
-	go test -race -timeout 20m ./...
+	go test -race -timeout 40m ./...
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,
@@ -61,7 +63,7 @@ test-root:
 		./internal/node/driver/chvm/
 
 e2e:
-	go test -race -timeout 20m -tags e2e ./test/e2e/...
+	go test -race -timeout 40m -tags e2e ./test/e2e/...
 
 # Real-host tests (L4), on a testbed VM only: they boot guests as root.
 # docs/runbook/testbed.md says what they need and how to provide it.
