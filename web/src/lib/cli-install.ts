@@ -1,8 +1,8 @@
 /**
  * The lines the console shows for getting the CLI and signing in with it:
  * the install line of the release this console came with
- * (deploy/cli/install.sh.in), which also makes a context for this
- * deployment's API, then `hangar login`.
+ * (deploy/cli/install.sh.in, or deploy/cli/install.ps1.in on Windows), which
+ * also makes a context for this deployment's API, then `hangar login`.
  */
 
 export const releasesUrl = "https://github.com/YukinaMochizuki/hangar/releases";
@@ -31,6 +31,14 @@ export function apiEndpoint(origin: string): string | undefined {
   return url.origin;
 }
 
+/** The systems the CLI is installed on in different ways. */
+export type CliPlatform = "unix" | "windows";
+
+/** The platform to show first for a browser on `platform` (navigator.platform). */
+export function defaultCliPlatform(platform: string): CliPlatform {
+  return /^win/i.test(platform) ? "windows" : "unix";
+}
+
 export interface CliSetup {
   /** The lines to run, in order. */
   lines: string[];
@@ -41,13 +49,19 @@ export interface CliSetup {
   releasesUrl?: string;
 }
 
-/** The setup lines for a console of `release` served at `origin`. */
-export function cliSetup(release: string, origin: string, project: string): CliSetup {
+/** The setup lines for a console of `release` served at `origin`, on `platform`. */
+export function cliSetup(release: string, origin: string, project: string, platform: CliPlatform): CliSetup {
   const endpoint = apiEndpoint(origin);
   const after = ["hangar login", `hangar get containers -p ${project}`];
   if (release && endpoint) {
+    const download = `${releasesUrl}/download/${release}`;
     return {
-      lines: [`curl -fsSL ${releasesUrl}/download/${release}/install.sh | sh -s -- --endpoint ${endpoint}`, ...after],
+      lines: [
+        platform === "windows"
+          ? `& ([scriptblock]::Create((irm ${download}/install.ps1))) -Endpoint ${endpoint}`
+          : `curl -fsSL ${download}/install.sh | sh -s -- --endpoint ${endpoint}`,
+        ...after,
+      ],
     };
   }
   const context = endpoint ? new URL(endpoint).hostname.replace(/^api\./, "") : "NAME";

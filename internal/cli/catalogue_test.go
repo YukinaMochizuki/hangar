@@ -23,6 +23,7 @@ var dated = regexp.MustCompile(`20[0-9]{6}`)
 // not a path that moves, and says what it is and whom to log in as;
 // ubuntu-24-04, which disks name, is there.
 func TestTheImageCatalogueApplies(t *testing.T) {
+	needPeerCred(t)
 	w := newWorld(t)
 	w.must("", "config", "set-context", "local", "--endpoint", "unix://"+w.admin, "--auth", "local", "--use")
 	first := w.must("", "apply", "-f", catalogueFile)

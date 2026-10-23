@@ -123,7 +123,12 @@ credentials. The node is a separate root process on the same host.
     in it, mode 0600, written atomically. The CLI refuses a file others may
     read. The default config directory, `…/hangar`, is the CLI's own and is
     kept 0700; a directory `HANGAR_CONFIG` puts it in is left as it is,
-    with a warning if others may read it. It never prints a token, in output or
+    with a warning if others may read it. On Windows, where modes mean
+    nothing, private is a protected DACL granting only the user, SYSTEM
+    and the Administrators, and an owner among them or TrustedInstaller,
+    the rule Win32-OpenSSH holds a private key to
+    (`internal/cli/private_windows.go`); the default directory is under
+    `%APPDATA%`. It never prints a token, in output or
     in an error.
   - `hangar logout` revokes the login; `hangar logout --all` revokes every
     login of the person (`SessionService.RevokeSessions`), which

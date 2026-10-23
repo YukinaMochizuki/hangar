@@ -210,7 +210,12 @@ func (a *app) exec(ctx context.Context, url string, hc *http.Client, creds crede
 	stopSignals := a.relaySignals(s, term, cancel)
 	defer stopSignals()
 	if start.GetStdin() {
-		go s.relayStdin(a.io.In)
+		in := a.io.In
+		// A terminal may read its keys its own way (terminal_windows.go).
+		if t, ok := term.(interface{ Input() io.Reader }); ok {
+			in = t.Input()
+		}
+		go s.relayStdin(in)
 	}
 
 	for {
@@ -261,7 +266,8 @@ func exitCodeOf(e *computev1alpha1.MachineExecExit) int {
 // relaySignals passes signals on to the exec until stop. Without a
 // terminal, SIGINT, SIGTERM, SIGHUP and SIGQUIT go to its process, as
 // docker exec passes them on, and a second SIGINT ends the exec by cancel;
-// with one, SIGWINCH resizes the remote terminal.
+// with one, a change of its size (SIGWINCH, or on Windows what watchSize
+// sees) resizes the remote terminal.
 func (a *app) relaySignals(s *execClient, term Terminal, cancel context.CancelCauseFunc) (stop func()) {
 	c := make(chan os.Signal, 4)
 	var stopNotify func()
@@ -288,7 +294,9 @@ func (a *app) relaySignals(s *execClient, term Terminal, cancel context.CancelCa
 		a.takeInterrupts.Store(&take)
 		stopNotify = a.opts.Signals(c, syscall.SIGHUP, syscall.SIGQUIT)
 	} else {
-		stopNotify = a.opts.Signals(c, syscall.SIGWINCH)
+		stopResized := a.opts.Signals(c, resized)
+		stopWatch := watchSize(term, c)
+		stopNotify = func() { stopWatch(); stopResized() }
 	}
 	done := make(chan struct{})
 	var wg sync.WaitGroup

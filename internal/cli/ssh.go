@@ -171,7 +171,7 @@ func (a *app) forgetHostKey(cmd *cobra.Command, name string) error {
 		kept = append(kept, line...)
 	}
 	if forgot {
-		if err := os.WriteFile(path, kept, 0o600); err != nil {
+		if err := writePrivate(path, kept); err != nil {
 			return err
 		}
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "forgot virtualmachine/%s's host key\n", name)
@@ -218,7 +218,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 		return err
 	}
 	keyFile, certFile := filepath.Join(dir, "id_ed25519"), filepath.Join(dir, "id_ed25519-cert.pub")
-	if err := os.WriteFile(keyFile, pem.EncodeToMemory(block), 0o600); err != nil {
+	if err := writePrivate(keyFile, pem.EncodeToMemory(block)); err != nil {
 		return err
 	}
 	sshPub, err := ssh.NewPublicKey(pub)
@@ -233,7 +233,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(certFile, []byte(res.Msg.GetCertificate()+"\n"), 0o600); err != nil {
+	if err := writePrivate(certFile, []byte(res.Msg.GetCertificate()+"\n")); err != nil {
 		return err
 	}
 	user := login
@@ -243,7 +243,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 	if user == "" {
 		return usageErr("virtualmachine/%s's image names no default user: say whom to log in as, with -l USER", name)
 	}
-	if err := os.MkdirAll(filepath.Dir(a.knownHosts()), 0o700); err != nil {
+	if err := mkdirPrivate(filepath.Dir(a.knownHosts())); err != nil {
 		return err
 	}
 
@@ -252,11 +252,7 @@ func (a *app) runSSH(cmd *cobra.Command, name, login string, remote []string) er
 		proxy = append(proxy, "--context", a.contextName)
 	}
 	proxy = append(proxy, "--project", sc.project, "ssh-proxy", "virtualmachine", name)
-	quoted := make([]string, len(proxy))
-	for i, s := range proxy {
-		quoted[i] = shellQuote(s)
-	}
-	proxyCmd := strings.Join(quoted, " ")
+	proxyCmd := proxyCommand(proxy)
 	for _, p := range []string{keyFile, certFile, a.knownHosts()} {
 		if strings.Contains(p, `"`) {
 			return fmt.Errorf("ssh takes no path with a double quote, as %s has", p)
@@ -328,12 +324,9 @@ func sshLiteral(s string) string { return strings.ReplaceAll(s, "%", "%%") }
 
 // sshPath is a path as an ssh option's value: quoted, as a known_hosts
 // option takes several paths split at blanks, and kept from expanding.
-func sshPath(p string) string { return `"` + sshLiteral(p) + `"` }
-
-// shellQuote quotes s for sh, which runs a ProxyCommand.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
-}
+// Within quotes ssh takes a backslash before a backslash or quote as an
+// escape, so a Windows path is given with slashes, which it also takes.
+func sshPath(p string) string { return `"` + sshLiteral(filepath.ToSlash(p)) + `"` }
 
 // sshProxy relays stdin and stdout to the VM's port 22 until either ends.
 func (a *app) sshProxy(ctx context.Context, name string) error {

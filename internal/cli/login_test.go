@@ -220,12 +220,11 @@ func TestLogin(t *testing.T) {
 		t.Errorf("login did not show the URL to open:\n%s", r.err)
 	}
 	w.noSecrets(r)
-	fi, err := os.Stat(w.credentialsPath())
-	if err != nil || fi.Mode().Perm() != 0o600 {
-		t.Fatalf("credentials file: %v, %v", fi, err)
+	if !isPrivate(t, w.credentialsPath()) {
+		t.Fatalf("credentials file not private: %s", accessOf(t, w.credentialsPath()))
 	}
-	if di, err := os.Stat(filepath.Dir(w.credentialsPath())); err != nil || di.Mode().Perm() != 0o700 {
-		t.Errorf("credentials directory: %v, %v", di.Mode(), err)
+	if dir := filepath.Dir(w.credentialsPath()); !isPrivate(t, dir) {
+		t.Errorf("credentials directory not private: %s", accessOf(t, dir))
 	}
 	l := w.stored()[w.url]
 	if !strings.HasPrefix(l.AccessToken, token.Access) || !strings.HasPrefix(l.RefreshToken, token.Refresh) || l.Email != "alice@example.com" {
@@ -312,11 +311,9 @@ func TestLoginRefusals(t *testing.T) {
 	}
 	w.noSecrets(r)
 
-	if err := os.Chmod(w.credentialsPath(), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	openUp(t, w.credentialsPath())
 	r = w.run("whoami")
-	if r.code == 0 || !strings.Contains(r.err, "chmod 600") {
+	if r.code == 0 || !strings.Contains(r.err, fixHint) {
 		t.Errorf("a credentials file others can read: exit %d %s", r.code, r.err)
 	}
 	w.noSecrets(r)
@@ -494,17 +491,18 @@ func TestConfigDirIsPrivate(t *testing.T) {
 		return result{code, out.String(), errb.String()}
 	}
 	t.Run("the default directory", func(t *testing.T) {
-		xdg := t.TempDir()
-		dir := filepath.Join(xdg, "hangar")
+		home := t.TempDir()
+		dir := filepath.Join(home, "hangar")
 		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		r := run(map[string]string{"XDG_CONFIG_HOME": xdg}, "config", "set-context", "prod", "--endpoint", "https://api.example.com", "--use")
+		openUp(t, dir)
+		r := run(map[string]string{configHome: home}, "config", "set-context", "prod", "--endpoint", "https://api.example.com", "--use")
 		if r.code != 0 {
 			t.Fatal(r.err)
 		}
-		if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm() != 0o700 {
-			t.Errorf("default config directory: %v, %v", fi.Mode(), err)
+		if !isPrivate(t, dir) {
+			t.Errorf("default config directory not private: %s", accessOf(t, dir))
 		}
 		if r.err != "" {
 			t.Errorf("warned about the directory it made private: %s", r.err)
@@ -515,18 +513,20 @@ func TestConfigDirIsPrivate(t *testing.T) {
 		if err := os.Mkdir(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		openUp(t, dir)
+		before := accessOf(t, dir)
 		r := run(map[string]string{"HANGAR_CONFIG": filepath.Join(dir, "config.yaml")}, "config", "set-context", "prod", "--endpoint", "https://api.example.com", "--use")
 		if r.code != 0 {
 			t.Fatal(r.err)
 		}
-		if fi, err := os.Stat(dir); err != nil || fi.Mode().Perm() != 0o755 {
-			t.Errorf("HANGAR_CONFIG's directory was changed: %v, %v", fi.Mode(), err)
+		if after := accessOf(t, dir); after != before {
+			t.Errorf("HANGAR_CONFIG's directory was changed: %s, was %s", after, before)
 		}
 		if !strings.Contains(r.err, "warning: "+dir) {
 			t.Errorf("no warning about %s: %q", dir, r.err)
 		}
-		if fi, err := os.Stat(filepath.Join(dir, "config.yaml")); err != nil || fi.Mode().Perm() != 0o600 {
-			t.Errorf("config.yaml: %v, %v", fi.Mode(), err)
+		if cfg := filepath.Join(dir, "config.yaml"); !isPrivate(t, cfg) {
+			t.Errorf("config.yaml not private: %s", accessOf(t, cfg))
 		}
 	})
 }

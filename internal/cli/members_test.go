@@ -1,7 +1,6 @@
 package cli_test
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -118,9 +117,7 @@ func TestProjectCommands(t *testing.T) {
 	}
 	// project use writes the config, so it looks after the directory as
 	// every command that writes it does.
-	if err := os.Chmod(filepath.Dir(w.config), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	openUp(t, filepath.Dir(w.config))
 	if r := w.run("", "project", "use", "db"); r.code != 0 || !strings.Contains(r.err, "warning: ") || !strings.Contains(r.err, "others can see") {
 		t.Errorf("project use with a config directory others may read: exit %d %q", r.code, r.err)
 	}

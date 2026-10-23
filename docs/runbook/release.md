@@ -13,8 +13,10 @@ copied to a host.
 | File | For |
 |---|---|
 | `hangar-host_TAG_linux_amd64.tar.gz` | A host: the binaries, the guest kernel and initramfs, the converter initramfs (`converter.cpio`, `docs/runbook/converter.md`), the console as `console.tar`, `deploy/` as `deploy.tar`, `VERSION` and their own `SHA256SUMS`, flat, the directory `bootstrap.sh --release` takes once unpacked |
-| `hangar_TAG_OS_ARCH.tar.gz` | The CLI, `hangar` alone, for `linux` and `darwin` on `amd64` and `arm64`. Not Windows: `internal/cli` locks files and drives the terminal through Unix calls |
-| `install.sh` | Installs the CLI (`deploy/cli/install.sh.in`, the tag baked in) |
+| `hangar_TAG_OS_ARCH.tar.gz` | The CLI, `hangar` alone, for `linux` and `darwin` on `amd64` and `arm64` |
+| `hangar_TAG_windows_ARCH.zip` | The CLI for Windows, `hangar.exe` alone, on `amd64` and `arm64` |
+| `install.sh` | Installs the CLI on Linux and macOS (`deploy/cli/install.sh.in`, the tag baked in) |
+| `install.ps1` | Installs the CLI on Windows (`deploy/cli/install.ps1.in`, the tag baked in) |
 | `VERSION` | The commit, the same as the host tar's |
 | `SHA256SUMS` | Over every file above; its digest is in the release notes |
 | `attestation.jsonl` | The build-provenance attestation of every other file |
@@ -28,10 +30,16 @@ fetches by hand (`docs/runbook/host-bootstrap.md`).
 
 The console's overview shows the line that installs the CLI and makes a
 context for its API, for the release it came with
-(`web/src/lib/cli-install.ts`):
+(`web/src/lib/cli-install.ts`), for macOS and Linux or for Windows, the
+browser's own first:
 
 ```sh
 curl -fsSL https://github.com/YukinaMochizuki/hangar/releases/download/TAG/install.sh | sh -s -- --endpoint https://api.<cp-domain>
+hangar login
+```
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/YukinaMochizuki/hangar/releases/download/TAG/install.ps1))) -Endpoint https://api.<cp-domain>
 hangar login
 ```
 
@@ -48,12 +56,21 @@ named after the endpoint's host without `api.` (`--context` names it) and
 makes it current; a context of that name and endpoint is kept as it is, and
 one with another endpoint is left alone.
 
+`install.ps1` does the same on Windows, in Windows PowerShell 5.1 or
+PowerShell 7, with `-Version`, `-Endpoint`, `-Context` and `-Dir`. It
+installs `hangar.exe` from the release's zip into
+`%LOCALAPPDATA%\Programs\hangar` (`-Dir` or `HANGAR_INSTALL_DIR` for
+elsewhere) and adds that directory to the user's `PATH` unless it is on it.
+Without arguments it runs as `irm URL | iex`; with them, as the console's
+line does, through `[scriptblock]::Create`.
+
 So **releases of one minor keep the CLI and the API compatible**: a CLI of
 `v0.4.y` works against an apiserver of any `v0.4.x`. A change that breaks
 that takes the next minor.
 
 `test/install` runs `install.sh` against a stand-in for GitHub (`make
-test`).
+test`), and on Windows `install.ps1` through the same cases; CI's
+`install-windows` job runs those under both PowerShells.
 
 ## Tags
 
@@ -180,6 +197,7 @@ the host's files unpacked, which a testbed installs
 (`docs/runbook/testbed.md`), and `dist/`, the files a release publishes.
 `HANGAR_RELEASE_TAG=TAG` names them for TAG; without it they are named
 `dev-<revision>` and the console shows no install line. Two builds of one
-commit and tag with one toolchain give the same `SHA256SUMS`. A release built by hand is
+commit and tag with one toolchain give the same `SHA256SUMS`; the Windows
+zips are packed by `tools/reprozip` for that. A release built by hand is
 for tests only: it has no attestation, so `hangar-fetch-release` would
 refuse it, and a host never installs one.

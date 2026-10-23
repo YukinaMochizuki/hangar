@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 
 	"connectrpc.com/connect"
@@ -20,8 +20,9 @@ import (
 
 // The CLI's logins live in credentials.yaml next to config.yaml, kept apart
 // so that config.yaml, which `config view` prints and people share, never
-// holds a secret. Only its owner may read it (0600, in a 0700 directory);
-// the CLI refuses a file anyone else can, as ssh does a private key.
+// holds a secret. Only its owner may read it (0600, in a 0700 directory, or
+// on Windows a DACL to match: see private_windows.go); the CLI refuses a
+// file anyone else can, as ssh does a private key.
 
 // credentialsFile is credentials.yaml: the logins, by endpoint.
 type credentialsFile struct {
@@ -43,17 +44,22 @@ func (a *app) credentialsPath() string {
 
 func loadCredentials(path string) (*credentialsFile, error) {
 	f := &credentialsFile{Logins: map[string]*storedLogin{}}
-	fi, err := os.Stat(path)
+	file, err := os.Open(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return f, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("%s is mode %v; it holds your logins, so only you may read it: chmod 600 %s", path, fi.Mode().Perm(), path)
+	defer func() { _ = file.Close() }()
+	who, fix, err := exposure(file)
+	if err != nil {
+		return nil, err
 	}
-	b, err := os.ReadFile(path)
+	if who != "" {
+		return nil, fmt.Errorf("%s may be read by others (%s); it holds your logins, so only you may read it: %s", path, who, fix)
+	}
+	b, err := io.ReadAll(file)
 	if err != nil {
 		return nil, err
 	}
@@ -75,18 +81,14 @@ func (f *credentialsFile) save(path string) error {
 		return err
 	}
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := mkdirPrivate(dir); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".credentials-*.yaml")
+	tmp, err := createPrivateTemp(dir, ".credentials-*.yaml")
 	if err != nil {
 		return err
 	}
 	defer func() { _ = os.Remove(tmp.Name()) }()
-	if err := tmp.Chmod(0o600); err != nil {
-		_ = tmp.Close()
-		return err
-	}
 	if _, err := tmp.Write(b); err != nil {
 		_ = tmp.Close()
 		return err
@@ -105,19 +107,19 @@ func (f *credentialsFile) save(path string) error {
 // unlock: a refresh spends the refresh token, so two hangar processes
 // refreshing at once would look like a stolen token and end the login.
 func lockCredentials(path string) (unlock func(), err error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := mkdirPrivate(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+	if err := lockFile(f); err != nil {
 		_ = f.Close()
 		return nil, err
 	}
 	return func() {
-		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = unlockFile(f)
 		_ = f.Close()
 	}, nil
 }

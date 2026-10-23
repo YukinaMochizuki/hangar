@@ -1,10 +1,10 @@
 package cli_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 )
 
@@ -72,19 +72,15 @@ func TestTokenCommands(t *testing.T) {
 	}
 	view := w.must("", "config", "view", "-o", "json")
 	noSecret(t, secret, view)
-	if err := os.Chmod(file, 0o644); err != nil {
-		t.Fatal(err)
-	}
+	openUp(t, file)
 	r = w.run("", "whoami")
-	if r.code == 0 || !strings.Contains(r.err, "chmod 600") {
+	if r.code == 0 || !strings.Contains(r.err, fixHint) {
 		t.Errorf("a token file others may read: exit %d %q", r.code, r.err)
 	}
 	noSecret(t, secret, r.out, r.err)
 	// Through symlinks, as Kubernetes mounts a secret: token -> ..data/token,
 	// ..data -> a timestamped directory.
-	if err := os.Chmod(file, 0o600); err != nil {
-		t.Fatal(err)
-	}
+	closeUp(t, file)
 	mount := filepath.Join(dir, "mount")
 	stamped := filepath.Join(mount, "..2026_10_16")
 	if err := os.MkdirAll(stamped, 0o700); err != nil {
@@ -105,19 +101,25 @@ func TestTokenCommands(t *testing.T) {
 	}
 	// What a symlink leads to is checked: one others may read is refused.
 	open := filepath.Join(dir, "open.token")
-	if err := os.WriteFile(open, []byte(secret+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(open, []byte(secret+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	openUp(t, open)
 	link := filepath.Join(dir, "link.token")
 	if err := os.Symlink(open, link); err != nil {
 		t.Fatal(err)
 	}
 	// Nor is what is not a regular file read, and a FIFO does not hang it.
+	cases := map[string]string{link: fixHint, dir: "not a regular file"}
 	fifo := filepath.Join(dir, "fifo.token")
-	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
+	switch err := mkfifo(fifo); {
+	case errors.Is(err, errors.ErrUnsupported): // Windows has none
+	case err != nil:
 		t.Fatal(err)
+	default:
+		cases[fifo] = "not a regular file"
 	}
-	for path, want := range map[string]string{link: "chmod 600", dir: "not a regular file", fifo: "not a regular file"} {
+	for path, want := range cases {
 		w.must("", "config", "set-context", "agent", "--endpoint", w.url, "--auth", "token", "--token-file", path, "--project", "web", "--use")
 		r = w.run("", "whoami")
 		if r.code == 0 || !strings.Contains(r.err, want) {
@@ -141,9 +143,8 @@ func TestTokenCommands(t *testing.T) {
 	if r.code != 0 || !strings.Contains(r.out, rotated) {
 		t.Fatalf("token rotate: exit %d %q %q", r.code, r.out, r.err)
 	}
-	fi, err := os.Stat(rotated)
-	if err != nil || fi.Mode().Perm() != 0o600 {
-		t.Fatalf("the secret file: %v, mode %v", err, fi.Mode())
+	if !isPrivate(t, rotated) {
+		t.Fatalf("the secret file not private: %s", accessOf(t, rotated))
 	}
 	b, _ := os.ReadFile(rotated)
 	second := strings.TrimSpace(string(b))

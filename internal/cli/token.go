@@ -73,7 +73,7 @@ func openSecretOut(path string) (*secretOut, error) {
 	if path == "" {
 		return &secretOut{}, nil
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	f, err := createPrivate(path, true)
 	if errors.Is(err, os.ErrExist) {
 		return nil, usageErr("%s exists; the secret goes only to a new file", path)
 	}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -121,7 +122,8 @@ func newWorld(t *testing.T, configure ...func(*apiserver.Config)) *world {
 	namesFree := &atomic.Bool{}
 	uploads := &atomic.Pointer[http.Handler]{}
 	public := httptest.NewServer(routeUploads(freeNames(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches), namesFree), uploads))
-	sock := filepath.Join(t.TempDir(), "node.sock")
+	sockets := socketDir(t)
+	sock := filepath.Join(sockets, "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +133,7 @@ func newWorld(t *testing.T, configure ...func(*apiserver.Config)) *world {
 		ConnContext: auth.ConnContext,
 	}
 	go func() { _ = node.Serve(ln) }()
-	adminSock := filepath.Join(t.TempDir(), "admin.sock")
+	adminSock := filepath.Join(sockets, "admin.sock")
 	adminLn, err := net.Listen("unix", adminSock)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +264,31 @@ type fakeNode struct {
 	machines computev1alpha1connect.MachineServiceClient
 }
 
+// socketDir is a directory for the world's unix sockets, whose paths must
+// be short: 108 bytes on Linux and Windows, which a test's own TempDir,
+// named for the test, can pass.
+func socketDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
+
+// needPeerCred skips a test that acts as the node or as root on the host:
+// their sockets know who calls by SO_PEERCRED, which Windows lacks, as a
+// host is Linux.
+func needPeerCred(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("the node and admin sockets know their peer by SO_PEERCRED, which Windows lacks")
+	}
+}
+
 func (w *world) node() *fakeNode {
+	needPeerCred(w.t)
 	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", w.socket)
 	}}}

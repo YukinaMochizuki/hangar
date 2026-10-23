@@ -8,13 +8,14 @@ import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { ArrowRight, Plus } from "lucide-react";
 import { ChassisArt } from "@/components/chassis-art";
+import { CliSetupCard } from "@/components/cli-setup";
 import { PageBanner } from "@/components/notice";
 import { computeTiles, OtherLimits, otherTiles, QuotaTiles } from "@/components/quota";
 import { Topbar, useProjectName } from "@/components/shell";
 import { EmptyState, ErrorNotice, Skeleton, SkeletonRows } from "@/components/states";
 import { buttonVariants, Card, CardHeader, CopyButton, SizeBadge, StatusDot, phaseLabel } from "@/components/ui";
 import { isNotFound, isPermissionDenied } from "@/lib/api";
-import { cliSetup, consoleRelease } from "@/lib/cli-install";
+import { consoleRelease } from "@/lib/cli-install";
 import { cn } from "@/lib/cn";
 import { ago, date, isLive, machinePath, useMachines, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
@@ -205,34 +206,6 @@ function RecentChanges({ project }: { project: string }) {
 }
 
 
-function FromTheCli({ project }: { project: string }) {
-  const { lines, releasesUrl } = cliSetup(consoleRelease, window.location.origin, project);
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader title="From the CLI" action={<CopyButton text={lines.join("\n")} />} />
-      {releasesUrl && (
-        <p className="px-4 pt-3 text-[12px] text-muted">
-          Linux and macOS builds:{" "}
-          <a className="text-accent underline" href={releasesUrl} target="_blank" rel="noreferrer">
-            releases
-          </a>
-        </p>
-      )}
-      <pre className="overflow-x-auto px-4 pt-3 font-mono text-[12px] leading-6">
-        {lines.map((l) => (
-          <div key={l}>
-            <span className="select-none text-accent">$ </span>
-            {l}
-          </div>
-        ))}
-      </pre>
-      <p className="px-4 pb-3 text-[12px] text-muted">
-        Installs <code className="font-mono">hangar</code> in ~/.local/bin.
-      </p>
-    </Card>
-  );
-}
-
 /**
  * A page banner for each host that has stopped reporting, which the
  * apiserver writes into the Ready condition of every container and VM on it.
@@ -310,7 +283,7 @@ export function Overview() {
           <div className="space-y-5">
             <HostCard project={project} />
             <OtherLimits tiles={otherTiles(p?.status?.limits, p?.status?.usage)} loading={q.isPending} />
-            <FromTheCli project={project} />
+            <CliSetupCard project={project} release={consoleRelease} origin={window.location.origin} />
           </div>
         </div>
       </div>
