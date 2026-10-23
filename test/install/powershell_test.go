@@ -275,11 +275,24 @@ func TestPowerShellInstallsIntoLocalAppData(t *testing.T) {
 func TestPowerShellAddsTheDirToThePathOnce(t *testing.T) {
 	s := newStandIn(t, map[string]release{"v0.2.0": {}})
 	home := t.TempDir()
+	// By the directory itself, not its name: Windows PowerShell's
+	// GetFullPath writes a TEMP of short 8.3 names, as a CI runner's is, in
+	// long ones.
 	count := func() int {
+		want, err := os.Stat(filepath.Join(home, "bin"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		v, _, _ := userPath(t)
 		n := 0
 		for _, e := range strings.Split(v, ";") {
-			if strings.EqualFold(strings.TrimRight(e, `\`), filepath.Join(home, "bin")) {
+			if e == "" {
+				continue
+			}
+			if x, err := registry.ExpandString(e); err == nil {
+				e = x
+			}
+			if fi, err := os.Stat(e); err == nil && os.SameFile(fi, want) {
 				n++
 			}
 		}
