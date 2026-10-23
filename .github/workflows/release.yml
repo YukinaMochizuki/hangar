@@ -3,8 +3,8 @@ name: release
 # Builds the release deploy/release.sh builds for a tag, attests every file
 # of it, and publishes it as the tag's GitHub Release: the host's files as one
 # tar, which hangar-fetch-release downloads and verifies on a host, and the
-# CLI for each platform with the install.sh the console points at
-# (docs/runbook/release.md).
+# CLI for each platform with the install.sh and install.ps1 the console
+# points at (docs/runbook/release.md).
 #
 # Two jobs: build runs the repository's code with a read-only token and no
 # cache from any other run, guest kernel included; publish runs none of it,
@@ -108,11 +108,12 @@ jobs:
             echo "::error::VERSION is $(cat VERSION), not this run's commit $GITHUB_SHA"
             exit 1
           fi
-          # The files a host and install.sh take, named for this tag: a
-          # release without them is one nothing can install.
-          for f in "hangar-host_${TAG}_linux_amd64.tar.gz" install.sh \
+          # The files a host, install.sh and install.ps1 take, named for
+          # this tag: a release without them is one nothing can install.
+          for f in "hangar-host_${TAG}_linux_amd64.tar.gz" install.sh install.ps1 \
             "hangar_${TAG}_linux_amd64.tar.gz" "hangar_${TAG}_linux_arm64.tar.gz" \
-            "hangar_${TAG}_darwin_amd64.tar.gz" "hangar_${TAG}_darwin_arm64.tar.gz"; do
+            "hangar_${TAG}_darwin_amd64.tar.gz" "hangar_${TAG}_darwin_arm64.tar.gz" \
+            "hangar_${TAG}_windows_amd64.zip" "hangar_${TAG}_windows_arm64.zip"; do
             if [ ! -f "$f" ]; then
               echo "::error::the release has no $f"
               exit 1
@@ -156,6 +157,13 @@ jobs:
 
           \`\`\`sh
           curl -fsSL https://github.com/$GH_REPO/releases/download/$TAG/install.sh | sh
+          \`\`\`
+
+          The CLI, for Windows (amd64, arm64), in PowerShell, into
+          \`%LOCALAPPDATA%\\Programs\\hangar\`, which it adds to your PATH:
+
+          \`\`\`powershell
+          irm https://github.com/$GH_REPO/releases/download/$TAG/install.ps1 | iex
           \`\`\`
 
           \`attestation.jsonl\` holds the build-provenance attestations of every

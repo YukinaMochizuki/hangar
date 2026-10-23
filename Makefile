@@ -154,7 +154,8 @@ dev:
 # A release, in bin/release/hangar-<revision>/: host/ is what a host runs,
 # with SHA256SUMS (the binaries, the guest kernel and the initramfs, the
 # console's files as console.tar and deploy/ as deploy.tar), and dist/ what
-# the release workflow publishes, the CLI's archives and install.sh among it
+# the release workflow publishes, the CLI's archives, install.sh and
+# install.ps1 among it
 # (docs/runbook/release.md). HANGAR_RELEASE_TAG=TAG names it. A host
 # installs only releases the release workflow published; this one is for a
 # testbed, which takes host/. Builds the kernel, so it takes

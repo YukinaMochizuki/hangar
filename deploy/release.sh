@@ -15,17 +15,19 @@
 #             (docs/runbook/host-bootstrap.md); a testbed takes this one.
 #   OUT/dist  what .github/workflows/release.yml publishes for a tag:
 #             OUT/host packed as hangar-host_TAG_linux_amd64.tar.gz, the CLI as
-#             hangar_TAG_OS_ARCH.tar.gz for each platform in CLI_PLATFORMS,
-#             install.sh for the CLI (deploy/cli/install.sh.in), VERSION,
-#             and SHA256SUMS over all of them. VERSION is the host's too: a
-#             host checks the tar's attestation for that commit before it
-#             unpacks it (deploy/host/fetch-release.sh).
+#             hangar_TAG_OS_ARCH.tar.gz for each platform in CLI_PLATFORMS
+#             (hangar_TAG_windows_ARCH.zip, with hangar.exe, for Windows),
+#             install.sh and install.ps1 for the CLI (deploy/cli/install.sh.in
+#             and deploy/cli/install.ps1.in), VERSION, and SHA256SUMS over
+#             all of them. VERSION is the host's too: a host checks the
+#             tar's attestation for that commit before it unpacks it
+#             (deploy/host/fetch-release.sh).
 #
 # HANGAR_RELEASE_TAG is the tag the release is for, vMAJOR.MINOR.PATCH with
-# an optional -rc.N. It names the files of OUT/dist, is baked into install.sh,
-# and the console shows the install line for it. Unset, the release is a test
-# build named dev-<first 12 of the revision>, whose console shows no install
-# line.
+# an optional -rc.N. It names the files of OUT/dist, is baked into install.sh
+# and install.ps1, and the console shows the install lines for it. Unset,
+# the release is a test build named dev-<first 12 of the revision>, whose
+# console shows no install line.
 #
 # OUT defaults to bin/release/hangar-<first 12 of the revision>. The build is
 # reproducible: the same commit and tag give the same SHA256SUMS on the same
@@ -41,10 +43,10 @@ shopt -s inherit_errexit
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/.." && pwd)
 
-# The platforms the CLI is released for. Windows is not one: internal/cli
-# locks files and drives the terminal through Unix calls.
-CLI_PLATFORMS=(linux/amd64 linux/arm64 darwin/amd64 darwin/arm64)
-# The same pattern as release.yml, fetch-release.sh and install.sh.in.
+# The platforms the CLI is released for.
+CLI_PLATFORMS=(linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64)
+# The same pattern as release.yml, fetch-release.sh, install.sh.in and
+# install.ps1.in.
 TAG_RE='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$'
 
 log() { printf '%s\n' "$*" >&2; }
@@ -160,18 +162,26 @@ while IFS= read -r f; do
 done < <(cd "$host" && LC_ALL=C ls)
 pack "$host" "$dist/hangar-host_${tag}_linux_amd64.tar.gz" "${host_files[@]}" SHA256SUMS
 
-# The CLI for each platform, the binary alone at the top of its tar.
+# The CLI for each platform, the binary alone at the top of its archive: a
+# tar, or for Windows, whose own tools unpack zip, a zip as reproducible.
 for p in "${CLI_PLATFORMS[@]}"; do
 	os=${p%/*} arch=${p#*/}
+	bin=hangar
+	[ "$os" != windows ] || bin=hangar.exe
 	mkdir "$stage/cli-$os-$arch"
 	CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags=-buildid= \
-		-o "$stage/cli-$os-$arch/hangar" ./cmd/hangar
-	pack "$stage/cli-$os-$arch" "$dist/hangar_${tag}_${os}_${arch}.tar.gz" hangar
+		-o "$stage/cli-$os-$arch/$bin" ./cmd/hangar
+	if [ "$os" = windows ]; then
+		go run ./tools/reprozip -C "$stage/cli-$os-$arch" -o "$dist/hangar_${tag}_${os}_${arch}.zip" "$bin"
+	else
+		pack "$stage/cli-$os-$arch" "$dist/hangar_${tag}_${os}_${arch}.tar.gz" "$bin"
+	fi
 	rm -rf "$stage/cli-$os-$arch"
 done
 cp "$host/VERSION" "$dist/VERSION"
 sed "s/@TAG@/$tag/g" deploy/cli/install.sh.in >"$dist/install.sh"
 chmod 0755 "$dist/install.sh"
+sed "s/@TAG@/$tag/g" deploy/cli/install.ps1.in >"$dist/install.ps1"
 (cd "$dist" && sha256sum -- * >SHA256SUMS.part && mv SHA256SUMS.part SHA256SUMS)
 
 mkdir -p "$(dirname "$out")"
