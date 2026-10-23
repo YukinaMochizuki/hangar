@@ -56,6 +56,10 @@ message NodeStatus {
   // machines' IPv4 leaves as and where PortForwards to them are open; empty
   // when the host has none, and PortForwards to its machines open nowhere.
   string shared_ipv4 = 9;
+  // Whether the node takes uploaded files for custom images, which needs a
+  // converter VM and a place to stage them. Uploads are placed only on
+  // nodes that do.
+  bool custom_image_uploads = 10;
 }
 
 // NodeResources is an amount of compute. Each field is a quantity in

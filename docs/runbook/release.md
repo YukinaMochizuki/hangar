@@ -12,7 +12,7 @@ copied to a host.
 
 | File | For |
 |---|---|
-| `hangar-host_TAG_linux_amd64.tar.gz` | A host: the binaries, the guest kernel and initramfs, the console as `console.tar`, `deploy/` as `deploy.tar`, `VERSION` and their own `SHA256SUMS`, flat, the directory `bootstrap.sh --release` takes once unpacked |
+| `hangar-host_TAG_linux_amd64.tar.gz` | A host: the binaries, the guest kernel and initramfs, the converter initramfs (`converter.cpio`, `docs/runbook/converter.md`), the console as `console.tar`, `deploy/` as `deploy.tar`, `VERSION` and their own `SHA256SUMS`, flat, the directory `bootstrap.sh --release` takes once unpacked |
 | `hangar_TAG_OS_ARCH.tar.gz` | The CLI, `hangar` alone, for `linux` and `darwin` on `amd64` and `arm64`. Not Windows: `internal/cli` locks files and drives the terminal through Unix calls |
 | `install.sh` | Installs the CLI (`deploy/cli/install.sh.in`, the tag baked in) |
 | `VERSION` | The commit, the same as the host tar's |

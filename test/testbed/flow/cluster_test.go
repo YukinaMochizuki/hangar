@@ -347,6 +347,10 @@ func (c *cluster) startNode() {
 		"--vm-dir", vmDir,
 		"--nat-log-dir", natLogDir,
 	)
+	// Without it, the agent takes no uploads.
+	if _, err := os.Stat(in.ConverterInitramfs); err == nil {
+		cmd.Args = append(cmd.Args, "--guest-converter-initramfs", in.ConverterInitramfs)
+	}
 	cmd.Args = append(cmd.Args, c.nodeArgs...)
 	if len(c.nodeEnv) > 0 {
 		cmd.Env = append(os.Environ(), c.nodeEnv...)

@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/node.proto.
  */
 export const file_hangar_node_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMt0BCgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAFCuQEKEmNvbS5oYW5nYXIubm9kZS52MUIJTm9kZVByb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMrwDCgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESagoRVXBsb2FkQ3VzdG9tSW1hZ2USKC5oYW5nYXIubm9kZS52MS5VcGxvYWRDdXN0b21JbWFnZVJlcXVlc3QaKS5oYW5nYXIubm9kZS52MS5VcGxvYWRDdXN0b21JbWFnZVJlc3BvbnNlKAEScQoUR2V0Q3VzdG9tSW1hZ2VVcGxvYWQSKy5oYW5nYXIubm9kZS52MS5HZXRDdXN0b21JbWFnZVVwbG9hZFJlcXVlc3QaLC5oYW5nYXIubm9kZS52MS5HZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlQrkBChJjb20uaGFuZ2FyLm5vZGUudjFCCU5vZGVQcm90b1ABWj5naXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ub2RlL3YxO25vZGV2MaICA0hOWKoCDkhhbmdhci5Ob2RlLlYxygIOSGFuZ2FyXE5vZGVcVjHiAhpIYW5nYXJcTm9kZVxWMVxHUEJNZXRhZGF0YeoCEEhhbmdhcjo6Tm9kZTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.node.v1.LogsRequest
@@ -406,6 +406,128 @@ export const SSHResponseSchema: GenMessage<SSHResponse> = /*@__PURE__*/
   messageDesc(file_hangar_node_v1_node, 10);
 
 /**
+ * @generated from message hangar.node.v1.UploadCustomImageRequest
+ */
+export type UploadCustomImageRequest = Message<"hangar.node.v1.UploadCustomImageRequest"> & {
+  /**
+   * @generated from oneof hangar.node.v1.UploadCustomImageRequest.message
+   */
+  message: {
+    /**
+     * The first request, and only the first.
+     *
+     * @generated from field: hangar.node.v1.UploadChunk chunk = 1;
+     */
+    value: UploadChunk;
+    case: "chunk";
+  } | {
+    /**
+     * The chunk's bytes, in order.
+     *
+     * @generated from field: bytes data = 2;
+     */
+    value: Uint8Array;
+    case: "data";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.UploadCustomImageRequest.
+ * Use `create(UploadCustomImageRequestSchema)` to create a new message.
+ */
+export const UploadCustomImageRequestSchema: GenMessage<UploadCustomImageRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 11);
+
+/**
+ * UploadChunk says where a chunk of an upload goes.
+ *
+ * @generated from message hangar.node.v1.UploadChunk
+ */
+export type UploadChunk = Message<"hangar.node.v1.UploadChunk"> & {
+  /**
+   * @generated from field: string image_uid = 1;
+   */
+  imageUid: string;
+
+  /**
+   * Where in the file the chunk starts: the node's count of bytes held.
+   *
+   * @generated from field: int64 offset = 2;
+   */
+  offset: bigint;
+
+  /**
+   * @generated from field: int64 length = 3;
+   */
+  length: bigint;
+
+  /**
+   * SHA-256 of the chunk, as 64 lowercase hex digits.
+   *
+   * @generated from field: string sha256 = 4;
+   */
+  sha256: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.UploadChunk.
+ * Use `create(UploadChunkSchema)` to create a new message.
+ */
+export const UploadChunkSchema: GenMessage<UploadChunk> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 12);
+
+/**
+ * @generated from message hangar.node.v1.UploadCustomImageResponse
+ */
+export type UploadCustomImageResponse = Message<"hangar.node.v1.UploadCustomImageResponse"> & {
+  /**
+   * @generated from field: int64 received_bytes = 1;
+   */
+  receivedBytes: bigint;
+};
+
+/**
+ * Describes the message hangar.node.v1.UploadCustomImageResponse.
+ * Use `create(UploadCustomImageResponseSchema)` to create a new message.
+ */
+export const UploadCustomImageResponseSchema: GenMessage<UploadCustomImageResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 13);
+
+/**
+ * @generated from message hangar.node.v1.GetCustomImageUploadRequest
+ */
+export type GetCustomImageUploadRequest = Message<"hangar.node.v1.GetCustomImageUploadRequest"> & {
+  /**
+   * @generated from field: string image_uid = 1;
+   */
+  imageUid: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.GetCustomImageUploadRequest.
+ * Use `create(GetCustomImageUploadRequestSchema)` to create a new message.
+ */
+export const GetCustomImageUploadRequestSchema: GenMessage<GetCustomImageUploadRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 14);
+
+/**
+ * @generated from message hangar.node.v1.GetCustomImageUploadResponse
+ */
+export type GetCustomImageUploadResponse = Message<"hangar.node.v1.GetCustomImageUploadResponse"> & {
+  /**
+   * @generated from field: int64 received_bytes = 1;
+   */
+  receivedBytes: bigint;
+};
+
+/**
+ * Describes the message hangar.node.v1.GetCustomImageUploadResponse.
+ * Use `create(GetCustomImageUploadResponseSchema)` to create a new message.
+ */
+export const GetCustomImageUploadResponseSchema: GenMessage<GetCustomImageUploadResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 15);
+
+/**
  * LogStream says what a record carries.
  *
  * @generated from enum hangar.node.v1.LogStream
@@ -490,6 +612,32 @@ export const NodeService: GenService<{
     methodKind: "bidi_streaming";
     input: typeof SSHRequestSchema;
     output: typeof SSHResponseSchema;
+  },
+  /**
+   * UploadCustomImage writes one chunk of a CustomImage's upload to the
+   * file the node stages it in. The first request says where the chunk
+   * goes; later ones carry its bytes, length bytes in all. The chunk
+   * counts only once its sha256 matches; one that does not is dropped,
+   * INVALID_ARGUMENT, and one not at the node's count is refused before
+   * its bytes are read, ABORTED. The response is the node's new count.
+   *
+   * @generated from rpc hangar.node.v1.NodeService.UploadCustomImage
+   */
+  uploadCustomImage: {
+    methodKind: "client_streaming";
+    input: typeof UploadCustomImageRequestSchema;
+    output: typeof UploadCustomImageResponseSchema;
+  },
+  /**
+   * GetCustomImageUpload says how many bytes of a CustomImage's upload
+   * the node holds, every chunk checked: where the next chunk starts.
+   *
+   * @generated from rpc hangar.node.v1.NodeService.GetCustomImageUpload
+   */
+  getCustomImageUpload: {
+    methodKind: "unary";
+    input: typeof GetCustomImageUploadRequestSchema;
+    output: typeof GetCustomImageUploadResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_node_v1_node, 0);

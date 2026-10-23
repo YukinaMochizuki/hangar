@@ -7,8 +7,9 @@
 # It writes two directories:
 #
 #   OUT/host  what a host runs: hangar-apiserver, hangar-node, hangar-edge and
-#             hangar (static, linux/amd64), the guest kernel and the platform
-#             initramfs, the console's files as console.tar, deploy/ itself as
+#             hangar (static, linux/amd64), the guest kernel, the platform
+#             initramfs and the converter initramfs (converter.cpio), the
+#             console's files as console.tar, deploy/ itself as
 #             deploy.tar, VERSION, and SHA256SUMS over all of them. The
 #             `release` step of deploy/host installs from a directory like it
 #             (docs/runbook/host-bootstrap.md); a testbed takes this one.
@@ -125,6 +126,7 @@ tar --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
 	-C deploy --null --no-recursion -T "$stage/deploy.list" -cf "$host/deploy.tar"
 rm "$stage/deploy.list"
 HANGAR_INITRAMFS_OUT=$stage/guest guest/initramfs/build.sh
+HANGAR_CONVERTER_OUT=$stage/guest guest/converter/build.sh
 if [ -z "${HANGAR_KERNEL_CACHE:-}" ]; then
 	HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
 else
@@ -145,7 +147,7 @@ else
 		log "kernel: built, cached under $key"
 	fi
 fi
-mv "$stage/guest/vmlinux" "$stage/guest/initramfs.cpio" "$host/"
+mv "$stage/guest/vmlinux" "$stage/guest/initramfs.cpio" "$stage/guest/converter.cpio" "$host/"
 rm -rf "$stage/guest"
 printf '%s\n' "$version" >"$host/VERSION"
 (cd "$host" && sha256sum -- * >SHA256SUMS.part && mv SHA256SUMS.part SHA256SUMS)

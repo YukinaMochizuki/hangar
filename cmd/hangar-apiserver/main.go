@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apiserver"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/auth/login"
@@ -67,6 +69,8 @@ type flags struct {
 	// maxOwnedTenants is the default cap on the tenants one person or
 	// service token owns.
 	maxOwnedTenants int
+	// maxUploadSize bounds a file uploaded for a CustomImage, a quantity.
+	maxUploadSize string
 }
 
 func main() {
@@ -102,6 +106,8 @@ func main() {
 	flag.StringVar(&f.alertmanagerURL, "alertmanager-url", "", "the host's Alertmanager on loopback, such as http://127.0.0.1:9093, which MonitoringService asks for alerts; empty, it answers Unavailable")
 	flag.IntVar(&f.maxOwnedTenants, "default-max-owned-tenants", apiserver.DefaultMaxOwnedTenants,
 		"how many tenants one person or service token may own, unless their User says otherwise; at least 1")
+	flag.StringVar(&f.maxUploadSize, "max-upload-size", fmt.Sprintf("%dGi", apiserver.DefaultMaxUploadSize>>30),
+		"the largest file a CustomImage may be uploaded from, as a quantity such as 16Gi")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -137,6 +143,15 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 	}
 	if err := checkBootstrapAdmin(f.bootstrapAdmin); err != nil {
 		return err
+	}
+	// Empty is the default.
+	var maxUpload uint64
+	if f.maxUploadSize != "" {
+		b, err := quantity.Bytes(f.maxUploadSize)
+		if err != nil || b == 0 || b > math.MaxInt64 {
+			return fmt.Errorf("--max-upload-size: %q is not a size above zero", f.maxUploadSize)
+		}
+		maxUpload = b
 	}
 	st, err := sqlite.Open(ctx, f.db)
 	if err != nil {
@@ -232,7 +247,7 @@ func serveAll(ctx context.Context, f flags, log *slog.Logger, socks *sdsocket.So
 		PublicEndpoints: apiserver.PublicEndpointsConfig{
 			Domain: f.endpointDomain, ControlPlaneDomain: controlPlaneDomain(f.publicURL), Resolvers: f.domainResolvers,
 		},
-		DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st,
+		DefaultMaxOwnedTenants: f.maxOwnedTenants, Credentials: st, MaxUploadSize: int64(maxUpload),
 		Monitoring: apiserver.MonitoringConfig{PrometheusURL: f.prometheusURL, AlertmanagerURL: f.alertmanagerURL},
 	})
 	public, err := publicChain(f, srv, st)

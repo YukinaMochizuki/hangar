@@ -22,6 +22,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/chvm"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver/drivertest"
 	"github.com/YukinaMochizuki/hangar/test/testbed/internal/diskimgtest"
+	"github.com/YukinaMochizuki/hangar/test/testbed/internal/vmtest"
 )
 
 // TestConformance holds every real driver to the drivers' contract
@@ -64,6 +65,32 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 				t.Fatal(err)
 			}
 			return func() { _ = f.Close() }
+		},
+		Converter: converterOf(h.hv),
+		WriteVolume: func(t *testing.T, path string, at int64, data []byte) {
+			f, err := os.OpenFile(path, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			if _, err := f.WriteAt(data, at); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Sync(); err != nil {
+				t.Fatal(err)
+			}
+		},
+		ReadVolume: func(t *testing.T, path string, at int64, n int) []byte {
+			f, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			buf := make([]byte, n)
+			if _, err := f.ReadAt(buf, at); err != nil {
+				t.Fatal(err)
+			}
+			return buf
 		},
 		Exit:             exit,
 		Run:              driver.RunSpec{Command: []string{"/bin/sh", "-c", guestScript}},
@@ -188,4 +215,14 @@ var execPrograms = drivertest.ExecPrograms{
 	Running: func(marker string) []string {
 		return []string{"/bin/sh", "-c", `kill -0 "$(cat "/tmp/hangar-wait-$1")" 2>/dev/null && echo 1 || echo 0`, "sh", marker}
 	},
+}
+
+// converterOf is the hypervisor's Converter, when the converter initramfs
+// is built (make guest-converter); the suite's converter part is skipped
+// without it.
+func converterOf(hv *chvm.Hypervisor) driver.Converter {
+	if _, err := os.Stat(vmtest.Artifacts().ConverterInitramfs); err != nil {
+		return nil
+	}
+	return hv.Converter()
 }

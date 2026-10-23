@@ -295,11 +295,16 @@ func openHypervisorOn(t *testing.T, grace time.Duration, cpus []int) *chvm.Hyper
 	// It boots firmware VMs too, as a host's does, their guests given the
 	// same grace once their power button is pressed: the conformance
 	// suite's has nothing to boot, and its firmware never answers.
+	// And converter VMs, when the converter initramfs is built.
+	converter := in.ConverterInitramfs
+	if _, err := os.Stat(converter); err != nil {
+		converter = ""
+	}
 	hv, err := chvm.New(context.Background(), chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
 		Firmware: diskimgtest.Firmware(t), FirmwareStopGrace: grace,
-		MachineCPUs: cpus,
+		MachineCPUs: cpus, ConverterInitramfs: converter,
 	})
 	if err != nil {
 		t.Fatal(err)

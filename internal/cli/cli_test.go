@@ -46,6 +46,23 @@ type world struct {
 	// namesFree, while set, has the public API answer every name check
 	// "available", as one made just before another call took the name would.
 	namesFree *atomic.Bool
+	// uploads, if set, answers the public API's :upload paths in place of
+	// the apiserver, which reaches no node here.
+	uploads *atomic.Pointer[http.Handler]
+	// opts are the options the CLI runs with.
+	opts cli.Options
+}
+
+// routeUploads has uploads, once set, answer the :upload paths next
+// would.
+func routeUploads(next http.Handler, uploads *atomic.Pointer[http.Handler]) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h := uploads.Load(); h != nil && strings.HasSuffix(r.URL.Path, ":upload") {
+			(*h).ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // countWatches counts in n the watch calls next serves.
@@ -102,7 +119,8 @@ func newWorld(t *testing.T, configure ...func(*apiserver.Config)) *world {
 	tokens, _ := srv.ServiceTokens()
 	watches := &atomic.Int64{}
 	namesFree := &atomic.Bool{}
-	public := httptest.NewServer(freeNames(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches), namesFree))
+	uploads := &atomic.Pointer[http.Handler]{}
+	public := httptest.NewServer(routeUploads(freeNames(countWatches(srv.Handler(auth.Chain{auth.Dev{}, tokens}), watches), namesFree), uploads))
 	sock := filepath.Join(t.TempDir(), "node.sock")
 	ln, err := net.Listen("unix", sock)
 	if err != nil {
@@ -131,7 +149,7 @@ func newWorld(t *testing.T, configure ...func(*apiserver.Config)) *world {
 		<-done
 		_ = st.Close()
 	})
-	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml"), watches: watches, namesFree: namesFree}
+	w := &world{t: t, url: public.URL, socket: sock, admin: adminSock, config: filepath.Join(t.TempDir(), "config.yaml"), watches: watches, namesFree: namesFree, uploads: uploads}
 	w.addMembers("alice@example.com", "bob@example.com")
 	return w
 }
@@ -215,7 +233,7 @@ func (w *world) runEnv(stdin string, env map[string]string, args ...string) resu
 			}
 			return env[k]
 		},
-	}, cli.Options{})
+	}, w.opts)
 	return result{code, out.String(), errb.String()}
 }
 
@@ -255,13 +273,15 @@ func (w *world) node() *fakeNode {
 	}
 }
 
-// ready reports the node ready, with room for a few machines.
+// ready reports the node ready, with room for a few machines, taking
+// uploads.
 func (n *fakeNode) ready() {
 	n.t.Helper()
 	if _, err := n.nodes.UpdateNodeStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
 		Name: testNode,
 		Status: &computev1alpha1.NodeStatus{
-			Capacity: &computev1alpha1.NodeResources{Cpu: "4", Memory: "4Gi"},
+			Capacity:           &computev1alpha1.NodeResources{Cpu: "4", Memory: "4Gi"},
+			CustomImageUploads: true,
 			Conditions: []*metav1.Condition{{
 				Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 			}},

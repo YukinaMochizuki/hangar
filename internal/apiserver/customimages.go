@@ -2,15 +2,19 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
+	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	metav1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/meta/v1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
@@ -31,9 +35,10 @@ func decodeCustomImage(o store.Object) (*storagev1alpha1.CustomImage, bool) {
 
 // validateCustomImage checks a custom image's spec and, as it is made, its
 // source: a live Disk made on a node, which no machine that is not stopped
-// has, and no VM or container asks to run with. The caller holds attach,
-// which every write of a machine, VM, container and disk holds too, so
-// none of them changes between the check and the write.
+// has, and no VM or container asks to run with; or a file to upload of at
+// most the bound. The caller holds attach, which every write of a machine,
+// VM, container and disk holds too, so none of them changes between the
+// check and the write.
 func validateCustomImage(ctx context.Context, s *Server, _ auth.Principal, old, obj proto.Message) error {
 	ci := obj.(*storagev1alpha1.CustomImage)
 	spec := ci.GetSpec()
@@ -49,9 +54,12 @@ func validateCustomImage(ctx context.Context, s *Server, _ auth.Principal, old, 
 			return invalid("spec.min_disk_size %s is not between 1Gi and 64Ti", m)
 		}
 	}
+	if up := spec.GetSource().GetUpload(); up != nil {
+		return s.validateUpload(up)
+	}
 	src := spec.GetSource().GetDisk()
 	if src == nil {
-		return invalid("spec.source.disk is required")
+		return invalid("spec.source needs disk or upload")
 	}
 	if err := ValidName(src.GetName()); err != nil {
 		return invalid("spec.source.disk.name: %v", err)
@@ -61,6 +69,30 @@ func validateCustomImage(ctx context.Context, s *Server, _ auth.Principal, old, 
 	}
 	_, err := s.captureSource(ctx, ci.GetMetadata().GetProject(), src.GetName())
 	return err
+}
+
+// validateUpload checks the file an image is uploaded from: its size, up
+// to the bound, and its sha256, if any.
+func (s *Server) validateUpload(up *storagev1alpha1.CustomImageUploadSource) error {
+	if up.GetSize() <= 0 {
+		return invalid("spec.source.upload.size is required: the file's size in bytes")
+	}
+	if bound := s.maxUploadSize(); up.GetSize() > bound {
+		return invalid("spec.source.upload.size %d is more than %d bytes (%s), the most an uploaded file may be",
+			up.GetSize(), bound, quantity.FormatDisk(uint64(bound)))
+	}
+	if h := up.GetSha256(); h != "" && !sha256Hex.MatchString(h) {
+		return invalid("spec.source.upload.sha256 %q is not 64 lowercase hex digits", h)
+	}
+	return nil
+}
+
+// maxUploadSize is the most bytes a file uploaded for a custom image holds.
+func (s *Server) maxUploadSize() int64 {
+	if s.cfg.MaxUploadSize > 0 {
+		return s.cfg.MaxUploadSize
+	}
+	return DefaultMaxUploadSize
 }
 
 // captureSource returns the disk a new image of project is captured from,
@@ -197,8 +229,8 @@ func (s *Server) heldSources(ctx context.Context, project string) (map[string]st
 		if !ok {
 			return nil, fmt.Errorf("decode custom image %s/%s", o.Project, o.Name)
 		}
-		if computeapi.CustomImageHoldsSource(ci) {
-			held[ci.GetSpec().GetSource().GetDisk().GetName()] = o.Name
+		if disk := ci.GetSpec().GetSource().GetDisk(); disk != nil && computeapi.CustomImageHoldsSource(ci) {
+			held[disk.GetName()] = o.Name
 		}
 	}
 	return held, nil
@@ -246,10 +278,23 @@ func (s *Server) refuseDeletingHeldDisk(ctx context.Context, d *storagev1alpha1.
 }
 
 // drawCustomImage is the status a new custom image is stored with: its
-// source disk's node, where it is captured, and size. Admission found the
-// disk made, under attach, which the create still holds.
+// source disk's node, where it is captured, and size, admission having
+// found the disk made, under attach, which the create still holds; or for
+// an upload the node picked to take the file, as a machine's is, among
+// those that take uploads.
 func drawCustomImage(ctx context.Context, s *Server, obj proto.Message) (proto.Message, error) {
 	ci := obj.(*storagev1alpha1.CustomImage)
+	if ci.GetSpec().GetSource().GetUpload() != nil {
+		node, why, err := s.pickNodeAmong(ctx, &computev1alpha1.Machine{}, takesUploads,
+			"no node takes uploads: each needs its converter initramfs (docs/runbook/converter.md)", 0)
+		if err != nil {
+			return nil, err
+		}
+		if node == "" {
+			return nil, failedPrecondition("no node can take the upload: %s", why)
+		}
+		return &storagev1alpha1.CustomImageStatus{Node: node}, nil
+	}
 	name := ci.GetSpec().GetSource().GetDisk().GetName()
 	dobj, err := s.get(ctx, registry.Disk, resource.Key{Project: ci.GetMetadata().GetProject(), Name: name})
 	if err != nil {
@@ -266,13 +311,56 @@ func drawCustomImage(ctx context.Context, s *Server, obj proto.Message) (proto.M
 	return &storagev1alpha1.CustomImageStatus{Node: d.GetStatus().GetNode(), DiskSize: quantity.FormatDisk(wholeGi(size) * quantity.GiB)}, nil
 }
 
+// takesUploads says the node takes files uploaded for custom images.
+func takesUploads(n *computev1alpha1.Node) bool { return n.GetStatus().GetCustomImageUploads() }
+
 // customImageFromNode is what a node's status report of a custom image
-// stores: the node's conditions, used size and observed generation, and
-// the apiserver's node and disk size as stored.
+// stores: all the node reports but the apiserver's node and disk size,
+// once stored. An upload's disk size and virtual size are the node's to
+// set, once: the size of the disk the file holds, which only its
+// converter reads. The apiserver's QuotaExceeded stays.
 func customImageFromNode(stored, reported proto.Message) proto.Message {
 	out := proto.Clone(reported).(*storagev1alpha1.CustomImageStatus)
 	st, _ := stored.(*storagev1alpha1.CustomImageStatus)
-	out.Node, out.DiskSize = st.GetNode(), st.GetDiskSize()
+	out.Node = st.GetNode()
+	if st.GetDiskSize() != "" {
+		out.DiskSize = st.GetDiskSize()
+	}
+	if st.GetVirtualSize() != 0 {
+		out.VirtualSize = st.GetVirtualSize()
+	}
+	if c := conditions.Find(st.GetConditions(), CustomImageReady); c.GetReason() == computeapi.ReasonQuotaExceeded {
+		out.Conditions = slices.DeleteFunc(out.Conditions, func(o *metav1.Condition) bool { return o.GetType() == CustomImageReady })
+		out.Conditions = append(out.Conditions, c)
+	}
+	return out
+}
+
+// customImageGrows says a node's report on an upload, stored as obj over
+// stored, gives it its virtual size, which it then counts toward the disk
+// quota, rounded up to whole Gi, if more than its file's size.
+func customImageGrows(stored, obj proto.Message) bool {
+	ci := obj.(*storagev1alpha1.CustomImage)
+	return ci.GetSpec().GetSource().GetUpload() != nil &&
+		stored.(*storagev1alpha1.CustomImage).GetStatus().GetVirtualSize() == 0 &&
+		ci.GetStatus().GetVirtualSize() != 0 && !computeapi.CustomImageFailed(ci)
+}
+
+// customImageOverQuota is what a node's report of an upload's virtual
+// size, status, stores when it does not fit the disk quota, as err says:
+// the image failed for good, as QuotaExceeded, its virtual size kept to
+// tell. The node, seeing it, makes no base and removes the file.
+func customImageOverQuota(s *Server, status proto.Message, err error) proto.Message {
+	out := proto.Clone(status).(*storagev1alpha1.CustomImageStatus)
+	msg := err.Error()
+	if ce := new(connect.Error); errors.As(err, &ce) {
+		msg = ce.Message()
+	}
+	out.Conditions = conditions.Set(out.GetConditions(), &metav1.Condition{
+		Type: CustomImageReady, Status: metav1.ConditionStatus_CONDITION_STATUS_FALSE, Reason: computeapi.ReasonQuotaExceeded,
+		Message:            fmt.Sprintf("the file holds a disk of %s, which the disk quota has no room for: %s", quantity.FormatDisk(wholeGi(uint64(out.GetVirtualSize()))*quantity.GiB), msg),
+		ObservedGeneration: out.GetObservedGeneration(),
+	}, s.clock.Now())
 	return out
 }
 
@@ -296,8 +384,9 @@ func customImageFloor(ci *storagev1alpha1.CustomImage) uint64 {
 
 // customImageAmounts is a custom image and the disk it takes: its source
 // disk's size while it is captured, read from the disk in until the image
-// has its own status, and what it holds once Ready. One that failed takes
-// nothing.
+// has its own status, or until an upload is Ready the larger of its file's
+// size and its virtual size, once kept, and what it holds once Ready. One
+// that failed takes nothing.
 func customImageAmounts(obj proto.Message, in projectObjects) amounts {
 	ci := obj.(*storagev1alpha1.CustomImage)
 	var a amounts
@@ -306,9 +395,15 @@ func customImageAmounts(obj proto.Message, in projectObjects) amounts {
 	}
 	a[dimCustomImages] = 1
 	size := ci.GetStatus().GetDiskSize()
-	if computeapi.CustomImageReadyNow(ci) {
+	up := ci.GetSpec().GetSource().GetUpload()
+	switch {
+	case computeapi.CustomImageReadyNow(ci):
 		size = ci.GetStatus().GetUsedSize()
-	} else if size == "" {
+	case up != nil:
+		bytes := max(up.GetSize(), ci.GetStatus().GetVirtualSize(), 0)
+		a[dimDisk] = int64(wholeGi(uint64(bytes)) * quantity.GiB)
+		return a
+	case size == "":
 		// As drawCustomImage will store it.
 		name := ci.GetSpec().GetSource().GetDisk().GetName()
 		for _, o := range in[registry.Disk.Kind] {

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -75,6 +76,15 @@ type world struct {
 	// sweepInterval, if set before the agent starts, is how often it
 	// sweeps; 100ms if not.
 	sweepInterval time.Duration
+	// uploadDir is where the agent stages custom images' uploads, kept
+	// across its restarts; uploadExpiry and maxImageDisk, if set before it
+	// starts, bound them.
+	uploadDir    string
+	uploadExpiry time.Duration
+	maxImageDisk int64
+	// inspectTimeout and convertTimeout, if set before it starts, bound
+	// the agent's reading and converting of an uploaded file.
+	inspectTimeout, convertTimeout time.Duration
 
 	stop func()
 	// agent is the running node agent; nil while it is stopped.
@@ -154,7 +164,7 @@ func newIdleWorldWith(t *testing.T, configure func(*apiserver.Config)) *world {
 	env.Setup()
 	w := &world{
 		t: t, env: env, host: fake.New(), root: env.As(apiservertest.Root), system: env.AsSystem(),
-		metadata: metadata.New(metadata.Config{}),
+		metadata: metadata.New(metadata.Config{}), uploadDir: filepath.Join(t.TempDir(), "uploads"),
 	}
 	w.host.AddImage("nginx", "sha256:nginx-1", nginx)
 	t.Cleanup(func() { w.stopAgent() })
@@ -193,9 +203,14 @@ func (w *world) startAgent() {
 		EdgeUIDs:          []uint32{uint32(os.Getuid())},
 		ImageCacheHigh:    w.imageCacheHigh,
 		ImageCacheLow:     w.imageCacheLow,
+		UploadDir:         w.uploadDir,
+		UploadExpiry:      w.uploadExpiry,
+		MaxImageDiskSize:  w.maxImageDisk,
+		InspectTimeout:    w.inspectTimeout,
+		ConvertTimeout:    w.convertTimeout,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
-			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(),
+			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(), Converter: w.host.Converter(),
 		},
 	})
 	if err != nil {

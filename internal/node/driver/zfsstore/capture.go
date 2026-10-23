@@ -192,6 +192,68 @@ func (s *Store) CaptureImageBase(ctx context.Context, imageUID string) (driver.I
 	return base, err
 }
 
+func (s *Store) FillImageBase(ctx context.Context, imageUID string, size int64, fill func(dev string) error) (driver.ImageBase, error) {
+	b, err := s.vmBaseOf(driver.CustomImageBase(imageUID))
+	if err != nil {
+		return driver.ImageBase{}, err
+	}
+	defer s.lock(b.key)()
+	if base, ok, err := imageBase(ctx, b); err != nil || ok {
+		return base, err
+	}
+	// An unfinished base of ours is made again; anything else at its name
+	// is left alone.
+	if p, ok, err := localProps(ctx, b.vol, b.prop); err != nil {
+		return driver.ImageBase{}, err
+	} else if ok {
+		if p[b.prop] != b.value {
+			return driver.ImageBase{}, fmt.Errorf("%s exists and is not a base of custom image %s", b.vol, imageUID)
+		}
+		if err := destroyBase(ctx, b); err != nil {
+			return driver.ImageBase{}, err
+		}
+	}
+	size = roundUp(max(size, 1), align)
+	release, err := s.reserveFill(ctx, imageUID, size)
+	if err != nil {
+		return driver.ImageBase{}, err
+	}
+	defer release()
+	if _, err := zfs(ctx, "create", "-s", "-V", strconv.FormatInt(size, 10),
+		"-o", "volmode=dev", "-o", b.prop+"="+b.value, b.vol); err != nil {
+		return driver.ImageBase{}, err
+	}
+	finish := func() error {
+		// The zvol's link, once it leads to the zvol: what a VM is given,
+		// as its launcher checks it is the zvol it names.
+		if _, err := s.waitDev(ctx, b.vol); err != nil {
+			return err
+		}
+		if err := fill(device(b.vol)); err != nil {
+			return fmt.Errorf("filling the base of custom image %s: %w", imageUID, err)
+		}
+		// @base inherits the volume's property; the same property set on
+		// @base itself, last, says it is finished, as for a captured base.
+		if _, err := zfs(ctx, "snapshot", b.snapshot()); err != nil {
+			return err
+		}
+		if _, err := zfs(ctx, "set", "readonly=on", b.vol); err != nil {
+			return err
+		}
+		_, err = zfs(ctx, "set", b.prop+"="+b.value, b.snapshot())
+		return err
+	}
+	if err := finish(); err != nil {
+		_ = destroyBase(context.WithoutCancel(ctx), b)
+		return driver.ImageBase{}, err
+	}
+	base, ok, err := imageBase(ctx, b)
+	if err == nil && !ok {
+		err = fmt.Errorf("the base of custom image %s is not there once made", imageUID)
+	}
+	return base, err
+}
+
 // sendReceive copies the snapshot snap whole into target, a snapshot of a
 // volume that does not exist, made with the user property prop: zfs send,
 // without its properties, piped into zfs receive. The pipe's ends are the
@@ -257,4 +319,29 @@ func brokenPipe(err error, msg string) bool {
 		}
 	}
 	return strings.Contains(msg, "Broken pipe")
+}
+
+// reserveFill counts size bytes toward the fills under way, as long as
+// the pool has room for them besides the others, and returns what stops
+// counting them. The fill writes all but the zeros, so a base may take up
+// to its size: how much less is not known before. A fill counts at its
+// whole size until it ends, though part of it is written meanwhile, so a
+// fill may be refused that would have fit, but none is let in that does
+// not.
+func (s *Store) reserveFill(ctx context.Context, imageUID string, size int64) (release func(), err error) {
+	s.fillMu.Lock()
+	defer s.fillMu.Unlock()
+	c, err := s.Capacity(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if free := c.Free - s.filling; free < size {
+		return nil, &driver.NoSpaceError{What: "the base of custom image " + imageUID, Room: driver.StorageRoom, Need: size, Free: max(free, 0)}
+	}
+	s.filling += size
+	return func() {
+		s.fillMu.Lock()
+		defer s.fillMu.Unlock()
+		s.filling -= size
+	}, nil
 }

@@ -144,6 +144,23 @@ unreliable on virtio-fs.
   it for a capture cut short. It goes once no volume is cloned from it, no
   disk admitted from it is still to be made on the node, and its
   CustomImage is gone (`docs/decisions/custom-images.md`).
+- **An uploaded custom image is staged on the images dataset**, then filled
+  into the same base. Its file is written, chunk by chunk, to `<image
+  dir>/uploads/<image uid>` on `hangar/images`, root's alone, whose quota
+  bounds it, beside `<image uid>.state`, the count of bytes checked and the
+  state of the file's sha256. The staged file holds the tenant's bytes at 4
+  KiB, after zeros, and once whole, zeros after them up to a 4 KiB boundary
+  and 4 KiB more: the converter VM's Cloud Hypervisor reads a disk's ends
+  for a format's header even when told it is raw, so it never sees the
+  tenant's bytes there (`docs/decisions/custom-images.md`). The host only
+  writes and hashes it; a converter VM reads it
+  (`docs/decisions/vm-images.md`). Its base is a sparse zvol of the size the
+  converter reports, made with `hangar:customimage` set, which the converter
+  writes through its `/dev/zvol` link; it is then snapshotted as `@base`,
+  set read-only, and marked finished as a captured one, the property set on
+  `@base` itself, last. A fill that fails destroys it, as an unfinished one
+  is destroyed as the driver starts. The staged file goes once the image is
+  Ready or failed, or gone.
 - **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk

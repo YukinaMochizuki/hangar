@@ -928,6 +928,293 @@ func (x *SSHResponse) GetData() []byte {
 	return nil
 }
 
+type UploadCustomImageRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*UploadCustomImageRequest_Chunk
+	//	*UploadCustomImageRequest_Data
+	Message       isUploadCustomImageRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadCustomImageRequest) Reset() {
+	*x = UploadCustomImageRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadCustomImageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadCustomImageRequest) ProtoMessage() {}
+
+func (x *UploadCustomImageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadCustomImageRequest.ProtoReflect.Descriptor instead.
+func (*UploadCustomImageRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *UploadCustomImageRequest) GetMessage() isUploadCustomImageRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *UploadCustomImageRequest) GetChunk() *UploadChunk {
+	if x != nil {
+		if x, ok := x.Message.(*UploadCustomImageRequest_Chunk); ok {
+			return x.Chunk
+		}
+	}
+	return nil
+}
+
+func (x *UploadCustomImageRequest) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*UploadCustomImageRequest_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isUploadCustomImageRequest_Message interface {
+	isUploadCustomImageRequest_Message()
+}
+
+type UploadCustomImageRequest_Chunk struct {
+	// The first request, and only the first.
+	Chunk *UploadChunk `protobuf:"bytes,1,opt,name=chunk,proto3,oneof"`
+}
+
+type UploadCustomImageRequest_Data struct {
+	// The chunk's bytes, in order.
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"`
+}
+
+func (*UploadCustomImageRequest_Chunk) isUploadCustomImageRequest_Message() {}
+
+func (*UploadCustomImageRequest_Data) isUploadCustomImageRequest_Message() {}
+
+// UploadChunk says where a chunk of an upload goes.
+type UploadChunk struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	ImageUid string                 `protobuf:"bytes,1,opt,name=image_uid,json=imageUid,proto3" json:"image_uid,omitempty"`
+	// Where in the file the chunk starts: the node's count of bytes held.
+	Offset int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	Length int64 `protobuf:"varint,3,opt,name=length,proto3" json:"length,omitempty"`
+	// SHA-256 of the chunk, as 64 lowercase hex digits.
+	Sha256        string `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadChunk) Reset() {
+	*x = UploadChunk{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadChunk) ProtoMessage() {}
+
+func (x *UploadChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadChunk.ProtoReflect.Descriptor instead.
+func (*UploadChunk) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *UploadChunk) GetImageUid() string {
+	if x != nil {
+		return x.ImageUid
+	}
+	return ""
+}
+
+func (x *UploadChunk) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *UploadChunk) GetLength() int64 {
+	if x != nil {
+		return x.Length
+	}
+	return 0
+}
+
+func (x *UploadChunk) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+type UploadCustomImageResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReceivedBytes int64                  `protobuf:"varint,1,opt,name=received_bytes,json=receivedBytes,proto3" json:"received_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UploadCustomImageResponse) Reset() {
+	*x = UploadCustomImageResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UploadCustomImageResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UploadCustomImageResponse) ProtoMessage() {}
+
+func (x *UploadCustomImageResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UploadCustomImageResponse.ProtoReflect.Descriptor instead.
+func (*UploadCustomImageResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *UploadCustomImageResponse) GetReceivedBytes() int64 {
+	if x != nil {
+		return x.ReceivedBytes
+	}
+	return 0
+}
+
+type GetCustomImageUploadRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ImageUid      string                 `protobuf:"bytes,1,opt,name=image_uid,json=imageUid,proto3" json:"image_uid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCustomImageUploadRequest) Reset() {
+	*x = GetCustomImageUploadRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCustomImageUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCustomImageUploadRequest) ProtoMessage() {}
+
+func (x *GetCustomImageUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCustomImageUploadRequest.ProtoReflect.Descriptor instead.
+func (*GetCustomImageUploadRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetCustomImageUploadRequest) GetImageUid() string {
+	if x != nil {
+		return x.ImageUid
+	}
+	return ""
+}
+
+type GetCustomImageUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ReceivedBytes int64                  `protobuf:"varint,1,opt,name=received_bytes,json=receivedBytes,proto3" json:"received_bytes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetCustomImageUploadResponse) Reset() {
+	*x = GetCustomImageUploadResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetCustomImageUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetCustomImageUploadResponse) ProtoMessage() {}
+
+func (x *GetCustomImageUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetCustomImageUploadResponse.ProtoReflect.Descriptor instead.
+func (*GetCustomImageUploadResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *GetCustomImageUploadResponse) GetReceivedBytes() int64 {
+	if x != nil {
+		return x.ReceivedBytes
+	}
+	return 0
+}
+
 var File_hangar_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_hangar_node_v1_node_proto_rawDesc = "" +
@@ -990,17 +1277,34 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
 	"\amessage\"!\n" +
 	"\vSSHResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data*\x7f\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"p\n" +
+	"\x18UploadCustomImageRequest\x123\n" +
+	"\x05chunk\x18\x01 \x01(\v2\x1b.hangar.node.v1.UploadChunkH\x00R\x05chunk\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\amessage\"r\n" +
+	"\vUploadChunk\x12\x1b\n" +
+	"\timage_uid\x18\x01 \x01(\tR\bimageUid\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x03R\x06offset\x12\x16\n" +
+	"\x06length\x18\x03 \x01(\x03R\x06length\x12\x16\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\"B\n" +
+	"\x19UploadCustomImageResponse\x12%\n" +
+	"\x0ereceived_bytes\x18\x01 \x01(\x03R\rreceivedBytes\":\n" +
+	"\x1bGetCustomImageUploadRequest\x12\x1b\n" +
+	"\timage_uid\x18\x01 \x01(\tR\bimageUid\"E\n" +
+	"\x1cGetCustomImageUploadResponse\x12%\n" +
+	"\x0ereceived_bytes\x18\x01 \x01(\x03R\rreceivedBytes*\x7f\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x13\n" +
 	"\x0fLOG_STREAM_INIT\x10\x03\x12\x13\n" +
-	"\x0fLOG_STREAM_EXIT\x10\x042\xdd\x01\n" +
+	"\x0fLOG_STREAM_EXIT\x10\x042\xbc\x03\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01\x12E\n" +
 	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01\x12B\n" +
-	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01B\xb9\x01\n" +
+	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01\x12j\n" +
+	"\x11UploadCustomImage\x12(.hangar.node.v1.UploadCustomImageRequest\x1a).hangar.node.v1.UploadCustomImageResponse(\x01\x12q\n" +
+	"\x14GetCustomImageUpload\x12+.hangar.node.v1.GetCustomImageUploadRequest\x1a,.hangar.node.v1.GetCustomImageUploadResponseB\xb9\x01\n" +
 	"\x12com.hangar.node.v1B\tNodeProtoP\x01Z>github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1;nodev1\xa2\x02\x03HNX\xaa\x02\x0eHangar.Node.V1\xca\x02\x0eHangar\\Node\\V1\xe2\x02\x1aHangar\\Node\\V1\\GPBMetadata\xea\x02\x10Hangar::Node::V1b\x06proto3"
 
 var (
@@ -1016,44 +1320,54 @@ func file_hangar_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_hangar_node_v1_node_proto_goTypes = []any{
-	(LogStream)(0),                // 0: hangar.node.v1.LogStream
-	(*LogsRequest)(nil),           // 1: hangar.node.v1.LogsRequest
-	(*LogsResponse)(nil),          // 2: hangar.node.v1.LogsResponse
-	(*LogRecord)(nil),             // 3: hangar.node.v1.LogRecord
-	(*ExitStatus)(nil),            // 4: hangar.node.v1.ExitStatus
-	(*ExecRequest)(nil),           // 5: hangar.node.v1.ExecRequest
-	(*ExecStart)(nil),             // 6: hangar.node.v1.ExecStart
-	(*ExecStdinClose)(nil),        // 7: hangar.node.v1.ExecStdinClose
-	(*WindowSize)(nil),            // 8: hangar.node.v1.WindowSize
-	(*ExecResponse)(nil),          // 9: hangar.node.v1.ExecResponse
-	(*SSHRequest)(nil),            // 10: hangar.node.v1.SSHRequest
-	(*SSHResponse)(nil),           // 11: hangar.node.v1.SSHResponse
-	(*timestamppb.Timestamp)(nil), // 12: google.protobuf.Timestamp
+	(LogStream)(0),                       // 0: hangar.node.v1.LogStream
+	(*LogsRequest)(nil),                  // 1: hangar.node.v1.LogsRequest
+	(*LogsResponse)(nil),                 // 2: hangar.node.v1.LogsResponse
+	(*LogRecord)(nil),                    // 3: hangar.node.v1.LogRecord
+	(*ExitStatus)(nil),                   // 4: hangar.node.v1.ExitStatus
+	(*ExecRequest)(nil),                  // 5: hangar.node.v1.ExecRequest
+	(*ExecStart)(nil),                    // 6: hangar.node.v1.ExecStart
+	(*ExecStdinClose)(nil),               // 7: hangar.node.v1.ExecStdinClose
+	(*WindowSize)(nil),                   // 8: hangar.node.v1.WindowSize
+	(*ExecResponse)(nil),                 // 9: hangar.node.v1.ExecResponse
+	(*SSHRequest)(nil),                   // 10: hangar.node.v1.SSHRequest
+	(*SSHResponse)(nil),                  // 11: hangar.node.v1.SSHResponse
+	(*UploadCustomImageRequest)(nil),     // 12: hangar.node.v1.UploadCustomImageRequest
+	(*UploadChunk)(nil),                  // 13: hangar.node.v1.UploadChunk
+	(*UploadCustomImageResponse)(nil),    // 14: hangar.node.v1.UploadCustomImageResponse
+	(*GetCustomImageUploadRequest)(nil),  // 15: hangar.node.v1.GetCustomImageUploadRequest
+	(*GetCustomImageUploadResponse)(nil), // 16: hangar.node.v1.GetCustomImageUploadResponse
+	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
 }
 var file_hangar_node_v1_node_proto_depIdxs = []int32{
-	12, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	17, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
 	0,  // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
-	12, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
+	17, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
 	6,  // 5: hangar.node.v1.ExecRequest.start:type_name -> hangar.node.v1.ExecStart
 	7,  // 6: hangar.node.v1.ExecRequest.stdin_close:type_name -> hangar.node.v1.ExecStdinClose
 	8,  // 7: hangar.node.v1.ExecRequest.resize:type_name -> hangar.node.v1.WindowSize
 	8,  // 8: hangar.node.v1.ExecStart.size:type_name -> hangar.node.v1.WindowSize
 	4,  // 9: hangar.node.v1.ExecResponse.exit:type_name -> hangar.node.v1.ExitStatus
-	1,  // 10: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
-	5,  // 11: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
-	10, // 12: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
-	2,  // 13: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	9,  // 14: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
-	11, // 15: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
-	13, // [13:16] is the sub-list for method output_type
-	10, // [10:13] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	13, // 10: hangar.node.v1.UploadCustomImageRequest.chunk:type_name -> hangar.node.v1.UploadChunk
+	1,  // 11: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
+	5,  // 12: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
+	10, // 13: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
+	12, // 14: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
+	15, // 15: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
+	2,  // 16: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 17: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	11, // 18: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
+	14, // 19: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
+	16, // 20: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
+	16, // [16:21] is the sub-list for method output_type
+	11, // [11:16] is the sub-list for method input_type
+	11, // [11:11] is the sub-list for extension type_name
+	11, // [11:11] is the sub-list for extension extendee
+	0,  // [0:11] is the sub-list for field type_name
 }
 
 func init() { file_hangar_node_v1_node_proto_init() }
@@ -1082,13 +1396,17 @@ func file_hangar_node_v1_node_proto_init() {
 		(*SSHRequest_MachineUid)(nil),
 		(*SSHRequest_Data)(nil),
 	}
+	file_hangar_node_v1_node_proto_msgTypes[11].OneofWrappers = []any{
+		(*UploadCustomImageRequest_Chunk)(nil),
+		(*UploadCustomImageRequest_Data)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_node_proto_rawDesc), len(file_hangar_node_v1_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   11,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

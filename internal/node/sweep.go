@@ -180,6 +180,23 @@ func (a *Agent) sweep(ctx context.Context) error {
 					live[uid], used[driver.CustomImageBase(uid)] = true, true
 					captured[uid] = computeapi.CustomImageReadyNow(ci) || computeapi.CustomImageFailed(ci)
 				}
+				if a.converts != nil {
+					a.inspects.keep(live)
+					a.converts.keep(live)
+				}
+				// A deleted image's upload goes, with any chunk being
+				// written; its conversion has ended above.
+				if a.stager != nil {
+					a.stager.stopAllBut(live)
+					if staged, err := a.stager.staged(); keep(err) {
+						for _, uid := range staged {
+							if !live[uid] {
+								a.cfg.Log.Info("removing an upload no custom image accounts for", "image_uid", uid)
+								keep(a.stager.remove(uid))
+							}
+						}
+					}
+				}
 				capturing := a.captures.keep(live)
 				if captures, err := d.Storage.Captures(ctx); keep(err) {
 					for _, c := range captures {

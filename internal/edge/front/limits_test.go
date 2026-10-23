@@ -276,6 +276,7 @@ func TestRequestLimits(t *testing.T) {
 	o := defaultOptions()
 	o.limits.APIBodyBytes = 1024
 	o.limits.EndpointBodyBytes = 2048
+	o.limits.UploadBodyBytes = 3072
 	o.limits.MaxHeaderBytes = 4096
 	o.limits.HTTP2MaxStreams = 7
 	o.limits.HTTP2ConnWindow, o.limits.HTTP2StreamWindow, o.limits.HTTP2MaxFrame = 200<<10, 100<<10, 20<<10
@@ -308,6 +309,37 @@ func TestRequestLimits(t *testing.T) {
 					break
 				}
 			}
+		}
+	})
+	// A chunk of a CustomImage's file takes its own limit, and only a PUT
+	// to an :upload path does; the body-rate rules still hold it.
+	t.Run("uploads", func(t *testing.T) {
+		upload := "/v1/projects/web/customimages/img:upload"
+		for _, tt := range []struct {
+			name, method, url string
+			n, code           int
+		}{
+			{"a chunk at its limit", http.MethodPut, "https://" + apiHost + upload, 3072, 200},
+			{"a chunk on the console's origin", http.MethodPut, "https://" + consoleHost + upload, 3072, 200},
+			{"a chunk said too long", http.MethodPut, "https://" + apiHost + upload, 3073, 413},
+			{"a POST to the path", http.MethodPost, "https://" + apiHost + upload, 2048, 413},
+			{"a PUT elsewhere in the API", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img:other", 2048, 413},
+			{"a PUT to another kind's :upload", http.MethodPut, "https://" + apiHost + "/v1/projects/web/disks/img:upload", 2048, 413},
+			// The name is one segment, not empty, as the apiserver routes it.
+			{"a name of two segments", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/a/b:upload", 2048, 413},
+			{"a path past a custom image", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img/x/customimages/y:upload", 2048, 413},
+			{"a path past :upload", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img:upload/x:upload", 2048, 413},
+			{"no name", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/:upload", 2048, 413},
+			{"no project", http.MethodPut, "https://" + apiHost + "/v1/projects//customimages/img:upload", 2048, 413},
+			{"a prefix before the API", http.MethodPut, "https://" + apiHost + "/x/v1/projects/web/customimages/img:upload", 2048, 413},
+		} {
+			if code, body, _ := do(t, d.client, tt.method, tt.url, bytes.NewReader(make([]byte, tt.n)), nil); code != tt.code {
+				t.Errorf("%s: %d %q; want %d", tt.name, code, body, tt.code)
+			}
+		}
+		chunked := io.MultiReader(bytes.NewReader(make([]byte, 8192)))
+		if code, body, _ := do(t, d.client, http.MethodPut, "https://"+apiHost+upload, chunked, nil); code != 413 {
+			t.Errorf("a chunk found too long: %d %q; want 413", code, body)
 		}
 	})
 	t.Run("headers", func(t *testing.T) {

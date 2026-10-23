@@ -14,6 +14,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/uploadwire"
 )
 
 // Limits are what the front door allows each client and all of them, as
@@ -58,8 +59,9 @@ type Limits struct {
 	// MaxHeaderBytes caps a request's header.
 	MaxHeaderBytes int
 	// APIBodyBytes and EndpointBodyBytes cap a request's body to the API
-	// and to an endpoint.
-	APIBodyBytes, EndpointBodyBytes int64
+	// and to an endpoint. UploadBodyBytes caps instead a PUT's to a
+	// CustomImage's :upload path, which carries one chunk of a file.
+	APIBodyBytes, EndpointBodyBytes, UploadBodyBytes int64
 	// MinBodyRate is the bytes a second a request's body must average over
 	// the time spent waiting for it; BodyReadTimeout is the longest one
 	// wait may be (bodyrate.go).
@@ -107,8 +109,10 @@ var DefaultLimits = Limits{
 	MaxHeaderBytes:    64 << 10,
 	APIBodyBytes:      8 << 20,
 	EndpointBodyBytes: 100 << 20,
-	MinBodyRate:       1 << 10,
-	BodyReadTimeout:   30 * time.Second,
+	// A chunk, and room for the request's framing.
+	UploadBodyBytes: uploadwire.ChunkSize + 1<<20,
+	MinBodyRate:     1 << 10,
+	BodyReadTimeout: 30 * time.Second,
 
 	ReadHeaderTimeout:   10 * time.Second,
 	IdleTimeout:         2 * time.Minute,
@@ -138,7 +142,7 @@ func (l Limits) Validate() error {
 		{"request rate", l.RequestRate > 0 && l.RequestBurst > 0},
 		{"requests per client", l.RequestsPerClient > 0},
 		{"header bytes", l.MaxHeaderBytes > 0},
-		{"body bytes", l.APIBodyBytes > 0 && l.EndpointBodyBytes > 0},
+		{"body bytes", l.APIBodyBytes > 0 && l.EndpointBodyBytes > 0 && l.UploadBodyBytes > 0},
 		{"body rate", l.MinBodyRate > 0 && l.BodyReadTimeout > 0},
 		{"timeouts", l.ReadHeaderTimeout > 0 && l.IdleTimeout > 0 && l.ConsoleWriteTimeout > 0 && l.StalledWriteTimeout > 0},
 		{"HTTP/2 settings", l.HTTP2MaxStreams > 0 && l.HTTP2SendPingTimeout > 0 && l.HTTP2PingTimeout > 0 && l.HTTP2WriteByteTimeout > 0},

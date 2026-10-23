@@ -30,6 +30,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -95,6 +96,12 @@ type Store struct {
 	// building holds a lock per digest, so a base is made once at a time
 	// and not deleted while it is made.
 	building keylock.Map
+
+	// filling is how many bytes the custom images' bases being filled may
+	// still take from the pool, which a sparse zvol does not take as it is
+	// made; fillMu holds it and a fill's check of the pool's room together.
+	fillMu  sync.Mutex
+	filling int64
 
 	// waitDev is waitDevice; a test replaces it, having no zvol.
 	waitDev func(ctx context.Context, vol string) (string, error)
@@ -283,7 +290,8 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		switch {
-		case strings.Contains(msg, "dataset does not exist"):
+		// A snapshot that is not there, zfs destroy says otherwise.
+		case strings.Contains(msg, "dataset does not exist"), strings.Contains(msg, "could not find any snapshots to destroy"):
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), errNotExist)
 		case strings.Contains(msg, "dataset is busy"):
 			return nil, fmt.Errorf("%s %s: %s: %w", name, strings.Join(args, " "), msg, errBusy)

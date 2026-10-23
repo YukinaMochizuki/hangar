@@ -331,6 +331,12 @@ type Storage interface {
 	// DeleteCapture removes the snapshot taken for the CustomImage of
 	// imageUID.
 	DeleteCapture(ctx context.Context, imageUID string) error
+	// FillImageBase makes, once, the base of the CustomImage of imageUID
+	// from an uploaded file: a volume of size bytes, all zeros, that fill
+	// writes given its device, then read-only and marked finished as a
+	// captured base is. It returns the base, as it does for one made
+	// before. A failure, fill's among them, leaves no base.
+	FillImageBase(ctx context.Context, imageUID string, size int64, fill func(dev string) error) (ImageBase, error)
 	// EnsureVolume returns a Disk's volume of at least size bytes, grown,
 	// never shrunk. A volume made here is blank if digest is empty, and
 	// otherwise a clone of the disk image's base of that key, a digest or
@@ -354,6 +360,53 @@ type Storage interface {
 	// Capacity returns how much the storage holds, and how much of it is
 	// free.
 	Capacity(ctx context.Context) (Capacity, error)
+}
+
+// Converter reads the files tenants upload for CustomImages, which the
+// host never parses: only qemu-img in a converter VM of the file's own
+// does, the platform kernel booting the converter initramfs, with no
+// network, its agent answering the host alone over vsock
+// (docs/decisions/custom-images.md). What it reports of a file is the
+// guest's claim. A file qemu-img refuses is ErrInvalidImage.
+type Converter interface {
+	// Inspect returns what qemu-img info in a converter VM says of the
+	// file, attached read-only.
+	Inspect(ctx context.Context, imageUID string, file UploadedFile) (ImageInfo, error)
+	// Convert has qemu-img convert in a converter VM write the file,
+	// attached read-only and read as format, onto the block device dev,
+	// all zeros, as raw.
+	Convert(ctx context.Context, imageUID string, file UploadedFile, format, dev string) error
+}
+
+// UploadedFile is a file a tenant uploaded, as the node stages it: Size
+// bytes at Offset of the file at Path, whole sectors of zeros before and
+// after them.
+type UploadedFile struct {
+	Path         string
+	Offset, Size int64
+}
+
+// UploadOffset is where a staged file holds the tenant's bytes: after
+// 4 KiB of zeros. Cloud Hypervisor reads a disk's first and last bytes
+// for a format's header, even when told the disk is raw, and refuses one
+// it takes for qcow2, VHD or VHDX; so it is never handed the tenant's
+// bytes at either end (docs/decisions/custom-images.md).
+const UploadOffset = 4 << 10
+
+// UploadedLength is the length of the staged file of size bytes: the
+// zeros before, the bytes, zeros up to a 4 KiB boundary, and 4 KiB more.
+func UploadedLength(size int64) int64 {
+	end := UploadOffset + size
+	return (end+UploadOffset-1)/UploadOffset*UploadOffset + UploadOffset
+}
+
+// ImageInfo is what qemu-img info says of a file.
+type ImageInfo struct {
+	Format string
+	// VirtualSize is the size of the disk the file holds, in bytes.
+	VirtualSize int64
+	// BackingFile and DataFile name other files the image reads, if any.
+	BackingFile, DataFile string
 }
 
 // Base is an OCI image's base.
@@ -791,6 +844,22 @@ type VMSpec struct {
 	// disk at vda that it never reads, and its share's volume at vdc,
 	// after its boot disk (docs/decisions/file-shares.md).
 	FileShareServer *ShareServer `json:",omitempty"`
+	// Converter boots the VM as a converter VM, from the converter
+	// initramfs: no Root, Disks, Mounts, Run or Interfaces, a blank disk at
+	// vda that it never reads, the file at vdc, read-only, and the target,
+	// if any, at vdd (docs/decisions/custom-images.md).
+	Converter *ConverterSpec `json:",omitempty"`
+}
+
+// ConverterSpec is what a converter VM is booted with.
+type ConverterSpec struct {
+	// File is the uploaded file, as staged: a regular file of root's, of
+	// whole sectors, holding FileSize bytes of the tenant's at FileOffset.
+	File                 string
+	FileOffset, FileSize int64
+	// Target is the block device the file is converted onto, a zvol's
+	// /dev/zvol link; empty for a VM that only inspects the file.
+	Target string `json:",omitempty"`
 }
 
 // ShareServer is what a FileShare's server is booted with.

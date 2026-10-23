@@ -26,6 +26,7 @@ import (
 
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/edge"
+	"github.com/YukinaMochizuki/hangar/internal/uploadwire"
 )
 
 // Config configures a Front.
@@ -189,6 +190,22 @@ func isAPIPath(p string) bool {
 	return false
 }
 
+// isUpload says r sends a chunk of a CustomImage's file, to its :upload
+// path (uploadwire.Path): /v1/projects/PROJECT/customimages/NAME:upload,
+// each of PROJECT and NAME one segment, not empty, as the apiserver routes
+// it.
+func isUpload(r *http.Request) bool {
+	if r.Method != http.MethodPut {
+		return false
+	}
+	seg := strings.Split(r.URL.EscapedPath(), "/")
+	if len(seg) != 6 || seg[0] != "" || seg[1] != "v1" || seg[2] != "projects" || seg[3] == "" || seg[4] != "customimages" {
+		return false
+	}
+	name, ok := strings.CutSuffix(seg[5], ":"+uploadwire.Action)
+	return ok && name != ""
+}
+
 // limitBody caps r's body at n bytes, answering 413 at once when it says
 // it is longer. It reports whether the request may go on.
 func (f *Front) limitBody(w http.ResponseWriter, r *http.Request, n int64) bool {
@@ -203,7 +220,11 @@ func (f *Front) limitBody(w http.ResponseWriter, r *http.Request, n int64) bool 
 }
 
 func (f *Front) serveAPI(w http.ResponseWriter, r *http.Request) {
-	if !f.limitBody(w, r, f.cfg.Limits.APIBodyBytes) {
+	limit := f.cfg.Limits.APIBodyBytes
+	if isUpload(r) {
+		limit = f.cfg.Limits.UploadBodyBytes
+	}
+	if !f.limitBody(w, r, limit) {
 		return
 	}
 	f.api.ServeHTTP(w, r)

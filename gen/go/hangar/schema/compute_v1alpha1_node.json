@@ -49,6 +49,10 @@
           },
           "type": "array"
         },
+        "customImageUploads": {
+          "description": "Whether the node takes uploaded files for custom images, which needs a converter VM and a place to stage them. Uploads are placed only on nodes that do.",
+          "type": "boolean"
+        },
         "ipv6Prefix": {
           "description": "The host's public IPv6 prefix, such as \"2001:db8:0:1::/64\", from which each machine interface on the node gets a /128; empty when the host has none, and its machines then have no IPv6.",
           "type": "string"

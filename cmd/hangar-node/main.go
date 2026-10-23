@@ -32,6 +32,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
@@ -66,6 +67,10 @@ type hostFlags struct {
 	firmware string
 	// reservedCPU is --reserved-cpu: the CPUs no VM may use.
 	reservedCPU string
+	// converterInitrd, uploadDir, inspectTimeout and convertTimeout are
+	// what custom images' uploads are staged in and converted with.
+	converterInitrd, uploadDir     string
+	inspectTimeout, convertTimeout time.Duration
 }
 
 func main() {
@@ -89,6 +94,8 @@ func main() {
 		reservedCPU    = flag.String("reserved-cpu", "", "CPUs kept back for the host, as a whole number: with the host drivers, no VM runs on them, taken whole cores first")
 		maxPulls       = flag.Int("max-pulls", node.DefaultMaxPulls, "images unpacked at once; fetching them takes no turn")
 		captureTimeout = flag.Duration("capture-timeout", node.DefaultCaptureTimeout, "how long copying a custom image's snapshot into its base may take before the capture fails for good")
+		uploadExpiry   = flag.Duration("upload-expiry", node.DefaultUploadExpiry, "how long after a custom image is made its uploaded file may take to be whole, before the upload fails for good")
+		maxImageDisk   = flag.String("max-image-disk-size", fmt.Sprintf("%dGi", node.DefaultMaxImageDiskSize>>30), "the largest disk a file uploaded for a custom image may hold, a quantity; past it the image is ImageTooLarge")
 		reservedDisk   = flag.String("reserved-disk", "", "storage kept back from root disks, such as for the image cache, as a quantity such as 50Gi")
 		hostDrivers    = flag.String("drivers", "none", "the host drivers: none, to report the node only; fake, a simulated host; or host, this host's")
 		dnsUpstreams   = flag.String("dns-upstreams", "1.1.1.1,8.8.8.8", "the resolvers each network's resolver forwards names outside hangar.internal to, comma-separated addresses")
@@ -136,6 +143,11 @@ func main() {
 		log.Error("node agent stopped", "error", err)
 		os.Exit(1)
 	}
+	maxDisk, err := parseSize("--max-image-disk-size", *maxImageDisk)
+	if err != nil {
+		log.Error("node agent stopped", "error", err)
+		os.Exit(1)
+	}
 	high, low, err := parseImageCache(*cacheHigh, *cacheLow)
 	if err != nil {
 		log.Error("node agent stopped", "error", err)
@@ -153,21 +165,26 @@ func main() {
 		Tunnel: func(ctx context.Context) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", *socket)
 		},
-		Reserved:       &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
-		Placement:      placement,
-		MaxPulls:       *maxPulls,
-		CaptureTimeout: *captureTimeout,
-		MaxUnpackWork:  hf.maxUnpackWork,
-		Drivers:        d,
-		DNSUpstreams:   upstreams,
-		IPv6Prefix:     prefix,
-		SharedIPv4:     shared,
-		EdgeDial:       edgeDial,
-		EdgeUIDs:       edgeUIDs,
-		NATLog:         *natLog,
-		ImageCacheHigh: high,
-		ImageCacheLow:  low,
-		Log:            log,
+		Reserved:         &computev1alpha1.NodeResources{Cpu: *reservedCPU, Memory: *reservedMemory, Disk: *reservedDisk},
+		Placement:        placement,
+		MaxPulls:         *maxPulls,
+		CaptureTimeout:   *captureTimeout,
+		UploadDir:        uploadDir(*hostDrivers, hf, d),
+		UploadExpiry:     *uploadExpiry,
+		MaxImageDiskSize: maxDisk,
+		InspectTimeout:   hf.inspectTimeout,
+		ConvertTimeout:   hf.convertTimeout,
+		MaxUnpackWork:    hf.maxUnpackWork,
+		Drivers:          d,
+		DNSUpstreams:     upstreams,
+		IPv6Prefix:       prefix,
+		SharedIPv4:       shared,
+		EdgeDial:         edgeDial,
+		EdgeUIDs:         edgeUIDs,
+		NATLog:           *natLog,
+		ImageCacheHigh:   high,
+		ImageCacheLow:    low,
+		Log:              log,
 	})
 	if err == nil {
 		if metricsLn != nil {
@@ -263,7 +280,7 @@ func fakeDrivers(hf hostFlags) (*node.Drivers, func(), error) {
 		return nil, none, err
 	}
 	h.SetSharedIPv4(shared)
-	d := &node.Drivers{Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
+	d := &node.Drivers{Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Converter: h.Converter(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest()}
 	switch hf.network {
 	case "fake":
 		return d, none, nil
@@ -322,6 +339,10 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.cloudHypervisor, "cloud-hypervisor", "/usr/local/bin/cloud-hypervisor", "for --drivers=host, Cloud Hypervisor")
 	fs.StringVar(&hf.kernel, "guest-kernel", "/usr/local/lib/hangar/vmlinux", "for --drivers=host, the guests' kernel")
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
+	fs.StringVar(&hf.converterInitrd, "guest-converter-initramfs", "/usr/local/lib/hangar/converter.cpio", "for --drivers=host, the converter VMs' initramfs, with hangar-init and qemu-img; without the file, custom images are not uploaded")
+	fs.StringVar(&hf.uploadDir, "upload-dir", "", "where files uploaded for custom images are staged, root's alone; empty is --image-dir's uploads with --drivers=host, and none, taking no uploads, with --drivers=fake")
+	fs.DurationVar(&hf.inspectTimeout, "inspect-timeout", node.DefaultInspectTimeout, "how long reading what a file uploaded for a custom image is may take, its converter VM's boot included, before the image fails for good")
+	fs.DurationVar(&hf.convertTimeout, "convert-timeout", node.DefaultConvertTimeout, "how long converting a file uploaded for a custom image, once read, may take, its converter VM's boot included, before the image fails for good")
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
@@ -349,6 +370,30 @@ func (hf hostFlags) prefix() (netip.Prefix, error) {
 		return netip.Prefix{}, fmt.Errorf("--public-ipv6-prefix: %w", err)
 	}
 	return p, nil
+}
+
+// uploadDir is where uploads are staged: --upload-dir, or with the host's
+// drivers --image-dir's uploads, on the images dataset; none without
+// drivers.
+func uploadDir(drivers string, hf hostFlags, d *node.Drivers) string {
+	switch {
+	case d == nil:
+		return ""
+	case hf.uploadDir != "":
+		return hf.uploadDir
+	case drivers == "host":
+		return filepath.Join(hf.imageDir, "uploads")
+	}
+	return ""
+}
+
+// parseSize reads the flag name's quantity of bytes, above zero.
+func parseSize(name, s string) (int64, error) {
+	b, err := quantity.Bytes(s)
+	if err != nil || b == 0 || b > math.MaxInt64 {
+		return 0, fmt.Errorf("%s: %q is not a size above zero", name, s)
+	}
+	return int64(b), nil
 }
 
 // parseImageCache reads --image-cache-high and --image-cache-low, the
@@ -449,10 +494,16 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 	if err != nil {
 		return nil, none, err
 	}
+	converter := hf.converterInitrd
+	if _, err := os.Stat(converter); errors.Is(err, os.ErrNotExist) {
+		slog.Warn("no converter initramfs: custom images are not uploaded to this host", "guest_converter_initramfs", converter)
+		converter = ""
+	}
 	vms, err := chvm.New(ctx, chvm.Config{
 		Firmware:    firmware,
 		MachineCPUs: cpus,
 		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
+		ConverterInitramfs: converter, ConverterRuntime: max(hf.inspectTimeout, hf.convertTimeout),
 		Launcher: []string{exe, "vmm"},
 	})
 	if err != nil {
@@ -464,5 +515,8 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		return nil, none, err
 	}
 	d := &node.Drivers{Images: images, DiskImages: diskImages, Storage: storage, Network: n, Hypervisor: vms, Guest: vms.Guest()}
+	if converter != "" {
+		d.Converter = vms.Converter()
+	}
 	return d, func() { _ = errors.Join(n.Close(), vms.Close()) }, nil
 }

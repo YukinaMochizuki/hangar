@@ -23,74 +23,114 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
-// captureMaker copies CustomImages' snapshots into their bases off the host
-// lock, one job per image, so a copy of many gigabytes holds up no other
-// disk or machine (docs/decisions/custom-images.md).
-type captureMaker struct {
-	storage driver.Storage
-	// timeout bounds one copy, so a stalled one fails rather than leaving
-	// its image capturing.
+// jobs run work of CustomImages off the host lock, one job per image, so
+// a copy or a conversion of many gigabytes holds up no other disk or
+// machine (docs/decisions/custom-images.md): captures copy a snapshot into
+// the base, inspections read what an uploaded file is, conversions write
+// it into the base. T is what a job makes.
+type jobs[T any] struct {
+	// build makes what the job of the image of uid makes. A failure leaves
+	// nothing behind; ctx ending, as the agent stopping or the image going,
+	// leaves what the next build starts again from.
+	build func(ctx context.Context, uid string) (T, error)
+	// what names a build in errors, such as "the copy".
+	what string
+	// timeout bounds one build, so a stalled one fails rather than leaving
+	// its image waiting for ever.
 	timeout time.Duration
-	// slots bounds the copies made at once.
+	// slots bounds the builds at once, which other jobs may share.
 	slots   *fifo
 	running sync.WaitGroup
 
 	mu     sync.Mutex
 	ctx    context.Context
 	notify func()
-	jobs   map[string]*captureJob // by image uid
+	jobs   map[string]*job[T] // by image uid
 }
 
-type captureJob struct {
+type job[T any] struct {
 	running, done bool
 	cancel        context.CancelFunc
-	base          driver.ImageBase
-	// err is why the capture failed for good, as it is never tried again.
+	made          T
+	// err is why the build failed for good, as it is never tried again.
 	err error
 }
 
-func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *captureMaker {
-	return &captureMaker{storage: storage, timeout: timeout, slots: newFIFO(slots), ctx: context.Background(), notify: func() {}, jobs: map[string]*captureJob{}}
+// baseMaker makes CustomImages' bases.
+type baseMaker = jobs[driver.ImageBase]
+
+func newJobs[T any](what string, build func(context.Context, string) (T, error), timeout time.Duration, slots *fifo) *jobs[T] {
+	return &jobs[T]{what: what, build: build, timeout: timeout, slots: slots, ctx: context.Background(), notify: func() {}, jobs: map[string]*job[T]{}}
 }
 
+// newCaptureMaker copies CustomImages' snapshots into their bases. A copy
+// that fails, running out of time among it, takes the snapshot with it.
+func newCaptureMaker(storage driver.Storage, timeout time.Duration, slots int) *baseMaker {
+	return newJobs("the copy", func(ctx context.Context, uid string) (driver.ImageBase, error) {
+		base, err := storage.CaptureImageBase(ctx, uid)
+		if err != nil && !errors.Is(context.Cause(ctx), errBuildCut) {
+			if derr := storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
+				err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))
+			}
+		}
+		return base, err
+	}, timeout, newFIFO(slots))
+}
+
+// errBuildCut is the cause of a build's context ending other than by its
+// timeout: the agent stopping or the image going.
+var errBuildCut = errors.New("cut short")
+
 // start runs jobs under ctx from now on and calls notify as each finishes.
-func (m *captureMaker) start(ctx context.Context, notify func()) {
+func (m *jobs[T]) start(ctx context.Context, notify func()) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ctx, m.notify = ctx, notify
 }
 
-// get says whether the base of the CustomImage of uid is made, and what it
-// is; until it is, get starts making it. A capture that failed returns its
-// error from then on: the agent never tries it again.
-func (m *captureMaker) get(uid string) (driver.ImageBase, bool, error) {
+// get says whether the job of the CustomImage of uid is done, and what it
+// made; until it is, get starts it. A build that failed returns its error
+// from then on: the agent never tries it again.
+func (m *jobs[T]) get(uid string) (T, bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	var none T
 	j := m.jobs[uid]
 	switch {
 	case j == nil:
 		ctx, cancel := context.WithCancel(m.ctx)
-		j = &captureJob{running: true, cancel: cancel}
+		j = &job[T]{running: true, cancel: cancel}
 		m.jobs[uid] = j
 		m.running.Add(1)
 		go m.run(ctx, j, uid)
-		return driver.ImageBase{}, false, nil
+		return none, false, nil
 	case j.running:
-		return driver.ImageBase{}, false, nil
+		return none, false, nil
 	}
-	return j.base, j.done, j.err
+	return j.made, j.done, j.err
 }
 
-func (m *captureMaker) run(ctx context.Context, j *captureJob, uid string) {
+// done returns what the job of uid made, if it is done, and starts none.
+func (m *jobs[T]) done(uid string) (T, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if j := m.jobs[uid]; j != nil && j.done {
+		return j.made, true
+	}
+	var none T
+	return none, false
+}
+
+func (m *jobs[T]) run(ctx context.Context, j *job[T], uid string) {
 	defer m.running.Done()
-	base, err := m.capture(ctx, uid)
+	made, err := m.make(ctx, uid)
 	cut := ctx.Err() != nil
 	m.mu.Lock()
 	j.cancel()
 	j.running = false
 	switch {
 	case err == nil:
-		j.done, j.base = true, base
+		j.done, j.made = true, made
 	case cut:
 		// Cut short, not failed: the next get starts again.
 		if m.jobs[uid] == j {
@@ -104,32 +144,37 @@ func (m *captureMaker) run(ctx context.Context, j *captureJob, uid string) {
 	notify()
 }
 
-// capture copies the image's snapshot into its base, a slot at a time,
-// within m.timeout of starting. A failure, running out of time among
-// them, leaves no base, and takes the snapshot with it; ctx ending, as the
-// agent stopping or the image going, leaves the snapshot.
-func (m *captureMaker) capture(ctx context.Context, uid string) (driver.ImageBase, error) {
+// make runs the image's build, a slot at a time, within m.timeout of
+// starting; past it, the build fails.
+func (m *jobs[T]) make(ctx context.Context, uid string) (T, error) {
 	if err := m.slots.acquire(ctx); err != nil {
-		return driver.ImageBase{}, err
+		var none T
+		return none, err
 	}
 	defer m.slots.release()
-	bounded, cancel := context.WithTimeout(ctx, m.timeout)
+	// Ended by ctx only through errBuildCut, so a build tells it from its
+	// timeout.
+	cuttable, cut := context.WithCancelCause(context.WithoutCancel(ctx))
+	defer cut(nil)
+	stop := context.AfterFunc(ctx, func() { cut(errBuildCut) })
+	defer stop()
+	bounded, cancel := context.WithTimeout(cuttable, m.timeout)
 	defer cancel()
-	base, err := m.storage.CaptureImageBase(bounded, uid)
+	made, err := m.build(bounded, uid)
 	if err != nil && ctx.Err() == nil && bounded.Err() != nil {
-		err = fmt.Errorf("the copy took longer than %v: %w", m.timeout, err)
-	}
-	if err != nil && ctx.Err() == nil {
-		if derr := m.storage.DeleteCapture(context.WithoutCancel(ctx), uid); derr != nil {
-			err = errors.Join(err, fmt.Errorf("and its snapshot stays, for the sweep: %w", derr))
+		// A *stuck keeps its reason.
+		if s := (*stuck)(nil); errors.As(err, &s) {
+			err = blocked(s.reason, fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, s.err))
+		} else {
+			err = fmt.Errorf("%s took longer than %v: %w", m.what, m.timeout, err)
 		}
 	}
-	return base, err
+	return made, err
 }
 
 // keep ends and drops the jobs of images not in wanted, by uid, and
 // returns the uids of the jobs left that still run.
-func (m *captureMaker) keep(wanted map[string]bool) map[string]bool {
+func (m *jobs[T]) keep(wanted map[string]bool) map[string]bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	running := map[string]bool{}
@@ -149,12 +194,14 @@ func (m *captureMaker) keep(wanted map[string]bool) map[string]bool {
 }
 
 // wait returns once every job has ended.
-func (m *captureMaker) wait() { m.running.Wait() }
+func (m *jobs[T]) wait() { m.running.Wait() }
 
 // customImageController captures the CustomImages that live on this node:
 // it snapshots the source disk's volume, reports Snapshotted, copies the
 // snapshot into the image's base off the host lock, and reports Ready, or
-// the failure, for good. What a deleted image leaves the sweep removes.
+// the failure, for good. It takes the uploaded ones' files and has them
+// converted (reconcileUpload). What a deleted image leaves the sweep
+// removes.
 func (a *Agent) customImageController() *controller.Controller {
 	return &controller.Controller{
 		Name:       "customimages",
@@ -223,6 +270,9 @@ func (a *Agent) reconcileCustomImage(ctx context.Context, k controller.Key) erro
 	ci, err := a.getCustomImage(ctx, k.Project, k.Name)
 	if err != nil || ci == nil || ci.GetStatus().GetNode() != a.cfg.Name || ci.GetMetadata().GetDeleteTime() != nil {
 		return err
+	}
+	if ci.GetSpec().GetSource().GetUpload() != nil {
+		return a.reconcileUpload(ctx, ci)
 	}
 	if computeapi.CustomImageFailed(ci) || computeapi.CustomImageReadyNow(ci) {
 		// Done, for good or ill: only its generation is followed.
@@ -305,6 +355,14 @@ func (a *Agent) writeCustomImageStatus(ctx context.Context, ci *storagev1alpha1.
 	if ci.GetStatus() != nil {
 		status = proto.Clone(ci.GetStatus()).(*storagev1alpha1.CustomImageStatus)
 	}
+	status.UsedSize = usedSize
+	return a.writeStatusAgainst(ctx, ci, status, conds...)
+}
+
+// writeStatusAgainst writes status, with conds set and every condition at
+// ci's generation, unless that is ci's status already. The write is
+// conditional on ci's resource version.
+func (a *Agent) writeStatusAgainst(ctx context.Context, ci *storagev1alpha1.CustomImage, status *storagev1alpha1.CustomImageStatus, conds ...*metav1.Condition) error {
 	gen := ci.GetMetadata().GetGeneration()
 	for _, c := range conds {
 		c.ObservedGeneration = gen
@@ -313,7 +371,7 @@ func (a *Agent) writeCustomImageStatus(ctx context.Context, ci *storagev1alpha1.
 	for _, c := range status.GetConditions() {
 		c.ObservedGeneration = gen
 	}
-	status.ObservedGeneration, status.UsedSize = gen, usedSize
+	status.ObservedGeneration = gen
 	if proto.Equal(status, ci.GetStatus()) {
 		return nil
 	}

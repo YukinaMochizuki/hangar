@@ -27,6 +27,16 @@ service NodeService {
   // request names the machine, which must be on this node; the node picks
   // the address. See docs/decisions/vm-ssh.md.
   rpc SSH(stream SSHRequest) returns (stream SSHResponse);
+  // UploadCustomImage writes one chunk of a CustomImage's upload to the
+  // file the node stages it in. The first request says where the chunk
+  // goes; later ones carry its bytes, length bytes in all. The chunk
+  // counts only once its sha256 matches; one that does not is dropped,
+  // INVALID_ARGUMENT, and one not at the node's count is refused before
+  // its bytes are read, ABORTED. The response is the node's new count.
+  rpc UploadCustomImage(stream UploadCustomImageRequest) returns (UploadCustomImageResponse);
+  // GetCustomImageUpload says how many bytes of a CustomImage's upload
+  // the node holds, every chunk checked: where the next chunk starts.
+  rpc GetCustomImageUpload(GetCustomImageUploadRequest) returns (GetCustomImageUploadResponse);
 }
 
 message LogsRequest {
@@ -141,4 +151,35 @@ message SSHRequest {
 message SSHResponse {
   // What the guest's sshd sends, as it comes.
   bytes data = 1;
+}
+
+message UploadCustomImageRequest {
+  oneof message {
+    // The first request, and only the first.
+    UploadChunk chunk = 1;
+    // The chunk's bytes, in order.
+    bytes data = 2;
+  }
+}
+
+// UploadChunk says where a chunk of an upload goes.
+message UploadChunk {
+  string image_uid = 1;
+  // Where in the file the chunk starts: the node's count of bytes held.
+  int64 offset = 2;
+  int64 length = 3;
+  // SHA-256 of the chunk, as 64 lowercase hex digits.
+  string sha256 = 4;
+}
+
+message UploadCustomImageResponse {
+  int64 received_bytes = 1;
+}
+
+message GetCustomImageUploadRequest {
+  string image_uid = 1;
+}
+
+message GetCustomImageUploadResponse {
+  int64 received_bytes = 1;
 }

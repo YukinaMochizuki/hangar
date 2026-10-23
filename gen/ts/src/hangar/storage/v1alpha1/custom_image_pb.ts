@@ -4,6 +4,8 @@
 
 import type { GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import { fileDesc, messageDesc, serviceDesc } from "@bufbuild/protobuf/codegenv2";
+import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import { file_google_protobuf_timestamp } from "@bufbuild/protobuf/wkt";
 import type { Condition, EventType, ObjectMeta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_meta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_options } from "../../meta/v1/options_pb";
@@ -13,17 +15,17 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/storage/v1alpha1/custom_image.proto.
  */
 export const file_hangar_storage_v1alpha1_custom_image: GenFile = /*@__PURE__*/
-  fileDesc("CipoYW5nYXIvc3RvcmFnZS92MWFscGhhMS9jdXN0b21faW1hZ2UucHJvdG8SF2hhbmdhci5zdG9yYWdlLnYxYWxwaGExIvsBCgtDdXN0b21JbWFnZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI2CgRzcGVjGAQgASgLMiguaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2VTcGVjEjoKBnN0YXR1cxgFIAEoCzIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlU3RhdHVzOieKtRgjCgtDdXN0b21JbWFnZRIMY3VzdG9taW1hZ2VzGgRjaW1nIAEinwEKD0N1c3RvbUltYWdlU3BlYxJCCgZzb3VyY2UYASABKAsyKi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZVNvdXJjZUIGirUYAggBEgoKAm9zGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSFAoMZGVmYXVsdF91c2VyGAQgASgJEhUKDW1pbl9kaXNrX3NpemUYBSABKAkiXQoRQ3VzdG9tSW1hZ2VTb3VyY2USPgoEZGlzaxgBIAEoCzIuLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlRGlza1NvdXJjZUgAQggKBnNvdXJjZSIlChVDdXN0b21JbWFnZURpc2tTb3VyY2USDAoEbmFtZRgBIAEoCSKTAQoRQ3VzdG9tSW1hZ2VTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEgwKBG5vZGUYAyABKAkSEQoJZGlza19zaXplGAQgASgJEhEKCXVzZWRfc2l6ZRgFIAEoCSI2ChVHZXRDdXN0b21JbWFnZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJIlQKFkdldEN1c3RvbUltYWdlUmVzcG9uc2USOgoMY3VzdG9tX2ltYWdlGAEgASgLMiQuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2UiaQoXTGlzdEN1c3RvbUltYWdlc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIRCglwYWdlX3NpemUYAyABKAUSEgoKcGFnZV90b2tlbhgEIAEoCSJ6ChhMaXN0Q3VzdG9tSW1hZ2VzUmVzcG9uc2USMwoFaXRlbXMYASADKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiWwoYV2F0Y2hDdXN0b21JbWFnZXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSFgoOc2luY2VfcmV2aXNpb24YAyABKAMikgEKGVdhdGNoQ3VzdG9tSW1hZ2VzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRI6CgxjdXN0b21faW1hZ2UYAiABKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRIQCghyZXZpc2lvbhgDIAEoAyJqChdBcHBseUN1c3RvbUltYWdlUmVxdWVzdBI6CgxjdXN0b21faW1hZ2UYASABKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRITCgtjcmVhdGVfb25seRgCIAEoCCJ5ChhBcHBseUN1c3RvbUltYWdlUmVzcG9uc2USOgoMY3VzdG9tX2ltYWdlGAEgASgLMiQuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2USEAoId2FybmluZ3MYAiADKAkSDwoHY3JlYXRlZBgDIAEoCCJ/ChhEZWxldGVDdXN0b21JbWFnZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJXChlEZWxldGVDdXN0b21JbWFnZVJlc3BvbnNlEjoKDGN1c3RvbV9pbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlIsEBCh5VcGRhdGVDdXN0b21JbWFnZVN0YXR1c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEjoKBnN0YXR1cxgDIAEoCzIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJdCh9VcGRhdGVDdXN0b21JbWFnZVN0YXR1c1Jlc3BvbnNlEjoKDGN1c3RvbV9pbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlMoIGChJDdXN0b21JbWFnZVNlcnZpY2UScQoOR2V0Q3VzdG9tSW1hZ2USLi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXRDdXN0b21JbWFnZVJlcXVlc3QaLy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXRDdXN0b21JbWFnZVJlc3BvbnNlEncKEExpc3RDdXN0b21JbWFnZXMSMC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5MaXN0Q3VzdG9tSW1hZ2VzUmVxdWVzdBoxLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkxpc3RDdXN0b21JbWFnZXNSZXNwb25zZRJ8ChFXYXRjaEN1c3RvbUltYWdlcxIxLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoQ3VzdG9tSW1hZ2VzUmVxdWVzdBoyLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoQ3VzdG9tSW1hZ2VzUmVzcG9uc2UwARJ3ChBBcHBseUN1c3RvbUltYWdlEjAuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQXBwbHlDdXN0b21JbWFnZVJlcXVlc3QaMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5BcHBseUN1c3RvbUltYWdlUmVzcG9uc2USegoRRGVsZXRlQ3VzdG9tSW1hZ2USMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVDdXN0b21JbWFnZVJlcXVlc3QaMi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVDdXN0b21JbWFnZVJlc3BvbnNlEowBChdVcGRhdGVDdXN0b21JbWFnZVN0YXR1cxI3Lmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLlVwZGF0ZUN1c3RvbUltYWdlU3RhdHVzUmVxdWVzdBo4Lmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLlVwZGF0ZUN1c3RvbUltYWdlU3RhdHVzUmVzcG9uc2VC/wEKG2NvbS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMUIQQ3VzdG9tSW1hZ2VQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9zdG9yYWdlL3YxYWxwaGExO3N0b3JhZ2V2MWFscGhhMaICA0hTWKoCF0hhbmdhci5TdG9yYWdlLlYxYWxwaGExygIXSGFuZ2FyXFN0b3JhZ2VcVjFhbHBoYTHiAiNIYW5nYXJcU3RvcmFnZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6U3RvcmFnZTo6VjFhbHBoYTFiBnByb3RvMw", [file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("CipoYW5nYXIvc3RvcmFnZS92MWFscGhhMS9jdXN0b21faW1hZ2UucHJvdG8SF2hhbmdhci5zdG9yYWdlLnYxYWxwaGExIvsBCgtDdXN0b21JbWFnZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI2CgRzcGVjGAQgASgLMiguaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2VTcGVjEjoKBnN0YXR1cxgFIAEoCzIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlU3RhdHVzOieKtRgjCgtDdXN0b21JbWFnZRIMY3VzdG9taW1hZ2VzGgRjaW1nIAEinwEKD0N1c3RvbUltYWdlU3BlYxJCCgZzb3VyY2UYASABKAsyKi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZVNvdXJjZUIGirUYAggBEgoKAm9zGAIgASgJEg8KB3ZlcnNpb24YAyABKAkSFAoMZGVmYXVsdF91c2VyGAQgASgJEhUKDW1pbl9kaXNrX3NpemUYBSABKAkioQEKEUN1c3RvbUltYWdlU291cmNlEj4KBGRpc2sYASABKAsyLi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZURpc2tTb3VyY2VIABJCCgZ1cGxvYWQYAiABKAsyMC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZVVwbG9hZFNvdXJjZUgAQggKBnNvdXJjZSIlChVDdXN0b21JbWFnZURpc2tTb3VyY2USDAoEbmFtZRgBIAEoCSI3ChdDdXN0b21JbWFnZVVwbG9hZFNvdXJjZRIMCgRzaXplGAEgASgDEg4KBnNoYTI1NhgCIAEoCSKFAgoRQ3VzdG9tSW1hZ2VTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEgwKBG5vZGUYAyABKAkSEQoJZGlza19zaXplGAQgASgJEhEKCXVzZWRfc2l6ZRgFIAEoCRIWCg5yZWNlaXZlZF9ieXRlcxgGIAEoAxIOCgZzaGEyNTYYByABKAkSMgoOdXBsb2FkX2V4cGlyZXMYCCABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEhQKDHZpcnR1YWxfc2l6ZRgJIAEoAyI2ChVHZXRDdXN0b21JbWFnZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJIlQKFkdldEN1c3RvbUltYWdlUmVzcG9uc2USOgoMY3VzdG9tX2ltYWdlGAEgASgLMiQuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2UiaQoXTGlzdEN1c3RvbUltYWdlc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIRCglwYWdlX3NpemUYAyABKAUSEgoKcGFnZV90b2tlbhgEIAEoCSJ6ChhMaXN0Q3VzdG9tSW1hZ2VzUmVzcG9uc2USMwoFaXRlbXMYASADKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiWwoYV2F0Y2hDdXN0b21JbWFnZXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSFgoOc2luY2VfcmV2aXNpb24YAyABKAMikgEKGVdhdGNoQ3VzdG9tSW1hZ2VzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRI6CgxjdXN0b21faW1hZ2UYAiABKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRIQCghyZXZpc2lvbhgDIAEoAyJqChdBcHBseUN1c3RvbUltYWdlUmVxdWVzdBI6CgxjdXN0b21faW1hZ2UYASABKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5DdXN0b21JbWFnZRITCgtjcmVhdGVfb25seRgCIAEoCCJ5ChhBcHBseUN1c3RvbUltYWdlUmVzcG9uc2USOgoMY3VzdG9tX2ltYWdlGAEgASgLMiQuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQ3VzdG9tSW1hZ2USEAoId2FybmluZ3MYAiADKAkSDwoHY3JlYXRlZBgDIAEoCCJ/ChhEZWxldGVDdXN0b21JbWFnZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJXChlEZWxldGVDdXN0b21JbWFnZVJlc3BvbnNlEjoKDGN1c3RvbV9pbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlIsEBCh5VcGRhdGVDdXN0b21JbWFnZVN0YXR1c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEjoKBnN0YXR1cxgDIAEoCzIqLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJdCh9VcGRhdGVDdXN0b21JbWFnZVN0YXR1c1Jlc3BvbnNlEjoKDGN1c3RvbV9pbWFnZRgBIAEoCzIkLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkN1c3RvbUltYWdlMoIGChJDdXN0b21JbWFnZVNlcnZpY2UScQoOR2V0Q3VzdG9tSW1hZ2USLi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXRDdXN0b21JbWFnZVJlcXVlc3QaLy5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5HZXRDdXN0b21JbWFnZVJlc3BvbnNlEncKEExpc3RDdXN0b21JbWFnZXMSMC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5MaXN0Q3VzdG9tSW1hZ2VzUmVxdWVzdBoxLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLkxpc3RDdXN0b21JbWFnZXNSZXNwb25zZRJ8ChFXYXRjaEN1c3RvbUltYWdlcxIxLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoQ3VzdG9tSW1hZ2VzUmVxdWVzdBoyLmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLldhdGNoQ3VzdG9tSW1hZ2VzUmVzcG9uc2UwARJ3ChBBcHBseUN1c3RvbUltYWdlEjAuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuQXBwbHlDdXN0b21JbWFnZVJlcXVlc3QaMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5BcHBseUN1c3RvbUltYWdlUmVzcG9uc2USegoRRGVsZXRlQ3VzdG9tSW1hZ2USMS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVDdXN0b21JbWFnZVJlcXVlc3QaMi5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5EZWxldGVDdXN0b21JbWFnZVJlc3BvbnNlEowBChdVcGRhdGVDdXN0b21JbWFnZVN0YXR1cxI3Lmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLlVwZGF0ZUN1c3RvbUltYWdlU3RhdHVzUmVxdWVzdBo4Lmhhbmdhci5zdG9yYWdlLnYxYWxwaGExLlVwZGF0ZUN1c3RvbUltYWdlU3RhdHVzUmVzcG9uc2VC/wEKG2NvbS5oYW5nYXIuc3RvcmFnZS52MWFscGhhMUIQQ3VzdG9tSW1hZ2VQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9zdG9yYWdlL3YxYWxwaGExO3N0b3JhZ2V2MWFscGhhMaICA0hTWKoCF0hhbmdhci5TdG9yYWdlLlYxYWxwaGExygIXSGFuZ2FyXFN0b3JhZ2VcVjFhbHBoYTHiAiNIYW5nYXJcU3RvcmFnZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6U3RvcmFnZTo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * CustomImage is a disk image of a project's own, captured from one of its
- * Disks, such as a stopped VM's root disk, that the project's disks are
- * then made from as they are from an Image. It is an independent copy: the
- * source disk can be started, changed or deleted once the image is
- * snapshotted. The platform does not change what it holds; run
- * "cloud-init clean --machine-id" in the guest before stopping it, so each
- * VM made from the image is a new instance. See
- * docs/decisions/custom-images.md.
+ * Disks, such as a stopped VM's root disk, or uploaded as a raw or qcow2
+ * file, that the project's disks are then made from as they are from an
+ * Image. It is an independent copy: the source disk can be started,
+ * changed or deleted once the image is snapshotted. The platform does not
+ * change what it holds; run "cloud-init clean --machine-id" in the guest
+ * before stopping it, so each VM made from the image is a new instance.
+ * See docs/decisions/custom-images.md.
  *
  * @generated from message hangar.storage.v1alpha1.CustomImage
  */
@@ -68,8 +70,8 @@ export const CustomImageSchema: GenMessage<CustomImage> = /*@__PURE__*/
  */
 export type CustomImageSpec = Message<"hangar.storage.v1alpha1.CustomImageSpec"> & {
   /**
-   * What the image is captured from; it cannot change once the image is
-   * made.
+   * What the image is captured or uploaded from; it cannot change once the
+   * image is made.
    *
    * @generated from field: hangar.storage.v1alpha1.CustomImageSource source = 1;
    */
@@ -113,7 +115,7 @@ export const CustomImageSpecSchema: GenMessage<CustomImageSpec> = /*@__PURE__*/
   messageDesc(file_hangar_storage_v1alpha1_custom_image, 1);
 
 /**
- * CustomImageSource is what an image is captured from.
+ * CustomImageSource is what an image is captured or uploaded from.
  *
  * @generated from message hangar.storage.v1alpha1.CustomImageSource
  */
@@ -132,6 +134,16 @@ export type CustomImageSource = Message<"hangar.storage.v1alpha1.CustomImageSour
      */
     value: CustomImageDiskSource;
     case: "disk";
+  } | {
+    /**
+     * A raw or qcow2 file, uploaded in chunks to the image's :upload path
+     * once the image is made, then converted on its node. See
+     * docs/decisions/custom-images.md.
+     *
+     * @generated from field: hangar.storage.v1alpha1.CustomImageUploadSource upload = 2;
+     */
+    value: CustomImageUploadSource;
+    case: "upload";
   } | { case: undefined; value?: undefined };
 };
 
@@ -164,9 +176,41 @@ export const CustomImageDiskSourceSchema: GenMessage<CustomImageDiskSource> = /*
   messageDesc(file_hangar_storage_v1alpha1_custom_image, 3);
 
 /**
+ * CustomImageUploadSource is the file an image is uploaded from.
+ *
+ * @generated from message hangar.storage.v1alpha1.CustomImageUploadSource
+ */
+export type CustomImageUploadSource = Message<"hangar.storage.v1alpha1.CustomImageUploadSource"> & {
+  /**
+   * The file's size in bytes, at most 16Gi unless the platform says
+   * otherwise; it is what the image counts toward the disk quota until its
+   * virtual size is known.
+   *
+   * @generated from field: int64 size = 1;
+   */
+  size: bigint;
+
+  /**
+   * SHA-256 of the whole file, as 64 lowercase hex digits; a file that does
+   * not match fails the image. Empty, the file is not checked as a whole,
+   * though each chunk is.
+   *
+   * @generated from field: string sha256 = 2;
+   */
+  sha256: string;
+};
+
+/**
+ * Describes the message hangar.storage.v1alpha1.CustomImageUploadSource.
+ * Use `create(CustomImageUploadSourceSchema)` to create a new message.
+ */
+export const CustomImageUploadSourceSchema: GenMessage<CustomImageUploadSource> = /*@__PURE__*/
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 4);
+
+/**
  * CustomImageStatus is what the apiserver and the image's node found. The
- * apiserver writes node and disk_size as the image is made; the node writes
- * the conditions and used_size.
+ * apiserver writes node, and disk_size of a captured image, as the image is
+ * made; the node writes the rest.
  *
  * @generated from message hangar.storage.v1alpha1.CustomImageStatus
  */
@@ -182,7 +226,8 @@ export type CustomImageStatus = Message<"hangar.storage.v1alpha1.CustomImageStat
   conditions: Condition[];
 
   /**
-   * Names the Node the image lives on: its source disk's. Disks made from
+   * Names the Node the image lives on: its source disk's, or for an upload
+   * the node picked as it is made, which takes the file. Disks made from
    * the image are made there.
    *
    * @generated from field: string node = 3;
@@ -190,8 +235,8 @@ export type CustomImageStatus = Message<"hangar.storage.v1alpha1.CustomImageStat
   node: string;
 
   /**
-   * The source disk's size, in whole Gi: the smallest disk made from the
-   * image.
+   * The smallest disk made from the image, in whole Gi: the source disk's
+   * size, or for an upload the converted image's, set once it is Ready.
    *
    * @generated from field: string disk_size = 4;
    */
@@ -199,11 +244,48 @@ export type CustomImageStatus = Message<"hangar.storage.v1alpha1.CustomImageStat
 
   /**
    * What the image holds, rounded up to whole Gi, once it is Ready: what it
-   * counts toward the disk quota. Until then it counts as disk_size.
+   * counts toward the disk quota. Until then it counts as disk_size, or an
+   * upload as the larger of its size and virtual_size.
    *
    * @generated from field: string used_size = 5;
    */
   usedSize: string;
+
+  /**
+   * How many bytes of an upload the node holds, every chunk checked: where
+   * the next chunk starts. Reported at most a few times a second; the
+   * :upload path answers the node's own count.
+   *
+   * @generated from field: int64 received_bytes = 6;
+   */
+  receivedBytes: bigint;
+
+  /**
+   * SHA-256 of the uploaded file as the node computed it, as 64 lowercase
+   * hex digits, once the whole file is in.
+   *
+   * @generated from field: string sha256 = 7;
+   */
+  sha256: string;
+
+  /**
+   * When an upload not yet whole fails, as UploadExpired: 24 hours after
+   * the image is made, unless the platform says otherwise.
+   *
+   * @generated from field: google.protobuf.Timestamp upload_expires = 8;
+   */
+  uploadExpires?: Timestamp | undefined;
+
+  /**
+   * The size in bytes of the disk an uploaded file describes, as the node
+   * inspected it before converting. The apiserver keeps it only once the
+   * project and tenant have the disk quota for it, rounded up to whole Gi,
+   * and fails the image as QuotaExceeded otherwise; the node converts only
+   * once it is kept. Never changes once set.
+   *
+   * @generated from field: int64 virtual_size = 9;
+   */
+  virtualSize: bigint;
 };
 
 /**
@@ -211,7 +293,7 @@ export type CustomImageStatus = Message<"hangar.storage.v1alpha1.CustomImageStat
  * Use `create(CustomImageStatusSchema)` to create a new message.
  */
 export const CustomImageStatusSchema: GenMessage<CustomImageStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 4);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 5);
 
 /**
  * @generated from message hangar.storage.v1alpha1.GetCustomImageRequest
@@ -233,7 +315,7 @@ export type GetCustomImageRequest = Message<"hangar.storage.v1alpha1.GetCustomIm
  * Use `create(GetCustomImageRequestSchema)` to create a new message.
  */
 export const GetCustomImageRequestSchema: GenMessage<GetCustomImageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 5);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 6);
 
 /**
  * @generated from message hangar.storage.v1alpha1.GetCustomImageResponse
@@ -250,7 +332,7 @@ export type GetCustomImageResponse = Message<"hangar.storage.v1alpha1.GetCustomI
  * Use `create(GetCustomImageResponseSchema)` to create a new message.
  */
 export const GetCustomImageResponseSchema: GenMessage<GetCustomImageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 6);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 7);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ListCustomImagesRequest
@@ -284,7 +366,7 @@ export type ListCustomImagesRequest = Message<"hangar.storage.v1alpha1.ListCusto
  * Use `create(ListCustomImagesRequestSchema)` to create a new message.
  */
 export const ListCustomImagesRequestSchema: GenMessage<ListCustomImagesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 7);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 8);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ListCustomImagesResponse
@@ -311,7 +393,7 @@ export type ListCustomImagesResponse = Message<"hangar.storage.v1alpha1.ListCust
  * Use `create(ListCustomImagesResponseSchema)` to create a new message.
  */
 export const ListCustomImagesResponseSchema: GenMessage<ListCustomImagesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 8);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 9);
 
 /**
  * @generated from message hangar.storage.v1alpha1.WatchCustomImagesRequest
@@ -340,7 +422,7 @@ export type WatchCustomImagesRequest = Message<"hangar.storage.v1alpha1.WatchCus
  * Use `create(WatchCustomImagesRequestSchema)` to create a new message.
  */
 export const WatchCustomImagesRequestSchema: GenMessage<WatchCustomImagesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 9);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 10);
 
 /**
  * @generated from message hangar.storage.v1alpha1.WatchCustomImagesResponse
@@ -367,7 +449,7 @@ export type WatchCustomImagesResponse = Message<"hangar.storage.v1alpha1.WatchCu
  * Use `create(WatchCustomImagesResponseSchema)` to create a new message.
  */
 export const WatchCustomImagesResponseSchema: GenMessage<WatchCustomImagesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 10);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 11);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ApplyCustomImageRequest
@@ -391,7 +473,7 @@ export type ApplyCustomImageRequest = Message<"hangar.storage.v1alpha1.ApplyCust
  * Use `create(ApplyCustomImageRequestSchema)` to create a new message.
  */
 export const ApplyCustomImageRequestSchema: GenMessage<ApplyCustomImageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 11);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 12);
 
 /**
  * @generated from message hangar.storage.v1alpha1.ApplyCustomImageResponse
@@ -418,7 +500,7 @@ export type ApplyCustomImageResponse = Message<"hangar.storage.v1alpha1.ApplyCus
  * Use `create(ApplyCustomImageResponseSchema)` to create a new message.
  */
 export const ApplyCustomImageResponseSchema: GenMessage<ApplyCustomImageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 12);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 13);
 
 /**
  * @generated from message hangar.storage.v1alpha1.DeleteCustomImageRequest
@@ -445,7 +527,7 @@ export type DeleteCustomImageRequest = Message<"hangar.storage.v1alpha1.DeleteCu
  * Use `create(DeleteCustomImageRequestSchema)` to create a new message.
  */
 export const DeleteCustomImageRequestSchema: GenMessage<DeleteCustomImageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 13);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 14);
 
 /**
  * @generated from message hangar.storage.v1alpha1.DeleteCustomImageResponse
@@ -462,7 +544,7 @@ export type DeleteCustomImageResponse = Message<"hangar.storage.v1alpha1.DeleteC
  * Use `create(DeleteCustomImageResponseSchema)` to create a new message.
  */
 export const DeleteCustomImageResponseSchema: GenMessage<DeleteCustomImageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 14);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 15);
 
 /**
  * @generated from message hangar.storage.v1alpha1.UpdateCustomImageStatusRequest
@@ -494,7 +576,7 @@ export type UpdateCustomImageStatusRequest = Message<"hangar.storage.v1alpha1.Up
  * Use `create(UpdateCustomImageStatusRequestSchema)` to create a new message.
  */
 export const UpdateCustomImageStatusRequestSchema: GenMessage<UpdateCustomImageStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 15);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 16);
 
 /**
  * @generated from message hangar.storage.v1alpha1.UpdateCustomImageStatusResponse
@@ -511,7 +593,7 @@ export type UpdateCustomImageStatusResponse = Message<"hangar.storage.v1alpha1.U
  * Use `create(UpdateCustomImageStatusResponseSchema)` to create a new message.
  */
 export const UpdateCustomImageStatusResponseSchema: GenMessage<UpdateCustomImageStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_storage_v1alpha1_custom_image, 16);
+  messageDesc(file_hangar_storage_v1alpha1_custom_image, 17);
 
 /**
  * CustomImageService manages custom images.

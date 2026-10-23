@@ -153,11 +153,15 @@
     },
     "hangar.storage.v1alpha1.CustomImageSource": {
       "additionalProperties": false,
-      "description": "CustomImageSource is what an image is captured from.",
+      "description": "CustomImageSource is what an image is captured or uploaded from.",
       "properties": {
         "disk": {
           "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageDiskSource",
-          "description": "A Disk in the image's project, captured as it is when the image is made. The disk must have been made on a node, and every machine it is attached to must be stopped; until the image is snapshotted, none of them can start and no machine can attach it.\n\nSet at most one of disk."
+          "description": "A Disk in the image's project, captured as it is when the image is made. The disk must have been made on a node, and every machine it is attached to must be stopped; until the image is snapshotted, none of them can start and no machine can attach it.\n\nSet at most one of disk, upload."
+        },
+        "upload": {
+          "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageUploadSource",
+          "description": "A raw or qcow2 file, uploaded in chunks to the image's :upload path once the image is made, then converted on its node. See docs/decisions/custom-images.md.\n\nSet at most one of disk, upload."
         }
       },
       "type": "object"
@@ -180,7 +184,7 @@
         },
         "source": {
           "$ref": "#/$defs/hangar.storage.v1alpha1.CustomImageSource",
-          "description": "What the image is captured from; it cannot change once the image is made."
+          "description": "What the image is captured or uploaded from; it cannot change once the image is made."
         },
         "version": {
           "type": "string"
@@ -190,7 +194,7 @@
     },
     "hangar.storage.v1alpha1.CustomImageStatus": {
       "additionalProperties": false,
-      "description": "CustomImageStatus is what the apiserver and the image's node found. The apiserver writes node and disk_size as the image is made; the node writes the conditions and used_size.",
+      "description": "CustomImageStatus is what the apiserver and the image's node found. The apiserver writes node, and disk_size of a captured image, as the image is made; the node writes the rest.",
       "properties": {
         "conditions": {
           "items": {
@@ -199,11 +203,11 @@
           "type": "array"
         },
         "diskSize": {
-          "description": "The source disk's size, in whole Gi: the smallest disk made from the image.",
+          "description": "The smallest disk made from the image, in whole Gi: the source disk's size, or for an upload the converted image's, set once it is Ready.",
           "type": "string"
         },
         "node": {
-          "description": "Names the Node the image lives on: its source disk's. Disks made from the image are made there.",
+          "description": "Names the Node the image lives on: its source disk's, or for an upload the node picked as it is made, which takes the file. Disks made from the image are made there.",
           "type": "string"
         },
         "observedGeneration": {
@@ -214,9 +218,56 @@
             "string"
           ]
         },
-        "usedSize": {
-          "description": "What the image holds, rounded up to whole Gi, once it is Ready: what it counts toward the disk quota. Until then it counts as disk_size.",
+        "receivedBytes": {
+          "description": "How many bytes of an upload the node holds, every chunk checked: where the next chunk starts. Reported at most a few times a second; the :upload path answers the node's own count.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "sha256": {
+          "description": "SHA-256 of the uploaded file as the node computed it, as 64 lowercase hex digits, once the whole file is in.",
           "type": "string"
+        },
+        "uploadExpires": {
+          "description": "When an upload not yet whole fails, as UploadExpired: 24 hours after the image is made, unless the platform says otherwise.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "usedSize": {
+          "description": "What the image holds, rounded up to whole Gi, once it is Ready: what it counts toward the disk quota. Until then it counts as disk_size, or an upload as the larger of its size and virtual_size.",
+          "type": "string"
+        },
+        "virtualSize": {
+          "description": "The size in bytes of the disk an uploaded file describes, as the node inspected it before converting. The apiserver keeps it only once the project and tenant have the disk quota for it, rounded up to whole Gi, and fails the image as QuotaExceeded otherwise; the node converts only once it is kept. Never changes once set.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "hangar.storage.v1alpha1.CustomImageUploadSource": {
+      "additionalProperties": false,
+      "description": "CustomImageUploadSource is the file an image is uploaded from.",
+      "properties": {
+        "sha256": {
+          "description": "SHA-256 of the whole file, as 64 lowercase hex digits; a file that does not match fails the image. Empty, the file is not checked as a whole, though each chunk is.",
+          "type": "string"
+        },
+        "size": {
+          "description": "The file's size in bytes, at most 16Gi unless the platform says otherwise; it is what the image counts toward the disk quota until its virtual size is known.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
         }
       },
       "type": "object"
@@ -224,7 +275,7 @@
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "CustomImage is a disk image of a project's own, captured from one of its Disks, such as a stopped VM's root disk, that the project's disks are then made from as they are from an Image. It is an independent copy: the source disk can be started, changed or deleted once the image is snapshotted. The platform does not change what it holds; run \"cloud-init clean --machine-id\" in the guest before stopping it, so each VM made from the image is a new instance. See docs/decisions/custom-images.md.",
+  "description": "CustomImage is a disk image of a project's own, captured from one of its Disks, such as a stopped VM's root disk, or uploaded as a raw or qcow2 file, that the project's disks are then made from as they are from an Image. It is an independent copy: the source disk can be started, changed or deleted once the image is snapshotted. The platform does not change what it holds; run \"cloud-init clean --machine-id\" in the guest before stopping it, so each VM made from the image is a new instance. See docs/decisions/custom-images.md.",
   "properties": {
     "apiVersion": {
       "const": "storage.hangarlab.cloud/v1alpha1",

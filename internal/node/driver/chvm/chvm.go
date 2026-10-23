@@ -70,6 +70,13 @@ type Config struct {
 	// DefaultFirmwareStopGrace.
 	Firmware          string
 	FirmwareStopGrace time.Duration
+	// ConverterInitramfs is the converter initramfs, with hangar-init and
+	// qemu-img, which converter VMs boot (Converter); empty takes no
+	// uploads. ConverterRuntime bounds how long one converter VM runs, its
+	// unit's RuntimeMaxSec, so one the agent lost track of ends; zero means
+	// DefaultConverterRuntime.
+	ConverterInitramfs string
+	ConverterRuntime   time.Duration
 	// MachineCPUs are the CPUs the VMs may use, as MachineCPUs reads them;
 	// none means every online CPU. New gives them to the VMs' slice, which a
 	// VM running already is in only from its next start.
@@ -93,6 +100,9 @@ type Config struct {
 	sysfs string
 	// removeAll, if set, replaces os.RemoveAll in removeRuntime.
 	removeAll func(string) error
+	// giveFile, if set, replaces giveFile, which a test that is not root
+	// cannot do.
+	giveFile func(path string, gid int) error
 }
 
 // Hypervisor is the driver. It is safe for concurrent use.
@@ -107,6 +117,7 @@ type Hypervisor struct {
 	users     sync.Mutex
 	procUsers func() (map[uint32]bool, error)
 	removeAll func(string) error
+	giveFile  func(path string, gid int) error
 }
 
 var _ driver.Hypervisor = (*Hypervisor)(nil)
@@ -148,6 +159,12 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if cfg.Firmware != "" {
 		paths = append(paths, cfg.Firmware)
 	}
+	if cfg.ConverterInitramfs != "" {
+		paths = append(paths, cfg.ConverterInitramfs)
+	}
+	if cfg.ConverterRuntime == 0 {
+		cfg.ConverterRuntime = DefaultConverterRuntime
+	}
 	for _, p := range paths {
 		if !filepath.IsAbs(p) {
 			return nil, fmt.Errorf("%q is not an absolute path", p)
@@ -173,6 +190,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	h.removeAll = cfg.removeAll
 	if h.removeAll == nil {
 		h.removeAll = os.RemoveAll
+	}
+	h.giveFile = cfg.giveFile
+	if h.giveFile == nil {
+		h.giveFile = giveFile
 	}
 	h.guest = cfg.guest
 	if h.guest == nil {
@@ -204,6 +225,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if err := h.sd.slice(ctx, machinesSlice, machinesSliceDescription, sliceProps(cpus)); err != nil {
 		h.sd.close()
 		return nil, fmt.Errorf("the VMs' slice %s: %w", machinesSlice, err)
+	}
+	if err := h.clearConverters(ctx); err != nil {
+		h.sd.close()
+		return nil, fmt.Errorf("clearing what converter VMs left: %w", err)
 	}
 	return h, nil
 }
@@ -322,6 +347,12 @@ func (h *Hypervisor) VMs(ctx context.Context) ([]driver.VM, error) {
 			uids[e.Name()] = true
 		}
 	}
+	// A converter VM is the driver's own, which no machine accounts for.
+	for uid := range uids {
+		if isConverter(uid) {
+			delete(uids, uid)
+		}
+	}
 	var out []driver.VM
 	for _, uid := range slices.Sorted(func(yield func(string) bool) {
 		for u := range uids {
@@ -362,6 +393,9 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	}
 	if spec.Firmware && h.cfg.Firmware == "" {
 		return fmt.Errorf("machine %s boots through firmware, which this host has none of", uid)
+	}
+	if spec.Converter != nil && h.cfg.ConverterInitramfs == "" {
+		return fmt.Errorf("%s is a converter VM, and this host has no converter initramfs", uid)
 	}
 	restart, err := restartOf(spec.Restart)
 	if err != nil {
@@ -431,18 +465,32 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		if err := writeAtomic(filepath.Join(dir, bootFile), disk); err != nil {
 			return err
 		}
-		if spec.FileShareServer != nil {
+		if blankVDA(spec) {
 			if err := writeAtomic(filepath.Join(dir, blankFile), make([]byte, blankSize)); err != nil {
 				return err
 			}
 		}
 	}
+	if c := spec.Converter; c != nil {
+		// Its own initramfs, and the file, bound read-only into the unit.
+		ln.Initramfs = h.cfg.ConverterInitramfs
+		sb.Binds = []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.ConverterInitramfs, c.File}
+	}
 	user, err := h.writeLaunch(dir, ln)
 	if err != nil {
 		return err
 	}
+	if c := spec.Converter; c != nil {
+		if err := h.giveFile(c.File, int(user)); err != nil {
+			return err
+		}
+	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
-	if err := h.sd.start(ctx, unitName(uid), unitProps(spec, argv, restart, stopTimeout(ln.stopTimes()), sb)); err != nil {
+	props := unitProps(spec, argv, restart, stopTimeout(ln.stopTimes()), sb)
+	if spec.Converter != nil {
+		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
+	}
+	if err := h.sd.start(ctx, unitName(uid), props); err != nil {
 		return fmt.Errorf("starting %s: %w", unitName(uid), err)
 	}
 	return nil
@@ -519,6 +567,20 @@ func checkSpec(s driver.VMSpec) error {
 		return fmt.Errorf("machine %s: %d vCPUs and %d MiB of memory", s.MachineUID, s.VCPUs, s.MemoryMiB)
 	}
 	switch srv := s.FileShareServer; {
+	case s.Converter != nil:
+		c := s.Converter
+		if srv != nil || s.Firmware || s.Root != (driver.Disk{}) || len(s.Disks) > 0 || len(s.Mounts) > 0 || len(s.Run.Command) > 0 || len(s.Interfaces) > 0 {
+			return fmt.Errorf("machine %s: a converter has no root disk, volume, mount, process or interface", s.MachineUID)
+		}
+		if !isConverter(s.MachineUID) {
+			return fmt.Errorf("machine %s: a converter's uid starts %s", s.MachineUID, converterPrefix)
+		}
+		if !filepath.IsAbs(c.File) || filepath.Clean(c.File) != c.File || strings.ContainsAny(c.File, ",=") {
+			return fmt.Errorf("machine %s: the converter's file %q is not a clean absolute path Cloud Hypervisor takes", s.MachineUID, c.File)
+		}
+		if t := c.Target; t != "" && (!strings.HasPrefix(t, "/dev/zvol/") || filepath.Clean(t) != t) {
+			return fmt.Errorf("machine %s: the converter's target %q is not a zvol's link", s.MachineUID, t)
+		}
 	case srv != nil:
 		if s.Firmware || s.Root != (driver.Disk{}) || len(s.Disks) > 0 || len(s.Mounts) > 0 || len(s.Run.Command) > 0 {
 			return fmt.Errorf("machine %s: a file share's server has no root disk, volume, mount or process", s.MachineUID)
@@ -572,6 +634,10 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 	if srv := spec.FileShareServer; srv != nil {
 		cfg.Process = nil
 		cfg.FileShareServer = &guestv1.FileShareServer{Export: chguest.ExportOf(srv.Export)}
+	}
+	if c := spec.Converter; c != nil {
+		cfg.Process = nil
+		cfg.ImageConverter = &guestv1.ImageConverter{FileOffset: c.FileOffset, FileSize: c.FileSize}
 	}
 	for n, i := range spec.Interfaces {
 		// The default route goes by the first interface; the guest takes
@@ -757,7 +823,7 @@ func (h *Hypervisor) Logs(context.Context) ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if !e.IsDir() || checkUID(e.Name()) != nil {
+		if !e.IsDir() || checkUID(e.Name()) != nil || isConverter(e.Name()) {
 			continue
 		}
 		if slices.ContainsFunc(logFiles, func(f string) bool { return exists(filepath.Join(h.cfg.Dir, e.Name(), f)) }) {

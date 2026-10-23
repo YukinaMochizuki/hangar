@@ -313,9 +313,13 @@ tenant's: what all its projects together hold, against its Plan.
   custom images (`customImages`). A
   file share's size counts as disk, and its server toward no limit
   (`file-shares.md`). A custom image counts as disk at its source disk's
-  size while it is captured and at what it holds once Ready, and as
-  nothing once failed (`custom-images.md`). Custom domains are the tenant's, not a project's, so
-  as with projects only a Plan limits them (`custom-domains.md`). The
+  size while it is captured, an uploaded one at its file's size and, once
+  its node has read the file, at the larger of that and the disk the file
+  holds, which the apiserver checks against the limits as it takes the
+  node's report, failing the image as `QuotaExceeded` past one; each at
+  what it holds once Ready, and as nothing once failed
+  (`custom-images.md`). Custom domains are the tenant's, not a project's,
+  so as with projects only a Plan limits them (`custom-domains.md`). The
   default limits are data from then on: the administrator changes them
   with apply. Paying users get a larger plan, through their Invitation or
   their User. The default plan, and a plan a tenant, a User or an

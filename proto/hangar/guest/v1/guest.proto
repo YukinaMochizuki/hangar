@@ -8,6 +8,7 @@ syntax = "proto3";
 package hangar.guest.v1;
 
 import "google/protobuf/duration.proto";
+import "hangar/guest/v1/converter.proto";
 import "hangar/guest/v1/file_share.proto";
 
 // BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -32,6 +33,10 @@ message BootConfig {
   // Set, the guest is this FileShare's server instead of a container: it
   // has no root disk and no process, and ignores volumes.
   FileShareServer file_share_server = 8;
+  // Set, the guest is a converter VM instead of a container: it has no
+  // root disk, process or network, and ignores volumes. Only the converter
+  // initramfs holds what it runs.
+  ImageConverter image_converter = 9;
 }
 
 // Volume is a disk the guest mounts, formatted when blank and filled from
