@@ -1,22 +1,19 @@
-// Package install tests deploy/cli/install.sh.in, the CLI's installer, with
-// /bin/sh against a stand-in for GitHub's downloads and API.
+// Package install tests the CLI's installers against a stand-in for GitHub's
+// downloads and API: deploy/cli/install.sh.in with /bin/sh, and on Windows
+// deploy/cli/install.ps1.in with PowerShell, through the same cases.
 package install_test
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -29,7 +26,7 @@ var realCLI = sync.OnceValues(func() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	out := filepath.Join(dir, "hangar")
+	out := filepath.Join(dir, cliName)
 	cmd := exec.Command("go", "build", "-o", out, "github.com/YukinaMochizuki/hangar/cmd/hangar")
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if b, err := cmd.CombinedOutput(); err != nil {
@@ -42,49 +39,63 @@ var realCLI = sync.OnceValues(func() (string, error) {
 type release struct {
 	noArchive bool // SHA256SUMS lists the archive but it is not there
 	badSum    bool // SHA256SUMS lists a wrong checksum for the archive
+	redirect  bool // the archive is behind a redirect, as GitHub's are
 }
 
 type standIn struct {
 	t        *testing.T
 	releases map[string]release
 	apiDown  bool
-	srv      *httptest.Server
+	// githubBase leaves HANGAR_INSTALL_BASE_URL unset, so the installer
+	// downloads from GitHub's own URL, and only the API is the stand-in's.
+	githubBase bool
+	srv        *httptest.Server
+
+	mu       sync.Mutex
+	archives map[string][]byte
+	apiCalls int
 }
 
-func archiveName(tag string) string {
-	return fmt.Sprintf("hangar_%s_%s_%s.tar.gz", tag, runtime.GOOS, runtime.GOARCH)
-}
-
-// archive packs a hangar that answers `which-release` with tag and runs the
-// real CLI otherwise.
+// archive is the CLI's archive for tag, packed once (packCLI), so SHA256SUMS
+// and the download agree.
 func (s *standIn) archive(tag string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if a, ok := s.archives[tag]; ok {
+		return a
+	}
 	cli, err := realCLI()
 	if err != nil {
 		s.t.Fatal(err)
 	}
-	script := fmt.Sprintf("#!/bin/sh\n[ \"$1\" = which-release ] && { echo %s; exit 0; }\nexec %s \"$@\"\n", tag, cli)
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	tw := tar.NewWriter(gz)
-	if err := tw.WriteHeader(&tar.Header{Name: "hangar", Mode: 0o755, Size: int64(len(script)), Typeflag: tar.TypeReg}); err != nil {
-		s.t.Fatal(err)
+	a := packCLI(s.t, tag, cli)
+	s.archives[tag] = a
+	return a
+}
+
+// installerSource is the installer this platform runs, as its .in file.
+func installerSource(t *testing.T) []byte {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join("..", "..", "deploy", "cli", installerIn))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := tw.Write([]byte(script)); err != nil {
-		s.t.Fatal(err)
-	}
-	if err := tw.Close(); err != nil {
-		s.t.Fatal(err)
-	}
-	if err := gz.Close(); err != nil {
-		s.t.Fatal(err)
-	}
-	return buf.Bytes()
+	return src
+}
+
+// installer is the installer made for tag, as release.sh makes it.
+func installer(t *testing.T, tag string) []byte {
+	return bytes.ReplaceAll(installerSource(t), []byte("@TAG@"), []byte(tag))
 }
 
 func newStandIn(t *testing.T, releases map[string]release) *standIn {
-	s := &standIn{t: t, releases: releases}
+	keepUserPath(t)
+	s := &standIn{t: t, releases: releases, archives: map[string][]byte{}}
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api" {
+			s.mu.Lock()
+			s.apiCalls++
+			s.mu.Unlock()
 			if s.apiDown {
 				http.Error(w, "rate limited", http.StatusForbidden)
 				return
@@ -96,7 +107,19 @@ func newStandIn(t *testing.T, releases map[string]release) *standIn {
 			_ = json.NewEncoder(w).Encode(list)
 			return
 		}
-		tag, file, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/"), "/")
+		// The installer made for a tag, as GitHub serves a release's files.
+		if tag, ok := strings.CutPrefix(r.URL.Path, "/installer/"); ok {
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = w.Write(installer(s.t, tag))
+			return
+		}
+		// Where a redirected archive is.
+		redirected := false
+		path := r.URL.Path
+		if p, ok := strings.CutPrefix(path, "/blob"); ok {
+			redirected, path = true, p
+		}
+		tag, file, ok := strings.Cut(strings.TrimPrefix(path, "/"), "/")
 		rel, known := s.releases[tag]
 		if !ok || !known {
 			http.NotFound(w, r)
@@ -111,10 +134,15 @@ func newStandIn(t *testing.T, releases map[string]release) *standIn {
 			}
 			_, _ = fmt.Fprintf(w, "%s  %s\n", hex.EncodeToString(sum[:]), archiveName(tag))
 		case archiveName(tag):
-			if rel.noArchive {
+			if rel.redirect && !redirected {
+				http.Redirect(w, r, "/blob"+path, http.StatusFound)
+				return
+			}
+			if rel.noArchive || rel.redirect != redirected {
 				http.NotFound(w, r)
 				return
 			}
+			w.Header().Set("Content-Type", "application/octet-stream")
 			_, _ = w.Write(a)
 		default:
 			http.NotFound(w, r)
@@ -126,48 +154,14 @@ func newStandIn(t *testing.T, releases map[string]release) *standIn {
 
 type result struct {
 	code   int
-	stderr string
+	stderr string // what the installer printed
 	dir    string
-}
-
-// run runs the installer made for tag, as release.sh makes it, with args.
-func (s *standIn) run(tag, home string, args ...string) result {
-	s.t.Helper()
-	src, err := os.ReadFile("../../deploy/cli/install.sh.in")
-	if err != nil {
-		s.t.Fatal(err)
-	}
-	script := filepath.Join(s.t.TempDir(), "install.sh")
-	if err := os.WriteFile(script, bytes.ReplaceAll(src, []byte("@TAG@"), []byte(tag)), 0o755); err != nil {
-		s.t.Fatal(err)
-	}
-	dir := filepath.Join(home, "bin")
-	cmd := exec.Command("/bin/sh", append([]string{script, "--dir", dir}, args...)...)
-	cmd.Env = []string{
-		"PATH=/usr/bin:/bin",
-		"HOME=" + home,
-		"HANGAR_CONFIG=" + filepath.Join(home, "config", "config.yaml"),
-		"HANGAR_INSTALL_BASE_URL=" + s.srv.URL,
-		"HANGAR_INSTALL_API_URL=" + s.srv.URL + "/api",
-	}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	err = cmd.Run()
-	code := 0
-	if err != nil {
-		var ee *exec.ExitError
-		if !errors.As(err, &ee) {
-			s.t.Fatal(err)
-		}
-		code = ee.ExitCode()
-	}
-	return result{code: code, stderr: stderr.String(), dir: dir}
 }
 
 // installed says which release's hangar is in dir, "" for none.
 func installed(t *testing.T, dir string) string {
 	t.Helper()
-	bin := filepath.Join(dir, "hangar")
+	bin := filepath.Join(dir, cliName)
 	if _, err := os.Stat(bin); err != nil {
 		return ""
 	}
@@ -176,6 +170,23 @@ func installed(t *testing.T, dir string) string {
 		t.Fatalf("%s which-release: %v", bin, err)
 	}
 	return strings.TrimSpace(string(out))
+}
+
+// The installers are fetched with tools that guess a file's encoding, and
+// install.ps1 is run as Windows PowerShell reads it.
+func TestTheInstallersAreASCII(t *testing.T) {
+	for _, f := range []string{"install.sh.in", "install.ps1.in"} {
+		b, err := os.ReadFile(filepath.Join("..", "..", "deploy", "cli", f))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, c := range b {
+			if c >= 0x80 {
+				t.Errorf("%s: byte %d is %#x, not ASCII", f, i, c)
+				break
+			}
+		}
+	}
 }
 
 func TestPicksTheNewestOfItsMinor(t *testing.T) {
@@ -261,11 +272,40 @@ func TestRefusesAnArchiveThatDoesNotMatch(t *testing.T) {
 	}
 }
 
+func TestFollowsARedirectToTheArchive(t *testing.T) {
+	s := newStandIn(t, map[string]release{"v0.2.0": {redirect: true}})
+	r := s.run("v0.2.0", t.TempDir())
+	if r.code != 0 || installed(t, r.dir) != "v0.2.0" {
+		t.Fatalf("exit %d, installed %q, want v0.2.0:\n%s", r.code, installed(t, r.dir), r.stderr)
+	}
+}
+
+// With GitHub's own download URL nothing but https is fetched, so the
+// stand-in's http API is never asked. The download from GitHub that follows
+// fails, for a tag GitHub has no release of, or for want of a network.
+func TestTakesOnlyHTTPSAlongsideGitHub(t *testing.T) {
+	s := newStandIn(t, map[string]release{"v0.999.0": {}, "v0.999.1": {}})
+	s.githubBase = true
+	r := s.run("v0.999.0", t.TempDir())
+	if !strings.Contains(r.stderr, "could not ask GitHub") {
+		t.Errorf("exit %d, want the http API refused:\n%s", r.code, r.stderr)
+	}
+	s.mu.Lock()
+	calls := s.apiCalls
+	s.mu.Unlock()
+	if calls != 0 {
+		t.Errorf("the http API was asked %d times", calls)
+	}
+	if got := installed(t, r.dir); got != "" {
+		t.Errorf("installed %q", got)
+	}
+}
+
 func TestEndpointMakesTheContext(t *testing.T) {
 	s := newStandIn(t, map[string]release{"v0.2.0": {}})
 	home := t.TempDir()
 	view := func(dir string) string {
-		out, err := exec.Command(filepath.Join(dir, "hangar"), "config", "view").Output()
+		out, err := exec.Command(filepath.Join(dir, cliName), "config", "view").Output()
 		if err != nil {
 			t.Fatalf("config view: %v", err)
 		}
@@ -285,7 +325,7 @@ func TestEndpointMakesTheContext(t *testing.T) {
 	// makes it current again.
 	setContext := func(args ...string) {
 		t.Helper()
-		if out, err := exec.Command(filepath.Join(r.dir, "hangar"), append([]string{"config", "set-context"}, args...)...).CombinedOutput(); err != nil {
+		if out, err := exec.Command(filepath.Join(r.dir, cliName), append([]string{"config", "set-context"}, args...)...).CombinedOutput(); err != nil {
 			t.Fatalf("set-context %v: %v\n%s", args, err, out)
 		}
 	}

@@ -1,0 +1,345 @@
+# Installs the hangar CLI on Windows from a GitHub Release of hangar.
+# deploy/release.sh makes the release's install.ps1 from this file, @TAG@
+# replaced by the tag, and the console shows the line that runs it
+# (docs/runbook/release.md):
+#
+#   irm https://github.com/YukinaMochizuki/hangar/releases/download/TAG/install.ps1 | iex
+#   & ([scriptblock]::Create((irm .../install.ps1))) [-Dir DIR] [-Version TAG] [-Endpoint URL [-Context NAME]]
+#
+# It does what install.sh does (deploy/cli/install.sh.in). It installs the
+# newest published release of the same vMAJOR.MINOR that is not older than
+# its own tag, since releases of one minor keep the CLI and the API
+# compatible; its own tag when GitHub cannot be asked, or with -Version,
+# exactly that tag. A pre-release is a candidate only when its own tag is
+# one. The zip is checked against that release's SHA256SUMS before anything
+# is installed. The attestations are not checked here, as that needs gh; the
+# line to check them is printed.
+#
+# hangar.exe goes to -Dir, or $env:HANGAR_INSTALL_DIR, or
+# %LOCALAPPDATA%\Programs\hangar, and that directory is added to the user's
+# PATH unless it is on it. With -Endpoint it then makes a context for that
+# API, NAME or the endpoint's host without "api.", and makes it the current
+# one; a context of that name with another endpoint is left as it is.
+#
+# HANGAR_INSTALL_BASE_URL and HANGAR_INSTALL_API_URL replace GitHub's download
+# and API URLs, for tests against a stand-in. With GitHub's download URL,
+# nothing but https is fetched, redirects included, as install.sh asks of
+# curl; with a stand-in's, any URL is. Nothing skips the checksum.
+#
+# Windows PowerShell 5.1 and PowerShell 7 alike. ASCII only: irm guesses the
+# encoding of a file served without a charset, as GitHub serves releases.
+
+# The whole run is this block, its parameters its own: iex runs a script in
+# the caller's scope, where a param() at the top would overwrite the
+# caller's $Dir or $Version. Whatever it sets stays in the block but for the
+# PATH it adds to and, until it ends, the TLS versions .NET offers. iex
+# parses it whole before it runs any of it, so a download cut short runs
+# nothing. Under iex, @args is the caller's, empty at a prompt.
+& {
+	param(
+		[string]$Dir,
+		[string]$Version,
+		[string]$Endpoint,
+		[string]$Context
+	)
+	$ErrorActionPreference = 'Stop'
+	# The caller's strict mode would reach into the block otherwise.
+	Set-StrictMode -Off
+
+	$Tag = '@TAG@'
+	$Repo = 'YukinaMochizuki/hangar'
+	$BaseUrl = $env:HANGAR_INSTALL_BASE_URL
+	if (-not $BaseUrl) { $BaseUrl = "https://github.com/$Repo/releases/download" }
+	$ApiUrl = $env:HANGAR_INSTALL_API_URL
+	if (-not $ApiUrl) { $ApiUrl = "https://api.github.com/repos/$Repo/releases?per_page=100" }
+	# vMAJOR.MINOR.PATCH, or that with -rc.N, as release.yml accepts.
+	$TagRe = '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-rc\.(0|[1-9][0-9]*))?$'
+
+	function Write-Log([string]$Message) { Write-Host $Message }
+
+	# Get-TagKey TAG is a string that sorts as TAG's version does, ordinally;
+	# vX.Y.Z sorts after its own -rc.N.
+	function Get-TagKey([string]$T) {
+		$null = $T -cmatch $TagRe
+		$rc = '~'
+		if ($Matches.ContainsKey(5)) { $rc = $Matches[5].PadLeft(30, '0') }
+		($Matches[1].PadLeft(30, '0'), $Matches[2].PadLeft(30, '0'), $Matches[3].PadLeft(30, '0'), $rc) -join '.'
+	}
+
+	# Get-Newest FLOOR TAGS is the newest of TAGS that is a release tag of
+	# FLOOR's major and minor and not older than FLOOR, FLOOR itself when none
+	# is.
+	function Get-Newest([string]$Floor, [string[]]$Tags) {
+		$null = $Floor -cmatch $TagRe
+		$line = "$($Matches[1]).$($Matches[2])"
+		$pre = $Floor.Contains('-rc.')
+		$best = $Floor
+		$bestKey = Get-TagKey $Floor
+		foreach ($t in $Tags) {
+			if (-not ($t -cmatch $TagRe)) { continue }
+			if ("$($Matches[1]).$($Matches[2])" -cne $line) { continue }
+			if (-not $pre -and $t.Contains('-rc.')) { continue }
+			$k = Get-TagKey $t
+			if ([string]::CompareOrdinal($k, $bestKey) -gt 0) {
+				$best = $t
+				$bestKey = $k
+			}
+		}
+		$best
+	}
+
+	# With GitHub's URLs, as install.sh's curl --proto =https
+	# --proto-redir =https.
+	$HttpsOnly = $BaseUrl.StartsWith('https://github.com/', [StringComparison]::Ordinal)
+
+	# Receive-Url URL FILE downloads URL to FILE, following redirects itself
+	# so that each one is checked against $HttpsOnly.
+	function Receive-Url([string]$Url, [string]$File) {
+		for ($hop = 0; $hop -le 10; $hop++) {
+			if ($HttpsOnly -and -not $Url.StartsWith('https://', [StringComparison]::OrdinalIgnoreCase)) {
+				throw [Security.SecurityException]::new("refusing $Url, which is not https")
+			}
+			$request = [Net.HttpWebRequest]::Create($Url)
+			$request.AllowAutoRedirect = $false
+			$request.UserAgent = 'hangar-install'
+			# A 3xx is returned, not thrown, with redirects not followed.
+			$response = $request.GetResponse()
+			try {
+				$code = [int]$response.StatusCode
+				if ($code -ge 300 -and $code -lt 400) {
+					$Url = [Uri]::new([Uri]$Url, [string]$response.Headers['Location']).AbsoluteUri
+					continue
+				}
+				$out = [IO.File]::Create($File)
+				try { $response.GetResponseStream().CopyTo($out) } finally { $out.Close() }
+				return
+			} finally {
+				$response.Close()
+			}
+		}
+		throw "too many redirects, the last to $Url"
+	}
+
+	# Save-Url URL FILE downloads URL to FILE. What may pass by itself (no
+	# answer, 408, 429, 5xx) is tried three more times, as curl --retry 3 does
+	# for install.sh.
+	function Save-Url([string]$Url, [string]$File) {
+		for ($try = 0; ; $try++) {
+			try {
+				Receive-Url $Url $File
+				return
+			} catch {
+				# A .NET call's exception comes wrapped.
+				$e = $_.Exception
+				while ($e -and -not ($e -is [Net.WebException])) { $e = $e.InnerException }
+				$code = 0
+				if ($e -and $e.Response) { $code = [int]$e.Response.StatusCode }
+				$passing = $e -and ($code -eq 0 -or $code -eq 408 -or $code -eq 429 -or $code -ge 500)
+				if ($try -ge 3 -or -not $passing) { throw }
+				Start-Sleep -Seconds ([math]::Pow(2, $try))
+			}
+		}
+	}
+
+	# Test-OnPath DIR LIST says whether the ;-separated LIST holds DIR.
+	function Test-OnPath([string]$D, [string]$List) {
+		$want = $D.TrimEnd('\')
+		foreach ($e in ($List -split ';')) {
+			$e = [Environment]::ExpandEnvironmentVariables($e.Trim()).TrimEnd('\')
+			if ($e -and $e -eq $want) { return $true }
+		}
+		$false
+	}
+
+	if ($Context -and -not $Endpoint) { throw '-Context needs -Endpoint' }
+	if ($Endpoint) {
+		if (-not ($Endpoint.StartsWith('https://', [StringComparison]::Ordinal) -or
+				$Endpoint.StartsWith('http://', [StringComparison]::Ordinal))) {
+			throw "-Endpoint must be an http(s) URL, not $Endpoint"
+		}
+		if (-not $Context) {
+			$Context = $Endpoint.Substring($Endpoint.IndexOf('://') + 3)
+			$Context = ($Context -split '/', 2)[0]
+			$Context = ($Context -split ':', 2)[0]
+			if ($Context.StartsWith('api.', [StringComparison]::Ordinal)) { $Context = $Context.Substring(4) }
+		}
+	}
+
+	if ($env:OS -ne 'Windows_NT') {
+		throw 'install.ps1 installs the hangar CLI on Windows; on Linux and macOS, use install.sh'
+	}
+	$native = $env:PROCESSOR_ARCHITEW6432
+	if (-not $native) { $native = $env:PROCESSOR_ARCHITECTURE }
+	switch ($native) {
+		'AMD64' { $arch = 'amd64' }
+		'ARM64' { $arch = 'arm64' }
+		default { throw "no hangar CLI is released for $native; there are amd64 and arm64 builds" }
+	}
+	# A PowerShell emulated as x64 on an Arm PC reports AMD64; the registry
+	# keeps the machine's own.
+	if ($arch -eq 'amd64') {
+		$machine = (Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name PROCESSOR_ARCHITECTURE -ErrorAction SilentlyContinue).PROCESSOR_ARCHITECTURE
+		if ($machine -eq 'ARM64') { $arch = 'arm64' }
+	}
+
+	if (-not $Dir) { $Dir = $env:HANGAR_INSTALL_DIR }
+	if (-not $Dir) {
+		if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set; pass -Dir' }
+		$Dir = Join-Path $env:LOCALAPPDATA 'Programs\hangar'
+	}
+	$Dir = [IO.Path]::GetFullPath($Dir)
+
+	# Windows PowerShell on an older .NET offers no TLS 1.2 unless asked, and
+	# GitHub takes nothing older. It is the whole process's setting, so it is
+	# put back at the end; so is $LASTEXITCODE, which hangar.exe sets.
+	$callerProtocol = [Net.ServicePointManager]::SecurityProtocol
+	$callerHasExitCode = Test-Path -LiteralPath variable:global:LASTEXITCODE
+	$callerExitCode = $global:LASTEXITCODE
+	$tmp = Join-Path ([IO.Path]::GetTempPath()) ('hangar-install-' + [guid]::NewGuid().ToString('N'))
+	try {
+		[Net.ServicePointManager]::SecurityProtocol = $callerProtocol -bor [Net.SecurityProtocolType]::Tls12
+		$null = New-Item -ItemType Directory -Path $tmp
+		$exact = [bool]$Version
+		if (-not $Version) {
+			$Version = $Tag
+			if ($Tag -cmatch $TagRe) {
+				try {
+					Save-Url $ApiUrl (Join-Path $tmp 'releases.json')
+					$names = foreach ($r in (Get-Content -Raw -LiteralPath (Join-Path $tmp 'releases.json') | ConvertFrom-Json)) { [string]$r.tag_name }
+					$Version = Get-Newest $Tag @($names)
+				} catch {
+					Write-Log "could not ask GitHub for the newest release of $($Tag.Substring(0, $Tag.LastIndexOf('.'))); installing $Tag"
+				}
+			}
+		}
+		if (-not $Version -or $Version -match '[/\\\s]') { throw "-Version must be a release tag, not $Version" }
+
+		# Get-Release TAG downloads TAG's zip for this platform and its
+		# SHA256SUMS, checks one against the other, and says whether it could
+		# download them.
+		function Get-Release([string]$T) {
+			$archive = "hangar_${T}_windows_$arch.zip"
+			$sums = Join-Path $tmp 'SHA256SUMS'
+			try {
+				Save-Url "$BaseUrl/$T/SHA256SUMS" $sums
+				Save-Url "$BaseUrl/$T/$archive" (Join-Path $tmp $archive)
+			} catch {
+				return $false
+			}
+			$want = @(foreach ($l in (Get-Content -LiteralPath $sums)) {
+					$f = $l.Trim() -split '\s+'
+					if ($f.Count -ge 2 -and ($f[1] -ceq $archive -or $f[1] -ceq "*$archive")) { $f[0] }
+				}) -join "`n"
+			if (-not $want) { throw "SHA256SUMS of $T does not list $archive" }
+			$got = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tmp $archive)).Hash.ToLowerInvariant()
+			if ($got -cne $want) { throw "$archive of $T has sha256 $got, not $want as its SHA256SUMS says; refusing it" }
+			$true
+		}
+		Write-Log "hangar $Version for windows/$arch"
+		if (-not (Get-Release $Version)) {
+			$failed = "could not download the hangar CLI $Version for windows/$arch from $BaseUrl/$Version/"
+			if ($exact -or $Version -eq $Tag) { throw $failed }
+			Write-Log "could not download $Version; installing $Tag"
+			$Version = $Tag
+			if (-not (Get-Release $Version)) { throw "could not download the hangar CLI $Version for windows/$arch from $BaseUrl/$Version/" }
+		}
+		$archive = "hangar_${Version}_windows_$arch.zip"
+
+		Add-Type -AssemblyName System.IO.Compression.FileSystem
+		$zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $tmp $archive))
+		try {
+			$entry = $zip.Entries | Where-Object { $_.FullName -ceq 'hangar.exe' } | Select-Object -First 1
+			if (-not $entry) { throw "$archive has no hangar.exe" }
+			[IO.Compression.ZipFileExtensions]::ExtractToFile($entry, (Join-Path $tmp 'hangar.exe'))
+		} finally {
+			$zip.Dispose()
+		}
+		$null = New-Item -ItemType Directory -Force -Path $Dir
+		$exe = Join-Path $Dir 'hangar.exe'
+		# Into DIR under another name first, then renamed. Windows renames a
+		# hangar.exe that is running but does not replace it, so the one there
+		# is moved aside first, put back if the new one cannot take its place,
+		# and removed once nothing runs it.
+		$part = Join-Path $Dir ".hangar.$PID.exe"
+		$aside = Join-Path $Dir ".hangar.old.$PID.exe"
+		Copy-Item -LiteralPath (Join-Path $tmp 'hangar.exe') -Destination $part -Force
+		$moved = $false
+		try {
+			if (Test-Path -LiteralPath $exe) {
+				Move-Item -LiteralPath $exe -Destination $aside -Force
+				$moved = $true
+			}
+			Move-Item -LiteralPath $part -Destination $exe
+		} catch {
+			if ($moved) { Move-Item -LiteralPath $aside -Destination $exe -Force -ErrorAction SilentlyContinue }
+			Remove-Item -LiteralPath $part -Force -ErrorAction SilentlyContinue
+			throw
+		}
+		Get-ChildItem -LiteralPath $Dir -Filter '.hangar.old.*.exe' -Force |
+			Remove-Item -Force -ErrorAction SilentlyContinue
+		Write-Log "installed $exe ($Version)"
+		Write-Log "check where it came from, with gh: gh attestation verify $archive -R $Repo --signer-workflow $Repo/.github/workflows/release.yml --source-ref refs/tags/$Version"
+
+		if ($Endpoint) {
+			# config view prints "* NAME<TAB>ENDPOINT<TAB>project=..." for the
+			# current context and "  NAME..." for the others.
+			$view = & {
+				$ErrorActionPreference = 'Continue'
+				& $exe config view 2>$null
+			}
+			$have = @(foreach ($l in $view) {
+					$f = ([string]$l) -split "`t"
+					if ($f[0].Length -ge 2 -and $f[0].Substring(2) -ceq $Context -and $f.Count -ge 2) { $f[1] }
+				}) -join "`n"
+			if (-not $have) {
+				& $exe config set-context $Context --endpoint $Endpoint --auth oidc --use | Out-Host
+				if ($LASTEXITCODE -ne 0) { throw "hangar config set-context failed" }
+				Write-Log "context ${Context}: $Endpoint, now the current one"
+			} elseif ($have -ceq $Endpoint) {
+				& $exe config use-context $Context | Out-Host
+				if ($LASTEXITCODE -ne 0) { throw "hangar config use-context failed" }
+				Write-Log "context ${Context}: $Endpoint, kept, now the current one"
+			} else {
+				Write-Log "context $Context is $have already; left as it is. To use ${Endpoint}:"
+				Write-Log "  hangar config set-context NAME --endpoint $Endpoint --auth oidc --use"
+			}
+		}
+
+		# The user's PATH as the registry holds it, %VARIABLES% unexpanded, so
+		# that adding to it keeps them.
+		$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)
+		try {
+			$userPath = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+			$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+			if (-not (Test-OnPath $Dir $userPath) -and -not (Test-OnPath $Dir $machinePath)) {
+				$kind = [Microsoft.Win32.RegistryValueKind]::ExpandString
+				if ($userPath) { $kind = $key.GetValueKind('Path') }
+				$new = $Dir
+				if ($userPath.TrimEnd(';')) { $new = $userPath.TrimEnd(';') + ';' + $Dir }
+				$key.SetValue('Path', $new, $kind)
+				# Setting any user variable tells running programs, Explorer
+				# among them, that the environment changed; a registry write
+				# does not.
+				$notify = 'hangar-install-' + [guid]::NewGuid().ToString('N')
+				[Environment]::SetEnvironmentVariable($notify, '1', 'User')
+				[Environment]::SetEnvironmentVariable($notify, $null, 'User')
+				Write-Log "added $Dir to your PATH; terminals opened before now see it once restarted"
+			}
+		} finally {
+			$key.Close()
+		}
+		$sessionPath = [string]$env:Path
+		if (-not (Test-OnPath $Dir $sessionPath)) { $env:Path = $sessionPath.TrimEnd(';') + ';' + $Dir }
+		if ($Endpoint) {
+			Write-Log 'next: hangar login'
+		}
+	} finally {
+		Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
+		[Net.ServicePointManager]::SecurityProtocol = $callerProtocol
+		if ($callerHasExitCode) {
+			$global:LASTEXITCODE = $callerExitCode
+		} else {
+			Remove-Variable -Name LASTEXITCODE -Scope Global -ErrorAction SilentlyContinue
+		}
+	}
+} @args
