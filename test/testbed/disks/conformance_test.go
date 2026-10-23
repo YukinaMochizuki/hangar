@@ -119,6 +119,31 @@ func TestConformance(t *testing.T) {
 				}
 				return func() { _ = f.Close() }
 			},
+			WriteVolume: func(t *testing.T, path string, at int64, data []byte) {
+				f, err := os.OpenFile(path, os.O_RDWR, 0)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = f.Close() }()
+				if _, err := f.WriteAt(data, at); err != nil {
+					t.Fatal(err)
+				}
+				if err := f.Sync(); err != nil {
+					t.Fatal(err)
+				}
+			},
+			ReadVolume: func(t *testing.T, path string, at int64, n int) []byte {
+				f, err := os.Open(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = f.Close() }()
+				buf := make([]byte, n)
+				if _, err := f.ReadAt(buf, at); err != nil {
+					t.Fatal(err)
+				}
+				return buf
+			},
 		}
 	})
 }
@@ -190,6 +215,34 @@ func TestDecoysAreLeftAlone(t *testing.T) {
 			t.Errorf("deleted the volume of %q", bad)
 		}
 	}
+	// Nor a custom image's base, or a snapshot to capture one from.
+	if captures, err := s.Captures(ctx); err != nil || len(captures) != 0 {
+		t.Errorf("captures %v %v", captures, err)
+	}
+	for _, uid := range []string{"decoy", "other", "someone-else"} {
+		key := driver.CustomImageBase(uid)
+		if err := s.DeleteImageBase(ctx, key); uid != "someone-else" && err == nil {
+			t.Errorf("deleted the custom image base %s the driver did not make", key)
+		}
+		if _, err := s.CaptureImageBase(ctx, uid); err == nil {
+			t.Errorf("captured custom image %s over what the driver did not make", uid)
+		}
+		if _, err := s.EnsureVolume(ctx, "d1", 1<<30, key); err == nil {
+			t.Errorf("made a volume of the custom image base %s the driver did not make", key)
+		}
+		if err := s.DeleteCapture(ctx, uid); err != nil {
+			t.Errorf("deleting what custom image %s was captured from, which is nothing: %v", uid, err)
+		}
+	}
+	if err := s.SnapshotVolume(ctx, "d-decoy", "x"); err == nil {
+		t.Error("snapshotted a volume the driver did not make")
+	}
+	if err := s.DeleteImageBase(ctx, driver.CustomImageBase("../x")); err == nil {
+		t.Error("deleted the base of a custom image key that is not one")
+	}
+	// A new instance clears unfinished custom images' bases of its own,
+	// not these.
+	h.storage(t)
 	h.checkDecoys(t)
 }
 

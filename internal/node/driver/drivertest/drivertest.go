@@ -63,6 +63,11 @@ type Host struct {
 	// release; HoldShareVolume a file share's volume, as its server does.
 	HoldVolume      func(t *testing.T, v driver.Volume) (release func())
 	HoldShareVolume func(t *testing.T, v driver.ShareVolume) (release func())
+	// WriteVolume writes data into the block device path at offset at,
+	// durably, and ReadVolume reads n bytes back from there. The custom
+	// images part checks what a base holds only with both.
+	WriteVolume func(t *testing.T, path string, at int64, data []byte)
+	ReadVolume  func(t *testing.T, path string, at int64, n int) []byte
 	// Exit ends the guest process of a running VM with code, as the
 	// container's process exiting does.
 	Exit func(t *testing.T, machineUID string, code int)
@@ -140,6 +145,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("disk images", diskImages, func(h Host) bool {
 		return h.Storage != nil && h.DiskImages != nil && h.PublishDiskImage != nil
 	})
+	part("custom images", customImages, func(h Host) bool { return h.Storage != nil })
 	nets := func(h Host) bool { return h.Network != nil }
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)

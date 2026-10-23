@@ -95,6 +95,17 @@ type Host struct {
 	vmBases    map[string]int64
 	diskImages map[string]fakeDiskImage
 	fetches    map[string]int
+	// captures are the snapshots taken for CustomImages, by image uid;
+	// imageUsed what each CustomImage's base holds, by key, which
+	// usedPerMille of its size sets; captureErr fails captures, and
+	// captureHold keeps them from ending until it is closed; capturing
+	// counts the captures under way.
+	captures     map[string]capture
+	imageUsed    map[string]int64
+	usedPerMille int64
+	captureErr   error
+	captureHold  chan struct{}
+	capturing    int
 	// Unpacked counts how often each digest was unpacked into a base.
 	unpacked map[string]int
 	// unpacks counts the unpacks begun, by reference; unpacking, those
@@ -183,6 +194,7 @@ func New() *Host {
 		bases: map[string]int64{}, baseSize: DefaultBaseSize, building: map[string]*sync.Mutex{}, roots: map[string]driver.Disk{}, unpacked: map[string]int{}, unpacks: map[string]int{},
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
 		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
+		captures: map[string]capture{}, imageUsed: map[string]int64{}, usedPerMille: 500,
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]driver.InterfacePolicy{},
 		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{}, exportHolds: map[string]chan struct{}{},
@@ -750,9 +762,11 @@ type Snapshot struct {
 	// ShareVolumes are FileShares' volumes, by share uid.
 	ShareVolumes map[string]driver.ShareVolume
 	ImageBases   []string
-	Networks     map[string]driver.NetworkSpec
-	Interfaces   map[string][]driver.Interface
-	VMs          map[string]VMView
+	// Captures are the snapshots taken for CustomImages, by image uid.
+	Captures   []string
+	Networks   map[string]driver.NetworkSpec
+	Interfaces map[string][]driver.Interface
+	VMs        map[string]VMView
 	// Logs are the machines whose console logs the host keeps.
 	Logs []string
 	// Listening are the sockets still open, such as "udp 10.0.0.1:53", by
@@ -771,7 +785,8 @@ type VMView struct {
 
 // Empty reports whether the host holds nothing at all.
 func (s Snapshot) Empty() bool {
-	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ShareVolumes) == 0 && len(s.ImageBases) == 0 && len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
+	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ShareVolumes) == 0 && len(s.ImageBases) == 0 && len(s.Captures) == 0 &&
+		len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
 		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.Listening) == 0
 }
 
@@ -788,7 +803,7 @@ func (h *Host) Snapshot() Snapshot {
 	defer h.mu.Unlock()
 	s := Snapshot{
 		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), ShareVolumes: maps.Clone(h.shareVols),
-		ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Networks: maps.Clone(h.networks),
+		ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Captures: slices.Sorted(maps.Keys(h.captures)), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
 		Listening: h.listening(),
 	}
@@ -1175,6 +1190,7 @@ func (d storage) DeleteImageBase(_ context.Context, digest string) error {
 		}
 	}
 	delete(d.h.vmBases, digest)
+	delete(d.h.imageUsed, digest)
 	return nil
 }
 
@@ -1228,6 +1244,11 @@ func (d storage) DeleteVolume(_ context.Context, diskUID string) error {
 	}
 	if d.h.heldVols[diskUID] > 0 {
 		return fmt.Errorf("the volume of disk %s is in use", diskUID)
+	}
+	for image, c := range d.h.captures {
+		if c.diskUID == diskUID {
+			return fmt.Errorf("the volume of disk %s has a snapshot for custom image %s", diskUID, image)
+		}
 	}
 	for _, v := range d.h.vms {
 		if v.State == driver.VMRunning && slices.ContainsFunc(v.spec.Disks, func(x driver.Volume) bool { return x.DiskUID == diskUID }) {
