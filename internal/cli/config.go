@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 
 	"sigs.k8s.io/yaml"
 )
@@ -75,11 +74,7 @@ func configPath(env func(string) string) string {
 	if p := env("HANGAR_CONFIG"); p != "" {
 		return p
 	}
-	dir := env("XDG_CONFIG_HOME")
-	if dir == "" {
-		dir = filepath.Join(env("HOME"), ".config")
-	}
-	return filepath.Join(dir, "hangar", "config.yaml")
+	return filepath.Join(userConfigDir(env), "hangar", "config.yaml")
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -105,38 +100,27 @@ func (c *Config) save(path string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := mkdirPrivate(filepath.Dir(path)); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	return writePrivate(path, b)
 }
 
 // prepareConfigDir makes the directory of the config file, which also holds
 // credentials.yaml, private. The default one, …/hangar, is the CLI's own,
-// so an existing one others may read is made 0700. One HANGAR_CONFIG names
-// may be anything, such as a home directory or a checkout, so it is left as
-// it is, with a warning if others may read it; credentials.yaml itself is
-// 0600 either way.
+// so an existing one others may read is made private (0700). One
+// HANGAR_CONFIG names may be anything, such as a home directory or a
+// checkout, so it is left as it is, with a warning if others may read it;
+// credentials.yaml itself is private either way.
 func (a *app) prepareConfigDir() error {
 	dir := filepath.Dir(a.configPath())
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	fi, err := os.Stat(dir)
+	seen, err := privateConfigDir(dir, a.env("HANGAR_CONFIG") == "")
 	if err != nil {
 		return err
 	}
-	if fi.Mode().Perm()&0o077 == 0 {
-		return nil
-	}
-	if a.env("HANGAR_CONFIG") == "" {
-		if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) == os.Getuid() {
-			return os.Chmod(dir, 0o700)
-		}
-	}
-	if fi.Mode().Perm()&0o044 != 0 && !a.warnedConfigDir {
+	if seen != "" && !a.warnedConfigDir {
 		a.warnedConfigDir = true
-		_, _ = fmt.Fprintf(a.io.Err, "warning: %s, which holds your logins, is mode %v: others can see which files are in it; credentials.yaml itself is readable by you only\n", dir, fi.Mode().Perm())
+		_, _ = fmt.Fprintf(a.io.Err, "warning: %s, which holds your logins, %s: others can see which files are in it; credentials.yaml itself is readable by you only\n", dir, seen)
 	}
 	return nil
 }

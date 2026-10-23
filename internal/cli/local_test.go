@@ -1,3 +1,7 @@
+//go:build !windows
+
+// Local auth is root's on the host, through its admin socket: Linux only.
+
 package cli_test
 
 import (

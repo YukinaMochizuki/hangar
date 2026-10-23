@@ -143,8 +143,12 @@ func readTokenFile(path string) (token.Secret, error) {
 	if !fi.Mode().IsRegular() {
 		return "", fmt.Errorf("token file %s is not a regular file", path)
 	}
-	if fi.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("token file %s may be read by others (mode %04o); run chmod 600 %s", path, fi.Mode().Perm(), path)
+	who, fix, err := exposure(f)
+	if err != nil {
+		return "", fmt.Errorf("token file: %w", err)
+	}
+	if who != "" {
+		return "", fmt.Errorf("token file %s may be read by others (%s); run %s", path, who, fix)
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxTokenFile))
 	if err != nil {

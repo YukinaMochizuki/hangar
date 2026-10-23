@@ -253,11 +253,16 @@ func (a *app) sessionsWith(endpoint string, creds credentials) iamv1alpha1connec
 
 // openBrowser opens a URL in the desktop's browser.
 func openBrowser(u string) error {
-	name := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		name = "open"
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", u)
+	case "windows":
+		// Not start, which is cmd's and would take the URL's & as its own.
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
+	default:
+		cmd = exec.Command("xdg-open", u)
 	}
-	cmd := exec.Command(name, u)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

@@ -35,8 +35,15 @@ lint-sh:
 	@if [ -n "$(SHELL_SCRIPTS)" ]; then ./tools/shellcheck.sh --shell=bash -x $(SHELL_SCRIPTS); fi
 	./tools/shellcheck.sh --shell=sh deploy/cli/install.sh.in
 
+# The CLI is also released for macOS and Windows (deploy/release.sh), so
+# its packages are linted, and so type-checked, as built for each, and so
+# are its installers' tests, which run on Windows too. GOOS goes to the
+# linter only: `go tool -n` builds it for this host and names it.
 lint-go:
 	$(GOLANGCI_LINT) run ./...
+	lint=$$($(TOOL) -n golangci-lint) && \
+		GOOS=darwin $$lint run ./cmd/hangar/... ./internal/cli/... && \
+		GOOS=windows $$lint run ./cmd/hangar/... ./internal/cli/... ./test/install/...
 
 # Compares against main; skipped while main has no schema to compare with.
 breaking:

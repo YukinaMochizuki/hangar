@@ -235,6 +235,32 @@ type execRun struct {
 	sigs       *signals
 	term       *fakeTerminal
 	stdin      io.Reader
+	// out is hangar's stdout, which a test may read while it runs.
+	out lockedBuffer
+}
+
+// lockedBuffer is a buffer one goroutine may write while another reads.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) Reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.buf.Reset()
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 func newExecRun(t *testing.T) *execRun {
@@ -264,10 +290,10 @@ func (r *execRun) run(t *testing.T, args ...string) (int, string, string) {
 		cli.IO{In: strings.NewReader(""), Out: &out, Err: &errb, Env: env}, opts); code != 0 {
 		t.Fatal(errb.String())
 	}
-	out.Reset()
+	r.out.Reset()
 	errb.Reset()
-	code := cli.Run(context.Background(), args, cli.IO{In: r.stdin, Out: &out, Err: &errb, Env: env}, opts)
-	return code, out.String(), errb.String()
+	code := cli.Run(context.Background(), args, cli.IO{In: r.stdin, Out: &r.out, Err: &errb, Env: env}, opts)
+	return code, r.out.String(), errb.String()
 }
 
 func TestExecSplitsTheStreamsAndExitsAsTheCommand(t *testing.T) {
@@ -371,12 +397,13 @@ func TestATerminalIsRawResizedAndRestored(t *testing.T) {
 		return raw
 	})
 	r.term.resize(30, 100)
-	r.sigs.raise(t, syscall.SIGWINCH)
-	// Ctrl-C ends hangar with -t: the remote process goes with the exec.
+	r.sigs.raise(t, cli.Resized)
+	// The command prints the new size once it has it; ending hangar before
+	// that came back would lose it.
 	testutil.EventuallyWithin(t, time.Until(deadline), "the resize", func() bool {
-		_, inputs := r.server.got()
-		return len(inputs) > 0
+		return strings.Contains(r.out.String(), "30 100\n")
 	})
+	// Ctrl-C ends hangar with -t: the remote process goes with the exec.
 	r.sigs.raise(t, syscall.SIGTERM)
 	select {
 	case code := <-done:
