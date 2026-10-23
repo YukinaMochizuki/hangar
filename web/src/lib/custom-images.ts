@@ -36,17 +36,50 @@ export function sourceDisk(ci: CustomImage): string | undefined {
   return ci.spec?.source?.source.case === "disk" ? ci.spec.source.source.value.name : undefined;
 }
 
+/** uploadSource is what an uploaded image's file is declared to be: its size and, if given, its sha256. */
+export function uploadSource(ci: CustomImage): { size: number; sha256: string } | undefined {
+  const s = ci.spec?.source?.source;
+  return s?.case === "upload" ? { size: Number(s.value.size), sha256: s.value.sha256 } : undefined;
+}
+
+// The reasons a custom image fails for good, each said for people.
+const failures: Record<string, string> = {
+  CaptureFailed: "Capture failed",
+  UploadExpired: "Upload expired",
+  DigestMismatch: "File does not match its sha256",
+  InvalidImage: "Not a usable image",
+  ImageTooLarge: "Image too large",
+  ConvertFailed: "Conversion failed",
+  QuotaExceeded: "Over the disk quota",
+};
+
+/** CustomImageStep is where an image is on its way to Ready. */
+export type CustomImageStep = "capturing" | "awaiting-upload" | "converting" | "ready" | "failed" | "deleting";
+
 /**
  * customImageState is what the console shows of a custom image's Ready
- * condition: Capturing until its node says otherwise, then Ready, or
- * Failed for good (CaptureFailed), with the node's message.
+ * condition, as its node reports it: a captured image is Capturing, an
+ * uploaded one Awaiting upload and then Converting, until Ready; or it
+ * failed for good, with the node's reason and message.
  */
-export function customImageState(ci: CustomImage): ImageState & { capturing: boolean } {
-  if (ci.metadata?.deleteTime) return { label: "Deleting", tone: "off", capturing: false };
+export function customImageState(ci: CustomImage): ImageState & { capturing: boolean; step: CustomImageStep } {
+  if (ci.metadata?.deleteTime) return { label: "Deleting", tone: "off", capturing: false, step: "deleting" };
   const c = ci.status?.conditions.find((x) => x.type === "Ready");
-  if (c?.status === ConditionStatus.TRUE) return { label: "Ready", tone: "ok", capturing: false };
-  if (c?.reason === "CaptureFailed") return { label: "Failed", tone: "fail", reason: c.reason, message: c.message, capturing: false };
-  return { label: "Capturing", tone: "off", message: c?.message, capturing: true };
+  if (c?.status === ConditionStatus.TRUE) return { label: "Ready", tone: "ok", capturing: false, step: "ready" };
+  if (c && failures[c.reason]) return { label: "Failed", tone: "fail", reason: failures[c.reason], message: c.message, capturing: false, step: "failed" };
+  if (uploadSource(ci)) {
+    const uploaded = ci.status?.conditions.find((x) => x.type === "Uploaded")?.status === ConditionStatus.TRUE;
+    return uploaded || c?.reason === "Converting"
+      ? { label: "Converting", tone: "pending", message: c?.message, capturing: false, step: "converting" }
+      : { label: "Awaiting upload", tone: "pending", message: c?.message, capturing: false, step: "awaiting-upload" };
+  }
+  return { label: "Capturing", tone: "off", message: c?.message, capturing: true, step: "capturing" };
+}
+
+/** uploadedFraction is how much of an uploaded image's file the node holds, 0 to 1. */
+export function uploadedFraction(ci: CustomImage): number {
+  const u = uploadSource(ci);
+  return u && u.size > 0 ? Math.min(1, Number(ci.status?.receivedBytes ?? 0n) / u.size) : 0;
 }
 
 /** customImageFloorGiB is the smallest disk a custom image fits on: the source disk's size, or min_disk_size if larger. */
@@ -77,11 +110,19 @@ export function captureRefusal(d: Disk, machines: MachineView[]): CaptureRefusal
   return undefined;
 }
 
+/** NewImageSource is where a new custom image comes from: a disk, or a file of this size to upload. */
+export type NewImageSource = { case: "disk"; disk: string } | { case: "upload"; size: number };
+
 /** newCustomImage is a custom image as the New image page describes it. */
-export function newCustomImage(project: string, name: string, disk: string, os: string, version: string, defaultUser: string): CustomImage {
+export function newCustomImage(project: string, name: string, src: NewImageSource, os: string, version: string, defaultUser: string): CustomImage {
   return create(CustomImageSchema, {
     metadata: { name, project },
-    spec: { source: { source: { case: "disk", value: { name: disk } } }, os, version, defaultUser },
+    spec: {
+      source: { source: src.case === "disk" ? { case: "disk", value: { name: src.disk } } : { case: "upload", value: { size: BigInt(src.size) } } },
+      os,
+      version,
+      defaultUser,
+    },
   });
 }
 

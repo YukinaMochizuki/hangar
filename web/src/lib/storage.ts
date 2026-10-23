@@ -133,7 +133,7 @@ export function growFloorGiB(d: Disk, img: Image | undefined): number {
 }
 
 /** ImageState is what the console shows of an image's Verified condition. */
-export type ImageState = { label: string; tone: "ok" | "fail" | "off"; reason?: string; message?: string };
+export type ImageState = { label: string; tone: "ok" | "fail" | "off" | "pending"; reason?: string; message?: string };
 
 /** imageState is what nodes found of an image: its Verified condition. */
 export function imageState(img: Image): ImageState {

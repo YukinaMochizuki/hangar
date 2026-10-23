@@ -100,6 +100,27 @@ export function image(name: string, o: Partial<{ size: string; min: string; veri
 /** CustomImageState is how far a test's custom image is: captured, still capturing, or failed. */
 export type CustomImageState = "ready" | "capturing" | "failed";
 
+/** UploadStep is how far a test's uploaded image is: awaiting the rest of its file, converting, or failed with a reason. */
+export type UploadStep = { awaiting: number } | "converting" | { failed: string; uploaded: boolean };
+
+/** uploadedImage is a CustomImage of the project made for a file of `size` bytes to upload, at `step`. */
+export function uploadedImage(name: string, size: number, step: UploadStep): CustomImage {
+  const uploaded = step === "converting" || (typeof step === "object" && "failed" in step && step.uploaded);
+  const ready =
+    typeof step === "object" && "failed" in step
+      ? { type: "Ready", status: ConditionStatus.FALSE, reason: step.failed, message: "the converter refused it" }
+      : { type: "Ready", status: ConditionStatus.FALSE, reason: uploaded ? "Converting" : "AwaitingUpload", message: "" };
+  return create(CustomImageSchema, {
+    metadata: { name, project },
+    spec: { source: { source: { case: "upload", value: { size: BigInt(size) } } }, os: "nixos", version: "24.11", defaultUser: "nixos" },
+    status: {
+      node: "node-a",
+      receivedBytes: BigInt(typeof step === "object" && "awaiting" in step ? step.awaiting : size),
+      conditions: [{ type: "Uploaded", status: uploaded ? ConditionStatus.TRUE : ConditionStatus.FALSE, reason: uploaded ? "Uploaded" : "AwaitingUpload", message: "" }, ready],
+    },
+  });
+}
+
 /** customImage is a CustomImage of the project captured from disk, as the API returns it. */
 export function customImage(name: string, o: Partial<{ disk: string; state: CustomImageState; size: string; used: string }> = {}): CustomImage {
   const state = o.state ?? "ready";

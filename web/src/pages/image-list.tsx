@@ -3,7 +3,7 @@
 // read-only to tenants. Both are data alone, with each row's actions.
 
 import { Link } from "@tanstack/react-router";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Upload } from "lucide-react";
 import { useState } from "react";
 import type { CustomImage } from "@hangar/api/hangar/storage/v1alpha1/custom_image_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
@@ -15,7 +15,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { ImageStateCell } from "@/components/storage";
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { buttonVariants, Card } from "@/components/ui";
-import { customImageFloorGiB, customImageState, sourceDisk, useCustomImages } from "@/lib/custom-images";
+import { customImageFloorGiB, customImageState, sourceDisk, uploadedFraction, uploadSource, useCustomImages } from "@/lib/custom-images";
 import { gib, imageFloorGiB, imageState, useImages } from "@/lib/storage";
 
 /** osLabel names an image's OS and version for people: "Debian 13". */
@@ -32,6 +32,13 @@ function ImageRowMenu({ img, project, can }: { img: Image; project: string; can:
 /** A custom image's row menu: the actions of its page. */
 function CustomImageRowMenu({ ci, project, can }: { ci: CustomImage; project: string; can: Can }) {
   return <ObjectRowMenu name={ci.metadata?.name ?? ""} set={useCustomImageActions(ci, project, can)} />;
+}
+
+/** CustomImageStateCell is a custom image's state, with how much of an upload's file the node holds. */
+function CustomImageStateCell({ ci }: { ci: CustomImage }) {
+  const s = customImageState(ci);
+  const label = s.step === "awaiting-upload" ? `${s.label} · ${Math.floor(uploadedFraction(ci) * 100)}%` : s.label;
+  return <ImageStateCell s={{ ...s, label }} />;
 }
 
 /** SectionHead names one of the page's two lists. */
@@ -52,19 +59,24 @@ function CustomImages({ project }: { project: string }) {
   const { items, loading, error, refetch } = useCustomImages(project);
   const perm = useCustomImageCan(project);
   const newButton = perm.can(customImagePerms.apply) && (
-    <Link to="/projects/$project/new/custom-image" params={{ project }} search={{}} className={buttonVariants({ variant: "primary" })}>
-      <Plus /> New image
-    </Link>
+    <div className="flex flex-wrap gap-2">
+      <Link to="/projects/$project/new/custom-image" params={{ project }} search={{ upload: 1 }} className={buttonVariants({})}>
+        <Upload /> Upload image
+      </Link>
+      <Link to="/projects/$project/new/custom-image" params={{ project }} search={{}} className={buttonVariants({ variant: "primary" })}>
+        <Plus /> New image
+      </Link>
+    </div>
   );
   return (
     <section className="mb-10">
-      <SectionHead title="Custom images" text="This project's own, captured from its stopped disks" action={items.length > 0 && newButton} />
+      <SectionHead title="Custom images" text="This project's own: captured from its stopped disks, or uploaded" action={items.length > 0 && newButton} />
       <ListFrame
         state={{ loading, error, refetch, count: items.length }}
         noun="custom images"
         empty={{
           title: "No custom images",
-          text: "Set up a virtual machine, stop it, and capture its boot disk: new machines can then start from that image.",
+          text: "Capture a stopped machine's boot disk, or upload a qcow2 or raw image of your own: new machines can then start from it.",
           action: newButton || undefined,
         }}
       >
@@ -82,7 +94,7 @@ function CustomImages({ project }: { project: string }) {
                     </span>
                   </Link>
                   <span className="shrink-0 text-right">
-                    <ImageStateCell s={customImageState(ci)} />
+                    <CustomImageStateCell ci={ci} />
                   </span>
                   <CustomImageRowMenu ci={ci} project={project} can={perm.can} />
                 </li>
@@ -97,7 +109,7 @@ function CustomImages({ project }: { project: string }) {
                 <Th className="w-[24%]">Name</Th>
                 <Th>OS</Th>
                 <Th>State</Th>
-                <Th>Captured from</Th>
+                <Th>From</Th>
                 <Th>Smallest disk</Th>
                 <Th>Space used</Th>
                 <Th className="w-10 px-0" />
@@ -116,9 +128,9 @@ function CustomImages({ project }: { project: string }) {
                     </td>
                     <td className="whitespace-nowrap px-4 py-2.5">{osLabel(ci.spec?.os ?? "", ci.spec?.version ?? "")}</td>
                     <td className="whitespace-nowrap px-4 py-2.5">
-                      <ImageStateCell s={customImageState(ci)} />
+                      <CustomImageStateCell ci={ci} />
                     </td>
-                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{disk ?? "–"}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{disk ?? (uploadSource(ci) ? <span className="font-sans">Uploaded file</span> : "–")}</td>
                     <td className="whitespace-nowrap px-4 py-2.5 tabular">
                       {ci.status?.diskSize ? `${customImageFloorGiB(ci)} GiB` : <span className="text-subtle">not known yet</span>}
                     </td>

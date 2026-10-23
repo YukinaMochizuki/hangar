@@ -113,7 +113,7 @@ describe("Images", () => {
     const table = (await screen.findAllByRole("table"))[0];
     await within(table).findByText("golden");
     const rows = within(table).getAllByRole("row").slice(1).map((r) => r.textContent);
-    expect(rows[0]).toMatch(/bad.*Failed.*CaptureFailed/);
+    expect(rows[0]).toMatch(/bad.*Failed.*Capture failed/);
     expect(rows[1]).toMatch(/golden.*Ready.*web-root.*20 GiB.*3 GiB/);
     expect(rows[2]).toMatch(/next.*Capturing/);
     expect(screen.getAllByRole("link", { name: /New image/ }).length).toBeGreaterThan(0);
