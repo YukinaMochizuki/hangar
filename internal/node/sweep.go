@@ -112,9 +112,12 @@ func (a *Agent) sweep(ctx context.Context) error {
 	// admitted from it, and the image is gone; its capture
 	// ends with it, and the snapshot it was captured from goes once the
 	// capture no longer needs it.
-	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
+	// The images are listed before the disks: a disk is admitted only from
+	// an image not being deleted, so a disk of an image these lists no
+	// longer show was stored before them, and the disk list has it.
 	images, _, ierr := a.api.ListAll(ctx, registry.Image, client.ListOptions{})
 	customImages, _, cerr := a.api.ListAll(ctx, registry.CustomImage, client.ListOptions{})
+	disks, _, err := a.api.ListAll(ctx, registry.Disk, client.ListOptions{})
 	if keep(err) {
 		bound := map[string]*storagev1alpha1.Disk{}
 		for _, o := range disks {

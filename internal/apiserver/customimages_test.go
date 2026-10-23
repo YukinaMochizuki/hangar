@@ -2,6 +2,7 @@ package apiserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
+	"github.com/YukinaMochizuki/hangar/internal/store"
 )
 
 func customImage(name, disk string) *storagev1alpha1.CustomImage {
@@ -489,6 +491,86 @@ func TestADiskFromACustomImage(t *testing.T) {
 	wantCodeOf(t, err, connect.CodeFailedPrecondition, "a disk of a deleted custom image")
 	if _, err := disks.Apply(user, fromImage("copy", "30Gi", "web", "db-img")); err != nil {
 		t.Errorf("growing a disk of a deleted custom image: %v", err)
+	}
+}
+
+// TestADiskOfACustomImageAndItsDeleteAreOneDecision: disks of a Ready
+// image created while the image is deleted are each stored before the
+// delete, or refused; none is stored once the image is gone, which the
+// node's sweep would take as no disk of the image, and remove its base.
+func TestADiskOfACustomImageAndItsDeleteAreOneDecision(t *testing.T) {
+	s, system, user := running(t)
+	disks, images := s.backend(registry.Disk), s.backend(registry.CustomImage)
+	stoppedVM(t, s, system, user)
+	errFound := errors.New("found")
+	for round := range 20 {
+		name := fmt.Sprintf("img-%d", round)
+		if _, err := images.Apply(user, customImage(name, "db-root")); err != nil {
+			t.Fatal(err)
+		}
+		reportCustomImage(t, s, system, name, "3Gi", snapshotted(), imageReady())
+		uid := getCustomImage(t, s, system, name).GetMetadata().GetUid()
+		since, err := s.store.Revision(system)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		const n = 4
+		var wg sync.WaitGroup
+		start := make(chan struct{})
+		var deleteErr error
+		made := make([]*storagev1alpha1.Disk, n)
+		createErrs := make([]error, n)
+		wg.Go(func() {
+			<-start
+			_, deleteErr = images.Delete(user, resource.Key{Project: "web", Name: name}, nil)
+		})
+		for i := range n {
+			wg.Go(func() {
+				<-start
+				d := diskOf(fmt.Sprintf("%s-%d", name, i), "12Gi", name)
+				d.Spec.Source.GetImage().Project = "web"
+				res, err := disks.Apply(user, d)
+				createErrs[i] = err
+				if err == nil {
+					made[i] = res.Object.(*storagev1alpha1.Disk)
+				}
+			})
+		}
+		close(start)
+		wg.Wait()
+		if deleteErr != nil {
+			t.Fatal(deleteErr)
+		}
+
+		// The revision the image's delete was stored at.
+		var deleted int64
+		err = s.store.Watch(system, store.WatchOptions{Kind: registry.CustomImage.Kind, Project: "web", SinceRevision: since}, func(e store.Event) error {
+			if e.Type == store.EventDeleted && e.Object.Name == name {
+				deleted = e.Revision
+				return errFound
+			}
+			return nil
+		})
+		if !errors.Is(err, errFound) {
+			t.Fatal(err)
+		}
+		for i, d := range made {
+			if d == nil {
+				wantCodeOf(t, createErrs[i], connect.CodeFailedPrecondition, "a disk of an image being deleted")
+				continue
+			}
+			if got := d.GetMetadata().GetAnnotations()[computeapi.CustomImageOf]; got != uid {
+				t.Errorf("round %d: disk %s names custom image %q, want %q", round, d.GetMetadata().GetName(), got, uid)
+			}
+			if rv := d.GetMetadata().GetResourceVersion(); rv > deleted {
+				t.Fatalf("round %d: disk %s of image %s stored at revision %d, after the image's delete at %d",
+					round, d.GetMetadata().GetName(), name, rv, deleted)
+			}
+			if _, err := disks.Delete(user, resource.Key{Project: "web", Name: d.GetMetadata().GetName()}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 
