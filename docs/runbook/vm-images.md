@@ -223,8 +223,14 @@ The upload path is `GET` and `PUT
 `GET` answers `{"received_bytes": N, "chunk_size": 67108864, "size": S}`;
 each `PUT` sends the bytes from `received_bytes` on, at most `chunk_size`,
 with `Content-Range: bytes FIRST-LAST/S` and `X-Hangar-Chunk-SHA256: HEX`,
-and answers `{"received_bytes": N}`. A chunk not at `received_bytes` is
-answered 409, with `received_bytes` in the error.
+and answers `{"received_bytes": N}`. Errors are JSON `{"code", "message"}`;
+three carry `received_bytes` too, and the chunk can be sent again: 409
+`aborted` (not at `received_bytes`; send from there), 503 `unavailable`
+with `Retry-After: 1` (another chunk of the upload is being written; wait
+and send it again) and 500 `data_loss` (the bytes did not match their
+sha256 on arrival; send it again). A 503 or 429 without it, the node not
+connected or too many calls open, is worth retrying with a growing wait
+too; 400, 401, 403, 404 and 413 are final.
 
 ## Distributions and the platform
 

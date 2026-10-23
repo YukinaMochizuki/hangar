@@ -93,10 +93,15 @@ func uploadError(err error) error {
 	case errors.As(err, &off):
 		return connect.NewError(connect.CodeAborted, err)
 	case errors.Is(err, errChunkBusy):
-		return connect.NewError(connect.CodeAborted, err)
+		// Not the sender's mistake: sent again once the other is written,
+		// it counts.
+		return connect.NewError(connect.CodeUnavailable, err)
 	case errors.Is(err, errNotExpected):
 		return connect.NewError(connect.CodeFailedPrecondition, err)
-	case errors.Is(err, errChunkDigest), errors.Is(err, errChunkShape):
+	case errors.Is(err, errChunkDigest):
+		// Garbled on the way, most likely: sent again, it counts.
+		return connect.NewError(connect.CodeDataLoss, err)
+	case errors.Is(err, errChunkShape):
 		return connect.NewError(connect.CodeInvalidArgument, err)
 	case errors.Is(err, errNoRoom):
 		return connect.NewError(connect.CodeResourceExhausted, err)

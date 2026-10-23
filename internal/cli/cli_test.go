@@ -273,13 +273,15 @@ func (w *world) node() *fakeNode {
 	}
 }
 
-// ready reports the node ready, with room for a few machines.
+// ready reports the node ready, with room for a few machines, taking
+// uploads.
 func (n *fakeNode) ready() {
 	n.t.Helper()
 	if _, err := n.nodes.UpdateNodeStatus(context.Background(), connect.NewRequest(&computev1alpha1.UpdateNodeStatusRequest{
 		Name: testNode,
 		Status: &computev1alpha1.NodeStatus{
-			Capacity: &computev1alpha1.NodeResources{Cpu: "4", Memory: "4Gi"},
+			Capacity:           &computev1alpha1.NodeResources{Cpu: "4", Memory: "4Gi"},
+			CustomImageUploads: true,
 			Conditions: []*metav1.Condition{{
 				Type: "Ready", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "AgentReporting",
 			}},

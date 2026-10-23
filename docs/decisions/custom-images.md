@@ -118,9 +118,12 @@ tenant's the platform would parse as a disk image.
   (`failed_precondition`); a malformed range or sha256, or a size not the
   image's (`invalid_argument`); a chunk over 64 MiB (413); one not at the
   node's count (409 `aborted`, its body carrying a top-level
-  `received_bytes`); and the caps on calls to nodes. A chunk whose bytes
-  are not its sha256 is dropped by the node (`invalid_argument`), the count
-  as it was.
+  `received_bytes`); and the caps on calls to nodes. Two more are the
+  node's, and carry `received_bytes` too, for a chunk to send again: one
+  sent while another chunk of the upload is written (503 `unavailable`,
+  `Retry-After: 1`), and one whose bytes are not its sha256, dropped, the
+  count as it was (500 `data_loss`, garbled on the way). The node not
+  connected is a 503 without them.
 - **The apiserver relays a chunk; the node stages it.** The apiserver asks
   the node's count (`NodeService.GetCustomImageUpload`), then streams the
   body on the client-streaming `NodeService.UploadCustomImage`

@@ -304,16 +304,22 @@ func (u *uploader) retry(ctx context.Context, try func() error) error {
 }
 
 // retriable says a chunk may go through if tried again: the way to the
-// node failed, a chunk was garbled on the way, or too many calls were
-// open. What the server refuses for good, it says again.
+// node failed, another chunk of the upload was being written (a
+// *uploadwire.BusyError, whose Retry-After the first wait already is), a
+// chunk was garbled on the way (data_loss), or too many calls were open.
+// What the server refuses for good, it says again.
 func retriable(err error) bool {
+	var (
+		busy    *uploadwire.BusyError
+		garbled *uploadwire.GarbledError
+	)
+	if errors.As(err, &busy) || errors.As(err, &garbled) {
+		return true
+	}
 	switch connect.CodeOf(err) {
 	case connect.CodeUnavailable, connect.CodeResourceExhausted, connect.CodeAborted, connect.CodeInternal,
-		connect.CodeUnknown, connect.CodeDeadlineExceeded:
+		connect.CodeDataLoss, connect.CodeUnknown, connect.CodeDeadlineExceeded:
 		return !errors.Is(err, uploadwire.TooLarge)
-	case connect.CodeInvalidArgument:
-		// A chunk whose bytes were garbled on the way.
-		return bytes.Contains([]byte(err.Error()), []byte("sha256 does not match"))
 	}
 	return false
 }

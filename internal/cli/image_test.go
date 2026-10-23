@@ -30,8 +30,9 @@ type fakeUploads struct {
 	chunk int64
 	mu    sync.Mutex
 	files map[string][]byte
-	puts  []string // each PUT's Content-Range
-	auth  []string // each request's Authorization
+	puts  []string    // each PUT's Content-Range
+	at    []time.Time // when each PUT came
+	auth  []string    // each request's Authorization
 	fail  func(n int) (err error, lost bool)
 }
 
@@ -50,6 +51,7 @@ func (f *fakeUploads) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f.puts = append(f.puts, r.Header.Get("Content-Range"))
+	f.at = append(f.at, time.Now())
 	first, n, _, err := uploadwire.ParseContentRange(r.Header.Get("Content-Range"))
 	if err != nil || n > f.chunk {
 		uploadwire.WriteError(w, connect.NewError(connect.CodeInvalidArgument, errors.New("bad range")))
@@ -69,7 +71,7 @@ func (f *fakeUploads) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	sum := sha256.Sum256(body)
 	if int64(len(body)) != n || hex.EncodeToString(sum[:]) != r.Header.Get(uploadwire.ChunkSHA256) {
-		uploadwire.WriteError(w, connect.NewError(connect.CodeInvalidArgument, errors.New("the chunk's sha256 does not match its bytes; it is dropped")))
+		uploadwire.WriteError(w, &uploadwire.GarbledError{ReceivedBytes: int64(len(have))})
 		return
 	}
 	f.files[name] = append(have, body...)
@@ -260,4 +262,57 @@ func TestImageUploadTakesAServiceToken(t *testing.T) {
 		}
 	}
 	noSecret(t, secret, r.out, r.err)
+}
+
+// TestImageUploadWaitsOutABusyOrGarbledChunk: a chunk refused while another
+// of the upload is written (503, Retry-After), or garbled on the way (500
+// data_loss), is sent again after a wait that grows, never at once; a
+// chunk refused for good is not.
+func TestImageUploadWaitsOutABusyOrGarbledChunk(t *testing.T) {
+	w, up, path, data := uploadWorld(t)
+	backoff := 20 * time.Millisecond
+	w.opts.UploadBackoff = backoff
+	up.fail = func(n int) (error, bool) {
+		switch n {
+		case 1, 2:
+			return &uploadwire.BusyError{ReceivedBytes: 0}, false
+		case 3:
+			return &uploadwire.GarbledError{ReceivedBytes: 0}, false
+		case 4:
+			// As a server would that says no more than the code.
+			return connect.NewError(connect.CodeDataLoss, errors.New("garbled")), false
+		}
+		return nil, false
+	}
+	if r := w.run("", "image", "upload", path, "--name", "nixos"); r.code != 0 {
+		t.Fatalf("upload: exit %d: %s", r.code, r.err)
+	}
+	if !bytes.Equal(up.file("nixos"), data) {
+		t.Error("the server got another file")
+	}
+	up.mu.Lock()
+	sent, at := append([]string(nil), up.puts...), append([]time.Time(nil), up.at...)
+	up.mu.Unlock()
+	if strings.Join(sent[:5], ",") != strings.Repeat("bytes 0-999/2500,", 4)+"bytes 0-999/2500" {
+		t.Errorf("sent %v; want the first chunk five times", sent)
+	}
+	for i, want := range []time.Duration{backoff, 2 * backoff, 4 * backoff, 8 * backoff} {
+		if gap := at[i+1].Sub(at[i]); gap < want {
+			t.Errorf("try %d came %v after the one before, want at least %v", i+2, gap, want)
+		}
+	}
+
+	// Refused for good: tried once.
+	up.mu.Lock()
+	up.puts, up.files = nil, map[string][]byte{}
+	up.fail = func(int) (error, bool) {
+		return connect.NewError(connect.CodeFailedPrecondition, errors.New("custom image \"other\" failed")), false
+	}
+	up.mu.Unlock()
+	if r := w.run("", "image", "upload", path, "--name", "other"); r.code == 0 {
+		t.Fatal("an upload refused for good succeeded")
+	}
+	if n := len(up.sent()); n != 1 {
+		t.Errorf("a chunk refused for good sent %d times, want once", n)
+	}
 }

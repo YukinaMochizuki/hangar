@@ -70,7 +70,8 @@ func ParseContentRange(s string) (first, n, size int64, err error) {
 }
 
 // wireError is a Connect error as JSON, as a refusal carries it, and, for
-// a chunk that does not start where the upload is, where it is.
+// a chunk refused where the upload stays (OffsetError, BusyError,
+// GarbledError), where it is.
 type wireError struct {
 	Code          string `json:"code"`
 	Message       string `json:"message"`
@@ -87,12 +88,38 @@ func (e *OffsetError) Error() string {
 	return fmt.Sprintf("the upload is at %d bytes; send the chunk starting there", e.ReceivedBytes)
 }
 
+// BusyError is a chunk refused while another chunk of the same upload is
+// being written; sent again once that one is, it counts. ReceivedBytes is
+// where the upload is.
+type BusyError struct {
+	ReceivedBytes int64
+}
+
+func (e *BusyError) Error() string {
+	return fmt.Sprintf("another chunk of the upload is being written; the upload is at %d bytes, send the chunk again in a moment", e.ReceivedBytes)
+}
+
+// GarbledError is a chunk whose bytes are not its sha256, as when garbled
+// on the way, which the image's node dropped; sent again, it counts.
+// ReceivedBytes is where the upload is, as before the chunk.
+type GarbledError struct {
+	ReceivedBytes int64
+}
+
+func (e *GarbledError) Error() string {
+	return fmt.Sprintf("the chunk's sha256 does not match its bytes, so it was dropped; the upload is at %d bytes, send the chunk again", e.ReceivedBytes)
+}
+
+// RetryAfter is the seconds a BusyError says to wait, in Retry-After.
+const RetryAfter = 1
+
 // TooLarge is a chunk of more than ChunkSize bytes.
 var TooLarge = connect.NewError(connect.CodeResourceExhausted, fmt.Errorf("a chunk holds at most %d bytes", ChunkSize))
 
-// WriteError refuses a request with err: an *OffsetError as 409 Aborted,
-// carrying the offset; TooLarge as 413; any other with its Connect code,
-// as Connect writes it.
+// WriteError refuses a request with err: an *OffsetError as 409 aborted,
+// a *BusyError as 503 unavailable with Retry-After, a *GarbledError as 500
+// data_loss, each carrying where the upload is; TooLarge as 413; any other
+// with its Connect code, as Connect writes it.
 func WriteError(w http.ResponseWriter, err error) {
 	we := wireError{Code: connect.CodeOf(err).String(), Message: err.Error()}
 	var ce *connect.Error
@@ -100,11 +127,22 @@ func WriteError(w http.ResponseWriter, err error) {
 		we.Message = ce.Message()
 	}
 	status := httpStatus(connect.CodeOf(err))
-	var off *OffsetError
+	var (
+		off     *OffsetError
+		busy    *BusyError
+		garbled *GarbledError
+	)
 	switch {
 	case errors.As(err, &off):
 		we.Code, status = connect.CodeAborted.String(), http.StatusConflict
 		we.ReceivedBytes = &off.ReceivedBytes
+	case errors.As(err, &busy):
+		we.Code, status = connect.CodeUnavailable.String(), http.StatusServiceUnavailable
+		we.ReceivedBytes = &busy.ReceivedBytes
+		w.Header().Set("Retry-After", strconv.Itoa(RetryAfter))
+	case errors.As(err, &garbled):
+		we.Code, status = connect.CodeDataLoss.String(), http.StatusInternalServerError
+		we.ReceivedBytes = &garbled.ReceivedBytes
 	case errors.Is(err, TooLarge):
 		status = http.StatusRequestEntityTooLarge
 	}
@@ -113,8 +151,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	_ = json.NewEncoder(w).Encode(we)
 }
 
-// ReadError is the error a refused request, resp, says: an *OffsetError
-// for one carrying the offset.
+// ReadError is the error a refused request, resp, says: an *OffsetError,
+// a *BusyError or a *GarbledError for one carrying where the upload is.
 func ReadError(resp *http.Response) error {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 	var we wireError
@@ -122,8 +160,15 @@ func ReadError(resp *http.Response) error {
 	if json.Unmarshal(b, &we) != nil || code.UnmarshalText([]byte(we.Code)) != nil {
 		return connect.NewError(connect.CodeUnknown, fmt.Errorf("the server refused the upload: %s", resp.Status))
 	}
-	if we.ReceivedBytes != nil && code == connect.CodeAborted {
-		return &OffsetError{ReceivedBytes: *we.ReceivedBytes}
+	if we.ReceivedBytes != nil {
+		switch code {
+		case connect.CodeAborted:
+			return &OffsetError{ReceivedBytes: *we.ReceivedBytes}
+		case connect.CodeUnavailable:
+			return &BusyError{ReceivedBytes: *we.ReceivedBytes}
+		case connect.CodeDataLoss:
+			return &GarbledError{ReceivedBytes: *we.ReceivedBytes}
+		}
 	}
 	return connect.NewError(code, errors.New(we.Message))
 }

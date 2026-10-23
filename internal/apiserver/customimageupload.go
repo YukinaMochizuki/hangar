@@ -127,6 +127,28 @@ func (x *uploadTarget) received(ctx context.Context) (int64, error) {
 	return res.Msg.GetReceivedBytes(), nil
 }
 
+// chunkError is what the node's refusal of a chunk, err, answers: where
+// the upload stays, for a chunk not at the node's count (aborted), one
+// sent while another of the upload is written (unavailable), or one whose
+// bytes are not its sha256 (data_loss); otherwise, or if the node then
+// does not answer, which makes an unavailable the tunnel's, err as any
+// call to the node fails.
+func (x *uploadTarget) chunkError(ctx context.Context, err error) error {
+	code := connect.CodeOf(err)
+	if code == connect.CodeAborted || code == connect.CodeUnavailable || code == connect.CodeDataLoss {
+		if at, rerr := x.received(context.WithoutCancel(ctx)); rerr == nil {
+			switch code {
+			case connect.CodeAborted:
+				return &uploadwire.OffsetError{ReceivedBytes: at}
+			case connect.CodeUnavailable:
+				return &uploadwire.BusyError{ReceivedBytes: at}
+			}
+			return &uploadwire.GarbledError{ReceivedBytes: at}
+		}
+	}
+	return x.call.failed(err)
+}
+
 // customImageUpload serves an upload's path: GET says where the upload is,
 // PUT sends one chunk.
 func (s *Server) customImageUpload(chain auth.Chain) http.HandlerFunc {
@@ -217,13 +239,8 @@ func (s *Server) uploadChunk(ctx context.Context, r *http.Request, x *uploadTarg
 		}
 	}
 	res, err := stream.CloseAndReceive()
-	if connect.CodeOf(err) == connect.CodeAborted {
-		if at, rerr := x.received(context.WithoutCancel(ctx)); rerr == nil {
-			return 0, &uploadwire.OffsetError{ReceivedBytes: at}
-		}
-	}
 	if err != nil {
-		return 0, x.call.failed(err)
+		return 0, x.chunkError(ctx, err)
 	}
 	return res.Msg.GetReceivedBytes(), nil
 }

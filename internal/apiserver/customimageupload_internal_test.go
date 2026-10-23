@@ -38,9 +38,12 @@ import (
 )
 
 // uploadNode serves a node's upload calls from memory: each image's file
-// as its chunks came, refusing, as a node does, a chunk not at its count,
-// short of its length, or not matching its sha256. hold, when set, keeps a
-// chunk's call open once its first request is in, until closed.
+// as its chunks came, refusing, as a node does, a chunk not at its count
+// (aborted), while another of the image is written (unavailable), short of
+// its length, or not matching its sha256 (data_loss). hold, when set, keeps
+// a chunk's call open once its first request is in, until closed; drop
+// has the next chunk's call find the tunnel gone, unavailable, and down
+// every call from then on.
 type uploadNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	mu      sync.Mutex
@@ -51,10 +54,13 @@ type uploadNode struct {
 	asked   int // GetCustomImageUpload calls
 	hold    chan struct{}
 	held    chan struct{}
+	writing map[string]bool // the images a chunk is being written of
+	drop    bool
+	down    bool
 }
 
 func newUploadNode() *uploadNode {
-	return &uploadNode{files: map[string][]byte{}, sizes: map[string]int64{}, held: make(chan struct{}, 10)}
+	return &uploadNode{files: map[string][]byte{}, sizes: map[string]int64{}, writing: map[string]bool{}, held: make(chan struct{}, 10)}
 }
 
 func (n *uploadNode) expect(uid string, size int64) {
@@ -86,6 +92,9 @@ func (n *uploadNode) GetCustomImageUpload(_ context.Context, req *connect.Reques
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	n.asked++
+	if n.down {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("node not connected"))
+	}
 	if _, ok := n.sizes[req.Msg.GetImageUid()]; !ok {
 		return nil, connect.NewError(connect.CodeFailedPrecondition, errors.New("not taking an upload of this image"))
 	}
@@ -95,15 +104,30 @@ func (n *uploadNode) GetCustomImageUpload(_ context.Context, req *connect.Reques
 func (n *uploadNode) UploadCustomImage(ctx context.Context, s *connect.ClientStream[nodev1.UploadCustomImageRequest]) (*connect.Response[nodev1.UploadCustomImageResponse], error) {
 	n.mu.Lock()
 	n.streams++
-	hold := n.hold
+	hold, down := n.hold, n.down || n.drop
+	n.down = down
 	n.mu.Unlock()
+	if down {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("node not connected"))
+	}
 	if !s.Receive() {
 		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("no chunk"))
 	}
 	c := s.Msg().GetChunk()
 	n.mu.Lock()
-	have := int64(len(n.files[c.GetImageUid()]))
+	have, busy := int64(len(n.files[c.GetImageUid()])), n.writing[c.GetImageUid()]
+	if !busy {
+		n.writing[c.GetImageUid()] = true
+	}
 	n.mu.Unlock()
+	if busy {
+		return nil, connect.NewError(connect.CodeUnavailable, errors.New("another chunk of this upload is being written"))
+	}
+	defer func() {
+		n.mu.Lock()
+		defer n.mu.Unlock()
+		delete(n.writing, c.GetImageUid())
+	}()
 	if c.GetOffset() != have {
 		return nil, connect.NewError(connect.CodeAborted, fmt.Errorf("at %d", have))
 	}
@@ -130,7 +154,7 @@ func (n *uploadNode) UploadCustomImage(ctx context.Context, s *connect.ClientStr
 		return nil, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("%d bytes of %d", len(data), c.GetLength()))
 	}
 	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != c.GetSha256() {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("the chunk's sha256 does not match"))
+		return nil, connect.NewError(connect.CodeDataLoss, errors.New("the chunk's sha256 does not match"))
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -240,6 +264,35 @@ func (w *uploadWorld) request(t *testing.T, h http.Header, method, name string, 
 	return st, nil
 }
 
+// putAnswer sends img's bytes from first to first+n as put does, and
+// returns the response's status and Retry-After, and the error it reads
+// as, if any.
+func (w *uploadWorld) putAnswer(t *testing.T, h http.Header, first, n int64, sum string) (status int, retryAfter string, _ error) {
+	t.Helper()
+	body := w.file[first : first+n]
+	if sum == "" {
+		sum = chunkSum(body)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPut, w.url+uploadwire.Path("web", "img"), bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range h {
+		req.Header[k] = v
+	}
+	req.Header.Set("Content-Range", uploadwire.ContentRange(first, n, uploadFileSize))
+	req.Header.Set(uploadwire.ChunkSHA256, sum)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusOK {
+		return resp.StatusCode, resp.Header.Get("Retry-After"), nil
+	}
+	return resp.StatusCode, resp.Header.Get("Retry-After"), uploadwire.ReadError(resp)
+}
+
 // putRaw sends a PUT of body to img with the headers given, and returns
 // the response's status.
 func (w *uploadWorld) putRaw(t *testing.T, h http.Header, body io.Reader) int {
@@ -333,21 +386,74 @@ func TestATooLargeChunkIsRefused(t *testing.T) {
 }
 
 // TestAChunkNotMatchingItsSHA256IsDropped: a chunk whose bytes are not
-// its sha256's is refused, and the upload stays where it was; a header
-// that is no sha256 is refused before anything reaches the node.
+// its sha256's is a 500 data_loss, to send again, carrying where the
+// upload stays; a header that is no sha256 is refused before anything
+// reaches the node.
 func TestAChunkNotMatchingItsSHA256IsDropped(t *testing.T) {
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
-	_, err := w.put(t, alice, 0, 1000, chunkSum([]byte("something else")))
-	wantCode(t, err, connect.CodeInvalidArgument, "a chunk not matching its sha256")
-	if st, err := w.get(t, alice, "img"); err != nil || st.ReceivedBytes != 0 {
-		t.Errorf("after a chunk dropped: %+v %v, want 0 received", st, err)
+	if _, err := w.put(t, alice, 0, 1000, ""); err != nil {
+		t.Fatal(err)
+	}
+	status, _, err := w.putAnswer(t, alice, 1000, 1000, chunkSum([]byte("something else")))
+	var garbled *uploadwire.GarbledError
+	if status != http.StatusInternalServerError || !errors.As(err, &garbled) || garbled.ReceivedBytes != 1000 {
+		t.Errorf("a chunk not matching its sha256: %d %v, want a 500 data_loss at 1000", status, err)
+	}
+	if st, err := w.get(t, alice, "img"); err != nil || st.ReceivedBytes != 1000 {
+		t.Errorf("after a chunk dropped: %+v %v, want 1000 received", st, err)
 	}
 	before, _ := w.node.counts()
-	_, err = w.put(t, alice, 0, 1000, strings.ToUpper(chunkSum(w.file[:1000])))
+	_, err = w.put(t, alice, 1000, 1000, strings.ToUpper(chunkSum(w.file[1000:2000])))
 	wantCode(t, err, connect.CodeInvalidArgument, "a chunk with a sha256 in upper case")
 	if streams, _ := w.node.counts(); streams != before {
 		t.Error("a chunk with no sha256 reached the node")
+	}
+}
+
+// TestAChunkWhileAnotherIsWrittenIsBusy: a chunk sent while another of the
+// same upload is being written is a 503 unavailable with Retry-After,
+// carrying where the upload is, the other written on; a node gone is a
+// 503 too, but neither says where the upload is nor when to come back.
+func TestAChunkWhileAnotherIsWrittenIsBusy(t *testing.T) {
+	w := newUploadWorld(t, nil)
+	alice := devHeader("alice@example.com")
+	w.node.mu.Lock()
+	w.node.hold = make(chan struct{})
+	w.node.mu.Unlock()
+	first := make(chan error, 1)
+	go func() {
+		_, err := w.put(t, alice, 0, 1000, "")
+		first <- err
+	}()
+	<-w.node.held
+	w.node.mu.Lock()
+	hold := w.node.hold
+	w.node.hold = nil
+	w.node.mu.Unlock()
+
+	status, retryAfter, err := w.putAnswer(t, alice, 0, 1000, "")
+	var busy *uploadwire.BusyError
+	if status != http.StatusServiceUnavailable || !errors.As(err, &busy) || busy.ReceivedBytes != 0 {
+		t.Errorf("a chunk while another is written: %d %v, want a 503 at 0", status, err)
+	}
+	if retryAfter != "1" {
+		t.Errorf("Retry-After %q, want 1", retryAfter)
+	}
+	close(hold)
+	if err := <-first; err != nil {
+		t.Errorf("the chunk written meanwhile: %v", err)
+	}
+	if st, err := w.get(t, alice, "img"); err != nil || st.ReceivedBytes != 1000 {
+		t.Errorf("after both: %+v %v, want the first chunk counted", st, err)
+	}
+
+	w.node.mu.Lock()
+	w.node.drop = true
+	w.node.mu.Unlock()
+	status, retryAfter, err = w.putAnswer(t, alice, 1000, 1000, "")
+	if status != http.StatusServiceUnavailable || errors.As(err, &busy) || retryAfter != "" {
+		t.Errorf("a chunk to a node gone: %d %v, Retry-After %q; want a 503 saying nothing of the upload", status, err, retryAfter)
 	}
 }
 

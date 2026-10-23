@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"slices"
@@ -148,8 +149,9 @@ func TestACustomImageIsUploadedChunkByChunk(t *testing.T) {
 	if _, err := w.putChunk("nixos", file, 2000, 1000, ""); !errors.As(err, &off) || off.ReceivedBytes != 1000 {
 		t.Errorf("a chunk at the wrong offset: %v, want a 409 at 1000", err)
 	}
-	if _, err := w.putChunk("nixos", file, 1000, 1000, sumOf([]byte("garbled"))); connect.CodeOf(err) != connect.CodeInvalidArgument {
-		t.Errorf("a chunk not matching its sha256: %v, want invalid_argument", err)
+	var garbled *uploadwire.GarbledError
+	if _, err := w.putChunk("nixos", file, 1000, 1000, sumOf([]byte("garbled"))); !errors.As(err, &garbled) || garbled.ReceivedBytes != 1000 {
+		t.Errorf("a chunk not matching its sha256: %v, want a 500 data_loss at 1000", err)
 	}
 	if n, err := w.uploadedBytes("nixos"); err != nil || n != 1000 {
 		t.Errorf("after the chunks refused: %d %v, want 1000", n, err)
@@ -494,5 +496,76 @@ func TestANodeThatTakesNoUploads(t *testing.T) {
 	ci := w.waitCustomImage("before", "expired", computeapi.CustomImageFailed)
 	if got := readyReason(ci); got != computeapi.ReasonUploadExpired {
 		t.Errorf("the upload placed before failed as %s, want UploadExpired", got)
+	}
+}
+
+// TestTwoChunksAtOnce: of two chunks of an upload sent at once, the node
+// writes one, and refuses the other as busy, a 503 with Retry-After and
+// where the upload is, which counts once sent again.
+func TestTwoChunksAtOnce(t *testing.T) {
+	w := newWorld(t)
+	file := bytes.Repeat([]byte("u"), 4000)
+	w.uploadImage("both", int64(len(file)), "")
+
+	// The first chunk's body comes slowly, its node writing it meanwhile.
+	pr, pw := io.Pipe()
+	req, err := http.NewRequest(http.MethodPut, w.env.URL+uploadwire.Path(project, "both"), pr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.ContentLength = 2000
+	req.Header.Set(auth.DevUserHeader, apiservertest.Root)
+	req.Header.Set("Content-Range", uploadwire.ContentRange(0, 2000, int64(len(file))))
+	req.Header.Set(uploadwire.ChunkSHA256, sumOf(file[:2000]))
+	first := make(chan int, 1)
+	go func() {
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Error(err)
+			first <- 0
+			return
+		}
+		_ = resp.Body.Close()
+		first <- resp.StatusCode
+	}()
+	if _, err := pw.Write(file[:1000]); err != nil {
+		t.Fatal(err)
+	}
+	// The node holds the first chunk once its bytes reach the stager.
+	testutil.Eventually(t, "the first chunk being written", func() (bool, string) {
+		return len(w.staged()) > 0, fmt.Sprint(w.staged())
+	})
+
+	req2, err := http.NewRequest(http.MethodPut, w.env.URL+uploadwire.Path(project, "both"), bytes.NewReader(file[:2000]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req2.Header.Set(auth.DevUserHeader, apiservertest.Root)
+	req2.Header.Set("Content-Range", uploadwire.ContentRange(0, 2000, int64(len(file))))
+	req2.Header.Set(uploadwire.ChunkSHA256, sumOf(file[:2000]))
+	resp2, err := http.DefaultClient.Do(req2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = uploadwire.ReadError(resp2)
+	_ = resp2.Body.Close()
+	var busy *uploadwire.BusyError
+	if resp2.StatusCode != http.StatusServiceUnavailable || !errors.As(err, &busy) || busy.ReceivedBytes != 0 || resp2.Header.Get("Retry-After") != "1" {
+		t.Errorf("the second chunk: %d %v, Retry-After %q; want a 503 at 0 with Retry-After 1", resp2.StatusCode, err, resp2.Header.Get("Retry-After"))
+	}
+
+	if _, err := pw.Write(file[1000:2000]); err != nil {
+		t.Fatal(err)
+	}
+	_ = pw.Close()
+	if status := <-first; status != http.StatusOK {
+		t.Errorf("the first chunk: %d, want 200", status)
+	}
+	var off *uploadwire.OffsetError
+	if _, err := w.putChunk("both", file, 0, 2000, ""); !errors.As(err, &off) || off.ReceivedBytes != 2000 {
+		t.Errorf("the second chunk sent again: %v, want it told the upload is at 2000", err)
+	}
+	if n, err := w.putChunk("both", file, 2000, 2000, ""); err != nil || n != 4000 {
+		t.Errorf("the rest: %d %v", n, err)
 	}
 }
