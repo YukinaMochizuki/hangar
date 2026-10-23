@@ -16,6 +16,7 @@ import {
 import { ArrowUpRight, AtSign, Globe, Lock, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { Notice } from "@/components/notice";
 import { ErrorNotice, Skeleton } from "@/components/states";
@@ -30,7 +31,7 @@ import { Topbar, useProjectName } from "@/components/shell";
 import { Button, buttonVariants, Card, CardHeader, CopyButton, Field, Led, StateText } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { domainFor, domainOf, hostnameOf, isVerified, rowProblems, rowsOf, useProjectDomains, type HostnameRow } from "@/lib/custom-domains";
-import { date, machinePath } from "@/lib/machines";
+import { date } from "@/lib/machines";
 import { accessLabel, conditionOf, endpointYaml, lightOf, nameOf, ownerOf, targetOf, usePublicEndpoints, type ListState } from "@/lib/network";
 import { isStale, permission, useChange, useNetworkCan } from "@/lib/network-actions";
 import { useApplyObjectAt, useReadObject } from "@/lib/object-kinds";
@@ -110,18 +111,7 @@ function UrlLink({ e, className }: { e: PublicEndpoint; className?: string }) {
 }
 
 function TargetText({ e }: { e: PublicEndpoint }) {
-  const project = useProjectName();
-  const t = targetOf(e.spec?.target);
-  if (!t) return <span className="text-subtle">none</span>;
-  return (
-    <span className="whitespace-nowrap">
-      <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
-        {t.name}
-      </Link>
-      <span className="font-mono text-[12px] text-muted">:{e.spec?.port}</span>
-      <span className="ml-2 text-[11.5px] text-subtle">{t.kind === "Container" ? "container" : "VM"}</span>
-    </span>
-  );
+  return <MachineTargetText t={targetOf(e.spec?.target)} detail={`:${e.spec?.port}`} className="whitespace-nowrap" />;
 }
 
 export function PublicEndpointList() {

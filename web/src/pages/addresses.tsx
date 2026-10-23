@@ -8,6 +8,7 @@ import { AddressSchema, AddressSpecSchema, type Address } from "@hangar/api/hang
 import { Link2, Link2Off, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Dialog } from "@/components/dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, FormFooter, StaleNotice } from "@/components/resource";
 import { FormEquivalent } from "@/components/form";
 import { InterfaceField, pickTarget } from "@/components/interface-field";
@@ -18,7 +19,7 @@ import { DetailBody, DetailFrame, DetailHead, ListFrame, NameFilter, PageHead } 
 import { NoMatch, tbodyRow, Th, theadRow } from "@/components/table";
 import { Topbar, useProjectName } from "@/components/shell";
 import { buttonVariants, Card, CardHeader, CopyButton, Field, StateText } from "@/components/ui";
-import { date, machinePath } from "@/lib/machines";
+import { date } from "@/lib/machines";
 import { isStale, permission, useApplyAt, useChange, useReload, useNetworkCan } from "@/lib/network-actions";
 import { addressYaml, conditionOf, nameOf, targetOf, useAddresses } from "@/lib/network";
 import { bare } from "@/pages/machine-list";
@@ -86,19 +87,7 @@ function StateCell({ a }: { a: Address }) {
 }
 
 function TargetText({ a }: { a: Address }) {
-  const project = useProjectName();
-  const t = targetOf(a.spec?.target);
-  if (!t) return <span className="text-subtle">none</span>;
-  const iface = a.spec?.target?.interface || "eth0";
-  return (
-    <span>
-      <Link to={machinePath(t.kind)} params={{ project, name: t.name }} className="font-medium text-accent hover:underline">
-        {t.name}
-      </Link>
-      <span className="font-mono text-[12px] text-muted"> · {iface}</span>
-      <span className="ml-2 text-[11.5px] text-subtle">{t.kind === "Container" ? "container" : "VM"}</span>
-    </span>
-  );
+  return <MachineTargetText t={targetOf(a.spec?.target)} detail={` · ${a.spec?.target?.interface || "eth0"}`} />;
 }
 
 export function AddressList() {

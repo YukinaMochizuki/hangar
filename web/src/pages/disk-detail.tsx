@@ -1,9 +1,10 @@
 // One disk: what it holds, how large it is, where it lives and which machine
 // has it.
 
-import { Link, useNavigate } from "@tanstack/react-router";
+import { useNavigate } from "@tanstack/react-router";
 import type { Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { useDiskActions, useDiskCan } from "@/components/disk-actions";
+import { MachineLink } from "@/components/links";
 import { PageBanner } from "@/components/notice";
 import { HeadActions, type ActionSet, type Can } from "@/components/object-actions";
 import { DetailSkeleton } from "@/components/page";
@@ -17,7 +18,6 @@ import { diskFault, gib, growthBlocked, rootDiskOwner, usedAs, useDisks } from "
 import { DiskSize } from "@/pages/disk-list";
 
 function Header({ d, set }: { d: Disk; set: ActionSet }) {
-  const project = d.metadata?.project ?? "";
   return (
     <div className="border-b px-4 pb-5 pt-6 md:px-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between md:gap-6">
@@ -33,7 +33,7 @@ function Header({ d, set }: { d: Disk; set: ActionSet }) {
             <span className="tabular">{gib(d.status?.size || d.spec?.size)}</span>
             {usedAs(d) && (
               <span>
-                <UsedAs d={d} project={project} />
+                <UsedAs d={d} />
               </span>
             )}
           </div>
@@ -48,20 +48,19 @@ function Header({ d, set }: { d: Disk; set: ActionSet }) {
 }
 
 function Summary({ d, set }: { d: Disk; set: ActionSet }) {
-  const project = d.metadata?.project ?? "";
   const owner = rootDiskOwner(d);
   return (
     <Card>
       <CardHeader title="Summary" />
       <dl className="divide-y px-4">
         <Field label="Source">
-          <DiskSource d={d} project={project} />
+          <DiskSource d={d} />
         </Field>
         <Field label="Size">
           <DiskSize d={d} />
         </Field>
         <Field label="Used as">
-          <UsedAs d={d} project={project} />
+          <UsedAs d={d} />
         </Field>
         <Field label="Made as">
           <MadeAs d={d} />
@@ -69,9 +68,7 @@ function Summary({ d, set }: { d: Disk; set: ActionSet }) {
         {owner && (
           <Field label="Made for">
             <span>
-              <Link to="/projects/$project/vms/$name" params={{ project, name: owner }} className="font-mono text-[12.5px] text-accent hover:underline">
-                {owner}
-              </Link>
+              <MachineLink kind="VirtualMachine" name={owner} />
               <span className="text-muted">, root disk; deleted with it</span>
             </span>
           </Field>

@@ -20,6 +20,7 @@ import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { customImageFloorGiB, customImageState, useCustomImages } from "@/lib/custom-images";
 import { imageFloorGiB } from "@/lib/storage";
 import { Box, Check, Globe, HardDrive, Lock, RotateCw, Server, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { DiskLink } from "@/components/links";
 import { networksAfter, VolumePicker, volumeProblems, type ShareAdds, type VolumeRow } from "@/components/volume-picker";
 import { addNetworks, removeNetworks, sharePerms, shareName, shareUses, shareYaml, useFileShares, withNetworks } from "@/lib/file-shares";
 import { useDeclarations } from "@/components/file-shares";
@@ -850,9 +851,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                         {baseRoot?.case === "fromImage" ? `${formatNumber(quantityGiB(baseRoot.value.size || vmDefaults.disk))} GiB` : "its own size"}
                       </span>
                       {baseV.status?.rootDisk && (
-                        <Link to="/projects/$project/disks/$name" params={{ project, name: baseV.status.rootDisk }} className="font-mono text-[12.5px] text-accent hover:underline">
-                          {baseV.status.rootDisk}
-                        </Link>
+                        <DiskLink name={baseV.status.rootDisk} />
                       )}
                       <span className="text-[12px] text-subtle">grows on its disk's page</span>
                     </span>

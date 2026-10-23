@@ -7,6 +7,7 @@ import type { CustomImage } from "@hangar/api/hangar/storage/v1alpha1/custom_ima
 import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { useCustomImageActions, useCustomImageCan } from "@/components/custom-image-actions";
 import { Bar, bytes, UploadCard } from "@/components/image-upload";
+import { DiskLink } from "@/components/links";
 import { PageBanner } from "@/components/notice";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { HeadActions, type Can } from "@/components/object-actions";
@@ -103,9 +104,7 @@ function Summary({ ci, project, onEditLabels }: { ci: CustomImage; project: stri
         ) : (
         <Field label="Captured from">
           {disk && sourceThere ? (
-            <Link to="/projects/$project/disks/$name" params={{ project, name: disk }} className="font-mono text-[12.5px] text-accent hover:underline">
-              {disk}
-            </Link>
+            <DiskLink name={disk} />
           ) : (
             <span>
               <span className="font-mono text-[12.5px]">{disk}</span>

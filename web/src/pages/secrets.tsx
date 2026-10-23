@@ -12,6 +12,7 @@ import { StaleBanner } from "@/components/credentials";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { FormEquivalent } from "@/components/form";
+import { MachineLink } from "@/components/links";
 import { Notice, PageBanner } from "@/components/notice";
 import { HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { StaleNotice } from "@/components/resource";
@@ -61,7 +62,7 @@ function Registries({ s }: { s: Secret }) {
 /** What the page knows of the containers naming a secret: they may still load, or have failed to. */
 type Use = { names: string[] | undefined; loading: boolean; error: unknown };
 
-function UsedBy({ use: { names, loading, error }, project }: { use: Use; project: string }) {
+function UsedBy({ use: { names, loading, error } }: { use: Use }) {
   if (loading) return <Skeleton className="h-3 w-16" />;
   if (error) return <span className="text-subtle">not known: the containers did not load</span>;
   if (!names?.length) return <span className="text-subtle">none</span>;
@@ -70,9 +71,7 @@ function UsedBy({ use: { names, loading, error }, project }: { use: Use; project
       {names.map((n, i) => (
         <span key={n}>
           {i > 0 && <span className="text-muted">, </span>}
-          <Link to="/projects/$project/containers/$name" params={{ project, name: n }} className="font-mono text-[12.5px] text-accent hover:underline">
-            {n}
-          </Link>
+          <MachineLink kind="Container" name={n} />
         </span>
       ))}
     </span>
@@ -311,7 +310,7 @@ export function SecretList() {
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">{(s.status?.keys ?? []).join(", ")}</td>
                       <td className="px-4 py-2.5">
-                        <UsedBy use={{ ...use, names: use.use[name] }} project={project} />
+                        <UsedBy use={{ ...use, names: use.use[name] }} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 text-muted">{day(s.metadata?.createTime)}</td>
                       <td className="px-2 py-2.5">
@@ -433,7 +432,7 @@ function Loaded({ s, crumbs, use, stale, refetch, can }: { s: Secret; crumbs: Re
                 </span>
               </Field>
               <Field label="Used by">
-                <UsedBy use={use} project={project} />
+                <UsedBy use={use} />
               </Field>
               <LabelsField labels={s.metadata?.labels ?? {}} note="Changed only with the value, by hangar apply." />
               <Field label="Created">{s.metadata?.createTime ? `${day(s.metadata.createTime)} UTC` : ""}</Field>

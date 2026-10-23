@@ -7,11 +7,9 @@ import { Box, Plus, Server } from "lucide-react";
 import { Fragment, useState } from "react";
 import {
   CopyBlock,
-  kindWord,
   MachineChip,
   machinesWithNetworks,
   Mono,
-  NetworkLink,
   notServed,
   OrNames,
   rowsShown,
@@ -24,6 +22,7 @@ import {
   type MachineRef,
 } from "@/components/file-shares";
 import { useFileShareActions } from "@/components/file-share-actions";
+import { kindWord, MachineLink, NetworkLink } from "@/components/links";
 import { CappedNames } from "@/components/machine-names";
 import { PageBanner } from "@/components/notice";
 import { EquivalentCard, LabelsField } from "@/components/object";
@@ -48,7 +47,7 @@ import {
   volumeSnippet,
 } from "@/lib/file-shares";
 import type { FileShare } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
-import { date, machinePath } from "@/lib/machines";
+import { date } from "@/lib/machines";
 import { count, nameOf, useAttachments, useNetworks } from "@/lib/network";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
 
@@ -225,9 +224,7 @@ function Loaded({ s, can }: { s: FileShare; can: Can }) {
                       {usersShown.map((u) => (
                         <tr key={`${u.kind}/${u.name}`} className="border-b align-top last:border-0">
                           <td className="px-4 py-2.5">
-                            <Link to={machinePath(u.kind)} params={{ project, name: u.name }} className="font-mono text-[12.5px] font-medium text-accent hover:underline">
-                              {u.name}
-                            </Link>
+                            <MachineLink kind={u.kind} name={u.name} className="font-medium" />
                             <UseBadge u={u} />
                           </td>
                           <td className="px-4 py-2.5 text-muted">{u.kind === "Container" ? "Container" : "Virtual machine"}</td>

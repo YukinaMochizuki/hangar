@@ -6,6 +6,7 @@ import type { Network } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { EditLabelsDialog } from "@/components/labels-dialog";
+import { MachineTargetText } from "@/components/links";
 import { DeleteDialog, MachinesNotice, type MachinesState, MemberCount, usageBlock } from "@/components/resource";
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
@@ -235,10 +236,7 @@ export function AttachmentsCard({ title, items, state, empty }: { title: string;
                 {items.map((a) => (
                   <tr key={`${a.kind}/${a.name}/${a.iface}`} className="border-b last:border-0">
                     <td className="px-4 py-2.5">
-                      <Link to={machinePath(a.kind)} params={{ project, name: a.name }} className="font-medium text-accent hover:underline">
-                        {a.name}
-                      </Link>
-                      <span className="ml-2 text-[11.5px] text-subtle">{a.kind === "Container" ? "container" : "VM"}</span>
+                      <MachineTargetText t={a} />
                     </td>
                     <td className="px-4 py-2.5 font-mono text-[12.5px]">{a.iface}</td>
                     <td className="px-4 py-2.5 font-mono text-[12.5px]">{a.ipv4 ? bare(a.ipv4) : <span className="text-subtle">–</span>}</td>

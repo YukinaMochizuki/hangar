@@ -156,7 +156,7 @@ export function DiskList() {
                           <span className="block truncate font-medium group-hover:text-accent">{name}</span>
                         </Link>
                         <span className="block truncate text-[11.5px]">
-                          <DiskSource d={d} project={project} link={false} />
+                          <DiskSource d={d} link={false} />
                         </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5">
@@ -166,7 +166,7 @@ export function DiskList() {
                         <DiskSize d={d} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5">
-                        <UsedAs d={d} project={project} />
+                        <UsedAs d={d} />
                       </td>
                       <td className="whitespace-nowrap px-4 py-2.5 font-mono text-[12px] text-muted">
                         {d.status?.node || <span className="font-sans text-subtle">not placed yet</span>}

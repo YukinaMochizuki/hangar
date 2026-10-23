@@ -8,6 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupSpecSchema, type SecurityGroup } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
 import { Fragment, useState } from "react";
+import { NetworkLink } from "@/components/links";
 import { DeleteDialog, MachinesNotice, MemberCount, StaleNotice, usageBlock } from "@/components/resource";
 import { Input, Select } from "@/components/form";
 import { CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
@@ -309,9 +310,7 @@ function Loaded({ g, can }: { g: SecurityGroup; can: Can }) {
             <span>
               on{" "}
               {nets.loading || nets.error || nets.items.some((n) => nameOf(n) === net) ? (
-                <Link to="/projects/$project/networks/$name" params={{ project, name: net }} className="text-accent hover:underline">
-                  {net}
-                </Link>
+                <NetworkLink name={net} />
               ) : (
                 <NetworkName net={net} exists={false} />
               )}

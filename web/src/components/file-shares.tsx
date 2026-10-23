@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { Dialog } from "@/components/dialog";
 import { CommandLine, FormEquivalent, Input } from "@/components/form";
+import { NetworkLink } from "@/components/links";
 import { CappedNames } from "@/components/machine-names";
 import { Notice } from "@/components/notice";
 import { StaleNotice } from "@/components/resource";
@@ -103,8 +104,6 @@ export function ShowAll({ all, n, onToggle }: { all: boolean; n: number; onToggl
   );
 }
 
-export const kindWord = (k: MachineKind) => (k === "Container" ? "container" : "VM");
-
 /** A machine's name, linked, with its kind's icon. */
 export function MachineChip({ m }: { m: { kind: MachineKind; name: string } }) {
   const project = useProjectName();
@@ -124,16 +123,6 @@ export function MachineChip({ m }: { m: { kind: MachineKind; name: string } }) {
 export function ShareState({ s }: { s: FileShare }) {
   const p = s.metadata?.deleteTime ? { label: "Deleting", tone: "pending" as const, pulse: true } : phaseWords(s);
   return <StateText tone={p.tone} pulse={p.pulse} label={p.label} />;
-}
-
-/** A network's name, linked to its page. */
-export function NetworkLink({ name, className }: { name: string; className?: string }) {
-  const project = useProjectName();
-  return (
-    <Link to="/projects/$project/networks/$name" params={{ project, name }} className={cn("font-mono text-[12.5px] text-accent hover:underline", className)}>
-      {name}
-    </Link>
-  );
 }
 
 /** What stands where a share's address on a network goes before its server has one. */
