@@ -305,6 +305,8 @@ func (s *Server) mux(chain auth.Chain) *http.ServeMux {
 		s.interceptors(chain))
 	mux.Handle(computev1alpha1connect.NewMachineCapabilityServiceHandler(machineCapabilities{s}, s.interceptors(chain)))
 	mux.HandleFunc(execws.Pattern, s.machineSocket(chain))
+	mux.HandleFunc("GET "+uploadPattern, s.customImageUpload(chain))
+	mux.HandleFunc("PUT "+uploadPattern, s.customImageUpload(chain))
 	mux.Handle(nodev1connect.NewImagePullCredentialsServiceHandler(imagePullCredentials{s}, s.interceptors(chain)))
 	mux.HandleFunc(tunnel.Path, s.openTunnel(chain))
 	mux.Handle(tenancyv1alpha1connect.NewNameServiceHandler(names{s}, s.interceptors(chain)))
