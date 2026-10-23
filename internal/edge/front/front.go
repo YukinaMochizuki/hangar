@@ -191,11 +191,19 @@ func isAPIPath(p string) bool {
 }
 
 // isUpload says r sends a chunk of a CustomImage's file, to its :upload
-// path (uploadwire.Path).
+// path (uploadwire.Path): /v1/projects/PROJECT/customimages/NAME:upload,
+// each of PROJECT and NAME one segment, not empty, as the apiserver routes
+// it.
 func isUpload(r *http.Request) bool {
-	p := r.URL.Path
-	return r.Method == http.MethodPut && strings.HasPrefix(p, "/v1/projects/") &&
-		strings.Contains(p, "/customimages/") && strings.HasSuffix(p, ":"+uploadwire.Action)
+	if r.Method != http.MethodPut {
+		return false
+	}
+	seg := strings.Split(r.URL.EscapedPath(), "/")
+	if len(seg) != 6 || seg[0] != "" || seg[1] != "v1" || seg[2] != "projects" || seg[3] == "" || seg[4] != "customimages" {
+		return false
+	}
+	name, ok := strings.CutSuffix(seg[5], ":"+uploadwire.Action)
+	return ok && name != ""
 }
 
 // limitBody caps r's body at n bytes, answering 413 at once when it says

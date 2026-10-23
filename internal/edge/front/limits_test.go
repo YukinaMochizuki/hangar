@@ -325,6 +325,13 @@ func TestRequestLimits(t *testing.T) {
 			{"a POST to the path", http.MethodPost, "https://" + apiHost + upload, 2048, 413},
 			{"a PUT elsewhere in the API", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img:other", 2048, 413},
 			{"a PUT to another kind's :upload", http.MethodPut, "https://" + apiHost + "/v1/projects/web/disks/img:upload", 2048, 413},
+			// The name is one segment, not empty, as the apiserver routes it.
+			{"a name of two segments", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/a/b:upload", 2048, 413},
+			{"a path past a custom image", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img/x/customimages/y:upload", 2048, 413},
+			{"a path past :upload", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/img:upload/x:upload", 2048, 413},
+			{"no name", http.MethodPut, "https://" + apiHost + "/v1/projects/web/customimages/:upload", 2048, 413},
+			{"no project", http.MethodPut, "https://" + apiHost + "/v1/projects//customimages/img:upload", 2048, 413},
+			{"a prefix before the API", http.MethodPut, "https://" + apiHost + "/x/v1/projects/web/customimages/img:upload", 2048, 413},
 		} {
 			if code, body, _ := do(t, d.client, tt.method, tt.url, bytes.NewReader(make([]byte, tt.n)), nil); code != tt.code {
 				t.Errorf("%s: %d %q; want %d", tt.name, code, body, tt.code)
