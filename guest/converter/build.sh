@@ -6,8 +6,11 @@
 # reproducible newc cpio in bin/guest/converter.cpio. The platform's
 # initramfs carries none of it (docs/decisions/custom-images.md).
 #
-# It needs Go, curl, tar and sha256sum, and no C toolchain: the packages
-# are Alpine's builds. SOURCE_DATE_EPOCH sets every entry's mtime; it
+# It needs Go, tar and sha256sum, and no C toolchain: the packages are
+# Alpine's builds, downloaded first from this repository's release that
+# mirrors them, then from Alpine (tools/converterdeps); with GITHUB_TOKEN
+# set, the release is read through GitHub's API, as a private
+# repository's must be. SOURCE_DATE_EPOCH sets every entry's mtime; it
 # defaults to the time of the last commit. docs/runbook/converter.md says
 # how to bump the packages.
 set -euo pipefail
@@ -26,7 +29,7 @@ OUT=${HANGAR_CONVERTER_OUT:-$REPO/bin/guest}
 log() { printf '%s\n' "$*" >&2; }
 die() { log "error: $*"; exit 1; }
 
-for cmd in curl sha256sum tar go; do
+for cmd in sha256sum tar go; do
 	command -v "$cmd" >/dev/null || die "$cmd not found"
 done
 
@@ -41,22 +44,18 @@ mkdir -p "$WORK" "$STAGE/pkgs"
 ROOT=$STAGE/root
 mkdir -m 0755 "$ROOT"
 
-# Download what the cache lacks; check every package on every run, so a
-# corrupt or swapped cache cannot slip through.
+# Download what the cache lacks, each checked; then check every package on
+# every run, so a corrupt or swapped cache cannot slip through.
+(cd "$REPO" && go run ./tools/converterdeps fetch -env "$HERE/converter.env" -dir "$WORK") ||
+	die "the packages could not be downloaded (docs/runbook/converter.md)"
 while read -r pkg sum; do
 	[ -n "$pkg" ] || continue
 	[[ $pkg =~ ^(main|community)/[A-Za-z0-9._+-]+$ ]] || die "converter.env: $pkg is not REPO/NAME-VERSION"
 	[[ $sum =~ ^[0-9a-f]{64}$ ]] || die "converter.env: $pkg has no sha256"
 	file=$WORK/${pkg#*/}.apk
-	if [ ! -f "$file" ]; then
-		url="$HANGAR_CONVERTER_MIRROR/$HANGAR_CONVERTER_ALPINE/${pkg%%/*}/x86_64/${pkg#*/}.apk"
-		log "download: $url"
-		curl -fsSL -o "$file.part" "$url" || die "$url: gone from the mirror? bump converter.env (docs/runbook/converter.md)"
-		mv "$file.part" "$file"
-	fi
 	if ! echo "$sum  $file" | sha256sum --check --status; then
 		rm -f "$file"
-		die "sha256 mismatch for $file (deleted); converter.env and the mirror disagree"
+		die "sha256 mismatch for $file (deleted); converter.env and the download disagree"
 	fi
 	# An .apk is gzip streams concatenated: its signature, its metadata
 	# and its files, one tar.

@@ -67,6 +67,10 @@ jobs:
       - name: Build
         env:
           HANGAR_RELEASE_TAG: ${{ env.TAG }}
+          # Read-only: the converter's packages from the converter-deps
+          # release, as a private repository's must be read
+          # (docs/runbook/converter.md).
+          GITHUB_TOKEN: ${{ github.token }}
         run: deploy/release.sh "$RUNNER_TEMP/release"
       # What is published: release.sh's dist/, not the unpacked host/.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
