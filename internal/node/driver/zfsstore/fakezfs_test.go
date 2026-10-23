@@ -17,7 +17,8 @@ import (
 // snapshots), and send piped into receive. Each dataset is a file of
 // property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %; a
 // snapshot, name@snap, inherits what its volume has and it has not, as
-// ZFS's user properties are inherited. A send writes its snapshot's
+// ZFS's user properties are inherited. A volume is made holding nothing,
+// logicalreferenced 0, which its snapshots read. A send writes its snapshot's
 // volsize and logicalreferenced, which a receive makes its volume and
 // snapshot of. Every call is logged to $FAKEZFS/log. Switches, files in
 // $FAKEZFS: set-fails makes set fail before its change, and set-killed
@@ -93,7 +94,7 @@ create)
 	while :; do
 		case $1 in
 		-s) opts="$opts sparse=yes"; shift ;;
-		-V) opts="$opts volsize=$2"; shift 2 ;;
+		-V) opts="$opts volsize=$2 logicalreferenced=0"; shift 2 ;;
 		-o) opts="$opts $2"; shift 2 ;;
 		*) break ;;
 		esac

@@ -331,6 +331,12 @@ type Storage interface {
 	// DeleteCapture removes the snapshot taken for the CustomImage of
 	// imageUID.
 	DeleteCapture(ctx context.Context, imageUID string) error
+	// FillImageBase makes, once, the base of the CustomImage of imageUID
+	// from an uploaded file: a volume of size bytes, all zeros, that fill
+	// writes given its device, then read-only and marked finished as a
+	// captured base is. It returns the base, as it does for one made
+	// before. A failure, fill's among them, leaves no base.
+	FillImageBase(ctx context.Context, imageUID string, size int64, fill func(dev string) error) (ImageBase, error)
 	// EnsureVolume returns a Disk's volume of at least size bytes, grown,
 	// never shrunk. A volume made here is blank if digest is empty, and
 	// otherwise a clone of the disk image's base of that key, a digest or
@@ -354,6 +360,31 @@ type Storage interface {
 	// Capacity returns how much the storage holds, and how much of it is
 	// free.
 	Capacity(ctx context.Context) (Capacity, error)
+}
+
+// Converter reads the files tenants upload for CustomImages, which the
+// host never parses: only qemu-img in a converter VM of the file's own
+// does, the platform kernel booting the converter initramfs, with no
+// network, its agent answering the host alone over vsock
+// (docs/decisions/custom-images.md). What it reports of a file is the
+// guest's claim. A file qemu-img refuses is ErrInvalidImage.
+type Converter interface {
+	// Inspect returns what qemu-img info in a converter VM says of the
+	// file at path, attached read-only.
+	Inspect(ctx context.Context, imageUID, path string) (ImageInfo, error)
+	// Convert has qemu-img convert in a converter VM write the file at
+	// path, attached read-only and read as format, onto the block device
+	// dev, all zeros, as raw.
+	Convert(ctx context.Context, imageUID, path, format, dev string) error
+}
+
+// ImageInfo is what qemu-img info says of a file.
+type ImageInfo struct {
+	Format string
+	// VirtualSize is the size of the disk the file holds, in bytes.
+	VirtualSize int64
+	// BackingFile and DataFile name other files the image reads, if any.
+	BackingFile, DataFile string
 }
 
 // Base is an OCI image's base.

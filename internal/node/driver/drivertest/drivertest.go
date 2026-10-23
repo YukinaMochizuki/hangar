@@ -34,6 +34,8 @@ type Host struct {
 	Network    driver.Network
 	Hypervisor driver.Hypervisor
 	Guest      driver.Guest
+	// Converter converts uploaded files; its part runs with Storage.
+	Converter driver.Converter
 	// Publish makes an image pullable under a reference made of name, and
 	// returns that reference and the image's digest.
 	Publish func(t *testing.T, name string) (ref, digest string)
@@ -146,6 +148,8 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 		return h.Storage != nil && h.DiskImages != nil && h.PublishDiskImage != nil
 	})
 	part("custom images", customImages, func(h Host) bool { return h.Storage != nil })
+	part("filled images", filledImages, func(h Host) bool { return h.Storage != nil })
+	part("converter", converter, func(h Host) bool { return h.Storage != nil && h.Converter != nil })
 	nets := func(h Host) bool { return h.Network != nil }
 	part("network", network, nets)
 	part("network changes", networkChanges, nets)

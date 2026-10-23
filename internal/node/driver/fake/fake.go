@@ -106,6 +106,16 @@ type Host struct {
 	captureErr   error
 	captureHold  chan struct{}
 	capturing    int
+	// inspects and converts count the converter's calls, by image uid;
+	// imageInfo, if set, is what Inspect says of every file, and inspectErr
+	// and convertErr fail each call; convertHold keeps conversions from
+	// ending until it is closed, and converting counts those under way.
+	inspects, converts map[string]int
+	imageInfo          *driver.ImageInfo
+	inspectErr         error
+	convertErr         error
+	convertHold        chan struct{}
+	converting         int
 	// Unpacked counts how often each digest was unpacked into a base.
 	unpacked map[string]int
 	// unpacks counts the unpacks begun, by reference; unpacking, those
@@ -195,6 +205,7 @@ func New() *Host {
 		held: map[string]chan struct{}{}, heldDisks: map[string]int{}, volumes: map[string]driver.Volume{}, heldVols: map[string]int{},
 		vmBases: map[string]int64{}, diskImages: map[string]fakeDiskImage{}, fetches: map[string]int{},
 		captures: map[string]capture{}, imageUsed: map[string]int64{}, usedPerMille: 500,
+		inspects: map[string]int{}, converts: map[string]int{},
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]driver.InterfacePolicy{},
 		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{}, exportHolds: map[string]chan struct{}{},
@@ -210,6 +221,7 @@ func New() *Host {
 func (h *Host) Images() driver.Images         { return images{h} }
 func (h *Host) DiskImages() driver.DiskImages { return diskImages{h} }
 func (h *Host) Storage() driver.Storage       { return storage{h} }
+func (h *Host) Converter() driver.Converter   { return converter{h} }
 func (h *Host) Network() driver.Network       { return network{h} }
 func (h *Host) Hypervisor() driver.Hypervisor { return hypervisor{h} }
 func (h *Host) Guest() driver.Guest           { return guest{h} }

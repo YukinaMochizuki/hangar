@@ -51,6 +51,7 @@ func host(h *fake.Host) drivertest.Host {
 	published := 0
 	return drivertest.Host{
 		Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest(),
+		Converter: h.Converter(),
 		Publish: func(_ *testing.T, name string) (string, string) {
 			published++
 			digest := fmt.Sprintf("sha256:%d", published)
