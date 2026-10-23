@@ -209,11 +209,14 @@ const newDiskRoute = createRoute({
 const newCustomImageRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/new/custom-image",
-  // disk opens it on that source disk, such as from a disk's page.
-  validateSearch: (s: Record<string, unknown>): { disk?: string } => (typeof s.disk === "string" && s.disk !== "" ? { disk: s.disk } : {}),
+  // disk opens it on that source disk, such as from a disk's page; upload on a file to upload.
+  validateSearch: (s: Record<string, unknown>): { disk?: string; upload?: 1 } => ({
+    ...(typeof s.disk === "string" && s.disk !== "" && { disk: s.disk }),
+    ...((s.upload === 1 || s.upload === "1") && { upload: 1 as const }),
+  }),
   component: function NewCustomImage() {
-    const { disk } = newCustomImageRoute.useSearch();
-    return <CreateCustomImage key={disk} disk={disk} />;
+    const { disk, upload } = newCustomImageRoute.useSearch();
+    return <CreateCustomImage key={`${disk}/${upload}`} disk={disk} mode={upload ? "upload" : undefined} />;
   },
 });
 

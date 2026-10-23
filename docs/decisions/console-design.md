@@ -630,6 +630,34 @@ Settled with the owner on the screens, before they read the API.
     the disk's machine, since the platform changes nothing in the image,
     and fills the image's OS, version and default user from the disk's
     image until they are edited. The one apply is create-only.
+  - New image's other source is **Upload a file** (`?upload=1`, and the
+    Images page's Upload image): a file dropped or chosen, which the page
+    reads the first bytes of to say qcow2 or raw and refuses anything else
+    or anything past the size a file may be, with what an image needs to
+    boot on Hangar (an EFI boot loader, cloud-init reading NoCloud, sshd
+    reading `sshd_config.d`), and its name taken from the file's until
+    typed. It creates the image for the file's size, with no whole-file
+    sha256 (`docs/decisions/custom-images.md`), and starts sending it.
+  - **The upload runs in the tab, apart from any page** (`web/src/lib/
+    upload.ts`): one chunk at a time, in order, each a `PUT` to the
+    upload route with its Content-Range and its own sha256, which Web
+    Crypto hashes whole; a 409 moves it to the node's count, a 413 halves
+    the chunk, a failure that may pass is tried again after a growing
+    wait, and one that cannot stops it. It never uses the route's `GET`,
+    which may come without `Origin` and is refused the cookie; it starts
+    from the image's `status.received_bytes`. Leaving the image's page
+    does not stop it; closing the tab does.
+  - **An uploaded image's page** draws its way as a machine's page does,
+    on a taxi line (Upload, Convert, Ready, with how much the node holds;
+    a failure at the step it happened in), then the upload: this tab's,
+    with its speed, time left, Pause and Resume; or, when none runs here,
+    how much the node holds, how long until it expires, and Choose file to
+    go on from there. A file of another size is refused at once. The
+    console keeps nothing of a file between tabs, as it keeps nothing in
+    storage, so a file of the same size and other content goes on; the
+    node's sha256 in the image's status tells what was sent. While it
+    converts, the page says so in words for its user, not how the
+    platform does it.
 - **Controls are shown as "What a control is shown for" says**: a disk
   list or page asks the project one question, and an image list or page
   asks the project one and the platform one. New disk and "New disk from

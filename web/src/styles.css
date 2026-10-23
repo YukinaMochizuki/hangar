@@ -204,7 +204,11 @@
   background: linear-gradient(100deg, transparent 35%, color-mix(in oklch, var(--foreground) 5%, transparent) 50%, transparent 65%);
   animation: runs-on-sweep 2.8s ease-in-out infinite;
 }
+/* A progress bar whose end is not known: a third of the track sliding across it. */
+@keyframes bar-slide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+.bar-slide { animation: bar-slide 1.4s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
+  .bar-slide { animation: none; transform: translateX(100%); }
   .runs-on-sweep { animation: none; display: none; }
   .art-draw, .art-led-in, .arrive-row { animation: none; stroke-dasharray: none; }
 }
