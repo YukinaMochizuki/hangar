@@ -1,4 +1,4 @@
-# Custom images: a project's own disk images, captured from its stopped disks
+# Custom images: a project's own disk images, captured from its stopped disks or uploaded
 
 Status: accepted, 2026-10.
 
@@ -7,17 +7,22 @@ Status: accepted, 2026-10.
 Tenants want golden images: set a VM up, stop it, keep its root disk as an
 image of their own, and make new disks from it. Until now the only images
 were the platform's global catalogue (`docs/decisions/vm-images.md`), which
-made room for project images without saying what they are. Uploading an
-image file is wanted later, as a second way to make one.
+made room for project images without saying what they are. Tenants also
+want to bring an image file of their own, such as a NixOS qcow2 built with
+nixos-generators: an upload is a second way to make one, from the CLI and
+the console alike, and a file a tenant uploads is the first thing of a
+tenant's the platform would parse as a disk image.
 
 ## Decision
 
 - **A `CustomImage` is a kind of its own, project-scoped** (`storage`
   group, short name `cimg`). It is the project's and no one else's: no
-  sharing across projects yet. Its `spec.source` is a oneof that holds only
-  `disk {name}`, a Disk of the same project, for now; an upload will be a
-  second source of the same kind. `os`, `version`, `default_user` and
-  `min_disk_size` mean what they mean on an `Image`.
+  sharing across projects yet. Its `spec.source` is a oneof: `disk {name}`,
+  a Disk of the same project, captured; or `upload {size, sha256}`, a raw
+  or qcow2 file, uploaded (below). `os`, `version`, `default_user` and
+  `min_disk_size` mean what they mean on an `Image`. An image made either
+  way is the same once Ready: VMs boot from it, and a disk of it can be
+  captured again.
 - **A disk names one by `source.image.project`.** `ImageSource` gains
   `project`: unset, `name` is a global Image, as before, so no manifest
   changes meaning; set, it names a CustomImage of that project. Admission
@@ -79,6 +84,80 @@ image file is wanted later, as a second way to make one.
   its `disk_size` while it is captured, which is reserved as it is made,
   and its `used_size` once Ready; one that failed or is gone counts
   nothing, toward either. The default plan allows 5.
+- **An upload is a file of a declared size, and maybe a sha256.**
+  `source.upload.size` is the file's bytes, 1 to `hangar-apiserver
+  --max-upload-size` (16Gi); `sha256`, 64 lowercase hex digits, is
+  optional: without one each chunk is checked, the whole file not. Both are
+  immutable, as the rest of `source`. The image is placed as it is made on
+  the node a machine would be (on one host, the only node), stored as
+  `status.node`; with no node ready it is refused. Toward `disk` it
+  reserves `size`, rounded up to whole Gi, from creation, and settles to
+  `used_size` once Ready, as a capture does; it counts toward
+  `custom_images`. Formats other than raw and qcow2, URLs, sharing and
+  copying between nodes are not offered.
+- **A file goes up in chunks, in order, resumable.** `GET
+  /v1/projects/{project}/customimages/{name}:upload` answers JSON
+  `{received_bytes, chunk_size, size}`: where the next chunk starts, as the
+  image's node counts it, and the most a chunk holds, 64 MiB. A `PUT` of
+  the same path is one chunk, with `Content-Range: bytes a-b/size`, `a`
+  the node's count, and `X-Hangar-Chunk-SHA256`, its hex sha256; it
+  answers `{received_bytes}`, the new count. Both need
+  `storage.customimages.apply` on the project, and nothing of the image is
+  told before. They take every credential; a browser's session counts only
+  on a request whose `Origin` is the console's
+  (`docs/decisions/console-design.md`), so a cookie GET without one is
+  refused, and the console reads `status.received_bytes` and corrects
+  itself from a 409 instead. Refused before any of the body is relayed, as
+  Connect-style JSON (`internal/uploadwire`): an image not uploaded, being
+  deleted, failed, whose file is whole, or past `upload_expires`
+  (`failed_precondition`); a malformed range or sha256, or a size not the
+  image's (`invalid_argument`); a chunk over 64 MiB (413); one not at the
+  node's count (409 `aborted`, its body carrying a top-level
+  `received_bytes`); and the caps on calls to nodes. A chunk whose bytes
+  are not its sha256 is dropped by the node (`invalid_argument`), the count
+  as it was.
+- **The apiserver relays a chunk; the node stages it.** The apiserver asks
+  the node's count (`NodeService.GetCustomImageUpload`), then streams the
+  body on the client-streaming `NodeService.UploadCustomImage`
+  (`docs/decisions/node-tunnel.md`), 256 KiB a message, holding no more.
+  The node writes it at its offset to `<image dir>/uploads/<image uid>`
+  on the images dataset, whose quota bounds it, one chunk of an upload at
+  a time, counted only once its sha256 matches and it is synced. The
+  whole file's sha256 is computed as the chunks come, and the count and
+  the hash's state (`encoding.BinaryMarshaler`) are kept beside the file,
+  so an upload goes on, its hash right, after the agent restarts. The node
+  reports `received_bytes` at most four times a second, and
+  `upload_expires`: the image's creation and `hangar-node --upload-expiry`
+  (24h).
+- **A whole file is checked, then converted in a VM of its own.** At
+  `size` bytes the node compares the declared sha256, if any (a mismatch
+  is `DigestMismatch`), and reports `Uploaded` True with the `sha256` it
+  computed. The host never parses the file. A **converter VM** does: the
+  platform kernel booting the **converter initramfs**, hangar-init in a
+  converter role and qemu-img from pinned Alpine packages
+  (`docs/runbook/converter.md`), not the containers' initramfs, which
+  stays as it is. It has no network interface, its agent answers CID 2
+  alone over vsock, as hangar-init's does, and it is confined as every VM,
+  with a VM user of its own, cgroup CPU and memory limits (1 vCPU,
+  512 MiB) and Cloud Hypervisor's confinement, the file bound read-only
+  into its unit and attached read-only as raw, so Cloud Hypervisor parses
+  no format of it. Step one, with the file alone: it reports `qemu-img
+  info`, and the node refuses anything not raw or qcow2, naming a backing
+  or a data file (`InvalidImage`), or holding a disk over `hangar-node
+  --max-image-disk-size`, 256Gi (`ImageTooLarge`). Step two: the node
+  makes `hangar/vmbases/customimage-<uid>` of that size, and the converter,
+  given the file and the zvol, runs `qemu-img convert -O raw` with the
+  format given, never probed. The base is finished and marked exactly as a
+  captured one, the property set on `@base` itself, read-only; the node
+  reports `Ready` with `used_size` and `disk_size`, the base's size in
+  whole Gi, which only the node knows and it sets once. Both steps are
+  bounded by `hangar-node --convert-timeout` (2h), each VM's unit by
+  `RuntimeMaxSec` too.
+- **An upload that fails, fails for good**, as a capture does: `Ready`
+  False with `UploadExpired`, `DigestMismatch`, `InvalidImage`,
+  `ImageTooLarge` or `ConvertFailed`; a partial base is destroyed, and the
+  user deletes the image and uploads again. The staged file goes once the
+  image is Ready or failed, and the sweep removes a deleted image's.
 - **The platform never changes what an image holds.** No generalization:
   no machine id, host keys, users or logs are removed. A VM made from one
   is a new instance to cloud-init anyway, as its instance id is the VM's
@@ -99,9 +178,16 @@ image file is wanted later, as a second way to make one.
   it, and no disk admitted from it, bound to the node or to none yet, is
   still to be made. The deleted image's quota is released at once
   meanwhile: the platform carries the space a kept base takes.
-- **An image lives on one node**, its source disk's, and disks of it can be
-  made only there; nothing copies an image between nodes. With one host,
-  that is every disk.
+- **An image lives on one node**, its source disk's or the one an upload
+  was placed on, and disks of it can be made only there; nothing copies an
+  image between nodes. With one host, that is every disk.
+- A tenant's file reaches qemu-img only in a converter VM, which sees
+  nothing but that file and the base it writes: what a crafted file gains
+  there is that VM, which writes only the tenant's own image.
+- An upload briefly takes its room twice on the host, the staged file on
+  the images dataset and the base on the pool. A chunk is 64 MiB, which a
+  slow link sends within the front door's body-rate rules
+  (`docs/decisions/front-door.md`).
 - **A source disk deleted after it was snapshotted waits for the capture**:
   ZFS refuses to destroy a volume with a snapshot, so its node releases it
   once the base is made or the capture failed, and the snapshot is gone.

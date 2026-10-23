@@ -199,6 +199,7 @@ stand in front of the internet with nothing else in front of it.
   | requests in flight, one client (streams and WebSockets included) | 128 | 429 |
   | request header | 64 KiB (net/http reads 4 KiB past it) | 431 |
   | request body to the API | 8 MiB | 413 |
+  | request body of a `PUT` to a CustomImage's `:upload` path, one chunk of its file (`--max-upload-body-bytes`) | 65 MiB, a 64 MiB chunk and room | 413 |
   | request body to an endpoint | 100 MiB | 413 |
   | request body's rate, on average over the time spent waiting for it | 1 KiB/s, no one wait past 30 s | 408; over HTTP/2 on the stream, the connection kept; over HTTP/1 the connection closed |
   | what net/http reads of a body left unread (HTTP/1) | 30 s | closed |
@@ -224,10 +225,11 @@ stand in front of the internet with nothing else in front of it.
     to the timeout, for as long as the average holds. So a client that
     keeps to the rate holds a connection for as long as its body lasts:
     8 MiB to the API is about 2 h 17 min, 100 MiB to an endpoint about
-    28 h, each at a cost to it of 1 KiB/s. Past the deadline the body is
-    cut (`edge.ErrBodyTooSlow`) and the request answered 408, by the API's
-    proxy and by the endpoints'. Over HTTP/2 that ends the stream alone;
-    over HTTP/1 the connection is closed.
+    28 h, each at a cost to it of 1 KiB/s; a chunk of an upload, the one
+    larger body the API takes, is held to the same rule. Past the deadline
+    the body is cut (`edge.ErrBodyTooSlow`) and the request answered 408,
+    by the API's proxy and by the endpoints'. Over HTTP/2 that ends the
+    stream alone; over HTTP/1 the connection is closed.
   - Only the body is held. A server stream's request ends at once, so its
     response flows for as long as it lasts. A WebSocket opens with a GET
     without a body and its frames are read from the hijacked connection,

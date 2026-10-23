@@ -37,9 +37,9 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     container's project), so no tenant takes a node's streams from the
     others; and 900 per node, below the 1000 streams an agent takes on its
     tunnel, leaving room for the apiserver's own calls. A call over a cap
-    fails at once with `ResourceExhausted`; none waits. Logs and exec share
-    the caps. They are counted in each apiserver process, which holds while
-    there is one.
+    fails at once with `ResourceExhausted`; none waits. Logs, exec and
+    uploads share the caps. They are counted in each apiserver process,
+    which holds while there is one.
   - Each end of a tunnel receives with a window of 1 MiB per stream and of
     1000 MiB for the connection, every stream's at once. A call whose
     caller stops reading holds its stream's window until it ends; were the
@@ -144,6 +144,18 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   everything the container can. It is the machine's, as logs are.
   The owner and editor roles and `platform.root` hold it; a sponsor does
   not.
+
+- **A chunk of a CustomImage's upload is a client-streaming call.** The
+  apiserver asks the node where the upload is
+  (`NodeService.GetCustomImageUpload`, unary), refuses a chunk not
+  starting there, then relays the request's body to
+  `NodeService.UploadCustomImage`: a first message saying where the chunk
+  goes, its length and its sha256, then its bytes, 256 KiB a message, the
+  apiserver holding no more than one; the answer is the node's new count
+  (`docs/decisions/custom-images.md`). Both calls take a slot of the caps
+  above, as logs and exec do, for as long as they last. A client that
+  stops sending holds its stream's window, not the apiserver's memory; one
+  that goes away ends the call, and the node counts nothing of the chunk.
 
 ## Consequences
 

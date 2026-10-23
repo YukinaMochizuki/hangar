@@ -45,11 +45,11 @@ about the platform's catalogue, which only the platform chooses.
   its partition and filesystem itself (cloud-init).
 - **qemu-img runs as root, unsandboxed.** It parses only files a platform
   administrator chose and pinned by sha256, so it reads nothing a tenant
-  controls. Images uploaded by tenants, a later source of CustomImage,
-  would change that: their files would have to be converted in a sandbox
-  (an unprivileged, namespaced process with only the file and the device),
-  or by a guest. A CustomImage captured from a disk needs neither: no file
-  is parsed, ZFS copies the volume as it is.
+  controls. A file a tenant uploads for a CustomImage is parsed only inside
+  a converter VM of its own, by the qemu-img of the converter initramfs,
+  never by the host's (`docs/decisions/custom-images.md`). A CustomImage
+  captured from a disk needs neither: no file is parsed, ZFS copies the
+  volume as it is.
 - **An image at fault fails for good.** A file that does not match its
   sha256, that qemu-img refuses or finds of another format, or that is too
   large, is reported on the Image (`Verified` False, with reason

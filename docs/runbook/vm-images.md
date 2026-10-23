@@ -176,6 +176,53 @@ Ready. It lives on its source disk's node, and the node keeps it after the
 image is deleted only while disks of it remain, made or still to be made,
 which then count toward no quota of the image's.
 
+## A project's own image: upload a file
+
+A tenant also makes a `CustomImage` from a disk image file of its own, raw
+or qcow2, such as a NixOS image built with nixos-generators
+(`docs/decisions/custom-images.md`). As with a captured disk, prepare it
+to boot as a VM here: it boots through the platform's UEFI firmware, so
+it needs a bootloader on an EFI system partition (`nixos-generators -f
+raw-efi`, or `qcow-efi`), and cloud-init, or another NoCloud datasource
+reader, to take the user, keys and network its VMs are given. Then:
+
+```sh
+hangar image upload nixos.qcow2 --name nixos --os nixos --version 25.05 --default-user root
+```
+
+It makes the image with the file's size and sha256, and sends the file in
+chunks of 64 MiB with a progress line; `-o json` prints the image instead.
+A chunk that fails on the way is sent again; run the same command after an
+interruption, and it goes on from where the node is, for up to 24 hours
+after the image was made (`uploadExpires`). `--no-verify` sends no sha256
+and does not read the file twice; each chunk is still checked. It
+authenticates as every command does, `HANGAR_TOKEN` included, and needs a
+role that may apply custom images, such as `project.editor`. An image of
+the name made for another file is refused (exit 4): delete it, or choose
+another `--name`.
+
+Once the whole file is in, `Uploaded` is True with the `sha256` the node
+computed, and the node converts the file in a converter VM of its own; the
+host never reads it. `hangar get cimg nixos -o yaml` then shows `Ready`
+True with `diskSize`, the disk the file holds, the smallest a disk of it
+can be, and `usedSize`. `Ready` False says why it failed, for good:
+`UploadExpired` (not whole in 24 hours), `DigestMismatch` (not the file
+whose sha256 was sent), `InvalidImage` (not raw or qcow2, or naming a
+backing or data file), `ImageTooLarge` (a disk over 256 GiB), or
+`ConvertFailed`; delete it and upload again. A file is at most 16 GiB.
+
+The image reserves the file's size toward the disk quota from the moment it
+is made, and counts as `usedSize` once Ready. Make VMs of it as of a
+captured image, with the project beside the name.
+
+The upload path is `GET` and `PUT
+/v1/projects/PROJECT/customimages/NAME:upload`, for a client of its own:
+`GET` answers `{"received_bytes": N, "chunk_size": 67108864, "size": S}`;
+each `PUT` sends the bytes from `received_bytes` on, at most `chunk_size`,
+with `Content-Range: bytes FIRST-LAST/S` and `X-Hangar-Chunk-SHA256: HEX`,
+and answers `{"received_bytes": N}`. A chunk not at `received_bytes` is
+answered 409, with `received_bytes` in the error.
+
 ## Distributions and the platform
 
 What the platform needs of an image, and which catalogue image needed what:

@@ -42,6 +42,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make test-monitoring` | promtool checks and tests the host's alerting rules, and promtool and amtool the monitoring configuration `deploy/host` writes (part of `make check`) |
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
 | `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
+| `make guest-converter` | Build the converter initramfs converter VMs boot, into `bin/guest/converter.cpio`: hangar-init and qemu-img from pinned Alpine packages (`docs/runbook/converter.md`); no C toolchain |
 | `make guest-initramfs-testbed` | Build the L4 tests' own initramfs into `bin/guest-testbed/`, hangar-init with the `testbed` tag, whose FileShare servers run what the host asks (`docs/runbook/guest-kernel.md`); never on a host |
 | `make tools` | Print the pinned tool versions |
 
@@ -75,7 +76,8 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/runbook/release.md` | You cut a release, change `.github/workflows/release.yml`, `deploy/release.sh` or `hangar-fetch-release`, or check a release from a workstation |
 | `docs/runbook/cloudflare.md` | You set up or change DNS (`hangar-cloudflare`), create a Cloudflare token, or cut a host over from the tunnel (or back) |
 | `docs/runbook/testbed.md` | You run or add a real-host test (L4), or change the guest boot path |
-| `docs/runbook/vm-images.md` | You apply the image catalogue (`deploy/catalog/images.yaml`), move an image to a newer file, or add or remove one, or capture a VM's disk as a project's own `CustomImage` |
+| `docs/runbook/vm-images.md` | You apply the image catalogue (`deploy/catalog/images.yaml`), move an image to a newer file, or add or remove one, capture a VM's disk as a project's own `CustomImage`, or upload a file as one (`hangar image upload`) |
 | `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
+| `docs/runbook/converter.md` | You build the converter initramfs, or bump the qemu-img or the Alpine packages it carries |
 
 When you add a doc, add it to this index.
