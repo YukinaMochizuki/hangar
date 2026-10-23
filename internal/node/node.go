@@ -177,6 +177,10 @@ type Agent struct {
 	stager   *stager
 	converts *baseMaker
 	reported *throttle
+	// wakes are when each upload expires, by image uid, which a timer
+	// has the controller look at.
+	wakeMu sync.Mutex
+	wakes  map[string]time.Time
 	// pullCreds gives the logins machines' images are pulled with.
 	pullCreds nodev1connect.ImagePullCredentialsServiceClient
 	images    *imageMaker
@@ -355,6 +359,7 @@ func New(cfg Config) (*Agent, error) {
 	a.forwardTrigger = make(chan struct{}, 1)
 	a.diskTrigger = make(chan struct{}, 1)
 	a.captureTrigger = make(chan struct{}, 1)
+	a.wakes = map[string]time.Time{}
 	if cfg.Drivers != nil && cfg.UploadDir != "" && cfg.Drivers.Converter != nil {
 		a.reported = newThrottle(cfg.Clock, reportEvery, func() { notify(a.captureTrigger) })
 		st, err := newStager(cfg.UploadDir, func(_ string, whole bool) {

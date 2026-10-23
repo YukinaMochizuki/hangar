@@ -140,6 +140,8 @@ func (a *Agent) reconcileUpload(ctx context.Context, ci *storagev1alpha1.CustomI
 				return a.writeStatusAgainst(ctx, ci, status, uploadFailed(ci, computeapi.ReasonUploadExpired,
 					fmt.Errorf("the file was not whole by %s: %d of its %d bytes came", status.GetUploadExpires().AsTime().Format(time.RFC3339), st.Received, up.GetSize()))...)
 			}
+			// Looked at again once it expires, if nothing comes before.
+			a.wakeAt(uid, status.GetUploadExpires().AsTime())
 			msg := fmt.Sprintf("%d of %d bytes uploaded", st.Received, up.GetSize())
 			return a.writeStatusAgainst(ctx, ci, status,
 				uploadCondition(metav1.ConditionStatus_CONDITION_STATUS_FALSE, computeapi.ReasonAwaitingUpload, msg),
@@ -196,6 +198,25 @@ func (a *Agent) followConversion(ctx context.Context, project, name, uid string)
 	status.DiskSize = quantity.FormatDisk((uint64(base.Size) + quantity.GiB - 1) / quantity.GiB * quantity.GiB)
 	return a.writeStatusAgainst(ctx, ci, status,
 		readyCondition(metav1.ConditionStatus_CONDITION_STATUS_TRUE, computeapi.ReasonConverted, "disks can be made from the image"))
+}
+
+// wakeAt has the custom images' controller look again at t, once per
+// image and time.
+func (a *Agent) wakeAt(uid string, t time.Time) {
+	a.wakeMu.Lock()
+	defer a.wakeMu.Unlock()
+	if a.wakes[uid].Equal(t) {
+		return
+	}
+	a.wakes[uid] = t
+	a.cfg.Clock.AfterFunc(t.Sub(a.cfg.Clock.Now()), func() {
+		a.wakeMu.Lock()
+		if a.wakes[uid].Equal(t) {
+			delete(a.wakes, uid)
+		}
+		a.wakeMu.Unlock()
+		notify(a.captureTrigger)
+	})
 }
 
 // statusOf is a copy of ci's status to change.
