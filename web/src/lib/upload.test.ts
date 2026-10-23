@@ -103,27 +103,70 @@ describe("startUpload", () => {
   });
 
   it("stops for good on a refusal no retry changes, sending nothing more", async () => {
-    const s = server(() => ({ status: 412, body: { message: "the image is not awaiting an upload" } }));
+    // FailedPrecondition, as the route answers an image not awaiting its file.
+    const s = server(() => ({ status: 400, body: { code: "failed_precondition", message: "the image is not awaiting an upload" } }));
     startUpload("demo", "nixos", file(8), 0, 4);
     expect(await settled()).toEqual(expect.objectContaining({ phase: "failed", error: "the image is not awaiting an upload" }));
     expect(s.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("sends a chunk the node found garbled again, after a wait", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    // DataLoss, as the route answers a chunk whose sha256 the node did not find.
+    const s = server((n) => (n === 1 ? { status: 500, body: { code: "data_loss", message: "the chunk's sha256 does not match", received_bytes: 0 } } : undefined));
+    const seen = phases();
+    startUpload("demo", "nixos", file(4), 0, 4);
+    await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe("retrying"));
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe("done"));
+    expect(s.puts.map((p) => p.range)).toEqual(["bytes 0-3/4", "bytes 0-3/4"]);
+  });
+
+  it("waits as long as a busy node asks before sending again", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const busy = vi.fn(async () => new Response(JSON.stringify({ code: "unavailable", message: "busy", received_bytes: 0 }), { status: 503, headers: { "Retry-After": "3" } }));
+    const s = server();
+    const inner = s.fetch.getMockImplementation()!;
+    s.fetch.mockImplementation(async (url, init) => (s.fetch.mock.calls.length === 1 ? busy() : inner(url, init)));
+    const seen = phases();
+    startUpload("demo", "nixos", file(4), 0, 4);
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual(expect.objectContaining({ phase: "retrying", inSeconds: 3 })));
+    await vi.advanceTimersByTimeAsync(2900);
+    expect(s.fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(100);
+    await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe("done"));
+  });
+
+  it("never sends again at once on a 409 at the offset it sent", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const s = server((n) => (n === 1 ? { status: 409, body: { code: "aborted", message: "wrong offset", received_bytes: 0 } } : undefined));
+    startUpload("demo", "nixos", file(4), 0, 4);
+    await vi.waitFor(() => expect(uploadState("demo", "nixos")?.phase).toBe("retrying"));
+    expect(s.fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    await vi.waitFor(() => expect(uploadState("demo", "nixos")?.phase).toBe("done"));
+  });
+
   it("pauses at the node's count, and sends nothing more until resumed", async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
+    let inFlight: Promise<Response> | undefined;
     const s = server();
     const inner = s.fetch.getMockImplementation()!;
-    // The second chunk waits, so the pause comes while it is in flight.
-    s.fetch.mockImplementation(async (url, init) => {
-      if (s.fetch.mock.calls.length === 2) await gate;
-      return inner(url, init);
+    // The second chunk waits, so the pause comes while it is in flight; as
+    // a browser's fetch does, it fails once its signal is aborted.
+    s.fetch.mockImplementation((url, init) => {
+      if (s.fetch.mock.calls.length !== 2) return inner(url, init);
+      inFlight = gate.then(() => (init.signal?.aborted ? Promise.reject(new DOMException("aborted", "AbortError")) : inner(url, init)));
+      return inFlight;
     });
     startUpload("demo", "nixos", file(12), 0, 4);
-    await vi.waitFor(() => expect(s.fetch).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(inFlight).toBeDefined());
     pauseUpload("demo", "nixos");
     release();
-    await new Promise((r) => setTimeout(r, 20));
+    // The pause aborted the chunk in flight, which never counted; the loop
+    // that sent it ends on the abort.
+    await expect(inFlight).rejects.toThrow("aborted");
     expect(uploadState("demo", "nixos")).toEqual(expect.objectContaining({ phase: "paused", received: 4 }));
     expect(s.fetch).toHaveBeenCalledTimes(2);
   });

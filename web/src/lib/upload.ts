@@ -73,12 +73,13 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** UploadError is a PUT the API refused; offset is the node's count, when it told one. */
+/** UploadError is a PUT the API refused; offset is the node's count, when it told one, and retryAfter the seconds it asked to wait. */
 export class UploadError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly offset?: number,
+    readonly retryAfter?: number,
   ) {
     super(message);
   }
@@ -108,13 +109,19 @@ export async function putChunk(project: string, name: string, file: Blob, offset
   });
   const json = (await resp.json().catch(() => ({}))) as { received_bytes?: number | string; message?: string; code?: string };
   const at = json.received_bytes === undefined ? undefined : Number(json.received_bytes);
-  if (!resp.ok) throw new UploadError(json.message || `${resp.status} ${resp.statusText}`, resp.status, at);
+  if (!resp.ok) {
+    const after = Number(resp.headers.get("Retry-After"));
+    throw new UploadError(json.message || `${resp.status} ${resp.statusText}`, resp.status, at, Number.isFinite(after) && after > 0 ? after : undefined);
+  }
   return at ?? end;
 }
 
-// A refusal no retry can change: the image is not awaiting this upload, the
-// caller may not, or the file is not the one it was made for.
-const final = (s: number) => s === 400 || s === 401 || s === 403 || s === 404 || s === 412;
+// A refusal no retry can change: the image is not awaiting this upload or
+// the request is wrong (400), the caller is not signed in or may not (401,
+// 403), or the image is gone (404). Anything else may pass: a node busy
+// with another chunk of the image (503), a chunk garbled on its way, which
+// the node drops (500), a node not connected.
+const final = (s: number) => s === 400 || s === 401 || s === 403 || s === 404;
 
 /**
  * startUpload sends file to the image from offset `from`, the image's
@@ -174,11 +181,12 @@ async function run(key: string, project: string, name: string, file: File, from:
       update({ phase: "uploading", received: at, size: file.size, bytesPerSecond: span > 0 ? (at - recent[0].n) / span : 0 });
     } catch (err) {
       if (signal.aborted) return;
-      if (err instanceof UploadError && err.status === 409 && err.offset !== undefined) {
+      if (err instanceof UploadError && err.status === 409 && err.offset !== undefined && err.offset !== at) {
         // The node counted otherwise, such as after another tab's chunk: go on from its count.
         at = err.offset;
         continue;
       }
+      // A 409 at the offset sent tells no progress; it is waited out below, never sent again at once.
       if (err instanceof UploadError && err.status === 413 && chunk > 1 << 20) {
         chunk = Math.floor(chunk / 2);
         continue;
@@ -188,7 +196,8 @@ async function run(key: string, project: string, name: string, file: File, from:
         update({ phase: "failed", received: at, size: file.size, error: message });
         return;
       }
-      const wait = retryDelays[Math.min(tries++, retryDelays.length - 1)];
+      const backoff = retryDelays[Math.min(tries++, retryDelays.length - 1)];
+      const wait = err instanceof UploadError && err.retryAfter ? Math.max(err.retryAfter * 1000, 1000) : backoff;
       update({ phase: "retrying", received: at, size: file.size, error: message, inSeconds: Math.round(wait / 1000) });
       await new Promise((r) => setTimeout(r, wait));
     }

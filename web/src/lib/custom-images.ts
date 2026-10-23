@@ -50,6 +50,7 @@ const failures: Record<string, string> = {
   InvalidImage: "Not a usable image",
   ImageTooLarge: "Image too large",
   ConvertFailed: "Conversion failed",
+  QuotaExceeded: "Over the disk quota",
 };
 
 /** CustomImageStep is where an image is on its way to Ready. */
