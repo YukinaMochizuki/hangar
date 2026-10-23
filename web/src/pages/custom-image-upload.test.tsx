@@ -122,10 +122,13 @@ describe("An uploaded image's page", () => {
     await waitFor(() => expect(puts).toEqual(["bytes 1024-4095/4096"]));
   });
 
-  it("shows the taxi line at Convert while converting, and offers no disk until Ready", async () => {
-    const a = storageApi({ customImages: async () => ({ items: [uploadedImage("nixos", 4096, "converting")] }) });
+  it("shows the taxi line at Convert while converting, the disk the file holds, and offers no disk until Ready", async () => {
+    const ci = uploadedImage("nixos", 4096, "converting");
+    ci.status!.virtualSize = 3n << 30n;
+    const a = storageApi({ customImages: async () => ({ items: [ci] }) });
     render(<CustomImageDetail name="nixos" />, { wrapper: withApi(a) });
     await screen.findByText("Conversion");
+    expect(screen.getByText("3 GiB")).toBeTruthy();
     expect(screen.queryByText("No upload runs in this tab")).toBeNull();
     await waitFor(() => expect((screen.getByRole("button", { name: /New disk from it/ }) as HTMLButtonElement).disabled).toBe(true));
   });

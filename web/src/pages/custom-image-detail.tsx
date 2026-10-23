@@ -80,6 +80,15 @@ function Summary({ ci, project, onEditLabels }: { ci: CustomImage; project: stri
         {upload ? (
           <>
             <Field label="Uploaded file">{bytes(upload.size)}</Field>
+            <Field label="Disk it holds">
+              {ci.status?.virtualSize ? (
+                <span>
+                  {bytes(Number(ci.status.virtualSize))} <span className="text-subtle">· counts toward the project's disk quota until it is ready</span>
+                </span>
+              ) : (
+                <span className="text-subtle">Known once the file is read</span>
+              )}
+            </Field>
             <Field label="SHA-256" mono>
               {ci.status?.sha256 ? (
                 <span className="flex items-start gap-1">
