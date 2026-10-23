@@ -67,6 +67,19 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 			return func() { _ = f.Close() }
 		},
 		Converter: converterOf(h.hv),
+		WriteVolume: func(t *testing.T, path string, at int64, data []byte) {
+			f, err := os.OpenFile(path, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer func() { _ = f.Close() }()
+			if _, err := f.WriteAt(data, at); err != nil {
+				t.Fatal(err)
+			}
+			if err := f.Sync(); err != nil {
+				t.Fatal(err)
+			}
+		},
 		ReadVolume: func(t *testing.T, path string, at int64, n int) []byte {
 			f, err := os.Open(path)
 			if err != nil {

@@ -283,7 +283,8 @@ func run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		switch {
-		case strings.Contains(msg, "dataset does not exist"):
+		// A snapshot that is not there, zfs destroy says otherwise.
+		case strings.Contains(msg, "dataset does not exist"), strings.Contains(msg, "could not find any snapshots to destroy"):
 			return nil, fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), errNotExist)
 		case strings.Contains(msg, "dataset is busy"):
 			return nil, fmt.Errorf("%s %s: %s: %w", name, strings.Join(args, " "), msg, errBusy)

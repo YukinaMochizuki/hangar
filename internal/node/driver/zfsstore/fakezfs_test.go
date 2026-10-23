@@ -17,7 +17,8 @@ import (
 // snapshots), and send piped into receive. Each dataset is a file of
 // property<TAB>value lines in $FAKEZFS/ds, named with its slashes as %; a
 // snapshot, name@snap, inherits what its volume has and it has not, as
-// ZFS's user properties are inherited. A volume is made holding nothing,
+// ZFS's user properties are inherited; destroying a snapshot that is not
+// there says so as zfs does. A volume is made holding nothing,
 // logicalreferenced 0, which its snapshots read. A send writes its snapshot's
 // volsize and logicalreferenced, which a receive makes its volume and
 // snapshot of. Every call is logged to $FAKEZFS/log. Switches, files in
@@ -129,7 +130,10 @@ set)
 	exit 0 ;;
 destroy)
 	f=$(file "$1")
-	[ -f "$f" ] || { echo "cannot open '$1': dataset does not exist" >&2; exit 1; }
+	case $1 in
+	*@*) [ -f "$f" ] || { echo "could not find any snapshots to destroy; check snapshot names." >&2; exit 1; } ;;
+	*) [ -f "$f" ] || { echo "cannot open '$1': dataset does not exist" >&2; exit 1; } ;;
+	esac
 	for s in "$f"@*; do
 		[ -f "$s" ] && { echo "cannot destroy '$1': volume has children" >&2; exit 1; }
 	done
