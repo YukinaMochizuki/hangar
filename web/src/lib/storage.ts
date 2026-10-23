@@ -83,10 +83,20 @@ export function rootDiskOwner(d: Disk): string | undefined {
   return d.metadata?.ownerReferences.find((r) => r.uid === uid)?.name;
 }
 
-/** diskImage is the image a disk was copied from, or undefined for a blank disk. */
+/** diskImage is the platform image a disk was copied from, or undefined for a blank disk or one of a custom image. */
 export function diskImage(d: Disk): string | undefined {
-  return d.spec?.source?.source.case === "image" ? d.spec.source.source.value.name : undefined;
+  const src = d.spec?.source?.source;
+  return src?.case === "image" && !src.value.project ? src.value.name : undefined;
 }
+
+/** diskCustomImage is the project's custom image a disk was copied from, if it was. */
+export function diskCustomImage(d: Disk): string | undefined {
+  const src = d.spec?.source?.source;
+  return src?.case === "image" && src.value.project ? src.value.name : undefined;
+}
+
+/** ImageChoice is the image a boot disk is copied from: a platform image, or one of the project's custom images. */
+export type ImageChoice = { name: string; custom: boolean };
 
 /** growingTo is the size a disk is growing to: its spec asks for more than its node holds. */
 export function growingTo(d: Disk): string | undefined {
@@ -188,13 +198,20 @@ export function usedAs(d: Disk): DiskUsedAs | undefined {
   return { role, kind: a.kind, name: a.name, device: a.device, path: a.path, readOnly: a.readOnly };
 }
 
-/** newDisk is a disk as the New disk page describes it; size is whole GiB as typed, image is for a boot disk alone. */
-export function newDisk(project: string, name: string, use: DiskUse, size: string, image: string): Disk {
+/**
+ * newDisk is a disk as the New disk page describes it; size is whole GiB as
+ * typed, image is for a boot disk alone. A custom image is named with the
+ * disk's own project, the only one the API takes.
+ */
+export function newDisk(project: string, name: string, use: DiskUse, size: string, image: ImageChoice | undefined): Disk {
   return create(DiskSchema, {
     metadata: { name, project, labels: { [intendedUse]: use } },
     spec: {
       size: size === "" ? "" : `${size}Gi`,
-      source: use === "boot" && image ? { source: { case: "image", value: { name: image } } } : {},
+      source:
+        use === "boot" && image?.name
+          ? { source: { case: "image", value: { name: image.name, project: image.custom ? project : "" } } }
+          : {},
     },
   });
 }

@@ -14,6 +14,7 @@ import { NetworkSchema, NetworkService } from "@hangar/api/hangar/network/v1alph
 import { PortForwardSchema, PortForwardService, Protocol } from "@hangar/api/hangar/network/v1alpha1/port_forward_pb";
 import { PublicEndpointAccess, PublicEndpointSchema, PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { SecurityGroupProtocol, SecurityGroupSchema, SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
+import { CustomImageSchema, CustomImageService } from "@hangar/api/hangar/storage/v1alpha1/custom_image_pb";
 import { DiskSchema, DiskService } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { FileShareSchema, FileShareService } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageSchema, ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
@@ -75,6 +76,12 @@ const read: { [K in LabelKind]: () => LabelObject<K> } = {
   serviceToken: () => create(ServiceTokenSchema, { metadata: meta("ci"), spec: { description: "deploys" }, status: { secretPrefix: "hgr_ab" } }),
   image: () =>
     create(ImageSchema, { metadata: meta("debian-13", true), spec: { url: "https://images.example.com/d.img", sha256: "ab".repeat(32), os: "debian" } }),
+  customImage: () =>
+    create(CustomImageSchema, {
+      metadata: meta("golden"),
+      spec: { source: { source: { case: "disk", value: { name: "db-root" } } }, os: "ubuntu" },
+      status: { usedSize: "2Gi", diskSize: "10Gi", node: "node-a" },
+    }),
 };
 
 const schemas: { [K in LabelKind]: DescMessage } = {
@@ -90,6 +97,7 @@ const schemas: { [K in LabelKind]: DescMessage } = {
   customDomain: CustomDomainSchema,
   serviceToken: ServiceTokenSchema,
   image: ImageSchema,
+  customImage: CustomImageSchema,
 };
 
 /** A transport whose every kind's Apply records the object it was sent. */
@@ -109,6 +117,7 @@ function recording() {
     r.service(CustomDomainService, { applyCustomDomain: (q) => keep(q.customDomain) });
     r.service(ServiceTokenService, { applyServiceToken: (q) => keep(q.serviceToken) });
     r.service(ImageService, { applyImage: (q) => keep(q.image) });
+    r.service(CustomImageService, { applyCustomImage: (q) => keep(q.customImage) });
   });
   return { transport, sent };
 }

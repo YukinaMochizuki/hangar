@@ -107,7 +107,7 @@ describe("New disk", () => {
   });
 
   it("opens on a boot disk of the image its address names", async () => {
-    render(<CreateDisk image="ubuntu-2404" />, { wrapper: withApi(storageApi({ images })) });
+    render(<CreateDisk image={{ name: "ubuntu-2404", custom: false }} />, { wrapper: withApi(storageApi({ images })) });
     expect((await screen.findByRole("radio", { name: "Boot disk" })).getAttribute("aria-checked")).toBe("true");
     expect((await screen.findByRole("radio", { name: "ubuntu-2404" })).getAttribute("aria-checked")).toBe("true");
     expect(screen.getByRole("radio", { name: "debian-13" }).getAttribute("aria-checked")).toBe("false");
@@ -115,7 +115,7 @@ describe("New disk", () => {
 
   it("refuses a size below the image's smallest disk, and sends nothing", async () => {
     const a = storageApi({ images });
-    render(<CreateDisk image="debian-13" />, { wrapper: withApi(a) });
+    render(<CreateDisk image={{ name: "debian-13", custom: false }} />, { wrapper: withApi(a) });
     await screen.findByRole("radio", { name: "debian-13" });
     type("Disk name", "data");
     type("Size, GiB", "5");
@@ -184,7 +184,7 @@ describe("New disk", () => {
 
 describe("diskYaml", () => {
   it("keeps the intended-use label and drops the platform's own", () => {
-    const d = newDisk("demo", "data", "boot", "20", "debian-13");
+    const d = newDisk("demo", "data", "boot", "20", { name: "debian-13", custom: false });
     d.metadata!.labels["storage.hangarlab.cloud/node"] = "node-a";
     const y = diskYaml(d);
     expect(y).toContain("hangar/intended-use: boot");

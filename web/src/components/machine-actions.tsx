@@ -1,9 +1,9 @@
-// Edit, start, stop, edit labels and delete, on a machine's page and in a
-// list's row menu. Resizing is the edit page's.
+// Edit, start, stop, create image (a VM's), edit labels and delete, on a
+// machine's page and in a list's row menu. Resizing is the edit page's.
 
 import { useNavigate } from "@tanstack/react-router";
 import { VirtualMachineDeletePolicy } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
-import { Pencil, Play, Square, Trash2, X } from "lucide-react";
+import { ImagePlus, Pencil, Play, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { EditLabelsDialog } from "@/components/labels-dialog";
@@ -12,8 +12,8 @@ import { Notice } from "@/components/notice";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { useDeleteMachine, useSetRunState, type RunState } from "@/lib/actions";
 import { errorMessage } from "@/lib/api";
-import type { MachineView } from "@/lib/machines";
-import { machineDeletePerms, machinePermKey, machinePerms } from "@/lib/permissions";
+import { isLive, type MachineView } from "@/lib/machines";
+import { capturePerm, machineDeletePerms, machinePermKey, machinePerms } from "@/lib/permissions";
 
 /** The title of a run-state error: the action asked for, whatever the state now. */
 function runErrorTitle(asked: RunState | undefined): string {
@@ -53,11 +53,13 @@ const editPath = (m: MachineView) => (m.kind === "Container" ? "/projects/$proje
 
 /**
  * A machine's actions, on its page and in its row's menu: Edit (not
- * offered while it is being deleted), Start or Stop, Edit labels and
- * Delete, by `can`, the answer of useMachineCan its list or page asked: the
- * kind's apply for all but Delete, which needs its delete. `after` follows a
- * delete the API took. The run state's call is given too, for where its
- * error is shown.
+ * offered while it is being deleted), Start or Stop, Create image (a VM's,
+ * the New image page on its root disk, off until the VM is stopped, as the
+ * API captures only then), Edit labels and Delete, by `can`, the answer of
+ * useMachineCan its list or page asked: the kind's apply for Edit, Start,
+ * Stop and labels, storage.customimages.apply for Create image, and the
+ * kind's delete for Delete. `after` follows a delete the API took. The run
+ * state's call is given too, for where its error is shown.
  */
 export function useMachineActions(m: MachineView, can: Can, after?: () => void): ActionSet & { run: ReturnType<typeof useSetRunState> } {
   const run = useSetRunState(m.kind, m.project, m.name);
@@ -77,6 +79,11 @@ export function useMachineActions(m: MachineView, can: Can, after?: () => void):
         ? { label: "Start", icon: Play, primary: true, pending: run.isPending ? "Starting…" : undefined, onSelect: () => run.mutate("running") }
         : { label: "Stop", icon: Square, pending: run.isPending ? "Stopping…" : undefined, onSelect: () => run.mutate("stopped") },
     );
+  }
+  const rootDisk = m.vm?.status?.rootDisk;
+  if (m.kind === "VirtualMachine" && rootDisk && can(capturePerm)) {
+    const link = { to: "/projects/$project/new/custom-image", params: { project: m.project }, search: { disk: rootDisk } };
+    actions.push({ label: "Create image", icon: ImagePlus, disabled: m.deleting || isLive(m), link, onSelect: () => void navigate(link) });
   }
   if (mayDelete) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
   const close = () => setOpen(null);

@@ -49,6 +49,9 @@ export function useMayApplyMachine(project: string, kind: "Container" | "Virtual
   return { may: q.can(perm), refused: q.known && !q.can(perm) };
 }
 
+/** What capturing a VM's root disk as a custom image needs at the project. */
+export const capturePerm = "storage.customimages.apply";
+
 /** What deleting a container or a virtual machine needs at the project. */
 export const machineDeletePerms = { container: "compute.containers.delete", vm: "compute.virtualmachines.delete" } as const;
 
@@ -58,7 +61,13 @@ export const machineDeletePerms = { container: "compute.containers.delete", vm: 
  * stop, labels) and its delete.
  */
 export function useMachineCan(project: string) {
-  return useCan({ level: "project", name: project }, [machinePerms.container, machinePerms.vm, machineDeletePerms.container, machineDeletePerms.vm]);
+  return useCan({ level: "project", name: project }, [
+    machinePerms.container,
+    machinePerms.vm,
+    machineDeletePerms.container,
+    machineDeletePerms.vm,
+    capturePerm,
+  ]);
 }
 
 /** The key a machine kind's permissions go by in machinePerms and machineDeletePerms. */

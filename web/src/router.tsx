@@ -24,6 +24,8 @@ import { CreateFileShare } from "@/pages/create-file-share";
 import { FileShareDetail } from "@/pages/file-share-detail";
 import { FileShareList } from "@/pages/file-share-list";
 import { Gate } from "@/pages/gate";
+import { CreateCustomImage } from "@/pages/create-custom-image";
+import { CustomImageDetail } from "@/pages/custom-image-detail";
 import { ImageDetail } from "@/pages/image-detail";
 import { ImageList } from "@/pages/image-list";
 import { MachineDetail } from "@/pages/machine-detail";
@@ -193,10 +195,25 @@ function toCreatePage(kind: string) {
 const newDiskRoute = createRoute({
   getParentRoute: () => projectRoute,
   path: "/new/disk",
-  validateSearch: (s: Record<string, unknown>): { image?: string } => (typeof s.image === "string" && s.image !== "" ? { image: s.image } : {}),
+  // image opens it on a boot disk of a platform image, customImage of one of the project's own.
+  validateSearch: (s: Record<string, unknown>): { image?: string; customImage?: string } => ({
+    ...(typeof s.image === "string" && s.image !== "" && { image: s.image }),
+    ...(typeof s.customImage === "string" && s.customImage !== "" && { customImage: s.customImage }),
+  }),
   component: function NewDisk() {
-    const { image } = newDiskRoute.useSearch();
-    return <CreateDisk key={image} image={image} />;
+    const { image, customImage } = newDiskRoute.useSearch();
+    const initial = customImage ? { name: customImage, custom: true } : image ? { name: image, custom: false } : undefined;
+    return <CreateDisk key={`${image}/${customImage}`} image={initial} />;
+  },
+});
+const newCustomImageRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/new/custom-image",
+  // disk opens it on that source disk, such as from a disk's page.
+  validateSearch: (s: Record<string, unknown>): { disk?: string } => (typeof s.disk === "string" && s.disk !== "" ? { disk: s.disk } : {}),
+  component: function NewCustomImage() {
+    const { disk } = newCustomImageRoute.useSearch();
+    return <CreateCustomImage key={disk} disk={disk} />;
   },
 });
 
@@ -253,6 +270,14 @@ const imageRoute = createRoute({
   component: function ImagePage() {
     const { name } = imageRoute.useParams();
     return <ImageDetail key={name} name={name} />;
+  },
+});
+const customImageRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/custom-images/$name",
+  component: function CustomImagePage() {
+    const { name } = customImageRoute.useParams();
+    return <CustomImageDetail key={name} name={name} />;
   },
 });
 
@@ -531,6 +556,8 @@ export const routeTree = rootRoute.addChildren([
     newFileShareRoute,
     imagesRoute,
     imageRoute,
+    customImageRoute,
+    newCustomImageRoute,
     membersRoute,
     secretsRoute,
     secretRoute,

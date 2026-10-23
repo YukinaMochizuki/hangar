@@ -18,6 +18,7 @@ import { machinePath } from "@/lib/machines";
 import { toYaml } from "@/lib/manifest";
 import { formatNumber, quantityGiB } from "@/lib/quantity";
 import {
+  diskCustomImage,
   diskFault,
   diskImage,
   growFloorGiB,
@@ -132,9 +133,24 @@ function useMachineName(project: string, machine: string): string {
   return useMachineOwners(project)(machine)?.name ?? machine;
 }
 
-/** DiskSource is a disk's source: blank, or a copy of an image, linked. */
+/** DiskSource is a disk's source: blank, or a copy of an image (the platform's or a custom one), linked. */
 export function DiskSource({ d, project, link = true }: { d: Disk; project: string; link?: boolean }) {
   const img = diskImage(d);
+  const custom = diskCustomImage(d);
+  if (custom) {
+    return (
+      <span>
+        <span className="text-muted">Custom image </span>
+        {link ? (
+          <Link to="/projects/$project/custom-images/$name" params={{ project, name: custom }} className="font-mono text-[12.5px] text-accent hover:underline">
+            {custom}
+          </Link>
+        ) : (
+          <span className="font-mono">{custom}</span>
+        )}
+      </span>
+    );
+  }
   if (!img) return <span className="text-muted">Blank</span>;
   return (
     <span>

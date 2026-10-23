@@ -112,7 +112,7 @@ describe("New disk, by permission", () => {
     const asked = a.requests.find((r) => r.method === "TestPermissions")!.request as TestPermissionsRequest;
     expect(asked.scope?.target).toEqual(expect.objectContaining({ case: "project", value: "demo" }));
     // One answer serves New disk and the rows' menus.
-    expect(asked.permissions).toEqual(["storage.disks.apply", "storage.disks.delete"]);
+    expect(asked.permissions).toEqual(["storage.disks.apply", "storage.disks.delete", "storage.customimages.apply"]);
   });
 
   it("hides New disk from a caller who does not hold it, in the list and the empty state", async () => {
