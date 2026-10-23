@@ -6,9 +6,10 @@ Status: accepted, 2026-10.
 
 VirtualMachines boot a distribution's own cloud image
 (`docs/decisions/machine-model.md`). Distributions publish those as qcow2 or
-raw files over HTTPS, with their checksums. Tenants will want images of
-their own later, which the API must make room for without a breaking
-change; for now only the platform chooses which images exist.
+raw files over HTTPS, with their checksums. Tenants want images of their
+own too, which the API had to make room for without a breaking change;
+those are `CustomImage`s (`docs/decisions/custom-images.md`). This file is
+about the platform's catalogue, which only the platform chooses.
 
 ## Decision
 
@@ -22,11 +23,12 @@ change; for now only the platform chooses which images exist.
   a node makes is named after it, and a URL serving another file is never
   used. No OCI repackaging: the distribution's file is used as it is.
 - **A disk names its image by a structured reference**,
-  `source.image.name`, which names a global image. Project images will add
-  a field beside it (a project), and a reference without one keeps
-  meaning a global image, so no existing manifest changes meaning. Not a
-  path string such as `global/<name>`: a structured field is validated and
-  extended field by field.
+  `source.image.name`, which names a global image. A project's own images
+  are named with `source.image.project` beside it, and a reference without
+  one keeps meaning a global image, so no existing manifest changed
+  meaning (`docs/decisions/custom-images.md`). Not a path string such as
+  `global/<name>`: a structured field is validated and extended field by
+  field.
 - **A node fetches an image when a disk of it is first made there**: over
   HTTPS only (redirects too), bounded in size (16 GiB a file, 256 GiB of
   disk, by default) and in progress as registries are (no answer within
@@ -43,9 +45,11 @@ change; for now only the platform chooses which images exist.
   its partition and filesystem itself (cloud-init).
 - **qemu-img runs as root, unsandboxed.** It parses only files a platform
   administrator chose and pinned by sha256, so it reads nothing a tenant
-  controls. Project images would change that: their files would have to be
-  converted in a sandbox (an unprivileged, namespaced process with only the
-  file and the device), or by a guest.
+  controls. Images uploaded by tenants, a later source of CustomImage,
+  would change that: their files would have to be converted in a sandbox
+  (an unprivileged, namespaced process with only the file and the device),
+  or by a guest. A CustomImage captured from a disk needs neither: no file
+  is parsed, ZFS copies the volume as it is.
 - **An image at fault fails for good.** A file that does not match its
   sha256, that qemu-img refuses or finds of another format, or that is too
   large, is reported on the Image (`Verified` False, with reason

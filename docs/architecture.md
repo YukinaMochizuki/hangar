@@ -56,7 +56,10 @@ addresses from the apiserver; every project has a `default` network. A
 one machine at a time; it lives on the node of the first machine it was
 attached to, and every later machine with it goes there. A disk is blank or
 a copy of a global `Image`, a distribution's disk image that platform
-administrators add to the catalogue by URL and sha256. A `FileShare` is a
+administrators add to the catalogue by URL and sha256, or of a
+`CustomImage`, a project's own image: an independent copy of one of its
+stopped disks, which that disk's node captures with ZFS and keeps, and
+makes the project's disks of (`decisions/custom-images.md`). A `FileShare` is a
 filesystem of a project on one to eight of its networks, which the
 machines that declare it, a container as a volume and a VM in its spec,
 are to mount over NFS from a server microVM of the platform's: a system

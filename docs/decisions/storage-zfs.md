@@ -128,10 +128,23 @@ unreliable on virtio-fs.
   volume is cloned from it, no disk still to be made on the node is of it,
   and no Image that is not being deleted names its digest
   (`docs/decisions/vm-images.md`).
+- **A base per custom image**: `hangar/vmbases/customimage-<uid>`, keyed
+  `customimage:<uid>` by its CustomImage's uid, never by a digest. The
+  volume it is captured from is snapshotted as
+  `hangar/disks/<disk uid>@customimage-<uid>`; that snapshot is sent
+  whole (`zfs send | zfs receive`, no properties) into the base, received
+  as its `@base`, which is set read-only and then marked finished, and the
+  source's snapshot is destroyed. The base holds nothing of the volume, so
+  the volume can go; until its snapshot is destroyed, ZFS keeps the volume
+  from going. A base that failed is destroyed, with the snapshot, and an
+  unfinished one is destroyed as the driver starts. It goes once no volume
+  is cloned from it and its CustomImage is gone
+  (`docs/decisions/custom-images.md`).
 - **A volume per Disk**: `hangar/disks/<disk uid>`, a sparse zvol,
   `volmode=dev`, its `volsize` the size the Disk has on its node; grown,
   never shrunk, like a root disk. It is blank, or a clone of its disk
-  image's `@base` (below whose size it fails with `DiskTooSmall`), and the
+  image's or a custom image's `@base` (below whose size it fails with
+  `DiskTooSmall`), and the
   host made no filesystem on it: the host never reads it. A container's
   guest makes one on a blank volume it mounts (`container-volumes.md`).
   It outlives the
@@ -169,7 +182,10 @@ unreliable on virtio-fs.
 - **The driver knows its datasets by their user properties**: `hangar:digest`
   on a base and its snapshot, `hangar:machine` and `hangar:digest` on a root
   disk, `hangar:disk` (and `hangar:digest`, for one cloned from a disk
-  image) on a volume, `hangar:fileshare` on a share's. It lists from them,
+  image, or `hangar:customimage`, for one cloned from a custom image) on a
+  volume, `hangar:customimage` on a custom image's base, its snapshot and
+  the snapshot it is captured from, `hangar:fileshare` on a share's. It
+  lists from them,
   and a dataset whose
   properties do not match its name is never listed, changed or destroyed,
   whatever it is called. It
