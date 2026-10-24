@@ -292,19 +292,15 @@ func (s *stager) stop(uid string) {
 	}
 }
 
-// stopAllBut stops the uploads of every uid not in live.
-func (s *stager) stopAllBut(live map[string]bool) {
+// expecting lists the uids of the uploads the node takes chunks of.
+func (s *stager) expecting() []string {
 	s.mu.Lock()
-	var gone []string
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.expected))
 	for uid := range s.expected {
-		if !live[uid] {
-			gone = append(gone, uid)
-		}
+		out = append(out, uid)
 	}
-	s.mu.Unlock()
-	for _, uid := range gone {
-		s.stop(uid)
-	}
+	return out
 }
 
 // remove stops uid's upload and removes its file and state.
