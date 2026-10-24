@@ -80,6 +80,9 @@ type Config struct {
 	// SweepInterval is how often the host is checked for what no machine
 	// accounts for. Zero means a minute.
 	SweepInterval time.Duration
+	// RetryMaxBackoff caps the delay before the agent's controllers retry a
+	// key that failed. Zero means the controllers' own cap, a minute.
+	RetryMaxBackoff time.Duration
 	// PullTimeout bounds preparing one image, so a stalled pull fails and
 	// is tried again. Zero means half an hour.
 	PullTimeout time.Duration
@@ -390,6 +393,9 @@ func New(cfg Config) (*Agent, error) {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
 		a.sharesCtl, a.forwardsCtl = a.shareController(), a.forwardController()
 		a.customImagesCtl = a.customImageController()
+		for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.customImagesCtl} {
+			c.MaxBackoff = cfg.RetryMaxBackoff
+		}
 		a.requeue = a.machinesCtl.Enqueue
 		a.requeueNetworks = a.networksCtl.Enqueue
 		puller.makeRoom = a.makeRoom

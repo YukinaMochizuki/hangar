@@ -208,6 +208,11 @@ func (w *world) startAgent() {
 		MaxImageDiskSize:  w.maxImageDisk,
 		InspectTimeout:    w.inspectTimeout,
 		ConvertTimeout:    w.convertTimeout,
+
+		// A failing key is retried within a second however long it has
+		// failed, so w.reconciled's next attempts come within a wait's
+		// bound; on the default cap they come seconds apart.
+		RetryMaxBackoff: time.Second,
 		Drivers: &node.Drivers{
 			Images: w.host.Images(), DiskImages: w.host.DiskImages(), Storage: w.host.Storage(), Network: w.host.Network(),
 			Hypervisor: w.host.Hypervisor(), Guest: w.host.Guest(), Converter: w.host.Converter(),
