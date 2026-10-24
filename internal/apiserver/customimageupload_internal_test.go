@@ -700,8 +700,8 @@ func TestAChunkEndsWithWhatLetItIn(t *testing.T) {
 
 // TestAMalformedChunkIsRefusedBeforeTheNode: a chunk whose Content-Range
 // names another file's size, or whose body is not the range's length,
-// shorter or longer, is invalid_argument; nothing of the first two reaches
-// the node, and nothing of any counts.
+// shorter or longer, is invalid_argument; nothing of the first three
+// reaches the node, and nothing of any counts.
 func TestAMalformedChunkIsRefusedBeforeTheNode(t *testing.T) {
 	w := newUploadWorld(t, nil)
 	alice := "alice@example.com"
@@ -709,11 +709,13 @@ func TestAMalformedChunkIsRefusedBeforeTheNode(t *testing.T) {
 		return http.Header{auth.DevUserHeader: {alice}, "Content-Range": {uploadwire.ContentRange(first, n, size)}, uploadwire.ChunkSHA256: {sum}}
 	}
 	for _, tt := range []struct {
-		name   string
-		h      http.Header
-		body   io.Reader
-		reach  bool
-		status int
+		name string
+		h    http.Header
+		body io.Reader
+		// A chunk found malformed only as it is relayed may reach the node,
+		// or not, as its call is cut.
+		mayReach bool
+		status   int
 	}{
 		{"another file's size", header(0, 1000, uploadFileSize+1, chunkSum(w.file[:1000])), bytes.NewReader(w.file[:1000]), false, http.StatusBadRequest},
 		{"a body shorter than its range", header(0, 1000, uploadFileSize, chunkSum(w.file[:1000])), bytes.NewReader(w.file[:999]), false, http.StatusBadRequest},
@@ -723,14 +725,15 @@ func TestAMalformedChunkIsRefusedBeforeTheNode(t *testing.T) {
 		{"a body of no length, longer than its range", header(0, 1000, uploadFileSize, chunkSum(w.file[:1000])), io.MultiReader(bytes.NewReader(w.file[:1001])), true, http.StatusBadRequest},
 	} {
 		before, _ := w.node.counts()
+		held := len(w.node.file(w.img))
 		if status := w.putRaw(t, tt.h, tt.body); status != tt.status {
 			t.Errorf("%s: answered %d, want %d", tt.name, status, tt.status)
 		}
-		if streams, _ := w.node.counts(); (streams != before) != tt.reach {
-			t.Errorf("%s: %d calls to the node, want any: %t", tt.name, streams-before, tt.reach)
+		if streams, _ := w.node.counts(); !tt.mayReach && streams != before {
+			t.Errorf("%s: %d calls to the node, want none", tt.name, streams-before)
 		}
-		if got := w.node.file(w.img); len(got) != 0 {
-			t.Errorf("%s: the node holds %d bytes", tt.name, len(got))
+		if got := len(w.node.file(w.img)); got != held {
+			t.Errorf("%s: the node holds %d bytes, %d before the chunk", tt.name, got, held)
 		}
 	}
 }

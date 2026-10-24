@@ -184,6 +184,34 @@ func TestAChunkWhoseUploadWentLeavesNothing(t *testing.T) {
 	}
 }
 
+// cutAtEnd reads data, then fails, as a stream the apiserver cut once a
+// chunk's bytes were all sent.
+type cutAtEnd struct{ r io.Reader }
+
+var errCut = errors.New("stream cut")
+
+func (c cutAtEnd) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if err == io.EOF {
+		return n, errCut
+	}
+	return n, err
+}
+
+// TestAChunkWhoseStreamIsCutAtItsEndCountsNothing: a chunk whose every
+// byte came, matching its sha256, but whose stream then fails rather than
+// ends is not counted.
+func TestAChunkWhoseStreamIsCutAtItsEndCountsNothing(t *testing.T) {
+	s, counted := stagerFor(t, t.TempDir(), "img1", 2000)
+	data := make([]byte, 1000)
+	if _, err := s.write(t.Context(), "img1", 0, 1000, hexSum(data), cutAtEnd{bytes.NewReader(data)}); !errors.Is(err, errCut) {
+		t.Errorf("a chunk whose stream was cut at its end: %v, want the cut", err)
+	}
+	if n, err := s.received("img1"); err != nil || n != 0 || len(*counted) != 0 {
+		t.Errorf("after a chunk whose stream was cut: received %d %v, counted %v; want nothing", n, err, *counted)
+	}
+}
+
 // TestCountedChunksAreReportedAFewTimesASecond: a throttle runs at once,
 // then at most once per its period, however many pokes come, and runs
 // once more after the last.
