@@ -53,9 +53,9 @@ func (s nodeService) Exec(ctx context.Context, stream *connect.BidiStream[nodev1
 	if !start.GetStdin() && !start.GetTty() {
 		// As docker exec without -i: the process reads end-of-file. A
 		// terminal is left open instead, which a shell would read as ^D.
-		if err := sess.CloseStdin(); err != nil {
-			return s.execFailed(ctx, uid, err)
-		}
+		// A process that has ended already refuses it, and Recv says how
+		// it ended; a guest that failed fails Recv too.
+		_ = sess.CloseStdin()
 	}
 	inputDone := make(chan struct{})
 	go func() {

@@ -25,9 +25,16 @@ import (
 // execNode serves a node's NodeService over HTTP/2 from a fake host.
 func execNode(t *testing.T) (*fake.Host, nodev1connect.NodeServiceClient) {
 	t.Helper()
+	return execNodeWith(t, func(g driver.Guest) driver.Guest { return g })
+}
+
+// execNodeWith is execNode with the fake host's guest driver as guest
+// makes it.
+func execNodeWith(t *testing.T, guest func(driver.Guest) driver.Guest) (*fake.Host, nodev1connect.NodeServiceClient) {
+	t.Helper()
 	host := fake.New()
 	a := &Agent{cfg: Config{Drivers: &Drivers{
-		Images: host.Images(), Storage: host.Storage(), Network: host.Network(), Hypervisor: host.Hypervisor(), Guest: host.Guest(),
+		Images: host.Images(), Storage: host.Storage(), Network: host.Network(), Hypervisor: host.Hypervisor(), Guest: guest(host.Guest()),
 	}}}
 	mux := http.NewServeMux()
 	mux.Handle(nodev1connect.NewNodeServiceHandler(nodeService{a: a, agent: t.Context()}))
@@ -170,6 +177,35 @@ func TestStdinOnlyWhenAskedFor(t *testing.T) {
 	}
 	if n := host.Execs("m1"); n != 0 {
 		t.Errorf("%d execs left", n)
+	}
+}
+
+// endedGuest is a guest whose execs' processes have ended by the time
+// their stdin is closed, which refuses it, as the contract of
+// driver.ExecSession allows.
+type endedGuest struct{ driver.Guest }
+
+func (g endedGuest) Exec(ctx context.Context, uid string, spec driver.ExecSpec) (driver.ExecSession, error) {
+	sess, err := g.Guest.Exec(ctx, uid, spec)
+	if err != nil {
+		return nil, err
+	}
+	return endedSession{sess}, nil
+}
+
+type endedSession struct{ driver.ExecSession }
+
+func (endedSession) CloseStdin() error { return errors.New("the exec has ended") }
+
+// TestAProcessEndedBeforeItsStdinClosedSaysHow: a process that ends
+// before its stdin is closed for it still has its output and its exit
+// come back, which a loaded host makes of any short command.
+func TestAProcessEndedBeforeItsStdinClosedSaysHow(t *testing.T) {
+	host, c := execNodeWith(t, func(g driver.Guest) driver.Guest { return endedGuest{g} })
+	runVM(t, host, "m1", driver.RunSpec{Command: []string{"wait", "main"}})
+	r := nodeExec(t, t.Context(), c, &nodev1.ExecStart{MachineUid: "m1", Args: []string{"exit", "3", "out", "err"}})
+	if r.err != nil || r.stdout != "out" || r.stderr != "err" || r.exit.GetCode() != 3 {
+		t.Errorf("%+v", r)
 	}
 }
 
