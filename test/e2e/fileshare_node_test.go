@@ -664,10 +664,8 @@ func TestAContainerWaitsForItsSharesFirewall(t *testing.T) {
 	c := sharing("web", "data", false)
 	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
 	w.apply(c)
-	waiting := w.waitMachine("ct-web", computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonFileShareNotReady)
-	if msg := conditions.Find(waiting.GetStatus().GetConditions(), computeapi.MachineReady).GetMessage(); !strings.Contains(msg, "firewall") {
-		t.Errorf("Ready says %q", msg)
-	}
+	// Its share's server not serving yet comes first, under the same reason.
+	waiting := w.waitMachineSaying("ct-web", computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonFileShareNotReady, "firewall")
 	network := w.networkUID("default")
 	uid := waiting.GetMetadata().GetUid()
 	at, web := w.shareAddr("data", "default"), containerAddr(w, "web")
