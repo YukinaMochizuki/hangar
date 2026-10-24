@@ -127,6 +127,17 @@
       },
       "type": "object"
     },
+    "hangar.compute.v1alpha1.VirtualMachinePlatform": {
+      "additionalProperties": false,
+      "description": "VirtualMachinePlatform is what the VM's firmware tables, SMBIOS, tell its guest.",
+      "properties": {
+        "serialNumber": {
+          "description": "The SMBIOS system serial number, which the guest reads as /sys/class/dmi/id/product_serial: printable ASCII, at most 64 bytes, not unique to the VM. Empty is the platform's, which tells the guest's cloud-init where its seed is. Setting it replaces that, so the guest's cloud-init gets no user_data, ssh_authorized_keys or trust in the platform's SSH CA, and hangar ssh cannot log in to it unless the image arranges both itself. Changing it restarts the VM. See docs/decisions/vm-boot.md.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.VirtualMachineResources": {
       "additionalProperties": false,
       "description": "VirtualMachineResources sizes the VM. Each field is a quantity in Kubernetes syntax, such as \"2\" or \"2Gi\"; empty takes the default.",
@@ -196,6 +207,10 @@
             "$ref": "#/$defs/hangar.compute.v1alpha1.NetworkInterface"
           },
           "type": "array"
+        },
+        "platform": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachinePlatform",
+          "description": "What the VM's virtual hardware tells its guest about the platform."
         },
         "resources": {
           "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineResources"

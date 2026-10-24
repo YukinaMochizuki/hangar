@@ -2,12 +2,14 @@ package chvm
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,7 +28,8 @@ import (
 // process, Ubuntu 24.04 in about 30 s while cloud-init still runs.
 const DefaultFirmwareStopGrace = 60 * time.Second
 
-// NoCloudSerial is the SMBIOS system serial number a firmware VM is given:
+// NoCloudSerial is the SMBIOS system serial number a firmware VM is given
+// unless its spec names one:
 // cloud-init reads it as where its NoCloud datasource is, the metadata
 // service every network of the VM's has. Its dsmode says the seed is read
 // once the network is up: without it, cloud-init 22.4 (Debian 12's) takes
@@ -62,9 +65,9 @@ func pressPowerButton(ctx context.Context, socket string) error {
 }
 
 // firmwareArgs is Cloud Hypervisor's command line for a firmware VM: the
-// firmware, the balloon for free page reporting, its volumes at their nodes
-// in dir, the root first, the taps on fds 3 and on, its serial console to
-// the FIFO, no virtio console, and its API socket.
+// firmware, the balloon for free page reporting, its serial number, its
+// volumes at their nodes in dir, the root first, the taps on fds 3 and on,
+// its serial console to the FIFO, no virtio console, and its API socket.
 func firmwareArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
@@ -72,7 +75,7 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		"--cpus", fmt.Sprintf("boot=%d", s.VCPUs),
 		"--memory", fmt.Sprintf("size=%dM", s.MemoryMiB),
 		"--balloon", freePageReporting,
-		"--platform", "serial_number=" + NoCloudSerial,
+		"--platform", "system_serial_number=" + quoteOption(cmp.Or(s.SystemSerialNumber, NoCloudSerial)),
 		"--disk",
 	}
 	for n := range s.Disks {
@@ -89,6 +92,13 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		"--console", "off",
 		"--serial", "file="+filepath.Join(dir, serialFIFO),
 	)
+}
+
+// quoteOption quotes v as a value of Cloud Hypervisor's comma-separated
+// options, which takes everything between double quotes as it is, a doubled
+// quote as one, and trims what is outside them.
+func quoteOption(v string) string {
+	return `"` + strings.ReplaceAll(v, `"`, `""`) + `"`
 }
 
 // serialFramer frames what a firmware VM's serial console writes into its

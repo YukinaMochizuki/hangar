@@ -116,6 +116,10 @@ message FirmwareBoot {
   // What the guest's cloud-init is served by the metadata service. Only
   // the node the machine is on reads it.
   MachineCloudInit cloud_init = 2;
+  // The SMBIOS system serial number the guest is given: printable ASCII, at
+  // most 64 bytes. Empty is the platform's, which points the guest's
+  // cloud-init at cloud_init. Changing it restarts the machine.
+  string system_serial_number = 3;
 }
 
 // FileShareServerBoot boots the platform's NFS server of a FileShare: the

@@ -3,6 +3,7 @@ package driver_test
 import (
 	"encoding/json"
 	"net/netip"
+	"strings"
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -52,6 +53,30 @@ func TestAVMWithoutDisksKeepsItsHash(t *testing.T) {
 	spec.Mounts[0].Target = "/srv"
 	if mounted == grown || spec.Hash() == mounted {
 		t.Error("mounting a volume, or moving it, leaves the hash as it was: the guest would not mount it")
+	}
+}
+
+// TestAVMWithoutASerialNumberKeepsItsHash: a firmware VM a node started
+// before VMSpec had a serial number hashes as it did, so the agent does not
+// restart it on upgrade; giving it one, or changing it, restarts it.
+func TestAVMWithoutASerialNumberKeepsItsHash(t *testing.T) {
+	spec := driver.VMSpec{
+		MachineUID: "m1", Machine: "p/vm-m1", VCPUs: 1, MemoryMiB: 1024, Firmware: true,
+		Disks: []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/r", Size: 10 << 30}}, Restart: driver.RestartOnFailure,
+	}
+	b, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "SystemSerialNumber") {
+		t.Errorf("a spec without a serial number encodes as %s, which changes its hash", b)
+	}
+	before := spec.Hash()
+	spec.SystemSerialNumber = "ARX-01"
+	given := spec.Hash()
+	spec.SystemSerialNumber = "ARX-02"
+	if given == before || spec.Hash() == given {
+		t.Error("giving a VM a serial number, or changing it, leaves the hash as it was: the guest would not see it")
 	}
 }
 
