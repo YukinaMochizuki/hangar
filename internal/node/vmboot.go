@@ -40,16 +40,17 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	// So is its IPv6 address, by DHCPv6; a new one, as when an Address moves
 	// to it, is no part of the spec's hash and does not restart the VM.
 	spec := driver.VMSpec{
-		MachineUID:  uid,
-		Machine:     m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
-		VCPUs:       vcpus,
-		MemoryMiB:   memoryMiB,
-		Disks:       vols,
-		Firmware:    true,
-		Interfaces:  ifaces,
-		Nameservers: nameservers,
-		Search:      search,
-		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
+		MachineUID:         uid,
+		Machine:            m.GetMetadata().GetProject() + "/" + m.GetMetadata().GetName(),
+		VCPUs:              vcpus,
+		MemoryMiB:          memoryMiB,
+		Disks:              vols,
+		Firmware:           true,
+		SystemSerialNumber: m.GetSpec().GetFirmware().GetSystemSerialNumber(),
+		Interfaces:         ifaces,
+		Nameservers:        nameservers,
+		Search:             search,
+		Restart:            restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
 	if vm != nil && vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces) {
 		if err := a.stopVM(ctx, uid); err != nil {

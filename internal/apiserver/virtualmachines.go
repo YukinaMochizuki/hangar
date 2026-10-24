@@ -27,6 +27,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/controller"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 )
@@ -167,6 +168,9 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	if n := len(spec.GetUserData()); n > maxUserData {
 		return invalid("spec.user_data is %d bytes, at most %d (16 KiB)", n, maxUserData)
 	}
+	if err := computeapi.CheckSystemSerialNumber(spec.GetPlatform().GetSerialNumber()); err != nil {
+		return invalid("spec.platform.serial_number: %v", err)
+	}
 	if n := len(spec.GetSshAuthorizedKeys()); n > maxSSHKeys {
 		return invalid("spec.ssh_authorized_keys: %d keys, at most %d", n, maxSSHKeys)
 	}
@@ -195,6 +199,16 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	}
 	return s.checkMachineShape(p, was, cur,
 		"spec.root_disk.from_image.size "+cmp.Or(spec.GetRootDisk().GetFromImage().GetSize(), defaultVMRootSize))
+}
+
+// warnVirtualMachine tells the caller what a VM gives up by having a serial
+// number of its own: the one cloud-init finds its seed by.
+func warnVirtualMachine(_ *Server, obj proto.Message) []string {
+	if obj.(*computev1alpha1.VirtualMachine).GetSpec().GetPlatform().GetSerialNumber() == "" {
+		return nil
+	}
+	return []string{"spec.platform.serial_number replaces the serial number the guest's cloud-init finds the platform's seed by: " +
+		"unless the image provides its own, the VM gets no user_data, ssh_authorized_keys or trust in the platform's SSH CA, and hangar ssh cannot log in to it"}
 }
 
 // validateRootDisk checks a VM's root disk: one it names, or one made from
@@ -523,6 +537,7 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 			CloudInit: &computev1alpha1.MachineCloudInit{
 				InstanceId: vm.GetMetadata().GetUid(), UserData: spec.GetUserData(), VendorData: vendorData(vm, caKey),
 			},
+			SystemSerialNumber: spec.GetPlatform().GetSerialNumber(),
 		}},
 		// Only a guest that powers itself off, which ends its boot well,
 		// stays off, as a VM's on a cloud does; a crash, or its host

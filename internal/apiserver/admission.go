@@ -437,6 +437,7 @@ func hooksFor(r registry.Resource) kindHooks {
 			target:       projectTarget,
 			owner:        ownedByProject,
 			validate:     validateVirtualMachine,
+			warn:         warnVirtualMachine,
 			beforeDelete: refuseDeletingUnsettledVM,
 			cascades:     true,
 			writeLocks:   only(attachLock),
@@ -999,6 +1000,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if err := validateServerBoot(spec); err != nil {
 		return err
+	}
+	if err := computeapi.CheckSystemSerialNumber(spec.GetFirmware().GetSystemSerialNumber()); err != nil {
+		return invalid("spec.firmware.system_serial_number: %v", err)
 	}
 	if ci := spec.GetFirmware().GetCloudInit(); len(ci.GetUserData()) > maxUserData || len(ci.GetVendorData()) > maxVendorData {
 		return invalid("spec.firmware.cloud_init: user_data of %d bytes, at most %d; vendor_data of %d, at most %d",

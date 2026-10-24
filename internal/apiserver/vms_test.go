@@ -130,6 +130,15 @@ func TestVirtualMachineAdmission(t *testing.T) {
 			s.SshAuthorizedKeys = []string{long, long, long}
 		},
 		"user-data past 16 KiB": func(s *computev1alpha1.VirtualMachineSpec) { s.UserData = strings.Repeat("x", 16<<10+1) },
+		"a serial number of 65 bytes": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.Platform = &computev1alpha1.VirtualMachinePlatform{SerialNumber: strings.Repeat("s", 65)}
+		},
+		"a serial number with a tab": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.Platform = &computev1alpha1.VirtualMachinePlatform{SerialNumber: "ARX\t01"}
+		},
+		"a serial number not ASCII": func(s *computev1alpha1.VirtualMachineSpec) {
+			s.Platform = &computev1alpha1.VirtualMachinePlatform{SerialNumber: "ARX-é"}
+		},
 		"a key comment with DEL": func(s *computev1alpha1.VirtualMachineSpec) {
 			s.SshAuthorizedKeys = []string{sshKey("ssh-ed25519") + "\x7f"}
 		},
@@ -156,6 +165,11 @@ func TestVirtualMachineAdmission(t *testing.T) {
 	ok.Spec.UserData = "#!/bin/sh\n" + strings.Repeat("#", 16<<10-10)
 	if _, err := b.Apply(user, ok); err != nil {
 		t.Errorf("a VM with keys, two interfaces and 16 KiB of user-data: %v", err)
+	}
+	serial := vmFromImage("serial", "noble")
+	serial.Spec.Platform = &computev1alpha1.VirtualMachinePlatform{SerialNumber: " " + strings.Repeat(`,"[]=~`, 10) + "abc"}
+	if _, err := b.Apply(user, serial); err != nil {
+		t.Errorf("a VM with a serial number of 64 bytes of printable ASCII: %v", err)
 	}
 
 	// The root disk is what it was made as; its size may grow.

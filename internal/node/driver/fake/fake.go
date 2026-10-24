@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
@@ -1508,6 +1509,12 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		if r, ok := d.h.roots[spec.MachineUID]; !ok || r != spec.Root {
 			return fmt.Errorf("machine %s has no root disk %s", spec.MachineUID, spec.Root.Path)
 		}
+	}
+	if spec.SystemSerialNumber != "" && !spec.Firmware {
+		return fmt.Errorf("machine %s is given a system serial number, and boots no firmware", spec.MachineUID)
+	}
+	if err := computeapi.CheckSystemSerialNumber(spec.SystemSerialNumber); err != nil {
+		return fmt.Errorf("machine %s: system serial number: %w", spec.MachineUID, err)
 	}
 	for _, v := range spec.Disks {
 		if have, ok := d.h.volumes[v.DiskUID]; !ok || have != v {

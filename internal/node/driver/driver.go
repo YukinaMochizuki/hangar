@@ -827,8 +827,14 @@ type VMSpec struct {
 	// ended by an Exit record, 0 if the guest powered off, StoppedSignal if
 	// the platform ended it (docs/decisions/vm-boot.md). Stop presses its
 	// power button.
-	Firmware   bool `json:",omitempty"`
-	Interfaces []Interface
+	Firmware bool `json:",omitempty"`
+	// SystemSerialNumber is a firmware VM's SMBIOS system serial number,
+	// printable ASCII of at most computeapi.MaxSystemSerialNumber bytes;
+	// empty is the one pointing cloud-init at the metadata service. Left
+	// out of the hash when empty, so a VM started before there was one
+	// keeps its hash.
+	SystemSerialNumber string `json:",omitempty"`
+	Interfaces         []Interface
 	// Nameservers and Search are the guest's resolvers and search domains,
 	// as its /etc/resolv.conf lists them.
 	Nameservers []string

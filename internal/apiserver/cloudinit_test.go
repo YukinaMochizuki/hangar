@@ -3,6 +3,7 @@ package apiserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -83,6 +84,33 @@ func TestAMachinesCloudInitIsBounded(t *testing.T) {
 			wantCodeOf(t, err, connect.CodeInvalidArgument, tc.what)
 		} else if err != nil {
 			t.Errorf("%s: %v", tc.what, err)
+		}
+	}
+}
+
+// TestAMachinesSerialNumberIsChecked: a firmware machine's system serial
+// number is refused past 64 bytes, or holding other than printable ASCII.
+func TestAMachinesSerialNumberIsChecked(t *testing.T) {
+	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
+	if _, err := s.backend(registry.Disk).Apply(user, disk("web-root", "10Gi")); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		serial  string
+		refused bool
+	}{
+		{strings.Repeat("s", 65), true},
+		{"ARX\x0001", true},
+		{"ARX-\x7f", true},
+		{strings.Repeat(`~ ,"`, 16), false},
+	} {
+		m := machine("vm-web", "n1")
+		m.Spec.Boot = &computev1alpha1.MachineSpec_Firmware{Firmware: &computev1alpha1.FirmwareBoot{RootDisk: "web-root", SystemSerialNumber: tc.serial}}
+		_, err := s.backend(registry.Machine).Apply(system, m)
+		if tc.refused {
+			wantCodeOf(t, err, connect.CodeInvalidArgument, fmt.Sprintf("serial number %q", tc.serial))
+		} else if err != nil {
+			t.Errorf("serial number %q: %v", tc.serial, err)
 		}
 	}
 }
