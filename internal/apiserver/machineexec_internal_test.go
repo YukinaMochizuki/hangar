@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -42,7 +43,8 @@ import (
 // programs named by the first argument: echo prints its arguments, fail
 // fails the call as a VM that is not running does, flood writes output
 // until it is stopped, sink reads no input, and anything else echoes
-// stdin, ends with stdin's close or a signal, and records resizes.
+// stdin, ends with stdin's close or a signal, records resizes, and runs on
+// past the caller closing its side, as a node's process does.
 type scriptedNode struct {
 	nodev1connect.UnimplementedNodeServiceHandler
 	starts  chan *nodev1.ExecStart
@@ -107,6 +109,12 @@ func (n *scriptedNode) Exec(ctx context.Context, s *connect.BidiStream[nodev1.Ex
 	}
 	for {
 		req, err := s.Receive()
+		if errors.Is(err, io.EOF) {
+			// The apiserver's client may close its side as it cancels the
+			// call; a node's process runs on until the reset ends it.
+			<-ctx.Done()
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
