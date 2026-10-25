@@ -30,6 +30,7 @@ func TestNoBindingOutlivesItsToken(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var events []store.Event
+	var seen int64 // the revision of the last event watched
 	watchCtx, stop := context.WithCancel(ctx)
 	watched := make(chan struct{})
 	go func() {
@@ -37,6 +38,7 @@ func TestNoBindingOutlivesItsToken(t *testing.T) {
 		_ = s.store.Watch(watchCtx, store.WatchOptions{SinceRevision: rev}, func(ev store.Event) error {
 			mu.Lock()
 			events = append(events, ev)
+			seen = ev.Revision
 			mu.Unlock()
 			return nil
 		})
@@ -66,13 +68,31 @@ func TestNoBindingOutlivesItsToken(t *testing.T) {
 		}
 		wg.Wait()
 	}
-	// Every token goes in the end.
-	testutil.Eventually(t, "every token gone", func() (bool, string) {
+	// Every token goes in the end. The garbage collector's work here grows
+	// with load, so the bound is on it following each next write, not on all
+	// of it: stalled with a token left, it follows none.
+	for {
 		objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.ServiceToken.Kind})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return len(objs) == 0, fmt.Sprintf("%d tokens", len(objs))
+		if len(objs) == 0 {
+			break
+		}
+		followed := s.gc.status().Followed
+		testutil.Eventually(t, fmt.Sprintf("the garbage collector to follow past revision %d, with %d tokens left", followed, len(objs)), func() bool {
+			return s.gc.status().Followed > followed
+		})
+	}
+	// The replay needs every event through the last token's delete.
+	last, err := s.store.Revision(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(t, fmt.Sprintf("the watch to reach revision %d", last), func() (bool, string) {
+		mu.Lock()
+		defer mu.Unlock()
+		return seen >= last, fmt.Sprintf("revision %d", seen)
 	})
 	stop()
 	<-watched
