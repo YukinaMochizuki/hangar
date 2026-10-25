@@ -72,12 +72,19 @@ func (w *world) editMachine(name string, edit func(*computev1alpha1.Machine)) {
 // condition giving reason, at its current generation.
 func (w *world) waitMachine(name string, phase computev1alpha1.MachinePhase, reason string) *computev1alpha1.Machine {
 	w.t.Helper()
+	return w.waitMachineSaying(name, phase, reason, "")
+}
+
+// waitMachineSaying is waitMachine for a Ready condition whose message also
+// holds says, for a reason the machine gives for more than one wait.
+func (w *world) waitMachineSaying(name string, phase computev1alpha1.MachinePhase, reason, says string) *computev1alpha1.Machine {
+	w.t.Helper()
 	var m *computev1alpha1.Machine
-	testutil.Eventually(w.t, fmt.Sprintf("machine %s %v %s", name, phase, reason), func() (bool, string) {
+	testutil.Eventually(w.t, fmt.Sprintf("machine %s %v %s %q", name, phase, reason, says), func() (bool, string) {
 		var ok bool
 		m, ok = get[*computev1alpha1.Machine](w, registry.Machine, name)
 		r := conditions.Find(m.GetStatus().GetConditions(), computeapi.MachineReady)
-		return ok && m.GetStatus().GetPhase() == phase && r.GetReason() == reason &&
+		return ok && m.GetStatus().GetPhase() == phase && r.GetReason() == reason && strings.Contains(r.GetMessage(), says) &&
 			r.GetObservedGeneration() == m.GetMetadata().GetGeneration(), fmt.Sprintf("%v", m.GetStatus())
 	})
 	return m

@@ -967,38 +967,36 @@ func TestSigningUpWaitsForNoShare(t *testing.T) {
 	for i := range n {
 		invite(t, s, fmt.Sprintf("p%d@example.com", i), "platform.member")
 	}
-	var wg sync.WaitGroup
 	errs := make([]error, 3*n)
+	finished := make(chan struct{}, 3*n)
 	for i := range n {
-		wg.Add(3)
 		go func() {
-			defer wg.Done()
+			defer func() { finished <- struct{}{} }()
 			email := fmt.Sprintf("p%d@example.com", i)
 			ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.User, ID: email})
 			_, errs[3*i] = (account{s}).SignUp(ctx, connect.NewRequest(&iamv1alpha1.SignUpRequest{Username: usernameOf(email)}))
 		}()
 		go func() {
-			defer wg.Done()
+			defer func() { finished <- struct{}{} }()
 			_, errs[3*i+1] = s.backend(registry.FileShare).Apply(user, fileShare(fmt.Sprintf("s%d", i), "1Gi"))
 		}()
 		go func() {
-			defer wg.Done()
+			defer func() { finished <- struct{}{} }()
 			_, errs[3*i+2] = s.backend(registry.Network).Apply(user, network(fmt.Sprintf("n%d", i), "10.1.0.0/24"))
 		}()
 	}
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-	testutil.Eventually(t, "signing up and applying shares and networks to finish", func() bool {
-		select {
-		case <-done:
-			return true
-		default:
-			return false
-		}
-	})
+	// The calls take the locks they share one at a time, so the bound is on
+	// each next one finishing, not on all of them: deadlocked, none does.
+	for done := range 3 * n {
+		testutil.Eventually(t, fmt.Sprintf("signing up and applying shares and networks to go on past %d of %d finished", done, 3*n), func() bool {
+			select {
+			case <-finished:
+				return true
+			default:
+				return false
+			}
+		})
+	}
 	for _, err := range errs {
 		if err != nil {
 			t.Error(err)
