@@ -29,7 +29,7 @@ const awkwardSerial = ` ARX,"01"[2]=x `
 // platform's metadata service, takes its seed from a CIDATA disk instead,
 // as an image without the platform's seed must.
 func TestAVMsGuestReadsItsOwnSerialNumber(t *testing.T) {
-	out := bootWithSeed(t, "serialvm", `printf 'hangar-serial:[%s]\n' "$(cat /sys/class/dmi/id/product_serial)"`,
+	out, _ := bootWithSeed(t, "serialvm", `printf 'hangar-serial:[%s]\n' "$(cat /sys/class/dmi/id/product_serial)"`,
 		func(_ *host, s *driver.VMSpec) { s.SystemSerialNumber = awkwardSerial })
 	if m := regexp.MustCompile(`hangar-serial:\[(.*)\]\r?\n`).FindStringSubmatch(out); m == nil || m[1] != awkwardSerial {
 		t.Errorf("the guest reads its serial number as %q, not %q", m, awkwardSerial)
@@ -42,7 +42,7 @@ func TestAVMsGuestReadsItsOwnSerialNumber(t *testing.T) {
 func TestAVMsGuestFindsItsDisksBySerial(t *testing.T) {
 	serials := []string{"disksroot", "disksseed", "782aad7135c14fc6c594"}
 	script := `for s in ` + strings.Join(serials, " ") + `; do printf 'hangar-disk:%s=%s\n' "$s" "$(readlink -f /dev/disk/by-id/virtio-$s)"; done`
-	out := bootWithSeed(t, "disksvm", script, func(h *host, s *driver.VMSpec) {
+	out, _ := bootWithSeed(t, "disksvm", script, func(h *host, s *driver.VMSpec) {
 		data, err := h.storage.EnsureVolume(context.Background(), "disksdata", 1<<30, "")
 		if err != nil {
 			t.Fatal(err)
@@ -64,10 +64,11 @@ func TestAVMsGuestFindsItsDisksBySerial(t *testing.T) {
 // bootWithSeed boots an Ubuntu cloud image as the firmware VM uid, its root
 // volume first and then a NoCloud seed volume, with spec changed by mutate
 // on the host, and returns its serial console once the user-data script,
-// whose output goes to it, has run. mutate must give the VM a serial number
-// of its own: cloud-init prefers the one pointing it at the platform's
-// metadata service, which this host has none of, to the seed volume.
-func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.VMSpec)) string {
+// whose output goes to it, has run, and the hypervisor running it. mutate
+// must give the VM a serial number of its own: cloud-init prefers the one
+// pointing it at the platform's metadata service, which this host has none
+// of, to the seed volume.
+func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor) {
 	t.Helper()
 	h := newHost(t)
 	ctx := context.Background()
@@ -129,7 +130,7 @@ func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.V
 		out := serialOf(t, uid)
 		if strings.Contains(out, done+"\r\n") || strings.Contains(out, done+"\n") {
 			t.Logf("the user-data ran %v after the start", time.Since(start).Round(time.Second))
-			return out
+			return out, hv
 		}
 		if vm, ok := vmOf(t, h, uid); ok && vm.State != driver.VMRunning {
 			t.Fatalf("the VM ended: %+v\n%s", vm, tail(out))
