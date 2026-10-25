@@ -434,28 +434,36 @@ describe("Edit on the machine's page and its row", () => {
     expect(screen.getByText("Being deleted: nothing to change.")).toBeTruthy();
   });
 
-  it("offer a VM's Create image, on its root disk, for whoever may capture, and only once it is stopped", async () => {
+  it("offer a VM's Create image, on its root disk, in the head's menu, for whoever may capture, and only once it is stopped", async () => {
     const stopped = () => {
       const v = db();
       v.spec!.runState = VirtualMachineRunState.STOPPED;
       return vmView(v, undefined);
     };
     const capturing = () => [...applyPerms, "storage.customimages.apply"];
+    const createImage = async () => {
+      fireEvent.click(await screen.findByRole("button", { name: "More actions" }));
+      return screen.getByRole("menuitem", { name: /Create image/ }) as HTMLButtonElement;
+    };
     render(<Head m={stopped()} />, { wrapper: withApi(api({ perms: capturing })) });
-    expect((await screen.findByRole("link", { name: /Create image/ })).getAttribute("href")).toBe("/projects/demo/new/custom-image?disk=db-root");
+    // Seldom used, so never a button of the head's own.
+    await screen.findByRole("button", { name: /Start/ });
+    expect(screen.queryByRole("link", { name: /Create image/ })).toBeNull();
+    fireEvent.click(await createImage());
+    expect(navigate).toHaveBeenCalledWith({ to: "/projects/$project/new/custom-image", params: { project: "demo" }, search: { disk: "db-root" } });
     cleanup();
     render(<Head m={vmView(db(), undefined)} />, { wrapper: withApi(api({ perms: capturing })) });
-    expect(((await screen.findByRole("button", { name: /Create image/ })) as HTMLButtonElement).disabled).toBe(true);
+    expect((await createImage()).disabled).toBe(true);
     cleanup();
     const a = api({ perms: () => applyPerms });
     render(<Head m={stopped()} />, { wrapper: withApi(a) });
     await screen.findByRole("button", { name: /Start/ });
-    expect(screen.queryByRole("link", { name: /Create image/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
     // A container has no root disk to capture.
     cleanup();
     render(<Head m={containerView(web(), undefined)} />, { wrapper: withApi(api({ perms: capturing })) });
     await screen.findByRole("link", { name: /Edit/ });
-    expect(screen.queryByRole("link", { name: /Create image/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull();
   });
 });
 
