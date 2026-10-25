@@ -65,6 +65,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	uploads := fs.String("github-uploads", "https://uploads.github.com", "GitHub's API for uploads")
 	secdb := fs.String("secdb", "https://secdb.alpinelinux.org", "Alpine's security database")
 	mirror := fs.String("alpine", "", "Alpine's mirror; empty is converter.env's")
+	prefix := fs.String("prefix", "HANGAR_CONVERTER", "what the names in -env start with")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	p, err := parseEnv(f)
+	p, err := parseEnv(f, *prefix)
 	_ = f.Close()
 	if err != nil {
 		return err

@@ -51,10 +51,12 @@ var (
 	envLine = regexp.MustCompile(`^([A-Z_][A-Z0-9_]*)=(.*)$`)
 )
 
-// parseEnv reads converter.env: NAME=value lines, a value in double quotes
+// parseEnv reads converter.env, or another file of its shape whose names
+// start with prefix in place of HANGAR_CONVERTER, as the swtpm bundle's
+// (deploy/swtpm/swtpm.env): NAME=value lines, a value in double quotes
 // running over lines; comments and blank lines are skipped. It takes no
 // more of the shell than the file uses.
-func parseEnv(r io.Reader) (pins, error) {
+func parseEnv(r io.Reader, prefix string) (pins, error) {
 	vars := map[string]string{}
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
@@ -82,15 +84,15 @@ func parseEnv(r io.Reader) (pins, error) {
 	if err := sc.Err(); err != nil {
 		return pins{}, err
 	}
-	p := pins{alpine: vars["HANGAR_CONVERTER_ALPINE"], mirror: strings.TrimSuffix(vars["HANGAR_CONVERTER_MIRROR"], "/")}
+	p := pins{alpine: vars[prefix+"_ALPINE"], mirror: strings.TrimSuffix(vars[prefix+"_MIRROR"], "/")}
 	if p.alpine == "" || p.mirror == "" {
-		return pins{}, fmt.Errorf("converter.env: HANGAR_CONVERTER_ALPINE and HANGAR_CONVERTER_MIRROR are required")
+		return pins{}, fmt.Errorf("converter.env: %s_ALPINE and %s_MIRROR are required", prefix, prefix)
 	}
 	var err error
-	if p.release, err = parseRelease(vars["HANGAR_CONVERTER_RELEASE"]); err != nil {
+	if p.release, err = parseRelease(vars[prefix+"_RELEASE"]); err != nil {
 		return pins{}, fmt.Errorf("converter.env: %w", err)
 	}
-	for _, line := range strings.Split(vars["HANGAR_CONVERTER_PACKAGES"], "\n") {
+	for _, line := range strings.Split(vars[prefix+"_PACKAGES"], "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
@@ -102,7 +104,7 @@ func parseEnv(r io.Reader) (pins, error) {
 		p.packages = append(p.packages, pkg{repo: m[1], name: m[2], version: m[3], sha256: m[4]})
 	}
 	if len(p.packages) == 0 {
-		return pins{}, fmt.Errorf("converter.env: HANGAR_CONVERTER_PACKAGES pins nothing")
+		return pins{}, fmt.Errorf("converter.env: %s_PACKAGES pins nothing", prefix)
 	}
 	return p, nil
 }
