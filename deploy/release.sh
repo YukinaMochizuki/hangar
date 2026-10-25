@@ -9,6 +9,7 @@
 #   OUT/host  what a host runs: hangar-apiserver, hangar-node, hangar-edge and
 #             hangar (static, linux/amd64), the guest kernel, the platform
 #             initramfs and the converter initramfs (converter.cpio), the
+#             swtpm bundle TPMs run from (swtpm.tar, deploy/swtpm), the
 #             console's files as console.tar, deploy/ itself as
 #             deploy.tar, VERSION, and SHA256SUMS over all of them. The
 #             `release` step of deploy/host installs from a directory like it
@@ -129,6 +130,7 @@ tar --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=u+rwX,go+rX,go-w \
 rm "$stage/deploy.list"
 HANGAR_INITRAMFS_OUT=$stage/guest guest/initramfs/build.sh
 HANGAR_CONVERTER_OUT=$stage/guest guest/converter/build.sh
+HANGAR_SWTPM_OUT=$host deploy/swtpm/build.sh
 if [ -z "${HANGAR_KERNEL_CACHE:-}" ]; then
 	HANGAR_KERNEL_OUT=$stage/guest guest/kernel/build.sh
 else

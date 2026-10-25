@@ -1,5 +1,6 @@
 # Hangar itself: the binaries, the guest kernel and initramfs, the
-# converter initramfs, and the console's files, installed from a release
+# converter initramfs, the swtpm bundle, and the console's files, installed
+# from a release
 # directory: one
 # hangar-fetch-release downloaded and verified (bootstrap.sh --release DIR),
 # or, on a testbed, one `make release` made. Every file is
@@ -18,6 +19,13 @@
 # named by their content, so the two releases' never collide. The previous
 # release's directory is kept; older ones are removed.
 #
+# The swtpm bundle TPM VMs run (deploy/swtpm) comes as swtpm.tar, installed
+# as the other files are, then unpacked into a directory of its own under
+# RELEASE_SWTPM_VERSIONS, named by the tar's checksum. RELEASE_SWTPM, which
+# hangar-node runs it from (--vm-swtpm), is a symbolic link to it, replaced
+# in one rename: a running VM's unit keeps the directory it bound, and binds
+# the new one when it starts again. The previous release's is kept.
+#
 # The step also installs deploy/host/fetch-release.sh, from the deploy/ it
 # runs from, as RELEASE_FETCH, with or without --release.
 
@@ -26,6 +34,9 @@ RELEASE_VERSION=$RELEASE_LIB/VERSION
 RELEASE_SUMS=$RELEASE_LIB/SHA256SUMS
 RELEASE_CONSOLE_TAR=$RELEASE_LIB/console.tar
 RELEASE_CONVERTER=$RELEASE_LIB/converter.cpio
+RELEASE_SWTPM_TAR=$RELEASE_LIB/swtpm.tar
+RELEASE_SWTPM=$RELEASE_LIB/swtpm
+RELEASE_SWTPM_VERSIONS=$RELEASE_LIB/swtpm.d
 RELEASE_CONSOLE=/usr/local/share/hangar/console
 RELEASE_CONSOLE_VERSIONS=/usr/local/share/hangar/console.d
 RELEASE_FETCH=/usr/local/sbin/hangar-fetch-release
@@ -41,12 +52,13 @@ release_files() {
 		"vmlinux:$RELEASE_LIB/vmlinux:644" \
 		"initramfs.cpio:$RELEASE_LIB/initramfs.cpio:644" \
 		"converter.cpio:$RELEASE_LIB/converter.cpio:644" \
+		"swtpm.tar:$RELEASE_SWTPM_TAR:644" \
 		"console.tar:$RELEASE_CONSOLE_TAR:644"
 }
 
 # Files a release lists that an installed release may lack, having come
 # before they were part of one: the record of such a release is still whole.
-RELEASE_LATER_FILES="console.tar converter.cpio"
+RELEASE_LATER_FILES="console.tar converter.cpio swtpm.tar"
 
 release_later_file() { case " $RELEASE_LATER_FILES " in *" $1 "*) return 0 ;; esac; return 1; }
 
@@ -106,6 +118,8 @@ release_apply() {
 			# that died before the switch) is made again from it.
 			[ ! -f "$RELEASE_CONSOLE_TAR" ] || release_console_installed_ok ||
 				run "unpack the console into $RELEASE_CONSOLE" release_console_unpack
+			[ ! -f "$RELEASE_SWTPM_TAR" ] || release_swtpm_installed_ok ||
+				run "unpack the swtpm bundle into $RELEASE_SWTPM" release_swtpm_unpack
 			return 0
 		fi
 		local why
@@ -126,6 +140,8 @@ release_apply() {
 	done
 	release_console_ok "$(grep -E '  console.tar$' "$dir/SHA256SUMS" | cut -d' ' -f1)" ||
 		run "unpack the console into $RELEASE_CONSOLE" release_console_unpack
+	release_swtpm_ok "$(grep -E '  swtpm.tar$' "$dir/SHA256SUMS" | cut -d' ' -f1)" ||
+		run "unpack the swtpm bundle into $RELEASE_SWTPM" release_swtpm_unpack
 	# Last, so a run that dies half-way leaves a record that does not match
 	# what is installed, which verify reports and the next run repairs.
 	put_file "$RELEASE_SUMS" 644 "$(release_installed_sums "$dir")"
@@ -203,6 +219,59 @@ release_console_unpack() {
 	rm -rf "$RELEASE_CONSOLE.hangar-old"
 }
 
+# release_swtpm_dir SHA prints the directory the swtpm bundle of the tar with
+# that checksum is unpacked in.
+release_swtpm_dir() { printf '%s/%s\n' "$RELEASE_SWTPM_VERSIONS" "${1:0:16}"; }
+
+# release_swtpm_ok SHA holds when RELEASE_SWTPM is the bundle of the tar with
+# that checksum.
+release_swtpm_ok() {
+	[ -n "$1" ] && [ -L "$RELEASE_SWTPM" ] &&
+		[ "$(readlink "$RELEASE_SWTPM")" = "$(release_swtpm_dir "$1")" ] &&
+		[ -f "$(release_swtpm_dir "$1")/VERSION" ]
+}
+
+release_swtpm_installed_ok() {
+	[ -f "$RELEASE_SWTPM_TAR" ] && release_swtpm_ok "$(sha_of "$RELEASE_SWTPM_TAR")"
+}
+
+# release_swtpm_unpack unpacks the installed swtpm.tar, whose one directory
+# is swtpm/, and points RELEASE_SWTPM at it, then removes the bundles of
+# every earlier release but the one it pointed at until now.
+release_swtpm_unpack() {
+	local sha target part old prev=
+	sha=$(sha_of "$RELEASE_SWTPM_TAR")
+	target=$(release_swtpm_dir "$sha")
+	install -d -m 755 -o root -g root "$RELEASE_SWTPM_VERSIONS"
+	if [ -L "$RELEASE_SWTPM" ] && [ "$(readlink "$RELEASE_SWTPM")" != "$target" ]; then
+		prev=$(readlink "$RELEASE_SWTPM")
+	fi
+	if [ ! -f "$target/VERSION" ]; then
+		# Unpacked under a temporary name first, so a directory named for a
+		# release always holds all of it.
+		part=$(mktemp -d "$RELEASE_SWTPM_VERSIONS/.part.XXXXXX")
+		tar -xf "$RELEASE_SWTPM_TAR" -C "$part" --strip-components=1 --no-same-owner --no-same-permissions
+		chown -R root:root "$part"
+		# Every VM's user reads and runs it; X keeps what runs runnable.
+		chmod -R u=rwX,go=rX "$part"
+		chmod 755 "$part"
+		rm -rf "$target"
+		mv -T "$part" "$target"
+	fi
+	ln -sfn "$target" "$RELEASE_SWTPM.hangar-new"
+	mv -Tf "$RELEASE_SWTPM.hangar-new" "$RELEASE_SWTPM"
+	for old in "$RELEASE_SWTPM_VERSIONS"/* "$RELEASE_SWTPM_VERSIONS"/.part.*; do
+		case $old in "$target" | "$prev") continue ;; esac
+		[ ! -e "$old" ] || rm -rf "$old"
+	done
+}
+
+# release_swtpm_version_ok holds when the swtpm bundle served says it carries
+# the swtpm versions.env pins (deploy/swtpm/build.sh writes its VERSION).
+release_swtpm_version_ok() {
+	[ "$(cat "$RELEASE_SWTPM/VERSION" 2>/dev/null)" = "hangar-swtpm swtpm-$HANGAR_SWTPM_VERSION" ]
+}
+
 # release_recorded PATH holds when the installed release's record lists PATH.
 release_recorded() { grep -qE "^[0-9a-f]{64}  $1\$" "$RELEASE_SUMS"; }
 
@@ -244,6 +313,12 @@ release_verify() {
 		check "the console served is the installed release's" release_console_installed_ok
 	else
 		skip "the console served is the installed release's" "the installed release carries no console"
+	fi
+	if [ -f "$RELEASE_SWTPM_TAR" ]; then
+		check "the swtpm bundle run is the installed release's" release_swtpm_installed_ok
+		check "the swtpm bundle carries swtpm $HANGAR_SWTPM_VERSION" release_swtpm_version_ok
+	else
+		skip "the swtpm bundle carries swtpm $HANGAR_SWTPM_VERSION" "the installed release carries no swtpm bundle"
 	fi
 	if [ -f "$RELEASE_CONVERTER" ]; then
 		check "the converter initramfs carries qemu-img $HANGAR_CONVERTER_QEMU_IMG" release_converter_ok

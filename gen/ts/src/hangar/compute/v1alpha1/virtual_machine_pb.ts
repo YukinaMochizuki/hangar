@@ -13,6 +13,8 @@ import { file_hangar_compute_v1alpha1_placement } from "./placement_pb";
 import type { Condition, EventType, ObjectMeta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_meta } from "../../meta/v1/meta_pb";
 import { file_hangar_meta_v1_options } from "../../meta/v1/options_pb";
+import type { SealedData } from "../../secrets/v1alpha1/secret_pb";
+import { file_hangar_secrets_v1alpha1_secret } from "../../secrets/v1alpha1/secret_pb";
 import type { ImageSource } from "../../storage/v1alpha1/disk_pb";
 import { file_hangar_storage_v1alpha1_disk } from "../../storage/v1alpha1/disk_pb";
 import type { Message } from "@bufbuild/protobuf";
@@ -21,7 +23,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/virtual_machine.proto.
  */
 export const file_hangar_compute_v1alpha1_virtual_machine: GenFile = /*@__PURE__*/
-  fileDesc("Ci1oYW5nYXIvY29tcHV0ZS92MWFscGhhMS92aXJ0dWFsX21hY2hpbmUucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIogCCg5WaXJ0dWFsTWFjaGluZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI5CgRzcGVjGAQgASgLMisuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVTcGVjEj0KBnN0YXR1cxgFIAEoCzItLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lU3RhdHVzOiuKtRgnCg5WaXJ0dWFsTWFjaGluZRIPdmlydHVhbG1hY2hpbmVzGgJ2bSABIpYEChJWaXJ0dWFsTWFjaGluZVNwZWMSQwoJcmVzb3VyY2VzGAEgASgLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVSZXNvdXJjZXMSQgoJcm9vdF9kaXNrGAIgASgLMi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVSb290RGlzaxI6CgVkaXNrcxgDIAMoCzIrLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lRGlzaxJCCglydW5fc3RhdGUYBCABKA4yLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVJ1blN0YXRlEhsKE3NzaF9hdXRob3JpemVkX2tleXMYBSADKAkSPQoKaW50ZXJmYWNlcxgGIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk5ldHdvcmtJbnRlcmZhY2USEQoJdXNlcl9kYXRhGAcgASgJEkUKC2ZpbGVfc2hhcmVzGAggAygLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVGaWxlU2hhcmUSQQoIcGxhdGZvcm0YCSABKAsyLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVBsYXRmb3JtIi8KFlZpcnR1YWxNYWNoaW5lUGxhdGZvcm0SFQoNc2VyaWFsX251bWJlchgBIAEoCSI6ChdWaXJ0dWFsTWFjaGluZUZpbGVTaGFyZRIMCgRuYW1lGAEgASgJEhEKCXJlYWRfb25seRgCIAEoCCI2ChdWaXJ0dWFsTWFjaGluZVJlc291cmNlcxILCgNjcHUYASABKAkSDgoGbWVtb3J5GAIgASgJIoIBChZWaXJ0dWFsTWFjaGluZVJvb3REaXNrEkYKCmZyb21faW1hZ2UYASABKAsyMC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZUltYWdlRGlza0gAEhYKBGRpc2sYAiABKAlCBoq1GAIIAUgAQggKBnNvdXJjZSKwAQoXVmlydHVhbE1hY2hpbmVJbWFnZURpc2sSOwoFaW1hZ2UYASABKAsyJC5oYW5nYXIuc3RvcmFnZS52MWFscGhhMS5JbWFnZVNvdXJjZUIGirUYAggBEgwKBHNpemUYAiABKAkSSgoNZGVsZXRlX3BvbGljeRgDIAEoDjIzLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lRGVsZXRlUG9saWN5IiIKElZpcnR1YWxNYWNoaW5lRGlzaxIMCgRkaXNrGAEgASgJIsICChRWaXJ0dWFsTWFjaGluZVN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24SEQoJcm9vdF9kaXNrGAMgASgJEkoKCmludGVyZmFjZXMYBCADKAsyNi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZUludGVyZmFjZVN0YXR1cxI1CglwbGFjZW1lbnQYBSABKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5QbGFjZW1lbnQSSAoNc3NoX2hvc3Rfa2V5cxgGIAMoCzIxLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lU1NISG9zdEtleSJfChhWaXJ0dWFsTWFjaGluZVNTSEhvc3RLZXkSEgoKcHVibGljX2tleRgBIAEoCRIvCgtyZWNvcmRfdGltZRgCIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXAiWgodVmlydHVhbE1hY2hpbmVJbnRlcmZhY2VTdGF0dXMSDAoEbmFtZRgBIAEoCRIPCgduZXR3b3JrGAIgASgJEgwKBGlwdjQYAyABKAkSDAoEaXB2NhgEIAEoCSI5ChhHZXRWaXJ0dWFsTWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJIl0KGUdldFZpcnR1YWxNYWNoaW5lUmVzcG9uc2USQAoPdmlydHVhbF9tYWNoaW5lGAEgASgLMicuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmUibAoaTGlzdFZpcnR1YWxNYWNoaW5lc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIRCglwYWdlX3NpemUYAyABKAUSEgoKcGFnZV90b2tlbhgEIAEoCSKAAQobTGlzdFZpcnR1YWxNYWNoaW5lc1Jlc3BvbnNlEjYKBWl0ZW1zGAEgAygLMicuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmUSFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhAKCHJldmlzaW9uGAMgASgDIl4KG1dhdGNoVmlydHVhbE1hY2hpbmVzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhYKDnNpbmNlX3JldmlzaW9uGAMgASgDIpsBChxXYXRjaFZpcnR1YWxNYWNoaW5lc1Jlc3BvbnNlEicKBHR5cGUYASABKA4yGS5oYW5nYXIubWV0YS52MS5FdmVudFR5cGUSQAoPdmlydHVhbF9tYWNoaW5lGAIgASgLMicuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmUSEAoIcmV2aXNpb24YAyABKAMicwoaQXBwbHlWaXJ0dWFsTWFjaGluZVJlcXVlc3QSQAoPdmlydHVhbF9tYWNoaW5lGAEgASgLMicuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmUSEwoLY3JlYXRlX29ubHkYAiABKAgiggEKG0FwcGx5VmlydHVhbE1hY2hpbmVSZXNwb25zZRJACg92aXJ0dWFsX21hY2hpbmUYASABKAsyJy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZRIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIIoIBChtEZWxldGVWaXJ0dWFsTWFjaGluZVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJgChxEZWxldGVWaXJ0dWFsTWFjaGluZVJlc3BvbnNlEkAKD3ZpcnR1YWxfbWFjaGluZRgBIAEoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lIscBCiFVcGRhdGVWaXJ0dWFsTWFjaGluZVN0YXR1c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEj0KBnN0YXR1cxgDIAEoCzItLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJmCiJVcGRhdGVWaXJ0dWFsTWFjaGluZVN0YXR1c1Jlc3BvbnNlEkAKD3ZpcnR1YWxfbWFjaGluZRgBIAEoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lKp8BChpWaXJ0dWFsTWFjaGluZURlbGV0ZVBvbGljeRItCilWSVJUVUFMX01BQ0hJTkVfREVMRVRFX1BPTElDWV9VTlNQRUNJRklFRBAAEigKJFZJUlRVQUxfTUFDSElORV9ERUxFVEVfUE9MSUNZX0RFTEVURRABEigKJFZJUlRVQUxfTUFDSElORV9ERUxFVEVfUE9MSUNZX1JFVEFJThACKpEBChZWaXJ0dWFsTWFjaGluZVJ1blN0YXRlEikKJVZJUlRVQUxfTUFDSElORV9SVU5fU1RBVEVfVU5TUEVDSUZJRUQQABIlCiFWSVJUVUFMX01BQ0hJTkVfUlVOX1NUQVRFX1JVTk5JTkcQARIlCiFWSVJUVUFMX01BQ0hJTkVfUlVOX1NUQVRFX1NUT1BQRUQQAjK/BgoVVmlydHVhbE1hY2hpbmVTZXJ2aWNlEnoKEUdldFZpcnR1YWxNYWNoaW5lEjEuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0VmlydHVhbE1hY2hpbmVSZXF1ZXN0GjIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0VmlydHVhbE1hY2hpbmVSZXNwb25zZRKAAQoTTGlzdFZpcnR1YWxNYWNoaW5lcxIzLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxpc3RWaXJ0dWFsTWFjaGluZXNSZXF1ZXN0GjQuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTGlzdFZpcnR1YWxNYWNoaW5lc1Jlc3BvbnNlEoUBChRXYXRjaFZpcnR1YWxNYWNoaW5lcxI0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLldhdGNoVmlydHVhbE1hY2hpbmVzUmVxdWVzdBo1Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLldhdGNoVmlydHVhbE1hY2hpbmVzUmVzcG9uc2UwARKAAQoTQXBwbHlWaXJ0dWFsTWFjaGluZRIzLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5VmlydHVhbE1hY2hpbmVSZXF1ZXN0GjQuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQXBwbHlWaXJ0dWFsTWFjaGluZVJlc3BvbnNlEoMBChREZWxldGVWaXJ0dWFsTWFjaGluZRI0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkRlbGV0ZVZpcnR1YWxNYWNoaW5lUmVxdWVzdBo1Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkRlbGV0ZVZpcnR1YWxNYWNoaW5lUmVzcG9uc2USlQEKGlVwZGF0ZVZpcnR1YWxNYWNoaW5lU3RhdHVzEjouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVXBkYXRlVmlydHVhbE1hY2hpbmVTdGF0dXNSZXF1ZXN0GjsuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVXBkYXRlVmlydHVhbE1hY2hpbmVTdGF0dXNSZXNwb25zZUKCAgobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQhNWaXJ0dWFsTWFjaGluZVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2NvbXB1dGUvdjFhbHBoYTE7Y29tcHV0ZXYxYWxwaGExogIDSENYqgIXSGFuZ2FyLkNvbXB1dGUuVjFhbHBoYTHKAhdIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMeICI0hhbmdhclxDb21wdXRlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpDb21wdXRlOjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_interface, file_hangar_compute_v1alpha1_placement, file_hangar_meta_v1_meta, file_hangar_meta_v1_options, file_hangar_storage_v1alpha1_disk]);
+  fileDesc("Ci1oYW5nYXIvY29tcHV0ZS92MWFscGhhMS92aXJ0dWFsX21hY2hpbmUucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIogCCg5WaXJ0dWFsTWFjaGluZRITCgthcGlfdmVyc2lvbhgBIAEoCRIMCgRraW5kGAIgASgJEiwKCG1ldGFkYXRhGAMgASgLMhouaGFuZ2FyLm1ldGEudjEuT2JqZWN0TWV0YRI5CgRzcGVjGAQgASgLMisuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVTcGVjEj0KBnN0YXR1cxgFIAEoCzItLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lU3RhdHVzOiuKtRgnCg5WaXJ0dWFsTWFjaGluZRIPdmlydHVhbG1hY2hpbmVzGgJ2bSABIs8EChJWaXJ0dWFsTWFjaGluZVNwZWMSQwoJcmVzb3VyY2VzGAEgASgLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVSZXNvdXJjZXMSQgoJcm9vdF9kaXNrGAIgASgLMi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVSb290RGlzaxI6CgVkaXNrcxgDIAMoCzIrLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lRGlzaxJCCglydW5fc3RhdGUYBCABKA4yLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVJ1blN0YXRlEhsKE3NzaF9hdXRob3JpemVkX2tleXMYBSADKAkSPQoKaW50ZXJmYWNlcxgGIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk5ldHdvcmtJbnRlcmZhY2USEQoJdXNlcl9kYXRhGAcgASgJEkUKC2ZpbGVfc2hhcmVzGAggAygLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVGaWxlU2hhcmUSQQoIcGxhdGZvcm0YCSABKAsyLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVBsYXRmb3JtEjcKA3RwbRgKIAEoCzIqLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lVFBNIq8BChFWaXJ0dWFsTWFjaGluZVRQTRIXCgdlbmFibGVkGAEgASgIQgaKtRgCCAESSAoGc291cmNlGAIgASgLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVUUE1Tb3VyY2VCBoq1GAIIARI3CgpzZWFsZWRfa2V5GAMgASgLMiMuaGFuZ2FyLnNlY3JldHMudjFhbHBoYTEuU2VhbGVkRGF0YSIZChdWaXJ0dWFsTWFjaGluZVRQTVNvdXJjZSIvChZWaXJ0dWFsTWFjaGluZVBsYXRmb3JtEhUKDXNlcmlhbF9udW1iZXIYASABKAkiOgoXVmlydHVhbE1hY2hpbmVGaWxlU2hhcmUSDAoEbmFtZRgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgiNgoXVmlydHVhbE1hY2hpbmVSZXNvdXJjZXMSCwoDY3B1GAEgASgJEg4KBm1lbW9yeRgCIAEoCSKCAQoWVmlydHVhbE1hY2hpbmVSb290RGlzaxJGCgpmcm9tX2ltYWdlGAEgASgLMjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVJbWFnZURpc2tIABIWCgRkaXNrGAIgASgJQgaKtRgCCAFIAEIICgZzb3VyY2UisAEKF1ZpcnR1YWxNYWNoaW5lSW1hZ2VEaXNrEjsKBWltYWdlGAEgASgLMiQuaGFuZ2FyLnN0b3JhZ2UudjFhbHBoYTEuSW1hZ2VTb3VyY2VCBoq1GAIIARIMCgRzaXplGAIgASgJEkoKDWRlbGV0ZV9wb2xpY3kYAyABKA4yMy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZURlbGV0ZVBvbGljeSIiChJWaXJ0dWFsTWFjaGluZURpc2sSDAoEZGlzaxgBIAEoCSLCAgoUVmlydHVhbE1hY2hpbmVTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEhEKCXJvb3RfZGlzaxgDIAEoCRJKCgppbnRlcmZhY2VzGAQgAygLMjYuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmVJbnRlcmZhY2VTdGF0dXMSNQoJcGxhY2VtZW50GAUgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUGxhY2VtZW50EkgKDXNzaF9ob3N0X2tleXMYBiADKAsyMS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVNTSEhvc3RLZXkiXwoYVmlydHVhbE1hY2hpbmVTU0hIb3N0S2V5EhIKCnB1YmxpY19rZXkYASABKAkSLwoLcmVjb3JkX3RpbWUYAiABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wIloKHVZpcnR1YWxNYWNoaW5lSW50ZXJmYWNlU3RhdHVzEgwKBG5hbWUYASABKAkSDwoHbmV0d29yaxgCIAEoCRIMCgRpcHY0GAMgASgJEgwKBGlwdjYYBCABKAkiOQoYR2V0VmlydHVhbE1hY2hpbmVSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCSJdChlHZXRWaXJ0dWFsTWFjaGluZVJlc3BvbnNlEkAKD3ZpcnR1YWxfbWFjaGluZRgBIAEoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lImwKGkxpc3RWaXJ0dWFsTWFjaGluZXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkigAEKG0xpc3RWaXJ0dWFsTWFjaGluZXNSZXNwb25zZRI2CgVpdGVtcxgBIAMoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lEhcKD25leHRfcGFnZV90b2tlbhgCIAEoCRIQCghyZXZpc2lvbhgDIAEoAyJeChtXYXRjaFZpcnR1YWxNYWNoaW5lc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgDIAEoAyKbAQocV2F0Y2hWaXJ0dWFsTWFjaGluZXNSZXNwb25zZRInCgR0eXBlGAEgASgOMhkuaGFuZ2FyLm1ldGEudjEuRXZlbnRUeXBlEkAKD3ZpcnR1YWxfbWFjaGluZRgCIAEoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lEhAKCHJldmlzaW9uGAMgASgDInMKGkFwcGx5VmlydHVhbE1hY2hpbmVSZXF1ZXN0EkAKD3ZpcnR1YWxfbWFjaGluZRgBIAEoCzInLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlZpcnR1YWxNYWNoaW5lEhMKC2NyZWF0ZV9vbmx5GAIgASgIIoIBChtBcHBseVZpcnR1YWxNYWNoaW5lUmVzcG9uc2USQAoPdmlydHVhbF9tYWNoaW5lGAEgASgLMicuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVmlydHVhbE1hY2hpbmUSEAoId2FybmluZ3MYAiADKAkSDwoHY3JlYXRlZBgDIAEoCCKCAQobRGVsZXRlVmlydHVhbE1hY2hpbmVSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAMgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iYAocRGVsZXRlVmlydHVhbE1hY2hpbmVSZXNwb25zZRJACg92aXJ0dWFsX21hY2hpbmUYASABKAsyJy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZSLHAQohVXBkYXRlVmlydHVhbE1hY2hpbmVTdGF0dXNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCRI9CgZzdGF0dXMYAyABKAsyLS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZVN0YXR1cxImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAQgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iZgoiVXBkYXRlVmlydHVhbE1hY2hpbmVTdGF0dXNSZXNwb25zZRJACg92aXJ0dWFsX21hY2hpbmUYASABKAsyJy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5WaXJ0dWFsTWFjaGluZSqfAQoaVmlydHVhbE1hY2hpbmVEZWxldGVQb2xpY3kSLQopVklSVFVBTF9NQUNISU5FX0RFTEVURV9QT0xJQ1lfVU5TUEVDSUZJRUQQABIoCiRWSVJUVUFMX01BQ0hJTkVfREVMRVRFX1BPTElDWV9ERUxFVEUQARIoCiRWSVJUVUFMX01BQ0hJTkVfREVMRVRFX1BPTElDWV9SRVRBSU4QAiqRAQoWVmlydHVhbE1hY2hpbmVSdW5TdGF0ZRIpCiVWSVJUVUFMX01BQ0hJTkVfUlVOX1NUQVRFX1VOU1BFQ0lGSUVEEAASJQohVklSVFVBTF9NQUNISU5FX1JVTl9TVEFURV9SVU5OSU5HEAESJQohVklSVFVBTF9NQUNISU5FX1JVTl9TVEFURV9TVE9QUEVEEAIyvwYKFVZpcnR1YWxNYWNoaW5lU2VydmljZRJ6ChFHZXRWaXJ0dWFsTWFjaGluZRIxLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkdldFZpcnR1YWxNYWNoaW5lUmVxdWVzdBoyLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkdldFZpcnR1YWxNYWNoaW5lUmVzcG9uc2USgAEKE0xpc3RWaXJ0dWFsTWFjaGluZXMSMy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5MaXN0VmlydHVhbE1hY2hpbmVzUmVxdWVzdBo0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxpc3RWaXJ0dWFsTWFjaGluZXNSZXNwb25zZRKFAQoUV2F0Y2hWaXJ0dWFsTWFjaGluZXMSNC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaFZpcnR1YWxNYWNoaW5lc1JlcXVlc3QaNS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaFZpcnR1YWxNYWNoaW5lc1Jlc3BvbnNlMAESgAEKE0FwcGx5VmlydHVhbE1hY2hpbmUSMy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5BcHBseVZpcnR1YWxNYWNoaW5lUmVxdWVzdBo0Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5VmlydHVhbE1hY2hpbmVSZXNwb25zZRKDAQoURGVsZXRlVmlydHVhbE1hY2hpbmUSNC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5EZWxldGVWaXJ0dWFsTWFjaGluZVJlcXVlc3QaNS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5EZWxldGVWaXJ0dWFsTWFjaGluZVJlc3BvbnNlEpUBChpVcGRhdGVWaXJ0dWFsTWFjaGluZVN0YXR1cxI6Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlVwZGF0ZVZpcnR1YWxNYWNoaW5lU3RhdHVzUmVxdWVzdBo7Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlVwZGF0ZVZpcnR1YWxNYWNoaW5lU3RhdHVzUmVzcG9uc2VCggIKG2NvbS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMUITVmlydHVhbE1hY2hpbmVQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9jb21wdXRlL3YxYWxwaGExO2NvbXB1dGV2MWFscGhhMaICA0hDWKoCF0hhbmdhci5Db21wdXRlLlYxYWxwaGExygIXSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTHiAiNIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6Q29tcHV0ZTo6VjFhbHBoYTFiBnByb3RvMw", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_interface, file_hangar_compute_v1alpha1_placement, file_hangar_meta_v1_meta, file_hangar_meta_v1_options, file_hangar_secrets_v1alpha1_secret, file_hangar_storage_v1alpha1_disk]);
 
 /**
  * VirtualMachine runs a disk image's own operating system, booted through
@@ -145,6 +147,14 @@ export type VirtualMachineSpec = Message<"hangar.compute.v1alpha1.VirtualMachine
    * @generated from field: hangar.compute.v1alpha1.VirtualMachinePlatform platform = 9;
    */
   platform?: VirtualMachinePlatform | undefined;
+
+  /**
+   * A TPM 2.0 for the guest. Set it when the VM is created: it cannot
+   * change afterwards. See docs/decisions/vm-tpm.md.
+   *
+   * @generated from field: hangar.compute.v1alpha1.VirtualMachineTPM tpm = 10;
+   */
+  tpm?: VirtualMachineTPM | undefined;
 };
 
 /**
@@ -153,6 +163,63 @@ export type VirtualMachineSpec = Message<"hangar.compute.v1alpha1.VirtualMachine
  */
 export const VirtualMachineSpecSchema: GenMessage<VirtualMachineSpec> = /*@__PURE__*/
   messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 1);
+
+/**
+ * VirtualMachineTPM is a VM's TPM. Its state is the VM's alone: kept, encrypted,
+ * on the VM's node across stops and restarts, deleted with the VM, and
+ * never part of an image or a snapshot.
+ *
+ * @generated from message hangar.compute.v1alpha1.VirtualMachineTPM
+ */
+export type VirtualMachineTPM = Message<"hangar.compute.v1alpha1.VirtualMachineTPM"> & {
+  /**
+   * Gives the guest a TPM 2.0 (CRB), empty when the VM is created. Needs
+   * an apiserver with a key-encryption key (--secrets-kek).
+   *
+   * @generated from field: bool enabled = 1;
+   */
+  enabled: boolean;
+
+  /**
+   * Reserved for starting the TPM from an existing state. Not supported
+   * yet: a VM that sets it is refused.
+   *
+   * @generated from field: hangar.compute.v1alpha1.VirtualMachineTPMSource source = 2;
+   */
+  source?: VirtualMachineTPMSource | undefined;
+
+  /**
+   * The key the TPM's state is encrypted with, sealed under the platform's
+   * key-encryption key. The apiserver's: it makes it when the VM is
+   * created, and no answer ever holds it.
+   *
+   * @generated from field: hangar.secrets.v1alpha1.SealedData sealed_key = 3;
+   */
+  sealedKey?: SealedData | undefined;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.VirtualMachineTPM.
+ * Use `create(VirtualMachineTPMSchema)` to create a new message.
+ */
+export const VirtualMachineTPMSchema: GenMessage<VirtualMachineTPM> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 2);
+
+/**
+ * VirtualMachineTPMSource is where a TPM's state would come from. It has no
+ * fields yet.
+ *
+ * @generated from message hangar.compute.v1alpha1.VirtualMachineTPMSource
+ */
+export type VirtualMachineTPMSource = Message<"hangar.compute.v1alpha1.VirtualMachineTPMSource"> & {
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.VirtualMachineTPMSource.
+ * Use `create(VirtualMachineTPMSourceSchema)` to create a new message.
+ */
+export const VirtualMachineTPMSourceSchema: GenMessage<VirtualMachineTPMSource> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 3);
 
 /**
  * VirtualMachinePlatform is what the VM's firmware tables, SMBIOS, tell
@@ -181,7 +248,7 @@ export type VirtualMachinePlatform = Message<"hangar.compute.v1alpha1.VirtualMac
  * Use `create(VirtualMachinePlatformSchema)` to create a new message.
  */
 export const VirtualMachinePlatformSchema: GenMessage<VirtualMachinePlatform> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 2);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 4);
 
 /**
  * VirtualMachineFileShare is a FileShare a VM declares.
@@ -209,7 +276,7 @@ export type VirtualMachineFileShare = Message<"hangar.compute.v1alpha1.VirtualMa
  * Use `create(VirtualMachineFileShareSchema)` to create a new message.
  */
 export const VirtualMachineFileShareSchema: GenMessage<VirtualMachineFileShare> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 3);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 5);
 
 /**
  * VirtualMachineResources sizes the VM. Each field is a quantity in
@@ -238,7 +305,7 @@ export type VirtualMachineResources = Message<"hangar.compute.v1alpha1.VirtualMa
  * Use `create(VirtualMachineResourcesSchema)` to create a new message.
  */
 export const VirtualMachineResourcesSchema: GenMessage<VirtualMachineResources> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 4);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 6);
 
 /**
  * VirtualMachineRootDisk is the disk a VM boots from.
@@ -273,7 +340,7 @@ export type VirtualMachineRootDisk = Message<"hangar.compute.v1alpha1.VirtualMac
  * Use `create(VirtualMachineRootDiskSchema)` to create a new message.
  */
 export const VirtualMachineRootDiskSchema: GenMessage<VirtualMachineRootDisk> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 5);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 7);
 
 /**
  * VirtualMachineImageDisk is a root disk the VM's controller makes from an
@@ -305,7 +372,7 @@ export type VirtualMachineImageDisk = Message<"hangar.compute.v1alpha1.VirtualMa
  * Use `create(VirtualMachineImageDiskSchema)` to create a new message.
  */
 export const VirtualMachineImageDiskSchema: GenMessage<VirtualMachineImageDisk> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 6);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 8);
 
 /**
  * VirtualMachineDisk is a Disk attached to a VM.
@@ -326,7 +393,7 @@ export type VirtualMachineDisk = Message<"hangar.compute.v1alpha1.VirtualMachine
  * Use `create(VirtualMachineDiskSchema)` to create a new message.
  */
 export const VirtualMachineDiskSchema: GenMessage<VirtualMachineDisk> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 7);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 9);
 
 /**
  * VirtualMachineStatus is the observed state of a virtual machine.
@@ -382,7 +449,7 @@ export type VirtualMachineStatus = Message<"hangar.compute.v1alpha1.VirtualMachi
  * Use `create(VirtualMachineStatusSchema)` to create a new message.
  */
 export const VirtualMachineStatusSchema: GenMessage<VirtualMachineStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 8);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 10);
 
 /**
  * VirtualMachineSSHHostKey is a host key of a VM's sshd, as recorded.
@@ -408,7 +475,7 @@ export type VirtualMachineSSHHostKey = Message<"hangar.compute.v1alpha1.VirtualM
  * Use `create(VirtualMachineSSHHostKeySchema)` to create a new message.
  */
 export const VirtualMachineSSHHostKeySchema: GenMessage<VirtualMachineSSHHostKey> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 9);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 11);
 
 /**
  * VirtualMachineInterfaceStatus is one of a VM's interfaces as it is.
@@ -449,7 +516,7 @@ export type VirtualMachineInterfaceStatus = Message<"hangar.compute.v1alpha1.Vir
  * Use `create(VirtualMachineInterfaceStatusSchema)` to create a new message.
  */
 export const VirtualMachineInterfaceStatusSchema: GenMessage<VirtualMachineInterfaceStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 10);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 12);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetVirtualMachineRequest
@@ -471,7 +538,7 @@ export type GetVirtualMachineRequest = Message<"hangar.compute.v1alpha1.GetVirtu
  * Use `create(GetVirtualMachineRequestSchema)` to create a new message.
  */
 export const GetVirtualMachineRequestSchema: GenMessage<GetVirtualMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 11);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 13);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetVirtualMachineResponse
@@ -488,7 +555,7 @@ export type GetVirtualMachineResponse = Message<"hangar.compute.v1alpha1.GetVirt
  * Use `create(GetVirtualMachineResponseSchema)` to create a new message.
  */
 export const GetVirtualMachineResponseSchema: GenMessage<GetVirtualMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 12);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 14);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListVirtualMachinesRequest
@@ -522,7 +589,7 @@ export type ListVirtualMachinesRequest = Message<"hangar.compute.v1alpha1.ListVi
  * Use `create(ListVirtualMachinesRequestSchema)` to create a new message.
  */
 export const ListVirtualMachinesRequestSchema: GenMessage<ListVirtualMachinesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 13);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 15);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListVirtualMachinesResponse
@@ -549,7 +616,7 @@ export type ListVirtualMachinesResponse = Message<"hangar.compute.v1alpha1.ListV
  * Use `create(ListVirtualMachinesResponseSchema)` to create a new message.
  */
 export const ListVirtualMachinesResponseSchema: GenMessage<ListVirtualMachinesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 14);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 16);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchVirtualMachinesRequest
@@ -578,7 +645,7 @@ export type WatchVirtualMachinesRequest = Message<"hangar.compute.v1alpha1.Watch
  * Use `create(WatchVirtualMachinesRequestSchema)` to create a new message.
  */
 export const WatchVirtualMachinesRequestSchema: GenMessage<WatchVirtualMachinesRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 15);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 17);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchVirtualMachinesResponse
@@ -605,7 +672,7 @@ export type WatchVirtualMachinesResponse = Message<"hangar.compute.v1alpha1.Watc
  * Use `create(WatchVirtualMachinesResponseSchema)` to create a new message.
  */
 export const WatchVirtualMachinesResponseSchema: GenMessage<WatchVirtualMachinesResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 16);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 18);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyVirtualMachineRequest
@@ -629,7 +696,7 @@ export type ApplyVirtualMachineRequest = Message<"hangar.compute.v1alpha1.ApplyV
  * Use `create(ApplyVirtualMachineRequestSchema)` to create a new message.
  */
 export const ApplyVirtualMachineRequestSchema: GenMessage<ApplyVirtualMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 17);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 19);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyVirtualMachineResponse
@@ -656,7 +723,7 @@ export type ApplyVirtualMachineResponse = Message<"hangar.compute.v1alpha1.Apply
  * Use `create(ApplyVirtualMachineResponseSchema)` to create a new message.
  */
 export const ApplyVirtualMachineResponseSchema: GenMessage<ApplyVirtualMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 18);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 20);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteVirtualMachineRequest
@@ -683,7 +750,7 @@ export type DeleteVirtualMachineRequest = Message<"hangar.compute.v1alpha1.Delet
  * Use `create(DeleteVirtualMachineRequestSchema)` to create a new message.
  */
 export const DeleteVirtualMachineRequestSchema: GenMessage<DeleteVirtualMachineRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 19);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 21);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteVirtualMachineResponse
@@ -700,7 +767,7 @@ export type DeleteVirtualMachineResponse = Message<"hangar.compute.v1alpha1.Dele
  * Use `create(DeleteVirtualMachineResponseSchema)` to create a new message.
  */
 export const DeleteVirtualMachineResponseSchema: GenMessage<DeleteVirtualMachineResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 20);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 22);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateVirtualMachineStatusRequest
@@ -732,7 +799,7 @@ export type UpdateVirtualMachineStatusRequest = Message<"hangar.compute.v1alpha1
  * Use `create(UpdateVirtualMachineStatusRequestSchema)` to create a new message.
  */
 export const UpdateVirtualMachineStatusRequestSchema: GenMessage<UpdateVirtualMachineStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 21);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 23);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateVirtualMachineStatusResponse
@@ -749,7 +816,7 @@ export type UpdateVirtualMachineStatusResponse = Message<"hangar.compute.v1alpha
  * Use `create(UpdateVirtualMachineStatusResponseSchema)` to create a new message.
  */
 export const UpdateVirtualMachineStatusResponseSchema: GenMessage<UpdateVirtualMachineStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 22);
+  messageDesc(file_hangar_compute_v1alpha1_virtual_machine, 24);
 
 /**
  * VirtualMachineDeletePolicy says what becomes of a root disk made for a VM

@@ -108,8 +108,13 @@ type sandbox struct {
 	// Dir is the VM's directory, the one path writable in the unit.
 	Dir string
 	// Binds are the files the unit reads besides: the launcher, Cloud
-	// Hypervisor, the kernel and the initramfs.
+	// Hypervisor, the kernel and the initramfs, or the firmware, and a TPM
+	// VM's swtpm bundle.
 	Binds []string
+	// TPMKey is a TPM VM's key, its unit's credential, and NoFile the hard
+	// RLIMIT_NOFILE its unit has, which vmm-exec gives swtpm.
+	TPMKey string
+	NoFile uint64
 }
 
 // vmTasks are the unit's tasks past two per vCPU; helperTasks, a firmware
@@ -125,6 +130,18 @@ func unitTasks(spec driver.VMSpec) uint64 {
 	n := uint64(vmTasks + 2*spec.VCPUs)
 	if spec.Firmware {
 		n += helperTasks
+	}
+	if spec.TPM {
+		n += tpmTasks
+	}
+	return n
+}
+
+// unitMemoryMax is the unit's MemoryMax: the VM's, and a TPM VM's swtpm's.
+func unitMemoryMax(spec driver.VMSpec) uint64 {
+	n := vmMemoryMax(spec.MemoryMiB)
+	if spec.TPM {
+		n += tpmMemory
 	}
 	return n
 }
@@ -198,8 +215,8 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 	for _, p := range sb.Binds {
 		binds = append(binds, bindPath{Source: p, Dest: p})
 	}
-	memory := vmMemoryMax(spec.MemoryMiB)
-	return []sd.Property{
+	memory := unitMemoryMax(spec)
+	props := []sd.Property{
 		// An empty root, as the jailer's chroot. Not ProtectSystem, PrivateTmp
 		// or ProtectHome, which bind the host's root again, add writable
 		// directories, or drop binds (docs/decisions/node-agent.md).
@@ -250,6 +267,15 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 		property("MemoryMax", memory),
 		property("TasksMax", unitTasks(spec)),
 	}
+	if spec.TPM {
+		props = append(props,
+			// The key, root's alone in the unit, read by the launcher.
+			property("LoadCredential", []pathPair{{tpmCredential, sb.TPMKey}}),
+			property("LimitNOFILE", sb.NoFile),
+			property("LimitNOFILESoft", uint64(unitNoFileSoft)),
+		)
+	}
+	return props
 }
 
 // dbusSystemd is systemd over D-Bus. It follows the driver's units and

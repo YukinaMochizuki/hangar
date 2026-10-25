@@ -54,6 +54,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Disks:              vols,
 		Firmware:           true,
 		SystemSerialNumber: m.GetSpec().GetFirmware().GetSystemSerialNumber(),
+		TPM:                m.GetSpec().GetFirmware().GetTpm(),
 		Interfaces:         ifaces,
 		Nameservers:        nameservers,
 		Search:             search,
@@ -66,6 +67,11 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		vm = nil
 	}
 	if vm == nil {
+		if spec.TPM {
+			if err := a.putTPMKey(ctx, m); err != nil {
+				return nil, blocked(computeapi.ReasonBootFailed, err)
+			}
+		}
 		if err := a.cfg.Drivers.Hypervisor.Start(ctx, spec); err != nil {
 			return nil, blocked(computeapi.ReasonBootFailed, err)
 		}

@@ -234,6 +234,10 @@
           },
           "type": "array"
         },
+        "tpm": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineTPM",
+          "description": "A TPM 2.0 for the guest. Set it when the VM is created: it cannot change afterwards. See docs/decisions/vm-tpm.md."
+        },
         "userData": {
           "description": "Handed to the guest's cloud-init unchanged, as user-data, such as a #cloud-config document or a script; at most 16 KiB. cloud-init runs it on the VM's first boot only, so changing it neither restarts the VM nor runs again in it. See docs/decisions/vm-boot.md.",
           "type": "string"
@@ -282,6 +286,31 @@
           "type": "array"
         }
       },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineTPM": {
+      "additionalProperties": false,
+      "description": "VirtualMachineTPM is a VM's TPM. Its state is the VM's alone: kept, encrypted, on the VM's node across stops and restarts, deleted with the VM, and never part of an image or a snapshot.",
+      "properties": {
+        "enabled": {
+          "description": "Gives the guest a TPM 2.0 (CRB), empty when the VM is created. Needs an apiserver with a key-encryption key (--secrets-kek).",
+          "type": "boolean"
+        },
+        "sealedKey": {
+          "$ref": "#/$defs/hangar.secrets.v1alpha1.SealedData",
+          "description": "The key the TPM's state is encrypted with, sealed under the platform's key-encryption key. The apiserver's: it makes it when the VM is created, and no answer ever holds it."
+        },
+        "source": {
+          "$ref": "#/$defs/hangar.compute.v1alpha1.VirtualMachineTPMSource",
+          "description": "Reserved for starting the TPM from an existing state. Not supported yet: a VM that sets it is refused."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.compute.v1alpha1.VirtualMachineTPMSource": {
+      "additionalProperties": false,
+      "description": "VirtualMachineTPMSource is where a TPM's state would come from. It has no fields yet.",
+      "properties": {},
       "type": "object"
     },
     "hangar.meta.v1.Condition": {
@@ -419,6 +448,35 @@
           "type": "string"
         },
         "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.secrets.v1alpha1.SealedData": {
+      "additionalProperties": false,
+      "description": "SealedData is a secret's data encrypted under a key of its own, which is itself encrypted under the platform's key-encryption key.",
+      "properties": {
+        "ciphertext": {
+          "contentEncoding": "base64",
+          "type": "string"
+        },
+        "contentHmac": {
+          "description": "An HMAC of the data, as status.content_hmac shows it.",
+          "type": "string"
+        },
+        "kekId": {
+          "description": "Names the key-encryption key that wrapped wrapped_key.",
+          "type": "string"
+        },
+        "nonce": {
+          "contentEncoding": "base64",
+          "description": "The data, encrypted under the secret's own key.",
+          "type": "string"
+        },
+        "wrappedKey": {
+          "contentEncoding": "base64",
+          "description": "The secret's own key, encrypted under the key-encryption key.",
           "type": "string"
         }
       },

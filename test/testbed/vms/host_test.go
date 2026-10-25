@@ -300,11 +300,17 @@ func openHypervisorOn(t *testing.T, grace time.Duration, cpus []int) *chvm.Hyper
 	if _, err := os.Stat(converter); err != nil {
 		converter = ""
 	}
+	// And TPM VMs, when the swtpm bundle is built.
+	swtpm := in.Swtpm
+	if _, err := os.Stat(swtpm); err != nil {
+		swtpm = ""
+	}
 	hv, err := chvm.New(context.Background(), chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: grace,
 		Firmware: diskimgtest.Firmware(t), FirmwareStopGrace: grace,
 		MachineCPUs: cpus, ConverterInitramfs: converter,
+		Swtpm: swtpm, TPMKeys: tpmKeys,
 	})
 	if err != nil {
 		t.Fatal(err)

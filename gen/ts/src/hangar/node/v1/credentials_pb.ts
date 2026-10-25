@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/credentials.proto.
  */
 export const file_hangar_node_v1_credentials: GenFile = /*@__PURE__*/
-  fileDesc("CiBoYW5nYXIvbm9kZS92MS9jcmVkZW50aWFscy5wcm90bxIOaGFuZ2FyLm5vZGUudjEiRgoiUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEg8KB21hY2hpbmUYAiABKAkicwojUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2USEAoIcmVnaXN0cnkYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAkSFgoOaWRlbnRpdHlfdG9rZW4YBCABKAkypgEKG0ltYWdlUHVsbENyZWRlbnRpYWxzU2VydmljZRKGAQobUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzEjIuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBozLmhhbmdhci5ub2RlLnYxLlJlc29sdmVJbWFnZVB1bGxDcmVkZW50aWFsc1Jlc3BvbnNlQsABChJjb20uaGFuZ2FyLm5vZGUudjFCEENyZWRlbnRpYWxzUHJvdG9QAVo+Z2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvbm9kZS92MTtub2RldjGiAgNITliqAg5IYW5nYXIuTm9kZS5WMcoCDkhhbmdhclxOb2RlXFYx4gIaSGFuZ2FyXE5vZGVcVjFcR1BCTWV0YWRhdGHqAhBIYW5nYXI6Ok5vZGU6OlYxYgZwcm90bzM");
+  fileDesc("CiBoYW5nYXIvbm9kZS92MS9jcmVkZW50aWFscy5wcm90bxIOaGFuZ2FyLm5vZGUudjEiRgoiUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEg8KB21hY2hpbmUYAiABKAkicwojUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2USEAoIcmVnaXN0cnkYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAkSFgoOaWRlbnRpdHlfdG9rZW4YBCABKAkiPwobUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDwoHbWFjaGluZRgCIAEoCSIrChxSZXNvbHZlVmlydHVhbFRQTUtleVJlc3BvbnNlEgsKA2tleRgBIAEoDDKmAQobSW1hZ2VQdWxsQ3JlZGVudGlhbHNTZXJ2aWNlEoYBChtSZXNvbHZlSW1hZ2VQdWxsQ3JlZGVudGlhbHMSMi5oYW5nYXIubm9kZS52MS5SZXNvbHZlSW1hZ2VQdWxsQ3JlZGVudGlhbHNSZXF1ZXN0GjMuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2UyiQEKFFZpcnR1YWxUUE1LZXlTZXJ2aWNlEnEKFFJlc29sdmVWaXJ0dWFsVFBNS2V5EisuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXNwb25zZULAAQoSY29tLmhhbmdhci5ub2RlLnYxQhBDcmVkZW50aWFsc1Byb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z");
 
 /**
  * @generated from message hangar.node.v1.ResolveImagePullCredentialsRequest
@@ -80,6 +80,49 @@ export const ResolveImagePullCredentialsResponseSchema: GenMessage<ResolveImageP
   messageDesc(file_hangar_node_v1_credentials, 1);
 
 /**
+ * @generated from message hangar.node.v1.ResolveVirtualTPMKeyRequest
+ */
+export type ResolveVirtualTPMKeyRequest = Message<"hangar.node.v1.ResolveVirtualTPMKeyRequest"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * Names the Machine.
+   *
+   * @generated from field: string machine = 2;
+   */
+  machine: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.ResolveVirtualTPMKeyRequest.
+ * Use `create(ResolveVirtualTPMKeyRequestSchema)` to create a new message.
+ */
+export const ResolveVirtualTPMKeyRequestSchema: GenMessage<ResolveVirtualTPMKeyRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_credentials, 2);
+
+/**
+ * @generated from message hangar.node.v1.ResolveVirtualTPMKeyResponse
+ */
+export type ResolveVirtualTPMKeyResponse = Message<"hangar.node.v1.ResolveVirtualTPMKeyResponse"> & {
+  /**
+   * 32 bytes.
+   *
+   * @generated from field: bytes key = 1;
+   */
+  key: Uint8Array;
+};
+
+/**
+ * Describes the message hangar.node.v1.ResolveVirtualTPMKeyResponse.
+ * Use `create(ResolveVirtualTPMKeyResponseSchema)` to create a new message.
+ */
+export const ResolveVirtualTPMKeyResponseSchema: GenMessage<ResolveVirtualTPMKeyResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_credentials, 3);
+
+/**
  * ImagePullCredentialsService gives a node the registry login to pull a
  * machine's image with.
  *
@@ -101,4 +144,26 @@ export const ImagePullCredentialsService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_node_v1_credentials, 0);
+
+/**
+ * VirtualTPMKeyService gives a node the key a machine's TPM state is
+ * encrypted with. See docs/decisions/vm-tpm.md.
+ *
+ * @generated from service hangar.node.v1.VirtualTPMKeyService
+ */
+export const VirtualTPMKeyService: GenService<{
+  /**
+   * ResolveVirtualTPMKey returns the TPM key of the machine, which must
+   * have a TPM and be placed on the asking node. The node writes it to a
+   * file only root reads, for the machine's VM, and never logs it.
+   *
+   * @generated from rpc hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey
+   */
+  resolveVirtualTPMKey: {
+    methodKind: "unary";
+    input: typeof ResolveVirtualTPMKeyRequestSchema;
+    output: typeof ResolveVirtualTPMKeyResponseSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_hangar_node_v1_credentials, 1);
 

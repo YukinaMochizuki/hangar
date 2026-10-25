@@ -44,6 +44,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
 | `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
 | `make guest-converter` | Build the converter initramfs converter VMs boot, into `bin/guest/converter.cpio`: hangar-init and qemu-img from pinned Alpine packages (`docs/runbook/converter.md`); no C toolchain |
+| `make host-swtpm` | Build the swtpm bundle TPM VMs run, into `bin/host/swtpm.tar` and unpacked as `bin/host/swtpm`: swtpm, its libraries and the musl loader from pinned Alpine packages (`docs/runbook/swtpm.md`); no C toolchain |
 | `make guest-initramfs-testbed` | Build the L4 tests' own initramfs into `bin/guest-testbed/`, hangar-init with the `testbed` tag, whose FileShare servers run what the host asks (`docs/runbook/guest-kernel.md`); never on a host |
 | `make tools` | Print the pinned tool versions |
 
@@ -80,5 +81,6 @@ Every other tool is pinned in the repo (`go.mod`, `tools/tools.mod`, or
 | `docs/runbook/vm-images.md` | You apply the image catalogue (`deploy/catalog/images.yaml`), move an image to a newer file, or add or remove one, capture a VM's disk as a project's own `CustomImage`, or upload a file as one (`hangar image upload`) |
 | `docs/runbook/guest-kernel.md` | You build the guest kernel or initramfs, change the kernel config, or bump its version |
 | `docs/runbook/converter.md` | You build the converter initramfs, or bump the qemu-img or the Alpine packages it carries |
+| `docs/runbook/swtpm.md` | You build the swtpm bundle a VM's TPM runs, bump swtpm or the Alpine packages it carries, or change how the launcher runs it |
 
 When you add a doc, add it to this index.

@@ -117,10 +117,10 @@ func validateImagePullSecrets(names []string) error {
 }
 
 // PrepareSecrets checks, before the apiserver serves, that it can open
-// every stored secret, and seals again under the current KEK those a
-// previous one sealed. It fails when there are secrets and no KEK, or a
-// secret the KEKs do not open: the KEK is wrong or missing. Nothing is
-// written until every secret has opened.
+// every stored secret and every VM's TPM key, and seals again under the
+// current KEK those a previous one sealed. It fails when there are secrets
+// or TPM keys and no KEK, or one the KEKs do not open: the KEK is wrong or
+// missing. Nothing is written until every one of them has opened.
 func (s *Server) PrepareSecrets(ctx context.Context) error {
 	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Secret.Kind})
 	if err != nil {
@@ -128,6 +128,10 @@ func (s *Server) PrepareSecrets(ctx context.Context) error {
 	}
 	if len(objs) > 0 && s.cfg.Secrets == nil {
 		return fmt.Errorf("the store holds %d secrets, and this apiserver has no key-encryption key to open them (--secrets-kek)", len(objs))
+	}
+	vms, err := s.openVMTPMKeys(ctx)
+	if err != nil {
+		return err
 	}
 	b := s.backend(registry.Secret)
 	stored := make([]*secretsv1alpha1.Secret, len(objs))
@@ -143,6 +147,9 @@ func (s *Server) PrepareSecrets(ctx context.Context) error {
 			return fmt.Errorf("secret %s in project %s: %w: the key-encryption key is wrong, or a previous one is missing (--secrets-kek-previous)", o.Name, o.Project, err)
 		}
 		stored[i] = sec
+	}
+	if err := s.rewrapVMTPMKeys(ctx, vms); err != nil {
+		return err
 	}
 	rewrapped := 0
 	for i, sec := range stored {

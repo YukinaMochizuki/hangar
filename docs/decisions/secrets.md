@@ -45,7 +45,9 @@ unpacked once into a base, and cloned for every machine of that digest.
   starts and refuses Secret writes. Given previous KEKs
   (`--secrets-kek-previous`), it seals again under the current one what they
   sealed: that is the rotation (`docs/runbook/host-bootstrap.md`). A KMS can
-  later take the KEK's place behind the same keyring.
+  later take the KEK's place behind the same keyring. A VM's TPM key is
+  sealed under the KEK too, and checked and sealed again in the same pass
+  (`docs/decisions/vm-tpm.md`).
 - **`Container.spec.imagePullSecrets`** names secrets in the container's
   project, mirrored onto its machine. Whoever may apply a container in a
   project may name any secret in it, as in Kubernetes: naming one gives the
@@ -62,7 +64,9 @@ unpacked once into a base, and cloned for every machine of that digest.
   names that holds one, for the registry of the machine's own image. The
   node asks each time the Images driver needs a login, keeps it in memory
   for that pull, and never writes or logs it. The apiserver logs each login
-  given (node, machine, secret, registry), never the login.
+  given (node, machine, secret, registry), never the login. A VM's TPM key
+  reaches its node the same way, through `VirtualTPMKeyService`
+  (`docs/decisions/vm-tpm.md`).
 - **The cache key is not authorization.** Content is cached by digest and
   shared across tenants, but a digest proves only what the content is, not
   who may have it, and a registry's word that it has a digest proves

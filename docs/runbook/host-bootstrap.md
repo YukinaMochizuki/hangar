@@ -1179,6 +1179,14 @@ The hypervisor driver (`internal/node/driver/chvm`,
   installs at the release and sha256 pinned in `deploy/host/versions.env`
   and `verify.sh` checks; `--vm-firmware` names another. Without the file
   the agent starts, warns, and refuses VirtualMachines.
+- For machines with a TPM, the swtpm bundle (`docs/runbook/swtpm.md`):
+  `/usr/local/lib/hangar/swtpm`, a link the `release` step points at the
+  release's `swtpm.tar` unpacked under `/usr/local/lib/hangar/swtpm.d/`,
+  whose `VERSION` `verify.sh` checks against `HANGAR_SWTPM_VERSION`;
+  `--vm-swtpm` names another. Without it the agent starts, warns, and
+  refuses machines with a TPM. Their keys are in `/run/hangar/vtpm`
+  (`--vm-tpm-keys`), one file each, root's, which each VM's unit loads as
+  a credential.
 - `/var/lib/hangar/vms` (`--vm-dir`), the `hangar/vms` dataset the `zfs`
   step makes, `0700` and
   root's: each VM's spec, boot disk, sockets and console logs. Its path must

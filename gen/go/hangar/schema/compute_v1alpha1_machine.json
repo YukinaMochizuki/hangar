@@ -116,6 +116,10 @@
         "systemSerialNumber": {
           "description": "The SMBIOS system serial number the guest is given: printable ASCII, at most 64 bytes. Empty is the platform's, which points the guest's cloud-init at cloud_init. Changing it restarts the machine.",
           "type": "string"
+        },
+        "tpm": {
+          "description": "Gives the guest a TPM 2.0 (CRB), whose state the node keeps, encrypted, across the machine's restarts and deletes with it. The node starts the machine only once it holds the key the state is encrypted with. Changing it restarts the machine.",
+          "type": "boolean"
         }
       },
       "type": "object"

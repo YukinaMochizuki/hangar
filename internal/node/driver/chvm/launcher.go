@@ -96,6 +96,12 @@ type Launcher struct {
 	// DropCaps leaves the launcher only what it needs once Cloud
 	// Hypervisor runs, with a VM user. Nil means dropCaps(launcherKeeps).
 	DropCaps func() error
+	// Credentials is where the unit's credentials are, a TPM VM's key
+	// among them. Empty means $CREDENTIALS_DIRECTORY.
+	Credentials string
+	// OwnTPM makes a TPM VM's state directory its user's for the run. Nil
+	// means ownTPMDir.
+	OwnTPM func(path string, uid int) error
 }
 
 // LauncherMain is hangar-node vmm [--dir DIR] UID, returning its exit code.
@@ -178,6 +184,9 @@ func (l *Launcher) defaults() {
 	}
 	if l.DropCaps == nil {
 		l.DropCaps = func() error { return dropCaps(launcherKeeps) }
+	}
+	if l.OwnTPM == nil {
+		l.OwnTPM = ownTPMDir
 	}
 }
 
@@ -330,6 +339,15 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		serial = fifo
 	}
 	defer func() { _ = serial.Close() }()
+	// swtpm listens before Cloud Hypervisor connects, and ends after it has
+	// exited: the deferred stop runs once run has waited for it.
+	if ln.Spec.TPM {
+		tpm, err := l.startTPM(ln, dir)
+		if err != nil {
+			return 0, fmt.Errorf("the VM's TPM: %w", err)
+		}
+		defer tpm.stop(l.KillGrace)
+	}
 
 	// The console comes on Cloud Hypervisor's stdout; its stdin, the
 	// console's input, is held open and never written.

@@ -190,7 +190,9 @@ type Agent struct {
 	wakes  map[string]time.Time
 	// pullCreds gives the logins machines' images are pulled with.
 	pullCreds nodev1connect.ImagePullCredentialsServiceClient
-	images    *imageMaker
+	// tpmKeys gives the keys machines' TPM states are encrypted with.
+	tpmKeys nodev1connect.VirtualTPMKeyServiceClient
+	images  *imageMaker
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
 	host sync.Mutex
@@ -351,6 +353,7 @@ func New(cfg Config) (*Agent, error) {
 		customImages: storagev1alpha1connect.NewCustomImageServiceClient(cfg.HTTP, cfg.BaseURL),
 		captures:     captures,
 		pullCreds:    nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
+		tpmKeys:      nodev1connect.NewVirtualTPMKeyServiceClient(cfg.HTTP, cfg.BaseURL),
 		images:       images,
 		netChecked:   map[string]int64{},
 		told:         map[string]toldIPv6{},

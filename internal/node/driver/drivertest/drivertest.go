@@ -91,6 +91,12 @@ type Host struct {
 	Exec *ExecPrograms
 	// Firmware says the hypervisor boots firmware VMs (VMSpec.Firmware).
 	Firmware bool
+	// HasTPMState reports whether the hypervisor keeps a TPM state for the
+	// machine, and DropLog removes the machine's console log alone, as if
+	// it had never been written. The TPM state part runs only with both,
+	// on a host with Firmware.
+	HasTPMState func(t *testing.T, machineUID string) bool
+	DropLog     func(t *testing.T, machineUID string)
 	// IPv6Prefix is the prefix the network driver was given, invalid for
 	// none; the suite's IPv6 part runs only with one.
 	IPv6Prefix netip.Prefix
@@ -173,6 +179,10 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })
 	part("firmware", firmware, func(h Host) bool { return vms(h) && h.Firmware })
+	part("TPM keys", tpmKeys, func(h Host) bool { return h.Hypervisor != nil })
+	part("TPM state", tpmState, func(h Host) bool {
+		return vms(h) && h.Firmware && h.HasTPMState != nil && h.DropLog != nil
+	})
 	part("file share servers", shareServers, vms)
 	part("boot exports", bootExports, func(h Host) bool { return vms(h) && h.BootDisk != nil })
 	part("guest IPv6", guestIPv6, func(h Host) bool {

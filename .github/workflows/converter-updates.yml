@@ -1,8 +1,9 @@
 name: converter-updates
 
 # Once a week, compares the Alpine packages the converter initramfs pins
-# (guest/converter/converter.env) with Alpine v3.22's index, main and
-# community, and its security database, and opens one issue naming each
+# (guest/converter/converter.env), and those the swtpm bundle pins
+# (deploy/swtpm/swtpm.env), with Alpine v3.22's index, main and community,
+# and its security database, and opens, for each, one issue naming each
 # package that has a newer version, the versions, and the CVEs fixed since,
 # labelled security if there are any; none if an open issue of the same
 # title is there already (tools/converterdeps, docs/runbook/converter.md).
@@ -38,3 +39,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: go run ./tools/converterdeps updates -env guest/converter/converter.env -issue -repo "$GITHUB_REPOSITORY"
+      - name: Compare the swtpm bundle's pins with Alpine's
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: go run ./tools/converterdeps updates -prefix HANGAR_SWTPM -env deploy/swtpm/swtpm.env -issue -repo "$GITHUB_REPOSITORY"

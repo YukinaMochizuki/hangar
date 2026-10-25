@@ -28,6 +28,8 @@ const (
 	// ImagePullCredentialsServiceName is the fully-qualified name of the ImagePullCredentialsService
 	// service.
 	ImagePullCredentialsServiceName = "hangar.node.v1.ImagePullCredentialsService"
+	// VirtualTPMKeyServiceName is the fully-qualified name of the VirtualTPMKeyService service.
+	VirtualTPMKeyServiceName = "hangar.node.v1.VirtualTPMKeyService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -41,6 +43,9 @@ const (
 	// ImagePullCredentialsServiceResolveImagePullCredentialsProcedure is the fully-qualified name of
 	// the ImagePullCredentialsService's ResolveImagePullCredentials RPC.
 	ImagePullCredentialsServiceResolveImagePullCredentialsProcedure = "/hangar.node.v1.ImagePullCredentialsService/ResolveImagePullCredentials"
+	// VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure is the fully-qualified name of the
+	// VirtualTPMKeyService's ResolveVirtualTPMKey RPC.
+	VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure = "/hangar.node.v1.VirtualTPMKeyService/ResolveVirtualTPMKey"
 )
 
 // ImagePullCredentialsServiceClient is a client for the hangar.node.v1.ImagePullCredentialsService
@@ -122,4 +127,81 @@ type UnimplementedImagePullCredentialsServiceHandler struct{}
 
 func (UnimplementedImagePullCredentialsServiceHandler) ResolveImagePullCredentials(context.Context, *connect.Request[v1.ResolveImagePullCredentialsRequest]) (*connect.Response[v1.ResolveImagePullCredentialsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.ImagePullCredentialsService.ResolveImagePullCredentials is not implemented"))
+}
+
+// VirtualTPMKeyServiceClient is a client for the hangar.node.v1.VirtualTPMKeyService service.
+type VirtualTPMKeyServiceClient interface {
+	// ResolveVirtualTPMKey returns the TPM key of the machine, which must
+	// have a TPM and be placed on the asking node. The node writes it to a
+	// file only root reads, for the machine's VM, and never logs it.
+	ResolveVirtualTPMKey(context.Context, *connect.Request[v1.ResolveVirtualTPMKeyRequest]) (*connect.Response[v1.ResolveVirtualTPMKeyResponse], error)
+}
+
+// NewVirtualTPMKeyServiceClient constructs a client for the hangar.node.v1.VirtualTPMKeyService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewVirtualTPMKeyServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) VirtualTPMKeyServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	virtualTPMKeyServiceMethods := v1.File_hangar_node_v1_credentials_proto.Services().ByName("VirtualTPMKeyService").Methods()
+	return &virtualTPMKeyServiceClient{
+		resolveVirtualTPMKey: connect.NewClient[v1.ResolveVirtualTPMKeyRequest, v1.ResolveVirtualTPMKeyResponse](
+			httpClient,
+			baseURL+VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure,
+			connect.WithSchema(virtualTPMKeyServiceMethods.ByName("ResolveVirtualTPMKey")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// virtualTPMKeyServiceClient implements VirtualTPMKeyServiceClient.
+type virtualTPMKeyServiceClient struct {
+	resolveVirtualTPMKey *connect.Client[v1.ResolveVirtualTPMKeyRequest, v1.ResolveVirtualTPMKeyResponse]
+}
+
+// ResolveVirtualTPMKey calls hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey.
+func (c *virtualTPMKeyServiceClient) ResolveVirtualTPMKey(ctx context.Context, req *connect.Request[v1.ResolveVirtualTPMKeyRequest]) (*connect.Response[v1.ResolveVirtualTPMKeyResponse], error) {
+	return c.resolveVirtualTPMKey.CallUnary(ctx, req)
+}
+
+// VirtualTPMKeyServiceHandler is an implementation of the hangar.node.v1.VirtualTPMKeyService
+// service.
+type VirtualTPMKeyServiceHandler interface {
+	// ResolveVirtualTPMKey returns the TPM key of the machine, which must
+	// have a TPM and be placed on the asking node. The node writes it to a
+	// file only root reads, for the machine's VM, and never logs it.
+	ResolveVirtualTPMKey(context.Context, *connect.Request[v1.ResolveVirtualTPMKeyRequest]) (*connect.Response[v1.ResolveVirtualTPMKeyResponse], error)
+}
+
+// NewVirtualTPMKeyServiceHandler builds an HTTP handler from the service implementation. It returns
+// the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewVirtualTPMKeyServiceHandler(svc VirtualTPMKeyServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	virtualTPMKeyServiceMethods := v1.File_hangar_node_v1_credentials_proto.Services().ByName("VirtualTPMKeyService").Methods()
+	virtualTPMKeyServiceResolveVirtualTPMKeyHandler := connect.NewUnaryHandler(
+		VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure,
+		svc.ResolveVirtualTPMKey,
+		connect.WithSchema(virtualTPMKeyServiceMethods.ByName("ResolveVirtualTPMKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/hangar.node.v1.VirtualTPMKeyService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure:
+			virtualTPMKeyServiceResolveVirtualTPMKeyHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedVirtualTPMKeyServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedVirtualTPMKeyServiceHandler struct{}
+
+func (UnimplementedVirtualTPMKeyServiceHandler) ResolveVirtualTPMKey(context.Context, *connect.Request[v1.ResolveVirtualTPMKeyRequest]) (*connect.Response[v1.ResolveVirtualTPMKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey is not implemented"))
 }

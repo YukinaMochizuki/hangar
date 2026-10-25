@@ -66,6 +66,9 @@ type hostFlags struct {
 	cmdline, vmDir                  string
 	// firmware is what VirtualMachines boot through.
 	firmware string
+	// swtpm is the bundle TPM VMs' TPMs run from, and tpmKeys where each
+	// one's key is.
+	swtpm, tpmKeys string
 	// reservedCPU is --reserved-cpu: the CPUs no VM may use.
 	reservedCPU string
 	// converterInitrd, uploadDir, inspectTimeout and convertTimeout are
@@ -350,6 +353,8 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.cmdline, "guest-cmdline", defaultCmdline, "for --drivers=host, the guests' kernel command line")
 	fs.StringVar(&hf.vmDir, "vm-dir", chvm.DefaultDir, "for --drivers=host, the VMs' directories: what they run, their sockets and their console logs")
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
+	fs.StringVar(&hf.swtpm, "vm-swtpm", "/usr/local/lib/hangar/swtpm", "for --drivers=host, the swtpm bundle virtual machines' TPMs run from (deploy/swtpm); without it, machines with a TPM are refused")
+	fs.StringVar(&hf.tpmKeys, "vm-tpm-keys", chvm.DefaultTPMKeys, "for --drivers=host, where each machine with a TPM has its key, a file named by its uid")
 }
 
 // shared reads --shared-ipv4; invalid when it is empty.
@@ -498,13 +503,18 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 	if err != nil {
 		return nil, none, err
 	}
+	swtpm := hf.swtpm
+	if _, err := os.Stat(swtpm); errors.Is(err, os.ErrNotExist) {
+		slog.Warn("no swtpm: machines with a TPM are refused on this host", "vm_swtpm", swtpm)
+		swtpm = ""
+	}
 	converter := hf.converterInitrd
 	if _, err := os.Stat(converter); errors.Is(err, os.ErrNotExist) {
 		slog.Warn("no converter initramfs: custom images are not uploaded to this host", "guest_converter_initramfs", converter)
 		converter = ""
 	}
 	vms, err := chvm.New(ctx, chvm.Config{
-		Firmware:    firmware,
+		Firmware: firmware, Swtpm: swtpm, TPMKeys: hf.tpmKeys,
 		MachineCPUs: cpus,
 		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
 		ConverterInitramfs: converter, ConverterRuntime: max(hf.inspectTimeout, hf.convertTimeout),

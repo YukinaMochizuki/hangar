@@ -99,6 +99,11 @@ func (a *Agent) beginStop(ctx context.Context, uid string) {
 	go func() {
 		defer a.stops.wg.Done()
 		err := a.cfg.Drivers.Hypervisor.Stop(ctx, uid)
+		if err == nil {
+			// A stopped VM starts again only through the agent, which asks
+			// for its TPM key again.
+			err = a.cfg.Drivers.Hypervisor.RemoveTPMKey(ctx, uid)
+		}
 		if err != nil && ctx.Err() == nil {
 			a.cfg.Log.Warn("stopping a VM failed", "machine_uid", uid, "error", err)
 		}

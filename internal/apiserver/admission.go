@@ -439,8 +439,12 @@ func hooksFor(r registry.Resource) kindHooks {
 			validate:     validateVirtualMachine,
 			warn:         warnVirtualMachine,
 			beforeDelete: refuseDeletingUnsettledVM,
-			cascades:     true,
-			writeLocks:   only(attachLock),
+			// Its TPM key is the apiserver's alone; its node gets it through
+			// VirtualTPMKeyService (docs/decisions/vm-tpm.md).
+			seal:       sealVirtualMachine,
+			redact:     redactVirtualMachine,
+			cascades:   true,
+			writeLocks: only(attachLock),
 			// Its machine carries what its guest is given, to its node.
 			forNode: func(_ string, obj proto.Message) {
 				spec := obj.(*computev1alpha1.VirtualMachine).GetSpec()
@@ -1003,6 +1007,9 @@ func validateMachine(ctx context.Context, s *Server, _ auth.Principal, old, obj 
 	}
 	if err := computeapi.CheckSystemSerialNumber(spec.GetFirmware().GetSystemSerialNumber()); err != nil {
 		return invalid("spec.firmware.system_serial_number: %v", err)
+	}
+	if spec.GetFirmware().GetTpm() && s.cfg.Secrets == nil {
+		return failedPrecondition("spec.firmware.tpm: %v", errNoKEKForTPM)
 	}
 	if ci := spec.GetFirmware().GetCloudInit(); len(ci.GetUserData()) > maxUserData || len(ci.GetVendorData()) > maxVendorData {
 		return invalid("spec.firmware.cloud_init: user_data of %d bytes, at most %d; vendor_data of %d, at most %d",

@@ -93,7 +93,7 @@ func (g *github) releaseByTag(r release) (ghRelease, error) {
 func (g *github) createRelease(r release) (ghRelease, error) {
 	body, _ := json.Marshal(map[string]any{
 		"tag_name": r.tag, "name": r.tag, "prerelease": true, "make_latest": "false",
-		"body": "The Alpine packages the converter initramfs is built from, as guest/converter/converter.env pins them (docs/runbook/converter.md). Uploaded by the converter-mirror workflow; not a release of the platform.",
+		"body": "The Alpine packages the converter initramfs is built from, as guest/converter/converter.env and deploy/swtpm/swtpm.env pin them (docs/runbook/converter.md, docs/runbook/swtpm.md). Uploaded by the converter-mirror workflow; not a release of the platform.",
 	})
 	var rel ghRelease
 	err := g.do(http.MethodPost, fmt.Sprintf("%s/repos/%s/%s/releases", g.api, r.owner, r.repo),

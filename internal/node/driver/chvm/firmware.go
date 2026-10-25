@@ -68,7 +68,7 @@ func pressPowerButton(ctx context.Context, socket string) error {
 // firmware, the balloon for free page reporting, its serial number, its
 // volumes at their nodes in dir with their serials, the root first, the
 // taps on fds 3 and on, its serial console on a socket for its console
-// helper, no virtio console, and its API socket.
+// helper, no virtio console, its API socket, and a TPM VM's swtpm.
 func firmwareArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
@@ -92,11 +92,15 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 			args = append(args, fmt.Sprintf("fd=%d,mac=%s", 3+n, i.MAC))
 		}
 	}
-	return append(args,
+	args = append(args,
 		"--api-socket", "path="+filepath.Join(dir, apiFile),
 		"--console", "off",
 		"--serial", "socket="+filepath.Join(dir, serialSocket),
 	)
+	if s.TPM {
+		args = append(args, "--tpm", "socket="+filepath.Join(dir, tpmSocket))
+	}
+	return args
 }
 
 // quoteOption quotes v as a value of Cloud Hypervisor's comma-separated

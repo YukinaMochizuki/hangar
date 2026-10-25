@@ -120,6 +120,11 @@ message FirmwareBoot {
   // most 64 bytes. Empty is the platform's, which points the guest's
   // cloud-init at cloud_init. Changing it restarts the machine.
   string system_serial_number = 3;
+  // Gives the guest a TPM 2.0 (CRB), whose state the node keeps, encrypted,
+  // across the machine's restarts and deletes with it. The node starts the
+  // machine only once it holds the key the state is encrypted with.
+  // Changing it restarts the machine.
+  bool tpm = 4;
 }
 
 // FileShareServerBoot boots the platform's NFS server of a FileShare: the
