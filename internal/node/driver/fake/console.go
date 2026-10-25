@@ -95,6 +95,17 @@ func (h *Host) ConsoleTyped(machineUID string) []byte {
 	return nil
 }
 
+// ConsoleClients is how many clients the machine's console has.
+func (h *Host) ConsoleClients(machineUID string) int {
+	h.mu.Lock()
+	c := h.consoles[machineUID]
+	h.mu.Unlock()
+	if c == nil {
+		return 0
+	}
+	return c.hub.Clients()
+}
+
 // StartedWithoutConsole makes the machine's VM one a node started before
 // serial consoles were interactive: its console takes no client.
 func (h *Host) StartedWithoutConsole(machineUID string) {

@@ -66,8 +66,10 @@ func New(log io.Writer, l *slog.Logger) *Hub {
 type client struct {
 	conn net.Conn
 	out  chan *nodev1.ConsoleResponse
-	// gone is closed once the client is let go.
-	gone chan struct{}
+	// gone is closed once the client is let go; behind, set before, says
+	// it fell behind.
+	gone   chan struct{}
+	behind bool
 }
 
 // Connected sets the connection to Cloud Hypervisor typing goes to: a new
@@ -90,6 +92,13 @@ func (h *Hub) Disconnected() {
 	h.mu.Lock()
 	h.serial = nil
 	h.mu.Unlock()
+}
+
+// Clients is how many clients are attached.
+func (h *Hub) Clients() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subs)
 }
 
 // Close lets every client go, as the VM's end does, and the screen: the
@@ -146,9 +155,14 @@ func (h *Hub) sendLocked(c *client, msg *nodev1.ConsoleResponse) {
 	case c.out <- msg:
 	default:
 		h.l.Info("serial console: letting go of a client that does not keep up")
+		c.behind = true
 		h.dropLocked(c)
 	}
 }
+
+// behindNotice is what a client let go for falling behind is told last, if
+// it can still be.
+const behindNotice = "the console let this client go: it fell behind what the guest wrote"
 
 func (h *Hub) dropLocked(c *client) {
 	if !h.subs[c] {
@@ -156,8 +170,13 @@ func (h *Hub) dropLocked(c *client) {
 	}
 	delete(h.subs, c)
 	close(c.gone)
-	// Ends a write it is stuck in, too.
-	_ = c.conn.Close()
+	if c.behind {
+		// A write it is stuck in ends soon, and it is told why it goes.
+		_ = c.conn.SetWriteDeadline(time.Now().Add(time.Second))
+	} else {
+		// Ends a write it is stuck in, too.
+		_ = c.conn.Close()
+	}
 	if h.input == c {
 		h.input = nil
 	}
@@ -238,9 +257,13 @@ func (h *Hub) write(c *client) {
 		case msg := <-c.out:
 			_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
 			if _, err := protodelim.MarshalTo(c.conn, msg); err != nil {
-				return
+				return // a message cut short: nothing more is told
 			}
 		case <-c.gone:
+			if c.behind {
+				_ = c.conn.SetWriteDeadline(time.Now().Add(time.Second))
+				_, _ = protodelim.MarshalTo(c.conn, &nodev1.ConsoleResponse{Message: &nodev1.ConsoleResponse_Ended{Ended: behindNotice}})
+			}
 			return
 		}
 	}

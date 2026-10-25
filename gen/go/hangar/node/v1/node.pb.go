@@ -1448,6 +1448,7 @@ type ConsoleResponse struct {
 	//
 	//	*ConsoleResponse_Output
 	//	*ConsoleResponse_State
+	//	*ConsoleResponse_Ended
 	Message       isConsoleResponse_Message `protobuf_oneof:"message"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1508,6 +1509,15 @@ func (x *ConsoleResponse) GetState() *ConsoleState {
 	return nil
 }
 
+func (x *ConsoleResponse) GetEnded() string {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleResponse_Ended); ok {
+			return x.Ended
+		}
+	}
+	return ""
+}
+
 type isConsoleResponse_Message interface {
 	isConsoleResponse_Message()
 }
@@ -1521,9 +1531,18 @@ type ConsoleResponse_State struct {
 	State *ConsoleState `protobuf:"bytes,2,opt,name=state,proto3,oneof"`
 }
 
+type ConsoleResponse_Ended struct {
+	// Why the client is let go while the VM runs, such as for falling
+	// behind; the last message. A console ending with no reason ended
+	// with its VM.
+	Ended string `protobuf:"bytes,3,opt,name=ended,proto3,oneof"`
+}
+
 func (*ConsoleResponse_Output) isConsoleResponse_Message() {}
 
 func (*ConsoleResponse_State) isConsoleResponse_Message() {}
+
+func (*ConsoleResponse_Ended) isConsoleResponse_Message() {}
 
 // ConsoleState is how a client is attached.
 type ConsoleState struct {
@@ -1670,10 +1689,11 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x05force\x18\x03 \x01(\bR\x05force\";\n" +
 	"\vConsoleSize\x12\x18\n" +
 	"\acolumns\x18\x01 \x01(\rR\acolumns\x12\x12\n" +
-	"\x04rows\x18\x02 \x01(\rR\x04rows\"l\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\"\x84\x01\n" +
 	"\x0fConsoleResponse\x12\x18\n" +
 	"\x06output\x18\x01 \x01(\fH\x00R\x06output\x124\n" +
-	"\x05state\x18\x02 \x01(\v2\x1c.hangar.node.v1.ConsoleStateH\x00R\x05stateB\t\n" +
+	"\x05state\x18\x02 \x01(\v2\x1c.hangar.node.v1.ConsoleStateH\x00R\x05state\x12\x16\n" +
+	"\x05ended\x18\x03 \x01(\tH\x00R\x05endedB\t\n" +
 	"\amessage\"U\n" +
 	"\fConsoleState\x12\x14\n" +
 	"\x05input\x18\x01 \x01(\bR\x05input\x12/\n" +
@@ -1683,11 +1703,12 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x13\n" +
 	"\x0fLOG_STREAM_INIT\x10\x03\x12\x13\n" +
-	"\x0fLOG_STREAM_EXIT\x10\x042\xbc\x03\n" +
+	"\x0fLOG_STREAM_EXIT\x10\x042\x8c\x04\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01\x12E\n" +
 	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01\x12B\n" +
-	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01\x12j\n" +
+	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01\x12N\n" +
+	"\aConsole\x12\x1e.hangar.node.v1.ConsoleRequest\x1a\x1f.hangar.node.v1.ConsoleResponse(\x010\x01\x12j\n" +
 	"\x11UploadCustomImage\x12(.hangar.node.v1.UploadCustomImageRequest\x1a).hangar.node.v1.UploadCustomImageResponse(\x01\x12q\n" +
 	"\x14GetCustomImageUpload\x12+.hangar.node.v1.GetCustomImageUploadRequest\x1a,.hangar.node.v1.GetCustomImageUploadResponseB\xb9\x01\n" +
 	"\x12com.hangar.node.v1B\tNodeProtoP\x01Z>github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1;nodev1\xa2\x02\x03HNX\xaa\x02\x0eHangar.Node.V1\xca\x02\x0eHangar\\Node\\V1\xe2\x02\x1aHangar\\Node\\V1\\GPBMetadata\xea\x02\x10Hangar::Node::V1b\x06proto3"
@@ -1750,15 +1771,17 @@ var file_hangar_node_v1_node_proto_depIdxs = []int32{
 	1,  // 15: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
 	5,  // 16: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
 	10, // 17: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
-	12, // 18: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
-	15, // 19: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
-	2,  // 20: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	9,  // 21: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
-	11, // 22: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
-	14, // 23: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
-	16, // 24: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
-	20, // [20:25] is the sub-list for method output_type
-	15, // [15:20] is the sub-list for method input_type
+	17, // 18: hangar.node.v1.NodeService.Console:input_type -> hangar.node.v1.ConsoleRequest
+	12, // 19: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
+	15, // 20: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
+	2,  // 21: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 22: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	11, // 23: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
+	20, // 24: hangar.node.v1.NodeService.Console:output_type -> hangar.node.v1.ConsoleResponse
+	14, // 25: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
+	16, // 26: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
+	21, // [21:27] is the sub-list for method output_type
+	15, // [15:21] is the sub-list for method input_type
 	15, // [15:15] is the sub-list for extension type_name
 	15, // [15:15] is the sub-list for extension extendee
 	0,  // [0:15] is the sub-list for field type_name
@@ -1802,6 +1825,7 @@ func file_hangar_node_v1_node_proto_init() {
 	file_hangar_node_v1_node_proto_msgTypes[19].OneofWrappers = []any{
 		(*ConsoleResponse_Output)(nil),
 		(*ConsoleResponse_State)(nil),
+		(*ConsoleResponse_Ended)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
