@@ -7,6 +7,8 @@ package computeapi
 import (
 	"fmt"
 	"net/netip"
+	"slices"
+	"strings"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
@@ -51,6 +53,44 @@ func MachineDisks(spec *computev1alpha1.MachineSpec) []string {
 		out = append(out, d.GetDisk())
 	}
 	return out
+}
+
+// MaxDiskSerial is the longest serial a virtio-blk disk carries, in bytes:
+// the virtio spec's, which Cloud Hypervisor refuses to boot past.
+const MaxDiskSerial = 20
+
+// DiskSerials are the serials a VirtualMachine's disks are given, in the
+// order of names, the Disks MachineDisks lists, and uids, theirs: a disk's
+// name if it fits MaxDiskSerial, else the last MaxDiskSerial hex digits of
+// its uid, the random part of a UUIDv7. A name that is any of the disks'
+// uid digits so taken gives way to its own, so no two serials are alike.
+// The guest finds each at /dev/disk/by-id/virtio-<serial>; see
+// docs/decisions/vm-boot.md.
+func DiskSerials(names, uids []string) []string {
+	tails := make([]string, len(uids))
+	for i, uid := range uids {
+		u := strings.ReplaceAll(uid, "-", "")
+		tails[i] = u[max(0, len(u)-MaxDiskSerial):]
+	}
+	out := make([]string, len(names))
+	for i, name := range names {
+		out[i] = tails[i]
+		if len(name) <= MaxDiskSerial && !slices.Contains(tails, name) {
+			out[i] = name
+		}
+	}
+	return out
+}
+
+// CheckDiskSerial checks a disk's serial as DiskSerials makes them: at most
+// MaxDiskSerial lowercase letters, digits and '-', which Cloud Hypervisor's
+// option parser takes as they are, and the guest's udev names a link by
+// unchanged; empty is none.
+func CheckDiskSerial(s string) error {
+	if len(s) > MaxDiskSerial || strings.Trim(s, "abcdefghijklmnopqrstuvwxyz0123456789-") != "" {
+		return fmt.Errorf("%q is not at most %d lowercase letters, digits and '-'", s, MaxDiskSerial)
+	}
+	return nil
 }
 
 // DiskInUseFinalizer keeps a deleted Disk until no machine lists it; the

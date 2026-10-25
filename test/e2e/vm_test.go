@@ -233,6 +233,76 @@ func TestAVirtualMachinesSerialNumber(t *testing.T) {
 	onHost("")
 }
 
+// TestAVirtualMachinesDisksHaveSerials: a VM's disks reach its host with
+// their serials, a name of up to 20 bytes as itself and a longer one as the
+// end of its disk's uid. A VM a node started before disks had serials runs
+// on after the agent is upgraded; started again, its disks have them.
+func TestAVirtualMachinesDisksHaveSerials(t *testing.T) {
+	w := newIdleWorld(t)
+	w.startAgent()
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	const long = "a-data-disk-of-a-long-name"
+	w.applyDisk(long, "1Gi")
+	w.applyVMDisks("web", 0, long)
+	w.waitVMReason("web", "Running")
+	uid := w.machine2(vmMachineOf("web")).GetMetadata().GetUid()
+	data, _ := get[*storagev1alpha1.Disk](w, registry.Disk, long)
+	tail := strings.ReplaceAll(data.GetMetadata().GetUid(), "-", "")
+	tail = tail[len(tail)-20:]
+	serials := func() []string {
+		var out []string
+		for _, v := range w.host.Snapshot().VMs[uid].Spec.Disks {
+			out = append(out, v.Serial)
+		}
+		return out
+	}
+	if got := serials(); !slices.Equal(got, []string{"web-root", tail}) {
+		t.Errorf("the VM's disks have serials %q, want web-root and %s", got, tail)
+	}
+
+	w.waitSettled()
+	started := w.started(uid)
+	w.stopAgent()
+	w.host.StartedWithoutDiskSerials(uid)
+	w.startAgent()
+	w.waitVMReason("web", "Running")
+	w.waitSettled()
+	w.checkNotRestarted(started)
+	if got := serials(); !slices.Equal(got, []string{"", ""}) {
+		t.Fatalf("the VM an older node started has serials %q: the test sees nothing", got)
+	}
+
+	w.applyVMDisks("web", computev1alpha1.VirtualMachineRunState_VIRTUAL_MACHINE_RUN_STATE_STOPPED, long)
+	w.waitVMReason("web", computeapi.ReasonStopped)
+	w.applyVMDisks("web", computev1alpha1.VirtualMachineRunState_VIRTUAL_MACHINE_RUN_STATE_RUNNING, long)
+	w.waitVMReason("web", "Running")
+	testutil.Eventually(t, "the VM started again with its disks' serials", func() (bool, string) {
+		got := serials()
+		return slices.Equal(got, []string{"web-root", tail}), fmt.Sprintf("%q", got)
+	})
+}
+
+// applyVMDisks applies a VM of the image noble with the data disks named,
+// in the run state given.
+func (w *world) applyVMDisks(name string, runState computev1alpha1.VirtualMachineRunState, disks ...string) {
+	w.t.Helper()
+	spec := &computev1alpha1.VirtualMachineSpec{
+		RootDisk: &computev1alpha1.VirtualMachineRootDisk{Source: &computev1alpha1.VirtualMachineRootDisk_FromImage{
+			FromImage: &computev1alpha1.VirtualMachineImageDisk{Image: &storagev1alpha1.ImageSource{Name: "noble"}, Size: "10Gi"},
+		}},
+		RunState: runState,
+	}
+	for _, d := range disks {
+		spec.Disks = append(spec.Disks, &computev1alpha1.VirtualMachineDisk{Disk: d})
+	}
+	if _, err := w.root.Apply(context.Background(), registry.VirtualMachine, &computev1alpha1.VirtualMachine{
+		Metadata: &metav1.ObjectMeta{Project: project, Name: name}, Spec: spec,
+	}); err != nil {
+		w.t.Fatal(err)
+	}
+}
+
 // TestOnlyItsGuestKeepsAVirtualMachineOff: a VM its host's reboot ended,
 // its power button pressed, boots again once the host is back, and its log
 // says the platform stopped it; so does a VM that crashed. Only its guest

@@ -4,10 +4,12 @@ package vms
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,9 +27,48 @@ const awkwardSerial = ` ARX,"01"[2]=x `
 // of its own boots an Ubuntu cloud image whose guest reads exactly that as
 // its SMBIOS system serial number. Its cloud-init, no longer pointed at the
 // platform's metadata service, takes its seed from a CIDATA disk instead,
-// as an image without the platform's seed must: the user-data there prints
-// what the guest reads to its serial console.
+// as an image without the platform's seed must.
 func TestAVMsGuestReadsItsOwnSerialNumber(t *testing.T) {
+	out := bootWithSeed(t, "serialvm", `printf 'hangar-serial:[%s]\n' "$(cat /sys/class/dmi/id/product_serial)"`,
+		func(_ *host, s *driver.VMSpec) { s.SystemSerialNumber = awkwardSerial })
+	if m := regexp.MustCompile(`hangar-serial:\[(.*)\]\r?\n`).FindStringSubmatch(out); m == nil || m[1] != awkwardSerial {
+		t.Errorf("the guest reads its serial number as %q, not %q", m, awkwardSerial)
+	}
+}
+
+// TestAVMsGuestFindsItsDisksBySerial: each of a firmware VM's volumes with
+// a serial is the guest's /dev/disk/by-id/virtio-<serial>, the volume the
+// guest has at its place: one of 20 bytes, the most virtio takes, too.
+func TestAVMsGuestFindsItsDisksBySerial(t *testing.T) {
+	serials := []string{"disksroot", "disksseed", "782aad7135c14fc6c594"}
+	script := `for s in ` + strings.Join(serials, " ") + `; do printf 'hangar-disk:%s=%s\n' "$s" "$(readlink -f /dev/disk/by-id/virtio-$s)"; done`
+	out := bootWithSeed(t, "disksvm", script, func(h *host, s *driver.VMSpec) {
+		data, err := h.storage.EnsureVolume(context.Background(), "disksdata", 1<<30, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Disks = append(s.Disks, data)
+		s.SystemSerialNumber = "disksvm"
+		for i := range s.Disks {
+			s.Disks[i].Serial = serials[i]
+		}
+	})
+	for i, s := range serials {
+		want := fmt.Sprintf("hangar-disk:%s=/dev/vd%c", s, 'a'+i)
+		if !strings.Contains(out, want+"\r\n") && !strings.Contains(out, want+"\n") {
+			t.Errorf("the guest's serial console lacks %q:\n%s", want, tail(out))
+		}
+	}
+}
+
+// bootWithSeed boots an Ubuntu cloud image as the firmware VM uid, its root
+// volume first and then a NoCloud seed volume, with spec changed by mutate
+// on the host, and returns its serial console once the user-data script,
+// whose output goes to it, has run. mutate must give the VM a serial number
+// of its own: cloud-init prefers the one pointing it at the platform's
+// metadata service, which this host has none of, to the seed volume.
+func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.VMSpec)) string {
+	t.Helper()
 	h := newHost(t)
 	ctx := context.Background()
 	in := vmtest.Artifacts()
@@ -55,49 +96,47 @@ func TestAVMsGuestReadsItsOwnSerialNumber(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = img.Close()
-	root, err := h.storage.EnsureVolume(ctx, "serialroot", 10<<30, digest)
+	root, err := h.storage.EnsureVolume(ctx, uid+"root", 10<<30, digest)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seed, err := h.storage.EnsureVolume(ctx, "serialseed", 64<<20, "")
+	seed, err := h.storage.EnsureVolume(ctx, uid+"seed", 64<<20, "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	const done = "hangar-seed-done"
 	writeSeed(t, seed.Path, map[string]string{
-		"meta-data": "instance-id: serialvm\nlocal-hostname: serialvm\n",
-		"user-data": "#!/bin/sh\nprintf 'hangar-serial:[%s]\\n' \"$(cat /sys/class/dmi/id/product_serial)\" > /dev/ttyS0\n",
+		"meta-data": "instance-id: " + uid + "\nlocal-hostname: " + uid + "\n",
+		"user-data": "#!/bin/sh\n{\n" + script + "\necho " + done + "\n} > /dev/ttyS0 2>&1\n",
 	})
 
-	spec := h.machine(t, "serialvm", driver.RestartOnFailure, guestScript)
+	spec := h.machine(t, uid, driver.RestartOnFailure, guestScript)
 	spec.Root, spec.Run, spec.Firmware = driver.Disk{}, driver.RunSpec{}, true
 	spec.Disks = []driver.Volume{root, seed}
 	spec.VCPUs, spec.MemoryMiB = 2, 1024
-	spec.SystemSerialNumber = awkwardSerial
+	mutate(h, &spec)
 	start := time.Now()
 	if err := hv.Start(ctx, spec); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = hv.Stop(context.Background(), "serialvm")
-		_ = hv.DeleteLogs(context.Background(), "serialvm")
+		_ = hv.Stop(context.Background(), uid)
+		_ = hv.DeleteLogs(context.Background(), uid)
 	})
 
-	printed := regexp.MustCompile(`hangar-serial:\[(.*)\]\r?\n`)
 	deadline := time.Now().Add(15 * time.Minute)
 	for {
-		if m := printed.FindStringSubmatch(serialOf(t, "serialvm")); m != nil {
-			if m[1] != awkwardSerial {
-				t.Errorf("the guest reads its serial number as %q, not %q", m[1], awkwardSerial)
-			}
-			t.Logf("the guest read %q %v after the start", m[1], time.Since(start).Round(time.Second))
-			break
+		out := serialOf(t, uid)
+		if strings.Contains(out, done+"\r\n") || strings.Contains(out, done+"\n") {
+			t.Logf("the user-data ran %v after the start", time.Since(start).Round(time.Second))
+			return out
 		}
-		if vm, ok := vmOf(t, h, "serialvm"); ok && vm.State != driver.VMRunning {
-			t.Fatalf("the VM ended: %+v\n%s", vm, tail(serialOf(t, "serialvm")))
+		if vm, ok := vmOf(t, h, uid); ok && vm.State != driver.VMRunning {
+			t.Fatalf("the VM ended: %+v\n%s", vm, tail(out))
 		}
 		if time.Now().After(deadline) {
-			dump(t, "serialvm")
-			t.Fatalf("the guest printed no serial number in 15 minutes:\n%s", tail(serialOf(t, "serialvm")))
+			dump(t, uid)
+			t.Fatalf("the user-data did not run in 15 minutes:\n%s", tail(out))
 		}
 		time.Sleep(time.Second)
 	}

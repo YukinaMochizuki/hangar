@@ -1517,7 +1517,15 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		return fmt.Errorf("machine %s: system serial number: %w", spec.MachineUID, err)
 	}
 	for _, v := range spec.Disks {
-		if have, ok := d.h.volumes[v.DiskUID]; !ok || have != v {
+		if v.Serial != "" && !spec.Firmware {
+			return fmt.Errorf("machine %s: only a firmware VM's volumes have serials", spec.MachineUID)
+		}
+		if err := computeapi.CheckDiskSerial(v.Serial); err != nil {
+			return fmt.Errorf("machine %s: volume %s's serial: %w", spec.MachineUID, v.Path, err)
+		}
+		bare := v
+		bare.Serial = ""
+		if have, ok := d.h.volumes[v.DiskUID]; !ok || have != bare {
 			return fmt.Errorf("machine %s has no volume %s as specified", spec.MachineUID, v.Path)
 		}
 	}
@@ -1757,6 +1765,21 @@ func (h *Host) StartedByOldNode(machineUID string) {
 	defer h.mu.Unlock()
 	if v, ok := h.vms[machineUID]; ok {
 		v.SpecHash = v.spec.LegacyHash(v.Interfaces)
+	}
+}
+
+// StartedWithoutDiskSerials makes the machine's VM one a node started
+// before volumes had serials: its volumes have none, and its hash counts
+// none (driver.VMSpec.Runs).
+func (h *Host) StartedWithoutDiskSerials(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if v, ok := h.vms[machineUID]; ok {
+		v.spec.Disks = slices.Clone(v.spec.Disks)
+		for i := range v.spec.Disks {
+			v.spec.Disks[i].Serial = ""
+		}
+		v.SpecHash = v.spec.Hash()
 	}
 }
 
