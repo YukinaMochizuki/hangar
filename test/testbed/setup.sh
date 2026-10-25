@@ -28,6 +28,10 @@ command -v mkfs.ext4 >/dev/null || fail "e2fsprogs is not installed"
 if ! command -v qemu-img >/dev/null; then
 	apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends qemu-utils
 fi
+# The VM tests' own cloud-init seeds, for a VM not pointed at the platform's.
+if ! command -v mkfs.vfat >/dev/null; then
+	apt-get update -q && DEBIAN_FRONTEND=noninteractive apt-get install -qy --no-install-recommends dosfstools
+fi
 modprobe zfs
 
 # A pool made before the loop device, on the file itself, is moved onto one.

@@ -46,6 +46,18 @@ booted kernels of their own, moved there too.
   boots with no datasource. Every version reads a `dsmode` given there
   before inferring one. Not `ds=nocloud-net`, which newer cloud-init
   reports as deprecated.
+- **A VM may have a serial number of its own instead.** Some operating
+  systems take the SMBIOS system serial number as the device's identity,
+  as hardware vendors set it. `spec.platform.serialNumber` replaces the
+  NoCloud string with any printable ASCII of at most 64 bytes, not checked
+  for uniqueness; changing it restarts the VM. Such a VM gives up what
+  that string pointed at: its cloud-init finds no platform seed, so it gets
+  no `userData`, keys or trust in the platform's SSH CA, and `hangar ssh`
+  cannot log in to it, unless the image arranges those itself (a `CIDATA`
+  disk is the other place cloud-init's NoCloud looks). Apply says so as a
+  warning. Cloud Hypervisor gets the value inside double quotes, a quote
+  in it doubled, so its option parser takes commas, brackets and
+  surrounding spaces as part of it.
 - **What cloud-init gets** (`networking.md`, the metadata service):
   `meta-data` with the VM's uid as `instance-id` and its name as
   `local-hostname`; `user-data`, the VM's `userData` exactly as written
@@ -107,6 +119,8 @@ booted kernels of their own, moved there too.
 
 ## Consequences
 
+- A VM given its own serial number boots as an image without cloud-init
+  does: the platform reaches nothing inside it.
 - A VM's image must boot through EFI: distributions' cloud images do; images
   with only a BIOS boot loader do not.
 - The platform cannot tell a VM that booted from one stuck at its boot

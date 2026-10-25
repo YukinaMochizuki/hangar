@@ -26,7 +26,7 @@ import (
 
 // firmwareDir is launcherDir with the launch made a firmware VM's: two
 // volumes, the root first, and no root disk.
-func firmwareDir(t *testing.T, mode string) (*Launcher, string) {
+func firmwareDir(t *testing.T, mode string, mutate ...func(*driver.VMSpec)) (*Launcher, string) {
 	t.Helper()
 	l, dir := launcherDir(t, "m1", mode)
 	ln, err := readLaunch(dir)
@@ -39,6 +39,9 @@ func firmwareDir(t *testing.T, mode string) (*Launcher, string) {
 	ln.Spec.Disks = []driver.Volume{
 		{DiskUID: "root", Path: "/dev/zvol/hangar/disks/root", Size: 10 << 30},
 		{DiskUID: "data", Path: "/dev/zvol/hangar/disks/data", Size: 1 << 30},
+	}
+	for _, f := range mutate {
+		f(&ln.Spec)
 	}
 	ln.Hash = ln.Spec.Hash()
 	ln.Kernel, ln.Initramfs, ln.Cmdline, ln.Firmware = "", "", "", "/fw/CLOUDHV.fd"
@@ -113,7 +116,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 	for _, want := range []string{
 		"--firmware /fw/CLOUDHV.fd",
 		"--balloon size=0,free_page_reporting=on",
-		"--platform serial_number=ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net",
+		`--platform system_serial_number="ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net"`,
 		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net",
 		"--api-socket path=" + filepath.Join(dir, apiFile),
 		"--console off",
@@ -127,6 +130,117 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 		if strings.Contains(joined, not) {
 			t.Errorf("a firmware VM's arguments %q have %q", joined, not)
 		}
+	}
+}
+
+// TestQuoteOptionRoundTrips: a quoted value reads back, as Cloud
+// Hypervisor's option parser reads it (option_parser's split_commas and
+// dequote, v53.0, rewritten here), as itself, whatever printable ASCII it
+// holds, and the option after it is still an option of its own.
+func TestQuoteOptionRoundTrips(t *testing.T) {
+	for _, v := range []string{
+		"ARX-0001", NoCloudSerial, `a,b"c[d]=e`, `"`, `""`, ",", "[", "]]", " lead and trail ", "x=y,z=w", `\"`,
+	} {
+		opts := chSplitCommas(t, "system_serial_number="+quoteOption(v)+",uuid=u")
+		if len(opts) != 2 || opts[1] != "uuid=u" {
+			t.Errorf("%q: options %q, not the serial number and uuid=u", v, opts)
+			continue
+		}
+		key, val, _ := strings.Cut(opts[0], "=")
+		if got := chDequote(strings.TrimSpace(val)); key != "system_serial_number" || got != v {
+			t.Errorf("%q reads back as %s=%q", v, key, got)
+		}
+	}
+}
+
+// chSplitCommas splits options as Cloud Hypervisor does: at commas outside
+// double quotes and brackets.
+func chSplitCommas(t *testing.T, s string) []string {
+	t.Helper()
+	var out []string
+	var cur strings.Builder
+	quoted, brackets := false, 0
+	for _, c := range strings.TrimSpace(s) {
+		switch {
+		case c == '"':
+			quoted = !quoted
+		case quoted:
+		case c == '[':
+			brackets++
+		case c == ']':
+			if brackets == 0 {
+				t.Fatalf("%q: unbalanced brackets", s)
+			}
+			brackets--
+		case c == ',' && brackets == 0:
+			out = append(out, cur.String())
+			cur.Reset()
+			continue
+		}
+		cur.WriteRune(c)
+	}
+	if quoted || brackets != 0 {
+		t.Fatalf("%q: unbalanced quotes or brackets", s)
+	}
+	return append(out, cur.String())
+}
+
+// chDequote drops double quotes as Cloud Hypervisor does, a quote right
+// after a closing one kept as one.
+func chDequote(s string) string {
+	var out strings.Builder
+	var prev rune
+	quoted := false
+	for _, c := range s {
+		if c == '"' {
+			if prev == '"' && !quoted {
+				out.WriteRune('"')
+			}
+			quoted = !quoted
+		} else {
+			out.WriteRune(c)
+		}
+		prev = c
+	}
+	return out.String()
+}
+
+// TestAFirmwareVMGetsItsOwnSerialNumber: a spec's serial number replaces
+// the NoCloud one, quoted; a bad one, or one on a VM that boots no
+// firmware, is refused before anything starts.
+func TestAFirmwareVMGetsItsOwnSerialNumber(t *testing.T) {
+	l, dir := firmwareDir(t, "exit:0", func(s *driver.VMSpec) { s.SystemSerialNumber = `ARX,"01"` })
+	if got := runFor(t, l, t.Context(), "m1"); got != 0 {
+		t.Fatalf("exited %d", got)
+	}
+	joined := strings.Join(chArgsOf(t, dir), " ")
+	if want := `--platform system_serial_number="ARX,""01"""`; !strings.Contains(joined, want) {
+		t.Errorf("Cloud Hypervisor's arguments %q lack %q", joined, want)
+	}
+	if strings.Contains(joined, "nocloud") {
+		t.Errorf("Cloud Hypervisor's arguments %q still point cloud-init at the platform", joined)
+	}
+
+	firmware := driver.VMSpec{MachineUID: "m1", VCPUs: 1, MemoryMiB: 256, Firmware: true, Disks: []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/d"}}}
+	for name, mutate := range map[string]func(*driver.VMSpec){
+		"65 bytes":  func(s *driver.VMSpec) { s.SystemSerialNumber = strings.Repeat("a", 65) },
+		"a newline": func(s *driver.VMSpec) { s.SystemSerialNumber = "a\nb" },
+		"UTF-8":     func(s *driver.VMSpec) { s.SystemSerialNumber = "ü" },
+		"no firmware": func(s *driver.VMSpec) {
+			s.Firmware, s.Disks = false, nil
+			s.Root = driver.Disk{MachineUID: "m1", Path: "/dev/zvol/r"}
+			s.SystemSerialNumber = "ARX-01"
+		},
+	} {
+		spec := firmware
+		mutate(&spec)
+		if err := checkSpec(spec); err == nil {
+			t.Errorf("%s: checkSpec takes it", name)
+		}
+	}
+	firmware.SystemSerialNumber = strings.Repeat("~", 64)
+	if err := checkSpec(firmware); err != nil {
+		t.Errorf("64 bytes of printable ASCII: %v", err)
 	}
 }
 

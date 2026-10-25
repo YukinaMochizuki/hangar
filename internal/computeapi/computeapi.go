@@ -187,6 +187,25 @@ const (
 	ReasonFileShareNotReady = "FileShareNotReady"
 )
 
+// MaxSystemSerialNumber is the longest SMBIOS system serial number a
+// firmware machine is given, in bytes.
+const MaxSystemSerialNumber = 64
+
+// CheckSystemSerialNumber checks a firmware machine's SMBIOS system serial
+// number, as its VirtualMachine's spec.platform.serial_number: printable
+// ASCII of at most MaxSystemSerialNumber bytes, or empty for the platform's.
+func CheckSystemSerialNumber(s string) error {
+	if len(s) > MaxSystemSerialNumber {
+		return fmt.Errorf("%d bytes, at most %d", len(s), MaxSystemSerialNumber)
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return fmt.Errorf("byte %d, %#02x, is not printable ASCII", i, s[i])
+		}
+	}
+	return nil
+}
+
 // ParseIPv6Prefix reads the IPv6 prefix a Node reports: a global unicast
 // /64 without host bits.
 func ParseIPv6Prefix(s string) (netip.Prefix, error) {

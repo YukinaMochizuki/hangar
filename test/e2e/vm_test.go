@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
+	"github.com/YukinaMochizuki/hangar/internal/node/driver/fake"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
@@ -173,6 +174,63 @@ func TestAVirtualMachineRuns(t *testing.T) {
 	})
 	w.deleteImage("noble")
 	w.waitHostEmpty()
+}
+
+// TestAVirtualMachinesSerialNumber: a VM's spec.platform.serial_number
+// reaches its host's VM spec, with a warning to whoever applied it; changing
+// it boots the VM again with the new one, and clearing it gives the VM the
+// platform's back.
+func TestAVirtualMachinesSerialNumber(t *testing.T) {
+	w := newWorld(t)
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	applySerial := func(serial string) []string {
+		t.Helper()
+		res, err := w.root.Apply(context.Background(), registry.VirtualMachine, &computev1alpha1.VirtualMachine{
+			Metadata: &metav1.ObjectMeta{Project: project, Name: "arx"},
+			Spec: &computev1alpha1.VirtualMachineSpec{
+				RootDisk: &computev1alpha1.VirtualMachineRootDisk{Source: &computev1alpha1.VirtualMachineRootDisk_FromImage{
+					FromImage: &computev1alpha1.VirtualMachineImageDisk{Image: &storagev1alpha1.ImageSource{Name: "noble"}, Size: "10Gi"},
+				}},
+				Platform: &computev1alpha1.VirtualMachinePlatform{SerialNumber: serial},
+			},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res.Warnings
+	}
+	onHost := func(want string) fake.VMView {
+		t.Helper()
+		var vm fake.VMView
+		testutil.Eventually(t, "the VM on its host with serial number "+want, func() (bool, string) {
+			m, ok := get[*computev1alpha1.Machine](w, registry.Machine, vmMachineOf("arx"))
+			if !ok {
+				return false, "no machine"
+			}
+			vm = w.host.Snapshot().VMs[m.GetMetadata().GetUid()]
+			return vm.State == driver.VMRunning && vm.Spec.SystemSerialNumber == want, fmt.Sprintf("%+v", vm)
+		})
+		return vm
+	}
+
+	if warned := applySerial(`ARX,"01"`); len(warned) != 1 || !strings.Contains(warned[0], "hangar ssh") {
+		t.Errorf("applying a VM with a serial number warned %q", warned)
+	}
+	w.waitVMReason("arx", "Running")
+	onHost(`ARX,"01"`)
+
+	// The host runs one spec per VM: running with the new serial number,
+	// it was stopped and started again.
+	applySerial("ARX-02")
+	w.waitVMReason("arx", "Running")
+	onHost("ARX-02")
+
+	if warned := applySerial(""); len(warned) != 0 {
+		t.Errorf("applying a VM without a serial number warned %q", warned)
+	}
+	w.waitVMReason("arx", "Running")
+	onHost("")
 }
 
 // TestOnlyItsGuestKeepsAVirtualMachineOff: a VM its host's reboot ended,

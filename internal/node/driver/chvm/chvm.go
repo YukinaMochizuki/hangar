@@ -593,6 +593,12 @@ func checkSpec(s driver.VMSpec) error {
 	case !s.Firmware && (s.Root.MachineUID != s.MachineUID || s.Root.Path == ""):
 		return fmt.Errorf("machine %s: root disk %+v is not its", s.MachineUID, s.Root)
 	}
+	if s.SystemSerialNumber != "" && !s.Firmware {
+		return fmt.Errorf("machine %s: only a firmware VM is given a system serial number", s.MachineUID)
+	}
+	if err := computeapi.CheckSystemSerialNumber(s.SystemSerialNumber); err != nil {
+		return fmt.Errorf("machine %s: system serial number: %w", s.MachineUID, err)
+	}
 	seen := map[string]bool{s.Root.Path: true}
 	for _, v := range s.Disks {
 		if v.DiskUID == "" || v.Path == "" || seen[v.Path] {

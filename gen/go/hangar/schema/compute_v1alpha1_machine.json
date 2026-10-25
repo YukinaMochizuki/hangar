@@ -112,6 +112,10 @@
         "rootDisk": {
           "description": "Names the Disk, in the machine's project, booted from: attached first, before spec.disks, and attached to one machine at a time as they are.",
           "type": "string"
+        },
+        "systemSerialNumber": {
+          "description": "The SMBIOS system serial number the guest is given: printable ASCII, at most 64 bytes. Empty is the platform's, which points the guest's cloud-init at cloud_init. Changing it restarts the machine.",
+          "type": "string"
         }
       },
       "type": "object"
