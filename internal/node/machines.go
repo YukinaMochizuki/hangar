@@ -308,7 +308,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	// not serve it yet: a boot the node starts waits, its VM of an earlier
 	// spec running on. A boot of the VM's own restart policy is not gated:
 	// its mount may fail, and the policy tries it again.
-	if vm == nil || (vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces)) {
+	if vm == nil || !spec.Runs(vm.SpecHash, vm.Interfaces) {
 		why, err := a.sharesServe(ctx, m, mnts)
 		switch {
 		case err != nil:
@@ -503,9 +503,9 @@ const guestTimeout = 2 * time.Second
 // else, and says how it runs.
 func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM) (*observation, error) {
 	d := a.cfg.Drivers
-	// One an older node started has the hash it gave, which counted the
-	// IPv6 addresses: an upgrade restarts nothing.
-	if vm != nil && vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces) {
+	// One an older node started has the hash it gave (driver.VMSpec.Runs):
+	// an upgrade restarts nothing.
+	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
 		if err := a.stopVM(ctx, spec.MachineUID); err != nil {
 			return nil, err
 		}

@@ -82,6 +82,18 @@ booted kernels of their own, moved there too.
   image (`<vm>-root`, deleted with it or retained, as its `deletePolicy`
   says) or one it names; data disks follow it, in order (`vda`, `vdb` and on).
   A VM has no platform boot disk and no virtio console.
+- **Each disk carries a serial** the guest finds it by, as
+  `/dev/disk/by-id/virtio-<serial>`, which an attach order does not move:
+  the Disk's name if it is at most 20 bytes, the most virtio-blk carries
+  (Cloud Hypervisor refuses to boot past it rather than cut it), and
+  otherwise the last 20 hex digits of the Disk's uid. Not its first 20: a
+  UUIDv7 starts with the time it was made in milliseconds, which two disks
+  made together share. A name that is another of the VM's disks' uid
+  digits gives way to its own, so no two are alike. There is no field for
+  it: names and uids never change, so neither does a disk's serial. A VM a
+  node started before disks had serials runs on through the node's upgrade
+  (`driver.VMSpec.Runs`), and has them from its next boot. A container's
+  disks have none: hangar-init mounts them by their place.
 - **Root disks follow the delete policy, races included.** A root disk the
   VM made is annotated with the VM's uid. Under `DELETE` it carries an
   owner reference to the VM, which garbage collection follows, though the

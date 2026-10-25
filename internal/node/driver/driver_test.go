@@ -3,6 +3,7 @@ package driver_test
 import (
 	"encoding/json"
 	"net/netip"
+	"slices"
 	"strings"
 	"testing"
 
@@ -77,6 +78,55 @@ func TestAVMWithoutASerialNumberKeepsItsHash(t *testing.T) {
 	spec.SystemSerialNumber = "ARX-02"
 	if given == before || spec.Hash() == given {
 		t.Error("giving a VM a serial number, or changing it, leaves the hash as it was: the guest would not see it")
+	}
+}
+
+// TestAVMStartedBeforeDiskSerialsRunsItsSpec: a VM a node started before
+// volumes had serials, by Hash or by LegacyHash, runs the spec that now
+// gives them; one started with other serials, or other volumes, does not.
+func TestAVMStartedBeforeDiskSerialsRunsItsSpec(t *testing.T) {
+	nic := driver.Interface{
+		MachineUID: "m1", Name: "eth0", Address: netip.MustParsePrefix("10.0.0.2/24"),
+		IPv6: netip.MustParseAddr("2001:db8:0:1::a"), Device: "hn1",
+	}
+	bare := driver.VMSpec{
+		MachineUID: "m1", Machine: "p/vm-web", VCPUs: 1, MemoryMiB: 1024, Firmware: true,
+		Disks:      []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/r", Size: 10 << 30}, {DiskUID: "d2", Path: "/dev/zvol/d", Size: 1 << 30}},
+		Interfaces: []driver.Interface{nic}, Restart: driver.RestartOnFailure,
+	}
+	b, err := json.Marshal(bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "Serial") {
+		t.Errorf("volumes without serials encode as %s, which changes their VM's hash", b)
+	}
+	serials := func(s driver.VMSpec, a, b string) driver.VMSpec {
+		s.Disks = slices.Clone(s.Disks)
+		s.Disks[0].Serial, s.Disks[1].Serial = a, b
+		return s
+	}
+	now := serials(bare, "web-root", "data")
+	started := []driver.Interface{nic}
+	for name, hash := range map[string]string{
+		"by its hash":                   now.Hash(),
+		"by an older node's hash":       bare.Hash(),
+		"by the IPv6 legacy hash, bare": bare.LegacyHash(started),
+	} {
+		if !now.Runs(hash, started) {
+			t.Errorf("a VM started %s does not run its spec: the agent would restart it", name)
+		}
+	}
+	other := bare
+	other.Disks = bare.Disks[:1]
+	for name, hash := range map[string]string{
+		"with other serials": serials(bare, "web-root", "logs").Hash(),
+		"with a serial less": serials(bare, "web-root", "").Hash(),
+		"with a volume less": other.Hash(),
+	} {
+		if now.Runs(hash, started) {
+			t.Errorf("a VM started %s runs the spec: the agent would not restart it", name)
+		}
 	}
 }
 

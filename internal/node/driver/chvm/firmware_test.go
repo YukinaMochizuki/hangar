@@ -226,6 +226,12 @@ func TestAFirmwareVMGetsItsOwnSerialNumber(t *testing.T) {
 		"65 bytes":  func(s *driver.VMSpec) { s.SystemSerialNumber = strings.Repeat("a", 65) },
 		"a newline": func(s *driver.VMSpec) { s.SystemSerialNumber = "a\nb" },
 		"UTF-8":     func(s *driver.VMSpec) { s.SystemSerialNumber = "ü" },
+		"a disk serial of 21 bytes": func(s *driver.VMSpec) {
+			s.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/d", Serial: strings.Repeat("a", 21)}}
+		},
+		"a disk serial with a comma": func(s *driver.VMSpec) {
+			s.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/d", Serial: "a,b"}}
+		},
 		"no firmware": func(s *driver.VMSpec) {
 			s.Firmware, s.Disks = false, nil
 			s.Root = driver.Disk{MachineUID: "m1", Path: "/dev/zvol/r"}
@@ -241,6 +247,20 @@ func TestAFirmwareVMGetsItsOwnSerialNumber(t *testing.T) {
 	firmware.SystemSerialNumber = strings.Repeat("~", 64)
 	if err := checkSpec(firmware); err != nil {
 		t.Errorf("64 bytes of printable ASCII: %v", err)
+	}
+}
+
+// TestAFirmwareVMsDisksHaveTheirSerials: each volume with a serial is
+// given it, and one without is given none.
+func TestAFirmwareVMsDisksHaveTheirSerials(t *testing.T) {
+	l, dir := firmwareDir(t, "exit:0", func(s *driver.VMSpec) { s.Disks[0].Serial = "web-root" })
+	if got := runFor(t, l, t.Context(), "m1"); got != 0 {
+		t.Fatalf("exited %d", got)
+	}
+	joined := strings.Join(chArgsOf(t, dir), " ")
+	want := "--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,serial=web-root path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net"
+	if !strings.Contains(joined, want) {
+		t.Errorf("Cloud Hypervisor's arguments %q lack %q", joined, want)
 	}
 }
 

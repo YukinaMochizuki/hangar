@@ -25,6 +25,13 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 	if err != nil {
 		return nil, err
 	}
+	uids := make([]string, len(vols))
+	for i, v := range vols {
+		uids[i] = v.DiskUID
+	}
+	for i, s := range computeapi.DiskSerials(computeapi.MachineDisks(m.GetSpec()), uids) {
+		vols[i].Serial = s
+	}
 	want, err := a.interfaces(ctx, m)
 	if err != nil {
 		return nil, err
@@ -52,7 +59,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Search:             search,
 		Restart:            restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
-	if vm != nil && vm.SpecHash != spec.Hash() && vm.SpecHash != spec.LegacyHash(vm.Interfaces) {
+	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err
 		}

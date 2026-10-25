@@ -441,6 +441,9 @@ type Volume struct {
 	// Digest is the key of the disk image's base it was cloned from, a
 	// digest or a CustomImageBase key; empty for a blank one.
 	Digest string `json:",omitempty"`
+	// Serial is the virtio-blk serial a firmware VM's guest sees the
+	// volume by (computeapi.DiskSerials); empty is none.
+	Serial string `json:",omitempty"`
 }
 
 // ImageBase is a CustomImage's base.
@@ -955,6 +958,25 @@ func (s VMSpec) LegacyHash(started []Interface) string {
 		}
 	}
 	return s.hash()
+}
+
+// Runs reports whether a VM whose recorded hash is hash, its interfaces
+// started as they were started, runs s: by Hash, by the LegacyHash an older
+// node gave, or by either of s without its volumes' serials, as a node
+// before them started it. An upgrade restarts no VM; its next boot gives it
+// the serials.
+func (s VMSpec) Runs(hash string, started []Interface) bool {
+	if hash == s.Hash() || hash == s.LegacyHash(started) {
+		return true
+	}
+	bare := s
+	bare.Disks = slices.Clone(s.Disks)
+	serials := false
+	for i := range bare.Disks {
+		serials = serials || bare.Disks[i].Serial != ""
+		bare.Disks[i].Serial = ""
+	}
+	return serials && (hash == bare.Hash() || hash == bare.LegacyHash(started))
 }
 
 func (s VMSpec) hash() string {

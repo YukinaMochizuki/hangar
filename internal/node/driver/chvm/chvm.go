@@ -605,6 +605,12 @@ func checkSpec(s driver.VMSpec) error {
 			return fmt.Errorf("machine %s: volume %+v has no disk or path, or is given twice", s.MachineUID, v)
 		}
 		seen[v.Path] = true
+		if v.Serial != "" && !s.Firmware {
+			return fmt.Errorf("machine %s: only a firmware VM's volumes have serials", s.MachineUID)
+		}
+		if err := computeapi.CheckDiskSerial(v.Serial); err != nil {
+			return fmt.Errorf("machine %s: volume %s's serial: %w", s.MachineUID, v.Path, err)
+		}
 	}
 	for _, m := range s.Mounts {
 		if s.Firmware || (!m.Share.IsValid() && (m.Disk < 0 || m.Disk >= len(s.Disks))) || m.Target == "" {
