@@ -9,12 +9,10 @@ package acmetest
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/libdns/libdns"
@@ -65,7 +63,8 @@ func Start(addr string, zones ...string) (*Server, error) {
 }
 
 // listen listens on addr over UDP and on the same port over TCP. A port
-// the system picked for UDP may be taken for TCP, so then it tries again.
+// the system picked for UDP may be unusable for TCP, taken or, on Windows,
+// in a range the system keeps back, so then it tries another.
 func listen(addr string) (net.PacketConn, net.Listener, error) {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -81,7 +80,7 @@ func listen(addr string) (net.PacketConn, net.Listener, error) {
 			return pc, ln, nil
 		}
 		_ = pc.Close()
-		if port != "0" || !errors.Is(err, syscall.EADDRINUSE) || try == 20 {
+		if port != "0" || try == 20 {
 			return nil, nil, err
 		}
 	}
