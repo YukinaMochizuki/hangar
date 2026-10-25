@@ -27,6 +27,13 @@ service NodeService {
   // request names the machine, which must be on this node; the node picks
   // the address. See docs/decisions/vm-ssh.md.
   rpc SSH(stream SSHRequest) returns (stream SSHResponse);
+  // Console attaches to a running firmware machine's interactive serial
+  // console for as long as the call lasts. The first request is a start
+  // naming the machine, which must be on this node; the rest are as its
+  // console helper takes them. A machine whose console takes no client,
+  // as one started before consoles were interactive, fails with
+  // FAILED_PRECONDITION. See docs/decisions/serial-console.md.
+  rpc Console(stream ConsoleRequest) returns (stream ConsoleResponse);
   // UploadCustomImage writes one chunk of a CustomImage's upload to the
   // file the node stages it in. The first request says where the chunk
   // goes; later ones carry its bytes, length bytes in all. The chunk
@@ -225,6 +232,10 @@ message ConsoleResponse {
     // Bytes for the client's terminal, as they come.
     bytes output = 1;
     ConsoleState state = 2;
+    // Why the client is let go while the VM runs, such as for falling
+    // behind; the last message. A console ending with no reason ended
+    // with its VM.
+    string ended = 3;
   }
 }
 

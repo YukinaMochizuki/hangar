@@ -232,9 +232,11 @@ type execRun struct {
 	// ping and pong time the CLI's liveness; zero is its default.
 	ping, pong time.Duration
 	server     *execServer
-	sigs       *signals
-	term       *fakeTerminal
-	stdin      io.Reader
+	// handler, if set, serves instead of server.
+	handler http.Handler
+	sigs    *signals
+	term    *fakeTerminal
+	stdin   io.Reader
 	// out is hangar's stdout, which a test may read while it runs.
 	out lockedBuffer
 }
@@ -271,7 +273,11 @@ func newExecRun(t *testing.T) *execRun {
 // and stderr.
 func (r *execRun) run(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
-	srv := httptest.NewServer(r.server)
+	var h http.Handler = r.server
+	if r.handler != nil {
+		h = r.handler
+	}
+	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 	config := filepath.Join(t.TempDir(), "config.yaml")
 	env := func(k string) string {

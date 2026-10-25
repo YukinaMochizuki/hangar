@@ -44,6 +44,8 @@ const (
 	NodeServiceExecProcedure = "/hangar.node.v1.NodeService/Exec"
 	// NodeServiceSSHProcedure is the fully-qualified name of the NodeService's SSH RPC.
 	NodeServiceSSHProcedure = "/hangar.node.v1.NodeService/SSH"
+	// NodeServiceConsoleProcedure is the fully-qualified name of the NodeService's Console RPC.
+	NodeServiceConsoleProcedure = "/hangar.node.v1.NodeService/Console"
 	// NodeServiceUploadCustomImageProcedure is the fully-qualified name of the NodeService's
 	// UploadCustomImage RPC.
 	NodeServiceUploadCustomImageProcedure = "/hangar.node.v1.NodeService/UploadCustomImage"
@@ -69,6 +71,13 @@ type NodeServiceClient interface {
 	// request names the machine, which must be on this node; the node picks
 	// the address. See docs/decisions/vm-ssh.md.
 	SSH(context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse]
+	// Console attaches to a running firmware machine's interactive serial
+	// console for as long as the call lasts. The first request is a start
+	// naming the machine, which must be on this node; the rest are as its
+	// console helper takes them. A machine whose console takes no client,
+	// as one started before consoles were interactive, fails with
+	// FAILED_PRECONDITION. See docs/decisions/serial-console.md.
+	Console(context.Context) *connect.BidiStreamForClient[v1.ConsoleRequest, v1.ConsoleResponse]
 	// UploadCustomImage writes one chunk of a CustomImage's upload to the
 	// file the node stages it in. The first request says where the chunk
 	// goes; later ones carry its bytes, length bytes in all. The chunk
@@ -110,6 +119,12 @@ func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ..
 			connect.WithSchema(nodeServiceMethods.ByName("SSH")),
 			connect.WithClientOptions(opts...),
 		),
+		console: connect.NewClient[v1.ConsoleRequest, v1.ConsoleResponse](
+			httpClient,
+			baseURL+NodeServiceConsoleProcedure,
+			connect.WithSchema(nodeServiceMethods.ByName("Console")),
+			connect.WithClientOptions(opts...),
+		),
 		uploadCustomImage: connect.NewClient[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse](
 			httpClient,
 			baseURL+NodeServiceUploadCustomImageProcedure,
@@ -130,6 +145,7 @@ type nodeServiceClient struct {
 	logs                 *connect.Client[v1.LogsRequest, v1.LogsResponse]
 	exec                 *connect.Client[v1.ExecRequest, v1.ExecResponse]
 	sSH                  *connect.Client[v1.SSHRequest, v1.SSHResponse]
+	console              *connect.Client[v1.ConsoleRequest, v1.ConsoleResponse]
 	uploadCustomImage    *connect.Client[v1.UploadCustomImageRequest, v1.UploadCustomImageResponse]
 	getCustomImageUpload *connect.Client[v1.GetCustomImageUploadRequest, v1.GetCustomImageUploadResponse]
 }
@@ -147,6 +163,11 @@ func (c *nodeServiceClient) Exec(ctx context.Context) *connect.BidiStreamForClie
 // SSH calls hangar.node.v1.NodeService.SSH.
 func (c *nodeServiceClient) SSH(ctx context.Context) *connect.BidiStreamForClient[v1.SSHRequest, v1.SSHResponse] {
 	return c.sSH.CallBidiStream(ctx)
+}
+
+// Console calls hangar.node.v1.NodeService.Console.
+func (c *nodeServiceClient) Console(ctx context.Context) *connect.BidiStreamForClient[v1.ConsoleRequest, v1.ConsoleResponse] {
+	return c.console.CallBidiStream(ctx)
 }
 
 // UploadCustomImage calls hangar.node.v1.NodeService.UploadCustomImage.
@@ -176,6 +197,13 @@ type NodeServiceHandler interface {
 	// request names the machine, which must be on this node; the node picks
 	// the address. See docs/decisions/vm-ssh.md.
 	SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error
+	// Console attaches to a running firmware machine's interactive serial
+	// console for as long as the call lasts. The first request is a start
+	// naming the machine, which must be on this node; the rest are as its
+	// console helper takes them. A machine whose console takes no client,
+	// as one started before consoles were interactive, fails with
+	// FAILED_PRECONDITION. See docs/decisions/serial-console.md.
+	Console(context.Context, *connect.BidiStream[v1.ConsoleRequest, v1.ConsoleResponse]) error
 	// UploadCustomImage writes one chunk of a CustomImage's upload to the
 	// file the node stages it in. The first request says where the chunk
 	// goes; later ones carry its bytes, length bytes in all. The chunk
@@ -213,6 +241,12 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 		connect.WithSchema(nodeServiceMethods.ByName("SSH")),
 		connect.WithHandlerOptions(opts...),
 	)
+	nodeServiceConsoleHandler := connect.NewBidiStreamHandler(
+		NodeServiceConsoleProcedure,
+		svc.Console,
+		connect.WithSchema(nodeServiceMethods.ByName("Console")),
+		connect.WithHandlerOptions(opts...),
+	)
 	nodeServiceUploadCustomImageHandler := connect.NewClientStreamHandler(
 		NodeServiceUploadCustomImageProcedure,
 		svc.UploadCustomImage,
@@ -233,6 +267,8 @@ func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption
 			nodeServiceExecHandler.ServeHTTP(w, r)
 		case NodeServiceSSHProcedure:
 			nodeServiceSSHHandler.ServeHTTP(w, r)
+		case NodeServiceConsoleProcedure:
+			nodeServiceConsoleHandler.ServeHTTP(w, r)
 		case NodeServiceUploadCustomImageProcedure:
 			nodeServiceUploadCustomImageHandler.ServeHTTP(w, r)
 		case NodeServiceGetCustomImageUploadProcedure:
@@ -256,6 +292,10 @@ func (UnimplementedNodeServiceHandler) Exec(context.Context, *connect.BidiStream
 
 func (UnimplementedNodeServiceHandler) SSH(context.Context, *connect.BidiStream[v1.SSHRequest, v1.SSHResponse]) error {
 	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.SSH is not implemented"))
+}
+
+func (UnimplementedNodeServiceHandler) Console(context.Context, *connect.BidiStream[v1.ConsoleRequest, v1.ConsoleResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.NodeService.Console is not implemented"))
 }
 
 func (UnimplementedNodeServiceHandler) UploadCustomImage(context.Context, *connect.ClientStream[v1.UploadCustomImageRequest]) (*connect.Response[v1.UploadCustomImageResponse], error) {

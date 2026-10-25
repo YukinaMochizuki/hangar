@@ -75,13 +75,15 @@ credentials. The node is a separate root process on the same host.
   exactly, and its `Sec-Fetch-Site`, when the browser sends one, must be
   `same-origin`. Browsers send `Origin` on every POST and every WebSocket
   handshake, which is all the API takes from a browser (Connect unary calls
-  are POSTs; exec and ssh are WebSockets). A form's POST carries the page's
-  real origin only if the page's referrer policy allows it: under
+  are POSTs; exec, ssh and a VM's serial console are WebSockets). A form's
+  POST carries the page's real origin only if the page's referrer policy
+  allows it: under
   `no-referrer` it is `Origin: null`, which the check refuses. The sign-in
   pages are therefore served with `Referrer-Policy: same-origin`, which
   still sends no referrer to another site, and the console must be too. So a
   cross-site form, fetch or WebSocket gets nothing from the cookie, and
-  cross-site WebSocket hijacking of exec and ssh is closed too.
+  cross-site WebSocket hijacking of exec, ssh and the console is closed
+  too.
   `SameSite=Lax` is a second layer. There is no CORS. The device approval
   form and the logout are held to the same rule. No GET the cookie
   authenticates changes anything, with two exceptions, named so no other
@@ -139,8 +141,8 @@ credentials. The node is a separate root process on the same host.
   nothing more.
 - **A long-lived stream is checked again every 30 seconds** while it is
   open. This covers every Connect streaming call
-  (every `Watch`, a log followed) and the exec and SSH WebSockets
-  (`streaming-transport.md`). One mechanism in the auth layer holds them
+  (every `Watch`, a log followed) and the exec, SSH and serial console
+  WebSockets (`streaming-transport.md`). One mechanism in the auth layer holds them
   all (`auth.Chain.Hold`; the Connect interceptor uses it for every
   streaming call). Each round checks the credential, then the decisions:
   - It checks again the credential the stream was opened with, without

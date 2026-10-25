@@ -20,6 +20,7 @@ import "hangar/compute/v1alpha1/container.proto";
 //
 //   GET /v1/projects/{project}/{plural}/{name}:exec
 //   GET /v1/projects/{project}/{plural}/{name}:ssh
+//   GET /v1/projects/{project}/{plural}/{name}:console
 //
 // where plural names the kind as its resource does, such as containers or
 // virtualmachines, authenticated as a Connect call is. A refusal before
@@ -41,6 +42,14 @@ import "hangar/compute/v1alpha1/container.proto";
 // An SSH tunnel has the subprotocol hangar.ssh.v1alpha1 and needs
 // compute.machines.ssh. Its binary messages are the SSH connection's
 // bytes to and from port 22 of the machine; see docs/decisions/vm-ssh.md.
+//
+// A serial console, a virtual machine's only, has the subprotocol
+// hangar.console.v1alpha1 and needs compute.machines.exec. Each binary
+// message is one MachineConsoleRequest from the client, the first of them
+// a start, or one MachineConsoleResponse from the server. Many clients may
+// be attached at once, one of them holding the input. A VM started before
+// its console was interactive fails with FailedPrecondition until it is
+// started again. See docs/decisions/serial-console.md.
 service MachineCapabilityService {
   // Logs streams what the object's machine wrote, oldest first, as one
   // stream across every boot its node keeps, with the end of each boot;
@@ -235,4 +244,54 @@ message MachineExecExit {
   int32 code = 1;
   // The signal that ended it, 0 if none.
   int32 signal = 2;
+}
+
+// MachineConsoleRequest is a message from a serial console's client.
+message MachineConsoleRequest {
+  oneof message {
+    // The first message, and only the first.
+    MachineConsoleStart start = 1;
+    // What the client types, as it comes; it reaches the guest only while
+    // the client holds the input. A lone newline arrives as a carriage
+    // return, as the console's UART takes it.
+    bytes input = 2;
+    // The screen's new size, taken only from the client holding the
+    // input. The guest is not told: its user runs stty in it.
+    MachineConsoleSize resize = 3;
+  }
+}
+
+// MachineConsoleStart attaches a client to the serial console.
+message MachineConsoleStart {
+  // Only watches: never holds the input.
+  bool read_only = 1;
+  // Takes the input from whoever holds it, who goes on watching; without
+  // it, a client finding the input held watches.
+  bool force = 2;
+}
+
+// MachineConsoleSize is the screen's size in character cells, within
+// 1..500 columns and 1..200 rows; 80x24 until it is set.
+message MachineConsoleSize {
+  uint32 columns = 1;
+  uint32 rows = 2;
+}
+
+// MachineConsoleResponse is a message from the server: the client's state
+// first, then the screen drawn whole, then what the guest writes, and the
+// state again whenever it changes, as when the input is taken or the guest
+// reboots.
+message MachineConsoleResponse {
+  oneof message {
+    // Bytes for the client's terminal.
+    bytes output = 1;
+    MachineConsoleState state = 2;
+  }
+}
+
+// MachineConsoleState is how the client is attached.
+message MachineConsoleState {
+  // The client holds the input.
+  bool input = 1;
+  MachineConsoleSize size = 2;
 }

@@ -176,6 +176,32 @@ func TestAnAttachMissesAndRepeatsNothing(t *testing.T) {
 	wg.Wait()
 }
 
+// TestABehindClientIsToldWhy: a client let go for falling behind, reading
+// again, is sent what was queued for it, then why it goes, last.
+func TestABehindClientIsToldWhy(t *testing.T) {
+	h, _, _ := testHub(t)
+	a := attach(t, h, &nodev1.ConsoleStart{})
+	testutil.Eventually(t, "the client attached", func() (bool, string) { return h.Clients() == 1, "" })
+	for range queued + 10 {
+		h.Output([]byte("x"))
+	}
+	if h.Clients() != 0 {
+		t.Fatal("a client that fell behind is still attached")
+	}
+	var last *nodev1.ConsoleResponse
+	for {
+		_ = a.conn.SetReadDeadline(time.Now().Add(testutil.Wait))
+		res := &nodev1.ConsoleResponse{}
+		if err := (protodelim.UnmarshalOptions{MaxSize: MaxMessage}).UnmarshalFrom(a.r, res); err != nil {
+			break
+		}
+		last = res
+	}
+	if last.GetEnded() != behindNotice {
+		t.Errorf("the client's last message is %v, not why it goes", last)
+	}
+}
+
 // TestOneClientTypes: the first client holds the input, a second watches,
 // and what it types reaches no one; a read-only client never holds it;
 // forcing takes it, telling the one that held it, whose typing then reaches

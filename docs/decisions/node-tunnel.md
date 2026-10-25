@@ -144,6 +144,20 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
   everything the container can. It is the machine's, as logs are.
   The owner and editor roles and `platform.root` hold it; a sponsor does
   not.
+- **A VM's serial console is relayed as an exec is**, its WebSocket
+  (`:console`, `internal/consolews`) to `NodeService.Console`, a
+  bidirectional call on the tunnel, and on to the VM's console helper,
+  which the node dials in the VM's directory
+  (`docs/decisions/serial-console.md`). It needs
+  `compute.machines.exec`, is held to the caps and rechecked as an exec
+  is, and pings the same way. Refused before the WebSocket opens as an
+  exec is, and as `FailedPrecondition` for an object with no firmware
+  machine, a container's; after it opens, a VM whose console takes no
+  client yet, started before it was interactive, ends it the same way.
+  The audit lines say who, which VM, how long and how many bytes each
+  way, never what was typed or written. A console ending with its VM, or
+  its helper, closes cleanly; a client let go for falling behind what the
+  guest writes is told so, `ResourceExhausted`.
 
 - **A chunk of a CustomImage's upload is a client-streaming call.** The
   apiserver asks the node where the upload is

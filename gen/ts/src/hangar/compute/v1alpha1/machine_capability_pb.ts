@@ -14,7 +14,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/machine_capability.proto.
  */
 export const file_hangar_compute_v1alpha1_machine_capability: GenFile = /*@__PURE__*/
-  fileDesc("CjBoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lX2NhcGFiaWxpdHkucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIp0BCgtMb2dzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBGtpbmQYAiABKAkSDAoEbmFtZRgDIAEoCRIOCgZmb2xsb3cYBCABKAgSFwoKdGFpbF9saW5lcxgFIAEoA0gAiAEBEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEINCgtfdGFpbF9saW5lcyJKCgxMb2dzUmVzcG9uc2USOgoHcmVjb3JkcxgBIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVMb2dSZWNvcmQi3AEKEE1hY2hpbmVMb2dSZWNvcmQSDAoEYm9vdBgBIAEoAxI5CgZzdHJlYW0YAiABKA4yKS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lTG9nU3RyZWFtEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBGRhdGEYBCABKAxIABI6CgRleGl0GAUgASgLMiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4aXRTdGF0dXNIAEIJCgdjb250ZW50IkIKEU1hY2hpbmVFeGl0U3RhdHVzEgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFEg8KB3N0b3BwZWQYAyABKAgiVAoRU2lnblNTSEtleVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAQgASgJEgwKBG5hbWUYAiABKAkSEgoKcHVibGljX2tleRgDIAEoCSKEAQoSU2lnblNTSEtleVJlc3BvbnNlEhMKC2NlcnRpZmljYXRlGAEgASgJEhEKCXByaW5jaXBhbBgCIAEoCRIUCgxkZWZhdWx0X3VzZXIYAyABKAkSMAoMdmFsaWRfYmVmb3JlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJHChhGb3JnZXRTU0hIb3N0S2V5c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkiLgoZRm9yZ2V0U1NISG9zdEtleXNSZXNwb25zZRIRCglmb3Jnb3R0ZW4YASADKAkihwIKEk1hY2hpbmVFeGVjUmVxdWVzdBI6CgVzdGFydBgBIAEoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEkUKC3N0ZGluX2Nsb3NlGAMgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNTdGRpbkNsb3NlSAASQAoGcmVzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSLOAQoQTWFjaGluZUV4ZWNTdGFydBIPCgdjb21tYW5kGAEgAygJEg0KBXN0ZGluGAIgASgIEgsKA3R0eRgDIAEoCBI8CgRzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplEgwKBHVzZXIYBSABKAkSLAoDZW52GAYgAygLMh8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRW52VmFyEhMKC3dvcmtpbmdfZGlyGAcgASgJIhcKFU1hY2hpbmVFeGVjU3RkaW5DbG9zZSIzChVNYWNoaW5lRXhlY1dpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNIn4KE01hY2hpbmVFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASOAoEZXhpdBgDIAEoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjRXhpdEgAQgkKB21lc3NhZ2UiLwoPTWFjaGluZUV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFKs4BChBNYWNoaW5lTG9nU3RyZWFtEiIKHk1BQ0hJTkVfTE9HX1NUUkVBTV9VTlNQRUNJRklFRBAAEh0KGU1BQ0hJTkVfTE9HX1NUUkVBTV9TVERPVVQQARIdChlNQUNISU5FX0xPR19TVFJFQU1fU1RERVJSEAISGwoXTUFDSElORV9MT0dfU1RSRUFNX0lOSVQQAxIbChdNQUNISU5FX0xPR19TVFJFQU1fRVhJVBAEEh4KGk1BQ0hJTkVfTE9HX1NUUkVBTV9DT05TT0xFEAUy1AIKGE1hY2hpbmVDYXBhYmlsaXR5U2VydmljZRJVCgRMb2dzEiQuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTG9nc1JlcXVlc3QaJS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Mb2dzUmVzcG9uc2UwARJlCgpTaWduU1NIS2V5EiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuU2lnblNTSEtleVJlcXVlc3QaKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5TaWduU1NIS2V5UmVzcG9uc2USegoRRm9yZ2V0U1NISG9zdEtleXMSMS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Gb3JnZXRTU0hIb3N0S2V5c1JlcXVlc3QaMi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Gb3JnZXRTU0hIb3N0S2V5c1Jlc3BvbnNlQoUCChtjb20uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTFCFk1hY2hpbmVDYXBhYmlsaXR5UHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container]);
+  fileDesc("CjBoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9tYWNoaW5lX2NhcGFiaWxpdHkucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIp0BCgtMb2dzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBGtpbmQYAiABKAkSDAoEbmFtZRgDIAEoCRIOCgZmb2xsb3cYBCABKAgSFwoKdGFpbF9saW5lcxgFIAEoA0gAiAEBEikKBXNpbmNlGAYgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcEINCgtfdGFpbF9saW5lcyJKCgxMb2dzUmVzcG9uc2USOgoHcmVjb3JkcxgBIAMoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVMb2dSZWNvcmQi3AEKEE1hY2hpbmVMb2dSZWNvcmQSDAoEYm9vdBgBIAEoAxI5CgZzdHJlYW0YAiABKA4yKS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lTG9nU3RyZWFtEigKBHRpbWUYAyABKAsyGi5nb29nbGUucHJvdG9idWYuVGltZXN0YW1wEg4KBGRhdGEYBCABKAxIABI6CgRleGl0GAUgASgLMiouaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4aXRTdGF0dXNIAEIJCgdjb250ZW50IkIKEU1hY2hpbmVFeGl0U3RhdHVzEgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFEg8KB3N0b3BwZWQYAyABKAgiVAoRU2lnblNTSEtleVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAQgASgJEgwKBG5hbWUYAiABKAkSEgoKcHVibGljX2tleRgDIAEoCSKEAQoSU2lnblNTSEtleVJlc3BvbnNlEhMKC2NlcnRpZmljYXRlGAEgASgJEhEKCXByaW5jaXBhbBgCIAEoCRIUCgxkZWZhdWx0X3VzZXIYAyABKAkSMAoMdmFsaWRfYmVmb3JlGAQgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcCJHChhGb3JnZXRTU0hIb3N0S2V5c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRraW5kGAIgASgJEgwKBG5hbWUYAyABKAkiLgoZRm9yZ2V0U1NISG9zdEtleXNSZXNwb25zZRIRCglmb3Jnb3R0ZW4YASADKAkihwIKEk1hY2hpbmVFeGVjUmVxdWVzdBI6CgVzdGFydBgBIAEoCzIpLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEkUKC3N0ZGluX2Nsb3NlGAMgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNTdGRpbkNsb3NlSAASQAoGcmVzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplSAASEAoGc2lnbmFsGAUgASgFSABCCQoHbWVzc2FnZSLOAQoQTWFjaGluZUV4ZWNTdGFydBIPCgdjb21tYW5kGAEgAygJEg0KBXN0ZGluGAIgASgIEgsKA3R0eRgDIAEoCBI8CgRzaXplGAQgASgLMi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTWFjaGluZUV4ZWNXaW5kb3dTaXplEgwKBHVzZXIYBSABKAkSLAoDZW52GAYgAygLMh8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRW52VmFyEhMKC3dvcmtpbmdfZGlyGAcgASgJIhcKFU1hY2hpbmVFeGVjU3RkaW5DbG9zZSIzChVNYWNoaW5lRXhlY1dpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNIn4KE01hY2hpbmVFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASOAoEZXhpdBgDIAEoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVFeGVjRXhpdEgAQgkKB21lc3NhZ2UiLwoPTWFjaGluZUV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFIrEBChVNYWNoaW5lQ29uc29sZVJlcXVlc3QSPQoFc3RhcnQYASABKAsyLC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVN0YXJ0SAASDwoFaW5wdXQYAiABKAxIABI9CgZyZXNpemUYAyABKAsyKy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5NYWNoaW5lQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIjcKE01hY2hpbmVDb25zb2xlU3RhcnQSEQoJcmVhZF9vbmx5GAEgASgIEg0KBWZvcmNlGAIgASgIIjMKEk1hY2hpbmVDb25zb2xlU2l6ZRIPCgdjb2x1bW5zGAEgASgNEgwKBHJvd3MYAiABKA0idAoWTWFjaGluZUNvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABI9CgVzdGF0ZRgCIAEoCzIsLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDb25zb2xlU3RhdGVIAEIJCgdtZXNzYWdlIl8KE01hY2hpbmVDb25zb2xlU3RhdGUSDQoFaW5wdXQYASABKAgSOQoEc2l6ZRgCIAEoCzIrLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLk1hY2hpbmVDb25zb2xlU2l6ZSrOAQoQTWFjaGluZUxvZ1N0cmVhbRIiCh5NQUNISU5FX0xPR19TVFJFQU1fVU5TUEVDSUZJRUQQABIdChlNQUNISU5FX0xPR19TVFJFQU1fU1RET1VUEAESHQoZTUFDSElORV9MT0dfU1RSRUFNX1NUREVSUhACEhsKF01BQ0hJTkVfTE9HX1NUUkVBTV9JTklUEAMSGwoXTUFDSElORV9MT0dfU1RSRUFNX0VYSVQQBBIeChpNQUNISU5FX0xPR19TVFJFQU1fQ09OU09MRRAFMtQCChhNYWNoaW5lQ2FwYWJpbGl0eVNlcnZpY2USVQoETG9ncxIkLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkxvZ3NSZXF1ZXN0GiUuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTG9nc1Jlc3BvbnNlMAESZQoKU2lnblNTSEtleRIqLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlNpZ25TU0hLZXlSZXF1ZXN0GisuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuU2lnblNTSEtleVJlc3BvbnNlEnoKEUZvcmdldFNTSEhvc3RLZXlzEjEuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRm9yZ2V0U1NISG9zdEtleXNSZXF1ZXN0GjIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRm9yZ2V0U1NISG9zdEtleXNSZXNwb25zZUKFAgobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQhZNYWNoaW5lQ2FwYWJpbGl0eVByb3RvUAFaUGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2NvbXB1dGUvdjFhbHBoYTE7Y29tcHV0ZXYxYWxwaGExogIDSENYqgIXSGFuZ2FyLkNvbXB1dGUuVjFhbHBoYTHKAhdIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMeICI0hhbmdhclxDb21wdXRlXFYxYWxwaGExXEdQQk1ldGFkYXRh6gIZSGFuZ2FyOjpDb21wdXRlOjpWMWFscGhhMWIGcHJvdG8z", [file_google_protobuf_timestamp, file_hangar_compute_v1alpha1_container]);
 
 /**
  * @generated from message hangar.compute.v1alpha1.LogsRequest
@@ -543,6 +543,168 @@ export const MachineExecExitSchema: GenMessage<MachineExecExit> = /*@__PURE__*/
   messageDesc(file_hangar_compute_v1alpha1_machine_capability, 13);
 
 /**
+ * MachineConsoleRequest is a message from a serial console's client.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineConsoleRequest
+ */
+export type MachineConsoleRequest = Message<"hangar.compute.v1alpha1.MachineConsoleRequest"> & {
+  /**
+   * @generated from oneof hangar.compute.v1alpha1.MachineConsoleRequest.message
+   */
+  message: {
+    /**
+     * The first message, and only the first.
+     *
+     * @generated from field: hangar.compute.v1alpha1.MachineConsoleStart start = 1;
+     */
+    value: MachineConsoleStart;
+    case: "start";
+  } | {
+    /**
+     * What the client types, as it comes; it reaches the guest only while
+     * the client holds the input. A lone newline arrives as a carriage
+     * return, as the console's UART takes it.
+     *
+     * @generated from field: bytes input = 2;
+     */
+    value: Uint8Array;
+    case: "input";
+  } | {
+    /**
+     * The screen's new size, taken only from the client holding the
+     * input. The guest is not told: its user runs stty in it.
+     *
+     * @generated from field: hangar.compute.v1alpha1.MachineConsoleSize resize = 3;
+     */
+    value: MachineConsoleSize;
+    case: "resize";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineConsoleRequest.
+ * Use `create(MachineConsoleRequestSchema)` to create a new message.
+ */
+export const MachineConsoleRequestSchema: GenMessage<MachineConsoleRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 14);
+
+/**
+ * MachineConsoleStart attaches a client to the serial console.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineConsoleStart
+ */
+export type MachineConsoleStart = Message<"hangar.compute.v1alpha1.MachineConsoleStart"> & {
+  /**
+   * Only watches: never holds the input.
+   *
+   * @generated from field: bool read_only = 1;
+   */
+  readOnly: boolean;
+
+  /**
+   * Takes the input from whoever holds it, who goes on watching; without
+   * it, a client finding the input held watches.
+   *
+   * @generated from field: bool force = 2;
+   */
+  force: boolean;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineConsoleStart.
+ * Use `create(MachineConsoleStartSchema)` to create a new message.
+ */
+export const MachineConsoleStartSchema: GenMessage<MachineConsoleStart> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 15);
+
+/**
+ * MachineConsoleSize is the screen's size in character cells, within
+ * 1..500 columns and 1..200 rows; 80x24 until it is set.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineConsoleSize
+ */
+export type MachineConsoleSize = Message<"hangar.compute.v1alpha1.MachineConsoleSize"> & {
+  /**
+   * @generated from field: uint32 columns = 1;
+   */
+  columns: number;
+
+  /**
+   * @generated from field: uint32 rows = 2;
+   */
+  rows: number;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineConsoleSize.
+ * Use `create(MachineConsoleSizeSchema)` to create a new message.
+ */
+export const MachineConsoleSizeSchema: GenMessage<MachineConsoleSize> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 16);
+
+/**
+ * MachineConsoleResponse is a message from the server: the client's state
+ * first, then the screen drawn whole, then what the guest writes, and the
+ * state again whenever it changes, as when the input is taken or the guest
+ * reboots.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineConsoleResponse
+ */
+export type MachineConsoleResponse = Message<"hangar.compute.v1alpha1.MachineConsoleResponse"> & {
+  /**
+   * @generated from oneof hangar.compute.v1alpha1.MachineConsoleResponse.message
+   */
+  message: {
+    /**
+     * Bytes for the client's terminal.
+     *
+     * @generated from field: bytes output = 1;
+     */
+    value: Uint8Array;
+    case: "output";
+  } | {
+    /**
+     * @generated from field: hangar.compute.v1alpha1.MachineConsoleState state = 2;
+     */
+    value: MachineConsoleState;
+    case: "state";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineConsoleResponse.
+ * Use `create(MachineConsoleResponseSchema)` to create a new message.
+ */
+export const MachineConsoleResponseSchema: GenMessage<MachineConsoleResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 17);
+
+/**
+ * MachineConsoleState is how the client is attached.
+ *
+ * @generated from message hangar.compute.v1alpha1.MachineConsoleState
+ */
+export type MachineConsoleState = Message<"hangar.compute.v1alpha1.MachineConsoleState"> & {
+  /**
+   * The client holds the input.
+   *
+   * @generated from field: bool input = 1;
+   */
+  input: boolean;
+
+  /**
+   * @generated from field: hangar.compute.v1alpha1.MachineConsoleSize size = 2;
+   */
+  size?: MachineConsoleSize | undefined;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.MachineConsoleState.
+ * Use `create(MachineConsoleStateSchema)` to create a new message.
+ */
+export const MachineConsoleStateSchema: GenMessage<MachineConsoleState> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_machine_capability, 18);
+
+/**
  * MachineLogStream says what a record carries.
  *
  * @generated from enum hangar.compute.v1alpha1.MachineLogStream
@@ -611,6 +773,7 @@ export const MachineLogStreamSchema: GenEnum<MachineLogStream> = /*@__PURE__*/
  *
  *   GET /v1/projects/{project}/{plural}/{name}:exec
  *   GET /v1/projects/{project}/{plural}/{name}:ssh
+ *   GET /v1/projects/{project}/{plural}/{name}:console
  *
  * where plural names the kind as its resource does, such as containers or
  * virtualmachines, authenticated as a Connect call is. A refusal before
@@ -632,6 +795,14 @@ export const MachineLogStreamSchema: GenEnum<MachineLogStream> = /*@__PURE__*/
  * An SSH tunnel has the subprotocol hangar.ssh.v1alpha1 and needs
  * compute.machines.ssh. Its binary messages are the SSH connection's
  * bytes to and from port 22 of the machine; see docs/decisions/vm-ssh.md.
+ *
+ * A serial console, a virtual machine's only, has the subprotocol
+ * hangar.console.v1alpha1 and needs compute.machines.exec. Each binary
+ * message is one MachineConsoleRequest from the client, the first of them
+ * a start, or one MachineConsoleResponse from the server. Many clients may
+ * be attached at once, one of them holding the input. A VM started before
+ * its console was interactive fails with FailedPrecondition until it is
+ * started again. See docs/decisions/serial-console.md.
  *
  * @generated from service hangar.compute.v1alpha1.MachineCapabilityService
  */

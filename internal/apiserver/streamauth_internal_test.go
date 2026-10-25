@@ -26,6 +26,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
+	"github.com/YukinaMochizuki/hangar/internal/consolews"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sshws"
 	"github.com/YukinaMochizuki/hangar/internal/store"
@@ -33,8 +34,9 @@ import (
 )
 
 // streamingNode is the scripted node, which also follows a log, writing one
-// record and then nothing until the call ends, and relays an SSH
-// connection to a guest that echoes what it is sent.
+// record and then nothing until the call ends, relays an SSH connection to
+// a guest that echoes what it is sent, and attaches to a serial console
+// whose guest echoes what is typed.
 type streamingNode struct {
 	*scriptedNode
 }
@@ -62,6 +64,29 @@ func (streamingNode) SSH(_ context.Context, stream *connect.BidiStream[nodev1.SS
 			return err
 		}
 		if err := stream.Send(&nodev1.SSHResponse{Data: req.GetData()}); err != nil {
+			return err
+		}
+	}
+}
+
+func (streamingNode) Console(_ context.Context, stream *connect.BidiStream[nodev1.ConsoleRequest, nodev1.ConsoleResponse]) error {
+	if _, err := stream.Receive(); err != nil { // the start
+		return err
+	}
+	if err := stream.Send(&nodev1.ConsoleResponse{Message: &nodev1.ConsoleResponse_State{State: &nodev1.ConsoleState{
+		Input: true, Size: &nodev1.ConsoleSize{Columns: 80, Rows: 24},
+	}}}); err != nil {
+		return err
+	}
+	for {
+		req, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&nodev1.ConsoleResponse{Message: &nodev1.ConsoleResponse_Output{Output: req.GetInput()}}); err != nil {
 			return err
 		}
 	}
@@ -246,11 +271,11 @@ func (w *streamWorld) dial(t *testing.T, h http.Header, path, subprotocol string
 	return c
 }
 
-// streams are an exec in api, a log of api followed and an SSH tunnel to
-// web, all open, as one caller.
+// streams are an exec in api, a log of api followed, and an SSH tunnel and
+// a serial console to web, all open, as one caller.
 type streams struct {
-	exec, ssh *websocket.Conn
-	logs      <-chan error
+	exec, ssh, console *websocket.Conn
+	logs               <-chan error
 }
 
 // open opens the streams with the credential header h, and waits until
@@ -269,6 +294,11 @@ func (w *streamWorld) open(t *testing.T, h http.Header) *streams {
 		}
 	})
 	st.ssh = w.dial(t, h, sshws.Path("web", "virtualmachines", "web"), sshws.Subprotocol, false)
+	st.console = w.dial(t, h, consolews.Path("web", "virtualmachines", "web"), consolews.Subprotocol, false)
+	sendConsole(t, st.console, &computev1alpha1.MachineConsoleRequest{Message: &computev1alpha1.MachineConsoleRequest_Start{Start: &computev1alpha1.MachineConsoleStart{}}})
+	if res := readConsoleRes(t, st.console); res.GetState() == nil {
+		t.Fatalf("the console's first message: %v", res)
+	}
 
 	logsCtx, stopLogs := context.WithCancel(t.Context())
 	t.Cleanup(stopLogs)
@@ -315,11 +345,41 @@ func (st *streams) alive(t *testing.T, when string) {
 	if _, b, err := st.ssh.Read(ctx); err != nil || string(b) != "SSH-2.0-test" {
 		t.Fatalf("the SSH tunnel, %s, did not relay: %q, %v", when, b, execws.ErrorOf(err))
 	}
+	sendConsole(t, st.console, &computev1alpha1.MachineConsoleRequest{Message: &computev1alpha1.MachineConsoleRequest_Input{Input: []byte("ping")}})
+	if res := readConsoleRes(t, st.console); string(res.GetOutput()) != "ping" {
+		t.Fatalf("the console, %s, did not relay: %v", when, res)
+	}
 	select {
 	case err := <-st.logs:
 		t.Fatalf("the log followed, %s, ended: %v", when, err)
 	default:
 	}
+}
+
+func sendConsole(t *testing.T, c *websocket.Conn, req *computev1alpha1.MachineConsoleRequest) {
+	t.Helper()
+	b, err := proto.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Write(t.Context(), websocket.MessageBinary, b); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func readConsoleRes(t *testing.T, c *websocket.Conn) *computev1alpha1.MachineConsoleResponse {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), testutil.Wait)
+	defer cancel()
+	_, b, err := c.Read(ctx)
+	res := &computev1alpha1.MachineConsoleResponse{}
+	if err == nil {
+		err = proto.Unmarshal(b, res)
+	}
+	if err != nil {
+		t.Fatalf("reading the console: %v", execws.ErrorOf(err))
+	}
+	return res
 }
 
 // endWith checks that every stream ended with code, as its client reads it.
@@ -335,6 +395,16 @@ func (st *streams) endWith(t *testing.T, code connect.Code, why string) {
 				t.Fatalf("the SSH tunnel still open after %s", why)
 			}
 			wantCodeOf(t, execws.ErrorOf(err), code, "the SSH tunnel, after "+why)
+			break
+		}
+	}
+	for {
+		_, _, err := st.console.Read(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				t.Fatalf("the console still open after %s", why)
+			}
+			wantCodeOf(t, execws.ErrorOf(err), code, "the console, after "+why)
 			break
 		}
 	}
@@ -403,10 +473,11 @@ func (w *streamWorld) serviceToken(t *testing.T) http.Header {
 	return http.Header{"Authorization": {"Bearer " + res.Msg.GetSecret()}}
 }
 
-// TestMachineStreamsEndWithWhatLetThemIn: an exec, an SSH tunnel and a log
-// followed end, at the next recheck, once what let them in is taken away:
-// the credential they were opened with, the binding that granted them, or
-// their caller's membership; the node's exec ends with them.
+// TestMachineStreamsEndWithWhatLetThemIn: an exec, an SSH tunnel, a serial
+// console and a log followed end, at the next recheck, once what let them
+// in is taken away: the credential they were opened with, the binding that
+// granted them, or their caller's membership; the node's exec ends with
+// them.
 func TestMachineStreamsEndWithWhatLetThemIn(t *testing.T) {
 	for _, tt := range []struct {
 		name   string

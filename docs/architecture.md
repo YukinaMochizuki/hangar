@@ -121,7 +121,9 @@ and its execs (`decisions/node-tunnel.md`): a node never listens. A client
 reaches an exec through a WebSocket on the apiserver, which relays it to the
 node (`decisions/streaming-transport.md`); `hangar ssh` reaches a virtual
 machine's port 22 the same way, with a key the apiserver's SSH CA signs for
-minutes (`decisions/vm-ssh.md`). From the internet, everything comes in
+minutes (`decisions/vm-ssh.md`), and `hangar console` its serial console,
+which the VM's console helper serves on the host
+(`decisions/serial-console.md`). From the internet, everything comes in
 through `hangar-edge` on :443, which hands the API to the apiserver over a
 unix socket of its own, saying each client's address
 (`decisions/front-door.md`); Cloudflare is the DNS alone, pointing every

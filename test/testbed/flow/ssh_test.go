@@ -102,6 +102,7 @@ spec:
 		return err == nil && out == "hello from sshy as ubuntu\n", last
 	})
 	t.Logf("hangar ssh logged in %v after the apply", time.Since(start).Round(time.Second))
+	checkConsoleWatches(t, "sshy", sshOut)
 	if out, err := sshOut("vm", "sshy", "--", "cat ~/.ssh/authorized_keys 2>/dev/null; true"); err != nil || strings.Contains(out, "ssh-") {
 		t.Errorf("the default user has static keys: %q %v", out, err)
 	}
@@ -206,6 +207,36 @@ spec:
 	c.cli("delete", "vm", "sshy")
 	c.cli("delete", "container", "prober")
 	c.cli("wait", "vm", "sshy", "--for=delete", "--timeout=3m")
+}
+
+// checkConsoleWatches runs hangar console --read-only on the VM, through
+// the apiserver, its tunnel to the node and the VM's console helper, its
+// security group letting nothing in: it says it is watching, draws the
+// screen, and is sent what the guest then writes on its serial port, here
+// asked to over ssh.
+func checkConsoleWatches(t *testing.T, vm string, sshOut func(...string) (string, error)) {
+	t.Helper()
+	cmd := exec.Command(vmtest.Artifacts().CLI, "console", "--read-only", "vm", vm)
+	cmd.Env = append(os.Environ(), "HANGAR_CONFIG="+filepath.Join(workDir, "cli.yaml"))
+	var out, errOut lockedBuffer
+	cmd.Stdout, cmd.Stderr = &out, &errOut
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+	}()
+	eventually(t, 2*time.Minute, "hangar console attached", func() (bool, string) {
+		return strings.Contains(out.String(), "\x1b[H") && strings.Contains(errOut.String(), "watching; an interrupt leaves"),
+			fmt.Sprintf("stdout %q, stderr %q", out.String(), errOut.String())
+	})
+	if o, err := sshOut("vm", vm, "--", "echo hangar-console-smoke | sudo tee /dev/ttyS0 >/dev/null"); err != nil {
+		t.Fatalf("writing on the guest's serial port: %q %v", o, err)
+	}
+	eventually(t, time.Minute, "what the guest wrote on its serial port, on the console", func() (bool, string) {
+		return strings.Contains(out.String(), "hangar-console-smoke"), fmt.Sprintf("%q", out.String())
+	})
 }
 
 // writeCAKey writes a new SSH CA key at path, the apiserver's, as the

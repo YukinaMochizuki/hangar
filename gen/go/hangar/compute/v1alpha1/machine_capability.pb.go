@@ -1144,6 +1144,362 @@ func (x *MachineExecExit) GetSignal() int32 {
 	return 0
 }
 
+// MachineConsoleRequest is a message from a serial console's client.
+type MachineConsoleRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*MachineConsoleRequest_Start
+	//	*MachineConsoleRequest_Input
+	//	*MachineConsoleRequest_Resize
+	Message       isMachineConsoleRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineConsoleRequest) Reset() {
+	*x = MachineConsoleRequest{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineConsoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineConsoleRequest) ProtoMessage() {}
+
+func (x *MachineConsoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineConsoleRequest.ProtoReflect.Descriptor instead.
+func (*MachineConsoleRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *MachineConsoleRequest) GetMessage() isMachineConsoleRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *MachineConsoleRequest) GetStart() *MachineConsoleStart {
+	if x != nil {
+		if x, ok := x.Message.(*MachineConsoleRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *MachineConsoleRequest) GetInput() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*MachineConsoleRequest_Input); ok {
+			return x.Input
+		}
+	}
+	return nil
+}
+
+func (x *MachineConsoleRequest) GetResize() *MachineConsoleSize {
+	if x != nil {
+		if x, ok := x.Message.(*MachineConsoleRequest_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+type isMachineConsoleRequest_Message interface {
+	isMachineConsoleRequest_Message()
+}
+
+type MachineConsoleRequest_Start struct {
+	// The first message, and only the first.
+	Start *MachineConsoleStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type MachineConsoleRequest_Input struct {
+	// What the client types, as it comes; it reaches the guest only while
+	// the client holds the input. A lone newline arrives as a carriage
+	// return, as the console's UART takes it.
+	Input []byte `protobuf:"bytes,2,opt,name=input,proto3,oneof"`
+}
+
+type MachineConsoleRequest_Resize struct {
+	// The screen's new size, taken only from the client holding the
+	// input. The guest is not told: its user runs stty in it.
+	Resize *MachineConsoleSize `protobuf:"bytes,3,opt,name=resize,proto3,oneof"`
+}
+
+func (*MachineConsoleRequest_Start) isMachineConsoleRequest_Message() {}
+
+func (*MachineConsoleRequest_Input) isMachineConsoleRequest_Message() {}
+
+func (*MachineConsoleRequest_Resize) isMachineConsoleRequest_Message() {}
+
+// MachineConsoleStart attaches a client to the serial console.
+type MachineConsoleStart struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Only watches: never holds the input.
+	ReadOnly bool `protobuf:"varint,1,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	// Takes the input from whoever holds it, who goes on watching; without
+	// it, a client finding the input held watches.
+	Force         bool `protobuf:"varint,2,opt,name=force,proto3" json:"force,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineConsoleStart) Reset() {
+	*x = MachineConsoleStart{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineConsoleStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineConsoleStart) ProtoMessage() {}
+
+func (x *MachineConsoleStart) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineConsoleStart.ProtoReflect.Descriptor instead.
+func (*MachineConsoleStart) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *MachineConsoleStart) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
+func (x *MachineConsoleStart) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+// MachineConsoleSize is the screen's size in character cells, within
+// 1..500 columns and 1..200 rows; 80x24 until it is set.
+type MachineConsoleSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Columns       uint32                 `protobuf:"varint,1,opt,name=columns,proto3" json:"columns,omitempty"`
+	Rows          uint32                 `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineConsoleSize) Reset() {
+	*x = MachineConsoleSize{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineConsoleSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineConsoleSize) ProtoMessage() {}
+
+func (x *MachineConsoleSize) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineConsoleSize.ProtoReflect.Descriptor instead.
+func (*MachineConsoleSize) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *MachineConsoleSize) GetColumns() uint32 {
+	if x != nil {
+		return x.Columns
+	}
+	return 0
+}
+
+func (x *MachineConsoleSize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+// MachineConsoleResponse is a message from the server: the client's state
+// first, then the screen drawn whole, then what the guest writes, and the
+// state again whenever it changes, as when the input is taken or the guest
+// reboots.
+type MachineConsoleResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*MachineConsoleResponse_Output
+	//	*MachineConsoleResponse_State
+	Message       isMachineConsoleResponse_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineConsoleResponse) Reset() {
+	*x = MachineConsoleResponse{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineConsoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineConsoleResponse) ProtoMessage() {}
+
+func (x *MachineConsoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineConsoleResponse.ProtoReflect.Descriptor instead.
+func (*MachineConsoleResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *MachineConsoleResponse) GetMessage() isMachineConsoleResponse_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *MachineConsoleResponse) GetOutput() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*MachineConsoleResponse_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *MachineConsoleResponse) GetState() *MachineConsoleState {
+	if x != nil {
+		if x, ok := x.Message.(*MachineConsoleResponse_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
+type isMachineConsoleResponse_Message interface {
+	isMachineConsoleResponse_Message()
+}
+
+type MachineConsoleResponse_Output struct {
+	// Bytes for the client's terminal.
+	Output []byte `protobuf:"bytes,1,opt,name=output,proto3,oneof"`
+}
+
+type MachineConsoleResponse_State struct {
+	State *MachineConsoleState `protobuf:"bytes,2,opt,name=state,proto3,oneof"`
+}
+
+func (*MachineConsoleResponse_Output) isMachineConsoleResponse_Message() {}
+
+func (*MachineConsoleResponse_State) isMachineConsoleResponse_Message() {}
+
+// MachineConsoleState is how the client is attached.
+type MachineConsoleState struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The client holds the input.
+	Input         bool                `protobuf:"varint,1,opt,name=input,proto3" json:"input,omitempty"`
+	Size          *MachineConsoleSize `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MachineConsoleState) Reset() {
+	*x = MachineConsoleState{}
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MachineConsoleState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MachineConsoleState) ProtoMessage() {}
+
+func (x *MachineConsoleState) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MachineConsoleState.ProtoReflect.Descriptor instead.
+func (*MachineConsoleState) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *MachineConsoleState) GetInput() bool {
+	if x != nil {
+		return x.Input
+	}
+	return false
+}
+
+func (x *MachineConsoleState) GetSize() *MachineConsoleSize {
+	if x != nil {
+		return x.Size
+	}
+	return nil
+}
+
 var File_hangar_compute_v1alpha1_machine_capability_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
@@ -1216,7 +1572,25 @@ const file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc = "" +
 	"\amessage\"=\n" +
 	"\x0fMachineExecExit\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\x05R\x04code\x12\x16\n" +
-	"\x06signal\x18\x02 \x01(\x05R\x06signal*\xce\x01\n" +
+	"\x06signal\x18\x02 \x01(\x05R\x06signal\"\xc7\x01\n" +
+	"\x15MachineConsoleRequest\x12D\n" +
+	"\x05start\x18\x01 \x01(\v2,.hangar.compute.v1alpha1.MachineConsoleStartH\x00R\x05start\x12\x16\n" +
+	"\x05input\x18\x02 \x01(\fH\x00R\x05input\x12E\n" +
+	"\x06resize\x18\x03 \x01(\v2+.hangar.compute.v1alpha1.MachineConsoleSizeH\x00R\x06resizeB\t\n" +
+	"\amessage\"H\n" +
+	"\x13MachineConsoleStart\x12\x1b\n" +
+	"\tread_only\x18\x01 \x01(\bR\breadOnly\x12\x14\n" +
+	"\x05force\x18\x02 \x01(\bR\x05force\"B\n" +
+	"\x12MachineConsoleSize\x12\x18\n" +
+	"\acolumns\x18\x01 \x01(\rR\acolumns\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\"\x83\x01\n" +
+	"\x16MachineConsoleResponse\x12\x18\n" +
+	"\x06output\x18\x01 \x01(\fH\x00R\x06output\x12D\n" +
+	"\x05state\x18\x02 \x01(\v2,.hangar.compute.v1alpha1.MachineConsoleStateH\x00R\x05stateB\t\n" +
+	"\amessage\"l\n" +
+	"\x13MachineConsoleState\x12\x14\n" +
+	"\x05input\x18\x01 \x01(\bR\x05input\x12?\n" +
+	"\x04size\x18\x02 \x01(\v2+.hangar.compute.v1alpha1.MachineConsoleSizeR\x04size*\xce\x01\n" +
 	"\x10MachineLogStream\x12\"\n" +
 	"\x1eMACHINE_LOG_STREAM_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19MACHINE_LOG_STREAM_STDOUT\x10\x01\x12\x1d\n" +
@@ -1244,7 +1618,7 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_rawDescGZIP() []byte 
 }
 
 var file_hangar_compute_v1alpha1_machine_capability_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
+var file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_hangar_compute_v1alpha1_machine_capability_proto_goTypes = []any{
 	(MachineLogStream)(0),             // 0: hangar.compute.v1alpha1.MachineLogStream
 	(*LogsRequest)(nil),               // 1: hangar.compute.v1alpha1.LogsRequest
@@ -1261,33 +1635,42 @@ var file_hangar_compute_v1alpha1_machine_capability_proto_goTypes = []any{
 	(*MachineExecWindowSize)(nil),     // 12: hangar.compute.v1alpha1.MachineExecWindowSize
 	(*MachineExecResponse)(nil),       // 13: hangar.compute.v1alpha1.MachineExecResponse
 	(*MachineExecExit)(nil),           // 14: hangar.compute.v1alpha1.MachineExecExit
-	(*timestamppb.Timestamp)(nil),     // 15: google.protobuf.Timestamp
-	(*EnvVar)(nil),                    // 16: hangar.compute.v1alpha1.EnvVar
+	(*MachineConsoleRequest)(nil),     // 15: hangar.compute.v1alpha1.MachineConsoleRequest
+	(*MachineConsoleStart)(nil),       // 16: hangar.compute.v1alpha1.MachineConsoleStart
+	(*MachineConsoleSize)(nil),        // 17: hangar.compute.v1alpha1.MachineConsoleSize
+	(*MachineConsoleResponse)(nil),    // 18: hangar.compute.v1alpha1.MachineConsoleResponse
+	(*MachineConsoleState)(nil),       // 19: hangar.compute.v1alpha1.MachineConsoleState
+	(*timestamppb.Timestamp)(nil),     // 20: google.protobuf.Timestamp
+	(*EnvVar)(nil),                    // 21: hangar.compute.v1alpha1.EnvVar
 }
 var file_hangar_compute_v1alpha1_machine_capability_proto_depIdxs = []int32{
-	15, // 0: hangar.compute.v1alpha1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	20, // 0: hangar.compute.v1alpha1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.compute.v1alpha1.LogsResponse.records:type_name -> hangar.compute.v1alpha1.MachineLogRecord
 	0,  // 2: hangar.compute.v1alpha1.MachineLogRecord.stream:type_name -> hangar.compute.v1alpha1.MachineLogStream
-	15, // 3: hangar.compute.v1alpha1.MachineLogRecord.time:type_name -> google.protobuf.Timestamp
+	20, // 3: hangar.compute.v1alpha1.MachineLogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.compute.v1alpha1.MachineLogRecord.exit:type_name -> hangar.compute.v1alpha1.MachineExitStatus
-	15, // 5: hangar.compute.v1alpha1.SignSSHKeyResponse.valid_before:type_name -> google.protobuf.Timestamp
+	20, // 5: hangar.compute.v1alpha1.SignSSHKeyResponse.valid_before:type_name -> google.protobuf.Timestamp
 	10, // 6: hangar.compute.v1alpha1.MachineExecRequest.start:type_name -> hangar.compute.v1alpha1.MachineExecStart
 	11, // 7: hangar.compute.v1alpha1.MachineExecRequest.stdin_close:type_name -> hangar.compute.v1alpha1.MachineExecStdinClose
 	12, // 8: hangar.compute.v1alpha1.MachineExecRequest.resize:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
 	12, // 9: hangar.compute.v1alpha1.MachineExecStart.size:type_name -> hangar.compute.v1alpha1.MachineExecWindowSize
-	16, // 10: hangar.compute.v1alpha1.MachineExecStart.env:type_name -> hangar.compute.v1alpha1.EnvVar
+	21, // 10: hangar.compute.v1alpha1.MachineExecStart.env:type_name -> hangar.compute.v1alpha1.EnvVar
 	14, // 11: hangar.compute.v1alpha1.MachineExecResponse.exit:type_name -> hangar.compute.v1alpha1.MachineExecExit
-	1,  // 12: hangar.compute.v1alpha1.MachineCapabilityService.Logs:input_type -> hangar.compute.v1alpha1.LogsRequest
-	5,  // 13: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:input_type -> hangar.compute.v1alpha1.SignSSHKeyRequest
-	7,  // 14: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:input_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysRequest
-	2,  // 15: hangar.compute.v1alpha1.MachineCapabilityService.Logs:output_type -> hangar.compute.v1alpha1.LogsResponse
-	6,  // 16: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:output_type -> hangar.compute.v1alpha1.SignSSHKeyResponse
-	8,  // 17: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:output_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysResponse
-	15, // [15:18] is the sub-list for method output_type
-	12, // [12:15] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	16, // 12: hangar.compute.v1alpha1.MachineConsoleRequest.start:type_name -> hangar.compute.v1alpha1.MachineConsoleStart
+	17, // 13: hangar.compute.v1alpha1.MachineConsoleRequest.resize:type_name -> hangar.compute.v1alpha1.MachineConsoleSize
+	19, // 14: hangar.compute.v1alpha1.MachineConsoleResponse.state:type_name -> hangar.compute.v1alpha1.MachineConsoleState
+	17, // 15: hangar.compute.v1alpha1.MachineConsoleState.size:type_name -> hangar.compute.v1alpha1.MachineConsoleSize
+	1,  // 16: hangar.compute.v1alpha1.MachineCapabilityService.Logs:input_type -> hangar.compute.v1alpha1.LogsRequest
+	5,  // 17: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:input_type -> hangar.compute.v1alpha1.SignSSHKeyRequest
+	7,  // 18: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:input_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysRequest
+	2,  // 19: hangar.compute.v1alpha1.MachineCapabilityService.Logs:output_type -> hangar.compute.v1alpha1.LogsResponse
+	6,  // 20: hangar.compute.v1alpha1.MachineCapabilityService.SignSSHKey:output_type -> hangar.compute.v1alpha1.SignSSHKeyResponse
+	8,  // 21: hangar.compute.v1alpha1.MachineCapabilityService.ForgetSSHHostKeys:output_type -> hangar.compute.v1alpha1.ForgetSSHHostKeysResponse
+	19, // [19:22] is the sub-list for method output_type
+	16, // [16:19] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_machine_capability_proto_init() }
@@ -1313,13 +1696,22 @@ func file_hangar_compute_v1alpha1_machine_capability_proto_init() {
 		(*MachineExecResponse_Stderr)(nil),
 		(*MachineExecResponse_Exit)(nil),
 	}
+	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[14].OneofWrappers = []any{
+		(*MachineConsoleRequest_Start)(nil),
+		(*MachineConsoleRequest_Input)(nil),
+		(*MachineConsoleRequest_Resize)(nil),
+	}
+	file_hangar_compute_v1alpha1_machine_capability_proto_msgTypes[17].OneofWrappers = []any{
+		(*MachineConsoleResponse_Output)(nil),
+		(*MachineConsoleResponse_State)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc), len(file_hangar_compute_v1alpha1_machine_capability_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   14,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
