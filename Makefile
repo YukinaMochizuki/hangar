@@ -110,7 +110,7 @@ e2e-host-vms: guest-initramfs guest-converter host-swtpm $(E2E_HOST_ROOTFS)
 		go test -exec 'sudo -E' -tags testbed -count=1 -timeout 30m -v ./test/testbed/vms/ $(if $(RUN),-run '$(RUN)')
 
 # The full flow alone: the real apiserver, node and CLI on every real driver.
-e2e-host-flow: guest-initramfs guest-initramfs-testbed guest-converter $(E2E_HOST_ROOTFS)
+e2e-host-flow: guest-initramfs guest-initramfs-testbed guest-converter host-swtpm $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \

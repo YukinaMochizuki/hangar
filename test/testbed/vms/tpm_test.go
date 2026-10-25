@@ -30,7 +30,7 @@ import (
 //go:embed tpmprobe.py
 var tpmProbe []byte
 
-// tpmKeys is where the test leaves its VMs' keys, as the agent would.
+// tpmKeys is where the driver keeps the test's VMs' keys.
 const tpmKeys = "/run/hangar-testbed-vtpm"
 
 // TestAVMsTPMKeepsItsState: an Ubuntu VM with a TPM sees /dev/tpm0, and the
@@ -49,14 +49,7 @@ func TestAVMsTPMKeepsItsState(t *testing.T) {
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(tpmKeys, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	keyFile := filepath.Join(tpmKeys, uid)
-	if err := os.WriteFile(keyFile, key, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(keyFile) })
+	t.Cleanup(func() { _ = os.RemoveAll(tpmKeys) })
 
 	// Each boot prints its number and what the probe reads; the first, from
 	// the user-data, makes the index and the key, then reboots.
@@ -72,8 +65,14 @@ EOF
 chmod +x /var/lib/cloud/scripts/per-boot/tpm.sh
 /var/lib/cloud/scripts/per-boot/tpm.sh
 systemd-run --on-active=3 systemctl reboot`
+	// The key the agent would have asked the apiserver for.
+	putKey := func(hv *chvm.Hypervisor) {
+		if err := hv.PutTPMKey(context.Background(), uid, key); err != nil {
+			t.Fatal(err)
+		}
+	}
 	out, hv, spec := bootWithSeedConfig(t, uid, script,
-		func(c *chvm.Config) { c.Swtpm, c.TPMKeys = bundle, tpmKeys },
+		func(c *chvm.Config) { c.Swtpm, c.TPMKeys = bundle, tpmKeys }, putKey,
 		func(_ *host, s *driver.VMSpec) { s.SystemSerialNumber, s.TPM = uid, true })
 	if !regexp.MustCompile(`crw-rw---- 1 tss root +10, +224 .* /dev/tpm0`).MatchString(out) {
 		t.Errorf("the guest has no /dev/tpm0:\n%s", tail(out))

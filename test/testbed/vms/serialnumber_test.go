@@ -70,13 +70,14 @@ func TestAVMsGuestFindsItsDisksBySerial(t *testing.T) {
 // of, to the seed volume.
 func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor) {
 	t.Helper()
-	out, hv, _ := bootWithSeedConfig(t, uid, script, nil, mutate)
+	out, hv, _ := bootWithSeedConfig(t, uid, script, nil, nil, mutate)
 	return out, hv
 }
 
 // bootWithSeedConfig is bootWithSeed with the driver's config changed by
-// configure, which may be nil, and the spec it started returned too.
-func bootWithSeedConfig(t *testing.T, uid, script string, configure func(*chvm.Config), mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor, driver.VMSpec) {
+// configure, and prepare given the driver before the VM starts, either of
+// them nil, and the spec it started returned too.
+func bootWithSeedConfig(t *testing.T, uid, script string, configure func(*chvm.Config), prepare func(*chvm.Hypervisor), mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor, driver.VMSpec) {
 	t.Helper()
 	h := newHost(t)
 	ctx := context.Background()
@@ -97,6 +98,9 @@ func bootWithSeedConfig(t *testing.T, uid, script string, configure func(*chvm.C
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = hv.Close() })
+	if prepare != nil {
+		prepare(hv)
+	}
 
 	file := diskimgtest.Ubuntu(t)
 	srv := diskimgtest.New(t)

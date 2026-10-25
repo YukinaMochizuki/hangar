@@ -85,6 +85,9 @@ id is freed; it goes with the VM's logs, when the machine is gone.
 
 ## Known issues
 
+Both are Cloud Hypervisor's; a patched Cloud Hypervisor is to fix them
+(hangar#212, `docs/decisions/vm-tpm.md`).
+
 - Cloud Hypervisor (v53.0, and main as of 2026-10) sends its stdin's fd
   with every control command after the first (`tpm/src/socket.rs` resets
   the fd to send to 0, not -1), and swtpm keeps them: 7 more per guest

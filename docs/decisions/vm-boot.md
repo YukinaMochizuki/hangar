@@ -58,6 +58,10 @@ booted kernels of their own, moved there too.
   warning. Cloud Hypervisor gets the value inside double quotes, a quote
   in it doubled, so its option parser takes commas, brackets and
   surrounding spaces as part of it.
+- **A VM may have a TPM 2.0**, `spec.tpm.enabled`, set when it is
+  created and never changed, served by swtpm on its node, its state kept
+  there, encrypted, until the VM is deleted (`docs/decisions/vm-tpm.md`).
+  The pinned firmware measures nothing into it.
 - **What cloud-init gets** (`networking.md`, the metadata service):
   `meta-data` with the VM's uid as `instance-id` and its name as
   `local-hostname`; `user-data`, the VM's `userData` exactly as written

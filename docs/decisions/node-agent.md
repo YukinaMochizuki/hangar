@@ -288,7 +288,16 @@ no group but the KVM device's, and checks all of it in
 `/proc/thread-self/status` before it execs Cloud Hypervisor, with no
 environment. Cloud Hypervisor keeps its own seccomp filter. A firmware
 VM's console helper, `hangar-node vmm-console`, is run the same way, before
-the capabilities go, with no group but the VM's (`serial-console.md`).
+the capabilities go, with no group but the VM's (`serial-console.md`). So
+is a TPM VM's swtpm, before Cloud Hypervisor, from Hangar's bundle under
+its own static loader, which the unit binds read-only, with its control
+socket, its key on a pipe and its log on fds 3 to 5, and the host's
+`nr_open` as its RLIMIT_NOFILE (`vm-tpm.md`). That unit's hard
+`LimitNOFILE` is `nr_open` for this, so its launcher and Cloud Hypervisor
+may raise their soft limit that far too. The launcher reads the key
+from the unit's credential, `LoadCredential=vtpm:/run/hangar/vtpm/<uid>`,
+which the agent writes before it starts the VM and removes once it has
+stopped it.
 
 **The VM's directory** is root's and the VM's group's, `0710`: Cloud
 Hypervisor reads `boot.img` (`0640`), opens `disk` and a container's
@@ -310,7 +319,7 @@ only as a socket, never through a link Cloud Hypervisor put in its place.
 | `PrivateNetwork`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK` | Any network but its taps' fds, and the host's abstract sockets |
 | `ProtectProc=invisible`, `ProcSubset=pid` | Seeing the host's other processes and its kernel settings |
 | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`, `RestrictSUIDSGID`, `RestrictNamespaces=net`, a system call deny list, `LimitCORE=0`, `KeyringMode=private` | Changing the kernel, the clock or the hostname; keys a later VM of the same uid could read; a core holding the guest's memory |
-| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's), `TasksMax` (64 and two a vCPU, 16 more for a firmware VM's console helper) | Taking the host's memory or tasks |
+| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's, 16 MiB more for a TPM VM's swtpm), `TasksMax` (64 and two a vCPU, 16 more for a firmware VM's console helper, 8 more for swtpm) | Taking the host's memory or tasks |
 
 `MemoryMax` was measured (2026-10, `TestMemoryOverhead` in
 `test/testbed/vms`) with guests of 1, 4 and 16 GiB filling half their
