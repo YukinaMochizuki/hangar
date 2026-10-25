@@ -33,6 +33,7 @@ import { MachineList } from "@/pages/machine-list";
 import { PlatformOverview } from "@/pages/monitoring";
 import { NodeDetail, NodeList } from "@/pages/nodes";
 import { TerminalPage } from "@/pages/machine-terminal";
+import { ConsolePage } from "@/pages/machine-console";
 import { ProjectMembers, TenantMembers } from "@/pages/members";
 import { Overview } from "@/pages/overview";
 import { TenantOverview } from "@/pages/tenant-overview";
@@ -139,6 +140,14 @@ const vmTerminalRoute = createRoute({
   component: function VMTerminal() {
     const { name } = vmTerminalRoute.useParams();
     return <TerminalPage key={name} kind="VirtualMachine" name={name} />;
+  },
+});
+const vmConsoleRoute = createRoute({
+  getParentRoute: () => projectRoute,
+  path: "/vms/$name/console",
+  component: function VMConsole() {
+    const { name } = vmConsoleRoute.useParams();
+    return <ConsolePage key={name} name={name} />;
   },
 });
 const vmsRoute = createRoute({
@@ -542,6 +551,7 @@ export const routeTree = rootRoute.addChildren([
     containerTerminalRoute,
     containerEditRoute,
     vmTerminalRoute,
+    vmConsoleRoute,
     vmEditRoute,
     vmsRoute,
     vmRoute,

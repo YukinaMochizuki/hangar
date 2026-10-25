@@ -9,10 +9,12 @@ import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/con
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { ArrowDown, ArrowUpRight, ChevronDown, ChevronUp, Lock, TerminalSquare } from "lucide-react";
+import { ArrowDown, ArrowUpRight, ChevronDown, ChevronUp, Lock, SquareChevronRight, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
 import { HostKeys } from "@/components/host-key";
 import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
+import { consoleBlock, useMayConsole } from "@/pages/machine-console";
+import type { MenuAction } from "@/components/menu";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { parseAnsi, type AnsiColor, type AnsiSpan, type AnsiStyle } from "@/lib/ansi";
 import { artStatus } from "@/components/chassis-art";
@@ -55,9 +57,28 @@ function sizeText(m: MachineView) {
   return `${formatNumber(m.cpu)} vCPU · ${formatNumber(m.memoryGi)} GiB${Number.isFinite(m.diskGi) ? ` · ${formatNumber(m.diskGi)} GiB disk` : ""}`;
 }
 
+/**
+ * What a VM's head adds to its "..." menu: its serial console, slower than
+ * the terminal and kept for what SSH cannot reach.
+ */
+function useMoreActions(m: MachineView): MenuAction[] {
+  const navigate = useNavigate();
+  const may = useMayConsole(m.project);
+  if (m.kind !== "VirtualMachine" || !may) return [];
+  return [
+    {
+      label: "Serial console",
+      icon: SquareChevronRight,
+      disabled: !!consoleBlock(m),
+      onSelect: () => void navigate({ to: "/projects/$project/vms/$name/console", params: { project: m.project, name: m.name } }),
+    },
+  ];
+}
+
 function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: ReturnType<typeof useMachineActions> }) {
   const { sizes } = useMachineSizes();
   const size = sizeOf(m, sizes);
+  const more = useMoreActions(m);
   const nic = m.interfaces[0];
   return (
     <div className="border-b px-4 pb-5 pt-6 md:px-8">
@@ -87,7 +108,7 @@ function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: 
               <TerminalSquare /> Terminal
             </Link>
           )}
-          <MachineActions set={set} />
+          <MachineActions set={set} more={more} />
         </span>
       </div>
     </div>

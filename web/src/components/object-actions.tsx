@@ -25,6 +25,8 @@ export type ObjectAction = {
   disabled?: boolean;
   /** Opens a page, which the head draws as a link to it. */
   link?: { to: string; params: Record<string, string>; search?: Record<string, string> };
+  /** Seldom used: the head keeps it in its "..." menu rather than as a button. */
+  more?: boolean;
 };
 
 /**
@@ -57,15 +59,18 @@ export const editLabelsAction = (may: boolean, deleting: boolean, onSelect: () =
   may && !deleting ? { label: "Edit labels", icon: Tag, onSelect } : undefined;
 
 /**
- * An object page's actions as buttons. While the object is being deleted
- * they are drawn off.
+ * An object page's actions as buttons, and those seldom used, with `more`
+ * the page adds, in a "..." menu after them. While the object is being
+ * deleted they are drawn off.
  */
-export function HeadActions({ set }: { set: ActionSet }) {
-  if (set.actions.length === 0) return null;
+export function HeadActions({ set, more = [] }: { set: ActionSet; more?: MenuAction[] }) {
+  const buttons = set.actions.filter((a) => !a.more);
+  const menu = [...set.actions.filter((a) => a.more).map(menuAction), ...more].map((a) => (set.deleting ? { ...a, disabled: true } : a));
+  if (buttons.length === 0 && menu.length === 0) return null;
   return (
     // A group for assistive technology alone: its buttons lay out in their parent's row.
     <div role="group" aria-label="Actions" className="contents">
-      {set.actions.map((a) => {
+      {buttons.map((a) => {
         const Icon = a.icon;
         const body = (
           <>
@@ -90,14 +95,17 @@ export function HeadActions({ set }: { set: ActionSet }) {
           </Button>
         );
       })}
+      {menu.length > 0 && <RowMenu label="More actions" actions={menu} />}
     </div>
   );
 }
 
+const menuAction = (a: ObjectAction): MenuAction => ({ label: a.label, icon: a.icon, danger: a.danger, disabled: !!a.pending || a.disabled, onSelect: a.onSelect });
+
 /** The menu's actions: the head's, with Edit labels before Delete; none while the object is being deleted. */
 export function menuActions(set: ActionSet): MenuAction[] {
   if (set.deleting) return [];
-  const all = set.actions.map((a): MenuAction => ({ label: a.label, icon: a.icon, danger: a.danger, disabled: !!a.pending || a.disabled, onSelect: a.onSelect }));
+  const all = set.actions.map(menuAction);
   if (!set.editLabels) return all;
   const at = all.findIndex((a) => a.danger);
   const labels = { label: set.editLabels.label, icon: set.editLabels.icon, onSelect: set.editLabels.onSelect };

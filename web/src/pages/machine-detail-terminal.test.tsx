@@ -3,10 +3,11 @@
 // Where a container's page offers its terminal: the header's Terminal link
 // and the Terminal card, only for a container and only once TestPermissions
 // holds compute.machines.exec; and a failed poll of the lists keeps the page,
-// and so a terminal open on it, on the last answer.
+// and so a terminal open on it, on the last answer. A VM's serial console
+// is offered only in the head's "..." menu, on compute.machines.exec.
 
 import { Code, ConnectError } from "@connectrpc/connect";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { MachineDetail } from "@/pages/machine-detail";
 import { never, withApi, type Api } from "@/test/harness";
@@ -88,5 +89,28 @@ describe("a container's terminal on its page", () => {
     expect(await screen.findByText(/did not reload; showing the last answer/)).toBeTruthy();
     expect(card()).toBeTruthy();
     expect(screen.queryByText("The container did not load")).toBeNull();
+  });
+});
+
+describe("a virtual machine's serial console on its page", () => {
+  const more = () => screen.queryByRole("button", { name: "More actions" });
+  const serialConsole = () => screen.queryByRole("menuitem", { name: /Serial console/ });
+
+  it("is offered in the head's menu alone, to a caller who holds exec", async () => {
+    await show("VirtualMachine", "postgres", { perms: () => ["compute.machines.exec"] });
+    await waitFor(() => expect(more()).toBeTruthy());
+    expect(screen.queryByRole("link", { name: /Serial console/ })).toBeNull();
+    fireEvent.click(more()!);
+    expect((serialConsole() as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("is not offered to a caller who holds ssh alone, nor on a container's page", async () => {
+    const api = await show("VirtualMachine", "postgres", { perms: () => ["compute.machines.ssh"] });
+    await waitFor(() => expect(api.client.isFetching()).toBe(0));
+    expect(more()).toBeNull();
+    cleanup();
+    const ct = await show("Container", "web", { perms: () => ["compute.machines.exec"] });
+    await waitFor(() => expect(ct.client.isFetching()).toBe(0));
+    expect(more()).toBeNull();
   });
 });

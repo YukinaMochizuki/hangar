@@ -7,7 +7,7 @@ import { ImagePlus, Pencil, Play, Square, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDeleteDialog } from "@/components/delete-dialog";
 import { EditLabelsDialog } from "@/components/labels-dialog";
-import { AnchoredLayer } from "@/components/menu";
+import { AnchoredLayer, type MenuAction } from "@/components/menu";
 import { Notice } from "@/components/notice";
 import { editLabelsAction, HeadActions, ObjectRowMenu, type ActionSet, type Can, type ObjectAction } from "@/components/object-actions";
 import { useDeleteMachine, useSetRunState, type RunState } from "@/lib/actions";
@@ -57,9 +57,10 @@ const editPath = (m: MachineView) => (m.kind === "Container" ? "/projects/$proje
  * the New image page on its root disk, off until the VM is stopped, as the
  * API captures only then), Edit labels and Delete, by `can`, the answer of
  * useMachineCan its list or page asked: the kind's apply for Edit, Start,
- * Stop and labels, storage.customimages.apply for Create image, and the
- * kind's delete for Delete. `after` follows a delete the API took. The run
- * state's call is given too, for where its error is shown.
+ * Stop and labels, storage.customimages.apply for Create image (kept in
+ * the page's "..." menu), and the kind's delete for Delete. `after`
+ * follows a delete the API took. The run state's call is given too, for
+ * where its error is shown.
  */
 export function useMachineActions(m: MachineView, can: Can, after?: () => void): ActionSet & { run: ReturnType<typeof useSetRunState> } {
   const run = useSetRunState(m.kind, m.project, m.name);
@@ -83,7 +84,7 @@ export function useMachineActions(m: MachineView, can: Can, after?: () => void):
   const rootDisk = m.vm?.status?.rootDisk;
   if (m.kind === "VirtualMachine" && rootDisk && can(capturePerm)) {
     const link = { to: "/projects/$project/new/custom-image", params: { project: m.project }, search: { disk: rootDisk } };
-    actions.push({ label: "Create image", icon: ImagePlus, disabled: m.deleting || isLive(m), link, onSelect: () => void navigate(link) });
+    actions.push({ label: "Create image", icon: ImagePlus, disabled: m.deleting || isLive(m), link, more: true, onSelect: () => void navigate(link) });
   }
   if (mayDelete) actions.push({ label: "Delete", icon: Trash2, danger: true, onSelect: () => setOpen("delete") });
   const close = () => setOpen(null);
@@ -102,13 +103,16 @@ export function useMachineActions(m: MachineView, can: Can, after?: () => void):
   };
 }
 
-/** The machine's actions as its page's head draws them, with the run state's error under them. */
-export function MachineActions({ set }: { set: ReturnType<typeof useMachineActions> }) {
+/**
+ * The machine's actions as its page's head draws them, with what the page
+ * adds to their "..." menu, and the run state's error under them.
+ */
+export function MachineActions({ set, more }: { set: ReturnType<typeof useMachineActions>; more?: MenuAction[] }) {
   const run = set.run;
   return (
     <div className="flex flex-col items-stretch gap-2 md:items-end">
       <div className="flex flex-wrap items-center gap-2">
-        <HeadActions set={set} />
+        <HeadActions set={set} more={more} />
       </div>
       {run.error && (
         <Notice tone="error" title={runErrorTitle(run.variables)} className="max-w-md">

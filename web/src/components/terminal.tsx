@@ -1,6 +1,8 @@
 // A terminal on an exec in a machine: xterm.js drawing what the process
 // writes, and sending what is typed and the terminal's size
-// (web/src/lib/exec.ts). It draws through WebGL alone, loaded before the
+// (web/src/lib/exec.ts); and the same terminal on a virtual machine's
+// serial console (web/src/lib/console.ts), whose size is the console's
+// rather than the window's. It draws through WebGL alone, loaded before the
 // terminal opens: xterm's DOM renderer lays out its text with injected
 // <style> elements (fonts, cell sizes, colours), which the console's
 // Content-Security-Policy (style-src 'self') blocks, so where WebGL is
@@ -9,7 +11,7 @@
 
 import type { ITheme, Terminal as XTerm } from "@xterm/xterm";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { openExec, type Exec, type ExecEnd } from "@/lib/exec";
+import { openExec, type ExecEnd } from "@/lib/exec";
 
 /** Where a terminal's exec stands. */
 export type TerminalState =
@@ -80,30 +82,69 @@ export function endLine(end: ExecEnd): string {
   }
 }
 
+/** What a terminal is connected to: an exec, or a serial console. */
+export interface Session {
+  send: (data: string | Uint8Array) => void;
+  resize: (cols: number, rows: number) => void;
+  close: () => void;
+}
+
+/** What a session tells the terminal drawing it. */
+export interface SessionEvents {
+  onOpen: () => void;
+  onOutput: (data: Uint8Array) => void;
+  onEnd: (end: ExecEnd) => void;
+}
+
+/** Starts a session on a terminal that has opened. */
+export type Opener = (term: XTerm, events: SessionEvents) => Session;
+
 /**
- * useTerminal runs a terminal in the element given to attach. Nothing
- * connects until connect is called; connect again starts a new process, and
- * leaving the page ends it.
+ * How a terminal is sized: to its element, sending each new size to its
+ * session (an exec's), or by its session alone (a console's, shared by
+ * every client), drawn at that size whatever the element's.
  */
+export type Sizing = "fit" | "session";
+
+/** useTerminal runs a terminal on an exec of the target's: see useXterm. */
 export function useTerminal(target: TerminalTarget) {
+  const { project, plural, name } = target;
+  const command = target.command.join("\u0000");
+  const open = useCallback<Opener>(
+    (term, events) =>
+      openExec(
+        // No command is a login shell, so "" stands for none, not for one empty argument.
+        { project, plural, name, command: command === "" ? [] : command.split("\u0000"), cols: term.cols, rows: term.rows },
+        events,
+      ),
+    [project, plural, name, command],
+  );
+  return useXterm(open, "fit");
+}
+
+/**
+ * useXterm runs a terminal in the element given to attach, on the session
+ * open starts. Nothing connects until connect is called; connect again
+ * starts a new session, and leaving the page ends it. fits gives the size
+ * that fills an element at the terminal's cell size, once it is drawn.
+ */
+export function useXterm(open: Opener, sizing: Sizing) {
   const element = useRef<HTMLDivElement | null>(null);
   const attach = useCallback((el: HTMLDivElement | null) => {
     element.current = el;
   }, []);
   const [state, setState] = useState<TerminalState>({ kind: "idle" });
-  const live = useRef<{ term: XTerm; exec?: Exec; observer: ResizeObserver } | null>(null);
+  const live = useRef<{ term: XTerm; session?: Session; observer?: ResizeObserver } | null>(null);
   // Counts connects and teardowns, so a connect overtaken while it waited (for the font, or for xterm to load) does nothing.
   const generation = useRef(0);
-  const { project, plural, name } = target;
-  const command = target.command.join("\u0000");
 
   const teardown = useCallback(() => {
     generation.current++;
     const l = live.current;
     live.current = null;
     if (!l) return;
-    l.observer.disconnect();
-    l.exec?.close();
+    l.observer?.disconnect();
+    l.session?.close();
     l.term.dispose();
   }, []);
 
@@ -152,39 +193,60 @@ export function useTerminal(target: TerminalTarget) {
     };
     draw();
     term.open(el);
-    fit.fit();
-    const observer = new ResizeObserver(() => fit.fit());
-    observer.observe(el);
-    const l: { term: XTerm; exec?: Exec; observer: ResizeObserver } = { term, observer };
+    const l: { term: XTerm; session?: Session; observer?: ResizeObserver } = { term };
+    if (sizing === "fit") {
+      fit.fit();
+      l.observer = new ResizeObserver(() => fit.fit());
+      l.observer.observe(el);
+    }
     live.current = l;
-    const exec = openExec(
-      // No command is a login shell, so "" stands for none, not for one empty argument.
-      { project, plural, name, command: command === "" ? [] : command.split("\u0000"), cols: term.cols, rows: term.rows },
-      {
-        onOpen: () => {
-          setState({ kind: "open", cols: term.cols, rows: term.rows });
-          term.focus();
-        },
-        onOutput: (d) => term.write(d),
-        onEnd: (end) => {
-          if (live.current !== l) return;
-          term.write(`\r\n\x1b[2m${endLine(end)}\x1b[0m\r\n`);
-          term.options.cursorBlink = false;
-          setState({ kind: "ended", end });
-        },
+    const session = open(term, {
+      onOpen: () => {
+        setState({ kind: "open", cols: term.cols, rows: term.rows });
+        term.focus();
       },
-    );
-    l.exec = exec;
-    term.onData((d) => exec.send(d));
+      onOutput: (d) => term.write(d),
+      onEnd: (end) => {
+        if (live.current !== l) return;
+        term.write(`\r\n\x1b[2m${endLine(end)}\x1b[0m\r\n`);
+        term.options.cursorBlink = false;
+        setState({ kind: "ended", end });
+      },
+    });
+    l.session = session;
+    term.onData((d) => session.send(d));
     // Mouse reports in xterm's default encoding are bytes, not text.
-    term.onBinary((d) => exec.send(Uint8Array.from(d, (c) => c.charCodeAt(0))));
+    term.onBinary((d) => session.send(Uint8Array.from(d, (c) => c.charCodeAt(0))));
     term.onResize(({ cols, rows }) => {
-      exec.resize(cols, rows);
+      // A session that sizes the terminal is not told the size it gave.
+      if (sizing === "fit") session.resize(cols, rows);
       setState((s) => (s.kind === "open" ? { kind: "open", cols, rows } : s));
     });
-  }, [project, plural, name, command, teardown]);
+  }, [open, sizing, teardown]);
 
-  const disconnect = useCallback(() => live.current?.exec?.close(), []);
+  const disconnect = useCallback(() => live.current?.session?.close(), []);
+
+  /**
+   * fits is the size that fills area at the terminal's cell size, less inset
+   * pixels each way for what frames it, or undefined before it is drawn.
+   */
+  const fits = useCallback((area: HTMLElement, inset = 0): { cols: number; rows: number } | undefined => {
+    const l = live.current;
+    const screen = l?.term.element?.querySelector(".xterm-screen");
+    if (!l || !screen) return undefined;
+    const r = screen.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return undefined;
+    const cellW = r.width / l.term.cols;
+    const cellH = r.height / l.term.rows;
+    // The area's padding is no room for cells.
+    const pad = getComputedStyle(area);
+    const width = area.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight) - inset;
+    const height = area.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom) - inset;
+    return { cols: Math.max(1, Math.floor(width / cellW)), rows: Math.max(1, Math.floor(height / cellH)) };
+  }, []);
+
+  /** resize asks the live session for a size, as a console's holder of the input does for everyone's screen. */
+  const resize = useCallback((cols: number, rows: number) => live.current?.session?.resize(cols, rows), []);
 
   /** close ends the exec and lets the terminal go, as a card folded away does. */
   const close = useCallback(() => {
@@ -201,5 +263,5 @@ export function useTerminal(target: TerminalTarget) {
     return () => window.removeEventListener("pagehide", disconnect);
   }, [disconnect]);
 
-  return { attach, state, connect, disconnect, close };
+  return { attach, state, connect, disconnect, close, fits, resize };
 }
