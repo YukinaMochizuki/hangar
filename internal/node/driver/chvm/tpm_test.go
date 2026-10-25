@@ -441,6 +441,62 @@ func TestATPMsStateOutlivesItsVMsStop(t *testing.T) {
 	}
 }
 
+// TestTheDriverKeepsTPMKeys: PutTPMKey leaves the key whole in TPMKeys,
+// root's 0600 in a 0700 directory, where Start finds it, replaced whole by
+// the next; TPMKeys lists it, and RemoveTPMKey takes it away, twice
+// without error. A key of another size, or a uid that is no machine's, is
+// refused.
+func TestTheDriverKeepsTPMKeys(t *testing.T) {
+	s := newFakeSystemd()
+	h, keys, _ := tpmDriver(t, s)
+	if err := os.Remove(keys); err != nil {
+		t.Fatal(err)
+	}
+	ctx := t.Context()
+	if err := h.PutTPMKey(ctx, "m1", testTPMKey); err != nil {
+		t.Fatal(err)
+	}
+	other := bytes.Repeat([]byte{0x5a}, tpmKeySize)
+	if err := h.PutTPMKey(ctx, "m1", other); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(keys, "m1"))
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("the key file: %v %v", fi, err)
+	}
+	if di, err := os.Stat(keys); err != nil || di.Mode().Perm() != 0o700 {
+		t.Errorf("the keys' directory: %v %v", di, err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(keys, "m1")); !bytes.Equal(b, other) {
+		t.Errorf("the key file holds %x", b)
+	}
+	if entries, _ := os.ReadDir(keys); len(entries) != 1 {
+		t.Errorf("the keys' directory holds %v, want the key alone", entries)
+	}
+	if got, err := h.TPMKeys(ctx); err != nil || !slices.Equal(got, []string{"m1"}) {
+		t.Errorf("TPMKeys: %q %v", got, err)
+	}
+	if err := h.Start(ctx, tpmSpec("m1")); err != nil {
+		t.Errorf("starting with the key put: %v", err)
+	}
+	for _, bad := range []struct {
+		uid string
+		key []byte
+	}{{"m2", testTPMKey[:31]}, {"m2", append(slices.Clone(testTPMKey), 1)}, {"../m2", testTPMKey}, {"", testTPMKey}} {
+		if err := h.PutTPMKey(ctx, bad.uid, bad.key); err == nil {
+			t.Errorf("put a key of %d bytes for %q", len(bad.key), bad.uid)
+		}
+	}
+	for range 2 {
+		if err := h.RemoveTPMKey(ctx, "m1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got, err := h.TPMKeys(ctx); err != nil || len(got) != 0 {
+		t.Errorf("TPMKeys after the removal: %q %v", got, err)
+	}
+}
+
 // TestOwnTPMDirRefusesALink: a link in place of the state directory is
 // refused, never followed.
 func TestOwnTPMDirRefusesALink(t *testing.T) {

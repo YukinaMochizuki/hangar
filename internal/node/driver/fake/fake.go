@@ -6,8 +6,10 @@
 package fake
 
 import (
+	"bytes"
 	"cmp"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -159,9 +161,14 @@ type Host struct {
 	natFollowers map[*natFollower]bool
 	natPort      uint16
 
-	vms        map[string]*vm
-	logs       map[string]*consoleLog // console logs kept, by machine uid
-	logChanged chan struct{}          // closed when any log is written
+	vms  map[string]*vm
+	logs map[string]*consoleLog // console logs kept, by machine uid
+	// tpmKeys are the TPM keys kept for machines' VMs, and tpms the TPM
+	// states, by machine uid: a stand-in for swtpm's, which a VM with a TPM
+	// starts with, kept across stops, and removed with the logs.
+	tpmKeys    map[string][]byte
+	tpms       map[string]*tpmState
+	logChanged chan struct{} // closed when any log is written
 	logReaders int
 	stops      map[string]int         // guest Stops asked for, by machine uid
 	bootErr    map[string]error       // by machine uid; "" for every machine
@@ -187,6 +194,13 @@ type Host struct {
 	capErr      error                        // fails reading the storage's capacity
 	vmChanges   chan struct{}
 	netChange   chan struct{}
+}
+
+// tpmState stands in for a TPM's state: an identity the TPM made on its
+// first start, and the key it is encrypted with.
+type tpmState struct {
+	identity string
+	key      []byte
 }
 
 type vm struct {
@@ -215,7 +229,7 @@ func New() *Host {
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]driver.InterfacePolicy{},
 		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{}, exportHolds: map[string]chan struct{}{},
-		vms: map[string]*vm{}, consoles: map[string]*fakeConsole{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		vms: map[string]*vm{}, consoles: map[string]*fakeConsole{}, logs: map[string]*consoleLog{}, tpmKeys: map[string][]byte{}, tpms: map[string]*tpmState{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
@@ -666,6 +680,8 @@ func (h *Host) Reboot() {
 			delete(h.vms, uid)
 		}
 	}
+	// The keys are in /run, which a reboot empties; the TPMs' states stay.
+	clear(h.tpmKeys)
 	signal(h.vmChanges)
 }
 
@@ -785,8 +801,10 @@ type Snapshot struct {
 	Networks   map[string]driver.NetworkSpec
 	Interfaces map[string][]driver.Interface
 	VMs        map[string]VMView
-	// Logs are the machines whose console logs the host keeps.
-	Logs []string
+	// Logs are the machines whose console logs the host keeps; TPMKeys and
+	// TPMs those it keeps a TPM key, or a TPM's state, of.
+	Logs          []string
+	TPMKeys, TPMs []string
 	// Listening are the sockets still open, such as "udp 10.0.0.1:53", by
 	// network uid, including those of a namespace since made again.
 	Listening map[string][]string
@@ -805,7 +823,7 @@ type VMView struct {
 func (s Snapshot) Empty() bool {
 	return len(s.Bases) == 0 && len(s.Roots) == 0 && len(s.Volumes) == 0 && len(s.ShareVolumes) == 0 && len(s.ImageBases) == 0 && len(s.Captures) == 0 &&
 		len(s.Networks) == 0 && len(s.Interfaces) == 0 &&
-		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.Listening) == 0
+		len(s.VMs) == 0 && len(s.Logs) == 0 && len(s.TPMKeys) == 0 && len(s.TPMs) == 0 && len(s.Listening) == 0
 }
 
 // EmptyButImages reports whether the host holds nothing but the container
@@ -823,6 +841,7 @@ func (h *Host) Snapshot() Snapshot {
 		Bases: slices.Sorted(maps.Keys(h.bases)), Roots: maps.Clone(h.roots), Volumes: maps.Clone(h.volumes), ShareVolumes: maps.Clone(h.shareVols),
 		ImageBases: slices.Sorted(maps.Keys(h.vmBases)), Captures: slices.Sorted(maps.Keys(h.captures)), Networks: maps.Clone(h.networks),
 		Interfaces: map[string][]driver.Interface{}, VMs: map[string]VMView{}, Logs: slices.Sorted(maps.Keys(h.logs)),
+		TPMKeys: slices.Sorted(maps.Keys(h.tpmKeys)), TPMs: slices.Sorted(maps.Keys(h.tpms)),
 		Listening: h.listening(),
 	}
 	for uid, ifs := range h.interfaces {
@@ -1520,6 +1539,16 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	if spec.TPM && !spec.Firmware {
 		return fmt.Errorf("machine %s is given a TPM, and boots no firmware", spec.MachineUID)
 	}
+	if spec.TPM {
+		key := d.h.tpmKeys[spec.MachineUID]
+		if len(key) != 32 {
+			return fmt.Errorf("machine %s's TPM has no key", spec.MachineUID)
+		}
+		// As swtpm with not-need-init: a state another key encrypted fails.
+		if st, ok := d.h.tpms[spec.MachineUID]; ok && !bytes.Equal(st.key, key) {
+			return fmt.Errorf("machine %s's TPM state does not decrypt with its key", spec.MachineUID)
+		}
+	}
 	for _, v := range spec.Disks {
 		if v.Serial != "" && !spec.Firmware {
 			return fmt.Errorf("machine %s: only a firmware VM's volumes have serials", spec.MachineUID)
@@ -1554,6 +1583,13 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces},
 		spec:  spec,
 		boots: boots,
+	}
+	if spec.TPM {
+		if _, ok := d.h.tpms[spec.MachineUID]; !ok {
+			id := make([]byte, 8)
+			_, _ = rand.Read(id)
+			d.h.tpms[spec.MachineUID] = &tpmState{identity: hex.EncodeToString(id), key: bytes.Clone(d.h.tpmKeys[spec.MachineUID])}
+		}
 	}
 	d.h.boot(spec.MachineUID)
 	d.h.bootGuest(d.h.vms[spec.MachineUID])
@@ -1644,7 +1680,13 @@ func (d hypervisor) Logs(context.Context) ([]string, error) {
 	if err := d.h.listErr[ListLogs]; err != nil {
 		return nil, err
 	}
-	return slices.Sorted(maps.Keys(d.h.logs)), nil
+	kept := maps.Clone(d.h.logs)
+	for uid := range d.h.tpms {
+		if _, ok := kept[uid]; !ok {
+			kept[uid] = nil
+		}
+	}
+	return slices.Sorted(maps.Keys(kept)), nil
 }
 
 func (d hypervisor) DeleteLogs(_ context.Context, machineUID string) error {
@@ -1657,7 +1699,65 @@ func (d hypervisor) DeleteLogs(_ context.Context, machineUID string) error {
 		return fmt.Errorf("machine %s's VM is listed; stop it first", machineUID)
 	}
 	delete(d.h.logs, machineUID)
+	delete(d.h.tpms, machineUID)
 	return nil
+}
+
+func (d hypervisor) PutTPMKey(_ context.Context, machineUID string, key []byte) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := driver.CheckMachineUID(machineUID); err != nil {
+		return err
+	}
+	if len(key) != 32 {
+		return fmt.Errorf("machine %s's TPM key is %d bytes, not 32", machineUID, len(key))
+	}
+	d.h.tpmKeys[machineUID] = bytes.Clone(key)
+	return nil
+}
+
+func (d hypervisor) RemoveTPMKey(_ context.Context, machineUID string) error {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	if err := driver.CheckMachineUID(machineUID); err != nil {
+		return err
+	}
+	delete(d.h.tpmKeys, machineUID)
+	return nil
+}
+
+func (d hypervisor) TPMKeys(context.Context) ([]string, error) {
+	d.h.mu.Lock()
+	defer d.h.mu.Unlock()
+	return slices.Sorted(maps.Keys(d.h.tpmKeys)), nil
+}
+
+// TPMKey is the TPM key the host keeps for the machine's VM.
+func (h *Host) TPMKey(machineUID string) ([]byte, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	k, ok := h.tpmKeys[machineUID]
+	return bytes.Clone(k), ok
+}
+
+// DropLog removes the machine's console log alone, as if it had never been
+// written.
+func (h *Host) DropLog(machineUID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.logs, machineUID)
+}
+
+// TPMIdentity is what stands for the machine's TPM state: an identity made
+// on its first start with a TPM, the same until the state is removed.
+func (h *Host) TPMIdentity(machineUID string) (string, bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	st, ok := h.tpms[machineUID]
+	if !ok {
+		return "", false
+	}
+	return st.identity, true
 }
 
 // --- Guest ---

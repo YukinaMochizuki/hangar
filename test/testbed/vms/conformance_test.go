@@ -97,6 +97,17 @@ func conformanceHost(t *testing.T, h *host) drivertest.Host {
 		Exec:             &execPrograms,
 		ReopenHypervisor: func(t *testing.T) driver.Hypervisor { return newHypervisor(t, testGrace) },
 		Firmware:         true,
+		HasTPMState: func(_ *testing.T, uid string) bool {
+			_, err := os.Stat(filepath.Join(vmDir, uid, "tpm"))
+			return err == nil
+		},
+		DropLog: func(t *testing.T, uid string) {
+			for _, f := range []string{chvm.ConsoleLog, chvm.ConsoleLog + ".1", chvm.SerialLog, chvm.SerialLog + ".1"} {
+				if err := os.Remove(filepath.Join(vmDir, uid, f)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+			}
+		},
 		BootDisk: func(t *testing.T, uid string) (driver.ShareExport, os.FileMode, int) {
 			return bootDiskOf(t, h.hv.BootDiskPath(uid))
 		},

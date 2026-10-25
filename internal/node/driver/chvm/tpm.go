@@ -2,6 +2,7 @@ package chvm
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -71,6 +72,63 @@ func readNrOpen(procSys string) (uint64, error) {
 		return 0, err
 	}
 	return strconv.ParseUint(strings.TrimSpace(string(b)), 10, 64)
+}
+
+// PutTPMKey writes the machine's key into TPMKeys, root's 0600, whole or
+// not at all, for its unit's LoadCredential.
+func (h *Hypervisor) PutTPMKey(_ context.Context, uid string, key []byte) error {
+	if err := checkUID(uid); err != nil {
+		return err
+	}
+	if len(key) != tpmKeySize {
+		return fmt.Errorf("machine %s's TPM key is %d bytes, not %d", uid, len(key), tpmKeySize)
+	}
+	if err := os.MkdirAll(h.cfg.TPMKeys, 0o700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(h.cfg.TPMKeys, ".key-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	_, err = f.Write(key)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), filepath.Join(h.cfg.TPMKeys, uid))
+}
+
+// RemoveTPMKey removes the machine's key; none is not an error.
+func (h *Hypervisor) RemoveTPMKey(_ context.Context, uid string) error {
+	if err := checkUID(uid); err != nil {
+		return err
+	}
+	err := os.Remove(filepath.Join(h.cfg.TPMKeys, uid))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// TPMKeys lists the machines TPMKeys holds a key of.
+func (h *Hypervisor) TPMKeys(context.Context) ([]string, error) {
+	entries, err := os.ReadDir(h.cfg.TPMKeys)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if e.Type().IsRegular() && checkUID(e.Name()) == nil {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil
 }
 
 // checkTPMKey checks a VM's key is there for its unit to load: a regular

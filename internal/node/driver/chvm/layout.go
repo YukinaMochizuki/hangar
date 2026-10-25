@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -243,19 +242,10 @@ func uidOfUnit(name string) (string, bool) {
 	return uid, ok && checkUID(uid) == nil
 }
 
-// uidPattern is what names a VM: a unit name and a directory name, short
-// enough that the vsock socket's path fits a unix address.
-var uidPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+// maxUID is the longest uid checkUID takes.
+const maxUID = driver.MaxMachineUID
 
-// maxUID is the longest uid uidPattern takes.
-const maxUID = 64
-
-func checkUID(uid string) error {
-	if !uidPattern.MatchString(uid) {
-		return fmt.Errorf("machine uid %q cannot name a VM", uid)
-	}
-	return nil
-}
+func checkUID(uid string) error { return driver.CheckMachineUID(uid) }
 
 // writeAtomic writes a file whole or not at all.
 func writeAtomic(path string, data []byte) error {

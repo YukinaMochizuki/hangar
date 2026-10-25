@@ -84,7 +84,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 	case m.GetSpec().GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED:
 		// Stopping needs neither the image nor the network; letting go of
 		// an address is tried again, the machine stopped all the same.
-		report, err = a.stop(ctx, vm)
+		report, err = a.stop(ctx, uid, vm)
 		err = cmp.Or(err, letGo)
 	case letGo != nil:
 		// Stuck, as a step of converging is.
@@ -168,11 +168,16 @@ func (a *Agent) vmOf(ctx context.Context, uid string) (*driver.VM, error) {
 }
 
 // stop stops the machine's VM, keeping its disk and interfaces.
-func (a *Agent) stop(ctx context.Context, vm *driver.VM) (*observation, error) {
+func (a *Agent) stop(ctx context.Context, uid string, vm *driver.VM) (*observation, error) {
 	if vm != nil {
 		if err := a.stopVM(ctx, vm.MachineUID); err != nil {
 			return nil, err
 		}
+	}
+	// The stop removed its TPM key, unless the agent died between the two,
+	// as it may have before this reconcile.
+	if err := a.cfg.Drivers.Hypervisor.RemoveTPMKey(ctx, uid); err != nil {
+		return nil, err
 	}
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine is stopped")
 	obs.applied = true
@@ -627,6 +632,9 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 		}
 	}
 	if err := d.Hypervisor.DeleteLogs(ctx, uid); err != nil {
+		return err
+	}
+	if err := d.Hypervisor.RemoveTPMKey(ctx, uid); err != nil {
 		return err
 	}
 	if err := d.Network.DeleteInterfaces(ctx, uid); err != nil {

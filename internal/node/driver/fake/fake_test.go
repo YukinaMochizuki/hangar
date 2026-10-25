@@ -52,6 +52,11 @@ func host(h *fake.Host) drivertest.Host {
 	return drivertest.Host{
 		Images: h.Images(), DiskImages: h.DiskImages(), Storage: h.Storage(), Network: h.Network(), Hypervisor: h.Hypervisor(), Guest: h.Guest(),
 		Converter: h.Converter(),
+		HasTPMState: func(_ *testing.T, uid string) bool {
+			_, ok := h.TPMIdentity(uid)
+			return ok
+		},
+		DropLog: func(_ *testing.T, uid string) { h.DropLog(uid) },
 		Publish: func(_ *testing.T, name string) (string, string) {
 			published++
 			digest := fmt.Sprintf("sha256:%d", published)

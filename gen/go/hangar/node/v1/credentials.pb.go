@@ -151,6 +151,104 @@ func (x *ResolveImagePullCredentialsResponse) GetIdentityToken() string {
 	return ""
 }
 
+type ResolveVirtualTPMKeyRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Project string                 `protobuf:"bytes,1,opt,name=project,proto3" json:"project,omitempty"`
+	// Names the Machine.
+	Machine       string `protobuf:"bytes,2,opt,name=machine,proto3" json:"machine,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveVirtualTPMKeyRequest) Reset() {
+	*x = ResolveVirtualTPMKeyRequest{}
+	mi := &file_hangar_node_v1_credentials_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveVirtualTPMKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveVirtualTPMKeyRequest) ProtoMessage() {}
+
+func (x *ResolveVirtualTPMKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_credentials_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveVirtualTPMKeyRequest.ProtoReflect.Descriptor instead.
+func (*ResolveVirtualTPMKeyRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_credentials_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ResolveVirtualTPMKeyRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
+}
+
+func (x *ResolveVirtualTPMKeyRequest) GetMachine() string {
+	if x != nil {
+		return x.Machine
+	}
+	return ""
+}
+
+type ResolveVirtualTPMKeyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 32 bytes.
+	Key           []byte `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveVirtualTPMKeyResponse) Reset() {
+	*x = ResolveVirtualTPMKeyResponse{}
+	mi := &file_hangar_node_v1_credentials_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveVirtualTPMKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveVirtualTPMKeyResponse) ProtoMessage() {}
+
+func (x *ResolveVirtualTPMKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_credentials_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveVirtualTPMKeyResponse.ProtoReflect.Descriptor instead.
+func (*ResolveVirtualTPMKeyResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_credentials_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ResolveVirtualTPMKeyResponse) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
 var File_hangar_node_v1_credentials_proto protoreflect.FileDescriptor
 
 const file_hangar_node_v1_credentials_proto_rawDesc = "" +
@@ -163,9 +261,16 @@ const file_hangar_node_v1_credentials_proto_rawDesc = "" +
 	"\bregistry\x18\x01 \x01(\tR\bregistry\x12\x1a\n" +
 	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x03 \x01(\tR\bpassword\x12%\n" +
-	"\x0eidentity_token\x18\x04 \x01(\tR\ridentityToken2\xa6\x01\n" +
+	"\x0eidentity_token\x18\x04 \x01(\tR\ridentityToken\"Q\n" +
+	"\x1bResolveVirtualTPMKeyRequest\x12\x18\n" +
+	"\aproject\x18\x01 \x01(\tR\aproject\x12\x18\n" +
+	"\amachine\x18\x02 \x01(\tR\amachine\"0\n" +
+	"\x1cResolveVirtualTPMKeyResponse\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\fR\x03key2\xa6\x01\n" +
 	"\x1bImagePullCredentialsService\x12\x86\x01\n" +
-	"\x1bResolveImagePullCredentials\x122.hangar.node.v1.ResolveImagePullCredentialsRequest\x1a3.hangar.node.v1.ResolveImagePullCredentialsResponseB\xc0\x01\n" +
+	"\x1bResolveImagePullCredentials\x122.hangar.node.v1.ResolveImagePullCredentialsRequest\x1a3.hangar.node.v1.ResolveImagePullCredentialsResponse2\x89\x01\n" +
+	"\x14VirtualTPMKeyService\x12q\n" +
+	"\x14ResolveVirtualTPMKey\x12+.hangar.node.v1.ResolveVirtualTPMKeyRequest\x1a,.hangar.node.v1.ResolveVirtualTPMKeyResponseB\xc0\x01\n" +
 	"\x12com.hangar.node.v1B\x10CredentialsProtoP\x01Z>github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1;nodev1\xa2\x02\x03HNX\xaa\x02\x0eHangar.Node.V1\xca\x02\x0eHangar\\Node\\V1\xe2\x02\x1aHangar\\Node\\V1\\GPBMetadata\xea\x02\x10Hangar::Node::V1b\x06proto3"
 
 var (
@@ -180,16 +285,20 @@ func file_hangar_node_v1_credentials_proto_rawDescGZIP() []byte {
 	return file_hangar_node_v1_credentials_proto_rawDescData
 }
 
-var file_hangar_node_v1_credentials_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_hangar_node_v1_credentials_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_hangar_node_v1_credentials_proto_goTypes = []any{
 	(*ResolveImagePullCredentialsRequest)(nil),  // 0: hangar.node.v1.ResolveImagePullCredentialsRequest
 	(*ResolveImagePullCredentialsResponse)(nil), // 1: hangar.node.v1.ResolveImagePullCredentialsResponse
+	(*ResolveVirtualTPMKeyRequest)(nil),         // 2: hangar.node.v1.ResolveVirtualTPMKeyRequest
+	(*ResolveVirtualTPMKeyResponse)(nil),        // 3: hangar.node.v1.ResolveVirtualTPMKeyResponse
 }
 var file_hangar_node_v1_credentials_proto_depIdxs = []int32{
 	0, // 0: hangar.node.v1.ImagePullCredentialsService.ResolveImagePullCredentials:input_type -> hangar.node.v1.ResolveImagePullCredentialsRequest
-	1, // 1: hangar.node.v1.ImagePullCredentialsService.ResolveImagePullCredentials:output_type -> hangar.node.v1.ResolveImagePullCredentialsResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
+	2, // 1: hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey:input_type -> hangar.node.v1.ResolveVirtualTPMKeyRequest
+	1, // 2: hangar.node.v1.ImagePullCredentialsService.ResolveImagePullCredentials:output_type -> hangar.node.v1.ResolveImagePullCredentialsResponse
+	3, // 3: hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey:output_type -> hangar.node.v1.ResolveVirtualTPMKeyResponse
+	2, // [2:4] is the sub-list for method output_type
+	0, // [0:2] is the sub-list for method input_type
 	0, // [0:0] is the sub-list for extension type_name
 	0, // [0:0] is the sub-list for extension extendee
 	0, // [0:0] is the sub-list for field type_name
@@ -206,9 +315,9 @@ func file_hangar_node_v1_credentials_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_credentials_proto_rawDesc), len(file_hangar_node_v1_credentials_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   4,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_hangar_node_v1_credentials_proto_goTypes,
 		DependencyIndexes: file_hangar_node_v1_credentials_proto_depIdxs,

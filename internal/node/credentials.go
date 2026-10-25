@@ -12,6 +12,22 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/secrets"
 )
 
+// putTPMKey asks the apiserver for the key the machine's TPM state is
+// encrypted with, and has the hypervisor driver keep it, root's alone, for
+// the VM's starts until the VM is stopped. Asked again on every start, it
+// is never logged (docs/decisions/vm-tpm.md).
+func (a *Agent) putTPMKey(ctx context.Context, m *computev1alpha1.Machine) error {
+	project, name := m.GetMetadata().GetProject(), m.GetMetadata().GetName()
+	res, err := a.tpmKeys.ResolveVirtualTPMKey(ctx, connect.NewRequest(&nodev1.ResolveVirtualTPMKeyRequest{Project: project, Machine: name}))
+	if err != nil {
+		// The error is the apiserver's, which holds no key.
+		return fmt.Errorf("the TPM key of machine %s: %w", name, err)
+	}
+	key := res.Msg.GetKey()
+	defer clear(key)
+	return a.cfg.Drivers.Hypervisor.PutTPMKey(ctx, m.GetMetadata().GetUid(), key)
+}
+
 // pullCredentials are the machine's registry logins, asked of the apiserver
 // each time the Images driver needs one, and kept nowhere: not on disk, not
 // in a log, not past the pull (docs/decisions/secrets.md).

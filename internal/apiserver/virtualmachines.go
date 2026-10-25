@@ -171,6 +171,9 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	if err := computeapi.CheckSystemSerialNumber(spec.GetPlatform().GetSerialNumber()); err != nil {
 		return invalid("spec.platform.serial_number: %v", err)
 	}
+	if err := validateVMTPM(s, old, vm); err != nil {
+		return err
+	}
 	if n := len(spec.GetSshAuthorizedKeys()); n > maxSSHKeys {
 		return invalid("spec.ssh_authorized_keys: %d keys, at most %d", n, maxSSHKeys)
 	}
@@ -538,6 +541,7 @@ func vmMachineSpec(vm *computev1alpha1.VirtualMachine, caKey string) (*computev1
 				InstanceId: vm.GetMetadata().GetUid(), UserData: spec.GetUserData(), VendorData: vendorData(vm, caKey),
 			},
 			SystemSerialNumber: spec.GetPlatform().GetSerialNumber(),
+			Tpm:                vmHasTPM(vm),
 		}},
 		// Only a guest that powers itself off, which ends its boot well,
 		// stays off, as a VM's on a cloud does; a crash, or its host

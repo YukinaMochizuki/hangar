@@ -7,6 +7,7 @@ import "hangar/compute/v1alpha1/interface.proto";
 import "hangar/compute/v1alpha1/placement.proto";
 import "hangar/meta/v1/meta.proto";
 import "hangar/meta/v1/options.proto";
+import "hangar/secrets/v1alpha1/secret.proto";
 import "hangar/storage/v1alpha1/disk.proto";
 
 // VirtualMachine runs a disk image's own operating system, booted through
@@ -60,7 +61,30 @@ message VirtualMachineSpec {
   repeated VirtualMachineFileShare file_shares = 8;
   // What the VM's virtual hardware tells its guest about the platform.
   VirtualMachinePlatform platform = 9;
+  // A TPM 2.0 for the guest. Set it when the VM is created: it cannot
+  // change afterwards. See docs/decisions/vm-tpm.md.
+  VirtualMachineTPM tpm = 10;
 }
+
+// VirtualMachineTPM is a VM's TPM. Its state is the VM's alone: kept, encrypted,
+// on the VM's node across stops and restarts, deleted with the VM, and
+// never part of an image or a snapshot.
+message VirtualMachineTPM {
+  // Gives the guest a TPM 2.0 (CRB), empty when the VM is created. Needs
+  // an apiserver with a key-encryption key (--secrets-kek).
+  bool enabled = 1 [(hangar.meta.v1.field).immutable = true];
+  // Reserved for starting the TPM from an existing state. Not supported
+  // yet: a VM that sets it is refused.
+  VirtualMachineTPMSource source = 2 [(hangar.meta.v1.field).immutable = true];
+  // The key the TPM's state is encrypted with, sealed under the platform's
+  // key-encryption key. The apiserver's: it makes it when the VM is
+  // created, and no answer ever holds it.
+  hangar.secrets.v1alpha1.SealedData sealed_key = 3;
+}
+
+// VirtualMachineTPMSource is where a TPM's state would come from. It has no
+// fields yet.
+message VirtualMachineTPMSource {}
 
 // VirtualMachinePlatform is what the VM's firmware tables, SMBIOS, tell
 // its guest.

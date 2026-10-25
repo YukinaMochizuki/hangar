@@ -756,6 +756,13 @@ type Hypervisor interface {
 	// DeleteLogs removes a machine's console log, and its TPM state. It
 	// fails while the machine's VM is listed.
 	DeleteLogs(ctx context.Context, machineUID string) error
+	// PutTPMKey keeps the key a TPM VM's state is encrypted with, root's
+	// alone, for its VM to start with: Start needs it, and so does every
+	// restart by its restart policy, until RemoveTPMKey. TPMKeys lists the
+	// machines it keeps a key of.
+	PutTPMKey(ctx context.Context, machineUID string, key []byte) error
+	RemoveTPMKey(ctx context.Context, machineUID string) error
+	TPMKeys(ctx context.Context) ([]string, error)
 	// ReadLog sends what the machine's console log holds, oldest first,
 	// across every boot it keeps, in batches. A machine with no log has no
 	// records. With Follow it then sends what is written, rotations
@@ -813,6 +820,21 @@ const (
 	MaxLogBatch = 256 << 10
 	MaxLogTail  = 4 << 20
 )
+
+// machineUIDPattern is what names a machine on a host: a unit name and a
+// directory name, short enough that a VM's socket paths fit a unix address.
+var machineUIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// MaxMachineUID is the longest machine uid a host takes.
+const MaxMachineUID = 64
+
+// CheckMachineUID refuses what cannot name a machine on a host.
+func CheckMachineUID(uid string) error {
+	if !machineUIDPattern.MatchString(uid) {
+		return fmt.Errorf("machine uid %q cannot name a VM", uid)
+	}
+	return nil
+}
 
 // StopGrace is how long a container's process has between SIGTERM and
 // SIGKILL when its machine is stopped.

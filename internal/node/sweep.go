@@ -84,6 +84,16 @@ func (a *Agent) sweep(ctx context.Context) error {
 			}
 		}
 	}
+	// The TPM key of a machine gone, with no stop of it under way, goes; a
+	// stopped machine's is its own reconcile's to remove (stop).
+	if keys, err := d.Hypervisor.TPMKeys(ctx); keep(err) {
+		for _, uid := range keys {
+			if gone(uid) {
+				a.cfg.Log.Info("removing a TPM key no machine accounts for", "machine_uid", uid)
+				keep(d.Hypervisor.RemoveTPMKey(ctx, uid))
+			}
+		}
+	}
 	if ifaces, err := d.Network.Interfaces(ctx); keep(err) {
 		done := map[string]bool{}
 		for _, i := range ifaces {
