@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs host-swtpm e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -94,7 +94,7 @@ E2E_HOST_ROOTFS_IMAGE := docker:29-dind@sha256:4c42359ca23de31b73b7a58396a9ca1f3
 # Named by the image's digest, so a new pin makes a new image.
 E2E_HOST_ROOTFS := .cache/testbed/dind-$(word 2,$(subst @sha256:, ,$(E2E_HOST_ROOTFS_IMAGE))).ext4
 
-e2e-host: guest-initramfs guest-initramfs-testbed guest-converter $(E2E_HOST_ROOTFS)
+e2e-host: guest-initramfs guest-initramfs-testbed guest-converter host-swtpm $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/ ./cmd/hangar-node ./cmd/hangar-apiserver ./cmd/hangar
 	CGO_ENABLED=0 go build -tags testbed -o bin/hangar-edge ./cmd/hangar-edge
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
@@ -103,7 +103,7 @@ e2e-host: guest-initramfs guest-initramfs-testbed guest-converter $(E2E_HOST_ROO
 		go test -exec 'sudo -E' -tags testbed -count=1 -p 1 -timeout 30m -v ./test/testbed/...
 
 # The real hypervisor driver's tests alone, with every other real driver.
-e2e-host-vms: guest-initramfs guest-converter $(E2E_HOST_ROOTFS)
+e2e-host-vms: guest-initramfs guest-converter host-swtpm $(E2E_HOST_ROOTFS)
 	CGO_ENABLED=0 go build -o bin/hangar-node ./cmd/hangar-node
 	CGO_ENABLED=0 go build -tags testbed -o bin/ch-probe ./test/testbed/vms/chprobe
 	HANGAR_TESTBED_ROOTFS=$(or $(HANGAR_TESTBED_ROOTFS),$(abspath $(E2E_HOST_ROOTFS))) \
@@ -199,6 +199,13 @@ guest-e2fsprogs:
 # pinned Alpine packages (docs/runbook/converter.md). No C toolchain.
 guest-converter:
 	guest/converter/build.sh
+
+# The swtpm bundle TPM VMs run: swtpm, its libraries and the musl loader
+# from pinned Alpine packages (docs/runbook/swtpm.md), as bin/host/swtpm.tar
+# and, for the L4 tests, unpacked as bin/host/swtpm. No C toolchain.
+host-swtpm:
+	deploy/swtpm/build.sh
+	rm -rf bin/host/swtpm && tar -xf bin/host/swtpm.tar -C bin/host
 
 tools:
 	@go tool protoc-gen-go --version

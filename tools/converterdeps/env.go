@@ -12,6 +12,8 @@ import (
 // mirror the packages come from, the GitHub release that mirrors them, and
 // the packages, each with its sha256.
 type pins struct {
+	// file names the file the pins were read from, as errors name it.
+	file     string
 	alpine   string // such as v3.22
 	mirror   string // Alpine's, such as https://dl-cdn.alpinelinux.org/alpine
 	release  release
@@ -56,7 +58,7 @@ var (
 // (deploy/swtpm/swtpm.env): NAME=value lines, a value in double quotes
 // running over lines; comments and blank lines are skipped. It takes no
 // more of the shell than the file uses.
-func parseEnv(r io.Reader, prefix string) (pins, error) {
+func parseEnv(r io.Reader, prefix, file string) (pins, error) {
 	vars := map[string]string{}
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
@@ -66,14 +68,14 @@ func parseEnv(r io.Reader, prefix string) (pins, error) {
 		}
 		m := envLine.FindStringSubmatch(line)
 		if m == nil {
-			return pins{}, fmt.Errorf("converter.env: %q is not NAME=value", line)
+			return pins{}, fmt.Errorf("%s: %q is not NAME=value", file, line)
 		}
 		name, val := m[1], m[2]
 		if strings.HasPrefix(val, `"`) {
 			val = val[1:]
 			for !strings.HasSuffix(val, `"`) {
 				if !sc.Scan() {
-					return pins{}, fmt.Errorf("converter.env: %s has no closing quote", name)
+					return pins{}, fmt.Errorf("%s: %s has no closing quote", file, name)
 				}
 				val += "\n" + sc.Text()
 			}
@@ -84,13 +86,13 @@ func parseEnv(r io.Reader, prefix string) (pins, error) {
 	if err := sc.Err(); err != nil {
 		return pins{}, err
 	}
-	p := pins{alpine: vars[prefix+"_ALPINE"], mirror: strings.TrimSuffix(vars[prefix+"_MIRROR"], "/")}
+	p := pins{file: file, alpine: vars[prefix+"_ALPINE"], mirror: strings.TrimSuffix(vars[prefix+"_MIRROR"], "/")}
 	if p.alpine == "" || p.mirror == "" {
-		return pins{}, fmt.Errorf("converter.env: %s_ALPINE and %s_MIRROR are required", prefix, prefix)
+		return pins{}, fmt.Errorf("%s: %s_ALPINE and %s_MIRROR are required", file, prefix, prefix)
 	}
 	var err error
 	if p.release, err = parseRelease(vars[prefix+"_RELEASE"]); err != nil {
-		return pins{}, fmt.Errorf("converter.env: %w", err)
+		return pins{}, fmt.Errorf("%s: %w", file, err)
 	}
 	for _, line := range strings.Split(vars[prefix+"_PACKAGES"], "\n") {
 		line = strings.TrimSpace(line)
@@ -99,12 +101,12 @@ func parseEnv(r io.Reader, prefix string) (pins, error) {
 		}
 		m := pkgLine.FindStringSubmatch(line)
 		if m == nil {
-			return pins{}, fmt.Errorf("converter.env: %q is not REPO/NAME-VERSION SHA256", line)
+			return pins{}, fmt.Errorf("%s: %q is not REPO/NAME-VERSION SHA256", file, line)
 		}
 		p.packages = append(p.packages, pkg{repo: m[1], name: m[2], version: m[3], sha256: m[4]})
 	}
 	if len(p.packages) == 0 {
-		return pins{}, fmt.Errorf("converter.env: %s_PACKAGES pins nothing", prefix)
+		return pins{}, fmt.Errorf("%s: %s_PACKAGES pins nothing", file, prefix)
 	}
 	return p, nil
 }

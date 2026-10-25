@@ -25,7 +25,7 @@ func TestTheRepositorysPinsParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
-	p, err := parseEnv(f, "HANGAR_CONVERTER")
+	p, err := parseEnv(f, "HANGAR_CONVERTER", "converter.env")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestTheSwtpmPinsParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = f.Close() }()
-	p, err := parseEnv(f, "HANGAR_SWTPM")
+	p, err := parseEnv(f, "HANGAR_SWTPM", "swtpm.env")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,8 +65,12 @@ func TestTheSwtpmPinsParse(t *testing.T) {
 	}) {
 		t.Errorf("no community/swtpm-0.10.2-r0 in %v", p.packages)
 	}
-	if _, err := parseEnv(strings.NewReader("HANGAR_SWTPM_ALPINE=v3.22\n"), "HANGAR_CONVERTER"); err == nil {
+	if _, err := parseEnv(strings.NewReader("HANGAR_SWTPM_ALPINE=v3.22\n"), "HANGAR_CONVERTER", "converter.env"); err == nil {
 		t.Error("pins of another prefix taken")
+	}
+	if _, err := parseEnv(strings.NewReader("HANGAR_SWTPM_ALPINE=v3.22\n"), "HANGAR_SWTPM", "swtpm.env"); err == nil ||
+		!strings.HasPrefix(err.Error(), "swtpm.env: ") {
+		t.Errorf("the error does not name the file it is of: %v", err)
 	}
 }
 
@@ -81,7 +85,7 @@ HANGAR_CONVERTER_PACKAGES="
 
 func TestPinsThatDoNotParseAreRefused(t *testing.T) {
 	sum := strings.Repeat("a", 64)
-	if p, err := parseEnv(strings.NewReader(fmt.Sprintf(testEnv, "main/p11-kit-0.26.2-r0 "+sum)), "HANGAR_CONVERTER"); err != nil ||
+	if p, err := parseEnv(strings.NewReader(fmt.Sprintf(testEnv, "main/p11-kit-0.26.2-r0 "+sum)), "HANGAR_CONVERTER", "converter.env"); err != nil ||
 		p.packages[0].name != "p11-kit" || p.packages[0].version != "0.26.2-r0" || p.mirror != "https://alpine.example/alpine" {
 		t.Errorf("a name with a dash and digits: %+v %v", p, err)
 	}
@@ -93,7 +97,7 @@ func TestPinsThatDoNotParseAreRefused(t *testing.T) {
 		"main/foo-1.0-r0 " + strings.ToUpper(sum),
 		"",
 	} {
-		if _, err := parseEnv(strings.NewReader(fmt.Sprintf(testEnv, bad)), "HANGAR_CONVERTER"); err == nil {
+		if _, err := parseEnv(strings.NewReader(fmt.Sprintf(testEnv, bad)), "HANGAR_CONVERTER", "converter.env"); err == nil {
 			t.Errorf("%q taken", bad)
 		}
 	}
@@ -103,7 +107,7 @@ func TestPinsThatDoNotParseAreRefused(t *testing.T) {
 		strings.TrimSuffix(fmt.Sprintf(testEnv, "main/foo-1.0-r0 "+sum), "\"\n"),
 		"export FOO=1\n",
 	} {
-		if _, err := parseEnv(strings.NewReader(env), "HANGAR_CONVERTER"); err == nil {
+		if _, err := parseEnv(strings.NewReader(env), "HANGAR_CONVERTER", "converter.env"); err == nil {
 			t.Errorf("taken:\n%s", env)
 		}
 	}
@@ -294,7 +298,7 @@ func (w *world) tool(token string, pkgs map[string][]byte) (*tool, *bytes.Buffer
 		j := strings.LastIndex(rest[:i], "-")
 		p.packages = append(p.packages, pkg{repo: repo, name: rest[:j], version: rest[j+1:], sha256: sumOf(pkgs[s])})
 	}
-	return &tool{pins: p, hc: w.srv.Client(), secdb: w.srv.URL + "/secdb", log: &log,
+	return &tool{pins: p, set: pinSets["HANGAR_CONVERTER"], hc: w.srv.Client(), secdb: w.srv.URL + "/secdb", log: &log,
 		gh: &github{api: w.srv.URL + "/api", uploads: w.srv.URL + "/up", token: token, hc: w.srv.Client()}}, &log
 }
 
@@ -575,8 +579,27 @@ func TestALongTitleIsCut(t *testing.T) {
 	for i := range 30 {
 		ups = append(ups, update{pkg: pkg{repo: "main", name: fmt.Sprintf("library-number-%02d", i), version: "1.0-r0"}, newer: "1.0-r1"})
 	}
-	title, _, security := report("v3.22", ups)
+	title, _, security := report(pinSets["HANGAR_CONVERTER"], "v3.22", ups)
 	if len(title) > maxTitle || !strings.Contains(title, "library-number-00 1.0-r1") || !strings.HasSuffix(title, "more") || security {
 		t.Errorf("title %q (%d), security %t", title, len(title), security)
+	}
+}
+
+// TestTheSwtpmPinsHaveTheirOwnIssue: an update of the swtpm bundle's pins
+// is titled and explained as the bundle's, never the converter's, so the
+// two never share an issue.
+func TestTheSwtpmPinsHaveTheirOwnIssue(t *testing.T) {
+	ups := []update{{pkg: pkg{repo: "community", name: "swtpm", version: "0.10.2-r0"}, newer: "0.10.2-r1"}}
+	title, body, _ := report(pinSets["HANGAR_SWTPM"], "v3.22", ups)
+	if title != "swtpm: newer Alpine v3.22 packages: swtpm 0.10.2-r1" {
+		t.Errorf("title %q", title)
+	}
+	for _, want := range []string{"`deploy/swtpm/swtpm.env`", "docs/runbook/swtpm.md", "the swtpm bundle"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the body lacks %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "converter.env") {
+		t.Errorf("the body names the converter's pins:\n%s", body)
 	}
 }

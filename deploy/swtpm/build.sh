@@ -13,7 +13,7 @@
 #
 # It needs Go, tar and sha256sum, and no C toolchain: the packages are
 # Alpine's builds, downloaded as the converter's are (tools/converterdeps,
-# docs/runbook/converter.md). SOURCE_DATE_EPOCH sets every entry's mtime;
+# docs/runbook/swtpm.md). SOURCE_DATE_EPOCH sets every entry's mtime;
 # it defaults to the time of the last commit.
 set -euo pipefail
 shopt -s inherit_errexit
@@ -49,7 +49,7 @@ mkdir -m 0755 "$ROOT"
 # Download what the cache lacks, each checked; then check every package on
 # every run, so a corrupt or swapped cache cannot slip through.
 (cd "$REPO" && go run ./tools/converterdeps fetch -prefix HANGAR_SWTPM -env "$HERE/swtpm.env" -dir "$WORK") ||
-	die "the packages could not be downloaded (docs/runbook/converter.md)"
+	die "the packages could not be downloaded (docs/runbook/swtpm.md)"
 while read -r pkg sum; do
 	[ -n "$pkg" ] || continue
 	[[ $pkg =~ ^(main|community)/[A-Za-z0-9._+-]+$ ]] || die "swtpm.env: $pkg is not REPO/NAME-VERSION"

@@ -1,8 +1,10 @@
 name: converter-mirror
 
 # Mirrors the Alpine packages the converter initramfs is built from
-# (guest/converter/converter.env) to this repository's release
-# converter-deps, which guest/converter/build.sh downloads from first:
+# (guest/converter/converter.env), and those of the swtpm bundle
+# (deploy/swtpm/swtpm.env), to this repository's release converter-deps,
+# which guest/converter/build.sh and deploy/swtpm/build.sh download from
+# first:
 # each package the release lacks is downloaded from Alpine, checked
 # against its pinned sha256, and uploaded (tools/converterdeps,
 # docs/runbook/converter.md). Its only credential is the workflow's
@@ -11,7 +13,7 @@ name: converter-mirror
 on:
   push:
     branches: [main]
-    paths: ['guest/converter/converter.env']
+    paths: ['guest/converter/converter.env', 'deploy/swtpm/swtpm.env']
   workflow_dispatch:
 
 permissions: {}
@@ -38,3 +40,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: go run ./tools/converterdeps mirror -env guest/converter/converter.env
+      - name: Mirror the swtpm bundle's pinned packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: go run ./tools/converterdeps mirror -prefix HANGAR_SWTPM -env deploy/swtpm/swtpm.env

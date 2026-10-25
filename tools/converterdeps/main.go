@@ -1,5 +1,7 @@
 // Command converterdeps keeps the Alpine packages the converter initramfs
-// is built from (guest/converter/converter.env, docs/runbook/converter.md):
+// is built from (guest/converter/converter.env, docs/runbook/converter.md),
+// and, with -prefix HANGAR_SWTPM, those of the swtpm bundle
+// (deploy/swtpm/swtpm.env, docs/runbook/swtpm.md):
 //
 //   - fetch downloads each pinned package into a directory, first from the
 //     GitHub release that mirrors them, then from Alpine, and checks it
@@ -41,10 +43,30 @@ func main() {
 	}
 }
 
+// pinSet is what a file of pins builds, as an issue of its updates says.
+type pinSet struct {
+	// name starts the issue's title; what is what the packages are in;
+	// env, runbook and tests are the file, how to bump it, and what to run.
+	name, what, env, runbook, tests string
+}
+
+// pinSets are the files of pins, by the prefix of their names.
+var pinSets = map[string]pinSet{
+	"HANGAR_CONVERTER": {
+		name: "converter", what: "the converter initramfs", env: "guest/converter/converter.env",
+		runbook: "docs/runbook/converter.md", tests: "the converter's L4 tests",
+	},
+	"HANGAR_SWTPM": {
+		name: "swtpm", what: "the swtpm bundle", env: "deploy/swtpm/swtpm.env",
+		runbook: "docs/runbook/swtpm.md", tests: "the TPM's L4 tests",
+	},
+}
+
 // tool is a run's configuration: where Alpine, its secdb and GitHub are,
 // which tests point elsewhere.
 type tool struct {
 	pins  pins
+	set   pinSet
 	gh    *github
 	hc    *http.Client
 	secdb string // https://secdb.alpinelinux.org
@@ -64,16 +86,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 	api := fs.String("github-api", "https://api.github.com", "GitHub's API")
 	uploads := fs.String("github-uploads", "https://uploads.github.com", "GitHub's API for uploads")
 	secdb := fs.String("secdb", "https://secdb.alpinelinux.org", "Alpine's security database")
-	mirror := fs.String("alpine", "", "Alpine's mirror; empty is converter.env's")
+	mirror := fs.String("alpine", "", "Alpine's mirror; empty is the pins'")
 	prefix := fs.String("prefix", "HANGAR_CONVERTER", "what the names in -env start with")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	set, ok := pinSets[*prefix]
+	if !ok {
+		return fmt.Errorf("no pins are named %s_*", *prefix)
 	}
 	f, err := os.Open(*env)
 	if err != nil {
 		return err
 	}
-	p, err := parseEnv(f, *prefix)
+	p, err := parseEnv(f, *prefix, filepath.Base(*env))
 	_ = f.Close()
 	if err != nil {
 		return err
@@ -83,7 +109,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	hc := &http.Client{Timeout: 5 * time.Minute}
 	t := &tool{
-		pins: p, hc: hc, secdb: strings.TrimSuffix(*secdb, "/"), log: stderr,
+		pins: p, set: set, hc: hc, secdb: strings.TrimSuffix(*secdb, "/"), log: stderr,
 		gh: &github{api: strings.TrimSuffix(*api, "/"), uploads: strings.TrimSuffix(*uploads, "/"), token: os.Getenv("GITHUB_TOKEN"), hc: hc},
 	}
 	switch args[0] {
@@ -130,10 +156,10 @@ func (t *tool) get(u string) ([]byte, error) {
 func (t *tool) fromAlpine(k pkg) ([]byte, error) {
 	b, err := t.get(t.pins.alpineURL(k))
 	if err != nil {
-		return nil, fmt.Errorf("%s from Alpine: %w (gone from the mirror? bump converter.env, docs/runbook/converter.md)", k, err)
+		return nil, fmt.Errorf("%s from Alpine: %w (gone from the mirror? bump %s, %s)", k, err, t.pins.file, t.set.runbook)
 	}
 	if got := sumOf(b); got != k.sha256 {
-		return nil, fmt.Errorf("%s from Alpine has sha256 %s, not %s as converter.env pins it", k, got, k.sha256)
+		return nil, fmt.Errorf("%s from Alpine has sha256 %s, not %s as %s pins it", k, got, k.sha256, t.pins.file)
 	}
 	return b, nil
 }
@@ -172,7 +198,7 @@ func (t *tool) fromRelease(k pkg, assets map[string]ghAsset) ([]byte, error) {
 		return nil, err
 	}
 	if got := sumOf(b); got != k.sha256 {
-		return nil, fmt.Errorf("%s from the release has sha256 %s, not %s as converter.env pins it", k, got, k.sha256)
+		return nil, fmt.Errorf("%s from the release has sha256 %s, not %s as %s pins it", k, got, k.sha256, t.pins.file)
 	}
 	return b, nil
 }
@@ -249,7 +275,7 @@ func (t *tool) mirror() error {
 	for _, k := range t.pins.packages {
 		if a, ok := have[k.file()]; ok {
 			if a.Digest != "" && a.Digest != "sha256:"+k.sha256 {
-				return fmt.Errorf("the release's %s has %s, not sha256:%s as converter.env pins it; delete the asset, and run this again", a.Name, a.Digest, k.sha256)
+				return fmt.Errorf("the release's %s has %s, not sha256:%s as %s pins it; delete the asset, and run this again", a.Name, a.Digest, k.sha256, t.pins.file)
 			}
 			continue
 		}
@@ -325,10 +351,10 @@ func (t *tool) updates(w io.Writer, issue bool, owner, repo string) error {
 		ups = append(ups, update{pkg: k, newer: e.version, origin: origin, cves: db.fixedBetween(origin, k.version, e.version)})
 	}
 	if len(ups) == 0 {
-		_, err := fmt.Fprintf(w, "every package the converter pins is Alpine %s's newest\n", t.pins.alpine)
+		_, err := fmt.Fprintf(w, "every package %s pins is Alpine %s's newest\n", t.set.what, t.pins.alpine)
 		return err
 	}
-	title, body, security := report(t.pins.alpine, ups)
+	title, body, security := report(t.set, t.pins.alpine, ups)
 	if _, err := fmt.Fprintf(w, "%s\n\n%s", title, body); err != nil {
 		return err
 	}
@@ -360,11 +386,11 @@ func (t *tool) updates(w io.Writer, issue bool, owner, repo string) error {
 // newer version, so a later run finding the same opens none and one
 // finding more opens another; its body, a table and the steps; and
 // whether any fixes a CVE.
-func report(alpine string, ups []update) (title, body string, security bool) {
+func report(set pinSet, alpine string, ups []update) (title, body string, security bool) {
 	slices.SortFunc(ups, func(a, b update) int { return strings.Compare(a.pkg.name, b.pkg.name) })
 	var names []string
 	var b strings.Builder
-	fmt.Fprintf(&b, "Alpine %s has newer versions of packages the converter initramfs pins in `guest/converter/converter.env`:\n\n", alpine)
+	fmt.Fprintf(&b, "Alpine %s has newer versions of packages %s pins in `%s`:\n\n", alpine, set.what, set.env)
 	b.WriteString("| Package | Pinned | Newer | CVEs fixed since |\n|---|---|---|---|\n")
 	for _, u := range ups {
 		names = append(names, u.pkg.name+" "+u.newer)
@@ -377,13 +403,13 @@ func report(alpine string, ups []update) (title, body string, security bool) {
 	}
 	b.WriteString("\nThe CVEs are those Alpine's secdb lists for the package's origin")
 	b.WriteString(" (https://secdb.alpinelinux.org), fixed after the pinned version up to the newer.\n\n")
-	b.WriteString("To take them, follow docs/runbook/converter.md: bump the pins and their sha256, resolve the")
-	b.WriteString(" dependencies again, merge (the converter-mirror workflow mirrors the new packages), run the")
-	b.WriteString(" converter's L4 tests on a testbed, and release.\n")
-	title = fmt.Sprintf("converter: newer Alpine %s packages: %s", alpine, strings.Join(names, ", "))
+	fmt.Fprintf(&b, "To take them, follow %s: bump the pins and their sha256, resolve the", set.runbook)
+	b.WriteString(" dependencies again, merge (the converter-mirror workflow mirrors the new packages), run")
+	fmt.Fprintf(&b, " %s on a testbed, and release.\n", set.tests)
+	title = fmt.Sprintf("%s: newer Alpine %s packages: %s", set.name, alpine, strings.Join(names, ", "))
 	// GitHub takes titles of up to 256 characters.
 	for n := len(names) - 1; len(title) > maxTitle && n > 0; n-- {
-		title = fmt.Sprintf("converter: newer Alpine %s packages: %s and %d more", alpine, strings.Join(names[:n], ", "), len(names)-n)
+		title = fmt.Sprintf("%s: newer Alpine %s packages: %s and %d more", set.name, alpine, strings.Join(names[:n], ", "), len(names)-n)
 	}
 	return title, b.String(), security
 }
