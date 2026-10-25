@@ -103,6 +103,16 @@ func (a *Agent) sweep(ctx context.Context) error {
 		}
 	}
 
+	// The uploads are read before the custom images are listed: the node
+	// takes an upload only of an image it has read, so an upload read here
+	// whose image the list does not show is of an image gone.
+	var expecting, staged []string
+	var serr error
+	if a.stager != nil {
+		expecting = a.stager.expecting()
+		staged, serr = a.stager.staged()
+	}
+
 	// A volume is a Disk's, not a machine's: it goes once its Disk is gone.
 	// The disk controller removes a deleted Disk's own. A disk image's base
 	// goes once no volume is cloned from it, no disk still to be made here
@@ -190,8 +200,12 @@ func (a *Agent) sweep(ctx context.Context) error {
 				// A deleted image's upload goes, with any chunk being
 				// written; its conversion has ended above.
 				if a.stager != nil {
-					a.stager.stopAllBut(live)
-					if staged, err := a.stager.staged(); keep(err) {
+					for _, uid := range expecting {
+						if !live[uid] {
+							a.stager.stop(uid)
+						}
+					}
+					if keep(serr) {
 						for _, uid := range staged {
 							if !live[uid] {
 								a.cfg.Log.Info("removing an upload no custom image accounts for", "image_uid", uid)

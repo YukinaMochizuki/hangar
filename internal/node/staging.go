@@ -211,8 +211,13 @@ func (s *stager) write(ctx context.Context, uid string, offset, length int64, sh
 	case n < length:
 		return st.Received, fmt.Errorf("%w: it ended after %d of its %d bytes", errChunkShape, n, length)
 	}
-	if extra, _ := body.Read(make([]byte, 1)); extra > 0 {
+	// Only a clean end counts: a stream cut there, as the apiserver cuts a
+	// chunk it refuses, fails here before the handler's context ends.
+	switch extra, err := body.Read(make([]byte, 1)); {
+	case extra > 0:
 		return st.Received, fmt.Errorf("%w: it holds more than its %d bytes", errChunkShape, length)
+	case err != nil && !errors.Is(err, io.EOF):
+		return st.Received, err
 	}
 	if got := hex.EncodeToString(part.Sum(nil)); got != strings.ToLower(sha) {
 		return st.Received, errChunkDigest
@@ -292,19 +297,15 @@ func (s *stager) stop(uid string) {
 	}
 }
 
-// stopAllBut stops the uploads of every uid not in live.
-func (s *stager) stopAllBut(live map[string]bool) {
+// expecting lists the uids of the uploads the node takes chunks of.
+func (s *stager) expecting() []string {
 	s.mu.Lock()
-	var gone []string
+	defer s.mu.Unlock()
+	out := make([]string, 0, len(s.expected))
 	for uid := range s.expected {
-		if !live[uid] {
-			gone = append(gone, uid)
-		}
+		out = append(out, uid)
 	}
-	s.mu.Unlock()
-	for _, uid := range gone {
-		s.stop(uid)
-	}
+	return out
 }
 
 // remove stops uid's upload and removes its file and state.
