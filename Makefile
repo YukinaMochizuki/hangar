@@ -57,21 +57,25 @@ breaking:
 # parallel" in docs/conventions/testing.md says why).
 E2E_PKG := github.com/YukinaMochizuki/hangar/test/e2e
 
+# The race detector, but not on the SQLite driver: SQLite translated to Go,
+# whose instrumented memory accesses cost a third of a race run's CPU.
+RACE := -race -gcflags=modernc.org/...=-race=false
+
 test:
-	go test -race -timeout 20m $$(go list ./... | grep -v -x -F $(E2E_PKG))
+	go test $(RACE) -timeout 20m $$(go list ./... | grep -v -x -F $(E2E_PKG))
 	go test -timeout 10m ./test/e2e/
 
 # test/e2e under the race detector, one test at a time: about eleven minutes
 # on 16 cores (2026-10).
 test-e2e-race:
-	go test -race -parallel 1 -timeout 40m ./test/e2e/
+	go test $(RACE) -parallel 1 -timeout 40m ./test/e2e/
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,
 # which gives up root. They skip in make test unless it runs as root. CI runs
 # this under sudo.
 test-root:
-	sudo -E env "PATH=$$PATH" go test -race -count=1 ./internal/guest/... ./internal/node/driver/chguest/ \
+	sudo -E env "PATH=$$PATH" go test $(RACE) -count=1 ./internal/guest/... ./internal/node/driver/chguest/ \
 		./internal/node/driver/ocilayer/ ./internal/node/driver/registry/ ./internal/node/ \
 		./internal/node/driver/chvm/
 
