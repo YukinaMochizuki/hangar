@@ -1215,6 +1215,371 @@ func (x *GetCustomImageUploadResponse) GetReceivedBytes() int64 {
 	return 0
 }
 
+// ConsoleRequest is what a client of a firmware machine's interactive
+// serial console sends, to the node and, from the node, to the machine's
+// console helper (docs/decisions/serial-console.md).
+type ConsoleRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ConsoleRequest_Start
+	//	*ConsoleRequest_Input
+	//	*ConsoleRequest_Resize
+	Message       isConsoleRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleRequest) Reset() {
+	*x = ConsoleRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleRequest) ProtoMessage() {}
+
+func (x *ConsoleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleRequest.ProtoReflect.Descriptor instead.
+func (*ConsoleRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *ConsoleRequest) GetMessage() isConsoleRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ConsoleRequest) GetStart() *ConsoleStart {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *ConsoleRequest) GetInput() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleRequest_Input); ok {
+			return x.Input
+		}
+	}
+	return nil
+}
+
+func (x *ConsoleRequest) GetResize() *ConsoleSize {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleRequest_Resize); ok {
+			return x.Resize
+		}
+	}
+	return nil
+}
+
+type isConsoleRequest_Message interface {
+	isConsoleRequest_Message()
+}
+
+type ConsoleRequest_Start struct {
+	// The first request, and only the first.
+	Start *ConsoleStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type ConsoleRequest_Input struct {
+	// What the client types, as it comes; the guest gets it only while
+	// the client holds the console's input.
+	Input []byte `protobuf:"bytes,2,opt,name=input,proto3,oneof"`
+}
+
+type ConsoleRequest_Resize struct {
+	// The screen's new size; taken only from the client holding the
+	// input.
+	Resize *ConsoleSize `protobuf:"bytes,3,opt,name=resize,proto3,oneof"`
+}
+
+func (*ConsoleRequest_Start) isConsoleRequest_Message() {}
+
+func (*ConsoleRequest_Input) isConsoleRequest_Message() {}
+
+func (*ConsoleRequest_Resize) isConsoleRequest_Message() {}
+
+// ConsoleStart attaches a client to a machine's serial console.
+type ConsoleStart struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Names the machine, which must be on the node; empty to its helper.
+	MachineUid string `protobuf:"bytes,1,opt,name=machine_uid,json=machineUid,proto3" json:"machine_uid,omitempty"`
+	// Only watches: never holds the input.
+	ReadOnly bool `protobuf:"varint,2,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
+	// Takes the input from whoever holds it, who goes on watching; without
+	// it, a client finding the input held watches.
+	Force         bool `protobuf:"varint,3,opt,name=force,proto3" json:"force,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleStart) Reset() {
+	*x = ConsoleStart{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleStart) ProtoMessage() {}
+
+func (x *ConsoleStart) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleStart.ProtoReflect.Descriptor instead.
+func (*ConsoleStart) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *ConsoleStart) GetMachineUid() string {
+	if x != nil {
+		return x.MachineUid
+	}
+	return ""
+}
+
+func (x *ConsoleStart) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
+}
+
+func (x *ConsoleStart) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
+}
+
+// ConsoleSize is a screen's size in character cells.
+type ConsoleSize struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Columns       uint32                 `protobuf:"varint,1,opt,name=columns,proto3" json:"columns,omitempty"`
+	Rows          uint32                 `protobuf:"varint,2,opt,name=rows,proto3" json:"rows,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleSize) Reset() {
+	*x = ConsoleSize{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleSize) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleSize) ProtoMessage() {}
+
+func (x *ConsoleSize) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleSize.ProtoReflect.Descriptor instead.
+func (*ConsoleSize) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *ConsoleSize) GetColumns() uint32 {
+	if x != nil {
+		return x.Columns
+	}
+	return 0
+}
+
+func (x *ConsoleSize) GetRows() uint32 {
+	if x != nil {
+		return x.Rows
+	}
+	return 0
+}
+
+// ConsoleResponse is what an attached client gets: its state first, then
+// the screen drawn whole, then what the guest writes, and its state again
+// whenever it changes.
+type ConsoleResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*ConsoleResponse_Output
+	//	*ConsoleResponse_State
+	Message       isConsoleResponse_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleResponse) Reset() {
+	*x = ConsoleResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleResponse) ProtoMessage() {}
+
+func (x *ConsoleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleResponse.ProtoReflect.Descriptor instead.
+func (*ConsoleResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ConsoleResponse) GetMessage() isConsoleResponse_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *ConsoleResponse) GetOutput() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleResponse_Output); ok {
+			return x.Output
+		}
+	}
+	return nil
+}
+
+func (x *ConsoleResponse) GetState() *ConsoleState {
+	if x != nil {
+		if x, ok := x.Message.(*ConsoleResponse_State); ok {
+			return x.State
+		}
+	}
+	return nil
+}
+
+type isConsoleResponse_Message interface {
+	isConsoleResponse_Message()
+}
+
+type ConsoleResponse_Output struct {
+	// Bytes for the client's terminal, as they come.
+	Output []byte `protobuf:"bytes,1,opt,name=output,proto3,oneof"`
+}
+
+type ConsoleResponse_State struct {
+	State *ConsoleState `protobuf:"bytes,2,opt,name=state,proto3,oneof"`
+}
+
+func (*ConsoleResponse_Output) isConsoleResponse_Message() {}
+
+func (*ConsoleResponse_State) isConsoleResponse_Message() {}
+
+// ConsoleState is how a client is attached.
+type ConsoleState struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The client holds the console's input.
+	Input bool `protobuf:"varint,1,opt,name=input,proto3" json:"input,omitempty"`
+	// The screen's size, which the guest is told only by its user (stty).
+	Size          *ConsoleSize `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConsoleState) Reset() {
+	*x = ConsoleState{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConsoleState) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConsoleState) ProtoMessage() {}
+
+func (x *ConsoleState) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConsoleState.ProtoReflect.Descriptor instead.
+func (*ConsoleState) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ConsoleState) GetInput() bool {
+	if x != nil {
+		return x.Input
+	}
+	return false
+}
+
+func (x *ConsoleState) GetSize() *ConsoleSize {
+	if x != nil {
+		return x.Size
+	}
+	return nil
+}
+
 var File_hangar_node_v1_node_proto protoreflect.FileDescriptor
 
 const file_hangar_node_v1_node_proto_rawDesc = "" +
@@ -1292,7 +1657,27 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x1bGetCustomImageUploadRequest\x12\x1b\n" +
 	"\timage_uid\x18\x01 \x01(\tR\bimageUid\"E\n" +
 	"\x1cGetCustomImageUploadResponse\x12%\n" +
-	"\x0ereceived_bytes\x18\x01 \x01(\x03R\rreceivedBytes*\x7f\n" +
+	"\x0ereceived_bytes\x18\x01 \x01(\x03R\rreceivedBytes\"\xa0\x01\n" +
+	"\x0eConsoleRequest\x124\n" +
+	"\x05start\x18\x01 \x01(\v2\x1c.hangar.node.v1.ConsoleStartH\x00R\x05start\x12\x16\n" +
+	"\x05input\x18\x02 \x01(\fH\x00R\x05input\x125\n" +
+	"\x06resize\x18\x03 \x01(\v2\x1b.hangar.node.v1.ConsoleSizeH\x00R\x06resizeB\t\n" +
+	"\amessage\"b\n" +
+	"\fConsoleStart\x12\x1f\n" +
+	"\vmachine_uid\x18\x01 \x01(\tR\n" +
+	"machineUid\x12\x1b\n" +
+	"\tread_only\x18\x02 \x01(\bR\breadOnly\x12\x14\n" +
+	"\x05force\x18\x03 \x01(\bR\x05force\";\n" +
+	"\vConsoleSize\x12\x18\n" +
+	"\acolumns\x18\x01 \x01(\rR\acolumns\x12\x12\n" +
+	"\x04rows\x18\x02 \x01(\rR\x04rows\"l\n" +
+	"\x0fConsoleResponse\x12\x18\n" +
+	"\x06output\x18\x01 \x01(\fH\x00R\x06output\x124\n" +
+	"\x05state\x18\x02 \x01(\v2\x1c.hangar.node.v1.ConsoleStateH\x00R\x05stateB\t\n" +
+	"\amessage\"U\n" +
+	"\fConsoleState\x12\x14\n" +
+	"\x05input\x18\x01 \x01(\bR\x05input\x12/\n" +
+	"\x04size\x18\x02 \x01(\v2\x1b.hangar.node.v1.ConsoleSizeR\x04size*\x7f\n" +
 	"\tLogStream\x12\x1a\n" +
 	"\x16LOG_STREAM_UNSPECIFIED\x10\x00\x12\x15\n" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
@@ -1320,7 +1705,7 @@ func file_hangar_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
+var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_hangar_node_v1_node_proto_goTypes = []any{
 	(LogStream)(0),                       // 0: hangar.node.v1.LogStream
 	(*LogsRequest)(nil),                  // 1: hangar.node.v1.LogsRequest
@@ -1339,13 +1724,18 @@ var file_hangar_node_v1_node_proto_goTypes = []any{
 	(*UploadCustomImageResponse)(nil),    // 14: hangar.node.v1.UploadCustomImageResponse
 	(*GetCustomImageUploadRequest)(nil),  // 15: hangar.node.v1.GetCustomImageUploadRequest
 	(*GetCustomImageUploadResponse)(nil), // 16: hangar.node.v1.GetCustomImageUploadResponse
-	(*timestamppb.Timestamp)(nil),        // 17: google.protobuf.Timestamp
+	(*ConsoleRequest)(nil),               // 17: hangar.node.v1.ConsoleRequest
+	(*ConsoleStart)(nil),                 // 18: hangar.node.v1.ConsoleStart
+	(*ConsoleSize)(nil),                  // 19: hangar.node.v1.ConsoleSize
+	(*ConsoleResponse)(nil),              // 20: hangar.node.v1.ConsoleResponse
+	(*ConsoleState)(nil),                 // 21: hangar.node.v1.ConsoleState
+	(*timestamppb.Timestamp)(nil),        // 22: google.protobuf.Timestamp
 }
 var file_hangar_node_v1_node_proto_depIdxs = []int32{
-	17, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	22, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
 	0,  // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
-	17, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
+	22, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
 	6,  // 5: hangar.node.v1.ExecRequest.start:type_name -> hangar.node.v1.ExecStart
 	7,  // 6: hangar.node.v1.ExecRequest.stdin_close:type_name -> hangar.node.v1.ExecStdinClose
@@ -1353,21 +1743,25 @@ var file_hangar_node_v1_node_proto_depIdxs = []int32{
 	8,  // 8: hangar.node.v1.ExecStart.size:type_name -> hangar.node.v1.WindowSize
 	4,  // 9: hangar.node.v1.ExecResponse.exit:type_name -> hangar.node.v1.ExitStatus
 	13, // 10: hangar.node.v1.UploadCustomImageRequest.chunk:type_name -> hangar.node.v1.UploadChunk
-	1,  // 11: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
-	5,  // 12: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
-	10, // 13: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
-	12, // 14: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
-	15, // 15: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
-	2,  // 16: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	9,  // 17: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
-	11, // 18: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
-	14, // 19: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
-	16, // 20: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
-	16, // [16:21] is the sub-list for method output_type
-	11, // [11:16] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	18, // 11: hangar.node.v1.ConsoleRequest.start:type_name -> hangar.node.v1.ConsoleStart
+	19, // 12: hangar.node.v1.ConsoleRequest.resize:type_name -> hangar.node.v1.ConsoleSize
+	21, // 13: hangar.node.v1.ConsoleResponse.state:type_name -> hangar.node.v1.ConsoleState
+	19, // 14: hangar.node.v1.ConsoleState.size:type_name -> hangar.node.v1.ConsoleSize
+	1,  // 15: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
+	5,  // 16: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
+	10, // 17: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
+	12, // 18: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
+	15, // 19: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
+	2,  // 20: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 21: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	11, // 22: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
+	14, // 23: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
+	16, // 24: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
+	20, // [20:25] is the sub-list for method output_type
+	15, // [15:20] is the sub-list for method input_type
+	15, // [15:15] is the sub-list for extension type_name
+	15, // [15:15] is the sub-list for extension extendee
+	0,  // [0:15] is the sub-list for field type_name
 }
 
 func init() { file_hangar_node_v1_node_proto_init() }
@@ -1400,13 +1794,22 @@ func file_hangar_node_v1_node_proto_init() {
 		(*UploadCustomImageRequest_Chunk)(nil),
 		(*UploadCustomImageRequest_Data)(nil),
 	}
+	file_hangar_node_v1_node_proto_msgTypes[16].OneofWrappers = []any{
+		(*ConsoleRequest_Start)(nil),
+		(*ConsoleRequest_Input)(nil),
+		(*ConsoleRequest_Resize)(nil),
+	}
+	file_hangar_node_v1_node_proto_msgTypes[19].OneofWrappers = []any{
+		(*ConsoleResponse_Output)(nil),
+		(*ConsoleResponse_State)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_node_proto_rawDesc), len(file_hangar_node_v1_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   16,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -35,6 +35,7 @@ the change.
 | `guest-kernel.md` | One platform guest kernel and initramfs for containers: LTS only, allnoconfig + fragment, no modules, `quiet` |
 | `vm-boot.md` | Virtual machines boot their image's own kernel through EDK2 firmware; serial console as log, power button to stop, no restart policy |
 | `secrets.md` | Secrets are write-only and sealed at rest under a KEK file; nodes get a login per pull; a private image is shared only after the machine's own resolve |
+| `serial-console.md` | A VM's serial console is interactive: its helper, as the VM's user, is Cloud Hypervisor's one serial client, logs as before, keeps the screen, and serves clients, many watching and one typing |
 | `vm-ssh.md` | `hangar ssh`: minutes-long certificates of one platform CA for the VM's uid, over a WebSocket to port 22 from the network's gateway |
 | `front-door.md` | `hangar-edge` is the only listener on :443 and :80, bound by systemd, with certificates over ACME DNS-01; routes by Host to the API, the console and the endpoints; per-client limits; a host firewall that opens 22, 80 and 443 alone |
 | `public-endpoints.md` | `PublicEndpoint`: `<endpoint>-<project>.hangarlab.dev`, claimed for good; an unprivileged `hangar-edge` signs private ones' callers in itself and reaches machines through the node's dial socket |

@@ -82,6 +82,10 @@ type Launcher struct {
 	// to which the launcher adds the flags of ExecMain. Nil means
 	// /proc/self/exe vmm-exec.
 	Exec []string
+	// Console runs a firmware VM's console helper, ConsoleMain, to which the
+	// launcher adds its flags; run as the VM's user through Exec. Nil means
+	// /proc/self/exe vmm-console.
+	Console []string
 	// KVM is the KVM device, whose group Cloud Hypervisor gets if it
 	// needs it. Empty means /dev/kvm.
 	KVM string
@@ -162,6 +166,9 @@ func (l *Launcher) defaults() {
 	}
 	if l.Exec == nil {
 		l.Exec = []string{"/proc/self/exe", "vmm-exec"}
+	}
+	if l.Console == nil {
+		l.Console = []string{"/proc/self/exe", "vmm-console"}
 	}
 	if l.KVM == "" {
 		l.KVM = "/dev/kvm"
@@ -304,9 +311,23 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		defer func() { _ = raw.Close() }()
 		serialLog = raw
 	}
-	serial, err := openFIFO(filepath.Join(dir, serialFIFO), gid)
-	if err != nil {
-		return 0, err
+	// A firmware VM's serial console comes through its console helper,
+	// which hands what the guest writes on through a pipe; a container's
+	// is a FIFO Cloud Hypervisor writes.
+	var serial io.ReadCloser
+	var helper *consoleHelper
+	if ln.Spec.Firmware {
+		if helper, err = l.openConsole(ln, dir); err != nil {
+			return 0, err
+		}
+		defer helper.close()
+		serial = helper.logR
+	} else {
+		fifo, err := openFIFO(filepath.Join(dir, serialFIFO), gid)
+		if err != nil {
+			return 0, err
+		}
+		serial = fifo
 	}
 	defer func() { _ = serial.Close() }()
 
@@ -338,10 +359,21 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 	if err != nil {
 		return 0, err
 	}
+	// Before the capabilities go: running it as the VM's user needs them.
+	if helper != nil {
+		if err := helper.start(l); err != nil {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			return 0, fmt.Errorf("starting the serial console's helper: %w", err)
+		}
+	}
 	if ln.VMUser != 0 {
 		if err := l.DropCaps(); err != nil {
 			_ = cmd.Process.Kill()
 			_ = cmd.Wait()
+			if helper != nil {
+				helper.stop(l.KillGrace)
+			}
 			return 0, fmt.Errorf("giving up root's capabilities: %w", err)
 		}
 	}
@@ -375,6 +407,8 @@ func (l *Launcher) run(ctx context.Context, uid, dir string, started time.Time) 
 		endSerial.Do(func() {
 			if ln.Spec.Firmware {
 				framer.quiet()
+				// Its end ends the pipe, and so the pump.
+				helper.stop(l.KillGrace)
 			}
 			_ = serial.Close()
 			<-serialDone

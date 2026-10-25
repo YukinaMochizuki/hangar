@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/node.proto.
  */
 export const file_hangar_node_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMrwDCgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESagoRVXBsb2FkQ3VzdG9tSW1hZ2USKC5oYW5nYXIubm9kZS52MS5VcGxvYWRDdXN0b21JbWFnZVJlcXVlc3QaKS5oYW5nYXIubm9kZS52MS5VcGxvYWRDdXN0b21JbWFnZVJlc3BvbnNlKAEScQoUR2V0Q3VzdG9tSW1hZ2VVcGxvYWQSKy5oYW5nYXIubm9kZS52MS5HZXRDdXN0b21JbWFnZVVwbG9hZFJlcXVlc3QaLC5oYW5nYXIubm9kZS52MS5HZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlQrkBChJjb20uaGFuZ2FyLm5vZGUudjFCCU5vZGVQcm90b1ABWj5naXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9ub2RlL3YxO25vZGV2MaICA0hOWKoCDkhhbmdhci5Ob2RlLlYxygIOSGFuZ2FyXE5vZGVcVjHiAhpIYW5nYXJcTm9kZVxWMVxHUEJNZXRhZGF0YeoCEEhhbmdhcjo6Tm9kZTo6VjFiBnByb3RvMw", [file_google_protobuf_timestamp]);
+  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDIooBCg5Db25zb2xlUmVxdWVzdBItCgVzdGFydBgBIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGFydEgAEg8KBWlucHV0GAIgASgMSAASLQoGcmVzaXplGAMgASgLMhsuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIkUKDENvbnNvbGVTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDQoFZm9yY2UYAyABKAgiLAoLQ29uc29sZVNpemUSDwoHY29sdW1ucxgBIAEoDRIMCgRyb3dzGAIgASgNIl0KD0NvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABItCgVzdGF0ZRgCIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGF0ZUgAQgkKB21lc3NhZ2UiSAoMQ29uc29sZVN0YXRlEg0KBWlucHV0GAEgASgIEikKBHNpemUYAiABKAsyGy5oYW5nYXIubm9kZS52MS5Db25zb2xlU2l6ZSp/CglMb2dTdHJlYW0SGgoWTE9HX1NUUkVBTV9VTlNQRUNJRklFRBAAEhUKEUxPR19TVFJFQU1fU1RET1VUEAESFQoRTE9HX1NUUkVBTV9TVERFUlIQAhITCg9MT0dfU1RSRUFNX0lOSVQQAxITCg9MT0dfU1RSRUFNX0VYSVQQBDK8AwoLTm9kZVNlcnZpY2USQwoETG9ncxIbLmhhbmdhci5ub2RlLnYxLkxvZ3NSZXF1ZXN0GhwuaGFuZ2FyLm5vZGUudjEuTG9nc1Jlc3BvbnNlMAESRQoERXhlYxIbLmhhbmdhci5ub2RlLnYxLkV4ZWNSZXF1ZXN0GhwuaGFuZ2FyLm5vZGUudjEuRXhlY1Jlc3BvbnNlKAEwARJCCgNTU0gSGi5oYW5nYXIubm9kZS52MS5TU0hSZXF1ZXN0GhsuaGFuZ2FyLm5vZGUudjEuU1NIUmVzcG9uc2UoATABEmoKEVVwbG9hZEN1c3RvbUltYWdlEiguaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXF1ZXN0GikuaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXNwb25zZSgBEnEKFEdldEN1c3RvbUltYWdlVXBsb2FkEisuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXNwb25zZUK5AQoSY29tLmhhbmdhci5ub2RlLnYxQglOb2RlUHJvdG9QAVo+Z2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvbm9kZS92MTtub2RldjGiAgNITliqAg5IYW5nYXIuTm9kZS5WMcoCDkhhbmdhclxOb2RlXFYx4gIaSGFuZ2FyXE5vZGVcVjFcR1BCTWV0YWRhdGHqAhBIYW5nYXI6Ok5vZGU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.node.v1.LogsRequest
@@ -526,6 +526,176 @@ export type GetCustomImageUploadResponse = Message<"hangar.node.v1.GetCustomImag
  */
 export const GetCustomImageUploadResponseSchema: GenMessage<GetCustomImageUploadResponse> = /*@__PURE__*/
   messageDesc(file_hangar_node_v1_node, 15);
+
+/**
+ * ConsoleRequest is what a client of a firmware machine's interactive
+ * serial console sends, to the node and, from the node, to the machine's
+ * console helper (docs/decisions/serial-console.md).
+ *
+ * @generated from message hangar.node.v1.ConsoleRequest
+ */
+export type ConsoleRequest = Message<"hangar.node.v1.ConsoleRequest"> & {
+  /**
+   * @generated from oneof hangar.node.v1.ConsoleRequest.message
+   */
+  message: {
+    /**
+     * The first request, and only the first.
+     *
+     * @generated from field: hangar.node.v1.ConsoleStart start = 1;
+     */
+    value: ConsoleStart;
+    case: "start";
+  } | {
+    /**
+     * What the client types, as it comes; the guest gets it only while
+     * the client holds the console's input.
+     *
+     * @generated from field: bytes input = 2;
+     */
+    value: Uint8Array;
+    case: "input";
+  } | {
+    /**
+     * The screen's new size; taken only from the client holding the
+     * input.
+     *
+     * @generated from field: hangar.node.v1.ConsoleSize resize = 3;
+     */
+    value: ConsoleSize;
+    case: "resize";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.ConsoleRequest.
+ * Use `create(ConsoleRequestSchema)` to create a new message.
+ */
+export const ConsoleRequestSchema: GenMessage<ConsoleRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 16);
+
+/**
+ * ConsoleStart attaches a client to a machine's serial console.
+ *
+ * @generated from message hangar.node.v1.ConsoleStart
+ */
+export type ConsoleStart = Message<"hangar.node.v1.ConsoleStart"> & {
+  /**
+   * Names the machine, which must be on the node; empty to its helper.
+   *
+   * @generated from field: string machine_uid = 1;
+   */
+  machineUid: string;
+
+  /**
+   * Only watches: never holds the input.
+   *
+   * @generated from field: bool read_only = 2;
+   */
+  readOnly: boolean;
+
+  /**
+   * Takes the input from whoever holds it, who goes on watching; without
+   * it, a client finding the input held watches.
+   *
+   * @generated from field: bool force = 3;
+   */
+  force: boolean;
+};
+
+/**
+ * Describes the message hangar.node.v1.ConsoleStart.
+ * Use `create(ConsoleStartSchema)` to create a new message.
+ */
+export const ConsoleStartSchema: GenMessage<ConsoleStart> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 17);
+
+/**
+ * ConsoleSize is a screen's size in character cells.
+ *
+ * @generated from message hangar.node.v1.ConsoleSize
+ */
+export type ConsoleSize = Message<"hangar.node.v1.ConsoleSize"> & {
+  /**
+   * @generated from field: uint32 columns = 1;
+   */
+  columns: number;
+
+  /**
+   * @generated from field: uint32 rows = 2;
+   */
+  rows: number;
+};
+
+/**
+ * Describes the message hangar.node.v1.ConsoleSize.
+ * Use `create(ConsoleSizeSchema)` to create a new message.
+ */
+export const ConsoleSizeSchema: GenMessage<ConsoleSize> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 18);
+
+/**
+ * ConsoleResponse is what an attached client gets: its state first, then
+ * the screen drawn whole, then what the guest writes, and its state again
+ * whenever it changes.
+ *
+ * @generated from message hangar.node.v1.ConsoleResponse
+ */
+export type ConsoleResponse = Message<"hangar.node.v1.ConsoleResponse"> & {
+  /**
+   * @generated from oneof hangar.node.v1.ConsoleResponse.message
+   */
+  message: {
+    /**
+     * Bytes for the client's terminal, as they come.
+     *
+     * @generated from field: bytes output = 1;
+     */
+    value: Uint8Array;
+    case: "output";
+  } | {
+    /**
+     * @generated from field: hangar.node.v1.ConsoleState state = 2;
+     */
+    value: ConsoleState;
+    case: "state";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.ConsoleResponse.
+ * Use `create(ConsoleResponseSchema)` to create a new message.
+ */
+export const ConsoleResponseSchema: GenMessage<ConsoleResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 19);
+
+/**
+ * ConsoleState is how a client is attached.
+ *
+ * @generated from message hangar.node.v1.ConsoleState
+ */
+export type ConsoleState = Message<"hangar.node.v1.ConsoleState"> & {
+  /**
+   * The client holds the console's input.
+   *
+   * @generated from field: bool input = 1;
+   */
+  input: boolean;
+
+  /**
+   * The screen's size, which the guest is told only by its user (stty).
+   *
+   * @generated from field: hangar.node.v1.ConsoleSize size = 2;
+   */
+  size?: ConsoleSize | undefined;
+};
+
+/**
+ * Describes the message hangar.node.v1.ConsoleState.
+ * Use `create(ConsoleStateSchema)` to create a new message.
+ */
+export const ConsoleStateSchema: GenMessage<ConsoleState> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 20);
 
 /**
  * LogStream says what a record carries.

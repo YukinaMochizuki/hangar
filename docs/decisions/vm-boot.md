@@ -114,7 +114,8 @@ booted kernels of their own, moved there too.
   numbered by boot, each boot ended by whether the guest powered off (0) or
   not (253), and whether the platform ended it, stopping the VM or shutting
   its host down (`stopped`): `hangar logs vm` reads it as `hangar logs`
-  reads a container's.
+  reads a container's. It is interactive too, through the VM's console
+  helper (`serial-console.md`).
 - **Stopping presses its power button**, an ACPI event through Cloud
   Hypervisor's API socket, by the driver and, at host shutdown, by the
   launcher; a guest still up after its grace (60 s by default,

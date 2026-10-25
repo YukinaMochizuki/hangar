@@ -5,9 +5,10 @@
 // hangar-node vmm MACHINE_UID is the launcher of one VM, the main process
 // of the VM's systemd unit (internal/node/driver/chvm); the agent starts
 // those units, never this command itself. hangar-node vmm-exec is what the
-// launcher runs Cloud Hypervisor through, as the VM's user. hangar-node
-// check-placement takes the placement flags alone and fails, saying why,
-// unless the node would report each as given.
+// launcher runs Cloud Hypervisor through, as the VM's user, and hangar-node
+// vmm-console a firmware VM's serial console helper, through vmm-exec too.
+// hangar-node check-placement takes the placement flags alone and fails,
+// saying why, unless the node would report each as given.
 //
 // hangar-node natlog --port PORT --at TIME finds the machine an abuse
 // report about the host's IPv4 address names, in the agent's NAT log.
@@ -79,6 +80,9 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "vmm-exec" {
 		os.Exit(chvm.ExecMain(os.Args[2:]))
+	}
+	if len(os.Args) > 1 && os.Args[1] == "vmm-console" {
+		os.Exit(chvm.ConsoleMain(os.Args[2:]))
 	}
 	if len(os.Args) > 1 && os.Args[1] == "check-placement" {
 		os.Exit(checkPlacementMain(os.Args[2:], os.Stderr))

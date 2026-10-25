@@ -486,7 +486,8 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		}
 	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
-	props := unitProps(spec, argv, restart, stopTimeout(ln.stopTimes()), sb)
+	grace, slack := ln.stopTimes()
+	props := unitProps(spec, argv, restart, stopTimeout(grace, slack, spec.Firmware), sb)
 	if spec.Converter != nil {
 		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
 	}

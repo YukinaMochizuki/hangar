@@ -761,7 +761,19 @@ type Hypervisor interface {
 	// included, until ctx ends; a log made later is followed from its
 	// start. It returns send's error, or ctx's once following.
 	ReadLog(ctx context.Context, machineUID string, opts LogOptions, send func([]LogRecord) error) error
+	// AttachConsole connects to a running firmware VM's interactive serial
+	// console, which speaks hangar.node.v1's ConsoleRequest and
+	// ConsoleResponse, each delimited by its length
+	// (docs/decisions/serial-console.md). A VM not running, one started
+	// before its console was interactive, until it is started again, or one
+	// booting no firmware, is ErrNoConsole.
+	AttachConsole(ctx context.Context, machineUID string) (net.Conn, error)
 }
+
+// ErrNoConsole is a VM whose serial console takes no client. It is short:
+// a WebSocket's close carries it in at most 123 bytes, after what the
+// apiserver puts before it.
+var ErrNoConsole = errors.New("its serial console takes clients once the VM is started again")
 
 // LogOptions selects what ReadLog sends.
 type LogOptions struct {

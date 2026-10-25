@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -37,6 +39,9 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(fakeExec(os.Args[2:]))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "vmm-console" {
+		os.Exit(ConsoleMain(os.Args[2:]))
+	}
 	if mode := os.Getenv(fakeCHEnv); mode != "" {
 		os.Exit(fakeCH(mode))
 	}
@@ -52,8 +57,13 @@ func fakeExec(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return ExitFailed
 	}
-	b, _ := json.Marshal(map[string]any{"uid": c.uid, "gid": c.gid, "groups": c.groups, "fds": c.fds, "open": openFDs()})
-	_ = os.WriteFile(filepath.Join(filepath.Dir(vsockOf(argv)), "exec.json"), b, 0o600)
+	// Only Cloud Hypervisor's run is recorded, beside its socket: a
+	// console helper's has none, and would be recorded in the working
+	// directory, the package's.
+	if sock := vsockOf(argv); sock != "" {
+		b, _ := json.Marshal(map[string]any{"uid": c.uid, "gid": c.gid, "groups": c.groups, "fds": c.fds, "open": openFDs()})
+		_ = os.WriteFile(filepath.Join(filepath.Dir(sock), "exec.json"), b, 0o600)
+	}
 	if err := syscall.Exec(argv[0], argv, os.Environ()); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
@@ -72,10 +82,17 @@ func openFDs() []int {
 	return fds
 }
 
+// vsockOf is Cloud Hypervisor's vsock socket in its arguments, or a
+// firmware VM's API socket, in the same directory.
 func vsockOf(args []string) string {
 	for i, a := range args {
 		if i > 0 && args[i-1] == "--vsock" {
 			return a[strings.Index(a, "socket=")+len("socket="):]
+		}
+	}
+	for i, a := range args {
+		if i > 0 && args[i-1] == "--api-socket" {
+			return strings.TrimPrefix(a, "path=")
 		}
 	}
 	return ""
@@ -109,9 +126,27 @@ func fakeCH(mode string) int {
 			serial = strings.TrimPrefix(a, "file=")
 		}
 	}
-	b, _ := json.Marshal(map[string]any{"args": args, "fds": openFDs()})
-	_ = os.WriteFile(filepath.Join(filepath.Dir(vsock), "args.json"), b, 0o600)
-	if f, err := os.OpenFile(serial, os.O_WRONLY, 0); err == nil {
+	if vsock != "" {
+		b, _ := json.Marshal(map[string]any{"args": args, "fds": openFDs()})
+		_ = os.WriteFile(filepath.Join(filepath.Dir(vsock), "args.json"), b, 0o600)
+	}
+	if path, ok := strings.CutPrefix(serial, "socket="); ok {
+		// A firmware VM's: its console helper connects, and is written to.
+		if ln, err := net.Listen("unix", path); err == nil {
+			connected := make(chan struct{})
+			go func() {
+				if c, err := ln.Accept(); err == nil {
+					_, _ = c.Write([]byte("kernel: hello\n"))
+					go func() { _, _ = io.Copy(c, c) }() // the guest echoes
+				}
+				close(connected)
+			}()
+			select {
+			case <-connected:
+			case <-time.After(5 * time.Second):
+			}
+		}
+	} else if f, err := os.OpenFile(serial, os.O_WRONLY, 0); err == nil {
 		_, _ = f.WriteString("kernel: hello\n")
 		_ = f.Close()
 	}
@@ -203,7 +238,8 @@ func launcherDir(t *testing.T, uid, mode string) (*Launcher, string) {
 		MakeNode: func(f *os.File, path string, gid int) error {
 			return os.WriteFile(path, []byte(f.Name()), 0o600)
 		},
-		Exec: []string{os.Args[0], "vmm-exec"},
+		Exec:    []string{os.Args[0], "vmm-exec"},
+		Console: []string{os.Args[0], "vmm-console"},
 		UnmountNetns: func() error {
 			t.Error("a launcher with no VM user unmounted /run/netns")
 			return nil

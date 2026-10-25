@@ -52,6 +52,7 @@ func (h *Host) endExecsLocked(machineUID string) {
 		p.fail(errGuestGone)
 	}
 	delete(h.execs, machineUID)
+	h.endConsoleLocked(machineUID)
 }
 
 func (d guest) Exec(ctx context.Context, machineUID string, spec driver.ExecSpec) (driver.ExecSession, error) {

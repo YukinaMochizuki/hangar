@@ -178,6 +178,7 @@ type Host struct {
 	// holds.
 	ipv6Refused int
 	execs       map[string]map[*process]bool // exec processes running, by machine uid
+	consoles    map[string]*fakeConsole      // running firmware VMs' serial consoles, by machine uid
 	listErr     map[string]error             // by listing: vms, interfaces, networks, roots, bases
 	removalErr  error                        // fails stopping VMs and removing disks and interfaces
 	netErr      error                        // fails making and listing networks and interfaces
@@ -214,7 +215,7 @@ func New() *Host {
 		networks: map[string]driver.NetworkSpec{}, interfaces: map[string]map[string]driver.Interface{}, instances: map[string]string{},
 		firewalls: map[string]map[string]driver.InterfacePolicy{},
 		shareVols: map[string]driver.ShareVolume{}, heldShares: map[string]int{}, exports: map[string]driver.ShareExport{}, exportErr: map[string]error{}, exportCalls: map[string]int{}, exportLog: map[string][]string{}, exportHolds: map[string]chan struct{}{},
-		vms: map[string]*vm{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
+		vms: map[string]*vm{}, consoles: map[string]*fakeConsole{}, logs: map[string]*consoleLog{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
@@ -1564,7 +1565,9 @@ func (h *Host) bootGuest(v *vm) {
 	switch {
 	case v.spec.FileShareServer != nil:
 		h.exports[v.MachineUID] = cloneExport(v.spec.FileShareServer.Export)
-	case !v.spec.Firmware:
+	case v.spec.Firmware:
+		h.bootConsoleLocked(v.MachineUID)
+	default:
 		h.guestIPv6[v.MachineUID] = driver.GuestIPv6Of(v.spec.Interfaces)
 	}
 }
