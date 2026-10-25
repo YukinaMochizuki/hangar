@@ -77,6 +77,13 @@ type Config struct {
 	// DefaultConverterRuntime.
 	ConverterInitramfs string
 	ConverterRuntime   time.Duration
+	// Swtpm is the swtpm bundle TPM VMs' TPMs run from (deploy/swtpm), at
+	// an absolute path: swtpm and its libraries, and the musl loader,
+	// static, that runs it; every TPM VM's unit binds it read-only. Empty
+	// refuses TPM VMs. TPMKeys is where each TPM VM's key is, the file
+	// named by its machine uid, which its unit loads as a credential; empty
+	// means DefaultTPMKeys.
+	Swtpm, TPMKeys string
 	// MachineCPUs are the CPUs the VMs may use, as MachineCPUs reads them;
 	// none means every online CPU. New gives them to the VMs' slice, which a
 	// VM running already is in only from its next start.
@@ -103,6 +110,11 @@ type Config struct {
 	// giveFile, if set, replaces giveFile, which a test that is not root
 	// cannot do.
 	giveFile func(path string, gid int) error
+	// disownTPM, if set, replaces disownTPMDir in removeRuntime, which a
+	// test that is not root cannot do.
+	disownTPM func(path string) error
+	// procSys, if set, replaces /proc/sys, where nr_open is.
+	procSys string
 }
 
 // Hypervisor is the driver. It is safe for concurrent use.
@@ -118,6 +130,9 @@ type Hypervisor struct {
 	procUsers func() (map[uint32]bool, error)
 	removeAll func(string) error
 	giveFile  func(path string, gid int) error
+	disownTPM func(path string) error
+	// nrOpen is the host's nr_open, a TPM VM's swtpm's RLIMIT_NOFILE.
+	nrOpen uint64
 }
 
 var _ driver.Hypervisor = (*Hypervisor)(nil)
@@ -180,10 +195,26 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 			}
 		}
 	}
+	if cfg.TPMKeys == "" {
+		cfg.TPMKeys = DefaultTPMKeys
+	}
+	var nrOpen uint64
+	if cfg.Swtpm != "" {
+		if err := checkSwtpm(cfg.Swtpm, cfg.dynamicOK); err != nil {
+			return nil, err
+		}
+		if cfg.procSys == "" {
+			cfg.procSys = "/proc/sys"
+		}
+		var err error
+		if nrOpen, err = readNrOpen(cfg.procSys); err != nil {
+			return nil, fmt.Errorf("nr_open: %w", err)
+		}
+	}
 	if err := os.MkdirAll(cfg.Dir, 0o700); err != nil {
 		return nil, err
 	}
-	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1), procUsers: cfg.procUsers}
+	h := &Hypervisor{cfg: cfg, changes: make(chan struct{}, 1), procUsers: cfg.procUsers, nrOpen: nrOpen}
 	if h.procUsers == nil {
 		h.procUsers = procUsers
 	}
@@ -194,6 +225,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	h.giveFile = cfg.giveFile
 	if h.giveFile == nil {
 		h.giveFile = giveFile
+	}
+	h.disownTPM = cfg.disownTPM
+	if h.disownTPM == nil {
+		h.disownTPM = disownTPMDir
 	}
 	h.guest = cfg.guest
 	if h.guest == nil {
@@ -397,6 +432,15 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	if spec.Converter != nil && h.cfg.ConverterInitramfs == "" {
 		return fmt.Errorf("%s is a converter VM, and this host has no converter initramfs", uid)
 	}
+	key := filepath.Join(h.cfg.TPMKeys, uid)
+	if spec.TPM {
+		if h.cfg.Swtpm == "" {
+			return fmt.Errorf("machine %s has a TPM, and this host has no swtpm", uid)
+		}
+		if err := checkTPMKey(key); err != nil {
+			return fmt.Errorf("machine %s's TPM has no key: %w", uid, err)
+		}
+	}
 	restart, err := restartOf(spec.Restart)
 	if err != nil {
 		return err
@@ -457,6 +501,11 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		ln.Kernel, ln.Initramfs, ln.Cmdline = "", "", ""
 		ln.Firmware, ln.StopGrace = h.cfg.Firmware, h.cfg.FirmwareStopGrace
 		sb.Binds = []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Firmware}
+		if spec.TPM {
+			ln.Swtpm, ln.NoFile = h.cfg.Swtpm, h.nrOpen
+			sb.Binds = append(sb.Binds, h.cfg.Swtpm)
+			sb.TPMKey, sb.NoFile = key, h.nrOpen
+		}
 	} else {
 		disk, err := h.bootDisk(spec)
 		if err != nil {
@@ -487,7 +536,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 	}
 	argv := append(slices.Clone(h.cfg.Launcher), "--dir", h.cfg.Dir, "--vm-user", fmt.Sprint(user), uid)
 	grace, slack := ln.stopTimes()
-	props := unitProps(spec, argv, restart, stopTimeout(grace, slack, spec.Firmware), sb)
+	props := unitProps(spec, argv, restart, stopTimeout(grace, slack, spec), sb)
 	if spec.Converter != nil {
 		props = append(props, property("RuntimeMaxUSec", usec(h.cfg.ConverterRuntime)))
 	}
@@ -599,6 +648,9 @@ func checkSpec(s driver.VMSpec) error {
 	}
 	if err := computeapi.CheckSystemSerialNumber(s.SystemSerialNumber); err != nil {
 		return fmt.Errorf("machine %s: system serial number: %w", s.MachineUID, err)
+	}
+	if s.TPM && !s.Firmware {
+		return fmt.Errorf("machine %s: only a firmware VM has a TPM", s.MachineUID)
 	}
 	seen := map[string]bool{s.Root.Path: true}
 	for _, v := range s.Disks {
@@ -796,9 +848,10 @@ func (h *Hypervisor) poweredOff(ctx context.Context, uid string) bool {
 	return err == nil && (unit == nil || !running(*unit))
 }
 
-// removeRuntime removes what a VM's directory holds but its logs, and the
-// directory too if no log is left. The spec file goes last: while anything
-// else of the VM's is left, its id is not given to another VM.
+// removeRuntime removes what a VM's directory holds but its logs and its
+// TPM's state, made root's, and the directory too if neither is left. The
+// spec file goes last: while anything else of the VM's is left, its id is
+// not given to another VM.
 func (h *Hypervisor) removeRuntime(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
@@ -810,6 +863,14 @@ func (h *Hypervisor) removeRuntime(dir string) error {
 	kept := 0
 	for _, e := range entries {
 		if slices.Contains(logFiles, e.Name()) {
+			kept++
+			continue
+		}
+		if e.Name() == tpmDir {
+			// Before the spec file goes, which frees the VM's id.
+			if err := h.disownTPM(filepath.Join(dir, tpmDir)); err != nil {
+				return fmt.Errorf("the TPM's state: %w", err)
+			}
 			kept++
 			continue
 		}
@@ -839,7 +900,9 @@ func (h *Hypervisor) Logs(context.Context) ([]string, error) {
 		if !e.IsDir() || checkUID(e.Name()) != nil || isConverter(e.Name()) {
 			continue
 		}
-		if slices.ContainsFunc(logFiles, func(f string) bool { return exists(filepath.Join(h.cfg.Dir, e.Name(), f)) }) {
+		// A TPM's state goes with the logs; a VM may have none of them.
+		kept := append(slices.Clone(logFiles), tpmDir)
+		if slices.ContainsFunc(kept, func(f string) bool { return exists(filepath.Join(h.cfg.Dir, e.Name(), f)) }) {
 			out = append(out, e.Name())
 		}
 	}

@@ -21,11 +21,15 @@ type execCreds struct {
 	groups   []int
 	// fds is how many fds past stderr the program gets: 3 to 3+fds-1.
 	fds int
+	// nofile, if not zero, is the program's RLIMIT_NOFILE, soft and hard:
+	// no more than the hard limit vmm-exec has, which it cannot raise.
+	nofile uint64
 }
 
 // ExecMain is hangar-node vmm-exec --uid UID --gid GID [--groups G,...]
-// --fds N -- PROGRAM ARGS...: it execs PROGRAM as UID and GID, with no
-// capability, no environment, and no fd but 0 to 2+N, or returns failing.
+// --fds N [--nofile M] -- PROGRAM ARGS...: it execs PROGRAM as UID and GID,
+// with no capability, no environment, no fd but 0 to 2+N, and M fds at
+// most if given, or returns failing.
 func ExecMain(args []string) int {
 	c, argv, err := parseExec(args)
 	if err == nil {
@@ -49,6 +53,7 @@ func parseExec(args []string) (execCreds, []string, error) {
 	fs.IntVar(&c.gid, "gid", -1, "the gid to run as")
 	fs.StringVar(&groups, "groups", "", "the supplementary groups, comma-separated")
 	fs.IntVar(&c.fds, "fds", -1, "how many fds past stderr to pass on")
+	fs.Uint64Var(&c.nofile, "nofile", 0, "the program's RLIMIT_NOFILE; 0 leaves it as it is")
 	if err := fs.Parse(args); err != nil {
 		return c, nil, err
 	}
@@ -79,6 +84,13 @@ func confine(c execCreds) error {
 	// Whatever else is open, the program does not get.
 	if err := unix.CloseRange(uint(3+c.fds), ^uint(0), unix.CLOSE_RANGE_CLOEXEC); err != nil {
 		return fmt.Errorf("close_range: %w", err)
+	}
+	if c.nofile > 0 {
+		// syscall's: Go puts back at exec the limit it started with unless
+		// syscall.Setrlimit changed it.
+		if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &syscall.Rlimit{Cur: c.nofile, Max: c.nofile}); err != nil {
+			return fmt.Errorf("RLIMIT_NOFILE %d: %w", c.nofile, err)
+		}
 	}
 	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 		return fmt.Errorf("no_new_privs: %w", err)

@@ -63,7 +63,7 @@ func (h *Hypervisor) StartUnconfined(ctx context.Context, spec driver.VMSpec, la
 		return err
 	}
 	argv := append(slices.Clone(launcher), "--dir", h.cfg.Dir, spec.MachineUID)
-	return h.sd.start(ctx, unitName(spec.MachineUID), baseProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack, spec.Firmware)))
+	return h.sd.start(ctx, unitName(spec.MachineUID), baseProps(spec, argv, restart, stopTimeout(h.cfg.StopGrace, h.cfg.StopSlack, spec)))
 }
 
 // PressPowerButton presses the power button of the machine's VM as its

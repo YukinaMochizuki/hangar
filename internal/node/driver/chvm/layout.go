@@ -61,6 +61,13 @@ const (
 	// consoleSocket is the socket clients attach to a firmware VM's serial
 	// console on, the launcher's, which its console helper serves.
 	consoleSocket = "console.sock"
+	// tpmDir is a TPM VM's TPM state, swtpm's, encrypted with the VM's key:
+	// the VM's user's while it runs, root's once it is stopped. It outlives
+	// the VM's stops, as its logs do, and goes with them.
+	tpmDir = "tpm"
+	// tpmSocket is swtpm's control socket, the launcher's, outside chDir,
+	// which Cloud Hypervisor connects to as the VM's group.
+	tpmSocket = "tpm.sock"
 
 	// ConsoleLog is the guest's framed console (internal/guest/console):
 	// what the container wrote, and how it ended. It is rotated to
@@ -111,7 +118,7 @@ func blankVDA(s driver.VMSpec) bool { return s.FileShareServer != nil || s.Conve
 // blankSize is the size of a blank vda.
 const blankSize = 1 << 20
 
-// logFiles are what Stop keeps of a VM's directory.
+// logFiles are what Stop keeps of a VM's directory, with tpmDir.
 var logFiles = []string{ConsoleLog, ConsoleLog + ".1", SerialLog, SerialLog + ".1"}
 
 // Exit codes the launcher ends with when it has no exit code of the
@@ -147,11 +154,14 @@ const (
 
 // stopTimeout is the unit's TimeoutStopSec: a stop of the unit by
 // systemd, as at host shutdown, takes each step of a stop at its longest,
-// a firmware VM's console helper's end included, so systemd never kills
-// the launcher before the guest has had its grace.
-func stopTimeout(grace, slack time.Duration, firmware bool) time.Duration {
+// a firmware VM's console helper's end and a TPM VM's swtpm's included, so
+// systemd never kills the launcher before the guest has had its grace.
+func stopTimeout(grace, slack time.Duration, spec driver.VMSpec) time.Duration {
 	t := stopAsk + grace + slack + killGrace + drainWait
-	if firmware {
+	if spec.Firmware {
+		t += killGrace
+	}
+	if spec.TPM {
 		t += killGrace
 	}
 	return t
@@ -179,6 +189,11 @@ type launch struct {
 	// own, from the driver's range, held while this file is. Zero, as in a
 	// spec written before it was, means Cloud Hypervisor runs as root.
 	VMUser uint32 `json:",omitempty"`
+	// Swtpm is the swtpm bundle a TPM VM's TPM runs from (Config.Swtpm),
+	// and NoFile the RLIMIT_NOFILE swtpm is given, the host's nr_open,
+	// which the unit's ProcSubset hides from the launcher.
+	Swtpm  string `json:",omitempty"`
+	NoFile uint64 `json:",omitempty"`
 }
 
 // stopTimes are the grace and the slack the launch gives a guest to stop.

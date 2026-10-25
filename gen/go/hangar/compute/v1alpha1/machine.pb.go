@@ -700,8 +700,13 @@ type FirmwareBoot struct {
 	// most 64 bytes. Empty is the platform's, which points the guest's
 	// cloud-init at cloud_init. Changing it restarts the machine.
 	SystemSerialNumber string `protobuf:"bytes,3,opt,name=system_serial_number,json=systemSerialNumber,proto3" json:"system_serial_number,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Gives the guest a TPM 2.0 (CRB), whose state the node keeps, encrypted,
+	// across the machine's restarts and deletes with it. The node starts the
+	// machine only once it holds the key the state is encrypted with.
+	// Changing it restarts the machine.
+	Tpm           bool `protobuf:"varint,4,opt,name=tpm,proto3" json:"tpm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FirmwareBoot) Reset() {
@@ -753,6 +758,13 @@ func (x *FirmwareBoot) GetSystemSerialNumber() string {
 		return x.SystemSerialNumber
 	}
 	return ""
+}
+
+func (x *FirmwareBoot) GetTpm() bool {
+	if x != nil {
+		return x.Tpm
+	}
+	return false
 }
 
 // FileShareServerBoot boots the platform's NFS server of a FileShare: the
@@ -1784,12 +1796,13 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x06nocopy\x18\x04 \x01(\bR\x06nocopy\x12\x18\n" +
 	"\asubpath\x18\x05 \x01(\tR\asubpath\x12\x1d\n" +
 	"\n" +
-	"file_share\x18\x06 \x01(\tR\tfileShare\"\xa7\x01\n" +
+	"file_share\x18\x06 \x01(\tR\tfileShare\"\xb9\x01\n" +
 	"\fFirmwareBoot\x12\x1b\n" +
 	"\troot_disk\x18\x01 \x01(\tR\brootDisk\x12H\n" +
 	"\n" +
 	"cloud_init\x18\x02 \x01(\v2).hangar.compute.v1alpha1.MachineCloudInitR\tcloudInit\x120\n" +
-	"\x14system_serial_number\x18\x03 \x01(\tR\x12systemSerialNumber\"H\n" +
+	"\x14system_serial_number\x18\x03 \x01(\tR\x12systemSerialNumber\x12\x10\n" +
+	"\x03tpm\x18\x04 \x01(\bR\x03tpm\"H\n" +
 	"\x13FileShareServerBoot\x12\x1d\n" +
 	"\n" +
 	"file_share\x18\x01 \x01(\tR\tfileShare\x12\x12\n" +

@@ -42,6 +42,10 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 1 && os.Args[1] == "vmm-console" {
 		os.Exit(ConsoleMain(os.Args[2:]))
 	}
+	// The bundle's loader, which runs swtpm: see fakeSwtpm.
+	if len(os.Args) > 1 && os.Args[1] == "--library-path" {
+		os.Exit(fakeSwtpm(os.Args[2:]))
+	}
 	if mode := os.Getenv(fakeCHEnv); mode != "" {
 		os.Exit(fakeCH(mode))
 	}
@@ -126,8 +130,20 @@ func fakeCH(mode string) int {
 			serial = strings.TrimPrefix(a, "file=")
 		}
 	}
+	// A TPM VM's swtpm listens already: connected, or why not.
+	tpm := ""
+	for i, a := range args {
+		if path, ok := strings.CutPrefix(a, "socket="); ok && i > 0 && args[i-1] == "--tpm" {
+			tpm = "connected"
+			if c, err := net.Dial("unix", path); err != nil {
+				tpm = err.Error()
+			} else {
+				defer func() { _ = c.Close() }()
+			}
+		}
+	}
 	if vsock != "" {
-		b, _ := json.Marshal(map[string]any{"args": args, "fds": openFDs()})
+		b, _ := json.Marshal(map[string]any{"args": args, "fds": openFDs(), "tpm": tpm})
 		_ = os.WriteFile(filepath.Join(filepath.Dir(vsock), "args.json"), b, 0o600)
 	}
 	if path, ok := strings.CutPrefix(serial, "socket="); ok {

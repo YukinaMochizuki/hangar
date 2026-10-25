@@ -1517,6 +1517,9 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	if err := computeapi.CheckSystemSerialNumber(spec.SystemSerialNumber); err != nil {
 		return fmt.Errorf("machine %s: system serial number: %w", spec.MachineUID, err)
 	}
+	if spec.TPM && !spec.Firmware {
+		return fmt.Errorf("machine %s is given a TPM, and boots no firmware", spec.MachineUID)
+	}
 	for _, v := range spec.Disks {
 		if v.Serial != "" && !spec.Firmware {
 			return fmt.Errorf("machine %s: only a firmware VM's volumes have serials", spec.MachineUID)

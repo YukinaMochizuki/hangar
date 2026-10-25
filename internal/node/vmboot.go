@@ -54,6 +54,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Disks:              vols,
 		Firmware:           true,
 		SystemSerialNumber: m.GetSpec().GetFirmware().GetSystemSerialNumber(),
+		TPM:                m.GetSpec().GetFirmware().GetTpm(),
 		Interfaces:         ifaces,
 		Nameservers:        nameservers,
 		Search:             search,

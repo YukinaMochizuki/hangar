@@ -731,7 +731,7 @@ type Interface struct {
 //
 // A VM's console log, what its container wrote, outlives it: through its
 // restarts, a Stop and a Start again, until DeleteLogs, once the machine is
-// gone.
+// gone. So does a TPM VM's TPM state, which goes with the log.
 type Hypervisor interface {
 	// Start runs the VM, or leaves it as it is if it already runs this exact
 	// spec. A VM running another spec is an error: stop it first.
@@ -750,10 +750,11 @@ type Hypervisor interface {
 	VMs(ctx context.Context) ([]VM, error)
 	// Changes signals that a VM changed state on its own, such as exiting.
 	Changes() <-chan struct{}
-	// Logs lists the machines whose console logs the host keeps.
+	// Logs lists the machines whose console logs, or TPM states, the host
+	// keeps.
 	Logs(ctx context.Context) ([]string, error)
-	// DeleteLogs removes a machine's console log. It fails while the
-	// machine's VM is listed.
+	// DeleteLogs removes a machine's console log, and its TPM state. It
+	// fails while the machine's VM is listed.
 	DeleteLogs(ctx context.Context, machineUID string) error
 	// ReadLog sends what the machine's console log holds, oldest first,
 	// across every boot it keeps, in batches. A machine with no log has no
@@ -849,7 +850,12 @@ type VMSpec struct {
 	// out of the hash when empty, so a VM started before there was one
 	// keeps its hash.
 	SystemSerialNumber string `json:",omitempty"`
-	Interfaces         []Interface
+	// TPM gives a firmware VM a TPM 2.0, swtpm's, whose state outlives the
+	// VM's stops and goes with its logs; the hypervisor driver needs the
+	// VM's key to start it. Left out of the hash when false, so a VM started
+	// before there were TPMs keeps its hash.
+	TPM        bool `json:",omitempty"`
+	Interfaces []Interface
 	// Nameservers and Search are the guest's resolvers and search domains,
 	// as its /etc/resolv.conf lists them.
 	Nameservers []string

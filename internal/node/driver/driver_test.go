@@ -81,6 +81,28 @@ func TestAVMWithoutASerialNumberKeepsItsHash(t *testing.T) {
 	}
 }
 
+// TestAVMWithoutATPMKeepsItsHash: a firmware VM a node started before
+// VMSpec had a TPM hashes as it did, so the agent does not restart it on
+// upgrade; giving it one restarts it.
+func TestAVMWithoutATPMKeepsItsHash(t *testing.T) {
+	spec := driver.VMSpec{
+		MachineUID: "m1", Machine: "p/vm-m1", VCPUs: 1, MemoryMiB: 1024, Firmware: true,
+		Disks: []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/r", Size: 10 << 30}}, Restart: driver.RestartOnFailure,
+	}
+	b, err := json.Marshal(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "TPM") {
+		t.Errorf("a spec without a TPM encodes as %s, which changes its hash", b)
+	}
+	before := spec.Hash()
+	spec.TPM = true
+	if spec.Hash() == before {
+		t.Error("giving a VM a TPM leaves the hash as it was: the guest would not see it")
+	}
+}
+
 // TestAVMStartedBeforeDiskSerialsRunsItsSpec: a VM a node started before
 // volumes had serials, by Hash or by LegacyHash, runs the spec that now
 // gives them; one started with other serials, or other volumes, does not.
