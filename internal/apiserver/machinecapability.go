@@ -17,6 +17,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/resource"
 	"github.com/YukinaMochizuki/hangar/internal/auth"
 	"github.com/YukinaMochizuki/hangar/internal/authz"
+	"github.com/YukinaMochizuki/hangar/internal/consolews"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sshws"
 )
@@ -245,7 +246,7 @@ func clientIP(ctx context.Context) string {
 }
 
 // machineSocket serves the WebSockets of the machines' capabilities, an
-// exec or an SSH tunnel, on the public listener; see
+// exec, an SSH tunnel or a serial console, on the public listener; see
 // proto/hangar/compute/v1alpha1/machine_capability.proto.
 func (s *Server) machineSocket(chain auth.Chain) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +260,8 @@ func (s *Server) machineSocket(chain auth.Chain) http.HandlerFunc {
 			s.serveExec(chain, w, r, route)
 		case sshws.Action:
 			s.serveSSH(chain, w, r, route)
+		case consolews.Action:
+			s.serveConsole(chain, w, r, route)
 		default:
 			http.NotFound(w, r)
 		}

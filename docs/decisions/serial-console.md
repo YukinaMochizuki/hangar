@@ -73,7 +73,8 @@ full screen of a TUI takes about a second to draw.
 - **Many watch, one types.** The first client holds the input; one asking
   for it while it is held watches; a read-only client never holds it; one
   that forces takes it, and the one that held it is told. When the holder
-  leaves no one holds it. A client that falls 1024 messages behind is let
+  leaves no one holds it. A client that falls 1024 messages behind is told
+  so, if it can still be, and let
   go: the guest's output is never held up for one.
 - **80x24 until the holder says otherwise.** A serial line carries no
   window size: the guest's tty is 0x0, which programs take as terminfo's
@@ -81,6 +82,16 @@ full screen of a TUI takes about a second to draw.
   resize it, within the bounds, which every client is told and drawn again,
   and the guest is told only by its user, with `stty`. A reboot brings
   80x24 back, as the guest's tty forgets its size.
+- **Clients reach it through the apiserver**, as an exec: a WebSocket,
+  `:console` with the subprotocol `hangar.console.v1alpha1`, of
+  `MachineConsoleRequest` and `MachineConsoleResponse`
+  (`proto/hangar/compute/v1alpha1/machine_capability.proto`), relayed to
+  the node's `NodeService.Console` on its tunnel
+  (`docs/decisions/node-tunnel.md`), which needs `compute.machines.exec`.
+  `hangar console vm NAME` is a terminal on it: raw, Ctrl-] to leave, as
+  telnet's and `virsh console`'s, every other key the guest's; it says on
+  stderr how it is attached, and the `stty` that tells the guest the
+  screen's size.
 - **No switch.** Unlike GCE's and EC2's, a VM's console is never turned
   off: whoever may reach it, with `compute.machines.exec`, which every
   built-in role granting it grants with `compute.machines.ssh` and the
