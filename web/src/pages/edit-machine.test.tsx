@@ -5,7 +5,7 @@ import { Code, ConnectError, type ConnectRouter } from "@connectrpc/connect";
 import { ContainerRunState, ContainerSchema, ContainerService, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { MachineSchema, MachineService } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
 import { MachineSizeSchema, MachineSizeService } from "@hangar/api/hangar/compute/v1alpha1/machine_size_pb";
-import { VirtualMachineRunState, VirtualMachineSchema, VirtualMachineService, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import { VirtualMachineRunState, VirtualMachineSchema, VirtualMachineService, VirtualMachineTPMSchema, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { AccountService } from "@hangar/api/hangar/iam/v1alpha1/account_pb";
 import { NetworkService } from "@hangar/api/hangar/network/v1alpha1/network_pb";
 import { SecurityGroupService } from "@hangar/api/hangar/network/v1alpha1/security_group_pb";
@@ -491,7 +491,7 @@ describe("the edit page's port forwards and a VM's fields", () => {
 
   it("says a VM's data disks restart it, and its SSH keys do not", async () => {
     await openEdit("VirtualMachine");
-    fireEvent.click(screen.getByRole("button", { name: /SSH keys, user data/ }));
+    fireEvent.click(screen.getByRole("button", { name: /cloud-init, hardware/ }));
     // Prefilled from the VM's own.
     expect((screen.getByLabelText("SSH keys") as HTMLTextAreaElement).value).toBe("ssh-ed25519 AAAA me");
     fireEvent.change(screen.getByLabelText("SSH keys"), { target: { value: "ssh-ed25519 AAAA me\nssh-ed25519 BBBB you" } });
@@ -502,5 +502,23 @@ describe("the edit page's port forwards and a VM's fields", () => {
     await screen.findByRole("option", { name: /^pg-data/ });
     fireEvent.change(screen.getByRole("combobox", { name: "Data disk 1" }), { target: { value: "pg-data" } });
     expect(await screen.findByText("Restarts the VM")).toBeTruthy();
+  });
+
+  it("locks a VM's TPM, and says its serial number restarts it", async () => {
+    const tpm = db();
+    tpm.spec!.tpm = create(VirtualMachineTPMSchema, { enabled: true });
+    const a = await openEdit("VirtualMachine", { vm: () => tpm });
+    fireEvent.click(screen.getByRole("button", { name: /cloud-init, hardware/ }));
+    const box = screen.getByRole("checkbox", { name: /^TPM 2\.0/ }) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(box.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Serial number"), { target: { value: "ARX-0042" } });
+    expect(await screen.findByText("Restarts the VM")).toBeTruthy();
+    expect(screen.getByText("the platform's → ARX-0042")).toBeTruthy();
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    const sent = applies(a)[0]!.obj as VirtualMachine;
+    expect(sent.spec?.platform?.serialNumber).toBe("ARX-0042");
+    expect(sent.spec?.tpm?.enabled).toBe(true);
   });
 });

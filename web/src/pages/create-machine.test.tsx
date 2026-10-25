@@ -712,7 +712,7 @@ describe("CreateMachine's VM fields and port forwards", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Read-only" }));
     // Folded until opened.
     expect(screen.queryByLabelText("SSH keys")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /SSH keys, user data/ }));
+    fireEvent.click(screen.getByRole("button", { name: /cloud-init, hardware/ }));
     fireEvent.change(screen.getByLabelText("SSH keys"), { target: { value: "ssh-ed25519 AAAA me\n\n  ssh-ed25519 BBBB you  " } });
     fireEvent.change(screen.getByLabelText("User data"), { target: { value: "#cloud-config\n" } });
     fill("db", false);
@@ -726,11 +726,57 @@ describe("CreateMachine's VM fields and port forwards", () => {
     expect(spec.userData).toBe("#cloud-config\n");
   });
 
+  it("sends a VM's serial number and TPM, and turns cloud-init's fields off while a serial number is set", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /cloud-init, hardware/ }));
+    expect((screen.getByLabelText("SSH keys") as HTMLTextAreaElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("Serial number"), { target: { value: "ARX-0042" } });
+    expect((screen.getByLabelText("SSH keys") as HTMLTextAreaElement).disabled).toBe(true);
+    expect((screen.getByLabelText("User data") as HTMLTextAreaElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /^TPM 2\.0/ }));
+    fill("win", false);
+    expect(manifest()).toContain("serialNumber: ARX-0042");
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    const spec = lastVM(a).spec!;
+    expect(spec.platform?.serialNumber).toBe("ARX-0042");
+    expect(spec.tpm?.enabled).toBe(true);
+  });
+
+  it("sends neither a platform nor a TPM when they are left alone", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    await screen.findByRole("button", { name: /cloud-init, hardware/ });
+    fill("db", false);
+    await waitFor(() => expect(submitButton().disabled).toBe(false));
+    submit();
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    const spec = lastVM(a).spec!;
+    expect(spec.platform).toBeUndefined();
+    expect(spec.tpm).toBeUndefined();
+  });
+
+  it("refuses a serial number the apiserver would", async () => {
+    const a = api({ containers: async () => ({ items: [] }) });
+    render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
+    fireEvent.click(await screen.findByRole("button", { name: /cloud-init, hardware/ }));
+    fireEvent.change(screen.getByLabelText("Serial number"), { target: { value: "ARX-é" } });
+    fill("db", false);
+    expect((await screen.findAllByText(/The serial number is not printable ASCII\./)).length).toBeGreaterThan(0);
+    expect(submitButton().disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Serial number"), { target: { value: "s".repeat(65) } });
+    expect((await screen.findAllByText(/The serial number is 65 bytes, at most 64\./)).length).toBeGreaterThan(0);
+    submit();
+    expect(sent(a)).toEqual([]);
+  });
+
   it("refuses user data over 16 KiB, and a data disk row with no disk", async () => {
     const a = api({ containers: async () => ({ items: [] }), disks: [pg] });
     render(<CreateMachine kind="vm" size="s" />, { wrapper: withApi(a) });
     fireEvent.click(await screen.findByRole("button", { name: /Attach disk/ }));
-    fireEvent.click(screen.getByRole("button", { name: /SSH keys, user data/ }));
+    fireEvent.click(screen.getByRole("button", { name: /cloud-init, hardware/ }));
     fireEvent.change(screen.getByLabelText("User data"), { target: { value: "x".repeat(16 * 1024 + 1) } });
     fill("db", false);
     expect(await screen.findByText(/User data is 16385 bytes, at most 16384\./)).toBeTruthy();
