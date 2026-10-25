@@ -252,6 +252,12 @@ function Summary({ m, onEditLabels }: { m: MachineView; onEditLabels?: () => voi
           </Field>
         )}
         {m.vm && <Field label="SSH keys">{m.vm.spec?.sshAuthorizedKeys.length ?? 0}</Field>}
+        {m.vm?.spec?.platform?.serialNumber && (
+          <Field label="Serial number" mono>
+            {m.vm.spec.platform.serialNumber}
+          </Field>
+        )}
+        {m.vm?.spec?.tpm?.enabled && <Field label="TPM">TPM 2.0</Field>}
         {m.vm && (
           <Field label="Host key">
             <HostKeys vm={m.vm} project={m.project} />
