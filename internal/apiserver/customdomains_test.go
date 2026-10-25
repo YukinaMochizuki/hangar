@@ -56,6 +56,7 @@ func otherTenant(t *testing.T, s *Server) context.Context {
 }
 
 func TestCustomDomainAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.PublicEndpoints.ControlPlaneDomain = "console.hangarlab.cloud" })
 	bob := otherTenant(t, s)
 	b := s.backend(registry.CustomDomain)
@@ -144,6 +145,7 @@ func TestCustomDomainAdmission(t *testing.T) {
 // write its domains; another tenant's owner neither reads nor writes them,
 // nor names a tenant of someone else's.
 func TestCustomDomainsAreTheTenants(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	bob := otherTenant(t, s)
 	b := s.backend(registry.CustomDomain)
@@ -174,6 +176,7 @@ func TestCustomDomainsAreTheTenants(t *testing.T) {
 }
 
 func TestEndpointHostnames(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	bob := otherTenant(t, s)
 	project(t, s, user, "blog")
@@ -247,6 +250,7 @@ func TestEndpointHostnames(t *testing.T) {
 // name is a CNAME of its own target, and stays so; an endpoint's hostnames
 // serve once their domain is.
 func TestCustomDomainVerification(t *testing.T) {
+	t.Parallel()
 	dns, err := acmetest.Start("127.0.0.1:0", "example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -324,6 +328,7 @@ func TestCustomDomainVerification(t *testing.T) {
 }
 
 func TestCustomDomainsCountTowardThePlan(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, func(c *Config) { c.DefaultPlanLimits = &tenancyv1alpha1.Limits{Domains: ptr(int32(1))} })
 	b := s.backend(registry.CustomDomain)
 	if _, err := b.Apply(user, customDomain("one", "acme", "one.org")); err != nil {
@@ -362,6 +367,7 @@ func markVerified(t *testing.T, s *Server, system context.Context, name string) 
 // CNAMEs in place; the first verified has it, the other is told why it is
 // not, and stays so with its record in place.
 func TestTheFirstTenantToVerifyANameHasIt(t *testing.T) {
+	t.Parallel()
 	dns, err := acmetest.Start("127.0.0.1:0", "example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -402,6 +408,7 @@ func TestTheFirstTenantToVerifyANameHasIt(t *testing.T) {
 // its record in place as the other's verification runs: one is verified,
 // never both.
 func TestTwoTenantsVerifyingAtOnce(t *testing.T) {
+	t.Parallel()
 	for range 10 {
 		dns, err := acmetest.Start("127.0.0.1:0", "example.com")
 		if err != nil {
@@ -447,6 +454,7 @@ func TestTwoTenantsVerifyingAtOnce(t *testing.T) {
 // writes hold no quota lock, so the endpoints' own lock is all that keeps
 // them apart.
 func TestOneHostnameOneEndpointUnderRacingApplies(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.CustomDomain).Apply(user, customDomain("example", "acme", "example.com")); err != nil {
 		t.Fatal(err)
@@ -489,6 +497,7 @@ func TestOneHostnameOneEndpointUnderRacingApplies(t *testing.T) {
 // under another of the tenant's takes the hostnames under it, so it may
 // not leave out a project that serves at one.
 func TestANestedDomainTakesNoHostnameFromAProjectItLeavesOut(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	project(t, s, user, "blog")
 	d := s.backend(registry.CustomDomain)
@@ -511,6 +520,7 @@ func TestANestedDomainTakesNoHostnameFromAProjectItLeavesOut(t *testing.T) {
 // now; they write none of them. No one but the apiserver writes a domain's
 // status, its tenant's owner included.
 func TestProjectRolesReadTheDomainsTheirProjectMayUse(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	project(t, s, user, "blog")
 	bob := otherTenant(t, s)

@@ -38,6 +38,7 @@ func ipv6Of(m *computev1alpha1.Machine) netip.Addr {
 // the interface's MAC alone, its resolver answers AAAA, and the machine's
 // groups hold the address.
 func TestMachinesGetPublicIPv6(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
@@ -164,6 +165,7 @@ func (w *world) leasedTo(networkUID string, mac net.HardwareAddr) netip.Addr {
 // addresses of it, and none starts again: a VM is leased its address by
 // DHCPv6, and a container's guest is told it.
 func TestAHostGainingAPrefix(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -212,6 +214,7 @@ func TestAHostGainingAPrefix(t *testing.T) {
 // TestNoPrefixNoIPv6: on a host without a prefix, nothing of IPv6 exists:
 // no address, no packet socket.
 func TestNoPrefixNoIPv6(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

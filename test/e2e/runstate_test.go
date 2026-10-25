@@ -29,6 +29,7 @@ func (w *world) waitStopped(name string, status metav1.ConditionStatus) *compute
 // STOPPED has its VM taken down, its disk and interface kept, and says
 // Stopped; applied RUNNING again it boots the same disk.
 func TestAContainerStopsAndStartsOnItsDisk(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("api", "nginx")
 	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_ALWAYS

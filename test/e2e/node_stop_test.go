@@ -23,6 +23,7 @@ import (
 // a guest that ignores SIGTERM, as the real driver waits out the grace
 // period, another machine is built and reported ready.
 func TestAStalledStopHoldsUpNoOtherMachine(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyMachine(bare("slow", "10.0.0.50/24"))
 	w.waitMachine("slow", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
@@ -59,6 +60,7 @@ func TestAStalledStopHoldsUpNoOtherMachine(t *testing.T) {
 // its VM runs, and the stop is tried again, no sooner than its backoff's
 // first second, until it succeeds.
 func TestAFailedStopIsReportedAndTriedAgain(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyMachine(bare("solo", "10.0.0.50/24"))
 	w.waitMachine("solo", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
@@ -122,6 +124,7 @@ func (w *world) quiet(uid string) int {
 // faster than its backoff (a second, then twice as long each time), and
 // costs the other machines nothing: none is reconciled for it.
 func TestAFailingStopBacksOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyMachine(bare("a", "10.0.0.50/24"))
 	w.applyMachine(bare("b", "10.0.0.51/24"))
@@ -154,6 +157,7 @@ func TestAFailingStopBacksOff(t *testing.T) {
 // TestNoVMNoStop: a machine with no VM is not stopped when its disk is
 // rebuilt or it is deleted, and its deletion checks no other machine again.
 func TestNoVMNoStop(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddImage("nginx:2", "sha256:nginx-2", nginx)
 	w.applyMachine(bare("a", "10.0.0.50/24"))

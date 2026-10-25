@@ -126,6 +126,7 @@ func contains(lines []string, want ...string) bool {
 // boots; a follow sees what comes as it comes, and a client going away
 // ends the node's read.
 func TestContainerLogs(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -189,6 +190,7 @@ func ptr[T any](v T) *T { return &v }
 // TestAFollowEndsWithTheContainer: a container that exits for good ends
 // its follow, once its exit is read.
 func TestAFollowEndsWithTheContainer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("job", "nginx")
 	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
@@ -212,6 +214,7 @@ func TestAFollowEndsWithTheContainer(t *testing.T) {
 // told so the same whether the container exists or not; and a container
 // not yet placed has none to read.
 func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	bind := func(name, user, role string, scope *iamv1alpha1.BindingScope) {
 		t.Helper()
@@ -269,6 +272,7 @@ func TestReadingLogsNeedsItsOwnPermission(t *testing.T) {
 // TestLogsOfANodeDown: a node with no tunnel, its agent stopped, fails a
 // read at once with Unavailable, and a follow under way when it goes too.
 func TestLogsOfANodeDown(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -301,6 +305,7 @@ func TestLogsOfANodeDown(t *testing.T) {
 // nodes as it may is refused another at once, while another tenant's go
 // through; a follow ending, or cancelled, gives its slot back.
 func TestATenantsCallsToNodesAreCapped(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerTenant = 2 })
 	w.startAgent()
 	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
@@ -379,6 +384,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 // whatever tenant it is in, while another caller in the same tenant is
 // not; a call ending gives the slot back.
 func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerPrincipal = 2 })
 	w.startAgent()
 	ctx := context.Background()

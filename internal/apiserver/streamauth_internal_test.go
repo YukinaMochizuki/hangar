@@ -479,6 +479,7 @@ func (w *streamWorld) serviceToken(t *testing.T) http.Header {
 // granted them, or their caller's membership; the node's exec ends with
 // them.
 func TestMachineStreamsEndWithWhatLetThemIn(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name   string
 		open   func(*streamWorld, *testing.T) http.Header
@@ -524,6 +525,7 @@ func TestMachineStreamsEndWithWhatLetThemIn(t *testing.T) {
 // ssh and exec by two bindings, loses it at the recheck after the ssh
 // binding goes, though he may still exec.
 func TestAVMExecEndsWithTheSSHPermission(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	clock := w.s.clock.(*clockwork.FakeClock)
 	c, err := w.dialVM(t, "rex@example.com", "web")
@@ -561,6 +563,7 @@ func revokeBob(w *streamWorld, t *testing.T) error {
 // browser session records no use of it, so they end at its idle limit,
 // as a tab left open does, unless the person uses the session otherwise.
 func TestAnOpenStreamIsNoUseOfItsSession(t *testing.T) {
+	t.Parallel()
 	w := newStreamWorld(t)
 	st := w.open(t, w.bobsBrowser(t))
 	gets, touches := w.creds.gets.Load(), w.creds.touches.Load()
@@ -579,6 +582,7 @@ func TestAnOpenStreamIsNoUseOfItsSession(t *testing.T) {
 // are rechecked by the login it was issued in, so they outlive the token's
 // hour, which the CLI renews without reopening them, and end with the login.
 func TestAStreamOutlivesItsAccessToken(t *testing.T) {
+	t.Parallel()
 	w := newStreamWorld(t)
 	st := w.open(t, w.bobsCLI(t))
 	asked := w.creds.familyHolds.Load()
@@ -597,6 +601,7 @@ func TestAStreamOutlivesItsAccessToken(t *testing.T) {
 // or write that would see its end, still ends at the recheck that refuses
 // its caller.
 func TestARevokedStreamEndsThoughItsClientStoppedReading(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		kind, path, subprotocol, ended string
 		begin                          func(*testing.T, *websocket.Conn)

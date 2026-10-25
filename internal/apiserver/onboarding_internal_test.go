@@ -81,6 +81,7 @@ var onboardingNamePattern = regexp.MustCompile(`^carol-example-com-[` + nameAlph
 // the User's plan and counting toward their cap, holding a project of the
 // same name with its default network.
 func TestSignUpOpensATenantAndProject(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	makePlan(t, s, system, "sponsor")
 	invite(t, s, "carol@example.com", "platform.member")
@@ -223,6 +224,7 @@ func networkIn(project, name, cidr string) *networkv1alpha1.Network {
 // TestSignUpWithoutAnInvitation: someone with no Invitation, such as the
 // bootstrap admin, starts with the default plan and the platform's cap.
 func TestSignUpWithoutAnInvitation(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	// The setup, in which alice opens acme besides the tenant signing up
 	// opened for her, runs under a higher cap.
@@ -245,6 +247,7 @@ func TestSignUpWithoutAnInvitation(t *testing.T) {
 // TestOnboardingNames: the name is the username, cut to leave room for the
 // suffix and a hostname label's prefix, and a valid label.
 func TestOnboardingNames(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct{ username, want string }{
 		{"carol", "carol-k3m9x"},
 		{"a", "a-k3m9x"},
@@ -272,6 +275,7 @@ func TestOnboardingNames(t *testing.T) {
 // TestSignUpAvoidsUsedNames: a name some tenant or some project has ever
 // had is not given again; another suffix is drawn.
 func TestSignUpAvoidsUsedNames(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	if _, err := s.backend(registry.Tenant).Apply(user, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "erin-aaaaa"}}); err != nil {
 		t.Fatal(err)
@@ -356,6 +360,7 @@ func (t failingTx) Delete(ctx context.Context, key store.Key, expected int64) (s
 // it is left in the store: no User, no tenant, project, network or binding,
 // no claimed name, and the invitation stays; signing up again then works.
 func TestSignUpIsAllOrNothing(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []registry.Resource{registry.User, nameClaimResource, registry.Tenant, registry.RoleBinding, registry.Project, registry.Network, registry.Invitation} {
 		t.Run(kind.Kind, func(t *testing.T) {
 			var st *failingTxn
@@ -430,6 +435,7 @@ var nameClaimResource = registry.Resource{Kind: nameClaimKind}
 // an invitation or a User names is not deleted; and a User's plan must
 // exist.
 func TestInvitationRules(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	invite(t, s, "root@example.com", "platform.root")
 	signUp(t, s, "root@example.com")
@@ -499,6 +505,7 @@ func TestInvitationRules(t *testing.T) {
 // is either taken up by the sign-up or refused for an email with a User;
 // never are both left.
 func TestInvitingRacesSigningUp(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	makePlan(t, s, system, "sponsor")
 	for i := range 20 {
@@ -535,6 +542,7 @@ func TestInvitingRacesSigningUp(t *testing.T) {
 // TestDeletingAPlanRacesNamingIt: a plan deleted while a User is given it
 // either goes, and the User is refused it, or stays, as the User names it.
 func TestDeletingAPlanRacesNamingIt(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	name := usernameOf("alice@example.com")
 	for i := range 20 {
@@ -557,6 +565,7 @@ func TestDeletingAPlanRacesNamingIt(t *testing.T) {
 // TestTwoSignUpsOfOnePerson: of two sign-ups at once by one person, one
 // wins, and only it opens a tenant.
 func TestTwoSignUpsOfOnePerson(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	invite(t, s, "kim@example.com", "platform.member")
 	var wg sync.WaitGroup
@@ -587,6 +596,7 @@ func TestTwoSignUpsOfOnePerson(t *testing.T) {
 // kinds, gets no User and no Invitation, by get, list or watch, and writes
 // neither.
 func TestNodesCannotReadUsersOrInvitations(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	makeInvitation(t, s, system, "lee@example.com", &iamv1alpha1.InvitationSpec{})
 	node := asNode(user, "n1")
@@ -627,6 +637,7 @@ func TestNodesCannotReadUsersOrInvitations(t *testing.T) {
 // back, so one acting as a person, whose writes wait for the authorization
 // view and the quota lock, is refused before it starts.
 func TestOnlyTheSystemRunsATransaction(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	for who, ctx := range map[string]context.Context{"a person": user, "no one": context.Background()} {
 		ran := false
@@ -645,6 +656,7 @@ func TestOnlyTheSystemRunsATransaction(t *testing.T) {
 
 // TestTheDefaultPlanAndCap are what a new store starts with.
 func TestTheDefaultPlanAndCap(t *testing.T) {
+	t.Parallel()
 	s, system, _ := runningWith(t, func(c *Config) { c.DefaultPlanLimits = nil })
 	plan := mustGet[*tenancyv1alpha1.Plan](t, s, system, registry.Plan, resource.Key{Name: DefaultPlan})
 	want := &tenancyv1alpha1.Limits{

@@ -43,6 +43,7 @@ func listSizes(t *testing.T, c clients) []string {
 // TestNoMachineSizeByDefault: the platform ships no size; its administrator
 // defines every one.
 func TestNoMachineSizeByDefault(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	if got := listSizes(t, e.as(root)); len(got) != 0 {
 		t.Errorf("a fresh store lists machine sizes %v", got)
@@ -53,6 +54,7 @@ func TestNoMachineSizeByDefault(t *testing.T) {
 // reads the sizes, people and service tokens alike; only platform.root
 // writes them, whatever role anyone else holds.
 func TestOnlyPlatformRootWritesMachineSizes(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -115,6 +117,7 @@ func TestOnlyPlatformRootWritesMachineSizes(t *testing.T) {
 // TestMachineSizeAdmission: a size is checked as a container's resources
 // are, though nothing in it has a default.
 func TestMachineSizeAdmission(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	r := e.as(root)
@@ -166,6 +169,7 @@ func TestMachineSizeAdmission(t *testing.T) {
 // not have is never stored. The binary codec keeps it, and the size is
 // refused; the JSON codec drops it, and the size is stored without it.
 func TestMachineSizeRefusesUnknownFields(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	r := e.as(root)

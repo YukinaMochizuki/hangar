@@ -96,6 +96,7 @@ func checkDomain(ctx context.Context, s *Server, name string) (*networkv1alpha1.
 // asks example.com's nameserver, finds it, and the domain is verified, in
 // the answer and as stored.
 func TestCheckSeesARecordTheResolverRemembersMissing(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	s, system, user := runningWith(t, w.configure)
 	if _, err := s.backend(registry.CustomDomain).Apply(user, customDomain("example", "acme", "example.com")); err != nil {
@@ -125,6 +126,7 @@ func TestCheckSeesARecordTheResolverRemembersMissing(t *testing.T) {
 // TestAVerifiedDomainIsNotLookedUpAgain: checking a verified domain answers
 // it as it is and asks no nameserver.
 func TestAVerifiedDomainIsNotLookedUpAgain(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	s, system, user := runningWith(t, w.configure)
 	if _, err := s.backend(registry.CustomDomain).Apply(user, customDomain("example", "acme", "example.com")); err != nil {
@@ -145,6 +147,7 @@ func TestAVerifiedDomainIsNotLookedUpAgain(t *testing.T) {
 // takes: the tenant's owner may, a project's people who read it may not,
 // nor another tenant, and a domain that does not exist is refused alike.
 func TestOnlyThoseWhoMayChangeADomainCheckIt(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	s, system, user := runningWith(t, w.configure)
 	if _, err := s.backend(registry.CustomDomain).Apply(user, customDomain("example", "acme", "example.com")); err != nil {
@@ -186,6 +189,7 @@ func verifiedMessage(d *networkv1alpha1.CustomDomain) string {
 // for victim.example.org, then answers the challenge with the new domain's
 // target. That answer is example.com's, and verifies nothing.
 func TestADomainMadeAgainDuringItsLookupIsNotVerifiedByIt(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	s, system, user := runningWith(t, w.configure)
 	b := s.backend(registry.CustomDomain)
@@ -228,6 +232,7 @@ func TestADomainMadeAgainDuringItsLookupIsNotVerifiedByIt(t *testing.T) {
 // is refused, saying when to try again, and asks no nameserver; after it,
 // a check is made.
 func TestADomainIsNotCheckedAgainAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	s, _, user := runningWith(t, w.configure)
 	if _, err := s.backend(registry.CustomDomain).Apply(user, customDomain("example", "acme", "example.com")); err != nil {
@@ -254,6 +259,7 @@ func TestADomainIsNotCheckedAgainAtOnce(t *testing.T) {
 // TestChecksRunAFewAtOnce: past the checks running at once, another
 // domain's check is refused until one ends.
 func TestChecksRunAFewAtOnce(t *testing.T) {
+	t.Parallel()
 	var l checkLimiter
 	now := time.Now()
 	var releases []func()
@@ -278,6 +284,7 @@ func TestChecksRunAFewAtOnce(t *testing.T) {
 // could name to probe the apiserver's networks, is asked at none of them;
 // the status says what a resolver answers instead.
 func TestNameserversAtInternalAddressesAreNotAsked(t *testing.T) {
+	t.Parallel()
 	w := newDNSWorld(t)
 	internal := dnstest.Serve(t, func(q dns.Question, m *dns.Msg) {
 		m.RecursionAvailable = true

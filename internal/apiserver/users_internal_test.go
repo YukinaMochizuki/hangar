@@ -22,6 +22,7 @@ import (
 // neither can sign up; root on the host changes Users as platform.root does,
 // but creates none.
 func TestNoUserForServiceTokensOrLocalRoot(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	token := serviceToken(t, s, system, "web", "agent")
 	local := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.Local, ID: "root@n1"})
@@ -75,6 +76,7 @@ func TestNoUserForServiceTokensOrLocalRoot(t *testing.T) {
 // happens beneath the API, stays claimed, and the refusal is about
 // usernames.
 func TestAUsernameIsNeverReused(t *testing.T) {
+	t.Parallel()
 	s, _, _ := running(t)
 	invite(t, s, "bob@example.com", "platform.member")
 	gone := usernameOf("alice@example.com")

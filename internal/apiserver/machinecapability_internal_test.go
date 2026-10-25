@@ -56,6 +56,7 @@ func dialPath(t *testing.T, url, user, path, subprotocol string) error {
 // them too, as it says nothing of any object.
 // Nothing about the object is told, and no node is called.
 func TestACapabilityAKindLacksIsUnimplemented(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	const stranger = "stranger@example.com"
@@ -117,6 +118,7 @@ func (d devAs) RoundTrip(r *http.Request) (*http.Response, error) {
 // being able to get it, and may not exec in it; reading the container is
 // not reading its logs.
 func TestACapabilityIsItsMachinesPermissionAlone(t *testing.T) {
+	t.Parallel()
 	const logsOnly = "test.logs-only"
 	w := newExecWorld(t, func(c *Config) {
 		c.ExtraRoles[logsOnly] = authz.NewRole(authz.TenantLevel, authz.MachineLogs)
@@ -141,6 +143,7 @@ func TestACapabilityIsItsMachinesPermissionAlone(t *testing.T) {
 // Machine kind, and the tenant's owner holds them, but a Machine stays the
 // system's to write.
 func TestAUserCannotWriteAMachine(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	alice := auth.WithPrincipal(t.Context(), auth.Principal{Type: auth.User, ID: "alice@example.com"})
 	machines := w.s.backend(registry.Machine)
@@ -166,6 +169,7 @@ func TestAUserCannotWriteAMachine(t *testing.T) {
 // capability; and a capability's target is computed from the key alone, so
 // it is authorized before anything is read.
 func TestEveryMachineKindIsMapped(t *testing.T) {
+	t.Parallel()
 	var kinds []string
 	for kind, mk := range machineKinds {
 		kinds = append(kinds, kind)
@@ -191,6 +195,7 @@ func TestEveryMachineKindIsMapped(t *testing.T) {
 // streams and exits; a virtual machine's, which boots firmware, are its
 // serial console, and only a boot the platform ended is stopped.
 func TestMachineLogRecords(t *testing.T) {
+	t.Parallel()
 	now := timestamppb.New(time.Unix(1700000000, 0))
 	data := func(stream nodev1.LogStream, s string) *nodev1.LogRecord {
 		return &nodev1.LogRecord{Boot: 1, Stream: stream, Time: now, Content: &nodev1.LogRecord_Data{Data: []byte(s)}}

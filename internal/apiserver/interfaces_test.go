@@ -17,6 +17,7 @@ func onNetworks(c *computev1alpha1.Container, networks ...string) *computev1alph
 }
 
 func TestInterfaceAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Container)
 	nine := make([]string, 9)
@@ -45,6 +46,7 @@ func TestInterfaceAdmission(t *testing.T) {
 // TestAContainerOnSeveralNetworks: each interface asked for is the
 // machine's, by position, with an address of its own network.
 func TestAContainerOnSeveralNetworks(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	if _, err := s.backend(registry.Network).Apply(user, network("backend", "10.1.0.0/24")); err != nil {
 		t.Fatal(err)

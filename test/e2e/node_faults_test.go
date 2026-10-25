@@ -93,6 +93,7 @@ func (w *world) waitMachineSaying(name string, phase computev1alpha1.MachinePhas
 // TestARegistryOutageLeavesARunningMachineAlone: the registry going down
 // changes nothing for a machine already running, even when its VM restarts.
 func TestARegistryOutageLeavesARunningMachineAlone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -117,6 +118,7 @@ func TestARegistryOutageLeavesARunningMachineAlone(t *testing.T) {
 // TestAStoppedMachineKeepsItsDisk: stopping takes the VM down and keeps its
 // disk, needs no registry, and starting again boots the same disk.
 func TestAStoppedMachineKeepsItsDisk(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	m := bare("solo", "10.0.0.50/24")
 	w.applyMachine(m)
@@ -157,6 +159,7 @@ func (w *world) machine2(name string) *computev1alpha1.Machine {
 // TestASuccessfulExitStops: under OnFailure, an exit with 0 leaves the
 // container stopped, not failed.
 func TestASuccessfulExitStops(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("job", "nginx")
 	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_ON_FAILURE
@@ -179,6 +182,7 @@ func TestASuccessfulExitStops(t *testing.T) {
 // TestAnInterfaceChangeReplacesIt: an interface taken away goes from the
 // host, one changed is made anew, and the VM is started on what is left.
 func TestAnInterfaceChangeReplacesIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	m := bare("solo", "10.0.0.50/24")
 	m.Spec.Interfaces = append(m.Spec.Interfaces, &computev1alpha1.MachineInterface{Name: "eth1", Network: "default", Ipv4: "10.0.0.60/24"})
@@ -205,6 +209,7 @@ func TestAnInterfaceChangeReplacesIt(t *testing.T) {
 // TestAMachineOnAnotherNodeIsLeftAlone: the agent builds nothing for a
 // machine placed elsewhere.
 func TestAMachineOnAnotherNodeIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	m := bare("elsewhere", "10.0.0.50/24")
 	m.Spec.Node = "n2"
@@ -221,6 +226,7 @@ func TestAMachineOnAnotherNodeIsLeftAlone(t *testing.T) {
 // TestAMachineWithoutItsNetworkSaysSo: a machine whose network does not
 // exist waits for it and says so.
 func TestAMachineWithoutItsNetworkSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	m := bare("lost", "10.9.0.5/24")
 	m.Spec.Interfaces[0].Network = "nowhere"
@@ -234,6 +240,7 @@ func TestAMachineWithoutItsNetworkSaysSo(t *testing.T) {
 // TestReleasedOnlyOnceTheHostIsClean: a deleted machine is reported
 // released only after its VM, disk and interfaces are gone.
 func TestReleasedOnlyOnceTheHostIsClean(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -261,6 +268,7 @@ func TestReleasedOnlyOnceTheHostIsClean(t *testing.T) {
 // on top of what it read, so a write made meanwhile by another (here a
 // condition the test adds, as the scheduler adds its own) is never lost.
 func TestStatusWritesAreConditional(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	probe := &metav1.Condition{Type: "Probe", Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: "Test"}
 	var done atomic.Bool
@@ -346,6 +354,7 @@ func (f failing) RoundTrip(r *http.Request) (*http.Response, error) {
 // TestTheSweepTrustsNoFailedList: neither the API nor the host failing to
 // list what it holds reads as "nothing is wanted".
 func TestTheSweepTrustsNoFailedList(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	var apiDown atomic.Bool
 	w.wrap = func(next http.RoundTripper) http.RoundTripper {
@@ -388,6 +397,7 @@ func TestTheSweepTrustsNoFailedList(t *testing.T) {
 // again for a while, here networking, changes nothing for a machine running
 // its current spec.
 func TestAHostHiccupLeavesARunningMachineAlone(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -413,6 +423,7 @@ func TestAHostHiccupLeavesARunningMachineAlone(t *testing.T) {
 // TestABaseBeingBuiltOnIsKept: the sweep spares the base of a machine whose
 // root disk could not be made yet, so the image is not unpacked again.
 func TestABaseBeingBuiltOnIsKept(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.FailClone(driver.ErrNoSpace)
 	w.apply(container("api", "nginx"))
@@ -428,6 +439,7 @@ func TestABaseBeingBuiltOnIsKept(t *testing.T) {
 // TestLostNetworkingIsNotHidden: when networking changed behind the agent's
 // back and cannot be checked, a running machine is not reported as fine.
 func TestLostNetworkingIsNotHidden(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -462,6 +474,7 @@ func TestLostNetworkingIsNotHidden(t *testing.T) {
 // TestAnUpdateThatCannotBePulledSaysSo: a running container changed to an
 // image that cannot be pulled says so, while the old one keeps running.
 func TestAnUpdateThatCannotBePulledSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -478,6 +491,7 @@ func TestAnUpdateThatCannotBePulledSaysSo(t *testing.T) {
 // the node runs, stops and deletes other machines, says the waiting ones
 // are pulling, and pulls the image once for all that want it.
 func TestASlowImageHoldsUpNoOtherMachine(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("old", "nginx"))
 	w.waitReason("old", "Running")
@@ -509,6 +523,7 @@ func TestASlowImageHoldsUpNoOtherMachine(t *testing.T) {
 // TestAFullDiskForANewImageSaysSo: a base that cannot be made for lack of
 // room is the disk's failure, not the registry's.
 func TestAFullDiskForANewImageSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.SetFull(true)
 	w.apply(container("api", "nginx"))
@@ -524,6 +539,7 @@ func TestAFullDiskForANewImageSaysSo(t *testing.T) {
 // the root disk asked for is the disk's size at fault, which its owner can
 // fix.
 func TestAnImageLargerThanTheDiskSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.SetBaseSize(20 << 30)
 	w.apply(container("api", "nginx"))
@@ -540,6 +556,7 @@ func TestAnImageLargerThanTheDiskSaysSo(t *testing.T) {
 // alone take more than storage has left fails as the disk's, and is never
 // unpacked.
 func TestAnImageLargerThanTheRoomLeftIsNotUnpacked(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddImage("big", "sha256:big-1", driver.ImageConfig{Cmd: []string{"true"}, Size: fake.Capacity + 1})
 	w.apply(container("api", "big"))
@@ -553,6 +570,7 @@ func TestAnImageLargerThanTheRoomLeftIsNotUnpacked(t *testing.T) {
 // container asks for, and asking for more grows it and restarts the VM on
 // it.
 func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("api", "nginx")
 	c.Spec.Resources = &computev1alpha1.Resources{Disk: "20Gi"}
@@ -575,6 +593,7 @@ func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 // TestAVanishedBaseIsMadeAgain: a base gone after its image was prepared,
 // before the machine's disk was cloned from it, is made again.
 func TestAVanishedBaseIsMadeAgain(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.FailClone(driver.ErrNoSpace)
 	w.apply(container("api", "nginx"))
@@ -591,6 +610,7 @@ func TestAVanishedBaseIsMadeAgain(t *testing.T) {
 // while the agent is busy with an image is still checked, so a VM cut off
 // meanwhile is not reported fine.
 func TestNetworkChangesWhilePullingAreNotHidden(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -624,6 +644,7 @@ func TestNetworkChangesWhilePullingAreNotHidden(t *testing.T) {
 // TestAStalledPullFailsAndIsTriedAgain: a pull that makes no progress fails
 // in time, says so, and is tried again.
 func TestAStalledPullFailsAndIsTriedAgain(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.pullTimeout = 300 * time.Millisecond
 	w.startAgent()
@@ -641,6 +662,7 @@ func TestAStalledPullFailsAndIsTriedAgain(t *testing.T) {
 // TestAHungGuestHoldsUpNoOtherMachine: a guest agent that takes a call and
 // never answers holds up no other machine.
 func TestAHungGuestHoldsUpNoOtherMachine(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	letGo := w.host.HoldUnpack("nginx")
 	defer letGo()
@@ -675,6 +697,7 @@ func TestAHungGuestHoldsUpNoOtherMachine(t *testing.T) {
 // TestAHungGuestThatAnswersAgainRuns: a guest agent that stopped answering
 // in time is running once it answers again.
 func TestAHungGuestThatAnswersAgainRuns(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	letGo := w.host.HoldUnpack("nginx")
 	defer letGo()
@@ -695,6 +718,7 @@ func TestAHungGuestThatAnswersAgainRuns(t *testing.T) {
 // being pulled leaves nothing behind once the pull ends but the image, kept
 // for its next use.
 func TestAMachineDeletedWhilePulling(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	letGo := w.host.HoldUnpack("nginx")
 	defer letGo()
@@ -719,6 +743,7 @@ func TestAMachineDeletedWhilePulling(t *testing.T) {
 // TestUnpackFailuresAreBlamedRight: a layer that cannot be fetched is the
 // registry's failure, and no room to write it is the disk's.
 func TestUnpackFailuresAreBlamedRight(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.FailUnpack("nginx", errors.New("layer sha256:abc: unexpected EOF"))
 	w.apply(container("api", "nginx"))

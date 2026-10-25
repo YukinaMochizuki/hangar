@@ -75,6 +75,7 @@ func open(t *testing.T, sock string) error {
 // authenticates; a person, a caller without credentials, or a node this
 // apiserver does not run cannot open one.
 func TestOnlyANodeOpensATunnel(t *testing.T) {
+	t.Parallel()
 	s, _, _ := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	for _, tt := range []struct {
 		name  string

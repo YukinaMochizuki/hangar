@@ -118,6 +118,7 @@ func (w *world) reasonIs(proj, name, reason string) (bool, string) {
 // with the login of the secret it names, and says so when it names none, or
 // one that does not exist.
 func TestAPrivateImageRunsWithItsSecret(t *testing.T) {
+	t.Parallel()
 	w := newSecretsWorld(t)
 	w.applyIn(project, "anon", privateImage)
 	w.waitReasonIn(project, "anon", computeapi.ReasonImagePullUnauthorized)
@@ -149,6 +150,7 @@ func TestAPrivateImageRunsWithItsSecret(t *testing.T) {
 // tag or by its digest, without a login or with a wrong one, is refused;
 // after the agent restarts too, while acme's keeps running.
 func TestAnotherTenantCannotRunAPrivateImageFromTheCache(t *testing.T) {
+	t.Parallel()
 	w := newSecretsWorld(t)
 	w.applySecret(project, "pull", acmeLogin)
 	w.applyIn(project, "app", privateImage, "pull")
@@ -206,6 +208,7 @@ func TestAnotherTenantCannotRunAPrivateImageFromTheCache(t *testing.T) {
 // its image fetched once from its own registry, which a registry that is
 // down blocks until it is back (docs/runbook/host-bootstrap.md).
 func TestAnUpgradedNodeFetchesEachImageAgain(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("api", "nginx")
 	w.apply(c)

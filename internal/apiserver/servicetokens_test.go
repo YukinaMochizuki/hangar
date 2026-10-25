@@ -64,6 +64,7 @@ func (e *env) whoAmI(secret string) (*iamv1alpha1.WhoAmIResponse, error) {
 // which authenticates as the token and holds what its role grants in its
 // project, nothing else; nothing shows the secret again.
 func TestServiceTokenIsIssuedOnce(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -122,6 +123,7 @@ func TestServiceTokenIsIssuedOnce(t *testing.T) {
 // TestServiceTokenStoresOnlyTheHash greps every database file for the
 // secret: it is not there, its SHA-256 is.
 func TestServiceTokenStoresOnlyTheHash(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -152,6 +154,7 @@ func TestServiceTokenStoresOnlyTheHash(t *testing.T) {
 // TestServiceTokenRotate: a rotated token's old secret stops working at
 // once, the new one works, and the status names the new one.
 func TestServiceTokenRotate(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -180,6 +183,7 @@ func TestServiceTokenRotate(t *testing.T) {
 // TestServiceTokenMadeByApplyHasNoSecret: apply makes a token with nothing
 // to authenticate with until it is rotated.
 func TestServiceTokenMadeByApplyHasNoSecret(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -200,6 +204,7 @@ func TestServiceTokenMadeByApplyHasNoSecret(t *testing.T) {
 // takes every binding naming it, and frees its name for a token that starts
 // with none of them.
 func TestServiceTokenDelete(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -250,6 +255,7 @@ func TestServiceTokenDelete(t *testing.T) {
 // binding a token they may not read is refused exactly as for a token that
 // does not exist, so bindings tell no one which tokens exist.
 func TestBindingTellsNoOneOfAnotherTenantsTokens(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -292,6 +298,7 @@ func (s *syncBuffer) String() string {
 // across creating, rotating, using, refusing and deleting a token, holds
 // none of its secrets.
 func TestServiceTokenSecretsAreNeverLogged(t *testing.T) {
+	t.Parallel()
 	var logs syncBuffer
 	e := newEnv(t, func(c *apiserver.Config) {
 		c.Logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
@@ -344,6 +351,7 @@ func (f *failingRevoke) RevokeCredentialsOf(ctx context.Context, principal strin
 // fails, the secret still stops working, and a token made again under the
 // name, with a binding, does not take it up.
 func TestAFailedRevokeLeavesNoSecret(t *testing.T) {
+	t.Parallel()
 	creds := &failingRevoke{}
 	e := newEnv(t, func(c *apiserver.Config) {
 		creds.Credentials = c.Credentials
@@ -383,6 +391,7 @@ func TestAFailedRevokeLeavesNoSecret(t *testing.T) {
 // secret fails, the token stays, being deleted, and its secret is refused;
 // once revokes work again, the next sweep lets it go.
 func TestFailingRevokesKeepTheToken(t *testing.T) {
+	t.Parallel()
 	creds := &failingRevoke{}
 	e := newEnv(t, func(c *apiserver.Config) {
 		creds.Credentials = c.Credentials
@@ -432,6 +441,7 @@ func TestFailingRevokesKeepTheToken(t *testing.T) {
 // TestRotateRacingDeleteLeavesNoSecret: rotations racing the token's delete
 // leave no secret that works, whichever lands first.
 func TestRotateRacingDeleteLeavesNoSecret(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -468,6 +478,7 @@ func TestRotateRacingDeleteLeavesNoSecret(t *testing.T) {
 // TestServiceTokenGoesWithItsProject: deleting the project revokes its
 // tokens' secrets.
 func TestServiceTokenGoesWithItsProject(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -488,6 +499,7 @@ func TestServiceTokenGoesWithItsProject(t *testing.T) {
 // TestServiceTokenExpires: a secret works until its duration is up, and the
 // duration is bounded.
 func TestServiceTokenExpires(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -510,6 +522,7 @@ func TestServiceTokenExpires(t *testing.T) {
 // TestUnknownTokensAreRefusedAlike: an unknown, a malformed and a deleted
 // secret are refused the same way.
 func TestUnknownTokensAreRefusedAlike(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	for _, s := range []string{token.New(token.Service).Reveal(), "hgr_", "hgr_short", "hgx_" + token.Random()} {
 		_, err := e.whoAmI(s)
@@ -524,6 +537,7 @@ func TestUnknownTokensAreRefusedAlike(t *testing.T) {
 // apply, rotate or delete one: rotating one an owner bound as owner would
 // hand the editor the owner's grant.
 func TestEditorsCannotMintTokens(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const carol = "carol@example.com"
@@ -562,6 +576,7 @@ func TestEditorsCannotMintTokens(t *testing.T) {
 
 // TestServiceTokensCountTowardQuota: a project's serviceTokens limit holds.
 func TestServiceTokensCountTowardQuota(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -576,6 +591,7 @@ func TestServiceTokensCountTowardQuota(t *testing.T) {
 
 // TestServiceTokenLastUse: a use shows in the token's status.
 func TestServiceTokenLastUse(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")

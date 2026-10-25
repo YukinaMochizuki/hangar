@@ -14,6 +14,7 @@ func person(email string) auth.Principal { return auth.Principal{Type: auth.User
 // do not; past a node's, every tenant's do; a slot given back, once only,
 // is taken again.
 func TestNodeCallsAreCapped(t *testing.T) {
+	t.Parallel()
 	n := newNodeCalls(100, 2, 3)
 	take := func(tenant, node string) func() {
 		t.Helper()
@@ -50,6 +51,7 @@ func TestNodeCallsAreCapped(t *testing.T) {
 // TestACallersNodeCallsAreCappedAcrossTenants: making more tenants gives a
 // caller no more calls; another caller, in the same tenants, has its own.
 func TestACallersNodeCallsAreCappedAcrossTenants(t *testing.T) {
+	t.Parallel()
 	n := newNodeCalls(2, 100, 100)
 	alice, bob := person("alice@example.com"), person("bob@example.com")
 	release, err := n.take(alice, "t1", "n1")
@@ -76,6 +78,7 @@ func TestACallersNodeCallsAreCappedAcrossTenants(t *testing.T) {
 }
 
 func TestNodeCallsDefaults(t *testing.T) {
+	t.Parallel()
 	n := newNodeCalls(0, 0, 0)
 	if n.maxPrincipal != 64 || n.maxTenant != 64 || n.maxPerNode != 900 {
 		t.Errorf("caps %d per caller, %d per tenant and %d per node", n.maxPrincipal, n.maxTenant, n.maxPerNode)

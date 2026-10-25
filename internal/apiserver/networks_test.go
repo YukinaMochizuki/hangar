@@ -47,6 +47,7 @@ func ipv4Of(m *computev1alpha1.Machine) string {
 }
 
 func TestNetworkAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Network)
 	for i, tt := range []struct {
@@ -92,6 +93,7 @@ func TestNetworkAdmission(t *testing.T) {
 }
 
 func TestEveryProjectGetsADefaultNetwork(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	var first *networkv1alpha1.Network
 	testutil.Eventually(t, "the default network with its transit link", func() bool {
@@ -122,6 +124,7 @@ func TestEveryProjectGetsADefaultNetwork(t *testing.T) {
 }
 
 func TestMachinesGetDistinctAddressesTheyKeep(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	seen := map[string]string{}
 	for _, name := range []string{"a", "b", "c", "d"} {
@@ -161,6 +164,7 @@ func TestMachinesGetDistinctAddressesTheyKeep(t *testing.T) {
 }
 
 func TestAMachineBeingDeletedKeepsItsAddress(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("a"))
@@ -177,6 +181,7 @@ func TestAMachineBeingDeletedKeepsItsAddress(t *testing.T) {
 }
 
 func TestConcurrentMachinesNeverShareAnAddress(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	const n = 20
 	containers := make([]*computev1alpha1.Container, n)
@@ -214,6 +219,7 @@ func TestConcurrentMachinesNeverShareAnAddress(t *testing.T) {
 // TestAFullNetworkSaysSo: a container that finds its network full says so,
 // and gets a machine as soon as an address frees.
 func TestAFullNetworkSaysSo(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	testutil.Eventually(t, "the default network", func() bool { return getNetwork(t, s, system, computeapi.DefaultNetwork) != nil })
 	// 10.0.0.0/24 has 253 addresses for machines: .2 to .254.
@@ -241,6 +247,7 @@ func TestAFullNetworkSaysSo(t *testing.T) {
 // TestANetworkInUseCannotBeDeleted: a user cannot delete a network machines
 // are on, and can once they are gone.
 func TestANetworkInUseCannotBeDeleted(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	applyCtr(t, s, user, ctr("api"))
 	waitMachine(t, s, system, "ct-api", "addressed", func(m *computev1alpha1.Machine) bool { return ipv4Of(m) != "" })
@@ -265,6 +272,7 @@ func TestANetworkInUseCannotBeDeleted(t *testing.T) {
 // TestAContainerProceedsOnceItsNetworkExists: a container waiting for its
 // network is picked up when the network appears, not at the next resync.
 func TestAContainerProceedsOnceItsNetworkExists(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	// Held by its finalizer, which no controller is running to remove.
 	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
@@ -287,6 +295,7 @@ func TestAContainerProceedsOnceItsNetworkExists(t *testing.T) {
 }
 
 func TestTransitLinksAreDistinctAndReused(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	ready := func(name, what string) *networkv1alpha1.Network {
 		t.Helper()
@@ -326,6 +335,7 @@ func TestTransitLinksAreDistinctAndReused(t *testing.T) {
 // TestADeletedProjectsNetworkWaitsForItsMachines: deleting a project takes
 // its networks with it, each kept until its machines have left their node.
 func TestADeletedProjectsNetworkWaitsForItsMachines(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -348,6 +358,7 @@ func TestADeletedProjectsNetworkWaitsForItsMachines(t *testing.T) {
 }
 
 func TestFirstFreeHostSkipsReservedAddresses(t *testing.T) {
+	t.Parallel()
 	cidr := netip.MustParsePrefix("192.168.5.0/29")
 	taken := map[netip.Addr]bool{netip.MustParseAddr("192.168.5.2"): true}
 	got, ok := firstFreeHost(cidr, taken)
@@ -365,6 +376,7 @@ func TestFirstFreeHostSkipsReservedAddresses(t *testing.T) {
 // TestADeletingProjectGetsNoNewNetwork: a project on its way out is not
 // handed a default network again.
 func TestADeletingProjectGetsNoNewNetwork(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Network).Delete(user, resource.Key{Project: "web", Name: computeapi.DefaultNetwork}, nil); err != nil {
 		t.Fatal(err)
@@ -407,6 +419,7 @@ func startControllers(t *testing.T, s *Server, system context.Context) {
 // TestMachinesWithoutAnAddressGetOne: machines written before addresses
 // existed are given one when the apiserver starts.
 func TestMachinesWithoutAnAddressGetOne(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	applyCtr(t, s, user, ctr("api"))
 	c := waitContainer(t, s, system, "api", "stored", func(*computev1alpha1.Container) bool { return true })
@@ -425,6 +438,7 @@ func TestMachinesWithoutAnAddressGetOne(t *testing.T) {
 // TestANetworkIsNotReleasedUnderAMachineJoiningIt: a network being deleted
 // stays while a machine is being given an address on it.
 func TestANetworkIsNotReleasedUnderAMachineJoiningIt(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	// What ensureMachine does: choose an address and write the machine,
 	// holding ipam throughout.
@@ -463,6 +477,7 @@ func TestANetworkIsNotReleasedUnderAMachineJoiningIt(t *testing.T) {
 // TestCreateNeverOverwrites: a controller that read "absent" and creates
 // leaves an object written in between as it is.
 func TestCreateNeverOverwrites(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	mine := network("lab", "10.7.0.0/24")
 	mine.Metadata.Labels = map[string]string{"team": "a"}

@@ -72,6 +72,7 @@ func shareVol(share, target string) *computev1alpha1.ContainerVolume {
 }
 
 func TestFileShareAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.FileShare)
 	nine := make([]string, 9)
@@ -166,6 +167,7 @@ func bindProjectRole(t *testing.T, s *Server, system context.Context, email, rol
 // permissions, held by the project's roles as a Disk's are; only the system
 // and the share's node write its status, whatever the role.
 func TestFileSharePermissions(t *testing.T) {
+	t.Parallel()
 	for _, v := range []authz.Verb{authz.Get, authz.List, authz.Watch, authz.Apply, authz.Delete, authz.UpdateStatus} {
 		perm := "storage.fileshares." + string(v)
 		if r, verb, ok := authz.LookupPermission(perm); !ok || r.Kind != registry.FileShare.Kind || verb != v {
@@ -221,6 +223,7 @@ func TestFileSharePermissions(t *testing.T) {
 // networks; one declaring a share not made yet is let through, and its
 // machine held back.
 func TestAShareIsReachedFromItsNetworks(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Network).Apply(user, network("back", "10.1.0.0/24")); err != nil {
 		t.Fatal(err)
@@ -288,6 +291,7 @@ func TestAShareIsReachedFromItsNetworks(t *testing.T) {
 // mounts a share from, the first of its own the share is on, cannot be
 // taken from the share; any other can, and networks can be added.
 func TestAShareKeepsTheNetworksItIsMountedFrom(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	shares, machines := s.backend(registry.FileShare), s.backend(registry.Machine)
 	if _, err := shares.Apply(user, fileShare("data", "1Gi", "a", "b", "c")); err != nil {
@@ -323,6 +327,7 @@ func TestAShareKeepsTheNetworksItIsMountedFrom(t *testing.T) {
 // TestANetworkWithAShareStays: a network a share is on cannot be deleted,
 // and a share cannot join a network being deleted.
 func TestANetworkWithAShareStays(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	networks, shares := s.backend(registry.Network), s.backend(registry.FileShare)
 	for _, n := range []string{"back", "old"} {
@@ -363,6 +368,7 @@ func TestANetworkWithAShareStays(t *testing.T) {
 // TestADeclaredShareCannotBeDeleted: a share a live machine declares stays;
 // once no machine but one being deleted declares it, it can go.
 func TestADeclaredShareCannotBeDeleted(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	shares, machines := s.backend(registry.FileShare), s.backend(registry.Machine)
 	key := resource.Key{Project: "web", Name: "data"}
@@ -416,6 +422,7 @@ func TestADeclaredShareCannotBeDeleted(t *testing.T) {
 // TestDeletingAProjectTakesItsShares: a project's shares go with it, even
 // one a machine declares.
 func TestDeletingAProjectTakesItsShares(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
 		t.Fatal(err)
@@ -455,6 +462,7 @@ func firmwareMachine(name, node, rootDisk string) *computev1alpha1.Machine {
 // back for a share on no node, and refused one of another node; a placed
 // VM's takes one on no node with the rest of its change.
 func TestAContainerWaitsForItsShare(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSized(t, s, system, "n1", 1024, 100)
 	nodeSized(t, s, system, "n2", 8192, 100)
@@ -562,6 +570,7 @@ func TestAContainerWaitsForItsShare(t *testing.T) {
 // VM's machine declaring a share on no node, and not a container's, which
 // admission holds back before it gets that far.
 func TestOnlyAVMsMachineIsPlacedWithAShareOnNoNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
 		t.Fatal(err)
@@ -595,6 +604,7 @@ func TestOnlyAVMsMachineIsPlacedWithAShareOnNoNode(t *testing.T) {
 // TestAVirtualMachineDeclaresItsShares: a VM's spec.file_shares are its
 // machine's, and changing them changes nothing else of the machine.
 func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -697,6 +707,7 @@ func TestAVirtualMachineDeclaresItsShares(t *testing.T) {
 // TestFileSharesAreCounted: a share counts toward file_shares and its size
 // toward disk; its server counts toward nothing.
 func TestFileSharesAreCounted(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("30Gi"), FileShares: proto.Int32(2), Machines: proto.Int32(1)})
 	b := s.backend(registry.FileShare)
@@ -741,6 +752,7 @@ func TestFileSharesAreCounted(t *testing.T) {
 // TestConcurrentSharesCannotOvershootTheirLimit races share creates against
 // the file_shares limit: exactly as many win as it allows.
 func TestConcurrentSharesCannotOvershootTheirLimit(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{FileShares: proto.Int32(3)})
 	var wg sync.WaitGroup
@@ -771,6 +783,7 @@ func TestConcurrentSharesCannotOvershootTheirLimit(t *testing.T) {
 // network with a machine coming to mount it from there, and a network
 // being deleted with a share joining it: in each, exactly one wins.
 func TestLeavingANetworkAndMountingFromItAreOneDecision(t *testing.T) {
+	t.Parallel()
 	for i := range 20 {
 		s, system, user := running(t)
 		shares := s.backend(registry.FileShare)
@@ -819,6 +832,7 @@ func TestLeavingANetworkAndMountingFromItAreOneDecision(t *testing.T) {
 // TestAShareIsPendingFromItsCreation: the apiserver stores a new share
 // Pending, whatever status its creator sent, and an apply keeps it.
 func TestAShareIsPendingFromItsCreation(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	fs := fileShare("data", "1Gi")
 	fs.Status = &storagev1alpha1.FileShareStatus{Phase: storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_IN_USE, Node: "n9"}
@@ -842,6 +856,7 @@ func TestAShareIsPendingFromItsCreation(t *testing.T) {
 // share cannot be deleted from under it, nor leave the network it mounts
 // from, nor be made where it cannot be reached from it.
 func TestContainersAndVMsDeclareBeforeTheirMachines(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	shares := s.backend(registry.FileShare)
 	key := resource.Key{Project: "web", Name: "data"}
@@ -901,6 +916,7 @@ func TestContainersAndVMsDeclareBeforeTheirMachines(t *testing.T) {
 // leaves and none of them declares it, or one declares it and the share
 // stays.
 func TestDeclaringAndMovingAShareAreOneDecision(t *testing.T) {
+	t.Parallel()
 	const declarers = 6
 	for i := range 20 {
 		s, _, user := running(t)
@@ -962,6 +978,7 @@ func TestDeclaringAndMovingAShareAreOneDecision(t *testing.T) {
 // writes their project's network, with FileShare and Network applies, which
 // hold the lock that write takes: all of them finish.
 func TestSigningUpWaitsForNoShare(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	const n = 30
 	for i := range n {
@@ -1009,6 +1026,7 @@ func TestSigningUpWaitsForNoShare(t *testing.T) {
 // its networks are reordered; a container whose machine declares the share
 // is held to the machine's network, not to the one it would choose now.
 func TestAMachineKeepsTheNetworkItMountsFrom(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	shares := s.backend(registry.FileShare)
@@ -1074,6 +1092,7 @@ func TestAMachineKeepsTheNetworkItMountsFrom(t *testing.T) {
 // chooses again once the machine leaves it; a network a writer names must
 // be the machine's and the share's.
 func TestTheNetworkAShareIsMountedFromIsSettledOnce(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	machines := s.backend(registry.Machine)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi", "a", "b")); err != nil {
@@ -1126,6 +1145,7 @@ func TestTheNetworkAShareIsMountedFromIsSettledOnce(t *testing.T) {
 // another of the share's as it is made; default's range counts before
 // default is made. Networks of overlapping ranges are otherwise fine.
 func TestAShareIsOnNoOverlappingNetworks(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	shares, networks := s.backend(registry.FileShare), s.backend(registry.Network)
 	for name, cidr := range map[string]string{"a": "10.1.0.0/24", "b": "10.1.0.0/25", "c": "10.2.0.0/24"} {
@@ -1185,6 +1205,7 @@ func TestAShareIsOnNoOverlappingNetworks(t *testing.T) {
 // the share's, race; never do both happen. The network is made as the
 // system, which takes no quota lock, as user applies of both kinds do.
 func TestJoiningAndMakingANetworkAreOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Network).Apply(user, network("a", "10.1.0.0/24")); err != nil {
 		t.Fatal(err)

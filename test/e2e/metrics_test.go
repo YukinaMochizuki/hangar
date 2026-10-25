@@ -16,6 +16,7 @@ import (
 // whose names and images carry a marker, and finds the marker nowhere in
 // what its metrics listener serves.
 func TestNodeMetricsNameNoMachine(t *testing.T) {
+	t.Parallel()
 	const marker = "qz7"
 	w := newWorld(t)
 	img := nginx

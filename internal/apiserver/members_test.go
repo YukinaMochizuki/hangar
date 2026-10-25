@@ -49,6 +49,7 @@ func memberRows(ms []*iamv1alpha1.Member) []string {
 // the next call; and adding someone who is not a platform member binds them
 // and says so.
 func TestTenantOwnerManagesMembers(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const carol = "carol@example.com"
@@ -148,6 +149,7 @@ func TestTenantOwnerManagesMembers(t *testing.T) {
 // members and nothing above or beside it; an editor and a viewer change
 // none; outsiders learn nothing; the platform is out of scope.
 func TestMembersGrantNoMoreThanBindings(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const (
@@ -248,6 +250,7 @@ func TestMembersGrantNoMoreThanBindings(t *testing.T) {
 // member, and is warned about in the same words; setting a role leaves a
 // person who held several bindings at a scope with the one.
 func TestMembersAndBindingsAreOneThing(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const carol = "carol@example.com"
@@ -298,6 +301,7 @@ func TestMembersAndBindingsAreOneThing(t *testing.T) {
 // project signing up opened for them, and what they were granted; a project
 // role lists the project, not its tenant.
 func TestListingReachesOnlyGrantedTenantsAndProjects(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const (
@@ -382,6 +386,7 @@ func TestListingReachesOnlyGrantedTenantsAndProjects(t *testing.T) {
 // writes several bindings is refused before it writes any; and deleting the
 // tenant takes its owners with it.
 func TestATenantKeepsAnOwner(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -465,6 +470,7 @@ func tokenOwner(name, token, tenant string) *connect.Request[iamv1alpha1.ApplyRo
 // count as the tenant's owner, so the last person who owns it stays, and
 // deleting the token, or the project it is in, leaves them owner.
 func TestAServiceTokenIsNoOwner(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -511,6 +517,7 @@ const binderRole = "test.binder"
 // several bindings deletes all but one, so a caller who may apply bindings
 // but not delete them is refused before anything is written.
 func TestSetMemberRoleNeedsDeleteUpFront(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(c *apiserver.Config) {
 		c.ExtraRoles = map[string]authz.Role{binderRole: authz.NewRole(authz.TenantLevel,
 			authz.Permission(registry.RoleBinding, authz.Apply), authz.Permission(registry.RoleBinding, authz.List),
@@ -539,6 +546,7 @@ func TestSetMemberRoleNeedsDeleteUpFront(t *testing.T) {
 // other's ownership at the same moment, through MemberService or the
 // RoleBinding calls, leave one owner: exactly one of the two calls succeeds.
 func TestOwnersCannotRemoveEachOtherAtOnce(t *testing.T) {
+	t.Parallel()
 	acme := tenantScope("acme")
 	people := []string{alice, bob}
 	for _, tc := range []struct {

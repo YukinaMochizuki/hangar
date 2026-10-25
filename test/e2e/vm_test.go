@@ -115,6 +115,7 @@ func (w *world) readVMLogs(name string) ([]string, error) {
 // guest powering off and a stop and start, to its deletion and an empty
 // host.
 func TestAVirtualMachineRuns(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -181,6 +182,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 // it boots the VM again with the new one, and clearing it gives the VM the
 // platform's back.
 func TestAVirtualMachinesSerialNumber(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -238,6 +240,7 @@ func TestAVirtualMachinesSerialNumber(t *testing.T) {
 // end of its disk's uid. A VM a node started before disks had serials runs
 // on after the agent is upgraded; started again, its disks have them.
 func TestAVirtualMachinesDisksHaveSerials(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.startAgent()
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
@@ -309,6 +312,7 @@ func (w *world) applyVMDisks(name string, runState computev1alpha1.VirtualMachin
 // powering off on its own keeps it off, through a reboot too; and a stop
 // says it was stopped.
 func TestOnlyItsGuestKeepsAVirtualMachineOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

@@ -75,6 +75,7 @@ func diskReady(d *storagev1alpha1.Disk) *metav1.Condition {
 // needs no fetch, and goes once the Image names another digest or is
 // deleted and no disk is made of it.
 func TestADiskMadeFromAnImage(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -198,6 +199,7 @@ func (w *world) deleteMachineAndDisk(machine, disk string) {
 // TestAnImageAtFault is never fetched again until its spec changes; a
 // failure that may pass is tried again.
 func TestAnImageAtFault(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudFixed, gib)
 	w.applyImage("noble", cloudSHA) // not what the server has
@@ -246,6 +248,7 @@ func TestAnImageAtFault(t *testing.T) {
 // TestADiskSmallerThanItsImage, admitted before any node knew the image's
 // size, says so, and is made once grown.
 func TestADiskSmallerThanItsImage(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

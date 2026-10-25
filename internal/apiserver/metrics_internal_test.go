@@ -56,6 +56,7 @@ func machineStatus(phase computev1alpha1.MachinePhase, reason string, booted tim
 // tenant, project, machine and person names all carry a marker, and finds
 // the marker nowhere in what the metrics listener serves.
 func TestMetricsNameNoTenant(t *testing.T) {
+	t.Parallel()
 	const marker = "qz7"
 	const (
 		tenantName  = "tenant-" + marker
@@ -157,6 +158,7 @@ func TestMetricsNameNoTenant(t *testing.T) {
 }
 
 func TestCrashLoopingMachinesAreCounted(t *testing.T) {
+	t.Parallel()
 	clock := clockwork.NewFakeClock()
 	s, system, _ := runningWith(t, func(c *Config) {
 		c.Clock = clock
@@ -218,6 +220,7 @@ func TestCrashLoopingMachinesAreCounted(t *testing.T) {
 // TestFileShareReasonsAreCounted: the reasons a node gives of file shares,
 // which the platform's alerts read, are counted as themselves, not Other.
 func TestFileShareReasonsAreCounted(t *testing.T) {
+	t.Parallel()
 	for _, r := range []string{computeapi.ReasonExportFailed, computeapi.ReasonFileShareNotReady} {
 		if got := machineReason(r); got != r {
 			t.Errorf("reason %s counted as %s", r, got)

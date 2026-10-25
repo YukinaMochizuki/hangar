@@ -235,6 +235,7 @@ func (w *edgeWorld) endpointReady(name string) *networkv1alpha1.PublicEndpoint {
 // only by whom their tenant allows, with the session left behind, streams
 // and upgrades going through, and nothing once the endpoint is gone.
 func TestPublicEndpointsThroughTheEdge(t *testing.T) {
+	t.Parallel()
 	w := newEdgeWorld(t)
 	c := container("api", "nginx")
 	c.Spec.Ports = []*computev1alpha1.ContainerPort{{Name: "http", Port: 8080, Public: true}}
@@ -410,6 +411,7 @@ func roleBinding(name, user, role string, scope *iamv1alpha1.BindingScope) *iamv
 // 8081 is reached on 8081 by the next request once the node has opened the
 // new port, however warm the edge's connections to 8080 were.
 func TestAPortChangeThroughTheEdge(t *testing.T) {
+	t.Parallel()
 	w := newEdgeWorld(t)
 	c := container("api", "nginx")
 	c.Spec.Ports = []*computev1alpha1.ContainerPort{{Name: "http", Port: 8080, Public: true}}

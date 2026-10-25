@@ -81,6 +81,7 @@ func addrOf(t *testing.T, nic *computev1alpha1.MachineInterface) string {
 // quota and no capability reaches. The scheduler places it and binds the
 // share there; the share is Available once the server runs.
 func TestAShareHasAServer(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Machines: proto.Int32(1)})
 	if _, err := s.backend(registry.Node).UpdateStatus(asNode(system, "n1"), resource.Key{Name: "n1"}, &computev1alpha1.NodeStatus{
@@ -163,6 +164,7 @@ func TestAShareHasAServer(t *testing.T) {
 // naming its share and the whole Gi of its volume, with no disk, no share
 // and no public address.
 func TestAServerMachineIsThePlatforms(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	server := func(change func(*computev1alpha1.Machine)) *computev1alpha1.Machine {
 		m := machine("fs-data", "")
@@ -191,6 +193,7 @@ func TestAServerMachineIsThePlatforms(t *testing.T) {
 // the share there; a container declaring the share follows it, and one
 // placed elsewhere is refused it.
 func TestAServerGoesWhereItsDeclarersAre(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSized(t, s, system, "n1", 2048, 100)
 	nodeSized(t, s, system, "n2", 8192, 100)
@@ -249,6 +252,7 @@ func TestAServerGoesWhereItsDeclarersAre(t *testing.T) {
 // server's interfaces and volume, which its node starts it again on. Each
 // network keeps its address; a growth waits for room on the share's node.
 func TestAShareChangeRestartsItsServer(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.Network).Apply(user, network("back", "10.1.0.0/24")); err != nil {
@@ -332,6 +336,7 @@ func TestAShareChangeRestartsItsServer(t *testing.T) {
 // as their specs have it, and its phase follows its server and its users;
 // its node writes its own conditions and nothing else.
 func TestAShareStatusIsDerived(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -423,6 +428,7 @@ func TestAShareStatusIsDerived(t *testing.T) {
 // server, and goes once the server is gone and its node has removed its
 // volume; one never placed goes with its server at once.
 func TestDeletingAShareWaitsForItsServerAndNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	key := resource.Key{Project: "web", Name: "data"}
@@ -494,6 +500,7 @@ func TestDeletingAShareWaitsForItsServerAndNode(t *testing.T) {
 // controller ran, before shares had their finalizers, gets them and its
 // server once one does.
 func TestFileShareControllerCatchesUpOnStart(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
 		t.Fatal(err)
@@ -532,6 +539,7 @@ func TestFileShareControllerCatchesUpOnStart(t *testing.T) {
 // TestASettledShareStaysQuiet: once a share and its server match, nothing
 // more is written to either.
 func TestASettledShareStaysQuiet(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
@@ -565,6 +573,7 @@ func TestASettledShareStaysQuiet(t *testing.T) {
 // TestGrowingIsOneDecision: a share and a disk growing on a node with room
 // for one growth: only one gets it.
 func TestGrowingIsOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	waitNode(t, s, "n1")
 	for round := range 10 {
@@ -614,6 +623,7 @@ func TestGrowingIsOneDecision(t *testing.T) {
 // node, which a server is placed only with room for, and which it keeps
 // until its node has released it; what waited for the room goes then.
 func TestSharesTakeRoomOnTheirNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("big", "80Gi")); err != nil {
@@ -656,6 +666,7 @@ func TestSharesTakeRoomOnTheirNode(t *testing.T) {
 // granted once a disk, another share or a machine on the node goes, or the
 // node grows.
 func TestAGrowthWaitsForRoom(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.Disk).Apply(user, disk("d", "40Gi")); err != nil {
@@ -736,6 +747,7 @@ func TestAGrowthWaitsForRoom(t *testing.T) {
 // full, says so, and gets its address once the network is made, or a
 // machine on it goes.
 func TestAServerWaitsForAnAddress(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi", "later")); err != nil {
 		t.Fatal(err)
@@ -781,6 +793,7 @@ func TestAServerWaitsForAnAddress(t *testing.T) {
 // conditional on the share as it read it, so a report from a read made
 // before the scheduler bound the share is refused, and the bind stays.
 func TestAStaleReportKeepsTheBind(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	waitNode(t, s, "n1")
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {
@@ -799,6 +812,7 @@ func TestAStaleReportKeepsTheBind(t *testing.T) {
 // nothing maps to no share on the node; the node going quiet makes its
 // shares' servers unready, and coming back ready again.
 func TestAShareFollowsItsNodeNotItsHeartbeats(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.FileShare).Apply(user, fileShare("data", "1Gi")); err != nil {

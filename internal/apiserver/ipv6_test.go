@@ -55,6 +55,7 @@ func checkIPv6(t *testing.T, a string) netip.Addr {
 }
 
 func TestMachinesOnANodeWithAPrefixGetIPv6TheyKeep(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
 	seen := map[netip.Addr]string{}
@@ -97,6 +98,7 @@ func TestMachinesOnANodeWithAPrefixGetIPv6TheyKeep(t *testing.T) {
 // IPv6 address together, so the node never runs the machine without it
 // and then again with it.
 func TestAMachineIsPlacedWithItsIPv6(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
 	applyCtr(t, s, user, ctr("a"))
@@ -113,6 +115,7 @@ func TestAMachineIsPlacedWithItsIPv6(t *testing.T) {
 }
 
 func TestANodesPrefixComesAndGoes(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", "")
 	applyCtr(t, s, user, ctr("a"))
@@ -149,6 +152,7 @@ func reader(ids ...uint64) func([]byte) (int, error) {
 }
 
 func TestFreeIPv6SkipsReservedAndTaken(t *testing.T) {
+	t.Parallel()
 	p := netip.MustParsePrefix(testPrefix)
 	taken := map[netip.Addr]bool{netip.MustParseAddr("2001:db8:0:1:1234:5678:9abc:def0"): true}
 	got, err := freeIPv6(p, taken, reader(0, 1, 0xffffffff, 0xfdffffffffffff80, 0xffffffffffffffff, 0x123456789abcdef0, 0x0000000100000000))
@@ -161,6 +165,7 @@ func TestFreeIPv6SkipsReservedAndTaken(t *testing.T) {
 }
 
 func TestFreeIPv6IsNotSequential(t *testing.T) {
+	t.Parallel()
 	p := netip.MustParsePrefix(testPrefix)
 	taken := map[netip.Addr]bool{}
 	var last []byte
@@ -179,6 +184,7 @@ func TestFreeIPv6IsNotSequential(t *testing.T) {
 }
 
 func TestParseIPv6Prefix(t *testing.T) {
+	t.Parallel()
 	if p, err := computeapi.ParseIPv6Prefix(testPrefix); err != nil || p.String() != testPrefix {
 		t.Errorf("%s: %v %v", testPrefix, p, err)
 	}
@@ -190,6 +196,7 @@ func TestParseIPv6Prefix(t *testing.T) {
 }
 
 func TestMachineIPv6Admission(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	b := s.backend(registry.Machine)
 	ok := machine("ct-ok", "n1")

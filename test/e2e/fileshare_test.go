@@ -75,6 +75,7 @@ func (w *world) applyVMSharing(name string, shares ...*computev1alpha1.VirtualMa
 // on their node, is in their exports, and changing what it declares, or
 // how, changes its machine and the exports, and leaves its VM running.
 func TestAVirtualMachinesSharesRestartNothing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -127,6 +128,7 @@ func TestAVirtualMachinesSharesRestartNothing(t *testing.T) {
 // boots on the host; once the share is on the node, it boots once, with
 // the share mounted from its server's address, never without it.
 func TestAContainerNeverRunsWithoutItsShare(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("assets", "64Ti")
 	c := container("db", "nginx")
@@ -180,6 +182,7 @@ func (w *world) shareAddr(name, network string) netip.Addr {
 // TestARunningContainerThatAddsAShareRestartsWithIt: a running container
 // that comes to declare a share on its node is started again, mounting it.
 func TestARunningContainerThatAddsAShareRestartsWithIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
@@ -219,6 +222,7 @@ func (w *world) shareGone(p, name string) {
 // its volume, goes once deleted: its server is released, its volume
 // destroyed, and the node says it holds nothing of the share.
 func TestADeletedShareGoes(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
@@ -237,6 +241,7 @@ func TestADeletedShareGoes(t *testing.T) {
 // TestDeletingAProjectTakesItsPlacedShares: a project's shares on the node
 // go with it, and so does the project.
 func TestDeletingAProjectTakesItsPlacedShares(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := context.Background()
 	if _, err := w.root.Apply(ctx, registry.Project, &tenancyv1alpha1.Project{
@@ -275,6 +280,7 @@ func TestDeletingAProjectTakesItsPlacedShares(t *testing.T) {
 // or out, is internal/secgroup's, and none of its firewall's rules:
 // TestAShareIsServed.)
 func TestAShareServerIsNoNeighbour(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.dnsUpstreams = nil
 	w.startAgent()
@@ -326,6 +332,7 @@ func (w *world) shareTaken(name string) {
 // it holds nothing of the share while the share's server, which holds its
 // volume, is not yet released.
 func TestAShareIsReleasedAfterItsServer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("assets", "1Gi")
 	w.shareOnNode("assets")
@@ -355,6 +362,7 @@ func TestAShareIsReleasedAfterItsServer(t *testing.T) {
 // its server until the server takes the export without it and a grace
 // more; at once if it refuses; for good past the bound if it never answers.
 func TestARevokedClientIsCutOnceItsServerDropsIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

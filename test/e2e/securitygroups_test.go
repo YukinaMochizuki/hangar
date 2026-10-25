@@ -53,6 +53,7 @@ func (w *world) machinePolicy(name, what string, ok func(secgroup.Policy) bool) 
 // its node enforces, kept current as groups and members change on running
 // machines.
 func TestSecurityGroupsReachTheHost(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	tcp := networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_TCP
 	fromGroup := func(g string) *networkv1alpha1.SecurityGroupPeer {
@@ -155,6 +156,7 @@ func TestSecurityGroupsReachTheHost(t *testing.T) {
 // groups it names, or in default, and its node enforces them as it does a
 // container's.
 func TestAVirtualMachinesInterfaceGetsItsPolicy(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

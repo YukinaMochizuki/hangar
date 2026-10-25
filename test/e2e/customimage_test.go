@@ -102,6 +102,7 @@ func (w *world) projectUsage() *tenancyv1alpha1.Usage {
 // the image, Ready, makes a VM of its own, which outlives the source VM
 // and the image; the image's base goes only once the last disk of it does.
 func TestACustomImagesLife(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -198,6 +199,7 @@ func TestACustomImagesLife(t *testing.T) {
 // TestACaptureThatFails fails for good: what it made goes, its source is
 // free, it holds no quota, and it is not tried again.
 func TestACaptureThatFails(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -239,6 +241,7 @@ func TestACaptureThatFails(t *testing.T) {
 // TestACaptureThatStallsFails: a copy that takes longer than the agent's
 // capture timeout fails for good, saying so, and leaves nothing.
 func TestACaptureThatStallsFails(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.captureTimeout = time.Second
 	w.startAgent()
@@ -275,6 +278,7 @@ func TestACaptureThatStallsFails(t *testing.T) {
 // the image is deleted, sweep after sweep; attached to a machine, it is
 // made from that base and Ready; and the base goes once the disk does.
 func TestADiskOfADeletedImageIsMadeFromItsKeptBase(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)
@@ -331,6 +335,7 @@ func sameVersion(a, b *storagev1alpha1.CustomImage) bool {
 // the snapshot it kept once it is back; and a capture whose image is
 // deleted mid-copy leaves nothing behind.
 func TestACaptureOutlivesItsAgent(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

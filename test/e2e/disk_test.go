@@ -82,6 +82,7 @@ func (w *world) vmOf(machine string) (*computev1alpha1.Machine, driver.VMSpec, b
 // TestADiskOnTheHost follows a disk from its first machine, through growing
 // and detaching, to its deletion, and an orphan volume to the sweep.
 func TestADiskOnTheHost(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyDisk("data", "2Gi")
 	w.putMachine(diskMachine("vm-a", "data"))
@@ -150,6 +151,7 @@ func TestADiskOnTheHost(t *testing.T) {
 // mounted at its target, the disk says it is the container's volume, and
 // moving it restarts the VM to mount it there.
 func TestAContainerWithAVolume(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyDisk("pgdata", "2Gi")
 	c := container("db", "nginx")
@@ -189,6 +191,7 @@ func TestAContainerWithAVolume(t *testing.T) {
 // TestADiskWaitsForItsNode: a machine whose disk the host cannot make says
 // so, and runs once it can.
 func TestADiskWaitsForItsNode(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyDisk("data", "2Gi")
 	w.host.SetFull(true)

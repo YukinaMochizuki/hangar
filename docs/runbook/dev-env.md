@@ -36,7 +36,10 @@ make check   # before every commit: lint, breaking, test, gen-check
 ```
 
 `make check` is what CI runs, split into jobs that only run when their paths
-change (`.github/workflows/ci.yml`).
+change (`.github/workflows/ci.yml`), plus `make test-e2e-race`, the e2e tests
+under the race detector, in a job of its own. While iterating, run the
+packages you changed and one suite at a time ("Run tests while you work" in
+`docs/conventions/testing.md`).
 
 ## Running the apiserver and CLI locally
 

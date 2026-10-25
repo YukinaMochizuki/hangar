@@ -61,6 +61,7 @@ func num(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 // stand at is the one in the alerting rule it names, with that rule's
 // severity, so a rule changed without them, or they without it, fails here.
 func TestThresholdsMatchTheRules(t *testing.T) {
+	t.Parallel()
 	five := 5 * time.Minute
 	for file, want := range map[string][]struct {
 		alert, severity string

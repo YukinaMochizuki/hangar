@@ -36,6 +36,7 @@ func https() *networkv1alpha1.IngressRule {
 }
 
 func TestSecurityGroupAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.SecurityGroup)
 	if _, err := b.Apply(user, group("web-in", https())); err != nil {
@@ -84,6 +85,7 @@ func TestSecurityGroupAdmission(t *testing.T) {
 // TestInterfaceGroupAdmission: the groups a container's or a virtual
 // machine's interface names are checked alike.
 func TestInterfaceGroupAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.SecurityGroup).Apply(user, elsewhere()); err != nil {
 		t.Fatal(err)
@@ -121,6 +123,7 @@ func TestInterfaceGroupAdmission(t *testing.T) {
 // TestAGroupInUseStays: a group an interface is in cannot be deleted; once
 // no interface is in it, it can.
 func TestAGroupInUseStays(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	if _, err := s.backend(registry.SecurityGroup).Apply(user, group("web-in", https())); err != nil {
 		t.Fatal(err)
@@ -150,6 +153,7 @@ func TestAGroupInUseStays(t *testing.T) {
 // interface names cannot be deleted, though no controller has made the VM's
 // machine yet; once the VM names it no more, it can.
 func TestAVMHoldsItsGroupsBeforeItHasAMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)

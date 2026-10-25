@@ -52,6 +52,7 @@ func boundReason(a *networkv1alpha1.Address) string {
 }
 
 func TestAddressAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Address)
 	if _, err := b.Apply(user, address("free", "", "")); err != nil {
@@ -93,6 +94,7 @@ func TestAddressAdmission(t *testing.T) {
 // TestBindingIsOneDecision: addresses racing for one interface, only one
 // gets it.
 func TestBindingIsOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	var wg sync.WaitGroup
 	errs := make([]error, 8)
@@ -115,6 +117,7 @@ func TestBindingIsOneDecision(t *testing.T) {
 }
 
 func TestAnAddressIsReservedFromTheNodesPrefix(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", "")
 	applyAddress(t, s, user, address("ip", "", ""))
@@ -135,6 +138,7 @@ func TestAnAddressIsReservedFromTheNodesPrefix(t *testing.T) {
 // address moves between interfaces, which fall back to an automatic address
 // of their own; deleting its target leaves it reserved.
 func TestAnAddressFollowsItsTarget(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
 	for _, c := range []string{"a", "b"} {
@@ -216,6 +220,7 @@ func TestAnAddressFollowsItsTarget(t *testing.T) {
 // most: the machine it moves to takes it only once the one it leaves has
 // let go.
 func TestNoTwoMachinesHoldAnAddress(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
 	for _, c := range []string{"a", "b"} {
@@ -283,6 +288,7 @@ func TestNoTwoMachinesHoldAnAddress(t *testing.T) {
 // failure, and is reported meanwhile; the machine letting go is what maps
 // to it again.
 func TestAMovingAddressIsWaitedOn(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	waitNode(t, s, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
@@ -355,6 +361,7 @@ func TestAMovingAddressIsWaitedOn(t *testing.T) {
 // TestATargetIsOfItsAddressesProject: an Address names a container of its
 // own project; one of the same name in another project is not given it.
 func TestATargetIsOfItsAddressesProject(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeReporting(t, s, "n1", testPrefix)
 	if _, err := s.backend(registry.Project).Apply(user, &tenancyv1alpha1.Project{
@@ -384,6 +391,7 @@ func TestATargetIsOfItsAddressesProject(t *testing.T) {
 // TestAddressesCatchUpOnStart: Addresses and their targets written while no
 // controller ran are reserved and bound once the apiserver starts with them.
 func TestAddressesCatchUpOnStart(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"}; c.NodeMonitorInterval = 1000 * time.Hour })
 	waitNode(t, s, "n1")
 	nodeReporting(t, s, "n1", testPrefix)

@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -53,12 +53,18 @@ breaking:
 		echo "breaking: main has no proto/ yet"; \
 	fi
 
-# test/e2e alone takes about nine minutes under -race on a quiet machine, and
-# on CI, where every package runs at once, it reached the twenty minutes it
-# was given (2026-10, with the custom images' tests). Its own time, not the
-# limit, is what to bring down; until then each package is given forty.
+# test/e2e runs without the race detector, and test-e2e-race with it ("Run in
+# parallel" in docs/conventions/testing.md says why).
+E2E_PKG := github.com/YukinaMochizuki/hangar/test/e2e
+
 test:
-	go test -race -timeout 40m ./...
+	go test -race -timeout 20m $$(go list ./... | grep -v -x -F $(E2E_PKG))
+	go test -timeout 10m ./test/e2e/
+
+# test/e2e under the race detector, one test at a time: about eleven minutes
+# on 16 cores (2026-10).
+test-e2e-race:
+	go test -race -parallel 1 -timeout 40m ./test/e2e/
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,
@@ -69,8 +75,9 @@ test-root:
 		./internal/node/driver/ocilayer/ ./internal/node/driver/registry/ ./internal/node/ \
 		./internal/node/driver/chvm/
 
+# test/e2e alone, as make test runs it.
 e2e:
-	go test -race -timeout 40m -tags e2e ./test/e2e/...
+	go test -timeout 10m ./test/e2e/
 
 # Real-host tests (L4), on a testbed VM only: they boot guests as root.
 # docs/runbook/testbed.md says what they need and how to provide it.

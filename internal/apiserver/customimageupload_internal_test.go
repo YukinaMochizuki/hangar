@@ -321,6 +321,7 @@ func wantCode(t *testing.T, err error, code connect.Code, what string) {
 // each chunk is relayed to the node a message of at most uploadPiece at
 // a time; the file is the node's as sent.
 func TestAnUploadIsRelayedChunkByChunk(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	st, err := w.get(t, alice, "img")
@@ -348,6 +349,7 @@ func TestAnUploadIsRelayedChunkByChunk(t *testing.T) {
 // TestAChunkAtTheWrongOffsetIsRefused: a chunk not at the node's count is
 // a 409 carrying the count, and nothing of it reaches the node.
 func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	if _, err := w.put(t, alice, 0, 1000, ""); err != nil {
@@ -374,6 +376,7 @@ func TestAChunkAtTheWrongOffsetIsRefused(t *testing.T) {
 // TestATooLargeChunkIsRefused: a chunk of more than the chunk size is a
 // 413, refused from its Content-Range before any of it is read.
 func TestATooLargeChunkIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	h := http.Header{auth.DevUserHeader: {"alice@example.com"},
 		"Content-Range": {uploadwire.ContentRange(0, uploadwire.ChunkSize+1, uploadFileSize+uploadwire.ChunkSize)}, uploadwire.ChunkSHA256: {chunkSum(nil)}}
@@ -390,6 +393,7 @@ func TestATooLargeChunkIsRefused(t *testing.T) {
 // upload stays; a header that is no sha256 is refused before anything
 // reaches the node.
 func TestAChunkNotMatchingItsSHA256IsDropped(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	if _, err := w.put(t, alice, 0, 1000, ""); err != nil {
@@ -416,6 +420,7 @@ func TestAChunkNotMatchingItsSHA256IsDropped(t *testing.T) {
 // carrying where the upload is, the other written on; a node gone is a
 // 503 too, but neither says where the upload is nor when to come back.
 func TestAChunkWhileAnotherIsWrittenIsBusy(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	w.node.mu.Lock()
@@ -460,6 +465,7 @@ func TestAChunkWhileAnotherIsWrittenIsBusy(t *testing.T) {
 // TestAnImageNotAwaitingAnUploadIsRefused: a captured image, one whose
 // file is whole, and one that failed take no chunks.
 func TestAnImageNotAwaitingAnUploadIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	madeDisk(t, w.s, w.system, w.user, "data", "n1", "4Gi")
@@ -502,6 +508,7 @@ func (w *uploadWorld) setImageStatus(t *testing.T, change func(*storagev1alpha1.
 // TestAnExpiredUploadIsRefused: past upload_expires, by the apiserver's
 // clock, the image takes no chunks, whatever its node says.
 func TestAnExpiredUploadIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := devHeader("alice@example.com")
 	w.setImageStatus(t, func(st *storagev1alpha1.CustomImageStatus) {
@@ -522,6 +529,7 @@ func TestAnExpiredUploadIsRefused(t *testing.T) {
 // of its project among them, gets nothing of it, and one with no
 // credential is unauthenticated; an editor of its project uploads.
 func TestUploadingIsApplying(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	addMember(t, w.s, "dave@example.com")
 	if _, err := w.s.backend(registry.RoleBinding).Apply(w.system, binding("dave-web", "dave@example.com", "project.viewer",
@@ -551,6 +559,7 @@ func TestUploadingIsApplying(t *testing.T) {
 // request the cookie authenticates; a CLI login and a service token
 // upload.
 func TestUploadsTakeEveryCredential(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	b, err := w.s.sessions.StartBrowser(t.Context(), bob)
 	if err != nil {
@@ -590,6 +599,7 @@ func TestUploadsTakeEveryCredential(t *testing.T) {
 // TestUploadsCountAgainstTheCallsToNodes: a chunk under way holds one of
 // its caller's calls to nodes; over the cap, the next is refused at once.
 func TestUploadsCountAgainstTheCallsToNodes(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1 })
 	alice := devHeader("alice@example.com")
 	hold := make(chan struct{})
@@ -619,6 +629,7 @@ func TestUploadsCountAgainstTheCallsToNodes(t *testing.T) {
 // image deleted, the next recheck ends it, and its call to the node, while
 // the node writes it or while its body comes slowly; nothing of it counts.
 func TestAChunkEndsWithWhatLetItIn(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name     string
 		slowBody bool
@@ -703,6 +714,7 @@ func TestAChunkEndsWithWhatLetItIn(t *testing.T) {
 // shorter or longer, is invalid_argument; nothing of the first three
 // reaches the node, and nothing of any counts.
 func TestAMalformedChunkIsRefusedBeforeTheNode(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	alice := "alice@example.com"
 	header := func(first, n, size int64, sum string) http.Header {
@@ -741,6 +753,7 @@ func TestAMalformedChunkIsRefusedBeforeTheNode(t *testing.T) {
 // TestAnImageBeingDeletedTakesNoChunks: an upload's image being deleted,
 // which a finalizer might keep a while, takes no chunk.
 func TestAnImageBeingDeletedTakesNoChunks(t *testing.T) {
+	t.Parallel()
 	w := newUploadWorld(t, nil)
 	ci := getCustomImage(t, w.s, w.system, "img")
 	if err := w.s.awaitsUpload(ci); err != nil {

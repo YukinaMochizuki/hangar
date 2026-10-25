@@ -45,6 +45,7 @@ func (w *world) kept(what string, digests ...string) {
 // TestARecreatedContainerPullsNothing: a container deleted and made again
 // finds its image kept, and pulls and unpacks nothing again.
 func TestARecreatedContainerPullsNothing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.runOnce("api", "nginx")
 	w.waitHostEmpty()
@@ -64,6 +65,7 @@ func TestARecreatedContainerPullsNothing(t *testing.T) {
 // TestTheLeastRecentlyUsedImageGoes: past the bound, the image used
 // longest ago goes, though another was pulled before it.
 func TestTheLeastRecentlyUsedImageGoes(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	// Three bases of 64 MiB; two fit.
 	w.imageCacheHigh, w.imageCacheLow = 150*mib, 150*mib
@@ -89,6 +91,7 @@ func TestTheLeastRecentlyUsedImageGoes(t *testing.T) {
 // later outlasts one pulled after it but let go before it: its use lasted
 // until its root disk went.
 func TestAnImageUsedLongerGoesLater(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	// Three bases of 64 MiB; two fit.
 	w.imageCacheHigh, w.imageCacheLow = 150*mib, 150*mib
@@ -115,6 +118,7 @@ func TestAnImageUsedLongerGoesLater(t *testing.T) {
 // TestAnImageInUseIsNeitherEvictedNorCounted: the image a running container
 // uses stays, and only the images no machine uses count against the bound.
 func TestAnImageInUseIsNeitherEvictedNorCounted(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.imageCacheHigh, w.imageCacheLow = 100*mib, 100*mib
 	big := nginx
@@ -132,6 +136,7 @@ func TestAnImageInUseIsNeitherEvictedNorCounted(t *testing.T) {
 // TestAnImageBeingPulledIsKept: the image a pull is still making a base of
 // stays in the cache, however far past the bound.
 func TestAnImageBeingPulledIsKept(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.imageCacheHigh, w.imageCacheLow = 1, 1
 	big := nginx
@@ -157,6 +162,7 @@ func TestAnImageBeingPulledIsKept(t *testing.T) {
 // TestTheLastUseOutlivesTheAgent: an agent started again evicts by the
 // last uses the host recorded, not by name.
 func TestTheLastUseOutlivesTheAgent(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	// By name, sha256:a-new would go first.
 	w.host.AddImage("old", "sha256:z-old", nginx)
@@ -178,6 +184,7 @@ func TestTheLastUseOutlivesTheAgent(t *testing.T) {
 // TestAFullCacheIsCleared: an image cache past 85% of its room is cleared
 // of images no machine uses, however far from the bound they are.
 func TestAFullCacheIsCleared(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	large := nginx
 	large.Size = 90 * mib
@@ -193,6 +200,7 @@ func TestAFullCacheIsCleared(t *testing.T) {
 // TestAPullMakesRoomInTheCache: a pull the cache has no room for evicts the
 // images no machine uses until it fits, rather than fail.
 func TestAPullMakesRoomInTheCache(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	one, two := nginx, nginx
 	one.Size, two.Size = 60*mib, 45*mib
@@ -217,6 +225,7 @@ func TestAPullMakesRoomInTheCache(t *testing.T) {
 // no room to unpack beside them evicts the images no machine uses, and is
 // unpacked.
 func TestAnUnpackMakesRoom(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.host.SetImageCacheSize(150 * mib)
 	old, small := nginx, nginx
@@ -239,6 +248,7 @@ func TestAnUnpackMakesRoom(t *testing.T) {
 // no machine uses covers evicts it and is unpacked, though it asks for
 // more than could be made.
 func TestAnUnpackShortOfLittleMakesRoom(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.host.SetImageCacheSize(100 * mib)
 	u, n := nginx, nginx
@@ -273,6 +283,7 @@ func (w *world) unusedKept(name string, n int) []string {
 // recently used images that free its compressed size, and no more, by what
 // they take, though what the storage says is free lags their going.
 func TestAnUnpackEvictsItsSizeATry(t *testing.T) {
+	t.Parallel()
 	for name, deferred := range map[string]bool{"frees at once": false, "frees deferred": true} {
 		t.Run(name, func(t *testing.T) {
 			w := newIdleWorld(t)
@@ -308,6 +319,7 @@ func TestAnUnpackEvictsItsSizeATry(t *testing.T) {
 // deleted makes room for a pull at once, no sweep having forgotten the
 // pull it was made by.
 func TestAJustDeletedContainersImageMakesRoom(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.sweepInterval = time.Hour
 	old, n := nginx, nginx
@@ -331,6 +343,7 @@ func TestAJustDeletedContainersImageMakesRoom(t *testing.T) {
 // TestABaseMakesRoomInTheStorage: a base the storage has no room for evicts
 // the least recently used images no machine uses, and is made.
 func TestABaseMakesRoomInTheStorage(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	// Bases of 4 GiB; two fit, and room for a root disk of 10 GiB, as the
 	// fake's root disks take none.
@@ -353,6 +366,7 @@ func TestABaseMakesRoomInTheStorage(t *testing.T) {
 // TestAHopelessPullEvictsNothing: a pull that would not fit with every
 // image no machine uses gone evicts none of them.
 func TestAHopelessPullEvictsNothing(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.host.SetImageCacheSize(100 * mib)
 	small, huge := nginx, nginx
@@ -371,6 +385,7 @@ func TestAHopelessPullEvictsNothing(t *testing.T) {
 // TestAnEvictedImageIsPulledAgain: an image evicted and asked for again is
 // pulled again, and runs.
 func TestAnEvictedImageIsPulledAgain(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	// Bases of 64 MiB; one fits.
 	w.imageCacheHigh, w.imageCacheLow = 100*mib, 100*mib
@@ -393,6 +408,7 @@ func TestAnEvictedImageIsPulledAgain(t *testing.T) {
 // keeps its image, though the agent, started again, has no pull of it to
 // count: only the root disk says it is in use.
 func TestRootDisksKeepTheirImagesAfterARestart(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.imageCacheHigh, w.imageCacheLow = 100*mib, 100*mib
 	big := nginx
@@ -418,6 +434,7 @@ func TestRootDisksKeepTheirImagesAfterARestart(t *testing.T) {
 // TestTheCacheJudgesItsOwnFullness: what else takes the image room, as
 // downloads and unpacks under way do, does not make the cache full.
 func TestTheCacheJudgesItsOwnFullness(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.host.SetImageCacheSize(100 * mib)
 	half := nginx
@@ -434,6 +451,7 @@ func TestTheCacheJudgesItsOwnFullness(t *testing.T) {
 // TestNoRoomInTheCacheIsTheDisks: a pull the cache has no room for, even
 // with every image no machine uses gone, is the disk's failure.
 func TestNoRoomInTheCacheIsTheDisks(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.host.SetImageCacheSize(100 * mib)
 	huge := nginx

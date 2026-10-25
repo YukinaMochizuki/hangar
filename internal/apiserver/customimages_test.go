@@ -132,6 +132,7 @@ const (
 )
 
 func TestCustomImageAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.CustomImage)
 	for name, mutate := range map[string]func(*storagev1alpha1.CustomImageSpec){
@@ -220,6 +221,7 @@ func TestCustomImageAdmission(t *testing.T) {
 // it, nothing with the source disk starts, nothing attaches it, and it is
 // not deleted; then all of that is allowed again.
 func TestASourceDiskIsHeldUntilSnapshotted(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	images, vms, machines, disks := s.backend(registry.CustomImage), s.backend(registry.VirtualMachine), s.backend(registry.Machine), s.backend(registry.Disk)
 	containers := s.backend(registry.Container)
@@ -311,6 +313,7 @@ func TestASourceDiskIsHeldUntilSnapshotted(t *testing.T) {
 // TestADeletedImageLetsItsSourceGo: deleting an image still holding its
 // disk ends the hold.
 func TestADeletedImageLetsItsSourceGo(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	stoppedVM(t, s, system, user)
 	if _, err := s.backend(registry.CustomImage).Apply(user, customImage("db-img", "db-root")); err != nil {
@@ -369,6 +372,7 @@ func raceCaptures(t *testing.T, s *Server, user context.Context, round int, disk
 // their source disk, or a running machine attaching it, only one side wins;
 // for machines, which the apiserver writes, the quota serializes nothing.
 func TestCaptureAndStartAreOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	vms, machines := s.backend(registry.VirtualMachine), s.backend(registry.Machine)
 	stoppedVM(t, s, system, user)
@@ -419,6 +423,7 @@ func TestCaptureAndStartAreOneDecision(t *testing.T) {
 }
 
 func TestADiskFromACustomImage(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	disks, images := s.backend(registry.Disk), s.backend(registry.CustomImage)
 	stoppedVM(t, s, system, user)
@@ -499,6 +504,7 @@ func TestADiskFromACustomImage(t *testing.T) {
 // delete, or refused; none is stored once the image is gone, which the
 // node's sweep would take as no disk of the image, and remove its base.
 func TestADiskOfACustomImageAndItsDeleteAreOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	disks, images := s.backend(registry.Disk), s.backend(registry.CustomImage)
 	stoppedVM(t, s, system, user)
@@ -578,6 +584,7 @@ func TestADiskOfACustomImageAndItsDeleteAreOneDecision(t *testing.T) {
 // is captured, what it holds once Ready, nothing once failed or deleted,
 // and toward custom_images.
 func TestCustomImageQuota(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	images := s.backend(registry.CustomImage)
 	madeDisk(t, s, system, user, "a", "n1", "10Gi")

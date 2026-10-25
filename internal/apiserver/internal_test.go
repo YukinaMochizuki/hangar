@@ -152,6 +152,7 @@ func ctr(name string) *computev1alpha1.Container {
 }
 
 func TestFailedSetupRollsBackAndReleasesTheName(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Tenant)
 	setup := b.hooks.afterCreate
@@ -171,6 +172,7 @@ func TestFailedSetupRollsBackAndReleasesTheName(t *testing.T) {
 }
 
 func TestFinalizers(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 	key := resource.Key{Project: "web", Name: "api"}
@@ -214,6 +216,7 @@ func deleted(b *backend, ctx context.Context, key resource.Key) func() (bool, st
 }
 
 func TestReservedLabelsSurviveUserApply(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 
@@ -236,6 +239,7 @@ func TestReservedLabelsSurviveUserApply(t *testing.T) {
 }
 
 func TestReservedAnnotationsSurviveAndEchoBack(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 	c := ctr("api")
@@ -267,6 +271,7 @@ func TestReservedAnnotationsSurviveAndEchoBack(t *testing.T) {
 }
 
 func TestSweepCollectsOrphans(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 
@@ -317,6 +322,7 @@ func TestSweepCollectsOrphans(t *testing.T) {
 }
 
 func TestStoredBytesCarryNoResourceVersion(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	if _, err := s.backend(registry.Container).Apply(system, ctr("api")); err != nil {
 		t.Fatal(err)

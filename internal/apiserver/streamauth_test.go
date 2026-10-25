@@ -83,6 +83,7 @@ func receivesAdded(t *testing.T, events <-chan *computev1alpha1.WatchContainersR
 // ends, at the next recheck, once the token is deleted or its secret
 // rotated.
 func TestAWatchEndsWithItsServiceToken(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -107,6 +108,7 @@ func TestAWatchEndsWithItsServiceToken(t *testing.T) {
 // next recheck, once the binding that let its caller watch there is
 // deleted; another caller's goes on.
 func TestAWatchEndsWithTheBindingThatLetItIn(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -125,6 +127,7 @@ func TestAWatchEndsWithTheBindingThatLetItIn(t *testing.T) {
 // TestAWatchEndsWithPlatformMembership: a watch everywhere, which needs no
 // grant but membership, ends once its caller is no longer a member.
 func TestAWatchEndsWithPlatformMembership(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	_, ended := openWatch(t, e.as(bob).containers, "")
@@ -136,6 +139,7 @@ func TestAWatchEndsWithPlatformMembership(t *testing.T) {
 // TestAWatchEndsWithItsSession: watches opened with a browser session and a
 // CLI login end, at the next recheck, once the person's logins are revoked.
 func TestAWatchEndsWithItsSession(t *testing.T) {
+	t.Parallel()
 	clock := clockwork.NewFakeClockAt(time.Now())
 	w := newOIDCWorldConfig(t, 0, func(c *apiserver.Config) { c.Clock = clock })
 	alice := w.adminInvites("bob@example.com")

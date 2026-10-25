@@ -159,6 +159,37 @@ chmod 755 /tmp/pkg.test
 su nobody -s /bin/sh -c 'TMPDIR=/tmp /tmp/pkg.test -test.run TestSecretFileModes'
 ```
 
+## Run in parallel
+
+Every top-level test in `test/e2e` and `internal/apiserver` calls
+`t.Parallel()` first, and so does a new one. A test that reads what the
+whole process shares stays serial and says why, as
+`TestExecsLeaveNothingRunning` (`internal/apiserver`), which counts the
+process's goroutines. Each test builds its own world, so a test that needs
+`t.Setenv`, a fixed port or a package variable it writes is one to rework,
+not to make serial.
+
+`make test` runs `test/e2e` without the race detector: under it, a world
+there takes some twenty times the CPU, and parallel worlds starve one
+another. `make test-e2e-race` runs it under the detector one test at a
+time, as CI's `e2e-race` job does. So no job looks for a race between two
+e2e worlds: that they share no state rests on the rule above, and a
+package variable or a global written in `internal/node`, the fake host or
+the controllers breaks it unseen.
+
+## Run tests while you work
+
+The suites take every CPU there is, so two side by side only slow each
+other down, and the load makes tests that are fine fail:
+- Run one suite at a time, never `make check` beside `make e2e` or another
+  `go test`.
+- While iterating, run the packages you changed, or one test of them:
+  `go test -race ./internal/node/ -run 'TestStdin'`. `make e2e` runs the
+  e2e tests alone, in about half a minute.
+- Run `make check` once before a commit. It skips `make test-e2e-race`,
+  which CI runs; run it yourself after changing how `test/e2e` or what it
+  drives synchronizes.
+
 ## When a test is flaky
 
 Find the root cause; about half the flakes so far were real bugs. While it
@@ -166,3 +197,15 @@ is open, quarantine the test with `testutil.Quarantine(t, "#N")`, naming the
 GitHub issue that tracks it. Run `.github/workflows/stress.yml` by hand to
 reproduce a flake or to show a fix holds. The rules are in "Flaky tests" in
 `docs/decisions/testing-strategy.md`.
+
+A test that failed once, in a change that did not touch what it tests, may
+be such a flake; find out by reproducing it, never by running it again until
+it passes. Run it alone many times, then under load as the stress job does:
+
+```sh
+go test -race -count=50 -run '^TestExecInAContainer$' ./test/e2e/
+GOMAXPROCS=2 go test -race -count=50 -run '^TestExecInAContainer$' ./test/e2e/ # beside a CPU load
+```
+
+If it fails, it is a flake to report and fix as above, whatever the change
+in hand. If it never does, look at the change again.

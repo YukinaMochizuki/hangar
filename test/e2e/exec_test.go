@@ -119,6 +119,7 @@ func (w *world) exec(name string, start *computev1alpha1.MachineExecStart, input
 // apiserver and the node's tunnel, with the container's environment, and
 // its output, stdin, terminal and exit pass through.
 func TestExecInAContainer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("api", "nginx")
 	c.Spec.Env = []*computev1alpha1.EnvVar{{Name: "MODE", Value: "prod"}}
@@ -173,6 +174,7 @@ func TestExecInAContainer(t *testing.T) {
 // TestAKilledClientKillsItsProcess: the process goes with the client,
 // however it goes.
 func TestAKilledClientKillsItsProcess(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -199,6 +201,7 @@ const readerRole = "e2e.reader"
 // get and read logs, a sponsor, a member and another tenant's owner do
 // not, and are told so the same whether the container exists or not.
 func TestExecNeedsItsOwnPermission(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorldWith(t, func(c *apiserver.Config) {
 		c.ExtraRoles = map[string]authz.Role{readerRole: authz.NewRole(authz.TenantLevel,
 			authz.Permission(registry.Container, authz.Get), authz.MachineLogs)}
@@ -259,6 +262,7 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 // TestExecIsRefusedClearly: a container that is not running, a node that
 // is down, and a caller over the caps on calls to nodes are each told so.
 func TestExecIsRefusedClearly(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerPrincipal = 1 })
 	w.startAgent()
 	w.apply(container("api", "nginx"))

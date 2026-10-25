@@ -35,6 +35,7 @@ func getMachine(t *testing.T, s *Server, system context.Context, key resource.Ke
 }
 
 func TestAResizeThatDoesNotFitIsNotApplied(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 1024)
 	applyCtr(t, s, user, ctr("api"))
@@ -56,6 +57,7 @@ func TestAResizeThatDoesNotFitIsNotApplied(t *testing.T) {
 }
 
 func TestAMachineNameInUseIsReported(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	squatter := machine("ct-api", "")
 	squatter.Metadata.OwnerReferences = []*metav1.OwnerReference{{
@@ -72,6 +74,7 @@ func TestAMachineNameInUseIsReported(t *testing.T) {
 }
 
 func TestAContainerWhoseNodeStopsReportingIsNotReady(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -98,6 +101,7 @@ func TestAContainerWhoseNodeStopsReportingIsNotReady(t *testing.T) {
 // TestAContainerSaysWhatItsNodeSays: what keeps a machine from running, as
 // its node reports it for the current spec, is what its container says.
 func TestAContainerSaysWhatItsNodeSays(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -145,6 +149,7 @@ func TestAContainerSaysWhatItsNodeSays(t *testing.T) {
 }
 
 func TestFreedMemoryPlacesAWaitingMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 1024)
 	applyCtr(t, s, user, sized("a", 1024))
@@ -165,6 +170,7 @@ func TestFreedMemoryPlacesAWaitingMachine(t *testing.T) {
 }
 
 func TestAContainerOfTheSameNameGetsANewMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	applyCtr(t, s, user, ctr("api"))
 	first := waitMachine(t, s, system, "ct-api", "created", func(*computev1alpha1.Machine) bool { return true })
@@ -182,6 +188,7 @@ func TestAContainerOfTheSameNameGetsANewMachine(t *testing.T) {
 // controller may create a machine just as its container goes; garbage
 // collection must not wait for the next sweep to remove it.
 func TestAMachineMadeForAContainerAlreadyGoneIsCollected(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	orphan := machine("ct-ghost", "")
 	orphan.Metadata.OwnerReferences = []*metav1.OwnerReference{{
@@ -196,6 +203,7 @@ func TestAMachineMadeForAContainerAlreadyGoneIsCollected(t *testing.T) {
 // TestNoMachineForAContainerBeingDeleted: a container already on its way out
 // gets no machine, even from a controller that sees it for the first time.
 func TestNoMachineForAContainerBeingDeleted(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	held := ctr("api")
 	held.Metadata.Finalizers = []string{"test/hold"}
@@ -216,6 +224,7 @@ func TestNoMachineForAContainerBeingDeleted(t *testing.T) {
 // TestAMachineBeingDeletedIsLeftAlone: while a container's machine waits for
 // its node, changes to the container are reported, not forced onto it.
 func TestAMachineBeingDeletedIsLeftAlone(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -238,6 +247,7 @@ func TestAMachineBeingDeletedIsLeftAlone(t *testing.T) {
 // the same time could each see the same free memory and together overcommit
 // the node; both wait for the memory lock.
 func TestMemoryDecisionsTakeTurns(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"}; c.NodeMonitorInterval = 1000 * time.Hour })
 	waitNode(t, s, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
@@ -282,6 +292,7 @@ func TestMemoryDecisionsTakeTurns(t *testing.T) {
 // TestABlockedResizeGoesThroughOnceThereIsRoom: memory freed on the node is
 // enough to retry a resize that did not fit; no heartbeat is needed.
 func TestABlockedResizeGoesThroughOnceThereIsRoom(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 2048)
 	applyCtr(t, s, user, ctr("api"))
@@ -307,6 +318,7 @@ func TestABlockedResizeGoesThroughOnceThereIsRoom(t *testing.T) {
 // TestCollectingAnOrphanSparesALaterObjectOfTheSameName: an event about an
 // orphan that is already gone must not take its successor with it.
 func TestCollectingAnOrphanSparesALaterObjectOfTheSameName(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	key := resource.Key{Project: "web", Name: "ct-api"}
 	if _, err := s.backend(registry.Machine).Apply(system, machine("ct-api", "")); err != nil {
@@ -327,6 +339,7 @@ func TestCollectingAnOrphanSparesALaterObjectOfTheSameName(t *testing.T) {
 // someone else wrote it. The step must fail rather than overwrite.
 
 func TestSettingScheduledNeverOverwritesANodeReport(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	key := resource.Key{Project: "web", Name: "ct-api"}
 	if _, err := s.backend(registry.Machine).Apply(system, machine("ct-api", "n1")); err != nil {
@@ -345,6 +358,7 @@ func TestSettingScheduledNeverOverwritesANodeReport(t *testing.T) {
 }
 
 func TestPlacingIsConditionalOnTheMachineAsRead(t *testing.T) {
+	t.Parallel()
 	s, system, _ := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"}; c.NodeMonitorInterval = 1000 * time.Hour })
 	waitNode(t, s, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
@@ -364,6 +378,7 @@ func TestPlacingIsConditionalOnTheMachineAsRead(t *testing.T) {
 }
 
 func TestUpdatingAMachineIsConditionalOnTheMachineAsRead(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	applyCtr(t, s, user, ctr("api"))
 	c := waitContainer(t, s, system, "api", "stored", func(*computev1alpha1.Container) bool { return true })
@@ -384,6 +399,7 @@ func TestUpdatingAMachineIsConditionalOnTheMachineAsRead(t *testing.T) {
 }
 
 func TestReportingIsConditionalOnTheContainerAsRead(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	applyCtr(t, s, user, ctr("api"))
 	stale := waitContainer(t, s, system, "api", "stored", func(*computev1alpha1.Container) bool { return true })
