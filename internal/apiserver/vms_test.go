@@ -321,6 +321,9 @@ func TestARootDiskFollowsItsDeletePolicy(t *testing.T) {
 	}
 	waitGone(t, s, system, registry.VirtualMachine, "web")
 	waitGone(t, s, system, registry.Machine, "vm-web")
+	// The disk's own controllers may still be writing what the VM's going
+	// changed; quiet is what comes after them.
+	waitSettled(t, s)
 	testutil.Unchanged(t, "the retained root disk, after its VM went", 100*time.Millisecond,
 		versionOf(s, system, registry.Disk, resource.Key{Project: "web", Name: "web-root"}))
 
