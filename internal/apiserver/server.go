@@ -207,9 +207,11 @@ type Server struct {
 	// tokenUses queues service tokens' uses to record in their status.
 	tokenUses chan tokenUse
 	// controllers are what Run runs, unless the config disables them; gc
-	// is how far garbage collection has come.
+	// is how far garbage collection has come, and ownerIdx the index of owner
+	// references it keeps.
 	controllers []*controller.Controller
 	gc          gcProgress
+	ownerIdx    ownerIndex
 	// rpc counts the Connect calls served; boots follows machines' boot
 	// times, through bootWatch, for the crash-loop gauge. bootWatch writes
 	// nothing, so it runs even when the config disables the controllers.

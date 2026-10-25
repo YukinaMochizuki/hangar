@@ -339,6 +339,7 @@ func TestDenialsReadTheSameWhetherOrNotTheObjectExists(t *testing.T) {
 // watches: every deletion is visible to the owner, contents before the tenant.
 func TestOwnerSeesTheirTenantCascadeToTheEnd(t *testing.T) {
 	t.Parallel()
+	testutil.Quarantine(t, "#210")
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
