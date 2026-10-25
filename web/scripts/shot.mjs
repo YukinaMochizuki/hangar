@@ -17,9 +17,14 @@ const [outDir, ...specs] = process.argv.slice(2);
 const base = process.env.BASE ?? "http://localhost:4173";
 const waitUntil = process.env.WAIT ?? "networkidle0";
 
+// Pages are shot at a device pixel ratio of 2, the browser's own rather than
+// one the viewport emulates: under emulation Chromium reports a canvas's
+// device-pixel size at 1x, and xterm's WebGL renderer, which sizes its
+// canvas by it, then draws a terminal magnified to a quarter of its screen
+// (hangar#214). A viewport's deviceScaleFactor of 0 leaves the ratio alone.
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME_PATH ?? "chromium",
-  args: ["--no-sandbox", "--disable-gpu", "--hide-scrollbars"],
+  args: ["--no-sandbox", "--disable-gpu", "--hide-scrollbars", "--force-device-scale-factor=2"],
 });
 try {
   for (const spec of specs) {
@@ -30,7 +35,7 @@ try {
     const page = await browser.newPage();
     page.on("console", (msg) => msg.type() === "error" && console.error(`${name}: ${msg.text()}`));
     page.on("pageerror", (err) => console.error(`${name}: ${err.message}`));
-    await page.setViewport({ width: Number(w), height: Number(h), deviceScaleFactor: 2 });
+    await page.setViewport({ width: Number(w), height: Number(h), deviceScaleFactor: 0 });
     const url = base + path + (path.includes("?") ? "&" : "?") + "still";
     await page.goto(url, { waitUntil });
     await page.evaluate(() => document.fonts.ready);
@@ -44,7 +49,7 @@ try {
     if (!clip && !click) {
       const height = await page.evaluate(() => document.documentElement.scrollHeight);
       if (height > Number(h)) {
-        await page.setViewport({ width: Number(w), height, deviceScaleFactor: 2 });
+        await page.setViewport({ width: Number(w), height, deviceScaleFactor: 0 });
         await new Promise((r) => setTimeout(r, 200));
       }
     }
