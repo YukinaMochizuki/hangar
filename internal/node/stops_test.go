@@ -271,10 +271,10 @@ func churn(t testing.TB, env *apiservertest.Env, sys *client.Client, a *Agent, h
 	if lost {
 		// Gone from the API while its release's stop runs, as if its
 		// finalizer were taken off by hand; sweeps come by meanwhile.
-		testutil.Eventually(t, "machine "+name+"'s release stopping its VM", func() bool {
+		whileMoving(t, sys, a, "machine "+name+"'s release stopping its VM", func() (bool, string) {
 			a.host.Lock()
 			defer a.host.Unlock()
-			return a.stops.running[uid]
+			return a.stops.running[uid], "not stopping"
 		})
 		key := store.Key{Kind: registry.Machine.Kind, Project: apiservertest.Project, Name: name}
 		for {
@@ -320,34 +320,41 @@ func edit(t testing.TB, sys *client.Client, name string, change func(*computev1a
 	return false
 }
 
-// stuckCap bounds a wait for a machine that keeps moving without arriving.
+// stuckCap bounds a wait for machines that keep moving without arriving.
 const stuckCap = 2 * time.Minute
 
 // waitMachine waits until the machine satisfies ok, or is gone if ok is
-// nil. The agent's one worker shares its turns among the test's four
-// machines and each change takes about five reconciles, so under load a
-// machine may move for longer than testutil.Wait: the bound is for a stuck
-// machine, not a slow one, and starts again whenever the machine's
-// resourceVersion or its reconcile attempts move.
+// nil, while the machines move.
 func waitMachine(t testing.TB, sys *client.Client, a *Agent, name, what string, ok func(*computev1alpha1.Machine) bool) {
 	t.Helper()
-	key := controller.Key{Project: apiservertest.Project, Name: name}
-	check := func() (done bool, progress, last string) {
+	whileMoving(t, sys, a, "machine "+name+" "+what, func() (bool, string) {
 		obj, err := sys.Get(context.Background(), registry.Machine, client.Key{Project: apiservertest.Project, Name: name})
 		switch {
 		case connect.CodeOf(err) == connect.CodeNotFound:
-			return ok == nil, "gone", "gone"
+			return ok == nil, "gone"
 		case err != nil:
 			t.Fatal(err)
 		}
 		m := obj.(*computev1alpha1.Machine)
-		return ok != nil && ok(m), fmt.Sprintf("%d/%d", m.GetMetadata().GetResourceVersion(), attempts(a, key)), fmt.Sprint(m.GetStatus())
-	}
+		return ok != nil && ok(m), fmt.Sprint(m.GetStatus())
+	})
+}
+
+// whileMoving waits until done reports true, and fails once the test's
+// machines stop moving, saying what done last saw. The agent's one worker
+// shares its turns among the four machines and each change takes about five
+// reconciles, so under load a machine may move for longer than
+// testutil.Wait, and wait its turn behind the other three for about as
+// long: the bound is for a stuck worker, not a slow one, and starts again
+// whenever any machine's resourceVersion or reconcile attempts move.
+func whileMoving(t testing.TB, sys *client.Client, a *Agent, what string, done func() (bool, string)) {
+	t.Helper()
 	start := time.Now()
 	moved, seen := start, ""
 	for pause := time.Millisecond; ; pause = min(2*pause, 50*time.Millisecond) {
-		done, progress, last := check()
-		if done {
+		progress := moves(t, sys, a)
+		ok, last := done()
+		if ok {
 			return
 		}
 		now := time.Now()
@@ -356,26 +363,35 @@ func waitMachine(t testing.TB, sys *client.Client, a *Agent, name, what string, 
 		}
 		switch {
 		case now.Sub(moved) > testutil.Wait:
-			t.Fatalf("machine %s %s: stuck for %v; last seen: %s", name, what, testutil.Wait, last)
+			t.Fatalf("%s: no machine moved for %v; last seen: %s", what, testutil.Wait, last)
 		case now.Sub(start) > stuckCap:
-			t.Fatalf("machine %s %s: still moving after %v; last seen: %s", name, what, stuckCap, last)
+			t.Fatalf("%s: still moving after %v; last seen: %s", what, stuckCap, last)
 		}
 		<-time.After(pause)
 	}
 }
 
-// attempts counts the machines controller's reconciles of key in a row
+// moves sums up how far the agent has taken the test's machines: each
+// one's resourceVersion and its machines controller's reconciles in a row
 // that failed or waited.
-func attempts(a *Agent, key controller.Key) int {
+func moves(t testing.TB, sys *client.Client, a *Agent) string {
+	attempts := map[controller.Key]int{}
 	for _, s := range a.ControllerStatus() {
 		if s.Name != "machines" {
 			continue
 		}
 		for _, r := range s.Retries {
-			if r.Key == key {
-				return r.Attempts
-			}
+			attempts[r.Key] = r.Attempts
 		}
 	}
-	return 0
+	objs, _, err := sys.ListAll(context.Background(), registry.Machine, client.ListOptions{Project: apiservertest.Project})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b strings.Builder
+	for _, o := range objs {
+		md := o.(*computev1alpha1.Machine).GetMetadata()
+		fmt.Fprintf(&b, "%s:%d/%d ", md.GetName(), md.GetResourceVersion(), attempts[controller.Key{Project: md.GetProject(), Name: md.GetName()}])
+	}
+	return b.String()
 }
