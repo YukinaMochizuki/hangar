@@ -1,7 +1,7 @@
 import { create } from "@bufbuild/protobuf";
 import { ContainerRunState, ContainerSchema, Protocol, RestartPolicy, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { NetworkInterfaceSchema } from "@hangar/api/hangar/compute/v1alpha1/interface_pb";
-import { VirtualMachineRunState, VirtualMachineSchema, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
+import { VirtualMachineRunState, VirtualMachineSchema, VirtualMachineTPMSchema, type VirtualMachine } from "@hangar/api/hangar/compute/v1alpha1/virtual_machine_pb";
 import { describe, expect, it } from "vitest";
 import {
   advancedOf,
@@ -152,6 +152,20 @@ describe("changesOf: what applying does, per field", () => {
     next.spec!.fileShares = [];
     next.spec!.userData = "";
     expect(effects(changesOf(db(), next))).toEqual({ size: "restart", interfaces: "restart", fileShares: "nothing", userData: "nothing" });
+  });
+
+  it("a VM's serial number restarts it, set and cleared alike, and keeps its TPM", () => {
+    const tpm = db();
+    tpm.spec!.tpm = create(VirtualMachineTPMSchema, { enabled: true });
+    const set = editedObject(tpm, { serialNumber: "ARX-0042" }) as VirtualMachine;
+    expect(set.spec?.platform?.serialNumber).toBe("ARX-0042");
+    expect(set.spec?.tpm?.enabled).toBe(true);
+    const cs = changesOf(tpm, set);
+    expect(effects(cs)).toEqual({ platform: "restart" });
+    expect(cs[0]!.detail).toBe("the platform's → ARX-0042");
+    const cleared = editedObject(set, { serialNumber: "" }) as VirtualMachine;
+    expect(cleared.spec?.platform).toBeUndefined();
+    expect(changesOf(set, cleared)[0]!.detail).toBe("ARX-0042 → the platform's");
   });
 });
 

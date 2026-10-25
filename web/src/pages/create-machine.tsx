@@ -211,7 +211,14 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     advanced: baseC ? advancedOf(baseC) : noAdvanced,
     vmShares: baseV ? vmShareRowsOf(baseV) : [],
     dataDisks: baseV ? (baseV.spec?.disks ?? []).map((d) => d.disk) : [],
-    vmAdvanced: baseV ? { sshKeys: (baseV.spec?.sshAuthorizedKeys ?? []).join("\n"), userData: baseV.spec?.userData ?? "" } : noVmAdvanced,
+    vmAdvanced: baseV
+      ? {
+          sshKeys: (baseV.spec?.sshAuthorizedKeys ?? []).join("\n"),
+          userData: baseV.spec?.userData ?? "",
+          serial: baseV.spec?.platform?.serialNumber ?? "",
+          tpm: baseV.spec?.tpm?.enabled ?? false,
+        }
+      : noVmAdvanced,
     // The stored disk as the field shows it, which may not be whole GiB, such as 10G.
     diskText: baseC ? formatNumber(quantityGiB(baseC.spec?.resources?.disk || containerDefaults.disk)) : undefined,
     diskWholeGi: baseC ? wholeGiB(baseC.spec?.resources?.disk || containerDefaults.disk) : undefined,
@@ -247,7 +254,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // A container's process, folded until opened.
   const [advanced, setAdvanced] = useState<Advanced>(initial.advanced);
   const [advancedOpen, setAdvancedOpen] = useState(false);
-  // A VM's file shares, data disks, and its SSH keys and user data, folded until opened.
+  // A VM's file shares, data disks, and its cloud-init and hardware fields, folded until opened.
   const [vmShares, setVmShares] = useState<VolumeRow[]>(initial.vmShares);
   const [dataDisks, setDataDisks] = useState<string[]>(initial.dataDisks);
   const [vmAdvanced, setVmAdvanced] = useState<VmAdvanced>(initial.vmAdvanced);
@@ -430,6 +437,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       if (json(vmShares) !== json(initial.vmShares)) changed.fileShares = vmShares;
       if (json(sshKeys) !== json(sshKeysOf(initial.vmAdvanced))) changed.sshAuthorizedKeys = sshKeys;
       if (vmAdvanced.userData !== initial.vmAdvanced.userData) changed.userData = vmAdvanced.userData;
+      // The TPM is never written back: it is chosen when the VM is created.
+      if (vmAdvanced.serial !== initial.vmAdvanced.serial) changed.serialNumber = vmAdvanced.serial;
     }
     if (json(netFields) !== json(initial.net)) changed.interfaces = interfaces;
     if (s && s !== current) {
@@ -465,6 +474,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               fileShares: vmSharesOf(vmShares.filter((v) => v.source)),
               sshAuthorizedKeys: sshKeys,
               userData: vmAdvanced.userData,
+              platform: vmAdvanced.serial ? { serialNumber: vmAdvanced.serial } : undefined,
+              tpm: vmAdvanced.tpm ? { enabled: true } : undefined,
             },
           });
   }
@@ -1077,7 +1088,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
         {kind === "container" ? (
           <ContainerAdvanced value={advanced} onChange={setAdvanced} open={advancedOpen} onToggle={() => setAdvancedOpen(!advancedOpen)} />
         ) : (
-          <VmAdvancedFields value={vmAdvanced} onChange={setVmAdvanced} open={vmAdvancedOpen} onToggle={() => setVmAdvancedOpen(!vmAdvancedOpen)} />
+          <VmAdvancedFields value={vmAdvanced} onChange={setVmAdvanced} open={vmAdvancedOpen} onToggle={() => setVmAdvancedOpen(!vmAdvancedOpen)} tpmLocked={!!baseV} />
         )}
       </Section>
 

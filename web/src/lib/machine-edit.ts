@@ -21,6 +21,7 @@ import { NetworkInterfaceSchema, type NetworkInterface } from "@hangar/api/hanga
 import {
   VirtualMachineDiskSchema,
   VirtualMachineFileShareSchema,
+  VirtualMachinePlatformSchema,
   VirtualMachineResourcesSchema,
   VirtualMachineSchema,
   VirtualMachineSpecSchema,
@@ -140,6 +141,8 @@ export type FormSpec = {
   fileShares?: VolumeRow[];
   sshAuthorizedKeys?: string[];
   userData?: string;
+  /** A VM's SMBIOS serial number; empty is the platform's. */
+  serialNumber?: string;
 };
 
 /**
@@ -174,6 +177,7 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
   if (changed.fileShares !== undefined) s.fileShares = vmSharesOf(changed.fileShares);
   if (changed.sshAuthorizedKeys !== undefined) s.sshAuthorizedKeys = changed.sshAuthorizedKeys;
   if (changed.userData !== undefined) s.userData = changed.userData;
+  if (changed.serialNumber !== undefined) s.platform = changed.serialNumber ? create(VirtualMachinePlatformSchema, { serialNumber: changed.serialNumber }) : undefined;
   if (changed.cpu !== undefined || changed.memory !== undefined) {
     s.resources = create(VirtualMachineResourcesSchema, {
       cpu: changed.cpu ?? s.resources?.cpu ?? "",
@@ -242,9 +246,9 @@ function sizeText(cpu: string, memory: string): string {
  * it does: a container's image rebuilds its root disk; its interfaces,
  * volumes, entrypoint, command, environment, restart policy, cpu, memory and
  * disk reach its VMSpec and restart it; image pull secrets are read only at
- * a pull and restart nothing. A VM's interfaces, cpu and memory restart it;
- * its file shares (its shares' exports) and user data (the metadata
- * service, cloud-init's first boot) restart nothing.
+ * a pull and restart nothing. A VM's interfaces, cpu, memory and serial
+ * number restart it; its file shares (its shares' exports) and user data
+ * (the metadata service, cloud-init's first boot) restart nothing.
  */
 export function changesOf(base: MachineObject, next: MachineObject): Change[] {
   const a = specJson(base);
@@ -282,6 +286,8 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
     add("fileShares", "File shares", "nothing", listDetail(a.fileShares, b.fileShares, (s) => String(s.name ?? "")));
     add("sshAuthorizedKeys", "SSH keys", "nothing", "changed; cloud-init reads them on the first boot only");
     add("userData", "User data", "nothing", "changed; cloud-init runs it on the first boot only");
+    const serial = (v: JsonValue | undefined) => String((v as Json | undefined)?.serialNumber ?? "") || "the platform's";
+    add("platform", "Serial number", "restart", `${serial(a.platform)} → ${serial(b.platform)}`);
   }
   return out;
 }
