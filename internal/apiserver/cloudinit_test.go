@@ -37,6 +37,7 @@ func keysQuotedTo(t *testing.T, size int) []string {
 // their vendor-data is past what its machine may hold, though the keys are
 // within their own limits, so a VM admitted always gets its machine.
 func TestKeysAreBoundedAsTheirMachineHoldsThem(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 8192)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -59,6 +60,7 @@ func TestKeysAreBoundedAsTheirMachineHoldsThem(t *testing.T) {
 // TestAMachinesCloudInitIsBounded: a machine's user-data and vendor-data
 // are refused past their limits, at one byte past each.
 func TestAMachinesCloudInitIsBounded(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Disk).Apply(user, disk("web-root", "10Gi")); err != nil {
 		t.Fatal(err)
@@ -91,6 +93,7 @@ func TestAMachinesCloudInitIsBounded(t *testing.T) {
 // TestAMachinesSerialNumberIsChecked: a firmware machine's system serial
 // number is refused past 64 bytes, or holding other than printable ASCII.
 func TestAMachinesSerialNumberIsChecked(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Disk).Apply(user, disk("web-root", "10Gi")); err != nil {
 		t.Fatal(err)
@@ -119,6 +122,7 @@ func TestAMachinesSerialNumberIsChecked(t *testing.T) {
 // asks for, made or changed, is what the owner reports, not an error
 // retried.
 func TestAMachineRefusedIsReported(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Disk).Apply(user, disk("web-root", "10Gi")); err != nil {
 		t.Fatal(err)
@@ -161,6 +165,7 @@ func TestAMachineRefusedIsReported(t *testing.T) {
 // quoted, quotes and colons in its comment too; a VM with none has no
 // vendor-data.
 func TestVendorDataGivesTheKeys(t *testing.T) {
+	t.Parallel()
 	key := sshKey("ssh-ed25519")
 	odd := strings.TrimSuffix(sshKey("ssh-rsa"), "alice@laptop") + `bob "the" builder: #1`
 	got := keysConfig(&computev1alpha1.VirtualMachineSpec{SshAuthorizedKeys: []string{key, odd}})
@@ -180,6 +185,7 @@ func TestVendorDataGivesTheKeys(t *testing.T) {
 // id; changing the user-data changes them, and nothing else of the
 // machine.
 func TestAVMsMachineCarriesItsCloudInit(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 8192)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -218,6 +224,7 @@ func TestAVMsMachineCarriesItsCloudInit(t *testing.T) {
 // data only if the machine is on it, and no node reads a VM's user-data or
 // keys, by get, list or watch; a user reads them all.
 func TestOnlyItsNodeReadsAGuestsData(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1", "n2"} })
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)

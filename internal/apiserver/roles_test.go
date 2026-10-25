@@ -20,6 +20,7 @@ func projectScope(p string) *iamv1alpha1.BindingScope {
 // editor changes what runs there but not who may or the project itself, a
 // viewer only reads, and none of them can grant past the project.
 func TestProjectRoles(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const (
@@ -115,6 +116,7 @@ func TestProjectRoles(t *testing.T) {
 
 // TestTenantViewer reads everything in the tenant and changes nothing.
 func TestTenantViewer(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")

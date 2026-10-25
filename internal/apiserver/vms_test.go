@@ -74,6 +74,7 @@ func vmReady(vm *computev1alpha1.VirtualMachine) *metav1.Condition {
 }
 
 func TestVirtualMachineAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
@@ -190,6 +191,7 @@ func TestVirtualMachineAdmission(t *testing.T) {
 }
 
 func TestAVirtualMachineRuns(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -275,6 +277,7 @@ func TestAVirtualMachineRuns(t *testing.T) {
 // unless it is retained; retained, it outlives the VM, and a VM of the
 // same name takes it only by naming it.
 func TestARootDiskFollowsItsDeletePolicy(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
@@ -343,6 +346,7 @@ func TestARootDiskFollowsItsDeletePolicy(t *testing.T) {
 // TestAVMIsNotDeletedBeforeItsPolicyHolds: a VM whose root disk's owner
 // reference does not yet say what its delete policy does is not deleted.
 func TestAVMIsNotDeletedBeforeItsPolicyHolds(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
@@ -374,6 +378,7 @@ func retainedVM(name string) *computev1alpha1.VirtualMachine {
 // the reference say the old policy: a retained disk would go with the VM,
 // or a disk to go with it stay behind.
 func TestAStaleReconcileDoesNotUndoADelete(t *testing.T) {
+	t.Parallel()
 	for name, tt := range map[string]struct {
 		before, stale, last *computev1alpha1.VirtualMachine
 		wantOwned           bool
@@ -420,6 +425,7 @@ func TestAStaleReconcileDoesNotUndoADelete(t *testing.T) {
 // policy: one wins, and a deleted VM never leaves its retained disk owned,
 // to go with it.
 func TestTheDeleteAndTheOwnerReferenceRace(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)

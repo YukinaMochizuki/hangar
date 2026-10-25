@@ -51,6 +51,7 @@ func reportImage(t *testing.T, s *Server, system context.Context, name, diskSize
 }
 
 func TestImageAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	b := s.backend(registry.Image)
 	if _, err := b.Apply(system, image("ubuntu-24-04")); err != nil {
@@ -82,6 +83,7 @@ func TestImageAdmission(t *testing.T) {
 // TestOnlyAdministratorsWriteImages: the catalogue is the platform's;
 // everyone allowed to use Hangar reads it, and nodes report on it.
 func TestOnlyAdministratorsWriteImages(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	root := asRoot(t, s, system)
 	b := s.backend(registry.Image)
@@ -128,6 +130,7 @@ func TestOnlyAdministratorsWriteImages(t *testing.T) {
 }
 
 func TestADiskFromAnImage(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	disks := s.backend(registry.Disk)
 	if _, err := s.backend(registry.Image).Apply(system, image("ubuntu-24-04")); err != nil {

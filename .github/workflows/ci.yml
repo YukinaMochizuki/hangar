@@ -89,6 +89,16 @@ jobs:
       - run: make test
       - run: make test-root
 
+  # test/e2e under the race detector, which make test runs without it.
+  e2e-race:
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./.github/actions/setup
+      - run: make test-e2e-race
+
   # The CLI as built for Windows, whose files' DACLs, console and locks only
   # a Windows host can test. No -race: it needs cgo, which Windows lacks
   # here.

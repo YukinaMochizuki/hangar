@@ -50,6 +50,7 @@ func wantShapeRefused(t *testing.T, err error, want, what string) {
 }
 
 func TestCPURange(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct {
 		memory uint64
 		lo, hi uint64
@@ -75,6 +76,7 @@ func TestCPURange(t *testing.T) {
 // least 2Gi, whether or not the platform defines any size, and whatever
 // disk a size has.
 func TestAMachineKeepsToTheShapeRules(t *testing.T) {
+	t.Parallel()
 	for _, withSizes := range []bool{false, true} {
 		s, system, user := running(t)
 		if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -137,6 +139,7 @@ func TestAMachineKeepsToTheShapeRules(t *testing.T) {
 // TestASizeKeepsToTheShapeRules: a size is a preset of a shape a tenant may
 // have.
 func TestASizeKeepsToTheShapeRules(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	sizes := s.backend(registry.MachineSize)
 	for name, c := range map[string]struct {
@@ -160,6 +163,7 @@ func TestASizeKeepsToTheShapeRules(t *testing.T) {
 // it changes cpu, memory or disk, so a machine outside the rules, made
 // before them or by someone exempt, still starts, stops and takes labels.
 func TestAnUnchangedMachineKeepsItsResources(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
@@ -214,6 +218,7 @@ func TestAnUnchangedMachineKeepsItsResources(t *testing.T) {
 // a service token bound it, and the system. A tenant owner and a token of a
 // project owner are checked.
 func TestWhoMayDefineSizesIsNotChecked(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	invite(t, s, "root@example.com", "platform.root")
 	signUp(t, s, "root@example.com")

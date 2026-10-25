@@ -63,6 +63,7 @@ func project(t *testing.T, s *Server, user context.Context, name string) {
 }
 
 func TestPublicEndpointAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.PublicEndpoint)
 	if _, err := b.Apply(user, endpoint("site", "api", 8080, 0)); err != nil {
@@ -104,6 +105,7 @@ func TestPublicEndpointAdmission(t *testing.T) {
 // for good, against the other even after it is deleted, while the endpoint
 // itself may be made again.
 func TestAHostnameIsClaimedForGood(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	project(t, s, user, "b-web")
 	b := s.backend(registry.PublicEndpoint)
@@ -129,6 +131,7 @@ func TestAHostnameIsClaimedForGood(t *testing.T) {
 // TestAHostnameIsClaimedOnce: endpoints of one hostname in several projects
 // made at once, only one is.
 func TestAHostnameIsClaimedOnce(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	// Every endpoint below has the label "x-y-z-web".
 	cands := []*networkv1alpha1.PublicEndpoint{
@@ -161,6 +164,7 @@ func TestAHostnameIsClaimedOnce(t *testing.T) {
 // TestTheEdgeReadsOnlyWhatItNeeds: the Edge principal reads endpoints,
 // bindings, projects and users everywhere, and does nothing else.
 func TestTheEdgeReadsOnlyWhatItNeeds(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	project(t, s, user, "other")
 	for _, ep := range []*networkv1alpha1.PublicEndpoint{endpoint("site", "api", 80, private), endpointIn("other", "site", "api", 80, public)} {
@@ -205,6 +209,7 @@ func runningMachine(t *testing.T, s *Server, system context.Context, name string
 }
 
 func TestAnEndpointFollowsItsTarget(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	if _, err := s.backend(registry.PublicEndpoint).Apply(user, endpoint("site", "api", 8080, private)); err != nil {
@@ -238,6 +243,7 @@ func TestAnEndpointFollowsItsTarget(t *testing.T) {
 // TestAPublicEndpointNeedsNothingMore: a PUBLIC endpoint is ready once its
 // machine runs, as a PRIVATE one is, and goes at once when deleted.
 func TestAPublicEndpointNeedsNothingMore(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -258,6 +264,7 @@ func TestAPublicEndpointNeedsNothingMore(t *testing.T) {
 // had a Cloudflare Access application, with its finalizer and condition,
 // loses both at its next reconcile, and so is not held on delete.
 func TestAnEndpointLosesWhatAccessLeft(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.PublicEndpoint)
 	if _, err := b.Apply(user, endpoint("site", "api", 8080, public)); err != nil {
@@ -313,6 +320,7 @@ func TestAnEndpointLosesWhatAccessLeft(t *testing.T) {
 // endpoint the container owns, which follows the port and goes with it; a
 // name another endpoint holds is reported, and taken once it is free.
 func TestAContainersPublicPortsGetEndpoints(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	if _, err := s.backend(registry.PublicEndpoint).Apply(user, endpoint("api-admin", "other", 9000, public)); err != nil {
@@ -365,6 +373,7 @@ func TestAContainersPublicPortsGetEndpoints(t *testing.T) {
 }
 
 func TestPublicPortAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	for what, port := range map[string]*computev1alpha1.ContainerPort{
 		"a public UDP port":                 {Name: "dns", Port: 53, Protocol: computev1alpha1.Protocol_PROTOCOL_UDP, Public: true},
@@ -387,6 +396,7 @@ func TestPublicPortAdmission(t *testing.T) {
 // deleted, nor to a PUBLIC one. (No endpoint's label holds a dot, so a host
 // of more labels could not name one anyway; the check stands in case.)
 func TestEndpointLoginsVerdict(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.PublicEndpoint)
 	for _, ep := range []*networkv1alpha1.PublicEndpoint{endpoint("site", "api", 8080, private), endpoint("open", "api", 8080, public)} {

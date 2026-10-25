@@ -60,6 +60,7 @@ func (w *world) applyVMWith(name, userData string, keys ...string) {
 // written, and each guest only its own; a container's answers are as they
 // were. New user-data is served, and does not restart the VM.
 func TestAVirtualMachinesCloudInit(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
 	w.applyImage("noble", cloudSHA)

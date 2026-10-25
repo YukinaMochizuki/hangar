@@ -41,6 +41,7 @@ func nodeStopped(gen int64) *metav1.Condition {
 // container says Stopped only once its node has stopped the machine at the
 // spec that asks for it.
 func TestARunStateReachesTheMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	running := ctr("api")
@@ -128,6 +129,7 @@ func TestARunStateReachesTheMachine(t *testing.T) {
 // TestAContainerCreatedStoppedGetsAStoppedMachine: a container may be
 // created stopped, and an explicit RUNNING is the same as unset.
 func TestAContainerCreatedStoppedGetsAStoppedMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	applyCtr(t, s, user, withRunState(ctr("cold"), computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED))
 	waitMachine(t, s, system, "ct-cold", "made stopped", func(m *computev1alpha1.Machine) bool {
@@ -144,6 +146,7 @@ func TestAContainerCreatedStoppedGetsAStoppedMachine(t *testing.T) {
 }
 
 func TestAnUnknownRunStateIsRefused(t *testing.T) {
+	t.Parallel()
 	s, _, user := controlled(t)
 	_, err := s.backend(registry.Container).Apply(user, withRunState(ctr("odd"), computev1alpha1.ContainerRunState(7)))
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {

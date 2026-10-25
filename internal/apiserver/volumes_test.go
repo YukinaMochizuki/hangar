@@ -19,6 +19,7 @@ func vol(source, target string) *computev1alpha1.ContainerVolume {
 }
 
 func TestContainerVolumeAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Container)
 	nine := make([]*computev1alpha1.ContainerVolume, 9)
@@ -73,6 +74,7 @@ func TestContainerVolumeAdmission(t *testing.T) {
 }
 
 func TestOnlyListedDisksAreMounted(t *testing.T) {
+	t.Parallel()
 	spec := func(disks []string, volumes ...*computev1alpha1.ContainerBootVolume) *computev1alpha1.MachineSpec {
 		m := withDisks(machine("ct-a", ""), disks...).GetSpec()
 		m.Boot = &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{Image: "nginx", Volumes: volumes}}
@@ -114,6 +116,7 @@ func TestOnlyListedDisksAreMounted(t *testing.T) {
 }
 
 func TestADiskAttachmentFollowsTheMachineSpec(t *testing.T) {
+	t.Parallel()
 	owned := func(m *computev1alpha1.Machine, kind, name string) *computev1alpha1.Machine {
 		m.Metadata.OwnerReferences = []*metav1.OwnerReference{
 			{Kind: "Project", Name: "web"},
@@ -155,6 +158,7 @@ func TestADiskAttachmentFollowsTheMachineSpec(t *testing.T) {
 // is made on the container's node; one living on another node is refused,
 // saying why, since a machine never moves.
 func TestAPlacedContainerKeepsItsNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	nodeSized(t, s, system, "n2", 4096, 100)
@@ -199,6 +203,7 @@ func TestAPlacedContainerKeepsItsNode(t *testing.T) {
 // yet, or one another machine has, holds the container back and says so;
 // once the disk is there and free, the container runs with it.
 func TestAContainerWaitsForItsDisk(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	c := ctr("db")
@@ -240,6 +245,7 @@ func TestAContainerWaitsForItsDisk(t *testing.T) {
 // disks and its boot's mounts, and each disk says it is a volume of the
 // container, at its target, until the container lets it go.
 func TestAContainerMountsItsVolumes(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	for _, d := range []string{"pgdata", "logs"} {

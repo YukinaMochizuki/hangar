@@ -47,6 +47,7 @@ func logsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
 // container's. Owned by the container, the same machine leads on to its
 // node.
 func TestARecreatedContainerDoesNotReadTheOldMachinesLog(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Container).Apply(user, &computev1alpha1.Container{
 		Metadata: &metav1.ObjectMeta{Project: "web", Name: "api"},
@@ -83,6 +84,7 @@ func TestARecreatedContainerDoesNotReadTheOldMachinesLog(t *testing.T) {
 // TestGettingAContainerIsNotReadingItsLogs: the node agent may get any
 // container, but not read its logs.
 func TestGettingAContainerIsNotReadingItsLogs(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Container).Apply(user, &computev1alpha1.Container{
 		Metadata: &metav1.ObjectMeta{Project: "web", Name: "api"},
@@ -106,6 +108,7 @@ func vmLogsOf(t *testing.T, s *Server, p auth.Principal, name string) error {
 // TestGettingAVirtualMachineIsNotReadingItsLogs: the node agent may get any
 // virtual machine, but not read its serial console; its owner may.
 func TestGettingAVirtualMachineIsNotReadingItsLogs(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)

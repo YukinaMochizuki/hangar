@@ -58,6 +58,7 @@ func userContainer(t *testing.T, s *Server, user context.Context, name string) *
 // placement of its machine's node from when it is placed, follows the node's
 // description, and is all its user reads of the node.
 func TestAContainerReportsWhereItRuns(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	applyCtr(t, s, user, ctr("a"))
 	c := waitContainer(t, s, system, "a", "reported unplaced", func(c *computev1alpha1.Container) bool {
@@ -92,6 +93,7 @@ func TestAContainerReportsWhereItRuns(t *testing.T) {
 // TestAVirtualMachineReportsWhereItRuns: a VM's status carries its node's
 // placement as a container's does.
 func TestAVirtualMachineReportsWhereItRuns(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -123,6 +125,7 @@ func TestAVirtualMachineReportsWhereItRuns(t *testing.T) {
 // TestPlacementOf: only a machine its owner owns, on the node given, gives
 // the owner a placement, and a copy of it.
 func TestPlacementOf(t *testing.T) {
+	t.Parallel()
 	node := &computev1alpha1.Node{
 		Metadata: &metav1.ObjectMeta{Name: "n1"},
 		Status:   &computev1alpha1.NodeStatus{Ipv6Prefix: testPrefix, Placement: described},
@@ -160,6 +163,7 @@ func TestPlacementOf(t *testing.T) {
 // TestAStuckReportKeepsWhereItRuns: a container or VM whose change cannot be
 // applied still runs on its node, and still says so.
 func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -201,6 +205,7 @@ func TestAStuckReportKeepsWhereItRuns(t *testing.T) {
 // TestAHeartbeatWritesNoMachineOwner: a node reporting again with the same
 // placement leaves its containers and VMs as they are.
 func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeDescribed(t, s, "n1", described)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -243,6 +248,7 @@ func TestAHeartbeatWritesNoMachineOwner(t *testing.T) {
 // printable text, and a chassis is a label, since every tenant on the node
 // reads it.
 func TestANodesPlacementIsBounded(t *testing.T) {
+	t.Parallel()
 	s, _, _ := controlled(t, "n1")
 	ok := func(p *computev1alpha1.Placement) error {
 		_, err := s.backend(registry.Node).UpdateStatus(asNode(t.Context(), "n1"), resource.Key{Name: "n1"},

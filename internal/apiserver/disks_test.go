@@ -92,6 +92,7 @@ func nodeSized(t *testing.T, s *Server, system context.Context, node string, mem
 }
 
 func TestDiskAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Disk)
 	for _, tt := range []struct {
@@ -134,6 +135,7 @@ func TestDiskAdmission(t *testing.T) {
 }
 
 func TestOnlyTheDisksNodeWritesItsStatus(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	root := asRoot(t, s, system)
 	b := s.backend(registry.Disk)
@@ -163,6 +165,7 @@ func TestOnlyTheDisksNodeWritesItsStatus(t *testing.T) {
 }
 
 func TestADiskIsAttachedToOneMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	disks, machines := s.backend(registry.Disk), s.backend(registry.Machine)
 	for _, name := range []string{"data", "logs"} {
@@ -207,6 +210,7 @@ func TestADiskIsAttachedToOneMachine(t *testing.T) {
 
 // TestAttachingIsOneDecision: machines racing for one disk, only one gets it.
 func TestAttachingIsOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Disk).Apply(user, disk("data", "10Gi")); err != nil {
 		t.Fatal(err)
@@ -233,6 +237,7 @@ func TestAttachingIsOneDecision(t *testing.T) {
 }
 
 func TestADiskFollowsItsMachines(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 4096, 100)
 	if _, err := s.backend(registry.Disk).Apply(user, disk("data", "20Gi")); err != nil {
@@ -305,6 +310,7 @@ func TestADiskFollowsItsMachines(t *testing.T) {
 }
 
 func TestAMachineGoesWhereItsDisksAre(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "big", "small")
 	nodeSized(t, s, system, "big", 8192, 100)
 	nodeSized(t, s, system, "small", 1024, 100)
@@ -338,6 +344,7 @@ func TestAMachineGoesWhereItsDisksAre(t *testing.T) {
 }
 
 func TestDisksTakeRoomOnTheirNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	// 30Gi of disk: a bound 10Gi disk leaves 20, and the machine's own
 	// 10Gi root disk plus an unbound 15Gi disk do not fit in it.
@@ -388,6 +395,7 @@ func TestDisksTakeRoomOnTheirNode(t *testing.T) {
 }
 
 func TestDiskControllerCatchesUpOnStart(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Disk).Apply(user, disk("data", "10Gi")); err != nil {
 		t.Fatal(err)
@@ -410,6 +418,7 @@ func TestDiskControllerCatchesUpOnStart(t *testing.T) {
 // TestASettledDiskStaysQuiet: once a disk's status matches, nothing more is
 // written to it.
 func TestASettledDiskStaysQuiet(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSized(t, s, system, "n1", 4096, 100)
 	if _, err := s.backend(registry.Disk).Apply(user, disk("data", "10Gi")); err != nil {

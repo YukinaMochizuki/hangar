@@ -21,6 +21,7 @@ import (
 // the registry and the descriptors, so the generated schemas cannot drift
 // from the messages the API takes.
 func TestDiscoveryServesEveryKind(t *testing.T) {
+	t.Parallel()
 	s, _, _ := running(t)
 	d := newDiscovery(s)
 	// Anyone signed in may ask, though they were never invited.
@@ -133,6 +134,7 @@ func messageNamed(md protoreflect.MessageDescriptor, name protoreflect.FullName)
 // TestServedSchemaShapes pins what the schemas say of the forms protojson
 // writes, by fields that have them.
 func TestServedSchemaShapes(t *testing.T) {
+	t.Parallel()
 	s, _, _ := running(t)
 	d := newDiscovery(s)
 	ctx := auth.WithPrincipal(context.Background(), auth.Principal{Type: auth.User, ID: "alice@example.com"})
@@ -190,6 +192,7 @@ func TestServedSchemaShapes(t *testing.T) {
 }
 
 func TestLinkDocs(t *testing.T) {
+	t.Parallel()
 	const base = "https://github.com/YukinaMochizuki/hangar/blob/0123abc/"
 	for in, want := range map[string]string{
 		`"See docs/decisions/vm-boot.md. And (docs/runbook/testbed.md)."`: `"See ` + base + `docs/decisions/vm-boot.md. And (` + base + `docs/runbook/testbed.md)."`,
@@ -211,6 +214,7 @@ func TestLinkDocs(t *testing.T) {
 }
 
 func TestDocsRef(t *testing.T) {
+	t.Parallel()
 	sha1, sha256 := strings.Repeat("a1", 20), strings.Repeat("b2", 32)
 	for version, want := range map[string]string{
 		sha1:            sha1,
@@ -227,6 +231,7 @@ func TestDocsRef(t *testing.T) {
 }
 
 func TestFirstSentence(t *testing.T) {
+	t.Parallel()
 	for in, want := range map[string]string{
 		"Disk is a block device. More follows.":           "Disk is a block device.",
 		"Disk is a block device, e.g. a root disk. More.": "Disk is a block device, e.g. a root disk.",

@@ -19,6 +19,7 @@ import (
 // interface on each, in order, is named on both, and asks its first
 // network's resolver.
 func TestAContainerOnTwoNetworks(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	if _, err := w.root.Apply(context.Background(), registry.Network, &networkv1alpha1.Network{
 		Metadata: &metav1.ObjectMeta{Project: project, Name: "backend"},

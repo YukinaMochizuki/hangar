@@ -16,6 +16,7 @@ import (
 // loopback. What each machine is told is asked of the service directly,
 // from its address (askMetadata).
 func TestEachNetworkHasItsMetadataService(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

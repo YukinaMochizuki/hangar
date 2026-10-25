@@ -72,6 +72,7 @@ func (r *racedCreates) Create(ctx context.Context, key store.Key, data []byte) (
 // apiserver, as its container endpoint controller is: two callers' creates
 // are serialized by the quota lock, which the apiserver's own do not take.
 func TestASameHolderRaceKeepsTheHostname(t *testing.T) {
+	t.Parallel()
 	var raced *racedCreates
 	s, system, user := runningWith(t, func(c *Config) {
 		raced = &racedCreates{Store: c.Store, kind: registry.PublicEndpoint.Kind, arrived: make(chan struct{}), first: make(chan struct{})}
@@ -101,6 +102,7 @@ func TestASameHolderRaceKeepsTheHostname(t *testing.T) {
 // TestASameNameRaceKeepsTheName: two creators of one tenant at once; the
 // name's claim stays, as the generic never-reused path keeps it.
 func TestASameNameRaceKeepsTheName(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	errs := make([]error, 4)
 	var wg sync.WaitGroup
@@ -163,6 +165,7 @@ func (m *missedOnce) Create(ctx context.Context, key store.Key, data []byte) (in
 // one; his read misses hers, so his create finds it. He is refused as for
 // her binding, create-only or not, and never told that it exists.
 func TestARacedCreateIsAuthorizedAgainstTheObjectFound(t *testing.T) {
+	t.Parallel()
 	name := "member-" + usernameOf("alice@example.com")
 	var missed *missedOnce
 	s, _, _ := runningWith(t, func(c *Config) {

@@ -17,6 +17,7 @@ import (
 // person may delete its last owner binding, which goes with the tenant
 // anyway; before, they may not.
 func TestDeletingATenantFreesItsLastOwner(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	// No controller runs here to take a disk's finalizers off, so the disk
 	// keeps project web, and with it acme, being deleted.

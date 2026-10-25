@@ -57,6 +57,7 @@ func (w *world) hostIPv6(machineUID string) netip.Addr {
 // automatic address of its own. A container whose guest cannot be told
 // starts again with it, once.
 func TestAnAddressMovesAndNothingRestarts(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
@@ -222,6 +223,7 @@ func (w *world) watchHolders(addr netip.Addr, machines ...string) (stop func()) 
 // waiting for the image; at no moment do both hold it on the host, and the
 // machine it moves to never fails to take it.
 func TestNoTwoInterfacesHoldAnAddress(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.host.AddImage("redis", "sha256:redis-1", nginx)
@@ -264,6 +266,7 @@ func TestNoTwoInterfacesHoldAnAddress(t *testing.T) {
 // Address the guest booted with moved away and, while the agent was down,
 // back, to what its boot disk carries.
 func TestAGuestIsToldItsAddressAfterTheAgentRestarts(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
@@ -301,6 +304,7 @@ func TestAGuestIsToldItsAddressAfterTheAgentRestarts(t *testing.T) {
 // again, by its restart policy, holds what its boot disk gave it when its VM
 // started, not the Address that moved to it since, until it is told again.
 func TestAGuestThatRebootsIsToldItsAddressAgain(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()
@@ -327,6 +331,7 @@ func TestAGuestThatRebootsIsToldItsAddressAgain(t *testing.T) {
 // counted its interfaces' IPv6 addresses, runs on after the agent is
 // upgraded, and its Address moves as any other's.
 func TestAnUpgradeRestartsNoContainer(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.ipv6Prefix = hostPrefix
 	w.startAgent()

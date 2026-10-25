@@ -345,6 +345,7 @@ func (n *scriptedNode) waitEnded(t *testing.T) error {
 }
 
 func TestAnExecRelaysAProcess(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -429,6 +430,7 @@ func wantFields(t *testing.T, got, want map[string]any) {
 // before its process starts, is logged with who asked, for what, and the
 // code it was refused with.
 func TestEveryRefusedExecIsLogged(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1; c.ExecStart = 200 * time.Millisecond })
 	w.connectNode(t)
 	_, _ = w.dial(t, "carol@example.com", "api")
@@ -473,6 +475,7 @@ func TestEveryRefusedExecIsLogged(t *testing.T) {
 }
 
 func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -522,6 +525,7 @@ func TestAnExecCarriesStdinResizesAndSignals(t *testing.T) {
 // learns nothing of the container, whether it exists included, and no
 // node is called for them.
 func TestAnExecIsAuthorizedBeforeAnythingIsTold(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	for _, tc := range []struct {
@@ -554,6 +558,7 @@ func TestAnExecIsAuthorizedBeforeAnythingIsTold(t *testing.T) {
 }
 
 func TestAnExecIsRefusedBeforeTheUpgrade(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1 })
 	// No node yet.
 	_, err := w.dial(t, "alice@example.com", "api")
@@ -597,6 +602,7 @@ func TestAnExecIsRefusedBeforeTheUpgrade(t *testing.T) {
 }
 
 func TestAnExecFailsAfterTheUpgradeWithItsCode(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecStart = 200 * time.Millisecond })
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -628,6 +634,7 @@ func TestAnExecFailsAfterTheUpgradeWithItsCode(t *testing.T) {
 // process, ends with the client, whether it closes, drops, or stops
 // answering pings.
 func TestAClientGoingAwayEndsTheNodesCall(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 50*time.Millisecond, 100*time.Millisecond })
 	w.connectNode(t)
 	for _, end := range []func(c *websocket.Conn){
@@ -651,6 +658,7 @@ func TestAClientGoingAwayEndsTheNodesCall(t *testing.T) {
 
 // TestAClientThatAnswersPingsStaysConnected: pings keep an idle exec up.
 func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 20*time.Millisecond, 200*time.Millisecond })
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -680,6 +688,7 @@ func TestAClientThatAnswersPingsStaysConnected(t *testing.T) {
 // is not kept by the apiserver; it holds up the node's call, which stops
 // sending.
 func TestAClientThatStopsReadingHoldsUpItsNode(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -705,7 +714,8 @@ func TestAClientThatStopsReadingHoldsUpItsNode(t *testing.T) {
 }
 
 // TestExecsLeaveNothingRunning: execs that end every way leave no
-// goroutine in the apiserver.
+// goroutine in the apiserver. Serial: it counts the whole process's
+// goroutines, which parallel tests would move.
 func TestExecsLeaveNothingRunning(t *testing.T) {
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
@@ -773,6 +783,7 @@ func (w *execWorld) liveFor(t *testing.T, c *websocket.Conn, d time.Duration, re
 // does not read is held up, not taken to be gone, though the apiserver's
 // reader, held up too, takes none of its pongs.
 func TestAClientWhoseStdinIsBackedUpStays(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -804,6 +815,7 @@ func TestAClientWhoseStdinIsBackedUpStays(t *testing.T) {
 // comes is held up, not taken to be gone, though its pongs wait behind the
 // output.
 func TestAClientReadingSlowlyStays(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -829,6 +841,7 @@ func TestAClientReadingSlowlyStays(t *testing.T) {
 // TestAClientThatStopsReadingButPingsStays: a client whose reader is held
 // up, as by a terminal that is not read, still pings, and so stays.
 func TestAClientThatStopsReadingButPingsStays(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, func(c *Config) { c.ExecPing, c.ExecPong = 100*time.Millisecond, 300*time.Millisecond })
 	w.connectNode(t)
 	c, err := w.dial(t, "alice@example.com", "api")
@@ -862,6 +875,7 @@ func TestAClientThatStopsReadingButPingsStays(t *testing.T) {
 // exec with the cookies it holds for this one; a same-origin page and a
 // client sending no Origin can.
 func TestACrossOriginExecIsRefused(t *testing.T) {
+	t.Parallel()
 	w := newExecWorld(t, nil)
 	w.connectNode(t)
 	for _, tc := range []struct {

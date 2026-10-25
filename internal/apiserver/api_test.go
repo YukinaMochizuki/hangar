@@ -27,6 +27,7 @@ const (
 )
 
 func TestLifecycle(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	a := e.as(alice)
@@ -88,6 +89,7 @@ func TestLifecycle(t *testing.T) {
 }
 
 func TestAuthorization(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -167,6 +169,7 @@ func TestAuthorization(t *testing.T) {
 }
 
 func TestApplyRules(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -222,6 +225,7 @@ func TestApplyRules(t *testing.T) {
 }
 
 func TestWatch(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t, func(c *apiserver.Config) { c.BookmarkInterval = 30 * time.Second })
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -291,6 +295,7 @@ func TestWatch(t *testing.T) {
 }
 
 func TestWatchReportsItsDeadline(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	e.setupTenant(alice, "acme", "web")
 	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
@@ -305,6 +310,7 @@ func TestWatchReportsItsDeadline(t *testing.T) {
 }
 
 func TestWatchFromCompactedRevision(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -328,6 +334,7 @@ func TestWatchFromCompactedRevision(t *testing.T) {
 }
 
 func TestTenantDeletionCollectsItsBindings(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	must[tenancyv1alpha1.ApplyTenantResponse](t)(e.as(alice).tenants.ApplyTenant(ctx, connect.NewRequest(tenant("acme"))))
@@ -352,6 +359,7 @@ func TestTenantDeletionCollectsItsBindings(t *testing.T) {
 }
 
 func TestBootstrapIsOnce(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	// A second server over the same store must not add another root.
@@ -381,6 +389,7 @@ func TestBootstrapIsOnce(t *testing.T) {
 // (here, registering a node) without --bootstrap-admin must not use up the
 // one bootstrap.
 func TestBootstrapAfterAStartWithoutAdmin(t *testing.T) {
+	t.Parallel()
 	ctx := t.Context()
 	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "hangar.db"))
 	if err != nil {

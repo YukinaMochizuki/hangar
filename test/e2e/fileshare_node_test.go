@@ -128,6 +128,7 @@ func echoBack(c net.Conn) {
 // the squash changed, changes the export the server holds, never
 // restarting it; a server booting again by its policy is told it again.
 func TestAShareIsServed(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	ctx := context.Background()
 	anon := uint32(1000)
@@ -248,6 +249,7 @@ func dial(w *world, network string, addr netip.AddrPort) bool {
 // TestARefusedExportIsReported: a server refusing its export is reported
 // not ready, saying why, and its share Pending, until it takes it.
 func TestARefusedExportIsReported(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -275,6 +277,7 @@ func TestARefusedExportIsReported(t *testing.T) {
 // is in it, and a client removed while it ran, its guest answering
 // nothing, is not.
 func TestARestartedServerServesItsCurrentExport(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -335,6 +338,7 @@ func TestARestartedServerServesItsCurrentExport(t *testing.T) {
 // written at its start, is written again only when its export changes, and
 // then before the server is told; a settled server's, never.
 func TestABootDiskIsWrittenBeforeItsServerIsTold(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -365,6 +369,7 @@ func TestABootDiskIsWrittenBeforeItsServerIsTold(t *testing.T) {
 // be given its export serves it all the same, told, but is reported not
 // ready, a restart losing it, and tried again until the disk takes it.
 func TestABootDiskRefusingItsExportIsReported(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -390,6 +395,7 @@ func TestABootDiskRefusingItsExportIsReported(t *testing.T) {
 // TestGrowingAShareRestartsItsServer: a share grown grows its volume, and
 // its server starts again on it, as a grown Disk's machine does.
 func TestGrowingAShareRestartsItsServer(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -411,6 +417,7 @@ func TestGrowingAShareRestartsItsServer(t *testing.T) {
 // bound to the node goes at the next sweep; a share's that is stays, its
 // server running or not.
 func TestAShareVolumeNoShareAccountsForIsSwept(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	// The server never boots: nothing on the host holds the volume.
 	w.host.FailBoot("", errors.New("no room for the VM"))
@@ -473,6 +480,7 @@ func (a addressless) RoundTrip(req *http.Request) (*http.Response, error) {
 // has no address on its network yet, as its node reads the share, is
 // refused and never booted; once it has one, it boots mounting it.
 func TestAContainerWaitsForItsSharesAddress(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	var strip atomic.Bool
 	strip.Store(true)
@@ -500,6 +508,7 @@ func TestAContainerWaitsForItsSharesAddress(t *testing.T) {
 // is not the server of, placed on the share's node, is refused, and gets
 // neither the share's volume nor a server's interface.
 func TestAMachineNotItsSharesServerGetsNothing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -534,6 +543,7 @@ func TestAMachineNotItsSharesServerGetsNothing(t *testing.T) {
 // mounts from, as its node reads the share, has its VM stopped and is
 // refused: it never runs on without its share mounted.
 func TestARunningContainerStopsWhenItsShareCannotBeMounted(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	var strip atomic.Bool
 	w.wrap = func(next http.RoundTripper) http.RoundTripper { return addressless{next: next, strip: &strip} }
@@ -570,6 +580,7 @@ func TestARunningContainerStopsWhenItsShareCannotBeMounted(t *testing.T) {
 // it never restarts; once the server takes an export holding it, it boots
 // once.
 func TestAContainerBootsOnlyOnceItsShareServesIt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.FailExport("", errors.New("the server is not ready"))
 	w.applyShare("data", "1Gi")
@@ -606,6 +617,7 @@ func TestAContainerBootsOnlyOnceItsShareServesIt(t *testing.T) {
 // container: not one without it, nor one told in an earlier boot, which
 // the server lost booting again.
 func TestAContainerWaitsForItsServersCurrentExport(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.waitSharePhase("data", storagev1alpha1.FileSharePhase_FILE_SHARE_PHASE_AVAILABLE)
@@ -658,6 +670,7 @@ func TestAContainerWaitsForItsServersCurrentExport(t *testing.T) {
 // failed though it never restarts; once the firewall is written, it boots
 // once, reaching its share.
 func TestAContainerWaitsForItsSharesFirewall(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.host.LimitFirewall(1)
 	w.applyShare("data", "1Gi")
@@ -705,6 +718,7 @@ func TestAContainerWaitsForItsSharesFirewall(t *testing.T) {
 // on the VM it has, which neither stops nor boots again; once the server
 // serves it, it starts again on its new spec.
 func TestAChangedContainerWaitsOnItsOldVM(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
 	w.apply(sharing("web", "data", false))

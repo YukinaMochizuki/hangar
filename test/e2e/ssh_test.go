@@ -135,6 +135,7 @@ func banner(who string) func(net.Conn) {
 // without compute.machines.ssh is refused before anything is
 // dialled, and a VM that is not running is not reached.
 func TestTheSSHTunnelReachesOnlyItsVM(t *testing.T) {
+	t.Parallel()
 	w, _ := sshWorld(t)
 	if _, err := w.root.Apply(context.Background(), registry.Network, &networkv1alpha1.Network{
 		Metadata: &metav1.ObjectMeta{Project: project, Name: "backend"},
@@ -277,6 +278,7 @@ func hangarBinary(t *testing.T) string {
 // another, not root; it records the VM's host key, refuses a changed one,
 // saying how to forget it, and takes it again once forgotten.
 func TestHangarSSH(t *testing.T) {
+	t.Parallel()
 	if _, err := exec.LookPath("ssh"); err != nil {
 		t.Skip("no ssh on PATH")
 	}

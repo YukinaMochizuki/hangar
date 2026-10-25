@@ -122,6 +122,7 @@ func newPermEnv(t *testing.T, opts ...envOption) permEnv {
 // grants and their inheritance, with nothing at a scope the caller cannot
 // see, alike whether it exists.
 func TestTestPermissionsByRole(t *testing.T) {
+	t.Parallel()
 	e := newPermEnv(t)
 	var (
 		rootAll   = []string{cget, capply, rbapply, exec, logs, ssh, access, pdelete, tapply, tcreate, iget, iapply, msget, msapply, msdel, stapply, monread, cdapply}
@@ -183,6 +184,7 @@ func TestTestPermissionsByRole(t *testing.T) {
 // cannot see, where TestPermissions answers nothing, so as not to tell which
 // tenants exist, though the call, checked at the platform, passes.
 func TestTestPermissionsAgreesWithCalls(t *testing.T) {
+	t.Parallel()
 	e := newPermEnv(t)
 	ctx := t.Context()
 	e.addMember("probe@example.com")
@@ -297,6 +299,7 @@ func TestTestPermissionsAgreesWithCalls(t *testing.T) {
 // refused, duplicates are answered once in the order first asked, and only
 // someone who may use Hangar may ask. Asking writes nothing.
 func TestTestPermissionsChecksItsRequest(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")

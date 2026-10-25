@@ -261,6 +261,7 @@ func (w *oidcWorld) adminInvites(emails ...string) headers {
 // authenticates the console's own requests, as the verified email in lower
 // case, and nothing else; signing out ends it.
 func TestBrowserSignIn(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	c := w.browser()
 	w.signInAdmin(w.browser(), "alice@example.com")
@@ -326,6 +327,7 @@ func TestBrowserSignIn(t *testing.T) {
 // TestSignInRefusals: what the callback refuses, and that a refusal leaves
 // no session behind.
 func TestSignInRefusals(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com", "kate@example.com")
 
@@ -451,6 +453,7 @@ func (w *oidcWorld) cliSignIn(email string) (url.Values, string, *loopback) {
 // gets access and refresh tokens; refresh rotates them, and replaying a
 // spent refresh token revokes the login.
 func TestCLISignIn(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -526,6 +529,7 @@ func TestCLISignIn(t *testing.T) {
 // redirect; the CLI's redirect must be a loopback one; and a refused
 // sign-in tells the loopback why.
 func TestCLISignInRefusals(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -560,6 +564,7 @@ func TestCLISignInRefusals(t *testing.T) {
 // TestDeviceSignIn: the device flow, approved and denied, from a browser
 // signed in to the console.
 func TestDeviceSignIn(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -653,6 +658,7 @@ func TestDeviceSignIn(t *testing.T) {
 // TestRevokeSessions: a person revokes their own logins; only an
 // administrator revokes someone else's.
 func TestRevokeSessions(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	alice := w.adminInvites("bob@example.com", "carol@example.com")
 	ctx := t.Context()
@@ -707,6 +713,7 @@ func (w *oidcWorld) uninvite(admin headers, i int) {
 // browser gets no CLI tokens from a loopback code or a device login, and
 // cannot approve a device login.
 func TestAdmissionAtEveryIssue(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	alice := w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -741,6 +748,7 @@ func TestAdmissionAtEveryIssue(t *testing.T) {
 // are on the public listener alone; the admin socket has RevokeSessions and
 // nothing else of them, and the node and edge sockets have none.
 func TestSignInOnlyOnThePublicListener(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	status := func(h http.Handler, method, path string) int {
 		var body io.Reader
@@ -784,6 +792,7 @@ func TestSignInOnlyOnThePublicListener(t *testing.T) {
 // that are kept, device logins and unexchanged CLI codes, are capped each on
 // its own, so a flood of one blocks neither the other nor sign-in itself.
 func TestAnonymousSignInsWriteNothing(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorldWith(t, 3)
 	alice := w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -842,6 +851,7 @@ func TestAnonymousSignInsWriteNothing(t *testing.T) {
 // shared cap; other sources still start theirs, and a login that ends
 // frees its source's place.
 func TestDeviceLoginsCappedPerSource(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	ctx := t.Context()
 	start := func(peer string) (*iamv1alpha1.StartDeviceLoginResponse, error) {
@@ -920,6 +930,7 @@ func TestDeviceLoginsCappedPerSource(t *testing.T) {
 // it, so one machine cannot block device login for the others; any other
 // /64 is still one source.
 func TestDeviceLoginsOnTheHostEachCount(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorldConfig(t, 0, func(c *apiserver.Config) { c.Nodes = []string{"n1"} })
 	ctx := t.Context()
 	w.nodeReportsPrefix("2001:db8:0:1::/64")
@@ -984,6 +995,7 @@ func (s *failingSwaps) SwapAuthRequest(ctx context.Context, key string, old, dat
 // after its row was kept, frees its source's place and its place under the
 // shared cap, here no larger than the source's.
 func TestFailedDeviceLoginsHoldNoPlace(t *testing.T) {
+	t.Parallel()
 	fs := &failingSwaps{}
 	w := newOIDCWorldCreds(t, login.MaxDeviceLoginsPerSource, nil, func(c store.Credentials) store.Credentials {
 		fs.Credentials = c
@@ -1009,6 +1021,7 @@ func TestFailedDeviceLoginsHoldNoPlace(t *testing.T) {
 // TestDeviceLoginsCappedPerSourceAtOnce: of many device logins one source
 // starts at once, exactly its cap are kept.
 func TestDeviceLoginsCappedPerSourceAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	anon := w.sessions(headers{testPeer: "192.0.2.1"})
 	const n = 40
@@ -1033,6 +1046,7 @@ func TestDeviceLoginsCappedPerSourceAtOnce(t *testing.T) {
 // TestDeviceCodeGuessesAreLimited: one browser session may try only so many
 // device codes a minute.
 func TestDeviceCodeGuessesAreLimited(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	c := w.browser()
 	w.signInAdmin(c, "alice@example.com")
@@ -1052,6 +1066,7 @@ func TestDeviceCodeGuessesAreLimited(t *testing.T) {
 // cookie authenticates is refused from a foreign origin, before anything
 // about the machine is looked at.
 func TestCookieWebSocketNeedsTheOrigin(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	cookie := w.signInAdmin(w.browser(), "alice@example.com")
 	for _, action := range []string{"exec", "ssh"} {
@@ -1083,6 +1098,7 @@ func TestCookieWebSocketNeedsTheOrigin(t *testing.T) {
 // device login waiting for its poll or a CLI code not yet exchanged, ends
 // with its person's logins: what it would claim afterwards is refused.
 func TestRevokeEndsApprovedLogins(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	alice := w.adminInvites("bob@example.com")
 	ctx := t.Context()
@@ -1129,6 +1145,7 @@ func TestRevokeEndsApprovedLogins(t *testing.T) {
 // TestAdminSocketRevokes: root on the host, through the admin socket,
 // revokes someone's logins.
 func TestAdminSocketRevokes(t *testing.T) {
+	t.Parallel()
 	w := newOIDCWorld(t)
 	w.adminInvites("bob@example.com")
 	ctx := t.Context()

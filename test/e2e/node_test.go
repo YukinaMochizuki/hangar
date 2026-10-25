@@ -374,6 +374,7 @@ func (w *world) waitHostEmpty() {
 // TestAContainerRuns follows a container from apply to a running VM and back
 // to an empty host.
 func TestAContainerRuns(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("api", "nginx")
 	c.Spec.Env = []*computev1alpha1.EnvVar{{Name: "PATH", Value: "/bin"}, {Name: "MODE", Value: "prod"}}
@@ -441,6 +442,7 @@ func TestAContainerRuns(t *testing.T) {
 // else restarts the VM on the disk it has, and a tag moving upstream
 // changes nothing.
 func TestChangesReachTheHost(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")
@@ -508,6 +510,7 @@ func TestChangesReachTheHost(t *testing.T) {
 // TestFailuresAreReportedAndOutlived: each way the host can fail shows on
 // the container, with the host's own words, until it clears.
 func TestFailuresAreReportedAndOutlived(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 
 	w.host.FailPull("nginx", errors.New("registry unreachable"))
@@ -546,6 +549,7 @@ func TestFailuresAreReportedAndOutlived(t *testing.T) {
 // TestAnExitedContainerSaysSo: a container whose restart policy keeps it
 // down after its process exits reports how it ended.
 func TestAnExitedContainerSaysSo(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	c := container("job", "nginx")
 	c.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
@@ -574,6 +578,7 @@ func TestAnExitedContainerSaysSo(t *testing.T) {
 // down is released when it returns, and whatever the host holds that no
 // machine accounts for is removed, but the images kept for their next use.
 func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.apply(container("web", "nginx"))
@@ -615,6 +620,7 @@ func TestTheNodePicksUpWhereItLeftOff(t *testing.T) {
 // TestLostNetworkingIsRebuilt: networking removed behind the agent's back,
 // as networkd can, comes back.
 func TestLostNetworkingIsRebuilt(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

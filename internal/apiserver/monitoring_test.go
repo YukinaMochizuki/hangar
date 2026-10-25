@@ -187,6 +187,7 @@ func callMonitoring(t *testing.T, c clients) map[string]error {
 // node agent and someone never invited are refused before anything is
 // asked of Prometheus, Alertmanager or the store.
 func TestMonitoringNeedsItsPermission(t *testing.T) {
+	t.Parallel()
 	prom, am := newFakeProm(t), newFakeAlertmanager(t)
 	e := newPermEnv(t, withMonitoring(prom.URL, am.URL))
 	refused := map[string]clients{
@@ -228,6 +229,7 @@ func TestMonitoringNeedsItsPermission(t *testing.T) {
 // answers every Node while no Prometheus is configured, and names nothing
 // but the Node.
 func TestNodeUsageNeedsNoPrometheus(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	res, err := e.as(root).monitoring.ListNodeUsage(t.Context(), connect.NewRequest(&mon.ListNodeUsageRequest{}))
 	if err != nil {
@@ -245,6 +247,7 @@ func TestNodeUsageNeedsNoPrometheus(t *testing.T) {
 // apiserver reads fails with Internal. A caller without the permission is
 // refused whatever the configuration.
 func TestMonitoringUnavailable(t *testing.T) {
+	t.Parallel()
 	gone := httptest.NewServer(http.NotFoundHandler())
 	gone.Close()
 	failing, failingAM := newFakeProm(t), newFakeAlertmanager(t)
@@ -427,6 +430,7 @@ var platformLayers = []*mon.LayerState{
 // and nothing of a tenant's is in them, though the store holds a tenant and
 // every series Prometheus answers carries labels naming one.
 func TestMonitoringOverview(t *testing.T) {
+	t.Parallel()
 	prom := newFakeProm(t)
 	platformAnswers(prom)
 	nodeAnswers(prom, testNode, true, false)
@@ -454,6 +458,7 @@ func TestMonitoringOverview(t *testing.T) {
 // answered for though the apiserver does not accept it, and one it accepts
 // with no series is answered as no data.
 func TestMonitoringOverviewOfTwoNodes(t *testing.T) {
+	t.Parallel()
 	prom := newFakeProm(t)
 	platformAnswers(prom)
 	nodeAnswers(prom, testNode, true, false)
@@ -491,6 +496,7 @@ func noDataNode(node string) []*mon.LayerState {
 // shown as such, never as healthy, for the platform and for each node the
 // apiserver accepts.
 func TestMonitoringOverviewWithoutData(t *testing.T) {
+	t.Parallel()
 	prom := newFakeProm(t)
 	e := newEnv(t, withMonitoring(prom.URL, ""))
 	got := must[mon.GetOverviewResponse](t)(e.as(root).monitoring.GetOverview(t.Context(), connect.NewRequest(&mon.GetOverviewRequest{})))
@@ -512,6 +518,7 @@ func TestMonitoringOverviewWithoutData(t *testing.T) {
 // of that node alone; a step with no value has no point; capacity and the
 // alert threshold come with the series that have them.
 func TestMonitoringSeries(t *testing.T) {
+	t.Parallel()
 	prom := newFakeProm(t)
 	e := newEnv(t, withMonitoring(prom.URL, ""), func(c *apiserver.Config) { c.Nodes = append(c.Nodes, "n2") })
 	for _, n := range []string{testNode, "n2"} {
@@ -617,6 +624,7 @@ func TestMonitoringSeries(t *testing.T) {
 // silenced or inhibited and Watchdog, most severe and then oldest first,
 // with their name, severity, summary and start and nothing else of theirs.
 func TestMonitoringAlerts(t *testing.T) {
+	t.Parallel()
 	am := newFakeAlertmanager(t)
 	e := newEnv(t, withMonitoring("", am.URL))
 	now := e.clock.Now().UTC()

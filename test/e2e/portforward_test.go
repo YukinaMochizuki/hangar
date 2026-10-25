@@ -73,6 +73,7 @@ func (w *world) ipv4Of(ctr string) netip.Addr {
 // another, and closes once deleted, which then lets the PortForward go; a
 // set ensured again as it is is not written again.
 func TestPortForwardsReachTheHost(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.sharedIPv4 = sharedIPv4
 	w.startAgent()
@@ -128,6 +129,7 @@ func TestPortForwardsReachTheHost(t *testing.T) {
 // address reports none, its forwards wait for one, and one deleted still
 // goes.
 func TestWithoutASharedAddressNothingIsForwarded(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

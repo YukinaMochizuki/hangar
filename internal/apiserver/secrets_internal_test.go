@@ -106,6 +106,7 @@ func noValues(t *testing.T, what string, msgs ...proto.Message) {
 // holds a secret's value, nor its sealed form; status says what can be
 // said without them.
 func TestSecretValuesAreNeverAnswered(t *testing.T) {
+	t.Parallel()
 	log := &lockedBuffer{}
 	s, system, user := runningWith(t, withSecrets(keyring(t, secrets.NewKEK("k1")), log))
 	b := s.backend(registry.Secret)
@@ -221,6 +222,7 @@ func secretMeta(m proto.Message) *metav1.ObjectMeta {
 // TestSecretDataAtRestIsCiphertext: the database's files, its history
 // included, hold no value of a secret, nor its Docker config at all.
 func TestSecretDataAtRestIsCiphertext(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	s, _, user := runningAt(t, filepath.Join(dir, "hangar.db"), withSecrets(keyring(t, secrets.NewKEK("k1")), nil))
 	b := s.backend(registry.Secret)
@@ -267,6 +269,7 @@ func TestSecretDataAtRestIsCiphertext(t *testing.T) {
 // TestSecretAppliesAreChecked: an apply carries the data, every time, never
 // the sealed form, and holds to its type.
 func TestSecretAppliesAreChecked(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, withSecrets(keyring(t, secrets.NewKEK("k1")), nil))
 	b := s.backend(registry.Secret)
 	if _, err := b.Apply(user, registrySecret("ghcr", dockerConfig("ghcr.io", "me", "p"))); err != nil {
@@ -299,6 +302,7 @@ func TestSecretAppliesAreChecked(t *testing.T) {
 // TestSecretsNeedAKEK: without a key-encryption key, writing a secret fails
 // and says why; with none stored, the apiserver starts all the same.
 func TestSecretsNeedAKEK(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, func(*Config) {})
 	if err := s.PrepareSecrets(t.Context()); err != nil {
 		t.Errorf("an empty store without a KEK: %v", err)
@@ -313,6 +317,7 @@ func TestSecretsNeedAKEK(t *testing.T) {
 // start without the KEK they were sealed under, or with a wrong one, and
 // seals them again under a new one given the old.
 func TestTheKEKIsCheckedAtStart(t *testing.T) {
+	t.Parallel()
 	k1 := secrets.NewKEK("k1")
 	s, system, user := runningWith(t, withSecrets(keyring(t, k1), nil))
 	if _, err := s.backend(registry.Secret).Apply(user, registrySecret("ghcr", dockerConfig("ghcr.io", "me", secretCanary))); err != nil {
@@ -359,6 +364,7 @@ func TestTheKEKIsCheckedAtStart(t *testing.T) {
 // TestNodesCannotReadSecrets: a node agent, which reads every other kind,
 // gets nothing of a secret, not even its metadata.
 func TestNodesCannotReadSecrets(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, withSecrets(keyring(t, secrets.NewKEK("k1")), nil))
 	b := s.backend(registry.Secret)
 	if _, err := b.Apply(user, registrySecret("ghcr", dockerConfig("ghcr.io", "me", "p"))); err != nil {
@@ -394,6 +400,7 @@ func pullMachine(name, node, image string, secretNames ...string) *computev1alph
 // names, the first that holds one for the image's registry, and only for
 // that registry. No one else gets one.
 func TestImagePullCredentials(t *testing.T) {
+	t.Parallel()
 	log := &lockedBuffer{}
 	s, system, user := runningWith(t, func(c *Config) {
 		withSecrets(keyring(t, secrets.NewKEK("k1")), log)(c)
@@ -479,6 +486,7 @@ func TestImagePullCredentials(t *testing.T) {
 // TestPullSecretsAreMirrored: a container's image pull secrets reach its
 // machine, and its names are checked.
 func TestPullSecretsAreMirrored(t *testing.T) {
+	t.Parallel()
 	want := []string{"a", "b"}
 	spec, err := machineSpec(&computev1alpha1.ContainerSpec{Image: "nginx", ImagePullSecrets: want})
 	if err != nil {

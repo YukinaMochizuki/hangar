@@ -90,6 +90,7 @@ func addrOf(m *computev1alpha1.Machine) string {
 // machines on it, and only those, forwards everything else, follows its
 // namespace being made again, and goes with its network.
 func TestEachNetworkHasItsResolver(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.dnsUpstreams = []netip.AddrPort{upstreamDNS(t)}
 	w.startAgent()

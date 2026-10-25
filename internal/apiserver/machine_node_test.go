@@ -57,6 +57,7 @@ func wantCodeOf(t *testing.T, err error, code connect.Code, what string) {
 }
 
 func TestOnlyTheSystemWritesMachines(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	root := asRoot(t, s, system)
 	b := s.backend(registry.Machine)
@@ -92,6 +93,7 @@ func TestOnlyTheSystemWritesMachines(t *testing.T) {
 }
 
 func TestOnlyTheMachinesNodeWritesItsStatus(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Machine)
 	key := resource.Key{Project: "web", Name: "ct-api"}
@@ -120,6 +122,7 @@ func TestOnlyTheMachinesNodeWritesItsStatus(t *testing.T) {
 }
 
 func TestMachineAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	b := s.backend(registry.Machine)
 
@@ -172,6 +175,7 @@ func waitNode(t *testing.T, s *Server, name string) {
 }
 
 func TestNodesAreRegisteredAndKeepTheirSpec(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1"} })
 	root := asRoot(t, s, system)
 	waitNode(t, s, "n1")
@@ -264,6 +268,7 @@ func checkNodesNow(t *testing.T, s *Server, system context.Context) {
 }
 
 func TestHeartbeatsCountFromTheMonitorStart(t *testing.T) {
+	t.Parallel()
 	t0 := time.Unix(1000, 0)
 	h := heartbeats{start: t0}
 	h.record("old", t0.Add(-time.Hour))
@@ -280,6 +285,7 @@ func TestHeartbeatsCountFromTheMonitorStart(t *testing.T) {
 }
 
 func TestNodeMonitorMarksSilentNodes(t *testing.T) {
+	t.Parallel()
 	s, system, clock := monitored(t, "talks", "silent")
 	unknown := metav1.ConditionStatus_CONDITION_STATUS_UNKNOWN
 
@@ -323,6 +329,7 @@ func TestNodeMonitorMarksSilentNodes(t *testing.T) {
 // TestNodeMonitorUsesItsOwnClock: an agent whose clock is far off is judged
 // by when its reports arrive, not by the time it writes in them.
 func TestNodeMonitorUsesItsOwnClock(t *testing.T) {
+	t.Parallel()
 	s, system, clock := monitored(t, "behind", "ahead")
 	for i := range 3 {
 		report(t, s, system, "behind", clock.Now().Add(-time.Hour))
@@ -344,6 +351,7 @@ func TestNodeMonitorUsesItsOwnClock(t *testing.T) {
 // apiserver started does not count against the node; it gets a full grace
 // period from the monitor's start to report again.
 func TestNodeMonitorGivesGraceAfterARestart(t *testing.T) {
+	t.Parallel()
 	s, system, clock := monitored(t, "n1")
 	report(t, s, system, "n1", clock.Now())
 
@@ -376,6 +384,7 @@ func TestNodeMonitorGivesGraceAfterARestart(t *testing.T) {
 // TestNodeMonitorNeverOverwritesANewerReport: the monitor decides on the node
 // as it read it; a report that lands in between wins, capacity and all.
 func TestNodeMonitorNeverOverwritesANewerReport(t *testing.T) {
+	t.Parallel()
 	s, system, clock := monitored(t, "n1")
 	stale, err := s.store.Get(system, store.Key{Kind: registry.Node.Kind, Name: "n1"})
 	if err != nil {

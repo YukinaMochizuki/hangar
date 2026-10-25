@@ -14,6 +14,7 @@ func createContainer(c *computev1alpha1.Container) *connect.Request[computev1alp
 }
 
 func TestCreateOnlyApplyNeverReplaces(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -50,6 +51,7 @@ func TestCreateOnlyApplyNeverReplaces(t *testing.T) {
 // TestARacedCreateIsAuthorizedAgainstTheObjectFound for an object made since
 // the read).
 func TestCreateOnlyDeniesBeforeSayingAnObjectExists(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")

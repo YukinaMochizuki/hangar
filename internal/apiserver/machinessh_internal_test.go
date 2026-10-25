@@ -79,6 +79,7 @@ func signAs(t *testing.T, s *Server, p auth.Principal, name, key string) (*compu
 // who may only get the VM, a node, or anyone for a VM they cannot see, is
 // refused; so is a key that is none. The CA's key is never logged.
 func TestSigningAKeyForAVM(t *testing.T) {
+	t.Parallel()
 	ca, caPub := testCA(t)
 	var log bytes.Buffer
 	s, system, user := runningWith(t, func(c *Config) {
@@ -150,6 +151,7 @@ func TestSigningAKeyForAVM(t *testing.T) {
 // TestSigningWithoutACA: without the CA's key, the apiserver runs, and
 // signing fails saying why; the VM's guest gets its static keys alone.
 func TestSigningWithoutACA(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
 		t.Fatal(err)
@@ -177,6 +179,7 @@ func TestSigningWithoutACA(t *testing.T) {
 // cloud-config, and a script, which sh reads, trusting the CA for the VM's
 // uid and every user but root.
 func TestVendorDataTrustsTheCA(t *testing.T) {
+	t.Parallel()
 	ca, _ := testCA(t)
 	vm := vmFromImage("web", "noble")
 	vm.Metadata.Uid = "0199-uid"
@@ -212,6 +215,7 @@ func TestVendorDataTrustsTheCA(t *testing.T) {
 
 // TestImageDefaultUser: an image's default user is a login name.
 func TestImageDefaultUser(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	for user, ok := range map[string]bool{"ubuntu": true, "": true, "ec2-user": true, "Root": false, "a b": false, "x;rm": false, strings.Repeat("a", 33): false} {
 		img := image("noble")
@@ -227,6 +231,7 @@ func TestImageDefaultUser(t *testing.T) {
 // fits the machine's vendor-data are refused when the CA's script would
 // take it past its limit, and a VM admitted gets its machine.
 func TestTheCAsScriptCountsAgainstVendorData(t *testing.T) {
+	t.Parallel()
 	ca, _ := testCA(t)
 	s, system, user := runningWith(t, func(c *Config) { c.SSHCA = ca })
 	if _, err := s.backend(registry.Image).Apply(system, image("noble")); err != nil {
@@ -307,6 +312,7 @@ func sshTunnelWorld(t *testing.T) (*Server, context.Context, *computev1alpha1.Ma
 // log in to it, or may do nothing in its tenant, is refused before anything
 // about the VM is looked at; its owner gets as far as the node.
 func TestTheSSHTunnelNeedsItsPermission(t *testing.T) {
+	t.Parallel()
 	s, system, m := sshTunnelWorld(t)
 	applied, err := s.backend(registry.Machine).Apply(system, m)
 	if err != nil {
@@ -328,6 +334,7 @@ func TestTheSSHTunnelNeedsItsPermission(t *testing.T) {
 // another VM of that name owned, as one deleted leaves it while it goes, is
 // not reached; nor is the VM's own while it does not run.
 func TestTheSSHTunnelTakesOnlyTheVMsOwnMachine(t *testing.T) {
+	t.Parallel()
 	s, system, m := sshTunnelWorld(t)
 	alice := auth.Principal{Type: auth.User, ID: "alice@example.com"}
 	theirs := m.Metadata.OwnerReferences[0].Uid

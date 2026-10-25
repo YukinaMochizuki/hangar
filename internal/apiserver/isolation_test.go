@@ -20,6 +20,7 @@ import (
 )
 
 func TestDeletingATenantCascadesAndItsNameIsNeverReused(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -63,6 +64,7 @@ func TestDeletingATenantCascadesAndItsNameIsNeverReused(t *testing.T) {
 }
 
 func TestNoExistenceLeaks(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -104,6 +106,7 @@ func collect[T any](t *testing.T, stream interface {
 }
 
 func TestWatchAuthorization(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -134,6 +137,7 @@ func TestWatchAuthorization(t *testing.T) {
 }
 
 func TestOwnerSeesEveryEventOfOwnProjects(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -177,6 +181,7 @@ func TestOwnerSeesEveryEventOfOwnProjects(t *testing.T) {
 }
 
 func TestMoreDenials(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -222,6 +227,7 @@ func TestMoreDenials(t *testing.T) {
 // container in it, while watching every project: the container's event must
 // be judged with the new project already known, or it is silently dropped.
 func TestWatchSeesObjectsInNewProjects(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -258,6 +264,7 @@ func TestWatchSeesObjectsInNewProjects(t *testing.T) {
 // TestWatchSeesTheGrantThatAdmitsIt checks that an event which itself grants
 // the watcher access is judged with that grant in effect.
 func TestWatchSeesTheGrantThatAdmitsIt(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -292,6 +299,7 @@ func TestWatchSeesTheGrantThatAdmitsIt(t *testing.T) {
 }
 
 func TestDenialsReadTheSameWhetherOrNotTheObjectExists(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -330,6 +338,7 @@ func TestDenialsReadTheSameWhetherOrNotTheObjectExists(t *testing.T) {
 // TestOwnerSeesTheirTenantCascadeToTheEnd deletes a tenant while its owner
 // watches: every deletion is visible to the owner, contents before the tenant.
 func TestOwnerSeesTheirTenantCascadeToTheEnd(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -401,6 +410,7 @@ func TestOwnerSeesTheirTenantCascadeToTheEnd(t *testing.T) {
 }
 
 func TestPlatformMembership(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -442,6 +452,7 @@ func TestPlatformMembership(t *testing.T) {
 // project or machine is listed or read. WhoAmI names the sponsor's
 // platform role, and a member's.
 func TestASponsorReadsThePlatformAndNoTenant(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -491,6 +502,7 @@ func TestASponsorReadsThePlatformAndNoTenant(t *testing.T) {
 }
 
 func TestBootstrapOnlyOnAnEmptyStore(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	r := e.as(root)

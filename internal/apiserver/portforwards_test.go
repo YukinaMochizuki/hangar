@@ -81,6 +81,7 @@ func drawFrom(s *Server, lo, hi int32) {
 }
 
 func TestPortForwardAdmission(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.PortForward)
 	if _, err := b.Apply(user, forward("waits", "not-made-yet", "", tcp, 80)); err != nil {
@@ -118,6 +119,7 @@ func TestPortForwardAdmission(t *testing.T) {
 // TestAPortIsDrawnAndKept: a new forward's port is of the range, unique per
 // protocol, and kept whatever is applied after.
 func TestAPortIsDrawnAndKept(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	pf := applyForward(t, s, user, forward("web", "a", "", tcp, 80))
 	port := pf.GetStatus().GetPort()
@@ -169,6 +171,7 @@ func in(project string, pf *networkv1alpha1.PortForward) *networkv1alpha1.PortFo
 // TestAPortIsUniqueAcrossProjects: a port another project's forward holds
 // is no more free than one of the same project's.
 func TestAPortIsUniqueAcrossProjects(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	otherProject(t, s, user)
 	drawFrom(s, 20000, 20000)
@@ -181,6 +184,7 @@ func TestAPortIsUniqueAcrossProjects(t *testing.T) {
 // of them, in two projects, each get another, and the rest are refused.
 // Half race as the system, whose writes the quota does not serialize.
 func TestDrawingIsOneDecision(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	otherProject(t, s, user)
 	drawFrom(s, 20000, 20003)
@@ -227,6 +231,7 @@ func TestDrawingIsOneDecision(t *testing.T) {
 // shared address, then forwarding, and waiting again for an interface it
 // does not have.
 func TestPortForwardFollowsItsTarget(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeSharing(t, s, "n1", "")
 	applyForward(t, s, user, forward("web", "a", "", tcp, 80))
@@ -270,6 +275,7 @@ func TestPortForwardFollowsItsTarget(t *testing.T) {
 // being deleted is drawn by no other until the node that opened it reports
 // it closed; no other node can say so.
 func TestADeletedForwardHoldsItsPortUntilItsNodeLetsGo(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSharing(t, s, "n1", testShared)
 	nodeSharing(t, s, "n2", "")
@@ -316,6 +322,7 @@ func TestADeletedForwardHoldsItsPortUntilItsNodeLetsGo(t *testing.T) {
 // TestAForwardNeverPlacedGoesAtOnce: deleted before any node held it, a
 // forward waits for none.
 func TestAForwardNeverPlacedGoesAtOnce(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	applyForward(t, s, user, forward("web", "nothing", "", udp, 53))
 	waitForward(t, s, system, "web", "waiting for its target", func(pf *networkv1alpha1.PortForward) bool {
@@ -331,6 +338,7 @@ func TestAForwardNeverPlacedGoesAtOnce(t *testing.T) {
 // other, nor reports on them. Get, list and watch judge an object alike
 // (backend.mayRead).
 func TestANodeReadsOnlyItsForwards(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSharing(t, s, "n1", testShared)
 	nodeSharing(t, s, "n2", testShared)
@@ -372,6 +380,7 @@ func TestANodeReadsOnlyItsForwards(t *testing.T) {
 // permissions; a viewer reads and writes nothing, and one with no grant
 // reads nothing either.
 func TestPortForwardPermissions(t *testing.T) {
+	t.Parallel()
 	for _, v := range []authz.Verb{authz.Get, authz.List, authz.Watch, authz.Apply, authz.Delete, authz.UpdateStatus} {
 		perm := "network.portforwards." + string(v)
 		if r, verb, ok := authz.LookupPermission(perm); !ok || r.Kind != registry.PortForward.Kind || verb != v {
@@ -402,6 +411,7 @@ func TestPortForwardPermissions(t *testing.T) {
 }
 
 func TestPortForwardsAreCounted(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{PortForwards: proto.Int32(1)})
 	applyForward(t, s, user, forward("one", "a", "", tcp, 80))

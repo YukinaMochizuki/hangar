@@ -114,6 +114,7 @@ func quotaDisk(name, size string, annotations map[string]string) *storagev1alpha
 // controller gives it, defaults and rounding included, and a VM's root disk
 // made from an image counts once.
 func TestQuotaCountsWhatTheNodeIsAskedFor(t *testing.T) {
+	t.Parallel()
 	for _, c := range []*computev1alpha1.Container{ctr("defaults"), quotaCtr("odd", "2", "1G", "1.5Gi")} {
 		want, err := machineSpec(c.GetSpec())
 		if err != nil {
@@ -161,6 +162,7 @@ func TestQuotaCountsWhatTheNodeIsAskedFor(t *testing.T) {
 }
 
 func TestQuotaRefusesWhatWouldPassALimit(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Cpu: proto.String("2500m"), Disk: proto.String("35Gi"), Machines: proto.Int32(3)})
 	b := s.backend(registry.Container)
@@ -207,6 +209,7 @@ func TestQuotaRefusesWhatWouldPassALimit(t *testing.T) {
 }
 
 func TestQuotaCountsProjectsAndTheirDefaultNetworks(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Projects: proto.Int32(2), Networks: proto.Int32(3), Addresses: proto.Int32(0)})
 	proj := func(name string) *tenancyv1alpha1.Project {
@@ -234,6 +237,7 @@ func TestQuotaCountsProjectsAndTheirDefaultNetworks(t *testing.T) {
 // TestProjectLimits: a tenant owner caps a project within the tenant's
 // limits, and a role on the project alone cannot change the cap.
 func TestProjectLimits(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) {
 		c.ExtraRoles = map[string]authz.Role{"test.project-admin": authz.NewRole(authz.ProjectLevel,
 			authz.Permission(registry.Project, authz.Get), authz.Permission(registry.Project, authz.Apply))}
@@ -286,6 +290,7 @@ func TestProjectLimits(t *testing.T) {
 // TestProjectOwnerCannotRaiseItsLimits: the built-in project.owner writes
 // its project but, holding nothing at the tenant, cannot change its limits.
 func TestProjectOwnerCannotRaiseItsLimits(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Machines: proto.Int32(5)})
 	pb := s.backend(registry.Project)
@@ -320,6 +325,7 @@ func TestProjectOwnerCannotRaiseItsLimits(t *testing.T) {
 // one for each public port, in place of the endpoint made for it, so a
 // create past the limit is refused whichever way it would come.
 func TestPublicEndpointsAreCounted(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{PublicEndpoints: proto.Int32(2)})
 	eb, cb := s.backend(registry.PublicEndpoint), s.backend(registry.Container)
@@ -357,6 +363,7 @@ func TestPublicEndpointsAreCounted(t *testing.T) {
 // TestEveryMachineKindCounts: every kind that runs as a machine counts
 // toward quota, so a machine kind added to machineKinds cannot run free.
 func TestEveryMachineKindCounts(t *testing.T) {
+	t.Parallel()
 	for kind := range machineKinds {
 		if _, ok := quotaCounters[kind]; !ok {
 			t.Errorf("%s runs as machines but has no quota counter", kind)
@@ -367,6 +374,7 @@ func TestEveryMachineKindCounts(t *testing.T) {
 // TestConcurrentCreatesCannotOvershootAQuota races creates against one
 // limit: exactly as many win as it allows.
 func TestConcurrentCreatesCannotOvershootAQuota(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Machines: proto.Int32(3)})
 	var wg sync.WaitGroup
@@ -399,6 +407,7 @@ func TestConcurrentCreatesCannotOvershootAQuota(t *testing.T) {
 // TestConcurrentTenantsCannotOvershootTheCap races tenant creates by one
 // person against their cap.
 func TestConcurrentTenantsCannotOvershootTheCap(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 4 })
 	var wg sync.WaitGroup
 	errs := make([]error, 8)
@@ -425,6 +434,7 @@ func TestConcurrentTenantsCannotOvershootTheCap(t *testing.T) {
 }
 
 func TestOwnedTenantsAreCapped(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 3 })
 	tb := s.backend(registry.Tenant)
 	newTenant := func(ctx context.Context, name string) error {
@@ -512,6 +522,7 @@ func TestOwnedTenantsAreCapped(t *testing.T) {
 }
 
 func TestPlans(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	pb := s.backend(registry.Plan)
 	plan := func(name string, l *tenancyv1alpha1.Limits) *tenancyv1alpha1.Plan {
@@ -576,6 +587,7 @@ func waitUsage(t *testing.T, s *Server, user context.Context, what string, ok fu
 // status follow what they hold and the limits that hold for them, and the
 // tenant's owner reads them.
 func TestUsageIsReported(t *testing.T) {
+	t.Parallel()
 	s, _, user := runningWith(t, func(c *Config) { c.DisableControllers = false })
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Cpu: proto.String("4"), Machines: proto.Int32(5)})
 	if _, err := s.backend(registry.Container).Apply(user, ctr("c1")); err != nil {

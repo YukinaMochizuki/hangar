@@ -58,6 +58,7 @@ func diskUsage(t *testing.T, s *Server) string {
 // size frees nothing the disk still holds, and growing the disk itself is
 // checked.
 func TestAVMRootDiskCountsWhatItHolds(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("15Gi")})
 	vm := vmWithRootDisk(t, s, system, user, "14Gi")
@@ -98,6 +99,7 @@ func TestAVMRootDiskCountsWhatItHolds(t *testing.T) {
 // a named disk, counts as created, with a uid of its own, so the disk still
 // counts and the VM is refused past the limit.
 func TestABorrowedUIDCountsForNothing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		// setup stores the disk whose RootDiskOf names uid, and what else
@@ -157,6 +159,7 @@ func diskOfRoot(name, size, uid string) *storagev1alpha1.Disk {
 // annotation, count as they are stored, so a tenant at its limit is not
 // refused.
 func TestApplyingAManifestAgainIsNotRefused(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
 	vmWithRootDisk(t, s, system, user, "10Gi")
@@ -174,6 +177,7 @@ func TestApplyingAManifestAgainIsNotRefused(t *testing.T) {
 // TestVMsAndDisksAreCheckedThroughApply: a VM's root disk, its cpu when it
 // starts, and a Disk are each checked when applied.
 func TestVMsAndDisksAreCheckedThroughApply(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	if _, err := s.backend(registry.Image).Apply(system, image("ubuntu")); err != nil {
 		t.Fatal(err)
@@ -207,6 +211,7 @@ func TestVMsAndDisksAreCheckedThroughApply(t *testing.T) {
 // binding made with it frees nothing; and no one but the apiserver can
 // write that record.
 func TestTheTenantCapIgnoresBindings(t *testing.T) {
+	t.Parallel()
 	// alice opens two: the tenant signing up opened, and acme.
 	s, system, user := runningWith(t, func(c *Config) { c.DefaultMaxOwnedTenants = 2 })
 	tb, rbb := s.backend(registry.Tenant), s.backend(registry.RoleBinding)
@@ -303,6 +308,7 @@ func getTenant(t *testing.T, s *Server, name string) *tenancyv1alpha1.Tenant {
 // TestAPlanAndATenantNamingItDoNotRace races deleting a plan against a
 // tenant coming to name it: the tenant never names a plan that is gone.
 func TestAPlanAndATenantNamingItDoNotRace(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	pb, tb := s.backend(registry.Plan), s.backend(registry.Tenant)
 	for i := range 20 {
@@ -336,6 +342,7 @@ func TestAPlanAndATenantNamingItDoNotRace(t *testing.T) {
 // TestProjectLimitsCompareByValue: the same limits written another way are
 // no change, so a project admin can apply them.
 func TestProjectLimitsCompareByValue(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, withProjectAdminRole)
 	pb := s.backend(registry.Project)
 	web := func(l *tenancyv1alpha1.Limits) *tenancyv1alpha1.Project {
@@ -359,6 +366,7 @@ func TestProjectLimitsCompareByValue(t *testing.T) {
 // TestTheUsageControllerCatchesUpOnStart: a store written while no usage
 // controller ran has its usage written once one starts.
 func TestTheUsageControllerCatchesUpOnStart(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	if _, err := s.backend(registry.Container).Apply(user, ctr("c1")); err != nil {
 		t.Fatal(err)

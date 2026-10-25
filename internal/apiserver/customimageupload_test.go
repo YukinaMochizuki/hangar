@@ -66,6 +66,7 @@ func uploadFailed(reason string) *metav1.Condition {
 }
 
 func TestCustomImageUploadAdmission(t *testing.T) {
+	t.Parallel()
 	s, system, user := withNode1(t, func(c *Config) { c.MaxUploadSize = 4 << 30 })
 	b := s.backend(registry.CustomImage)
 	sha := strings.Repeat("ab", 32)
@@ -123,6 +124,7 @@ func TestCustomImageUploadAdmission(t *testing.T) {
 // cannot know of an upload, its disk size among it, and never moves the
 // image to another node.
 func TestAnUploadsNodeSetsItsDiskSizeOnce(t *testing.T) {
+	t.Parallel()
 	s, system, user := withNode1(t, func(*Config) {})
 	uploadingNode(t, s, system, "n1")
 	if _, err := s.backend(registry.CustomImage).Apply(user, uploadImage("img", 3<<30, "")); err != nil {
@@ -150,6 +152,7 @@ func TestAnUploadsNodeSetsItsDiskSizeOnce(t *testing.T) {
 }
 
 func TestCustomImageUploadQuota(t *testing.T) {
+	t.Parallel()
 	s, system, user := withNode1(t, func(*Config) {})
 	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
@@ -205,6 +208,7 @@ func TestCustomImageUploadQuota(t *testing.T) {
 // limit fails the image as QuotaExceeded instead, for good, and releases
 // it. Ready, the image settles at what it holds.
 func TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota(t *testing.T) {
+	t.Parallel()
 	s, system, user := withNode1(t, func(*Config) {})
 	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
@@ -296,6 +300,7 @@ func TestAnUploadsVirtualSizeIsKeptWithinTheDiskQuota(t *testing.T) {
 // TestUploadsReportedAtOnceAreCountedTogether: two virtual sizes reported
 // at the same time, each of which fits alone, do not both fit.
 func TestUploadsReportedAtOnceAreCountedTogether(t *testing.T) {
+	t.Parallel()
 	s, system, user := withNode1(t, func(*Config) {})
 	uploadingNode(t, s, system, "n1")
 	images := s.backend(registry.CustomImage)
@@ -339,6 +344,7 @@ func TestUploadsReportedAtOnceAreCountedTogether(t *testing.T) {
 // TestAnUploadIsPlacedOnANodeThatTakesUploads: of two nodes, the upload
 // goes to the one that takes uploads, though the other has more room.
 func TestAnUploadIsPlacedOnANodeThatTakesUploads(t *testing.T) {
+	t.Parallel()
 	s, system, user := runningWith(t, func(c *Config) { c.Nodes = []string{"n1", "n2"} })
 	waitNode(t, s, "n1")
 	waitNode(t, s, "n2")

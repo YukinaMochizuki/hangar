@@ -457,6 +457,7 @@ func receive[T any](t *testing.T, ch <-chan T, what string) T {
 // records the host key in the VM's status. The audit lines say who, as
 // whom, with which key, and how it ended, never what was typed or written.
 func TestAVMExecLogsInAsTheDefaultUser(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	if got := w.recorded(t); len(got) != 0 {
 		t.Fatalf("host keys before any login: %v", got)
@@ -522,6 +523,7 @@ func TestAVMExecLogsInAsTheDefaultUser(t *testing.T) {
 // output and exit code come back; and a terminal is not asked for unless
 // the start asks.
 func TestAVMExecRunsACommandAsGiven(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	r := w.run(t, &computev1alpha1.MachineExecStart{Command: []string{"printf", `%s\n`, "a b", "it's", "", "x;rm"}})
 	want := `printf '%s\n' 'a b' 'it'\''s' '' 'x;rm'`
@@ -541,6 +543,7 @@ func TestAVMExecRunsACommandAsGiven(t *testing.T) {
 // TestAVMExecCarriesStdinAndSignals: stdin reaches the process and its
 // close ends it; a signal reaches it by name, and the exit says it.
 func TestAVMExecCarriesStdinAndSignals(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	r := w.run(t, &computev1alpha1.MachineExecStart{Command: []string{"cat"}, Stdin: true}, stdinReq("some input"), stdinCloseReq())
 	if r.err != nil || r.stdout != "some input" || r.exit.GetCode() != 0 {
@@ -569,6 +572,7 @@ func TestAVMExecCarriesStdinAndSignals(t *testing.T) {
 // and root, whether the start or the image names it, are refused before
 // the node is asked to reach the guest.
 func TestAVMExecRefusesWhatSSHCannotDo(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	for what, start := range map[string]*computev1alpha1.MachineExecStart{
 		"env":                          {Command: []string{"id"}, Env: []*computev1alpha1.EnvVar{{Name: "A", Value: "b"}}},
@@ -610,6 +614,7 @@ func TestAVMExecRefusesWhatSSHCannotDo(t *testing.T) {
 // alone execs in the VM; one who holds compute.machines.exec alone is
 // refused before the upgrade, and the node is not called.
 func TestAVMExecNeedsTheSSHPermission(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	_, err := w.dialVM(t, "eve@example.com", "web")
 	wantCodeOf(t, err, connect.CodePermissionDenied, "eve, who may exec but not ssh")
@@ -635,6 +640,7 @@ func TestAVMExecNeedsTheSSHPermission(t *testing.T) {
 // which logging in to it does not give, and the next login records the
 // new key.
 func TestAVMExecRefusesAChangedHostKey(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	if r := w.run(t, &computev1alpha1.MachineExecStart{Command: []string{"id"}}); r.err != nil {
 		t.Fatal(r.err)
@@ -710,6 +716,7 @@ func TestAVMExecRefusesAChangedHostKey(t *testing.T) {
 // offers the kind recorded is refused as a changed key, not taken for an
 // sshd not up yet.
 func TestAVMExecAsksForTheKindOfKeyRecorded(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	if r := w.run(t, &computev1alpha1.MachineExecStart{Command: []string{"id"}}); r.err != nil {
 		t.Fatal(r.err)
@@ -728,6 +735,7 @@ func TestAVMExecAsksForTheKindOfKeyRecorded(t *testing.T) {
 // first, as OpenSSH does, so a guest with ECDSA and Ed25519 host keys gets
 // its Ed25519 key recorded, the one people compare with.
 func TestAVMExecFirstRecordsTheEd25519Key(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	ed := ed25519HostKey(t)
 	w.guest.setHostKeys(ecdsaHostKey(t), ed)
@@ -743,6 +751,7 @@ func TestAVMExecFirstRecordsTheEd25519Key(t *testing.T) {
 // is recorded and that offers Ed25519 alone is refused as a changed key,
 // not taken for an sshd not up yet.
 func TestAVMExecRefusesAGuestWithoutTheKindRecorded(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	w.guest.setHostKeys(ecdsaHostKey(t))
 	if r := w.run(t, &computev1alpha1.MachineExecStart{Command: []string{"id"}}); r.err != nil {
@@ -763,6 +772,7 @@ func TestAVMExecRefusesAGuestWithoutTheKindRecorded(t *testing.T) {
 // timing keeps clear of the streams' rechecks, every 30 s on the same
 // clock.
 func TestAVMExecEndsWhenTheGuestFallsSilent(t *testing.T) {
+	t.Parallel()
 	const ping, pong = 7 * time.Second, 5 * time.Second
 	w := newVMExecWorldWith(t, func(c *Config) { c.ExecPing, c.ExecPong = ping, pong })
 	clock := w.s.clock.(*clockwork.FakeClock)
@@ -800,6 +810,7 @@ func TestAVMExecEndsWhenTheGuestFallsSilent(t *testing.T) {
 // TestFirstLoginsAtOnceRecordOneKey: of two first logins at once shown
 // different keys, one records its key and the other is refused.
 func TestFirstLoginsAtOnceRecordOneKey(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	vm := getVM(t, w.s, w.system, "web")
 	x := &machineTarget{principal: auth.SystemPrincipal, kind: registry.VirtualMachine, key: resource.Key{Project: "web", Name: "web"}, obj: vm}
@@ -839,6 +850,7 @@ func TestFirstLoginsAtOnceRecordOneKey(t *testing.T) {
 // that does not trust the platform's CA, end the exec with a reason the
 // client shows.
 func TestAVMExecSaysWhyItFails(t *testing.T) {
+	t.Parallel()
 	w := newVMExecWorld(t)
 	w.node.down.Store(true)
 	r := w.run(t, &computev1alpha1.MachineExecStart{})

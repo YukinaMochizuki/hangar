@@ -41,6 +41,7 @@ func nodeWithDisk(t *testing.T, s *Server, system context.Context, node, capacit
 }
 
 func TestAMachineGetsCanonicalQuantities(t *testing.T) {
+	t.Parallel()
 	s, system, _ := controlled(t)
 	tests := []struct {
 		name string
@@ -68,6 +69,7 @@ func TestAMachineGetsCanonicalQuantities(t *testing.T) {
 }
 
 func TestContainerQuantitiesAreChecked(t *testing.T) {
+	t.Parallel()
 	s, _, user := running(t)
 	b := s.backend(registry.Container)
 	refused := []struct {
@@ -108,6 +110,7 @@ func TestContainerQuantitiesAreChecked(t *testing.T) {
 }
 
 func TestADiskCanGrowButNeverShrink(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithDisk(t, s, system, "n1", "1000Gi", "")
 	b := s.backend(registry.Container)
@@ -147,6 +150,7 @@ func TestADiskCanGrowButNeverShrink(t *testing.T) {
 // its own, the stored container is the floor; another object's machine of
 // the same name is not.
 func TestBeforeItsMachineAContainerCannotShrinkItsDisk(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 	applyCtr(t, s, user, withResources("api", &computev1alpha1.Resources{Disk: "20Gi"}))
@@ -165,6 +169,7 @@ func TestBeforeItsMachineAContainerCannotShrinkItsDisk(t *testing.T) {
 // TestAGrowthThatDidNotFitCanBeWithdrawn: the floor is the disk the machine
 // has, not what the container last asked for.
 func TestAGrowthThatDidNotFitCanBeWithdrawn(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	b := s.backend(registry.Container)
 	nodeWithDisk(t, s, system, "n1", "30Gi", "")
@@ -200,6 +205,7 @@ func TestAGrowthThatDidNotFitCanBeWithdrawn(t *testing.T) {
 // machine has, as when a withdrawal races the growth landing, leaves the
 // machine its disk and still applies the rest.
 func TestAMachineDiskNeverShrinks(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithDisk(t, s, system, "n1", "100Gi", "")
 	applyCtr(t, s, user, withResources("api", &computev1alpha1.Resources{Disk: "20Gi"}))
@@ -227,6 +233,7 @@ func TestAMachineDiskNeverShrinks(t *testing.T) {
 }
 
 func TestTheSchedulerFitsDisk(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "d", "plain")
 	// Allocatable, not capacity, is what machines get.
 	nodeWithDisk(t, s, system, "d", "1000Gi", "30Gi")
@@ -254,6 +261,7 @@ func TestTheSchedulerFitsDisk(t *testing.T) {
 }
 
 func TestUnschedulableMessagesNameTheShortfall(t *testing.T) {
+	t.Parallel()
 	s, system, _ := controlled(t, "mem", "disk")
 	// mem has memory and no disk to spare; disk has disk and no memory.
 	nodeWithDisk(t, s, system, "mem", "1Gi", "")
@@ -287,6 +295,7 @@ func TestUnschedulableMessagesNameTheShortfall(t *testing.T) {
 }
 
 func TestANodeWithAnUnreadableQuantityTakesNothing(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "odd", "full")
 	nodeWithDisk(t, s, system, "odd", "lots", "")
 	applyCtr(t, s, user, ctr("api"))
@@ -308,6 +317,7 @@ func TestANodeWithAnUnreadableQuantityTakesNothing(t *testing.T) {
 // TestAResizeOnANodeWithUnreadableSizesIsBlocked: the container says why,
 // and the resize goes through once the node reports sizes that read.
 func TestAResizeOnANodeWithUnreadableSizesIsBlocked(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithDisk(t, s, system, "n1", "100Gi", "")
 	applyCtr(t, s, user, ctr("api"))
@@ -326,6 +336,7 @@ func TestAResizeOnANodeWithUnreadableSizesIsBlocked(t *testing.T) {
 // TestAnUnplacedMachineHoldsNoDisk: a disk too large for any node can be
 // lowered, as no disk exists before the machine is placed.
 func TestAnUnplacedMachineHoldsNoDisk(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithDisk(t, s, system, "n1", "50Gi", "")
 	applyCtr(t, s, user, withResources("api", &computev1alpha1.Resources{Disk: "100Gi"}))
@@ -342,6 +353,7 @@ func TestAnUnplacedMachineHoldsNoDisk(t *testing.T) {
 // the machine kept the larger disk, an apply that does not change the disk
 // still passes; one that does is held to the machine's disk.
 func TestReapplyingAfterTheRacePasses(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	b := s.backend(registry.Container)
 	nodeWithDisk(t, s, system, "n1", "100Gi", "")
@@ -375,6 +387,7 @@ func TestReapplyingAfterTheRacePasses(t *testing.T) {
 }
 
 func TestResourcesHaveMaximums(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	b := s.backend(registry.Container)
 	for _, tt := range []struct {
@@ -414,6 +427,7 @@ func TestResourcesHaveMaximums(t *testing.T) {
 }
 
 func TestAddSaturates(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct{ a, b, want uint64 }{
 		{1, 2, 3},
 		{math.MaxUint64 - 1, 1, math.MaxUint64},
@@ -428,6 +442,7 @@ func TestAddSaturates(t *testing.T) {
 }
 
 func TestADiskResizeMustFitItsNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithDisk(t, s, system, "n1", "30Gi", "")
 	applyCtr(t, s, user, ctr("api"))
@@ -465,6 +480,7 @@ func TestADiskResizeMustFitItsNode(t *testing.T) {
 }
 
 func TestADiskResizeOnANodeWithoutDiskIsNotChecked(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 1024)
 	applyCtr(t, s, user, ctr("api"))
@@ -474,6 +490,7 @@ func TestADiskResizeOnANodeWithoutDiskIsNotChecked(t *testing.T) {
 }
 
 func TestMachineQuantitiesAreChecked(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	b := s.backend(registry.Machine)
 	for _, bad := range []*computev1alpha1.Resources{

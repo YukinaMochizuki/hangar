@@ -16,6 +16,7 @@ import (
 // is given the address the apiserver assigned its interface, and a MAC the
 // network does not know is not answered.
 func TestEachNetworkHandsOutItsAddresses(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

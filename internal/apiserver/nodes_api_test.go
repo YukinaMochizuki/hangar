@@ -15,6 +15,7 @@ import (
 // through the real listeners: the agent on the socket reports on its own Node,
 // only platform administrators read nodes, and nobody writes their spec.
 func TestNodeOverTheWire(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := context.Background()
 

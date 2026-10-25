@@ -142,6 +142,7 @@ func containerReady(c *computev1alpha1.Container) *metav1.Condition {
 }
 
 func TestAContainerGetsAMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t)
 	applyCtr(t, s, user, ctr("api"))
 	c := waitContainer(t, s, system, "api", "created", func(*computev1alpha1.Container) bool { return true })
@@ -179,6 +180,7 @@ func TestAContainerGetsAMachine(t *testing.T) {
 }
 
 func TestSchedulerPicksAReadyNodeWithRoom(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "big", "small", "silent")
 
 	applyCtr(t, s, user, ctr("first"))
@@ -220,6 +222,7 @@ func TestSchedulerPicksAReadyNodeWithRoom(t *testing.T) {
 }
 
 func TestAContainerFollowsItsMachine(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -259,6 +262,7 @@ func TestAContainerFollowsItsMachine(t *testing.T) {
 // TestASettledSystemStaysQuiet: once everything matches, the controllers
 // write nothing more.
 func TestASettledSystemStaysQuiet(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -283,6 +287,7 @@ func TestASettledSystemStaysQuiet(t *testing.T) {
 }
 
 func TestDeletingAContainerWaitsForItsNode(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1")
 	nodeWithRoom(t, s, system, "n1", 4096)
 	applyCtr(t, s, user, ctr("api"))
@@ -313,6 +318,7 @@ func TestDeletingAContainerWaitsForItsNode(t *testing.T) {
 }
 
 func TestControllersCatchUpOnStart(t *testing.T) {
+	t.Parallel()
 	s, system, user := running(t)
 	applyCtr(t, s, user, ctr("api"))
 
@@ -332,6 +338,7 @@ func TestControllersCatchUpOnStart(t *testing.T) {
 }
 
 func TestMachineNamesStayValid(t *testing.T) {
+	t.Parallel()
 	long := strings.Repeat("a", 63)
 	other := strings.Repeat("a", 62) + "b"
 	got, gotOther := machineName(long), machineName(other)

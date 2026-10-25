@@ -154,6 +154,7 @@ func (w *endpointWorld) check(cred, host string) (*networkv1alpha1.CheckEndpoint
 // minute, for that host and that state; anything else spends it and gets
 // nothing. The session it makes counts on that host alone.
 func TestAHandoffCodeCountsOnceForItsHostAndState(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 
 	resp, err := w.browser.Get(w.url + login.PathEndpointLogin + "?" + url.Values{"host": {siteHost}, "state": {handoffState}}.Encode())
@@ -225,6 +226,7 @@ func TestAHandoffCodeCountsOnceForItsHostAndState(t *testing.T) {
 // redirects nowhere a link names; a person who may not use the endpoint is
 // told so, and one not signed in signs in first and comes back.
 func TestEndpointLoginSendsBrowsersToEndpointsAlone(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	for _, c := range []struct {
 		host, state string
@@ -296,6 +298,7 @@ func TestEndpointLoginSendsBrowsersToEndpointsAlone(t *testing.T) {
 // console session it came from: signing out of the console ends it, and
 // revoking the person's logins ends one of any.
 func TestSigningOutEndsEndpointSessions(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	session := func() string {
 		t.Helper()
@@ -337,6 +340,7 @@ func TestSigningOutEndsEndpointSessions(t *testing.T) {
 // principal on the edge socket's handler and no one else, and no other
 // listener serves it.
 func TestEndpointAuthIsTheEdgesAlone(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	notEdge := httptest.NewServer(w.srv.EdgeHandler(auth.Chain{asUser{}}))
 	defer notEdge.Close()
@@ -413,6 +417,7 @@ func (w *oidcWorld) adminInvitesWith(alice headers, emails ...string) {
 // codes waiting, so no one fills the cap all share; another person still
 // gets one, and a code exchanged no longer counts.
 func TestEndpointCodesAreCappedPerPerson(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	var codes []string
 	for range login.MaxEndpointCodesPerPerson {
@@ -501,6 +506,7 @@ func (w *endpointWorld) codeIn(b *http.Client, host, state string) string {
 // the second as well; the invitation is asked again on its own anyway, as
 // at every other issue.)
 func TestAnExchangeAsksForTheGrantAgain(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	bob := w.bobWhoMayUse()
 	del := func(name string) {
@@ -529,6 +535,7 @@ func TestAnExchangeAsksForTheGrantAgain(t *testing.T) {
 // by one person get no more codes than the cap, the rest 429, as the count
 // and the insert are one transaction.
 func TestEndpointCodesAreCappedPerPersonAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorld(t)
 	const n = 60
 	var wg sync.WaitGroup
@@ -557,6 +564,7 @@ func TestEndpointCodesAreCappedPerPersonAtOnce(t *testing.T) {
 // everyone's together, endpoint-login answers 503 to anyone, not the 429 of
 // one person's own cap; a code exchanged makes room again.
 func TestEndpointCodesHaveASharedCap(t *testing.T) {
+	t.Parallel()
 	w := newEndpointWorldWith(t, 3)
 	bob := w.bobWhoMayUse()
 	codes := []string{w.code(siteHost, handoffState), w.code(siteHost, handoffState), w.codeIn(bob, siteHost, handoffState)}

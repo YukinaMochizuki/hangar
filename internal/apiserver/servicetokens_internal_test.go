@@ -21,6 +21,7 @@ import (
 // gone, no binding naming it may be left, not even for the moment before
 // the garbage collector would find it.
 func TestNoBindingOutlivesItsToken(t *testing.T) {
+	t.Parallel()
 	s, system, _ := running(t)
 	ctx := t.Context()
 	rev, err := s.store.Revision(ctx)

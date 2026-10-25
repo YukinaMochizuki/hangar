@@ -38,6 +38,7 @@ func checkUsername(t *testing.T, c clients, name string) bool {
 // named, until they sign up; WhoAmI, CheckName for a username and SignUp
 // itself work before, and the User carries their verified email.
 func TestSigningUp(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const carol = "carol@example.com"
@@ -134,6 +135,7 @@ func TestSigningUp(t *testing.T) {
 // TestUsernames: a username is a DNS label, not reserved, not taken and never
 // used before; CheckName answers the same.
 func TestUsernames(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	const carol, dave = "carol@example.com", "dave@example.com"
@@ -179,6 +181,7 @@ func TestUsernames(t *testing.T) {
 
 // TestOneUserPerEmail: of two sign-ups racing for one email, one wins.
 func TestOneUserPerEmail(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	const carol = "carol@example.com"
 	e.invite(carol, "platform.member")
@@ -218,6 +221,7 @@ func TestOneUserPerEmail(t *testing.T) {
 // nobody, root included, creates one for someone else or changes its email;
 // a person reads their own through WhoAmI and changes only its display name.
 func TestUsersAreRoots(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	e.setupTenant(alice, "acme", "web")
@@ -298,6 +302,7 @@ func TestUsersAreRoots(t *testing.T) {
 // TestRemovingAMember: deleting someone's platform binding ends their
 // membership and leaves their User; inviting them again restores it.
 func TestRemovingAMember(t *testing.T) {
+	t.Parallel()
 	e := newEnv(t)
 	ctx := t.Context()
 	b := e.as(bob)

@@ -17,6 +17,7 @@ import (
 // TestOverviewAsksItsQueriesOnly: the overview sends Prometheus each of its
 // fixed queries, exactly as written, once, and nothing else.
 func TestOverviewAsksItsQueriesOnly(t *testing.T) {
+	t.Parallel()
 	var mu sync.Mutex
 	var asked []string
 	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

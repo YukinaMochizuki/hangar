@@ -137,6 +137,7 @@ func (w *world) staged() []string {
 // whole file, matching its sha256, is converted, the image is Ready with
 // its disk's size, the staged file goes, and a VM boots from a disk of it.
 func TestACustomImageIsUploadedChunkByChunk(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	file := bytes.Repeat([]byte("nixos-25.05 "), 250)
 	size := int64(len(file))
@@ -212,6 +213,7 @@ func TestACustomImageIsUploadedChunkByChunk(t *testing.T) {
 // upload not whole by its expiry, and files the node refuses fail with
 // their reason, their staged file and any base gone, and take no chunk.
 func TestAnUploadThatFailsFailsForGood(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.uploadExpiry = 2 * time.Second
 	w.maxImageDisk = 1 << 30
@@ -287,6 +289,7 @@ func TestAnUploadThatFailsFailsForGood(t *testing.T) {
 // TestADeletedUploadLeavesNothing: an upload's image deleted part-way, its
 // staged file goes, and a chunk of it is refused.
 func TestADeletedUploadLeavesNothing(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	file := bytes.Repeat([]byte("y"), 2000)
 	w.uploadImage("gone", int64(len(file)), "")
@@ -330,6 +333,7 @@ func (h holdGets) RoundTrip(r *http.Request) (*http.Response, error) {
 // made counts, though the node's controller has not looked at the image
 // yet: the node finds the image itself.
 func TestAChunkBeforeTheNodeSawItsImage(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	release := make(chan struct{})
 	w.wrap = func(next http.RoundTripper) http.RoundTripper { return holdGets{next: next, release: release} }
@@ -351,6 +355,7 @@ func TestAChunkBeforeTheNodeSawItsImage(t *testing.T) {
 // converted, leaves no base nor staged file, and counts nothing. One that
 // fits is converted, and settles at what it holds.
 func TestAnUploadPastTheDiskQuotaIsNotConverted(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	obj, err := w.root.Get(context.Background(), registry.Project, client.Key{Name: project})
 	if err != nil {
@@ -401,6 +406,7 @@ func TestAnUploadPastTheDiskQuotaIsNotConverted(t *testing.T) {
 // than the virtual size kept fails, rather than filling a base the quota
 // did not count.
 func TestAFileReadAgainToAnotherSizeFails(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	file := bytes.Repeat([]byte("r"), 1500)
 	w.host.SetImageInfo(&driver.ImageInfo{Format: "qcow2", VirtualSize: 1 << 30})
@@ -430,6 +436,7 @@ func TestAFileReadAgainToAnotherSizeFails(t *testing.T) {
 // --convert-timeout; past either the image fails as ConvertFailed, saying
 // which, and leaves no base.
 func TestReadingAndConvertingAFileAreBoundedApart(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.inspectTimeout, w.convertTimeout = time.Second, 2*time.Second
 	w.startAgent()
@@ -461,6 +468,7 @@ func TestReadingAndConvertingAFileAreBoundedApart(t *testing.T) {
 // uploads, so none is placed on it; one placed there before still expires,
 // rather than wait for ever.
 func TestANodeThatTakesNoUploads(t *testing.T) {
+	t.Parallel()
 	w := newIdleWorld(t)
 	w.uploadExpiry = 3 * time.Second
 	w.startAgent()
@@ -503,6 +511,7 @@ func TestANodeThatTakesNoUploads(t *testing.T) {
 // writes one, and refuses the other as busy, a 503 with Retry-After and
 // where the upload is, which counts once sent again.
 func TestTwoChunksAtOnce(t *testing.T) {
+	t.Parallel()
 	w := newWorld(t)
 	file := bytes.Repeat([]byte("u"), 4000)
 	w.uploadImage("both", int64(len(file)), "")

@@ -14,6 +14,7 @@ import (
 // their vCPUs and memory; its disk is theirs and the Disks' placed there, as
 // the scheduler counts it. A node with nothing on it answers zeros.
 func TestNodeUsageSummary(t *testing.T) {
+	t.Parallel()
 	s, system, user := controlled(t, "n1", "n2")
 	nodeSized(t, s, system, "n1", 8192, 100)
 	nodeWithRoom(t, s, system, "n2", 0)
