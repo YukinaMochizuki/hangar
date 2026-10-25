@@ -439,6 +439,12 @@ func TestEveryRefusedExecIsLogged(t *testing.T) {
 	}
 	_, _ = w.dial(t, "alice@example.com", "api") // over the cap: c holds the one call
 	readAll(t, c)                                // no start comes
+	// The exec closes before its refusal is logged: the next one waits for
+	// it, so the lines come in the order below.
+	testutil.Eventually(t, "the exec with no start logged", func() (bool, string) {
+		n := len(w.auditLines("exec refused"))
+		return n >= 4, fmt.Sprintf("%d refusals logged", n)
+	})
 	system := auth.WithPrincipal(t.Context(), auth.SystemPrincipal)
 	m, err := w.s.backend(registry.Machine).Get(system, resource.Key{Project: "web", Name: machineName("api")})
 	if err != nil {
