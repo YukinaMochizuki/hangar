@@ -286,12 +286,16 @@ fd but the taps' close-on-exec, sets `no_new_privs`, empties the
 bounding, inheritable and ambient sets, takes the VM's uid and gid with
 no group but the KVM device's, and checks all of it in
 `/proc/thread-self/status` before it execs Cloud Hypervisor, with no
-environment. Cloud Hypervisor keeps its own seccomp filter.
+environment. Cloud Hypervisor keeps its own seccomp filter. A firmware
+VM's console helper, `hangar-node vmm-console`, is run the same way, before
+the capabilities go, with no group but the VM's (`serial-console.md`).
 
 **The VM's directory** is root's and the VM's group's, `0710`: Cloud
-Hypervisor reads `boot.img` (`0640`), opens `disk` and `serial.fifo`
-through the group, and writes only in `ch/` (`0770`), made afresh on each
-run, where it makes its socket. It can neither read `spec.json` or the
+Hypervisor reads `boot.img` (`0640`), opens `disk` and a container's
+`serial.fifo` through the group, and writes only in `ch/` (`0770`), made
+afresh on each run, where it makes its sockets. A firmware VM's
+`console.sock` is the launcher's, `0600`, listened on by it and served by
+the console helper. It can neither read `spec.json` or the
 logs, nor replace them. The agent and the launcher connect to the socket
 only as a socket, never through a link Cloud Hypervisor put in its place.
 
@@ -306,7 +310,7 @@ only as a socket, never through a link Cloud Hypervisor put in its place.
 | `PrivateNetwork`, `IPAddressDeny=any`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK` | Any network but its taps' fds, and the host's abstract sockets |
 | `ProtectProc=invisible`, `ProcSubset=pid` | Seeing the host's other processes and its kernel settings |
 | `ProtectKernel*`, `ProtectControlGroups`, `ProtectClock`, `ProtectHostname`, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictRealtime`, `RestrictSUIDSGID`, `RestrictNamespaces=net`, a system call deny list, `LimitCORE=0`, `KeyringMode=private` | Changing the kernel, the clock or the hostname; keys a later VM of the same uid could read; a core holding the guest's memory |
-| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's), `TasksMax` (64 and two a vCPU) | Taking the host's memory or tasks |
+| `MemoryMax` (the guest's memory, 256 MiB, and 2% of the guest's), `TasksMax` (64 and two a vCPU, 16 more for a firmware VM's console helper) | Taking the host's memory or tasks |
 
 `MemoryMax` was measured (2026-10, `TestMemoryOverhead` in
 `test/testbed/vms`) with guests of 1, 4 and 16 GiB filling half their

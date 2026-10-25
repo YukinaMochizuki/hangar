@@ -120,7 +120,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net",
 		"--api-socket path=" + filepath.Join(dir, apiFile),
 		"--console off",
-		"--serial file=" + filepath.Join(dir, serialFIFO),
+		"--serial socket=" + filepath.Join(dir, serialSocket),
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("Cloud Hypervisor's arguments %q lack %q", joined, want)
@@ -537,7 +537,7 @@ func TestStartWritesAFirmwareVM(t *testing.T) {
 	if got, want := prop(props, "DeviceAllow"), []pathPair{{"/dev/kvm", "rw"}, {"/dev/net/tun", "rw"}, {spec.Disks[0].Path, "rwm"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("DeviceAllow=%v, want %v", got, want)
 	}
-	if got, want := prop(props, "TimeoutStopUSec"), usec(stopAsk+DefaultFirmwareStopGrace+testSlack+killGrace+drainWait); got != want {
+	if got, want := prop(props, "TimeoutStopUSec"), usec(stopAsk+DefaultFirmwareStopGrace+testSlack+killGrace+drainWait+killGrace); got != want {
 		t.Errorf("TimeoutStopUSec=%v, want %d", got, want)
 	}
 	// /run/netns, the launcher, Cloud Hypervisor and the firmware: no

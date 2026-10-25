@@ -1,12 +1,48 @@
 package drivertest
 
 import (
+	"bufio"
+	"errors"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/encoding/protodelim"
+
+	nodev1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/node/v1"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
+
+// checkConsole attaches to the running firmware VM fw's serial console
+// twice: the first client holds the input, the second watches, and each is
+// told its state at the default 80x24, then drawn the screen.
+func checkConsole(t *testing.T, h Host) {
+	t.Helper()
+	for i, wantInput := range []bool{true, false} {
+		c, err := h.Hypervisor.AttachConsole(t.Context(), "fw")
+		if err != nil {
+			t.Fatalf("attaching to the console: %v", err)
+		}
+		defer func() { _ = c.Close() }()
+		_ = c.SetDeadline(time.Now().Add(10 * time.Second))
+		start := &nodev1.ConsoleRequest{Message: &nodev1.ConsoleRequest_Start{Start: &nodev1.ConsoleStart{}}}
+		if _, err := protodelim.MarshalTo(c, start); err != nil {
+			t.Fatal(err)
+		}
+		r := bufio.NewReader(c)
+		var state, drawn nodev1.ConsoleResponse
+		if err := protodelim.UnmarshalFrom(r, &state); err != nil {
+			t.Fatalf("client %d: reading its state: %v", i, err)
+		}
+		st := state.GetState()
+		if st.GetInput() != wantInput || st.GetSize().GetColumns() != 80 || st.GetSize().GetRows() != 24 {
+			t.Errorf("client %d is told %v, want input %t at 80x24", i, &state, wantInput)
+		}
+		if err := protodelim.UnmarshalFrom(r, &drawn); err != nil || len(drawn.GetOutput()) == 0 {
+			t.Errorf("client %d is drawn %v, %v", i, &drawn, err)
+		}
+	}
+}
 
 // firmware: a firmware VM boots from its first volume, with no root disk,
 // and is refused without a volume or with a root disk; it runs as any VM
@@ -14,6 +50,8 @@ import (
 // asks a guest agent, and ends its boot in its log as the platform's,
 // StoppedSignal, whether the guest powered off or was killed after its
 // grace. The volume needs nothing bootable on it: the firmware runs on.
+// While it runs, its serial console takes clients, the first holding its
+// input and drawn the screen; once stopped, none.
 func firmware(t *testing.T, h Host) {
 	ctx := t.Context()
 	vol, err := h.Storage.EnsureVolume(ctx, "fw1", rootSize, "")
@@ -59,6 +97,7 @@ func firmware(t *testing.T, h Host) {
 	}
 	// Running for a while, as a guest would before it is stopped.
 	time.Sleep(time.Second) //nolint:forbidigo // stands for a guest running before it is stopped
+	checkConsole(t, h)
 
 	must(t, h.Hypervisor.Stop(ctx, "fw"))
 	must(t, h.Hypervisor.Stop(ctx, "fw"))
@@ -67,6 +106,12 @@ func firmware(t *testing.T, h Host) {
 	}
 	if h.AskedToStop(t, "fw") {
 		t.Error("a firmware VM's stop asked a guest agent")
+	}
+	if c, err := h.Hypervisor.AttachConsole(ctx, "fw"); !errors.Is(err, driver.ErrNoConsole) {
+		if c != nil {
+			_ = c.Close()
+		}
+		t.Errorf("attaching to a stopped firmware VM's console: %v, want ErrNoConsole", err)
 	}
 	recs := readLog(t, h.Hypervisor, "fw", driver.LogOptions{Tail: driver.AllLines})
 	if len(recs) == 0 || recs[len(recs)-1].Stream != console.Exit || recs[len(recs)-1].Boot < 1 {

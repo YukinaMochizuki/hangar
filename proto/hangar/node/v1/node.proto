@@ -183,3 +183,55 @@ message GetCustomImageUploadRequest {
 message GetCustomImageUploadResponse {
   int64 received_bytes = 1;
 }
+
+// ConsoleRequest is what a client of a firmware machine's interactive
+// serial console sends, to the node and, from the node, to the machine's
+// console helper (docs/decisions/serial-console.md).
+message ConsoleRequest {
+  oneof message {
+    // The first request, and only the first.
+    ConsoleStart start = 1;
+    // What the client types, as it comes; the guest gets it only while
+    // the client holds the console's input.
+    bytes input = 2;
+    // The screen's new size; taken only from the client holding the
+    // input.
+    ConsoleSize resize = 3;
+  }
+}
+
+// ConsoleStart attaches a client to a machine's serial console.
+message ConsoleStart {
+  // Names the machine, which must be on the node; empty to its helper.
+  string machine_uid = 1;
+  // Only watches: never holds the input.
+  bool read_only = 2;
+  // Takes the input from whoever holds it, who goes on watching; without
+  // it, a client finding the input held watches.
+  bool force = 3;
+}
+
+// ConsoleSize is a screen's size in character cells.
+message ConsoleSize {
+  uint32 columns = 1;
+  uint32 rows = 2;
+}
+
+// ConsoleResponse is what an attached client gets: its state first, then
+// the screen drawn whole, then what the guest writes, and its state again
+// whenever it changes.
+message ConsoleResponse {
+  oneof message {
+    // Bytes for the client's terminal, as they come.
+    bytes output = 1;
+    ConsoleState state = 2;
+  }
+}
+
+// ConsoleState is how a client is attached.
+message ConsoleState {
+  // The client holds the console's input.
+  bool input = 1;
+  // The screen's size, which the guest is told only by its user (stty).
+  ConsoleSize size = 2;
+}

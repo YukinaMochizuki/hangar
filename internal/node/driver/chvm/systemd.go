@@ -112,8 +112,22 @@ type sandbox struct {
 	Binds []string
 }
 
-// The unit's tasks past two per vCPU.
-const vmTasks = 64
+// vmTasks are the unit's tasks past two per vCPU; helperTasks, a firmware
+// VM's console helper's past those: a Go runtime that cannot make a thread
+// within TasksMax dies.
+const (
+	vmTasks     = 64
+	helperTasks = 16
+)
+
+// unitTasks is the unit's TasksMax.
+func unitTasks(spec driver.VMSpec) uint64 {
+	n := uint64(vmTasks + 2*spec.VCPUs)
+	if spec.Firmware {
+		n += helperTasks
+	}
+	return n
+}
 
 // vmMemoryMax is the unit's MemoryMax: the guest's memory, 256 MiB for Cloud
 // Hypervisor and the launcher, and 2% of the guest's for what grows with it
@@ -234,7 +248,7 @@ func (sb sandbox) props(spec driver.VMSpec) []sd.Property {
 		// A core of Cloud Hypervisor would hold the guest's memory.
 		property("LimitCORE", uint64(0)),
 		property("MemoryMax", memory),
-		property("TasksMax", uint64(vmTasks+2*spec.VCPUs)),
+		property("TasksMax", unitTasks(spec)),
 	}
 }
 

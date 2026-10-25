@@ -52,9 +52,15 @@ const (
 	// launcher waits to be stopped instead of exiting, so the restart
 	// policy never starts it again.
 	stopFile = "stopping"
-	// serialFIFO carries the guest's serial console from Cloud Hypervisor
-	// to the launcher.
+	// serialFIFO carries a container's guest's serial console from Cloud
+	// Hypervisor to the launcher.
 	serialFIFO = "serial.fifo"
+	// serialSocket is a firmware VM's serial console, which Cloud
+	// Hypervisor listens on for its console helper.
+	serialSocket = chDir + "/serial"
+	// consoleSocket is the socket clients attach to a firmware VM's serial
+	// console on, the launcher's, which its console helper serves.
+	consoleSocket = "console.sock"
 
 	// ConsoleLog is the guest's framed console (internal/guest/console):
 	// what the container wrote, and how it ended. It is rotated to
@@ -141,9 +147,14 @@ const (
 
 // stopTimeout is the unit's TimeoutStopSec: a stop of the unit by
 // systemd, as at host shutdown, takes each step of a stop at its longest,
-// so systemd never kills the launcher before the guest has had its grace.
-func stopTimeout(grace, slack time.Duration) time.Duration {
-	return stopAsk + grace + slack + killGrace + drainWait
+// a firmware VM's console helper's end included, so systemd never kills
+// the launcher before the guest has had its grace.
+func stopTimeout(grace, slack time.Duration, firmware bool) time.Duration {
+	t := stopAsk + grace + slack + killGrace + drainWait
+	if firmware {
+		t += killGrace
+	}
+	return t
 }
 
 // launch is the spec file: the VM and what the launcher starts it with.
