@@ -70,6 +70,14 @@ func TestAVMsGuestFindsItsDisksBySerial(t *testing.T) {
 // of, to the seed volume.
 func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor) {
 	t.Helper()
+	out, hv, _ := bootWithSeedConfig(t, uid, script, nil, mutate)
+	return out, hv
+}
+
+// bootWithSeedConfig is bootWithSeed with the driver's config changed by
+// configure, which may be nil, and the spec it started returned too.
+func bootWithSeedConfig(t *testing.T, uid, script string, configure func(*chvm.Config), mutate func(*host, *driver.VMSpec)) (string, *chvm.Hypervisor, driver.VMSpec) {
+	t.Helper()
 	h := newHost(t)
 	ctx := context.Background()
 	in := vmtest.Artifacts()
@@ -77,10 +85,14 @@ func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.V
 	if err != nil {
 		t.Fatal(err)
 	}
-	hv, err := chvm.New(ctx, chvm.Config{
+	cfg := chvm.Config{
 		Dir: vmDir, CloudHypervisor: ch, Kernel: in.Kernel, Initramfs: in.Initramfs, Cmdline: in.Cmdline,
 		Launcher: []string{in.Node, "vmm"}, StopGrace: testGrace, Firmware: diskimgtest.Firmware(t),
-	})
+	}
+	if configure != nil {
+		configure(&cfg)
+	}
+	hv, err := chvm.New(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +142,7 @@ func bootWithSeed(t *testing.T, uid, script string, mutate func(*host, *driver.V
 		out := serialOf(t, uid)
 		if strings.Contains(out, done+"\r\n") || strings.Contains(out, done+"\n") {
 			t.Logf("the user-data ran %v after the start", time.Since(start).Round(time.Second))
-			return out, hv
+			return out, hv, spec
 		}
 		if vm, ok := vmOf(t, h, uid); ok && vm.State != driver.VMRunning {
 			t.Fatalf("the VM ended: %+v\n%s", vm, tail(out))

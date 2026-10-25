@@ -68,6 +68,10 @@ type Inputs struct {
 	// ConverterInitramfs is the converter initramfs, with qemu-img, which
 	// converter VMs boot (make guest-converter).
 	ConverterInitramfs string
+	// Swtpm is the swtpm bundle TPM VMs run (make host-swtpm, unpacked by
+	// make e2e-host), or HANGAR_TESTBED_SWTPM; a package that uses it
+	// checks that it is there.
+	Swtpm string
 }
 
 var in Inputs
@@ -258,6 +262,7 @@ func loadInputs() (Inputs, error) {
 		VsockProbe:           pick("HANGAR_TESTBED_VSOCKPROBE", "bin/vsock-probe"),
 		ServerProbeInitramfs: pick("HANGAR_TESTBED_SERVER_PROBE_INITRAMFS", "bin/guest-testbed/initramfs.cpio"),
 		ConverterInitramfs:   pick("HANGAR_TESTBED_CONVERTER_INITRAMFS", "bin/guest/converter.cpio"),
+		Swtpm:                pick("HANGAR_TESTBED_SWTPM", "bin/host/swtpm"),
 	}
 	if i.Rootfs == "" {
 		return Inputs{}, errors.New("HANGAR_TESTBED_ROOTFS is not set (make e2e-host sets it)")
