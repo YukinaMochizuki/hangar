@@ -76,8 +76,10 @@ jobs:
           # docs/conventions/testing.md), packages chosen by hand included.
           par=()
           if [ "${{ matrix.group }}" = e2e ] || [[ "$PKGS" == *test/e2e* ]]; then par=(-parallel 1); fi
+          # The race detector as make test runs it, the SQLite driver not
+          # instrumented (the Makefile's RACE).
           # shellcheck disable=SC2086
-          "${as[@]}" go test -race "${par[@]}" -shuffle=on -count="$COUNT" -timeout 330m $PKGS 2>&1 | tee stress.log
+          "${as[@]}" go test -race -gcflags=modernc.org/...=-race=false "${par[@]}" -shuffle=on -count="$COUNT" -timeout 330m $PKGS 2>&1 | tee stress.log
       - name: Summarize failures
         if: failure()
         run: |

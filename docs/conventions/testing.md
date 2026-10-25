@@ -177,6 +177,11 @@ e2e worlds: that they share no state rests on the rule above, and a
 package variable or a global written in `internal/node`, the fake host or
 the controllers breaks it unseen.
 
+Every race run leaves the SQLite driver (`modernc.org/sqlite`, SQLite
+translated to Go) uninstrumented, through the Makefile's `RACE`: the
+detector's checks of its memory accesses took a third of a run's CPU. A
+race inside the driver goes unseen; our code's use of it does not.
+
 ## Run tests while you work
 
 The suites take every CPU there is, so two side by side only slow each
