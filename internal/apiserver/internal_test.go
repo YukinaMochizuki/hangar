@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -44,23 +45,15 @@ func runningWith(t *testing.T, configure func(*Config)) (s *Server, system, user
 // runningAt is runningWith on the database file db, which a test can read.
 func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, system, user context.Context) {
 	t.Helper()
-	ctx, cancel := context.WithCancel(context.Background())
-	st, err := sqlite.Open(ctx, db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Tests size machines and open tenants freely; the quota tests set limits.
-	cfg := Config{Store: st, Clock: clockwork.NewFakeClock(), DisableControllers: true,
-		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
-	configure(&cfg)
-	s = New(cfg)
-	done := make(chan error, 1)
-	go func() { done <- s.Run(ctx) }()
-	t.Cleanup(func() {
-		cancel()
-		<-done
-		_ = st.Close()
-	})
+	s, system, user, _ = stoppableAt(t, db, configure)
+	return s, system, user
+}
+
+// stoppableAt is runningAt, and returns what stops the server before the
+// test ends, as for a restart on the same database file (serve).
+func stoppableAt(t *testing.T, db string, configure func(*Config)) (s *Server, system, user context.Context, stop func()) {
+	t.Helper()
+	s, ctx, stop := serve(t, db, configure)
 	system = auth.WithPrincipal(ctx, auth.SystemPrincipal)
 	addMember(t, s, "alice@example.com")
 	user = auth.WithPrincipal(ctx, auth.Principal{Type: auth.User, ID: "alice@example.com"})
@@ -73,7 +66,7 @@ func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, sys
 		t.Fatal(err)
 	}
 	// What the project controller does, for tests that run without it.
-	if cfg.DisableControllers {
+	if s.cfg.DisableControllers {
 		if _, err := s.backend(registry.Network).Apply(system, &networkv1alpha1.Network{
 			Metadata: &metav1.ObjectMeta{Project: "web", Name: computeapi.DefaultNetwork},
 			Spec:     &networkv1alpha1.NetworkSpec{Ipv4Cidr: DefaultNetworkCIDR},
@@ -81,7 +74,32 @@ func runningAt(t *testing.T, db string, configure func(*Config)) (s *Server, sys
 			t.Fatal(err)
 		}
 	}
-	return s, system, user
+	return s, system, user, stop
+}
+
+// serve runs a server on the database file db until the test ends, or until
+// stop, and returns it with a context that ends with it.
+func serve(t *testing.T, db string, configure func(*Config)) (s *Server, ctx context.Context, stop func()) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	st, err := sqlite.Open(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tests size machines and open tenants freely; the quota tests set limits.
+	cfg := Config{Store: st, Clock: clockwork.NewFakeClock(), DisableControllers: true,
+		DefaultPlanLimits: &tenancyv1alpha1.Limits{}, DefaultMaxOwnedTenants: 1000}
+	configure(&cfg)
+	s = New(cfg)
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	stop = sync.OnceFunc(func() {
+		cancel()
+		<-done
+		_ = st.Close()
+	})
+	t.Cleanup(stop)
+	return s, ctx, stop
 }
 
 // waitSettled waits until s's controllers and garbage collector have
