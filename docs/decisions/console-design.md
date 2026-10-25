@@ -273,6 +273,10 @@ Settled with the owner on screenshots before the dialogs sent anything.
   `web/src/components/menu.tsx`), in its desktop table and its phone list;
   the File shares list, one table that scrolls sideways, has it there.
   The built-in `default` security groups, which are no objects, have none.
+- **What a page's head does seldom sits in a "..." after its buttons**:
+  a VM's Create image (an action marked `more`) and its serial console
+  (`docs/decisions/serial-console.md`). A row's menu holds Create image
+  as it holds every action; the serial console is the page's alone.
 - **Both are gated by one answer**: a kind's list and its page each ask
   TestPermissions one question at the project (its apply and delete
   permissions; for a network also `storage.fileshares.apply`, for its
@@ -620,11 +624,12 @@ Settled with the owner on the screens, before they read the API.
   group of their own before the platform's, and the disk names its
   project in `source.image`.
   - New image (`/new/custom-image`), reached from the Images page, a
-    disk's Create image and a VM's Create image (off until the VM is
-    stopped), chooses its source disk from one filterable list: the disks
-    that can be captured now first, boot disks before data disks; those
-    that cannot are folded behind a count and, shown, each says why (its
-    machine runs, or it was never made on a node). The console only reads
+    disk's Create image and a VM's Create image (in its page's "..." menu,
+    off until the VM is stopped), chooses its source disk from one
+    filterable list: the disks that can be captured now first, boot disks
+    before data disks; those that cannot are folded behind a count and,
+    shown, each says why (its machine runs, or it was never made on a
+    node). The console only reads
     this from the disk and its machine; the API decides. The page gives
     the guest command that clears its identity and the stop command for
     the disk's machine, since the platform changes nothing in the image,

@@ -92,6 +92,17 @@ full screen of a TUI takes about a second to draw.
   telnet's and `virsh console`'s, every other key the guest's; it says on
   stderr how it is attached, and the `stty` that tells the guest the
   screen's size.
+- **The web console has it too, out of the way.** It is slower than SSH and
+  is for what SSH cannot reach, so a VM's page offers it only in its head's
+  "..." menu, never as a button. It has a page of its own,
+  `/vms/<name>/console` (`web/src/pages/machine-console.tsx`), which
+  attaches on opening as `hangar console` does, on the same WebSocket
+  (`web/src/lib/console.ts`), drawing with the container Terminal's xterm
+  (`web/src/components/terminal.tsx`). The terminal is drawn at the
+  console's size, not the window's, as that size is everyone's: a smaller
+  window scrolls it. The client holding the input sets it from a few sizes
+  or the window's; one watching is offered Take input, which attaches
+  again with force.
 - **No switch.** Unlike GCE's and EC2's, a VM's console is never turned
   off: whoever may reach it, with `compute.machines.exec`, which every
   built-in role granting it grants with `compute.machines.ssh` and the

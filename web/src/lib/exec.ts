@@ -56,14 +56,19 @@ export interface Exec {
   close: () => void;
 }
 
-/** The exec URL of an object, on the origin the console was loaded from. */
-export function execURL(t: Pick<ExecTarget, "project" | "plural" | "name">, origin: string): string {
+/** The WebSocket URL of an object's capability, such as exec, on the origin the console was loaded from. */
+export function capabilityURL(t: Pick<ExecTarget, "project" | "plural" | "name">, action: string, origin: string): string {
   const u = new URL(origin);
   u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
-  u.pathname = `/v1/projects/${encodeURIComponent(t.project)}/${encodeURIComponent(t.plural)}/${encodeURIComponent(t.name)}:exec`;
+  u.pathname = `/v1/projects/${encodeURIComponent(t.project)}/${encodeURIComponent(t.plural)}/${encodeURIComponent(t.name)}:${action}`;
   u.search = "";
   u.hash = "";
   return u.toString();
+}
+
+/** The exec URL of an object, on the origin the console was loaded from. */
+export function execURL(t: Pick<ExecTarget, "project" | "plural" | "name">, origin: string): string {
+  return capabilityURL(t, "exec", origin);
 }
 
 /**
