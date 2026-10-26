@@ -480,6 +480,36 @@ func hooksFor(r registry.Resource) kindHooks {
 			nodeReads:  func(node string, obj proto.Message) bool { return portForwardNode(obj) == node },
 			fromNode:   portForwardFromNode,
 		}
+	case registry.EndpointService.Kind:
+		// Its writes hold its lock: a new one's transit port is drawn among
+		// the others' (drawEndpointService). Its node, which carries its
+		// traffic, alone reads it among nodes, and reports when it no longer
+		// does for one being deleted (docs/decisions/endpoint-services.md).
+		return kindHooks{
+			target:     projectTarget,
+			owner:      ownedByProject,
+			validate:   validateEndpointService,
+			writeLocks: only(endpointServiceLock),
+			drawStatus: drawEndpointService,
+			finalizers: []string{NodeCleanupFinalizer},
+			nodeOf:     endpointServiceNode,
+			nodeReads:  func(node string, obj proto.Message) bool { return endpointServiceNode(obj) == node },
+			fromNode:   endpointServiceFromNode,
+		}
+	case registry.NetworkEndpoint.Kind:
+		// It is its network's, and goes with it. Its node, its service's,
+		// alone reads it among nodes, and reports when it no longer holds
+		// the address of one being deleted, which no other machine or
+		// endpoint is given until then.
+		return kindHooks{
+			target:     projectTarget,
+			owner:      networkEndpointOwner,
+			validate:   validateNetworkEndpoint,
+			finalizers: []string{NodeCleanupFinalizer},
+			nodeOf:     networkEndpointNode,
+			nodeReads:  func(node string, obj proto.Message) bool { return networkEndpointNode(obj) == node },
+			fromNode:   networkEndpointFromNode,
+		}
 	case registry.PublicEndpoint.Kind:
 		// Its hostname is claimed for good when it is made. An apply with
 		// spec.hostnames holds customDomains: they are checked against the

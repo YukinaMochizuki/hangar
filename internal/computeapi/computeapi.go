@@ -1,7 +1,8 @@
 // Package computeapi is what the apiserver and the node agent must read
-// alike in Machines, Nodes, Disks, FileShares and CustomImages: what their
-// status says, of which each writes a part and reads the other's, which
-// Disks a Machine's spec names, and which networks a FileShare is on.
+// alike in Machines, Nodes, Disks, FileShares, CustomImages and
+// EndpointServices: what their status says, of which each writes a part and
+// reads the other's, which Disks a Machine's spec names, which networks a
+// FileShare is on, and which transit ports an EndpointService draws from.
 package computeapi
 
 import (
@@ -18,6 +19,14 @@ import (
 // DefaultNetwork is the network every project has: the one a machine
 // naming no interface joins, and a FileShare naming no network is on.
 const DefaultNetwork = "default"
+
+// The transit ports EndpointServices draw theirs from: below those
+// PortForwards draw, which a network's namespace takes at the same transit
+// address (docs/decisions/endpoint-services.md).
+const (
+	TransitPortsFrom    = 1024
+	TransitPortsThrough = 9999
+)
 
 // ShareNetworks are the networks a FileShare is on: those its spec names,
 // or DefaultNetwork if it names none.

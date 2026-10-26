@@ -36,6 +36,13 @@ func validateSecurityGroup(ctx context.Context, s *Server, _ auth.Principal, _, 
 			}
 			peers = append(peers, name)
 		}
+		// A network not made yet is let through, as a group is: until it is,
+		// the rule matches no one.
+		if name := p.GetNetwork(); name != "" {
+			if err := ValidName(name); err != nil {
+				return invalid("spec: network %q: %v", name, err)
+			}
+		}
 	}
 	return s.refuseGroupsOfOtherNetworks(ctx, g.GetMetadata().GetProject(), g.GetSpec().GetNetwork(), peers, "spec")
 }
