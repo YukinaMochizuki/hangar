@@ -7,6 +7,9 @@ those rules.
 ## Every change
 
 - [ ] `make check` passes, and CI is green.
+- [ ] Every flaky test met while making the change was handled as "When a
+      test is flaky" in `docs/conventions/testing.md` says: reproduced, then
+      an issue and a quarantine. None was re-run until it passed.
 - [ ] The change does what its issue or PR description says, and nothing else.
 - [ ] Generated code (`gen/`, sqlc output) changed only through its source and
       `make gen`.

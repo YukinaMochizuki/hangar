@@ -5,7 +5,7 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs host-swtpm e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race stress gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs host-swtpm e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
 SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
@@ -69,6 +69,14 @@ test:
 # on 16 cores (2026-10).
 test-e2e-race:
 	go test $(RACE) -parallel 1 -timeout 40m ./test/e2e/
+
+# The stress job's load on this machine (tools/stress.sh): -race
+# -shuffle=on with GOMAXPROCS=2 and CPU burners, quarantined tests included.
+# PKG=packages picks some (default: every package make test runs under the
+# race detector), COUNT=n the runs of each test (default 20), RUN=regexp some
+# tests. docs/conventions/testing.md says when to run it.
+stress:
+	./tools/stress.sh
 
 # Tests that need root: the guest's, which start processes as other users as
 # PID 1 does, the image unpacker's, which give files owners, and vmm-exec's,

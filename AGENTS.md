@@ -37,6 +37,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make check` | Lint, test, and fail if `make gen` would change anything. Run before every commit |
 | `make e2e` | Hermetic end-to-end tests (no KVM, no root) alone, about half a minute; `make test` runs them too |
 | `make test-e2e-race` | The same under the race detector, one test at a time (minutes; CI runs it, `make check` does not) |
+| `make stress` | The stress job's load on this machine: `-race -shuffle=on -count=COUNT` (default 20) on two CPUs under CPU load, quarantined tests included; `PKG=` some packages, `RUN=` some tests (`docs/conventions/testing.md`, "When a test is flaky") |
 | `make e2e-host` | Real-host tests (L4): boots guests as root, on a disposable testbed VM only |
 | `make dev` | Run the apiserver locally in dev auth mode |
 | `make lint-sh` | shellcheck every shell script (part of `make check`) |
