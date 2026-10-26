@@ -18,7 +18,9 @@ address.
   169.254.169.254. There is no `Subnet`:
   on one host without zones a subnet buys nothing another network does
   not, as DigitalOcean's VPCs have none; one can come later as a network's
-  default subnet. Peering, route tables and shared VPCs come later.
+  default subnet. Peering, route tables and shared VPCs come later; one
+  machine's port is reached from other networks of its project through an
+  `EndpointService` and `NetworkEndpoint`s (`endpoint-services.md`).
 - **A Container or VirtualMachine names its networks** in
   `spec.interfaces` (`NetworkInterface`), at most 8, each network once;
   none is one interface on `default`. They are eth0, eth1… in order, each
@@ -102,7 +104,9 @@ address.
     network's traffic leaves only as an address of its range, NATed, and only
     to the internet; nothing reaches a network or the host from one but
     replies. The exceptions are port forwards at the shared IPv4 address
-    ("Port forwards", below), and public IPv6: a new connection to a live /128 of one network from the
+    ("Port forwards", below), network endpoints, which reach one port of a
+    machine of another network of the project (`endpoint-services.md`),
+    and public IPv6: a new connection to a live /128 of one network from the
     internet or from another network on the host passes the host, and the
     receiving interface's security groups decide, as they would for the
     same packet from anywhere; a public address is no more trusted from a
@@ -110,22 +114,27 @@ address.
     one place it cannot be reached from. Private IPv4 between networks
     stays blocked, the host stays unreachable but for the front door's
     ports at its public addresses, which anyone reaches, and a network sends only from its own /128s. Table
-    `ip hangar` in the root namespace has nine rules, eleven with a public
-    address set and fourteen with a shared one too, however many networks
-    there are:
+    `ip hangar` in the root namespace has eleven rules, thirteen with a
+    public address set and sixteen with a shared one too, however many
+    networks there are:
     - prerouting, before conntrack: from `hnv*`, drop a source not routed
       back out of the link it came in on (strict reverse path, `fib saddr .
       iif oif missing`), so a network sends only as its own transit address;
+      from the uplink, drop a source of 100.64.0.0/10, which a group's
+      `network` peer trusts as a network's (`endpoint-services.md`);
     - postrouting: 100.64.0.0/10 leaving the uplink is SNATed to the
       shared address, TCP and UDP from its ports 32768 to 65535 (two
       rules) and anything else as it is (a third); without one, to the
       configured public address (masqueraded if none is set);
-    - forward, six, seven with a shared address: from `hnv*`, drop TCP to
+    - forward, seven, eight with a shared address: from `hnv*`, drop TCP to
       ports 25 and 465, and what conntrack finds invalid (the abuse
       protection below); with a shared address, from the uplink into
       `hnv*`, accept what the forward table DNATed and marked as a
       forward's (`ct status dnat ct mark & 0x40000000 == 0x40000000`),
-      the port forwards' way in; into `hnv*`, drop all but
+      the port forwards' way in; from `hnv*` into `hnv*`, accept what the
+      endpoint table marked as a network endpoint's and the NAT log did not
+      (`ct mark & 0xa0000000 == 0x20000000`), network endpoints' way
+      across (`endpoint-services.md`); into `hnv*`, drop all but
       replies, which isolates networks from each other; from
       `hnv*`, drop what leaves by any link but the uplink, so docker
       bridges, VPNs and the like, and the host's DNAT into them, stay out
@@ -179,7 +188,11 @@ address.
   - Tables `ip hangar_forward`, in the root namespace and in each
     namespace with a port forward, hold the forwards' DNAT, one rule a
     forward, apart from `ip hangar` so that one keeps its bounded size
-    ("Port forwards", below). With no forward they are not there.
+    ("Port forwards", below). With no forward they are not there. Tables
+    `ip hangar_endpoint` hold network endpoints' marks and DNAT in the same
+    way (`endpoint-services.md`), and a network's bridge holds each of its
+    endpoints' addresses, labelled `hn-br:ep`, which the driver leaves out
+    of the addresses it keeps the bridge to otherwise.
   - Table `inet hangar_limit` in each namespace has one rule, in forward:
     a new connection from `hn-br` out of `hn-up` past the network's rate is
     dropped (the abuse protection below). It is written, read back and
@@ -455,6 +468,9 @@ address.
     members' IPv4 and IPv6 addresses, `default` included; `icmp` is ICMPv6
     for an IPv6 peer. Inbound IPv6 from the internet is thus denied unless
     a rule allows it.
+  - A rule's peer may also be another network of the project (`network`),
+    for ingress alone: what comes through that network's endpoints, from
+    its transit address (`endpoint-services.md`).
   - The node resolves each interface's policy from the network's groups and
     every machine on it, whichever node runs them, in the same reconcile
     as the network's resolver, and enforces it in table `bridge hangar_sg`
