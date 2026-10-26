@@ -117,7 +117,7 @@ func (s *Server) reachUpload(chain auth.Chain, r *http.Request) (_ context.Conte
 	if project == nil {
 		return nil, nil, failedPrecondition("project %q is gone", key.Project)
 	}
-	call, err := s.callNode(p, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), ci.GetStatus().GetNode(),
+	call, err := s.callNode(ctx, p, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), ci.GetStatus().GetNode(),
 		fmt.Sprintf("custom image %q", key.Name))
 	if err != nil {
 		return nil, nil, err

@@ -185,7 +185,7 @@ func (s *Server) callMachine(ctx context.Context, r *reached, machine *computev1
 	if project == nil {
 		return nil, failedPrecondition("project %q is gone", r.key.Project)
 	}
-	return s.callNode(r.principal, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), machine.GetSpec().GetNode(), r.String())
+	return s.callNode(ctx, r.principal, project.(*tenancyv1alpha1.Project).GetSpec().GetTenant(), machine.GetSpec().GetNode(), r.String())
 }
 
 // machineTarget is a running machine a caller reached, and the call to its

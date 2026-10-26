@@ -36,7 +36,8 @@ message TenantStatus {
   repeated hangar.meta.v1.Condition conditions = 2;
   // The Plan the tenant has: spec.plan, or "default".
   string plan = 3;
-  // The plan's limits; an unset field has no limit.
+  // The plan's limits; an unset field has no limit, but for
+  // machine_calls, which is then 64.
   Limits limits = 4;
   // What all the tenant's projects hold.
   Usage usage = 5;

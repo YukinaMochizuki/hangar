@@ -78,7 +78,8 @@ export type ProjectSpec = Message<"hangar.tenancy.v1alpha1.ProjectSpec"> & {
   /**
    * A budget within the tenant's, such as one to cap what an agent's
    * project may hold. An unset field leaves the tenant's limit, and none
-   * may be above it; projects may not be set. Only someone who may apply
+   * may be above it; projects, domains and machine_calls, which only the
+   * tenant's plan sets, may not be set. Only someone who may apply
    * the tenant's projects at the tenant changes it, so a project's own
    * owner cannot raise it.
    *
@@ -112,7 +113,9 @@ export type ProjectStatus = Message<"hangar.tenancy.v1alpha1.ProjectStatus"> & {
 
   /**
    * The limits that hold for the project: the smaller of spec.limits and
-   * the tenant's. An unset field has no limit.
+   * the tenant's. An unset field has no limit, but for machine_calls,
+   * which is then 64. machine_calls is the tenant's allowance, shared by
+   * all its projects, not a budget of the project's own.
    *
    * @generated from field: hangar.tenancy.v1alpha1.Limits limits = 3;
    */

@@ -106,7 +106,8 @@ func (x *Plan) GetStatus() *PlanStatus {
 type PlanSpec struct {
 	state       protoimpl.MessageState `protogen:"open.v1"`
 	DisplayName string                 `protobuf:"bytes,1,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
-	// A field left unset has no limit.
+	// A field left unset has no limit, but for machine_calls, which is then
+	// 64.
 	Limits        *Limits `protobuf:"bytes,2,opt,name=limits,proto3" json:"limits,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -241,7 +242,15 @@ type Limits struct {
 	// PortForwards, each holding a port of the shared IPv4 address.
 	PortForwards *int32 `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3,oneof" json:"port_forwards,omitempty"`
 	// CustomImages; one that failed counts toward no limit.
-	CustomImages  *int32 `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3,oneof" json:"custom_images,omitempty"`
+	CustomImages *int32 `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3,oneof" json:"custom_images,omitempty"`
+	// Calls to machines' nodes the tenant's callers may keep open at once,
+	// together, and each caller alone: each log read or follow, exec, ssh,
+	// console or port-forward session, and each chunk of a CustomImage's
+	// upload, from its start to its end. A call over it fails at once with
+	// RESOURCE_EXHAUSTED, and a change applies from the next call. Only a
+	// Plan sets it, from 1 to 512; unset, it is 64. Usage does not count it.
+	// See docs/decisions/node-tunnel.md.
+	MachineCalls  *int32 `protobuf:"varint,14,opt,name=machine_calls,json=machineCalls,proto3,oneof" json:"machine_calls,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -363,6 +372,13 @@ func (x *Limits) GetPortForwards() int32 {
 func (x *Limits) GetCustomImages() int32 {
 	if x != nil && x.CustomImages != nil {
 		return *x.CustomImages
+	}
+	return 0
+}
+
+func (x *Limits) GetMachineCalls() int32 {
+	if x != nil && x.MachineCalls != nil {
+		return *x.MachineCalls
 	}
 	return 0
 }
@@ -1163,7 +1179,7 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"\x89\x05\n" +
+	"conditions\"\xc5\x05\n" +
 	"\x06Limits\x12\x15\n" +
 	"\x03cpu\x18\x01 \x01(\tH\x00R\x03cpu\x88\x01\x01\x12\x1b\n" +
 	"\x06memory\x18\x02 \x01(\tH\x01R\x06memory\x88\x01\x01\x12\x17\n" +
@@ -1180,7 +1196,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\adomains\x18\v \x01(\x05H\n" +
 	"R\adomains\x88\x01\x01\x12(\n" +
 	"\rport_forwards\x18\f \x01(\x05H\vR\fportForwards\x88\x01\x01\x12(\n" +
-	"\rcustom_images\x18\r \x01(\x05H\fR\fcustomImages\x88\x01\x01B\x06\n" +
+	"\rcustom_images\x18\r \x01(\x05H\fR\fcustomImages\x88\x01\x01\x12(\n" +
+	"\rmachine_calls\x18\x0e \x01(\x05H\rR\fmachineCalls\x88\x01\x01B\x06\n" +
 	"\x04_cpuB\t\n" +
 	"\a_memoryB\a\n" +
 	"\x05_diskB\v\n" +
@@ -1195,7 +1212,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\n" +
 	"\b_domainsB\x10\n" +
 	"\x0e_port_forwardsB\x10\n" +
-	"\x0e_custom_images\"\x8e\x03\n" +
+	"\x0e_custom_imagesB\x10\n" +
+	"\x0e_machine_calls\"\x8e\x03\n" +
 	"\x05Usage\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +

@@ -108,7 +108,8 @@ type ProjectSpec struct {
 	DisplayName string `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	// A budget within the tenant's, such as one to cap what an agent's
 	// project may hold. An unset field leaves the tenant's limit, and none
-	// may be above it; projects may not be set. Only someone who may apply
+	// may be above it; projects, domains and machine_calls, which only the
+	// tenant's plan sets, may not be set. Only someone who may apply
 	// the tenant's projects at the tenant changes it, so a project's own
 	// owner cannot raise it.
 	Limits        *Limits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
@@ -173,7 +174,9 @@ type ProjectStatus struct {
 	ObservedGeneration int64                  `protobuf:"varint,1,opt,name=observed_generation,json=observedGeneration,proto3" json:"observed_generation,omitempty"`
 	Conditions         []*v1.Condition        `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	// The limits that hold for the project: the smaller of spec.limits and
-	// the tenant's. An unset field has no limit.
+	// the tenant's. An unset field has no limit, but for machine_calls,
+	// which is then 64. machine_calls is the tenant's allowance, shared by
+	// all its projects, not a budget of the project's own.
 	Limits *Limits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
 	// What the project holds.
 	Usage         *Usage `protobuf:"bytes,4,opt,name=usage,proto3" json:"usage,omitempty"`

@@ -25,7 +25,8 @@ message Plan {
 // PlanSpec is the desired state of a plan.
 message PlanSpec {
   string display_name = 1;
-  // A field left unset has no limit.
+  // A field left unset has no limit, but for machine_calls, which is then
+  // 64.
   Limits limits = 2;
 }
 
@@ -67,6 +68,14 @@ message Limits {
   optional int32 port_forwards = 12;
   // CustomImages; one that failed counts toward no limit.
   optional int32 custom_images = 13;
+  // Calls to machines' nodes the tenant's callers may keep open at once,
+  // together, and each caller alone: each log read or follow, exec, ssh,
+  // console or port-forward session, and each chunk of a CustomImage's
+  // upload, from its start to its end. A call over it fails at once with
+  // RESOURCE_EXHAUSTED, and a change applies from the next call. Only a
+  // Plan sets it, from 1 to 512; unset, it is 64. Usage does not count it.
+  // See docs/decisions/node-tunnel.md.
+  optional int32 machine_calls = 14;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits

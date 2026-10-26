@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"google.golang.org/protobuf/proto"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
@@ -301,20 +302,41 @@ func TestLogsOfANodeDown(t *testing.T) {
 	})
 }
 
-// TestATenantsCallsToNodesAreCapped: a tenant with as many calls open to
-// nodes as it may is refused another at once, while another tenant's go
-// through; a follow ending, or cancelled, gives its slot back.
+// TestATenantsCallsToNodesAreCapped: a tenant whose plan's machine_calls
+// its callers together hold is refused another at once, while another
+// tenant's go through; raising the plan admits more from the next call; a
+// follow ending, or cancelled, gives its slot back.
 func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 	t.Parallel()
-	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerTenant = 2 })
+	w := newIdleWorld(t)
 	w.startAgent()
-	if _, err := w.root.Apply(context.Background(), registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
-		t.Fatal(err)
+	ctx := context.Background()
+	small := func(calls int32) {
+		t.Helper()
+		if _, err := w.root.Apply(ctx, registry.Plan, &tenancyv1alpha1.Plan{
+			Metadata: &metav1.ObjectMeta{Name: "small"},
+			Spec:     &tenancyv1alpha1.PlanSpec{Limits: &tenancyv1alpha1.Limits{MachineCalls: proto.Int32(calls)}},
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := w.root.Apply(context.Background(), registry.Project, &tenancyv1alpha1.Project{
-		Metadata: &metav1.ObjectMeta{Name: "elsewhere"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "other"},
-	}); err != nil {
-		t.Fatal(err)
+	small(3)
+	w.env.AddMember("owner@example.com", "platform.member")
+	for _, obj := range []struct {
+		r   registry.Resource
+		obj proto.Message
+	}{
+		{registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: apiservertest.Tenant}, Spec: &tenancyv1alpha1.TenantSpec{Plan: "small"}}},
+		{registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}},
+		{registry.Project, &tenancyv1alpha1.Project{Metadata: &metav1.ObjectMeta{Name: "elsewhere"}, Spec: &tenancyv1alpha1.ProjectSpec{Tenant: "other"}}},
+		{registry.RoleBinding, &iamv1alpha1.RoleBinding{Metadata: &metav1.ObjectMeta{Name: "owner"}, Spec: &iamv1alpha1.RoleBindingSpec{
+			Subject: &iamv1alpha1.Subject{Subject: &iamv1alpha1.Subject_User{User: "owner@example.com"}}, Role: "tenant.owner",
+			Scope: &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: apiservertest.Tenant}},
+		}}},
+	} {
+		if _, err := w.root.Apply(ctx, obj.r, obj.obj); err != nil {
+			t.Fatal(err)
+		}
 	}
 	job := container("job", "nginx")
 	job.Spec.RestartPolicy = computev1alpha1.RestartPolicy_RESTART_POLICY_NEVER
@@ -327,7 +349,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 	w.waitReason("job", "Running")
 	root := w.logsAs(apiservertest.Root)
 	read := func(project, name string) error {
-		_, err := readLogs(context.Background(), root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
+		_, err := readLogs(ctx, root, &computev1alpha1.LogsRequest{Kind: registry.Container.Kind, Project: project, Name: name})
 		return err
 	}
 	testutil.Eventually(w.t, "the other tenant's container readable", func() (bool, string) {
@@ -335,24 +357,38 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 		return err == nil, fmt.Sprint(err)
 	})
 
+	// Two callers hold the tenant's three calls.
 	started := "1:init:hangar-init: starting the container"
 	f1 := w.follow(apiservertest.Root, "api")
 	f2 := w.follow(apiservertest.Root, "job")
-	testutil.Eventually(w.t, "both follows open", func() (bool, string) {
+	f3 := w.follow("owner@example.com", "api")
+	testutil.Eventually(w.t, "three follows open", func() (bool, string) {
 		ok1, _ := f1.has(started)
 		ok2, _ := f2.has(started)
-		return ok1 && ok2, ""
+		ok3, _ := f3.has(started)
+		return ok1 && ok2 && ok3, ""
 	})
 	start := time.Now()
 	err := read(project, "api")
-	if connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), `tenant "acme"`) {
-		t.Errorf("a third call of the tenant: %v, want resource exhausted", err)
+	if connect.CodeOf(err) != connect.CodeResourceExhausted || !strings.Contains(err.Error(), `tenant "acme" has 3 calls open`) {
+		t.Errorf("a fourth call of the tenant: %v, want resource exhausted", err)
 	}
 	if took := time.Since(start); took > time.Second {
 		t.Errorf("the refusal took %v", took)
 	}
 	if err := read("elsewhere", "theirs"); err != nil {
 		t.Errorf("another tenant's call: %v", err)
+	}
+
+	// A larger plan holds from the next call.
+	small(4)
+	if err := read(project, "api"); err != nil {
+		t.Errorf("a fourth call once the plan allows four: %v", err)
+	}
+	f4 := w.follow("owner@example.com", "api")
+	testutil.Eventually(w.t, "the fourth follow open", func() (bool, string) { return f4.has(started) })
+	if err := read(project, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Errorf("a fifth call of the tenant: %v, want resource exhausted", err)
 	}
 
 	// The job exiting for good ends its follow, and frees its slot.
@@ -366,8 +402,8 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 		err := read(project, "api")
 		return err == nil, fmt.Sprint(err)
 	})
-	f3 := w.follow(apiservertest.Root, "api")
-	testutil.Eventually(w.t, "the third follow open", func() (bool, string) { return f3.has(started) })
+	f5 := w.follow(apiservertest.Root, "api")
+	testutil.Eventually(w.t, "the fifth follow open", func() (bool, string) { return f5.has(started) })
 	if err := read(project, "api"); connect.CodeOf(err) != connect.CodeResourceExhausted {
 		t.Errorf("a call at the cap again: %v", err)
 	}
@@ -385,7 +421,7 @@ func TestATenantsCallsToNodesAreCapped(t *testing.T) {
 // not; a call ending gives the slot back.
 func TestACallersCallsToNodesAreCappedAcrossTenants(t *testing.T) {
 	t.Parallel()
-	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerPrincipal = 2 })
+	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.DefaultMachineCalls = 2 })
 	w.startAgent()
 	ctx := context.Background()
 	if _, err := w.root.Apply(ctx, registry.Tenant, &tenancyv1alpha1.Tenant{Metadata: &metav1.ObjectMeta{Name: "other"}}); err != nil {
