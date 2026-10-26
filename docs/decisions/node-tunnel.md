@@ -31,23 +31,31 @@ called the apiserver, over the node socket that `SO_PEERCRED` authenticates
     connection being closed. An agent stopping answers its calls
     `Unavailable`, and gives them 2 s to answer before it closes the
     tunnel.
-  - Calls to nodes open at once are capped: 64 per caller, counted by the
-    principal the call is authenticated as, so making tenants, as any
-    member may, gives no one more; 64 per tenant (the tenant of the
-    container's project), so no tenant takes a node's streams from the
-    others; and 900 per node, below the 1000 streams an agent takes on its
-    tunnel, leaving room for the apiserver's own calls. A call over a cap
-    fails at once with `ResourceExhausted`; none waits. Logs, exec and
-    uploads share the caps. They are counted in each apiserver process,
-    which holds while there is one.
+  - Calls to nodes open at once are capped per tenant (the tenant of the
+    machine's project) at its Plan's `machine_calls` (64 when the Plan
+    sets none, 1 to 512 when it does), so no tenant takes a node's
+    streams from the others. Each caller, counted by the principal the
+    call is authenticated as across every tenant, is capped at the same
+    `machine_calls` of the tenant the call is in: one token may use its
+    tenant's whole allowance, and making tenants, as any member may, gives
+    no one more. Root on the host and the apiserver itself, members of no
+    tenant, are capped at 64 each instead. Each node takes 900, below the
+    1000 streams an agent takes on its tunnel, leaving room for the
+    apiserver's own calls. The Plan is read at each call, so a change
+    holds from the next, with no restart; calls already open stay open
+    when it is lowered. A call over a cap fails at once with
+    `ResourceExhausted`; none waits. Logs, exec, ssh, console, port
+    forwards and uploads share the caps. They are counted in each
+    apiserver process, which holds while there is one.
   - Each end of a tunnel receives with a window of 1 MiB per stream and of
     1000 MiB for the connection, every stream's at once. A call whose
     caller stops reading holds its stream's window until it ends; were the
     connection's smaller than the streams' together, a few hundred such
     calls would hold it all, and no call on the tunnel would get data while
     pings still went through. The cost is memory: the apiserver keeps up to
-    1 MiB unread per call, so at most 64 MiB for a caller and 900 MiB for a
-    node. x/net's HTTP/2 client passes no window to net/http, so the
+    1 MiB unread per call, so at most 64 MiB for a tenant on a Plan that
+    sets no `machine_calls`, 512 MiB for one on the largest, and 900 MiB
+    for a node. x/net's HTTP/2 client passes no window to net/http, so the
     apiserver's end is net/http's own, on the connection it took over.
   - Not the node listening and the apiserver dialing: that takes a second
     trust setup, and inbound ports on every node once there are several.

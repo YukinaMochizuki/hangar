@@ -305,7 +305,8 @@ tenant's: what all its projects together hold, against its Plan.
 - `Plan` is a global kind only platform administrators read and write. Its
   `spec.limits` caps cpu, memory, disk, machines, projects, networks,
   addresses, public endpoints, service tokens, file shares, custom
-  domains and custom images; a field left unset has no limit. A tenant with an empty
+  domains, custom images and calls to machines; a field left unset has
+  no limit, but for `machine_calls` (below). A tenant with an empty
   `spec.plan` has the plan `default`, a trial's, which the apiserver makes
   the first time it starts
   on a store, with 8 cpu, 16Gi memory, 100Gi disk, 10 machines, 5
@@ -325,6 +326,14 @@ tenant's: what all its projects together hold, against its Plan.
   with apply. Paying users get a larger plan, through their Invitation or
   their User. The default plan, and a plan a tenant, a User or an
   Invitation names, cannot be deleted.
+- A Plan's `machine_calls` is not a quota on what a tenant holds but on
+  the calls to machines' nodes (logs, exec, ssh, console, port forwards,
+  upload chunks) its callers keep open at once: together, and each caller
+  alone, so one token may use the tenant's whole allowance. Unset is 64,
+  not unlimited; admission takes 1 to 512, below what one node takes. The
+  apiserver reads it at each call, so a change holds from the next one;
+  `usage` does not count it, and a project may not set it. How the calls
+  are counted is in `node-tunnel.md`.
 - A tenant owner may give a project `spec.limits`, a budget inside the
   tenant's, such as one to cap an agent's project. It may not be above the
   tenant's limits, and the limits that hold for a project are the smaller of

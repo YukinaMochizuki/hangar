@@ -96,9 +96,12 @@ func (a *amounts) add(b amounts) {
 }
 
 // limitSet is a Limits read as numbers; a dimension not set has no limit.
+// machineCalls counts no object, so it is no dimension (nodecalls.go).
 type limitSet struct {
-	val [numDims]int64
-	set [numDims]bool
+	val             [numDims]int64
+	set             [numDims]bool
+	machineCalls    int64
+	machineCallsSet bool
 }
 
 // parseLimits reads l, refusing a quantity that is not one or a count
@@ -146,6 +149,12 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 			return ls, fmt.Errorf("%s: %d is below zero", dimNames[c.d], *c.v)
 		}
 		ls.val[c.d], ls.set[c.d] = int64(*c.v), true
+	}
+	if l.MachineCalls != nil {
+		if l.GetMachineCalls() < 0 {
+			return ls, fmt.Errorf("machine_calls: %d is below zero", l.GetMachineCalls())
+		}
+		ls.machineCalls, ls.machineCallsSet = int64(l.GetMachineCalls()), true
 	}
 	return ls, nil
 }
@@ -218,6 +227,9 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	l.Machines, l.Projects, l.Networks, l.Addresses = count(dimMachines), count(dimProjects), count(dimNetworks), count(dimAddresses)
 	l.PublicEndpoints, l.ServiceTokens, l.FileShares = count(dimPublicEndpoints), count(dimServiceTokens), count(dimFileShares)
 	l.Domains, l.PortForwards, l.CustomImages = count(dimDomains), count(dimPortForwards), count(dimCustomImages)
+	if ls.machineCallsSet {
+		l.MachineCalls = proto.Int32(int32(ls.machineCalls))
+	}
 	return l
 }
 
@@ -515,6 +527,20 @@ func (s *Server) listWith(ctx context.Context, r registry.Resource, project stri
 	return out, nil
 }
 
+// noPlanError is what planOf fails with, as FailedPrecondition, when the
+// tenant's Plan does not exist.
+type noPlanError struct{ tenant, plan string }
+
+func (e *noPlanError) Error() string {
+	return fmt.Sprintf("tenant %q has plan %q, which does not exist; a platform administrator has to make it", e.tenant, e.plan)
+}
+
+// isNoPlan reports whether err is planOf's for a Plan that does not exist.
+func isNoPlan(err error) bool {
+	var e *noPlanError
+	return errors.As(err, &e)
+}
+
 // planOf returns the name of tenant's Plan and its limits.
 func (s *Server) planOf(ctx context.Context, t *tenancyv1alpha1.Tenant) (string, limitSet, error) {
 	name := cmp.Or(t.GetSpec().GetPlan(), DefaultPlan)
@@ -523,8 +549,7 @@ func (s *Server) planOf(ctx context.Context, t *tenancyv1alpha1.Tenant) (string,
 		return name, limitSet{}, err
 	}
 	if obj == nil {
-		return name, limitSet{}, failedPrecondition("tenant %q has plan %q, which does not exist; a platform administrator has to make it",
-			t.GetMetadata().GetName(), name)
+		return name, limitSet{}, connect.NewError(connect.CodeFailedPrecondition, &noPlanError{tenant: t.GetMetadata().GetName(), plan: name})
 	}
 	// Admission refuses a plan whose limits do not parse.
 	ls, err := parseLimits(obj.(*tenancyv1alpha1.Plan).GetSpec().GetLimits())
@@ -723,8 +748,12 @@ func (s *Server) ownedTenants(ctx context.Context, p auth.Principal) (int64, err
 
 // validatePlan checks a plan's limits.
 func validatePlan(_ context.Context, _ *Server, _ auth.Principal, _, obj proto.Message) error {
-	if _, err := parseLimits(obj.(*tenancyv1alpha1.Plan).GetSpec().GetLimits()); err != nil {
+	ls, err := parseLimits(obj.(*tenancyv1alpha1.Plan).GetSpec().GetLimits())
+	if err != nil {
 		return invalid("spec.limits.%v", err)
+	}
+	if ls.machineCallsSet && (ls.machineCalls < 1 || ls.machineCalls > MaxMachineCalls) {
+		return invalid("spec.limits.machine_calls: %d is not from 1 to %d", ls.machineCalls, MaxMachineCalls)
 	}
 	return nil
 }
@@ -784,6 +813,9 @@ func (s *Server) validateProjectLimits(ctx context.Context, p auth.Principal, ol
 	}
 	if ls.set[dimDomains] {
 		return invalid("spec.limits.domains is not a project's to set; the tenant's plan limits domains")
+	}
+	if ls.machineCallsSet {
+		return invalid("spec.limits.machine_calls is not a project's to set; the tenant's plan limits machine calls")
 	}
 	tenantName := proj.GetSpec().GetTenant()
 	if !s.authz.Allowed(p, authz.Permission(registry.Project, authz.Apply), authz.Target{Tenant: tenantName}) {
@@ -894,8 +926,7 @@ func (s *Server) reconcileUsage(ctx context.Context, k controller.Key) error {
 	}
 	t := obj.(*tenancyv1alpha1.Tenant)
 	planName, planLimits, err := s.planOf(ctx, t)
-	var noPlan *connect.Error
-	if errors.As(err, &noPlan) {
+	if isNoPlan(err) {
 		// The usage is still worth showing; the plan's absence is in the
 		// admission errors.
 		err = nil

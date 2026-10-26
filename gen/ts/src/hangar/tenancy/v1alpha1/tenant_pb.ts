@@ -109,7 +109,8 @@ export type TenantStatus = Message<"hangar.tenancy.v1alpha1.TenantStatus"> & {
   plan: string;
 
   /**
-   * The plan's limits; an unset field has no limit.
+   * The plan's limits; an unset field has no limit, but for
+   * machine_calls, which is then 64.
    *
    * @generated from field: hangar.tenancy.v1alpha1.Limits limits = 4;
    */

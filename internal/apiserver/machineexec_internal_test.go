@@ -431,7 +431,7 @@ func wantFields(t *testing.T, got, want map[string]any) {
 // code it was refused with.
 func TestEveryRefusedExecIsLogged(t *testing.T) {
 	t.Parallel()
-	w := newExecWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1; c.ExecStart = 200 * time.Millisecond })
+	w := newExecWorld(t, func(c *Config) { c.DefaultMachineCalls = 1; c.ExecStart = 200 * time.Millisecond })
 	w.connectNode(t)
 	_, _ = w.dial(t, "carol@example.com", "api")
 	_, _ = w.dial(t, "", "api")
@@ -559,7 +559,7 @@ func TestAnExecIsAuthorizedBeforeAnythingIsTold(t *testing.T) {
 
 func TestAnExecIsRefusedBeforeTheUpgrade(t *testing.T) {
 	t.Parallel()
-	w := newExecWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1 })
+	w := newExecWorld(t, func(c *Config) { c.DefaultMachineCalls = 1 })
 	// No node yet.
 	_, err := w.dial(t, "alice@example.com", "api")
 	wantCodeOf(t, err, connect.CodeUnavailable, "a node not connected")

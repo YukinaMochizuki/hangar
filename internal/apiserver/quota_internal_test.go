@@ -565,6 +565,36 @@ func TestPlans(t *testing.T) {
 	}
 }
 
+// TestMachineCallsAreAPlans: a plan's machine_calls is from 1 to
+// MaxMachineCalls, and no project sets its own.
+func TestMachineCallsAreAPlans(t *testing.T) {
+	t.Parallel()
+	s, system, user := running(t)
+	pb := s.backend(registry.Plan)
+	plan := func(n int32) *tenancyv1alpha1.Plan {
+		return &tenancyv1alpha1.Plan{Metadata: &metav1.ObjectMeta{Name: "calls"},
+			Spec: &tenancyv1alpha1.PlanSpec{Limits: &tenancyv1alpha1.Limits{MachineCalls: proto.Int32(n)}}}
+	}
+	for _, n := range []int32{-1, 0, MaxMachineCalls + 1} {
+		_, err := pb.Apply(system, plan(n))
+		if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "spec.limits.machine_calls") {
+			t.Errorf("a plan with machine_calls %d: %v, want invalid argument", n, err)
+		}
+	}
+	for _, n := range []int32{1, MaxMachineCalls} {
+		if _, err := pb.Apply(system, plan(n)); err != nil {
+			t.Errorf("a plan with machine_calls %d: %v", n, err)
+		}
+	}
+	_, err := s.backend(registry.Project).Apply(user, &tenancyv1alpha1.Project{
+		Metadata: &metav1.ObjectMeta{Name: "web"},
+		Spec:     &tenancyv1alpha1.ProjectSpec{Tenant: "acme", Limits: &tenancyv1alpha1.Limits{MachineCalls: proto.Int32(1)}},
+	})
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || !strings.Contains(err.Error(), "spec.limits.machine_calls is not a project's to set") {
+		t.Errorf("a project setting machine_calls: %v, want invalid argument", err)
+	}
+}
+
 // waitUsage waits until the status of tenant acme and project web, as
 // their owner reads them, satisfy ok.
 func waitUsage(t *testing.T, s *Server, user context.Context, what string, ok func(*tenancyv1alpha1.TenantStatus, *tenancyv1alpha1.ProjectStatus) bool) {
@@ -620,10 +650,10 @@ func TestUsageIsReported(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Cpu: proto.String("8"), Machines: proto.Int32(1), Memory: proto.String("2Gi")})
-	wantProject := &tenancyv1alpha1.Limits{Cpu: proto.String("1500m"), Machines: proto.Int32(1), Memory: proto.String("2Gi")}
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Cpu: proto.String("8"), Machines: proto.Int32(1), Memory: proto.String("2Gi"), MachineCalls: proto.Int32(5)})
+	wantProject := &tenancyv1alpha1.Limits{Cpu: proto.String("1500m"), Machines: proto.Int32(1), Memory: proto.String("2Gi"), MachineCalls: proto.Int32(5)}
 	waitUsage(t, s, user, "project limits and a changed plan", func(ts *tenancyv1alpha1.TenantStatus, ps *tenancyv1alpha1.ProjectStatus) bool {
-		return ts.GetLimits().GetCpu() == "8" && proto.Equal(ps.GetLimits(), wantProject)
+		return ts.GetLimits().GetCpu() == "8" && ts.GetLimits().GetMachineCalls() == 5 && proto.Equal(ps.GetLimits(), wantProject)
 	})
 
 	// A Disk, which only the Disk watch sees.

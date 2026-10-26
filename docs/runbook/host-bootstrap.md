@@ -725,7 +725,11 @@ tokens, 3 file shares, 3 custom domains, 5 port forwards and 5 custom
 images. From then on the plan is data: the apiserver
 never changes it again, so a store made before these limits keeps the ones
 it was made with, and the operator sets them, as platform root, with apply; a field left
-out has no limit:
+out has no limit, but for `machineCalls`, the calls to machines (logs,
+exec, ssh, console, port forwards, uploads) a tenant's callers may keep
+open at once, which is then 64 and may be set from 1 to 512; one agent
+driving many machines through one token, as tower does, needs a plan
+that raises it:
 
 ```yaml
 apiVersion: tenancy.hangarlab.cloud/v1alpha1

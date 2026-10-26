@@ -73,10 +73,14 @@ type Config struct {
 	// TunnelLiveness is the node tunnels'; zero means
 	// tunnel.DefaultLiveness.
 	TunnelLiveness tunnel.Liveness
-	// MaxNodeCallsPerPrincipal, MaxNodeCallsPerTenant and
-	// MaxNodeCallsPerNode cap the calls to nodes open at once; zero means
-	// their Default.
-	MaxNodeCallsPerPrincipal, MaxNodeCallsPerTenant, MaxNodeCallsPerNode int
+	// MaxNodeCallsOfNoTenant caps the calls to nodes each caller of no
+	// tenant, root on the host or the apiserver, holds open at once (a
+	// tenant's callers are capped by its Plan's machine_calls), and
+	// MaxNodeCallsPerNode those to one node; zero means their Default.
+	MaxNodeCallsOfNoTenant, MaxNodeCallsPerNode int
+	// DefaultMachineCalls is the machine_calls of a Plan that sets none;
+	// zero means DefaultMachineCalls.
+	DefaultMachineCalls int
 	// ExecPing, ExecPong and ExecStart time a container's exec: how often
 	// its client is pinged, how long a pong may take, and how long the
 	// start may; zero means DefaultExecPing, DefaultExecPong and
@@ -251,6 +255,9 @@ func New(cfg Config) *Server {
 	if cfg.DefaultMaxOwnedTenants == 0 {
 		cfg.DefaultMaxOwnedTenants = DefaultMaxOwnedTenants
 	}
+	if cfg.DefaultMachineCalls == 0 {
+		cfg.DefaultMachineCalls = DefaultMachineCalls
+	}
 	s := &Server{
 		cfg:        cfg,
 		store:      txStore{cfg.Store},
@@ -260,7 +267,7 @@ func New(cfg Config) *Server {
 		authz:      authz.New(cfg.Store, cfg.ExtraRoles),
 		backends:   map[string]*backend{},
 		tunnels:    &tunnel.Hub{Liveness: cfg.TunnelLiveness, Log: cfg.Logger},
-		nodeCalls:  newNodeCalls(cfg.MaxNodeCallsPerPrincipal, cfg.MaxNodeCallsPerTenant, cfg.MaxNodeCallsPerNode),
+		nodeCalls:  newNodeCalls(cfg.MaxNodeCallsOfNoTenant, cfg.MaxNodeCallsPerNode),
 		tokenUses:  make(chan tokenUse, 256),
 		rpc:        newRPCMetrics(),
 		boots:      newBootTracker(cfg.Clock),

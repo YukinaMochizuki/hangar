@@ -600,7 +600,7 @@ func TestUploadsTakeEveryCredential(t *testing.T) {
 // its caller's calls to nodes; over the cap, the next is refused at once.
 func TestUploadsCountAgainstTheCallsToNodes(t *testing.T) {
 	t.Parallel()
-	w := newUploadWorld(t, func(c *Config) { c.MaxNodeCallsPerPrincipal = 1 })
+	w := newUploadWorld(t, func(c *Config) { c.DefaultMachineCalls = 1 })
 	alice := devHeader("alice@example.com")
 	hold := make(chan struct{})
 	w.node.mu.Lock()

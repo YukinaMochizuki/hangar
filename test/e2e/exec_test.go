@@ -263,7 +263,7 @@ func TestExecNeedsItsOwnPermission(t *testing.T) {
 // is down, and a caller over the caps on calls to nodes are each told so.
 func TestExecIsRefusedClearly(t *testing.T) {
 	t.Parallel()
-	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.MaxNodeCallsPerPrincipal = 1 })
+	w := newIdleWorldWith(t, func(c *apiserver.Config) { c.DefaultMachineCalls = 1 })
 	w.startAgent()
 	w.apply(container("api", "nginx"))
 	w.waitReason("api", "Running")

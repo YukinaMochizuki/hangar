@@ -29,7 +29,8 @@ message ProjectSpec {
   string display_name = 2;
   // A budget within the tenant's, such as one to cap what an agent's
   // project may hold. An unset field leaves the tenant's limit, and none
-  // may be above it; projects may not be set. Only someone who may apply
+  // may be above it; projects, domains and machine_calls, which only the
+  // tenant's plan sets, may not be set. Only someone who may apply
   // the tenant's projects at the tenant changes it, so a project's own
   // owner cannot raise it.
   Limits limits = 3;
@@ -40,7 +41,9 @@ message ProjectStatus {
   int64 observed_generation = 1;
   repeated hangar.meta.v1.Condition conditions = 2;
   // The limits that hold for the project: the smaller of spec.limits and
-  // the tenant's. An unset field has no limit.
+  // the tenant's. An unset field has no limit, but for machine_calls,
+  // which is then 64. machine_calls is the tenant's allowance, shared by
+  // all its projects, not a budget of the project's own.
   Limits limits = 3;
   // What the project holds.
   Usage usage = 4;

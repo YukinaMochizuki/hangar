@@ -163,7 +163,8 @@ type TenantStatus struct {
 	Conditions         []*v1.Condition        `protobuf:"bytes,2,rep,name=conditions,proto3" json:"conditions,omitempty"`
 	// The Plan the tenant has: spec.plan, or "default".
 	Plan string `protobuf:"bytes,3,opt,name=plan,proto3" json:"plan,omitempty"`
-	// The plan's limits; an unset field has no limit.
+	// The plan's limits; an unset field has no limit, but for
+	// machine_calls, which is then 64.
 	Limits *Limits `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
 	// What all the tenant's projects hold.
 	Usage         *Usage `protobuf:"bytes,5,opt,name=usage,proto3" json:"usage,omitempty"`
