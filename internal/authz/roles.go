@@ -39,6 +39,9 @@ const (
 	// SSH logs in to a machine; only machines use it. It reaches everything
 	// the machine can, as Exec does.
 	SSH Verb = "ssh"
+	// PortForward connects to a TCP port of a machine; only machines use it.
+	// It reaches whatever listens there, past the machine's security groups.
+	PortForward Verb = "portforward"
 	// Access uses a private public endpoint: reaches what it serves through
 	// the edge. It is not Get, which reads the endpoint object, nor Apply,
 	// which edits it.
@@ -46,7 +49,7 @@ const (
 )
 
 // verbs lists every Verb, for tests that must see each one.
-var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, Access}
+var verbs = []Verb{Get, List, Watch, Apply, Delete, UpdateStatus, Create, Logs, Exec, SSH, PortForward, Access}
 
 // CreateTenant is the permission to open a tenant of one's own.
 const CreateTenant = "tenancy.tenants.create"
@@ -63,6 +66,9 @@ var (
 	// MachineSSH is the permission to log in to a machine: to have a key
 	// signed for it, and to reach its port 22.
 	MachineSSH = Permission(registry.Machine, SSH)
+	// MachinePortForward is the permission to connect to any TCP port of a
+	// machine, whatever its security groups say.
+	MachinePortForward = Permission(registry.Machine, PortForward)
 )
 
 // PublicEndpointAccess is the permission to use a private PublicEndpoint
@@ -147,7 +153,7 @@ var readVerbs = []Verb{Get, List, Watch}
 // process in it, a login to it. Root, owners and editors hold them; viewers
 // do not, since output can hold what the spec does not. Reaching what a
 // private PublicEndpoint serves is of that sort too.
-var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, PublicEndpointAccess}
+var reachPermissions = []string{MachineLogs, MachineExec, MachineSSH, MachinePortForward, PublicEndpointAccess}
 
 // Roles are the built-in roles by name. Platform roles nest: root holds
 // everything a sponsor does, and a sponsor everything a member does.
@@ -219,8 +225,8 @@ func KnownPermission(permission string) bool {
 }
 
 // IsReach reports whether a permission reaches into what a machine or an
-// endpoint holds (logs, exec, ssh, endpoint access), rather than acting on
-// an object of its kind.
+// endpoint holds (logs, exec, ssh, port forward, endpoint access), rather
+// than acting on an object of its kind.
 func IsReach(permission string) bool { return slices.Contains(reachPermissions, permission) }
 
 // readPermissions are the read verbs on the kinds given.

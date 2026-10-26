@@ -27,6 +27,13 @@ service NodeService {
   // request names the machine, which must be on this node; the node picks
   // the address. See docs/decisions/vm-ssh.md.
   rpc SSH(stream SSHRequest) returns (stream SSHResponse);
+  // PortForward connects to a TCP port of a running machine's first
+  // interface, from its network's gateway inside the network's namespace,
+  // and relays bytes both ways for as long as the call lasts, as SSH does
+  // for port 22. The first request names the machine, which must be on this
+  // node, and the port; the node picks the address. See
+  // docs/decisions/port-forward.md.
+  rpc PortForward(stream PortForwardRequest) returns (stream PortForwardResponse);
   // Console attaches to a running firmware machine's interactive serial
   // console for as long as the call lasts. The first request is a start
   // naming the machine, which must be on this node; the rest are as its
@@ -157,6 +164,27 @@ message SSHRequest {
 
 message SSHResponse {
   // What the guest's sshd sends, as it comes.
+  bytes data = 1;
+}
+
+message PortForwardRequest {
+  oneof message {
+    // First, and only first.
+    PortForwardStart start = 1;
+    // What the client sends, as it comes.
+    bytes data = 2;
+  }
+}
+
+// PortForwardStart names what a port forward connects to.
+message PortForwardStart {
+  string machine_uid = 1;
+  // The TCP port, 1 to 65535.
+  int32 port = 2;
+}
+
+message PortForwardResponse {
+  // What the guest sends, as it comes.
   bytes data = 1;
 }
 

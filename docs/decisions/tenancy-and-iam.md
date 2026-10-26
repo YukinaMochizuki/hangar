@@ -39,10 +39,11 @@ cloud, and some people fund the hardware and should see more of it.
 - **Permissions, roles, bindings** (GCP IAM style):
   - Permissions are `<group>.<plural>.<verb>`, generated from resource
     declarations (`get`, `list`, `watch`, `apply`, `delete`, `updateStatus`);
-    special actions are declared explicitly. Logs, exec and ssh are
-    capabilities of the machine an object runs as, whatever its kind:
-    `compute.machines.logs`, `compute.machines.exec` and
-    `compute.machines.ssh`, checked in the project of the machine behind
+    special actions are declared explicitly. Logs, exec, ssh and port
+    forwards are capabilities of the machine an object runs as, whatever
+    its kind: `compute.machines.logs`, `compute.machines.exec`,
+    `compute.machines.ssh` and `compute.machines.portforward`
+    (`port-forward.md`), checked in the project of the machine behind
     the Container or VirtualMachine the caller names. With them goes
     `network.publicendpoints.access`, using a private public endpoint
     (`public-endpoints.md`). The owner and editor roles and `platform.root`

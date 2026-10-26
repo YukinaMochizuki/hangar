@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,7 +16,6 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
-	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 
@@ -25,7 +23,6 @@ import (
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1/computev1alpha1connect"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/client"
-	"github.com/YukinaMochizuki/hangar/internal/execws"
 	"github.com/YukinaMochizuki/hangar/internal/sshws"
 )
 
@@ -119,19 +116,24 @@ func (a *app) knownHosts() string {
 	return filepath.Join(filepath.Dir(a.configPath()), "known_hosts")
 }
 
-// sshContext is what hangar ssh and ssh-proxy reach the API with.
+// sshContext is what hangar ssh, ssh-proxy, console and port-forward reach
+// the API with.
 type sshContext struct {
 	project string
 	c       *Context
 	creds   credentials
 }
 
-func (a *app) sshContext() (*sshContext, error) {
+func (a *app) sshContext() (*sshContext, error) { return a.capabilityContext(registry.VirtualMachine) }
+
+// capabilityContext is what a machine capability of an object of kind
+// reaches the API with.
+func (a *app) capabilityContext(kind registry.Resource) (*sshContext, error) {
 	c, err := a.current()
 	if err != nil {
 		return nil, err
 	}
-	project, err := a.projectFor(registry.VirtualMachine, c)
+	project, err := a.projectFor(kind, c)
 	if err != nil {
 		return nil, err
 	}
@@ -334,78 +336,5 @@ func (a *app) sshProxy(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	header := http.Header{}
-	if err := sc.creds.set(ctx, header.Set); err != nil {
-		return err
-	}
-	every, timeout := a.opts.ExecPing, a.opts.ExecPong
-	if every <= 0 {
-		every = defaultExecPing
-	}
-	if timeout <= 0 {
-		timeout = defaultExecPong
-	}
-	live := execws.NewLiveness(every, timeout)
-	hc, base := a.execHTTPClient(sc.c)
-	conn, resp, err := websocket.Dial(ctx, base+sshws.Path(sc.project, registry.VirtualMachine.Plural, name), &websocket.DialOptions{
-		HTTPClient: hc, HTTPHeader: header, Subprotocols: []string{sshws.Subprotocol},
-		OnPingReceived: live.OnPing, OnPongReceived: live.OnPong,
-	})
-	if err != nil {
-		if resp == nil {
-			return err
-		}
-		defer func() { _ = resp.Body.Close() }()
-		if resp.StatusCode != http.StatusSwitchingProtocols {
-			return execws.ReadError(resp)
-		}
-		return err
-	}
-	defer func() { _ = conn.CloseNow() }()
-	conn.SetReadLimit(sshws.MaxMessage)
-	ctx, cancel := context.WithCancelCause(ctx)
-	defer cancel(nil)
-	ws := context.WithoutCancel(ctx)
-	stopOnCancel := context.AfterFunc(ctx, func() { _ = conn.CloseNow() })
-	defer stopOnCancel()
-	go func() {
-		if live.Run(ctx, conn) != nil {
-			cancel(errors.New("the server stopped answering"))
-		}
-	}()
-	go func() {
-		buf := make([]byte, 32<<10)
-		for {
-			n, err := a.io.In.Read(buf)
-			if n > 0 {
-				done := live.Pending()
-				werr := conn.Write(ws, websocket.MessageBinary, buf[:n])
-				done()
-				if werr != nil {
-					return
-				}
-			}
-			if err != nil {
-				// ssh is done with the connection.
-				_ = conn.Close(websocket.StatusNormalClosure, "")
-				return
-			}
-		}
-	}()
-	for {
-		typ, b, err := conn.Read(ws)
-		if err != nil {
-			if cause := context.Cause(ctx); cause != nil {
-				return cause
-			}
-			return execws.ErrorOf(err)
-		}
-		live.Heard()
-		if typ != websocket.MessageBinary {
-			continue
-		}
-		if _, err := a.io.Out.Write(b); err != nil {
-			return err
-		}
-	}
+	return a.tunnel(ctx, sc, sshws.Path(sc.project, registry.VirtualMachine.Plural, name), sshws.Subprotocol, sshws.MaxMessage, a.io.In, a.io.Out)
 }

@@ -74,14 +74,15 @@ func (h *Host) interfaceAt(networkUID string, addr netip.Addr) (driver.Interface
 	return driver.Interface{}, false
 }
 
-// edgeOpen reports whether the firewall lets Dial reach addr: port 22 of
-// any interface, or a port of an interface's edge ports, but nothing of a
-// file share's server. Callers hold h.mu.
-func (h *Host) edgeOpen(networkUID string, addr netip.AddrPort) bool {
+// dialOpen reports whether the firewall lets a dial reach addr: port 22 of
+// any interface, a port of an interface's edge ports, or with anyPort, a
+// port forward's, any port; but nothing of a file share's server. Callers
+// hold h.mu.
+func (h *Host) dialOpen(networkUID string, addr netip.AddrPort, anyPort bool) bool {
 	if i, ok := h.interfaceAt(networkUID, addr.Addr()); ok && i.FileShareServer {
 		return false
 	}
-	if addr.Port() == 22 {
+	if anyPort || addr.Port() == 22 {
 		return true
 	}
 	for key, p := range h.firewalls[networkUID] {

@@ -39,6 +39,16 @@ func (h *Host) Dials() []string {
 }
 
 func (d network) Dial(_ context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
+	return d.dial(networkUID, addr, false)
+}
+
+// DialAnyPort is Dial as a port forward's, which the firewall lets in to
+// any port of an interface but a file share's server's.
+func (d network) DialAnyPort(_ context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
+	return d.dial(networkUID, addr, true)
+}
+
+func (d network) dial(networkUID string, addr netip.AddrPort, anyPort bool) (net.Conn, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	if d.h.netErr != nil {
@@ -48,7 +58,7 @@ func (d network) Dial(_ context.Context, networkUID string, addr netip.AddrPort)
 		return nil, fmt.Errorf("network %s has no namespace on the host", networkUID)
 	}
 	d.h.dials = append(d.h.dials, networkUID+" "+addr.String())
-	if !d.h.edgeOpen(networkUID, addr) {
+	if !d.h.dialOpen(networkUID, addr, anyPort) {
 		// The real firewall drops it, and the dial times out.
 		return nil, fmt.Errorf("network %s: dial %s: the firewall drops it: %w", networkUID, addr, syscall.ETIMEDOUT)
 	}

@@ -450,7 +450,10 @@ address.
     gateway's address. So does the edge's path to a public endpoint: while an endpoint exists, TCP from the gateway's
     address to its port passes on the first interface of the machine it
     reaches, that tap alone, gated by Access and the endpoint's permission
-    in the edge (`public-endpoints.md`); the rule goes with the endpoint. The bridge and the IP
+    in the edge (`public-endpoints.md`); the rule goes with the endpoint.
+    So does a port forward: TCP from the gateway's address to any port of
+    a tap, from a socket the node marked as a port forward's, gated by
+    RBAC (`port-forward.md`). The bridge and the IP
     stack share one conntrack entry per flow. A tap with no policy yet,
     such as one just made, sends and receives nothing else, and the table
     is made, closed, with the network, before any tap can join it. The

@@ -18,7 +18,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/node.proto.
  */
 export const file_hangar_node_v1_node: GenFile = /*@__PURE__*/
-  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDIooBCg5Db25zb2xlUmVxdWVzdBItCgVzdGFydBgBIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGFydEgAEg8KBWlucHV0GAIgASgMSAASLQoGcmVzaXplGAMgASgLMhsuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIkUKDENvbnNvbGVTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDQoFZm9yY2UYAyABKAgiLAoLQ29uc29sZVNpemUSDwoHY29sdW1ucxgBIAEoDRIMCgRyb3dzGAIgASgNIm4KD0NvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABItCgVzdGF0ZRgCIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGF0ZUgAEg8KBWVuZGVkGAMgASgJSABCCQoHbWVzc2FnZSJICgxDb25zb2xlU3RhdGUSDQoFaW5wdXQYASABKAgSKQoEc2l6ZRgCIAEoCzIbLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTaXplKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMowECgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESTgoHQ29uc29sZRIeLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVSZXF1ZXN0Gh8uaGFuZ2FyLm5vZGUudjEuQ29uc29sZVJlc3BvbnNlKAEwARJqChFVcGxvYWRDdXN0b21JbWFnZRIoLmhhbmdhci5ub2RlLnYxLlVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBopLmhhbmdhci5ub2RlLnYxLlVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2UoARJxChRHZXRDdXN0b21JbWFnZVVwbG9hZBIrLmhhbmdhci5ub2RlLnYxLkdldEN1c3RvbUltYWdlVXBsb2FkUmVxdWVzdBosLmhhbmdhci5ub2RlLnYxLkdldEN1c3RvbUltYWdlVXBsb2FkUmVzcG9uc2VCuQEKEmNvbS5oYW5nYXIubm9kZS52MUIJTm9kZVByb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z", [file_google_protobuf_timestamp]);
+  fileDesc("ChloYW5nYXIvbm9kZS92MS9ub2RlLnByb3RvEg5oYW5nYXIubm9kZS52MSKFAQoLTG9nc1JlcXVlc3QSEwoLbWFjaGluZV91aWQYASABKAkSDgoGZm9sbG93GAIgASgIEhcKCnRhaWxfbGluZXMYAyABKANIAIgBARIpCgVzaW5jZRgEIAEoCzIaLmdvb2dsZS5wcm90b2J1Zi5UaW1lc3RhbXBCDQoLX3RhaWxfbGluZXMiOgoMTG9nc1Jlc3BvbnNlEioKB3JlY29yZHMYASADKAsyGS5oYW5nYXIubm9kZS52MS5Mb2dSZWNvcmQitQEKCUxvZ1JlY29yZBIMCgRib290GAEgASgDEikKBnN0cmVhbRgCIAEoDjIZLmhhbmdhci5ub2RlLnYxLkxvZ1N0cmVhbRIoCgR0aW1lGAMgASgLMhouZ29vZ2xlLnByb3RvYnVmLlRpbWVzdGFtcBIOCgRkYXRhGAQgASgMSAASKgoEZXhpdBgFIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdjb250ZW50IioKCkV4aXRTdGF0dXMSDAoEY29kZRgBIAEoBRIOCgZzaWduYWwYAiABKAUizAEKC0V4ZWNSZXF1ZXN0EioKBXN0YXJ0GAEgASgLMhkuaGFuZ2FyLm5vZGUudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABI1CgtzdGRpbl9jbG9zZRgDIAEoCzIeLmhhbmdhci5ub2RlLnYxLkV4ZWNTdGRpbkNsb3NlSAASLAoGcmVzaXplGAQgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UipAEKCUV4ZWNTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIMCgRhcmdzGAIgAygJEgsKA2VudhgDIAMoCRITCgt3b3JraW5nX2RpchgEIAEoCRIMCgR1c2VyGAUgASgJEgsKA3R0eRgGIAEoCBIoCgRzaXplGAcgASgLMhouaGFuZ2FyLm5vZGUudjEuV2luZG93U2l6ZRINCgVzdGRpbhgIIAEoCCIQCg5FeGVjU3RkaW5DbG9zZSIoCgpXaW5kb3dTaXplEgwKBHJvd3MYASABKA0SDAoEY29scxgCIAEoDSJpCgxFeGVjUmVzcG9uc2USEAoGc3Rkb3V0GAEgASgMSAASEAoGc3RkZXJyGAIgASgMSAASKgoEZXhpdBgDIAEoCzIaLmhhbmdhci5ub2RlLnYxLkV4aXRTdGF0dXNIAEIJCgdtZXNzYWdlIj4KClNTSFJlcXVlc3QSFQoLbWFjaGluZV91aWQYASABKAlIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSIbCgtTU0hSZXNwb25zZRIMCgRkYXRhGAEgASgMImIKElBvcnRGb3J3YXJkUmVxdWVzdBIxCgVzdGFydBgBIAEoCzIgLmhhbmdhci5ub2RlLnYxLlBvcnRGb3J3YXJkU3RhcnRIABIOCgRkYXRhGAIgASgMSABCCQoHbWVzc2FnZSI1ChBQb3J0Rm9yd2FyZFN0YXJ0EhMKC21hY2hpbmVfdWlkGAEgASgJEgwKBHBvcnQYAiABKAUiIwoTUG9ydEZvcndhcmRSZXNwb25zZRIMCgRkYXRhGAEgASgMImMKGFVwbG9hZEN1c3RvbUltYWdlUmVxdWVzdBIsCgVjaHVuaxgBIAEoCzIbLmhhbmdhci5ub2RlLnYxLlVwbG9hZENodW5rSAASDgoEZGF0YRgCIAEoDEgAQgkKB21lc3NhZ2UiUAoLVXBsb2FkQ2h1bmsSEQoJaW1hZ2VfdWlkGAEgASgJEg4KBm9mZnNldBgCIAEoAxIOCgZsZW5ndGgYAyABKAMSDgoGc2hhMjU2GAQgASgJIjMKGVVwbG9hZEN1c3RvbUltYWdlUmVzcG9uc2USFgoOcmVjZWl2ZWRfYnl0ZXMYASABKAMiMAobR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0EhEKCWltYWdlX3VpZBgBIAEoCSI2ChxHZXRDdXN0b21JbWFnZVVwbG9hZFJlc3BvbnNlEhYKDnJlY2VpdmVkX2J5dGVzGAEgASgDIooBCg5Db25zb2xlUmVxdWVzdBItCgVzdGFydBgBIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGFydEgAEg8KBWlucHV0GAIgASgMSAASLQoGcmVzaXplGAMgASgLMhsuaGFuZ2FyLm5vZGUudjEuQ29uc29sZVNpemVIAEIJCgdtZXNzYWdlIkUKDENvbnNvbGVTdGFydBITCgttYWNoaW5lX3VpZBgBIAEoCRIRCglyZWFkX29ubHkYAiABKAgSDQoFZm9yY2UYAyABKAgiLAoLQ29uc29sZVNpemUSDwoHY29sdW1ucxgBIAEoDRIMCgRyb3dzGAIgASgNIm4KD0NvbnNvbGVSZXNwb25zZRIQCgZvdXRwdXQYASABKAxIABItCgVzdGF0ZRgCIAEoCzIcLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTdGF0ZUgAEg8KBWVuZGVkGAMgASgJSABCCQoHbWVzc2FnZSJICgxDb25zb2xlU3RhdGUSDQoFaW5wdXQYASABKAgSKQoEc2l6ZRgCIAEoCzIbLmhhbmdhci5ub2RlLnYxLkNvbnNvbGVTaXplKn8KCUxvZ1N0cmVhbRIaChZMT0dfU1RSRUFNX1VOU1BFQ0lGSUVEEAASFQoRTE9HX1NUUkVBTV9TVERPVVQQARIVChFMT0dfU1RSRUFNX1NUREVSUhACEhMKD0xPR19TVFJFQU1fSU5JVBADEhMKD0xPR19TVFJFQU1fRVhJVBAEMugECgtOb2RlU2VydmljZRJDCgRMb2dzEhsuaGFuZ2FyLm5vZGUudjEuTG9nc1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5Mb2dzUmVzcG9uc2UwARJFCgRFeGVjEhsuaGFuZ2FyLm5vZGUudjEuRXhlY1JlcXVlc3QaHC5oYW5nYXIubm9kZS52MS5FeGVjUmVzcG9uc2UoATABEkIKA1NTSBIaLmhhbmdhci5ub2RlLnYxLlNTSFJlcXVlc3QaGy5oYW5nYXIubm9kZS52MS5TU0hSZXNwb25zZSgBMAESWgoLUG9ydEZvcndhcmQSIi5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlcXVlc3QaIy5oYW5nYXIubm9kZS52MS5Qb3J0Rm9yd2FyZFJlc3BvbnNlKAEwARJOCgdDb25zb2xlEh4uaGFuZ2FyLm5vZGUudjEuQ29uc29sZVJlcXVlc3QaHy5oYW5nYXIubm9kZS52MS5Db25zb2xlUmVzcG9uc2UoATABEmoKEVVwbG9hZEN1c3RvbUltYWdlEiguaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXF1ZXN0GikuaGFuZ2FyLm5vZGUudjEuVXBsb2FkQ3VzdG9tSW1hZ2VSZXNwb25zZSgBEnEKFEdldEN1c3RvbUltYWdlVXBsb2FkEisuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuR2V0Q3VzdG9tSW1hZ2VVcGxvYWRSZXNwb25zZUK5AQoSY29tLmhhbmdhci5ub2RlLnYxQglOb2RlUHJvdG9QAVo+Z2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvbm9kZS92MTtub2RldjGiAgNITliqAg5IYW5nYXIuTm9kZS5WMcoCDkhhbmdhclxOb2RlXFYx4gIaSGFuZ2FyXE5vZGVcVjFcR1BCTWV0YWRhdGHqAhBIYW5nYXI6Ok5vZGU6OlYxYgZwcm90bzM", [file_google_protobuf_timestamp]);
 
 /**
  * @generated from message hangar.node.v1.LogsRequest
@@ -406,6 +406,84 @@ export const SSHResponseSchema: GenMessage<SSHResponse> = /*@__PURE__*/
   messageDesc(file_hangar_node_v1_node, 10);
 
 /**
+ * @generated from message hangar.node.v1.PortForwardRequest
+ */
+export type PortForwardRequest = Message<"hangar.node.v1.PortForwardRequest"> & {
+  /**
+   * @generated from oneof hangar.node.v1.PortForwardRequest.message
+   */
+  message: {
+    /**
+     * First, and only first.
+     *
+     * @generated from field: hangar.node.v1.PortForwardStart start = 1;
+     */
+    value: PortForwardStart;
+    case: "start";
+  } | {
+    /**
+     * What the client sends, as it comes.
+     *
+     * @generated from field: bytes data = 2;
+     */
+    value: Uint8Array;
+    case: "data";
+  } | { case: undefined; value?: undefined };
+};
+
+/**
+ * Describes the message hangar.node.v1.PortForwardRequest.
+ * Use `create(PortForwardRequestSchema)` to create a new message.
+ */
+export const PortForwardRequestSchema: GenMessage<PortForwardRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 11);
+
+/**
+ * PortForwardStart names what a port forward connects to.
+ *
+ * @generated from message hangar.node.v1.PortForwardStart
+ */
+export type PortForwardStart = Message<"hangar.node.v1.PortForwardStart"> & {
+  /**
+   * @generated from field: string machine_uid = 1;
+   */
+  machineUid: string;
+
+  /**
+   * The TCP port, 1 to 65535.
+   *
+   * @generated from field: int32 port = 2;
+   */
+  port: number;
+};
+
+/**
+ * Describes the message hangar.node.v1.PortForwardStart.
+ * Use `create(PortForwardStartSchema)` to create a new message.
+ */
+export const PortForwardStartSchema: GenMessage<PortForwardStart> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 12);
+
+/**
+ * @generated from message hangar.node.v1.PortForwardResponse
+ */
+export type PortForwardResponse = Message<"hangar.node.v1.PortForwardResponse"> & {
+  /**
+   * What the guest sends, as it comes.
+   *
+   * @generated from field: bytes data = 1;
+   */
+  data: Uint8Array;
+};
+
+/**
+ * Describes the message hangar.node.v1.PortForwardResponse.
+ * Use `create(PortForwardResponseSchema)` to create a new message.
+ */
+export const PortForwardResponseSchema: GenMessage<PortForwardResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_node, 13);
+
+/**
  * @generated from message hangar.node.v1.UploadCustomImageRequest
  */
 export type UploadCustomImageRequest = Message<"hangar.node.v1.UploadCustomImageRequest"> & {
@@ -436,7 +514,7 @@ export type UploadCustomImageRequest = Message<"hangar.node.v1.UploadCustomImage
  * Use `create(UploadCustomImageRequestSchema)` to create a new message.
  */
 export const UploadCustomImageRequestSchema: GenMessage<UploadCustomImageRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 11);
+  messageDesc(file_hangar_node_v1_node, 14);
 
 /**
  * UploadChunk says where a chunk of an upload goes.
@@ -474,7 +552,7 @@ export type UploadChunk = Message<"hangar.node.v1.UploadChunk"> & {
  * Use `create(UploadChunkSchema)` to create a new message.
  */
 export const UploadChunkSchema: GenMessage<UploadChunk> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 12);
+  messageDesc(file_hangar_node_v1_node, 15);
 
 /**
  * @generated from message hangar.node.v1.UploadCustomImageResponse
@@ -491,7 +569,7 @@ export type UploadCustomImageResponse = Message<"hangar.node.v1.UploadCustomImag
  * Use `create(UploadCustomImageResponseSchema)` to create a new message.
  */
 export const UploadCustomImageResponseSchema: GenMessage<UploadCustomImageResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 13);
+  messageDesc(file_hangar_node_v1_node, 16);
 
 /**
  * @generated from message hangar.node.v1.GetCustomImageUploadRequest
@@ -508,7 +586,7 @@ export type GetCustomImageUploadRequest = Message<"hangar.node.v1.GetCustomImage
  * Use `create(GetCustomImageUploadRequestSchema)` to create a new message.
  */
 export const GetCustomImageUploadRequestSchema: GenMessage<GetCustomImageUploadRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 14);
+  messageDesc(file_hangar_node_v1_node, 17);
 
 /**
  * @generated from message hangar.node.v1.GetCustomImageUploadResponse
@@ -525,7 +603,7 @@ export type GetCustomImageUploadResponse = Message<"hangar.node.v1.GetCustomImag
  * Use `create(GetCustomImageUploadResponseSchema)` to create a new message.
  */
 export const GetCustomImageUploadResponseSchema: GenMessage<GetCustomImageUploadResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 15);
+  messageDesc(file_hangar_node_v1_node, 18);
 
 /**
  * ConsoleRequest is what a client of a firmware machine's interactive
@@ -572,7 +650,7 @@ export type ConsoleRequest = Message<"hangar.node.v1.ConsoleRequest"> & {
  * Use `create(ConsoleRequestSchema)` to create a new message.
  */
 export const ConsoleRequestSchema: GenMessage<ConsoleRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 16);
+  messageDesc(file_hangar_node_v1_node, 19);
 
 /**
  * ConsoleStart attaches a client to a machine's serial console.
@@ -608,7 +686,7 @@ export type ConsoleStart = Message<"hangar.node.v1.ConsoleStart"> & {
  * Use `create(ConsoleStartSchema)` to create a new message.
  */
 export const ConsoleStartSchema: GenMessage<ConsoleStart> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 17);
+  messageDesc(file_hangar_node_v1_node, 20);
 
 /**
  * ConsoleSize is a screen's size in character cells.
@@ -632,7 +710,7 @@ export type ConsoleSize = Message<"hangar.node.v1.ConsoleSize"> & {
  * Use `create(ConsoleSizeSchema)` to create a new message.
  */
 export const ConsoleSizeSchema: GenMessage<ConsoleSize> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 18);
+  messageDesc(file_hangar_node_v1_node, 21);
 
 /**
  * ConsoleResponse is what an attached client gets: its state first, then
@@ -677,7 +755,7 @@ export type ConsoleResponse = Message<"hangar.node.v1.ConsoleResponse"> & {
  * Use `create(ConsoleResponseSchema)` to create a new message.
  */
 export const ConsoleResponseSchema: GenMessage<ConsoleResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 19);
+  messageDesc(file_hangar_node_v1_node, 22);
 
 /**
  * ConsoleState is how a client is attached.
@@ -705,7 +783,7 @@ export type ConsoleState = Message<"hangar.node.v1.ConsoleState"> & {
  * Use `create(ConsoleStateSchema)` to create a new message.
  */
 export const ConsoleStateSchema: GenMessage<ConsoleState> = /*@__PURE__*/
-  messageDesc(file_hangar_node_v1_node, 20);
+  messageDesc(file_hangar_node_v1_node, 23);
 
 /**
  * LogStream says what a record carries.
@@ -792,6 +870,21 @@ export const NodeService: GenService<{
     methodKind: "bidi_streaming";
     input: typeof SSHRequestSchema;
     output: typeof SSHResponseSchema;
+  },
+  /**
+   * PortForward connects to a TCP port of a running machine's first
+   * interface, from its network's gateway inside the network's namespace,
+   * and relays bytes both ways for as long as the call lasts, as SSH does
+   * for port 22. The first request names the machine, which must be on this
+   * node, and the port; the node picks the address. See
+   * docs/decisions/port-forward.md.
+   *
+   * @generated from rpc hangar.node.v1.NodeService.PortForward
+   */
+  portForward: {
+    methodKind: "bidi_streaming";
+    input: typeof PortForwardRequestSchema;
+    output: typeof PortForwardResponseSchema;
   },
   /**
    * Console attaches to a running firmware machine's interactive serial

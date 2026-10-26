@@ -523,6 +523,10 @@ type Network interface {
 	// (docs/decisions/public-endpoints.md). The firewall lets them in to
 	// port 22 of every interface, and to an interface's EdgePorts.
 	Dial(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error)
+	// DialAnyPort connects as Dial does, as a port forward
+	// (docs/decisions/port-forward.md), which the firewall lets in to any
+	// TCP port of an interface, but none of a file share's server.
+	DialAnyPort(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error)
 	// Instance names what a network's sockets serve, until it is made again;
 	// "" means there is nothing to serve.
 	Instance(ctx context.Context, networkUID string) (string, error)

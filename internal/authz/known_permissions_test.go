@@ -37,7 +37,7 @@ func TestKnownPermissions(t *testing.T) {
 	for _, perm := range []string{
 		"compute.containers.apply", "iam.rolebindings.apply", "compute.machines.updateStatus",
 		"tenancy.tenants.create", "compute.machines.logs", "compute.machines.exec",
-		"compute.machines.ssh", "network.publicendpoints.access",
+		"compute.machines.ssh", "compute.machines.portforward", "network.publicendpoints.access",
 		"compute.machinesizes.get", "compute.machinesizes.apply", "compute.machinesizes.updateStatus",
 		"platform.monitoring.read",
 	} {

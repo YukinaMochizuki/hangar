@@ -25,6 +25,12 @@ type packet struct {
 // holds and the verdict is accept. It knows the expressions rules here use.
 func accepts(t *testing.T, r ruleSpec, p packet) bool {
 	t.Helper()
+	return acceptsMarked(t, r, p, 0)
+}
+
+// acceptsMarked is accepts of p sent by a socket marked mark, 0 for none.
+func acceptsMarked(t *testing.T, r ruleSpec, p packet, mark uint32) bool {
+	t.Helper()
 	var reg []byte
 	for _, e := range r.exprs {
 		switch e := e.(type) {
@@ -34,6 +40,8 @@ func accepts(t *testing.T, r ruleSpec, p packet) bool {
 				reg = etherIPv4
 			case expr.MetaKeyL4PROTO:
 				reg = []byte{p.l4}
+			case expr.MetaKeyMARK:
+				reg = binary.NativeEndian.AppendUint32(nil, mark)
 			default:
 				t.Fatalf("meta %v", e.Key)
 			}
@@ -128,6 +136,67 @@ func TestThePlatformsSSHPasses(t *testing.T) {
 		jump := slices.IndexFunc(c.rules, func(r ruleSpec) bool { return strings.Contains(r.says, locked.name+"'s ingress") })
 		if at > jump {
 			t.Errorf("the platform's SSH rule is at %d, after %s's ingress at %d", at, locked.name, jump)
+		}
+	}
+}
+
+// TestThePlatformsPortForwardsPass: the namespace's TCP from the gateway,
+// its socket marked anyPortMark, passes to any port of a tap, whatever the
+// tap's groups let in, before the tap's own chain and after a file share's
+// server's taps went to theirs; nothing else does by it: not unmarked or
+// otherwise marked, not UDP, not from another address; nor anything by
+// prerouting or forward.
+func TestThePlatformsPortForwardsPass(t *testing.T) {
+	gw := netip.MustParseAddr("10.0.0.1")
+	locked := tapPolicy{name: "hnt000000000001", policy: secgroup.Policy{EgressAll: true}}
+	cs, err := firewallChains(gw, []tapPolicy{locked})
+	if err != nil {
+		t.Fatal(err)
+	}
+	isForward := func(r ruleSpec) bool { return strings.Contains(r.says, "port forwards") }
+	for _, c := range cs {
+		var fw []ruleSpec
+		for _, r := range c.rules {
+			if isForward(r) {
+				fw = append(fw, r)
+			}
+		}
+		if c.name != "output" {
+			if len(fw) != 0 {
+				t.Errorf("%s lets the platform's port forwards through", c.name)
+			}
+			continue
+		}
+		if len(fw) != 1 {
+			t.Fatalf("output has %d rules for the platform's port forwards", len(fw))
+		}
+		r := fw[0]
+		tcp, udp := byte(unix.IPPROTO_TCP), byte(unix.IPPROTO_UDP)
+		for _, tc := range []struct {
+			what string
+			p    packet
+			mark uint32
+			want bool
+		}{
+			{"marked TCP from the gateway to the guest's port 8080", packet{tcp, "10.0.0.1", "10.0.0.5", 40000, 8080}, anyPortMark, true},
+			{"marked TCP from the gateway to the guest's port 1", packet{tcp, "10.0.0.1", "10.0.0.5", 40000, 1}, anyPortMark, true},
+			{"unmarked TCP from the gateway to the guest's port 8080", packet{tcp, "10.0.0.1", "10.0.0.5", 40000, 8080}, 0, false},
+			{"TCP from the gateway with another mark", packet{tcp, "10.0.0.1", "10.0.0.5", 40000, 8080}, anyPortMark + 1, false},
+			{"marked UDP from the gateway", packet{udp, "10.0.0.1", "10.0.0.5", 40000, 8080}, anyPortMark, false},
+			{"marked TCP from another guest", packet{tcp, "10.0.0.6", "10.0.0.5", 40000, 8080}, anyPortMark, false},
+		} {
+			if got := acceptsMarked(t, r, tc.p, tc.mark); got != tc.want {
+				t.Errorf("%s: accepted %t, want %t", tc.what, got, tc.want)
+			}
+		}
+		at := slices.IndexFunc(c.rules, isForward)
+		jump := slices.IndexFunc(c.rules, func(r ruleSpec) bool { return strings.Contains(r.says, locked.name+"'s ingress") })
+		if at > jump {
+			t.Errorf("the port forwards' rule is at %d, after %s's ingress at %d", at, locked.name, jump)
+		}
+		toServers := slices.IndexFunc(c.rules, func(r ruleSpec) bool { return strings.Contains(r.says, "file share's server's taps receive") })
+		if toServers < 0 || toServers > at {
+			t.Errorf("the port forwards' rule is at %d, before the file share servers' jump at %d", at, toServers)
 		}
 	}
 }

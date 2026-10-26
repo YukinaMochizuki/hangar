@@ -274,17 +274,24 @@ func tunnelAs(t *testing.T, s *Server, p auth.Principal, name string) error {
 }
 
 // sshTunnelWorld has a VM, web, whose machine runs on n1, whose tunnel is
-// not connected; carol may get VMs and nothing more; bob is a member.
+// not connected; carol may get VMs and nothing more; dan may get VMs, exec
+// in and ssh to machines, but not forward their ports; bob is a member.
 func sshTunnelWorld(t *testing.T) (*Server, context.Context, *computev1alpha1.Machine) {
 	t.Helper()
 	s, system, user := runningWith(t, func(c *Config) {
 		c.Nodes = []string{"n1"}
-		c.ExtraRoles = map[string]authz.Role{vmReaderRole: authz.NewRole(authz.TenantLevel, authz.Permission(registry.VirtualMachine, authz.Get))}
+		c.ExtraRoles = map[string]authz.Role{
+			vmReaderRole: authz.NewRole(authz.TenantLevel, authz.Permission(registry.VirtualMachine, authz.Get)),
+			noForwardRole: authz.NewRole(authz.TenantLevel, authz.Permission(registry.VirtualMachine, authz.Get),
+				authz.MachineExec, authz.MachineSSH),
+		}
 	})
 	addMember(t, s, "bob@example.com")
 	addMember(t, s, "carol@example.com")
+	addMember(t, s, "dan@example.com")
 	for _, rb := range []*iamv1alpha1.RoleBinding{
 		binding("reader-carol", "carol@example.com", vmReaderRole, &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}),
+		binding("no-forward-dan", "dan@example.com", noForwardRole, &iamv1alpha1.BindingScope{Target: &iamv1alpha1.BindingScope_Tenant{Tenant: "acme"}}),
 	} {
 		if _, err := s.backend(registry.RoleBinding).Apply(system, rb); err != nil {
 			t.Fatal(err)
