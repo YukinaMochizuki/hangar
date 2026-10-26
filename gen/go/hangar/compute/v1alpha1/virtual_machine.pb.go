@@ -231,7 +231,8 @@ type VirtualMachineSpec struct {
 	// ssh_authorized_keys itself, or turns vendor-data off, takes precedence.
 	SshAuthorizedKeys []string `protobuf:"bytes,5,rep,name=ssh_authorized_keys,json=sshAuthorizedKeys,proto3" json:"ssh_authorized_keys,omitempty"`
 	// The VM's network interfaces, eth0, eth1 and on, in this order. Empty is
-	// one interface on the network "default". Changing them restarts the VM.
+	// one interface on the network "default". Changing them restarts the VM,
+	// except when only their aliases change.
 	Interfaces []*NetworkInterface `protobuf:"bytes,6,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	// Handed to the guest's cloud-init unchanged, as user-data, such as a
 	// #cloud-config document or a script; at most 16 KiB. cloud-init runs it

@@ -35,11 +35,11 @@ import { joinWords } from "@/lib/shell-words";
 
 export type MachineObject = Container | VirtualMachine;
 
-/** An interface after the first, on its network in the groups it names. */
-export type ExtraInterface = { network: string; groups: string[] };
+/** An interface after the first, on its network in the groups it names, with the aliases it had, which the form does not show. */
+export type ExtraInterface = { network: string; groups: string[]; aliases?: string[] };
 
 /** The form's network: the first interface, and those after it. */
-export type NetworkFields = { network: string; groups: string[]; extra: ExtraInterface[] };
+export type NetworkFields = { network: string; groups: string[]; aliases?: string[]; extra: ExtraInterface[] };
 
 // What the apiserver gives a machine whose spec leaves its resources out.
 export const containerDefaults = { cpu: "1", memory: "512Mi", disk: "10Gi" };
@@ -58,19 +58,21 @@ const restartOf: Record<RestartPolicy, Restart> = {
 export function networkFieldsOf(nics: NetworkInterface[]): NetworkFields {
   const groups = (n: NetworkInterface) => (n.securityGroups.length ? [...n.securityGroups] : ["default"]);
   const [first, ...rest] = nics;
+  const aliases = (n: NetworkInterface) => (n.aliases.length ? { aliases: [...n.aliases] } : {});
   return {
     network: first?.network || "default",
     groups: first ? groups(first) : ["default"],
-    extra: rest.map((n) => ({ network: n.network, groups: groups(n) })),
+    ...(first ? aliases(first) : {}),
+    extra: rest.map((n) => ({ network: n.network, groups: groups(n), ...aliases(n) })),
   };
 }
 
 /** The interfaces the form's network fields amount to; one on default in its default group is the spec's empty. */
 export function interfacesOf(f: NetworkFields): NetworkInterface[] {
-  if (f.network === "default" && f.groups.length === 1 && f.groups[0] === "default" && f.extra.length === 0) return [];
+  if (f.network === "default" && f.groups.length === 1 && f.groups[0] === "default" && !f.aliases?.length && f.extra.length === 0) return [];
   return [
-    create(NetworkInterfaceSchema, { network: f.network, securityGroups: f.groups }),
-    ...f.extra.map((x) => create(NetworkInterfaceSchema, { network: x.network, securityGroups: x.groups })),
+    create(NetworkInterfaceSchema, { network: f.network, securityGroups: f.groups, aliases: f.aliases ?? [] }),
+    ...f.extra.map((x) => create(NetworkInterfaceSchema, { network: x.network, securityGroups: x.groups, aliases: x.aliases ?? [] })),
   ];
 }
 
@@ -217,9 +219,19 @@ function envDetail(a: JsonValue | undefined, b: JsonValue | undefined): string {
 }
 
 function nicsText(v: JsonValue | undefined): string {
-  const nics = (v ?? []) as { network: string; securityGroups?: string[] }[];
+  const nics = (v ?? []) as { network: string; securityGroups?: string[]; aliases?: string[] }[];
   if (nics.length === 0) return "default";
-  return nics.map((n) => `${n.network} (${(n.securityGroups ?? []).join(", ") || "default"})`).join(", ");
+  const aliases = (n: { aliases?: string[] }) => (n.aliases?.length ? ` as ${n.aliases.join(", ")}` : "");
+  return nics.map((n) => `${n.network} (${(n.securityGroups ?? []).join(", ") || "default"})${aliases(n)}`).join(", ");
+}
+
+const withoutAliases = (v: JsonValue | undefined) => ((v ?? []) as Json[]).map(({ aliases: _, ...n }) => n);
+
+/** An interfaces change: one of their aliases alone restarts nothing, as networking.md says; any other restarts the machine. */
+function addInterfaces(a: Json, b: Json, out: Change[]) {
+  if (same(a.interfaces, b.interfaces)) return;
+  const effect: Effect = same(withoutAliases(a.interfaces), withoutAliases(b.interfaces)) ? "nothing" : "restart";
+  out.push({ field: "interfaces", label: "Interfaces", effect, detail: `${nicsText(a.interfaces)} → ${nicsText(b.interfaces)}` });
 }
 
 function listDetail(a: JsonValue | undefined, b: JsonValue | undefined, key: (x: Json) => string): string {
@@ -248,7 +260,8 @@ function sizeText(cpu: string, memory: string): string {
  * disk reach its VMSpec and restart it; image pull secrets are read only at
  * a pull and restart nothing. A VM's interfaces, cpu, memory and serial
  * number restart it; its file shares (its shares' exports) and user data
- * (the metadata service, cloud-init's first boot) restart nothing.
+ * (the metadata service, cloud-init's first boot) restart nothing. Either
+ * kind's interfaces whose aliases alone changed restart nothing.
  */
 export function changesOf(base: MachineObject, next: MachineObject): Change[] {
   const a = specJson(base);
@@ -260,7 +273,7 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
   if (base.$typeName === ContainerSchema.typeName) {
     const d = containerDefaults;
     add("image", "Image", "rebuild", `${a.image ?? ""} → ${b.image ?? ""}`);
-    add("interfaces", "Interfaces", "restart", `${nicsText(a.interfaces)} → ${nicsText(b.interfaces)}`);
+    addInterfaces(a, b, out);
     add("volumes", "Volumes", "restart", listDetail(a.volumes, b.volumes, (v) => String(v.target ?? "")));
     add("command", "Entrypoint", "restart", `${words(a.command)} → ${words(b.command)}`);
     add("args", "Command", "restart", `${words(a.args)} → ${words(b.args)}`);
@@ -281,7 +294,7 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
     if (!same(ra, rb)) {
       out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(String(ra.cpu || d.cpu), String(ra.memory || d.memory))} → ${sizeText(String(rb.cpu || d.cpu), String(rb.memory || d.memory))}` });
     }
-    add("interfaces", "Interfaces", "restart", `${nicsText(a.interfaces)} → ${nicsText(b.interfaces)}`);
+    addInterfaces(a, b, out);
     add("disks", "Data disks", "restart", listDetail(a.disks, b.disks, (d) => String(d.disk ?? "")));
     add("fileShares", "File shares", "nothing", listDetail(a.fileShares, b.fileShares, (s) => String(s.name ?? "")));
     add("sshAuthorizedKeys", "SSH keys", "nothing", "changed; cloud-init reads them on the first boot only");

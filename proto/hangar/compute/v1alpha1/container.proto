@@ -46,7 +46,7 @@ message ContainerSpec {
   ContainerRunState run_state = 8;
   // The networks the container is on, at most 8, each once; empty is one
   // interface on "default". The first holds the default route. Changing
-  // them restarts the container.
+  // them restarts the container, except when only their aliases change.
   repeated NetworkInterface interfaces = 9;
   // Names Secrets of type registry-auth, in the container's project, whose
   // logins its node pulls the image with: the first that holds a login for

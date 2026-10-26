@@ -24,7 +24,8 @@ address.
   none is one interface on `default`. They are eth0, eth1… in order, each
   with an address of its network's range and no address of the user's
   choosing; the first holds the default route, and so the machine's
-  internet and its resolver. Changing them restarts the machine.
+  internet and its resolver. Changing them restarts the machine, but for
+  their aliases (below), which reach no part of what the machine runs.
 - **Each `Network` is its own network namespace** (that is what allows
   overlapping CIDRs) with a bridge and nftables. The node creates tap devices
   and hands their file descriptors to Cloud Hypervisor. The apiserver does IPAM
@@ -314,6 +315,32 @@ address.
     seconds: A for its IPv4 addresses on the network and AAAA for its
     public IPv6 ones. A machine of another network or project is
     NXDOMAIN. `hangar.internal` is never forwarded.
+  - An interface may also name **aliases** (`NetworkInterface.aliases`),
+    at most 8, each a DNS label, which its network's resolver answers as
+    it answers the machine's name, `<alias>.<project>.hangar.internal`,
+    with the machine's addresses on that network; other networks'
+    resolvers answer NXDOMAIN. They let a guest find another by a name of
+    its choosing on its network whatever the object is named, as Docker's
+    network aliases do: two networks of a project can each have a `db`,
+    which object names, unique in the project, cannot. Admission keeps a
+    name to one machine of a network: an alias another machine with an
+    interface on the network holds, as an alias or as its name, is
+    refused, naming the holder, and so is a machine whose name is an
+    alias on one of its networks; a machine's own name as its alias is
+    accepted, and answers what its name does. A name is held both by the
+    owner's spec and by its Machine, which is what the resolvers answer
+    from and can lag the spec, or keep an older one when the controller
+    cannot write it, as when a resize does not fit; only the applying
+    object's own Machine is left out. One being deleted holds its names
+    until it is gone. Every write of a Container, VirtualMachine or
+    Machine holds attach, so the check and the write are one decision.
+    The machine carries the aliases (`MachineInterface.aliases`) for the
+    node, which reads them with its network's machines; they are no part
+    of a VM's spec hash, so changing them restarts nothing: the resolver
+    answers the new names once the node has read the machine, and a guest
+    may hold a name let go for its TTL. At most 8 keeps a machine's
+    records small, as each alias is an entry in every resolver that
+    serves its network.
   - The agent opens a network's sockets before it reads the network's
     machines from the API, and until it has, internal names fail with
     SERVFAIL, not NXDOMAIN, so a client retries rather than caching a

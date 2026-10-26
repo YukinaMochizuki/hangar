@@ -177,6 +177,13 @@
       "additionalProperties": false,
       "description": "MachineInterface is one network interface of the machine.",
       "properties": {
+        "aliases": {
+          "description": "More names the network's resolver answers for the machine with this interface's addresses, as its owner's interface names them. Changing them restarts nothing.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "ipv4": {
           "description": "The interface's address with the network's prefix length, such as \"10.0.0.5/24\". Assigned by the apiserver; empty until it is.",
           "type": "string"

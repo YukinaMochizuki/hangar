@@ -345,7 +345,8 @@ func hooksFor(r registry.Resource) kindHooks {
 		// Deleting a container waits for its machine to be gone from the
 		// node, so the deletion a client watches is the real one. Its writes
 		// hold attach: the shares it declares are checked against it, and it
-		// against them.
+		// against them, and its names on its networks against the VMs' and
+		// the other containers' (checkAliasesFree).
 		return kindHooks{target: projectTarget, owner: ownedByProject, validate: validateContainer, cascades: true,
 			writeLocks: only(attachLock)}
 	case registry.Machine.Kind:
@@ -432,7 +433,8 @@ func hooksFor(r registry.Resource) kindHooks {
 		// for a root disk it owns. Its applies and deletes hold attach:
 		// whether its root disk is owned by it is checked against it, both
 		// ways (checkRootDiskOwner, refuseDeletingUnsettledVM), and so are
-		// the file shares it declares.
+		// the file shares it declares, and its names on its networks
+		// (checkAliasesFree).
 		return kindHooks{
 			target:       projectTarget,
 			owner:        ownedByProject,
@@ -811,6 +813,9 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 	if err := s.validateInterfaces(ctx, meta.GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
+	if err := s.checkAliasesFree(ctx, meta.GetProject(), applying("container", old, obj, spec.GetInterfaces())); err != nil {
+		return err
+	}
 	if err := validateImagePullSecrets(spec.GetImagePullSecrets()); err != nil {
 		return err
 	}
@@ -847,6 +852,9 @@ func validateContainer(ctx context.Context, s *Server, p auth.Principal, old, ob
 // MaxInterfaces bounds the interfaces of a machine.
 const MaxInterfaces = 8
 
+// MaxAliases bounds the aliases of an interface.
+const MaxAliases = 8
+
 // validateInterfaces checks the interfaces a Container or VirtualMachine
 // asks for in project. A network or group that does not exist yet is the
 // controller's or the node's to wait for, not admission's to refuse.
@@ -863,6 +871,9 @@ func (s *Server) validateInterfaces(ctx context.Context, project string, nics []
 			return invalid("spec.interfaces: network %q twice; a machine has one interface on a network", nic.GetNetwork())
 		}
 		seen[nic.GetNetwork()] = true
+		if err := validateAliases(i, nic.GetAliases()); err != nil {
+			return err
+		}
 		if err := validateSecurityGroupNames(i, nic.GetSecurityGroups()); err != nil {
 			return err
 		}

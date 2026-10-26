@@ -123,7 +123,7 @@ export type ContainerSpec = Message<"hangar.compute.v1alpha1.ContainerSpec"> & {
   /**
    * The networks the container is on, at most 8, each once; empty is one
    * interface on "default". The first holds the default route. Changing
-   * them restarts the container.
+   * them restarts the container, except when only their aliases change.
    *
    * @generated from field: repeated hangar.compute.v1alpha1.NetworkInterface interfaces = 9;
    */

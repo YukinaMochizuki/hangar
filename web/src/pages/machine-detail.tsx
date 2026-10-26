@@ -317,6 +317,12 @@ function Networking({ m }: { m: MachineView }) {
                     )}
                   </dd>
                 </div>
+                {i.aliases.length > 0 && (
+                  <div>
+                    <dt className="text-[11.5px] text-subtle">Aliases</dt>
+                    <dd className="font-mono text-[12.5px]">{i.aliases.join(", ")}</dd>
+                  </div>
+                )}
                 <div>
                   <dt className="text-[11.5px] text-subtle">Security groups</dt>
                   <dd className="mt-0.5 flex flex-wrap gap-1">
@@ -337,6 +343,7 @@ function Networking({ m }: { m: MachineView }) {
                 <th className="px-4 py-2 font-medium">Network</th>
                 <th className="px-4 py-2 font-medium">IPv4</th>
                 <th className="px-4 py-2 font-medium">Public IPv6</th>
+                <th className="px-4 py-2 font-medium">Aliases</th>
                 <th className="px-4 py-2 font-medium">Security groups</th>
               </tr>
             </thead>
@@ -355,6 +362,9 @@ function Networking({ m }: { m: MachineView }) {
                     ) : (
                       <span className="text-subtle">–</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2.5 font-mono text-[12.5px]">
+                    {i.aliases.length > 0 ? i.aliases.join(", ") : <span className="text-subtle">–</span>}
                   </td>
                   <td className="px-4 py-2.5">
                     <span className="flex flex-wrap gap-1">

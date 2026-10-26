@@ -336,9 +336,9 @@ describe("the edit page", () => {
     expect(applyButton().disabled).toBe(true);
   });
 
-  it("leaves the interfaces as they were written when they are not changed", async () => {
+  it("leaves the interfaces as they were written, aliases and all, when they are not changed", async () => {
     const explicit = web();
-    explicit.spec!.interfaces = [{ $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [] }];
+    explicit.spec!.interfaces = [{ $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [], aliases: ["www"] }];
     const a = await openEdit("Container", { container: () => explicit });
     fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
     expect(screen.queryByText("Restarts the container")).toBeNull();
@@ -350,8 +350,8 @@ describe("the edit page", () => {
   it("shows a VM's own interfaces after the first, and keeps them", async () => {
     const two = db();
     two.spec!.interfaces = [
-      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [] },
-      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "data", securityGroups: ["db"] },
+      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "default", securityGroups: [], aliases: [] },
+      { $typeName: "hangar.compute.v1alpha1.NetworkInterface", network: "data", securityGroups: ["db"], aliases: ["pg"] },
     ];
     const a = await openEdit("VirtualMachine", { vm: () => two });
     expect(screen.getByText("eth1")).toBeTruthy();
