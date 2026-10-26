@@ -928,6 +928,189 @@ func (x *SSHResponse) GetData() []byte {
 	return nil
 }
 
+type PortForwardRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Message:
+	//
+	//	*PortForwardRequest_Start
+	//	*PortForwardRequest_Data
+	Message       isPortForwardRequest_Message `protobuf_oneof:"message"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardRequest) Reset() {
+	*x = PortForwardRequest{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardRequest) ProtoMessage() {}
+
+func (x *PortForwardRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardRequest.ProtoReflect.Descriptor instead.
+func (*PortForwardRequest) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *PortForwardRequest) GetMessage() isPortForwardRequest_Message {
+	if x != nil {
+		return x.Message
+	}
+	return nil
+}
+
+func (x *PortForwardRequest) GetStart() *PortForwardStart {
+	if x != nil {
+		if x, ok := x.Message.(*PortForwardRequest_Start); ok {
+			return x.Start
+		}
+	}
+	return nil
+}
+
+func (x *PortForwardRequest) GetData() []byte {
+	if x != nil {
+		if x, ok := x.Message.(*PortForwardRequest_Data); ok {
+			return x.Data
+		}
+	}
+	return nil
+}
+
+type isPortForwardRequest_Message interface {
+	isPortForwardRequest_Message()
+}
+
+type PortForwardRequest_Start struct {
+	// First, and only first.
+	Start *PortForwardStart `protobuf:"bytes,1,opt,name=start,proto3,oneof"`
+}
+
+type PortForwardRequest_Data struct {
+	// What the client sends, as it comes.
+	Data []byte `protobuf:"bytes,2,opt,name=data,proto3,oneof"`
+}
+
+func (*PortForwardRequest_Start) isPortForwardRequest_Message() {}
+
+func (*PortForwardRequest_Data) isPortForwardRequest_Message() {}
+
+// PortForwardStart names what a port forward connects to.
+type PortForwardStart struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	MachineUid string                 `protobuf:"bytes,1,opt,name=machine_uid,json=machineUid,proto3" json:"machine_uid,omitempty"`
+	// The TCP port, 1 to 65535.
+	Port          int32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardStart) Reset() {
+	*x = PortForwardStart{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardStart) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardStart) ProtoMessage() {}
+
+func (x *PortForwardStart) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardStart.ProtoReflect.Descriptor instead.
+func (*PortForwardStart) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *PortForwardStart) GetMachineUid() string {
+	if x != nil {
+		return x.MachineUid
+	}
+	return ""
+}
+
+func (x *PortForwardStart) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+type PortForwardResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// What the guest sends, as it comes.
+	Data          []byte `protobuf:"bytes,1,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PortForwardResponse) Reset() {
+	*x = PortForwardResponse{}
+	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PortForwardResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PortForwardResponse) ProtoMessage() {}
+
+func (x *PortForwardResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PortForwardResponse.ProtoReflect.Descriptor instead.
+func (*PortForwardResponse) Descriptor() ([]byte, []int) {
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PortForwardResponse) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
 type UploadCustomImageRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Message:
@@ -941,7 +1124,7 @@ type UploadCustomImageRequest struct {
 
 func (x *UploadCustomImageRequest) Reset() {
 	*x = UploadCustomImageRequest{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -953,7 +1136,7 @@ func (x *UploadCustomImageRequest) String() string {
 func (*UploadCustomImageRequest) ProtoMessage() {}
 
 func (x *UploadCustomImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[11]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1149,7 @@ func (x *UploadCustomImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadCustomImageRequest.ProtoReflect.Descriptor instead.
 func (*UploadCustomImageRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{11}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UploadCustomImageRequest) GetMessage() isUploadCustomImageRequest_Message {
@@ -1027,7 +1210,7 @@ type UploadChunk struct {
 
 func (x *UploadChunk) Reset() {
 	*x = UploadChunk{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1039,7 +1222,7 @@ func (x *UploadChunk) String() string {
 func (*UploadChunk) ProtoMessage() {}
 
 func (x *UploadChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[12]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1052,7 +1235,7 @@ func (x *UploadChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadChunk.ProtoReflect.Descriptor instead.
 func (*UploadChunk) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{12}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UploadChunk) GetImageUid() string {
@@ -1092,7 +1275,7 @@ type UploadCustomImageResponse struct {
 
 func (x *UploadCustomImageResponse) Reset() {
 	*x = UploadCustomImageResponse{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1104,7 +1287,7 @@ func (x *UploadCustomImageResponse) String() string {
 func (*UploadCustomImageResponse) ProtoMessage() {}
 
 func (x *UploadCustomImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[13]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1117,7 +1300,7 @@ func (x *UploadCustomImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadCustomImageResponse.ProtoReflect.Descriptor instead.
 func (*UploadCustomImageResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{13}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UploadCustomImageResponse) GetReceivedBytes() int64 {
@@ -1136,7 +1319,7 @@ type GetCustomImageUploadRequest struct {
 
 func (x *GetCustomImageUploadRequest) Reset() {
 	*x = GetCustomImageUploadRequest{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1148,7 +1331,7 @@ func (x *GetCustomImageUploadRequest) String() string {
 func (*GetCustomImageUploadRequest) ProtoMessage() {}
 
 func (x *GetCustomImageUploadRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[14]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1161,7 +1344,7 @@ func (x *GetCustomImageUploadRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCustomImageUploadRequest.ProtoReflect.Descriptor instead.
 func (*GetCustomImageUploadRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{14}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *GetCustomImageUploadRequest) GetImageUid() string {
@@ -1180,7 +1363,7 @@ type GetCustomImageUploadResponse struct {
 
 func (x *GetCustomImageUploadResponse) Reset() {
 	*x = GetCustomImageUploadResponse{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1192,7 +1375,7 @@ func (x *GetCustomImageUploadResponse) String() string {
 func (*GetCustomImageUploadResponse) ProtoMessage() {}
 
 func (x *GetCustomImageUploadResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[15]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1205,7 +1388,7 @@ func (x *GetCustomImageUploadResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetCustomImageUploadResponse.ProtoReflect.Descriptor instead.
 func (*GetCustomImageUploadResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{15}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *GetCustomImageUploadResponse) GetReceivedBytes() int64 {
@@ -1232,7 +1415,7 @@ type ConsoleRequest struct {
 
 func (x *ConsoleRequest) Reset() {
 	*x = ConsoleRequest{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1244,7 +1427,7 @@ func (x *ConsoleRequest) String() string {
 func (*ConsoleRequest) ProtoMessage() {}
 
 func (x *ConsoleRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[16]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1257,7 +1440,7 @@ func (x *ConsoleRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleRequest.ProtoReflect.Descriptor instead.
 func (*ConsoleRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{16}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ConsoleRequest) GetMessage() isConsoleRequest_Message {
@@ -1337,7 +1520,7 @@ type ConsoleStart struct {
 
 func (x *ConsoleStart) Reset() {
 	*x = ConsoleStart{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1349,7 +1532,7 @@ func (x *ConsoleStart) String() string {
 func (*ConsoleStart) ProtoMessage() {}
 
 func (x *ConsoleStart) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[17]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1362,7 +1545,7 @@ func (x *ConsoleStart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleStart.ProtoReflect.Descriptor instead.
 func (*ConsoleStart) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{17}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ConsoleStart) GetMachineUid() string {
@@ -1397,7 +1580,7 @@ type ConsoleSize struct {
 
 func (x *ConsoleSize) Reset() {
 	*x = ConsoleSize{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1409,7 +1592,7 @@ func (x *ConsoleSize) String() string {
 func (*ConsoleSize) ProtoMessage() {}
 
 func (x *ConsoleSize) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[18]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1422,7 +1605,7 @@ func (x *ConsoleSize) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleSize.ProtoReflect.Descriptor instead.
 func (*ConsoleSize) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{18}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ConsoleSize) GetColumns() uint32 {
@@ -1456,7 +1639,7 @@ type ConsoleResponse struct {
 
 func (x *ConsoleResponse) Reset() {
 	*x = ConsoleResponse{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1468,7 +1651,7 @@ func (x *ConsoleResponse) String() string {
 func (*ConsoleResponse) ProtoMessage() {}
 
 func (x *ConsoleResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[19]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1481,7 +1664,7 @@ func (x *ConsoleResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleResponse.ProtoReflect.Descriptor instead.
 func (*ConsoleResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{19}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ConsoleResponse) GetMessage() isConsoleResponse_Message {
@@ -1557,7 +1740,7 @@ type ConsoleState struct {
 
 func (x *ConsoleState) Reset() {
 	*x = ConsoleState{}
-	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1569,7 +1752,7 @@ func (x *ConsoleState) String() string {
 func (*ConsoleState) ProtoMessage() {}
 
 func (x *ConsoleState) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_node_v1_node_proto_msgTypes[20]
+	mi := &file_hangar_node_v1_node_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1582,7 +1765,7 @@ func (x *ConsoleState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsoleState.ProtoReflect.Descriptor instead.
 func (*ConsoleState) Descriptor() ([]byte, []int) {
-	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{20}
+	return file_hangar_node_v1_node_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ConsoleState) GetInput() bool {
@@ -1661,6 +1844,16 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
 	"\amessage\"!\n" +
 	"\vSSHResponse\x12\x12\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"o\n" +
+	"\x12PortForwardRequest\x128\n" +
+	"\x05start\x18\x01 \x01(\v2 .hangar.node.v1.PortForwardStartH\x00R\x05start\x12\x14\n" +
+	"\x04data\x18\x02 \x01(\fH\x00R\x04dataB\t\n" +
+	"\amessage\"G\n" +
+	"\x10PortForwardStart\x12\x1f\n" +
+	"\vmachine_uid\x18\x01 \x01(\tR\n" +
+	"machineUid\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\x05R\x04port\")\n" +
+	"\x13PortForwardResponse\x12\x12\n" +
 	"\x04data\x18\x01 \x01(\fR\x04data\"p\n" +
 	"\x18UploadCustomImageRequest\x123\n" +
 	"\x05chunk\x18\x01 \x01(\v2\x1b.hangar.node.v1.UploadChunkH\x00R\x05chunk\x12\x14\n" +
@@ -1703,11 +1896,12 @@ const file_hangar_node_v1_node_proto_rawDesc = "" +
 	"\x11LOG_STREAM_STDOUT\x10\x01\x12\x15\n" +
 	"\x11LOG_STREAM_STDERR\x10\x02\x12\x13\n" +
 	"\x0fLOG_STREAM_INIT\x10\x03\x12\x13\n" +
-	"\x0fLOG_STREAM_EXIT\x10\x042\x8c\x04\n" +
+	"\x0fLOG_STREAM_EXIT\x10\x042\xe8\x04\n" +
 	"\vNodeService\x12C\n" +
 	"\x04Logs\x12\x1b.hangar.node.v1.LogsRequest\x1a\x1c.hangar.node.v1.LogsResponse0\x01\x12E\n" +
 	"\x04Exec\x12\x1b.hangar.node.v1.ExecRequest\x1a\x1c.hangar.node.v1.ExecResponse(\x010\x01\x12B\n" +
-	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01\x12N\n" +
+	"\x03SSH\x12\x1a.hangar.node.v1.SSHRequest\x1a\x1b.hangar.node.v1.SSHResponse(\x010\x01\x12Z\n" +
+	"\vPortForward\x12\".hangar.node.v1.PortForwardRequest\x1a#.hangar.node.v1.PortForwardResponse(\x010\x01\x12N\n" +
 	"\aConsole\x12\x1e.hangar.node.v1.ConsoleRequest\x1a\x1f.hangar.node.v1.ConsoleResponse(\x010\x01\x12j\n" +
 	"\x11UploadCustomImage\x12(.hangar.node.v1.UploadCustomImageRequest\x1a).hangar.node.v1.UploadCustomImageResponse(\x01\x12q\n" +
 	"\x14GetCustomImageUpload\x12+.hangar.node.v1.GetCustomImageUploadRequest\x1a,.hangar.node.v1.GetCustomImageUploadResponseB\xb9\x01\n" +
@@ -1726,7 +1920,7 @@ func file_hangar_node_v1_node_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_node_v1_node_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_hangar_node_v1_node_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
 var file_hangar_node_v1_node_proto_goTypes = []any{
 	(LogStream)(0),                       // 0: hangar.node.v1.LogStream
 	(*LogsRequest)(nil),                  // 1: hangar.node.v1.LogsRequest
@@ -1740,51 +1934,57 @@ var file_hangar_node_v1_node_proto_goTypes = []any{
 	(*ExecResponse)(nil),                 // 9: hangar.node.v1.ExecResponse
 	(*SSHRequest)(nil),                   // 10: hangar.node.v1.SSHRequest
 	(*SSHResponse)(nil),                  // 11: hangar.node.v1.SSHResponse
-	(*UploadCustomImageRequest)(nil),     // 12: hangar.node.v1.UploadCustomImageRequest
-	(*UploadChunk)(nil),                  // 13: hangar.node.v1.UploadChunk
-	(*UploadCustomImageResponse)(nil),    // 14: hangar.node.v1.UploadCustomImageResponse
-	(*GetCustomImageUploadRequest)(nil),  // 15: hangar.node.v1.GetCustomImageUploadRequest
-	(*GetCustomImageUploadResponse)(nil), // 16: hangar.node.v1.GetCustomImageUploadResponse
-	(*ConsoleRequest)(nil),               // 17: hangar.node.v1.ConsoleRequest
-	(*ConsoleStart)(nil),                 // 18: hangar.node.v1.ConsoleStart
-	(*ConsoleSize)(nil),                  // 19: hangar.node.v1.ConsoleSize
-	(*ConsoleResponse)(nil),              // 20: hangar.node.v1.ConsoleResponse
-	(*ConsoleState)(nil),                 // 21: hangar.node.v1.ConsoleState
-	(*timestamppb.Timestamp)(nil),        // 22: google.protobuf.Timestamp
+	(*PortForwardRequest)(nil),           // 12: hangar.node.v1.PortForwardRequest
+	(*PortForwardStart)(nil),             // 13: hangar.node.v1.PortForwardStart
+	(*PortForwardResponse)(nil),          // 14: hangar.node.v1.PortForwardResponse
+	(*UploadCustomImageRequest)(nil),     // 15: hangar.node.v1.UploadCustomImageRequest
+	(*UploadChunk)(nil),                  // 16: hangar.node.v1.UploadChunk
+	(*UploadCustomImageResponse)(nil),    // 17: hangar.node.v1.UploadCustomImageResponse
+	(*GetCustomImageUploadRequest)(nil),  // 18: hangar.node.v1.GetCustomImageUploadRequest
+	(*GetCustomImageUploadResponse)(nil), // 19: hangar.node.v1.GetCustomImageUploadResponse
+	(*ConsoleRequest)(nil),               // 20: hangar.node.v1.ConsoleRequest
+	(*ConsoleStart)(nil),                 // 21: hangar.node.v1.ConsoleStart
+	(*ConsoleSize)(nil),                  // 22: hangar.node.v1.ConsoleSize
+	(*ConsoleResponse)(nil),              // 23: hangar.node.v1.ConsoleResponse
+	(*ConsoleState)(nil),                 // 24: hangar.node.v1.ConsoleState
+	(*timestamppb.Timestamp)(nil),        // 25: google.protobuf.Timestamp
 }
 var file_hangar_node_v1_node_proto_depIdxs = []int32{
-	22, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
+	25, // 0: hangar.node.v1.LogsRequest.since:type_name -> google.protobuf.Timestamp
 	3,  // 1: hangar.node.v1.LogsResponse.records:type_name -> hangar.node.v1.LogRecord
 	0,  // 2: hangar.node.v1.LogRecord.stream:type_name -> hangar.node.v1.LogStream
-	22, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
+	25, // 3: hangar.node.v1.LogRecord.time:type_name -> google.protobuf.Timestamp
 	4,  // 4: hangar.node.v1.LogRecord.exit:type_name -> hangar.node.v1.ExitStatus
 	6,  // 5: hangar.node.v1.ExecRequest.start:type_name -> hangar.node.v1.ExecStart
 	7,  // 6: hangar.node.v1.ExecRequest.stdin_close:type_name -> hangar.node.v1.ExecStdinClose
 	8,  // 7: hangar.node.v1.ExecRequest.resize:type_name -> hangar.node.v1.WindowSize
 	8,  // 8: hangar.node.v1.ExecStart.size:type_name -> hangar.node.v1.WindowSize
 	4,  // 9: hangar.node.v1.ExecResponse.exit:type_name -> hangar.node.v1.ExitStatus
-	13, // 10: hangar.node.v1.UploadCustomImageRequest.chunk:type_name -> hangar.node.v1.UploadChunk
-	18, // 11: hangar.node.v1.ConsoleRequest.start:type_name -> hangar.node.v1.ConsoleStart
-	19, // 12: hangar.node.v1.ConsoleRequest.resize:type_name -> hangar.node.v1.ConsoleSize
-	21, // 13: hangar.node.v1.ConsoleResponse.state:type_name -> hangar.node.v1.ConsoleState
-	19, // 14: hangar.node.v1.ConsoleState.size:type_name -> hangar.node.v1.ConsoleSize
-	1,  // 15: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
-	5,  // 16: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
-	10, // 17: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
-	17, // 18: hangar.node.v1.NodeService.Console:input_type -> hangar.node.v1.ConsoleRequest
-	12, // 19: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
-	15, // 20: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
-	2,  // 21: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
-	9,  // 22: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
-	11, // 23: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
-	20, // 24: hangar.node.v1.NodeService.Console:output_type -> hangar.node.v1.ConsoleResponse
-	14, // 25: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
-	16, // 26: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
-	21, // [21:27] is the sub-list for method output_type
-	15, // [15:21] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	13, // 10: hangar.node.v1.PortForwardRequest.start:type_name -> hangar.node.v1.PortForwardStart
+	16, // 11: hangar.node.v1.UploadCustomImageRequest.chunk:type_name -> hangar.node.v1.UploadChunk
+	21, // 12: hangar.node.v1.ConsoleRequest.start:type_name -> hangar.node.v1.ConsoleStart
+	22, // 13: hangar.node.v1.ConsoleRequest.resize:type_name -> hangar.node.v1.ConsoleSize
+	24, // 14: hangar.node.v1.ConsoleResponse.state:type_name -> hangar.node.v1.ConsoleState
+	22, // 15: hangar.node.v1.ConsoleState.size:type_name -> hangar.node.v1.ConsoleSize
+	1,  // 16: hangar.node.v1.NodeService.Logs:input_type -> hangar.node.v1.LogsRequest
+	5,  // 17: hangar.node.v1.NodeService.Exec:input_type -> hangar.node.v1.ExecRequest
+	10, // 18: hangar.node.v1.NodeService.SSH:input_type -> hangar.node.v1.SSHRequest
+	12, // 19: hangar.node.v1.NodeService.PortForward:input_type -> hangar.node.v1.PortForwardRequest
+	20, // 20: hangar.node.v1.NodeService.Console:input_type -> hangar.node.v1.ConsoleRequest
+	15, // 21: hangar.node.v1.NodeService.UploadCustomImage:input_type -> hangar.node.v1.UploadCustomImageRequest
+	18, // 22: hangar.node.v1.NodeService.GetCustomImageUpload:input_type -> hangar.node.v1.GetCustomImageUploadRequest
+	2,  // 23: hangar.node.v1.NodeService.Logs:output_type -> hangar.node.v1.LogsResponse
+	9,  // 24: hangar.node.v1.NodeService.Exec:output_type -> hangar.node.v1.ExecResponse
+	11, // 25: hangar.node.v1.NodeService.SSH:output_type -> hangar.node.v1.SSHResponse
+	14, // 26: hangar.node.v1.NodeService.PortForward:output_type -> hangar.node.v1.PortForwardResponse
+	23, // 27: hangar.node.v1.NodeService.Console:output_type -> hangar.node.v1.ConsoleResponse
+	17, // 28: hangar.node.v1.NodeService.UploadCustomImage:output_type -> hangar.node.v1.UploadCustomImageResponse
+	19, // 29: hangar.node.v1.NodeService.GetCustomImageUpload:output_type -> hangar.node.v1.GetCustomImageUploadResponse
+	23, // [23:30] is the sub-list for method output_type
+	16, // [16:23] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_hangar_node_v1_node_proto_init() }
@@ -1814,15 +2014,19 @@ func file_hangar_node_v1_node_proto_init() {
 		(*SSHRequest_Data)(nil),
 	}
 	file_hangar_node_v1_node_proto_msgTypes[11].OneofWrappers = []any{
+		(*PortForwardRequest_Start)(nil),
+		(*PortForwardRequest_Data)(nil),
+	}
+	file_hangar_node_v1_node_proto_msgTypes[14].OneofWrappers = []any{
 		(*UploadCustomImageRequest_Chunk)(nil),
 		(*UploadCustomImageRequest_Data)(nil),
 	}
-	file_hangar_node_v1_node_proto_msgTypes[16].OneofWrappers = []any{
+	file_hangar_node_v1_node_proto_msgTypes[19].OneofWrappers = []any{
 		(*ConsoleRequest_Start)(nil),
 		(*ConsoleRequest_Input)(nil),
 		(*ConsoleRequest_Resize)(nil),
 	}
-	file_hangar_node_v1_node_proto_msgTypes[19].OneofWrappers = []any{
+	file_hangar_node_v1_node_proto_msgTypes[22].OneofWrappers = []any{
 		(*ConsoleResponse_Output)(nil),
 		(*ConsoleResponse_State)(nil),
 		(*ConsoleResponse_Ended)(nil),
@@ -1833,7 +2037,7 @@ func file_hangar_node_v1_node_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_node_v1_node_proto_rawDesc), len(file_hangar_node_v1_node_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   24,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

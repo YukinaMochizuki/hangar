@@ -177,7 +177,7 @@ func TestEveryMachineKindIsMapped(t *testing.T) {
 			t.Errorf("%s is mapped to %+v", kind, mk)
 		}
 		for _, v := range mk.capabilities {
-			if !slices.Contains([]authz.Verb{authz.Logs, authz.Exec, authz.SSH}, v) {
+			if !slices.Contains([]authz.Verb{authz.Logs, authz.Exec, authz.SSH, authz.PortForward}, v) {
 				t.Errorf("%s has the capability %s, which is none", kind, v)
 			}
 		}

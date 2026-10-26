@@ -15,6 +15,18 @@ import (
 // by its bridge, so the connection is the one the firewall lets through to
 // a tap: to port 22 (platformSSH) or one of its edge ports (edgePorts).
 func (d *Driver) Dial(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
+	return d.dial(ctx, networkUID, addr, 0)
+}
+
+// DialAnyPort connects as Dial does, its socket marked anyPortMark, which
+// the firewall lets through to any TCP port of a tap (platformAnyPort).
+func (d *Driver) DialAnyPort(ctx context.Context, networkUID string, addr netip.AddrPort) (net.Conn, error) {
+	return d.dial(ctx, networkUID, addr, anyPortMark)
+}
+
+// dial connects from the network's gateway by its bridge, its socket
+// marked mark unless it is 0.
+func (d *Driver) dial(ctx context.Context, networkUID string, addr netip.AddrPort, mark int) (net.Conn, error) {
 	if err := checkUID(networkUID); err != nil {
 		return nil, err
 	}
@@ -45,6 +57,9 @@ func (d *Driver) Dial(ctx context.Context, networkUID string, addr netip.AddrPor
 			var serr error
 			if err := c.Control(func(fd uintptr) {
 				serr = unix.SetsockoptString(int(fd), unix.SOL_SOCKET, unix.SO_BINDTODEVICE, nsBridge)
+				if serr == nil && mark != 0 {
+					serr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_MARK, mark)
+				}
 			}); err != nil {
 				return err
 			}

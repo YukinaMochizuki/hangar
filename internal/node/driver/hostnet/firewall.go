@@ -349,6 +349,7 @@ func firewallChains(gateway netip.Addr, taps []tapPolicy) ([]chainSpec, error) {
 		{says: fmt.Sprintf("DHCPv6 replies from the server at %s pass", driver.GatewayIPv6),
 			exprs: slices.Concat(matchEtherType(etherIPv6), matchSaddr6(netip.PrefixFrom(driver.GatewayIPv6, 128)), matchUDPPorts(547, 546), accept)},
 		platformSSH(gateway),
+		platformAnyPort(gateway),
 	})
 	chains := servers
 	for _, t := range taps {
@@ -573,6 +574,31 @@ func edgePorts(gateway netip.Addr, tap string, ports []uint16) []ruleSpec {
 				[]expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})})
 	}
 	return out
+}
+
+// anyPortMark is the socket mark (skb mark, not a conntrack mark) of the
+// node's connections that may reach any TCP port of a tap: the port
+// forwards of docs/decisions/port-forward.md. No other socket in a
+// network's namespace sets a mark, and a guest's packets carry none.
+const anyPortMark = 0x68670001
+
+// platformAnyPort lets the node's port forwards, their sockets marked
+// anyPortMark (DialAnyPort), reach any TCP port of a tap from the gateway,
+// whatever its security groups say; RBAC gates them (port-forward.md). It
+// is in the output chain alone, after a file share's server's taps went to
+// their own chain, so it passes nothing to a server.
+func platformAnyPort(gateway netip.Addr) ruleSpec {
+	return ruleSpec{says: fmt.Sprintf("the platform's port forwards, marked %#x, from %s to any TCP port pass", anyPortMark, gateway),
+		exprs: slices.Concat(matchMetaMark(anyPortMark), matchEtherType(etherIPv4), matchSaddr(netip.PrefixFrom(gateway, 32)), matchL4(unix.IPPROTO_TCP),
+			[]expr.Any{&expr.Verdict{Kind: expr.VerdictAccept}})}
+}
+
+// matchMetaMark is nft's "meta mark == mark".
+func matchMetaMark(mark uint32) []expr.Any {
+	return []expr.Any{
+		&expr.Meta{Key: expr.MetaKeyMARK, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(mark)},
+	}
 }
 
 // platformSSH lets the platform's SSH reach a tap's port 22 from the

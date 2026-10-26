@@ -57,11 +57,13 @@ Hypervisor directly, without Kata or Kubernetes.
   read their machines (it is where placement and boot failures show) but never
   write them: `Machine` and `Node` are system-managed kinds, whose spec only the
   apiserver writes, whatever role the caller holds.
-- Logs, exec and ssh are capabilities of the `Machine`, each one permission,
-  `compute.machines.logs`, `compute.machines.exec` and
-  `compute.machines.ssh`, held in the machine's project, and one API,
-  `MachineCapabilityService` (`Logs`, `SignSSHKey`, `ForgetSSHHostKeys`) and the WebSockets
-  `/v1/projects/{project}/{plural}/{name}:exec` and `:ssh`. A caller names
+- Logs, exec, ssh and port forwards are capabilities of the `Machine`, each
+  one permission, `compute.machines.logs`, `compute.machines.exec`,
+  `compute.machines.ssh` and `compute.machines.portforward`, held in the
+  machine's project, and one API, `MachineCapabilityService` (`Logs`,
+  `SignSSHKey`, `ForgetSSHHostKeys`) and the WebSockets
+  `/v1/projects/{project}/{plural}/{name}:exec`, `:ssh` and `:portforward`
+  (`port-forward.md`). A caller names
   what it made, by kind and name, such as Container `web`, never the machine;
   the apiserver maps the kind to its machine in one table
   (`internal/apiserver/machinecapability.go`), and takes the machine only if

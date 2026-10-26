@@ -123,7 +123,9 @@ node (`decisions/streaming-transport.md`); `hangar ssh` reaches a virtual
 machine's port 22 the same way, with a key the apiserver's SSH CA signs for
 minutes (`decisions/vm-ssh.md`), and `hangar console` its serial console,
 which the VM's console helper serves on the host
-(`decisions/serial-console.md`). From the internet, everything comes in
+(`decisions/serial-console.md`); `hangar port-forward` reaches any TCP port
+of a container or a VM the same way (`decisions/port-forward.md`). From the
+internet, everything comes in
 through `hangar-edge` on :443, which hands the API to the apiserver over a
 unix socket of its own, saying each client's address
 (`decisions/front-door.md`); Cloudflare is the DNS alone, pointing every

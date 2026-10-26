@@ -162,6 +162,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network sockets", networkSockets, nets)
 	part("dialing SSH", dialSSH, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("dialing edge ports", dialEdgePorts, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
+	part("dialing any port", dialAnyPort, func(h Host) bool { return h.Network != nil && h.ServeGuest != nil })
 	part("network firewall", networkFirewall, nets)
 	part("file share servers' firewall", shareServerFirewall, func(h Host) bool {
 		return h.Network != nil && h.ServeGuest != nil && h.Reaches != nil

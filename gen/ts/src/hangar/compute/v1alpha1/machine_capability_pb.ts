@@ -774,6 +774,7 @@ export const MachineLogStreamSchema: GenEnum<MachineLogStream> = /*@__PURE__*/
  *   GET /v1/projects/{project}/{plural}/{name}:exec
  *   GET /v1/projects/{project}/{plural}/{name}:ssh
  *   GET /v1/projects/{project}/{plural}/{name}:console
+ *   GET /v1/projects/{project}/{plural}/{name}:portforward?port={port}
  *
  * where plural names the kind as its resource does, such as containers or
  * virtualmachines, authenticated as a Connect call is. A refusal before
@@ -795,6 +796,14 @@ export const MachineLogStreamSchema: GenEnum<MachineLogStream> = /*@__PURE__*/
  * An SSH tunnel has the subprotocol hangar.ssh.v1alpha1 and needs
  * compute.machines.ssh. Its binary messages are the SSH connection's
  * bytes to and from port 22 of the machine; see docs/decisions/vm-ssh.md.
+ *
+ * A port forward has the subprotocol hangar.portforward.v1alpha1 and needs
+ * compute.machines.portforward. Its binary messages are one TCP
+ * connection's bytes to and from the port the query names, 1 to 65535, of
+ * the machine's first interface, a container's or a virtual machine's,
+ * whatever its security groups let in. The connection is made once the
+ * WebSocket is open; one the machine refuses closes it as Unavailable. See
+ * docs/decisions/port-forward.md.
  *
  * A serial console, a virtual machine's only, has the subprotocol
  * hangar.console.v1alpha1 and needs compute.machines.exec. Each binary

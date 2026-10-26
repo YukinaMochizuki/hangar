@@ -13,7 +13,7 @@ import (
 // none. No other kind has them: the kind a caller names never decides.
 func TestMachineCapabilitiesAreTheirOwnPermissions(t *testing.T) {
 	for perm, want := range map[string]string{
-		MachineLogs: "compute.machines.logs", MachineExec: "compute.machines.exec", MachineSSH: "compute.machines.ssh",
+		MachineLogs: "compute.machines.logs", MachineExec: "compute.machines.exec", MachineSSH: "compute.machines.ssh", MachinePortForward: "compute.machines.portforward",
 	} {
 		if perm != want {
 			t.Errorf("the permission is %q, want %q", perm, want)

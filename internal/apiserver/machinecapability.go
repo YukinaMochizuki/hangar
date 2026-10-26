@@ -19,6 +19,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/authz"
 	"github.com/YukinaMochizuki/hangar/internal/consolews"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/portforwardws"
 	"github.com/YukinaMochizuki/hangar/internal/sshws"
 )
 
@@ -43,8 +44,8 @@ type machineKind struct {
 // permissions, with no permission of its own; any other capability fails
 // with Unimplemented. See docs/decisions/machine-model.md.
 var machineKinds = map[string]machineKind{
-	registry.Container.Kind:      {what: "container", machine: machineName, capabilities: []authz.Verb{authz.Logs, authz.Exec}},
-	registry.VirtualMachine.Kind: {what: "virtual machine", machine: vmMachineName, capabilities: []authz.Verb{authz.Logs, authz.Exec, authz.SSH}, execOverSSH: true},
+	registry.Container.Kind:      {what: "container", machine: machineName, capabilities: []authz.Verb{authz.Logs, authz.Exec, authz.PortForward}},
+	registry.VirtualMachine.Kind: {what: "virtual machine", machine: vmMachineName, capabilities: []authz.Verb{authz.Logs, authz.Exec, authz.SSH, authz.PortForward}, execOverSSH: true},
 }
 
 // kindNamed is the kind a capability's request names, by kind, as
@@ -246,7 +247,8 @@ func clientIP(ctx context.Context) string {
 }
 
 // machineSocket serves the WebSockets of the machines' capabilities, an
-// exec, an SSH tunnel or a serial console, on the public listener; see
+// exec, an SSH tunnel, a serial console or a port forward, on the public
+// listener; see
 // proto/hangar/compute/v1alpha1/machine_capability.proto.
 func (s *Server) machineSocket(chain auth.Chain) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -262,6 +264,8 @@ func (s *Server) machineSocket(chain auth.Chain) http.HandlerFunc {
 			s.serveSSH(chain, w, r, route)
 		case consolews.Action:
 			s.serveConsole(chain, w, r, route)
+		case portforwardws.Action:
+			s.servePortForward(chain, w, r, route)
 		default:
 			http.NotFound(w, r)
 		}

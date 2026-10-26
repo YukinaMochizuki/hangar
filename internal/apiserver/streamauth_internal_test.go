@@ -28,15 +28,16 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/auth/session"
 	"github.com/YukinaMochizuki/hangar/internal/consolews"
 	"github.com/YukinaMochizuki/hangar/internal/execws"
+	"github.com/YukinaMochizuki/hangar/internal/portforwardws"
 	"github.com/YukinaMochizuki/hangar/internal/sshws"
 	"github.com/YukinaMochizuki/hangar/internal/store"
 	"github.com/YukinaMochizuki/hangar/internal/testutil"
 )
 
 // streamingNode is the scripted node, which also follows a log, writing one
-// record and then nothing until the call ends, relays an SSH connection to
-// a guest that echoes what it is sent, and attaches to a serial console
-// whose guest echoes what is typed.
+// record and then nothing until the call ends, relays an SSH connection and
+// a port forward to a guest that echoes what it is sent, and attaches to a
+// serial console whose guest echoes what is typed.
 type streamingNode struct {
 	*scriptedNode
 }
@@ -64,6 +65,24 @@ func (streamingNode) SSH(_ context.Context, stream *connect.BidiStream[nodev1.SS
 			return err
 		}
 		if err := stream.Send(&nodev1.SSHResponse{Data: req.GetData()}); err != nil {
+			return err
+		}
+	}
+}
+
+func (streamingNode) PortForward(_ context.Context, stream *connect.BidiStream[nodev1.PortForwardRequest, nodev1.PortForwardResponse]) error {
+	if _, err := stream.Receive(); err != nil { // the start
+		return err
+	}
+	for {
+		req, err := stream.Receive()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := stream.Send(&nodev1.PortForwardResponse{Data: req.GetData()}); err != nil {
 			return err
 		}
 	}
@@ -271,11 +290,12 @@ func (w *streamWorld) dial(t *testing.T, h http.Header, path, subprotocol string
 	return c
 }
 
-// streams are an exec in api, a log of api followed, and an SSH tunnel and
-// a serial console to web, all open, as one caller.
+// streams are an exec in api, a log of api followed, a port forward to
+// api's port 8080, and an SSH tunnel and a serial console to web, all open,
+// as one caller.
 type streams struct {
-	exec, ssh, console *websocket.Conn
-	logs               <-chan error
+	exec, ssh, console, forward *websocket.Conn
+	logs                        <-chan error
 }
 
 // open opens the streams with the credential header h, and waits until
@@ -294,6 +314,7 @@ func (w *streamWorld) open(t *testing.T, h http.Header) *streams {
 		}
 	})
 	st.ssh = w.dial(t, h, sshws.Path("web", "virtualmachines", "web"), sshws.Subprotocol, false)
+	st.forward = w.dial(t, h, portforwardws.Path("web", "containers", "api", 8080), portforwardws.Subprotocol, false)
 	st.console = w.dial(t, h, consolews.Path("web", "virtualmachines", "web"), consolews.Subprotocol, false)
 	sendConsole(t, st.console, &computev1alpha1.MachineConsoleRequest{Message: &computev1alpha1.MachineConsoleRequest_Start{Start: &computev1alpha1.MachineConsoleStart{}}})
 	if res := readConsoleRes(t, st.console); res.GetState() == nil {
@@ -344,6 +365,12 @@ func (st *streams) alive(t *testing.T, when string) {
 	}
 	if _, b, err := st.ssh.Read(ctx); err != nil || string(b) != "SSH-2.0-test" {
 		t.Fatalf("the SSH tunnel, %s, did not relay: %q, %v", when, b, execws.ErrorOf(err))
+	}
+	if err := st.forward.Write(ctx, websocket.MessageBinary, []byte("GET /")); err != nil {
+		t.Fatal(err)
+	}
+	if _, b, err := st.forward.Read(ctx); err != nil || string(b) != "GET /" {
+		t.Fatalf("the port forward, %s, did not relay: %q, %v", when, b, execws.ErrorOf(err))
 	}
 	sendConsole(t, st.console, &computev1alpha1.MachineConsoleRequest{Message: &computev1alpha1.MachineConsoleRequest_Input{Input: []byte("ping")}})
 	if res := readConsoleRes(t, st.console); string(res.GetOutput()) != "ping" {
@@ -405,6 +432,16 @@ func (st *streams) endWith(t *testing.T, code connect.Code, why string) {
 				t.Fatalf("the console still open after %s", why)
 			}
 			wantCodeOf(t, execws.ErrorOf(err), code, "the console, after "+why)
+			break
+		}
+	}
+	for {
+		_, _, err := st.forward.Read(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				t.Fatalf("the port forward still open after %s", why)
+			}
+			wantCodeOf(t, execws.ErrorOf(err), code, "the port forward, after "+why)
 			break
 		}
 	}
@@ -473,8 +510,8 @@ func (w *streamWorld) serviceToken(t *testing.T) http.Header {
 	return http.Header{"Authorization": {"Bearer " + res.Msg.GetSecret()}}
 }
 
-// TestMachineStreamsEndWithWhatLetThemIn: an exec, an SSH tunnel, a serial
-// console and a log followed end, at the next recheck, once what let them
+// TestMachineStreamsEndWithWhatLetThemIn: an exec, an SSH tunnel, a port
+// forward, a serial console and a log followed end, at the next recheck, once what let them
 // in is taken away: the credential they were opened with, the binding that
 // granted them, or their caller's membership; the node's exec ends with
 // them.
