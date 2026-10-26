@@ -250,9 +250,11 @@ type Limits struct {
 	// RESOURCE_EXHAUSTED, and a change applies from the next call. Only a
 	// Plan sets it, from 1 to 512; unset, it is 64. Usage does not count it.
 	// See docs/decisions/node-tunnel.md.
-	MachineCalls  *int32 `protobuf:"varint,14,opt,name=machine_calls,json=machineCalls,proto3,oneof" json:"machine_calls,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	MachineCalls *int32 `protobuf:"varint,14,opt,name=machine_calls,json=machineCalls,proto3,oneof" json:"machine_calls,omitempty"`
+	// NetworkEndpoints, each holding an address of its network.
+	NetworkEndpoints *int32 `protobuf:"varint,15,opt,name=network_endpoints,json=networkEndpoints,proto3,oneof" json:"network_endpoints,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Limits) Reset() {
@@ -383,25 +385,33 @@ func (x *Limits) GetMachineCalls() int32 {
 	return 0
 }
 
+func (x *Limits) GetNetworkEndpoints() int32 {
+	if x != nil && x.NetworkEndpoints != nil {
+		return *x.NetworkEndpoints
+	}
+	return 0
+}
+
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
 // counts it.
 type Usage struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Cpu             string                 `protobuf:"bytes,1,opt,name=cpu,proto3" json:"cpu,omitempty"`
-	Memory          string                 `protobuf:"bytes,2,opt,name=memory,proto3" json:"memory,omitempty"`
-	Disk            string                 `protobuf:"bytes,3,opt,name=disk,proto3" json:"disk,omitempty"`
-	Machines        int32                  `protobuf:"varint,4,opt,name=machines,proto3" json:"machines,omitempty"`
-	Projects        int32                  `protobuf:"varint,5,opt,name=projects,proto3" json:"projects,omitempty"`
-	Networks        int32                  `protobuf:"varint,6,opt,name=networks,proto3" json:"networks,omitempty"`
-	Addresses       int32                  `protobuf:"varint,7,opt,name=addresses,proto3" json:"addresses,omitempty"`
-	PublicEndpoints int32                  `protobuf:"varint,8,opt,name=public_endpoints,json=publicEndpoints,proto3" json:"public_endpoints,omitempty"`
-	ServiceTokens   int32                  `protobuf:"varint,9,opt,name=service_tokens,json=serviceTokens,proto3" json:"service_tokens,omitempty"`
-	FileShares      int32                  `protobuf:"varint,10,opt,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
-	Domains         int32                  `protobuf:"varint,11,opt,name=domains,proto3" json:"domains,omitempty"`
-	PortForwards    int32                  `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3" json:"port_forwards,omitempty"`
-	CustomImages    int32                  `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3" json:"custom_images,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	Cpu              string                 `protobuf:"bytes,1,opt,name=cpu,proto3" json:"cpu,omitempty"`
+	Memory           string                 `protobuf:"bytes,2,opt,name=memory,proto3" json:"memory,omitempty"`
+	Disk             string                 `protobuf:"bytes,3,opt,name=disk,proto3" json:"disk,omitempty"`
+	Machines         int32                  `protobuf:"varint,4,opt,name=machines,proto3" json:"machines,omitempty"`
+	Projects         int32                  `protobuf:"varint,5,opt,name=projects,proto3" json:"projects,omitempty"`
+	Networks         int32                  `protobuf:"varint,6,opt,name=networks,proto3" json:"networks,omitempty"`
+	Addresses        int32                  `protobuf:"varint,7,opt,name=addresses,proto3" json:"addresses,omitempty"`
+	PublicEndpoints  int32                  `protobuf:"varint,8,opt,name=public_endpoints,json=publicEndpoints,proto3" json:"public_endpoints,omitempty"`
+	ServiceTokens    int32                  `protobuf:"varint,9,opt,name=service_tokens,json=serviceTokens,proto3" json:"service_tokens,omitempty"`
+	FileShares       int32                  `protobuf:"varint,10,opt,name=file_shares,json=fileShares,proto3" json:"file_shares,omitempty"`
+	Domains          int32                  `protobuf:"varint,11,opt,name=domains,proto3" json:"domains,omitempty"`
+	PortForwards     int32                  `protobuf:"varint,12,opt,name=port_forwards,json=portForwards,proto3" json:"port_forwards,omitempty"`
+	CustomImages     int32                  `protobuf:"varint,13,opt,name=custom_images,json=customImages,proto3" json:"custom_images,omitempty"`
+	NetworkEndpoints int32                  `protobuf:"varint,15,opt,name=network_endpoints,json=networkEndpoints,proto3" json:"network_endpoints,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Usage) Reset() {
@@ -521,6 +531,13 @@ func (x *Usage) GetPortForwards() int32 {
 func (x *Usage) GetCustomImages() int32 {
 	if x != nil {
 		return x.CustomImages
+	}
+	return 0
+}
+
+func (x *Usage) GetNetworkEndpoints() int32 {
+	if x != nil {
+		return x.NetworkEndpoints
 	}
 	return 0
 }
@@ -1179,7 +1196,7 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
 	"conditions\x18\x02 \x03(\v2\x19.hangar.meta.v1.ConditionR\n" +
-	"conditions\"\xc5\x05\n" +
+	"conditions\"\x8d\x06\n" +
 	"\x06Limits\x12\x15\n" +
 	"\x03cpu\x18\x01 \x01(\tH\x00R\x03cpu\x88\x01\x01\x12\x1b\n" +
 	"\x06memory\x18\x02 \x01(\tH\x01R\x06memory\x88\x01\x01\x12\x17\n" +
@@ -1197,7 +1214,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"R\adomains\x88\x01\x01\x12(\n" +
 	"\rport_forwards\x18\f \x01(\x05H\vR\fportForwards\x88\x01\x01\x12(\n" +
 	"\rcustom_images\x18\r \x01(\x05H\fR\fcustomImages\x88\x01\x01\x12(\n" +
-	"\rmachine_calls\x18\x0e \x01(\x05H\rR\fmachineCalls\x88\x01\x01B\x06\n" +
+	"\rmachine_calls\x18\x0e \x01(\x05H\rR\fmachineCalls\x88\x01\x01\x120\n" +
+	"\x11network_endpoints\x18\x0f \x01(\x05H\x0eR\x10networkEndpoints\x88\x01\x01B\x06\n" +
 	"\x04_cpuB\t\n" +
 	"\a_memoryB\a\n" +
 	"\x05_diskB\v\n" +
@@ -1213,7 +1231,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"\b_domainsB\x10\n" +
 	"\x0e_port_forwardsB\x10\n" +
 	"\x0e_custom_imagesB\x10\n" +
-	"\x0e_machine_calls\"\x8e\x03\n" +
+	"\x0e_machine_callsB\x14\n" +
+	"\x12_network_endpoints\"\xc1\x03\n" +
 	"\x05Usage\x12\x10\n" +
 	"\x03cpu\x18\x01 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x02 \x01(\tR\x06memory\x12\x12\n" +
@@ -1229,7 +1248,8 @@ const file_hangar_tenancy_v1alpha1_plan_proto_rawDesc = "" +
 	"fileShares\x12\x18\n" +
 	"\adomains\x18\v \x01(\x05R\adomains\x12#\n" +
 	"\rport_forwards\x18\f \x01(\x05R\fportForwards\x12#\n" +
-	"\rcustom_images\x18\r \x01(\x05R\fcustomImages\"$\n" +
+	"\rcustom_images\x18\r \x01(\x05R\fcustomImages\x12+\n" +
+	"\x11network_endpoints\x18\x0f \x01(\x05R\x10networkEndpointsJ\x04\b\x0e\x10\x0f\"$\n" +
 	"\x0eGetPlanRequest\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\"D\n" +
 	"\x0fGetPlanResponse\x121\n" +

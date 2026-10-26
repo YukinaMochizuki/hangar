@@ -166,10 +166,13 @@ type Agent struct {
 	nodes    computev1alpha1connect.NodeServiceClient
 	machines computev1alpha1connect.MachineServiceClient
 	networks networkv1alpha1connect.NetworkServiceClient
-	// portForwards reports on PortForwards.
-	portForwards networkv1alpha1connect.PortForwardServiceClient
-	disks        storagev1alpha1connect.DiskServiceClient
-	shares       storagev1alpha1connect.FileShareServiceClient
+	// portForwards reports on PortForwards, endpointServices and
+	// networkEndpoints on EndpointServices and NetworkEndpoints.
+	portForwards     networkv1alpha1connect.PortForwardServiceClient
+	endpointServices networkv1alpha1connect.EndpointServiceServiceClient
+	networkEndpoints networkv1alpha1connect.NetworkEndpointServiceClient
+	disks            storagev1alpha1connect.DiskServiceClient
+	shares           storagev1alpha1connect.FileShareServiceClient
 	// imagesAPI reaches Images; images makes disk images' bases.
 	imagesAPI storagev1alpha1connect.ImageServiceClient
 	// customImages reaches CustomImages; captures makes their bases, and
@@ -232,11 +235,13 @@ type Agent struct {
 	// among them, which netTrigger has checked again.
 	netsvc     *netServices
 	netTrigger chan struct{}
-	// forwardTrigger has the host's port forwards ensured again.
-	forwardTrigger chan struct{}
-	// machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl and
-	// customImagesCtl are the controllers Run runs with drivers.
-	machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl, customImagesCtl *controller.Controller
+	// forwardTrigger has the host's port forwards ensured again, and
+	// endpointTrigger its network endpoints.
+	forwardTrigger, endpointTrigger chan struct{}
+	// machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl,
+	// endpointsCtl and customImagesCtl are the controllers Run runs with
+	// drivers.
+	machinesCtl, networksCtl, disksCtl, sharesCtl, forwardsCtl, endpointsCtl, customImagesCtl *controller.Controller
 	// sweeps counts the sweeps sweepLoop has finished.
 	sweeps atomic.Int64
 	// cpuRead is how the last read of the host's CPU went; only report
@@ -341,35 +346,38 @@ func New(cfg Config) (*Agent, error) {
 		captures = newCaptureMaker(cfg.Drivers.Storage, cfg.CaptureTimeout, cfg.MaxPulls)
 	}
 	a := &Agent{
-		cfg:          cfg,
-		api:          client.New(cfg.HTTP, cfg.BaseURL),
-		nodes:        computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
-		machines:     computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
-		networks:     networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
-		portForwards: networkv1alpha1connect.NewPortForwardServiceClient(cfg.HTTP, cfg.BaseURL),
-		disks:        storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
-		shares:       storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
-		imagesAPI:    storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
-		customImages: storagev1alpha1connect.NewCustomImageServiceClient(cfg.HTTP, cfg.BaseURL),
-		captures:     captures,
-		pullCreds:    nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
-		tpmKeys:      nodev1connect.NewVirtualTPMKeyServiceClient(cfg.HTTP, cfg.BaseURL),
-		images:       images,
-		netChecked:   map[string]int64{},
-		told:         map[string]toldIPv6{},
-		exported:     map[string]toldExport{},
-		bootExported: map[string]driver.ShareExport{},
-		shareWaiters: map[controller.Key]bool{},
-		revoking:     newRevocations(),
-		puller:       puller,
-		metrics:      newAgentMetrics(),
-		stops:        newStops(),
-		guests:       newGuests(),
-		trigger:      make(chan struct{}, 1),
-		netsvc:       netsvc,
-		netTrigger:   make(chan struct{}, 1),
+		cfg:              cfg,
+		api:              client.New(cfg.HTTP, cfg.BaseURL),
+		nodes:            computev1alpha1connect.NewNodeServiceClient(cfg.HTTP, cfg.BaseURL),
+		machines:         computev1alpha1connect.NewMachineServiceClient(cfg.HTTP, cfg.BaseURL),
+		networks:         networkv1alpha1connect.NewNetworkServiceClient(cfg.HTTP, cfg.BaseURL),
+		portForwards:     networkv1alpha1connect.NewPortForwardServiceClient(cfg.HTTP, cfg.BaseURL),
+		endpointServices: networkv1alpha1connect.NewEndpointServiceServiceClient(cfg.HTTP, cfg.BaseURL),
+		networkEndpoints: networkv1alpha1connect.NewNetworkEndpointServiceClient(cfg.HTTP, cfg.BaseURL),
+		disks:            storagev1alpha1connect.NewDiskServiceClient(cfg.HTTP, cfg.BaseURL),
+		shares:           storagev1alpha1connect.NewFileShareServiceClient(cfg.HTTP, cfg.BaseURL),
+		imagesAPI:        storagev1alpha1connect.NewImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		customImages:     storagev1alpha1connect.NewCustomImageServiceClient(cfg.HTTP, cfg.BaseURL),
+		captures:         captures,
+		pullCreds:        nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
+		tpmKeys:          nodev1connect.NewVirtualTPMKeyServiceClient(cfg.HTTP, cfg.BaseURL),
+		images:           images,
+		netChecked:       map[string]int64{},
+		told:             map[string]toldIPv6{},
+		exported:         map[string]toldExport{},
+		bootExported:     map[string]driver.ShareExport{},
+		shareWaiters:     map[controller.Key]bool{},
+		revoking:         newRevocations(),
+		puller:           puller,
+		metrics:          newAgentMetrics(),
+		stops:            newStops(),
+		guests:           newGuests(),
+		trigger:          make(chan struct{}, 1),
+		netsvc:           netsvc,
+		netTrigger:       make(chan struct{}, 1),
 	}
 	a.forwardTrigger = make(chan struct{}, 1)
+	a.endpointTrigger = make(chan struct{}, 1)
 	a.diskTrigger = make(chan struct{}, 1)
 	a.captureTrigger = make(chan struct{}, 1)
 	a.wakes = map[string]time.Time{}
@@ -394,9 +402,9 @@ func New(cfg Config) (*Agent, error) {
 	}
 	if cfg.Drivers != nil {
 		a.machinesCtl, a.networksCtl, a.disksCtl = a.machineController(), a.networkController(), a.diskController()
-		a.sharesCtl, a.forwardsCtl = a.shareController(), a.forwardController()
+		a.sharesCtl, a.forwardsCtl, a.endpointsCtl = a.shareController(), a.forwardController(), a.endpointController()
 		a.customImagesCtl = a.customImageController()
-		for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.customImagesCtl} {
+		for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.endpointsCtl, a.customImagesCtl} {
 			c.MaxBackoff = cfg.RetryMaxBackoff
 		}
 		a.requeue = a.machinesCtl.Enqueue
@@ -425,7 +433,7 @@ func (a *Agent) Activity() Activity {
 // without drivers it runs none.
 func (a *Agent) ControllerStatus() []controller.Status {
 	var st []controller.Status
-	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.customImagesCtl} {
+	for _, c := range []*controller.Controller{a.machinesCtl, a.networksCtl, a.disksCtl, a.sharesCtl, a.forwardsCtl, a.endpointsCtl, a.customImagesCtl} {
 		if c != nil {
 			st = append(st, c.Status())
 		}
@@ -482,6 +490,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		}()
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
+		wg.Go(func() { _ = a.endpointsCtl.Run(ctx) })
 		wg.Go(func() {
 			a.captures.start(ctx, func() { notify(a.captureTrigger) })
 			if a.converts != nil {
@@ -551,6 +560,7 @@ func (a *Agent) followHost(ctx context.Context) {
 		a.netEpoch.Add(1)
 		notify(a.netTrigger)
 		notify(a.forwardTrigger)
+		notify(a.endpointTrigger)
 	})
 	go forward(a.cfg.Drivers.Hypervisor.Changes(), func() {})
 	// An image made ready is looked at as soon as it is.

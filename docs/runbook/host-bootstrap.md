@@ -752,6 +752,7 @@ spec:
     domains: 3
     portForwards: 5
     customImages: 5
+    networkEndpoints: 20
 ```
 
 `sudo hangar --context local apply -f default-plan.yaml` on the host, or

@@ -122,6 +122,29 @@ func (s *Server) newControllers() []*controller.Controller {
 			},
 		},
 		{
+			Name: "endpointservice", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileEndpointService),
+			Watches: []controller.Watch{
+				{Kind: registry.EndpointService.Kind, Map: controller.Self},
+				// Its target's machine coming, going, moving or given its
+				// address.
+				{Kind: registry.Machine.Kind, Map: s.endpointServicesOfMachine, SkipResync: true},
+			},
+		},
+		{
+			Name: "networkendpoint", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
+			Reconciler: controller.ReconcilerFunc(s.reconcileNetworkEndpoint),
+			Watches: []controller.Watch{
+				{Kind: registry.NetworkEndpoint.Kind, Map: controller.Self},
+				// Its service ready, moving or going.
+				{Kind: registry.EndpointService.Kind, Map: s.networkEndpointsOfService, SkipResync: true},
+				// Its network's labels, which the service's selector reads.
+				{Kind: registry.Network.Kind, Map: s.networkEndpointsOfNetwork, SkipResync: true},
+				// A machine of its network taking or leaving its name.
+				{Kind: registry.Machine.Kind, Map: s.networkEndpointsOfMachine, SkipResync: true},
+			},
+		},
+		{
 			Name: "publicendpoint", Source: controller.StoreSource{Store: s.store}, Clock: s.clock, Log: s.log,
 			Reconciler: controller.ReconcilerFunc(s.reconcilePublicEndpoint),
 			Watches: []controller.Watch{

@@ -193,11 +193,15 @@
       "description": "SecurityGroupPeer is the other end of a rule.",
       "properties": {
         "cidr": {
-          "description": "An IPv4 or IPv6 range, such as \"0.0.0.0/0\", \"10.0.0.0/24\" or \"::/0\". A range matches only addresses of its own family.\n\nSet at most one of cidr, group.",
+          "description": "An IPv4 or IPv6 range, such as \"0.0.0.0/0\", \"10.0.0.0/24\" or \"::/0\". A range matches only addresses of its own family.\n\nSet at most one of cidr, group, network.",
           "type": "string"
         },
         "group": {
-          "description": "The members of a group of the same network, \"default\" included.\n\nSet at most one of cidr, group.",
+          "description": "The members of a group of the same network, \"default\" included.\n\nSet at most one of cidr, group, network.",
+          "type": "string"
+        },
+        "network": {
+          "description": "Names another Network of the project: what reaches a member through that network's NetworkEndpoints, which comes from the network's transit address (docs/decisions/endpoint-services.md). Only ingress rules take it.\n\nSet at most one of cidr, group, network.",
           "type": "string"
         }
       },

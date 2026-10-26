@@ -76,6 +76,8 @@ message Limits {
   // Plan sets it, from 1 to 512; unset, it is 64. Usage does not count it.
   // See docs/decisions/node-tunnel.md.
   optional int32 machine_calls = 14;
+  // NetworkEndpoints, each holding an address of its network.
+  optional int32 network_endpoints = 15;
 }
 
 // Usage is what a tenant, or one of its projects, holds, counted as Limits
@@ -94,6 +96,9 @@ message Usage {
   int32 domains = 11;
   int32 port_forwards = 12;
   int32 custom_images = 13;
+  // Usage has no machine_calls, which Limits numbers 14.
+  reserved 14;
+  int32 network_endpoints = 15;
 }
 
 // PlanService manages plans.

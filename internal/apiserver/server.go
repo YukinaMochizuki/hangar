@@ -145,8 +145,8 @@ type Server struct {
 	// placing a machine, and growing a placed one.
 	capacity sync.Mutex
 	// ipam serializes every decision that hands out an address (a machine's
-	// interface addresses, a network's transit link) and the release of a
-	// network. Whoever holds both takes ipam first.
+	// interface addresses, a network endpoint's, a network's transit link)
+	// and the release of a network. Whoever holds both takes ipam first.
 	ipam sync.Mutex
 	// attach serializes every apply and delete of machines, containers,
 	// virtual machines, disks, file shares and networks, from the admission
@@ -172,6 +172,12 @@ type Server struct {
 	// range a test draws them from in place of the platform's.
 	portForwardPorts sync.Mutex
 	testForwardPorts [2]int32
+	// endpointServicePorts serializes every apply and delete of an
+	// EndpointService, so no two draw one transit port. testTransitPorts,
+	// if set, is the range a test draws them from in place of the
+	// platform's.
+	endpointServicePorts sync.Mutex
+	testTransitPorts     [2]int32
 	// users serializes every apply and delete of a User or an Invitation,
 	// so no two Users have one email and no Invitation is for an email with
 	// a User. Whoever holds it and plans takes users first.

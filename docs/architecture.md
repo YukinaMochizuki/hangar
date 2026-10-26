@@ -84,7 +84,10 @@ the tenant's own that it proves with a CNAME, which also lets the edge get
 its certificates (`decisions/custom-domains.md`). A `PortForward` opens a
 TCP or UDP port of its node's shared IPv4 address, which the apiserver
 draws, to one interface and port of a container or VM
-(`decisions/networking.md`). A
+(`decisions/networking.md`). An `EndpointService` offers one port of a
+container or VM to the project's other networks, each of which reaches it
+through a `NetworkEndpoint`, an address of its own range
+(`decisions/endpoint-services.md`). A
 `Secret` holds a project's credentials, such as registry logins that a
 container names to pull its image with: its values are write-only and
 stored sealed under a key outside the database, and a node gets a login
@@ -139,7 +142,11 @@ port
 (`decisions/public-endpoints.md`). A port forward's traffic passes
 neither: the host DNATs its port of the shared address to the machine,
 whose security groups judge the client, and the node agent only writes the
-forwards of the PortForwards it reads (`decisions/networking.md`).
+forwards of the PortForwards it reads (`decisions/networking.md`). A
+network endpoint's traffic passes neither either: the host NATs it from
+one network's namespace to the other's, and the node agent writes the
+endpoints of the NetworkEndpoints it reads
+(`decisions/endpoint-services.md`).
 
 ## Metrics
 

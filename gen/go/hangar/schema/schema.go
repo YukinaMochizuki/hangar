@@ -39,8 +39,14 @@ var networkv1alpha1Address []byte
 //go:embed network_v1alpha1_customdomain.json
 var networkv1alpha1CustomDomain []byte
 
+//go:embed network_v1alpha1_endpointservice.json
+var networkv1alpha1EndpointService []byte
+
 //go:embed network_v1alpha1_network.json
 var networkv1alpha1Network []byte
+
+//go:embed network_v1alpha1_networkendpoint.json
+var networkv1alpha1NetworkEndpoint []byte
 
 //go:embed network_v1alpha1_portforward.json
 var networkv1alpha1PortForward []byte
@@ -100,8 +106,12 @@ func Get(group, version, kind string) ([]byte, bool) {
 		return networkv1alpha1Address, true
 	case "network/v1alpha1/CustomDomain":
 		return networkv1alpha1CustomDomain, true
+	case "network/v1alpha1/EndpointService":
+		return networkv1alpha1EndpointService, true
 	case "network/v1alpha1/Network":
 		return networkv1alpha1Network, true
+	case "network/v1alpha1/NetworkEndpoint":
+		return networkv1alpha1NetworkEndpoint, true
 	case "network/v1alpha1/PortForward":
 		return networkv1alpha1PortForward, true
 	case "network/v1alpha1/PublicEndpoint":

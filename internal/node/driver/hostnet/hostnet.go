@@ -571,6 +571,9 @@ func (d *Driver) DeleteNetwork(_ context.Context, networkUID string) error {
 				if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, ForwardTable); err != nil {
 					return err
 				}
+				if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, EndpointTable); err != nil {
+					return err
+				}
 				if err := deleteTable(conn, nftables.TableFamilyIPv6); err != nil {
 					return err
 				}
@@ -614,6 +617,9 @@ func (d *Driver) deleteRootIfUnused() error {
 		return err
 	}
 	if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, ForwardTable); err != nil {
+		return err
+	}
+	if err := deleteNamedTable(conn, nftables.TableFamilyIPv4, EndpointTable); err != nil {
 		return err
 	}
 	return deleteTable(conn, nftables.TableFamilyIPv4)
@@ -1007,14 +1013,15 @@ func ensureUp(h *netlink.Handle, l netlink.Link) error {
 }
 
 // addrOf returns the first IPv4 address of a link other than the metadata
-// service's, which a bridge holds beside its gateway.
+// service's and network endpoints', which a bridge holds beside its
+// gateway.
 func addrOf(h *netlink.Handle, l netlink.Link) (netip.Prefix, bool, error) {
 	addrs, err := h.AddrList(l, unix.AF_INET)
 	if err != nil {
 		return netip.Prefix{}, false, err
 	}
 	for _, a := range addrs {
-		if p, ok := prefixOf(a.IPNet); ok && p.Addr() != driver.MetadataAddr {
+		if p, ok := prefixOf(a.IPNet); ok && p.Addr() != driver.MetadataAddr && a.Label != endpointLabel {
 			return p, true, nil
 		}
 	}
@@ -1034,9 +1041,10 @@ func ipNet(p netip.Prefix) *net.IPNet {
 	return &net.IPNet{IP: p.Addr().AsSlice(), Mask: net.CIDRMask(p.Bits(), p.Addr().BitLen())}
 }
 
-// ensureAddr makes want and more the link's only IPv4 addresses, with
-// want's route to the rest of its prefix, which flushing routes takes away
-// and nothing gives back.
+// ensureAddr makes want and more the link's only IPv4 addresses but
+// network endpoints', which are EnsureEndpoints', with want's route to the
+// rest of its prefix, which flushing routes takes away and nothing gives
+// back.
 func ensureAddr(h *netlink.Handle, l netlink.Link, want netip.Prefix, more ...netip.Prefix) error {
 	addrs, err := h.AddrList(l, unix.AF_INET)
 	if err != nil {
@@ -1045,6 +1053,9 @@ func ensureAddr(h *netlink.Handle, l netlink.Link, want netip.Prefix, more ...ne
 	all := append([]netip.Prefix{want}, more...)
 	found := map[netip.Prefix]bool{}
 	for _, a := range addrs {
+		if a.Label == endpointLabel {
+			continue
+		}
 		if p, _ := prefixOf(a.IPNet); slices.Contains(all, p) {
 			found[p] = true
 			continue

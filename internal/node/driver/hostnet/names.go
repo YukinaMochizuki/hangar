@@ -44,6 +44,14 @@ const (
 	// each network's with port forwards, of the forwards from the shared
 	// address; apart from Table, so that one keeps its bounded size.
 	ForwardTable = "hangar_forward"
+	// EndpointTable is the ip-family table, in the root namespace and in
+	// each network's with a network endpoint or an endpoint service's
+	// machine, of the endpoints' NAT (docs/decisions/endpoint-services.md);
+	// apart from Table, so that one keeps its bounded size.
+	EndpointTable = "hangar_endpoint"
+	// endpointLabel labels the addresses of network endpoints on a
+	// network's bridge, which EnsureNetwork leaves to EnsureEndpoints.
+	endpointLabel = nsBridge + ":ep"
 	// nameLen is the longest a link's name is: the prefix, then hex digits
 	// of the hash, 12 after a three-character prefix.
 	nameLen = 15

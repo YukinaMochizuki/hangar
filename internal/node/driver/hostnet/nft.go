@@ -159,14 +159,15 @@ func natRules(uplink string, public, shared netip.Addr) []ruleSpec {
 }
 
 // forwardInRules open the forward chain: the abuse rules, then, with a
-// shared address, the way in for its port forwards, before "only replies
-// into a network" turns every other new connection away.
+// shared address, the way in for its port forwards, and the way from a
+// network into another for network endpoints, before "only replies into a
+// network" turns every other new connection away.
 func forwardInRules(uplink string, shared netip.Addr) []ruleSpec {
 	rules := abuseRules()
 	if shared.IsValid() {
 		rules = append(rules, forwardedInRule(uplink))
 	}
-	return rules
+	return append(rules, endpointInRule())
 }
 
 // rootChains is the root namespace's table, whose size does not depend on
@@ -180,6 +181,13 @@ func rootChains(uplink string, public, shared netip.Addr) []chainSpec {
 			rules: []ruleSpec{{
 				says:  "a network sends only from addresses routed back to it",
 				exprs: append(matchIfnamePrefix(expr.MetaKeyIIFNAME, vethPrefix), dropUnlessRoutedBack()...),
+			}, {
+				// A transit address stands for its network in the groups'
+				// network peers (docs/decisions/endpoint-services.md), so none
+				// may come in from outside, as through a port forward.
+				says: fmt.Sprintf("nothing from %s in by %s", transitRange, uplink),
+				exprs: slices.Concat(matchIfname(expr.MetaKeyIIFNAME, uplink),
+					matchSaddr(netip.MustParsePrefix(transitRange)), []expr.Any{&expr.Verdict{Kind: expr.VerdictDrop}}),
 			}},
 		},
 		{
@@ -488,5 +496,5 @@ func isOurs(data any) bool {
 	case *nftables.Rule:
 		t = v.Table
 	}
-	return t != nil && isOursFamily(t.Family) && (t.Name == Table || t.Name == FirewallTable || t.Name == ForwardTable)
+	return t != nil && isOursFamily(t.Family) && (t.Name == Table || t.Name == FirewallTable || t.Name == ForwardTable || t.Name == EndpointTable)
 }

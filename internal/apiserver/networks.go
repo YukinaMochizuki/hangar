@@ -398,8 +398,9 @@ func reservedInterfaceID(id [8]byte) bool {
 }
 
 // freeAddress returns the lowest address of the network no other machine
-// holds. The network address, the gateway (the first usable address) and the
-// broadcast address are never handed out.
+// and no NetworkEndpoint holds. The network address, the gateway (the first
+// usable address) and the broadcast address are never handed out. The
+// caller holds s.ipam.
 func (s *Server) freeAddress(ctx context.Context, project, network string) (string, error) {
 	obj, err := s.get(ctx, registry.Network, resource.Key{Project: project, Name: network})
 	if err != nil {
@@ -430,6 +431,13 @@ func (s *Server) freeAddress(ctx context.Context, project, network string) (stri
 				taken[p.Addr()] = true
 			}
 		}
+	}
+	endpoints, err := s.endpointAddresses(ctx, project, network)
+	if err != nil {
+		return "", err
+	}
+	for _, a := range endpoints {
+		taken[a] = true
 	}
 	if a, ok := firstFreeHost(cidr, taken); ok {
 		return netip.PrefixFrom(a, cidr.Bits()).String(), nil

@@ -44,19 +44,20 @@ const DefaultMaxOwnedTenants = 1
 // (docs/runbook/host-bootstrap.md).
 func DefaultLimits() *tenancyv1alpha1.Limits {
 	return &tenancyv1alpha1.Limits{
-		Cpu:             proto.String("8"),
-		Memory:          proto.String("16Gi"),
-		Disk:            proto.String("100Gi"),
-		Machines:        proto.Int32(10),
-		Projects:        proto.Int32(5),
-		Networks:        proto.Int32(5),
-		Addresses:       proto.Int32(5),
-		PublicEndpoints: proto.Int32(10),
-		ServiceTokens:   proto.Int32(10),
-		FileShares:      proto.Int32(3),
-		Domains:         proto.Int32(3),
-		PortForwards:    proto.Int32(5),
-		CustomImages:    proto.Int32(5),
+		Cpu:              proto.String("8"),
+		Memory:           proto.String("16Gi"),
+		Disk:             proto.String("100Gi"),
+		Machines:         proto.Int32(10),
+		Projects:         proto.Int32(5),
+		Networks:         proto.Int32(5),
+		Addresses:        proto.Int32(5),
+		PublicEndpoints:  proto.Int32(10),
+		ServiceTokens:    proto.Int32(10),
+		FileShares:       proto.Int32(3),
+		Domains:          proto.Int32(3),
+		PortForwards:     proto.Int32(5),
+		CustomImages:     proto.Int32(5),
+		NetworkEndpoints: proto.Int32(20),
 	}
 }
 
@@ -80,11 +81,12 @@ const (
 	dimDomains
 	dimPortForwards
 	dimCustomImages
+	dimNetworkEndpoints
 	numDims
 )
 
 // dimNames are the dimensions as Limits and Usage name them.
-var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains", "port_forwards", "custom_images"}
+var dimNames = [numDims]string{"cpu", "memory", "disk", "machines", "projects", "networks", "addresses", "public_endpoints", "service_tokens", "file_shares", "domains", "port_forwards", "custom_images", "network_endpoints"}
 
 // amounts are what something holds, by dimension.
 type amounts [numDims]int64
@@ -141,6 +143,7 @@ func parseLimits(l *tenancyv1alpha1.Limits) (limitSet, error) {
 		{dimMachines, l.Machines}, {dimProjects, l.Projects}, {dimNetworks, l.Networks}, {dimAddresses, l.Addresses},
 		{dimPublicEndpoints, l.PublicEndpoints}, {dimServiceTokens, l.ServiceTokens}, {dimFileShares, l.FileShares},
 		{dimDomains, l.Domains}, {dimPortForwards, l.PortForwards}, {dimCustomImages, l.CustomImages},
+		{dimNetworkEndpoints, l.NetworkEndpoints},
 	} {
 		if c.v == nil {
 			continue
@@ -227,6 +230,7 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 	l.Machines, l.Projects, l.Networks, l.Addresses = count(dimMachines), count(dimProjects), count(dimNetworks), count(dimAddresses)
 	l.PublicEndpoints, l.ServiceTokens, l.FileShares = count(dimPublicEndpoints), count(dimServiceTokens), count(dimFileShares)
 	l.Domains, l.PortForwards, l.CustomImages = count(dimDomains), count(dimPortForwards), count(dimCustomImages)
+	l.NetworkEndpoints = count(dimNetworkEndpoints)
 	if ls.machineCallsSet {
 		l.MachineCalls = proto.Int32(int32(ls.machineCalls))
 	}
@@ -236,19 +240,20 @@ func (ls limitSet) proto() *tenancyv1alpha1.Limits {
 // usage is a as a Usage.
 func (a amounts) usage() *tenancyv1alpha1.Usage {
 	return &tenancyv1alpha1.Usage{
-		Cpu:             formatAmount(dimCPU, a[dimCPU]),
-		Memory:          formatAmount(dimMemory, a[dimMemory]),
-		Disk:            formatAmount(dimDisk, a[dimDisk]),
-		Machines:        int32(a[dimMachines]),
-		Projects:        int32(a[dimProjects]),
-		Networks:        int32(a[dimNetworks]),
-		Addresses:       int32(a[dimAddresses]),
-		PublicEndpoints: int32(a[dimPublicEndpoints]),
-		ServiceTokens:   int32(a[dimServiceTokens]),
-		FileShares:      int32(a[dimFileShares]),
-		Domains:         int32(a[dimDomains]),
-		PortForwards:    int32(a[dimPortForwards]),
-		CustomImages:    int32(a[dimCustomImages]),
+		Cpu:              formatAmount(dimCPU, a[dimCPU]),
+		Memory:           formatAmount(dimMemory, a[dimMemory]),
+		Disk:             formatAmount(dimDisk, a[dimDisk]),
+		Machines:         int32(a[dimMachines]),
+		Projects:         int32(a[dimProjects]),
+		Networks:         int32(a[dimNetworks]),
+		Addresses:        int32(a[dimAddresses]),
+		PublicEndpoints:  int32(a[dimPublicEndpoints]),
+		ServiceTokens:    int32(a[dimServiceTokens]),
+		FileShares:       int32(a[dimFileShares]),
+		Domains:          int32(a[dimDomains]),
+		PortForwards:     int32(a[dimPortForwards]),
+		CustomImages:     int32(a[dimCustomImages]),
+		NetworkEndpoints: int32(a[dimNetworkEndpoints]),
 	}
 }
 
@@ -262,16 +267,17 @@ type projectObjects map[string][]proto.Message
 // counts exactly when it is here: admission checks its writes, which hold
 // Server.quota, and the usage controller watches it.
 var quotaCounters = map[string]func(obj proto.Message, in projectObjects) amounts{
-	registry.ServiceToken.Kind:   countsOne(dimServiceTokens),
-	registry.Container.Kind:      containerAmounts,
-	registry.VirtualMachine.Kind: vmAmounts,
-	registry.Disk.Kind:           diskAmounts,
-	registry.Network.Kind:        countsOne(dimNetworks),
-	registry.Address.Kind:        countsOne(dimAddresses),
-	registry.PublicEndpoint.Kind: endpointAmounts,
-	registry.FileShare.Kind:      fileShareAmounts,
-	registry.PortForward.Kind:    countsOne(dimPortForwards),
-	registry.CustomImage.Kind:    customImageAmounts,
+	registry.ServiceToken.Kind:    countsOne(dimServiceTokens),
+	registry.Container.Kind:       containerAmounts,
+	registry.VirtualMachine.Kind:  vmAmounts,
+	registry.Disk.Kind:            diskAmounts,
+	registry.Network.Kind:         countsOne(dimNetworks),
+	registry.Address.Kind:         countsOne(dimAddresses),
+	registry.PublicEndpoint.Kind:  endpointAmounts,
+	registry.FileShare.Kind:       fileShareAmounts,
+	registry.PortForward.Kind:     countsOne(dimPortForwards),
+	registry.CustomImage.Kind:     customImageAmounts,
+	registry.NetworkEndpoint.Kind: countsOne(dimNetworkEndpoints),
 }
 
 func countsOne(d dim) func(proto.Message, projectObjects) amounts {

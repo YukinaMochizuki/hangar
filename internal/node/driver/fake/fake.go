@@ -156,6 +156,10 @@ type Host struct {
 	sharedIPv4    netip.Addr
 	forwards      []driver.Forward
 	forwardWrites int
+	// endpoints are the network endpoints in force, in SortEndpoints'
+	// order, which endpointWrites counts the changes of.
+	endpoints      []driver.Endpoint
+	endpointWrites int
 	// natFollowers are the FollowNATs under way; natPort the last public
 	// port handed out.
 	natFollowers map[*natFollower]bool

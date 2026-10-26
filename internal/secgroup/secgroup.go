@@ -44,8 +44,8 @@ func (p Protocol) String() string {
 type PortRange struct{ From, To uint16 }
 
 // Rule is one allow rule. Peers are the ranges it allows, resolved from a
-// CIDR or a group's members; a rule of a group with no members allows
-// nothing.
+// CIDR, a group's members or a network's transit address; a rule of a group
+// with no members, or of a network not known, allows nothing.
 type Rule struct {
 	Protocol Protocol
 	// Ports is empty for every port, and always for All and ICMP.
@@ -58,12 +58,17 @@ type Group struct {
 	Ingress, Egress []RuleSpec
 }
 
-// RuleSpec is a rule whose peer is a CIDR or a group's name.
+// RuleSpec is a rule whose peer is a CIDR, a group's name or another
+// network's name.
 type RuleSpec struct {
 	Protocol  Protocol
 	Ports     []PortRange
 	PeerCIDR  netip.Prefix
 	PeerGroup string
+	// PeerNetwork is what comes through another network's NetworkEndpoints,
+	// from that network's transit address (docs/decisions/endpoint-services.md).
+	// Only ingress rules have it.
+	PeerNetwork string
 }
 
 // FromSpec reads a group's spec, refusing what is not a valid one.
@@ -83,6 +88,11 @@ func FromSpec(spec *networkv1alpha1.SecurityGroupSpec) (Group, error) {
 		rs, err := ruleSpec(r.GetProtocol(), r.GetPorts(), r.GetTo())
 		if err != nil {
 			return Group{}, fmt.Errorf("egress[%d]: %w", i, err)
+		}
+		// Nothing a member sends goes to another network's transit address:
+		// a network endpoint is reached in one direction only.
+		if rs.PeerNetwork != "" {
+			return Group{}, fmt.Errorf("egress[%d]: only ingress rules take a network peer", i)
 		}
 		g.Egress = append(g.Egress, rs)
 	}
@@ -127,8 +137,13 @@ func ruleSpec(p networkv1alpha1.SecurityGroupProtocol, ports string, peer *netwo
 			return RuleSpec{}, fmt.Errorf("a group peer needs a group's name")
 		}
 		rs.PeerGroup = v.Group
+	case *networkv1alpha1.SecurityGroupPeer_Network:
+		if v.Network == "" {
+			return RuleSpec{}, fmt.Errorf("a network peer needs a network's name")
+		}
+		rs.PeerNetwork = v.Network
 	default:
-		return RuleSpec{}, fmt.Errorf("a rule needs a peer: a cidr or a group")
+		return RuleSpec{}, fmt.Errorf("a rule needs a peer: a cidr, a group or a network")
 	}
 	return rs, nil
 }
@@ -199,12 +214,13 @@ func (p Policy) Size() int {
 }
 
 // Resolve gives each member of a network its policy, from the network's
-// groups by name. A member naming no group is in Default, unless it is
-// Isolated. A group a member names that does not exist lets in nothing and
-// lets out nothing, so a member is never more open for a group missing; a
-// rule naming a group that does not exist, or has no members, allows
-// nothing.
-func Resolve(groups map[string]Group, members []Member) []Policy {
+// groups by name, and transits, the transit address each other network of
+// the project comes from through a NetworkEndpoint, by name. A member naming
+// no group is in Default, unless it is Isolated. A group a member names that
+// does not exist lets in nothing and lets out nothing, so a member is never
+// more open for a group missing; a rule naming a group that does not exist,
+// or has no members, or a network not in transits, allows nothing.
+func Resolve(groups map[string]Group, members []Member, transits map[string]netip.Addr) []Policy {
 	inGroup := map[string][]netip.Prefix{}
 	for _, m := range members {
 		for _, g := range groupsOf(m) {
@@ -219,6 +235,10 @@ func Resolve(groups map[string]Group, members []Member) []Policy {
 		switch {
 		case rs.PeerCIDR.IsValid():
 			r.Peers = []netip.Prefix{rs.PeerCIDR}
+		case rs.PeerNetwork != "":
+			if a, ok := transits[rs.PeerNetwork]; ok {
+				r.Peers = []netip.Prefix{netip.PrefixFrom(a, a.BitLen())}
+			}
 		case rs.PeerGroup == Default || exists:
 			r.Peers = slices.Clone(inGroup[rs.PeerGroup])
 		default:

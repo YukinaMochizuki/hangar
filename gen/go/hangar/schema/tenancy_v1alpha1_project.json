@@ -185,6 +185,11 @@
           "description": "Memory, a quantity such as \"16Gi\".",
           "type": "string"
         },
+        "networkEndpoints": {
+          "description": "NetworkEndpoints, each holding an address of its network.",
+          "format": "int32",
+          "type": "integer"
+        },
         "networks": {
           "description": "Networks, each project's default network among them.",
           "format": "int32",
@@ -290,6 +295,10 @@
         },
         "memory": {
           "type": "string"
+        },
+        "networkEndpoints": {
+          "format": "int32",
+          "type": "integer"
         },
         "networks": {
           "format": "int32",

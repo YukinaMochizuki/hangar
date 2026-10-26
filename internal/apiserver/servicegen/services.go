@@ -41,7 +41,9 @@ func Mount(mux *http.ServeMux, backends Backends, opts ...connect.HandlerOption)
 	mux.Handle(iamv1alpha1connect.NewUserServiceHandler(&userService{b: backends(registry.User)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewAddressServiceHandler(&addressService{b: backends(registry.Address)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewCustomDomainServiceHandler(&customDomainService{b: backends(registry.CustomDomain)}, opts...))
+	mux.Handle(networkv1alpha1connect.NewEndpointServiceServiceHandler(&endpointServiceService{b: backends(registry.EndpointService)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewNetworkServiceHandler(&networkService{b: backends(registry.Network)}, opts...))
+	mux.Handle(networkv1alpha1connect.NewNetworkEndpointServiceHandler(&networkEndpointService{b: backends(registry.NetworkEndpoint)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewPortForwardServiceHandler(&portForwardService{b: backends(registry.PortForward)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewPublicEndpointServiceHandler(&publicEndpointService{b: backends(registry.PublicEndpoint)}, opts...))
 	mux.Handle(networkv1alpha1connect.NewSecurityGroupServiceHandler(&securityGroupService{b: backends(registry.SecurityGroup)}, opts...))
@@ -792,6 +794,73 @@ func (s *customDomainService) UpdateCustomDomainStatus(ctx context.Context, req 
 	return connect.NewResponse(&v1alpha12.UpdateCustomDomainStatusResponse{CustomDomain: obj.(*v1alpha12.CustomDomain)}), nil
 }
 
+type endpointServiceService struct {
+	b resource.Backend
+}
+
+func (s *endpointServiceService) GetEndpointService(ctx context.Context, req *connect.Request[v1alpha12.GetEndpointServiceRequest]) (*connect.Response[v1alpha12.GetEndpointServiceResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.GetEndpointServiceResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+}
+
+func (s *endpointServiceService) ListEndpointServices(ctx context.Context, req *connect.Request[v1alpha12.ListEndpointServicesRequest]) (*connect.Response[v1alpha12.ListEndpointServicesResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha12.ListEndpointServicesResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha12.EndpointService))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *endpointServiceService) WatchEndpointServices(ctx context.Context, req *connect.Request[v1alpha12.WatchEndpointServicesRequest], stream *connect.ServerStream[v1alpha12.WatchEndpointServicesResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha12.WatchEndpointServicesResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.EndpointService = ev.Object.(*v1alpha12.EndpointService)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *endpointServiceService) ApplyEndpointService(ctx context.Context, req *connect.Request[v1alpha12.ApplyEndpointServiceRequest]) (*connect.Response[v1alpha12.ApplyEndpointServiceResponse], error) {
+	in := req.Msg.GetEndpointService()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("endpoint_service is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.ApplyEndpointServiceResponse{EndpointService: res.Object.(*v1alpha12.EndpointService), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *endpointServiceService) DeleteEndpointService(ctx context.Context, req *connect.Request[v1alpha12.DeleteEndpointServiceRequest]) (*connect.Response[v1alpha12.DeleteEndpointServiceResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.DeleteEndpointServiceResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+}
+
+func (s *endpointServiceService) UpdateEndpointServiceStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateEndpointServiceStatusRequest]) (*connect.Response[v1alpha12.UpdateEndpointServiceStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.UpdateEndpointServiceStatusResponse{EndpointService: obj.(*v1alpha12.EndpointService)}), nil
+}
+
 type networkService struct {
 	b resource.Backend
 }
@@ -857,6 +926,73 @@ func (s *networkService) UpdateNetworkStatus(ctx context.Context, req *connect.R
 		return nil, err
 	}
 	return connect.NewResponse(&v1alpha12.UpdateNetworkStatusResponse{Network: obj.(*v1alpha12.Network)}), nil
+}
+
+type networkEndpointService struct {
+	b resource.Backend
+}
+
+func (s *networkEndpointService) GetNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.GetNetworkEndpointRequest]) (*connect.Response[v1alpha12.GetNetworkEndpointResponse], error) {
+	obj, err := s.b.Get(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()})
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.GetNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
+}
+
+func (s *networkEndpointService) ListNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha12.ListNetworkEndpointsRequest]) (*connect.Response[v1alpha12.ListNetworkEndpointsResponse], error) {
+	res, err := s.b.List(ctx, resource.ListOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), PageSize: req.Msg.GetPageSize(), PageToken: req.Msg.GetPageToken()})
+	if err != nil {
+		return nil, err
+	}
+	out := &v1alpha12.ListNetworkEndpointsResponse{NextPageToken: res.NextPageToken, Revision: res.Revision}
+	for _, item := range res.Items {
+		out.Items = append(out.Items, item.(*v1alpha12.NetworkEndpoint))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *networkEndpointService) WatchNetworkEndpoints(ctx context.Context, req *connect.Request[v1alpha12.WatchNetworkEndpointsRequest], stream *connect.ServerStream[v1alpha12.WatchNetworkEndpointsResponse]) error {
+	opts := resource.WatchOptions{Project: req.Msg.GetProject(), LabelSelector: req.Msg.GetLabelSelector(), SinceRevision: req.Msg.GetSinceRevision()}
+	return s.b.Watch(ctx, opts, func(ev resource.Event) error {
+		out := &v1alpha12.WatchNetworkEndpointsResponse{Type: ev.Type, Revision: ev.Revision}
+		if ev.Object != nil {
+			out.NetworkEndpoint = ev.Object.(*v1alpha12.NetworkEndpoint)
+		}
+		return stream.Send(out)
+	})
+}
+
+func (s *networkEndpointService) ApplyNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.ApplyNetworkEndpointRequest]) (*connect.Response[v1alpha12.ApplyNetworkEndpointResponse], error) {
+	in := req.Msg.GetNetworkEndpoint()
+	if in == nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("network_endpoint is required"))
+	}
+	apply := s.b.Apply
+	if req.Msg.GetCreateOnly() {
+		apply = s.b.Create
+	}
+	res, err := apply(ctx, in)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.ApplyNetworkEndpointResponse{NetworkEndpoint: res.Object.(*v1alpha12.NetworkEndpoint), Warnings: res.Warnings, Created: res.Created}), nil
+}
+
+func (s *networkEndpointService) DeleteNetworkEndpoint(ctx context.Context, req *connect.Request[v1alpha12.DeleteNetworkEndpointRequest]) (*connect.Response[v1alpha12.DeleteNetworkEndpointResponse], error) {
+	obj, err := s.b.Delete(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.DeleteNetworkEndpointResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
+}
+
+func (s *networkEndpointService) UpdateNetworkEndpointStatus(ctx context.Context, req *connect.Request[v1alpha12.UpdateNetworkEndpointStatusRequest]) (*connect.Response[v1alpha12.UpdateNetworkEndpointStatusResponse], error) {
+	obj, err := s.b.UpdateStatus(ctx, resource.Key{Project: req.Msg.GetProject(), Name: req.Msg.GetName()}, req.Msg.GetStatus(), req.Msg.ExpectedResourceVersion)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&v1alpha12.UpdateNetworkEndpointStatusResponse{NetworkEndpoint: obj.(*v1alpha12.NetworkEndpoint)}), nil
 }
 
 type portForwardService struct {

@@ -34,6 +34,10 @@ func peerGroup(g string) *networkv1alpha1.SecurityGroupPeer {
 	return &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Group{Group: g}}
 }
 
+func peerNetwork(n string) *networkv1alpha1.SecurityGroupPeer {
+	return &networkv1alpha1.SecurityGroupPeer{Peer: &networkv1alpha1.SecurityGroupPeer_Network{Network: n}}
+}
+
 func TestFromSpec(t *testing.T) {
 	tcp := networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_TCP
 	icmp := networkv1alpha1.SecurityGroupProtocol_SECURITY_GROUP_PROTOCOL_ICMP
@@ -49,6 +53,14 @@ func TestFromSpec(t *testing.T) {
 	if g, err := FromSpec(v6); err != nil || g.Ingress[0].PeerCIDR != netip.MustParsePrefix("::/0") {
 		t.Errorf("an IPv6 range: %+v %v", g, err)
 	}
+	fromNet := &networkv1alpha1.SecurityGroupSpec{Ingress: []*networkv1alpha1.IngressRule{{Protocol: tcp, Ports: "22", From: peerNetwork("ws-a")}}}
+	if g, err := FromSpec(fromNet); err != nil || g.Ingress[0].PeerNetwork != "ws-a" {
+		t.Errorf("a network peer: %+v %v", g, err)
+	}
+	toNet := &networkv1alpha1.SecurityGroupSpec{Egress: []*networkv1alpha1.EgressRule{{Protocol: tcp, To: peerNetwork("ws-a")}}}
+	if g, err := FromSpec(toNet); err == nil {
+		t.Errorf("an egress rule took a network peer: %+v", g)
+	}
 	for name, r := range map[string]*networkv1alpha1.IngressRule{
 		"no protocol":          {From: peerCIDR("0.0.0.0/0")},
 		"ports on icmp":        {Protocol: icmp, Ports: "1", From: peerCIDR("0.0.0.0/0")},
@@ -59,6 +71,7 @@ func TestFromSpec(t *testing.T) {
 		"host bits":            {Protocol: tcp, From: peerCIDR("10.0.0.1/24")},
 		"IPv6 host bits":       {Protocol: tcp, From: peerCIDR("2001:db8::1/64")},
 		"an empty group":       {Protocol: tcp, From: peerGroup("")},
+		"an empty network":     {Protocol: tcp, From: peerNetwork("")},
 		"not a range":          {Protocol: tcp, From: peerCIDR("nonsense")},
 	} {
 		if _, err := FromSpec(&networkv1alpha1.SecurityGroupSpec{Ingress: []*networkv1alpha1.IngressRule{r}}); err == nil {
@@ -96,7 +109,7 @@ func TestResolve(t *testing.T) {
 		{Addrs: as("10.0.0.9"), Isolated: true},                          // a file share's server
 		{Addrs: as("10.0.0.10"), Groups: []string{"web"}, Isolated: true},
 	}
-	got := Resolve(groups, members)
+	got := Resolve(groups, members, nil)
 
 	if d := got[0]; len(d.Ingress) != 1 || !slices.Equal(d.Ingress[0].Peers, []netip.Prefix{p("10.0.0.2"), p("2001:db8::2"), p("10.0.0.5")}) || !d.EgressAll {
 		t.Errorf("default member: %+v", d)
@@ -128,5 +141,20 @@ func TestResolve(t *testing.T) {
 		if peer == p("10.0.0.9") || peer == p("10.0.0.10") {
 			t.Errorf("an isolated member is a peer of default or web: %v", peer)
 		}
+	}
+}
+
+// A network peer stands for that network's transit address alone, and for
+// no one while the network is not known.
+func TestResolveNetworkPeers(t *testing.T) {
+	groups := map[string]Group{"git": {Ingress: []RuleSpec{
+		{Protocol: TCP, Ports: []PortRange{{22, 22}}, PeerNetwork: "ws-a"},
+		{Protocol: TCP, Ports: []PortRange{{22, 22}}, PeerNetwork: "not-made-yet"},
+	}}}
+	members := []Member{{Addrs: []netip.Addr{netip.MustParseAddr("10.0.0.2")}, Groups: []string{"git"}}}
+	transits := map[string]netip.Addr{"ws-a": netip.MustParseAddr("100.64.0.1"), "ws-b": netip.MustParseAddr("100.64.0.3")}
+	got := Resolve(groups, members, transits)[0]
+	if len(got.Ingress) != 2 || !slices.Equal(got.Ingress[0].Peers, []netip.Prefix{netip.MustParsePrefix("100.64.0.1/32")}) || len(got.Ingress[1].Peers) != 0 {
+		t.Errorf("policy %+v, want ws-a's transit address alone, then no one", got)
 	}
 }

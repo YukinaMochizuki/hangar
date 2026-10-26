@@ -62,6 +62,11 @@ message SecurityGroupPeer {
     string cidr = 1;
     // The members of a group of the same network, "default" included.
     string group = 2;
+    // Names another Network of the project: what reaches a member through
+    // that network's NetworkEndpoints, which comes from the network's
+    // transit address (docs/decisions/endpoint-services.md). Only ingress
+    // rules take it.
+    string network = 3;
   }
 }
 
