@@ -199,8 +199,9 @@ other down, and the load makes tests that are fine fail:
 
 Find the root cause; about half the flakes so far were real bugs. While it
 is open, quarantine the test with `testutil.Quarantine(t, "#N")`, naming the
-GitHub issue that tracks it. Run `.github/workflows/stress.yml` by hand to
-reproduce a flake or to show a fix holds. The rules are in "Flaky tests" in
+GitHub issue that tracks it. Run `.github/workflows/stress.yml` by hand, or
+`make stress` (the same load on one machine), to reproduce a flake or to
+show a fix holds. The rules are in "Flaky tests" in
 `docs/decisions/testing-strategy.md`.
 
 A test that failed once, in a change that did not touch what it tests, may
@@ -209,7 +210,7 @@ it passes. Run it alone many times, then under load as the stress job does:
 
 ```sh
 go test -race -count=50 -run '^TestExecInAContainer$' ./test/e2e/
-GOMAXPROCS=2 go test -race -count=50 -run '^TestExecInAContainer$' ./test/e2e/ # beside a CPU load
+make stress PKG=./test/e2e/ RUN='^TestExecInAContainer$' COUNT=50
 ```
 
 If it fails, it is a flake to report and fix as above, whatever the change

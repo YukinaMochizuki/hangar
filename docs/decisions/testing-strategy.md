@@ -56,7 +56,7 @@ exposed, so a flake is always fixed at its root:
   the background, with quarantined tests included
   (`HANGAR_RUN_QUARANTINED=1`). It shakes out flakes that one CI run rarely
   hits. A failure it finds is a new issue, or a comment on the one that
-  already tracks the test.
+  already tracks the test. `make stress` puts the same load on one machine.
 - **A test leaves quarantine** in the change that fixes its root cause, once
   the stress job has passed on that change's branch for the test's package.
 
