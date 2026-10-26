@@ -115,7 +115,8 @@ export type VirtualMachineSpec = Message<"hangar.compute.v1alpha1.VirtualMachine
 
   /**
    * The VM's network interfaces, eth0, eth1 and on, in this order. Empty is
-   * one interface on the network "default". Changing them restarts the VM.
+   * one interface on the network "default". Changing them restarts the VM,
+   * except when only their aliases change.
    *
    * @generated from field: repeated hangar.compute.v1alpha1.NetworkInterface interfaces = 6;
    */

@@ -10,7 +10,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/interface.proto.
  */
 export const file_hangar_compute_v1alpha1_interface: GenFile = /*@__PURE__*/
-  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9pbnRlcmZhY2UucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIkIKEE5ldHdvcmtJbnRlcmZhY2USDwoHbmV0d29yaxgBIAEoCRIXCg9zZWN1cml0eV9ncm91cHMYAyADKAlKBAgCEANC/QEKG2NvbS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMUIOSW50ZXJmYWNlUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM");
+  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9pbnRlcmZhY2UucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIlMKEE5ldHdvcmtJbnRlcmZhY2USDwoHbmV0d29yaxgBIAEoCRIXCg9zZWN1cml0eV9ncm91cHMYAyADKAkSDwoHYWxpYXNlcxgEIAMoCUoECAIQA0L9AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQg5JbnRlcmZhY2VQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9jb21wdXRlL3YxYWxwaGExO2NvbXB1dGV2MWFscGhhMaICA0hDWKoCF0hhbmdhci5Db21wdXRlLlYxYWxwaGExygIXSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTHiAiNIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6Q29tcHV0ZTo6VjFhbHBoYTFiBnByb3RvMw");
 
 /**
  * NetworkInterface is one network interface a Container or VirtualMachine
@@ -35,6 +35,20 @@ export type NetworkInterface = Message<"hangar.compute.v1alpha1.NetworkInterface
    * @generated from field: repeated string security_groups = 3;
    */
   securityGroups: string[];
+
+  /**
+   * More names the network's resolver answers for the machine with its
+   * addresses on this network, A for its IPv4 address and AAAA for its
+   * public IPv6 one, as <alias>.<project>.hangar.internal, as it answers
+   * its name: at most 8, each a DNS label. Another machine with an
+   * interface on the network may hold none of them, as an alias or as its
+   * name; on another network the same alias names another machine. Other
+   * networks' resolvers do not know them. Changing them restarts nothing.
+   * See docs/decisions/networking.md.
+   *
+   * @generated from field: repeated string aliases = 4;
+   */
+  aliases: string[];
 };
 
 /**

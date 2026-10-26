@@ -241,9 +241,14 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 					addrs = append(addrs, v6)
 					leases6[mac(m.GetMetadata().GetUid(), nic.GetName())] = v6
 				}
-				for _, a := range addrs {
-					if !slices.Contains(names[name], a) {
-						names[name] = append(names[name], a)
+				// Admission refuses an alias that another machine of the
+				// network holds, as an alias or a name, by its owner's
+				// spec or by its Machine, so no name is two machines'.
+				for _, n := range append([]string{name}, nic.GetAliases()...) {
+					for _, a := range addrs {
+						if !slices.Contains(names[n], a) {
+							names[n] = append(names[n], a)
+						}
 					}
 				}
 				leases.ByMAC[mac(m.GetMetadata().GetUid(), nic.GetName())] = dhcp.Lease{Addr: addr, Hostname: name}

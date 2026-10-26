@@ -597,7 +597,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 
 // machineInterfaces are the interfaces asked for, named by position, or one
 // on the default network if none is, each in the groups it names or, naming
-// none, in the network's implicit default group.
+// none, in the network's implicit default group, and with its aliases.
 func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alpha1.MachineInterface {
 	if len(nics) == 0 {
 		nics = []*computev1alpha1.NetworkInterface{{Network: computeapi.DefaultNetwork}}
@@ -608,7 +608,8 @@ func machineInterfaces(nics []*computev1alpha1.NetworkInterface) []*computev1alp
 		if len(groups) == 0 {
 			groups = []string{secgroup.Default}
 		}
-		out[i] = &computev1alpha1.MachineInterface{Name: fmt.Sprintf("eth%d", i), Network: nic.GetNetwork(), SecurityGroups: groups}
+		out[i] = &computev1alpha1.MachineInterface{Name: fmt.Sprintf("eth%d", i), Network: nic.GetNetwork(), SecurityGroups: groups,
+			Aliases: slices.Clone(nic.GetAliases())}
 	}
 	return out
 }

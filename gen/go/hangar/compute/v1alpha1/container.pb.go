@@ -280,7 +280,7 @@ type ContainerSpec struct {
 	RunState ContainerRunState `protobuf:"varint,8,opt,name=run_state,json=runState,proto3,enum=hangar.compute.v1alpha1.ContainerRunState" json:"run_state,omitempty"`
 	// The networks the container is on, at most 8, each once; empty is one
 	// interface on "default". The first holds the default route. Changing
-	// them restarts the container.
+	// them restarts the container, except when only their aliases change.
 	Interfaces []*NetworkInterface `protobuf:"bytes,9,rep,name=interfaces,proto3" json:"interfaces,omitempty"`
 	// Names Secrets of type registry-auth, in the container's project, whose
 	// logins its node pulls the image with: the first that holds a login for

@@ -32,8 +32,17 @@ type NetworkInterface struct {
 	// network's implicit "default" alone. Naming others without "default"
 	// leaves it.
 	SecurityGroups []string `protobuf:"bytes,3,rep,name=security_groups,json=securityGroups,proto3" json:"security_groups,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// More names the network's resolver answers for the machine with its
+	// addresses on this network, A for its IPv4 address and AAAA for its
+	// public IPv6 one, as <alias>.<project>.hangar.internal, as it answers
+	// its name: at most 8, each a DNS label. Another machine with an
+	// interface on the network may hold none of them, as an alias or as its
+	// name; on another network the same alias names another machine. Other
+	// networks' resolvers do not know them. Changing them restarts nothing.
+	// See docs/decisions/networking.md.
+	Aliases       []string `protobuf:"bytes,4,rep,name=aliases,proto3" json:"aliases,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NetworkInterface) Reset() {
@@ -80,14 +89,22 @@ func (x *NetworkInterface) GetSecurityGroups() []string {
 	return nil
 }
 
+func (x *NetworkInterface) GetAliases() []string {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
+}
+
 var File_hangar_compute_v1alpha1_interface_proto protoreflect.FileDescriptor
 
 const file_hangar_compute_v1alpha1_interface_proto_rawDesc = "" +
 	"\n" +
-	"'hangar/compute/v1alpha1/interface.proto\x12\x17hangar.compute.v1alpha1\"[\n" +
+	"'hangar/compute/v1alpha1/interface.proto\x12\x17hangar.compute.v1alpha1\"u\n" +
 	"\x10NetworkInterface\x12\x18\n" +
 	"\anetwork\x18\x01 \x01(\tR\anetwork\x12'\n" +
-	"\x0fsecurity_groups\x18\x03 \x03(\tR\x0esecurityGroupsJ\x04\b\x02\x10\x03B\xfd\x01\n" +
+	"\x0fsecurity_groups\x18\x03 \x03(\tR\x0esecurityGroups\x12\x18\n" +
+	"\aaliases\x18\x04 \x03(\tR\aaliasesJ\x04\b\x02\x10\x03B\xfd\x01\n" +
 	"\x1bcom.hangar.compute.v1alpha1B\x0eInterfaceProtoP\x01ZPgithub.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1;computev1alpha1\xa2\x02\x03HCX\xaa\x02\x17Hangar.Compute.V1alpha1\xca\x02\x17Hangar\\Compute\\V1alpha1\xe2\x02#Hangar\\Compute\\V1alpha1\\GPBMetadata\xea\x02\x19Hangar::Compute::V1alpha1b\x06proto3"
 
 var (

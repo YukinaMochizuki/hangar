@@ -55,3 +55,37 @@ func TestContainersResolveEachOther(t *testing.T) {
 		t.Errorf("an external name (exit %d):\n%s", code, out)
 	}
 }
+
+// TestAContainerIsResolvedByItsAlias: a container's alias on its network is
+// a name the network's other containers resolve, by its full name and by
+// the search domain, to its address there; a container of another network
+// does not resolve it.
+func TestAContainerIsResolvedByItsAlias(t *testing.T) {
+	c := startCluster(t)
+	c.applyYAML(`apiVersion: network.hangarlab.cloud/v1alpha1
+kind: Network
+metadata: {name: other}
+spec: {ipv4Cidr: 10.1.0.0/24}
+`)
+	c.applyYAML(idlerYAML("t-db") + "  interfaces: [{network: default, aliases: [db]}]\n")
+	c.applyYAML(idlerYAML("t-app"))
+	c.applyYAML(idlerYAML("t-far") + "  interfaces: [{network: other}]\n")
+	for _, n := range []string{"t-db", "t-app", "t-far"} {
+		c.waitReady(n, 3*time.Minute)
+	}
+	m := c.machine("t-db")
+	db, _, _ := strings.Cut(m.GetSpec().GetInterfaces()[0].GetIpv4(), "/")
+	// The containers' own project: with dev auth, signing up points the CLI
+	// at the admin's personal project rather than project.
+	zone := m.GetMetadata().GetProject() + ".hangar.internal"
+	for _, name := range []string{"db." + zone, "db"} {
+		eventually(t, 30*time.Second, "t-app resolving "+name, func() (bool, string) {
+			out, errOut, code := execCLI(t, nil, "ct", "t-app", "--", "sh", "-c", "ping -c 1 -W 2 "+name+" 2>&1 | head -1")
+			return strings.Contains(out, "("+db+")"), fmt.Sprintf("exit %d: %s%s", code, out, errOut)
+		})
+	}
+	out, _, _ := execCLI(t, nil, "ct", "t-far", "--", "nslookup", "db."+zone)
+	if !strings.Contains(out, "NXDOMAIN") {
+		t.Errorf("t-far, on another network, resolving db:\n%s", out)
+	}
+}

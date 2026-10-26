@@ -101,6 +101,14 @@ describe("editedObject", () => {
     expect({ ...o.spec, resources: undefined }).toEqual({ ...db().spec, resources: undefined });
   });
 
+  it("keeps the interfaces' aliases, which the form does not show, through the form's fields", () => {
+    const nics = [create(NetworkInterfaceSchema, { network: "data", aliases: ["db"] }), create(NetworkInterfaceSchema, { network: "default", aliases: ["pg", "sql"] })];
+    const f = networkFieldsOf(nics);
+    expect(f).toEqual({ network: "data", groups: ["default"], aliases: ["db"], extra: [{ network: "default", groups: ["default"], aliases: ["pg", "sql"] }] });
+    expect(interfacesOf(f).map((n) => n.aliases)).toEqual([["db"], ["pg", "sql"]]);
+    expect(interfacesOf(networkFieldsOf([create(NetworkInterfaceSchema, { network: "default", aliases: ["db"] })]))).toHaveLength(1);
+  });
+
   it("writes one interface on default in its default group as no interfaces", () => {
     expect(interfacesOf({ network: "default", groups: ["default"], extra: [] })).toEqual([]);
     expect(interfacesOf({ network: "default", groups: ["default", "web"], extra: [] })).toEqual([create(NetworkInterfaceSchema, { network: "default", securityGroups: ["default", "web"] })]);
@@ -139,6 +147,15 @@ describe("changesOf: what applying does, per field", () => {
     expect(cs.find((c) => c.field === "env")!.detail).toBe("MODE changed, DEBUG added");
     expect(cs.find((c) => c.field === "disk")!.detail).toBe("10 → 20 GiB");
     expect(cs.find((c) => c.field === "restartPolicy")!.detail).toBe("on-failure → no");
+  });
+
+  it("interfaces whose aliases alone changed restart nothing", () => {
+    for (const base of [web(), db()]) {
+      const nics = base.spec!.interfaces.map((n) => create(NetworkInterfaceSchema, { network: n.network, securityGroups: n.securityGroups, aliases: ["cache"] }));
+      expect(effects(changesOf(base, editedObject(base, { interfaces: nics })))).toEqual({ interfaces: "nothing" });
+      nics[0]!.network = "other";
+      expect(effects(changesOf(base, editedObject(base, { interfaces: nics })))).toEqual({ interfaces: "restart" });
+    }
   });
 
   it("a container's image pull secrets restart nothing", () => {

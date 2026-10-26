@@ -1,10 +1,11 @@
 // Package resolver is the resolver the node serves each network on its
 // gateway (docs/decisions/networking.md). It answers for the machines of the
 // network under the zone hangar.internal, as <name>.<project>.hangar.internal,
-// and forwards every other name to the node's upstream resolvers, caching
-// what they answer. A network's records are set by the agent from the API;
-// until they are, its internal names fail with SERVFAIL rather than NXDOMAIN,
-// so a client retries instead of caching an answer that may be wrong.
+// by their names and their interfaces' aliases on the network, and forwards
+// every other name to the node's upstream resolvers, caching what they
+// answer. A network's records are set by the agent from the API; until they
+// are, its internal names fail with SERVFAIL rather than NXDOMAIN, so a
+// client retries instead of caching an answer that may be wrong.
 package resolver
 
 import (
@@ -66,7 +67,7 @@ type Config struct {
 }
 
 // Records are one network's internal names: the addresses of each machine
-// name in the network's project.
+// name, and of each alias, in the network's project.
 type Records struct {
 	Project string
 	Names   map[string][]netip.Addr

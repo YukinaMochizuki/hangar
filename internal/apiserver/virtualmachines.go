@@ -157,6 +157,10 @@ func validateVirtualMachine(ctx context.Context, s *Server, p auth.Principal, ol
 	if err := s.validateInterfaces(ctx, vm.GetMetadata().GetProject(), spec.GetInterfaces()); err != nil {
 		return err
 	}
+	if err := s.checkAliasesFree(ctx, vm.GetMetadata().GetProject(),
+		applying("virtual machine", old, obj, spec.GetInterfaces())); err != nil {
+		return err
+	}
 	shares := vmShares(spec)
 	if err := checkShareNames("spec.file_shares", shares); err != nil {
 		return err

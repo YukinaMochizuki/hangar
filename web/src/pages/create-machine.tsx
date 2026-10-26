@@ -386,7 +386,9 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
 
   // The object as it is sent, and as its manifest shows it.
   const extra = extraNets.filter((x) => x.network !== network);
-  const netFields = { network, groups, extra };
+  // The first interface keeps its aliases, which the form does not show, while it stays on its network.
+  const firstAliases = network === initial.net.network && initial.net.aliases ? { aliases: initial.net.aliases } : {};
+  const netFields = { network, groups, ...firstAliases, extra };
   const interfaces = interfacesOf(netFields);
   const onNetworks = [network, ...extra.map((x) => x.network)];
   const addInterface = (n: string, share: string) => {

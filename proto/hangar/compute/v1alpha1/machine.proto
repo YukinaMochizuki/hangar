@@ -170,6 +170,10 @@ message MachineInterface {
   // as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128". Assigned by the apiserver once
   // the machine is on a node that has a prefix; empty otherwise.
   string ipv6 = 5;
+  // More names the network's resolver answers for the machine with this
+  // interface's addresses, as its owner's interface names them. Changing
+  // them restarts nothing.
+  repeated string aliases = 6;
 }
 
 // MachineRunState is whether the machine should be running.

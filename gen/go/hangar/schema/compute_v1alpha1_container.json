@@ -63,7 +63,7 @@
           "type": "array"
         },
         "interfaces": {
-          "description": "The networks the container is on, at most 8, each once; empty is one interface on \"default\". The first holds the default route. Changing them restarts the container.",
+          "description": "The networks the container is on, at most 8, each once; empty is one interface on \"default\". The first holds the default route. Changing them restarts the container, except when only their aliases change.",
           "items": {
             "$ref": "#/$defs/hangar.compute.v1alpha1.NetworkInterface"
           },
@@ -191,6 +191,13 @@
       "additionalProperties": false,
       "description": "NetworkInterface is one network interface a Container or VirtualMachine asks for. Its name is eth0, eth1… by position; its address comes from the network's range.",
       "properties": {
+        "aliases": {
+          "description": "More names the network's resolver answers for the machine with its addresses on this network, A for its IPv4 address and AAAA for its public IPv6 one, as <alias>.<project>.hangar.internal, as it answers its name: at most 8, each a DNS label. Another machine with an interface on the network may hold none of them, as an alias or as its name; on another network the same alias names another machine. Other networks' resolvers do not know them. Changing them restarts nothing. See docs/decisions/networking.md.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "network": {
           "description": "Names a network in the object's project.",
           "type": "string"

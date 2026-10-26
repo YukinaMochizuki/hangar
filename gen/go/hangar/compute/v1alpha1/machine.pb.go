@@ -911,7 +911,11 @@ type MachineInterface struct {
 	// The interface's public address, a /128 of its node's IPv6 prefix, such
 	// as "2001:db8:0:1:8a3f:12c4:9e01:77b2/128". Assigned by the apiserver once
 	// the machine is on a node that has a prefix; empty otherwise.
-	Ipv6          string `protobuf:"bytes,5,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
+	Ipv6 string `protobuf:"bytes,5,opt,name=ipv6,proto3" json:"ipv6,omitempty"`
+	// More names the network's resolver answers for the machine with this
+	// interface's addresses, as its owner's interface names them. Changing
+	// them restarts nothing.
+	Aliases       []string `protobuf:"bytes,6,rep,name=aliases,proto3" json:"aliases,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -979,6 +983,13 @@ func (x *MachineInterface) GetIpv6() string {
 		return x.Ipv6
 	}
 	return ""
+}
+
+func (x *MachineInterface) GetAliases() []string {
+	if x != nil {
+		return x.Aliases
+	}
+	return nil
 }
 
 // MachineStatus is what the node and the scheduler observed.
@@ -1812,13 +1823,14 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"instanceId\x12\x1b\n" +
 	"\tuser_data\x18\x02 \x01(\tR\buserData\x12\x1f\n" +
 	"\vvendor_data\x18\x03 \x01(\tR\n" +
-	"vendorData\"\x91\x01\n" +
+	"vendorData\"\xab\x01\n" +
 	"\x10MachineInterface\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
 	"\anetwork\x18\x02 \x01(\tR\anetwork\x12\x12\n" +
 	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12'\n" +
 	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\x12\x12\n" +
-	"\x04ipv6\x18\x05 \x01(\tR\x04ipv6\"\xaa\x02\n" +
+	"\x04ipv6\x18\x05 \x01(\tR\x04ipv6\x12\x18\n" +
+	"\aaliases\x18\x06 \x03(\tR\aaliases\"\xaa\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +

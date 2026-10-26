@@ -13,4 +13,13 @@ message NetworkInterface {
   // leaves it.
   repeated string security_groups = 3;
   reserved 2;
+  // More names the network's resolver answers for the machine with its
+  // addresses on this network, A for its IPv4 address and AAAA for its
+  // public IPv6 one, as <alias>.<project>.hangar.internal, as it answers
+  // its name: at most 8, each a DNS label. Another machine with an
+  // interface on the network may hold none of them, as an alias or as its
+  // name; on another network the same alias names another machine. Other
+  // networks' resolvers do not know them. Changing them restarts nothing.
+  // See docs/decisions/networking.md.
+  repeated string aliases = 4;
 }
