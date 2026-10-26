@@ -224,17 +224,19 @@ func TestNoRuleTakesAConntrackDirection(t *testing.T) {
 		t.Fatal(err)
 	}
 	tables := map[string][]chainSpec{
-		"ip hangar":                    rootChains("eth0", netip.Addr{}, netip.Addr{}),
-		"ip hangar, public":            rootChains("eth0", public, netip.Addr{}),
-		"ip hangar, shared":            rootChains("eth0", public, shared),
-		"ip6 hangar":                   rootChains6("eth0", prefix, netip.MustParseAddr("2001:db8:0:1::1")),
-		"a namespace's ip hangar":      nsChains(netip.MustParsePrefix("10.0.0.0/24"), netip.MustParseAddr("100.64.0.1")),
-		"a namespace's ip6 hangar":     nsChains6(prefix),
-		"inet hangar_limit":            limitChains(),
-		"ip hangar_forward":            forwardChains("eth0", shared, []rootForward{{proto: driver.TCP, port: 10022, to: netip.MustParseAddr("100.64.0.1")}}),
-		"a namespace's hangar_forward": nsForwardChains(netip.MustParseAddr("100.64.0.1"), []driver.Forward{{Protocol: driver.UDP, Port: 10053, NetworkUID: "n1", To: netip.MustParseAddrPort("10.0.0.2:53")}}),
-		"bridge hangar":                bindingChains([]boundTap{{name: tapPrefix + "0123456789ab", mac: net.HardwareAddr{2, 0, 0, 0, 0, 1}, addr: host.Addr(), ipv6: netip.MustParseAddr("2001:db8:0:1::2")}}),
-		"bridge hangar_sg":             firewall,
+		"ip hangar":                     rootChains("eth0", netip.Addr{}, netip.Addr{}),
+		"ip hangar, public":             rootChains("eth0", public, netip.Addr{}),
+		"ip hangar, shared":             rootChains("eth0", public, shared),
+		"ip6 hangar":                    rootChains6("eth0", prefix, netip.MustParseAddr("2001:db8:0:1::1")),
+		"a namespace's ip hangar":       nsChains(netip.MustParsePrefix("10.0.0.0/24"), netip.MustParseAddr("100.64.0.1")),
+		"a namespace's ip6 hangar":      nsChains6(prefix),
+		"inet hangar_limit":             limitChains(),
+		"ip hangar_forward":             forwardChains("eth0", shared, []rootForward{{proto: driver.TCP, port: 10022, to: netip.MustParseAddr("100.64.0.1")}}),
+		"a namespace's hangar_forward":  nsForwardChains(netip.MustParseAddr("100.64.0.1"), []driver.Forward{{Protocol: driver.UDP, Port: 10053, NetworkUID: "n1", To: netip.MustParseAddrPort("10.0.0.2:53")}}),
+		"ip hangar_endpoint":            rootEndpointChains(testRootEndpoints),
+		"a namespace's hangar_endpoint": nsEndpointChains(netip.MustParseAddr("100.64.0.1"), testNSEndpoints),
+		"bridge hangar":                 bindingChains([]boundTap{{name: tapPrefix + "0123456789ab", mac: net.HardwareAddr{2, 0, 0, 0, 0, 1}, addr: host.Addr(), ipv6: netip.MustParseAddr("2001:db8:0:1::2")}}),
+		"bridge hangar_sg":              firewall,
 	}
 	for name, chains := range tables {
 		for _, c := range chains {

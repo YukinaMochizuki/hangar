@@ -132,6 +132,11 @@ func (a *Agent) networkController() *controller.Controller {
 		Reconciler: controller.ReconcilerFunc(a.reconcileNetworkServices),
 		Watches: []controller.Watch{
 			{Kind: registry.Network.Kind, Map: controller.Self},
+			// Another network's transit address is what a group's network
+			// peer stands for.
+			{Kind: registry.Network.Kind, Map: a.networksInProject, SkipResync: true},
+			// A network endpoint is a name the network's resolver answers.
+			{Kind: registry.NetworkEndpoint.Kind, Map: networkOfEndpoint, SkipResync: true},
 			{Kind: registry.Machine.Kind, Map: a.networksOfMachine},
 			{Kind: registry.SecurityGroup.Kind, Map: networkOfGroup},
 			// A public endpoint opens its machine's port to the edge.
@@ -270,11 +275,18 @@ func (a *Agent) reconcileNetworkServices(ctx context.Context, k controller.Key) 
 	if err != nil {
 		return err
 	}
+	transits, err := a.transitsOf(ctx, k.Project)
+	if err != nil {
+		return err
+	}
+	if err := a.nameEndpoints(ctx, k, names); err != nil {
+		return err
+	}
 	edge, err := a.edgePortsOf(ctx, k.Project)
 	if err != nil {
 		return err
 	}
-	policies := secgroup.Resolve(groups, members)
+	policies := secgroup.Resolve(groups, members, transits)
 	for i, at := range mineAt {
 		mine[i].Policy = policies[at]
 		// Endpoints reach a machine on its first interface alone.
@@ -426,6 +438,68 @@ func networkOfGroup(_ context.Context, o store.Object) []controller.Key {
 		return nil
 	}
 	return []controller.Key{{Project: o.Project, Name: g.GetSpec().GetNetwork()}}
+}
+
+// networksInProject maps a network to every network of its project.
+func (a *Agent) networksInProject(ctx context.Context, o store.Object) []controller.Key {
+	objs, _, err := a.api.ListAll(ctx, registry.Network, client.ListOptions{Project: o.Project})
+	if err != nil {
+		a.cfg.Log.Warn("listing networks", "project", o.Project, "error", err)
+		return nil
+	}
+	keys := make([]controller.Key, 0, len(objs))
+	for _, obj := range objs {
+		keys = append(keys, controller.Key{Project: o.Project, Name: obj.(*networkv1alpha1.Network).GetMetadata().GetName()})
+	}
+	return keys
+}
+
+// networkOfEndpoint maps a NetworkEndpoint to its network.
+func networkOfEndpoint(_ context.Context, o store.Object) []controller.Key {
+	var ne networkv1alpha1.NetworkEndpoint
+	if proto.Unmarshal(o.Data, &ne) != nil {
+		return nil
+	}
+	return []controller.Key{{Project: o.Project, Name: ne.GetSpec().GetNetwork()}}
+}
+
+// transitsOf reads, by name, the address each network of a project comes
+// from through a NetworkEndpoint: the namespace end of its transit link,
+// where its traffic leaves its namespace as.
+func (a *Agent) transitsOf(ctx context.Context, project string) (map[string]netip.Addr, error) {
+	objs, _, err := a.api.ListAll(ctx, registry.Network, client.ListOptions{Project: project})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]netip.Addr{}
+	for _, obj := range objs {
+		n := obj.(*networkv1alpha1.Network)
+		if p, err := netip.ParsePrefix(n.GetStatus().GetTransitIpv4()); err == nil && p.Addr().Is4() && p.Bits() == 31 {
+			out[n.GetMetadata().GetName()] = p.Addr().Next()
+		}
+	}
+	return out, nil
+}
+
+// nameEndpoints adds to names the network's NetworkEndpoints with an address
+// and a hostname: one whose name a machine of the network has has none, and
+// the machine keeps the name.
+func (a *Agent) nameEndpoints(ctx context.Context, network controller.Key, names map[string][]netip.Addr) error {
+	objs, _, err := a.api.ListAll(ctx, registry.NetworkEndpoint, client.ListOptions{Project: network.Project})
+	if err != nil {
+		return err
+	}
+	for _, obj := range objs {
+		ne := obj.(*networkv1alpha1.NetworkEndpoint)
+		addr, err := netip.ParseAddr(ne.GetStatus().GetIpv4())
+		name := ne.GetMetadata().GetName()
+		if ne.GetSpec().GetNetwork() != network.Name || err != nil || ne.GetStatus().GetHostname() == "" ||
+			ne.GetMetadata().GetDeleteTime() != nil || len(names[name]) > 0 {
+			continue
+		}
+		names[name] = []netip.Addr{addr}
+	}
+	return nil
 }
 
 // groupsOf reads the SecurityGroups of a network, by name. One the agent

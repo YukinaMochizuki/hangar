@@ -9,6 +9,7 @@
 package driver
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/name"
 
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/secgroup"
 )
@@ -564,6 +566,19 @@ type Network interface {
 	// Forwards reads back from the host the forwards in force, by protocol
 	// and port.
 	Forwards(ctx context.Context) ([]Forward, error)
+
+	// EnsureEndpoints makes the host carry exactly these network endpoints'
+	// traffic from their networks to their services' machines, replacing the
+	// whole set at once; a table already as wanted is not written. An
+	// endpoint whose network or service network is not on the host is
+	// ignored. A set CheckEndpoints refuses is refused whole, and what the
+	// host carries is left as it was. By the time it returns, no flow a
+	// removed endpoint, or one whose target changed, let in still reaches the
+	// machine it led to.
+	EnsureEndpoints(ctx context.Context, endpoints []Endpoint) error
+	// Endpoints reads back from the host the endpoints in force, in the order
+	// SortEndpoints puts them.
+	Endpoints(ctx context.Context) ([]Endpoint, error)
 }
 
 // SharedPortsFrom is the first port a network's TCP and UDP leave the
@@ -629,6 +644,82 @@ func CheckForwards(fs []Forward) error {
 			return fmt.Errorf("%s port %d is forwarded twice", f.Protocol, f.Port)
 		}
 		seen[k] = true
+	}
+	return nil
+}
+
+// The transit ports an Endpoint may have, those EndpointServices draw.
+const (
+	TransitPortsFrom    = computeapi.TransitPortsFrom
+	TransitPortsThrough = computeapi.TransitPortsThrough
+)
+
+// Endpoint is one network's way to one EndpointService
+// (docs/decisions/endpoint-services.md): Port of Addr, an address of the
+// network NetworkUID, leads through TransitPort of the service network's
+// transit link to To, a machine's address and port on ServiceNetworkUID.
+type Endpoint struct {
+	Protocol   ForwardProtocol
+	NetworkUID string
+	Addr       netip.Addr
+	Port       uint16
+	// ServiceNetworkUID is the network of the service's machine.
+	ServiceNetworkUID string
+	// TransitPort is the service's port at its network's transit address,
+	// which no two services of a protocol share.
+	TransitPort uint16
+	To          netip.AddrPort
+}
+
+// SortEndpoints puts endpoints in the order Network.Endpoints lists them:
+// by network, address, protocol and port.
+func SortEndpoints(es []Endpoint) {
+	slices.SortFunc(es, func(a, b Endpoint) int {
+		return cmp.Or(cmp.Compare(a.NetworkUID, b.NetworkUID), a.Addr.Compare(b.Addr),
+			cmp.Compare(a.Protocol, b.Protocol), cmp.Compare(a.Port, b.Port))
+	})
+}
+
+// CheckEndpoints refuses a set of endpoints no host holds: one not of TCP
+// or UDP, at no IPv4 address and port, of a transit port outside
+// TransitPortsFrom to TransitPortsThrough, to no IPv4 address and port, of a
+// network uid no network can have, or from a network to itself; an address
+// and port of a protocol twice in a network; or a transit port of a
+// protocol of a service network leading to two targets.
+func CheckEndpoints(es []Endpoint) error {
+	at := map[string]bool{}
+	transit := map[string]netip.AddrPort{}
+	for _, e := range es {
+		if e.Protocol != TCP && e.Protocol != UDP {
+			return fmt.Errorf("endpoint %s:%d: %s is neither TCP nor UDP", e.Addr, e.Port, e.Protocol)
+		}
+		if !e.Addr.Is4() || e.Port == 0 {
+			return fmt.Errorf("endpoint %s:%d is not an IPv4 address and port", e.Addr, e.Port)
+		}
+		if e.TransitPort < TransitPortsFrom || e.TransitPort > TransitPortsThrough {
+			return fmt.Errorf("endpoint %s:%d: transit port %d is not from %d to %d", e.Addr, e.Port, e.TransitPort, TransitPortsFrom, TransitPortsThrough)
+		}
+		if !e.To.Addr().Is4() || e.To.Port() == 0 {
+			return fmt.Errorf("endpoint %s:%d: %s is not an IPv4 address and port", e.Addr, e.Port, e.To)
+		}
+		for _, uid := range []string{e.NetworkUID, e.ServiceNetworkUID} {
+			if !NetworkUIDPattern.MatchString(uid) {
+				return fmt.Errorf("endpoint %s:%d: network uid %q is no network's", e.Addr, e.Port, uid)
+			}
+		}
+		if e.NetworkUID == e.ServiceNetworkUID {
+			return fmt.Errorf("endpoint %s:%d leads to its own network %s", e.Addr, e.Port, e.NetworkUID)
+		}
+		k := fmt.Sprintf("%s %s %s:%d", e.NetworkUID, e.Protocol, e.Addr, e.Port)
+		if at[k] {
+			return fmt.Errorf("%s %s:%d is an endpoint of network %s twice", e.Protocol, e.Addr, e.Port, e.NetworkUID)
+		}
+		at[k] = true
+		t := fmt.Sprintf("%s %s %d", e.ServiceNetworkUID, e.Protocol, e.TransitPort)
+		if to, ok := transit[t]; ok && to != e.To {
+			return fmt.Errorf("%s transit port %d of network %s leads to both %s and %s", e.Protocol, e.TransitPort, e.ServiceNetworkUID, to, e.To)
+		}
+		transit[t] = e.To
 	}
 	return nil
 }
