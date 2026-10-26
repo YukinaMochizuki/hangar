@@ -1,0 +1,255 @@
+{
+  "$defs": {
+    "hangar.meta.v1.Condition": {
+      "additionalProperties": false,
+      "description": "Condition is one observed aspect of an object's state, such as \"Ready\".",
+      "properties": {
+        "lastTransitionTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "message": {
+          "description": "Human-readable detail.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "The generation this condition was computed from.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "reason": {
+          "description": "CamelCase machine-readable cause of the last transition.",
+          "type": "string"
+        },
+        "status": {
+          "description": "ConditionStatus is the state of a condition.",
+          "enum": [
+            "CONDITION_STATUS_TRUE",
+            "CONDITION_STATUS_FALSE",
+            "CONDITION_STATUS_UNKNOWN"
+          ],
+          "type": "string"
+        },
+        "type": {
+          "description": "CamelCase, such as \"Ready\".",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.ObjectMeta": {
+      "additionalProperties": false,
+      "description": "ObjectMeta is the metadata every resource carries. Users set name, project, labels and annotations; everything else is owned by the system. See docs/decisions/apply-semantics.md.",
+      "properties": {
+        "annotations": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "createTime": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "deleteTime": {
+          "description": "Set when deletion was requested and finalizers are still pending.",
+          "format": "date-time",
+          "type": "string"
+        },
+        "finalizers": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "generation": {
+          "description": "Incremented on every change to spec.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Keys under a *.hangarlab.cloud/ prefix are reserved for the system.",
+          "type": "object"
+        },
+        "name": {
+          "description": "DNS-1123 label, unique within the project (or the platform, for global kinds). An Invitation's is an email instead.",
+          "type": "string"
+        },
+        "ownerReferences": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.OwnerReference"
+          },
+          "type": "array"
+        },
+        "project": {
+          "description": "Empty for global kinds.",
+          "type": "string"
+        },
+        "resourceVersion": {
+          "description": "Store revision of the last write to this object.",
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "uid": {
+          "description": "UUIDv7, assigned at creation.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.meta.v1.OwnerReference": {
+      "additionalProperties": false,
+      "description": "OwnerReference points at the object that owns this one. An owner is in the same project, a global object, or, for a global object, one in the project the reference names; when it is deleted, its dependents are garbage collected.",
+      "properties": {
+        "apiVersion": {
+          "type": "string"
+        },
+        "controller": {
+          "description": "The owner is the controller responsible for this object.",
+          "type": "boolean"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project": {
+          "description": "The owner's project, when the owner is project-scoped and this object is global, as a RoleBinding owned by the ServiceToken it names. Empty otherwise.",
+          "type": "string"
+        },
+        "uid": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.EndpointServiceSpec": {
+      "additionalProperties": false,
+      "description": "EndpointServiceSpec is the port offered and who may reach it.",
+      "properties": {
+        "networkSelector": {
+          "description": "Which networks of the project may have a NetworkEndpoint of the service, as a label selector over their labels, such as \"tier=workstream\" or \"team=a,!sandbox\"; empty is every network of the project. A network the selector stops matching loses its way in, and its open connections end.",
+          "type": "string"
+        },
+        "port": {
+          "description": "The port the target listens on, 1 to 65535. A NetworkEndpoint is reached at the same port.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "protocol": {
+          "description": "The transport the service carries; it cannot change once the EndpointService is made.",
+          "enum": [
+            "PROTOCOL_TCP",
+            "PROTOCOL_UDP"
+          ],
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/hangar.network.v1alpha1.EndpointServiceTarget",
+          "description": "The machine the service reaches, on its first interface (eth0). A target that does not exist yet is waited for."
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.EndpointServiceStatus": {
+      "additionalProperties": false,
+      "description": "EndpointServiceStatus is where the service leads.",
+      "properties": {
+        "conditions": {
+          "items": {
+            "$ref": "#/$defs/hangar.meta.v1.Condition"
+          },
+          "type": "array"
+        },
+        "machine": {
+          "description": "The Machine the service leads to; empty while the target has none.",
+          "type": "string"
+        },
+        "network": {
+          "description": "The Network of the machine's first interface, where the service is.",
+          "type": "string"
+        },
+        "node": {
+          "description": "The Node that runs the machine, kept when the machine goes; empty while the target has never been placed. A deleted EndpointService stays until that node no longer forwards to it.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "format": "int64",
+          "pattern": "^-?[0-9]+$",
+          "type": [
+            "integer",
+            "string"
+          ]
+        },
+        "transitPort": {
+          "description": "The port the host forwards the service's traffic to on its network's transit link, drawn from 1024 to 9999 when the EndpointService is made, unique among every EndpointService of its protocol, and kept until it is deleted.",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "hangar.network.v1alpha1.EndpointServiceTarget": {
+      "additionalProperties": false,
+      "description": "EndpointServiceTarget is a VirtualMachine or Container in the service's project.",
+      "properties": {
+        "container": {
+          "description": "Names a Container.\n\nSet at most one of virtualMachine, container.",
+          "type": "string"
+        },
+        "virtualMachine": {
+          "description": "Names a VirtualMachine.\n\nSet at most one of virtualMachine, container.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "EndpointService offers one TCP or UDP port of a VirtualMachine or Container to other networks of its project, as an AWS VPC endpoint service does. A network reaches it through a NetworkEndpoint of its own, an address of that network's range, without joining the service's network and whatever the two networks' ranges are. The host NATs the traffic to the machine, which sees it come from the connecting network's transit address, so the interface's SecurityGroups decide what passes; a rule's `network` peer names such a network. See docs/decisions/endpoint-services.md.",
+  "properties": {
+    "apiVersion": {
+      "const": "network.hangarlab.cloud/v1alpha1",
+      "type": "string"
+    },
+    "kind": {
+      "const": "EndpointService",
+      "type": "string"
+    },
+    "metadata": {
+      "$ref": "#/$defs/hangar.meta.v1.ObjectMeta"
+    },
+    "spec": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.EndpointServiceSpec"
+    },
+    "status": {
+      "$ref": "#/$defs/hangar.network.v1alpha1.EndpointServiceStatus",
+      "readOnly": true
+    }
+  },
+  "required": [
+    "apiVersion",
+    "kind",
+    "metadata"
+  ],
+  "title": "EndpointService",
+  "type": "object"
+}

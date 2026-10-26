@@ -15,8 +15,8 @@ func TestAPIResources(t *testing.T) {
 	out := w.must("", "api-resources")
 	for _, want := range []string{
 		"NAME", "SHORTNAMES", "APIVERSION",
-		"containers        ct           compute.hangarlab.cloud/v1alpha1   Project   Container",
-		"tenants                        tenancy.hangarlab.cloud/v1alpha1   Global    Tenant",
+		"containers         ct           compute.hangarlab.cloud/v1alpha1   Project   Container",
+		"tenants                         tenancy.hangarlab.cloud/v1alpha1   Global    Tenant",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("api-resources lacks %q:\n%s", want, out)

@@ -359,6 +359,7 @@ type SecurityGroupPeer struct {
 	//
 	//	*SecurityGroupPeer_Cidr
 	//	*SecurityGroupPeer_Group
+	//	*SecurityGroupPeer_Network
 	Peer          isSecurityGroupPeer_Peer `protobuf_oneof:"peer"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -419,6 +420,15 @@ func (x *SecurityGroupPeer) GetGroup() string {
 	return ""
 }
 
+func (x *SecurityGroupPeer) GetNetwork() string {
+	if x != nil {
+		if x, ok := x.Peer.(*SecurityGroupPeer_Network); ok {
+			return x.Network
+		}
+	}
+	return ""
+}
+
 type isSecurityGroupPeer_Peer interface {
 	isSecurityGroupPeer_Peer()
 }
@@ -434,9 +444,19 @@ type SecurityGroupPeer_Group struct {
 	Group string `protobuf:"bytes,2,opt,name=group,proto3,oneof"`
 }
 
+type SecurityGroupPeer_Network struct {
+	// Names another Network of the project: what reaches a member through
+	// that network's NetworkEndpoints, which comes from the network's
+	// transit address (docs/decisions/endpoint-services.md). Only ingress
+	// rules take it.
+	Network string `protobuf:"bytes,3,opt,name=network,proto3,oneof"`
+}
+
 func (*SecurityGroupPeer_Cidr) isSecurityGroupPeer_Peer() {}
 
 func (*SecurityGroupPeer_Group) isSecurityGroupPeer_Peer() {}
+
+func (*SecurityGroupPeer_Network) isSecurityGroupPeer_Peer() {}
 
 // SecurityGroupStatus is the envelope's status. Nothing writes it: a
 // group's rules take effect on the nodes, which report through each
@@ -1193,10 +1213,11 @@ const file_hangar_network_v1alpha1_security_group_proto_rawDesc = "" +
 	"EgressRule\x12J\n" +
 	"\bprotocol\x18\x01 \x01(\x0e2..hangar.network.v1alpha1.SecurityGroupProtocolR\bprotocol\x12\x14\n" +
 	"\x05ports\x18\x02 \x01(\tR\x05ports\x12:\n" +
-	"\x02to\x18\x03 \x01(\v2*.hangar.network.v1alpha1.SecurityGroupPeerR\x02to\"I\n" +
+	"\x02to\x18\x03 \x01(\v2*.hangar.network.v1alpha1.SecurityGroupPeerR\x02to\"e\n" +
 	"\x11SecurityGroupPeer\x12\x14\n" +
 	"\x04cidr\x18\x01 \x01(\tH\x00R\x04cidr\x12\x16\n" +
-	"\x05group\x18\x02 \x01(\tH\x00R\x05groupB\x06\n" +
+	"\x05group\x18\x02 \x01(\tH\x00R\x05group\x12\x1a\n" +
+	"\anetwork\x18\x03 \x01(\tH\x00R\anetworkB\x06\n" +
 	"\x04peer\"\x81\x01\n" +
 	"\x13SecurityGroupStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
@@ -1349,6 +1370,7 @@ func file_hangar_network_v1alpha1_security_group_proto_init() {
 	file_hangar_network_v1alpha1_security_group_proto_msgTypes[4].OneofWrappers = []any{
 		(*SecurityGroupPeer_Cidr)(nil),
 		(*SecurityGroupPeer_Group)(nil),
+		(*SecurityGroupPeer_Network)(nil),
 	}
 	file_hangar_network_v1alpha1_security_group_proto_msgTypes[14].OneofWrappers = []any{}
 	file_hangar_network_v1alpha1_security_group_proto_msgTypes[16].OneofWrappers = []any{}

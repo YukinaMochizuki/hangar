@@ -151,6 +151,16 @@ var (
 		Message:    (*v1alpha12.CustomDomain)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.CustomDomainService",
 	}
+	EndpointService = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "EndpointService",
+		Plural:     "endpointservices",
+		ShortNames: []string{"epsvc"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.EndpointService)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.EndpointServiceService",
+	}
 	Network = Resource{
 		Group:      "network",
 		Version:    "v1alpha1",
@@ -160,6 +170,16 @@ var (
 		Scope:      v1.Scope_SCOPE_PROJECT,
 		Message:    (*v1alpha12.Network)(nil).ProtoReflect().Type(),
 		Service:    "hangar.network.v1alpha1.NetworkService",
+	}
+	NetworkEndpoint = Resource{
+		Group:      "network",
+		Version:    "v1alpha1",
+		Kind:       "NetworkEndpoint",
+		Plural:     "networkendpoints",
+		ShortNames: []string{"nep"},
+		Scope:      v1.Scope_SCOPE_PROJECT,
+		Message:    (*v1alpha12.NetworkEndpoint)(nil).ProtoReflect().Type(),
+		Service:    "hangar.network.v1alpha1.NetworkEndpointService",
 	}
 	PortForward = Resource{
 		Group:      "network",
@@ -286,7 +306,9 @@ var All = []Resource{
 	User,
 	Address,
 	CustomDomain,
+	EndpointService,
 	Network,
+	NetworkEndpoint,
 	PortForward,
 	PublicEndpoint,
 	SecurityGroup,

@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+import "hangar/network/v1alpha1/port_forward.proto";
+
+// EndpointService offers one TCP or UDP port of a VirtualMachine or
+// Container to other networks of its project, as an AWS VPC endpoint
+// service does. A network reaches it through a NetworkEndpoint of its own,
+// an address of that network's range, without joining the service's
+// network and whatever the two networks' ranges are. The host NATs the
+// traffic to the machine, which sees it come from the connecting network's
+// transit address, so the interface's SecurityGroups decide what passes; a
+// rule's `network` peer names such a network. See
+// docs/decisions/endpoint-services.md.
+message EndpointService {
+  option (hangar.meta.v1.resource) = {
+    kind: "EndpointService"
+    plural: "endpointservices"
+    short_names: ["epsvc"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  EndpointServiceSpec spec = 4;
+  EndpointServiceStatus status = 5;
+}
+
+// EndpointServiceSpec is the port offered and who may reach it.
+message EndpointServiceSpec {
+  // The machine the service reaches, on its first interface (eth0). A
+  // target that does not exist yet is waited for.
+  EndpointServiceTarget target = 1;
+  // The transport the service carries; it cannot change once the
+  // EndpointService is made.
+  Protocol protocol = 2 [(hangar.meta.v1.field).immutable = true];
+  // The port the target listens on, 1 to 65535. A NetworkEndpoint is
+  // reached at the same port.
+  int32 port = 3;
+  // Which networks of the project may have a NetworkEndpoint of the
+  // service, as a label selector over their labels, such as
+  // "tier=workstream" or "team=a,!sandbox"; empty is every network of the
+  // project. A network the selector stops matching loses its way in, and
+  // its open connections end.
+  string network_selector = 4;
+}
+
+// EndpointServiceTarget is a VirtualMachine or Container in the service's
+// project.
+message EndpointServiceTarget {
+  oneof object {
+    // Names a VirtualMachine.
+    string virtual_machine = 1;
+    // Names a Container.
+    string container = 2;
+  }
+}
+
+// EndpointServiceStatus is where the service leads.
+message EndpointServiceStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The Machine the service leads to; empty while the target has none.
+  string machine = 3;
+  // The Network of the machine's first interface, where the service is.
+  string network = 4;
+  // The Node that runs the machine, kept when the machine goes; empty while
+  // the target has never been placed. A deleted EndpointService stays until
+  // that node no longer forwards to it.
+  string node = 5;
+  // The port the host forwards the service's traffic to on its network's
+  // transit link, drawn from 1024 to 9999 when the EndpointService is made,
+  // unique among every EndpointService of its protocol, and kept until it
+  // is deleted.
+  int32 transit_port = 6;
+}
+
+// EndpointServiceService manages endpoint services.
+service EndpointServiceService {
+  rpc GetEndpointService(GetEndpointServiceRequest) returns (GetEndpointServiceResponse);
+  rpc ListEndpointServices(ListEndpointServicesRequest) returns (ListEndpointServicesResponse);
+  rpc WatchEndpointServices(WatchEndpointServicesRequest) returns (stream WatchEndpointServicesResponse);
+  rpc ApplyEndpointService(ApplyEndpointServiceRequest) returns (ApplyEndpointServiceResponse);
+  rpc DeleteEndpointService(DeleteEndpointServiceRequest) returns (DeleteEndpointServiceResponse);
+  rpc UpdateEndpointServiceStatus(UpdateEndpointServiceStatusRequest) returns (UpdateEndpointServiceStatusResponse);
+}
+
+message GetEndpointServiceRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetEndpointServiceResponse {
+  EndpointService endpoint_service = 1;
+}
+
+message ListEndpointServicesRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListEndpointServicesResponse {
+  repeated EndpointService items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchEndpointServicesRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchEndpointServicesResponse {
+  hangar.meta.v1.EventType type = 1;
+  EndpointService endpoint_service = 2;
+  int64 revision = 3;
+}
+
+message ApplyEndpointServiceRequest {
+  EndpointService endpoint_service = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyEndpointServiceResponse {
+  EndpointService endpoint_service = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteEndpointServiceRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteEndpointServiceResponse {
+  EndpointService endpoint_service = 1;
+}
+
+message UpdateEndpointServiceStatusRequest {
+  string project = 1;
+  string name = 2;
+  EndpointServiceStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateEndpointServiceStatusResponse {
+  EndpointService endpoint_service = 1;
+}

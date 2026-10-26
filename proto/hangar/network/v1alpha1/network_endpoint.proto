@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package hangar.network.v1alpha1;
+
+import "hangar/meta/v1/meta.proto";
+import "hangar/meta/v1/options.proto";
+
+// NetworkEndpoint is a network's way to an EndpointService of its project,
+// as an AWS VPC interface endpoint is: an address of the network's own
+// range, and a name its resolver answers, where the network's machines
+// reach the service's port. The service's network is neither joined nor
+// routed to, so the two networks' ranges may overlap. See
+// docs/decisions/endpoint-services.md.
+message NetworkEndpoint {
+  option (hangar.meta.v1.resource) = {
+    kind: "NetworkEndpoint"
+    plural: "networkendpoints"
+    short_names: ["nep"]
+    scope: SCOPE_PROJECT
+  };
+  string api_version = 1;
+  string kind = 2;
+  hangar.meta.v1.ObjectMeta metadata = 3;
+  NetworkEndpointSpec spec = 4;
+  NetworkEndpointStatus status = 5;
+}
+
+// NetworkEndpointSpec is which network reaches which service.
+message NetworkEndpointSpec {
+  // Names the Network in the endpoint's project whose machines reach the
+  // service; the endpoint's address is of its range. Deleting the network
+  // deletes its endpoints.
+  string network = 1 [(hangar.meta.v1.field).immutable = true];
+  // Names the EndpointService in the endpoint's project it reaches. A
+  // service that does not exist yet is waited for.
+  string service = 2 [(hangar.meta.v1.field).immutable = true];
+}
+
+// NetworkEndpointStatus is where the network reaches the service.
+message NetworkEndpointStatus {
+  int64 observed_generation = 1;
+  repeated hangar.meta.v1.Condition conditions = 2;
+  // The endpoint's address, such as "10.0.0.7", the lowest one of the
+  // network's range no machine or other endpoint holds, given when the
+  // network exists and kept until the endpoint is deleted.
+  string ipv4 = 3;
+  // The name the network's resolver answers with the address, such as
+  // "git.demo.hangar.internal": the endpoint's own name in the project's
+  // internal domain. A machine of the same name on the network keeps the
+  // name, and the endpoint is reached at its address alone.
+  string hostname = 4;
+  // The port the service is reached at, its spec.port.
+  int32 port = 5;
+  // The Node that forwards the endpoint's traffic, its service's, kept when
+  // the service goes. A deleted NetworkEndpoint keeps its address until that
+  // node no longer holds it.
+  string node = 6;
+}
+
+// NetworkEndpointService manages network endpoints.
+service NetworkEndpointService {
+  rpc GetNetworkEndpoint(GetNetworkEndpointRequest) returns (GetNetworkEndpointResponse);
+  rpc ListNetworkEndpoints(ListNetworkEndpointsRequest) returns (ListNetworkEndpointsResponse);
+  rpc WatchNetworkEndpoints(WatchNetworkEndpointsRequest) returns (stream WatchNetworkEndpointsResponse);
+  rpc ApplyNetworkEndpoint(ApplyNetworkEndpointRequest) returns (ApplyNetworkEndpointResponse);
+  rpc DeleteNetworkEndpoint(DeleteNetworkEndpointRequest) returns (DeleteNetworkEndpointResponse);
+  rpc UpdateNetworkEndpointStatus(UpdateNetworkEndpointStatusRequest) returns (UpdateNetworkEndpointStatusResponse);
+}
+
+message GetNetworkEndpointRequest {
+  string project = 1;
+  string name = 2;
+}
+
+message GetNetworkEndpointResponse {
+  NetworkEndpoint network_endpoint = 1;
+}
+
+message ListNetworkEndpointsRequest {
+  // Empty lists across every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListNetworkEndpointsResponse {
+  repeated NetworkEndpoint items = 1;
+  string next_page_token = 2;
+  int64 revision = 3;
+}
+
+message WatchNetworkEndpointsRequest {
+  // Empty watches every project the caller can read.
+  string project = 1;
+  string label_selector = 2;
+  int64 since_revision = 3;
+}
+
+message WatchNetworkEndpointsResponse {
+  hangar.meta.v1.EventType type = 1;
+  NetworkEndpoint network_endpoint = 2;
+  int64 revision = 3;
+}
+
+message ApplyNetworkEndpointRequest {
+  NetworkEndpoint network_endpoint = 1;
+  // Refuses an existing object with ALREADY_EXISTS, changing nothing.
+  bool create_only = 2;
+}
+
+message ApplyNetworkEndpointResponse {
+  NetworkEndpoint network_endpoint = 1;
+  repeated string warnings = 2;
+  bool created = 3;
+}
+
+message DeleteNetworkEndpointRequest {
+  string project = 1;
+  string name = 2;
+  optional int64 expected_resource_version = 3;
+}
+
+message DeleteNetworkEndpointResponse {
+  NetworkEndpoint network_endpoint = 1;
+}
+
+message UpdateNetworkEndpointStatusRequest {
+  string project = 1;
+  string name = 2;
+  NetworkEndpointStatus status = 3;
+  optional int64 expected_resource_version = 4;
+}
+
+message UpdateNetworkEndpointStatusResponse {
+  NetworkEndpoint network_endpoint = 1;
+}
