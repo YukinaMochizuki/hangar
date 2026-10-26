@@ -92,6 +92,10 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 		header += "\tUSED AS"
 	case registry.PortForward.Kind:
 		header += "\tIPV4\tPORT\tPROTOCOL\tTARGET"
+	case registry.EndpointService.Kind:
+		header += "\tPROTOCOL\tPORT\tTARGET\tNETWORK"
+	case registry.NetworkEndpoint.Kind:
+		header += "\tNETWORK\tIPV4\tPORT\tSERVICE"
 	}
 	if allProjects && r.ProjectScoped() {
 		header = "PROJECT\t" + header
@@ -107,6 +111,11 @@ func (a *app) printObjects(w io.Writer, format string, r registry.Resource, objs
 			row += "\t" + usedAs(o.GetStatus().GetAttachment())
 		case *networkv1alpha1.PortForward:
 			row += "\t" + forwardColumns(o)
+		case *networkv1alpha1.EndpointService:
+			row += "\t" + endpointServiceColumns(o)
+		case *networkv1alpha1.NetworkEndpoint:
+			row += "\t" + strings.Join([]string{o.GetSpec().GetNetwork(), cmp.Or(o.GetStatus().GetIpv4(), "-"),
+				portOrNone(o.GetStatus().GetPort()), o.GetSpec().GetService()}, "\t")
 		}
 		if allProjects && r.ProjectScoped() {
 			row = meta.GetProject() + "\t" + row
@@ -147,6 +156,30 @@ func forwardColumns(pf *networkv1alpha1.PortForward) string {
 		target += ":" + cmp.Or(t.GetInterface(), "eth0") + ":" + strconv.Itoa(int(pf.GetSpec().GetTargetPort()))
 	}
 	return strings.Join([]string{cmp.Or(pf.GetStatus().GetIpv4(), "-"), port, protocol, target}, "\t")
+}
+
+// endpointServiceColumns are an endpoint service's columns: its protocol,
+// port, the object it leads to, such as "container/git", and the network it
+// is on; "-" for what it does not have yet.
+func endpointServiceColumns(es *networkv1alpha1.EndpointService) string {
+	protocol := strings.TrimPrefix(es.GetSpec().GetProtocol().String(), "PROTOCOL_")
+	t := es.GetSpec().GetTarget()
+	target := "-"
+	switch {
+	case t.GetVirtualMachine() != "":
+		target = "virtualmachine/" + t.GetVirtualMachine()
+	case t.GetContainer() != "":
+		target = "container/" + t.GetContainer()
+	}
+	return strings.Join([]string{protocol, portOrNone(es.GetSpec().GetPort()), target, cmp.Or(es.GetStatus().GetNetwork(), "-")}, "\t")
+}
+
+// portOrNone is a port, or "-" for none.
+func portOrNone(p int32) string {
+	if p == 0 {
+		return "-"
+	}
+	return strconv.Itoa(int(p))
 }
 
 func objectName(r registry.Resource, o proto.Message) string {
