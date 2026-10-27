@@ -119,8 +119,8 @@ unreliable on virtio-fs.
 - **A root disk per machine**: `hangar/roots/<machine uid>`, a clone of its
   image's `@base`, `volmode=dev`, sparse, its `volsize` the size the machine
   asks for. A root disk smaller than asked is grown (`zfs set volsize`),
-  never shrunk; a size below its base's fails with `DiskTooSmall`. The size
-  is part of the VM's spec, so a grown disk restarts the VM.
+  never shrunk; a size below its base's fails with `DiskTooSmall`. A grown
+  disk grows in the running VM, which is never restarted for it (below).
 - **A base per disk image**: `hangar/vmbases/<sha256 hex>`, a sparse zvol
   of the size of the disk the image holds, onto which `qemu-img convert`
   writes it raw (`docs/decisions/vm-images.md`), then snapshotted as
@@ -171,13 +171,14 @@ unreliable on virtio-fs.
   It outlives the
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
-  volume restarts the machine it is attached to, as a grown root disk does.
+  volume grows in the running machine it is attached to, as a grown root
+  disk does.
 - **A volume per FileShare**: `hangar/shares/<share uid>`, a sparse zvol,
   `volmode=dev`, blank, at the size its server's machine names, grown,
   never shrunk; only that server has it, and makes its filesystem
-  (`file-shares.md`). Growing it restarts the server. It goes when its
-  share is deleted, once its server is gone, or when the sweep finds no
-  share bound to the node for it.
+  (`file-shares.md`). Grown, it grows in the running server. It goes when
+  its share is deleted, once its server is gone, or when the sweep finds
+  no share bound to the node for it.
 - **Every zvol is made `volmode=dev` from the start.** The driver's five
   parent datasets carry `volmode=dev`, so a zvol's device is made as `dev`
   when the zvol is. A zvol given `-o volmode=dev` under a parent without it
@@ -200,6 +201,44 @@ unreliable on virtio-fs.
 - **The guest grows its filesystem.** hangar-init, after mounting the root
   disk and before switching to it, grows the ext4 to the whole device with
   `EXT4_IOC_RESIZE_FS`; a failure is logged and the guest boots as it is.
+- **A disk grows while its machine runs, never by restarting it.** Disks are
+  grown on demand (tower starts a box small and grows it as it fills), and a
+  restart would kill what runs in the machine. A disk's size is no part of
+  the VM's spec hash (`driver.VMSpec.Hash`); a VM an older node started,
+  with sizes in its hash, is matched by the hash of its spec at the sizes it
+  was started with. Once the zvol is grown, the node agent asks the
+  hypervisor driver to grow the disk in the running VM: Cloud Hypervisor's
+  `PUT /api/v1/vm.resize-disk` (`{"id", "desired_size"}`, v53), on the API
+  socket every VM now has, by the id each disk is given (`disk` for the
+  root, `disk-N` for the others). For a block device Cloud Hypervisor never
+  truncates anything: it checks the device is already `desired_size` (fixed
+  for block devices in v52) and raises the virtio-blk config change, and the
+  guest's kernel sees the new capacity. The node agent then asks the guest,
+  over the guest agent's `GrowFilesystems`, to grow its filesystems, which
+  hangar-init does for every ext4 mounted from one of its virtio disks,
+  found in the mount table by device and grown through a detached, writable
+  copy of its mount, so a read-only volume grows too, and a mount point a
+  container mounted something else over is never taken for it. A container's
+  guest and a FileShare's server do this; a VM booting its own kernel sees
+  its block device grow, and growing its filesystem is its own business. A
+  failure (Cloud Hypervisor refusing the size, the guest failing to grow) is
+  the machine's `DiskGrowFailed`, `Ready` False while it runs on, and is
+  tried again; it is never turned into a restart. A VM started before its
+  disks could grow while it ran (no API socket, unnamed disks) says the
+  same, and sees the new size once it is started again. A stopped machine's
+  disk is grown as before, and its guest grows the filesystem as it boots.
+- **Guests trim their filesystems hourly, not with `-o discard`.** A zvol
+  frees only what the guest discards; ext4 mounted without `discard`
+  discards nothing, so a deleted file held its blocks on the pool until a
+  manual `fstrim`. hangar-init, in a container's guest and in a FileShare's
+  server, runs `FITRIM` on every ext4 mounted from one of its virtio disks,
+  first at a random point in the first hour, so a host's guests do not
+  trim together, then every hour (`BootConfig.trim_interval`, which the
+  hypervisor driver's `TrimInterval` sets, for the testbed). A periodic
+  trim batches the discards rather than issuing one per deleted extent on
+  the write path, as `-o discard` does. Failures go to the console log,
+  once until they change. A VM booting its own kernel trims as its
+  operating system does.
 - **The driver knows its datasets by their user properties**: `hangar:digest`
   on a base and its snapshot, `hangar:machine` and `hangar:digest` on a root
   disk, `hangar:disk` (and `hangar:digest`, for one cloned from a disk

@@ -25,6 +25,12 @@ const (
 // and returns its block count before and after: the same when it filled
 // dev already. It never shrinks one.
 func GrowRoot(dir, dev string) (from, to uint64, err error) {
+	return grow(dev, dir, func() (*os.File, error) { return os.Open(dir) })
+}
+
+// grow grows the ext4 filesystem on dev, named dir in errors, to fill dev,
+// through a file of it that open opens, as GrowRoot does.
+func grow(dev, dir string, open func() (*os.File, error)) (from, to uint64, err error) {
 	d, err := os.Open(dev)
 	if err != nil {
 		return 0, 0, err
@@ -42,7 +48,7 @@ func GrowRoot(dir, dev string) (from, to uint64, err error) {
 	if want <= blocks {
 		return blocks, blocks, nil
 	}
-	f, err := os.Open(dir)
+	f, err := open()
 	if err != nil {
 		return blocks, blocks, err
 	}

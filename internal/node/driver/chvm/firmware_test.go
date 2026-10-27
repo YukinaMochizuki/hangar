@@ -117,7 +117,7 @@ func TestAFirmwareVMBootsItsOwnKernel(t *testing.T) {
 		"--firmware /fw/CLOUDHV.fd",
 		"--balloon size=0,free_page_reporting=on",
 		`--platform system_serial_number="ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net"`,
-		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net",
+		"--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,id=disk-1 path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw,id=disk-2 --net",
 		"--api-socket path=" + filepath.Join(dir, apiFile),
 		"--console off",
 		"--serial socket=" + filepath.Join(dir, serialSocket),
@@ -258,7 +258,7 @@ func TestAFirmwareVMsDisksHaveTheirSerials(t *testing.T) {
 		t.Fatalf("exited %d", got)
 	}
 	joined := strings.Join(chArgsOf(t, dir), " ")
-	want := "--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,serial=web-root path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw --net"
+	want := "--disk path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,id=disk-1,serial=web-root path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw,id=disk-2 --net"
 	if !strings.Contains(joined, want) {
 		t.Errorf("Cloud Hypervisor's arguments %q lack %q", joined, want)
 	}

@@ -313,7 +313,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	// not serve it yet: a boot the node starts waits, its VM of an earlier
 	// spec running on. A boot of the VM's own restart policy is not gated:
 	// its mount may fail, and the policy tries it again.
-	if vm == nil || !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	if vm == nil || !spec.Runs(*vm) {
 		why, err := a.sharesServe(ctx, m, mnts)
 		switch {
 		case err != nil:
@@ -509,8 +509,9 @@ const guestTimeout = 2 * time.Second
 func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM) (*observation, error) {
 	d := a.cfg.Drivers
 	// One an older node started has the hash it gave (driver.VMSpec.Runs):
-	// an upgrade restarts nothing.
-	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	// an upgrade restarts nothing. Nor does a disk grown: its size is no
+	// part of the hash, and ensureGrown grows it in the running VM.
+	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, spec.MachineUID); err != nil {
 			return nil, err
 		}
@@ -556,7 +557,12 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 				"the server serves its export, but its boot disk did not take it, so a restart would serve an older one: "+bootErr.Error())
 			obs.started = running.started
 		}
-		return obs, errors.Join(err, bootErr)
+		// Grown whatever the export: a failure to export is reported first.
+		grown, gerr := a.ensureGrown(ctx, spec, vm, running)
+		if err == nil && bootErr == nil {
+			obs = grown
+		}
+		return obs, errors.Join(err, bootErr, gerr)
 	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
 	switch {
@@ -564,10 +570,12 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting again with its IPv6 address"),
 			errors.Join(fmt.Errorf("%w: machine %s booting", controller.ErrWaiting, spec.Machine), err)
 	case err != nil:
-		// It runs all the same; telling it is tried again.
-		return running, fmt.Errorf("%w: machine %s: %w", controller.ErrWaiting, spec.Machine, err)
+		// It runs all the same; telling it is tried again, and its disks
+		// grown meanwhile.
+		obs, gerr := a.ensureGrown(ctx, spec, vm, running)
+		return obs, errors.Join(fmt.Errorf("%w: machine %s: %w", controller.ErrWaiting, spec.Machine, err), gerr)
 	}
-	return running, nil
+	return a.ensureGrown(ctx, spec, vm, running)
 }
 
 // toldIPv6 is what a container's guest was told of its public IPv6 in one
@@ -648,6 +656,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	delete(a.told, uid)
 	delete(a.exported, uid)
 	delete(a.bootExported, uid)
+	delete(a.grownFS, uid)
 	a.requeueNetworksOf(a.revoking.forget(uid))
 	a.forgetGuest(uid)
 	obs := notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, computeapi.ReasonStopped, "the machine was deleted")

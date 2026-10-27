@@ -22,7 +22,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/guest/v1/guest.proto.
  */
 export const file_hangar_guest_v1_guest: GenFile = /*@__PURE__*/
-  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSLUAgoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXIinwEKBlZvbHVtZRIOCgZkZXZpY2UYASABKAkSDgoGdGFyZ2V0GAIgASgJEhEKCXJlYWRfb25seRgDIAEoCBIOCgZub2NvcHkYBCABKAgSDwoHc3VicGF0aBgFIAEoCRIMCgRuYW1lGAYgASgJEjMKCmZpbGVfc2hhcmUYByABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuRmlsZVNoYXJlTW91bnQiRwoHUHJvY2VzcxIMCgRhcmdzGAEgAygJEgsKA2VudhgCIAMoCRITCgt3b3JraW5nX2RpchgDIAEoCRIMCgR1c2VyGAQgASgJIl4KCUludGVyZmFjZRILCgNtYWMYASABKAkSDwoHYWRkcmVzcxgCIAEoCRIPCgdnYXRld2F5GAMgASgJEgwKBGlwdjYYBCABKAkSFAoMaXB2Nl9nYXRld2F5GAUgASgJIkAKDlNldElQdjZSZXF1ZXN0Ei4KCmludGVyZmFjZXMYASADKAsyGi5oYW5nYXIuZ3Vlc3QudjEuSW50ZXJmYWNlIhEKD1NldElQdjZSZXNwb25zZSI3CgtTdG9wUmVxdWVzdBIoCgVncmFjZRgBIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiIOCgxTdG9wUmVzcG9uc2UiDQoLUGluZ1JlcXVlc3QiSgoMUGluZ1Jlc3BvbnNlEg8KB3ZlcnNpb24YASABKAkSKQoGdXB0aW1lGAIgASgLMhkuZ29vZ2xlLnByb3RvYnVmLkR1cmF0aW9uIssBCgtFeGVjUmVxdWVzdBIrCgVzdGFydBgBIAEoCzIaLmhhbmdhci5ndWVzdC52MS5FeGVjU3RhcnRIABIPCgVzdGRpbhgCIAEoDEgAEjIKC3N0ZGluX2Nsb3NlGAMgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLlN0ZGluQ2xvc2VIABItCgZyZXNpemUYBCABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZUgAEhAKBnNpZ25hbBgFIAEoBUgAQgkKB21lc3NhZ2UibgoJRXhlY1N0YXJ0EikKB3Byb2Nlc3MYASABKAsyGC5oYW5nYXIuZ3Vlc3QudjEuUHJvY2VzcxILCgN0dHkYAiABKAgSKQoEc2l6ZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5XaW5kb3dTaXplIgwKClN0ZGluQ2xvc2UiKAoKV2luZG93U2l6ZRIMCgRyb3dzGAEgASgNEgwKBGNvbHMYAiABKA0iaAoMRXhlY1Jlc3BvbnNlEhAKBnN0ZG91dBgBIAEoDEgAEhAKBnN0ZGVychgCIAEoDEgAEikKBGV4aXQYAyABKAsyGS5oYW5nYXIuZ3Vlc3QudjEuRXhlY0V4aXRIAEIJCgdtZXNzYWdlIigKCEV4ZWNFeGl0EgwKBGNvZGUYASABKAUSDgoGc2lnbmFsGAIgASgFMrQCChFHdWVzdEFnZW50U2VydmljZRJDCgRQaW5nEhwuaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLlBpbmdSZXNwb25zZRJHCgRFeGVjEhwuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXF1ZXN0Gh0uaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNSZXNwb25zZSgBMAESQwoEU3RvcBIcLmhhbmdhci5ndWVzdC52MS5TdG9wUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5TdG9wUmVzcG9uc2USTAoHU2V0SVB2NhIfLmhhbmdhci5ndWVzdC52MS5TZXRJUHY2UmVxdWVzdBogLmhhbmdhci5ndWVzdC52MS5TZXRJUHY2UmVzcG9uc2VCwQEKE2NvbS5oYW5nYXIuZ3Vlc3QudjFCCkd1ZXN0UHJvdG9QAVpAZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvZ3Vlc3QvdjE7Z3Vlc3R2MaICA0hHWKoCD0hhbmdhci5HdWVzdC5WMcoCD0hhbmdhclxHdWVzdFxWMeICG0hhbmdhclxHdWVzdFxWMVxHUEJNZXRhZGF0YeoCEUhhbmdhcjo6R3Vlc3Q6OlYxYgZwcm90bzM", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
+  fileDesc("ChtoYW5nYXIvZ3Vlc3QvdjEvZ3Vlc3QucHJvdG8SD2hhbmdhci5ndWVzdC52MSKGAwoKQm9vdENvbmZpZxIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSLgoKaW50ZXJmYWNlcxgCIAMoCzIaLmhhbmdhci5ndWVzdC52MS5JbnRlcmZhY2USEAoIaG9zdG5hbWUYAyABKAkSEwoLbmFtZXNlcnZlcnMYBCADKAkSDgoGc2VhcmNoGAUgAygJEigKB3ZvbHVtZXMYBiADKAsyFy5oYW5nYXIuZ3Vlc3QudjEuVm9sdW1lEhMKC21hY2hpbmVfdWlkGAcgASgJEjsKEWZpbGVfc2hhcmVfc2VydmVyGAggASgLMiAuaGFuZ2FyLmd1ZXN0LnYxLkZpbGVTaGFyZVNlcnZlchI4Cg9pbWFnZV9jb252ZXJ0ZXIYCSABKAsyHy5oYW5nYXIuZ3Vlc3QudjEuSW1hZ2VDb252ZXJ0ZXISMAoNdHJpbV9pbnRlcnZhbBgKIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiKfAQoGVm9sdW1lEg4KBmRldmljZRgBIAEoCRIOCgZ0YXJnZXQYAiABKAkSEQoJcmVhZF9vbmx5GAMgASgIEg4KBm5vY29weRgEIAEoCBIPCgdzdWJwYXRoGAUgASgJEgwKBG5hbWUYBiABKAkSMwoKZmlsZV9zaGFyZRgHIAEoCzIfLmhhbmdhci5ndWVzdC52MS5GaWxlU2hhcmVNb3VudCJHCgdQcm9jZXNzEgwKBGFyZ3MYASADKAkSCwoDZW52GAIgAygJEhMKC3dvcmtpbmdfZGlyGAMgASgJEgwKBHVzZXIYBCABKAkiXgoJSW50ZXJmYWNlEgsKA21hYxgBIAEoCRIPCgdhZGRyZXNzGAIgASgJEg8KB2dhdGV3YXkYAyABKAkSDAoEaXB2NhgEIAEoCRIUCgxpcHY2X2dhdGV3YXkYBSABKAkiGAoWR3Jvd0ZpbGVzeXN0ZW1zUmVxdWVzdCIZChdHcm93RmlsZXN5c3RlbXNSZXNwb25zZSJACg5TZXRJUHY2UmVxdWVzdBIuCgppbnRlcmZhY2VzGAEgAygLMhouaGFuZ2FyLmd1ZXN0LnYxLkludGVyZmFjZSIRCg9TZXRJUHY2UmVzcG9uc2UiNwoLU3RvcFJlcXVlc3QSKAoFZ3JhY2UYASABKAsyGS5nb29nbGUucHJvdG9idWYuRHVyYXRpb24iDgoMU3RvcFJlc3BvbnNlIg0KC1BpbmdSZXF1ZXN0IkoKDFBpbmdSZXNwb25zZRIPCgd2ZXJzaW9uGAEgASgJEikKBnVwdGltZRgCIAEoCzIZLmdvb2dsZS5wcm90b2J1Zi5EdXJhdGlvbiLLAQoLRXhlY1JlcXVlc3QSKwoFc3RhcnQYASABKAsyGi5oYW5nYXIuZ3Vlc3QudjEuRXhlY1N0YXJ0SAASDwoFc3RkaW4YAiABKAxIABIyCgtzdGRpbl9jbG9zZRgDIAEoCzIbLmhhbmdhci5ndWVzdC52MS5TdGRpbkNsb3NlSAASLQoGcmVzaXplGAQgASgLMhsuaGFuZ2FyLmd1ZXN0LnYxLldpbmRvd1NpemVIABIQCgZzaWduYWwYBSABKAVIAEIJCgdtZXNzYWdlIm4KCUV4ZWNTdGFydBIpCgdwcm9jZXNzGAEgASgLMhguaGFuZ2FyLmd1ZXN0LnYxLlByb2Nlc3MSCwoDdHR5GAIgASgIEikKBHNpemUYAyABKAsyGy5oYW5nYXIuZ3Vlc3QudjEuV2luZG93U2l6ZSIMCgpTdGRpbkNsb3NlIigKCldpbmRvd1NpemUSDAoEcm93cxgBIAEoDRIMCgRjb2xzGAIgASgNImgKDEV4ZWNSZXNwb25zZRIQCgZzdGRvdXQYASABKAxIABIQCgZzdGRlcnIYAiABKAxIABIpCgRleGl0GAMgASgLMhkuaGFuZ2FyLmd1ZXN0LnYxLkV4ZWNFeGl0SABCCQoHbWVzc2FnZSIoCghFeGVjRXhpdBIMCgRjb2RlGAEgASgFEg4KBnNpZ25hbBgCIAEoBTKaAwoRR3Vlc3RBZ2VudFNlcnZpY2USQwoEUGluZxIcLmhhbmdhci5ndWVzdC52MS5QaW5nUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5QaW5nUmVzcG9uc2USRwoERXhlYxIcLmhhbmdhci5ndWVzdC52MS5FeGVjUmVxdWVzdBodLmhhbmdhci5ndWVzdC52MS5FeGVjUmVzcG9uc2UoATABEkMKBFN0b3ASHC5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlcXVlc3QaHS5oYW5nYXIuZ3Vlc3QudjEuU3RvcFJlc3BvbnNlEkwKB1NldElQdjYSHy5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlcXVlc3QaIC5oYW5nYXIuZ3Vlc3QudjEuU2V0SVB2NlJlc3BvbnNlEmQKD0dyb3dGaWxlc3lzdGVtcxInLmhhbmdhci5ndWVzdC52MS5Hcm93RmlsZXN5c3RlbXNSZXF1ZXN0GiguaGFuZ2FyLmd1ZXN0LnYxLkdyb3dGaWxlc3lzdGVtc1Jlc3BvbnNlQsEBChNjb20uaGFuZ2FyLmd1ZXN0LnYxQgpHdWVzdFByb3RvUAFaQGdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL2d1ZXN0L3YxO2d1ZXN0djGiAgNIR1iqAg9IYW5nYXIuR3Vlc3QuVjHKAg9IYW5nYXJcR3Vlc3RcVjHiAhtIYW5nYXJcR3Vlc3RcVjFcR1BCTWV0YWRhdGHqAhFIYW5nYXI6Okd1ZXN0OjpWMWIGcHJvdG8z", [file_google_protobuf_duration, file_hangar_guest_v1_converter, file_hangar_guest_v1_file_share]);
 
 /**
  * BootConfig is all a guest needs from the node to boot, and to boot again:
@@ -96,6 +96,15 @@ export type BootConfig = Message<"hangar.guest.v1.BootConfig"> & {
    * @generated from field: hangar.guest.v1.ImageConverter image_converter = 9;
    */
   imageConverter?: ImageConverter | undefined;
+
+  /**
+   * How often the guest trims the ext4 filesystems it mounted from its
+   * disks, returning what was deleted to the host's storage. Unset means
+   * hourly.
+   *
+   * @generated from field: google.protobuf.Duration trim_interval = 10;
+   */
+  trimInterval?: Duration | undefined;
 };
 
 /**
@@ -263,6 +272,32 @@ export const InterfaceSchema: GenMessage<Interface> = /*@__PURE__*/
   messageDesc(file_hangar_guest_v1_guest, 3);
 
 /**
+ * @generated from message hangar.guest.v1.GrowFilesystemsRequest
+ */
+export type GrowFilesystemsRequest = Message<"hangar.guest.v1.GrowFilesystemsRequest"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.GrowFilesystemsRequest.
+ * Use `create(GrowFilesystemsRequestSchema)` to create a new message.
+ */
+export const GrowFilesystemsRequestSchema: GenMessage<GrowFilesystemsRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 4);
+
+/**
+ * @generated from message hangar.guest.v1.GrowFilesystemsResponse
+ */
+export type GrowFilesystemsResponse = Message<"hangar.guest.v1.GrowFilesystemsResponse"> & {
+};
+
+/**
+ * Describes the message hangar.guest.v1.GrowFilesystemsResponse.
+ * Use `create(GrowFilesystemsResponseSchema)` to create a new message.
+ */
+export const GrowFilesystemsResponseSchema: GenMessage<GrowFilesystemsResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_guest_v1_guest, 5);
+
+/**
  * @generated from message hangar.guest.v1.SetIPv6Request
  */
 export type SetIPv6Request = Message<"hangar.guest.v1.SetIPv6Request"> & {
@@ -280,7 +315,7 @@ export type SetIPv6Request = Message<"hangar.guest.v1.SetIPv6Request"> & {
  * Use `create(SetIPv6RequestSchema)` to create a new message.
  */
 export const SetIPv6RequestSchema: GenMessage<SetIPv6Request> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 4);
+  messageDesc(file_hangar_guest_v1_guest, 6);
 
 /**
  * @generated from message hangar.guest.v1.SetIPv6Response
@@ -293,7 +328,7 @@ export type SetIPv6Response = Message<"hangar.guest.v1.SetIPv6Response"> & {
  * Use `create(SetIPv6ResponseSchema)` to create a new message.
  */
 export const SetIPv6ResponseSchema: GenMessage<SetIPv6Response> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 5);
+  messageDesc(file_hangar_guest_v1_guest, 7);
 
 /**
  * @generated from message hangar.guest.v1.StopRequest
@@ -312,7 +347,7 @@ export type StopRequest = Message<"hangar.guest.v1.StopRequest"> & {
  * Use `create(StopRequestSchema)` to create a new message.
  */
 export const StopRequestSchema: GenMessage<StopRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 6);
+  messageDesc(file_hangar_guest_v1_guest, 8);
 
 /**
  * @generated from message hangar.guest.v1.StopResponse
@@ -325,7 +360,7 @@ export type StopResponse = Message<"hangar.guest.v1.StopResponse"> & {
  * Use `create(StopResponseSchema)` to create a new message.
  */
 export const StopResponseSchema: GenMessage<StopResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 7);
+  messageDesc(file_hangar_guest_v1_guest, 9);
 
 /**
  * @generated from message hangar.guest.v1.PingRequest
@@ -338,7 +373,7 @@ export type PingRequest = Message<"hangar.guest.v1.PingRequest"> & {
  * Use `create(PingRequestSchema)` to create a new message.
  */
 export const PingRequestSchema: GenMessage<PingRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 8);
+  messageDesc(file_hangar_guest_v1_guest, 10);
 
 /**
  * @generated from message hangar.guest.v1.PingResponse
@@ -364,7 +399,7 @@ export type PingResponse = Message<"hangar.guest.v1.PingResponse"> & {
  * Use `create(PingResponseSchema)` to create a new message.
  */
 export const PingResponseSchema: GenMessage<PingResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 9);
+  messageDesc(file_hangar_guest_v1_guest, 11);
 
 /**
  * @generated from message hangar.guest.v1.ExecRequest
@@ -415,7 +450,7 @@ export type ExecRequest = Message<"hangar.guest.v1.ExecRequest"> & {
  * Use `create(ExecRequestSchema)` to create a new message.
  */
 export const ExecRequestSchema: GenMessage<ExecRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 10);
+  messageDesc(file_hangar_guest_v1_guest, 12);
 
 /**
  * ExecStart starts the process.
@@ -448,7 +483,7 @@ export type ExecStart = Message<"hangar.guest.v1.ExecStart"> & {
  * Use `create(ExecStartSchema)` to create a new message.
  */
 export const ExecStartSchema: GenMessage<ExecStart> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 11);
+  messageDesc(file_hangar_guest_v1_guest, 13);
 
 /**
  * @generated from message hangar.guest.v1.StdinClose
@@ -461,7 +496,7 @@ export type StdinClose = Message<"hangar.guest.v1.StdinClose"> & {
  * Use `create(StdinCloseSchema)` to create a new message.
  */
 export const StdinCloseSchema: GenMessage<StdinClose> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 12);
+  messageDesc(file_hangar_guest_v1_guest, 14);
 
 /**
  * @generated from message hangar.guest.v1.WindowSize
@@ -483,7 +518,7 @@ export type WindowSize = Message<"hangar.guest.v1.WindowSize"> & {
  * Use `create(WindowSizeSchema)` to create a new message.
  */
 export const WindowSizeSchema: GenMessage<WindowSize> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 13);
+  messageDesc(file_hangar_guest_v1_guest, 15);
 
 /**
  * @generated from message hangar.guest.v1.ExecResponse
@@ -520,7 +555,7 @@ export type ExecResponse = Message<"hangar.guest.v1.ExecResponse"> & {
  * Use `create(ExecResponseSchema)` to create a new message.
  */
 export const ExecResponseSchema: GenMessage<ExecResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 14);
+  messageDesc(file_hangar_guest_v1_guest, 16);
 
 /**
  * ExecExit says how the process ended.
@@ -548,7 +583,7 @@ export type ExecExit = Message<"hangar.guest.v1.ExecExit"> & {
  * Use `create(ExecExitSchema)` to create a new message.
  */
 export const ExecExitSchema: GenMessage<ExecExit> = /*@__PURE__*/
-  messageDesc(file_hangar_guest_v1_guest, 15);
+  messageDesc(file_hangar_guest_v1_guest, 17);
 
 /**
  * GuestAgentService is served by hangar-init over vsock.
@@ -604,6 +639,19 @@ export const GuestAgentService: GenService<{
     methodKind: "unary";
     input: typeof SetIPv6RequestSchema;
     output: typeof SetIPv6ResponseSchema;
+  },
+  /**
+   * GrowFilesystems grows each ext4 filesystem the guest mounted from one
+   * of its disks to fill the disk, as the guest does as it boots, once the
+   * node has grown the disk while the guest runs. It answers once each is
+   * grown, or fails saying which could not be.
+   *
+   * @generated from rpc hangar.guest.v1.GuestAgentService.GrowFilesystems
+   */
+  growFilesystems: {
+    methodKind: "unary";
+    input: typeof GrowFilesystemsRequestSchema;
+    output: typeof GrowFilesystemsResponseSchema;
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_guest_v1_guest, 0);

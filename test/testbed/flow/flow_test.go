@@ -379,8 +379,9 @@ func (f *flow) restartPolicy(t *testing.T) {
 	t.Logf("crashy exited 3, systemd restarted it (NRestarts 1), and its boot time is the restart's, %s", started["ExecMainStartTimestamp"])
 }
 
-// Scenario 5: raising the disk restarts the VM on a larger zvol, and the
-// guest's root has grown into it, keeping what was written on it.
+// Scenario 5: raising the disk grows the zvol under the running VM, and
+// the guest's root grows into it, with no restart: its process runs on,
+// never sent SIGTERM, and what was written on it is kept.
 func (f *flow) growTheDisk(t *testing.T) {
 	c := f.c
 	uid := f.uids["web"]
@@ -390,6 +391,8 @@ func (f *flow) growTheDisk(t *testing.T) {
 		t.Fatalf("web's root is %d KiB before growing", before)
 	}
 	launcher := mainPID(t, uid)
+	// Its log holds the boots before, which earlier scenarios stopped.
+	sigterms := strings.Count(consoleText(t, uid), "got SIGTERM")
 
 	c.applyYAML(containerYAML("web", busyboxRef, "", "2Gi", webScript))
 	c.waitReady("web", 2*time.Minute)
@@ -397,18 +400,22 @@ func (f *flow) growTheDisk(t *testing.T) {
 	if r := roots(t)[uid]; r.volsize != 2*gib {
 		t.Errorf("web's root zvol is %d bytes, want 2 GiB", r.volsize)
 	}
-	if mainPID(t, uid) == launcher {
-		t.Error("web's VM was not restarted to grow its disk")
-	}
-	after := rootSizeKiB(t, uid)
-	if after < 2*gib/1024*9/10 {
-		t.Errorf("web's root is %d KiB after growing to 2 GiB (it was %d KiB)", after, before)
+	var after int64
+	eventually(t, time.Minute, "web's root grown in the running guest", func() (bool, string) {
+		after = rootSizeKiB(t, uid)
+		return after >= 2*gib/1024*9/10, fmt.Sprintf("%d KiB (it was %d KiB)", after, before)
+	})
+	if mainPID(t, uid) != launcher {
+		t.Error("web's VM was restarted to grow its disk")
 	}
 	if out := mustExec(t, uid, "cat /marker"); strings.TrimSpace(out) != "kept" {
 		t.Errorf("/marker after growing: %q", out)
 	}
-	if !strings.Contains(consoleText(t, uid), "got SIGTERM") {
-		t.Error("web's process was not sent SIGTERM before the restart")
+	if strings.Count(consoleText(t, uid), "got SIGTERM") != sigterms {
+		t.Error("web's process was sent SIGTERM to grow its disk")
+	}
+	if !strings.Contains(consoleText(t, uid), "grew the filesystem on /dev/vda at /") {
+		t.Error("web's guest did not say it grew its root while it ran")
 	}
 	t.Logf("web's root grew from %d KiB to %d KiB; /marker kept", before, after)
 }

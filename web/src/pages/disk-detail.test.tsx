@@ -154,15 +154,16 @@ describe("Grow", () => {
   };
   const size = (d: HTMLElement, v: string) => fireEvent.change(within(d).getByLabelText("Size, GiB"), { target: { value: v } });
 
-  it("says growing restarts the VM the disk is attached to", async () => {
+  it("says growing does not restart the VM the disk is attached to", async () => {
     render(<DiskDetail name="pg-data" />, { wrapper: withApi(api([attached])) });
     await waitFor(() => expect(screen.getAllByRole("link", { name: "postgres" }).length).toBeGreaterThan(0));
     const d = await open();
-    expect(within(d).getByText("Growing it restarts postgres.")).toBeTruthy();
+    expect(within(d).getByText(/^Growing it does not restart postgres: the disk grows while it runs\./)).toBeTruthy();
+    expect(within(d).queryByText(/restarts/)).toBeNull();
     expect(within(d).getByText("Its node holds 20 GiB.")).toBeTruthy();
   });
 
-  it("says nothing of restarts for a disk attached to no machine", async () => {
+  it("says nothing of a machine for a disk attached to none", async () => {
     render(<DiskDetail name="scratch" />, { wrapper: withApi(api([free])) });
     const d = await open();
     expect(within(d).queryByText(/restart/)).toBeNull();

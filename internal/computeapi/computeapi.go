@@ -230,6 +230,11 @@ const (
 	// ReasonExportFailed means a file share's server did not take the
 	// export its node told it, and serves the one it had.
 	ReasonExportFailed = "ExportFailed"
+	// ReasonDiskGrowFailed means a disk of a running machine grew on its
+	// node, and the machine, running on, does not see it whole yet: its VM
+	// did not take the new size, or its guest did not grow its filesystem
+	// to it. The machine is never restarted for it.
+	ReasonDiskGrowFailed = "DiskGrowFailed"
 	// ReasonFileShareNotReady means a container waits to boot for a file
 	// share it mounts: its server on the node is not running yet, or has
 	// not yet taken an export holding the container.

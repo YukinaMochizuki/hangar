@@ -47,6 +47,9 @@ const (
 	// GuestAgentServiceSetIPv6Procedure is the fully-qualified name of the GuestAgentService's SetIPv6
 	// RPC.
 	GuestAgentServiceSetIPv6Procedure = "/hangar.guest.v1.GuestAgentService/SetIPv6"
+	// GuestAgentServiceGrowFilesystemsProcedure is the fully-qualified name of the GuestAgentService's
+	// GrowFilesystems RPC.
+	GuestAgentServiceGrowFilesystemsProcedure = "/hangar.guest.v1.GuestAgentService/GrowFilesystems"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -68,6 +71,11 @@ type GuestAgentServiceClient interface {
 	// container runs: the address its interface holds now, which may have
 	// moved since it booted. The other addresses of an interface stay.
 	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
+	// GrowFilesystems grows each ext4 filesystem the guest mounted from one
+	// of its disks to fill the disk, as the guest does as it boots, once the
+	// node has grown the disk while the guest runs. It answers once each is
+	// grown, or fails saying which could not be.
+	GrowFilesystems(context.Context, *connect.Request[v1.GrowFilesystemsRequest]) (*connect.Response[v1.GrowFilesystemsResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -105,15 +113,22 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
 			connect.WithClientOptions(opts...),
 		),
+		growFilesystems: connect.NewClient[v1.GrowFilesystemsRequest, v1.GrowFilesystemsResponse](
+			httpClient,
+			baseURL+GuestAgentServiceGrowFilesystemsProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("GrowFilesystems")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // guestAgentServiceClient implements GuestAgentServiceClient.
 type guestAgentServiceClient struct {
-	ping    *connect.Client[v1.PingRequest, v1.PingResponse]
-	exec    *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	stop    *connect.Client[v1.StopRequest, v1.StopResponse]
-	setIPv6 *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	ping            *connect.Client[v1.PingRequest, v1.PingResponse]
+	exec            *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop            *connect.Client[v1.StopRequest, v1.StopResponse]
+	setIPv6         *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	growFilesystems *connect.Client[v1.GrowFilesystemsRequest, v1.GrowFilesystemsResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -136,6 +151,11 @@ func (c *guestAgentServiceClient) SetIPv6(ctx context.Context, req *connect.Requ
 	return c.setIPv6.CallUnary(ctx, req)
 }
 
+// GrowFilesystems calls hangar.guest.v1.GuestAgentService.GrowFilesystems.
+func (c *guestAgentServiceClient) GrowFilesystems(ctx context.Context, req *connect.Request[v1.GrowFilesystemsRequest]) (*connect.Response[v1.GrowFilesystemsResponse], error) {
+	return c.growFilesystems.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -155,6 +175,11 @@ type GuestAgentServiceHandler interface {
 	// container runs: the address its interface holds now, which may have
 	// moved since it booted. The other addresses of an interface stay.
 	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
+	// GrowFilesystems grows each ext4 filesystem the guest mounted from one
+	// of its disks to fill the disk, as the guest does as it boots, once the
+	// node has grown the disk while the guest runs. It answers once each is
+	// grown, or fails saying which could not be.
+	GrowFilesystems(context.Context, *connect.Request[v1.GrowFilesystemsRequest]) (*connect.Response[v1.GrowFilesystemsResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -188,6 +213,12 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceGrowFilesystemsHandler := connect.NewUnaryHandler(
+		GuestAgentServiceGrowFilesystemsProcedure,
+		svc.GrowFilesystems,
+		connect.WithSchema(guestAgentServiceMethods.ByName("GrowFilesystems")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -198,6 +229,8 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceStopHandler.ServeHTTP(w, r)
 		case GuestAgentServiceSetIPv6Procedure:
 			guestAgentServiceSetIPv6Handler.ServeHTTP(w, r)
+		case GuestAgentServiceGrowFilesystemsProcedure:
+			guestAgentServiceGrowFilesystemsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -221,4 +254,8 @@ func (UnimplementedGuestAgentServiceHandler) Stop(context.Context, *connect.Requ
 
 func (UnimplementedGuestAgentServiceHandler) SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.SetIPv6 is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) GrowFilesystems(context.Context, *connect.Request[v1.GrowFilesystemsRequest]) (*connect.Response[v1.GrowFilesystemsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.GrowFilesystems is not implemented"))
 }

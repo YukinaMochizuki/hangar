@@ -75,6 +75,9 @@ type hostFlags struct {
 	// what custom images' uploads are staged in and converted with.
 	converterInitrd, uploadDir     string
 	inspectTimeout, convertTimeout time.Duration
+	// trimInterval is how often guests trim their filesystems; zero is the
+	// guests' own default.
+	trimInterval time.Duration
 }
 
 func main() {
@@ -355,6 +358,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.firmware, "vm-firmware", "/usr/local/lib/hangar/CLOUDHV.fd", "for --drivers=host, the firmware virtual machines boot through; without the file, they are refused")
 	fs.StringVar(&hf.swtpm, "vm-swtpm", "/usr/local/lib/hangar/swtpm", "for --drivers=host, the swtpm bundle virtual machines' TPMs run from (deploy/swtpm); without it, machines with a TPM are refused")
 	fs.StringVar(&hf.tpmKeys, "vm-tpm-keys", chvm.DefaultTPMKeys, "for --drivers=host, where each machine with a TPM has its key, a file named by its uid")
+	fs.DurationVar(&hf.trimInterval, "guest-trim-interval", 0, "for --drivers=host, how often a container's guest and a file share's server trim their filesystems, giving what was deleted back to the pool; 0 is hourly. A machine keeps the one it was started with")
 }
 
 // shared reads --shared-ipv4; invalid when it is empty.
@@ -518,7 +522,8 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		MachineCPUs: cpus,
 		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
 		ConverterInitramfs: converter, ConverterRuntime: max(hf.inspectTimeout, hf.convertTimeout),
-		Launcher: []string{exe, "vmm"},
+		Launcher:     []string{exe, "vmm"},
+		TrimInterval: hf.trimInterval,
 	})
 	if err != nil {
 		return nil, none, fmt.Errorf("hypervisor driver: %w", err)

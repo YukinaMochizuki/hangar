@@ -177,6 +177,7 @@ func Run(t *testing.T, fresh func(t *testing.T) Host) {
 	part("network IPv6", networkIPv6, func(h Host) bool { return nets(h) && h.IPv6Prefix.IsValid() })
 	part("network without IPv6", networkWithoutIPv6, func(h Host) bool { return nets(h) && !h.IPv6Prefix.IsValid() })
 	part("hypervisor", hypervisor, vms)
+	part("growing disks", growDisks, vms)
 	part("restart policies", restarts, vms)
 	part("logs", logs, vms)
 	part("exec", exec, func(h Host) bool { return vms(h) && h.Exec != nil })

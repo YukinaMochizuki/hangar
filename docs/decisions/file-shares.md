@@ -257,8 +257,11 @@ Hangar has one host, so only the second shape keeps the host out of it.
   from cannot be removed, nor can a network with a share on it be
   deleted, as one with a machine on it cannot (`networking.md`). A
   project being deleted takes its shares with it.
-- **Growing a share starts its server again** on the grown zvol, which it
-  grows its filesystem to, as a grown Disk restarts its machine.
+- **Growing a share keeps its server running**: the grown zvol grows in
+  the running server, which grows its filesystem to it, as a grown Disk
+  grows in its running machine (`storage-zfs.md`); its clients see the
+  room at once. The server also trims its filesystem hourly, so what
+  clients delete goes back to the pool.
 - **Deleting a share any machine declares is refused**; a deleted share
   waits for its server to be gone and its node to report its zvol
   released, as a Disk does.

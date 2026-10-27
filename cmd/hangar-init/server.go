@@ -35,6 +35,8 @@ func runServer(cfg *guestv1.BootConfig, logf func(string, ...any), started time.
 			return failed, fmt.Errorf("the boot disk's export: %w", err)
 		}
 	}
+	// What the clients delete goes back to the host's storage.
+	go boot.TrimEvery(cfg.GetTrimInterval().AsDuration(), logf)
 	stopped := make(chan struct{})
 	var once sync.Once
 	stop := func() { once.Do(func() { close(stopped) }) }
@@ -53,9 +55,9 @@ func runServer(cfg *guestv1.BootConfig, logf func(string, ...any), started time.
 }
 
 // serveServerAgent serves a FileShare's server's agent on ln to the host
-// alone: Ping, Stop, which calls stop, and SetExport. It runs nothing else,
-// so Exec is refused (but in a build with the testbed tag,
-// server_testbed.go), as is SetIPv6. It returns at once.
+// alone: Ping, Stop, which calls stop, GrowFilesystems, and SetExport. It
+// runs nothing else, so Exec is refused (but in a build with the testbed
+// tag, server_testbed.go), as is SetIPv6. It returns at once.
 func serveServerAgent(ln net.Listener, exports guestv1connect.FileShareServerServiceHandler, stop func(), started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
 	mux := http.NewServeMux()
@@ -64,6 +66,7 @@ func serveServerAgent(ln net.Listener, exports guestv1connect.FileShareServerSer
 		Version: buildinfo.Version() + buildMarker, Started: started,
 		OnPanic:  func(r any) { logf("hangar-init: guest agent: %v", r) },
 		StopMain: func(time.Duration) { stop() },
+		Grow:     growFilesystems(logf),
 	}, connect.WithReadMaxBytes(agent.MaxMessage)))
 	mux.Handle(guestv1connect.NewFileShareServerServiceHandler(exports, connect.WithReadMaxBytes(agent.MaxMessage)))
 	serveHTTP(ln, mux)

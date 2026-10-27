@@ -114,6 +114,9 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 		return failed, err
 	}
 
+	// What the container deletes goes back to the host's storage.
+	go boot.TrimEvery(cfg.GetTrimInterval().AsDuration(), logf)
+
 	reaper := supervise.NewReaper()
 	stopper := &supervise.Stopper{}
 	v6 := boot.NewIPv6(cfg.GetInterfaces())
@@ -201,8 +204,21 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			logf("hangar-init: stopping the container, %v before SIGKILL", grace)
 			stopper.Stop(grace)
 		},
+		Grow: growFilesystems(logf),
 	}, connect.WithReadMaxBytes(agent.MaxMessage))
 	serveHTTP(ln, h)
+}
+
+// growFilesystems grows the guest's filesystems to its disks, as the agent's
+// GrowFilesystems asks, saying in logf what failed.
+func growFilesystems(logf func(string, ...any)) func() error {
+	return func() error {
+		err := boot.GrowFilesystems(logf)
+		if err != nil {
+			logf("hangar-init: %v", err)
+		}
+		return err
+	}
 }
 
 // serveHTTP serves h over HTTP/2 without TLS on ln until it is closed.

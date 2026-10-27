@@ -787,11 +787,11 @@ const freePageReporting = "size=0,free_page_reporting=on"
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
 // or a blank file, the boot disk and the volumes, the server's share, or a
 // converter's file, read-only and raw whatever it holds, and its target,
-// at their nodes in dir, and the taps on fds 3 and on, as the launcher
-// passes them.
+// at their nodes in dir, the disks that grow named by their ids, the taps
+// on fds 3 and on, as the launcher passes them, and its API socket.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
-	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw"
+	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID
 	if blankVDA(s) {
 		vda = "path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on"
 	}
@@ -812,7 +812,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		args = append(args, "path="+c.File+",image_type=raw,readonly=on")
 	}
 	for n := range dataDisks(s) {
-		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw")
+		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw,id="+volumeNode(n))
 	}
 	if taps > 0 {
 		args = append(args, "--net")
@@ -821,6 +821,7 @@ func chArgs(ln launch, dir string, taps int) []string {
 		}
 	}
 	return append(args,
+		"--api-socket", "path="+filepath.Join(dir, apiFile),
 		"--vsock", "cid=3,socket="+filepath.Join(dir, vsockFile),
 		"--console", "tty",
 		"--serial", "file="+filepath.Join(dir, serialFIFO),

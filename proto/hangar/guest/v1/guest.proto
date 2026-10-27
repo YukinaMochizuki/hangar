@@ -37,6 +37,10 @@ message BootConfig {
   // root disk, process or network, and ignores volumes. Only the converter
   // initramfs holds what it runs.
   ImageConverter image_converter = 9;
+  // How often the guest trims the ext4 filesystems it mounted from its
+  // disks, returning what was deleted to the host's storage. Unset means
+  // hourly.
+  google.protobuf.Duration trim_interval = 10;
 }
 
 // Volume is a disk the guest mounts, formatted when blank and filled from
@@ -106,7 +110,16 @@ service GuestAgentService {
   // container runs: the address its interface holds now, which may have
   // moved since it booted. The other addresses of an interface stay.
   rpc SetIPv6(SetIPv6Request) returns (SetIPv6Response);
+  // GrowFilesystems grows each ext4 filesystem the guest mounted from one
+  // of its disks to fill the disk, as the guest does as it boots, once the
+  // node has grown the disk while the guest runs. It answers once each is
+  // grown, or fails saying which could not be.
+  rpc GrowFilesystems(GrowFilesystemsRequest) returns (GrowFilesystemsResponse);
 }
+
+message GrowFilesystemsRequest {}
+
+message GrowFilesystemsResponse {}
 
 message SetIPv6Request {
   // Each interface by its MAC, with its ipv6 and ipv6_gateway; an empty

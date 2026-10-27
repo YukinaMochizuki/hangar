@@ -45,8 +45,8 @@ func TestAVMWithoutDisksKeepsItsHash(t *testing.T) {
 	spec.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/d", Size: 1 << 30}}
 	withDisk := spec.Hash()
 	spec.Disks[0].Size = 2 << 30
-	if spec.Hash() == withDisk {
-		t.Error("a grown volume leaves the hash as it was: the VM would not boot to see it")
+	if spec.Hash() != withDisk {
+		t.Error("a grown volume changes the hash: the VM would be restarted to grow it")
 	}
 	grown := spec.Hash()
 	spec.Mounts = []driver.Mount{{Disk: 0, Name: "data", Target: "/data"}}
@@ -130,12 +130,15 @@ func TestAVMStartedBeforeDiskSerialsRunsItsSpec(t *testing.T) {
 	}
 	now := serials(bare, "web-root", "data")
 	started := []driver.Interface{nic}
+	vm := func(hash string) driver.VM {
+		return driver.VM{SpecHash: hash, Interfaces: started, DiskSizes: bare.DiskSizes()}
+	}
 	for name, hash := range map[string]string{
 		"by its hash":                   now.Hash(),
-		"by an older node's hash":       bare.Hash(),
+		"by an older node's hash":       bare.SizedHash(),
 		"by the IPv6 legacy hash, bare": bare.LegacyHash(started),
 	} {
-		if !now.Runs(hash, started) {
+		if !now.Runs(vm(hash)) {
 			t.Errorf("a VM started %s does not run its spec: the agent would restart it", name)
 		}
 	}
@@ -146,7 +149,7 @@ func TestAVMStartedBeforeDiskSerialsRunsItsSpec(t *testing.T) {
 		"with a serial less": serials(bare, "web-root", "").Hash(),
 		"with a volume less": other.Hash(),
 	} {
-		if now.Runs(hash, started) {
+		if now.Runs(vm(hash)) {
 			t.Errorf("a VM started %s runs the spec: the agent would not restart it", name)
 		}
 	}
@@ -182,5 +185,70 @@ func TestAVMStartedBeforeIPv6ChangedLiveKeepsItsHash(t *testing.T) {
 	}
 	if spec.Hash() == before {
 		t.Error("Hash is LegacyHash: the test sees nothing")
+	}
+}
+
+// TestADiskGrownKeepsItsVM: Hash leaves out the disks' sizes, which grow
+// while a VM runs; SizedHash is the hash nodes gave before, which counted
+// them, so a VM such a node started runs its spec with its disks grown
+// since, without a restart. Another disk, or one taken away, is another
+// spec.
+func TestADiskGrownKeepsItsVM(t *testing.T) {
+	nic := driver.Interface{
+		MachineUID: "m1", Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
+		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"), Device: "hm0123456789abc",
+	}
+	ct := driver.VMSpec{
+		MachineUID: "m1", Machine: "web/ct-api", VCPUs: 1, MemoryMiB: 256,
+		Root:       driver.Disk{MachineUID: "m1", Digest: "sha256:aa", Path: "/dev/zvol/hangar/roots/m1", Size: 2 << 30},
+		Disks:      []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1", Size: 1 << 30}},
+		Mounts:     []driver.Mount{{Disk: 0, Name: "data", Target: "/data"}},
+		Interfaces: []driver.Interface{nic}, Run: driver.RunSpec{Command: []string{"nginx"}},
+	}
+	srv := driver.VMSpec{
+		MachineUID: "s1", Machine: "web/fs-data", VCPUs: 1, MemoryMiB: 256,
+		FileShareServer: &driver.ShareServer{Volume: driver.ShareVolume{ShareUID: "f1", Path: "/dev/zvol/hangar/shares/f1", Size: 1 << 30}},
+	}
+	// What the node before gave these specs, Hash at commit 2c787ad.
+	for _, tt := range []struct {
+		spec   driver.VMSpec
+		before string
+	}{{ct, "4c2186b58986393e3d8081f8"}, {srv, "bab8897fdc1792abfa8dca69"}} {
+		s := tt.spec
+		if got := s.SizedHash(); got != tt.before {
+			t.Errorf("%s: SizedHash %s, the node before gave %s", s.Machine, got, tt.before)
+		}
+		grown, _ := s.WithDiskSizes(slices.Repeat([]int64{5 << 30}, len(s.DiskSizes())))
+		if grown.Hash() != s.Hash() {
+			t.Errorf("%s: growing its disks changes the hash: the VM would be restarted", s.Machine)
+		}
+		if s.Hash() == tt.before {
+			t.Errorf("%s: Hash is SizedHash: the test sees nothing", s.Machine)
+		}
+		old := driver.VM{SpecHash: tt.before, Interfaces: s.Interfaces, DiskSizes: s.DiskSizes()}
+		if !grown.Runs(old) {
+			t.Errorf("%s: a VM an older node started does not run its spec with its disks grown: the agent would restart it", s.Machine)
+		}
+		if !grown.Runs(driver.VM{SpecHash: s.Hash()}) {
+			t.Errorf("%s: a VM started with its disks smaller does not run its spec", s.Machine)
+		}
+	}
+	other := ct
+	other.Disks = []driver.Volume{{DiskUID: "d2", Path: "/dev/zvol/hangar/disks/d2", Size: 1 << 30}}
+	less := ct
+	less.Disks, less.Mounts = nil, nil
+	for name, s := range map[string]driver.VMSpec{"another volume": other, "a volume less": less} {
+		if s.Runs(driver.VM{SpecHash: ct.Hash(), DiskSizes: ct.DiskSizes()}) || s.Runs(driver.VM{SpecHash: ct.SizedHash(), DiskSizes: ct.DiskSizes()}) {
+			t.Errorf("a VM started with %s runs the spec: the agent would not restart it", name)
+		}
+	}
+	if d := ct.DiskSizes(); !slices.Equal(d, []int64{2 << 30, 1 << 30}) {
+		t.Errorf("a container's disk sizes are %v, not its root's then its volume's", d)
+	}
+	if d := srv.DiskSizes(); !slices.Equal(d, []int64{1 << 30}) {
+		t.Errorf("a share's server's disk sizes are %v, not its share's", d)
+	}
+	if _, ok := ct.WithDiskSizes([]int64{1}); ok {
+		t.Error("WithDiskSizes took fewer sizes than the spec has disks")
 	}
 }

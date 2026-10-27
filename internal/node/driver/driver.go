@@ -429,7 +429,8 @@ type Disk struct {
 	// Path is the block device the VM boots from.
 	Path string
 	// Size is the disk's size in bytes, at least what was asked for. The
-	// guest grows its filesystem to it as it boots.
+	// guest grows its filesystem to it as it boots, and while it runs once
+	// told the disk grew (Hypervisor.GrowDisks, Guest.GrowFilesystems).
 	Size int64
 }
 
@@ -470,7 +471,8 @@ type ShareVolume struct {
 	// Path is the block device the server is given.
 	Path string
 	// Size is the volume's size in bytes, at least what was asked for. The
-	// server grows its filesystem to it as it boots.
+	// server grows its filesystem to it as it boots, and while it runs, as
+	// a container's guest does.
 	Size int64
 }
 
@@ -841,6 +843,14 @@ type Hypervisor interface {
 	// disk, which its next boot by its restart policy serves; the boot
 	// running and SpecHash stay. Any other VM is refused (file-shares.md).
 	SetBootExport(ctx context.Context, machineUID string, export ShareExport) error
+	// GrowDisks makes the running VM's disks the sizes spec gives them, spec
+	// being one the VM runs (VMSpec.Runs), once the storage has grown their
+	// devices: the guest sees each disk grow, while the boot running and
+	// SpecHash stay. It reports whether a disk grew; a disk smaller in spec
+	// than in the VM is left as it is. With a disk to grow, a VM not
+	// running, or one started before its disks could grow while it ran,
+	// fails with ErrGrowsAtStart.
+	GrowDisks(ctx context.Context, spec VMSpec) (grown bool, err error)
 	// VMs lists the VMs on the host, running or not.
 	VMs(ctx context.Context) ([]VM, error)
 	// Changes signals that a VM changed state on its own, such as exiting.
@@ -1059,7 +1069,8 @@ type Mount struct {
 }
 
 // Hash identifies the spec: a VM started with a spec of another hash runs
-// something else and must be started again.
+// something else and must be started again. Its disks' sizes are no part
+// of it: they grow while the VM runs (Hypervisor.GrowDisks).
 func (s VMSpec) Hash() string {
 	// The interfaces' IPv6 addresses change while a VM runs, so they are no
 	// part of what it runs.
@@ -1067,7 +1078,43 @@ func (s VMSpec) Hash() string {
 	for i := range s.Interfaces {
 		s.Interfaces[i].IPv6 = netip.Addr{}
 	}
+	s, _ = s.WithDiskSizes(make([]int64, len(s.DiskSizes())))
 	return s.hash()
+}
+
+// DiskSizes are the sizes of the spec's disks in bytes: its root disk's, or
+// its share's volume's, zero for none, then each volume's, in order.
+func (s VMSpec) DiskSizes() []int64 {
+	first := s.Root.Size
+	if s.FileShareServer != nil {
+		first = s.FileShareServer.Volume.Size
+	}
+	out := []int64{first}
+	for _, v := range s.Disks {
+		out = append(out, v.Size)
+	}
+	return out
+}
+
+// WithDiskSizes is the spec with its disks of the sizes given, as
+// DiskSizes lists them; false, and the spec as it is, if they are not as
+// many as its disks.
+func (s VMSpec) WithDiskSizes(sizes []int64) (VMSpec, bool) {
+	if len(sizes) != len(s.Disks)+1 {
+		return s, false
+	}
+	if s.FileShareServer != nil {
+		srv := *s.FileShareServer
+		srv.Volume.Size = sizes[0]
+		s.FileShareServer = &srv
+	} else {
+		s.Root.Size = sizes[0]
+	}
+	s.Disks = slices.Clone(s.Disks)
+	for i := range s.Disks {
+		s.Disks[i].Size = sizes[i+1]
+	}
+	return s, true
 }
 
 // noExport is the spec less what a share's server is told while it runs.
@@ -1080,10 +1127,21 @@ func (s VMSpec) noExport() VMSpec {
 	return s
 }
 
+// SizedHash is the Hash nodes gave a spec before its disks could grow while
+// its VM ran, which counted their sizes.
+func (s VMSpec) SizedHash() string {
+	s.Interfaces = slices.Clone(s.Interfaces)
+	for i := range s.Interfaces {
+		s.Interfaces[i].IPv6 = netip.Addr{}
+	}
+	return s.hash()
+}
+
 // LegacyHash is the Hash nodes gave a spec before an interface's IPv6
 // address could change while its VM ran, which counted the addresses, with
-// those of started, the interfaces as the VM was started. A VM started by
-// such a node keeps that hash, and runs the spec all the same.
+// those of started, the interfaces as the VM was started, and its disks'
+// sizes. A VM started by such a node keeps that hash, and runs the spec all
+// the same.
 func (s VMSpec) LegacyHash(started []Interface) string {
 	s.Interfaces = slices.Clone(s.Interfaces)
 	for i := range s.Interfaces {
@@ -1095,23 +1153,32 @@ func (s VMSpec) LegacyHash(started []Interface) string {
 	return s.hash()
 }
 
-// Runs reports whether a VM whose recorded hash is hash, its interfaces
-// started as they were started, runs s: by Hash, by the LegacyHash an older
-// node gave, or by either of s without its volumes' serials, as a node
-// before them started it. An upgrade restarts no VM; its next boot gives it
-// the serials.
-func (s VMSpec) Runs(hash string, started []Interface) bool {
-	if hash == s.Hash() || hash == s.LegacyHash(started) {
+// Runs reports whether vm runs s, whatever the sizes of its disks: by Hash,
+// or, for a VM an older node started, by the hash that node gave it, of s at
+// the sizes vm's disks have: SizedHash, the LegacyHash of before IPv6
+// addresses could change, or either of s without its volumes' serials, as
+// a node before them started it. An upgrade restarts no VM; its next boot
+// gives it the serials.
+func (s VMSpec) Runs(vm VM) bool {
+	hash, started := vm.SpecHash, vm.Interfaces
+	if hash == s.Hash() {
 		return true
 	}
-	bare := s
-	bare.Disks = slices.Clone(s.Disks)
+	sized, ok := s.WithDiskSizes(vm.DiskSizes)
+	if !ok {
+		return false
+	}
+	if hash == sized.SizedHash() || hash == sized.LegacyHash(started) {
+		return true
+	}
+	bare := sized
+	bare.Disks = slices.Clone(sized.Disks)
 	serials := false
 	for i := range bare.Disks {
 		serials = serials || bare.Disks[i].Serial != ""
 		bare.Disks[i].Serial = ""
 	}
-	return serials && (hash == bare.Hash() || hash == bare.LegacyHash(started))
+	return serials && (hash == bare.SizedHash() || hash == bare.LegacyHash(started))
 }
 
 func (s VMSpec) hash() string {
@@ -1157,6 +1224,13 @@ type VM struct {
 	// Interfaces are its interfaces as the VM was started, which a
 	// container's guest takes from its boot disk at every boot.
 	Interfaces []Interface
+	// DiskSizes are the sizes of its disks as its guest sees them, as
+	// VMSpec.DiskSizes lists them: as the VM was started, or as GrowDisks
+	// grew them since.
+	DiskSizes []int64
+	// Grown says GrowDisks grew a disk of it since it was started, which
+	// its guest's filesystems are then grown to (Guest.GrowFilesystems).
+	Grown bool
 }
 
 // VMState is where a VM is.
@@ -1190,7 +1264,18 @@ type Guest interface {
 	// SetExport replaces the whole export of a FileShare's server. A server
 	// refusing it keeps the export it had, and the error says why.
 	SetExport(ctx context.Context, machineUID string, export ShareExport) error
+	// GrowFilesystems has a container's guest, or a FileShare's server,
+	// grow the filesystems it mounted from its disks to fill them, as it
+	// does at boot, once GrowDisks grew a disk. It returns once each is
+	// grown, or says which could not be. A guest that cannot, as one started
+	// before it could, fails with ErrGuestCannot.
+	GrowFilesystems(ctx context.Context, machineUID string) error
 }
+
+// ErrGrowsAtStart is a VM whose disks cannot grow while it runs: not
+// running, or started before they could. Its disks are their new sizes
+// when it next starts.
+var ErrGrowsAtStart = errors.New("its disks grow when the machine next starts")
 
 // GuestIPv6 is one guest interface's public IPv6, by its MAC: an address
 // and, on the interface holding it, the default route's gateway; zero for

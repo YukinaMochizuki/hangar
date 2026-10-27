@@ -392,9 +392,10 @@ func TestABootDiskRefusingItsExportIsReported(t *testing.T) {
 	}
 }
 
-// TestGrowingAShareRestartsItsServer: a share grown grows its volume, and
-// its server starts again on it, as a grown Disk's machine does.
-func TestGrowingAShareRestartsItsServer(t *testing.T) {
+// TestGrowingAShareKeepsItsServer: a share grown grows its volume, and its
+// server, running on, sees it grow and grows its filesystem, as a grown
+// Disk's machine does.
+func TestGrowingAShareKeepsItsServer(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
 	w.applyShare("data", "1Gi")
@@ -406,11 +407,12 @@ func TestGrowingAShareRestartsItsServer(t *testing.T) {
 		s := w.host.Snapshot()
 		vm := s.VMs[before.MachineUID]
 		return s.ShareVolumes[uid].Size == 3<<30 && vm.Spec.FileShareServer != nil && vm.Spec.FileShareServer.Volume.Size == 3<<30 &&
-			vm.State == driver.VMRunning, fmt.Sprintf("%+v %+v", s.ShareVolumes[uid], vm.Spec.FileShareServer)
+			vm.State == driver.VMRunning && w.host.GrownFilesystems(before.MachineUID) > 0, fmt.Sprintf("%+v %+v", s.ShareVolumes[uid], vm.Spec.FileShareServer)
 	})
-	if after := w.server("data"); after.Started.Equal(before.Started) {
-		t.Error("the server runs on as it was started, on a volume grown under it")
+	if after := w.server("data"); !after.Started.Equal(before.Started) || after.Boots != before.Boots {
+		t.Error("the server was started again to grow its share")
 	}
+	w.waitMachine("fs-data", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonRunning)
 }
 
 // TestAShareVolumeNoShareAccountsForIsSwept: a share's volume of no share

@@ -125,10 +125,10 @@ func zvolExists(uid string) bool {
 // TestAFileShare: a share's two containers on one network read each
 // other's writes; a container declaring nothing reaches neither the
 // server's 2049 nor anything else of it, while a client does; the server
-// runs on a zvol of the share, on taps of a server's. Growing the share,
-// and adding a network to it, start its server again, and the clients'
-// mounts carry on, their writes landing; deleting the share, once nothing
-// declares it, destroys its zvol.
+// runs on a zvol of the share, on taps of a server's. Growing the share
+// grows it in the running server; adding a network to it starts its server
+// again; either way the clients' mounts carry on, their writes landing;
+// deleting the share, once nothing declares it, destroys its zvol.
 func TestAFileShare(t *testing.T) {
 	c := startCluster(t)
 	c.applyYAML(`apiVersion: network.hangarlab.cloud/v1alpha1
@@ -191,26 +191,24 @@ spec: {ipv4Cidr: 10.1.0.0/24}
 		t.Errorf("a container declaring no share pings the server: %s", out)
 	}
 
-	// Grown, the server starts again on the grown zvol, and the mounts
-	// carry on, their containers never started again.
+	// Grown, the zvol grows under the running server, which grows its
+	// filesystem, and the mounts carry on, nothing started again.
 	clients := map[string]time.Time{}
 	for _, n := range []string{"alpha", "beta"} {
 		clients[n] = c.machine(n).GetStatus().GetBootTime().AsTime()
 	}
 	booted := srv.GetStatus().GetBootTime().AsTime()
 	c.applyYAML(shareYAML("data", "2Gi", "default"))
-	eventually(t, 3*time.Minute, "the server booted again on the grown share", func() (bool, string) {
-		m := c.serverMachine("data")
-		return m.GetStatus().GetBootTime().AsTime().After(booted) && m.GetStatus().GetPhase() == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING,
-			m.GetStatus().String()
-	})
-	keepsWriting(t, "alpha", "beta", 5, 2*time.Minute)
 	eventually(t, time.Minute, "beta seeing the grown filesystem", func() (bool, string) {
 		out, _, _ := execCLI(t, nil, "ct", "beta", "--", "df", "-k", "/data")
 		f := strings.Fields(out)
 		size, _ := strconv.Atoi(f[min(len(f)-1, 8)])
 		return size > 1<<20+(1<<19), out
 	})
+	keepsWriting(t, "alpha", "beta", 5, 2*time.Minute)
+	if now := c.serverMachine("data").GetStatus().GetBootTime().AsTime(); !now.Equal(booted) {
+		t.Errorf("the server booted again at %v to grow its share (it booted at %v)", now, booted)
+	}
 
 	// A network added: the server starts again on both, and the mounts
 	// carry on.

@@ -288,6 +288,8 @@ func (g *launcherGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) err
 
 func (g *launcherGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
 
+func (g *launcherGuest) GrowFilesystems(context.Context, string) error { return nil }
+
 func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {
 	g.mu.Lock()
 	g.graces = append(g.graces, grace)
@@ -370,7 +372,7 @@ func TestTheLauncherExitsAsTheContainer(t *testing.T) {
 			if exists(filepath.Join(dir, legacyVsockFile)) {
 				t.Error("the legacy socket was left")
 			}
-			for _, want := range []string{"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw", "fd=3,mac=02:00:00:00:00:01", "tty", "size=0,free_page_reporting=on"} {
+			for _, want := range []string{"boot=2", "size=512M", "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID, "--api-socket", "path=" + filepath.Join(dir, apiFile), "fd=3,mac=02:00:00:00:00:01", "tty", "size=0,free_page_reporting=on"} {
 				if !slices.Contains(ch.Args, want) {
 					t.Errorf("Cloud Hypervisor's arguments %q lack %q", ch.Args, want)
 				}
@@ -501,10 +503,10 @@ func TestTheLauncherAttachesVolumes(t *testing.T) {
 	// sees them as vda, vdb, vdc and vdd.
 	i := slices.Index(ch.Args, "--disk")
 	want := []string{
-		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw",
+		"path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID,
 		"path=" + filepath.Join(dir, bootFile) + ",image_type=raw,readonly=on",
-		"path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw",
-		"path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw",
+		"path=" + filepath.Join(dir, volumeNode(0)) + ",image_type=raw,id=" + volumeNode(0),
+		"path=" + filepath.Join(dir, volumeNode(1)) + ",image_type=raw,id=" + volumeNode(1),
 	}
 	if i < 0 || len(ch.Args) < i+1+len(want) || !slices.Equal(ch.Args[i+1:i+1+len(want)], want) {
 		t.Errorf("Cloud Hypervisor's arguments %q, want --disk %q", ch.Args, want)

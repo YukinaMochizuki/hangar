@@ -104,12 +104,23 @@ func TestADiskOnTheHost(t *testing.T) {
 		t.Errorf("volume %+v %t", v, ok)
 	}
 
-	// Grown, the volume grows, and the VM boots again to see it.
+	// Grown, the volume grows, and the VM sees it grow where it runs: the
+	// same boot, its guest told to grow its filesystem.
+	m, _, _ := w.vmOf("vm-a")
+	muid := m.GetMetadata().GetUid()
+	before := w.host.Snapshot().VMs[muid]
 	w.applyDisk("data", "3Gi")
 	testutil.Eventually(w.t, "the VM running with the grown disk", func() (bool, string) {
 		_, spec, running := w.vmOf("vm-a")
-		return running && len(spec.Disks) == 1 && spec.Disks[0].Size >= 3*gib, fmt.Sprintf("%+v", spec.Disks)
+		return running && len(spec.Disks) == 1 && spec.Disks[0].Size >= 3*gib && w.host.GrownFilesystems(muid) > 0,
+			fmt.Sprintf("%+v, filesystems grown %d times", spec.Disks, w.host.GrownFilesystems(muid))
 	})
+	if after := w.host.Snapshot().VMs[muid]; after.Boots != before.Boots || !after.Started.Equal(before.Started) {
+		t.Errorf("the VM was started again to grow its disk: boot %d at %v, before %d at %v", after.Boots, after.Started, before.Boots, before.Started)
+	}
+	if n := w.host.GrownDisks(muid); n != 1 {
+		t.Errorf("the VM's disks grew %d times, want once", n)
+	}
 
 	// Detached, the VM runs without it, and the disk stays on the host.
 	w.putMachine(diskMachine("vm-a"))

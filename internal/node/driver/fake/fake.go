@@ -185,6 +185,8 @@ type Host struct {
 	// by machine uid; oldGuests cannot be told.
 	guestIPv6 map[string][]driver.GuestIPv6
 	oldGuests map[string]bool
+	// growth is what GrowDisks and GrowFilesystems did, and are made to do.
+	growth growth
 	// ipv6Refused counts interfaces refused for an IPv6 address another
 	// holds.
 	ipv6Refused int
@@ -1583,8 +1585,13 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 	if v, ok := d.h.vms[spec.MachineUID]; ok {
 		boots = v.boots + 1
 	}
+	// Started now, its disks grow while it runs.
+	delete(d.h.growth.fixed, spec.MachineUID)
 	d.h.vms[spec.MachineUID] = &vm{
-		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces},
+		VM: driver.VM{
+			MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces,
+			DiskSizes: spec.DiskSizes(),
+		},
 		spec:  spec,
 		boots: boots,
 	}
@@ -1879,8 +1886,8 @@ func (h *Host) StartedByOldNode(machineUID string) {
 }
 
 // StartedWithoutDiskSerials makes the machine's VM one a node started
-// before volumes had serials: its volumes have none, and its hash counts
-// none (driver.VMSpec.Runs).
+// before volumes had serials: its volumes have none, and its hash, which
+// counted its disks' sizes then, counts none (driver.VMSpec.Runs).
 func (h *Host) StartedWithoutDiskSerials(machineUID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -1889,7 +1896,7 @@ func (h *Host) StartedWithoutDiskSerials(machineUID string) {
 		for i := range v.spec.Disks {
 			v.spec.Disks[i].Serial = ""
 		}
-		v.SpecHash = v.spec.Hash()
+		v.SpecHash = v.spec.SizedHash()
 	}
 }
 

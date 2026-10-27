@@ -286,6 +286,44 @@ func TestAVirtualMachinesDisksHaveSerials(t *testing.T) {
 	})
 }
 
+// TestAVirtualMachinesDiskGrowsWhileItRuns: a VM's data disk grown grows
+// in the running VM, its block device alone: its filesystems are its own
+// guest's, which hangar never asks to grow them. A VM an older node
+// started, its hash counting its disks' sizes, is not restarted for a
+// growth either: it says it sees the new size once started again.
+func TestAVirtualMachinesDiskGrowsWhileItRuns(t *testing.T) {
+	t.Parallel()
+	w := newIdleWorld(t)
+	w.startAgent()
+	w.host.AddDiskImage(cloudURL, "sha256:"+cloudSHA, 3*gib)
+	w.applyImage("noble", cloudSHA)
+	w.applyDisk("data", "1Gi")
+	w.applyVMDisks("web", 0, "data")
+	w.waitVMReason("web", "Running")
+	uid := w.machine2(vmMachineOf("web")).GetMetadata().GetUid()
+	w.waitSettled()
+	started := w.started(uid)
+
+	w.applyDisk("data", "2Gi")
+	testutil.Eventually(t, "the data disk grown in the running VM", func() (bool, string) {
+		vm := w.host.Snapshot().VMs[uid]
+		return len(vm.Spec.Disks) == 2 && vm.Spec.Disks[1].Size == 2*gib && vm.Grown, fmt.Sprintf("%+v", vm.Spec.Disks)
+	})
+	w.waitVMReason("web", "Running")
+	w.waitSettled()
+	w.checkNotRestarted(started)
+	if n := w.host.GrownFilesystems(uid); n != 0 {
+		t.Errorf("a VM's guest was asked %d times to grow its filesystems", n)
+	}
+
+	w.host.StartedByOldNode(uid)
+	w.host.FixDisks(uid)
+	w.applyDisk("data", "3Gi")
+	w.waitVMReason("web", computeapi.ReasonDiskGrowFailed)
+	w.waitSettled()
+	w.checkNotRestarted(started)
+}
+
 // applyVMDisks applies a VM of the image noble with the data disks named,
 // in the run state given.
 func (w *world) applyVMDisks(name string, runState computev1alpha1.VirtualMachineRunState, disks ...string) {

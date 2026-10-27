@@ -219,6 +219,10 @@ type Agent struct {
 	told         map[string]toldIPv6
 	exported     map[string]toldExport
 	bootExported map[string]driver.ShareExport
+	// grownFS is, by machine uid, the disks' sizes a guest has grown its
+	// filesystems to in its current boot, as far as the agent asked it to.
+	// Guarded by host.
+	grownFS map[string]grownFS
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -366,6 +370,7 @@ func New(cfg Config) (*Agent, error) {
 		told:             map[string]toldIPv6{},
 		exported:         map[string]toldExport{},
 		bootExported:     map[string]driver.ShareExport{},
+		grownFS:          map[string]grownFS{},
 		shareWaiters:     map[controller.Key]bool{},
 		revoking:         newRevocations(),
 		puller:           puller,

@@ -60,7 +60,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Search:             search,
 		Restart:            restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
-	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err
 		}
@@ -89,12 +89,15 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		obs.applied = true
 		return obs, pending
 	}
-	return &observation{
+	running := &observation{
 		phase: computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING,
 		conds: []*metav1.Condition{{
 			Type: computeapi.MachineReady, Status: metav1.ConditionStatus_CONDITION_STATUS_TRUE, Reason: computeapi.ReasonRunning,
 		}},
 		started: timestamppb.New(vm.Started),
 		applied: true,
-	}, pending
+	}
+	// Its block devices grow; its filesystems are its guest's to grow.
+	obs, err := a.ensureGrown(ctx, spec, vm, running)
+	return obs, errors.Join(err, pending)
 }

@@ -50,6 +50,9 @@ type Server struct {
 	// ApplyIPv6, if set, makes the interfaces' public IPv6 what SetIPv6
 	// asks.
 	ApplyIPv6 func(ifaces []*guestv1.Interface) error
+	// Grow, if set, grows the guest's filesystems to its disks, as
+	// GrowFilesystems asks.
+	Grow func() error
 }
 
 // MaxGrace bounds the grace period a Stop may ask for.
@@ -88,6 +91,18 @@ func (s *Server) SetIPv6(_ context.Context, req *connect.Request[guestv1.SetIPv6
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewResponse(&guestv1.SetIPv6Response{}), nil
+}
+
+// GrowFilesystems grows the guest's filesystems to its disks, which the
+// node has grown.
+func (s *Server) GrowFilesystems(context.Context, *connect.Request[guestv1.GrowFilesystemsRequest]) (*connect.Response[guestv1.GrowFilesystemsResponse], error) {
+	if s.Grow == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest's filesystems are not the agent's to grow"))
+	}
+	if err := s.Grow(); err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&guestv1.GrowFilesystemsResponse{}), nil
 }
 
 // Exit codes for a program that cannot run, as shells give them.

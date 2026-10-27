@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
@@ -88,12 +89,19 @@ type Config struct {
 	// none means every online CPU. New gives them to the VMs' slice, which a
 	// VM running already is in only from its next start.
 	MachineCPUs []int
+	// TrimInterval is how often a container's guest, and a FileShare's
+	// server, trims its filesystems, returning what was deleted to the
+	// storage; zero means the guest's own default, hourly. A VM keeps the
+	// one it was started with.
+	TrimInterval time.Duration
 
-	// systemd, guest and powerButton, if set, replace systemd over D-Bus,
-	// the guests' agents and pressPowerButton, for tests.
+	// systemd, guest, powerButton and resizeDisk, if set, replace systemd
+	// over D-Bus, the guests' agents, pressPowerButton and resizeDisk, for
+	// tests.
 	systemd     systemd
 	guest       driver.Guest
 	powerButton func(ctx context.Context, socket string) error
+	resizeDisk  func(ctx context.Context, socket, id string, size int64) error
 	// logPoll, if set, is how often a followed log is checked for more.
 	logPoll time.Duration
 	// procUsers, if set, replaces listing the ids processes run as.
@@ -123,6 +131,7 @@ type Hypervisor struct {
 	sd          systemd
 	guest       driver.Guest
 	powerButton func(ctx context.Context, socket string) error
+	resizeDisk  func(ctx context.Context, socket, id string, size int64) error
 	locks       keylock.Map
 	changes     chan struct{}
 	// users is held while a Start picks its VM's id and writes it down.
@@ -238,6 +247,10 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if h.powerButton == nil {
 		h.powerButton = pressPowerButton
 	}
+	h.resizeDisk = cfg.resizeDisk
+	if h.resizeDisk == nil {
+		h.resizeDisk = resizeDisk
+	}
 	h.sd = cfg.systemd
 	if h.sd == nil {
 		sd, err := dialSystemd(ctx, h.signal)
@@ -336,7 +349,10 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	if err != nil {
 		return driver.VM{}, false, err
 	}
-	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces}
+	vm := driver.VM{
+		MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces,
+		DiskSizes: ln.Spec.DiskSizes(), Grown: ln.Grown,
+	}
 	// A guest that powered off while it was being stopped, its launcher
 	// waiting for the stop, has exited.
 	offInStop := exited && exists(filepath.Join(dir, stopFile))
@@ -494,6 +510,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		Spec: spec, Hash: hash, CloudHypervisor: h.cfg.CloudHypervisor,
 		Kernel: h.cfg.Kernel, Initramfs: h.cfg.Initramfs, Cmdline: h.cfg.Cmdline,
 		StopGrace: h.cfg.StopGrace, StopSlack: h.cfg.StopSlack,
+		Growable: true,
 	}
 	sb := sandbox{Dir: dir, Binds: []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.Initramfs}}
 	if spec.Firmware {
@@ -695,6 +712,9 @@ func (h *Hypervisor) bootDisk(spec driver.VMSpec) ([]byte, error) {
 		Nameservers: spec.Nameservers,
 		Search:      spec.Search,
 		MachineUid:  spec.MachineUID,
+	}
+	if h.cfg.TrimInterval > 0 {
+		cfg.TrimInterval = durationpb.New(h.cfg.TrimInterval)
 	}
 	if srv := spec.FileShareServer; srv != nil {
 		cfg.Process = nil

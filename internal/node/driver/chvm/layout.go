@@ -37,7 +37,8 @@ const (
 	// sockets; the launcher makes it afresh on each run.
 	chDir = "ch"
 	// apiFile is Cloud Hypervisor's API socket, which a firmware VM's stop
-	// presses its power button through.
+	// presses its power button through, and GrowDisks grows its disks
+	// through.
 	apiFile = chDir + "/api"
 	// vsockFile is the hybrid vsock socket Cloud Hypervisor listens on.
 	vsockFile = chDir + "/vsock"
@@ -78,6 +79,11 @@ const (
 
 // volumeNode is the node of the spec's n-th volume, from 0.
 func volumeNode(n int) string { return fmt.Sprintf("%s%d", volumeNodePrefix, n+1) }
+
+// Cloud Hypervisor's ids of a VM's disks, which GrowDisks names them by: a
+// root disk's is its node's name, and each data disk's (dataDisks) its
+// node's, volumeNode.
+const rootDiskID = diskNode
 
 // dataDisks are the devices of the disks a VM has after its boot disk, vdc
 // on, each with a volumeNode: a file share's server's share, a converter's
@@ -193,6 +199,13 @@ type launch struct {
 	// which the unit's ProcSubset hides from the launcher.
 	Swtpm  string `json:",omitempty"`
 	NoFile uint64 `json:",omitempty"`
+	// Growable says Cloud Hypervisor serves its API and names its disks, so
+	// GrowDisks can grow them while the VM runs; false, as in a spec
+	// written before they could, it cannot until the VM is started again.
+	Growable bool `json:",omitempty"`
+	// Grown says GrowDisks grew a disk of the VM since Start wrote the file:
+	// Spec holds the disks' sizes as the guest now sees them.
+	Grown bool `json:",omitempty"`
 }
 
 // stopTimes are the grace and the slack the launch gives a guest to stop.

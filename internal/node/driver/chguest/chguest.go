@@ -71,6 +71,18 @@ func (g Guest) SetIPv6(ctx context.Context, machineUID string, ifaces []driver.G
 	return err
 }
 
+// GrowFilesystems has the guest agent grow the guest's filesystems to its
+// disks.
+func (g Guest) GrowFilesystems(ctx context.Context, machineUID string) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	_, err := c.GrowFilesystems(ctx, connect.NewRequest(&guestv1.GrowFilesystemsRequest{}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	return err
+}
+
 // SetExport replaces the export of a FileShare's server, which its
 // hangar-init serves beside the guest agent.
 func (g Guest) SetExport(ctx context.Context, machineUID string, export driver.ShareExport) error {

@@ -143,9 +143,15 @@ export function diskYaml(d: Disk): string {
   return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
 }
 
-/** growFacts says what growing a disk does: it restarts the machine the disk is attached to, if any. */
+/**
+ * growFacts says what growing a disk does to the machine it is attached to,
+ * if any: nothing restarts it. The disk grows while it runs, a container's
+ * filesystem with it; a VM's operating system grows its own.
+ */
 export function growFacts(machine: string | undefined): string | undefined {
-  return machine ? `Growing it restarts ${machine}.` : undefined;
+  return machine
+    ? `Growing it does not restart ${machine}: the disk grows while it runs. A container's filesystem grows with it; a VM's operating system grows its own.`
+    : undefined;
 }
 
 /** sizeFacts states a disk's spec.size and what its node holds. */

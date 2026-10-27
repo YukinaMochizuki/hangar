@@ -567,8 +567,8 @@ func TestAnImageLargerThanTheRoomLeftIsNotUnpacked(t *testing.T) {
 }
 
 // TestTheRootDiskIsTheSizeAsked: a machine's root disk is the size its
-// container asks for, and asking for more grows it and restarts the VM on
-// it.
+// container asks for, and asking for more grows it in the running VM, whose
+// guest grows its filesystem, without a restart.
 func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -580,14 +580,71 @@ func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 	if r := w.host.Snapshot().Roots[uid]; r.Size != 20<<30 {
 		t.Fatalf("root %+v, want 20Gi", r)
 	}
+	before := w.host.Snapshot().VMs[uid]
 	c.Spec.Resources.Disk = "30Gi"
 	w.apply(c)
-	testutil.Eventually(w.t, "the root grown and the VM started again on it", func() (bool, string) {
+	testutil.Eventually(w.t, "the root grown in the running VM", func() (bool, string) {
 		s := w.host.Snapshot()
 		vm := s.VMs[uid]
-		return s.Roots[uid].Size == 30<<30 && vm.Spec.Root.Size == 30<<30 && vm.State == driver.VMRunning,
+		return s.Roots[uid].Size == 30<<30 && vm.Spec.Root.Size == 30<<30 && vm.State == driver.VMRunning && w.host.GrownFilesystems(uid) == 1,
 			fmt.Sprintf("root %+v vm %+v", s.Roots[uid], vm.Spec.Root)
 	})
+	if after := w.host.Snapshot().VMs[uid]; after.Boots != before.Boots || !after.Started.Equal(before.Started) {
+		t.Errorf("the VM was started again to grow its root: boot %d, before %d", after.Boots, before.Boots)
+	}
+	w.waitReason("api", "Running")
+}
+
+// TestAFailedGrowthIsReportedNotRestarted: a disk the running VM does not
+// take, or a filesystem its guest does not grow, says so on the machine,
+// which runs on in the same boot and is Ready again once the growth is
+// done; a VM started before its disks could grow while it ran says it sees
+// the new size only once started again, and is not restarted for it.
+func TestAFailedGrowthIsReportedNotRestarted(t *testing.T) {
+	t.Parallel()
+	w := newWorld(t)
+	c := container("api", "nginx")
+	c.Spec.Resources = &computev1alpha1.Resources{Disk: "20Gi"}
+	w.apply(c)
+	w.waitReason("api", "Running")
+	uid := w.machine("api").GetMetadata().GetUid()
+	before := w.host.Snapshot().VMs[uid]
+	sameBoot := func() {
+		t.Helper()
+		if after := w.host.Snapshot().VMs[uid]; after.Boots != before.Boots || !after.Started.Equal(before.Started) || after.State != driver.VMRunning {
+			t.Fatalf("the VM was started again, or stopped, to grow its root: %+v", after.VM)
+		}
+	}
+
+	// Cloud Hypervisor refuses the new size, then takes it.
+	w.host.FailGrowDisks(uid, errors.New("block device size does not match requested size"))
+	c.Spec.Resources.Disk = "30Gi"
+	w.apply(c)
+	w.waitMachineSaying("ct-api", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonDiskGrowFailed, "does not match requested size")
+	sameBoot()
+	w.host.FailGrowDisks(uid, nil)
+	w.waitReason("api", "Running")
+	sameBoot()
+
+	// The guest does not grow its filesystem, then does.
+	w.host.FailGrowFilesystems(uid, errors.New("resizing / from 1 to 2 blocks: no space left on device"))
+	c.Spec.Resources.Disk = "40Gi"
+	w.apply(c)
+	w.waitMachineSaying("ct-api", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonDiskGrowFailed, "did not grow its filesystem")
+	sameBoot()
+	w.host.FailGrowFilesystems(uid, nil)
+	w.waitReason("api", "Running")
+	sameBoot()
+	if n := w.host.GrownFilesystems(uid); n != 2 {
+		t.Errorf("the guest grew its filesystems %d times, want 2", n)
+	}
+
+	// A VM an older node started.
+	w.host.FixDisks(uid)
+	c.Spec.Resources.Disk = "50Gi"
+	w.apply(c)
+	w.waitMachineSaying("ct-api", computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, computeapi.ReasonDiskGrowFailed, "next starts")
+	sameBoot()
 }
 
 // TestAVanishedBaseIsMadeAgain: a base gone after its image was prepared,

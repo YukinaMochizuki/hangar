@@ -39,36 +39,54 @@ const NoCloudSerial = "ds=nocloud;s=http://169.254.169.254/nocloud/;dsmode=net"
 
 // pressPowerButton presses the power button of the VM whose Cloud
 // Hypervisor serves its API at socket: an ACPI event the guest's operating
-// system shuts down on. The socket is in a directory Cloud Hypervisor can
-// write in, so it is dialled as the vsock socket is, never through a link.
+// system shuts down on.
 func pressPowerButton(ctx context.Context, socket string) error {
+	if err := callCH(ctx, socket, "vm.power-button", nil); err != nil {
+		return fmt.Errorf("pressing the power button: %w", err)
+	}
+	return nil
+}
+
+// callCH puts body, JSON or nothing, to the action of the Cloud Hypervisor
+// API served at socket, such as vm.power-button. The socket is in a
+// directory Cloud Hypervisor can write in, so it is dialled as the vsock
+// socket is, never through a link.
+func callCH(ctx context.Context, socket, action string, body []byte) error {
 	c := http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return chguest.DialSocket(ctx, socket)
 		},
 	}}
 	defer c.CloseIdleConnections()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://localhost/api/v1/vm.power-button", nil)
+	var r io.Reader
+	if body != nil {
+		r = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://localhost/api/v1/"+action, r)
 	if err != nil {
 		return err
 	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	resp, err := c.Do(req)
 	if err != nil {
-		return fmt.Errorf("pressing the power button: %w", err)
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
-		return fmt.Errorf("pressing the power button: %s: %s", resp.Status, b)
+		return fmt.Errorf("%s: %s: %s", action, resp.Status, bytes.TrimSpace(b))
 	}
 	return nil
 }
 
 // firmwareArgs is Cloud Hypervisor's command line for a firmware VM: the
 // firmware, the balloon for free page reporting, its serial number, its
-// volumes at their nodes in dir with their serials, the root first, the
-// taps on fds 3 and on, its serial console on a socket for its console
-// helper, no virtio console, its API socket, and a TPM VM's swtpm.
+// volumes at their nodes in dir with their serials, named by their ids,
+// the root first, the taps on fds 3 and on, its serial console on a socket
+// for its console helper, no virtio console, its API socket, and a TPM
+// VM's swtpm.
 func firmwareArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	args := []string{
@@ -80,7 +98,7 @@ func firmwareArgs(ln launch, dir string, taps int) []string {
 		"--disk",
 	}
 	for n, v := range s.Disks {
-		disk := "path=" + filepath.Join(dir, volumeNode(n)) + ",image_type=raw"
+		disk := "path=" + filepath.Join(dir, volumeNode(n)) + ",image_type=raw,id=" + volumeNode(n)
 		if v.Serial != "" {
 			disk += ",serial=" + v.Serial
 		}
