@@ -2,7 +2,10 @@ import { create } from "@bufbuild/protobuf";
 import { ContainerSchema, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
 import { describe, expect, it } from "vitest";
 import { diskGrowOf, diskGrowSpec, growthSteps, noDiskGrow, type DiskGrow } from "@/components/disk-grow";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
+import { DiskSchema } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { changesOf, editedObject } from "@/lib/machine-edit";
+import { growthBlocked, growthOf, newDisk } from "@/lib/storage";
 import { wholeGiB } from "@/lib/quantity";
 
 const on = (patch: Partial<DiskGrow>): DiskGrow => ({ on: true, maxGi: "20", threshold: "", step: "", ...patch });
@@ -57,6 +60,29 @@ describe("growthSteps", () => {
   });
   it("is nothing with no room to grow", () => {
     expect(growthSteps(on({ maxGi: "2" }), 2)).toEqual([]);
+  });
+});
+
+describe("a Disk's growth", () => {
+  const data = (grow: { max: string; threshold: string; step: string } | undefined, size?: string) =>
+    create(DiskSchema, { metadata: { name: "ws", project: "demo" }, spec: { size: "2Gi", grow }, status: { size, node: "n1" } });
+
+  it("goes into spec.grow of a new data disk", () => {
+    const grow = diskGrowSpec(on({ maxGi: "40", step: "5" }), 2).spec;
+    expect(newDisk("demo", "ws", "data", "2", undefined, grow).spec?.grow).toMatchObject({ max: "40Gi", step: "5Gi" });
+    expect(newDisk("demo", "ws", "data", "2", undefined).spec?.grow).toBeUndefined();
+  });
+
+  it("is said on the page, and at its max as such", () => {
+    expect(growthOf(data(undefined))).toBeUndefined();
+    expect(growthOf(data({ max: "20Gi", threshold: "", step: "" }, "4Gi"))).toBe("up to 20 GiB, at 80% full, by 2x");
+    expect(growthOf(data({ max: "20Gi", threshold: "90%", step: "3Gi" }, "20Gi"))).toBe("at its largest, 20 GiB");
+  });
+
+  it("waiting on quota is a growth blocked", () => {
+    const d = data({ max: "20Gi", threshold: "", step: "" }, "8Gi");
+    d.status!.conditions = [{ $typeName: "hangar.meta.v1.Condition", type: "DiskGrowBlocked", status: ConditionStatus.TRUE, reason: "QuotaExceeded", message: "the disk stays 8Gi", observedGeneration: 0n }];
+    expect(growthBlocked(d)).toEqual({ reason: "QuotaExceeded", message: "the disk stays 8Gi" });
   });
 });
 

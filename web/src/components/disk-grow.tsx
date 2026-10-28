@@ -87,27 +87,37 @@ export function DiskGrowFields({
   onChange,
   diskGi,
   disabled,
+  apiPath = "spec.resources.diskGrow",
+  indent = true,
+  note = "Grows while it runs, no restart.",
 }: {
   value: DiskGrow;
   onChange: (g: DiskGrow) => void;
   diskGi: number;
   disabled?: boolean;
+  /** The field as the manifest names it. */
+  apiPath?: string;
+  /** Lines the fields up under a labelled row, as the machine form's disk row is. */
+  indent?: boolean;
+  /** When it grows, the first sentence of the explanation. */
+  note?: string;
 }) {
   const set = (patch: Partial<DiskGrow>) => onChange({ ...g, ...patch });
   const { problems } = diskGrowSpec(g, diskGi);
   const steps = growthSteps(g, diskGi);
   return (
-    <div className="mt-2.5 sm:pl-[108px]">
+    <div className={cn("mt-2.5", indent && "sm:pl-[108px]")}>
       <label className="flex items-center gap-2 text-[12.5px]">
         <input
           type="checkbox"
           checked={g.on}
           disabled={disabled}
-          onChange={(e) => set({ on: e.target.checked, maxGi: g.maxGi || (Number.isFinite(diskGi) ? String(Math.max(diskGi, 20)) : "") })}
+          // The max starts where a growth shows: 20 GiB, or twice a disk already that large.
+          onChange={(e) => set({ on: e.target.checked, maxGi: g.maxGi || (Number.isFinite(diskGi) ? String(Math.max(diskGi * 2, 20)) : "") })}
           className="size-3.5 accent-[var(--accent)]"
         />
         <span className="font-medium">Grow by itself as it fills</span>
-        <span className="hidden font-mono text-[11px] text-subtle sm:inline">spec.resources.diskGrow</span>
+        <span className="hidden font-mono text-[11px] text-subtle sm:inline">{apiPath}</span>
       </label>
       {g.on && (
         <div className="mt-2 space-y-2 rounded-md border bg-background px-3 py-2.5">
@@ -125,7 +135,7 @@ export function DiskGrowFields({
             <Field label="by" ariaLabel="Grow by" value={g.step} placeholder={diskGrowDefaults.step} onChange={(step) => set({ step })} width="w-20" />
           </div>
           <p className="text-[11.5px] text-muted">
-            Grows while it runs, no restart. Each step counts toward the disk quota as it is taken; a step past quota waits, and the disk stays as it is. Grow
+            {note} Each step counts toward the disk quota as it is taken; a step past quota waits, and the disk stays as it is. Grow
             by a factor such as <span className="font-mono">2x</span>, or by GiB such as <span className="font-mono">3</span>.
           </p>
           {steps.length > 1 && (

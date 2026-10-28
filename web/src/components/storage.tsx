@@ -3,7 +3,7 @@
 // its error shown where it was asked for.
 
 import { toJson, type JsonValue } from "@bufbuild/protobuf";
-import { DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
+import { DiskAttachmentRole, DiskPhase, DiskSchema, type Disk } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import type { Image } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
 import { HardDrive } from "lucide-react";
 import { useState } from "react";
@@ -143,9 +143,14 @@ export function diskYaml(d: Disk): string {
   return toYaml({ apiVersion: "storage.hangarlab.cloud/v1alpha1", kind: "Disk", metadata, spec });
 }
 
-/** growFacts says what growing a disk does: it restarts the machine the disk is attached to, if any. */
-export function growFacts(machine: string | undefined): string | undefined {
-  return machine ? `Growing it restarts ${machine}.` : undefined;
+/**
+ * growFacts says what growing a disk does: a container's volume grows while
+ * the container runs (docs/decisions/disk-autogrow.md); any other machine the
+ * disk is attached to restarts.
+ */
+export function growFacts(machine: string | undefined, volume: boolean): string | undefined {
+  if (!machine) return undefined;
+  return volume ? `It grows while ${machine} runs; nothing restarts.` : `Growing it restarts ${machine}.`;
 }
 
 /** sizeFacts states a disk's spec.size and what its node holds. */
@@ -172,9 +177,13 @@ export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: I
   const grow = useGrowDisk(project, name);
   const machine = useMachineName(project, d.status?.machine ?? "");
   const imageFloor = diskImage(d) ? imageFloorGiB(image) : 1;
+  // A disk that grows by itself grows by hand no further than its grow.max.
+  const growMax = d.spec?.grow ? quantityGiB(d.spec.grow.max) : NaN;
   const problem = !Number.isInteger(size)
     ? "The size is not a whole number of GiB."
-    : size === spec
+    : size > growMax
+      ? `${name} grows by itself up to ${formatNumber(growMax)} GiB; raise spec.grow.max in its manifest to go past it.`
+      : size === spec
       ? `${name} is already set to ${formatNumber(spec)} GiB.`
       : size >= floor
         ? undefined
@@ -189,7 +198,7 @@ export function GrowDiskDialog({ d, image, open, onClose }: { d: Disk; image?: I
   };
   return (
     <Dialog open={open} onClose={close} title={`Grow disk ${name}`}>
-      {d.status?.machine && <p className="mb-1">{growFacts(machine)}</p>}
+      {d.status?.machine && <p className="mb-1">{growFacts(machine, d.status.attachment?.as === DiskAttachmentRole.VOLUME)}</p>}
       <p>{sizeFacts(d)}</p>
       <form
         onSubmit={(e) => {

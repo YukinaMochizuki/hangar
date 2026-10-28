@@ -15,7 +15,7 @@ import { ImageService, type Image } from "@hangar/api/hangar/storage/v1alpha1/im
 import { readModifyWrite } from "@/lib/actions";
 import { createError } from "@/lib/create";
 import { refetchInterval, useMachines, type ListOpts, type MachineKind } from "@/lib/machines";
-import { quantityGiB } from "@/lib/quantity";
+import { formatNumber, quantityGiB } from "@/lib/quantity";
 
 /** rootDiskOf is the annotation a root disk made for a VM carries: the VM's UID. */
 export const rootDiskOf = "hangarlab.cloud/virtual-machine";
@@ -119,7 +119,19 @@ export function diskFault(d: Disk): { reason: string; message: string } | undefi
 export function growthBlocked(d: Disk): { reason: string; message: string } | undefined {
   if (!d.status?.node) return undefined;
   const c = d.status.conditions.find((x) => x.type === "Allocated");
-  return c?.status === ConditionStatus.FALSE ? { reason: c.reason, message: c.message } : undefined;
+  if (c?.status === ConditionStatus.FALSE) return { reason: c.reason, message: c.message };
+  // A growth by itself its machine asked for, waiting on quota or the node (docs/decisions/disk-autogrow.md).
+  const g = d.status.conditions.find((x) => x.type === "DiskGrowBlocked");
+  return g?.status === ConditionStatus.TRUE ? { reason: g.reason, message: g.message } : undefined;
+}
+
+/** growthOf says how a disk grows by itself: up to its max, at its threshold, by its step; undefined if it does not. */
+export function growthOf(d: Disk): string | undefined {
+  const g = d.spec?.grow;
+  if (!g) return undefined;
+  const max = quantityGiB(g.max);
+  if (quantityGiB(d.status?.size) >= max) return `at its largest, ${formatNumber(max)} GiB`;
+  return `up to ${formatNumber(max)} GiB, at ${g.threshold || "80%"} full, by ${g.step || "2x"}`;
 }
 
 /**
@@ -203,11 +215,19 @@ export function usedAs(d: Disk): DiskUsedAs | undefined {
  * typed, image is for a boot disk alone. A custom image is named with the
  * disk's own project, the only one the API takes.
  */
-export function newDisk(project: string, name: string, use: DiskUse, size: string, image: ImageChoice | undefined): Disk {
+export function newDisk(
+  project: string,
+  name: string,
+  use: DiskUse,
+  size: string,
+  image: ImageChoice | undefined,
+  grow?: { max: string; threshold: string; step: string },
+): Disk {
   return create(DiskSchema, {
     metadata: { name, project, labels: { [intendedUse]: use } },
     spec: {
       size: size === "" ? "" : `${size}Gi`,
+      grow,
       source:
         use === "boot" && image?.name
           ? { source: { case: "image", value: { name: image.name, project: image.custom ? project : "" } } }

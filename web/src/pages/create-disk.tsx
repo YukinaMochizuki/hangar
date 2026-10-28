@@ -8,6 +8,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { HardDrive, Power } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { DiskGrowFields, diskGrowSpec, noDiskGrow, type DiskGrow } from "@/components/disk-grow";
 import { Input } from "@/components/form";
 import { Choice, CreateGate, FormManifest, FormPage, FormSection, FormSummary } from "@/components/form-page";
 import { useProjectName } from "@/components/shell";
@@ -76,6 +77,8 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
   // The size as typed; null until edited, while it follows the type and image.
   const [sizeText, setSizeText] = useState<string | null>(null);
   const [name, setName] = useState("");
+  // A data disk growing by itself while a container mounts it, off until ticked.
+  const [diskGrow, setDiskGrow] = useState<DiskGrow>(noDiskGrow);
   const images = useImages();
   const customImages = useCustomImages(project);
   const disks = useDisks(project);
@@ -115,11 +118,14 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
     else if (!offer) problems.push(`${chosen} is not a usable image.`);
   }
   if (sizeProblem) problems.push(sizeProblem);
+  // A boot disk is a VM's, which does not grow by itself.
+  const grow = use === "data" ? diskGrowSpec(diskGrow, size) : { spec: undefined, problems: [] as string[] };
+  problems.push(...grow.problems);
 
   // A whole number as the browser reads it ("1e1" is 10) goes out as its digits: the API takes no exponent.
   const sizeSent = Number.isInteger(size) ? String(size) : sizeTyped;
-  const disk = newDisk(project, name, use, sizeSent, chosenRef);
-  const yaml = diskYaml(newDisk(project, name || "NAME", use, sizeSent, chosenRef));
+  const disk = newDisk(project, name, use, sizeSent, chosenRef, grow.spec);
+  const yaml = diskYaml(newDisk(project, name || "NAME", use, sizeSent, chosenRef, grow.spec));
   const submit = () => {
     if (problems.length > 0) return;
     create.mutate(disk, {
@@ -217,6 +223,16 @@ function DiskForm({ crumbs, project, initialImage }: { crumbs: ReactNode[]; proj
           </div>
           {sizeProblem && <p className="mt-1.5 text-[12px] text-fail">{sizeProblem}</p>}
           <p className="mt-1.5 text-[12px] text-subtle">Can grow later, never shrink.</p>
+          {use === "data" && (
+            <DiskGrowFields
+              value={diskGrow}
+              onChange={setDiskGrow}
+              diskGi={size}
+              apiPath="spec.grow"
+              indent={false}
+              note="Grows while a running container mounts it as a volume, no restart."
+            />
+          )}
         </div>
       </FormSection>
 
