@@ -112,6 +112,34 @@ service GuestAgentService {
   // the guest does at boot, once the host has grown the device while the
   // guest runs. See docs/decisions/disk-autogrow.md.
   rpc GrowRoot(GrowRootRequest) returns (GrowRootResponse);
+  // VolumeUsage says how full the filesystem of a volume the boot disk
+  // listed is, as statfs(2) says, as RootUsage does for the root.
+  rpc VolumeUsage(VolumeUsageRequest) returns (VolumeUsageResponse);
+  // GrowVolume grows the mounted filesystem of a volume the boot disk listed
+  // to its whole device, once the host has grown the device while the guest
+  // runs. See docs/decisions/disk-autogrow.md.
+  rpc GrowVolume(GrowVolumeRequest) returns (GrowVolumeResponse);
+}
+
+message VolumeUsageRequest {
+  // The volume's device, as the boot disk lists it, such as /dev/vdc.
+  string device = 1;
+}
+
+message VolumeUsageResponse {
+  // The filesystem's size and what is used of it, in bytes.
+  uint64 size = 1;
+  uint64 used = 2;
+}
+
+message GrowVolumeRequest {
+  // The volume's device, as the boot disk lists it, such as /dev/vdc.
+  string device = 1;
+}
+
+message GrowVolumeResponse {
+  // The volume's filesystem's size once grown, in bytes.
+  uint64 size = 1;
 }
 
 message RootUsageRequest {}

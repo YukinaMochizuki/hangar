@@ -35,13 +35,58 @@ const probeSize = 1 << 20
 // root disk is the root, over anything a volume would put there.
 var platformDirs = []string{"/proc", "/sys", "/dev", "/run"}
 
+// Mounted are the volumes on disks that hangar-init mounted read-write,
+// by the device the boot disk names: what VolumeUsage and GrowVolume
+// reach. Each is an O_PATH fd of a mount the container sees, the first of
+// its device's, held for good: the container moving or covering its own
+// mounts never leads hangar-init to another filesystem.
+type Mounted map[string]int
+
+// ErrNotVolume is a device no volume of Mounted is on.
+var ErrNotVolume = errors.New("no volume the boot disk lists is mounted read-write from it")
+
+// Stat says how large the filesystem of the volume on device is and how
+// much of it is used, in bytes, as StatRoot does.
+func (m Mounted) Stat(device string) (size, used uint64, err error) {
+	fd, ok := m[device]
+	if !ok {
+		return 0, 0, fmt.Errorf("%s: %w", device, ErrNotVolume)
+	}
+	var st unix.Statfs_t
+	if err := unix.Fstatfs(fd, &st); err != nil {
+		return 0, 0, fmt.Errorf("statfs of the volume on %s: %w", device, err)
+	}
+	bs := uint64(st.Bsize)
+	return st.Blocks * bs, (st.Blocks - st.Bfree) * bs, nil
+}
+
+// Grow grows the filesystem of the volume on device to the device, which
+// the host has grown, and says its size in bytes after.
+func (m Mounted) Grow(device string) (uint64, error) {
+	fd, ok := m[device]
+	if !ok {
+		return 0, fmt.Errorf("%s: %w", device, ErrNotVolume)
+	}
+	_, _, err := growFS(device, func() (*os.File, error) {
+		// The mount itself, reopened through its fd: an O_PATH fd takes no
+		// ioctl.
+		return os.OpenFile(fmt.Sprintf("/proc/self/fd/%d", fd), os.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	})
+	if err != nil {
+		return 0, err
+	}
+	size, _, err := m.Stat(device)
+	return size, err
+}
+
 // Volumes mounts the container's volumes in root, the root disk before it
-// becomes /, as docs/decisions/container-volumes.md says. A FileShare's is
-// mounted over NFS, as the client clientID, which the network must reach.
-func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(format string, args ...any)) error {
+// becomes /, as docs/decisions/container-volumes.md says, and returns those
+// on disks mounted read-write. A FileShare's is mounted over NFS, as the
+// client clientID, which the network must reach.
+func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(format string, args ...any)) (Mounted, error) {
 	if slices.ContainsFunc(vols, func(v *guestv1.Volume) bool { return v.GetFileShare() != nil }) {
 		if err := setNFSClientID(clientID); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	// Where each target leads in the image as it is: what a new volume is
@@ -50,10 +95,10 @@ func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(for
 	for i, v := range vols {
 		t, err := imageTarget(root, v.GetTarget())
 		if err != nil {
-			return fmt.Errorf("volume %s at %s: %w", v.GetName(), v.GetTarget(), err)
+			return nil, fmt.Errorf("volume %s at %s: %w", v.GetName(), v.GetTarget(), err)
 		}
 		if j := slices.Index(in[:i], t); j >= 0 {
-			return fmt.Errorf("volume %s at %s leads to %s, as volume %s does", v.GetName(), v.GetTarget(), t, vols[j].GetName())
+			return nil, fmt.Errorf("volume %s at %s leads to %s, as volume %s does", v.GetName(), v.GetTarget(), t, vols[j].GetName())
 		}
 		in[i] = t
 	}
@@ -68,13 +113,13 @@ func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(for
 	for i, v := range vols {
 		staged[i] = filepath.Join(stagingDir, fmt.Sprint(i))
 		if err := stage(root, v, in[i], staged[i], logf); err != nil {
-			return fmt.Errorf("volume %s at %s: %w", v.GetName(), v.GetTarget(), err)
+			return nil, fmt.Errorf("volume %s at %s: %w", v.GetName(), v.GetTarget(), err)
 		}
 	}
 	order := bindOrder(in)
 	rootfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = unix.Close(rootfd) }()
 	// Read-only only once all are bound, so an inner mountpoint can be made
@@ -90,10 +135,11 @@ func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(for
 	for _, i := range order {
 		fd, err := bind(root, rootfd, vols[i], staged[i])
 		if err != nil {
-			return fmt.Errorf("volume %s at %s: %w", vols[i].GetName(), vols[i].GetTarget(), err)
+			return nil, fmt.Errorf("volume %s at %s: %w", vols[i].GetName(), vols[i].GetTarget(), err)
 		}
 		bound[i] = fd
 	}
+	mounted := Mounted{}
 	for i, v := range vols {
 		if !v.GetReadOnly() {
 			continue
@@ -101,10 +147,17 @@ func Volumes(root string, vols []*guestv1.Volume, clientID string, logf func(for
 		// Not a bind remount, which would clear nosuid and nodev.
 		ro := &unix.MountAttr{Attr_set: unix.MOUNT_ATTR_RDONLY}
 		if err := unix.MountSetattr(bound[i], "", unix.AT_EMPTY_PATH, ro); err != nil {
-			return fmt.Errorf("volume %s at %s: making it read-only: %w", v.GetName(), v.GetTarget(), err)
+			return nil, fmt.Errorf("volume %s at %s: making it read-only: %w", v.GetName(), v.GetTarget(), err)
 		}
 	}
-	return nil
+	for i, v := range vols {
+		if dev := v.GetDevice(); dev != "" && !v.GetReadOnly() && v.GetFileShare() == nil {
+			if _, ok := mounted[dev]; !ok {
+				mounted[dev], bound[i] = bound[i], 0
+			}
+		}
+	}
+	return mounted, nil
 }
 
 // imageTarget is where target leads in root, refused if that is / or where

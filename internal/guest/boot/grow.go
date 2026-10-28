@@ -48,6 +48,12 @@ func ResizeRoot() (uint64, error) {
 // and returns its block count before and after: the same when it filled
 // dev already. It never shrinks one.
 func GrowRoot(dir, dev string) (from, to uint64, err error) {
+	return growFS(dev, func() (*os.File, error) { return os.Open(dir) })
+}
+
+// growFS grows the ext4 filesystem on dev to fill dev, as GrowRoot does,
+// through its mount as openDir opens it.
+func growFS(dev string, openDir func() (*os.File, error)) (from, to uint64, err error) {
 	d, err := os.Open(dev)
 	if err != nil {
 		return 0, 0, err
@@ -65,13 +71,13 @@ func GrowRoot(dir, dev string) (from, to uint64, err error) {
 	if want <= blocks {
 		return blocks, blocks, nil
 	}
-	f, err := os.Open(dir)
+	f, err := openDir()
 	if err != nil {
 		return blocks, blocks, err
 	}
 	defer func() { _ = f.Close() }()
 	if err := ioctl(f, ext4ResizeFS, unsafe.Pointer(&want)); err != nil {
-		return blocks, blocks, fmt.Errorf("resizing %s from %d to %d blocks: %w", dir, blocks, want, err)
+		return blocks, blocks, fmt.Errorf("resizing %s from %d to %d blocks: %w", dev, blocks, want, err)
 	}
 	return blocks, want, nil
 }
