@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 )
 
@@ -42,6 +43,17 @@ const (
 	ReasonRootGrew = "RootGrew"
 )
 
+// VolumeGrowth is the condition a container machine carries once a Disk
+// volume of its failed to grow while its VM ran, as RootGrowth is of its
+// root disk: False, with ReasonVMCannotResize or ReasonGuestCannotGrow,
+// until a later boot grows one, then True, with ReasonVolumeGrew. A machine
+// whose volumes never failed to grow has none. Each Disk the machine mounts
+// carries it as its own.
+const VolumeGrowth = "VolumeGrowth"
+
+// ReasonVolumeGrew is a volume grown while the VM runs, in its current boot.
+const ReasonVolumeGrew = "VolumeGrew"
+
 // DiskGrowth is a DiskGrow read as numbers, with the defaults for what it
 // leaves empty.
 type DiskGrowth struct {
@@ -55,9 +67,18 @@ type DiskGrowth struct {
 	Step   uint64
 }
 
-// ParseDiskGrow reads g, of a root disk that starts at disk bytes; field is
-// its path in the spec, for errors. A nil g is no growth: ok is false.
-func ParseDiskGrow(g *computev1alpha1.DiskGrow, disk uint64, field string) (dg DiskGrowth, ok bool, err error) {
+// DiskGrowSpec is a container's resources.disk_grow or a Disk's spec.grow,
+// which hold the same fields by the same rules.
+type DiskGrowSpec interface {
+	*computev1alpha1.DiskGrow | *storagev1alpha1.DiskGrow
+	GetMax() string
+	GetThreshold() string
+	GetStep() string
+}
+
+// ParseDiskGrow reads g, of a disk that starts at disk bytes; field is its
+// path in the spec, for errors. A nil g is no growth: ok is false.
+func ParseDiskGrow[G DiskGrowSpec](g G, disk uint64, field string) (dg DiskGrowth, ok bool, err error) {
 	if g == nil {
 		return DiskGrowth{}, false, nil
 	}
