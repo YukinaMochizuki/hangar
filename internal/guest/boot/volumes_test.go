@@ -3,6 +3,7 @@ package boot
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -247,6 +248,30 @@ func TestCopyTreeKeepsWhatTheImageHas(t *testing.T) {
 		var st unix.Stat_t
 		if err := unix.Lstat(filepath.Join(dst, path), &st); err != nil || int(st.Uid) != want[0] || want[1] >= 0 && int(st.Gid) != want[1] {
 			t.Errorf("%s owned by %d:%d (%v), want %v", path, st.Uid, st.Gid, err, want)
+		}
+	}
+}
+
+// TestMountedReachesOnlyItsVolumes: the volumes hangar-init mounted are
+// measured through the fd it holds of each, and a device none is mounted
+// from is refused, never looked up by name.
+func TestMountedReachesOnlyItsVolumes(t *testing.T) {
+	fd, err := unix.Open(t.TempDir(), unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = unix.Close(fd) })
+	m := Mounted{"/dev/vdc": fd}
+	size, used, err := m.Stat("/dev/vdc")
+	if err != nil || size == 0 || used > size {
+		t.Errorf("Stat of the volume: %d bytes, %d used, %v", size, used, err)
+	}
+	for _, dev := range []string{"/dev/vdd", "/dev/vda", "/dev/../dev/vdc"} {
+		if _, _, err := m.Stat(dev); !errors.Is(err, ErrNotVolume) {
+			t.Errorf("Stat of %s: %v, want ErrNotVolume", dev, err)
+		}
+		if _, err := m.Grow(dev); !errors.Is(err, ErrNotVolume) {
+			t.Errorf("Grow of %s: %v, want ErrNotVolume", dev, err)
 		}
 	}
 }

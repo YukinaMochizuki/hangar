@@ -56,7 +56,16 @@ type Server struct {
 	// ResizeRoot, if set, grows the mounted root filesystem to its device
 	// and says its size in bytes after.
 	ResizeRoot func() (size uint64, err error)
+	// StatVolume and ResizeVolume, if set, do for the filesystem of the
+	// volume on device what StatRoot and ResizeRoot do for the root. A
+	// device no volume the boot disk lists is mounted read-write from is an
+	// error wrapping ErrNoVolume.
+	StatVolume   func(device string) (size, used uint64, err error)
+	ResizeVolume func(device string) (size uint64, err error)
 }
+
+// ErrNoVolume is a device no volume is mounted read-write from.
+var ErrNoVolume = errors.New("no volume the boot disk lists is mounted read-write from this device")
 
 // MaxGrace bounds the grace period a Stop may ask for.
 const MaxGrace = time.Hour
@@ -119,6 +128,38 @@ func (s *Server) GrowRoot(context.Context, *connect.Request[guestv1.GrowRootRequ
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&guestv1.GrowRootResponse{Size: size}), nil
+}
+
+// VolumeUsage says how full a volume's filesystem is.
+func (s *Server) VolumeUsage(_ context.Context, req *connect.Request[guestv1.VolumeUsageRequest]) (*connect.Response[guestv1.VolumeUsageResponse], error) {
+	if s.StatVolume == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest mounts no volumes of its own"))
+	}
+	size, used, err := s.StatVolume(req.Msg.GetDevice())
+	if err != nil {
+		return nil, volumeError(err)
+	}
+	return connect.NewResponse(&guestv1.VolumeUsageResponse{Size: size, Used: used}), nil
+}
+
+// GrowVolume grows a volume's filesystem to its device, which the host has
+// grown while the guest runs.
+func (s *Server) GrowVolume(_ context.Context, req *connect.Request[guestv1.GrowVolumeRequest]) (*connect.Response[guestv1.GrowVolumeResponse], error) {
+	if s.ResizeVolume == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest mounts no volumes of its own"))
+	}
+	size, err := s.ResizeVolume(req.Msg.GetDevice())
+	if err != nil {
+		return nil, volumeError(err)
+	}
+	return connect.NewResponse(&guestv1.GrowVolumeResponse{Size: size}), nil
+}
+
+func volumeError(err error) error {
+	if errors.Is(err, ErrNoVolume) {
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return connect.NewError(connect.CodeInternal, err)
 }
 
 // Exit codes for a program that cannot run, as shells give them.

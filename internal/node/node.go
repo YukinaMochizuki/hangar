@@ -222,14 +222,18 @@ type Agent struct {
 	told         map[string]toldIPv6
 	exported     map[string]toldExport
 	bootExported map[string]driver.ShareExport
-	// toldRoot is, by machine uid, what each container's VM and guest took
-	// of its root disk's size in its current boot, and rootWatches the
-	// running containers whose root disk grows by itself, which the usage
-	// poll asks, and rootGrowths whether each one's root grew while it ran
-	// in its current boot (RootGrowth). Guarded by host.
-	toldRoot    map[string]toldRoot
-	rootWatches map[string]*rootWatch
-	rootGrowths map[string]rootGrowth
+	// toldDisks is what each container's VM and guest took of each of its
+	// disks' sizes in its current boot, growings each one's disks being
+	// told their sizes, growWatches the running containers whose root disk
+	// or a volume grows by itself, which the usage poll asks, and
+	// rootGrowths and volumeGrowths whether each one's root and volumes
+	// grew while it ran in its current boot (RootGrowth, VolumeGrowth), by
+	// machine uid. Guarded by host.
+	toldDisks     map[grownKey]toldDisk
+	growings      map[string]growing
+	growWatches   map[string]*growWatch
+	rootGrowths   map[string]diskGrowth
+	volumeGrowths map[string]diskGrowth
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -380,9 +384,11 @@ func New(cfg Config) (*Agent, error) {
 		told:             map[string]toldIPv6{},
 		exported:         map[string]toldExport{},
 		bootExported:     map[string]driver.ShareExport{},
-		toldRoot:         map[string]toldRoot{},
-		rootWatches:      map[string]*rootWatch{},
-		rootGrowths:      map[string]rootGrowth{},
+		toldDisks:        map[grownKey]toldDisk{},
+		growings:         map[string]growing{},
+		growWatches:      map[string]*growWatch{},
+		rootGrowths:      map[string]diskGrowth{},
+		volumeGrowths:    map[string]diskGrowth{},
 		shareWaiters:     map[controller.Key]bool{},
 		revoking:         newRevocations(),
 		puller:           puller,

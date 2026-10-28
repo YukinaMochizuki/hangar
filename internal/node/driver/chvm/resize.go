@@ -25,6 +25,29 @@ import (
 const rootDiskID = "root"
 
 func (h *Hypervisor) ResizeRoot(ctx context.Context, uid string) (int64, error) {
+	return h.resizeOn(ctx, uid, func(ln launch) (string, string, error) {
+		return diskNode, rootDiskID, nil
+	})
+}
+
+func (h *Hypervisor) ResizeVolume(ctx context.Context, uid string, n int) (int64, error) {
+	return h.resizeOn(ctx, uid, func(ln launch) (string, string, error) {
+		if n < 0 || n >= len(ln.Spec.Disks) {
+			return "", "", fmt.Errorf("machine %s's VM has no volume %d", uid, n)
+		}
+		// A launch from before volumes had ids: Cloud Hypervisor named them
+		// itself.
+		if !ln.VolumeIDs {
+			return "", "", driver.ErrNoLiveResize
+		}
+		return volumeNode(n), volumeNode(n), nil
+	})
+}
+
+// resizeOn tells a running container's VM the size of the disk which says,
+// of its launch, by its node in the VM's directory and its id in Cloud
+// Hypervisor, and returns the size.
+func (h *Hypervisor) resizeOn(ctx context.Context, uid string, which func(launch) (node, id string, err error)) (int64, error) {
 	if err := checkUID(uid); err != nil {
 		return 0, err
 	}
@@ -47,7 +70,14 @@ func (h *Hypervisor) ResizeRoot(ctx context.Context, uid string) (int64, error) 
 		return 0, err
 	}
 	if ln.Spec.Firmware || blankVDA(ln.Spec) {
-		return 0, fmt.Errorf("machine %s's VM has no root disk", uid)
+		return 0, fmt.Errorf("machine %s's VM is no container's", uid)
+	}
+	node, id, err := which(ln)
+	if errors.Is(err, driver.ErrNoLiveResize) {
+		return 0, fmt.Errorf("machine %s: %w", uid, err)
+	}
+	if err != nil {
+		return 0, err
 	}
 	// A container's VM started before Cloud Hypervisor served its API has
 	// no socket.
@@ -58,11 +88,11 @@ func (h *Hypervisor) ResizeRoot(ctx context.Context, uid string) (int64, error) 
 	// The node the launcher made of the device Cloud Hypervisor has open,
 	// in a directory only root writes in: Cloud Hypervisor refuses any size
 	// but the device's.
-	size, err := h.deviceSize(filepath.Join(dir, diskNode))
+	size, err := h.deviceSize(filepath.Join(dir, node))
 	if err != nil {
-		return 0, fmt.Errorf("machine %s's root disk: %w", uid, err)
+		return 0, fmt.Errorf("machine %s's disk %s: %w", uid, id, err)
 	}
-	if err := h.resizeDisk(ctx, api, rootDiskID, size); err != nil {
+	if err := h.resizeDisk(ctx, api, id, size); err != nil {
 		return 0, fmt.Errorf("machine %s: %w", uid, err)
 	}
 	return size, nil

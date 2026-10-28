@@ -53,6 +53,12 @@ const (
 	// GuestAgentServiceGrowRootProcedure is the fully-qualified name of the GuestAgentService's
 	// GrowRoot RPC.
 	GuestAgentServiceGrowRootProcedure = "/hangar.guest.v1.GuestAgentService/GrowRoot"
+	// GuestAgentServiceVolumeUsageProcedure is the fully-qualified name of the GuestAgentService's
+	// VolumeUsage RPC.
+	GuestAgentServiceVolumeUsageProcedure = "/hangar.guest.v1.GuestAgentService/VolumeUsage"
+	// GuestAgentServiceGrowVolumeProcedure is the fully-qualified name of the GuestAgentService's
+	// GrowVolume RPC.
+	GuestAgentServiceGrowVolumeProcedure = "/hangar.guest.v1.GuestAgentService/GrowVolume"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -80,6 +86,13 @@ type GuestAgentServiceClient interface {
 	// the guest does at boot, once the host has grown the device while the
 	// guest runs. See docs/decisions/disk-autogrow.md.
 	GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error)
+	// VolumeUsage says how full the filesystem of a volume the boot disk
+	// listed is, as statfs(2) says, as RootUsage does for the root.
+	VolumeUsage(context.Context, *connect.Request[v1.VolumeUsageRequest]) (*connect.Response[v1.VolumeUsageResponse], error)
+	// GrowVolume grows the mounted filesystem of a volume the boot disk listed
+	// to its whole device, once the host has grown the device while the guest
+	// runs. See docs/decisions/disk-autogrow.md.
+	GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -129,17 +142,31 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("GrowRoot")),
 			connect.WithClientOptions(opts...),
 		),
+		volumeUsage: connect.NewClient[v1.VolumeUsageRequest, v1.VolumeUsageResponse](
+			httpClient,
+			baseURL+GuestAgentServiceVolumeUsageProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("VolumeUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		growVolume: connect.NewClient[v1.GrowVolumeRequest, v1.GrowVolumeResponse](
+			httpClient,
+			baseURL+GuestAgentServiceGrowVolumeProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("GrowVolume")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // guestAgentServiceClient implements GuestAgentServiceClient.
 type guestAgentServiceClient struct {
-	ping      *connect.Client[v1.PingRequest, v1.PingResponse]
-	exec      *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	stop      *connect.Client[v1.StopRequest, v1.StopResponse]
-	setIPv6   *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
-	rootUsage *connect.Client[v1.RootUsageRequest, v1.RootUsageResponse]
-	growRoot  *connect.Client[v1.GrowRootRequest, v1.GrowRootResponse]
+	ping        *connect.Client[v1.PingRequest, v1.PingResponse]
+	exec        *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop        *connect.Client[v1.StopRequest, v1.StopResponse]
+	setIPv6     *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	rootUsage   *connect.Client[v1.RootUsageRequest, v1.RootUsageResponse]
+	growRoot    *connect.Client[v1.GrowRootRequest, v1.GrowRootResponse]
+	volumeUsage *connect.Client[v1.VolumeUsageRequest, v1.VolumeUsageResponse]
+	growVolume  *connect.Client[v1.GrowVolumeRequest, v1.GrowVolumeResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -172,6 +199,16 @@ func (c *guestAgentServiceClient) GrowRoot(ctx context.Context, req *connect.Req
 	return c.growRoot.CallUnary(ctx, req)
 }
 
+// VolumeUsage calls hangar.guest.v1.GuestAgentService.VolumeUsage.
+func (c *guestAgentServiceClient) VolumeUsage(ctx context.Context, req *connect.Request[v1.VolumeUsageRequest]) (*connect.Response[v1.VolumeUsageResponse], error) {
+	return c.volumeUsage.CallUnary(ctx, req)
+}
+
+// GrowVolume calls hangar.guest.v1.GuestAgentService.GrowVolume.
+func (c *guestAgentServiceClient) GrowVolume(ctx context.Context, req *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error) {
+	return c.growVolume.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -197,6 +234,13 @@ type GuestAgentServiceHandler interface {
 	// the guest does at boot, once the host has grown the device while the
 	// guest runs. See docs/decisions/disk-autogrow.md.
 	GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error)
+	// VolumeUsage says how full the filesystem of a volume the boot disk
+	// listed is, as statfs(2) says, as RootUsage does for the root.
+	VolumeUsage(context.Context, *connect.Request[v1.VolumeUsageRequest]) (*connect.Response[v1.VolumeUsageResponse], error)
+	// GrowVolume grows the mounted filesystem of a volume the boot disk listed
+	// to its whole device, once the host has grown the device while the guest
+	// runs. See docs/decisions/disk-autogrow.md.
+	GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -242,6 +286,18 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("GrowRoot")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceVolumeUsageHandler := connect.NewUnaryHandler(
+		GuestAgentServiceVolumeUsageProcedure,
+		svc.VolumeUsage,
+		connect.WithSchema(guestAgentServiceMethods.ByName("VolumeUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	guestAgentServiceGrowVolumeHandler := connect.NewUnaryHandler(
+		GuestAgentServiceGrowVolumeProcedure,
+		svc.GrowVolume,
+		connect.WithSchema(guestAgentServiceMethods.ByName("GrowVolume")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -256,6 +312,10 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceRootUsageHandler.ServeHTTP(w, r)
 		case GuestAgentServiceGrowRootProcedure:
 			guestAgentServiceGrowRootHandler.ServeHTTP(w, r)
+		case GuestAgentServiceVolumeUsageProcedure:
+			guestAgentServiceVolumeUsageHandler.ServeHTTP(w, r)
+		case GuestAgentServiceGrowVolumeProcedure:
+			guestAgentServiceGrowVolumeHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -287,4 +347,12 @@ func (UnimplementedGuestAgentServiceHandler) RootUsage(context.Context, *connect
 
 func (UnimplementedGuestAgentServiceHandler) GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.GrowRoot is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) VolumeUsage(context.Context, *connect.Request[v1.VolumeUsageRequest]) (*connect.Response[v1.VolumeUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.VolumeUsage is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) GrowVolume(context.Context, *connect.Request[v1.GrowVolumeRequest]) (*connect.Response[v1.GrowVolumeResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.GrowVolume is not implemented"))
 }

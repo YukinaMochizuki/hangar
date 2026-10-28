@@ -871,6 +871,12 @@ type Hypervisor interface {
 	// started before it could be told, until it is started again, is
 	// ErrNoLiveResize; it sees the size at its next boot.
 	ResizeRoot(ctx context.Context, machineUID string) (int64, error)
+	// ResizeVolume does for a running container's VM's volume, the n-th of
+	// its spec's Disks from 0, what ResizeRoot does for its root disk: the
+	// guest sees it at once, and grows its filesystem when asked
+	// (Guest.GrowVolume). A VM started before it could be told is
+	// ErrNoLiveResize.
+	ResizeVolume(ctx context.Context, machineUID string, n int) (int64, error)
 	// AttachConsole connects to a running firmware VM's interactive serial
 	// console, which speaks hangar.node.v1's ConsoleRequest and
 	// ConsoleResponse, each delimited by its length
@@ -1071,14 +1077,36 @@ type Mount struct {
 // Hash identifies the spec: a VM started with a spec of another hash runs
 // something else and must be started again.
 func (s VMSpec) Hash() string {
-	// A container's root disk grows while its VM runs (Hypervisor.ResizeRoot),
-	// so its size is no part of what the VM runs.
+	// A container's root disk and volumes grow while its VM runs
+	// (Hypervisor.ResizeRoot, ResizeVolume), so their sizes are no part of
+	// what the VM runs. A firmware VM sees a disk grown only as it boots.
 	s.Root.Size = 0
+	if !s.Firmware {
+		s.Disks = slices.Clone(s.Disks)
+		for i := range s.Disks {
+			s.Disks[i].Size = 0
+		}
+	}
 	return s.sizedHash()
 }
 
+// asStarted is s with its root disk's and, but for a firmware VM's, its
+// volumes' sizes as vm was started with them, which a hash older nodes gave
+// counted.
+func (s VMSpec) asStarted(vm VM) VMSpec {
+	s.Root.Size = vm.RootSize
+	if !s.Firmware && len(vm.DiskSizes) == len(s.Disks) {
+		s.Disks = slices.Clone(s.Disks)
+		for i := range s.Disks {
+			s.Disks[i].Size = vm.DiskSizes[i]
+		}
+	}
+	return s
+}
+
 // sizedHash is the Hash nodes gave a spec before a root disk grew while
-// its VM ran, which counted the root disk's size.
+// its VM ran, which counted every disk's size; with the root disk's size
+// zero, the Hash nodes gave before a container's volumes did.
 func (s VMSpec) sizedHash() string {
 	// The interfaces' IPv6 addresses change while a VM runs, so they are no
 	// part of what it runs.
@@ -1116,10 +1144,11 @@ func (s VMSpec) LegacyHash(started []Interface) string {
 }
 
 // Runs reports whether vm, as the host lists it, runs s: by Hash, by a hash
-// an older node gave, counting the root disk's size as vm was started
-// (sizedHash) or the IPv6 addresses it was started with too (LegacyHash),
-// or by any of them of s without its volumes' serials, as a node before them
-// started it. An upgrade restarts no VM; its next boot gives it the serials.
+// an older node gave, counting the disks' sizes as vm was started, the root
+// disk's or not (sizedHash), or the IPv6 addresses it was started with too
+// (LegacyHash), or by any of them of s without its volumes' serials, as a
+// node before them started it. An upgrade restarts no VM; its next boot
+// gives it the serials.
 func (s VMSpec) Runs(vm VM) bool {
 	specs := []VMSpec{s}
 	bare := s
@@ -1136,8 +1165,10 @@ func (s VMSpec) Runs(vm VM) bool {
 		if vm.SpecHash == c.Hash() {
 			return true
 		}
-		c.Root.Size = vm.RootSize
-		if vm.SpecHash == c.sizedHash() || vm.SpecHash == c.LegacyHash(vm.Interfaces) {
+		c = c.asStarted(vm)
+		rootless := c
+		rootless.Root.Size = 0
+		if vm.SpecHash == c.sizedHash() || vm.SpecHash == c.LegacyHash(vm.Interfaces) || vm.SpecHash == rootless.sizedHash() {
 			return true
 		}
 	}
@@ -1190,6 +1221,9 @@ type VM struct {
 	// RootSize is its root disk's size as the VM was started; the disk may
 	// have grown since (Hypervisor.ResizeRoot).
 	RootSize int64
+	// DiskSizes are the sizes of its Disks as the VM was started, in their
+	// order; a container's may have grown since (Hypervisor.ResizeVolume).
+	DiskSizes []int64
 }
 
 // VMState is where a VM is.
@@ -1223,13 +1257,20 @@ type Guest interface {
 	// RootUsage says how large a container's root filesystem is and how much
 	// of it is used, as the guest claims. A guest that cannot, as one
 	// started before it could, fails with ErrGuestCannot.
-	RootUsage(ctx context.Context, machineUID string) (RootUsage, error)
+	RootUsage(ctx context.Context, machineUID string) (FSUsage, error)
 	// GrowRoot has a container's guest grow its root filesystem, while it
 	// runs, to the disk it sees (Hypervisor.ResizeRoot). A filesystem that
 	// fills its disk already stays as it is. A guest that cannot, as one
 	// started before it could, fails with ErrGuestCannot; it grows the
 	// filesystem as it boots.
 	GrowRoot(ctx context.Context, machineUID string) error
+	// VolumeUsage and GrowVolume do for the filesystem of a container's
+	// volume on device, as its boot disk names it (/dev/vdc on), what
+	// RootUsage and GrowRoot do for its root. A guest that cannot, as one
+	// started before it could, fails with ErrGuestCannot; one that mounts no
+	// volume read-write from device fails otherwise.
+	VolumeUsage(ctx context.Context, machineUID, device string) (FSUsage, error)
+	GrowVolume(ctx context.Context, machineUID, device string) error
 	// SetExport replaces the whole export of a FileShare's server. A server
 	// refusing it keeps the export it had, and the error says why.
 	SetExport(ctx context.Context, machineUID string, export ShareExport) error
@@ -1258,9 +1299,9 @@ func GuestIPv6Of(ifaces []Interface) []GuestIPv6 {
 	return out
 }
 
-// RootUsage is how large a guest's root filesystem is and how much of it is
-// used, in bytes.
-type RootUsage struct {
+// FSUsage is how large a guest's filesystem, its root or a volume's, is and
+// how much of it is used, in bytes.
+type FSUsage struct {
 	Size, Used uint64
 }
 

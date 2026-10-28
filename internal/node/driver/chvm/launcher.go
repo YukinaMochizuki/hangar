@@ -787,8 +787,9 @@ const freePageReporting = "size=0,free_page_reporting=on"
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
 // by rootDiskID, or a blank file, the boot disk and the volumes, the
 // server's share, or a converter's file, read-only and raw whatever it
-// holds, and its target, at their nodes in dir, the taps on fds 3 and on,
-// as the launcher passes them, and its API socket.
+// holds, and its target, at their nodes in dir, a container's volumes by
+// their volumeNode if the launch says so, the taps on fds 3 and on, as the
+// launcher passes them, and its API socket.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID
@@ -812,7 +813,11 @@ func chArgs(ln launch, dir string, taps int) []string {
 		args = append(args, "path="+c.File+",image_type=raw,readonly=on")
 	}
 	for n := range dataDisks(s) {
-		args = append(args, "path="+filepath.Join(dir, volumeNode(n))+",image_type=raw")
+		disk := "path=" + filepath.Join(dir, volumeNode(n)) + ",image_type=raw"
+		if ln.VolumeIDs && s.FileShareServer == nil && s.Converter == nil {
+			disk += ",id=" + volumeNode(n)
+		}
+		args = append(args, disk)
 	}
 	if taps > 0 {
 		args = append(args, "--net")

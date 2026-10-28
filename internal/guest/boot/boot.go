@@ -73,10 +73,11 @@ func ReadConfig() (*guestv1.BootConfig, error) {
 // SwitchRoot mounts the root disk, grows its filesystem to the disk (or says
 // why not with logf), mounts the volumes in it, FileShares as the NFS client
 // clientID, makes it the root keeping /dev, /proc and /sys, and drops the
-// initramfs; hangar-init runs on from memory.
-func SwitchRoot(volumes []*guestv1.Volume, clientID string, logf func(format string, args ...any)) error {
+// initramfs; hangar-init runs on from memory. It returns the volumes on
+// disks mounted read-write.
+func SwitchRoot(volumes []*guestv1.Volume, clientID string, logf func(format string, args ...any)) (Mounted, error) {
 	if err := (mount{RootDevice, newRoot, "ext4", "", 0}).do(); err != nil {
-		return err
+		return nil, err
 	}
 	if from, to, err := GrowRoot(newRoot, RootDevice); err != nil {
 		logf("hangar-init: the root filesystem stays as it is: %v", err)
@@ -84,31 +85,32 @@ func SwitchRoot(volumes []*guestv1.Volume, clientID string, logf func(format str
 		logf("hangar-init: grew the root filesystem from %d to %d blocks", from, to)
 	}
 	// Before the switch: mke2fs is in the initramfs.
-	if err := Volumes(newRoot, volumes, clientID, logf); err != nil {
-		return err
+	mounted, err := Volumes(newRoot, volumes, clientID, logf)
+	if err != nil {
+		return nil, err
 	}
 	for _, dir := range []string{"/dev", "/proc", "/sys"} {
 		target := newRoot + dir
 		if err := os.MkdirAll(target, 0o755); err != nil {
-			return err
+			return nil, err
 		}
 		if err := unix.Mount(dir, target, "", unix.MS_MOVE, ""); err != nil {
-			return fmt.Errorf("moving %s: %w", dir, err)
+			return nil, fmt.Errorf("moving %s: %w", dir, err)
 		}
 	}
 	// The initramfs holds only its two binaries and empty directories.
 	_ = os.Remove("/init")
 	_ = os.Remove(Mke2fs)
 	if err := unix.Chdir(newRoot); err != nil {
-		return err
+		return nil, err
 	}
 	if err := unix.Mount(newRoot, "/", "", unix.MS_MOVE, ""); err != nil {
-		return fmt.Errorf("moving the root disk to /: %w", err)
+		return nil, fmt.Errorf("moving the root disk to /: %w", err)
 	}
 	if err := unix.Chroot("."); err != nil {
-		return err
+		return nil, err
 	}
-	return unix.Chdir("/")
+	return mounted, unix.Chdir("/")
 }
 
 // System mounts what the container's processes expect, and the cgroups

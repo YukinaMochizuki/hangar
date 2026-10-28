@@ -173,6 +173,21 @@
       },
       "type": "object"
     },
+    "hangar.compute.v1alpha1.MachineDiskWanted": {
+      "additionalProperties": false,
+      "description": "MachineDiskWanted is the size the node asks a Disk be grown to.",
+      "properties": {
+        "disk": {
+          "description": "Names a Disk in the machine's project.",
+          "type": "string"
+        },
+        "size": {
+          "description": "A quantity in whole Gi.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "hangar.compute.v1alpha1.MachineFileShare": {
       "additionalProperties": false,
       "description": "MachineFileShare is a FileShare the machine declares. See docs/decisions/file-shares.md.",
@@ -310,6 +325,13 @@
         "diskWanted": {
           "description": "The root disk size the node asks the machine be grown to, as its guest found it past resources.disk_grow's threshold; empty when it asks for none. Its owner's controller grants it within quota.",
           "type": "string"
+        },
+        "disksWanted": {
+          "description": "The Disks the node asks be grown, each a volume the running container mounts whose filesystem its guest found past the Disk's grow threshold. A disk asks for no growth when it is not listed. Each Disk's controller grants it within quota.",
+          "items": {
+            "$ref": "#/$defs/hangar.compute.v1alpha1.MachineDiskWanted"
+          },
+          "type": "array"
         },
         "image": {
           "description": "The image reference image_digest was resolved from. The node resolves a reference once: it resolves it again only when the spec names another image, so a tag moving upstream never rebuilds a machine's disk.",

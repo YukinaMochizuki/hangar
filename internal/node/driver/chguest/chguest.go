@@ -72,17 +72,17 @@ func (g Guest) SetIPv6(ctx context.Context, machineUID string, ifaces []driver.G
 }
 
 // RootUsage asks the guest agent how full the root filesystem is.
-func (g Guest) RootUsage(ctx context.Context, machineUID string) (driver.RootUsage, error) {
+func (g Guest) RootUsage(ctx context.Context, machineUID string) (driver.FSUsage, error) {
 	c, done := g.Client(machineUID)
 	defer done()
 	res, err := c.RootUsage(ctx, connect.NewRequest(&guestv1.RootUsageRequest{}))
 	if connect.CodeOf(err) == connect.CodeUnimplemented {
-		return driver.RootUsage{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+		return driver.FSUsage{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
 	}
 	if err != nil {
-		return driver.RootUsage{}, err
+		return driver.FSUsage{}, err
 	}
-	return driver.RootUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed()}, nil
+	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed()}, nil
 }
 
 // GrowRoot has the guest agent grow the root filesystem to its disk.
@@ -90,6 +90,33 @@ func (g Guest) GrowRoot(ctx context.Context, machineUID string) error {
 	c, done := g.Client(machineUID)
 	defer done()
 	_, err := c.GrowRoot(ctx, connect.NewRequest(&guestv1.GrowRootRequest{}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	return err
+}
+
+// VolumeUsage asks the guest agent how full the filesystem of the volume
+// on device is.
+func (g Guest) VolumeUsage(ctx context.Context, machineUID, device string) (driver.FSUsage, error) {
+	c, done := g.Client(machineUID)
+	defer done()
+	res, err := c.VolumeUsage(ctx, connect.NewRequest(&guestv1.VolumeUsageRequest{Device: device}))
+	if connect.CodeOf(err) == connect.CodeUnimplemented {
+		return driver.FSUsage{}, fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
+	}
+	if err != nil {
+		return driver.FSUsage{}, err
+	}
+	return driver.FSUsage{Size: res.Msg.GetSize(), Used: res.Msg.GetUsed()}, nil
+}
+
+// GrowVolume has the guest agent grow the filesystem of the volume on
+// device to its disk.
+func (g Guest) GrowVolume(ctx context.Context, machineUID, device string) error {
+	c, done := g.Client(machineUID)
+	defer done()
+	_, err := c.GrowVolume(ctx, connect.NewRequest(&guestv1.GrowVolumeRequest{Device: device}))
 	if connect.CodeOf(err) == connect.CodeUnimplemented {
 		return fmt.Errorf("%w: %w", driver.ErrGuestCannot, err)
 	}

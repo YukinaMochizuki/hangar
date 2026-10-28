@@ -77,6 +77,13 @@ func validateDisk(ctx context.Context, s *Server, _ auth.Principal, old, obj pro
 	if size > maxDisk {
 		return invalid("spec.size %s is above the maximum of 64Ti", d.GetSpec().GetSize())
 	}
+	dg, _, err := computeapi.ParseDiskGrow(d.GetSpec().GetGrow(), size, "spec.grow")
+	if err != nil {
+		return invalid("%v", err)
+	}
+	if dg.Max > maxDisk {
+		return invalid("spec.grow.max %s is above the maximum of 64Ti", d.GetSpec().GetGrow().GetMax())
+	}
 	var was *storagev1alpha1.Disk
 	if old != nil {
 		was = old.(*storagev1alpha1.Disk)
@@ -90,13 +97,21 @@ func validateDisk(ctx context.Context, s *Server, _ auth.Principal, old, obj pro
 	if was == nil {
 		return nil
 	}
-	if stored, err := diskBytes(was.GetSpec()); err == nil && wholeGi(stored) == wholeGi(size) {
+	have, haveErr := optionalBytes(was.GetStatus().GetSize())
+	if haveErr == nil && d.GetSpec().GetGrow() != nil && dg.Max < have {
+		return invalid("spec.grow.max %s is less than the %s the disk has", d.GetSpec().GetGrow().GetMax(), was.GetStatus().GetSize())
+	}
+	stored, err := diskBytes(was.GetSpec())
+	if err == nil && wholeGi(stored) == wholeGi(size) {
 		return nil
 	}
-	if have := was.GetStatus().GetSize(); have != "" {
-		if b, err := quantity.Bytes(have); err == nil && wholeGi(size) < wholeGi(b) {
-			return invalid("spec.size %s is smaller than the current %s; a disk can grow but never shrink", d.GetSpec().GetSize(), have)
-		}
+	// A disk that grew by itself past its spec keeps its status.size
+	// whatever the spec asks: a smaller spec.size shrinks nothing.
+	if was.GetSpec().GetGrow() != nil && err == nil && haveErr == nil && wholeGi(have) > wholeGi(stored) {
+		return nil
+	}
+	if haveErr == nil && have > 0 && wholeGi(size) < wholeGi(have) {
+		return invalid("spec.size %s is smaller than the current %s; a disk can grow but never shrink", d.GetSpec().GetSize(), was.GetStatus().GetSize())
 	}
 	return nil
 }
@@ -262,7 +277,8 @@ func (s *Server) disksOfMachineAndWaiting(ctx context.Context, o store.Object) [
 	return keys
 }
 
-// disksWaitingForRoom maps to every disk whose growth did not fit its node.
+// disksWaitingForRoom maps to every disk whose growth, asked for in its spec
+// or by itself, did not fit its node.
 func (s *Server) disksWaitingForRoom(ctx context.Context, _ store.Object) []controller.Key {
 	objs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Disk.Kind})
 	if err != nil {
@@ -275,8 +291,10 @@ func (s *Server) disksWaitingForRoom(ctx context.Context, _ store.Object) []cont
 		if !ok {
 			continue
 		}
-		if c := conditions.Find(d.GetStatus().GetConditions(), DiskAllocated); c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE &&
-			(d.GetStatus().GetNode() != "" || c.GetReason() == reasonDoesNotFitMachineNode) {
+		c := conditions.Find(d.GetStatus().GetConditions(), DiskAllocated)
+		g := conditions.Find(d.GetStatus().GetConditions(), DiskGrowBlocked)
+		if c.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE && (d.GetStatus().GetNode() != "" || c.GetReason() == reasonDoesNotFitMachineNode) ||
+			g.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_TRUE && g.GetReason() != ReasonDiskGrowQuotaExceeded {
 			keys = append(keys, controller.Key{Project: o.Project, Name: o.Name})
 		}
 	}
@@ -369,9 +387,16 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 		if err != nil {
 			return err
 		}
-		if wholeGi(want) > wholeGi(have) {
+		// A growth by itself, which its machine's node asks for.
+		wanted, dg, asked, err := s.diskAsk(ctx, d, status)
+		if err != nil {
+			return err
+		}
+		if wholeGi(want) > wholeGi(have) || asked && wholeGi(wanted) > wholeGi(have) {
 			s.capacity.Lock()
 			defer s.capacity.Unlock()
+		}
+		if wholeGi(want) > wholeGi(have) {
 			err := s.growthFits(ctx, "the disk", node, have, want)
 			var stuck *blocked
 			switch {
@@ -385,6 +410,37 @@ func (s *Server) reportDisk(ctx context.Context, key resource.Key, d *storagev1a
 				status.Size = quantity.FormatDisk(want)
 			}
 		}
+		// The step is from the size the disk has now, a growth by hand
+		// included: an ask that growth met is met.
+		now, _ := optionalBytes(status.GetSize())
+		target := dg.Next(now)
+		switch {
+		case d.GetSpec().GetGrow() == nil:
+		case asked && wholeGi(wanted) > wholeGi(now) && wholeGi(target) > wholeGi(now):
+			// Quota is held until the status is written, as for every
+			// write it counts, after capacity, which is held already.
+			s.quota.Lock()
+			defer s.quota.Unlock()
+			if err := s.grantDiskStep(ctx, d, status, have, target); err != nil {
+				return err
+			}
+		default:
+			status.Conditions = conditions.Set(status.GetConditions(), diskGrowNotBlocked(), s.clock.Now())
+		}
+	}
+	if d.GetSpec().GetGrow() == nil {
+		// Growth turned off keeps what grew, and no longer reports on it.
+		status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == DiskGrowBlocked })
+	}
+	// Whether a volume grows while its container runs is its machine's
+	// node's to say, for every volume it mounts (docs/decisions/disk-autogrow.md).
+	g, err := s.volumeGrowthOf(ctx, key.Project, status.GetMachine())
+	if err != nil {
+		return err
+	}
+	status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == computeapi.VolumeGrowth })
+	if g != nil {
+		status.Conditions = append(status.Conditions, g)
 	}
 	allocated.ObservedGeneration = gen
 	status.Conditions = conditions.Set(status.GetConditions(), allocated, s.clock.Now())

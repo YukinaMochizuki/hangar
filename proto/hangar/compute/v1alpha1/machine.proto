@@ -201,6 +201,19 @@ message MachineStatus {
   // guest found it past resources.disk_grow's threshold; empty when it asks
   // for none. Its owner's controller grants it within quota.
   string disk_wanted = 7;
+  // The Disks the node asks be grown, each a volume the running container
+  // mounts whose filesystem its guest found past the Disk's grow threshold.
+  // A disk asks for no growth when it is not listed. Each Disk's controller
+  // grants it within quota.
+  repeated MachineDiskWanted disks_wanted = 8;
+}
+
+// MachineDiskWanted is the size the node asks a Disk be grown to.
+message MachineDiskWanted {
+  // Names a Disk in the machine's project.
+  string disk = 1;
+  // A quantity in whole Gi.
+  string size = 2;
 }
 
 // MachinePhase is where the machine is in its lifecycle.

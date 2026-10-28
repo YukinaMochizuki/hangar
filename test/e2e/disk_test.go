@@ -104,11 +104,14 @@ func TestADiskOnTheHost(t *testing.T) {
 		t.Errorf("volume %+v %t", v, ok)
 	}
 
-	// Grown, the volume grows, and the VM boots again to see it.
+	// Grown, the volume grows, and the VM is told its size while it runs.
+	m, _, _ := w.vmOf("vm-a")
+	before := w.host.Snapshot().VMs[m.GetMetadata().GetUid()]
 	w.applyDisk("data", "3Gi")
-	testutil.Eventually(w.t, "the VM running with the grown disk", func() (bool, string) {
-		_, spec, running := w.vmOf("vm-a")
-		return running && len(spec.Disks) == 1 && spec.Disks[0].Size >= 3*gib, fmt.Sprintf("%+v", spec.Disks)
+	testutil.Eventually(w.t, "the VM running on, seeing the grown disk", func() (bool, string) {
+		vm := w.host.Snapshot().VMs[m.GetMetadata().GetUid()]
+		return vm.State == driver.VMRunning && vm.Started.Equal(before.Started) && len(vm.GuestVolumes) == 1 && vm.GuestVolumes[0] >= 3*gib,
+			fmt.Sprintf("started at %v, sees %v", vm.Started, vm.GuestVolumes)
 	})
 
 	// Detached, the VM runs without it, and the disk stays on the host.

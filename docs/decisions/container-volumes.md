@@ -70,9 +70,11 @@ gives the semantics users already know.
   reserve and no `lost+found`, so a new volume is an empty directory as
   Docker's is (`initdb`, for one, refuses a data directory holding one).
   If it is ext4, it mounts it and grows it to the device, as it grows the
-  root disk. Anything else (a partition table, another filesystem, a VM's
-  boot disk) fails the boot, the reason on the container's log; a volume
-  is never formatted because it was attached in the wrong place.
+  root disk, and again when the device grows while it runs
+  (`disk-autogrow.md`). Anything else (a partition table, another
+  filesystem, a VM's boot disk) fails the boot, the reason on the
+  container's log; a volume is never formatted because it was attached in
+  the wrong place.
 - **The initramfs carries a static `mke2fs`.** Formatting in the guest
   keeps the host from ever touching a volume's contents (`storage-zfs.md`),
   and keeps the decision of what is blank with the only party allowed to

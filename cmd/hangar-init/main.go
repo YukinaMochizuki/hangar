@@ -103,7 +103,8 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	if err := boot.Network(cfg.GetInterfaces()); err != nil {
 		return failed, fmt.Errorf("network: %w", err)
 	}
-	if err := boot.SwitchRoot(cfg.GetVolumes(), cfg.GetMachineUid(), logf); err != nil {
+	mounted, err := boot.SwitchRoot(cfg.GetVolumes(), cfg.GetMachineUid(), logf)
+	if err != nil {
 		return failed, err
 	}
 	workload, err := boot.System()
@@ -121,7 +122,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 		// The container runs all the same; the node sees it does not answer.
 		logf("hangar-init: guest agent: %v", err)
 	} else {
-		serveAgent(ln, reaper, stopper, workload, v6, started, logf)
+		serveAgent(ln, reaper, stopper, workload, v6, mounted, started, logf)
 	}
 
 	devnull, err := os.Open(os.DevNull)
@@ -185,7 +186,7 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 // serveAgent serves the guest agent on the vsock listener ln to the host
 // alone, processes it starts going to the workload cgroup; a Stop goes to
 // stopper. It returns at once; serving ends when ln is closed.
-func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, started time.Time, logf func(string, ...any)) {
+func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, mounted boot.Mounted, started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
 	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
 		Reaper: reaper, Root: "/", Version: buildinfo.Version() + buildMarker, Started: started, Cgroup: workload,
@@ -208,6 +209,17 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 				logf("hangar-init: growing the root filesystem: %v", err)
 			}
 			return size, err
+		},
+		StatVolume: func(device string) (uint64, uint64, error) {
+			size, used, err := mounted.Stat(device)
+			return size, used, asAgentVolumeError(err)
+		},
+		ResizeVolume: func(device string) (uint64, error) {
+			size, err := mounted.Grow(device)
+			if err != nil && !errors.Is(err, boot.ErrNotVolume) {
+				logf("hangar-init: growing the volume on %s: %v", device, err)
+			}
+			return size, asAgentVolumeError(err)
 		},
 	}, connect.WithReadMaxBytes(agent.MaxMessage))
 	serveHTTP(ln, h)
@@ -258,4 +270,13 @@ func othersRunning() bool {
 		}
 	}
 	return false
+}
+
+// asAgentVolumeError has a device no volume is mounted read-write from say
+// so as the guest agent tells it.
+func asAgentVolumeError(err error) error {
+	if errors.Is(err, boot.ErrNotVolume) {
+		return fmt.Errorf("%w: %w", agent.ErrNoVolume, err)
+	}
+	return err
 }

@@ -22,10 +22,14 @@ import (
 )
 
 // ContainerDiskGrowBlocked is the condition a container with
-// resources.disk_grow carries: True while its node asks for its root disk
-// to grow and the growth does not fit the tenant's quota or the node
+// resources.disk_grow, and a Disk with spec.grow, carries, which the
+// apiserver writes: True while the node of the machine using the disk asks
+// for it to grow and the growth does not fit the tenant's quota or the node
 // (docs/decisions/disk-autogrow.md).
 const ContainerDiskGrowBlocked = "DiskGrowBlocked"
+
+// DiskGrowBlocked is ContainerDiskGrowBlocked, as a Disk carries it.
+const DiskGrowBlocked = ContainerDiskGrowBlocked
 
 // Reasons of ContainerDiskGrowBlocked.
 const (
@@ -129,23 +133,8 @@ func (s *Server) growContainerDisk(ctx context.Context, c *computev1alpha1.Conta
 // usage controller rewrites as what it holds or may hold changes, to the
 // containers under it whose root disk's growth waits on quota.
 func (s *Server) containersWaitingOnQuota(ctx context.Context, o store.Object) []controller.Key {
-	var projects []string
-	if o.Kind == registry.Project.Kind {
-		projects = []string{o.Name}
-	} else {
-		objs, err := s.listWith(ctx, registry.Project, "", nil)
-		if err != nil {
-			s.log.Error("listing projects failed", "error", err)
-			return nil
-		}
-		for _, obj := range objs {
-			if p := obj.(*tenancyv1alpha1.Project); p.GetSpec().GetTenant() == o.Name {
-				projects = append(projects, p.GetMetadata().GetName())
-			}
-		}
-	}
 	var keys []controller.Key
-	for _, project := range projects {
+	for _, project := range s.projectsOf(ctx, o) {
 		objs, err := s.listWith(ctx, registry.Container, project, nil)
 		if err != nil {
 			s.log.Error("listing containers failed", "error", err)
@@ -159,6 +148,26 @@ func (s *Server) containersWaitingOnQuota(ctx context.Context, o store.Object) [
 		}
 	}
 	return keys
+}
+
+// projectsOf names the projects a Tenant or a Project o counts toward
+// quota for: the Project itself, or every project of the Tenant.
+func (s *Server) projectsOf(ctx context.Context, o store.Object) []string {
+	if o.Kind == registry.Project.Kind {
+		return []string{o.Name}
+	}
+	objs, err := s.listWith(ctx, registry.Project, "", nil)
+	if err != nil {
+		s.log.Error("listing projects failed", "error", err)
+		return nil
+	}
+	var projects []string
+	for _, obj := range objs {
+		if p := obj.(*tenancyv1alpha1.Project); p.GetSpec().GetTenant() == o.Name {
+			projects = append(projects, p.GetMetadata().GetName())
+		}
+	}
+	return projects
 }
 
 // writeContainerStatus stores status as c's, conditional on c as read, and

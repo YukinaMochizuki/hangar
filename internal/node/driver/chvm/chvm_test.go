@@ -137,12 +137,20 @@ func (g *fakeGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) error {
 
 func (g *fakeGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
 
-func (g *fakeGuest) RootUsage(context.Context, string) (driver.RootUsage, error) {
-	return driver.RootUsage{}, errors.New("the hypervisor driver never asks a guest's root")
+func (g *fakeGuest) RootUsage(context.Context, string) (driver.FSUsage, error) {
+	return driver.FSUsage{}, errors.New("the hypervisor driver never asks a guest's root")
 }
 
 func (g *fakeGuest) GrowRoot(context.Context, string) error {
 	return errors.New("the hypervisor driver never grows a guest's root")
+}
+
+func (g *fakeGuest) VolumeUsage(context.Context, string, string) (driver.FSUsage, error) {
+	return driver.FSUsage{}, errors.New("the hypervisor driver never asks a guest's volumes")
+}
+
+func (g *fakeGuest) GrowVolume(context.Context, string, string) error {
+	return errors.New("the hypervisor driver never grows a guest's volumes")
 }
 
 func (g *fakeGuest) Stop(ctx context.Context, uid string, grace time.Duration) error {

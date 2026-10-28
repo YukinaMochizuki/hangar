@@ -78,7 +78,7 @@ func TestTheAgentServesTheHostAlone(t *testing.T) {
 		defer mu.Unlock()
 		logged = append(logged, fmt.Sprintf(format, args...))
 	}
-	serveAgent(ln, supervise.NewReaper(), &supervise.Stopper{}, nil, nil, time.Now(), logf)
+	serveAgent(ln, supervise.NewReaper(), &supervise.Stopper{}, nil, nil, nil, time.Now(), logf)
 
 	for _, cid := range []uint32{vsock.Local, 3} {
 		if err := ln.ping(cid); err == nil {

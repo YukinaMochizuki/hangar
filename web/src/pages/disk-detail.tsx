@@ -14,7 +14,7 @@ import { DiskSource, DiskState, diskYaml, MadeAs, UsedAs } from "@/components/st
 import { ConditionsCard, EquivalentCard, LabelsField } from "@/components/object";
 import { Badge, Card, CardHeader, Field } from "@/components/ui";
 import { date } from "@/lib/machines";
-import { diskFault, gib, growthBlocked, rootDiskOwner, usedAs, useDisks } from "@/lib/storage";
+import { diskFault, gib, growthBlocked, growthOf, rootDiskOwner, usedAs, useDisks } from "@/lib/storage";
 import { DiskSize } from "@/pages/disk-list";
 
 function Header({ d, set }: { d: Disk; set: ActionSet }) {
@@ -59,6 +59,11 @@ function Summary({ d, set }: { d: Disk; set: ActionSet }) {
         <Field label="Size">
           <DiskSize d={d} />
         </Field>
+        {growthOf(d) && (
+          <Field label="Growth">
+            <span className="tabular">{growthOf(d)}</span>
+          </Field>
+        )}
         <Field label="Used as">
           <UsedAs d={d} />
         </Field>

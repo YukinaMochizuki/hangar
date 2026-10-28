@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
+	storagev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/storage/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 )
@@ -68,8 +69,19 @@ func TestDiskGrowDefaults(t *testing.T) {
 	if !dg.Due(^uint64(0), ^uint64(0)) {
 		t.Error("a full disk at the largest size is not due")
 	}
-	if _, ok, err := computeapi.ParseDiskGrow(nil, 2*gi, "f"); ok || err != nil {
+	if _, ok, err := computeapi.ParseDiskGrow[*computev1alpha1.DiskGrow](nil, 2*gi, "f"); ok || err != nil {
 		t.Errorf("no DiskGrow: %v %v", ok, err)
+	}
+	if _, ok, err := computeapi.ParseDiskGrow[*storagev1alpha1.DiskGrow](nil, 2*gi, "f"); ok || err != nil {
+		t.Errorf("no Disk's DiskGrow: %v %v", ok, err)
+	}
+	// A Disk's grow reads by the same rules.
+	disk, ok, err := computeapi.ParseDiskGrow(&storagev1alpha1.DiskGrow{Max: "20Gi", Step: "3Gi"}, 2*gi, "spec.grow")
+	if err != nil || !ok || disk.Threshold != 80 || disk.Next(2*gi) != 5*gi {
+		t.Errorf("a Disk's grow: %+v %v %v", disk, ok, err)
+	}
+	if _, _, err := computeapi.ParseDiskGrow(&storagev1alpha1.DiskGrow{Max: "1Gi"}, 2*gi, "spec.grow"); err == nil || !strings.HasPrefix(err.Error(), "spec.grow.max:") {
+		t.Errorf("a Disk's max below its size: %v", err)
 	}
 }
 
