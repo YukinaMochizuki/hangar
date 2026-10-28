@@ -146,7 +146,10 @@ func TestABrowserWithoutASessionIsHandedOff(t *testing.T) {
 	w := newWorld(t)
 	w.endpoint(8080, private)
 	w.served(w.rootCookie())
-	resp, _ := w.do(http.MethodGet, host, "/app/page?x=1", nil)
+	// A return path no random state or sealed value holds by chance: a
+	// short word, such as "page", turns up in base64 now and then.
+	const returnPath = "the_return_path_of_this_test"
+	resp, _ := w.do(http.MethodGet, host, "/"+returnPath+"?x=1", nil)
 	if resp.StatusCode != http.StatusFound {
 		t.Fatalf("no session: %d", resp.StatusCode)
 	}
@@ -158,7 +161,7 @@ func TestABrowserWithoutASessionIsHandedOff(t *testing.T) {
 	if to.Scheme+"://"+to.Host != consoleURL || to.Path != login.PathEndpointLogin || q.Get("host") != host || len(q) != 2 {
 		t.Errorf("handed off to %s", to)
 	}
-	if strings.Contains(to.String(), "app") || strings.Contains(to.String(), "page") {
+	if strings.Contains(to.String(), returnPath) {
 		t.Errorf("the return path left the edge: %s", to)
 	}
 	state := q.Get("state")
@@ -172,7 +175,7 @@ func TestABrowserWithoutASessionIsHandedOff(t *testing.T) {
 	if ck == nil || !ck.Secure || !ck.HttpOnly || ck.SameSite != http.SameSiteLaxMode || ck.Path != "/" || ck.Domain != "" || ck.MaxAge <= 0 {
 		t.Fatalf("the state cookie: %+v of %q", ck, resp.Header.Values("Set-Cookie"))
 	}
-	if strings.Contains(ck.Value, state) || strings.Contains(ck.Value, "page") {
+	if strings.Contains(ck.Value, state) || strings.Contains(ck.Value, returnPath) {
 		t.Errorf("the state cookie is not sealed: %q", ck.Value)
 	}
 	if got := resp.Header.Get("Referrer-Policy"); got != "no-referrer" {
