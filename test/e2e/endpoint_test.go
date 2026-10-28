@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -250,12 +251,14 @@ func TestPublicEndpointsThroughTheEdge(t *testing.T) {
 		t.Fatalf("the container's endpoint: %v", ep)
 	}
 
-	// Only its port is open to the edge, on that interface alone.
+	// Only its port is open to the edge, on that interface alone, once the
+	// node has seen the endpoint: its network's reconcile opens it, after
+	// the endpoint says Ready.
 	m := w.machine("api")
-	ports := w.host.EdgePorts(w.networkUID("default"))
-	if got := ports[m.GetMetadata().GetUid()+"/eth0"]; !slices.Equal(got, []uint16{8080}) {
-		t.Errorf("the edge's ports: %v", ports)
-	}
+	testutil.Eventually(w.t, "the node to open 8080 alone", func() (bool, string) {
+		ports := w.host.EdgePorts(w.networkUID("default"))
+		return maps.EqualFunc(ports, map[string][]uint16{m.GetMetadata().GetUid() + "/eth0": {8080}}, slices.Equal), fmt.Sprintf("%v", ports)
+	})
 
 	// Private: nobody without a sign-in, who is sent to sign in, nobody
 	// outside the tenant.
