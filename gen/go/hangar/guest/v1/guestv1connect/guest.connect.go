@@ -47,6 +47,12 @@ const (
 	// GuestAgentServiceSetIPv6Procedure is the fully-qualified name of the GuestAgentService's SetIPv6
 	// RPC.
 	GuestAgentServiceSetIPv6Procedure = "/hangar.guest.v1.GuestAgentService/SetIPv6"
+	// GuestAgentServiceRootUsageProcedure is the fully-qualified name of the GuestAgentService's
+	// RootUsage RPC.
+	GuestAgentServiceRootUsageProcedure = "/hangar.guest.v1.GuestAgentService/RootUsage"
+	// GuestAgentServiceGrowRootProcedure is the fully-qualified name of the GuestAgentService's
+	// GrowRoot RPC.
+	GuestAgentServiceGrowRootProcedure = "/hangar.guest.v1.GuestAgentService/GrowRoot"
 )
 
 // GuestAgentServiceClient is a client for the hangar.guest.v1.GuestAgentService service.
@@ -68,6 +74,12 @@ type GuestAgentServiceClient interface {
 	// container runs: the address its interface holds now, which may have
 	// moved since it booted. The other addresses of an interface stay.
 	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
+	// RootUsage says how full the root filesystem is, as statfs(2) says.
+	RootUsage(context.Context, *connect.Request[v1.RootUsageRequest]) (*connect.Response[v1.RootUsageResponse], error)
+	// GrowRoot grows the mounted root filesystem to its whole device, as
+	// the guest does at boot, once the host has grown the device while the
+	// guest runs. See docs/decisions/disk-autogrow.md.
+	GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error)
 }
 
 // NewGuestAgentServiceClient constructs a client for the hangar.guest.v1.GuestAgentService service.
@@ -105,15 +117,29 @@ func NewGuestAgentServiceClient(httpClient connect.HTTPClient, baseURL string, o
 			connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
 			connect.WithClientOptions(opts...),
 		),
+		rootUsage: connect.NewClient[v1.RootUsageRequest, v1.RootUsageResponse](
+			httpClient,
+			baseURL+GuestAgentServiceRootUsageProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("RootUsage")),
+			connect.WithClientOptions(opts...),
+		),
+		growRoot: connect.NewClient[v1.GrowRootRequest, v1.GrowRootResponse](
+			httpClient,
+			baseURL+GuestAgentServiceGrowRootProcedure,
+			connect.WithSchema(guestAgentServiceMethods.ByName("GrowRoot")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // guestAgentServiceClient implements GuestAgentServiceClient.
 type guestAgentServiceClient struct {
-	ping    *connect.Client[v1.PingRequest, v1.PingResponse]
-	exec    *connect.Client[v1.ExecRequest, v1.ExecResponse]
-	stop    *connect.Client[v1.StopRequest, v1.StopResponse]
-	setIPv6 *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	ping      *connect.Client[v1.PingRequest, v1.PingResponse]
+	exec      *connect.Client[v1.ExecRequest, v1.ExecResponse]
+	stop      *connect.Client[v1.StopRequest, v1.StopResponse]
+	setIPv6   *connect.Client[v1.SetIPv6Request, v1.SetIPv6Response]
+	rootUsage *connect.Client[v1.RootUsageRequest, v1.RootUsageResponse]
+	growRoot  *connect.Client[v1.GrowRootRequest, v1.GrowRootResponse]
 }
 
 // Ping calls hangar.guest.v1.GuestAgentService.Ping.
@@ -136,6 +162,16 @@ func (c *guestAgentServiceClient) SetIPv6(ctx context.Context, req *connect.Requ
 	return c.setIPv6.CallUnary(ctx, req)
 }
 
+// RootUsage calls hangar.guest.v1.GuestAgentService.RootUsage.
+func (c *guestAgentServiceClient) RootUsage(ctx context.Context, req *connect.Request[v1.RootUsageRequest]) (*connect.Response[v1.RootUsageResponse], error) {
+	return c.rootUsage.CallUnary(ctx, req)
+}
+
+// GrowRoot calls hangar.guest.v1.GuestAgentService.GrowRoot.
+func (c *guestAgentServiceClient) GrowRoot(ctx context.Context, req *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error) {
+	return c.growRoot.CallUnary(ctx, req)
+}
+
 // GuestAgentServiceHandler is an implementation of the hangar.guest.v1.GuestAgentService service.
 type GuestAgentServiceHandler interface {
 	// Ping answers once the guest is up.
@@ -155,6 +191,12 @@ type GuestAgentServiceHandler interface {
 	// container runs: the address its interface holds now, which may have
 	// moved since it booted. The other addresses of an interface stay.
 	SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error)
+	// RootUsage says how full the root filesystem is, as statfs(2) says.
+	RootUsage(context.Context, *connect.Request[v1.RootUsageRequest]) (*connect.Response[v1.RootUsageResponse], error)
+	// GrowRoot grows the mounted root filesystem to its whole device, as
+	// the guest does at boot, once the host has grown the device while the
+	// guest runs. See docs/decisions/disk-autogrow.md.
+	GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error)
 }
 
 // NewGuestAgentServiceHandler builds an HTTP handler from the service implementation. It returns
@@ -188,6 +230,18 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 		connect.WithSchema(guestAgentServiceMethods.ByName("SetIPv6")),
 		connect.WithHandlerOptions(opts...),
 	)
+	guestAgentServiceRootUsageHandler := connect.NewUnaryHandler(
+		GuestAgentServiceRootUsageProcedure,
+		svc.RootUsage,
+		connect.WithSchema(guestAgentServiceMethods.ByName("RootUsage")),
+		connect.WithHandlerOptions(opts...),
+	)
+	guestAgentServiceGrowRootHandler := connect.NewUnaryHandler(
+		GuestAgentServiceGrowRootProcedure,
+		svc.GrowRoot,
+		connect.WithSchema(guestAgentServiceMethods.ByName("GrowRoot")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/hangar.guest.v1.GuestAgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case GuestAgentServicePingProcedure:
@@ -198,6 +252,10 @@ func NewGuestAgentServiceHandler(svc GuestAgentServiceHandler, opts ...connect.H
 			guestAgentServiceStopHandler.ServeHTTP(w, r)
 		case GuestAgentServiceSetIPv6Procedure:
 			guestAgentServiceSetIPv6Handler.ServeHTTP(w, r)
+		case GuestAgentServiceRootUsageProcedure:
+			guestAgentServiceRootUsageHandler.ServeHTTP(w, r)
+		case GuestAgentServiceGrowRootProcedure:
+			guestAgentServiceGrowRootHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -221,4 +279,12 @@ func (UnimplementedGuestAgentServiceHandler) Stop(context.Context, *connect.Requ
 
 func (UnimplementedGuestAgentServiceHandler) SetIPv6(context.Context, *connect.Request[v1.SetIPv6Request]) (*connect.Response[v1.SetIPv6Response], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.SetIPv6 is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) RootUsage(context.Context, *connect.Request[v1.RootUsageRequest]) (*connect.Response[v1.RootUsageResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.RootUsage is not implemented"))
+}
+
+func (UnimplementedGuestAgentServiceHandler) GrowRoot(context.Context, *connect.Request[v1.GrowRootRequest]) (*connect.Response[v1.GrowRootResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.guest.v1.GuestAgentService.GrowRoot is not implemented"))
 }

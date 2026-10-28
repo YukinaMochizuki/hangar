@@ -21,6 +21,29 @@ const (
 	superblockSize = 1024
 )
 
+// StatRoot says how large the running container's root filesystem is and how
+// much of it is used, in bytes. A root disk has no root reserve, so what is
+// not free is used.
+func StatRoot() (size, used uint64, err error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs("/", &st); err != nil {
+		return 0, 0, fmt.Errorf("statfs /: %w", err)
+	}
+	bs := uint64(st.Bsize)
+	return st.Blocks * bs, (st.Blocks - st.Bfree) * bs, nil
+}
+
+// ResizeRoot grows the running container's root filesystem, mounted at /
+// once the root is switched, to its disk, which the host has grown, and
+// says its size in bytes after.
+func ResizeRoot() (uint64, error) {
+	if _, _, err := GrowRoot("/", RootDevice); err != nil {
+		return 0, err
+	}
+	size, _, err := StatRoot()
+	return size, err
+}
+
 // GrowRoot grows the ext4 filesystem on dev, mounted at dir, to fill dev,
 // and returns its block count before and after: the same when it filled
 // dev already. It never shrinks one.
