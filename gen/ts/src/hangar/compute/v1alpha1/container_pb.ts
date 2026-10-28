@@ -17,7 +17,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/compute/v1alpha1/container.proto.
  */
 export const file_hangar_compute_v1alpha1_container: GenFile = /*@__PURE__*/
-  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9jb250YWluZXIucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIu8BCglDb250YWluZXISEwoLYXBpX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIsCghtZXRhZGF0YRgDIAEoCzIaLmhhbmdhci5tZXRhLnYxLk9iamVjdE1ldGESNAoEc3BlYxgEIAEoCzImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclNwZWMSOAoGc3RhdHVzGAUgASgLMiguaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyU3RhdHVzOiGKtRgdCglDb250YWluZXISCmNvbnRhaW5lcnMaAmN0IAEi7gMKDUNvbnRhaW5lclNwZWMSDQoFaW1hZ2UYASABKAkSDwoHY29tbWFuZBgCIAMoCRIMCgRhcmdzGAMgAygJEiwKA2VudhgEIAMoCzIfLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkVudlZhchI1CgVwb3J0cxgFIAMoCzImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclBvcnQSPgoOcmVzdGFydF9wb2xpY3kYBiABKA4yJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5SZXN0YXJ0UG9saWN5EjUKCXJlc291cmNlcxgHIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlJlc291cmNlcxI9CglydW5fc3RhdGUYCCABKA4yKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXJSdW5TdGF0ZRI9CgppbnRlcmZhY2VzGAkgAygLMikuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTmV0d29ya0ludGVyZmFjZRIaChJpbWFnZV9wdWxsX3NlY3JldHMYCiADKAkSOQoHdm9sdW1lcxgLIAMoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclZvbHVtZSKoAQoPQ29udGFpbmVyVm9sdW1lEgwKBHR5cGUYASABKAkSDgoGc291cmNlGAIgASgJEhMKC3NvdXJjZV9raW5kGAMgASgJEg4KBnRhcmdldBgEIAEoCRIRCglyZWFkX29ubHkYBSABKAgSPwoGdm9sdW1lGAYgASgLMi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyVm9sdW1lT3B0aW9ucyI5ChZDb250YWluZXJWb2x1bWVPcHRpb25zEg4KBm5vY29weRgBIAEoCBIPCgdzdWJwYXRoGAIgASgJIiUKBkVudlZhchIMCgRuYW1lGAEgASgJEg0KBXZhbHVlGAIgASgJInAKDUNvbnRhaW5lclBvcnQSDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgFEjMKCHByb3RvY29sGAMgASgOMiEuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUHJvdG9jb2wSDgoGcHVibGljGAQgASgIIlUKCVJlc291cmNlcxILCgNjcHUYAyABKAkSDgoGbWVtb3J5GAQgASgJEgwKBGRpc2sYBSABKAlKBAgBEAJKBAgCEANSBXZjcHVzUgptZW1vcnlfbWliIpQBCg9Db250YWluZXJTdGF0dXMSGwoTb2JzZXJ2ZWRfZ2VuZXJhdGlvbhgBIAEoAxItCgpjb25kaXRpb25zGAIgAygLMhkuaGFuZ2FyLm1ldGEudjEuQ29uZGl0aW9uEjUKCXBsYWNlbWVudBgDIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlBsYWNlbWVudCI0ChNHZXRDb250YWluZXJSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDAoEbmFtZRgCIAEoCSJNChRHZXRDb250YWluZXJSZXNwb25zZRI1Cgljb250YWluZXIYASABKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXIiZwoVTGlzdENvbnRhaW5lcnNSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSFgoObGFiZWxfc2VsZWN0b3IYAiABKAkSEQoJcGFnZV9zaXplGAMgASgFEhIKCnBhZ2VfdG9rZW4YBCABKAkidgoWTGlzdENvbnRhaW5lcnNSZXNwb25zZRIxCgVpdGVtcxgBIAMoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lchIXCg9uZXh0X3BhZ2VfdG9rZW4YAiABKAkSEAoIcmV2aXNpb24YAyABKAMiWQoWV2F0Y2hDb250YWluZXJzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhYKDnNpbmNlX3JldmlzaW9uGAMgASgDIosBChdXYXRjaENvbnRhaW5lcnNSZXNwb25zZRInCgR0eXBlGAEgASgOMhkuaGFuZ2FyLm1ldGEudjEuRXZlbnRUeXBlEjUKCWNvbnRhaW5lchgCIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lchIQCghyZXZpc2lvbhgDIAEoAyJjChVBcHBseUNvbnRhaW5lclJlcXVlc3QSNQoJY29udGFpbmVyGAEgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyEhMKC2NyZWF0ZV9vbmx5GAIgASgIInIKFkFwcGx5Q29udGFpbmVyUmVzcG9uc2USNQoJY29udGFpbmVyGAEgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyEhAKCHdhcm5pbmdzGAIgAygJEg8KB2NyZWF0ZWQYAyABKAgifQoWRGVsZXRlQ29udGFpbmVyUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBG5hbWUYAiABKAkSJgoZZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbhgDIAEoA0gAiAEBQhwKGl9leHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uIlAKF0RlbGV0ZUNvbnRhaW5lclJlc3BvbnNlEjUKCWNvbnRhaW5lchgBIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lciK9AQocVXBkYXRlQ29udGFpbmVyU3RhdHVzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBG5hbWUYAiABKAkSOAoGc3RhdHVzGAMgASgLMiguaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyU3RhdHVzEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YBCABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJWCh1VcGRhdGVDb250YWluZXJTdGF0dXNSZXNwb25zZRI1Cgljb250YWluZXIYASABKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXIqegoRQ29udGFpbmVyUnVuU3RhdGUSIwofQ09OVEFJTkVSX1JVTl9TVEFURV9VTlNQRUNJRklFRBAAEh8KG0NPTlRBSU5FUl9SVU5fU1RBVEVfUlVOTklORxABEh8KG0NPTlRBSU5FUl9SVU5fU1RBVEVfU1RPUFBFRBACKkgKCFByb3RvY29sEhgKFFBST1RPQ09MX1VOU1BFQ0lGSUVEEAASEAoMUFJPVE9DT0xfVENQEAESEAoMUFJPVE9DT0xfVURQEAIqgwEKDVJlc3RhcnRQb2xpY3kSHgoaUkVTVEFSVF9QT0xJQ1lfVU5TUEVDSUZJRUQQABIZChVSRVNUQVJUX1BPTElDWV9BTFdBWVMQARIdChlSRVNUQVJUX1BPTElDWV9PTl9GQUlMVVJFEAISGAoUUkVTVEFSVF9QT0xJQ1lfTkVWRVIQAzLcBQoQQ29udGFpbmVyU2VydmljZRJrCgxHZXRDb250YWluZXISLC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5HZXRDb250YWluZXJSZXF1ZXN0Gi0uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0Q29udGFpbmVyUmVzcG9uc2UScQoOTGlzdENvbnRhaW5lcnMSLi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5MaXN0Q29udGFpbmVyc1JlcXVlc3QaLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5MaXN0Q29udGFpbmVyc1Jlc3BvbnNlEnYKD1dhdGNoQ29udGFpbmVycxIvLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLldhdGNoQ29udGFpbmVyc1JlcXVlc3QaMC5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaENvbnRhaW5lcnNSZXNwb25zZTABEnEKDkFwcGx5Q29udGFpbmVyEi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQXBwbHlDb250YWluZXJSZXF1ZXN0Gi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQXBwbHlDb250YWluZXJSZXNwb25zZRJ0Cg9EZWxldGVDb250YWluZXISLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5EZWxldGVDb250YWluZXJSZXF1ZXN0GjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRGVsZXRlQ29udGFpbmVyUmVzcG9uc2UShgEKFVVwZGF0ZUNvbnRhaW5lclN0YXR1cxI1Lmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlVwZGF0ZUNvbnRhaW5lclN0YXR1c1JlcXVlc3QaNi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5VcGRhdGVDb250YWluZXJTdGF0dXNSZXNwb25zZUL9AQobY29tLmhhbmdhci5jb21wdXRlLnYxYWxwaGExQg5Db250YWluZXJQcm90b1ABWlBnaXRodWIuY29tL1l1a2luYU1vY2hpenVraS9oYW5nYXIvZ2VuL2dvL2hhbmdhci9jb21wdXRlL3YxYWxwaGExO2NvbXB1dGV2MWFscGhhMaICA0hDWKoCF0hhbmdhci5Db21wdXRlLlYxYWxwaGExygIXSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTHiAiNIYW5nYXJcQ29tcHV0ZVxWMWFscGhhMVxHUEJNZXRhZGF0YeoCGUhhbmdhcjo6Q29tcHV0ZTo6VjFhbHBoYTFiBnByb3RvMw", [file_hangar_compute_v1alpha1_interface, file_hangar_compute_v1alpha1_placement, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
+  fileDesc("CidoYW5nYXIvY29tcHV0ZS92MWFscGhhMS9jb250YWluZXIucHJvdG8SF2hhbmdhci5jb21wdXRlLnYxYWxwaGExIu8BCglDb250YWluZXISEwoLYXBpX3ZlcnNpb24YASABKAkSDAoEa2luZBgCIAEoCRIsCghtZXRhZGF0YRgDIAEoCzIaLmhhbmdhci5tZXRhLnYxLk9iamVjdE1ldGESNAoEc3BlYxgEIAEoCzImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclNwZWMSOAoGc3RhdHVzGAUgASgLMiguaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyU3RhdHVzOiGKtRgdCglDb250YWluZXISCmNvbnRhaW5lcnMaAmN0IAEi7gMKDUNvbnRhaW5lclNwZWMSDQoFaW1hZ2UYASABKAkSDwoHY29tbWFuZBgCIAMoCRIMCgRhcmdzGAMgAygJEiwKA2VudhgEIAMoCzIfLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkVudlZhchI1CgVwb3J0cxgFIAMoCzImLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclBvcnQSPgoOcmVzdGFydF9wb2xpY3kYBiABKA4yJi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5SZXN0YXJ0UG9saWN5EjUKCXJlc291cmNlcxgHIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLlJlc291cmNlcxI9CglydW5fc3RhdGUYCCABKA4yKi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXJSdW5TdGF0ZRI9CgppbnRlcmZhY2VzGAkgAygLMikuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTmV0d29ya0ludGVyZmFjZRIaChJpbWFnZV9wdWxsX3NlY3JldHMYCiADKAkSOQoHdm9sdW1lcxgLIAMoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclZvbHVtZSKoAQoPQ29udGFpbmVyVm9sdW1lEgwKBHR5cGUYASABKAkSDgoGc291cmNlGAIgASgJEhMKC3NvdXJjZV9raW5kGAMgASgJEg4KBnRhcmdldBgEIAEoCRIRCglyZWFkX29ubHkYBSABKAgSPwoGdm9sdW1lGAYgASgLMi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyVm9sdW1lT3B0aW9ucyI5ChZDb250YWluZXJWb2x1bWVPcHRpb25zEg4KBm5vY29weRgBIAEoCBIPCgdzdWJwYXRoGAIgASgJIiUKBkVudlZhchIMCgRuYW1lGAEgASgJEg0KBXZhbHVlGAIgASgJInAKDUNvbnRhaW5lclBvcnQSDAoEbmFtZRgBIAEoCRIMCgRwb3J0GAIgASgFEjMKCHByb3RvY29sGAMgASgOMiEuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUHJvdG9jb2wSDgoGcHVibGljGAQgASgIIosBCglSZXNvdXJjZXMSCwoDY3B1GAMgASgJEg4KBm1lbW9yeRgEIAEoCRIMCgRkaXNrGAUgASgJEjQKCWRpc2tfZ3JvdxgGIAEoCzIhLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkRpc2tHcm93SgQIARACSgQIAhADUgV2Y3B1c1IKbWVtb3J5X21pYiI4CghEaXNrR3JvdxILCgNtYXgYASABKAkSEQoJdGhyZXNob2xkGAIgASgJEgwKBHN0ZXAYAyABKAkiogEKD0NvbnRhaW5lclN0YXR1cxIbChNvYnNlcnZlZF9nZW5lcmF0aW9uGAEgASgDEi0KCmNvbmRpdGlvbnMYAiADKAsyGS5oYW5nYXIubWV0YS52MS5Db25kaXRpb24SNQoJcGxhY2VtZW50GAMgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuUGxhY2VtZW50EgwKBGRpc2sYBCABKAkiNAoTR2V0Q29udGFpbmVyUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEgwKBG5hbWUYAiABKAkiTQoUR2V0Q29udGFpbmVyUmVzcG9uc2USNQoJY29udGFpbmVyGAEgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyImcKFUxpc3RDb250YWluZXJzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEhYKDmxhYmVsX3NlbGVjdG9yGAIgASgJEhEKCXBhZ2Vfc2l6ZRgDIAEoBRISCgpwYWdlX3Rva2VuGAQgASgJInYKFkxpc3RDb250YWluZXJzUmVzcG9uc2USMQoFaXRlbXMYASADKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXISFwoPbmV4dF9wYWdlX3Rva2VuGAIgASgJEhAKCHJldmlzaW9uGAMgASgDIlkKFldhdGNoQ29udGFpbmVyc1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIWCg5sYWJlbF9zZWxlY3RvchgCIAEoCRIWCg5zaW5jZV9yZXZpc2lvbhgDIAEoAyKLAQoXV2F0Y2hDb250YWluZXJzUmVzcG9uc2USJwoEdHlwZRgBIAEoDjIZLmhhbmdhci5tZXRhLnYxLkV2ZW50VHlwZRI1Cgljb250YWluZXIYAiABKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXISEAoIcmV2aXNpb24YAyABKAMiYwoVQXBwbHlDb250YWluZXJSZXF1ZXN0EjUKCWNvbnRhaW5lchgBIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lchITCgtjcmVhdGVfb25seRgCIAEoCCJyChZBcHBseUNvbnRhaW5lclJlc3BvbnNlEjUKCWNvbnRhaW5lchgBIAEoCzIiLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lchIQCgh3YXJuaW5ncxgCIAMoCRIPCgdjcmVhdGVkGAMgASgIIn0KFkRlbGV0ZUNvbnRhaW5lclJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEiYKGWV4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24YAyABKANIAIgBAUIcChpfZXhwZWN0ZWRfcmVzb3VyY2VfdmVyc2lvbiJQChdEZWxldGVDb250YWluZXJSZXNwb25zZRI1Cgljb250YWluZXIYASABKAsyIi5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5Db250YWluZXIivQEKHFVwZGF0ZUNvbnRhaW5lclN0YXR1c1JlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIMCgRuYW1lGAIgASgJEjgKBnN0YXR1cxgDIAEoCzIoLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkNvbnRhaW5lclN0YXR1cxImChlleHBlY3RlZF9yZXNvdXJjZV92ZXJzaW9uGAQgASgDSACIAQFCHAoaX2V4cGVjdGVkX3Jlc291cmNlX3ZlcnNpb24iVgodVXBkYXRlQ29udGFpbmVyU3RhdHVzUmVzcG9uc2USNQoJY29udGFpbmVyGAEgASgLMiIuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuQ29udGFpbmVyKnoKEUNvbnRhaW5lclJ1blN0YXRlEiMKH0NPTlRBSU5FUl9SVU5fU1RBVEVfVU5TUEVDSUZJRUQQABIfChtDT05UQUlORVJfUlVOX1NUQVRFX1JVTk5JTkcQARIfChtDT05UQUlORVJfUlVOX1NUQVRFX1NUT1BQRUQQAipICghQcm90b2NvbBIYChRQUk9UT0NPTF9VTlNQRUNJRklFRBAAEhAKDFBST1RPQ09MX1RDUBABEhAKDFBST1RPQ09MX1VEUBACKoMBCg1SZXN0YXJ0UG9saWN5Eh4KGlJFU1RBUlRfUE9MSUNZX1VOU1BFQ0lGSUVEEAASGQoVUkVTVEFSVF9QT0xJQ1lfQUxXQVlTEAESHQoZUkVTVEFSVF9QT0xJQ1lfT05fRkFJTFVSRRACEhgKFFJFU1RBUlRfUE9MSUNZX05FVkVSEAMy3AUKEENvbnRhaW5lclNlcnZpY2USawoMR2V0Q29udGFpbmVyEiwuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuR2V0Q29udGFpbmVyUmVxdWVzdBotLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkdldENvbnRhaW5lclJlc3BvbnNlEnEKDkxpc3RDb250YWluZXJzEi4uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTGlzdENvbnRhaW5lcnNSZXF1ZXN0Gi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuTGlzdENvbnRhaW5lcnNSZXNwb25zZRJ2Cg9XYXRjaENvbnRhaW5lcnMSLy5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5XYXRjaENvbnRhaW5lcnNSZXF1ZXN0GjAuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuV2F0Y2hDb250YWluZXJzUmVzcG9uc2UwARJxCg5BcHBseUNvbnRhaW5lchIuLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5Q29udGFpbmVyUmVxdWVzdBovLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkFwcGx5Q29udGFpbmVyUmVzcG9uc2USdAoPRGVsZXRlQ29udGFpbmVyEi8uaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuRGVsZXRlQ29udGFpbmVyUmVxdWVzdBowLmhhbmdhci5jb21wdXRlLnYxYWxwaGExLkRlbGV0ZUNvbnRhaW5lclJlc3BvbnNlEoYBChVVcGRhdGVDb250YWluZXJTdGF0dXMSNS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMS5VcGRhdGVDb250YWluZXJTdGF0dXNSZXF1ZXN0GjYuaGFuZ2FyLmNvbXB1dGUudjFhbHBoYTEuVXBkYXRlQ29udGFpbmVyU3RhdHVzUmVzcG9uc2VC/QEKG2NvbS5oYW5nYXIuY29tcHV0ZS52MWFscGhhMUIOQ29udGFpbmVyUHJvdG9QAVpQZ2l0aHViLmNvbS9ZdWtpbmFNb2NoaXp1a2kvaGFuZ2FyL2dlbi9nby9oYW5nYXIvY29tcHV0ZS92MWFscGhhMTtjb21wdXRldjFhbHBoYTGiAgNIQ1iqAhdIYW5nYXIuQ29tcHV0ZS5WMWFscGhhMcoCF0hhbmdhclxDb21wdXRlXFYxYWxwaGEx4gIjSGFuZ2FyXENvbXB1dGVcVjFhbHBoYTFcR1BCTWV0YWRhdGHqAhlIYW5nYXI6OkNvbXB1dGU6OlYxYWxwaGExYgZwcm90bzM", [file_hangar_compute_v1alpha1_interface, file_hangar_compute_v1alpha1_placement, file_hangar_meta_v1_meta, file_hangar_meta_v1_options]);
 
 /**
  * Container runs an OCI image as its own microVM. See
@@ -333,11 +333,21 @@ export type Resources = Message<"hangar.compute.v1alpha1.Resources"> & {
   memory: string;
 
   /**
-   * Root disk size, at least 1Gi. It can grow but never shrink.
+   * Root disk size, at least 1Gi. It can grow but never shrink. With
+   * disk_grow set, the size the root disk starts at.
    *
    * @generated from field: string disk = 5;
    */
   disk: string;
+
+  /**
+   * Set, the root disk grows by itself while the container runs, as it
+   * fills, up to disk_grow.max; unset, it never does. See
+   * docs/decisions/disk-autogrow.md.
+   *
+   * @generated from field: hangar.compute.v1alpha1.DiskGrow disk_grow = 6;
+   */
+  diskGrow?: DiskGrow | undefined;
 };
 
 /**
@@ -346,6 +356,43 @@ export type Resources = Message<"hangar.compute.v1alpha1.Resources"> & {
  */
 export const ResourcesSchema: GenMessage<Resources> = /*@__PURE__*/
   messageDesc(file_hangar_compute_v1alpha1_container, 6);
+
+/**
+ * DiskGrow is how a container's root disk grows by itself.
+ *
+ * @generated from message hangar.compute.v1alpha1.DiskGrow
+ */
+export type DiskGrow = Message<"hangar.compute.v1alpha1.DiskGrow"> & {
+  /**
+   * The largest the disk grows to, a quantity at least resources.disk.
+   *
+   * @generated from field: string max = 1;
+   */
+  max: string;
+
+  /**
+   * How full the disk is when it grows, a percentage from 50% to 95%;
+   * empty is 80%.
+   *
+   * @generated from field: string threshold = 2;
+   */
+  threshold: string;
+
+  /**
+   * How much it grows by: a factor such as "2x", over 1x and at most 16x, or
+   * a quantity such as "3Gi", at least 1Gi. Empty is 2x.
+   *
+   * @generated from field: string step = 3;
+   */
+  step: string;
+};
+
+/**
+ * Describes the message hangar.compute.v1alpha1.DiskGrow.
+ * Use `create(DiskGrowSchema)` to create a new message.
+ */
+export const DiskGrowSchema: GenMessage<DiskGrow> = /*@__PURE__*/
+  messageDesc(file_hangar_compute_v1alpha1_container, 7);
 
 /**
  * ContainerStatus is the observed state of a container.
@@ -370,6 +417,15 @@ export type ContainerStatus = Message<"hangar.compute.v1alpha1.ContainerStatus">
    * @generated from field: hangar.compute.v1alpha1.Placement placement = 3;
    */
   placement?: Placement | undefined;
+
+  /**
+   * The root disk's size as it has grown by itself, past resources.disk;
+   * empty while it has not. The tenant's disk quota counts the larger of
+   * the two.
+   *
+   * @generated from field: string disk = 4;
+   */
+  disk: string;
 };
 
 /**
@@ -377,7 +433,7 @@ export type ContainerStatus = Message<"hangar.compute.v1alpha1.ContainerStatus">
  * Use `create(ContainerStatusSchema)` to create a new message.
  */
 export const ContainerStatusSchema: GenMessage<ContainerStatus> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 7);
+  messageDesc(file_hangar_compute_v1alpha1_container, 8);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetContainerRequest
@@ -399,7 +455,7 @@ export type GetContainerRequest = Message<"hangar.compute.v1alpha1.GetContainerR
  * Use `create(GetContainerRequestSchema)` to create a new message.
  */
 export const GetContainerRequestSchema: GenMessage<GetContainerRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 8);
+  messageDesc(file_hangar_compute_v1alpha1_container, 9);
 
 /**
  * @generated from message hangar.compute.v1alpha1.GetContainerResponse
@@ -416,7 +472,7 @@ export type GetContainerResponse = Message<"hangar.compute.v1alpha1.GetContainer
  * Use `create(GetContainerResponseSchema)` to create a new message.
  */
 export const GetContainerResponseSchema: GenMessage<GetContainerResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 9);
+  messageDesc(file_hangar_compute_v1alpha1_container, 10);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListContainersRequest
@@ -450,7 +506,7 @@ export type ListContainersRequest = Message<"hangar.compute.v1alpha1.ListContain
  * Use `create(ListContainersRequestSchema)` to create a new message.
  */
 export const ListContainersRequestSchema: GenMessage<ListContainersRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 10);
+  messageDesc(file_hangar_compute_v1alpha1_container, 11);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ListContainersResponse
@@ -477,7 +533,7 @@ export type ListContainersResponse = Message<"hangar.compute.v1alpha1.ListContai
  * Use `create(ListContainersResponseSchema)` to create a new message.
  */
 export const ListContainersResponseSchema: GenMessage<ListContainersResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 11);
+  messageDesc(file_hangar_compute_v1alpha1_container, 12);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchContainersRequest
@@ -506,7 +562,7 @@ export type WatchContainersRequest = Message<"hangar.compute.v1alpha1.WatchConta
  * Use `create(WatchContainersRequestSchema)` to create a new message.
  */
 export const WatchContainersRequestSchema: GenMessage<WatchContainersRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 12);
+  messageDesc(file_hangar_compute_v1alpha1_container, 13);
 
 /**
  * @generated from message hangar.compute.v1alpha1.WatchContainersResponse
@@ -533,7 +589,7 @@ export type WatchContainersResponse = Message<"hangar.compute.v1alpha1.WatchCont
  * Use `create(WatchContainersResponseSchema)` to create a new message.
  */
 export const WatchContainersResponseSchema: GenMessage<WatchContainersResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 13);
+  messageDesc(file_hangar_compute_v1alpha1_container, 14);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyContainerRequest
@@ -557,7 +613,7 @@ export type ApplyContainerRequest = Message<"hangar.compute.v1alpha1.ApplyContai
  * Use `create(ApplyContainerRequestSchema)` to create a new message.
  */
 export const ApplyContainerRequestSchema: GenMessage<ApplyContainerRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 14);
+  messageDesc(file_hangar_compute_v1alpha1_container, 15);
 
 /**
  * @generated from message hangar.compute.v1alpha1.ApplyContainerResponse
@@ -584,7 +640,7 @@ export type ApplyContainerResponse = Message<"hangar.compute.v1alpha1.ApplyConta
  * Use `create(ApplyContainerResponseSchema)` to create a new message.
  */
 export const ApplyContainerResponseSchema: GenMessage<ApplyContainerResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 15);
+  messageDesc(file_hangar_compute_v1alpha1_container, 16);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteContainerRequest
@@ -611,7 +667,7 @@ export type DeleteContainerRequest = Message<"hangar.compute.v1alpha1.DeleteCont
  * Use `create(DeleteContainerRequestSchema)` to create a new message.
  */
 export const DeleteContainerRequestSchema: GenMessage<DeleteContainerRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 16);
+  messageDesc(file_hangar_compute_v1alpha1_container, 17);
 
 /**
  * @generated from message hangar.compute.v1alpha1.DeleteContainerResponse
@@ -628,7 +684,7 @@ export type DeleteContainerResponse = Message<"hangar.compute.v1alpha1.DeleteCon
  * Use `create(DeleteContainerResponseSchema)` to create a new message.
  */
 export const DeleteContainerResponseSchema: GenMessage<DeleteContainerResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 17);
+  messageDesc(file_hangar_compute_v1alpha1_container, 18);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateContainerStatusRequest
@@ -660,7 +716,7 @@ export type UpdateContainerStatusRequest = Message<"hangar.compute.v1alpha1.Upda
  * Use `create(UpdateContainerStatusRequestSchema)` to create a new message.
  */
 export const UpdateContainerStatusRequestSchema: GenMessage<UpdateContainerStatusRequest> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 18);
+  messageDesc(file_hangar_compute_v1alpha1_container, 19);
 
 /**
  * @generated from message hangar.compute.v1alpha1.UpdateContainerStatusResponse
@@ -677,7 +733,7 @@ export type UpdateContainerStatusResponse = Message<"hangar.compute.v1alpha1.Upd
  * Use `create(UpdateContainerStatusResponseSchema)` to create a new message.
  */
 export const UpdateContainerStatusResponseSchema: GenMessage<UpdateContainerStatusResponse> = /*@__PURE__*/
-  messageDesc(file_hangar_compute_v1alpha1_container, 19);
+  messageDesc(file_hangar_compute_v1alpha1_container, 20);
 
 /**
  * ContainerRunState is what a container's user asks of its process. More

@@ -1005,7 +1005,11 @@ type MachineStatus struct {
 	// The image reference image_digest was resolved from. The node resolves a
 	// reference once: it resolves it again only when the spec names another
 	// image, so a tag moving upstream never rebuilds a machine's disk.
-	Image         string `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	Image string `protobuf:"bytes,6,opt,name=image,proto3" json:"image,omitempty"`
+	// The root disk size the node asks the machine be grown to, as its
+	// guest found it past resources.disk_grow's threshold; empty when it asks
+	// for none. Its owner's controller grants it within quota.
+	DiskWanted    string `protobuf:"bytes,7,opt,name=disk_wanted,json=diskWanted,proto3" json:"disk_wanted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1078,6 +1082,13 @@ func (x *MachineStatus) GetBootTime() *timestamppb.Timestamp {
 func (x *MachineStatus) GetImage() string {
 	if x != nil {
 		return x.Image
+	}
+	return ""
+}
+
+func (x *MachineStatus) GetDiskWanted() string {
+	if x != nil {
+		return x.DiskWanted
 	}
 	return ""
 }
@@ -1830,7 +1841,7 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12'\n" +
 	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\x12\x12\n" +
 	"\x04ipv6\x18\x05 \x01(\tR\x04ipv6\x12\x18\n" +
-	"\aaliases\x18\x06 \x03(\tR\aaliases\"\xaa\x02\n" +
+	"\aaliases\x18\x06 \x03(\tR\aaliases\"\xcb\x02\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1839,7 +1850,9 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x05phase\x18\x03 \x01(\x0e2%.hangar.compute.v1alpha1.MachinePhaseR\x05phase\x12!\n" +
 	"\fimage_digest\x18\x04 \x01(\tR\vimageDigest\x127\n" +
 	"\tboot_time\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\bbootTime\x12\x14\n" +
-	"\x05image\x18\x06 \x01(\tR\x05image\"A\n" +
+	"\x05image\x18\x06 \x01(\tR\x05image\x12\x1f\n" +
+	"\vdisk_wanted\x18\a \x01(\tR\n" +
+	"diskWanted\"A\n" +
 	"\x11GetMachineRequest\x12\x18\n" +
 	"\aproject\x18\x01 \x01(\tR\aproject\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"P\n" +

@@ -197,6 +197,10 @@ message MachineStatus {
   // reference once: it resolves it again only when the spec names another
   // image, so a tag moving upstream never rebuilds a machine's disk.
   string image = 6;
+  // The root disk size the node asks the machine be grown to, as its
+  // guest found it past resources.disk_grow's threshold; empty when it asks
+  // for none. Its owner's controller grants it within quota.
+  string disk_wanted = 7;
 }
 
 // MachinePhase is where the machine is in its lifecycle.
