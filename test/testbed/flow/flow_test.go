@@ -379,8 +379,10 @@ func (f *flow) restartPolicy(t *testing.T) {
 	t.Logf("crashy exited 3, systemd restarted it (NRestarts 1), and its boot time is the restart's, %s", started["ExecMainStartTimestamp"])
 }
 
-// Scenario 5: raising the disk restarts the VM on a larger zvol, and the
-// guest's root has grown into it, keeping what was written on it.
+// Scenario 5: raising the disk grows the zvol while the VM runs: Cloud
+// Hypervisor is told the device's size and the guest grows its root into
+// it, in the same boot, keeping what was written on it; then it writes more
+// than the root held before.
 func (f *flow) growTheDisk(t *testing.T) {
 	c := f.c
 	uid := f.uids["web"]
@@ -389,28 +391,62 @@ func (f *flow) growTheDisk(t *testing.T) {
 	if before > gib/1024 {
 		t.Fatalf("web's root is %d KiB before growing", before)
 	}
-	launcher := mainPID(t, uid)
+	launcher, ch := mainPID(t, uid), chPID(t, uid)
+	bootID := strings.TrimSpace(mustExec(t, uid, "cat /proc/sys/kernel/random/boot_id"))
+	uptime := guestUptime(t, uid)
+	bootTime := c.machine("web").GetStatus().GetBootTime().AsTime()
 
 	c.applyYAML(containerYAML("web", busyboxRef, "", "2Gi", webScript))
-	c.waitReady("web", 2*time.Minute)
+	var after int64
+	eventually(t, 2*time.Minute, "web's root grown while it runs", func() (bool, string) {
+		after = rootSizeKiB(t, uid)
+		return after > gib/1024, fmt.Sprintf("%d KiB, zvol %d bytes", after, roots(t)[uid].volsize)
+	})
+	c.waitReady("web", time.Minute)
 
 	if r := roots(t)[uid]; r.volsize != 2*gib {
 		t.Errorf("web's root zvol is %d bytes, want 2 GiB", r.volsize)
 	}
-	if mainPID(t, uid) == launcher {
-		t.Error("web's VM was not restarted to grow its disk")
-	}
-	after := rootSizeKiB(t, uid)
 	if after < 2*gib/1024*9/10 {
 		t.Errorf("web's root is %d KiB after growing to 2 GiB (it was %d KiB)", after, before)
+	}
+	if mainPID(t, uid) != launcher || chPID(t, uid) != ch {
+		t.Errorf("web's VM was started again to grow its disk: launcher %d, Cloud Hypervisor %d; were %d, %d", mainPID(t, uid), chPID(t, uid), launcher, ch)
+	}
+	if got := strings.TrimSpace(mustExec(t, uid, "cat /proc/sys/kernel/random/boot_id")); got != bootID {
+		t.Errorf("web's guest booted again: boot id %s, was %s", got, bootID)
+	}
+	if up := guestUptime(t, uid); up <= uptime {
+		t.Errorf("web's guest uptime went from %.2f s to %.2f s", uptime, up)
+	}
+	if bt := c.machine("web").GetStatus().GetBootTime().AsTime(); !bt.Equal(bootTime) {
+		t.Errorf("web's boot time went from %v to %v", bootTime, bt)
+	}
+	if strings.Count(consoleText(t, uid), "got SIGTERM") != 1 {
+		t.Error("web's process was sent SIGTERM again, beyond scenario 3's stop")
 	}
 	if out := mustExec(t, uid, "cat /marker"); strings.TrimSpace(out) != "kept" {
 		t.Errorf("/marker after growing: %q", out)
 	}
-	if !strings.Contains(consoleText(t, uid), "got SIGTERM") {
-		t.Error("web's process was not sent SIGTERM before the restart")
+	// More than the whole root held before it grew.
+	mustExec(t, uid, fmt.Sprintf("dd if=/dev/zero of=/fill bs=1M count=%d 2>&1 && sync && rm /fill", before/1024+64))
+	t.Logf("web's root grew from %d KiB to %d KiB in the same boot (%s); /marker kept, %d MiB written", before, after, bootID, before/1024+64)
+}
+
+// guestUptime is how long the guest has run, in seconds, as /proc/uptime
+// says.
+func guestUptime(t *testing.T, uid string) float64 {
+	t.Helper()
+	out := mustExec(t, uid, "cat /proc/uptime")
+	fields := strings.Fields(out)
+	if len(fields) < 1 {
+		t.Fatalf("/proc/uptime: %q", out)
 	}
-	t.Logf("web's root grew from %d KiB to %d KiB; /marker kept", before, after)
+	up, err := strconv.ParseFloat(fields[0], 64)
+	if err != nil {
+		t.Fatalf("/proc/uptime: %q: %v", out, err)
+	}
+	return up
 }
 
 // rootSizeKiB is the size of the guest's root filesystem as df says.
