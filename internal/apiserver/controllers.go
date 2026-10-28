@@ -180,6 +180,10 @@ func (s *Server) newControllers() []*controller.Controller {
 				{Kind: registry.Machine.Kind, Map: s.disksOfMachineAndWaiting},
 				// Any node change may make room for a disk to grow.
 				{Kind: registry.Node.Kind, Map: s.disksWaitingForRoom, SkipResync: true},
+				// What a tenant or a project holds, or may hold, changing may
+				// let through a growth by itself waiting on quota.
+				{Kind: registry.Tenant.Kind, Map: s.disksWaitingOnQuota, SkipResync: true},
+				{Kind: registry.Project.Kind, Map: s.disksWaitingOnQuota, SkipResync: true},
 			},
 		},
 		{
