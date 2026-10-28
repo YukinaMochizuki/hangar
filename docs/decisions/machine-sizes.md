@@ -32,7 +32,9 @@ can choose a shape within rules instead.
     `root_disk.from_image.size`, each 10Gi when empty. A VM booting a Disk
     it names is checked for cpu and memory only, as that Disk's size is its
     own. The disk is not tied to the memory, and no rule caps it: what a
-    tenant may hold is its plan's disk limit.
+    tenant may hold is its plan's disk limit. A container's
+    `resources.disk_grow` is checked beside its shape, by its own rules
+    (`disk-autogrow.md`); its `max` is held to the 64Ti every disk is.
 
   The refusal says which rule, and for a ratio the vCPUs the memory allows.
   The rules are constants of the apiserver (`checkShape` in

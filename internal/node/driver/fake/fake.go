@@ -185,6 +185,18 @@ type Host struct {
 	// by machine uid; oldGuests cannot be told.
 	guestIPv6 map[string][]driver.GuestIPv6
 	oldGuests map[string]bool
+	// rootUsed is what each container's guest uses of its root filesystem,
+	// and rootClaims what a guest that lies says of it instead, by machine
+	// uid; oldRootGuests can say nothing of it, nor grow it, and
+	// noLiveResize VMs cannot be told their root disk's size while they
+	// run. rootCalls lists the calls about each machine's root (RootCalls),
+	// and rootHolds the GrowRoots held (HoldRootGrowth).
+	rootUsed      map[string]uint64
+	rootClaims    map[string]driver.RootUsage
+	oldRootGuests map[string]bool
+	noLiveResize  map[string]bool
+	rootCalls     map[string][]string
+	rootHolds     map[string]chan struct{}
 	// ipv6Refused counts interfaces refused for an IPv6 address another
 	// holds.
 	ipv6Refused int
@@ -215,6 +227,9 @@ type vm struct {
 	// deadNICs says an interface was taken from under the running VM: the
 	// tap it holds is gone, whatever is recreated by the same name.
 	deadNICs bool
+	// guestDisk and guestFS are a container's root disk's size as its guest
+	// sees it, and its root filesystem's (bootRoot).
+	guestDisk, guestFS int64
 }
 
 // New returns an empty host.
@@ -236,6 +251,7 @@ func New() *Host {
 		vms: map[string]*vm{}, consoles: map[string]*fakeConsole{}, logs: map[string]*consoleLog{}, tpmKeys: map[string][]byte{}, tpms: map[string]*tpmState{}, logChanged: make(chan struct{}), stops: map[string]int{}, bootErr: map[string]error{}, silent: map[string]bool{}, listErr: map[string]error{},
 		stopDelay: map[string]*stopDelay{}, stopCalls: map[string][]time.Time{}, readyCalls: map[string]int{},
 		guestIPv6: map[string][]driver.GuestIPv6{}, oldGuests: map[string]bool{},
+		rootUsed: map[string]uint64{}, rootClaims: map[string]driver.RootUsage{}, oldRootGuests: map[string]bool{}, noLiveResize: map[string]bool{}, rootCalls: map[string][]string{}, rootHolds: map[string]chan struct{}{},
 		vmChanges: make(chan struct{}, 1), netChange: make(chan struct{}, 1),
 	}
 }
@@ -821,6 +837,9 @@ type VMView struct {
 	Boots int
 	// DeadNICs says the running instance lost an interface from under it.
 	DeadNICs bool
+	// GuestDisk is a container's root disk's size as its guest sees it, and
+	// GuestRootFS its root filesystem's.
+	GuestDisk, GuestRootFS int64
 }
 
 // Empty reports whether the host holds nothing at all.
@@ -854,7 +873,7 @@ func (h *Host) Snapshot() Snapshot {
 		}
 	}
 	for uid, v := range h.vms {
-		s.VMs[uid] = VMView{VM: v.VM, Spec: v.spec, Boots: v.boots, DeadNICs: v.deadNICs}
+		s.VMs[uid] = VMView{VM: v.VM, Spec: v.spec, Boots: v.boots, DeadNICs: v.deadNICs, GuestDisk: v.guestDisk, GuestRootFS: v.guestFS}
 	}
 	return s
 }
@@ -1584,7 +1603,10 @@ func (d hypervisor) Start(_ context.Context, spec driver.VMSpec) error {
 		boots = v.boots + 1
 	}
 	d.h.vms[spec.MachineUID] = &vm{
-		VM:    driver.VM{MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces},
+		VM: driver.VM{
+			MachineUID: spec.MachineUID, SpecHash: hash, State: driver.VMRunning, Started: time.Now(), Run: spec.Run, Interfaces: spec.Interfaces,
+			RootSize: spec.Root.Size,
+		},
 		spec:  spec,
 		boots: boots,
 	}
@@ -1612,6 +1634,7 @@ func (h *Host) bootGuest(v *vm) {
 		h.bootConsoleLocked(v.MachineUID)
 	default:
 		h.guestIPv6[v.MachineUID] = driver.GuestIPv6Of(v.spec.Interfaces)
+		h.bootRoot(v)
 	}
 }
 

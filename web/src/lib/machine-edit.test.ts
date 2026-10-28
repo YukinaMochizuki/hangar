@@ -121,7 +121,7 @@ describe("changesOf: what applying does, per field", () => {
     expect(changesOf(web(), editedObject(web(), { image: "nginx:2" }))[0]!.detail).toBe("nginx:1 → nginx:2");
   });
 
-  it("a container's interfaces, volumes, process and resources restart it", () => {
+  it("a container's interfaces, volumes, process and size restart it; its disk grows in place", () => {
     const next = editedObject(web(), {
       interfaces: [],
       volumes: [],
@@ -142,7 +142,7 @@ describe("changesOf: what applying does, per field", () => {
       env: "restart",
       restartPolicy: "restart",
       size: "restart",
-      disk: "restart",
+      disk: "nothing",
     });
     expect(cs.find((c) => c.field === "env")!.detail).toBe("MODE changed, DEBUG added");
     expect(cs.find((c) => c.field === "disk")!.detail).toBe("10 → 20 GiB");

@@ -66,6 +66,12 @@ to boot again.
   reports, which no unprivileged process can choose. The testbed checks
   from a `USER nobody` container that nothing in the guest reaches the
   agent (`docs/runbook/testbed.md`); the agent's check has a unit test.
+- **The node reads and grows the root filesystem through the agent.**
+  `RootUsage` answers its size and use, as statfs gives them; `GrowRoot`
+  grows the mounted ext4 to its device once the host has grown the device
+  while the guest runs, as hangar-init does at every boot
+  (`disk-autogrow.md`). A guest asserts its own usage: one that lies grows
+  its own disk, within its own quota, and nothing else.
 - **Output goes to the virtio console, framed** (`internal/guest/console`):
   every write of the container's stdout and stderr, hangar-init's own
   messages, and, last, how the process ended. Cloud Hypervisor hands the

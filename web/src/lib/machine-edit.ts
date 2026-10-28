@@ -137,6 +137,8 @@ export type FormSpec = {
   cpu?: string;
   memory?: string;
   disk?: string;
+  /** A container's root disk growing by itself; null turns it off. */
+  diskGrow?: { max: string; threshold: string; step: string } | null;
   /** A VM's data disks, by name. */
   disks?: string[];
   /** A VM's file shares. */
@@ -163,11 +165,12 @@ export function editedObject(base: MachineObject, changed: FormSpec): MachineObj
     if (changed.restartPolicy !== undefined) s.restartPolicy = changed.restartPolicy;
     if (changed.interfaces !== undefined) s.interfaces = changed.interfaces;
     if (changed.volumes !== undefined) s.volumes = volumesOf(changed.volumes, (base as Container).spec?.volumes);
-    if (changed.cpu !== undefined || changed.memory !== undefined || changed.disk !== undefined) {
+    if (changed.cpu !== undefined || changed.memory !== undefined || changed.disk !== undefined || changed.diskGrow !== undefined) {
       s.resources = create(ResourcesSchema, {
         cpu: changed.cpu ?? s.resources?.cpu ?? "",
         memory: changed.memory ?? s.resources?.memory ?? "",
         disk: changed.disk ?? s.resources?.disk ?? "",
+        diskGrow: changed.diskGrow === null ? undefined : (changed.diskGrow ?? s.resources?.diskGrow),
       });
     }
     return o;
@@ -253,6 +256,12 @@ function sizeText(cpu: string, memory: string): string {
   return `${formatNumber(quantityCPU(cpu))} vCPU · ${formatNumber(quantityGiB(memory))} GiB`;
 }
 
+/** A diskGrow as a change shows it: off, or up to its max at its threshold and step. */
+function growText(g: Json | undefined): string {
+  if (!g) return "off";
+  return `up to ${formatNumber(quantityGiB(String(g.max ?? "")))} GiB, at ${String(g.threshold || "80%")}, by ${String(g.step || "2x")}`;
+}
+
 /**
  * What applying `next` over `base` changes, field by field, each with what
  * it does: a container's image rebuilds its root disk; its interfaces,
@@ -283,8 +292,12 @@ export function changesOf(base: MachineObject, next: MachineObject): Change[] {
     const rb = (b.resources ?? {}) as Json;
     const cpuA = String(ra.cpu || d.cpu), memA = String(ra.memory || d.memory), cpuB = String(rb.cpu || d.cpu), memB = String(rb.memory || d.memory);
     if (!same(ra.cpu, rb.cpu) || !same(ra.memory, rb.memory)) out.push({ field: "size", label: "Size", effect: "restart", detail: `${sizeText(cpuA, memA)} → ${sizeText(cpuB, memB)}` });
+    // A root disk grows while its container runs (docs/decisions/disk-autogrow.md).
     if (!same(ra.disk, rb.disk)) {
-      out.push({ field: "disk", label: "Disk", effect: "restart", detail: `${formatNumber(quantityGiB(String(ra.disk || d.disk)))} → ${formatNumber(quantityGiB(String(rb.disk || d.disk)))} GiB` });
+      out.push({ field: "disk", label: "Disk", effect: "nothing", detail: `${formatNumber(quantityGiB(String(ra.disk || d.disk)))} → ${formatNumber(quantityGiB(String(rb.disk || d.disk)))} GiB` });
+    }
+    if (!same(ra.diskGrow, rb.diskGrow)) {
+      out.push({ field: "diskGrow", label: "Disk growth", effect: "nothing", detail: `${growText(ra.diskGrow as Json | undefined)} → ${growText(rb.diskGrow as Json | undefined)}` });
     }
     add("imagePullSecrets", "Image pull secrets", "nothing", `${((a.imagePullSecrets ?? []) as string[]).join(", ") || "none"} → ${((b.imagePullSecrets ?? []) as string[]).join(", ") || "none"}`);
   } else {

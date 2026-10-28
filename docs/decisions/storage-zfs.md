@@ -119,8 +119,9 @@ unreliable on virtio-fs.
 - **A root disk per machine**: `hangar/roots/<machine uid>`, a clone of its
   image's `@base`, `volmode=dev`, sparse, its `volsize` the size the machine
   asks for. A root disk smaller than asked is grown (`zfs set volsize`),
-  never shrunk; a size below its base's fails with `DiskTooSmall`. The size
-  is part of the VM's spec, so a grown disk restarts the VM.
+  never shrunk; a size below its base's fails with `DiskTooSmall`. A
+  container's grown root disk restarts nothing: the node tells the running
+  VM and its guest, which grows the filesystem (`disk-autogrow.md`).
 - **A base per disk image**: `hangar/vmbases/<sha256 hex>`, a sparse zvol
   of the size of the disk the image holds, onto which `qemu-img convert`
   writes it raw (`docs/decisions/vm-images.md`), then snapshotted as

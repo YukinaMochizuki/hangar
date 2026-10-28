@@ -80,6 +80,9 @@ type Config struct {
 	// SweepInterval is how often the host is checked for what no machine
 	// accounts for. Zero means a minute.
 	SweepInterval time.Duration
+	// RootPoll is how often each running container whose root disk grows by
+	// itself is asked how full its root is. Zero means DefaultRootPoll.
+	RootPoll time.Duration
 	// RetryMaxBackoff caps the delay before the agent's controllers retry a
 	// key that failed. Zero means the controllers' own cap, a minute.
 	RetryMaxBackoff time.Duration
@@ -219,6 +222,14 @@ type Agent struct {
 	told         map[string]toldIPv6
 	exported     map[string]toldExport
 	bootExported map[string]driver.ShareExport
+	// toldRoot is, by machine uid, what each container's VM and guest took
+	// of its root disk's size in its current boot, and rootWatches the
+	// running containers whose root disk grows by itself, which the usage
+	// poll asks, and rootGrowths whether each one's root grew while it ran
+	// in its current boot (RootGrowth). Guarded by host.
+	toldRoot    map[string]toldRoot
+	rootWatches map[string]*rootWatch
+	rootGrowths map[string]rootGrowth
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -297,6 +308,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.SweepInterval == 0 {
 		cfg.SweepInterval = time.Minute
 	}
+	if cfg.RootPoll == 0 {
+		cfg.RootPoll = DefaultRootPoll
+	}
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
@@ -366,6 +380,9 @@ func New(cfg Config) (*Agent, error) {
 		told:             map[string]toldIPv6{},
 		exported:         map[string]toldExport{},
 		bootExported:     map[string]driver.ShareExport{},
+		toldRoot:         map[string]toldRoot{},
+		rootWatches:      map[string]*rootWatch{},
+		rootGrowths:      map[string]rootGrowth{},
 		shareWaiters:     map[controller.Key]bool{},
 		revoking:         newRevocations(),
 		puller:           puller,
@@ -488,6 +505,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			defer wg.Done()
 			a.sweepLoop(ctx)
 		}()
+		wg.Go(func() { a.rootLoop(ctx) })
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
 		wg.Go(func() { _ = a.endpointsCtl.Run(ctx) })

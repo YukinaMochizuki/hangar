@@ -15,6 +15,7 @@ the change.
 | `container-volumes.md` | A container mounts Disks as volumes in Compose's long syntax, formatted and filled from the image in the guest; a Disk's status says what it is used as |
 | `vm-images.md` | A platform catalogue of disk images, fetched by URL and sha256 and written raw onto a base |
 | `custom-images.md` | `CustomImage`: a project's own disk image, captured from a stopped Disk as an independent copy on its node, held to the tenant's disk quota by what it holds |
+| `disk-autogrow.md` | A container's root disk may grow by itself as it fills, while it runs, up to a max; each step is granted within quota and the node's room and recorded in its status, never its spec |
 | `machine-sizes.md` | A machine's shape is held to rules (256Mi steps of memory, 512Mi to 8Gi of it per vCPU, a disk of 2Gi or more); `MachineSize`s are the administrator's presets, read by all, never recorded on a machine |
 | `api-versioning.md` | Proto packages and `apiVersion` are per group, mapped 1:1 |
 | `api-rpc-shape.md` | One typed service per kind, buf STANDARD request/response wrappers |

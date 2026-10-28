@@ -201,6 +201,14 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			logf("hangar-init: stopping the container, %v before SIGKILL", grace)
 			stopper.Stop(grace)
 		},
+		StatRoot: boot.StatRoot,
+		ResizeRoot: func() (uint64, error) {
+			size, err := boot.ResizeRoot()
+			if err != nil {
+				logf("hangar-init: growing the root filesystem: %v", err)
+			}
+			return size, err
+		},
 	}, connect.WithReadMaxBytes(agent.MaxMessage))
 	serveHTTP(ln, h)
 }

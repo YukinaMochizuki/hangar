@@ -144,8 +144,25 @@ message Resources {
   string cpu = 3;
   // Guest memory, at least 128Mi.
   string memory = 4;
-  // Root disk size, at least 1Gi. It can grow but never shrink.
+  // Root disk size, at least 1Gi. It can grow but never shrink. With
+  // disk_grow set, the size the root disk starts at.
   string disk = 5;
+  // Set, the root disk grows by itself while the container runs, as it
+  // fills, up to disk_grow.max; unset, it never does. See
+  // docs/decisions/disk-autogrow.md.
+  DiskGrow disk_grow = 6;
+}
+
+// DiskGrow is how a container's root disk grows by itself.
+message DiskGrow {
+  // The largest the disk grows to, a quantity at least resources.disk.
+  string max = 1;
+  // How full the disk is when it grows, a percentage from 50% to 95%;
+  // empty is 80%.
+  string threshold = 2;
+  // How much it grows by: a factor such as "2x", over 1x and at most 16x, or
+  // a quantity such as "3Gi", at least 1Gi. Empty is 2x.
+  string step = 3;
 }
 
 // ContainerStatus is the observed state of a container.
@@ -155,6 +172,10 @@ message ContainerStatus {
   // The hardware of the node the container is placed on, as that node
   // describes it now; unset until it is placed.
   Placement placement = 3;
+  // The root disk's size as it has grown by itself, past resources.disk;
+  // empty while it has not. The tenant's disk quota counts the larger of
+  // the two.
+  string disk = 4;
 }
 
 // ContainerService manages containers.

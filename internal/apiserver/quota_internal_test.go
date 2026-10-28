@@ -116,7 +116,7 @@ func quotaDisk(name, size string, annotations map[string]string) *storagev1alpha
 func TestQuotaCountsWhatTheNodeIsAskedFor(t *testing.T) {
 	t.Parallel()
 	for _, c := range []*computev1alpha1.Container{ctr("defaults"), quotaCtr("odd", "2", "1G", "1.5Gi")} {
-		want, err := machineSpec(c.GetSpec())
+		want, err := machineSpec(c.GetSpec(), nil)
 		if err != nil {
 			t.Fatal(err)
 		}

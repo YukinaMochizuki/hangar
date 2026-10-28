@@ -70,6 +70,10 @@ func (s *Server) newControllers() []*controller.Controller {
 				// A secret appearing or going is what a container waiting on
 				// one reports.
 				{Kind: registry.Secret.Kind, Map: s.containersInProject, SkipResync: true},
+				// What a tenant or a project holds, or may hold, changing may
+				// let through a root disk's growth waiting on quota.
+				{Kind: registry.Tenant.Kind, Map: s.containersWaitingOnQuota, SkipResync: true},
+				{Kind: registry.Project.Kind, Map: s.containersWaitingOnQuota, SkipResync: true},
 			},
 		},
 		{
@@ -407,6 +411,9 @@ func (s *Server) reconcileContainer(ctx context.Context, k controller.Key) error
 	var m *computev1alpha1.Machine
 	if mobj != nil {
 		m = mobj.(*computev1alpha1.Machine)
+		if c, err = s.growContainerDisk(ctx, c, m); err != nil {
+			return err
+		}
 	}
 	m, err = s.ensureMachine(ctx, c, m)
 	var stuck *blocked
@@ -472,7 +479,7 @@ func splitWaiting(err error) (waiting, other error) {
 // ensureMachine brings m, the container's machine as read (nil if there is
 // none), in line with the container. Every write is conditional on m.
 func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
-	want, err := machineSpec(c.GetSpec())
+	want, err := machineSpec(c.GetSpec(), c.GetStatus())
 	if err != nil {
 		return m, &blocked{"InvalidResources", err.Error()}
 	}
@@ -588,11 +595,17 @@ func ownedBy(meta *metav1.ObjectMeta, uid string) bool {
 }
 
 // machineSpec is what a container's spec asks of its machine, in canonical
-// quantities; node is left for the scheduler.
-func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpec, error) {
+// quantities, with the disk its root disk has grown to by itself as its
+// status says, if larger; node is left for the scheduler.
+func machineSpec(cs *computev1alpha1.ContainerSpec, st *computev1alpha1.ContainerStatus) (*computev1alpha1.MachineSpec, error) {
 	sz, err := containerSizes(cs.GetResources())
 	if err != nil {
 		return nil, err
+	}
+	sz.disk = max(sz.disk, grownDisk(st)*quantity.GiB)
+	resources := sz.canonical()
+	if g := cs.GetResources().GetDiskGrow(); g != nil {
+		resources.DiskGrow = proto.Clone(g).(*computev1alpha1.DiskGrow)
 	}
 	restart := cs.GetRestartPolicy()
 	if restart == computev1alpha1.RestartPolicy_RESTART_POLICY_UNSPECIFIED {
@@ -604,7 +617,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec) (*computev1alpha1.MachineSpe
 	}
 	disks, shares, mounts := machineVolumes(cs.GetVolumes())
 	return &computev1alpha1.MachineSpec{
-		Resources: sz.canonical(),
+		Resources: resources,
 		RunState:  runState,
 		Boot: &computev1alpha1.MachineSpec_Container{Container: &computev1alpha1.ContainerBoot{
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
@@ -668,6 +681,12 @@ func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Contain
 	status.Conditions = conditions.Set(status.GetConditions(), ready, s.clock.Now())
 	status.Conditions = conditions.Set(status.GetConditions(), stopped, s.clock.Now())
 	status.Placement = placementOf(c.GetMetadata().GetUid(), m, node)
+	// Whether its root disk grew while it ran is the node's to say, on the
+	// machine (docs/decisions/disk-autogrow.md); the container says it as is.
+	status.Conditions = slices.DeleteFunc(status.Conditions, func(x *metav1.Condition) bool { return x.GetType() == computeapi.RootGrowth })
+	if g := conditions.Find(m.GetStatus().GetConditions(), computeapi.RootGrowth); g != nil && ownedBy(m.GetMetadata(), c.GetMetadata().GetUid()) {
+		status.Conditions = append(status.Conditions, proto.Clone(g).(*metav1.Condition))
+	}
 	if proto.Equal(status, c.GetStatus()) {
 		return nil
 	}

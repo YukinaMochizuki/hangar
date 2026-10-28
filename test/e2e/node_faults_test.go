@@ -567,8 +567,9 @@ func TestAnImageLargerThanTheRoomLeftIsNotUnpacked(t *testing.T) {
 }
 
 // TestTheRootDiskIsTheSizeAsked: a machine's root disk is the size its
-// container asks for, and asking for more grows it and restarts the VM on
-// it.
+// container asks for, and asking for more grows it while its VM runs: the
+// VM is told the disk's size, then its guest grows its filesystem, and the
+// VM is not started again. Any other change still starts it again.
 func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 	t.Parallel()
 	w := newWorld(t)
@@ -580,14 +581,37 @@ func TestTheRootDiskIsTheSizeAsked(t *testing.T) {
 	if r := w.host.Snapshot().Roots[uid]; r.Size != 20<<30 {
 		t.Fatalf("root %+v, want 20Gi", r)
 	}
+	before := w.host.Snapshot().VMs[uid]
 	c.Spec.Resources.Disk = "30Gi"
 	w.apply(c)
-	testutil.Eventually(w.t, "the root grown and the VM started again on it", func() (bool, string) {
+	testutil.Eventually(w.t, "the root grown, and the guest's filesystem with it", func() (bool, string) {
 		s := w.host.Snapshot()
 		vm := s.VMs[uid]
-		return s.Roots[uid].Size == 30<<30 && vm.Spec.Root.Size == 30<<30 && vm.State == driver.VMRunning,
-			fmt.Sprintf("root %+v vm %+v", s.Roots[uid], vm.Spec.Root)
+		return s.Roots[uid].Size == 30<<30 && vm.GuestDisk == 30<<30 && vm.GuestRootFS == 30<<30,
+			fmt.Sprintf("root %+v, the guest sees %d bytes, its filesystem %d", s.Roots[uid], vm.GuestDisk, vm.GuestRootFS)
 	})
+	w.waitReason("api", "Running")
+	if vm := w.host.Snapshot().VMs[uid]; vm.Boots != before.Boots || !vm.Started.Equal(before.Started) || vm.State != driver.VMRunning {
+		t.Errorf("the VM grown is %+v, booted %d times; it was started at %v, booted %d times", vm.VM, vm.Boots, before.Started, before.Boots)
+	}
+	if calls := w.host.RootCalls(uid); !slices.Equal(calls, []string{fake.RootCallResize, fake.RootCallGrow}) {
+		t.Errorf("the root grew by %q; want the VM told, then the guest grown, once each", calls)
+	}
+
+	c.Spec.Env = []*computev1alpha1.EnvVar{{Name: "MODE", Value: "debug"}}
+	w.apply(c)
+	testutil.Eventually(w.t, "the VM started again with the new environment", func() (bool, string) {
+		vm := w.host.Snapshot().VMs[uid]
+		return slices.Contains(vm.Spec.Run.Env, "MODE=debug") && vm.State == driver.VMRunning && vm.Started.After(before.Started),
+			fmt.Sprintf("%+v, started at %v", vm.Spec.Run, vm.Started)
+	})
+	w.waitReason("api", "Running")
+	if vm := w.host.Snapshot().VMs[uid]; vm.GuestDisk != 30<<30 || vm.GuestRootFS != 30<<30 {
+		t.Errorf("started again, the guest sees %d bytes, its filesystem %d; want 30Gi", vm.GuestDisk, vm.GuestRootFS)
+	}
+	if calls := w.host.RootCalls(uid); len(calls) != 2 {
+		t.Errorf("a VM started at its root's size was told it again: %q", calls)
+	}
 }
 
 // TestAVanishedBaseIsMadeAgain: a base gone after its image was prepared,

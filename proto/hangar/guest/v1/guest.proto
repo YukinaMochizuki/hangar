@@ -106,6 +106,28 @@ service GuestAgentService {
   // container runs: the address its interface holds now, which may have
   // moved since it booted. The other addresses of an interface stay.
   rpc SetIPv6(SetIPv6Request) returns (SetIPv6Response);
+  // RootUsage says how full the root filesystem is, as statfs(2) says.
+  rpc RootUsage(RootUsageRequest) returns (RootUsageResponse);
+  // GrowRoot grows the mounted root filesystem to its whole device, as
+  // the guest does at boot, once the host has grown the device while the
+  // guest runs. See docs/decisions/disk-autogrow.md.
+  rpc GrowRoot(GrowRootRequest) returns (GrowRootResponse);
+}
+
+message RootUsageRequest {}
+
+message RootUsageResponse {
+  // The filesystem's size and what is used of it, in bytes. With no root
+  // reserve, used plus available is size.
+  uint64 size = 1;
+  uint64 used = 2;
+}
+
+message GrowRootRequest {}
+
+message GrowRootResponse {
+  // The root filesystem's size once grown, in bytes.
+  uint64 size = 1;
 }
 
 message SetIPv6Request {

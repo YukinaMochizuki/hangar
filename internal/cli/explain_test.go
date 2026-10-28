@@ -98,8 +98,8 @@ func TestExplain(t *testing.T) {
 		t.Fatal(err)
 	}
 	defs, _ := schema["$defs"].(map[string]any)
-	if schema["$ref"] != "#/$defs/hangar.compute.v1alpha1.Resources" || len(defs) != 1 || defs["hangar.compute.v1alpha1.Resources"] == nil {
-		t.Errorf("explain -o json of a field, which refers to Resources alone: %v", schema)
+	if schema["$ref"] != "#/$defs/hangar.compute.v1alpha1.Resources" || len(defs) != 2 || defs["hangar.compute.v1alpha1.Resources"] == nil || defs["hangar.compute.v1alpha1.DiskGrow"] == nil {
+		t.Errorf("explain -o json of a field, which refers to Resources and what it holds alone: %v", schema)
 	}
 	if out := w.must("", "explain", "container.spec.ports", "-o", "json"); !strings.Contains(out, `"<container>-<name>`) {
 		t.Errorf("explain -o json escapes what it prints:\n%s", out)
@@ -110,7 +110,7 @@ func TestExplain(t *testing.T) {
 		want string
 	}{
 		{[]string{"explain", "containr"}, "did you mean containers?"},
-		{[]string{"explain", "container.spec.resources.cpus"}, `spec.resources has no field "cpus"; did you mean cpu?; it has cpu, disk, memory`},
+		{[]string{"explain", "container.spec.resources.cpus"}, `spec.resources has no field "cpus"; did you mean cpu?; it has cpu, disk, diskGrow, memory`},
 		{[]string{"explain", "container.spec.image.x"}, "spec.image has no fields"},
 	} {
 		r := w.run("", tt.args...)

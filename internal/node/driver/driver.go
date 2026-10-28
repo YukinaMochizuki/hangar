@@ -864,6 +864,13 @@ type Hypervisor interface {
 	// included, until ctx ends; a log made later is followed from its
 	// start. It returns send's error, or ctx's once following.
 	ReadLog(ctx context.Context, machineUID string, opts LogOptions, send func([]LogRecord) error) error
+	// ResizeRoot tells a running container's VM that its root disk, grown
+	// since the VM started, is now the size its device has, and returns that
+	// size: the guest sees it at once, and grows its filesystem when asked
+	// (Guest.GrowRoot). Telling it the size it has already is no error. A VM
+	// started before it could be told, until it is started again, is
+	// ErrNoLiveResize; it sees the size at its next boot.
+	ResizeRoot(ctx context.Context, machineUID string) (int64, error)
 	// AttachConsole connects to a running firmware VM's interactive serial
 	// console, which speaks hangar.node.v1's ConsoleRequest and
 	// ConsoleResponse, each delimited by its length
@@ -872,6 +879,9 @@ type Hypervisor interface {
 	// booting no firmware, is ErrNoConsole.
 	AttachConsole(ctx context.Context, machineUID string) (net.Conn, error)
 }
+
+// ErrNoLiveResize is a VM whose disk's size is told it only as it boots.
+var ErrNoLiveResize = errors.New("the VM sees its disk's new size only once started again")
 
 // ErrNoConsole is a VM whose serial console takes no client. It is short:
 // a WebSocket's close carries it in at most 123 bytes, after what the
@@ -1061,6 +1071,15 @@ type Mount struct {
 // Hash identifies the spec: a VM started with a spec of another hash runs
 // something else and must be started again.
 func (s VMSpec) Hash() string {
+	// A container's root disk grows while its VM runs (Hypervisor.ResizeRoot),
+	// so its size is no part of what the VM runs.
+	s.Root.Size = 0
+	return s.sizedHash()
+}
+
+// sizedHash is the Hash nodes gave a spec before a root disk grew while
+// its VM ran, which counted the root disk's size.
+func (s VMSpec) sizedHash() string {
 	// The interfaces' IPv6 addresses change while a VM runs, so they are no
 	// part of what it runs.
 	s.Interfaces = slices.Clone(s.Interfaces)
@@ -1082,8 +1101,9 @@ func (s VMSpec) noExport() VMSpec {
 
 // LegacyHash is the Hash nodes gave a spec before an interface's IPv6
 // address could change while its VM ran, which counted the addresses, with
-// those of started, the interfaces as the VM was started. A VM started by
-// such a node keeps that hash, and runs the spec all the same.
+// those of started, the interfaces as the VM was started, and the root
+// disk's size. A VM started by such a node keeps that hash, and runs the
+// spec all the same.
 func (s VMSpec) LegacyHash(started []Interface) string {
 	s.Interfaces = slices.Clone(s.Interfaces)
 	for i := range s.Interfaces {
@@ -1095,15 +1115,13 @@ func (s VMSpec) LegacyHash(started []Interface) string {
 	return s.hash()
 }
 
-// Runs reports whether a VM whose recorded hash is hash, its interfaces
-// started as they were started, runs s: by Hash, by the LegacyHash an older
-// node gave, or by either of s without its volumes' serials, as a node
-// before them started it. An upgrade restarts no VM; its next boot gives it
-// the serials.
-func (s VMSpec) Runs(hash string, started []Interface) bool {
-	if hash == s.Hash() || hash == s.LegacyHash(started) {
-		return true
-	}
+// Runs reports whether vm, as the host lists it, runs s: by Hash, by a hash
+// an older node gave, counting the root disk's size as vm was started
+// (sizedHash) or the IPv6 addresses it was started with too (LegacyHash),
+// or by any of them of s without its volumes' serials, as a node before them
+// started it. An upgrade restarts no VM; its next boot gives it the serials.
+func (s VMSpec) Runs(vm VM) bool {
+	specs := []VMSpec{s}
 	bare := s
 	bare.Disks = slices.Clone(s.Disks)
 	serials := false
@@ -1111,7 +1129,19 @@ func (s VMSpec) Runs(hash string, started []Interface) bool {
 		serials = serials || bare.Disks[i].Serial != ""
 		bare.Disks[i].Serial = ""
 	}
-	return serials && (hash == bare.Hash() || hash == bare.LegacyHash(started))
+	if serials {
+		specs = append(specs, bare)
+	}
+	for _, c := range specs {
+		if vm.SpecHash == c.Hash() {
+			return true
+		}
+		c.Root.Size = vm.RootSize
+		if vm.SpecHash == c.sizedHash() || vm.SpecHash == c.LegacyHash(vm.Interfaces) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s VMSpec) hash() string {
@@ -1157,6 +1187,9 @@ type VM struct {
 	// Interfaces are its interfaces as the VM was started, which a
 	// container's guest takes from its boot disk at every boot.
 	Interfaces []Interface
+	// RootSize is its root disk's size as the VM was started; the disk may
+	// have grown since (Hypervisor.ResizeRoot).
+	RootSize int64
 }
 
 // VMState is where a VM is.
@@ -1187,6 +1220,16 @@ type Guest interface {
 	// A guest that cannot, as one started before it could, fails with
 	// ErrGuestCannot.
 	SetIPv6(ctx context.Context, machineUID string, ifaces []GuestIPv6) error
+	// RootUsage says how large a container's root filesystem is and how much
+	// of it is used, as the guest claims. A guest that cannot, as one
+	// started before it could, fails with ErrGuestCannot.
+	RootUsage(ctx context.Context, machineUID string) (RootUsage, error)
+	// GrowRoot has a container's guest grow its root filesystem, while it
+	// runs, to the disk it sees (Hypervisor.ResizeRoot). A filesystem that
+	// fills its disk already stays as it is. A guest that cannot, as one
+	// started before it could, fails with ErrGuestCannot; it grows the
+	// filesystem as it boots.
+	GrowRoot(ctx context.Context, machineUID string) error
 	// SetExport replaces the whole export of a FileShare's server. A server
 	// refusing it keeps the export it had, and the error says why.
 	SetExport(ctx context.Context, machineUID string, export ShareExport) error
@@ -1213,6 +1256,12 @@ func GuestIPv6Of(ifaces []Interface) []GuestIPv6 {
 		}
 	}
 	return out
+}
+
+// RootUsage is how large a guest's root filesystem is and how much of it is
+// used, in bytes.
+type RootUsage struct {
+	Size, Used uint64
 }
 
 // ErrGuestCannot is a guest asked what it does not know how to do.

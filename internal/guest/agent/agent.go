@@ -50,6 +50,12 @@ type Server struct {
 	// ApplyIPv6, if set, makes the interfaces' public IPv6 what SetIPv6
 	// asks.
 	ApplyIPv6 func(ifaces []*guestv1.Interface) error
+	// StatRoot, if set, says how large the root filesystem is and how much
+	// of it is used, in bytes.
+	StatRoot func() (size, used uint64, err error)
+	// ResizeRoot, if set, grows the mounted root filesystem to its device
+	// and says its size in bytes after.
+	ResizeRoot func() (size uint64, err error)
 }
 
 // MaxGrace bounds the grace period a Stop may ask for.
@@ -88,6 +94,31 @@ func (s *Server) SetIPv6(_ context.Context, req *connect.Request[guestv1.SetIPv6
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	return connect.NewResponse(&guestv1.SetIPv6Response{}), nil
+}
+
+// RootUsage says how full the root filesystem is.
+func (s *Server) RootUsage(context.Context, *connect.Request[guestv1.RootUsageRequest]) (*connect.Response[guestv1.RootUsageResponse], error) {
+	if s.StatRoot == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest has no root filesystem of its own"))
+	}
+	size, used, err := s.StatRoot()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&guestv1.RootUsageResponse{Size: size, Used: used}), nil
+}
+
+// GrowRoot grows the root filesystem to its device, which the host has
+// grown while the guest runs.
+func (s *Server) GrowRoot(context.Context, *connect.Request[guestv1.GrowRootRequest]) (*connect.Response[guestv1.GrowRootResponse], error) {
+	if s.ResizeRoot == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest has no root filesystem of its own"))
+	}
+	size, err := s.ResizeRoot()
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(&guestv1.GrowRootResponse{Size: size}), nil
 }
 
 // Exit codes for a program that cannot run, as shells give them.

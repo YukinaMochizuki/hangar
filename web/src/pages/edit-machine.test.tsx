@@ -318,6 +318,18 @@ describe("the edit page", () => {
     expect((applies(a)[0]!.obj as Container).spec?.resources?.disk).toBe("10G");
   });
 
+  it("edits a container whose stored disk growth the form would not write, keeping it as stored", async () => {
+    const growing = web();
+    growing.spec!.resources!.disk = "2Gi";
+    growing.spec!.resources!.diskGrow = { $typeName: "hangar.compute.v1alpha1.DiskGrow", max: "20480Mi", threshold: "", step: "2048Mi" };
+    const a = await openEdit("Container", { container: () => growing });
+    fireEvent.change(screen.getByLabelText("Image"), { target: { value: "nginx:2" } });
+    await waitFor(() => expect(applyButton().disabled).toBe(false));
+    fireEvent.click(applyButton());
+    await waitFor(() => expect(applies(a)).toHaveLength(1));
+    expect((applies(a)[0]!.obj as Container).spec?.resources?.diskGrow).toMatchObject({ max: "20480Mi", step: "2048Mi" });
+  });
+
   it("holds the disk to what the placed machine has, or before it is placed to the spec's", async () => {
     const grown = web();
     grown.spec!.resources!.disk = "30Gi";

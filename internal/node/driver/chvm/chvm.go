@@ -94,6 +94,10 @@ type Config struct {
 	systemd     systemd
 	guest       driver.Guest
 	powerButton func(ctx context.Context, socket string) error
+	// resizeDisk and deviceSize, if set, replace resizeDisk and blockSize,
+	// for tests.
+	resizeDisk func(ctx context.Context, socket, id string, size int64) error
+	deviceSize func(path string) (int64, error)
 	// logPoll, if set, is how often a followed log is checked for more.
 	logPoll time.Duration
 	// procUsers, if set, replaces listing the ids processes run as.
@@ -123,6 +127,8 @@ type Hypervisor struct {
 	sd          systemd
 	guest       driver.Guest
 	powerButton func(ctx context.Context, socket string) error
+	resizeDisk  func(ctx context.Context, socket, id string, size int64) error
+	deviceSize  func(path string) (int64, error)
 	locks       keylock.Map
 	changes     chan struct{}
 	// users is held while a Start picks its VM's id and writes it down.
@@ -238,6 +244,13 @@ func New(ctx context.Context, cfg Config) (*Hypervisor, error) {
 	if h.powerButton == nil {
 		h.powerButton = pressPowerButton
 	}
+	h.resizeDisk, h.deviceSize = cfg.resizeDisk, cfg.deviceSize
+	if h.resizeDisk == nil {
+		h.resizeDisk = resizeDisk
+	}
+	if h.deviceSize == nil {
+		h.deviceSize = blockSize
+	}
 	h.sd = cfg.systemd
 	if h.sd == nil {
 		sd, err := dialSystemd(ctx, h.signal)
@@ -336,7 +349,7 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 	if err != nil {
 		return driver.VM{}, false, err
 	}
-	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces}
+	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size}
 	// A guest that powered off while it was being stopped, its launcher
 	// waiting for the stop, has exited.
 	offInStop := exited && exists(filepath.Join(dir, stopFile))
