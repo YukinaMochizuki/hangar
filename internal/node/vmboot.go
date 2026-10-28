@@ -21,7 +21,7 @@ import (
 func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine, vm *driver.VM, epoch int64, vcpus int32, memoryMiB int64) (*observation, error) {
 	uid := m.GetMetadata().GetUid()
 	// Its root disk first, as the firmware boots the first disk.
-	vols, err := a.volumes(ctx, m)
+	vols, _, err := a.volumes(ctx, m)
 	if err != nil {
 		return nil, err
 	}

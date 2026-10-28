@@ -86,7 +86,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		// an address is tried again, the machine stopped all the same.
 		report, err = a.stop(ctx, uid, vm)
 		err = cmp.Or(err, letGo)
-		delete(a.rootWatches, uid)
+		delete(a.growWatches, uid)
 	case letGo != nil:
 		// Stuck, as a step of converging is.
 		err = blocked(computeapi.ReasonNetworkFailed, letGo)
@@ -281,7 +281,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
 
-	vols, err := a.volumes(ctx, m)
+	vols, disks, err := a.volumes(ctx, m)
 	if err != nil {
 		return nil, err
 	}
@@ -329,12 +329,10 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	if obs != nil {
 		obs.image, obs.digest = boot.GetImage(), digest
 		if obs.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING && obs.started != nil {
-			if c := a.rootGrowthCondition(m, obs.started.AsTime()); c != nil {
-				obs.conds = append(obs.conds, c)
-			}
+			obs.conds = append(obs.conds, a.growthConditions(m, obs.started.AsTime())...)
 		}
 	}
-	a.watchRoot(m, spec, obs)
+	a.watchGrowth(m, spec, disks, obs)
 	return obs, cmp.Or(err, pending)
 }
 
@@ -567,7 +565,7 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
 	if !restarted {
-		err = errors.Join(err, a.ensureRootSize(ctx, spec, vm))
+		err = errors.Join(err, a.ensureDiskSizes(ctx, spec, vm))
 	}
 	switch {
 	case restarted:
@@ -656,9 +654,7 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	a.puller.drop(uid)
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
-	delete(a.toldRoot, uid)
-	delete(a.rootWatches, uid)
-	delete(a.rootGrowths, uid)
+	a.forgetGrowth(uid)
 	delete(a.exported, uid)
 	delete(a.bootExported, uid)
 	a.requeueNetworksOf(a.revoking.forget(uid))

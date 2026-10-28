@@ -45,8 +45,8 @@ func TestAVMWithoutDisksKeepsItsHash(t *testing.T) {
 	spec.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/d", Size: 1 << 30}}
 	withDisk := spec.Hash()
 	spec.Disks[0].Size = 2 << 30
-	if spec.Hash() == withDisk {
-		t.Error("a grown volume leaves the hash as it was: the VM would not boot to see it")
+	if spec.Hash() != withDisk {
+		t.Error("a grown volume changes a container's hash: its VM would start again, where it is told the size while it runs")
 	}
 	grown := spec.Hash()
 	spec.Mounts = []driver.Mount{{Disk: 0, Name: "data", Target: "/data"}}
@@ -240,5 +240,69 @@ func TestAVMWhoseRootGrewRunsItsSpec(t *testing.T) {
 		if tt.spec.Runs(tt.vm) {
 			t.Errorf("a VM started %s runs the spec: the agent would not restart it", name)
 		}
+	}
+}
+
+// TestAContainerWhoseVolumesGrewRunsItsSpec: Hash leaves out a container's
+// volumes' sizes, which grow while its VM runs, as it does its root disk's;
+// a VM the node before started, whose hash counted them, runs the spec at
+// the sizes it started with, grown since or not. A firmware VM's disks'
+// sizes still count: it sees a disk grown only as it boots.
+func TestAContainerWhoseVolumesGrewRunsItsSpec(t *testing.T) {
+	nic := driver.Interface{
+		MachineUID: "m1", Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
+		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"), Device: "hm0123456789abc",
+	}
+	spec := driver.VMSpec{
+		MachineUID: "m1", Machine: "web/ct-api", VCPUs: 1, MemoryMiB: 256,
+		Root:       driver.Disk{MachineUID: "m1", Digest: "sha256:app", Path: "/dev/zvol/hangar/roots/m1", Size: 1 << 30},
+		Disks:      []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1", Size: 2 << 30}},
+		Mounts:     []driver.Mount{{Disk: 0, Name: "data", Target: "/data"}},
+		Interfaces: []driver.Interface{nic},
+		Run:        driver.RunSpec{Command: []string{"nginx"}},
+	}
+	// What the node before gave this spec, Hash at commit 86550db.
+	const before = "42fd887de5aa6e12e9882f28"
+	grown := spec
+	grown.Disks = []driver.Volume{spec.Disks[0]}
+	grown.Disks[0].Size = 4 << 30
+	grown.Root.Size = 3 << 30
+	started := driver.VM{SpecHash: before, Interfaces: []driver.Interface{nic}, RootSize: 1 << 30, DiskSizes: []int64{2 << 30}}
+	for name, s := range map[string]driver.VMSpec{"as started": spec, "its root and volume grown since": grown} {
+		if !s.Runs(started) {
+			t.Errorf("a VM the node before started, %s, does not run its spec: the agent would restart it", name)
+		}
+	}
+	if grown.Hash() != spec.Hash() {
+		t.Error("a volume's size changes a container's hash: its VM would start again for the volume to grow")
+	}
+	if spec.Hash() == before {
+		t.Error("Hash counts the volumes' sizes still: the test sees nothing")
+	}
+	other := grown
+	other.Mounts = []driver.Mount{{Disk: 0, Name: "data", Target: "/srv"}}
+	moved := started
+	moved.DiskSizes = []int64{3 << 30}
+	for name, tt := range map[string]struct {
+		s  driver.VMSpec
+		vm driver.VM
+	}{
+		"mounted elsewhere":                   {other, started},
+		"by the node before, at another size": {spec, moved},
+	} {
+		if tt.s.Runs(tt.vm) {
+			t.Errorf("a VM %s runs the spec: the agent would not restart it", name)
+		}
+	}
+
+	fw := driver.VMSpec{
+		MachineUID: "m1", Machine: "p/vm-m1", VCPUs: 1, MemoryMiB: 1024, Firmware: true,
+		Disks: []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/r", Size: 10 << 30}},
+	}
+	fwGrown := fw
+	fwGrown.Disks = []driver.Volume{fw.Disks[0]}
+	fwGrown.Disks[0].Size = 20 << 30
+	if fwGrown.Hash() == fw.Hash() || fwGrown.Runs(driver.VM{SpecHash: fw.Hash(), DiskSizes: []int64{10 << 30}}) {
+		t.Error("a firmware VM's disk grown leaves it running: it would not see the disk")
 	}
 }

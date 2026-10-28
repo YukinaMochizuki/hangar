@@ -50,7 +50,7 @@ func rootGrowth(t *testing.T, h Host) {
 		}
 		must(t, h.Guest.GrowRoot(ctx, "m1"))
 	}
-	var after driver.RootUsage
+	var after driver.FSUsage
 	testutil.EventuallyWithin(t, vmWait, "the guest's root grown", func() (bool, string) {
 		after, err = h.Guest.RootUsage(ctx, "m1")
 		return err == nil && after.Size > uint64(spec.Root.Size), fmt.Sprintf("%+v %v, was %+v on %d bytes", after, err, booted, spec.Root.Size)

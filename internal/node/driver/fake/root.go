@@ -46,19 +46,19 @@ func (d hypervisor) ResizeRoot(_ context.Context, machineUID string) (int64, err
 	return v.guestDisk, nil
 }
 
-func (d guest) RootUsage(_ context.Context, machineUID string) (driver.RootUsage, error) {
+func (d guest) RootUsage(_ context.Context, machineUID string) (driver.FSUsage, error) {
 	d.h.mu.Lock()
 	defer d.h.mu.Unlock()
 	d.h.rootCalls[machineUID] = append(d.h.rootCalls[machineUID], RootCallUsage)
 	v, err := d.h.rootGuestLocked(machineUID)
 	if err != nil {
-		return driver.RootUsage{}, err
+		return driver.FSUsage{}, err
 	}
 	if u, ok := d.h.rootClaims[machineUID]; ok {
 		return u, nil
 	}
 	size := uint64(max(v.guestFS, 0))
-	return driver.RootUsage{Size: size, Used: min(d.h.rootUsed[machineUID], size)}, nil
+	return driver.FSUsage{Size: size, Used: min(d.h.rootUsed[machineUID], size)}, nil
 }
 
 func (d guest) GrowRoot(ctx context.Context, machineUID string) error {
@@ -112,7 +112,7 @@ func (h *Host) FillRoot(machineUID string, used uint64) {
 
 // ClaimRoot has the machine's guest answer RootUsage with u, whatever its
 // filesystem holds, as a guest that lies does; nil has it tell the truth.
-func (h *Host) ClaimRoot(machineUID string, u *driver.RootUsage) {
+func (h *Host) ClaimRoot(machineUID string, u *driver.FSUsage) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if u == nil {

@@ -288,12 +288,20 @@ func (g *launcherGuest) SetIPv6(context.Context, string, []driver.GuestIPv6) err
 
 func (g *launcherGuest) SetExport(context.Context, string, driver.ShareExport) error { return nil }
 
-func (g *launcherGuest) RootUsage(context.Context, string) (driver.RootUsage, error) {
-	return driver.RootUsage{}, errors.New("the launcher never asks a guest's root")
+func (g *launcherGuest) RootUsage(context.Context, string) (driver.FSUsage, error) {
+	return driver.FSUsage{}, errors.New("the launcher never asks a guest's root")
 }
 
 func (g *launcherGuest) GrowRoot(context.Context, string) error {
 	return errors.New("the launcher never grows a guest's root")
+}
+
+func (g *launcherGuest) VolumeUsage(context.Context, string, string) (driver.FSUsage, error) {
+	return driver.FSUsage{}, errors.New("the launcher never asks a guest's volumes")
+}
+
+func (g *launcherGuest) GrowVolume(context.Context, string, string) error {
+	return errors.New("the launcher never grows a guest's volumes")
 }
 
 func (g *launcherGuest) Stop(_ context.Context, _ string, grace time.Duration) error {

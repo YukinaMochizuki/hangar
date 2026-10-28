@@ -194,6 +194,11 @@ type launch struct {
 	// which the unit's ProcSubset hides from the launcher.
 	Swtpm  string `json:",omitempty"`
 	NoFile uint64 `json:",omitempty"`
+	// VolumeIDs gives a container's volumes their volumeNode as their id in
+	// Cloud Hypervisor, by which ResizeVolume names them. A launch written
+	// before has none, and its VM's volumes are resized only as it starts
+	// again.
+	VolumeIDs bool `json:",omitempty"`
 }
 
 // stopTimes are the grace and the slack the launch gives a guest to stop.

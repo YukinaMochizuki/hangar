@@ -301,40 +301,42 @@ func (a *Agent) writeDiskStatus(ctx context.Context, d *storagev1alpha1.Disk, co
 
 // volumes makes the volumes of the disks m lists, in its order. A disk not
 // yet bound to this node holds the machine up.
-func (a *Agent) volumes(ctx context.Context, m *computev1alpha1.Machine) ([]driver.Volume, error) {
+func (a *Agent) volumes(ctx context.Context, m *computev1alpha1.Machine) ([]driver.Volume, []*storagev1alpha1.Disk, error) {
 	var out []driver.Volume
+	var disks []*storagev1alpha1.Disk
 	for _, name := range computeapi.MachineDisks(m.GetSpec()) {
 		d, err := a.getDisk(ctx, m.GetMetadata().GetProject(), name)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if d == nil {
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s does not exist", name))
+			return nil, nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s does not exist", name))
 		}
 		if d.GetStatus().GetNode() != a.cfg.Name {
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not bound to this node", name))
+			return nil, nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not bound to this node", name))
 		}
 		// A disk made from an image is the disk controller's to make; the
 		// machine waits for it, and is queued again once it is ready.
 		have, made, err := a.volumeOn(ctx, d.GetMetadata().GetUid())
 		if err != nil {
-			return nil, blocked(computeapi.ReasonDiskFailed, err)
+			return nil, nil, blocked(computeapi.ReasonDiskFailed, err)
 		}
 		if !made && d.GetSpec().GetSource().GetImage() != nil {
 			msg := conditions.Find(d.GetStatus().GetConditions(), computeapi.DiskReady).GetMessage()
-			return nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not made yet: %s", name, msg))
+			return nil, nil, blocked(computeapi.ReasonDiskNotReady, fmt.Errorf("disk %s is not made yet: %s", name, msg))
 		}
 		size, err := statusSize(d)
 		if err != nil {
-			return nil, blocked(computeapi.ReasonDiskFailed, err)
+			return nil, nil, blocked(computeapi.ReasonDiskFailed, err)
 		}
 		v, err := a.cfg.Drivers.Storage.EnsureVolume(ctx, d.GetMetadata().GetUid(), size, have.Digest)
 		if err != nil {
-			return nil, blocked(computeapi.ReasonDiskFailed, err)
+			return nil, nil, blocked(computeapi.ReasonDiskFailed, err)
 		}
 		out = append(out, v)
+		disks = append(disks, d)
 	}
-	return out, nil
+	return out, disks, nil
 }
 
 // machinesWithDisk maps a disk to the machines on this node that list it: a

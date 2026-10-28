@@ -350,6 +350,9 @@ func (h *Hypervisor) vm(uid string, unit *unitState) (driver.VM, bool, error) {
 		return driver.VM{}, false, err
 	}
 	vm := driver.VM{MachineUID: uid, SpecHash: ln.Hash, Run: ln.Spec.Run, Interfaces: ln.Spec.Interfaces, RootSize: ln.Spec.Root.Size}
+	for _, v := range ln.Spec.Disks {
+		vm.DiskSizes = append(vm.DiskSizes, v.Size)
+	}
 	// A guest that powered off while it was being stopped, its launcher
 	// waiting for the stop, has exited.
 	offInStop := exited && exists(filepath.Join(dir, stopFile))
@@ -507,6 +510,7 @@ func (h *Hypervisor) Start(ctx context.Context, spec driver.VMSpec) error {
 		Spec: spec, Hash: hash, CloudHypervisor: h.cfg.CloudHypervisor,
 		Kernel: h.cfg.Kernel, Initramfs: h.cfg.Initramfs, Cmdline: h.cfg.Cmdline,
 		StopGrace: h.cfg.StopGrace, StopSlack: h.cfg.StopSlack,
+		VolumeIDs: true,
 	}
 	sb := sandbox{Dir: dir, Binds: []string{h.cfg.Launcher[0], h.cfg.CloudHypervisor, h.cfg.Kernel, h.cfg.Initramfs}}
 	if spec.Firmware {

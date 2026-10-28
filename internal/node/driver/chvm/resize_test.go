@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
@@ -137,5 +139,90 @@ func TestBlockSizeTakesOnlyABlockDevice(t *testing.T) {
 	}
 	if _, err := blockSize(link); err == nil {
 		t.Error("followed a link")
+	}
+}
+
+// TestResizeVolumeTellsItsDevicesSize: a running container's volume is told
+// the VM by its node's id, at the size its node's device has; a volume the
+// launch gave no id, as a launch written before ids, cannot be, and says
+// so; nor can a volume the VM has not.
+func TestResizeVolumeTellsItsDevicesSize(t *testing.T) {
+	type call struct {
+		socket, id string
+		size       int64
+	}
+	var calls []call
+	var sized []string
+	h := newDriverWith(t, shortDir(t), newFakeSystemd(), &fakeGuest{}, func(c *Config) {
+		c.resizeDisk = func(_ context.Context, socket, id string, size int64) error {
+			calls = append(calls, call{socket, id, size})
+			return nil
+		}
+		c.deviceSize = func(path string) (int64, error) {
+			sized = append(sized, path)
+			return 5 << 30, nil
+		}
+	})
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Disks = []driver.Volume{{DiskUID: "d1", Path: "/dev/zvol/hangar/disks/d1", Size: 1 << 30}, {DiskUID: "d2", Path: "/dev/zvol/hangar/disks/d2", Size: 1 << 30}}
+	if err := h.Start(t.Context(), spec); err != nil {
+		t.Fatal(err)
+	}
+	dir := h.dir("m1")
+	if err := os.MkdirAll(filepath.Join(dir, chDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, apiFile), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if vm, ok := listed(t, h, "m1"); !ok || !slices.Equal(vm.DiskSizes, []int64{1 << 30, 1 << 30}) {
+		t.Errorf("the VM lists its volumes as started at %v; want 1Gi each", vm.DiskSizes)
+	}
+	size, err := h.ResizeVolume(t.Context(), "m1", 1)
+	if err != nil || size != 5<<30 {
+		t.Fatalf("resized to %d, %v; want the device's 5 GiB", size, err)
+	}
+	want := call{filepath.Join(dir, apiFile), volumeNode(1), 5 << 30}
+	if len(calls) != 1 || calls[0] != want || len(sized) != 1 || sized[0] != filepath.Join(dir, volumeNode(1)) {
+		t.Errorf("asked %+v of the sizes of %q; want %+v of %s", calls, sized, want, filepath.Join(dir, volumeNode(1)))
+	}
+	if _, err := h.ResizeVolume(t.Context(), "m1", 2); err == nil || errors.Is(err, driver.ErrNoLiveResize) {
+		t.Errorf("a volume the VM has not: %v, want an error", err)
+	}
+
+	ln, err := readLaunch(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ln.VolumeIDs = false
+	if _, err := h.writeLaunch(dir, ln); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.ResizeVolume(t.Context(), "m1", 0); !errors.Is(err, driver.ErrNoLiveResize) {
+		t.Errorf("a volume of a launch with no ids: %v, want ErrNoLiveResize", err)
+	}
+	if len(calls) != 1 {
+		t.Errorf("a volume of a launch with no ids was asked: %+v", calls)
+	}
+}
+
+// TestAContainersVolumesHaveIDs: a launch that says so gives a container's
+// volumes their node's name as their id in Cloud Hypervisor, and one that
+// does not, none; a file share's server's share never has one.
+func TestAContainersVolumesHaveIDs(t *testing.T) {
+	spec := testSpec("m1", driver.RestartAlways)
+	spec.Disks = []driver.Volume{{DiskUID: "d1"}, {DiskUID: "d2"}}
+	with := strings.Join(chArgs(launch{Spec: spec, VolumeIDs: true}, "/d", 0), " ")
+	for n := range spec.Disks {
+		if want := "path=/d/" + volumeNode(n) + ",image_type=raw,id=" + volumeNode(n); !strings.Contains(with, want) {
+			t.Errorf("Cloud Hypervisor's arguments %q lack %q", with, want)
+		}
+	}
+	if without := strings.Join(chArgs(launch{Spec: spec}, "/d", 0), " "); strings.Contains(without, "id=disk-") {
+		t.Errorf("a launch without ids gives its volumes some: %q", without)
+	}
+	srv := driver.VMSpec{MachineUID: "s1", FileShareServer: &driver.ShareServer{Volume: driver.ShareVolume{ShareUID: "f1", Path: "/dev/zvol/hangar/shares/f1"}}}
+	if args := strings.Join(chArgs(launch{Spec: srv, VolumeIDs: true}, "/d", 0), " "); strings.Contains(args, "id=disk-") {
+		t.Errorf("a file share's server's share has an id: %q", args)
 	}
 }
