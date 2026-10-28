@@ -213,7 +213,11 @@ const (
 	ReasonDiskFailed            = "DiskFailed"
 	// ReasonDiskTooSmall means the machine asks for a root disk smaller than
 	// its image.
-	ReasonDiskTooSmall  = "DiskTooSmall"
+	ReasonDiskTooSmall = "DiskTooSmall"
+	// ReasonDiskGrowing means the machine's root disk, smaller than its
+	// image, waits for its owner to grant it the size the image needs,
+	// which its resources.disk_grow lets it grow to (status.disk_needed).
+	ReasonDiskGrowing   = "DiskGrowing"
 	ReasonNetworkFailed = "NetworkFailed"
 	ReasonBootFailed    = "BootFailed"
 	ReasonExited        = "Exited"

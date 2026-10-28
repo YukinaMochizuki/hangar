@@ -206,6 +206,12 @@ message MachineStatus {
   // A disk asks for no growth when it is not listed. Each Disk's controller
   // grants it within quota.
   repeated MachineDiskWanted disks_wanted = 8;
+  // The root disk size, in whole Gi, the base of the machine's image needs,
+  // which the node asks for before it makes the root disk of a machine
+  // whose resources.disk is smaller and whose resources.disk_grow lets it
+  // be that large; empty when it asks for none. Its owner's controller
+  // grants it within quota.
+  string disk_needed = 9;
 }
 
 // MachineDiskWanted is the size the node asks a Disk be grown to.

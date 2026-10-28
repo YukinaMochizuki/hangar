@@ -36,6 +36,21 @@ func askToGrow(t *testing.T, s *Server, system context.Context, m *computev1alph
 	}
 }
 
+// askToStart writes the machine's status as its node does when its image's
+// base needs more than the machine's disk: asking for needed.
+func askToStart(t *testing.T, s *Server, system context.Context, m *computev1alpha1.Machine, needed string) {
+	t.Helper()
+	status := &computev1alpha1.MachineStatus{}
+	if m.GetStatus() != nil {
+		status = proto.Clone(m.GetStatus()).(*computev1alpha1.MachineStatus)
+	}
+	status.DiskNeeded = needed
+	key := resource.Key{Project: "web", Name: m.GetMetadata().GetName()}
+	if _, err := s.backend(registry.Machine).UpdateStatus(asNode(system, m.GetSpec().GetNode()), key, status, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func diskGrowBlocked(c *computev1alpha1.Container) *metav1.Condition {
 	return conditions.Find(c.GetStatus().GetConditions(), ContainerDiskGrowBlocked)
 }
@@ -101,6 +116,80 @@ func TestARootDiskGrowsWithinQuota(t *testing.T) {
 	waitContainer(t, s, system, "api", "no longer blocked", func(c *computev1alpha1.Container) bool {
 		return c.GetStatus().GetDisk() == "16Gi" && diskGrowBlocked(c).GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE
 	})
+}
+
+// TestARootDiskStartsAsLargeAsItsImageNeeds: the node asking for the size
+// its image needs before it makes the root disk is granted that size, not
+// the next step, in the container's status and its machine, and quota
+// counts it; asked again, nothing more is granted.
+func TestARootDiskStartsAsLargeAsItsImageNeeds(t *testing.T) {
+	t.Parallel()
+	s, system, user := controlled(t, "n1")
+	nodeWithDisk(t, s, system, "n1", "100Gi", "")
+	applyCtr(t, s, user, growing("api", "20Gi"))
+	m := waitMachine(t, s, system, "ct-api", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
+
+	// The step from 2Gi is 4Gi; the image needs 3Gi.
+	askToStart(t, s, system, m, "3Gi")
+	m = waitMachine(t, s, system, "ct-api", "started at 3Gi", machineDisk("3Gi"))
+	c := waitContainer(t, s, system, "api", "recording 3Gi", func(c *computev1alpha1.Container) bool {
+		return c.GetStatus().GetDisk() == "3Gi" && diskGrowBlocked(c).GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE
+	})
+	if c.GetSpec().GetResources().GetDisk() != "2Gi" {
+		t.Errorf("the spec was rewritten: %s", c.GetSpec().GetResources().GetDisk())
+	}
+	if got := diskUsage(t, s); got != "3Gi" {
+		t.Errorf("the tenant uses %s of disk, want 3Gi", got)
+	}
+
+	askToStart(t, s, system, m, "3Gi")
+	waitSettled(t, s)
+	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"}); m.GetSpec().GetResources().GetDisk() != "3Gi" {
+		t.Errorf("an ask repeated grew the disk to %s", m.GetSpec().GetResources().GetDisk())
+	}
+}
+
+// TestAStartTheImageNeedsWaitsOnQuota: the size an image needs, past the
+// tenant's disk limit, is not granted, the container saying why, and is
+// once the limit is raised.
+func TestAStartTheImageNeedsWaitsOnQuota(t *testing.T) {
+	t.Parallel()
+	s, system, user := controlled(t, "n1")
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("4Gi")})
+	nodeWithDisk(t, s, system, "n1", "100Gi", "")
+	applyCtr(t, s, user, growing("api", "20Gi"))
+	m := waitMachine(t, s, system, "ct-api", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
+
+	askToStart(t, s, system, m, "5Gi")
+	waitContainer(t, s, system, "api", "blocked by quota", func(c *computev1alpha1.Container) bool {
+		b := diskGrowBlocked(c)
+		return b.GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_TRUE && b.GetReason() == ReasonDiskGrowQuotaExceeded
+	})
+	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"}); m.GetSpec().GetResources().GetDisk() != "2Gi" {
+		t.Errorf("a start past quota reached the machine: %s", m.GetSpec().GetResources().GetDisk())
+	}
+
+	setDefaultPlan(t, s, &tenancyv1alpha1.Limits{Disk: proto.String("10Gi")})
+	waitMachine(t, s, system, "ct-api", "started at 5Gi once the limit is raised", machineDisk("5Gi"))
+}
+
+// TestAStartPastMaxIsNotGranted: a size the image needs past
+// disk_grow.max, which the node does not ask for, is not granted if asked.
+func TestAStartPastMaxIsNotGranted(t *testing.T) {
+	t.Parallel()
+	s, system, user := controlled(t, "n1")
+	nodeWithDisk(t, s, system, "n1", "100Gi", "")
+	applyCtr(t, s, user, growing("api", "4Gi"))
+	m := waitMachine(t, s, system, "ct-api", "placed", func(m *computev1alpha1.Machine) bool { return m.GetSpec().GetNode() == "n1" })
+
+	askToStart(t, s, system, m, "5Gi")
+	waitContainer(t, s, system, "api", "not blocked", func(c *computev1alpha1.Container) bool {
+		return diskGrowBlocked(c).GetStatus() == metav1.ConditionStatus_CONDITION_STATUS_FALSE
+	})
+	waitSettled(t, s)
+	if m := getMachine(t, s, system, resource.Key{Project: "web", Name: "ct-api"}); m.GetSpec().GetResources().GetDisk() != "2Gi" {
+		t.Errorf("a start past max reached the machine: %s", m.GetSpec().GetResources().GetDisk())
+	}
 }
 
 // setProjectDisk caps project web's disk, as its tenant's owner does.
