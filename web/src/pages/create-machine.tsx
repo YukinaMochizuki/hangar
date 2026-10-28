@@ -28,6 +28,7 @@ import { useCan } from "@/lib/permissions";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { Input, Select } from "@/components/form";
 import { advancedSpec, ContainerAdvanced, noAdvanced, type Advanced } from "@/components/container-advanced";
+import { DiskGrowFields, diskGrowOf, diskGrowSpec, type DiskGrow } from "@/components/disk-grow";
 import { Choice, FormManifest, FormPage, FormSection as Section, FormSummary } from "@/components/form-page";
 import { gibText, SizeSliders } from "@/components/size-sliders";
 import { MachinePortForwards } from "@/components/machine-port-forwards";
@@ -222,6 +223,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
     // The stored disk as the field shows it, which may not be whole GiB, such as 10G.
     diskText: baseC ? formatNumber(quantityGiB(baseC.spec?.resources?.disk || containerDefaults.disk)) : undefined,
     diskWholeGi: baseC ? wholeGiB(baseC.spec?.resources?.disk || containerDefaults.disk) : undefined,
+    diskGrow: diskGrowOf(baseC?.spec?.resources?.diskGrow, wholeGiB),
   }));
   const [kind, setKind] = useState<CreateKind>(initialKind);
   const [image, setImage] = useState(initial.image);
@@ -251,6 +253,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   // the minimum. An edit starts on the disk the container has, which no
   // size moves: a disk that grew never shrinks again.
   const [diskText, setDiskText] = useState<string | null>(initial.diskText ?? null);
+  // A container's root disk growing by itself, off until ticked.
+  const [diskGrow, setDiskGrow] = useState<DiskGrow>(initial.diskGrow);
   // A container's process, folded until opened.
   const [advanced, setAdvanced] = useState<Advanced>(initial.advanced);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -380,6 +384,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
           : `A disk is at least ${minDisk} GiB; ${diskGi} GiB is less.`
       : undefined;
   const diskQuantity = diskTyped === "" ? "" : `${diskTyped}Gi`;
+  const grow = kind === "container" ? diskGrowSpec(diskGrow, diskGi) : { spec: undefined, problems: [] as string[] };
   const groupsHere = (securityGroups.data?.items ?? []).filter((g) => g.spec?.network === network).map((g) => g.metadata?.name ?? "");
   const noun = kind === "container" ? "container" : "virtual machine";
   const shortNoun = kind === "container" ? "container" : "VM";
@@ -434,6 +439,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
       if (advanced.restart !== initial.advanced.restart) changed.restartPolicy = proc.restartPolicy;
       if (json(volumes) !== json(initial.volumes)) changed.volumes = volumes;
       if (diskEdited) changed.disk = diskQuantity;
+      if (JSON.stringify(diskGrow) !== JSON.stringify(initial.diskGrow)) changed.diskGrow = grow.spec ?? null;
     } else {
       if (json(dataDisks) !== json(initial.dataDisks)) changed.disks = dataDisks;
       if (json(vmShares) !== json(initial.vmShares)) changed.fileShares = vmShares;
@@ -461,7 +467,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
               restartPolicy: proc.restartPolicy,
               interfaces,
               volumes: volumesOf(volumes),
-              resources: s && { ...s.resources, disk: diskQuantity },
+              resources: s && { ...s.resources, disk: diskQuantity, diskGrow: grow.spec },
             },
           })
         : create(VirtualMachineSchema, {
@@ -543,6 +549,8 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
   if (!s) problems.push(machineSizes.loading ? "The machine sizes are loading." : "No machine size is chosen.");
   if (customProblem) problems.push(customProblem);
   if (s && diskProblem && !baseV) problems.push(diskProblem);
+  // An edit is held back by growth fields only once they are changed: what is stored, the API took.
+  if (!edit || JSON.stringify(diskGrow) !== JSON.stringify(initial.diskGrow)) problems.push(...grow.problems);
   const nameProblem = !edit && !nameCheck.ok && name !== "" && !existing.loading && !existing.error ? nameCheck.reason : undefined;
 
   const submit = useMutation({
@@ -953,6 +961,7 @@ export function MachineForm({ kind: initialKind, size: initialSize, edit }: { ki
                 </>
               )}
             </div>
+            {kind === "container" && <DiskGrowFields value={diskGrow} onChange={setDiskGrow} diskGi={diskGi} disabled={!s} />}
             {!baseV && s && diskProblem ? (
               <p className="mt-1.5 text-[12px] text-fail">{diskProblem}</p>
             ) : !baseV && diskOver ? (

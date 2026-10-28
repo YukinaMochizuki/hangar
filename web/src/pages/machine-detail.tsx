@@ -5,7 +5,8 @@ import { createClient } from "@connectrpc/connect";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import { MachineCapabilityService, MachineLogStream, type MachineLogRecord } from "@hangar/api/hangar/compute/v1alpha1/machine_capability_pb";
 import { MachinePhase } from "@hangar/api/hangar/compute/v1alpha1/machine_pb";
-import { Protocol, RestartPolicy } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
+import { Protocol, RestartPolicy, type Container } from "@hangar/api/hangar/compute/v1alpha1/container_pb";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import type { Condition } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { PublicEndpointService } from "@hangar/api/hangar/network/v1alpha1/public_endpoint_pb";
 import { Link, useNavigate } from "@tanstack/react-router";
@@ -35,7 +36,7 @@ import { manifestOf, toYaml } from "@/lib/manifest";
 import { date, isLive, refetchInterval, uptime, useMachines, type MachineKind, type MachineView } from "@/lib/machines";
 import { sizeOf, useMachineSizes } from "@/lib/machine-sizes";
 import { useReducedMotion } from "@/lib/motion";
-import { formatNumber } from "@/lib/quantity";
+import { formatNumber, quantityGiB } from "@/lib/quantity";
 import { runsOnState } from "@/lib/runs-on";
 import { bare } from "@/pages/machine-list";
 import { VmFileSharesCard } from "@/components/file-shares";
@@ -227,6 +228,38 @@ function Lifecycle({ m }: { m: MachineView }) {
   );
 }
 
+/**
+ * A container's root disk growing by itself: how far it may grow, and,
+ * while a step waits on quota or the node, why (docs/decisions/disk-autogrow.md).
+ */
+function DiskGrowth({ c, diskGi }: { c: Container; diskGi: number }) {
+  const g = c.spec?.resources?.diskGrow;
+  const blocked = c.status?.conditions.find((x) => x.type === "DiskGrowBlocked" && x.status === ConditionStatus.TRUE);
+  // The node says so when the running guest cannot take a grown disk until it starts again.
+  const cannot = c.status?.conditions.find((x) => x.type === "RootGrowth" && x.status === ConditionStatus.FALSE);
+  const maxGi = quantityGiB(g?.max);
+  return (
+    <Field label="Disk growth">
+      <span className="tabular">
+        {Number.isFinite(diskGi) && diskGi >= maxGi
+          ? `at its largest, ${formatNumber(maxGi)} GiB`
+          : `up to ${formatNumber(maxGi)} GiB, at ${g?.threshold || "80%"} full, by ${g?.step || "2x"}`}
+      </span>
+      {blocked && (
+        <div className="mt-1 text-[12px] text-pending" role="status">
+          {blocked.reason === "QuotaExceeded" ? "Waiting on quota: " : "Waiting for room on its node: "}
+          <span className="text-muted">{blocked.message}</span>
+        </div>
+      )}
+      {cannot && (
+        <div className="mt-1 text-[12px] text-pending" role="status">
+          Grows at the next restart: <span className="text-muted">{cannot.message}</span>
+        </div>
+      )}
+    </Field>
+  );
+}
+
 function Summary({ m, onEditLabels }: { m: MachineView; onEditLabels?: () => void }) {
   const { sizes } = useMachineSizes();
   const size = sizeOf(m, sizes);
@@ -245,6 +278,7 @@ function Summary({ m, onEditLabels }: { m: MachineView; onEditLabels?: () => voi
             <span className="tabular">{sizeText(m)}</span>
           </span>
         </Field>
+        {m.container?.spec?.resources?.diskGrow && <DiskGrowth c={m.container} diskGi={m.diskGi} />}
         {m.container && <Field label="Restart policy">{restartPolicies[m.container.spec?.restartPolicy ?? 0]}</Field>}
         {m.vm && (
           <Field label="Root disk" mono>
