@@ -1,4 +1,4 @@
-# A container's root disk grows by itself, within quota, while it runs
+# A container's disks grow by themselves, within quota, while it runs
 
 Status: accepted, 2026-10.
 
@@ -69,6 +69,44 @@ full filesystem, and holds for one node, while a plan spans many).
 - **A rebuilt root disk keeps the grown size.** A new image rebuilds the
   root disk at the machine's disk, which `status.disk` still sets.
 
+### A Disk a container mounts
+
+A container's volumes (`container-volumes.md`) are where its data goes, and
+are sized up front just as its root disk was, so a Disk grows the same way.
+
+- **`spec.grow` turns it on**, a `DiskGrow` of the storage group with the
+  fields and rules of `resources.disk_grow` (`max` at least `spec.size`), read
+  by the same `computeapi.ParseDiskGrow`. The storage group cannot use the
+  compute group's message, which imports it.
+- **It grows only while a running container mounts it read-write.** That
+  container's node asks the guest how full the volume's filesystem is
+  (`VolumeUsage`, by its device), and past the threshold lists the Disk in
+  the machine's `status.disks_wanted`. A Disk attached to a VM, mounted
+  read-only, or attached to nothing does not grow by itself.
+- **The Disk's controller grants it, into `status.size`.** `status.size`
+  already is the size the Disk has on its node, never less than before, and
+  quota already counts the larger of it and `spec.size`. The grant is the
+  root disk's: the next step from `status.size`, never the node's number,
+  capacity then quota held, `checkFits` and `growthFits`, `DiskGrowBlocked`
+  on the Disk when it does not fit, retried when the tenant's or project's
+  usage or limits change or the node's room does. A Disk's spec is never
+  rewritten: a `spec.size` below `status.size` is accepted for a Disk that
+  grows, or grew, by itself, and shrinks nothing.
+- **A mounted volume grows while its container runs**, as the root disk
+  does: the zvol, then Cloud Hypervisor's `vm.resize-disk` for that disk,
+  then `GrowVolume` in the guest. So does a `spec.size` raised by hand. A
+  container volume's size is no part of what its VM runs. A VM or a guest
+  that cannot take it while it runs, as for the root disk, takes it at its
+  next boot; meanwhile the machine's `VolumeGrowth` condition, which each
+  Disk it mounts carries as it is, is False with `VMCannotResize` or
+  `GuestCannotGrow`.
+- **A CustomImage captured from a grown Disk is as large as the Disk.** Its
+  `status.disk_size` is the source's size, and a Disk made from it starts
+  at least that large (`custom-images.md`): to make small Disks, capture a
+  Disk that never grew. Starting a Disk at what an image holds would mean
+  shrinking an ext4 filesystem, which the host never touches; that is not
+  offered.
+
 ## Consequences
 
 - A container whose growth is blocked fills its disk as one without growth
@@ -78,6 +116,7 @@ full filesystem, and holds for one node, while a plan spans many).
   its own `max`, which its tenant's quota pays for, and no further.
 - A disk only grows; nothing shrinks a root disk, grown or asked.
 - OpenZFS 2.4.1's `zvol_os_update_volsize` oops (`storage-zfs.md`) may meet
-  a growth of a zvol a running VM holds; the testbed's ZFS 2.2 does not
-  show it, and production has not run it yet.
-- VMs, Disks and FileShares do not grow by themselves.
+  a growth of a zvol a running VM holds; a root disk grown so on production's
+  2.4.1 (2026-10, v0.2.0-rc.14) showed none.
+- A VM's disks and FileShares do not grow by themselves: a VM has no agent
+  to say how full they are, nor to grow its own filesystems.

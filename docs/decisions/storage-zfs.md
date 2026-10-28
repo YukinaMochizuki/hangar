@@ -172,7 +172,8 @@ unreliable on virtio-fs.
   It outlives the
   machines it is attached to, one at a time, and goes when its Disk is
   deleted, or when the sweep finds no Disk bound to the node for it. A grown
-  volume restarts the machine it is attached to, as a grown root disk does.
+  volume a container mounts grows while it runs, as its root disk does; one
+  attached to a VM restarts it (`disk-autogrow.md`).
 - **A volume per FileShare**: `hangar/shares/<share uid>`, a sparse zvol,
   `volmode=dev`, blank, at the size its server's machine names, grown,
   never shrunk; only that server has it, and makes its filesystem
