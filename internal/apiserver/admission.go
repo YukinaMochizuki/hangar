@@ -943,6 +943,13 @@ func (s *Server) validateContainerResources(ctx context.Context, old proto.Messa
 	if err := checkMaximums(sz, "spec.resources", cmp.Or(r.GetCpu(), defaultCPU), cmp.Or(r.GetMemory(), defaultMemory), cmp.Or(r.GetDisk(), defaultDisk)); err != nil {
 		return err
 	}
+	dg, _, err := computeapi.ParseDiskGrow(r.GetDiskGrow(), sz.disk, "spec.resources.disk_grow")
+	if err != nil {
+		return invalid("%v", err)
+	}
+	if dg.Max > maxDisk {
+		return invalid("spec.resources.disk_grow.max %s is above the maximum of 64Ti", r.GetDiskGrow().GetMax())
+	}
 	if old == nil {
 		return nil
 	}
@@ -955,6 +962,12 @@ func (s *Server) validateContainerResources(ctx context.Context, old proto.Messa
 	floor, err := s.diskFloor(ctx, was)
 	if err != nil {
 		return err
+	}
+	// A machine whose disk grew by itself keeps it whatever the spec asks,
+	// as the machine's disk is the larger of the two: a smaller spec.disk
+	// shrinks nothing.
+	if grownDisk(was.GetStatus()) >= floor {
+		return nil
 	}
 	if wholeGi(sz.disk) < floor {
 		return invalid("spec.resources.disk %s is smaller than the current %dGi; a root disk can grow but never shrink",

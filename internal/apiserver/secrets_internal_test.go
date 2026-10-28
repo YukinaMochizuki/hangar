@@ -488,7 +488,7 @@ func TestImagePullCredentials(t *testing.T) {
 func TestPullSecretsAreMirrored(t *testing.T) {
 	t.Parallel()
 	want := []string{"a", "b"}
-	spec, err := machineSpec(&computev1alpha1.ContainerSpec{Image: "nginx", ImagePullSecrets: want})
+	spec, err := machineSpec(&computev1alpha1.ContainerSpec{Image: "nginx", ImagePullSecrets: want}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

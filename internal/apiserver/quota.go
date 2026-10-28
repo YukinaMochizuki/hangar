@@ -291,10 +291,12 @@ func countsOne(d dim) func(proto.Message, projectObjects) amounts {
 // containerAmounts is what a container's machine is asked for, with the
 // defaults and in the canonical sizes the container controller gives it,
 // plus a public endpoint for each public port, which the apiserver makes
-// for it. A stopped container holds its disk, its endpoints and its place
-// among machines, but no cpu or memory.
+// for it. Its disk is what its root disk has grown to by itself, if more
+// than the spec asks. A stopped container holds its disk, its endpoints and
+// its place among machines, but no cpu or memory.
 func containerAmounts(obj proto.Message, _ projectObjects) amounts {
-	spec := obj.(*computev1alpha1.Container).GetSpec()
+	c := obj.(*computev1alpha1.Container)
+	spec := c.GetSpec()
 	var a amounts
 	a[dimMachines] = 1
 	for _, p := range spec.GetPorts() {
@@ -308,7 +310,7 @@ func containerAmounts(obj proto.Message, _ projectObjects) amounts {
 	if err != nil {
 		return a
 	}
-	a[dimDisk] = int64(wholeGi(sz.disk) * quantity.GiB)
+	a[dimDisk] = int64(max(wholeGi(sz.disk), grownDisk(c.GetStatus())) * quantity.GiB)
 	if spec.GetRunState() != computev1alpha1.ContainerRunState_CONTAINER_RUN_STATE_STOPPED {
 		a[dimCPU] = int64(sz.cpu) * 1000
 		a[dimMemory] = int64(wholeMi(sz.memory) * quantity.MiB)
