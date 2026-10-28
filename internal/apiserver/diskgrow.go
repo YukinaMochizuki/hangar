@@ -48,6 +48,7 @@ func grownDisk(st *computev1alpha1.ContainerStatus) uint64 {
 }
 
 // growContainerDisk grants c's root disk the growth its machine m asks for,
+// the next step past a threshold or the size its image needs to start,
 // within the tenant's quota and the room on m's node, by recording the new
 // size in c's status; the machine follows from there (machineSpec). It
 // returns c as stored after. A growth that does not fit is reported on c
@@ -83,6 +84,15 @@ func (s *Server) growContainerDisk(ctx context.Context, c *computev1alpha1.Conta
 	// next step from the disk the machine has, so a growth the node asked
 	// for twice is granted once.
 	target := dg.Next(have.disk)
+	if needed, nerr := optionalBytes(m.GetStatus().GetDiskNeeded()); nerr == nil && wholeGi(needed) > wholeGi(have.disk) {
+		// Before it makes the root disk, the node asks for what the image
+		// needs: that size in whole Gi, not a step, so the disk starts no
+		// larger than it must; none past max, as no step is.
+		wanted, target, err = needed, wholeGi(needed)*quantity.GiB, nil
+		if target > dg.Max {
+			target = have.disk
+		}
+	}
 	if grownDisk(status) > wholeGi(have.disk) {
 		// Granted, and not yet on the machine: ensureMachine grows it, or
 		// says on Ready why the node has no room for it after all, the room

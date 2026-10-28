@@ -129,6 +129,8 @@ type observation struct {
 	// applied says the host runs the machine's current generation, as far
 	// as it ever will: running, stopped or exited.
 	applied bool
+	// diskNeeded is the status.disk_needed it asks; empty for none.
+	diskNeeded string
 }
 
 func notReady(phase computev1alpha1.MachinePhase, reason, msg string) *observation {
@@ -274,7 +276,19 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		return nil, blocked(computeapi.ReasonDiskFailed, err)
 	}
 	root, err := d.Storage.EnsureRoot(ctx, uid, digest, size)
+	var small *driver.DiskTooSmallError
 	switch {
+	case errors.As(err, &small):
+		need, ok := neededDisk(m.GetSpec().GetResources(), small.Need)
+		if !ok {
+			return nil, blocked(computeapi.ReasonDiskTooSmall, err)
+		}
+		// Its owner grants the size, within quota, into the machine's
+		// resources.disk, whose change brings the machine back here.
+		obs := notReady(phaseOf(vm), computeapi.ReasonDiskGrowing,
+			fmt.Sprintf("the root disk waits to be granted %s, which its image needs", need))
+		obs.diskNeeded = need
+		return obs, fmt.Errorf("%w: machine %s's root disk, to be granted %s", controller.ErrWaiting, uid, need)
 	case errors.Is(err, driver.ErrDiskTooSmall):
 		return nil, blocked(computeapi.ReasonDiskTooSmall, err)
 	case err != nil:
@@ -685,6 +699,12 @@ func (a *Agent) writeStatus(ctx context.Context, m *computev1alpha1.Machine, obs
 	}
 	if obs.applied {
 		status.ObservedGeneration = gen
+	}
+	status.DiskNeeded = obs.diskNeeded
+	if obs.diskNeeded != "" {
+		// What the poll asked was of a root disk now gone: the one to be
+		// made asks nothing until it is polled.
+		status.DiskWanted = ""
 	}
 	for _, c := range obs.conds {
 		c = proto.Clone(c).(*metav1.Condition)

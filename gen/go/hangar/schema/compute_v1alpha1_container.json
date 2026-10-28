@@ -116,7 +116,7 @@
           "type": "array"
         },
         "disk": {
-          "description": "The root disk's size as it has grown by itself, past resources.disk; empty while it has not. The tenant's disk quota counts the larger of the two.",
+          "description": "The root disk's size as it has grown by itself, past resources.disk, or as it started, larger, to hold its image; empty while it has not. The tenant's disk quota counts the larger of the two.",
           "type": "string"
         },
         "observedGeneration": {
@@ -283,7 +283,7 @@
           "type": "string"
         },
         "disk": {
-          "description": "Root disk size, at least 1Gi. It can grow but never shrink. With disk_grow set, the size the root disk starts at.",
+          "description": "Root disk size, at least 1Gi. It can grow but never shrink. With disk_grow set, the size the root disk starts at, or the size its image's base needs, in whole Gi, if that is larger. A size below the base fails with DiskTooSmall without disk_grow, and so does a base past disk_grow.max.",
           "type": "string"
         },
         "diskGrow": {

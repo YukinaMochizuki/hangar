@@ -128,6 +128,19 @@ func (e *NoSpaceError) Error() string {
 
 func (e *NoSpaceError) Is(target error) bool { return target == ErrNoSpace }
 
+// DiskTooSmallError is ErrDiskTooSmall saying how large the disk had to
+// be: Need is the size in bytes of the base it is cloned from.
+type DiskTooSmallError struct {
+	What        string
+	Asked, Need int64
+}
+
+func (e *DiskTooSmallError) Error() string {
+	return fmt.Sprintf("%v: %d bytes asked, %s has %d", ErrDiskTooSmall, e.Asked, e.What, e.Need)
+}
+
+func (e *DiskTooSmallError) Is(target error) bool { return target == ErrDiskTooSmall }
+
 // UnpackShortfall is the NoSpaceError of what, the unpack of an image of
 // layers of size bytes compressed that ran out of the free bytes it had,
 // failing with err: known to need more than free, it asks for size more
@@ -300,8 +313,9 @@ type Storage interface {
 	// exists, as a ZFS snapshot with clones does.
 	DeleteBase(ctx context.Context, digest string) error
 	// EnsureRoot returns the machine's root disk of digest, cloned if need
-	// be, of at least size bytes: grown, never shrunk, and ErrDiskTooSmall
-	// below the base. A root disk of another digest is an error.
+	// be, of at least size bytes: grown, never shrunk, and a
+	// *DiskTooSmallError below the base. A root disk of another digest is an
+	// error.
 	EnsureRoot(ctx context.Context, machineUID, digest string, size int64) (Disk, error)
 	// Roots lists every machine's root disk.
 	Roots(ctx context.Context) ([]Disk, error)

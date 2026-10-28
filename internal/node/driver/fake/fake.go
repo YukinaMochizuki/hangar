@@ -1187,7 +1187,7 @@ func (d storage) EnsureRoot(_ context.Context, machineUID, digest string, size i
 		return driver.Disk{}, fmt.Errorf("no base for %s", digest)
 	}
 	if size < baseSize {
-		return driver.Disk{}, fmt.Errorf("%w: %d bytes asked, the base of %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
+		return driver.Disk{}, &driver.DiskTooSmallError{What: "the base of " + digest, Asked: size, Need: baseSize}
 	}
 	if d.h.cloneErr != nil {
 		return driver.Disk{}, d.h.cloneErr

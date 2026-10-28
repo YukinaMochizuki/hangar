@@ -530,13 +530,20 @@ func rootSizes(t *testing.T, h Host) {
 	ctx := t.Context()
 	digest := base(t, h, "app:1")
 
-	// Below the base's size is too small, and makes nothing.
-	if _, err := h.Storage.EnsureRoot(ctx, "m1", digest, 1); !errors.Is(err, driver.ErrDiskTooSmall) {
-		t.Errorf("a root of one byte: %v, want too small", err)
+	// Below the base's size is too small, says the size it needs, and makes
+	// nothing; at that size it is made.
+	_, err := h.Storage.EnsureRoot(ctx, "m1", digest, 1)
+	var small *driver.DiskTooSmallError
+	if !errors.Is(err, driver.ErrDiskTooSmall) || !errors.As(err, &small) || small.Need <= 1 {
+		t.Fatalf("a root of one byte: %v, want too small, saying what it needs", err)
 	}
 	if _, ok := rootOf(t, h.Storage, "m1"); ok {
 		t.Error("a root too small was made")
 	}
+	if _, err := h.Storage.EnsureRoot(ctx, "m0", digest, small.Need); err != nil {
+		t.Errorf("a root of the size it was said to need: %v", err)
+	}
+	must(t, h.Storage.DeleteRoot(ctx, "m0"))
 
 	root, err := h.Storage.EnsureRoot(ctx, "m1", digest, rootSize)
 	must(t, err)

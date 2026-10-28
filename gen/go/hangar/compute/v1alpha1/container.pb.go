@@ -692,7 +692,10 @@ type Resources struct {
 	// Guest memory, at least 128Mi.
 	Memory string `protobuf:"bytes,4,opt,name=memory,proto3" json:"memory,omitempty"`
 	// Root disk size, at least 1Gi. It can grow but never shrink. With
-	// disk_grow set, the size the root disk starts at.
+	// disk_grow set, the size the root disk starts at, or the size its
+	// image's base needs, in whole Gi, if that is larger. A size below the
+	// base fails with DiskTooSmall without disk_grow, and so does a base past
+	// disk_grow.max.
 	Disk string `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
 	// Set, the root disk grows by itself while the container runs, as it
 	// fills, up to disk_grow.max; unset, it never does. See
@@ -834,9 +837,9 @@ type ContainerStatus struct {
 	// The hardware of the node the container is placed on, as that node
 	// describes it now; unset until it is placed.
 	Placement *Placement `protobuf:"bytes,3,opt,name=placement,proto3" json:"placement,omitempty"`
-	// The root disk's size as it has grown by itself, past resources.disk;
-	// empty while it has not. The tenant's disk quota counts the larger of
-	// the two.
+	// The root disk's size as it has grown by itself, past resources.disk,
+	// or as it started, larger, to hold its image; empty while it has not.
+	// The tenant's disk quota counts the larger of the two.
 	Disk          string `protobuf:"bytes,4,opt,name=disk,proto3" json:"disk,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

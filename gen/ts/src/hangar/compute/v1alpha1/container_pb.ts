@@ -334,7 +334,10 @@ export type Resources = Message<"hangar.compute.v1alpha1.Resources"> & {
 
   /**
    * Root disk size, at least 1Gi. It can grow but never shrink. With
-   * disk_grow set, the size the root disk starts at.
+   * disk_grow set, the size the root disk starts at, or the size its
+   * image's base needs, in whole Gi, if that is larger. A size below the
+   * base fails with DiskTooSmall without disk_grow, and so does a base past
+   * disk_grow.max.
    *
    * @generated from field: string disk = 5;
    */
@@ -419,9 +422,9 @@ export type ContainerStatus = Message<"hangar.compute.v1alpha1.ContainerStatus">
   placement?: Placement | undefined;
 
   /**
-   * The root disk's size as it has grown by itself, past resources.disk;
-   * empty while it has not. The tenant's disk quota counts the larger of
-   * the two.
+   * The root disk's size as it has grown by itself, past resources.disk,
+   * or as it started, larger, to hold its image; empty while it has not.
+   * The tenant's disk quota counts the larger of the two.
    *
    * @generated from field: string disk = 4;
    */

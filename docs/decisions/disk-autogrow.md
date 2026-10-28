@@ -68,6 +68,19 @@ full filesystem, and holds for one node, while a plan spans many).
   stays Ready.
 - **A rebuilt root disk keeps the grown size.** A new image rebuilds the
   root disk at the machine's disk, which `status.disk` still sets.
+- **A root disk starts at least as large as its image.** A root disk is a
+  clone of its image's base, and only the node knows the base's size, once
+  it has made it; whoever writes the spec cannot. So with `disk_grow` set,
+  a `resources.disk` below the base is not refused: before it makes the
+  root disk, the node asks for the base's size in whole Gi in the
+  machine's `status.disk_needed`, and the machine is not Ready, with
+  `DiskGrowing`, meanwhile. The container controller grants that size, not
+  a step, the way it grants a step: quota and the node's room checked, into
+  `status.disk`, `DiskGrowBlocked` and a retry when it does not fit. Quota
+  then counts the disk as it started, and nothing the host holds was
+  unaccounted for even for a moment. A base past `max` is `DiskTooSmall`,
+  as is any base past a `resources.disk` without `disk_grow`: `max` is the
+  most the disk is ever let be.
 
 ### A Disk a container mounts
 

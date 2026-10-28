@@ -12,6 +12,7 @@ import (
 
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/quantity"
+	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 	"github.com/YukinaMochizuki/hangar/internal/node/driver"
 )
 
@@ -131,6 +132,25 @@ func diskSize(r *computev1alpha1.Resources) (int64, error) {
 		return 0, fmt.Errorf("disk: %q is not a size a root disk can have", r.GetDisk())
 	}
 	return int64(size), nil
+}
+
+// neededDisk is the root disk size, base bytes rounded up to whole Gi, a
+// machine resourced r asks its owner for when its image's base needs base
+// bytes: ok only where r's disk_grow lets the disk be that large.
+func neededDisk(r *computev1alpha1.Resources, base int64) (string, bool) {
+	disk, err := quantity.Bytes(r.GetDisk())
+	if err != nil || base <= 0 {
+		return "", false
+	}
+	dg, ok, err := computeapi.ParseDiskGrow(r.GetDiskGrow(), disk, "spec.resources.disk_grow")
+	if err != nil || !ok {
+		return "", false
+	}
+	need := quantity.FormatDisk(uint64(base))
+	if b, err := quantity.Bytes(need); err != nil || b > dg.Max {
+		return "", false
+	}
+	return need, true
 }
 
 // diskCapacity is the storage's size as a node reports it, in whole Gi

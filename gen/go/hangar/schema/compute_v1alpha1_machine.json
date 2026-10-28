@@ -322,6 +322,10 @@
           },
           "type": "array"
         },
+        "diskNeeded": {
+          "description": "The root disk size, in whole Gi, the base of the machine's image needs, which the node asks for before it makes the root disk of a machine whose resources.disk is smaller and whose resources.disk_grow lets it be that large; empty when it asks for none. Its owner's controller grants it within quota.",
+          "type": "string"
+        },
         "diskWanted": {
           "description": "The root disk size the node asks the machine be grown to, as its guest found it past resources.disk_grow's threshold; empty when it asks for none. Its owner's controller grants it within quota.",
           "type": "string"
@@ -373,7 +377,7 @@
           "type": "string"
         },
         "disk": {
-          "description": "Root disk size, at least 1Gi. It can grow but never shrink. With disk_grow set, the size the root disk starts at.",
+          "description": "Root disk size, at least 1Gi. It can grow but never shrink. With disk_grow set, the size the root disk starts at, or the size its image's base needs, in whole Gi, if that is larger. A size below the base fails with DiskTooSmall without disk_grow, and so does a base past disk_grow.max.",
           "type": "string"
         },
         "diskGrow": {

@@ -748,7 +748,7 @@ func (s *Store) EnsureRoot(ctx context.Context, machineUID, digest string, size 
 			return driver.Disk{}, fmt.Errorf("%s: volsize %q", snap, p["volsize"])
 		}
 		if want < baseSize {
-			return driver.Disk{}, fmt.Errorf("%w: %d bytes asked, the base of %s has %d", driver.ErrDiskTooSmall, size, digest, baseSize)
+			return driver.Disk{}, &driver.DiskTooSmallError{What: "the base of " + digest, Asked: size, Need: baseSize}
 		}
 		if _, err := zfs(ctx, "set", usedNow(), snap); err != nil {
 			return driver.Disk{}, err

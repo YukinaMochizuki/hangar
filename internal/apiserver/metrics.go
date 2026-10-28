@@ -197,7 +197,7 @@ func enumWord(name, prefix string) string {
 var machineReasons = map[string]bool{
 	computeapi.ReasonRunning: true, computeapi.ReasonCreating: true, computeapi.ReasonPulling: true,
 	computeapi.ReasonBooting: true, computeapi.ReasonStopped: true, computeapi.ReasonImagePullFailed: true,
-	computeapi.ReasonImagePullUnauthorized: true, computeapi.ReasonDiskFailed: true, computeapi.ReasonDiskTooSmall: true,
+	computeapi.ReasonImagePullUnauthorized: true, computeapi.ReasonDiskFailed: true, computeapi.ReasonDiskTooSmall: true, computeapi.ReasonDiskGrowing: true,
 	computeapi.ReasonNetworkFailed: true, computeapi.ReasonBootFailed: true, computeapi.ReasonExited: true,
 	computeapi.ReasonPoweredOff: true, computeapi.ReasonNetworkNotReady: true, computeapi.ReasonDiskNotReady: true,
 	computeapi.ReasonExportFailed: true, computeapi.ReasonFileShareNotReady: true,

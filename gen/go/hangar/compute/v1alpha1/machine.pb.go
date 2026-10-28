@@ -1014,7 +1014,13 @@ type MachineStatus struct {
 	// mounts whose filesystem its guest found past the Disk's grow threshold.
 	// A disk asks for no growth when it is not listed. Each Disk's controller
 	// grants it within quota.
-	DisksWanted   []*MachineDiskWanted `protobuf:"bytes,8,rep,name=disks_wanted,json=disksWanted,proto3" json:"disks_wanted,omitempty"`
+	DisksWanted []*MachineDiskWanted `protobuf:"bytes,8,rep,name=disks_wanted,json=disksWanted,proto3" json:"disks_wanted,omitempty"`
+	// The root disk size, in whole Gi, the base of the machine's image needs,
+	// which the node asks for before it makes the root disk of a machine
+	// whose resources.disk is smaller and whose resources.disk_grow lets it
+	// be that large; empty when it asks for none. Its owner's controller
+	// grants it within quota.
+	DiskNeeded    string `protobuf:"bytes,9,opt,name=disk_needed,json=diskNeeded,proto3" json:"disk_needed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1103,6 +1109,13 @@ func (x *MachineStatus) GetDisksWanted() []*MachineDiskWanted {
 		return x.DisksWanted
 	}
 	return nil
+}
+
+func (x *MachineStatus) GetDiskNeeded() string {
+	if x != nil {
+		return x.DiskNeeded
+	}
+	return ""
 }
 
 // MachineDiskWanted is the size the node asks a Disk be grown to.
@@ -1908,7 +1921,7 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x04ipv4\x18\x03 \x01(\tR\x04ipv4\x12'\n" +
 	"\x0fsecurity_groups\x18\x04 \x03(\tR\x0esecurityGroups\x12\x12\n" +
 	"\x04ipv6\x18\x05 \x01(\tR\x04ipv6\x12\x18\n" +
-	"\aaliases\x18\x06 \x03(\tR\aaliases\"\x9a\x03\n" +
+	"\aaliases\x18\x06 \x03(\tR\aaliases\"\xbb\x03\n" +
 	"\rMachineStatus\x12/\n" +
 	"\x13observed_generation\x18\x01 \x01(\x03R\x12observedGeneration\x129\n" +
 	"\n" +
@@ -1920,7 +1933,9 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\x05image\x18\x06 \x01(\tR\x05image\x12\x1f\n" +
 	"\vdisk_wanted\x18\a \x01(\tR\n" +
 	"diskWanted\x12M\n" +
-	"\fdisks_wanted\x18\b \x03(\v2*.hangar.compute.v1alpha1.MachineDiskWantedR\vdisksWanted\";\n" +
+	"\fdisks_wanted\x18\b \x03(\v2*.hangar.compute.v1alpha1.MachineDiskWantedR\vdisksWanted\x12\x1f\n" +
+	"\vdisk_needed\x18\t \x01(\tR\n" +
+	"diskNeeded\";\n" +
 	"\x11MachineDiskWanted\x12\x12\n" +
 	"\x04disk\x18\x01 \x01(\tR\x04disk\x12\x12\n" +
 	"\x04size\x18\x02 \x01(\tR\x04size\"A\n" +
