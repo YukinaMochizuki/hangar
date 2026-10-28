@@ -60,7 +60,7 @@ func (a *Agent) convergeFirmware(ctx context.Context, m *computev1alpha1.Machine
 		Search:             search,
 		Restart:            restartPolicy(m.GetSpec().GetRestartPolicy()),
 	}
-	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, uid); err != nil {
 			return nil, err
 		}

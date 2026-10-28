@@ -785,13 +785,13 @@ func kvmGroups(kvm string) (string, error) {
 const freePageReporting = "size=0,free_page_reporting=on"
 
 // chArgs is Cloud Hypervisor's command line for the launch: the root disk,
-// or a blank file, the boot disk and the volumes, the server's share, or a
-// converter's file, read-only and raw whatever it holds, and its target,
-// at their nodes in dir, and the taps on fds 3 and on, as the launcher
-// passes them.
+// by rootDiskID, or a blank file, the boot disk and the volumes, the
+// server's share, or a converter's file, read-only and raw whatever it
+// holds, and its target, at their nodes in dir, the taps on fds 3 and on,
+// as the launcher passes them, and its API socket.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
-	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw"
+	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID
 	if blankVDA(s) {
 		vda = "path=" + filepath.Join(dir, blankFile) + ",image_type=raw,readonly=on"
 	}
@@ -824,5 +824,6 @@ func chArgs(ln launch, dir string, taps int) []string {
 		"--vsock", "cid=3,socket="+filepath.Join(dir, vsockFile),
 		"--console", "tty",
 		"--serial", "file="+filepath.Join(dir, serialFIFO),
+		"--api-socket", "path="+filepath.Join(dir, apiFile),
 	)
 }

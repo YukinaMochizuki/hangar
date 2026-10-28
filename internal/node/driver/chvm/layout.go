@@ -37,7 +37,8 @@ const (
 	// sockets; the launcher makes it afresh on each run.
 	chDir = "ch"
 	// apiFile is Cloud Hypervisor's API socket, which a firmware VM's stop
-	// presses its power button through.
+	// presses its power button through, and a container's root disk is
+	// resized through (ResizeRoot).
 	apiFile = chDir + "/api"
 	// vsockFile is the hybrid vsock socket Cloud Hypervisor listens on.
 	vsockFile = chDir + "/vsock"

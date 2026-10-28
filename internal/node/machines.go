@@ -86,6 +86,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		// an address is tried again, the machine stopped all the same.
 		report, err = a.stop(ctx, uid, vm)
 		err = cmp.Or(err, letGo)
+		delete(a.rootWatches, uid)
 	case letGo != nil:
 		// Stuck, as a step of converging is.
 		err = blocked(computeapi.ReasonNetworkFailed, letGo)
@@ -313,7 +314,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	// not serve it yet: a boot the node starts waits, its VM of an earlier
 	// spec running on. A boot of the VM's own restart policy is not gated:
 	// its mount may fail, and the policy tries it again.
-	if vm == nil || !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	if vm == nil || !spec.Runs(*vm) {
 		why, err := a.sharesServe(ctx, m, mnts)
 		switch {
 		case err != nil:
@@ -327,7 +328,13 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 	obs, err := a.ensureVM(ctx, spec, vm)
 	if obs != nil {
 		obs.image, obs.digest = boot.GetImage(), digest
+		if obs.phase == computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING && obs.started != nil {
+			if c := a.rootGrowthCondition(m, obs.started.AsTime()); c != nil {
+				obs.conds = append(obs.conds, c)
+			}
+		}
 	}
+	a.watchRoot(m, spec, obs)
 	return obs, cmp.Or(err, pending)
 }
 
@@ -510,7 +517,7 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 	d := a.cfg.Drivers
 	// One an older node started has the hash it gave (driver.VMSpec.Runs):
 	// an upgrade restarts nothing.
-	if vm != nil && !spec.Runs(vm.SpecHash, vm.Interfaces) {
+	if vm != nil && !spec.Runs(*vm) {
 		if err := a.stopVM(ctx, spec.MachineUID); err != nil {
 			return nil, err
 		}
@@ -559,6 +566,9 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 		return obs, errors.Join(err, bootErr)
 	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
+	if !restarted {
+		err = errors.Join(err, a.ensureRootSize(ctx, spec, vm))
+	}
 	switch {
 	case restarted:
 		return notReady(computev1alpha1.MachinePhase_MACHINE_PHASE_CREATING, computeapi.ReasonBooting, "the VM is starting again with its IPv6 address"),
@@ -646,6 +656,9 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	a.puller.drop(uid)
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
+	delete(a.toldRoot, uid)
+	delete(a.rootWatches, uid)
+	delete(a.rootGrowths, uid)
 	delete(a.exported, uid)
 	delete(a.bootExported, uid)
 	a.requeueNetworksOf(a.revoking.forget(uid))

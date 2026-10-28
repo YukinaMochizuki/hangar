@@ -135,7 +135,7 @@ func TestAVMStartedBeforeDiskSerialsRunsItsSpec(t *testing.T) {
 		"by an older node's hash":       bare.Hash(),
 		"by the IPv6 legacy hash, bare": bare.LegacyHash(started),
 	} {
-		if !now.Runs(hash, started) {
+		if !now.Runs(driver.VM{SpecHash: hash, Interfaces: started}) {
 			t.Errorf("a VM started %s does not run its spec: the agent would restart it", name)
 		}
 	}
@@ -146,7 +146,7 @@ func TestAVMStartedBeforeDiskSerialsRunsItsSpec(t *testing.T) {
 		"with a serial less": serials(bare, "web-root", "").Hash(),
 		"with a volume less": other.Hash(),
 	} {
-		if now.Runs(hash, started) {
+		if now.Runs(driver.VM{SpecHash: hash, Interfaces: started}) {
 			t.Errorf("a VM started %s runs the spec: the agent would not restart it", name)
 		}
 	}
@@ -182,5 +182,63 @@ func TestAVMStartedBeforeIPv6ChangedLiveKeepsItsHash(t *testing.T) {
 	}
 	if spec.Hash() == before {
 		t.Error("Hash is LegacyHash: the test sees nothing")
+	}
+}
+
+// TestAVMWhoseRootGrewRunsItsSpec: Hash leaves out the root disk's size,
+// which grows while a VM runs, so a VM runs its spec whatever its root has
+// grown to since it started. One an older node started has the hash that
+// counted the size, as it started with: it runs the spec too, grown since
+// or not, so neither an upgrade nor a growth restarts it. Anything else
+// changed still does.
+func TestAVMWhoseRootGrewRunsItsSpec(t *testing.T) {
+	nic := driver.Interface{
+		MachineUID: "m1", Name: "eth0", NetworkUID: "n1", MAC: "02:00:00:00:00:01",
+		Address: netip.MustParsePrefix("10.0.0.2/24"), Gateway: netip.MustParseAddr("10.0.0.1"),
+		IPv6: netip.MustParseAddr("2001:db8:0:1::a"), Device: "hm0123456789abc",
+	}
+	spec := driver.VMSpec{
+		MachineUID: "m1", Machine: "web/ct-api", VCPUs: 1, MemoryMiB: 256,
+		Root:       driver.Disk{MachineUID: "m1", Digest: "sha256:app", Path: "/dev/zvol/hangar/roots/m1", Size: 1 << 30},
+		Interfaces: []driver.Interface{nic},
+		Run:        driver.RunSpec{Command: []string{"nginx"}},
+	}
+	// What the node before gave this spec, Hash and LegacyHash at commit
+	// 2c787ad.
+	const sized, legacy = "cfb3f3cc89d159e5000591b8", "bb459d17f79af878d30a68ea"
+	grown := spec
+	grown.Root.Size = 3 << 30
+	started := []driver.Interface{nic}
+	for name, tt := range map[string]struct {
+		spec driver.VMSpec
+		vm   driver.VM
+	}{
+		"by its hash":                          {spec, driver.VM{SpecHash: spec.Hash(), RootSize: 1 << 30}},
+		"by its hash, its root grown since":    {grown, driver.VM{SpecHash: spec.Hash(), RootSize: 1 << 30}},
+		"by an older node's hash":              {spec, driver.VM{SpecHash: sized, RootSize: 1 << 30}},
+		"by an older node's hash, grown since": {grown, driver.VM{SpecHash: sized, RootSize: 1 << 30}},
+		"by the IPv6 legacy hash":              {spec, driver.VM{SpecHash: legacy, Interfaces: started, RootSize: 1 << 30}},
+		"by the IPv6 legacy hash, grown since": {grown, driver.VM{SpecHash: legacy, Interfaces: started, RootSize: 1 << 30}},
+	} {
+		if !tt.spec.Runs(tt.vm) {
+			t.Errorf("a VM started %s does not run its spec: the agent would restart it", name)
+		}
+	}
+	if grown.Hash() != spec.Hash() {
+		t.Error("the root disk's size changes the hash: a VM would start again for its root to grow")
+	}
+	bigger := spec
+	bigger.MemoryMiB = 512
+	for name, tt := range map[string]struct {
+		spec driver.VMSpec
+		vm   driver.VM
+	}{
+		"with other memory":                      {bigger, driver.VM{SpecHash: spec.Hash(), RootSize: 1 << 30}},
+		"by an older node, with other memory":    {bigger, driver.VM{SpecHash: sized, RootSize: 1 << 30}},
+		"by an older node, at another root size": {spec, driver.VM{SpecHash: sized, RootSize: 2 << 30}},
+	} {
+		if tt.spec.Runs(tt.vm) {
+			t.Errorf("a VM started %s runs the spec: the agent would not restart it", name)
+		}
 	}
 }
