@@ -3,6 +3,7 @@
   "build": {
     "dockerfile": "Dockerfile"
   },
+  "updateContentCommand": "pnpm install --frozen-lockfile && go mod download && go mod download -modfile=tools/tools.mod",
   "postCreateCommand": "pnpm install --frozen-lockfile && go mod download && go mod download -modfile=tools/tools.mod",
   "customizations": {
     "vscode": {

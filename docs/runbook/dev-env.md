@@ -9,6 +9,12 @@ through corepack (`corepack enable pnpm`; the version is pinned by
 The devcontainer (`.devcontainer/`) provides all three. Any environment that
 builds a dev container from this repo gets it automatically.
 
+`updateContentCommand` and `postCreateCommand` run the same dependency
+downloads (pnpm, `go.mod`, `tools/tools.mod`). A prebuild runs the first, so a
+workspace started from a prebuilt image finds the caches full and the second
+returns in seconds. A workspace built from scratch gets them from the second.
+Change both together.
+
 ## Where each tool is pinned
 
 | Tool | Pinned in | Run with |
