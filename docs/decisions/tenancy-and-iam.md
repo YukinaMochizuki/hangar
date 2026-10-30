@@ -344,7 +344,9 @@ tenant's: what all its projects together hold, against its Plan.
   defaults and the rounding their controllers apply: what the node is asked
   for. cpu and memory count only machines asked to run; a stopped machine
   counts its disk and its place among machines (the AWS and GCP model), so
-  starting one is checked and can be refused. Disk is containers' disks,
+  starting one is checked and can be refused. The node it is on frees its
+  memory too once it has stopped it, and a start waits there for room
+  rather than being refused (`machine-model.md`). Disk is containers' disks,
   Disks, FileShares, and the root disks VMs have made from images. Such a
   root disk counts once, by its VM: the size the VM asks for, or, once the
   Disk exists, the larger of that and the Disk's spec and status sizes. So

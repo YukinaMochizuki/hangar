@@ -141,19 +141,28 @@ const phases: Record<number, { label: string; tone: Tone; pulse?: boolean }> = {
   [MachinePhase.SUSPENDED]: { label: "Suspended", tone: "off" },
 };
 
-export function phaseLabel(phase: MachinePhase) {
-  return phases[phase]?.label ?? "Unknown";
+// A start waiting on its node for room: its Machine is still stopped, so the phase alone would say Stopped.
+const waitingForRoom = { label: "Waiting for room", tone: "pending" as Tone };
+
+function stateOf(phase: MachinePhase, waiting?: boolean): { label: string; tone: Tone; pulse?: boolean } {
+  if (waiting) return waitingForRoom;
+  return phases[phase] ?? { label: "Unknown", tone: "off" };
 }
 
-/** StatusDot is a machine phase's LED. */
-export function StatusDot({ phase, className }: { phase: MachinePhase; className?: string }) {
-  const p: { tone: Tone; pulse?: boolean } = phases[phase] ?? { tone: "off" };
+/** phaseLabel names a machine's state: its phase, or a start waiting for room when waiting is set. */
+export function phaseLabel(phase: MachinePhase, waiting?: boolean) {
+  return stateOf(phase, waiting).label;
+}
+
+/** StatusDot is a machine state's LED, as phaseLabel names it. */
+export function StatusDot({ phase, waiting, className }: { phase: MachinePhase; waiting?: boolean; className?: string }) {
+  const p = stateOf(phase, waiting);
   return <Led tone={p.tone} pulse={p.pulse} className={className} />;
 }
 
-export function Status({ phase }: { phase: MachinePhase }) {
-  const p: { tone: Tone; pulse?: boolean } = phases[phase] ?? { tone: "off" };
-  return <StateText tone={p.tone} pulse={p.pulse} label={phaseLabel(phase)} className="text-[13px]" />;
+export function Status({ phase, waiting }: { phase: MachinePhase; waiting?: boolean }) {
+  const p = stateOf(phase, waiting);
+  return <StateText tone={p.tone} pulse={p.pulse} label={p.label} className="text-[13px]" />;
 }
 
 /**

@@ -22,6 +22,7 @@ import { SecretService } from "@hangar/api/hangar/secrets/v1alpha1/secret_pb";
 import { DiskService } from "@hangar/api/hangar/storage/v1alpha1/disk_pb";
 import { FileShareService } from "@hangar/api/hangar/storage/v1alpha1/file_share_pb";
 import { ImageService } from "@hangar/api/hangar/storage/v1alpha1/image_pb";
+import { ConditionStatus } from "@hangar/api/hangar/meta/v1/meta_pb";
 import { NameService } from "@hangar/api/hangar/tenancy/v1alpha1/names_pb";
 import { ProjectService } from "@hangar/api/hangar/tenancy/v1alpha1/project_pb";
 import { TenantService } from "@hangar/api/hangar/tenancy/v1alpha1/tenant_pb";
@@ -78,6 +79,25 @@ export const lists = {
   }),
   listTenants: () => ({ items: [{ metadata: { name: "acme" }, spec: { displayName: "Acme" } }, { metadata: { name: "zeta" }, spec: { displayName: "Zeta Research" } }] }),
 };
+
+/** What the API says of a start waiting for room on node dev. */
+export const roomMessage = "node dev has 0Mi of memory free for this machine, not 2048Mi; it starts once there is room";
+
+/**
+ * A Container or VirtualMachine at generation 2, asked to run, whose Ready
+ * condition says its start waits for room, computed from generation
+ * observed; and its Machine, placed on dev and stopped. Each kind's object
+ * is in container or vm.
+ */
+export function waiting(kind: "Container" | "VirtualMachine", name: string, observed = 2n) {
+  const ready = { type: "Ready", status: ConditionStatus.FALSE, reason: "StartDoesNotFit", message: roomMessage, observedGeneration: observed };
+  const object = { metadata: { ...meta(name), generation: 2n }, status: { conditions: [ready] } };
+  return {
+    container: { ...object, spec: { image: "nginx" } },
+    vm: { ...object, spec: {} },
+    machine: { ...owned(kind, name, MachinePhase.STOPPED), spec: { node: "dev" } },
+  };
+}
 
 type Lists = typeof lists;
 type Answer<K extends keyof Lists> = ReturnType<Lists[K]>;

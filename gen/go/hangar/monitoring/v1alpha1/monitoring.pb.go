@@ -1159,18 +1159,26 @@ type NodeUsage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The Node's name.
 	Node string `protobuf:"bytes,1,opt,name=node,proto3" json:"node,omitempty"`
-	// Machines placed on the node.
+	// Machines placed on the node, stopped ones included: a stopped machine
+	// stays on its node, where its disks are.
 	Machines int32 `protobuf:"varint,2,opt,name=machines,proto3" json:"machines,omitempty"`
-	// The vCPUs the machines are given, summed: vCPUs are shared, not
-	// reserved, so this may pass what the node offers. A quantity, such as
-	// "12".
+	// The vCPUs the machines holding memory are given, summed: vCPUs are
+	// shared, not reserved, so this may pass what the node offers. A
+	// quantity, such as "12".
 	Cpu string `protobuf:"bytes,3,opt,name=cpu,proto3" json:"cpu,omitempty"`
-	// The memory the machines are given, a quantity such as "24Gi".
+	// The memory the machines hold, a quantity such as "24Gi": every machine
+	// but those its node has stopped, as the scheduler counts them.
 	Memory string `protobuf:"bytes,4,opt,name=memory,proto3" json:"memory,omitempty"`
 	// The disk held on the node, a quantity such as "300Gi": the machines'
-	// disks, and the Disks and FileShares placed there, at the sizes they
-	// were made, as the scheduler counts them.
-	Disk          string `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
+	// disks, stopped ones' too, and the Disks and FileShares placed there, at
+	// the sizes they were made, as the scheduler counts them.
+	Disk string `protobuf:"bytes,5,opt,name=disk,proto3" json:"disk,omitempty"`
+	// The machines among `machines` the node has stopped, which hold no
+	// memory.
+	StoppedMachines int32 `protobuf:"varint,6,opt,name=stopped_machines,json=stoppedMachines,proto3" json:"stopped_machines,omitempty"`
+	// The memory the stopped machines take back if started, a quantity such
+	// as "52Gi": not in `memory`, and only on this node.
+	StoppedMemory string `protobuf:"bytes,7,opt,name=stopped_memory,json=stoppedMemory,proto3" json:"stopped_memory,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1236,6 +1244,20 @@ func (x *NodeUsage) GetMemory() string {
 func (x *NodeUsage) GetDisk() string {
 	if x != nil {
 		return x.Disk
+	}
+	return ""
+}
+
+func (x *NodeUsage) GetStoppedMachines() int32 {
+	if x != nil {
+		return x.StoppedMachines
+	}
+	return 0
+}
+
+func (x *NodeUsage) GetStoppedMemory() string {
+	if x != nil {
+		return x.StoppedMemory
 	}
 	return ""
 }
@@ -1460,13 +1482,15 @@ const file_hangar_monitoring_v1alpha1_monitoring_proto_rawDesc = "" +
 	"\x05value\x18\x02 \x01(\x01R\x05value\"\x16\n" +
 	"\x14ListNodeUsageRequest\"T\n" +
 	"\x15ListNodeUsageResponse\x12;\n" +
-	"\x05nodes\x18\x01 \x03(\v2%.hangar.monitoring.v1alpha1.NodeUsageR\x05nodes\"y\n" +
+	"\x05nodes\x18\x01 \x03(\v2%.hangar.monitoring.v1alpha1.NodeUsageR\x05nodes\"\xcb\x01\n" +
 	"\tNodeUsage\x12\x12\n" +
 	"\x04node\x18\x01 \x01(\tR\x04node\x12\x1a\n" +
 	"\bmachines\x18\x02 \x01(\x05R\bmachines\x12\x10\n" +
 	"\x03cpu\x18\x03 \x01(\tR\x03cpu\x12\x16\n" +
 	"\x06memory\x18\x04 \x01(\tR\x06memory\x12\x12\n" +
-	"\x04disk\x18\x05 \x01(\tR\x04disk\"\x13\n" +
+	"\x04disk\x18\x05 \x01(\tR\x04disk\x12)\n" +
+	"\x10stopped_machines\x18\x06 \x01(\x05R\x0fstoppedMachines\x12%\n" +
+	"\x0estopped_memory\x18\a \x01(\tR\rstoppedMemory\"\x13\n" +
 	"\x11ListAlertsRequest\"O\n" +
 	"\x12ListAlertsResponse\x129\n" +
 	"\x06alerts\x18\x01 \x03(\v2!.hangar.monitoring.v1alpha1.AlertR\x06alerts\"\xc6\x01\n" +

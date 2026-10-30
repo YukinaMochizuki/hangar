@@ -198,9 +198,11 @@ func (m monitoring) ListNodeUsage(ctx context.Context, _ *connect.Request[monito
 }
 
 // nodeUsageSummary is, for each Node by name, the machines placed on it
-// counted and their vCPUs summed, with the memory and disk held there as
-// the scheduler counts them (nodeUsage): the machines', and the disks' and
-// file shares' placed there. No machine, tenant or project is named.
+// counted and the vCPUs of those holding memory summed, with the memory and
+// disk held there as the scheduler counts them (nodeUsage): the machines',
+// and the disks' and file shares' placed there; and the machines its node
+// has stopped counted, with the memory they take back if started. No
+// machine, tenant or project is named.
 func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.NodeUsage, error) {
 	nodes, used, err := s.nodeUsage(ctx, resource.Key{})
 	if err != nil {
@@ -211,8 +213,9 @@ func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.No
 		return nil, err
 	}
 	type placed struct {
-		machines int32
-		cpu      int64
+		machines, stopped int32
+		cpu               int64
+		stoppedMemory     uint64
 	}
 	per := map[string]placed{}
 	for _, o := range machineObjs {
@@ -226,6 +229,15 @@ func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.No
 		}
 		p := per[n]
 		p.machines++
+		if machineHasStopped(mc) {
+			p.stopped++
+			// A memory that does not parse has failed nodeUsage already.
+			if h, err := heldBy(mc.GetSpec().GetResources()); err == nil {
+				p.stoppedMemory = add(p.stoppedMemory, h.memory)
+			}
+			per[n] = p
+			continue
+		}
 		// The controllers write a machine's cpu in its canonical form; one
 		// that does not parse adds no vCPU, and the machine still counts.
 		// The scheduler does not count vCPUs, which are shared.
@@ -241,11 +253,13 @@ func (s *Server) nodeUsageSummary(ctx context.Context) ([]*monitoringv1alpha1.No
 		name := n.GetMetadata().GetName()
 		p, h := per[name], used[name]
 		out = append(out, &monitoringv1alpha1.NodeUsage{
-			Node:     name,
-			Machines: p.machines,
-			Cpu:      strconv.FormatInt(p.cpu, 10),
-			Memory:   formatAmount(dimMemory, clampInt64(h.memory)),
-			Disk:     formatAmount(dimDisk, clampInt64(h.disk)),
+			Node:            name,
+			Machines:        p.machines,
+			Cpu:             strconv.FormatInt(p.cpu, 10),
+			Memory:          formatAmount(dimMemory, clampInt64(h.memory)),
+			Disk:            formatAmount(dimDisk, clampInt64(h.disk)),
+			StoppedMachines: p.stopped,
+			StoppedMemory:   formatAmount(dimMemory, clampInt64(p.stoppedMemory)),
 		})
 	}
 	slices.SortFunc(out, func(a, b *monitoringv1alpha1.NodeUsage) int { return strings.Compare(a.GetNode(), b.GetNode()) })

@@ -25,11 +25,19 @@ export type Resources = { cpu: string; memory: string; disk: string };
 export type Held = { cpu: number; memory: number; disk: number };
 
 /**
+ * The machines placed on a node that it has stopped, counted, and the GiB of
+ * memory they take back if started: not in what is held, as a stopped
+ * machine holds only its disk (docs/decisions/machine-model.md).
+ */
+export type Stopped = { count: number; memory: number };
+
+/**
  * One resource of a host, in vCPUs or GiB, as the scheduler counts it
  * (internal/apiserver/resources.go): all the host has; what it keeps for
  * itself, the part of that not allocatable; what is placed on it holds, as
- * ListNodeUsage answers it (the machines' spec.resources, and the disks and
- * file shares there); and what is left for another machine, the
+ * ListNodeUsage answers it (the machines' spec.resources, but for the vCPUs
+ * and memory of those their node has stopped, and the disks and file shares
+ * there); and what is left for another machine, the
  * allocatable less what is held. vCPUs are shared, never reserved
  * (docs/decisions/machine-model.md), so the machines' vCPUs are what is
  * assigned and may pass what is allocatable. total is NaN when the node
@@ -112,14 +120,19 @@ export function useNodes(enabled = true) {
 export function useMachinesPerNode(enabled = true) {
   const q = useQuery(MonitoringService.method.listNodeUsage, enabled ? {} : skipToken, { refetchInterval: 30_000 });
   const num = (v: number) => (Number.isFinite(v) ? v : 0);
-  const per = new Map<string, { count: number; held: Held }>();
+  const per = new Map<string, { count: number; held: Held; stopped: Stopped }>();
   for (const u of q.data?.nodes ?? []) {
-    per.set(u.node, { count: u.machines, held: { cpu: num(quantityCPU(u.cpu)), memory: num(quantityGiB(u.memory)), disk: num(quantityGiB(u.disk)) } });
+    per.set(u.node, {
+      count: u.machines,
+      held: { cpu: num(quantityCPU(u.cpu)), memory: num(quantityGiB(u.memory)), disk: num(quantityGiB(u.disk)) },
+      stopped: { count: u.stoppedMachines, memory: num(quantityGiB(u.stoppedMemory)) },
+    });
   }
   const known = q.data !== undefined;
   return {
     count: (node: string) => (known ? (per.get(node)?.count ?? 0) : undefined),
     held: (node: string): Held | undefined => (known ? (per.get(node)?.held ?? { cpu: 0, memory: 0, disk: 0 }) : undefined),
+    stopped: (node: string): Stopped | undefined => (known ? (per.get(node)?.stopped ?? { count: 0, memory: 0 }) : undefined),
     error: q.error,
   };
 }

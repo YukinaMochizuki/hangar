@@ -240,6 +240,12 @@ const (
 	ReasonFileShareNotReady = "FileShareNotReady"
 )
 
+// ReasonStartDoesNotFit is a Container's or VirtualMachine's Ready and
+// Stopped reason while it is asked to run but stays stopped: its node, where
+// its disks are, has too little memory free for it. The apiserver, not the
+// node, sets it, and starts the machine once there is room.
+const ReasonStartDoesNotFit = "StartDoesNotFit"
+
 // MaxSystemSerialNumber is the longest SMBIOS system serial number a
 // firmware machine is given, in bytes.
 const MaxSystemSerialNumber = 64

@@ -378,7 +378,7 @@ func (a *app) waitCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return await(cmd, cl, r, client.Key{Project: project, Name: args[1]}, condType, timeout)
+			return await(cmd, cl, r, client.Key{Project: project, Name: args[1]}, condType, timeout, nil)
 		},
 	}
 	cmd.Flags().StringVar(&forCond, "for", "", "condition=TYPE or delete")
@@ -387,15 +387,22 @@ func (a *app) waitCmd() *cobra.Command {
 }
 
 // await waits until the object's condition condType is True for its current
-// generation, or with an empty condType until the object is gone.
-func await(cmd *cobra.Command, cl *client.Client, r registry.Resource, key client.Key, condType string, timeout time.Duration) error {
+// generation, or with an empty condType until the object is gone. seen, if
+// not nil, is given the object each time it is read before that.
+func await(cmd *cobra.Command, cl *client.Client, r registry.Resource, key client.Key, condType string, timeout time.Duration, seen func(proto.Message)) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
 	defer cancel()
 	done := func(o proto.Message) bool {
 		if condType == "" {
 			return o == nil
 		}
-		return o != nil && conditionMet(o, condType)
+		if o != nil && conditionMet(o, condType) {
+			return true
+		}
+		if o != nil && seen != nil {
+			seen(o)
+		}
+		return false
 	}
 
 	o, err := cl.Get(ctx, r, key)

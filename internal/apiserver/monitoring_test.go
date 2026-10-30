@@ -235,7 +235,7 @@ func TestNodeUsageNeedsNoPrometheus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := &mon.ListNodeUsageResponse{Nodes: []*mon.NodeUsage{{Node: testNode, Cpu: "0", Memory: "0", Disk: "0"}}}
+	want := &mon.ListNodeUsageResponse{Nodes: []*mon.NodeUsage{{Node: testNode, Cpu: "0", Memory: "0", Disk: "0", StoppedMemory: "0"}}}
 	if !proto.Equal(res.Msg, want) {
 		t.Errorf("got %v, want %v", res.Msg, want)
 	}

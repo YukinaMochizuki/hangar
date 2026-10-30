@@ -110,7 +110,31 @@ Hypervisor directly, without Kata or Kubernetes.
   Memory and disk are the resources it reserves; vCPUs are shared. Root disks
   are sparse, so a machine holds the disk size it declares, and a node that
   reports no disk is not checked for it. A placed machine is only grown
-  (memory or disk) if its node still has room. The scheduler owns the machine's
+  (memory or disk) if its node still has room. A stopped machine keeps its
+  node, where its disks are, and the disk it holds there, and gives the
+  node's memory back once its node has stopped it (its spec asking it to
+  stop, observed, the phase `Stopped` or `Failed`); until then the VM may
+  still run, and it holds its memory, so a machine started again before
+  its stop took effect never loses its place. The Plan quota stops counting
+  cpu and memory from the moment a machine is asked to stop
+  (`tenancy-and-iam.md`). A change to a stopped machine's spec is written
+  unchecked for memory, and the machine holds its memory again until its
+  node has observed the change: briefly more may be held on the node than
+  it offers, which refuses other placements and growths there meanwhile
+  and starts nothing. A machine is placed with room for its memory
+  whatever its run state, so it lands where it can start. Starting a
+  stopped machine asks its node for its memory again, as a growth does:
+  without room, the machine stays stopped, its owner's `Ready` and
+  `Stopped` are False with reason `StartDoesNotFit` and say how much is
+  free, and the machine starts by itself once a machine on that node
+  stops, shrinks or goes, as a growth waiting for room does. Admission
+  takes the start, as it takes a growth: the node's room is weighed as the
+  machine is written, under the lock placements take, never against a
+  read made earlier. Memory a stopped machine asks for is checked only as
+  it starts; disk is checked as it grows. `hangar start --wait` says what
+  it waits for, and waits on; `hangar stop` withdraws the start. A
+  FileShare's server always runs, so it always holds its memory. The
+  scheduler owns the machine's
   `Scheduled` condition and sets phase `Pending` until the node reports; the
   node owns the rest of the machine's status. A container is `Ready` only
   while its node is reporting.

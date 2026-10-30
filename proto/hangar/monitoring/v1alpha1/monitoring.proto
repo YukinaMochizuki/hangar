@@ -214,18 +214,26 @@ message ListNodeUsageResponse {
 message NodeUsage {
   // The Node's name.
   string node = 1;
-  // Machines placed on the node.
+  // Machines placed on the node, stopped ones included: a stopped machine
+  // stays on its node, where its disks are.
   int32 machines = 2;
-  // The vCPUs the machines are given, summed: vCPUs are shared, not
-  // reserved, so this may pass what the node offers. A quantity, such as
-  // "12".
+  // The vCPUs the machines holding memory are given, summed: vCPUs are
+  // shared, not reserved, so this may pass what the node offers. A
+  // quantity, such as "12".
   string cpu = 3;
-  // The memory the machines are given, a quantity such as "24Gi".
+  // The memory the machines hold, a quantity such as "24Gi": every machine
+  // but those its node has stopped, as the scheduler counts them.
   string memory = 4;
   // The disk held on the node, a quantity such as "300Gi": the machines'
-  // disks, and the Disks and FileShares placed there, at the sizes they
-  // were made, as the scheduler counts them.
+  // disks, stopped ones' too, and the Disks and FileShares placed there, at
+  // the sizes they were made, as the scheduler counts them.
   string disk = 5;
+  // The machines among `machines` the node has stopped, which hold no
+  // memory.
+  int32 stopped_machines = 6;
+  // The memory the stopped machines take back if started, a quantity such
+  // as "52Gi": not in `memory`, and only on this node.
+  string stopped_memory = 7;
 }
 
 message ListAlertsRequest {}

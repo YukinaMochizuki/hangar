@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	computev1alpha1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/compute/v1alpha1"
 	"github.com/YukinaMochizuki/hangar/gen/go/hangar/registry"
 	"github.com/YukinaMochizuki/hangar/internal/apimachinery/conditions"
+	"github.com/YukinaMochizuki/hangar/internal/apimachinery/object"
 	"github.com/YukinaMochizuki/hangar/internal/client"
 	"github.com/YukinaMochizuki/hangar/internal/computeapi"
 )
@@ -98,7 +100,9 @@ This sets spec.runState to RUNNING and leaves the rest of the spec as it is.
 A container already asked to run is left alone, and the command succeeds.
 
 --wait returns once the condition Ready is True, as
-hangar wait KIND NAME --for=condition=Ready does.`,
+hangar wait KIND NAME --for=condition=Ready does. A start whose node has too
+little memory free waits there for room (Ready's reason StartDoesNotFit):
+--wait says so, and waits on; hangar stop withdraws the start.`,
 		"  hangar start container api\n  hangar start ct api --wait -o json")
 }
 
@@ -158,7 +162,25 @@ func (a *app) runStateCmd(v runStateVerb, short, long, example string) *cobra.Co
 			if !wait {
 				return nil
 			}
-			return await(cmd, cl, r, key, v.done, timeout)
+			if v.name != startVerb.name {
+				return await(cmd, cl, r, key, v.done, timeout, nil)
+			}
+			// What the start waits for, as last seen: room on its node.
+			var waitingFor string
+			err = await(cmd, cl, r, key, v.done, timeout, func(o proto.Message) {
+				msg, waits := waitsForRoom(o)
+				if waits && waitingFor == "" {
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "waiting: %s: %s\n", objectName(r, o), msg)
+				}
+				waitingFor = msg
+			})
+			var timedOut *exitError
+			if waitingFor != "" && errors.As(err, &timedOut) && timedOut.code == ExitTimeout {
+				return &exitError{code: ExitTimeout, err: fmt.Errorf(
+					"timed out, %s still waiting to start: %s. hangar stop %s %s withdraws the start",
+					objectName(r, o), waitingFor, args[0], args[1])}
+			}
+			return err
 		},
 	}
 	cmd.Flags().StringVarP(&output, "output", "o", "", "name or json")
@@ -182,6 +204,16 @@ func poweredOff(o proto.Message) error {
 	name := vm.GetMetadata().GetName()
 	return fmt.Errorf("virtualmachine/%s is meant to run, but is off: %s. Only a stop and a start boot it again: "+
 		"hangar stop vm %s --wait && hangar start vm %s", name, ready.GetMessage(), name, name)
+}
+
+// waitsForRoom gives the message of o's Ready condition, and true, while o
+// is asked to run but stays stopped for want of memory on its node.
+func waitsForRoom(o proto.Message) (string, bool) {
+	ready := condition(o, "Ready")
+	if ready.GetReason() != computeapi.ReasonStartDoesNotFit || ready.GetObservedGeneration() != object.Meta(o).GetGeneration() {
+		return "", false
+	}
+	return ready.GetMessage(), true
 }
 
 // setRunState reads the object and applies it back with only the run state

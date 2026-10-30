@@ -320,6 +320,21 @@ Settled with the owner on screenshots before the dialogs sent anything.
   it back with only the run state changed at the version read, and read
   again on a conflict. Delete asks for the name to be typed and says what
   goes with the object.
+- **A start waiting for room says so.** A stopped machine gives its
+  node's memory back, so a start on a node with no room waits there: the
+  object is asked to run, its Machine stays stopped, and its own `Ready`
+  condition has reason `StartDoesNotFit`, computed from its current
+  generation (`waitingForRoom` in `web/src/lib/machines.ts`; an older
+  condition says nothing of the spec as it is, and is not believed). Its
+  state, in the list and in the page's head, reads "Waiting for room" in
+  the pending tone, with a still light, where the phase alone would say
+  Stopped. Under the top bar a banner gives the API's message, which says
+  it starts once there is room, and that Stop withdraws the start. The
+  rest is as for any machine asked to run: Stop in the head and the row's
+  menu, Run state Running, and the list's
+  Running filter, which follows the run state asked for, not Stopped.
+  Elsewhere, such as the command palette and the overview, it shows its
+  phase.
 - **Creating never replaces a machine.** The form sends nothing until the
   project's machines of the kind have loaded and the name is not among
   them; while they load, or when they failed to, it is disabled and says
@@ -1010,16 +1025,20 @@ Overview reads the platform and each node has a page of its own.
   node, with its CPU model and region under its name, its state, and per
   resource what the host has in bold; a bar of it, the part the host keeps
   for itself (capacity less allocatable) in a light tone and what is
-  placed on it holds (the machines' `spec.resources` summed, with the Disks
+  placed on it holds (the machines' `spec.resources` summed, but for the
+  vCPUs and memory of those their node has stopped, with the Disks
   and FileShares there, as the scheduler counts them,
   `MonitoringService.ListNodeUsage`) in a dark one, which takes the pending colour from
   80% of what the host offers, as a quota's bar does; and under it what is
   left for another machine. vCPUs are shared, not reserved
   (`machine-model.md`), so the vCPU column says how many are assigned,
-  which may pass what is offered. Then its machines counted and its last
-  report. A node's page also says what the host keeps.
+  which may pass what is offered. Then its machines counted, with how many
+  of them are stopped, which hold their disk and no memory or vCPU, and its
+  last report. A node's page also says what the host keeps, and under its
+  memory how much its stopped machines take back if they start.
 - **A node's page is that node alone.** Its head says whether it reports,
-  whether it is cordoned, its machines counted, and its last report. The
+  whether it is cordoned, its machines counted with how many are stopped,
+  and its last report. The
   main column holds its alerts alone, its Host and Platform services cards,
   its CPU and memory side by side with its pools across both under them
   over a range, and its conditions; the side column its chassis drawn as a
