@@ -18,14 +18,20 @@ import { formatNumber } from "@/lib/quantity";
 
 type StatusFilter = "all" | "running" | "stopped" | "failed";
 
+// A start waiting for room is under Running, with the machines asked to run on their way there.
 const filters: { id: StatusFilter; label: string; match: (m: MachineView) => boolean }[] = [
   { id: "all", label: "All", match: () => true },
   {
     id: "running",
     label: "Running",
-    match: (m) => [MachinePhase.RUNNING, MachinePhase.CREATING, MachinePhase.PENDING].includes(m.phase) && !m.stopped,
+    match: (m) =>
+      ([MachinePhase.RUNNING, MachinePhase.CREATING, MachinePhase.PENDING].includes(m.phase) || m.waitingForRoom !== undefined) && !m.stopped,
   },
-  { id: "stopped", label: "Stopped", match: (m) => m.stopped || m.phase === MachinePhase.STOPPED },
+  {
+    id: "stopped",
+    label: "Stopped",
+    match: (m) => m.stopped || (m.phase === MachinePhase.STOPPED && m.waitingForRoom === undefined),
+  },
   { id: "failed", label: "Failed", match: (m) => m.phase === MachinePhase.FAILED },
 ];
 
@@ -44,8 +50,8 @@ export function MachineStatusCell({ m }: { m: MachineView }) {
   return (
     <>
       <span className="inline-flex items-center gap-2">
-        <StatusDot phase={m.phase} />
-        {m.deleting ? "Deleting" : phaseLabel(m.phase)}
+        <StatusDot phase={m.phase} waiting={m.waitingForRoom !== undefined} />
+        {m.deleting ? "Deleting" : phaseLabel(m.phase, m.waitingForRoom !== undefined)}
       </span>
       {m.phase === MachinePhase.FAILED && <span className="block text-[11.5px] text-fail">{notReadyReason(m)}</span>}
     </>

@@ -320,6 +320,21 @@ Settled with the owner on screenshots before the dialogs sent anything.
   it back with only the run state changed at the version read, and read
   again on a conflict. Delete asks for the name to be typed and says what
   goes with the object.
+- **A start waiting for room says so.** A stopped machine gives its
+  node's memory back, so a start on a node with no room waits there: the
+  object is asked to run, its Machine stays stopped, and its own `Ready`
+  condition has reason `StartDoesNotFit`, computed from its current
+  generation (`waitingForRoom` in `web/src/lib/machines.ts`; an older
+  condition says nothing of the spec as it is, and is not believed). Its
+  state, in the list and in the page's head, reads "Waiting for room" in
+  the pending tone, with a still light, where the phase alone would say
+  Stopped. Under the top bar a banner gives the API's message, which says
+  it starts once there is room, and that Stop withdraws the start. The
+  rest is as for any machine asked to run: Stop in the head and the row's
+  menu, Run state Running, and the list's
+  Running filter, which follows the run state asked for, not Stopped.
+  Elsewhere, such as the command palette and the overview, it shows its
+  phase.
 - **Creating never replaces a machine.** The form sends nothing until the
   project's machines of the kind have loaded and the name is not among
   them; while they load, or when they failed to, it is disabled and says

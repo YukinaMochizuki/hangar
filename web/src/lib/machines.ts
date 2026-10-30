@@ -42,6 +42,11 @@ export type MachineView = {
   booted?: Date;
   deleting: boolean;
   stopped: boolean;
+  /**
+   * The API's message while a start waits on the machine's node for room,
+   * and undefined otherwise.
+   */
+  waitingForRoom?: string;
   interfaces: MachineInterface[];
   /** The object's conditions, then the machine's. */
   conditions: Condition[];
@@ -70,6 +75,20 @@ export function date(ts: Timestamp | undefined): Date | undefined {
   return ts ? timestampDate(ts) : undefined;
 }
 
+// The Ready reason of a start waiting for room, computeapi.ReasonStartDoesNotFit.
+const reasonStartDoesNotFit = "StartDoesNotFit";
+
+/**
+ * The message of a start waiting for room: the object is asked to run and
+ * its own Ready condition, computed from its current generation, says so.
+ * An older condition is not believed, as the spec may have changed since.
+ */
+function waitingForRoom(stopped: boolean, generation: bigint | undefined, own: Condition[]): string | undefined {
+  const ready = own.find((c) => c.type === "Ready");
+  if (stopped || ready?.reason !== reasonStartDoesNotFit || ready.observedGeneration !== (generation ?? 0n)) return undefined;
+  return ready.message;
+}
+
 function ownerOf(m: Machine): { kind: string; name: string } | undefined {
   const ref = m.metadata?.ownerReferences.find((r) => r.controller) ?? m.metadata?.ownerReferences[0];
   return ref ? { kind: ref.kind, name: ref.name } : undefined;
@@ -77,6 +96,7 @@ function ownerOf(m: Machine): { kind: string; name: string } | undefined {
 
 export function containerView(c: Container, m: Machine | undefined): MachineView {
   const res = m?.spec?.resources ?? c.spec?.resources;
+  const stopped = c.spec?.runState === ContainerRunState.STOPPED;
   return {
     kind: "Container",
     name: c.metadata?.name ?? "",
@@ -91,7 +111,8 @@ export function containerView(c: Container, m: Machine | undefined): MachineView
     created: date(c.metadata?.createTime),
     booted: date(m?.status?.bootTime),
     deleting: !!c.metadata?.deleteTime,
-    stopped: c.spec?.runState === ContainerRunState.STOPPED,
+    stopped,
+    waitingForRoom: waitingForRoom(stopped, c.metadata?.generation, c.status?.conditions ?? []),
     interfaces: m?.spec?.interfaces ?? [],
     conditions: [...(c.status?.conditions ?? []), ...(m?.status?.conditions ?? [])],
     labels: c.metadata?.labels ?? {},
@@ -107,6 +128,7 @@ export function vmView(v: VirtualMachine, m: Machine | undefined): MachineView {
   const image = root?.case === "fromImage" ? (root.value.image?.name ?? "") : root?.case === "disk" ? root.value : "";
   const disk = root?.case === "fromImage" ? root.value.size || "10Gi" : "";
   const res = m?.spec?.resources;
+  const stopped = v.spec?.runState === VirtualMachineRunState.STOPPED;
   return {
     kind: "VirtualMachine",
     name: v.metadata?.name ?? "",
@@ -121,7 +143,8 @@ export function vmView(v: VirtualMachine, m: Machine | undefined): MachineView {
     created: date(v.metadata?.createTime),
     booted: date(m?.status?.bootTime),
     deleting: !!v.metadata?.deleteTime,
-    stopped: v.spec?.runState === VirtualMachineRunState.STOPPED,
+    stopped,
+    waitingForRoom: waitingForRoom(stopped, v.metadata?.generation, v.status?.conditions ?? []),
     interfaces: m?.spec?.interfaces ?? [],
     conditions: [...(v.status?.conditions ?? []), ...(m?.status?.conditions ?? [])],
     labels: v.metadata?.labels ?? {},

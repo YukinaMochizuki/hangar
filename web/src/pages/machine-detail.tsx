@@ -90,7 +90,7 @@ function Header({ m, terminal, set }: { m: MachineView; terminal: boolean; set: 
             <Badge>{m.kind === "Container" ? "Container" : "Virtual machine"}</Badge>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[13px] text-muted">
-            {m.deleting ? <span>Deleting</span> : <Status phase={m.phase} />}
+            {m.deleting ? <span>Deleting</span> : <Status phase={m.phase} waiting={m.waitingForRoom !== undefined} />}
             {m.phase === MachinePhase.RUNNING && m.booted && <span>up {uptime(m.booted)}</span>}
             <span className="flex items-center gap-1.5">
               {size && <SizeBadge size={size.label} />}
@@ -769,7 +769,7 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
   const crumbs = [
     list,
     <span key="name" className="flex items-center gap-2">
-      {m && <StatusDot phase={m.phase} />}
+      {m && <StatusDot phase={m.phase} waiting={m.waitingForRoom !== undefined} />}
       {name}
     </span>,
   ];
@@ -837,6 +837,12 @@ function Loaded({
       {m.phase === MachinePhase.FAILED && ready?.message && (
         <PageBanner tone="error" title={`${m.name} failed: ${ready.reason}`}>
           {ready.message}
+        </PageBanner>
+      )}
+      {m.waitingForRoom !== undefined && !m.deleting && (
+        <PageBanner tone="warning" title={`${m.name} is waiting for room on its node`}>
+          {m.waitingForRoom && <span className="block">{m.waitingForRoom}</span>}
+          <span className="block">Stop withdraws the start.</span>
         </PageBanner>
       )}
       <Header m={m} terminal={terminal} set={set} />
