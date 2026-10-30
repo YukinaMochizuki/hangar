@@ -51,6 +51,17 @@ describe("NodeList", () => {
     expect(within(cell("empty", 1)).getByText("76 GiB free")).toBeTruthy();
   });
 
+  // A machine its node has stopped stays there, holding its disk and none
+  // of its memory or vCPUs.
+  it("counts a node's stopped machines among its machines, holding no memory", async () => {
+    const api = monitoringApi({ nodes: [node("busy")], machinesOn: ["busy"], stoppedOn: ["busy", "busy"] });
+    render(<NodeList />, { wrapper: withApi(api, platform) });
+    await waitFor(() => expect(Array.from(row("busy").querySelectorAll("td")).at(-2)?.textContent).toBe("3 · 2 stopped"));
+    expect(within(cell("busy", 0)).getByText("2 vCPU assigned")).toBeTruthy();
+    expect(within(cell("busy", 1)).getByText("72 GiB free")).toBeTruthy();
+    expect(within(cell("busy", 2)).getByText("436 GiB free")).toBeTruthy();
+  });
+
   it("says nothing of what machines hold without platform.monitoring.read, and asks for none of it", async () => {
     const api = monitoringApi({ perms: ["compute.nodes.list"], machinesOn: ["a"], nodes: [node("a")] });
     render(<NodeList />, { wrapper: withApi(api, platform) });
@@ -125,6 +136,13 @@ describe("NodeDetail", () => {
     expect(screen.getByText("v0.14.2")).toBeTruthy();
     // What the host keeps for itself is said on its page: 128Gi less the 76Gi it offers.
     expect(screen.getByText(/52 GiB kept for the host/)).toBeTruthy();
+  });
+
+  it("says how many of its machines are stopped, and the memory they take back if started", async () => {
+    show({ machinesOn: ["a"], stoppedOn: ["a", "a"] });
+    await screen.findByText("8 GiB more if its 2 stopped machines start");
+    expect(screen.getByText("3 machines").textContent).toBe("3 machines · 2 stopped");
+    expect(screen.getByText("72 GiB free")).toBeTruthy();
   });
 
   it("says a host check Prometheus has no data for is no data", async () => {

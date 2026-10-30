@@ -1238,7 +1238,12 @@ systemctl list-units --plain --no-legend 'hangar-vm-*.service' |
 
 and restart each at a time its tenant can take: `hangar stop` then
 `hangar start` on its container or VM (a restart under its policy keeps the
-unit, and so its slice).
+unit, and so its slice). A stopped machine gives its node's memory back,
+so on a full node a machine waiting for a place can take it in between:
+the start then waits for room, `StartDoesNotFit`
+(`docs/decisions/machine-model.md`). On a node close to full, look for a
+machine with no node in `sudo hangar --context local get machines -A`
+before restarting.
 
 The same upgrade holds machines to shape rules (`docs/decisions/machine-sizes.md`),
 and sizes to them too: a size stored before that breaks them is no longer

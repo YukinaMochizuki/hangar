@@ -345,8 +345,9 @@ operating system needs its own, as Ubuntu 24.04's has: a 2 GiB Ubuntu VM
 that filled and freed its 983 MiB `/dev/shm` fell from 1782 to 859 MiB
 within 60 s, and without the balloon stayed at 1837 MiB (measured once,
 by hand, with a unit planted in the cloud image). Placement still
-reserves a machine's whole memory, so this frees the host's memory for
-its page cache and the ARC, not for more machines.
+reserves a running machine's whole memory, so this frees the host's memory
+for its page cache and the ARC, not for more machines; a machine its node
+has stopped reserves none (`machine-model.md`).
 
 Not `ProtectSystem=strict`, which binds the host's root again over the
 empty one; not `PrivateTmp` or `ProtectHome=tmpfs`, which add directories

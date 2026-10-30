@@ -256,6 +256,61 @@ func TestStopStartWait(t *testing.T) {
 	}
 }
 
+// TestStartWaitSaysItWaitsForRoom: a start its node has no memory for
+// waits there; --wait says so as it begins to, and a timeout says what it
+// waited for and how to withdraw it. Room made, the wait ends as any does.
+func TestStartWaitSaysItWaitsForRoom(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	w.must(stack, "apply", "-f", "-")
+	node := w.node()
+	node.ready()
+	m := node.placed("ct-api")
+	w.must("", "stop", "ct", "api")
+	testutil.Eventually(t, "the machine asked to stop", func() bool {
+		m = node.placed("ct-api")
+		return m.GetSpec().GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
+	})
+	node.report(m, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, m.GetMetadata().GetGeneration())
+	// All the node's memory, which api stopped has given back.
+	big := strings.Replace(strings.Split(stack, "---\n")[2], "name: api", "name: big", 1)
+	big = strings.Replace(strings.Replace(big, "cpu: 2", "cpu: 1", 1), "memory: 1Gi", "memory: 4Gi", 1)
+	w.must(big, "apply", "-f", "-")
+	b := node.placed("ct-big")
+
+	r := w.run("", "start", "ct", "api", "--wait", "--timeout=1s")
+	if r.code != cli.ExitTimeout || r.out != "container/api started\n" ||
+		!strings.Contains(r.err, "waiting: container/api: node n1 has 0Mi of memory free for this machine, not 1024Mi; it starts once there is room\n") ||
+		!strings.Contains(r.err, "container/api still waiting to start") || !strings.Contains(r.err, "hangar stop ct api withdraws the start") {
+		t.Fatalf("start --wait with no room: exit %d: %q %s", r.code, r.out, r.err)
+	}
+	if got := node.placed("ct-api"); got.GetSpec().GetRunState() != computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED {
+		t.Fatalf("machine run state %v while there is no room", got.GetSpec().GetRunState())
+	}
+
+	ch := make(chan result, 1)
+	go func() { ch <- w.run("", "start", "ct", "api", "--wait", "--timeout=10s") }()
+	w.must("", "stop", "ct", "big")
+	testutil.Eventually(t, "big asked to stop", func() bool {
+		b = node.placed("ct-big")
+		return b.GetSpec().GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
+	})
+	node.report(b, computev1alpha1.MachinePhase_MACHINE_PHASE_STOPPED, b.GetMetadata().GetGeneration())
+	testutil.Eventually(t, "api started", func() bool {
+		m = node.placed("ct-api")
+		return m.GetSpec().GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_RUNNING
+	})
+	node.report(m, computev1alpha1.MachinePhase_MACHINE_PHASE_RUNNING, m.GetMetadata().GetGeneration())
+	select {
+	case r := <-ch:
+		if r.code != 0 || r.out != "container/api already running\n" {
+			t.Errorf("start --wait once there is room: exit %d: %q %s", r.code, r.out, r.err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("start --wait did not return once the container ran")
+	}
+}
+
 func TestStopStartErrors(t *testing.T) {
 	w := newWorld(t)
 	w.as("alice@example.com")

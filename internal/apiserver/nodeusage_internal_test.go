@@ -33,8 +33,8 @@ func TestNodeUsageSummary(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []*monitoringv1alpha1.NodeUsage{
-		{Node: "n1", Machines: 2, Cpu: "3", Memory: "1536Mi", Disk: "35Gi"},
-		{Node: "n2", Cpu: "0", Memory: "0", Disk: "0"},
+		{Node: "n1", Machines: 2, Cpu: "3", Memory: "1536Mi", Disk: "35Gi", StoppedMemory: "0"},
+		{Node: "n2", Cpu: "0", Memory: "0", Disk: "0", StoppedMemory: "0"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("got %v, want %v", got, want)

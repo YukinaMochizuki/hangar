@@ -103,7 +103,10 @@ restart count.
 - **What is placed on each node is counted by the apiserver, not by the
   browser.** `ListNodeUsage`, under the same permission, answers each Node's
   machines counted and their vCPUs, memory and disk summed, with the Disks
-  and FileShares placed there, as the scheduler counts them. It reads the
+  and FileShares placed there, as the scheduler counts them: a machine its
+  node has stopped counts among the machines and holds its disk, not its
+  vCPUs or memory, and those are counted apart, with the memory they take
+  back if started (`machine-model.md`). It reads the
   store, not Prometheus, so it answers while Prometheus is down, and it
   names no machine: whoever reads the Nodes pages needs no
   `compute.machines.list` across every project, which would hand them each

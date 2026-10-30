@@ -561,11 +561,21 @@ func (s *Server) ensureMachineOf(ctx context.Context, r registry.Resource, meta 
 	if proto.Equal(want, m.GetSpec()) {
 		return m, moving
 	}
+	// A machine asked to stop asks for no memory, and gives its node's back
+	// once stopped (machineHolds); a start asks for all of it again, whether
+	// or not the stop had taken effect.
+	starts := asksToStop(m.GetSpec()) && !asksToStop(want)
+	if starts {
+		was.memory = 0
+	}
+	if asksToStop(want) {
+		now.memory = 0
+	}
 	if node := want.GetNode(); node != "" && (now.memory > was.memory || now.disk > was.disk) {
 		// The check and the write are one decision, as a placement is.
 		s.capacity.Lock()
 		defer s.capacity.Unlock()
-		if err := s.resizeFits(ctx, node, key, was, now); err != nil {
+		if err := s.resizeFits(ctx, node, key, was, now, starts); err != nil {
 			return m, err
 		}
 	}
@@ -898,10 +908,27 @@ func (s *Server) setScheduled(ctx context.Context, key resource.Key, m *computev
 	return err
 }
 
+// asksToStop says whether a machine's spec asks it to stay stopped.
+func asksToStop(spec *computev1alpha1.MachineSpec) bool {
+	return spec.GetRunState() == computev1alpha1.MachineRunState_MACHINE_RUN_STATE_STOPPED
+}
+
+// machineHolds is what m holds on its node: its root disk always, as its
+// disks stay there, and its memory unless its node has stopped it at a spec
+// asking it to stay stopped. Until the node has, the VM may still run.
+func machineHolds(m *computev1alpha1.Machine) (held, error) {
+	h, err := heldBy(m.GetSpec().GetResources())
+	if machineHasStopped(m) {
+		h.memory = 0
+	}
+	return h, err
+}
+
 // nodeUsage returns every node and what machines, disks and file shares
-// hold on each. One still being deleted holds its part until released.
-// Disks are sparse, so a machine holds the root disk size it declares, and
-// a disk or a share the size it has, not what was written to them.
+// hold on each (machineHolds). One still being deleted holds its part until
+// released. Disks are sparse, so a machine holds the root disk size it
+// declares, and a disk or a share the size it has, not what was written to
+// them.
 func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*computev1alpha1.Node, map[string]held, error) {
 	nodeObjs, _, err := s.store.List(ctx, store.ListOptions{Kind: registry.Node.Kind})
 	if err != nil {
@@ -924,7 +951,7 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 		if n == "" {
 			continue
 		}
-		h, err := heldBy(m.GetSpec().GetResources())
+		h, err := machineHolds(m)
 		if err != nil {
 			return nil, nil, fmt.Errorf("machine %s/%s: %w", o.Project, o.Name, err)
 		}
@@ -988,8 +1015,9 @@ func (s *Server) nodeUsage(ctx context.Context, except resource.Key) ([]*compute
 
 // resizeFits says whether a machine placed on node can grow from was to now:
 // each amount that grows must fit in what the node has left besides this
-// machine. A node that reports no disk is not checked for disk.
-func (s *Server) resizeFits(ctx context.Context, node string, machine resource.Key, was, now held) error {
+// machine. A node that reports no disk is not checked for disk. When
+// starts, too little memory is a start waiting for room (StartDoesNotFit).
+func (s *Server) resizeFits(ctx context.Context, node string, machine resource.Key, was, now held, starts bool) error {
 	nodes, used, err := s.nodeUsage(ctx, machine)
 	if err != nil {
 		return err
@@ -1005,6 +1033,11 @@ func (s *Server) resizeFits(ctx context.Context, node string, machine resource.K
 		}
 	}
 	if mem := free(room.memory, used[node].memory); now.memory > was.memory && now.memory > mem {
+		if starts {
+			return &blocked{computeapi.ReasonStartDoesNotFit, fmt.Sprintf(
+				"node %s has %s of memory free for this machine, not %s; it starts once there is room",
+				node, quantity.FormatMemory(mem), quantity.FormatMemory(now.memory))}
+		}
 		return &blocked{"ResizeDoesNotFit", fmt.Sprintf(
 			"node %s has %s of memory free for this machine, not %s; the change is not applied",
 			node, quantity.FormatMemory(mem), quantity.FormatMemory(now.memory))}

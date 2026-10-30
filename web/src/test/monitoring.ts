@@ -119,6 +119,8 @@ export function monitoringApi(f: {
   nodes?: ReturnType<typeof node>[];
   /** The node of each machine ListNodeUsage sums; each holds 2 vCPUs, 4Gi and 20Gi. */
   machinesOn?: string[];
+  /** The node of each machine its node has stopped; each holds 20Gi, and takes 4Gi back if started. */
+  stoppedOn?: string[];
   /** What TestPermissions answers: as perms names, or never. */
   permissions?: "never";
   /** ListNodes fails, as an apiserver that cannot read them. */
@@ -141,7 +143,16 @@ export function monitoringApi(f: {
       listNodeUsage: () => ({
         nodes: (f.nodes ?? [node("dev")]).map((n) => {
           const count = (f.machinesOn ?? []).filter((on) => on === n.metadata?.name).length;
-          return { node: n.metadata?.name ?? "", machines: count, cpu: `${2 * count}`, memory: `${4 * count}Gi`, disk: `${20 * count}Gi` };
+          const stopped = (f.stoppedOn ?? []).filter((on) => on === n.metadata?.name).length;
+          return {
+            node: n.metadata?.name ?? "",
+            machines: count + stopped,
+            cpu: `${2 * count}`,
+            memory: `${4 * count}Gi`,
+            disk: `${20 * (count + stopped)}Gi`,
+            stoppedMachines: stopped,
+            stoppedMemory: `${4 * stopped}Gi`,
+          };
         }),
       }),
       getOverview: () => (f.overview ?? overview)(),

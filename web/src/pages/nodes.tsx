@@ -20,7 +20,7 @@ import { errorMessage } from "@/lib/api";
 import { cn } from "@/lib/cn";
 import { ago } from "@/lib/machines";
 import { isUnavailable, monitoringPermission, useMonitoringOverview, type SeriesRange } from "@/lib/monitoring";
-import { capacities, formatAmount, nodePerms, useMachinesPerNode, useNodes, type Capacity, type NodeView, type Readiness as ReadinessKind } from "@/lib/nodes";
+import { capacities, formatAmount, nodePerms, useMachinesPerNode, useNodes, type Capacity, type NodeView, type Readiness as ReadinessKind, type Stopped } from "@/lib/nodes";
 import { usePlatformCan } from "@/lib/permissions";
 
 const readyTone: Record<ReadinessKind, Tone> = { ready: "ok", notReady: "fail", unknown: "pending" };
@@ -188,7 +188,10 @@ function NodeListBody({ may }: { may: May }) {
                         <CapacityCell c={c} />
                       </td>
                     ))}
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular text-muted">{machines.count(n.name) ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-2.5 tabular text-muted">
+                      {machines.count(n.name) ?? "—"}
+                      <StoppedCount stopped={machines.stopped(n.name)} />
+                    </td>
                     <td className="whitespace-nowrap px-4 py-2.5 text-muted">{n.heartbeat ? `${ago(n.heartbeat)} ago` : <span className="text-subtle">never</span>}</td>
                   </tr>
                 ))}
@@ -235,9 +238,16 @@ function NodeDetailBody({ name, initial, may }: { name: string; initial: SeriesR
   return <NodePage n={n} initial={initial} may={may} />;
 }
 
+/** How many of a node's machines it has stopped, after their count, when any. */
+function StoppedCount({ stopped }: { stopped: Stopped | undefined }) {
+  if (!stopped?.count) return null;
+  return <span className="text-subtle"> · {stopped.count} stopped</span>;
+}
+
 function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may: May }) {
   const perNode = useMachinesPerNode(may.monitoring);
   const machines = perNode.count(n.name);
+  const stopped = perNode.stopped(n.name);
   const [range, setRange] = useState<SeriesRange>(initial);
   const o = useMonitoringOverview(may.monitoring);
   return (
@@ -253,7 +263,12 @@ function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may:
                 <Cordoned /> <span className="text-[12px]">No new machines are placed here.</span>
               </span>
             )}
-            {machines !== undefined && <span className="tabular">{machines === 1 ? "1 machine" : `${machines} machines`}</span>}
+            {machines !== undefined && (
+              <span className="tabular">
+                {machines === 1 ? "1 machine" : `${machines} machines`}
+                <StoppedCount stopped={stopped} />
+              </span>
+            )}
             {n.heartbeat && <span>reported {ago(n.heartbeat)} ago</span>}
           </>
         }
@@ -275,7 +290,14 @@ function NodePage({ n, initial, may }: { n: NodeView; initial: SeriesRange; may:
               {capacities(n, perNode.held(n.name)).map((c) => (
                 <li key={c.kind} className="grid grid-cols-[64px_1fr] items-start gap-3 px-4 py-3 text-[13px]">
                   <span className="text-muted">{capacityLabel[c.kind]}</span>
-                  <CapacityCell c={c} wide />
+                  <div>
+                    <CapacityCell c={c} wide />
+                    {c.kind === "memory" && !!stopped?.count && (
+                      <div className="mt-0.5 text-[11.5px] text-subtle tabular">
+                        {formatAmount("memory", stopped.memory)} more if its {stopped.count === 1 ? "stopped machine starts" : `${stopped.count} stopped machines start`}
+                      </div>
+                    )}
+                  </div>
                 </li>
               ))}
             </ul>
