@@ -141,7 +141,12 @@ with `--release DIR`. `--only <step>` runs a single step
   table, `inet hangar-host`, whose input chain drops everything, IPv4 and
   IPv6, on every interface but loopback, except replies, ICMP and ICMPv6,
   the uplink's DHCPv4 replies, and TCP 22 (SSH), 80 and 443 (the front
-  door; `docs/decisions/front-door.md`). It has no forward chain, so the
+  door; `docs/decisions/front-door.md`). Right after loopback it drops,
+  and counts, every IPv4 packet that carries IP options, a temporary
+  mitigation of CVE-2026-98432 until the host runs a kernel with the fix
+  (`nft list table inet hangar-host` shows the count). The table it
+  compares with what it loaded last is listed without counter values, so
+  dropped packets alone never make the step reload it. It has no forward chain, so the
   guests' traffic is the node agent's tables' alone. Before it loads the
   table it warns of every listener it closes: anything listening on an
   address other than loopback, on a port other than those. It never uses

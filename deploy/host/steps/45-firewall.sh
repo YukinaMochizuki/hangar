@@ -13,13 +13,22 @@
 # forward chain. It is loaded by a unit of its own before the network comes
 # up, never by nftables.service, whose stock config flushes every table,
 # the node agent's too.
+#
+# Right after loopback, the input chain drops, and counts, every IPv4 packet
+# whose header carries options (a header length other than 5 words). It
+# mitigates CVE-2026-98432, a use-after-free in the kernel's IPv4 TCP that a
+# SYN carrying a Record Route or Timestamp option triggers, until the host
+# runs a kernel with the fix. Nothing the host is reached for sends IP
+# options, so the rule drops a packet class with no legitimate use here.
+# IPv6 has no such options and is unaffected.
 
 FIREWALL_TABLE=hangar-host
 FIREWALL_FILE=/etc/hangar/firewall.nft
 FIREWALL_UNIT=hangar-firewall
 FIREWALL_UNIT_PATH=/etc/systemd/system/$FIREWALL_UNIT.service
-# What the table held when this step last loaded it, as nft lists it: a
-# table changed since by hand is loaded again.
+# What the table held when this step last loaded it, as nft lists it
+# without its counters' values: a table changed since by hand is loaded
+# again, one that only counted packets is not.
 FIREWALL_LIVE=$STATE_DIR/firewall.live
 # The TCP ports anyone may reach: the operator's SSH, and the front door.
 FIREWALL_TCP_PORTS="22, 80, 443"
@@ -41,7 +50,8 @@ delete table inet $FIREWALL_TABLE
 table inet $FIREWALL_TABLE {
 	chain input {
 		type filter hook input priority filter; policy drop;
-		iif "lo" accept$(firewall_shared_rule)
+		iif "lo" accept
+		ip hdrlength != 5 counter drop$(firewall_shared_rule)
 		ct state established,related accept
 		ct state invalid drop
 		meta l4proto icmp accept
@@ -76,7 +86,7 @@ WantedBy=sysinit.target
 EOF
 }
 
-firewall_live() { nft list table inet "$FIREWALL_TABLE" 2>/dev/null; }
+firewall_live() { nft --stateless list table inet "$FIREWALL_TABLE" 2>/dev/null; }
 
 # firewall_loaded holds when the table is what this step last loaded.
 firewall_loaded() {
