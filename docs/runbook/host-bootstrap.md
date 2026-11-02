@@ -13,11 +13,50 @@ exporters. It is safe to re-run.
 
 ## Before the first run
 
-The OS install itself is done through the OVH API with a custom partition
-layout: `/boot` 1 GiB, `/` 100 GiB and swap 8 GiB on software RAID1, and the
-rest as a ZFS partition with `raidLevel: 1` and pool name `hangar`, which the
-installer turns into a mirrored pool. The installer does not mirror swap and
-gives the host its prefix's `::` address; the bootstrap fixes both.
+### Installing the OS
+
+The OS is installed through the OVH API (`POST
+/dedicated/server/{serviceName}/reinstall`) with a `storage` partitioning
+layout of our own. Each host's exact request is kept with the operator, not
+in this repository; whatever it holds, the layout is this, on two disks:
+
+| Mount point | File system | Size | `raidLevel` |
+|---|---|---|---|
+| `/boot` | ext4 | 1 GiB | 1 |
+| `/` | ext4 | 100 GiB | 1 |
+| swap | swap | 8 GiB | 1 |
+| `/var/lib/hangar` | zfs, `extras.zp.name: hangar` | the rest (`size: 0`) | 1 |
+
+What the installer makes of it, and what the bootstrap expects:
+
+- **A reinstall erases every disk, the pool included.** What lives only on
+  the host, `/var/lib/hangar/state` above all (the store, the SSH CA, which
+  has no other copy, and the KEK), has to be copied off first.
+- **Partitions it adds by itself:** a 511 MiB EFI system partition first on
+  each disk, the two mirrored as md RAID1 with metadata 0.90 (at the end of
+  the partition, so the firmware reads either one as plain FAT) and mounted
+  at `/boot/efi`; and a 2 MiB `config-2` partition at the end of the first
+  disk only, the config drive cloud-init reads. Neither goes in the layout.
+- **Each disk ends up as** 1 ESP, 2 `/boot`, 3 `/`, 4 swap, 5 ZFS. The
+  `/boot` and `/` mirrors are md RAID1 arrays with ext4.
+- **Swap is not mirrored**: each disk gets its own swap partition. The
+  `swap-raid` step rebuilds the pair as one md RAID1, from the partitions
+  `HANGAR_SWAP_PARTS` names by `/dev/disk/by-id` path. Those paths carry the
+  disks' serial numbers, so a host on new disks needs new values.
+- **The ZFS partition becomes the pool `hangar`**, a mirror, made with
+  `ashift=12`, `compatibility=openzfs-2.4`, `xattr=sa`, `acltype=posixacl`
+  and compression off. The `zfs` step sets compression, `atime` and
+  `autotrim` and checks none of the others.
+- **The ZFS mount point becomes a dataset**, `hangar/zd0`, the installer's
+  own, mounted at `/var/lib/hangar` with a quota of the partition's size.
+  The datasets the `zfs` step makes are mounted beneath it, so
+  `/var/lib/hangar` itself is on the pool, not on `/`.
+- **GRUB is the unsigned build** (`grub-efi-amd64`, copied over the ESP's
+  fallback `BOOTX64.EFI` too), so the host boots only with Secure Boot off.
+- **The host is given its prefix's `::` address**; the `network` step
+  replaces it.
+
+### The host's settings
 
 Write the host env file, `/etc/hangar/host.env`, root's, mode 0600.
 `deploy/host/host.env.example` lists every variable it takes, with example
