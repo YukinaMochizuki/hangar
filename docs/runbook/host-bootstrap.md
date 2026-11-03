@@ -15,10 +15,12 @@ exporters. It is safe to re-run.
 
 ### Installing the OS
 
-The OS is installed through the OVH API (`POST
-/dedicated/server/{serviceName}/reinstall`) with a `storage` partitioning
-layout of our own. Each host's exact request is kept with the operator, not
-in this repository; whatever it holds, the layout is this, on two disks:
+The OS is Debian 13 (OVH template `debian13_64`); `deploy/host` also runs
+on Ubuntu 26.04, which hosts ran before. It is installed through the OVH API
+(`POST /dedicated/server/{serviceName}/reinstall`) or the manager's form,
+with a `storage` partitioning layout of our own. Each host's exact request
+is kept with the operator, not in this repository; whatever it holds, the
+layout is this, on two disks:
 
 | Mount point | File system | Size | `raidLevel` |
 |---|---|---|---|
@@ -26,6 +28,10 @@ in this repository; whatever it holds, the layout is this, on two disks:
 | `/` | ext4 | 100 GiB | 1 |
 | swap | swap | 8 GiB | 1 |
 | `/var/lib/hangar` | zfs, `extras.zp.name: hangar` | the rest (`size: 0`) | 1 |
+
+In the manager's form, "Disks used for this installation" starts at 1: set
+it to 2, or nothing is mirrored. Its swap row has no RAID field; swap comes
+out one partition per disk either way.
 
 What the installer makes of it, and what the bootstrap expects:
 
@@ -44,9 +50,13 @@ What the installer makes of it, and what the bootstrap expects:
   `HANGAR_SWAP_PARTS` names by `/dev/disk/by-id` path. Those paths carry the
   disks' serial numbers, so a host on new disks needs new values.
 - **The ZFS partition becomes the pool `hangar`**, a mirror, made with
-  `ashift=12`, `compatibility=openzfs-2.4`, `xattr=sa`, `acltype=posixacl`
-  and compression off. The `zfs` step sets compression, `atime` and
-  `autotrim` and checks none of the others.
+  `ashift=12`, `xattr=sa`, `acltype=posixacl`, compression off and the
+  `compatibility` of the installed ZFS (`openzfs-2.3` on Debian 13,
+  `openzfs-2.4` on Ubuntu 26.04). The `zfs` step sets compression, `atime`
+  and `autotrim` and checks none of the others.
+- **On Debian, ZFS is a DKMS module** (`zfs-dkms`, with the kernel's
+  headers), which the installer builds; every kernel update builds it again.
+  Ubuntu's kernel carries ZFS itself.
 - **The ZFS mount point becomes a dataset**, `hangar/zd0`, the installer's
   own, mounted at `/var/lib/hangar` with a quota of the partition's size.
   The datasets the `zfs` step makes are mounted beneath it, so
@@ -54,7 +64,13 @@ What the installer makes of it, and what the bootstrap expects:
 - **GRUB is the unsigned build** (`grub-efi-amd64`, copied over the ESP's
   fallback `BOOTX64.EFI` too), so the host boots only with Secure Boot off.
 - **The host is given its prefix's `::` address**; the `network` step
-  replaces it.
+  replaces it. Both images write the uplink's netplan config through
+  cloud-init, which the step takes over.
+- **The login user is the image's**: `debian` on Debian, `ubuntu` on
+  Ubuntu, with the key from the install request and passwordless sudo.
+  The `sshd` step lets in `ubuntu` alone unless `HANGAR_SSH_USERS` says
+  otherwise, so a Debian host's env file sets `HANGAR_SSH_USERS=debian`;
+  without it the run refuses, as no listed user has a key.
 
 ### The host's settings
 
@@ -241,11 +257,12 @@ with `--release DIR`. `--only <step>` runs a single step
   log in again from a second terminal before closing the first. To back
   out by hand: `sudo rm /etc/ssh/sshd_config.d/10-hangar.conf && sudo
   systemctl reload ssh` (the next run writes it again).
-- `upgrades` keeps Ubuntu's unattended upgrades to their default origins
-  (security only), never reboots, and moves `apt-daily.timer` to 03:30 and
-  `apt-daily-upgrade.timer` to 04:00 in `HANGAR_UPGRADES_TZ` (UTC unless
-  the host env file sets it; a zone the host does not know is refused before
-  any step), with no random delay
+- `upgrades` keeps unattended upgrades to security updates (Ubuntu's
+  default origins; on Debian, whose defaults also take the stable release's
+  point updates, its security archives alone), never reboots, and moves
+  `apt-daily.timer` to 03:30 and `apt-daily-upgrade.timer` to 04:00 in
+  `HANGAR_UPGRADES_TZ` (UTC unless the host env file sets it; a zone the
+  host does not know is refused before any step), with no random delay
   and nothing made up at boot: an upgrade can re-exec systemd and trigger
   udev on every device. It also tells needrestart to leave every `hangar-*`
   unit alone: after a hangar release every VM's launcher looks stale to it.

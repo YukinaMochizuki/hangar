@@ -700,7 +700,7 @@ address.
     agent then names the machine from what its network services read
     from the API. Nothing is read per packet, from a table dump or from
     another log, and nothing depends on journald or conntrack tools, which
-    differ between the testbed's Ubuntu 24.04 and the host's 26.04.
+    differ between the testbed's Ubuntu 24.04 and the host's OS.
   - Conntrack's events carry no time for a new connection, so a line's
     time is when the agent read the event: one goroutine reads events into
     a bounded queue (4096), another joins and writes them.

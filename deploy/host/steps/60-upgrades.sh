@@ -12,10 +12,19 @@ UPGRADES_TZ=${HANGAR_UPGRADES_TZ:-UTC}
 # Each entry is TIMER:TIME: the lists are fetched first, then upgrades run.
 UPGRADES_TIMERS="apt-daily:03:30 apt-daily-upgrade:04:00"
 
+# Ubuntu's default origins (Allowed-Origins) take security updates only and
+# stay. Debian's (Origins-Pattern) also take the stable release's point
+# updates, so the pattern list is cleared and given its security archives
+# alone; on Ubuntu, whose pattern list is empty, they match nothing.
 upgrades_conf() {
 	cat <<'EOF'
-// Written by deploy/host/steps/60-upgrades.sh. The origins stay Ubuntu's
-// defaults, which take security updates only.
+// Written by deploy/host/steps/60-upgrades.sh. Security updates only: on
+// Ubuntu its default Allowed-Origins, on Debian these patterns.
+#clear Unattended-Upgrade::Origins-Pattern;
+Unattended-Upgrade::Origins-Pattern {
+	"origin=Debian,codename=${distro_codename},label=Debian-Security";
+	"origin=Debian,codename=${distro_codename}-security,label=Debian-Security";
+};
 Unattended-Upgrade::Automatic-Reboot "false";
 Unattended-Upgrade::Automatic-Reboot-WithUsers "false";
 EOF
