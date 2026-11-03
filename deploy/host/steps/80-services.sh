@@ -877,6 +877,17 @@ services_apply() {
 	# apiserver in dev auth, which trusts a header: it goes before the
 	# apiserver could restart in dev.
 	[ "$(auth_mode)" = oidc ] || cloudflared_down "the auth mode is dev"
+	# The VMs' ids are kept from useradd, then the users are made: on a new
+	# host the client secret below can only be installed as hangar's once
+	# hangar exists.
+	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
+	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
+	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
+	for u in "$SERVICES_USER" "$SERVICES_EDGE_USER"; do
+		id -u "$u" >/dev/null 2>&1 ||
+			run "create system user $u" useradd --system --user-group \
+				--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$u"
+	done
 	# In oidc auth the apiserver does not start without its client secret,
 	# which is the operator's to install, never this step's to make.
 	if [ "$(auth_mode)" = oidc ]; then
@@ -896,17 +907,9 @@ services_apply() {
 		log "warning: $what; a real run refuses until they are removed"
 	fi
 
-	services_vm_ids_free || refuse "$(services_vm_ids_problem)"
 	services_metrics_note hangar-apiserver hangar-node
 	services_monitoring_note
-	put_file /etc/subuid 644 "$(services_vm_ids_file /etc/subuid)"
-	put_file /etc/subgid 644 "$(services_vm_ids_file /etc/subgid)"
 
-	for u in "$SERVICES_USER" "$SERVICES_EDGE_USER"; do
-		id -u "$u" >/dev/null 2>&1 ||
-			run "create system user $u" useradd --system --user-group \
-				--home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin "$u"
-	done
 	# Under --dry-run the zfs step may not have made the dataset yet.
 	if [ ! -d "$SERVICES_STATE" ] || ! services_state_ok; then
 		run "give $SERVICES_STATE to $SERVICES_USER, mode 700" \

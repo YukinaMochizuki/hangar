@@ -161,6 +161,12 @@ journalctl -u hangar-bootstrap       # its output; ends with "changes: N"
 DEPLOY/host/verify.sh                # one PASS/FAIL per check, exit 1 on any FAIL
 ```
 
+A new host whose `local.env` already says `HANGAR_AUTH_MODE=oidc` stops
+at the `services` step on the first run, after making the `hangar` user:
+install the OAuth client's secret as `hangar`'s ("Switching to sign-in
+through Google" below, step 2), and the Cloudflare DNS token
+(`/etc/hangar/cloudflare-dns-token`, root's, mode 0600), then run it again.
+
 Run the real thing detached from the SSH session, as above. `netplan apply` and
 `networkctl reconfigure` renew the uplink's DHCPv4 lease, which can drop the
 session; a run killed with it is safe to re-run, but it should not be killed.
