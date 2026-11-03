@@ -12,8 +12,9 @@ unreliable on virtio-fs.
 
 ## Decision
 
-- The host runs Ubuntu 26.04 (ZFS in-tree). A small mdadm RAID1 holds the root
-  filesystem; the rest of the disks form a ZFS mirror (ZFS must not sit on
+- The host runs Debian 13, with ZFS from `zfs-dkms` (it ran Ubuntu 26.04,
+  whose kernel carries ZFS, until November 2026). A small mdadm RAID1 holds
+  the root filesystem; the rest of the disks form a ZFS mirror (ZFS must not sit on
   mdadm).
 - Every machine disk is a zvol. OCI and cloud images are converted once into a
   base zvol snapshot, and each machine clones from it.
@@ -239,7 +240,8 @@ unreliable on virtio-fs.
   `/usr/lib/udev/rules.d/60-persistent-storage.rules` on the testbed (Ubuntu
   24.04, systemd 255.4), before every `IMPORT{builtin}="blkid"` in it; the
   same line is in systemd 259's `rules.d/60-persistent-storage.rules.in`,
-  which Ubuntu 26.04 ships (259.5). A destroy refused as busy is still
+  which Ubuntu 26.04 ships (259.5), and line 123 of Debian 13's file (systemd
+  257.13). A destroy refused as busy is still
   retried for a few seconds, as other tools may open a zvol.
 
 ## Consequences
