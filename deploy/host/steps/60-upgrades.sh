@@ -90,14 +90,19 @@ upgrades_timers_ok() {
 	done
 }
 
-# upgrades_apt_ok checks what apt itself makes of the configuration.
+# upgrades_apt_ok checks what apt itself makes of the configuration: a
+# security origin (Ubuntu's -security pocket, or Debian's security label),
+# no updates, proposed or backports pocket, and no pattern but Debian's
+# security ones.
 upgrades_apt_ok() {
-	local dump
+	local dump origins
 	dump=$(apt-config dump)
+	origins=$(grep -E '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern):: ' <<<"$dump" || true)
 	grep -qx 'APT::Periodic::Unattended-Upgrade "1";' <<<"$dump" &&
 		grep -qx 'Unattended-Upgrade::Automatic-Reboot "false";' <<<"$dump" &&
-		grep -q '^Unattended-Upgrade::Allowed-Origins:: ".*-security";' <<<"$dump" &&
-		! grep -qE '^Unattended-Upgrade::(Allowed-Origins|Origins-Pattern):: ".*-(updates|proposed|backports)' <<<"$dump"
+		grep -qE '^Unattended-Upgrade::(Allowed-Origins:: ".*-security"|Origins-Pattern:: ".*label=Debian-Security");' <<<"$origins" &&
+		! grep -qE -- '-(updates|proposed|backports)' <<<"$origins" &&
+		! grep '^Unattended-Upgrade::Origins-Pattern:: ' <<<"$origins" | grep -qv 'label=Debian-Security";$'
 }
 
 upgrades_apply() {
