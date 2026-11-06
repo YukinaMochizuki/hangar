@@ -1297,11 +1297,17 @@ it, as root.
 
 ## Giving the guests an IPv4 of their own
 
-Without `HANGAR_SHARED_IPV4` every machine's IPv4 leaves as the host's own
+Without `HANGAR_SHARED_IPV4` the host opens no port forward: every
+`PortForward` stays `NoSharedIPv4`, with a port and no address, since a
+forward is a port of the shared address and nothing else
+(`docs/decisions/networking.md`, "Port forwards"). The plan still grants
+port forwards, so tenants can make them, and `verify.sh` says SKIP for the
+shared address. Every machine's IPv4 also leaves as the host's own
 address, so a machine's abuse, a blocklisting or OVH's mitigation of a flood
 reaches SSH and the front door too. With it, they leave as an address of
 their own, and the host serves nothing there
-(`docs/decisions/networking.md`, "The shared IPv4 address"). To move them:
+(`docs/decisions/networking.md`, "The shared IPv4 address"). A host that
+takes port forwards needs one. To move them:
 
 1. Order one Additional IP in the OVH control panel, in the host's
    location, and route it to the server (no virtual MAC: the host routes
@@ -1312,11 +1318,14 @@ their own, and the host serves nothing there
    rollback timer (the address as a /32 with `lifetime: 0`, so the host
    never sends from it), the firewall step drops all input to it, and the
    services step restarts the agent with `--shared-ipv4`, which rewrites
-   table `ip hangar`.
+   table `ip hangar` and writes the forwards into table `ip hangar_forward`.
 3. The machines' connections open at that moment were NATed to the old
    address and break; new ones leave as the shared one. Anyone who allowed
    a machine's traffic in by the host's address must allow the new one.
-4. Check from a machine: `curl -4 https://ifconfig.me` prints the shared
+4. Check that the Node reports it (`hangar get node <name> -o yaml` shows
+   `sharedIpv4`), and that every PortForward is Ready at it (`hangar get
+   portforwards -A`).
+5. Check from a machine: `curl -4 https://ifconfig.me` prints the shared
    address, and `curl -4 https://api.hangarlab.cloud` still answers (the
    front door stays at the host's own address). From outside, nothing
    answers at the shared address, `ssh` included.

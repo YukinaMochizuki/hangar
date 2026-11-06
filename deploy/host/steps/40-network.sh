@@ -304,7 +304,11 @@ network_verify() {
 	check "uplink IPv6 is $HANGAR_IPV6_ADDR and the gateway answers" network_ipv6_ok
 	check "no other global IPv6 address on $HANGAR_UPLINK" test -z "$(network_stale_ipv6)"
 	check "IPv4 address on $HANGAR_UPLINK and a default route" network_ipv4_ok
-	check "shared IPv4 ${HANGAR_SHARED_IPV4:-(none)} on $HANGAR_UPLINK, never sent from" network_shared_ok
+	if [ -n "${HANGAR_SHARED_IPV4:-}" ]; then
+		check "shared IPv4 $HANGAR_SHARED_IPV4 on $HANGAR_UPLINK, never sent from" network_shared_ok
+	else
+		skip "shared IPv4 on $HANGAR_UPLINK" "no HANGAR_SHARED_IPV4: no port forward opens, docs/runbook/host-bootstrap.md"
+	fi
 	check "no other shared IPv4 left on $HANGAR_UPLINK" test -z "$(network_stale_shared)"
 	check "proxy NDP on $HANGAR_UPLINK, live and owned by networkd" network_proxy_ndp_ok
 	check "no netplan rollback pending" network_no_rollback_pending
