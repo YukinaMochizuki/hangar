@@ -14,6 +14,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/creack/pty"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	guestv1 "github.com/YukinaMochizuki/hangar/gen/go/hangar/guest/v1"
@@ -62,7 +63,22 @@ type Server struct {
 	// error wrapping ErrNoVolume.
 	StatVolume   func(device string) (size, used uint64, err error)
 	ResizeVolume func(device string) (size uint64, err error)
+	// ExecEnv, if set, makes the environment of each process Exec runs.
+	ExecEnv func(env []string) []string
+	// TailnetState, TailnetSet and TailnetJoin, if set, say where the
+	// guest's tailnet join stands, have it join as told or leave, nil, and
+	// join it with an auth key; TailnetJoin's errors wrap
+	// ErrTailnetHasState or ErrTailnetBusy where they refuse the key.
+	TailnetState func() *guestv1.TailnetStatusResponse
+	TailnetSet   func(*guestv1.Tailscale)
+	TailnetJoin  func(key string) error
 }
+
+// Refusals of JoinTailnet.
+var (
+	ErrTailnetHasState = errors.New("the guest has its node's state, and joins without an auth key")
+	ErrTailnetBusy     = errors.New("the guest does not wait for an auth key now")
+)
 
 // ErrNoVolume is a device no volume is mounted read-write from.
 var ErrNoVolume = errors.New("no volume the boot disk lists is mounted read-write from this device")
@@ -155,6 +171,41 @@ func (s *Server) GrowVolume(_ context.Context, req *connect.Request[guestv1.Grow
 	return connect.NewResponse(&guestv1.GrowVolumeResponse{Size: size}), nil
 }
 
+// TailnetStatus says where the guest's tailnet join stands.
+func (s *Server) TailnetStatus(context.Context, *connect.Request[guestv1.TailnetStatusRequest]) (*connect.Response[guestv1.TailnetStatusResponse], error) {
+	if s.TailnetState == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest joins no tailnet"))
+	}
+	return connect.NewResponse(s.TailnetState()), nil
+}
+
+// SetTailnet has the guest join the tailnet as told, or leave it.
+func (s *Server) SetTailnet(_ context.Context, req *connect.Request[guestv1.SetTailnetRequest]) (*connect.Response[guestv1.SetTailnetResponse], error) {
+	if s.TailnetSet == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest joins no tailnet"))
+	}
+	s.TailnetSet(req.Msg.GetTailscale())
+	return connect.NewResponse(&guestv1.SetTailnetResponse{}), nil
+}
+
+// JoinTailnet joins the guest's tailnet with the auth key the node gives.
+// Neither the key nor the request is logged.
+func (s *Server) JoinTailnet(_ context.Context, req *connect.Request[guestv1.JoinTailnetRequest]) (*connect.Response[guestv1.JoinTailnetResponse], error) {
+	if s.TailnetJoin == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("this guest joins no tailnet"))
+	}
+	err := s.TailnetJoin(req.Msg.GetAuthKey())
+	switch {
+	case err == nil:
+		return connect.NewResponse(&guestv1.JoinTailnetResponse{}), nil
+	case errors.Is(err, ErrTailnetHasState):
+		return nil, connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, ErrTailnetBusy):
+		return nil, connect.NewError(connect.CodeAborted, err)
+	}
+	return nil, connect.NewError(connect.CodeInternal, err)
+}
+
 func volumeError(err error) error {
 	if errors.Is(err, ErrNoVolume) {
 		return connect.NewError(connect.CodeInvalidArgument, err)
@@ -192,7 +243,12 @@ func (s *Server) Exec(ctx context.Context, stream *connect.BidiStream[guestv1.Ex
 	}
 	defer std.close()
 
-	argv, attr, err := supervise.Spec(s.Root, start.GetProcess(), std.child)
+	spec := start.GetProcess()
+	if s.ExecEnv != nil {
+		spec = proto.Clone(spec).(*guestv1.Process)
+		spec.Env = s.ExecEnv(spec.GetEnv())
+	}
+	argv, attr, err := supervise.Spec(s.Root, spec, std.child)
 	if errors.Is(err, supervise.ErrNotFound) {
 		return cannotRun(stream, exitNotFound, err)
 	}

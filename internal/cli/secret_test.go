@@ -82,3 +82,41 @@ func TestCreateRegistrySecret(t *testing.T) {
 		}
 	}
 }
+
+// TestCreateTailscaleSecret: a tailscale-auth secret is made from an auth
+// key in a file or on stdin, and no output shows the key again.
+func TestCreateTailscaleSecret(t *testing.T) {
+	w := newWorld(t)
+	w.as("alice@example.com")
+	w.must(stack, "apply", "-f", "-")
+
+	key := "tskey-auth-k" + cliCanary
+	file := filepath.Join(t.TempDir(), "authkey")
+	if err := os.WriteFile(file, []byte(key+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out := w.must("", "create", "secret", "tailscale", "ts", "--auth-key-file", file); out != "secret/ts created\n" {
+		t.Errorf("create printed %q", out)
+	}
+	if out := w.must(key, "create", "secret", "tailscale", "ts", "--auth-key-file", "-"); out != "secret/ts applied\n" {
+		t.Errorf("create again from stdin printed %q", out)
+	}
+	all := w.must("", "get", "secret") + w.must("", "get", "secret", "ts", "-o", "yaml")
+	if strings.Contains(all, cliCanary) || strings.Contains(all, "sealed") {
+		t.Errorf("the CLI showed the key or its sealed form:\n%s", all)
+	}
+	for _, c := range []struct {
+		what  string
+		stdin string
+		args  []string
+	}{
+		{"no file", "", []string{"create", "secret", "tailscale", "x"}},
+		{"an empty key", "\n", []string{"create", "secret", "tailscale", "x", "--auth-key-file", "-"}},
+		{"two words", key + " " + key, []string{"create", "secret", "tailscale", "x", "--auth-key-file", "-"}},
+	} {
+		r := w.run(c.stdin, c.args...)
+		if r.code == 0 || strings.Contains(r.out+r.err, cliCanary) {
+			t.Errorf("%s: exit %d, %q %q", c.what, r.code, r.out, r.err)
+		}
+	}
+}

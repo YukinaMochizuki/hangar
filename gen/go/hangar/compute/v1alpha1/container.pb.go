@@ -294,7 +294,17 @@ type ContainerSpec struct {
 	// container; one on no node yet holds the container back.
 	// Changing them restarts the container. See
 	// docs/decisions/container-volumes.md.
-	Volumes       []*ContainerVolume `protobuf:"bytes,11,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	Volumes []*ContainerVolume `protobuf:"bytes,11,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	// Set, the container joins a tailnet as a node of its own, its processes
+	// seeing it as an interface, tailscale0, beside the others. The tailscale
+	// CLI is at /run/hangar/tailscale/bin/tailscale. The status condition
+	// TailnetJoined says whether it has joined. None of it restarts the
+	// container: setting it on a running container joins the tailnet as it
+	// runs; unsetting it logs the node out, stops it, and deletes its state,
+	// so setting it again joins as a new node with the key; a new hostname
+	// or accept_routes is set on the running node. See
+	// docs/decisions/container-tailscale.md.
+	Tailscale     *ContainerTailscale `protobuf:"bytes,12,opt,name=tailscale,proto3" json:"tailscale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -406,6 +416,79 @@ func (x *ContainerSpec) GetVolumes() []*ContainerVolume {
 	return nil
 }
 
+func (x *ContainerSpec) GetTailscale() *ContainerTailscale {
+	if x != nil {
+		return x.Tailscale
+	}
+	return nil
+}
+
+// ContainerTailscale joins the container to a tailnet as a node of its own.
+type ContainerTailscale struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// A Secret in the container's project holding, under "authkey", the auth
+	// key the container joins with the first time. Once it has joined, its
+	// node's state is on its root disk, and the key is not used again.
+	AuthSecret string `protobuf:"bytes,1,opt,name=auth_secret,json=authSecret,proto3" json:"auth_secret,omitempty"`
+	// The node's hostname on the tailnet; empty is the container's name.
+	Hostname string `protobuf:"bytes,2,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	// Accept the subnet routes the tailnet offers this node.
+	AcceptRoutes  bool `protobuf:"varint,3,opt,name=accept_routes,json=acceptRoutes,proto3" json:"accept_routes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ContainerTailscale) Reset() {
+	*x = ContainerTailscale{}
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ContainerTailscale) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ContainerTailscale) ProtoMessage() {}
+
+func (x *ContainerTailscale) ProtoReflect() protoreflect.Message {
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ContainerTailscale.ProtoReflect.Descriptor instead.
+func (*ContainerTailscale) Descriptor() ([]byte, []int) {
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ContainerTailscale) GetAuthSecret() string {
+	if x != nil {
+		return x.AuthSecret
+	}
+	return ""
+}
+
+func (x *ContainerTailscale) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *ContainerTailscale) GetAcceptRoutes() bool {
+	if x != nil {
+		return x.AcceptRoutes
+	}
+	return false
+}
+
 // ContainerVolume is a volume a container mounts, as Compose writes one.
 type ContainerVolume struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -431,7 +514,7 @@ type ContainerVolume struct {
 
 func (x *ContainerVolume) Reset() {
 	*x = ContainerVolume{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -443,7 +526,7 @@ func (x *ContainerVolume) String() string {
 func (*ContainerVolume) ProtoMessage() {}
 
 func (x *ContainerVolume) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[2]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -456,7 +539,7 @@ func (x *ContainerVolume) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerVolume.ProtoReflect.Descriptor instead.
 func (*ContainerVolume) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{2}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ContainerVolume) GetType() string {
@@ -516,7 +599,7 @@ type ContainerVolumeOptions struct {
 
 func (x *ContainerVolumeOptions) Reset() {
 	*x = ContainerVolumeOptions{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -528,7 +611,7 @@ func (x *ContainerVolumeOptions) String() string {
 func (*ContainerVolumeOptions) ProtoMessage() {}
 
 func (x *ContainerVolumeOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[3]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +624,7 @@ func (x *ContainerVolumeOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerVolumeOptions.ProtoReflect.Descriptor instead.
 func (*ContainerVolumeOptions) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{3}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ContainerVolumeOptions) GetNocopy() bool {
@@ -569,7 +652,7 @@ type EnvVar struct {
 
 func (x *EnvVar) Reset() {
 	*x = EnvVar{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -581,7 +664,7 @@ func (x *EnvVar) String() string {
 func (*EnvVar) ProtoMessage() {}
 
 func (x *EnvVar) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[4]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -594,7 +677,7 @@ func (x *EnvVar) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EnvVar.ProtoReflect.Descriptor instead.
 func (*EnvVar) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{4}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *EnvVar) GetName() string {
@@ -627,7 +710,7 @@ type ContainerPort struct {
 
 func (x *ContainerPort) Reset() {
 	*x = ContainerPort{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -639,7 +722,7 @@ func (x *ContainerPort) String() string {
 func (*ContainerPort) ProtoMessage() {}
 
 func (x *ContainerPort) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[5]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -652,7 +735,7 @@ func (x *ContainerPort) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerPort.ProtoReflect.Descriptor instead.
 func (*ContainerPort) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{5}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ContainerPort) GetName() string {
@@ -707,7 +790,7 @@ type Resources struct {
 
 func (x *Resources) Reset() {
 	*x = Resources{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -719,7 +802,7 @@ func (x *Resources) String() string {
 func (*Resources) ProtoMessage() {}
 
 func (x *Resources) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[6]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -732,7 +815,7 @@ func (x *Resources) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Resources.ProtoReflect.Descriptor instead.
 func (*Resources) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{6}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Resources) GetCpu() string {
@@ -780,7 +863,7 @@ type DiskGrow struct {
 
 func (x *DiskGrow) Reset() {
 	*x = DiskGrow{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -792,7 +875,7 @@ func (x *DiskGrow) String() string {
 func (*DiskGrow) ProtoMessage() {}
 
 func (x *DiskGrow) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[7]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -805,7 +888,7 @@ func (x *DiskGrow) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskGrow.ProtoReflect.Descriptor instead.
 func (*DiskGrow) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{7}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DiskGrow) GetMax() string {
@@ -847,7 +930,7 @@ type ContainerStatus struct {
 
 func (x *ContainerStatus) Reset() {
 	*x = ContainerStatus{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -859,7 +942,7 @@ func (x *ContainerStatus) String() string {
 func (*ContainerStatus) ProtoMessage() {}
 
 func (x *ContainerStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[8]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -872,7 +955,7 @@ func (x *ContainerStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ContainerStatus.ProtoReflect.Descriptor instead.
 func (*ContainerStatus) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{8}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ContainerStatus) GetObservedGeneration() int64 {
@@ -913,7 +996,7 @@ type GetContainerRequest struct {
 
 func (x *GetContainerRequest) Reset() {
 	*x = GetContainerRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -925,7 +1008,7 @@ func (x *GetContainerRequest) String() string {
 func (*GetContainerRequest) ProtoMessage() {}
 
 func (x *GetContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[9]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -938,7 +1021,7 @@ func (x *GetContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContainerRequest.ProtoReflect.Descriptor instead.
 func (*GetContainerRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{9}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GetContainerRequest) GetProject() string {
@@ -964,7 +1047,7 @@ type GetContainerResponse struct {
 
 func (x *GetContainerResponse) Reset() {
 	*x = GetContainerResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -976,7 +1059,7 @@ func (x *GetContainerResponse) String() string {
 func (*GetContainerResponse) ProtoMessage() {}
 
 func (x *GetContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[10]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -989,7 +1072,7 @@ func (x *GetContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetContainerResponse.ProtoReflect.Descriptor instead.
 func (*GetContainerResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{10}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *GetContainerResponse) GetContainer() *Container {
@@ -1012,7 +1095,7 @@ type ListContainersRequest struct {
 
 func (x *ListContainersRequest) Reset() {
 	*x = ListContainersRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1024,7 +1107,7 @@ func (x *ListContainersRequest) String() string {
 func (*ListContainersRequest) ProtoMessage() {}
 
 func (x *ListContainersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[11]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1037,7 +1120,7 @@ func (x *ListContainersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContainersRequest.ProtoReflect.Descriptor instead.
 func (*ListContainersRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{11}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *ListContainersRequest) GetProject() string {
@@ -1079,7 +1162,7 @@ type ListContainersResponse struct {
 
 func (x *ListContainersResponse) Reset() {
 	*x = ListContainersResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1091,7 +1174,7 @@ func (x *ListContainersResponse) String() string {
 func (*ListContainersResponse) ProtoMessage() {}
 
 func (x *ListContainersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[12]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1104,7 +1187,7 @@ func (x *ListContainersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListContainersResponse.ProtoReflect.Descriptor instead.
 func (*ListContainersResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{12}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *ListContainersResponse) GetItems() []*Container {
@@ -1140,7 +1223,7 @@ type WatchContainersRequest struct {
 
 func (x *WatchContainersRequest) Reset() {
 	*x = WatchContainersRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1152,7 +1235,7 @@ func (x *WatchContainersRequest) String() string {
 func (*WatchContainersRequest) ProtoMessage() {}
 
 func (x *WatchContainersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[13]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1165,7 +1248,7 @@ func (x *WatchContainersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchContainersRequest.ProtoReflect.Descriptor instead.
 func (*WatchContainersRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{13}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *WatchContainersRequest) GetProject() string {
@@ -1200,7 +1283,7 @@ type WatchContainersResponse struct {
 
 func (x *WatchContainersResponse) Reset() {
 	*x = WatchContainersResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1212,7 +1295,7 @@ func (x *WatchContainersResponse) String() string {
 func (*WatchContainersResponse) ProtoMessage() {}
 
 func (x *WatchContainersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[14]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1225,7 +1308,7 @@ func (x *WatchContainersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchContainersResponse.ProtoReflect.Descriptor instead.
 func (*WatchContainersResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{14}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *WatchContainersResponse) GetType() v1.EventType {
@@ -1260,7 +1343,7 @@ type ApplyContainerRequest struct {
 
 func (x *ApplyContainerRequest) Reset() {
 	*x = ApplyContainerRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1272,7 +1355,7 @@ func (x *ApplyContainerRequest) String() string {
 func (*ApplyContainerRequest) ProtoMessage() {}
 
 func (x *ApplyContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[15]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1285,7 +1368,7 @@ func (x *ApplyContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyContainerRequest.ProtoReflect.Descriptor instead.
 func (*ApplyContainerRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{15}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ApplyContainerRequest) GetContainer() *Container {
@@ -1313,7 +1396,7 @@ type ApplyContainerResponse struct {
 
 func (x *ApplyContainerResponse) Reset() {
 	*x = ApplyContainerResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1325,7 +1408,7 @@ func (x *ApplyContainerResponse) String() string {
 func (*ApplyContainerResponse) ProtoMessage() {}
 
 func (x *ApplyContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[16]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1338,7 +1421,7 @@ func (x *ApplyContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyContainerResponse.ProtoReflect.Descriptor instead.
 func (*ApplyContainerResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{16}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ApplyContainerResponse) GetContainer() *Container {
@@ -1373,7 +1456,7 @@ type DeleteContainerRequest struct {
 
 func (x *DeleteContainerRequest) Reset() {
 	*x = DeleteContainerRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1385,7 +1468,7 @@ func (x *DeleteContainerRequest) String() string {
 func (*DeleteContainerRequest) ProtoMessage() {}
 
 func (x *DeleteContainerRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[17]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1398,7 +1481,7 @@ func (x *DeleteContainerRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteContainerRequest.ProtoReflect.Descriptor instead.
 func (*DeleteContainerRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{17}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *DeleteContainerRequest) GetProject() string {
@@ -1431,7 +1514,7 @@ type DeleteContainerResponse struct {
 
 func (x *DeleteContainerResponse) Reset() {
 	*x = DeleteContainerResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1443,7 +1526,7 @@ func (x *DeleteContainerResponse) String() string {
 func (*DeleteContainerResponse) ProtoMessage() {}
 
 func (x *DeleteContainerResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[18]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1456,7 +1539,7 @@ func (x *DeleteContainerResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteContainerResponse.ProtoReflect.Descriptor instead.
 func (*DeleteContainerResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{18}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *DeleteContainerResponse) GetContainer() *Container {
@@ -1478,7 +1561,7 @@ type UpdateContainerStatusRequest struct {
 
 func (x *UpdateContainerStatusRequest) Reset() {
 	*x = UpdateContainerStatusRequest{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1490,7 +1573,7 @@ func (x *UpdateContainerStatusRequest) String() string {
 func (*UpdateContainerStatusRequest) ProtoMessage() {}
 
 func (x *UpdateContainerStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[19]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1503,7 +1586,7 @@ func (x *UpdateContainerStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateContainerStatusRequest.ProtoReflect.Descriptor instead.
 func (*UpdateContainerStatusRequest) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{19}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UpdateContainerStatusRequest) GetProject() string {
@@ -1543,7 +1626,7 @@ type UpdateContainerStatusResponse struct {
 
 func (x *UpdateContainerStatusResponse) Reset() {
 	*x = UpdateContainerStatusResponse{}
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1555,7 +1638,7 @@ func (x *UpdateContainerStatusResponse) String() string {
 func (*UpdateContainerStatusResponse) ProtoMessage() {}
 
 func (x *UpdateContainerStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[20]
+	mi := &file_hangar_compute_v1alpha1_container_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1568,7 +1651,7 @@ func (x *UpdateContainerStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateContainerStatusResponse.ProtoReflect.Descriptor instead.
 func (*UpdateContainerStatusResponse) Descriptor() ([]byte, []int) {
-	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{20}
+	return file_hangar_compute_v1alpha1_container_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *UpdateContainerStatusResponse) GetContainer() *Container {
@@ -1591,7 +1674,7 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"\x04spec\x18\x04 \x01(\v2&.hangar.compute.v1alpha1.ContainerSpecR\x04spec\x12@\n" +
 	"\x06status\x18\x05 \x01(\v2(.hangar.compute.v1alpha1.ContainerStatusR\x06status:!\x8a\xb5\x18\x1d\n" +
 	"\tContainer\x12\n" +
-	"containers\x1a\x02ct \x01\"\xdb\x04\n" +
+	"containers\x1a\x02ct \x01\"\xa6\x05\n" +
 	"\rContainerSpec\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
@@ -1606,7 +1689,13 @@ const file_hangar_compute_v1alpha1_container_proto_rawDesc = "" +
 	"interfaces\x12,\n" +
 	"\x12image_pull_secrets\x18\n" +
 	" \x03(\tR\x10imagePullSecrets\x12B\n" +
-	"\avolumes\x18\v \x03(\v2(.hangar.compute.v1alpha1.ContainerVolumeR\avolumes\"\xdc\x01\n" +
+	"\avolumes\x18\v \x03(\v2(.hangar.compute.v1alpha1.ContainerVolumeR\avolumes\x12I\n" +
+	"\ttailscale\x18\f \x01(\v2+.hangar.compute.v1alpha1.ContainerTailscaleR\ttailscale\"v\n" +
+	"\x12ContainerTailscale\x12\x1f\n" +
+	"\vauth_secret\x18\x01 \x01(\tR\n" +
+	"authSecret\x12\x1a\n" +
+	"\bhostname\x18\x02 \x01(\tR\bhostname\x12#\n" +
+	"\raccept_routes\x18\x03 \x01(\bR\facceptRoutes\"\xdc\x01\n" +
 	"\x0fContainerVolume\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x16\n" +
 	"\x06source\x18\x02 \x01(\tR\x06source\x12\x1f\n" +
@@ -1724,80 +1813,82 @@ func file_hangar_compute_v1alpha1_container_proto_rawDescGZIP() []byte {
 }
 
 var file_hangar_compute_v1alpha1_container_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_hangar_compute_v1alpha1_container_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_hangar_compute_v1alpha1_container_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_hangar_compute_v1alpha1_container_proto_goTypes = []any{
 	(ContainerRunState)(0),                // 0: hangar.compute.v1alpha1.ContainerRunState
 	(Protocol)(0),                         // 1: hangar.compute.v1alpha1.Protocol
 	(RestartPolicy)(0),                    // 2: hangar.compute.v1alpha1.RestartPolicy
 	(*Container)(nil),                     // 3: hangar.compute.v1alpha1.Container
 	(*ContainerSpec)(nil),                 // 4: hangar.compute.v1alpha1.ContainerSpec
-	(*ContainerVolume)(nil),               // 5: hangar.compute.v1alpha1.ContainerVolume
-	(*ContainerVolumeOptions)(nil),        // 6: hangar.compute.v1alpha1.ContainerVolumeOptions
-	(*EnvVar)(nil),                        // 7: hangar.compute.v1alpha1.EnvVar
-	(*ContainerPort)(nil),                 // 8: hangar.compute.v1alpha1.ContainerPort
-	(*Resources)(nil),                     // 9: hangar.compute.v1alpha1.Resources
-	(*DiskGrow)(nil),                      // 10: hangar.compute.v1alpha1.DiskGrow
-	(*ContainerStatus)(nil),               // 11: hangar.compute.v1alpha1.ContainerStatus
-	(*GetContainerRequest)(nil),           // 12: hangar.compute.v1alpha1.GetContainerRequest
-	(*GetContainerResponse)(nil),          // 13: hangar.compute.v1alpha1.GetContainerResponse
-	(*ListContainersRequest)(nil),         // 14: hangar.compute.v1alpha1.ListContainersRequest
-	(*ListContainersResponse)(nil),        // 15: hangar.compute.v1alpha1.ListContainersResponse
-	(*WatchContainersRequest)(nil),        // 16: hangar.compute.v1alpha1.WatchContainersRequest
-	(*WatchContainersResponse)(nil),       // 17: hangar.compute.v1alpha1.WatchContainersResponse
-	(*ApplyContainerRequest)(nil),         // 18: hangar.compute.v1alpha1.ApplyContainerRequest
-	(*ApplyContainerResponse)(nil),        // 19: hangar.compute.v1alpha1.ApplyContainerResponse
-	(*DeleteContainerRequest)(nil),        // 20: hangar.compute.v1alpha1.DeleteContainerRequest
-	(*DeleteContainerResponse)(nil),       // 21: hangar.compute.v1alpha1.DeleteContainerResponse
-	(*UpdateContainerStatusRequest)(nil),  // 22: hangar.compute.v1alpha1.UpdateContainerStatusRequest
-	(*UpdateContainerStatusResponse)(nil), // 23: hangar.compute.v1alpha1.UpdateContainerStatusResponse
-	(*v1.ObjectMeta)(nil),                 // 24: hangar.meta.v1.ObjectMeta
-	(*NetworkInterface)(nil),              // 25: hangar.compute.v1alpha1.NetworkInterface
-	(*v1.Condition)(nil),                  // 26: hangar.meta.v1.Condition
-	(*Placement)(nil),                     // 27: hangar.compute.v1alpha1.Placement
-	(v1.EventType)(0),                     // 28: hangar.meta.v1.EventType
+	(*ContainerTailscale)(nil),            // 5: hangar.compute.v1alpha1.ContainerTailscale
+	(*ContainerVolume)(nil),               // 6: hangar.compute.v1alpha1.ContainerVolume
+	(*ContainerVolumeOptions)(nil),        // 7: hangar.compute.v1alpha1.ContainerVolumeOptions
+	(*EnvVar)(nil),                        // 8: hangar.compute.v1alpha1.EnvVar
+	(*ContainerPort)(nil),                 // 9: hangar.compute.v1alpha1.ContainerPort
+	(*Resources)(nil),                     // 10: hangar.compute.v1alpha1.Resources
+	(*DiskGrow)(nil),                      // 11: hangar.compute.v1alpha1.DiskGrow
+	(*ContainerStatus)(nil),               // 12: hangar.compute.v1alpha1.ContainerStatus
+	(*GetContainerRequest)(nil),           // 13: hangar.compute.v1alpha1.GetContainerRequest
+	(*GetContainerResponse)(nil),          // 14: hangar.compute.v1alpha1.GetContainerResponse
+	(*ListContainersRequest)(nil),         // 15: hangar.compute.v1alpha1.ListContainersRequest
+	(*ListContainersResponse)(nil),        // 16: hangar.compute.v1alpha1.ListContainersResponse
+	(*WatchContainersRequest)(nil),        // 17: hangar.compute.v1alpha1.WatchContainersRequest
+	(*WatchContainersResponse)(nil),       // 18: hangar.compute.v1alpha1.WatchContainersResponse
+	(*ApplyContainerRequest)(nil),         // 19: hangar.compute.v1alpha1.ApplyContainerRequest
+	(*ApplyContainerResponse)(nil),        // 20: hangar.compute.v1alpha1.ApplyContainerResponse
+	(*DeleteContainerRequest)(nil),        // 21: hangar.compute.v1alpha1.DeleteContainerRequest
+	(*DeleteContainerResponse)(nil),       // 22: hangar.compute.v1alpha1.DeleteContainerResponse
+	(*UpdateContainerStatusRequest)(nil),  // 23: hangar.compute.v1alpha1.UpdateContainerStatusRequest
+	(*UpdateContainerStatusResponse)(nil), // 24: hangar.compute.v1alpha1.UpdateContainerStatusResponse
+	(*v1.ObjectMeta)(nil),                 // 25: hangar.meta.v1.ObjectMeta
+	(*NetworkInterface)(nil),              // 26: hangar.compute.v1alpha1.NetworkInterface
+	(*v1.Condition)(nil),                  // 27: hangar.meta.v1.Condition
+	(*Placement)(nil),                     // 28: hangar.compute.v1alpha1.Placement
+	(v1.EventType)(0),                     // 29: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_container_proto_depIdxs = []int32{
-	24, // 0: hangar.compute.v1alpha1.Container.metadata:type_name -> hangar.meta.v1.ObjectMeta
+	25, // 0: hangar.compute.v1alpha1.Container.metadata:type_name -> hangar.meta.v1.ObjectMeta
 	4,  // 1: hangar.compute.v1alpha1.Container.spec:type_name -> hangar.compute.v1alpha1.ContainerSpec
-	11, // 2: hangar.compute.v1alpha1.Container.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
-	7,  // 3: hangar.compute.v1alpha1.ContainerSpec.env:type_name -> hangar.compute.v1alpha1.EnvVar
-	8,  // 4: hangar.compute.v1alpha1.ContainerSpec.ports:type_name -> hangar.compute.v1alpha1.ContainerPort
+	12, // 2: hangar.compute.v1alpha1.Container.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
+	8,  // 3: hangar.compute.v1alpha1.ContainerSpec.env:type_name -> hangar.compute.v1alpha1.EnvVar
+	9,  // 4: hangar.compute.v1alpha1.ContainerSpec.ports:type_name -> hangar.compute.v1alpha1.ContainerPort
 	2,  // 5: hangar.compute.v1alpha1.ContainerSpec.restart_policy:type_name -> hangar.compute.v1alpha1.RestartPolicy
-	9,  // 6: hangar.compute.v1alpha1.ContainerSpec.resources:type_name -> hangar.compute.v1alpha1.Resources
+	10, // 6: hangar.compute.v1alpha1.ContainerSpec.resources:type_name -> hangar.compute.v1alpha1.Resources
 	0,  // 7: hangar.compute.v1alpha1.ContainerSpec.run_state:type_name -> hangar.compute.v1alpha1.ContainerRunState
-	25, // 8: hangar.compute.v1alpha1.ContainerSpec.interfaces:type_name -> hangar.compute.v1alpha1.NetworkInterface
-	5,  // 9: hangar.compute.v1alpha1.ContainerSpec.volumes:type_name -> hangar.compute.v1alpha1.ContainerVolume
-	6,  // 10: hangar.compute.v1alpha1.ContainerVolume.volume:type_name -> hangar.compute.v1alpha1.ContainerVolumeOptions
-	1,  // 11: hangar.compute.v1alpha1.ContainerPort.protocol:type_name -> hangar.compute.v1alpha1.Protocol
-	10, // 12: hangar.compute.v1alpha1.Resources.disk_grow:type_name -> hangar.compute.v1alpha1.DiskGrow
-	26, // 13: hangar.compute.v1alpha1.ContainerStatus.conditions:type_name -> hangar.meta.v1.Condition
-	27, // 14: hangar.compute.v1alpha1.ContainerStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
-	3,  // 15: hangar.compute.v1alpha1.GetContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 16: hangar.compute.v1alpha1.ListContainersResponse.items:type_name -> hangar.compute.v1alpha1.Container
-	28, // 17: hangar.compute.v1alpha1.WatchContainersResponse.type:type_name -> hangar.meta.v1.EventType
-	3,  // 18: hangar.compute.v1alpha1.WatchContainersResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 19: hangar.compute.v1alpha1.ApplyContainerRequest.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 20: hangar.compute.v1alpha1.ApplyContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	3,  // 21: hangar.compute.v1alpha1.DeleteContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	11, // 22: hangar.compute.v1alpha1.UpdateContainerStatusRequest.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
-	3,  // 23: hangar.compute.v1alpha1.UpdateContainerStatusResponse.container:type_name -> hangar.compute.v1alpha1.Container
-	12, // 24: hangar.compute.v1alpha1.ContainerService.GetContainer:input_type -> hangar.compute.v1alpha1.GetContainerRequest
-	14, // 25: hangar.compute.v1alpha1.ContainerService.ListContainers:input_type -> hangar.compute.v1alpha1.ListContainersRequest
-	16, // 26: hangar.compute.v1alpha1.ContainerService.WatchContainers:input_type -> hangar.compute.v1alpha1.WatchContainersRequest
-	18, // 27: hangar.compute.v1alpha1.ContainerService.ApplyContainer:input_type -> hangar.compute.v1alpha1.ApplyContainerRequest
-	20, // 28: hangar.compute.v1alpha1.ContainerService.DeleteContainer:input_type -> hangar.compute.v1alpha1.DeleteContainerRequest
-	22, // 29: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:input_type -> hangar.compute.v1alpha1.UpdateContainerStatusRequest
-	13, // 30: hangar.compute.v1alpha1.ContainerService.GetContainer:output_type -> hangar.compute.v1alpha1.GetContainerResponse
-	15, // 31: hangar.compute.v1alpha1.ContainerService.ListContainers:output_type -> hangar.compute.v1alpha1.ListContainersResponse
-	17, // 32: hangar.compute.v1alpha1.ContainerService.WatchContainers:output_type -> hangar.compute.v1alpha1.WatchContainersResponse
-	19, // 33: hangar.compute.v1alpha1.ContainerService.ApplyContainer:output_type -> hangar.compute.v1alpha1.ApplyContainerResponse
-	21, // 34: hangar.compute.v1alpha1.ContainerService.DeleteContainer:output_type -> hangar.compute.v1alpha1.DeleteContainerResponse
-	23, // 35: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:output_type -> hangar.compute.v1alpha1.UpdateContainerStatusResponse
-	30, // [30:36] is the sub-list for method output_type
-	24, // [24:30] is the sub-list for method input_type
-	24, // [24:24] is the sub-list for extension type_name
-	24, // [24:24] is the sub-list for extension extendee
-	0,  // [0:24] is the sub-list for field type_name
+	26, // 8: hangar.compute.v1alpha1.ContainerSpec.interfaces:type_name -> hangar.compute.v1alpha1.NetworkInterface
+	6,  // 9: hangar.compute.v1alpha1.ContainerSpec.volumes:type_name -> hangar.compute.v1alpha1.ContainerVolume
+	5,  // 10: hangar.compute.v1alpha1.ContainerSpec.tailscale:type_name -> hangar.compute.v1alpha1.ContainerTailscale
+	7,  // 11: hangar.compute.v1alpha1.ContainerVolume.volume:type_name -> hangar.compute.v1alpha1.ContainerVolumeOptions
+	1,  // 12: hangar.compute.v1alpha1.ContainerPort.protocol:type_name -> hangar.compute.v1alpha1.Protocol
+	11, // 13: hangar.compute.v1alpha1.Resources.disk_grow:type_name -> hangar.compute.v1alpha1.DiskGrow
+	27, // 14: hangar.compute.v1alpha1.ContainerStatus.conditions:type_name -> hangar.meta.v1.Condition
+	28, // 15: hangar.compute.v1alpha1.ContainerStatus.placement:type_name -> hangar.compute.v1alpha1.Placement
+	3,  // 16: hangar.compute.v1alpha1.GetContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 17: hangar.compute.v1alpha1.ListContainersResponse.items:type_name -> hangar.compute.v1alpha1.Container
+	29, // 18: hangar.compute.v1alpha1.WatchContainersResponse.type:type_name -> hangar.meta.v1.EventType
+	3,  // 19: hangar.compute.v1alpha1.WatchContainersResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 20: hangar.compute.v1alpha1.ApplyContainerRequest.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 21: hangar.compute.v1alpha1.ApplyContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	3,  // 22: hangar.compute.v1alpha1.DeleteContainerResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	12, // 23: hangar.compute.v1alpha1.UpdateContainerStatusRequest.status:type_name -> hangar.compute.v1alpha1.ContainerStatus
+	3,  // 24: hangar.compute.v1alpha1.UpdateContainerStatusResponse.container:type_name -> hangar.compute.v1alpha1.Container
+	13, // 25: hangar.compute.v1alpha1.ContainerService.GetContainer:input_type -> hangar.compute.v1alpha1.GetContainerRequest
+	15, // 26: hangar.compute.v1alpha1.ContainerService.ListContainers:input_type -> hangar.compute.v1alpha1.ListContainersRequest
+	17, // 27: hangar.compute.v1alpha1.ContainerService.WatchContainers:input_type -> hangar.compute.v1alpha1.WatchContainersRequest
+	19, // 28: hangar.compute.v1alpha1.ContainerService.ApplyContainer:input_type -> hangar.compute.v1alpha1.ApplyContainerRequest
+	21, // 29: hangar.compute.v1alpha1.ContainerService.DeleteContainer:input_type -> hangar.compute.v1alpha1.DeleteContainerRequest
+	23, // 30: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:input_type -> hangar.compute.v1alpha1.UpdateContainerStatusRequest
+	14, // 31: hangar.compute.v1alpha1.ContainerService.GetContainer:output_type -> hangar.compute.v1alpha1.GetContainerResponse
+	16, // 32: hangar.compute.v1alpha1.ContainerService.ListContainers:output_type -> hangar.compute.v1alpha1.ListContainersResponse
+	18, // 33: hangar.compute.v1alpha1.ContainerService.WatchContainers:output_type -> hangar.compute.v1alpha1.WatchContainersResponse
+	20, // 34: hangar.compute.v1alpha1.ContainerService.ApplyContainer:output_type -> hangar.compute.v1alpha1.ApplyContainerResponse
+	22, // 35: hangar.compute.v1alpha1.ContainerService.DeleteContainer:output_type -> hangar.compute.v1alpha1.DeleteContainerResponse
+	24, // 36: hangar.compute.v1alpha1.ContainerService.UpdateContainerStatus:output_type -> hangar.compute.v1alpha1.UpdateContainerStatusResponse
+	31, // [31:37] is the sub-list for method output_type
+	25, // [25:31] is the sub-list for method input_type
+	25, // [25:25] is the sub-list for extension type_name
+	25, // [25:25] is the sub-list for extension extendee
+	0,  // [0:25] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_container_proto_init() }
@@ -1807,15 +1898,15 @@ func file_hangar_compute_v1alpha1_container_proto_init() {
 	}
 	file_hangar_compute_v1alpha1_interface_proto_init()
 	file_hangar_compute_v1alpha1_placement_proto_init()
-	file_hangar_compute_v1alpha1_container_proto_msgTypes[17].OneofWrappers = []any{}
-	file_hangar_compute_v1alpha1_container_proto_msgTypes[19].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_container_proto_msgTypes[18].OneofWrappers = []any{}
+	file_hangar_compute_v1alpha1_container_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_hangar_compute_v1alpha1_container_proto_rawDesc), len(file_hangar_compute_v1alpha1_container_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   21,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -194,6 +194,7 @@ func (w *world) startAgent() {
 		HeartbeatInterval: 50 * time.Millisecond,
 		SweepInterval:     cmp.Or(w.sweepInterval, 100*time.Millisecond),
 		RootPoll:          20 * time.Millisecond,
+		TailnetPoll:       20 * time.Millisecond,
 		PullTimeout:       w.pullTimeout,
 		CaptureTimeout:    w.captureTimeout,
 		DNSUpstreams:      w.dnsUpstreams,

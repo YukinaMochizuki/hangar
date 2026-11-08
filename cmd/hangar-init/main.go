@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"github.com/YukinaMochizuki/hangar/internal/guest/boot"
 	"github.com/YukinaMochizuki/hangar/internal/guest/console"
 	"github.com/YukinaMochizuki/hangar/internal/guest/supervise"
+	"github.com/YukinaMochizuki/hangar/internal/guest/tailnet"
 )
 
 // Exit codes for a process that never ran, as shells give them.
@@ -114,15 +116,24 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 	if err := boot.Identity("/", cfg); err != nil {
 		return failed, err
 	}
-
 	reaper := supervise.NewReaper()
+	// After Identity: the split rewrites the resolv.conf it provided.
+	return withTailnet(context.Background(), cfg, reaper, logf, func(cfg *guestv1.BootConfig, tn *tailnet.Tailnet) (console.ExitStatus, error) {
+		return runProcess(con, cfg, reaper, workload, mounted, tn, logf, started)
+	})
+}
+
+// runProcess serves the guest agent and runs the container's process, as
+// cfg says, until it ends, returning how it ended.
+func runProcess(con *console.Writer, cfg *guestv1.BootConfig, reaper *supervise.Reaper, workload *os.File, mounted boot.Mounted, tn *tailnet.Tailnet, logf func(string, ...any), started time.Time) (console.ExitStatus, error) {
+	failed := console.ExitStatus{Code: exitBootFailed}
 	stopper := &supervise.Stopper{}
 	v6 := boot.NewIPv6(cfg.GetInterfaces())
 	if ln, err := vsock.Listen(agent.Port, nil); err != nil {
 		// The container runs all the same; the node sees it does not answer.
 		logf("hangar-init: guest agent: %v", err)
 	} else {
-		serveAgent(ln, reaper, stopper, workload, v6, mounted, started, logf)
+		serveAgent(ln, reaper, stopper, workload, v6, mounted, tn, started, logf)
 	}
 
 	devnull, err := os.Open(os.DevNull)
@@ -186,9 +197,9 @@ func run(con *console.Writer, logf func(string, ...any), started time.Time) (con
 // serveAgent serves the guest agent on the vsock listener ln to the host
 // alone, processes it starts going to the workload cgroup; a Stop goes to
 // stopper. It returns at once; serving ends when ln is closed.
-func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, mounted boot.Mounted, started time.Time, logf func(string, ...any)) {
+func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.Stopper, workload *os.File, v6 *boot.IPv6, mounted boot.Mounted, tn *tailnet.Tailnet, started time.Time, logf func(string, ...any)) {
 	ln = agent.HostOnly(ln, logf)
-	_, h := guestv1connect.NewGuestAgentServiceHandler(&agent.Server{
+	srv := &agent.Server{
 		Reaper: reaper, Root: "/", Version: buildinfo.Version() + buildMarker, Started: started, Cgroup: workload,
 		OnPanic: func(r any) { logf("hangar-init: guest agent: %v", r) },
 		ApplyIPv6: func(ifaces []*guestv1.Interface) error {
@@ -221,7 +232,9 @@ func serveAgent(ln net.Listener, reaper *supervise.Reaper, stopper *supervise.St
 			}
 			return size, asAgentVolumeError(err)
 		},
-	}, connect.WithReadMaxBytes(agent.MaxMessage))
+	}
+	tailnetAgent(srv, tn)
+	_, h := guestv1connect.NewGuestAgentServiceHandler(srv, connect.WithReadMaxBytes(agent.MaxMessage))
 	serveHTTP(ln, h)
 }
 

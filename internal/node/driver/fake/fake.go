@@ -36,6 +36,19 @@ import (
 type Host struct {
 	mu sync.Mutex
 
+	// tailnetGuests are, by machine uid, the running container guests'
+	// tailnets; tailnetRoots what each machine's root disk holds of its
+	// node; rejectedKeys the auth keys the tailnet refuses;
+	// tailnetKeyRetry how long a guest waits after one; noTailscaleDisk a
+	// host without the disk; oldTailnetGuests guests that cannot be told a
+	// tailnet (tailnet.go).
+	tailnetGuests    map[string]*tailnetGuest
+	tailnetRoots     map[string]*tailnetRoot
+	rejectedKeys     map[string]bool
+	tailnetKeyRetry  time.Duration
+	noTailscaleDisk  bool
+	oldTailnetGuests map[string]bool
+
 	tags      map[string]string             // reference to digest
 	configs   map[string]driver.ImageConfig // by digest; a digest stays pullable
 	pullErr   map[string]error              // by reference
@@ -1225,6 +1238,7 @@ func (d storage) DeleteRoot(_ context.Context, machineUID string) error {
 		}
 	}
 	delete(d.h.roots, machineUID)
+	d.h.forgetTailnetRootLocked(machineUID)
 	return nil
 }
 
@@ -1652,6 +1666,7 @@ func (h *Host) bootGuest(v *vm) {
 		h.guestIPv6[v.MachineUID] = driver.GuestIPv6Of(v.spec.Interfaces)
 		h.bootRoot(v)
 		h.bootVolumes(v)
+		h.bootTailnet(v)
 	}
 }
 

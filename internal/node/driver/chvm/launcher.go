@@ -788,8 +788,9 @@ const freePageReporting = "size=0,free_page_reporting=on"
 // by rootDiskID, or a blank file, the boot disk and the volumes, the
 // server's share, or a converter's file, read-only and raw whatever it
 // holds, and its target, at their nodes in dir, a container's volumes by
-// their volumeNode if the launch says so, the taps on fds 3 and on, as the
-// launcher passes them, and its API socket.
+// their volumeNode if the launch says so, then the tailscale disk,
+// read-only, if it has one, the taps on fds 3 and on, as the launcher
+// passes them, and its API socket.
 func chArgs(ln launch, dir string, taps int) []string {
 	s := ln.Spec
 	vda := "path=" + filepath.Join(dir, diskNode) + ",image_type=raw,id=" + rootDiskID
@@ -818,6 +819,10 @@ func chArgs(ln launch, dir string, taps int) []string {
 			disk += ",id=" + volumeNode(n)
 		}
 		args = append(args, disk)
+	}
+	if ln.TailscaleDisk != "" {
+		// The unit binds it read-only; every such VM shares it.
+		args = append(args, "path="+ln.TailscaleDisk+",image_type=raw,readonly=on")
 	}
 	if taps > 0 {
 		args = append(args, "--net")

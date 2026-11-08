@@ -5,10 +5,10 @@ GOLANGCI_LINT := $(TOOL) golangci-lint
 # Paths whose contents are produced by `make gen` and must never drift.
 GENERATED := gen internal/apiserver/servicegen internal/store/sqlite/db
 
-.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race stress gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-e2fsprogs host-swtpm e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
+.PHONY: all gen check lint lint-proto lint-go lint-sh breaking test test-root test-web test-monitoring e2e test-e2e-race stress gen-check dev tools deps guest-kernel guest-initramfs guest-initramfs-testbed guest-converter guest-tailscale guest-e2fsprogs host-swtpm e2e-host e2e-host-network e2e-host-vms e2e-host-flow e2e-host-images release
 
 # Every shell script in the repo, committed or not, outside ignored paths.
-SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env')
+SHELL_SCRIPTS = $(shell git ls-files --cached --others --exclude-standard '*.sh' 'deploy/host/*.env' 'deploy/host/*.env.example' 'guest/kernel/*.env' 'guest/tailscale/*.env')
 
 all: check
 
@@ -207,6 +207,13 @@ guest-e2fsprogs:
 # pinned Alpine packages (docs/runbook/converter.md). No C toolchain.
 guest-converter:
 	guest/converter/build.sh
+
+# The tailscale disk containers joining a tailnet get: tailscaled and the
+# CLI from the Tailscale release guest/tailscale/tailscale.env pins, as a
+# read-only ext4 image (docs/decisions/container-tailscale.md). Needs the
+# static mke2fs, so a C toolchain the first time.
+guest-tailscale: guest-e2fsprogs
+	guest/tailscale/build.sh
 
 # The swtpm bundle TPM VMs run: swtpm, its libraries and the musl loader
 # from pinned Alpine packages (docs/runbook/swtpm.md), as bin/host/swtpm.tar

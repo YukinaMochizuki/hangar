@@ -99,6 +99,11 @@ to boot again.
   over the image's files, so the image's own are never written. The
   resolvers are those of the machine's networks, at their gateways
   (`networking.md`), as the boot disk lists them.
+- **A container that joins a tailnet**, as it boots or later as the agent
+  tells it (`SetTailnet`), has hangar-init run tailscaled beside its
+  process, from a read-only disk of the platform's, and answer the DNS of
+  its `/etc/resolv.conf` itself; the auth key comes through the agent,
+  never the boot disk (`container-tailscale.md`).
 - **Cgroups are laid out for Docker in the guest**: hangar-init in `/agent`,
   everything it starts in `/workload`, with every controller enabled, since
   the root cgroup has no limits to give.

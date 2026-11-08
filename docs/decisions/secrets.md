@@ -19,6 +19,10 @@ unpacked once into a base, and cloned for every machine of that digest.
   types (`opaque`, `tls`) can follow. Admission checks the format and bounds
   the data to 64 KiB; a login names a whole registry by its host, and Docker
   Hub's names are one, `index.docker.io`. Its errors never quote a value.
+  A `tailscale-auth` secret holds one key, `authkey`, the auth key a
+  container joins a tailnet with; its node gets it as it gets a login,
+  per join, through `TailscaleAuthKeyService`
+  (`container-tailscale.md`).
 - **Values are write-only.** Apply sets `spec.data`; no answer holds it
   again: get, list, watch, apply's and delete's answers, and status updates
   all go through one function that clears it (`kindHooks.redact`). Status

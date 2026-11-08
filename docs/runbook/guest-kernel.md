@@ -131,6 +131,40 @@ purpose; the kernel has no `CONFIG_RD_*` decompressor built in, so a
 compressed archive will not boot. `HANGAR_INITRAMFS_OUT` overrides the output
 directory.
 
+## Build the tailscale disk
+
+```sh
+make guest-tailscale                      # or guest/tailscale/build.sh
+```
+
+A container that joins a tailnet gets `bin/guest/tailscale.img` as a
+read-only disk after its volumes, which hangar-init mounts at
+`/run/hangar/tailscale` (`docs/decisions/container-tailscale.md`). It is an
+ext4 image, with no journal, holding `bin/tailscaled` and `bin/tailscale`
+from the Tailscale release `guest/tailscale/tailscale.env` pins, downloaded
+into `.cache/tailscale/` and checked against its sha256 on every run. It is
+made with the static `mke2fs` above, so it needs a C toolchain the first
+time. It is reproducible as the initramfs is: a fixed UUID and hash seed,
+and `SOURCE_DATE_EPOCH` for every time in it. `HANGAR_TAILSCALE_WORKDIR`
+and `HANGAR_TAILSCALE_OUT` override the defaults. A host installs it as
+`/usr/local/lib/hangar/tailscale.img` (`hangar-node --guest-tailscale-disk`);
+without it, such containers boot and say they cannot join.
+
+### Bump tailscale
+
+1. Take the new version's `tailscale_VERSION_amd64.tgz.sha256` from
+   `https://pkgs.tailscale.com/stable/`, and set
+   `HANGAR_TAILSCALE_VERSION` and `HANGAR_TAILSCALE_SHA256` in
+   `tailscale.env` together. Tower pins the same release for its hosts
+   (its `deploy/hostd/versions.env`); keep the two in step.
+2. `make guest-tailscale`, then check the image holds the version:
+   mount it read-only on a testbed (`mount -o ro,loop`) and run
+   `bin/tailscale version`.
+3. Read the release notes for changes to `--auth-key=file:`, `--reset`,
+   `--accept-dns`, the LocalAPI status, `TS_DEBUG_FIREWALL_MODE` or the
+   state file's `_current-profile`, which hangar-init relies on
+   (`internal/guest/tailnet`).
+
 ## Boot it
 
 Cloud Hypervisor boots `vmlinux` directly through PVH, with the initramfs.

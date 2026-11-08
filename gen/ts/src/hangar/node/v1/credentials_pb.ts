@@ -15,7 +15,7 @@ import type { Message } from "@bufbuild/protobuf";
  * Describes the file hangar/node/v1/credentials.proto.
  */
 export const file_hangar_node_v1_credentials: GenFile = /*@__PURE__*/
-  fileDesc("CiBoYW5nYXIvbm9kZS92MS9jcmVkZW50aWFscy5wcm90bxIOaGFuZ2FyLm5vZGUudjEiRgoiUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEg8KB21hY2hpbmUYAiABKAkicwojUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2USEAoIcmVnaXN0cnkYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAkSFgoOaWRlbnRpdHlfdG9rZW4YBCABKAkiPwobUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDwoHbWFjaGluZRgCIAEoCSIrChxSZXNvbHZlVmlydHVhbFRQTUtleVJlc3BvbnNlEgsKA2tleRgBIAEoDDKmAQobSW1hZ2VQdWxsQ3JlZGVudGlhbHNTZXJ2aWNlEoYBChtSZXNvbHZlSW1hZ2VQdWxsQ3JlZGVudGlhbHMSMi5oYW5nYXIubm9kZS52MS5SZXNvbHZlSW1hZ2VQdWxsQ3JlZGVudGlhbHNSZXF1ZXN0GjMuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2UyiQEKFFZpcnR1YWxUUE1LZXlTZXJ2aWNlEnEKFFJlc29sdmVWaXJ0dWFsVFBNS2V5EisuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXF1ZXN0GiwuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXNwb25zZULAAQoSY29tLmhhbmdhci5ub2RlLnYxQhBDcmVkZW50aWFsc1Byb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z");
+  fileDesc("CiBoYW5nYXIvbm9kZS92MS9jcmVkZW50aWFscy5wcm90bxIOaGFuZ2FyLm5vZGUudjEiRgoiUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBIPCgdwcm9qZWN0GAEgASgJEg8KB21hY2hpbmUYAiABKAkicwojUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVzcG9uc2USEAoIcmVnaXN0cnkYASABKAkSEAoIdXNlcm5hbWUYAiABKAkSEAoIcGFzc3dvcmQYAyABKAkSFgoOaWRlbnRpdHlfdG9rZW4YBCABKAkiPwobUmVzb2x2ZVZpcnR1YWxUUE1LZXlSZXF1ZXN0Eg8KB3Byb2plY3QYASABKAkSDwoHbWFjaGluZRgCIAEoCSIrChxSZXNvbHZlVmlydHVhbFRQTUtleVJlc3BvbnNlEgsKA2tleRgBIAEoDCJCCh5SZXNvbHZlVGFpbHNjYWxlQXV0aEtleVJlcXVlc3QSDwoHcHJvamVjdBgBIAEoCRIPCgdtYWNoaW5lGAIgASgJIjMKH1Jlc29sdmVUYWlsc2NhbGVBdXRoS2V5UmVzcG9uc2USEAoIYXV0aF9rZXkYASABKAkypgEKG0ltYWdlUHVsbENyZWRlbnRpYWxzU2VydmljZRKGAQobUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzEjIuaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZUltYWdlUHVsbENyZWRlbnRpYWxzUmVxdWVzdBozLmhhbmdhci5ub2RlLnYxLlJlc29sdmVJbWFnZVB1bGxDcmVkZW50aWFsc1Jlc3BvbnNlMokBChRWaXJ0dWFsVFBNS2V5U2VydmljZRJxChRSZXNvbHZlVmlydHVhbFRQTUtleRIrLmhhbmdhci5ub2RlLnYxLlJlc29sdmVWaXJ0dWFsVFBNS2V5UmVxdWVzdBosLmhhbmdhci5ub2RlLnYxLlJlc29sdmVWaXJ0dWFsVFBNS2V5UmVzcG9uc2UylQEKF1RhaWxzY2FsZUF1dGhLZXlTZXJ2aWNlEnoKF1Jlc29sdmVUYWlsc2NhbGVBdXRoS2V5Ei4uaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVRhaWxzY2FsZUF1dGhLZXlSZXF1ZXN0Gi8uaGFuZ2FyLm5vZGUudjEuUmVzb2x2ZVRhaWxzY2FsZUF1dGhLZXlSZXNwb25zZULAAQoSY29tLmhhbmdhci5ub2RlLnYxQhBDcmVkZW50aWFsc1Byb3RvUAFaPmdpdGh1Yi5jb20vWXVraW5hTW9jaGl6dWtpL2hhbmdhci9nZW4vZ28vaGFuZ2FyL25vZGUvdjE7bm9kZXYxogIDSE5YqgIOSGFuZ2FyLk5vZGUuVjHKAg5IYW5nYXJcTm9kZVxWMeICGkhhbmdhclxOb2RlXFYxXEdQQk1ldGFkYXRh6gIQSGFuZ2FyOjpOb2RlOjpWMWIGcHJvdG8z");
 
 /**
  * @generated from message hangar.node.v1.ResolveImagePullCredentialsRequest
@@ -123,6 +123,47 @@ export const ResolveVirtualTPMKeyResponseSchema: GenMessage<ResolveVirtualTPMKey
   messageDesc(file_hangar_node_v1_credentials, 3);
 
 /**
+ * @generated from message hangar.node.v1.ResolveTailscaleAuthKeyRequest
+ */
+export type ResolveTailscaleAuthKeyRequest = Message<"hangar.node.v1.ResolveTailscaleAuthKeyRequest"> & {
+  /**
+   * @generated from field: string project = 1;
+   */
+  project: string;
+
+  /**
+   * Names the Machine.
+   *
+   * @generated from field: string machine = 2;
+   */
+  machine: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.ResolveTailscaleAuthKeyRequest.
+ * Use `create(ResolveTailscaleAuthKeyRequestSchema)` to create a new message.
+ */
+export const ResolveTailscaleAuthKeyRequestSchema: GenMessage<ResolveTailscaleAuthKeyRequest> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_credentials, 4);
+
+/**
+ * @generated from message hangar.node.v1.ResolveTailscaleAuthKeyResponse
+ */
+export type ResolveTailscaleAuthKeyResponse = Message<"hangar.node.v1.ResolveTailscaleAuthKeyResponse"> & {
+  /**
+   * @generated from field: string auth_key = 1;
+   */
+  authKey: string;
+};
+
+/**
+ * Describes the message hangar.node.v1.ResolveTailscaleAuthKeyResponse.
+ * Use `create(ResolveTailscaleAuthKeyResponseSchema)` to create a new message.
+ */
+export const ResolveTailscaleAuthKeyResponseSchema: GenMessage<ResolveTailscaleAuthKeyResponse> = /*@__PURE__*/
+  messageDesc(file_hangar_node_v1_credentials, 5);
+
+/**
  * ImagePullCredentialsService gives a node the registry login to pull a
  * machine's image with.
  *
@@ -166,4 +207,28 @@ export const VirtualTPMKeyService: GenService<{
   },
 }> = /*@__PURE__*/
   serviceDesc(file_hangar_node_v1_credentials, 1);
+
+/**
+ * TailscaleAuthKeyService gives a node the auth key a container machine's
+ * guest joins its tailnet with. See docs/decisions/container-tailscale.md.
+ *
+ * @generated from service hangar.node.v1.TailscaleAuthKeyService
+ */
+export const TailscaleAuthKeyService: GenService<{
+  /**
+   * ResolveTailscaleAuthKey returns the auth key of the Secret the
+   * machine's spec.container.tailscale names. Only the node the machine is
+   * placed on may ask. A Secret that does not exist, is not of type
+   * tailscale-auth, or holds no key fails with NOT_FOUND. The node hands
+   * the key to the guest agent, and never writes or logs it.
+   *
+   * @generated from rpc hangar.node.v1.TailscaleAuthKeyService.ResolveTailscaleAuthKey
+   */
+  resolveTailscaleAuthKey: {
+    methodKind: "unary";
+    input: typeof ResolveTailscaleAuthKeyRequestSchema;
+    output: typeof ResolveTailscaleAuthKeyResponseSchema;
+  },
+}> = /*@__PURE__*/
+  serviceDesc(file_hangar_node_v1_credentials, 2);
 

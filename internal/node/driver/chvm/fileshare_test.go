@@ -37,7 +37,7 @@ func serverSpec(uid string) driver.VMSpec {
 
 func readBootDisk(t *testing.T, spec driver.VMSpec) *guestv1.BootConfig {
 	t.Helper()
-	b, err := (&Hypervisor{}).bootDisk(spec)
+	b, err := (&Hypervisor{}).bootDisk(spec, "")
 	if err != nil {
 		t.Fatal(err)
 	}

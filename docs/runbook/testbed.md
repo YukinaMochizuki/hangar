@@ -64,7 +64,11 @@ static (`CGO_ENABLED=0`): a VM's unit has an empty root with no dynamic
 loader, and the hypervisor driver refuses a dynamically linked launcher.
 The unit binds the launcher, Cloud Hypervisor, the kernel and the
 initramfs from wherever they are, a checkout in a home directory
-included. Then it runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
+included. The conformance suite's tailnets part runs only with the
+tailscale disk built (`make guest-tailscale`, `HANGAR_TESTBED_TAILSCALE_DISK`
+names another) and `HANGAR_TESTBED_TAILSCALE_KEY` set to a reusable auth key
+of a tailnet the testbed reaches; it joins, renames and logs out a node
+named `m1`, so use a tailnet of its own, or remove the nodes after. Then it runs `go test -exec 'sudo -E' -tags testbed ./test/testbed/...`: the
 tests are built as you and run as root. The root disk image,
 `.cache/testbed/dind-<digest>.ext4`, comes from the `docker:dind` image
 pinned by digest in the `Makefile` (`test/testbed/guest-rootfs.sh` makes it,

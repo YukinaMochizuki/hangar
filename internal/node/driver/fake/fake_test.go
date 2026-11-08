@@ -97,8 +97,10 @@ func host(h *fake.Host) drivertest.Host {
 			e, _ := h.BootExport(uid)
 			return e, 0, 0
 		},
-		AskedToStop: func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
-		Firmware:    true,
+		AskedToStop:   func(_ *testing.T, uid string) bool { return h.GuestStops(uid) > 0 },
+		Firmware:      true,
+		Tailnet:       fakeTailnet(h),
+		TailscaleDisk: true,
 		ServeGuest: func(_ *testing.T, nic driver.Interface, ports ...uint16) {
 			for _, p := range ports {
 				h.ServeGuest(nic.NetworkUID, netip.AddrPortFrom(nic.Address.Addr(), p), echo)
@@ -219,4 +221,11 @@ func TestFillsUnderWayCountTogether(t *testing.T) {
 	if _, err := st.FillImageBase(t.Context(), "img2", 2<<30, func(string) error { return nil }); err != nil {
 		t.Errorf("the second fill once the first ended, in 3GiB more: %v", err)
 	}
+}
+
+// fakeTailnet is the fake host's tailnet, which refuses one key.
+func fakeTailnet(h *fake.Host) *drivertest.Tailnet {
+	tn := &drivertest.Tailnet{Key: "tskey-auth-kCONFORM-good", Rejected: "tskey-auth-kCONFORM-refused"}
+	h.RejectTailnetKey(tn.Rejected, true)
+	return tn
 }

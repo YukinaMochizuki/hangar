@@ -35,6 +35,7 @@ the change.
 | `node-tunnel.md` | The apiserver calls a node over a tunnel the node opens; a container's logs are one stream across its boots; an exec runs as `docker exec` does, as long as its call |
 | `guest-kernel.md` | One platform guest kernel and initramfs for containers: LTS only, allnoconfig + fragment, no modules, `quiet` |
 | `vm-boot.md` | Virtual machines boot their image's own kernel through EDK2 firmware; serial console as log, power button to stop, no restart policy |
+| `container-tailscale.md` | A container joins a tailnet with one spec field, and joins or leaves while it runs, never restarted: hangar-init runs tailscaled from a read-only disk every container gets, splits DNS itself, keeps the node's state on the root disk, and gets the auth key over the guest agent only when it asks for one |
 | `secrets.md` | Secrets are write-only and sealed at rest under a KEK file; nodes get a login per pull; a private image is shared only after the machine's own resolve |
 | `vm-tpm.md` | A VM's TPM 2.0: `spec.tpm` set at creation only, swtpm built by Hangar in the VM's unit as its user, the state the VM's alone, encrypted with a key sealed under the KEK and given to its node per start; no measured boot |
 | `serial-console.md` | A VM's serial console is interactive: its helper, as the VM's user, is Cloud Hypervisor's one serial client, logs as before, keeps the screen, and serves clients, many watching and one typing |

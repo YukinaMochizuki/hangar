@@ -30,6 +30,8 @@ const (
 	ImagePullCredentialsServiceName = "hangar.node.v1.ImagePullCredentialsService"
 	// VirtualTPMKeyServiceName is the fully-qualified name of the VirtualTPMKeyService service.
 	VirtualTPMKeyServiceName = "hangar.node.v1.VirtualTPMKeyService"
+	// TailscaleAuthKeyServiceName is the fully-qualified name of the TailscaleAuthKeyService service.
+	TailscaleAuthKeyServiceName = "hangar.node.v1.TailscaleAuthKeyService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -46,6 +48,9 @@ const (
 	// VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure is the fully-qualified name of the
 	// VirtualTPMKeyService's ResolveVirtualTPMKey RPC.
 	VirtualTPMKeyServiceResolveVirtualTPMKeyProcedure = "/hangar.node.v1.VirtualTPMKeyService/ResolveVirtualTPMKey"
+	// TailscaleAuthKeyServiceResolveTailscaleAuthKeyProcedure is the fully-qualified name of the
+	// TailscaleAuthKeyService's ResolveTailscaleAuthKey RPC.
+	TailscaleAuthKeyServiceResolveTailscaleAuthKeyProcedure = "/hangar.node.v1.TailscaleAuthKeyService/ResolveTailscaleAuthKey"
 )
 
 // ImagePullCredentialsServiceClient is a client for the hangar.node.v1.ImagePullCredentialsService
@@ -204,4 +209,85 @@ type UnimplementedVirtualTPMKeyServiceHandler struct{}
 
 func (UnimplementedVirtualTPMKeyServiceHandler) ResolveVirtualTPMKey(context.Context, *connect.Request[v1.ResolveVirtualTPMKeyRequest]) (*connect.Response[v1.ResolveVirtualTPMKeyResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.VirtualTPMKeyService.ResolveVirtualTPMKey is not implemented"))
+}
+
+// TailscaleAuthKeyServiceClient is a client for the hangar.node.v1.TailscaleAuthKeyService service.
+type TailscaleAuthKeyServiceClient interface {
+	// ResolveTailscaleAuthKey returns the auth key of the Secret the
+	// machine's spec.container.tailscale names. Only the node the machine is
+	// placed on may ask. A Secret that does not exist, is not of type
+	// tailscale-auth, or holds no key fails with NOT_FOUND. The node hands
+	// the key to the guest agent, and never writes or logs it.
+	ResolveTailscaleAuthKey(context.Context, *connect.Request[v1.ResolveTailscaleAuthKeyRequest]) (*connect.Response[v1.ResolveTailscaleAuthKeyResponse], error)
+}
+
+// NewTailscaleAuthKeyServiceClient constructs a client for the
+// hangar.node.v1.TailscaleAuthKeyService service. By default, it uses the Connect protocol with the
+// binary Protobuf Codec, asks for gzipped responses, and sends uncompressed requests. To use the
+// gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewTailscaleAuthKeyServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) TailscaleAuthKeyServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	tailscaleAuthKeyServiceMethods := v1.File_hangar_node_v1_credentials_proto.Services().ByName("TailscaleAuthKeyService").Methods()
+	return &tailscaleAuthKeyServiceClient{
+		resolveTailscaleAuthKey: connect.NewClient[v1.ResolveTailscaleAuthKeyRequest, v1.ResolveTailscaleAuthKeyResponse](
+			httpClient,
+			baseURL+TailscaleAuthKeyServiceResolveTailscaleAuthKeyProcedure,
+			connect.WithSchema(tailscaleAuthKeyServiceMethods.ByName("ResolveTailscaleAuthKey")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// tailscaleAuthKeyServiceClient implements TailscaleAuthKeyServiceClient.
+type tailscaleAuthKeyServiceClient struct {
+	resolveTailscaleAuthKey *connect.Client[v1.ResolveTailscaleAuthKeyRequest, v1.ResolveTailscaleAuthKeyResponse]
+}
+
+// ResolveTailscaleAuthKey calls hangar.node.v1.TailscaleAuthKeyService.ResolveTailscaleAuthKey.
+func (c *tailscaleAuthKeyServiceClient) ResolveTailscaleAuthKey(ctx context.Context, req *connect.Request[v1.ResolveTailscaleAuthKeyRequest]) (*connect.Response[v1.ResolveTailscaleAuthKeyResponse], error) {
+	return c.resolveTailscaleAuthKey.CallUnary(ctx, req)
+}
+
+// TailscaleAuthKeyServiceHandler is an implementation of the hangar.node.v1.TailscaleAuthKeyService
+// service.
+type TailscaleAuthKeyServiceHandler interface {
+	// ResolveTailscaleAuthKey returns the auth key of the Secret the
+	// machine's spec.container.tailscale names. Only the node the machine is
+	// placed on may ask. A Secret that does not exist, is not of type
+	// tailscale-auth, or holds no key fails with NOT_FOUND. The node hands
+	// the key to the guest agent, and never writes or logs it.
+	ResolveTailscaleAuthKey(context.Context, *connect.Request[v1.ResolveTailscaleAuthKeyRequest]) (*connect.Response[v1.ResolveTailscaleAuthKeyResponse], error)
+}
+
+// NewTailscaleAuthKeyServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewTailscaleAuthKeyServiceHandler(svc TailscaleAuthKeyServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	tailscaleAuthKeyServiceMethods := v1.File_hangar_node_v1_credentials_proto.Services().ByName("TailscaleAuthKeyService").Methods()
+	tailscaleAuthKeyServiceResolveTailscaleAuthKeyHandler := connect.NewUnaryHandler(
+		TailscaleAuthKeyServiceResolveTailscaleAuthKeyProcedure,
+		svc.ResolveTailscaleAuthKey,
+		connect.WithSchema(tailscaleAuthKeyServiceMethods.ByName("ResolveTailscaleAuthKey")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/hangar.node.v1.TailscaleAuthKeyService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case TailscaleAuthKeyServiceResolveTailscaleAuthKeyProcedure:
+			tailscaleAuthKeyServiceResolveTailscaleAuthKeyHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedTailscaleAuthKeyServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedTailscaleAuthKeyServiceHandler struct{}
+
+func (UnimplementedTailscaleAuthKeyServiceHandler) ResolveTailscaleAuthKey(context.Context, *connect.Request[v1.ResolveTailscaleAuthKeyRequest]) (*connect.Response[v1.ResolveTailscaleAuthKeyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("hangar.node.v1.TailscaleAuthKeyService.ResolveTailscaleAuthKey is not implemented"))
 }

@@ -87,6 +87,7 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		report, err = a.stop(ctx, uid, vm)
 		err = cmp.Or(err, letGo)
 		delete(a.growWatches, uid)
+		delete(a.tailnets, uid)
 	case letGo != nil:
 		// Stuck, as a step of converging is.
 		err = blocked(computeapi.ReasonNetworkFailed, letGo)
@@ -110,6 +111,9 @@ func (a *Agent) reconcileMachine(ctx context.Context, k controller.Key) (err err
 		}
 	}
 	if report != nil {
+		if c := a.tailnetCondition(m, report); c != nil {
+			report.conds = append(report.conds, c)
+		}
 		if werr := a.writeStatus(ctx, m, report); werr != nil {
 			return werr
 		}
@@ -323,6 +327,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		Run:         runSpec(boot, image),
 		Mounts:      mnts,
 		Restart:     restartPolicy(m.GetSpec().GetRestartPolicy()),
+		Tailscale:   tailscaleSpec(m),
 	}
 	// Its one mount of each share fails the boot if the share's server does
 	// not serve it yet: a boot the node starts waits, its VM of an earlier
@@ -347,6 +352,7 @@ func (a *Agent) converge(ctx context.Context, m *computev1alpha1.Machine, vm *dr
 		}
 	}
 	a.watchGrowth(m, spec, disks, obs)
+	a.watchTailnet(m, spec, obs)
 	return obs, cmp.Or(err, pending)
 }
 
@@ -579,7 +585,7 @@ func (a *Agent) ensureVM(ctx context.Context, spec driver.VMSpec, vm *driver.VM)
 	}
 	restarted, err := a.ensureGuestIPv6(ctx, spec, vm)
 	if !restarted {
-		err = errors.Join(err, a.ensureDiskSizes(ctx, spec, vm))
+		err = errors.Join(err, a.ensureDiskSizes(ctx, spec, vm), a.ensureGuestTailnet(ctx, spec, vm))
 	}
 	switch {
 	case restarted:
@@ -669,6 +675,8 @@ func (a *Agent) release(ctx context.Context, m *computev1alpha1.Machine) error {
 	delete(a.netChecked, uid)
 	delete(a.told, uid)
 	a.forgetGrowth(uid)
+	delete(a.tailnets, uid)
+	delete(a.toldTailnets, uid)
 	delete(a.exported, uid)
 	delete(a.bootExported, uid)
 	a.requeueNetworksOf(a.revoking.forget(uid))
@@ -710,6 +718,9 @@ func (a *Agent) writeStatus(ctx context.Context, m *computev1alpha1.Machine, obs
 		c = proto.Clone(c).(*metav1.Condition)
 		c.ObservedGeneration = gen
 		status.Conditions = conditions.Set(status.GetConditions(), c, a.cfg.Clock.Now())
+	}
+	if tailscaleSpec(m) == nil {
+		status.Conditions = slices.DeleteFunc(status.Conditions, func(c *metav1.Condition) bool { return c.GetType() == computeapi.TailnetJoined })
 	}
 	if proto.Equal(status, m.GetStatus()) {
 		return nil

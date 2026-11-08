@@ -75,6 +75,8 @@ type hostFlags struct {
 	// what custom images' uploads are staged in and converted with.
 	converterInitrd, uploadDir     string
 	inspectTimeout, convertTimeout time.Duration
+	// tailscaleDisk is the disk containers that join a tailnet get.
+	tailscaleDisk string
 }
 
 func main() {
@@ -346,6 +348,7 @@ func (hf *hostFlags) bind(fs *flag.FlagSet) {
 	fs.StringVar(&hf.cloudHypervisor, "cloud-hypervisor", "/usr/local/bin/cloud-hypervisor", "for --drivers=host, Cloud Hypervisor")
 	fs.StringVar(&hf.kernel, "guest-kernel", "/usr/local/lib/hangar/vmlinux", "for --drivers=host, the guests' kernel")
 	fs.StringVar(&hf.initrd, "guest-initramfs", "/usr/local/lib/hangar/initramfs.cpio", "for --drivers=host, the guests' initramfs, with hangar-init")
+	fs.StringVar(&hf.tailscaleDisk, "guest-tailscale-disk", "/usr/local/lib/hangar/tailscale.img", "for --drivers=host, the read-only disk holding tailscaled and the tailscale CLI that containers joining a tailnet get; without the file, they boot unable to join")
 	fs.StringVar(&hf.converterInitrd, "guest-converter-initramfs", "/usr/local/lib/hangar/converter.cpio", "for --drivers=host, the converter VMs' initramfs, with hangar-init and qemu-img; without the file, custom images are not uploaded")
 	fs.StringVar(&hf.uploadDir, "upload-dir", "", "where files uploaded for custom images are staged, root's alone; empty is --image-dir's uploads with --drivers=host, and none, taking no uploads, with --drivers=fake")
 	fs.DurationVar(&hf.inspectTimeout, "inspect-timeout", node.DefaultInspectTimeout, "how long reading what a file uploaded for a custom image is may take, its converter VM's boot included, before the image fails for good")
@@ -513,8 +516,13 @@ func hostDrivers(ctx context.Context, hf hostFlags) (*node.Drivers, func(), erro
 		slog.Warn("no converter initramfs: custom images are not uploaded to this host", "guest_converter_initramfs", converter)
 		converter = ""
 	}
+	tailscaleDisk := hf.tailscaleDisk
+	if _, err := os.Stat(tailscaleDisk); errors.Is(err, os.ErrNotExist) {
+		slog.Warn("no tailscale disk: containers that join a tailnet boot unable to join it", "guest_tailscale_disk", tailscaleDisk)
+		tailscaleDisk = ""
+	}
 	vms, err := chvm.New(ctx, chvm.Config{
-		Firmware: firmware, Swtpm: swtpm, TPMKeys: hf.tpmKeys,
+		Firmware: firmware, Swtpm: swtpm, TPMKeys: hf.tpmKeys, TailscaleDisk: tailscaleDisk,
 		MachineCPUs: cpus,
 		Dir:         hf.vmDir, CloudHypervisor: hf.cloudHypervisor, Kernel: hf.kernel, Initramfs: hf.initrd, Cmdline: hf.cmdline,
 		ConverterInitramfs: converter, ConverterRuntime: max(hf.inspectTimeout, hf.convertTimeout),

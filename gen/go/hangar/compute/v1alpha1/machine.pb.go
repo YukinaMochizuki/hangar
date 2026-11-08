@@ -519,7 +519,13 @@ type ContainerBoot struct {
 	// The machine's disks and file shares the guest mounts, as the
 	// container's spec.volumes has them. Each names one of the machine's
 	// spec.disks or spec.file_shares, at most once.
-	Volumes       []*ContainerBootVolume `protobuf:"bytes,6,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	Volumes []*ContainerBootVolume `protobuf:"bytes,6,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	// Joins the guest to a tailnet, as the container's spec.tailscale does,
+	// with hostname set: the container's name where it gives none. Only the
+	// machine's node gets the auth key, and only while the guest has not
+	// joined (TailscaleAuthKeyService). Changing it restarts nothing: the
+	// node has the running guest join, leave or change as it says.
+	Tailscale     *ContainerTailscale `protobuf:"bytes,7,opt,name=tailscale,proto3" json:"tailscale,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -592,6 +598,13 @@ func (x *ContainerBoot) GetImagePullSecrets() []string {
 func (x *ContainerBoot) GetVolumes() []*ContainerBootVolume {
 	if x != nil {
 		return x.Volumes
+	}
+	return nil
+}
+
+func (x *ContainerBoot) GetTailscale() *ContainerTailscale {
+	if x != nil {
+		return x.Tailscale
 	}
 	return nil
 }
@@ -1883,14 +1896,15 @@ const file_hangar_compute_v1alpha1_machine_proto_rawDesc = "" +
 	"\n" +
 	"file_share\x18\x01 \x01(\tR\tfileShare\x12\x1b\n" +
 	"\tread_only\x18\x02 \x01(\bR\breadOnly\x12\x18\n" +
-	"\anetwork\x18\x03 \x01(\tR\anetwork\"\xfc\x01\n" +
+	"\anetwork\x18\x03 \x01(\tR\anetwork\"\xc7\x02\n" +
 	"\rContainerBoot\x12\x14\n" +
 	"\x05image\x18\x01 \x01(\tR\x05image\x12\x18\n" +
 	"\acommand\x18\x02 \x03(\tR\acommand\x12\x12\n" +
 	"\x04args\x18\x03 \x03(\tR\x04args\x121\n" +
 	"\x03env\x18\x04 \x03(\v2\x1f.hangar.compute.v1alpha1.EnvVarR\x03env\x12,\n" +
 	"\x12image_pull_secrets\x18\x05 \x03(\tR\x10imagePullSecrets\x12F\n" +
-	"\avolumes\x18\x06 \x03(\v2,.hangar.compute.v1alpha1.ContainerBootVolumeR\avolumes\"\xaf\x01\n" +
+	"\avolumes\x18\x06 \x03(\v2,.hangar.compute.v1alpha1.ContainerBootVolumeR\avolumes\x12I\n" +
+	"\ttailscale\x18\a \x01(\v2+.hangar.compute.v1alpha1.ContainerTailscaleR\ttailscale\"\xaf\x01\n" +
 	"\x13ContainerBootVolume\x12\x12\n" +
 	"\x04disk\x18\x01 \x01(\tR\x04disk\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1b\n" +
@@ -2052,9 +2066,10 @@ var file_hangar_compute_v1alpha1_machine_proto_goTypes = []any{
 	(*Resources)(nil),                   // 27: hangar.compute.v1alpha1.Resources
 	(RestartPolicy)(0),                  // 28: hangar.compute.v1alpha1.RestartPolicy
 	(*EnvVar)(nil),                      // 29: hangar.compute.v1alpha1.EnvVar
-	(*v1.Condition)(nil),                // 30: hangar.meta.v1.Condition
-	(*timestamppb.Timestamp)(nil),       // 31: google.protobuf.Timestamp
-	(v1.EventType)(0),                   // 32: hangar.meta.v1.EventType
+	(*ContainerTailscale)(nil),          // 30: hangar.compute.v1alpha1.ContainerTailscale
+	(*v1.Condition)(nil),                // 31: hangar.meta.v1.Condition
+	(*timestamppb.Timestamp)(nil),       // 32: google.protobuf.Timestamp
+	(v1.EventType)(0),                   // 33: hangar.meta.v1.EventType
 }
 var file_hangar_compute_v1alpha1_machine_proto_depIdxs = []int32{
 	26, // 0: hangar.compute.v1alpha1.Machine.metadata:type_name -> hangar.meta.v1.ObjectMeta
@@ -2071,37 +2086,38 @@ var file_hangar_compute_v1alpha1_machine_proto_depIdxs = []int32{
 	5,  // 11: hangar.compute.v1alpha1.MachineSpec.file_shares:type_name -> hangar.compute.v1alpha1.MachineFileShare
 	29, // 12: hangar.compute.v1alpha1.ContainerBoot.env:type_name -> hangar.compute.v1alpha1.EnvVar
 	7,  // 13: hangar.compute.v1alpha1.ContainerBoot.volumes:type_name -> hangar.compute.v1alpha1.ContainerBootVolume
-	10, // 14: hangar.compute.v1alpha1.FirmwareBoot.cloud_init:type_name -> hangar.compute.v1alpha1.MachineCloudInit
-	30, // 15: hangar.compute.v1alpha1.MachineStatus.conditions:type_name -> hangar.meta.v1.Condition
-	1,  // 16: hangar.compute.v1alpha1.MachineStatus.phase:type_name -> hangar.compute.v1alpha1.MachinePhase
-	31, // 17: hangar.compute.v1alpha1.MachineStatus.boot_time:type_name -> google.protobuf.Timestamp
-	13, // 18: hangar.compute.v1alpha1.MachineStatus.disks_wanted:type_name -> hangar.compute.v1alpha1.MachineDiskWanted
-	2,  // 19: hangar.compute.v1alpha1.GetMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 20: hangar.compute.v1alpha1.ListMachinesResponse.items:type_name -> hangar.compute.v1alpha1.Machine
-	32, // 21: hangar.compute.v1alpha1.WatchMachinesResponse.type:type_name -> hangar.meta.v1.EventType
-	2,  // 22: hangar.compute.v1alpha1.WatchMachinesResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 23: hangar.compute.v1alpha1.ApplyMachineRequest.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 24: hangar.compute.v1alpha1.ApplyMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	2,  // 25: hangar.compute.v1alpha1.DeleteMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	12, // 26: hangar.compute.v1alpha1.UpdateMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.MachineStatus
-	2,  // 27: hangar.compute.v1alpha1.UpdateMachineStatusResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
-	14, // 28: hangar.compute.v1alpha1.MachineService.GetMachine:input_type -> hangar.compute.v1alpha1.GetMachineRequest
-	16, // 29: hangar.compute.v1alpha1.MachineService.ListMachines:input_type -> hangar.compute.v1alpha1.ListMachinesRequest
-	18, // 30: hangar.compute.v1alpha1.MachineService.WatchMachines:input_type -> hangar.compute.v1alpha1.WatchMachinesRequest
-	20, // 31: hangar.compute.v1alpha1.MachineService.ApplyMachine:input_type -> hangar.compute.v1alpha1.ApplyMachineRequest
-	22, // 32: hangar.compute.v1alpha1.MachineService.DeleteMachine:input_type -> hangar.compute.v1alpha1.DeleteMachineRequest
-	24, // 33: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateMachineStatusRequest
-	15, // 34: hangar.compute.v1alpha1.MachineService.GetMachine:output_type -> hangar.compute.v1alpha1.GetMachineResponse
-	17, // 35: hangar.compute.v1alpha1.MachineService.ListMachines:output_type -> hangar.compute.v1alpha1.ListMachinesResponse
-	19, // 36: hangar.compute.v1alpha1.MachineService.WatchMachines:output_type -> hangar.compute.v1alpha1.WatchMachinesResponse
-	21, // 37: hangar.compute.v1alpha1.MachineService.ApplyMachine:output_type -> hangar.compute.v1alpha1.ApplyMachineResponse
-	23, // 38: hangar.compute.v1alpha1.MachineService.DeleteMachine:output_type -> hangar.compute.v1alpha1.DeleteMachineResponse
-	25, // 39: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateMachineStatusResponse
-	34, // [34:40] is the sub-list for method output_type
-	28, // [28:34] is the sub-list for method input_type
-	28, // [28:28] is the sub-list for extension type_name
-	28, // [28:28] is the sub-list for extension extendee
-	0,  // [0:28] is the sub-list for field type_name
+	30, // 14: hangar.compute.v1alpha1.ContainerBoot.tailscale:type_name -> hangar.compute.v1alpha1.ContainerTailscale
+	10, // 15: hangar.compute.v1alpha1.FirmwareBoot.cloud_init:type_name -> hangar.compute.v1alpha1.MachineCloudInit
+	31, // 16: hangar.compute.v1alpha1.MachineStatus.conditions:type_name -> hangar.meta.v1.Condition
+	1,  // 17: hangar.compute.v1alpha1.MachineStatus.phase:type_name -> hangar.compute.v1alpha1.MachinePhase
+	32, // 18: hangar.compute.v1alpha1.MachineStatus.boot_time:type_name -> google.protobuf.Timestamp
+	13, // 19: hangar.compute.v1alpha1.MachineStatus.disks_wanted:type_name -> hangar.compute.v1alpha1.MachineDiskWanted
+	2,  // 20: hangar.compute.v1alpha1.GetMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 21: hangar.compute.v1alpha1.ListMachinesResponse.items:type_name -> hangar.compute.v1alpha1.Machine
+	33, // 22: hangar.compute.v1alpha1.WatchMachinesResponse.type:type_name -> hangar.meta.v1.EventType
+	2,  // 23: hangar.compute.v1alpha1.WatchMachinesResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 24: hangar.compute.v1alpha1.ApplyMachineRequest.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 25: hangar.compute.v1alpha1.ApplyMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	2,  // 26: hangar.compute.v1alpha1.DeleteMachineResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	12, // 27: hangar.compute.v1alpha1.UpdateMachineStatusRequest.status:type_name -> hangar.compute.v1alpha1.MachineStatus
+	2,  // 28: hangar.compute.v1alpha1.UpdateMachineStatusResponse.machine:type_name -> hangar.compute.v1alpha1.Machine
+	14, // 29: hangar.compute.v1alpha1.MachineService.GetMachine:input_type -> hangar.compute.v1alpha1.GetMachineRequest
+	16, // 30: hangar.compute.v1alpha1.MachineService.ListMachines:input_type -> hangar.compute.v1alpha1.ListMachinesRequest
+	18, // 31: hangar.compute.v1alpha1.MachineService.WatchMachines:input_type -> hangar.compute.v1alpha1.WatchMachinesRequest
+	20, // 32: hangar.compute.v1alpha1.MachineService.ApplyMachine:input_type -> hangar.compute.v1alpha1.ApplyMachineRequest
+	22, // 33: hangar.compute.v1alpha1.MachineService.DeleteMachine:input_type -> hangar.compute.v1alpha1.DeleteMachineRequest
+	24, // 34: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:input_type -> hangar.compute.v1alpha1.UpdateMachineStatusRequest
+	15, // 35: hangar.compute.v1alpha1.MachineService.GetMachine:output_type -> hangar.compute.v1alpha1.GetMachineResponse
+	17, // 36: hangar.compute.v1alpha1.MachineService.ListMachines:output_type -> hangar.compute.v1alpha1.ListMachinesResponse
+	19, // 37: hangar.compute.v1alpha1.MachineService.WatchMachines:output_type -> hangar.compute.v1alpha1.WatchMachinesResponse
+	21, // 38: hangar.compute.v1alpha1.MachineService.ApplyMachine:output_type -> hangar.compute.v1alpha1.ApplyMachineResponse
+	23, // 39: hangar.compute.v1alpha1.MachineService.DeleteMachine:output_type -> hangar.compute.v1alpha1.DeleteMachineResponse
+	25, // 40: hangar.compute.v1alpha1.MachineService.UpdateMachineStatus:output_type -> hangar.compute.v1alpha1.UpdateMachineStatusResponse
+	35, // [35:41] is the sub-list for method output_type
+	29, // [29:35] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_hangar_compute_v1alpha1_machine_proto_init() }

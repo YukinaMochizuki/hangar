@@ -52,13 +52,14 @@ release_files() {
 		"vmlinux:$RELEASE_LIB/vmlinux:644" \
 		"initramfs.cpio:$RELEASE_LIB/initramfs.cpio:644" \
 		"converter.cpio:$RELEASE_LIB/converter.cpio:644" \
+		"tailscale.img:$RELEASE_LIB/tailscale.img:644" \
 		"swtpm.tar:$RELEASE_SWTPM_TAR:644" \
 		"console.tar:$RELEASE_CONSOLE_TAR:644"
 }
 
 # Files a release lists that an installed release may lack, having come
 # before they were part of one: the record of such a release is still whole.
-RELEASE_LATER_FILES="console.tar converter.cpio swtpm.tar"
+RELEASE_LATER_FILES="console.tar converter.cpio swtpm.tar tailscale.img"
 
 release_later_file() { case " $RELEASE_LATER_FILES " in *" $1 "*) return 0 ;; esac; return 1; }
 

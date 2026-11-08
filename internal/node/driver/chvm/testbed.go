@@ -44,7 +44,7 @@ func (h *Hypervisor) StartUnconfined(ctx context.Context, spec driver.VMSpec, la
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	disk, err := h.bootDisk(spec)
+	disk, err := h.bootDisk(spec, "")
 	if err != nil {
 		return err
 	}

@@ -52,6 +52,7 @@ export const dockerConfigKey = ".dockerconfigjson";
 
 export const secretTypes: Record<number, { label: string }> = {
   [SecretType.REGISTRY_AUTH]: { label: "Registry login" },
+  [SecretType.TAILSCALE_AUTH]: { label: "Tailscale auth key" },
 };
 
 export function secretTypeLabel(s: Secret): string {

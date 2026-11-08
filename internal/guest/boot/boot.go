@@ -287,6 +287,51 @@ func Identity(root string, cfg *guestv1.BootConfig) error {
 	return nil
 }
 
+// SetResolvers makes the /etc/resolv.conf Identity provided list
+// nameservers and search, while the container runs. The platform's file
+// is written in place, so the mount over the image's file, which is of that
+// very file, shows it at once; where Identity wrote under /run instead, that
+// file is written again. The image's own files are never written. Not a
+// rename over the file: the mount holds the inode, not the name. So a
+// reader between the truncate and the write sees it empty, and its libc
+// falls back to a nameserver on loopback for that lookup; the window is
+// one write of a few dozen bytes, as the container joins or leaves.
+func SetResolvers(root string, nameservers, search []string) error {
+	content := []byte(resolvConf(nameservers, search))
+	source := filepath.Join(root, "run/hangar/resolv.conf")
+	f, err := os.OpenFile(source, os.O_WRONLY|os.O_TRUNC|unix.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(content)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return err
+	}
+	rootfd, err := unix.Open(root, unix.O_PATH|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unix.Close(rootfd) }()
+	p, err := placement(root, rootfd, "/etc/resolv.conf")
+	if err != nil {
+		return fmt.Errorf("/etc/resolv.conf: %w", err)
+	}
+	defer func() { _ = unix.Close(p.fd) }()
+	if !p.write {
+		return nil
+	}
+	if err := unix.Ftruncate(p.fd, 0); err != nil {
+		return err
+	}
+	if n, err := unix.Write(p.fd, content); err != nil || n != len(content) {
+		return fmt.Errorf("writing %s: %d bytes of %d: %w", p.where, n, len(content), err)
+	}
+	return nil
+}
+
 // provide puts the platform's file source, holding content, where path
 // leads in root: written there under /run, mounted over it elsewhere.
 func provide(root string, rootfd int, path, source, content string) error {

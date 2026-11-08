@@ -83,6 +83,9 @@ type Config struct {
 	// RootPoll is how often each running container whose root disk grows by
 	// itself is asked how full its root is. Zero means DefaultRootPoll.
 	RootPoll time.Duration
+	// TailnetPoll is how often each running container that joins a tailnet
+	// is asked where its join stands. Zero means DefaultTailnetPoll.
+	TailnetPoll time.Duration
 	// RetryMaxBackoff caps the delay before the agent's controllers retry a
 	// key that failed. Zero means the controllers' own cap, a minute.
 	RetryMaxBackoff time.Duration
@@ -198,7 +201,9 @@ type Agent struct {
 	pullCreds nodev1connect.ImagePullCredentialsServiceClient
 	// tpmKeys gives the keys machines' TPM states are encrypted with.
 	tpmKeys nodev1connect.VirtualTPMKeyServiceClient
-	images  *imageMaker
+	// tailscaleKeys gives the auth keys containers join tailnets with.
+	tailscaleKeys nodev1connect.TailscaleAuthKeyServiceClient
+	images        *imageMaker
 	// host serializes everything that changes the host: each reconcile, and
 	// the sweep, which must not judge what a reconcile is building.
 	host sync.Mutex
@@ -234,6 +239,13 @@ type Agent struct {
 	growWatches   map[string]*growWatch
 	rootGrowths   map[string]diskGrowth
 	volumeGrowths map[string]diskGrowth
+	// tailnets are the running containers that join a tailnet, by machine
+	// uid, which the tailnet poll asks, and tailnetTrigger has it ask at
+	// once; toldTailnets is the tailnet each container's guest was told in
+	// its current boot. Guarded by host.
+	tailnets       map[string]*tailnetWatch
+	toldTailnets   map[string]toldTailnet
+	tailnetTrigger chan struct{}
 	// shareWaiters are the machines waiting for their shares to serve them
 	// (sharesServe), which a server taking an export, or a network's
 	// firewall written, queues again; requeue queues them, the machine
@@ -315,6 +327,9 @@ func New(cfg Config) (*Agent, error) {
 	if cfg.RootPoll == 0 {
 		cfg.RootPoll = DefaultRootPoll
 	}
+	if cfg.TailnetPoll == 0 {
+		cfg.TailnetPoll = DefaultTailnetPoll
+	}
 	if cfg.PullTimeout == 0 {
 		cfg.PullTimeout = 30 * time.Minute
 	}
@@ -379,6 +394,10 @@ func New(cfg Config) (*Agent, error) {
 		captures:         captures,
 		pullCreds:        nodev1connect.NewImagePullCredentialsServiceClient(cfg.HTTP, cfg.BaseURL),
 		tpmKeys:          nodev1connect.NewVirtualTPMKeyServiceClient(cfg.HTTP, cfg.BaseURL),
+		tailscaleKeys:    nodev1connect.NewTailscaleAuthKeyServiceClient(cfg.HTTP, cfg.BaseURL),
+		tailnets:         map[string]*tailnetWatch{},
+		toldTailnets:     map[string]toldTailnet{},
+		tailnetTrigger:   make(chan struct{}, 1),
 		images:           images,
 		netChecked:       map[string]int64{},
 		told:             map[string]toldIPv6{},
@@ -512,6 +531,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			a.sweepLoop(ctx)
 		}()
 		wg.Go(func() { a.rootLoop(ctx) })
+		wg.Go(func() { a.tailnetLoop(ctx) })
 		wg.Go(func() { _ = a.sharesCtl.Run(ctx) })
 		wg.Go(func() { _ = a.forwardsCtl.Run(ctx) })
 		wg.Go(func() { _ = a.endpointsCtl.Run(ctx) })

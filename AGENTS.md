@@ -45,6 +45,7 @@ This is the intended layout; directories appear as the work reaches them. Only
 | `make guest-kernel` | Build the guest kernel (minutes, needs a C toolchain; not part of `make check`) |
 | `make guest-initramfs` | Build the platform initramfs with hangar-init as `/init` and a static `mke2fs` (needs a C toolchain the first time; `INIT_MAIN=DIR` packs another main package) |
 | `make guest-converter` | Build the converter initramfs converter VMs boot, into `bin/guest/converter.cpio`: hangar-init and qemu-img from pinned Alpine packages (`docs/runbook/converter.md`); no C toolchain |
+| `make guest-tailscale` | Build the read-only tailscale disk containers joining a tailnet get, into `bin/guest/tailscale.img`: tailscaled and the CLI from the pinned Tailscale release (`docs/runbook/guest-kernel.md`) |
 | `make host-swtpm` | Build the swtpm bundle TPM VMs run, into `bin/host/swtpm.tar` and unpacked as `bin/host/swtpm`: swtpm, its libraries and the musl loader from pinned Alpine packages (`docs/runbook/swtpm.md`); no C toolchain |
 | `make guest-initramfs-testbed` | Build the L4 tests' own initramfs into `bin/guest-testbed/`, hangar-init with the `testbed` tag, whose FileShare servers run what the host asks (`docs/runbook/guest-kernel.md`); never on a host |
 | `make tools` | Print the pinned tool versions |

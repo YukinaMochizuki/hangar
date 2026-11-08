@@ -483,7 +483,7 @@ func splitWaiting(err error) (waiting, other error) {
 // ensureMachine brings m, the container's machine as read (nil if there is
 // none), in line with the container. Every write is conditional on m.
 func (s *Server) ensureMachine(ctx context.Context, c *computev1alpha1.Container, m *computev1alpha1.Machine) (*computev1alpha1.Machine, error) {
-	want, err := machineSpec(c.GetSpec(), c.GetStatus())
+	want, err := machineSpec(c.GetMetadata().GetName(), c.GetSpec(), c.GetStatus())
 	if err != nil {
 		return m, &blocked{"InvalidResources", err.Error()}
 	}
@@ -608,10 +608,10 @@ func ownedBy(meta *metav1.ObjectMeta, uid string) bool {
 	})
 }
 
-// machineSpec is what a container's spec asks of its machine, in canonical
-// quantities, with the disk its root disk has grown to by itself as its
-// status says, if larger; node is left for the scheduler.
-func machineSpec(cs *computev1alpha1.ContainerSpec, st *computev1alpha1.ContainerStatus) (*computev1alpha1.MachineSpec, error) {
+// machineSpec is what the spec of container name asks of its machine, in
+// canonical quantities, with the disk its root disk has grown to by itself
+// as its status says, if larger; node is left for the scheduler.
+func machineSpec(name string, cs *computev1alpha1.ContainerSpec, st *computev1alpha1.ContainerStatus) (*computev1alpha1.MachineSpec, error) {
 	sz, err := containerSizes(cs.GetResources())
 	if err != nil {
 		return nil, err
@@ -637,6 +637,7 @@ func machineSpec(cs *computev1alpha1.ContainerSpec, st *computev1alpha1.Containe
 			Image: cs.GetImage(), Command: cs.GetCommand(), Args: cs.GetArgs(), Env: cs.GetEnv(),
 			ImagePullSecrets: slices.Clone(cs.GetImagePullSecrets()),
 			Volumes:          mounts,
+			Tailscale:        machineTailscale(name, cs.GetTailscale()),
 		}},
 		Interfaces:    machineInterfaces(cs.GetInterfaces()),
 		RestartPolicy: restart,
@@ -701,6 +702,7 @@ func (s *Server) reportContainer(ctx context.Context, c *computev1alpha1.Contain
 	if g := conditions.Find(m.GetStatus().GetConditions(), computeapi.RootGrowth); g != nil && ownedBy(m.GetMetadata(), c.GetMetadata().GetUid()) {
 		status.Conditions = append(status.Conditions, proto.Clone(g).(*metav1.Condition))
 	}
+	status.Conditions = s.withTailnetJoined(status.Conditions, c, m)
 	if proto.Equal(status, c.GetStatus()) {
 		return nil
 	}

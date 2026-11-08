@@ -30,6 +30,9 @@ const (
 	SecretType_SECRET_TYPE_UNSPECIFIED SecretType = 0
 	// A container registry login, in the Docker config format.
 	SecretType_SECRET_TYPE_REGISTRY_AUTH SecretType = 1
+	// A Tailscale auth key, which a container joins a tailnet with. See
+	// docs/decisions/container-tailscale.md.
+	SecretType_SECRET_TYPE_TAILSCALE_AUTH SecretType = 2
 )
 
 // Enum value maps for SecretType.
@@ -37,10 +40,12 @@ var (
 	SecretType_name = map[int32]string{
 		0: "SECRET_TYPE_UNSPECIFIED",
 		1: "SECRET_TYPE_REGISTRY_AUTH",
+		2: "SECRET_TYPE_TAILSCALE_AUTH",
 	}
 	SecretType_value = map[string]int32{
-		"SECRET_TYPE_UNSPECIFIED":   0,
-		"SECRET_TYPE_REGISTRY_AUTH": 1,
+		"SECRET_TYPE_UNSPECIFIED":    0,
+		"SECRET_TYPE_REGISTRY_AUTH":  1,
+		"SECRET_TYPE_TAILSCALE_AUTH": 2,
 	}
 )
 
@@ -158,7 +163,8 @@ type SecretSpec struct {
 	// The values, by key, at most 64 KiB in all. Write-only: every apply
 	// carries them, and every answer leaves them out. A registry-auth secret
 	// holds one key, ".dockerconfigjson", in the Docker config format, as
-	// docker login writes it.
+	// docker login writes it. A tailscale-auth secret holds one key,
+	// "authkey": a Tailscale auth key.
 	Data map[string][]byte `protobuf:"bytes,2,rep,name=data,proto3" json:"data,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// What the apiserver stores of data, encrypted. It is the apiserver's
 	// alone: an apply that sets it is refused, and no answer holds it.
@@ -1142,11 +1148,12 @@ const file_hangar_secrets_v1alpha1_secret_proto_rawDesc = "" +
 	"\x19expected_resource_version\x18\x04 \x01(\x03H\x00R\x17expectedResourceVersion\x88\x01\x01B\x1c\n" +
 	"\x1a_expected_resource_version\"U\n" +
 	"\x1aUpdateSecretStatusResponse\x127\n" +
-	"\x06secret\x18\x01 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret*H\n" +
+	"\x06secret\x18\x01 \x01(\v2\x1f.hangar.secrets.v1alpha1.SecretR\x06secret*h\n" +
 	"\n" +
 	"SecretType\x12\x1b\n" +
 	"\x17SECRET_TYPE_UNSPECIFIED\x10\x00\x12\x1d\n" +
-	"\x19SECRET_TYPE_REGISTRY_AUTH\x10\x012\xa2\x05\n" +
+	"\x19SECRET_TYPE_REGISTRY_AUTH\x10\x01\x12\x1e\n" +
+	"\x1aSECRET_TYPE_TAILSCALE_AUTH\x10\x022\xa2\x05\n" +
 	"\rSecretService\x12b\n" +
 	"\tGetSecret\x12).hangar.secrets.v1alpha1.GetSecretRequest\x1a*.hangar.secrets.v1alpha1.GetSecretResponse\x12h\n" +
 	"\vListSecrets\x12+.hangar.secrets.v1alpha1.ListSecretsRequest\x1a,.hangar.secrets.v1alpha1.ListSecretsResponse\x12m\n" +
