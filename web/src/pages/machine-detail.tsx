@@ -13,7 +13,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { ArrowDown, ArrowUpRight, ChevronDown, ChevronUp, Lock, SquareChevronRight, TerminalSquare } from "lucide-react";
 import { StaleBanner } from "@/components/credentials";
 import { HostKeys } from "@/components/host-key";
-import { TerminalCard, useMayTerminal } from "@/pages/machine-terminal";
+import { TerminalCard, useMachineTerminal, useMayTerminal, type MachineTerminal } from "@/pages/machine-terminal";
 import { consoleBlock, useMayConsole } from "@/pages/machine-console";
 import type { MenuAction } from "@/components/menu";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -761,8 +761,10 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
   const mayTerminal = useMayTerminal(project);
   // Asked with the list, so the page's controls come with it, and once.
   const { can } = useMachineCan(project);
-  // Asking again failing keeps the page on its last answer, so a terminal open on it is not ended.
+  // Asking again failing keeps the page, and a terminal open on it, on its last answer.
   const m = held.find((x) => x.name === name);
+  // Held from the page's first render, so one coming back from the terminal page is taken up while the page loads.
+  const terminal = useMachineTerminal(project, kind, name, !loading && (!m || (mayTerminal.settled && !mayTerminal[kind])));
   const list = kind === "Container" ? "Containers" : "Virtual machines";
   const noun = kind === "Container" ? "container" : "virtual machine";
 
@@ -803,7 +805,7 @@ export function MachineDetail({ kind, name }: { kind: MachineKind; name: string 
       </>
     );
   }
-  return <Loaded m={m} crumbs={crumbs} stale={error} refetch={refetch} terminal={mayTerminal[m.kind]} can={can} />;
+  return <Loaded m={m} crumbs={crumbs} stale={error} refetch={refetch} terminal={mayTerminal[m.kind] ? terminal : undefined} can={can} />;
 }
 
 /** The page of a machine that has loaded, its actions made once for its head and its labels. */
@@ -819,7 +821,8 @@ function Loaded({
   crumbs: ReactNode[];
   stale: unknown;
   refetch: () => void;
-  terminal: boolean;
+  /** The machine's terminal, where the caller may open one. */
+  terminal: MachineTerminal | undefined;
   can: Can;
 }) {
   const navigate = useNavigate();
@@ -845,11 +848,11 @@ function Loaded({
           <span className="block">Stop withdraws the start.</span>
         </PageBanner>
       )}
-      <Header m={m} terminal={terminal} set={set} />
+      <Header m={m} terminal={!!terminal} set={set} />
       <div className="grid grid-cols-1 gap-5 px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0 space-y-5">
           <Lifecycle m={m} />
-          {terminal && <TerminalCard m={m} />}
+          {terminal && <TerminalCard m={m} terminal={terminal} />}
           <Summary m={m} onEditLabels={set.editLabels?.onSelect} />
           <Networking m={m} />
           <MachinePortForwards m={m} />

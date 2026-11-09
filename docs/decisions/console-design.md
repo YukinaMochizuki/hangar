@@ -495,7 +495,11 @@ Settled with the owner on screenshots before the dialogs sent anything.
   until Connect, so opening the page starts no process; and a page of its
   own, `/projects/<project>/containers/<name>/terminal`, opened from the
   header's Terminal button or the card's Full page, which connects on
-  opening. Both are shown only when TestPermissions holds
+  opening. The two show the machine's one terminal of the browser tab:
+  moving between them, by Full page, the header's button or Back, carries
+  the terminal and its process along, scrollback and size to the new view
+  included, and the page connects only when it is handed none still
+  connected. Both are shown only when TestPermissions holds
   `compute.machines.exec` at the project; the page states a refusal once
   the answer gives one. A container being deleted or not running takes no
   terminal, and the card and page say which. A refusal before the upgrade
@@ -509,9 +513,11 @@ Settled with the owner on screenshots before the dialogs sent anything.
   under that policy, so where WebGL is missing the terminal draws nothing
   and names the `hangar exec` command instead; a context the GPU takes back
   is asked for again. xterm loads only when a terminal connects. Leaving
-  the page ends the process, also when the browser keeps the page in its
-  back/forward cache. A failed poll of the machine lists keeps the page,
-  and a terminal open on it, on the last answer under a banner.
+  the machine's page and its terminal page for any other page ends the
+  process, also when the browser keeps the page in its back/forward cache;
+  a reload or another tab starts its own. A failed poll of the machine
+  lists keeps the page, and a terminal open on it, on the last answer under
+  a banner.
   A virtual machine has the same card and page
   (`/projects/<project>/vms/<name>/terminal`), on the same exec WebSocket
   with no command: the apiserver logs in over SSH as the image's default
